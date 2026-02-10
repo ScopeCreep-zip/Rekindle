@@ -1,0 +1,167 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+	"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html>
+<head>
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+	<style>
+    %include styles/shared.css%
+
+    .box_title a
+    {
+    font-size: 0.85em;
+    }
+
+    #thumbnail
+    {
+    text-align: center;
+    margin-top: 10px;
+    }
+    #thumbnail img
+    {
+    border: 1px solid rgb(%color_shaded_x:0.3%);
+    }
+    #thumbnail_path
+    {
+    margin-top: 10px;
+    }
+
+    #screenshot_details
+    {
+    margin: 12px;
+    padding-top: 6px;
+    padding-bottom: 6px;
+    padding-left: 8px;
+    padding-right: 8px;
+    border: 1px solid rgb(%color_shaded_x:0.3%);
+    background-color: rgb(%color_shaded%);
+    }
+    .detail_table
+    {
+    width: 100%;
+    }
+    .detail_table th
+    {
+    width: 70px;
+    font-weight: bold;
+    text-align: left;
+    vertical-align: top;
+    }
+    .detail_table td
+    {
+    vertical-align: top;
+    }
+
+    .textarea_description
+    {
+    width: 98%;
+    background-image: url(%media_template_folder%enter_caption_bg.jpg);
+    background-repeat: no-repeat;
+    background-position: center;
+    overflow: auto;
+    }
+
+    .save_button
+    {
+    float: right;
+    height: 20px;
+    border:1px solid rgb(%color_shaded_x:0.3%);
+    background-color:rgb(%color_text%);
+    color:rgb(%color_background%);
+    cursor: pointer;
+    }
+
+    input.text
+    {
+      text-align: center;
+	  border:1px solid rgb(%color_shaded_x:0.1%);
+	  color: rgb(%color_text%);
+	  background-color:rgb(%color_background%);
+	  font-weight: bold;
+    }
+
+  </style>
+	
+  <script language="JavaScript">
+    %include scripts/shared.js%
+    %include scripts/screenshots.js%
+  </script>	
+	
+</head>
+<body>
+<table id='main_table' cellpadding='0' cellspacing='0' border='0' width='100%'><tr><td><div id='main_div'><!-- needed for scrollbar determination -->
+<div id='wrap'>
+
+	%include screenshot_header.tmpl%
+	
+	<div class='box'>
+		<div class='box_title'>%dl_screenshot_title%</div>
+		<div class='box_details'>
+			<div id='thumbnail'>
+				<script language="JavaScript">
+					function openWindow(url)
+					{
+						window.open(url, "popup", "width=965,height=515,scrollbars,resizable,status");
+					}
+				
+					if (bIsRemote)
+					{
+						//document.write("<img src='" + strScreenshotURL + "' alt='" + strScreenshotURL + "'width='160' height='120' style='cursor:pointer' onclick='openWindow(\"" + strRemoteClickURL + "\")' />");
+						document.write("<a href='" + strRemoteClickURL + "'><img src='" + strScreenshotURL + "' alt='" + strScreenshotURL + "'width='160' height='120' /></a>");
+					}
+					else
+					{
+						document.write("<div><a href='" + strScreenshotURL + "'><img src='" + strScreenshotURL + "' width='160' height='120'/></a></div>");
+						document.write("<div id='thumbnail_path'><a href='" + strScreenshotURL + "' title='" + strScreenshotURL + "'>" + strPNGFile + "</a></div>");
+					}
+				</script>
+			</div>
+
+			<div id='screenshot_details'>
+				<table class='detail_table'>
+					<script language="JavaScript">
+						document.write("<tr><th>" + strGameText + "</th><td>" + strGameName + "</td></tr>");
+						if (bHasIPPort)
+						{
+							document.write("<tr><th>" + strServerIPText + "</th><td>" + strIPPort + "</td></tr>");
+						}
+						document.write("<tr><th>" + strTimeTakenText + "</th><td>" + strTimeTaken + "</td></tr>");
+						document.write("<tr><th>" + strFileSizeText + "</th><td>" + strFileSize + "</td></tr>");
+						if (!bIsRemote)
+						{
+							// I don't have dimensions for remote yet...
+							document.write("<tr><th>" + strResolutionText + "</th><td>" + strDimensions + "</td></tr>");
+						}
+				if (bDisplayUploadStatus)
+				{
+				  document.write("<tr><th>" + strStatusText + "</th><td>" + strStatus + "</td></tr>");
+				}
+						document.write("<tr><th>" + strDescriptionText + "</th><td>&nbsp;</td>");
+					</script>
+				</table>	
+				<table class='detail_table'>
+					<script language="JavaScript">
+						if (bIsRemote && bDisconnected)
+						{
+							document.write("<tr><td colspan='2'><textarea id='desc_id' class='textarea_description' rows='5' disabled='disabled'>" + strDescription + "</textarea></td></tr>");
+							document.write("<tr><th>&nbsp;</th><td><input class='save_button' type='button' size='15' name='save' value='" + strSaveText + "' disabled='disabled'></td></tr>");
+						}
+						else
+						{
+							document.write("<tr><td colspan='2'><textarea id='desc_id' class='textarea_description' rows='5'>" + strDescription + "</textarea></td></tr>");
+							document.write("<tr><th>&nbsp;</th><td><input class='save_button' type='button' size='15' name='save' value='" + strSaveText + "'></td></tr>");
+						}
+					</script>
+				</table>	
+			</div>
+		
+		</div>
+	</div>
+
+	<script language="JavaScript">
+		RenderHeader();
+	</script>
+
+</div>	
+</td></tr></table>
+</body>
+</html>

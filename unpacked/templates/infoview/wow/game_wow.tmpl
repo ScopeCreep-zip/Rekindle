@@ -1,0 +1,314 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+	"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html>
+<head>
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+	<style>
+		%include styles/shared.css%
+		%include styles/user.css%
+		%include styles/server.css%
+	</style>
+	<!--[if IE 7]> 
+		<style>
+			.frame
+			{
+				background-image: url(http://www.wowarmory.com/_images/icon-glass.png);
+			}
+		</style>
+	<![endif]-->
+	<!--[if IE 6]>
+		<style>
+			#talentSpecImage
+			{
+				display: none;
+			}
+		</style>
+	<![endif]-->
+
+	<script language="JavaScript">
+	<!--
+		%include scripts/shared.js%
+		%include scripts/voicechat.js%
+		%include scripts/linkify.js%
+		%include scripts/colorize.js%
+		%include scripts/personal_file_transfers.js%
+		%include scripts/user.js%	
+		%include scripts/server.js%
+	//-->
+	</script>
+	
+</head>
+
+<body onload='setupSlots();'>
+<table id='main_table' cellpadding='0' cellspacing='0' border='0' width='100%'><tr><td><!-- needed for scrollbar determination -->
+<div id='wrap'>
+
+	<div id='user_box' class='box'>
+		<div class='box_title'>
+			%user_display_name%&nbsp;<img id='speakerimg' src='%media_template_folder%infoview/images/icon_speaker_green.gif' style='visibility: hidden' align='top' /><br>
+			<a id='profile_link' class='small_text' href='%profile_url%%username%' target='_blank'>%text_profile%</a><br>
+      <span id='blocked_user_link' class='fake_small_link' action='privacytab'>%text_blocked_user%</span>
+		</div>
+		<div class='box_details'>
+			<table class='detail_table'>
+				<tr id='user_clan_nickname_row'>
+					<th>Clan Nickname</th>
+					<td>%clan_member_nickname%</td>
+				</tr>
+				<tr id='user_nickname_row'>
+					<th>%text_nickname%</th>
+					<td>%user_nickname%</td>
+				</tr>
+				<tr id='username_row'>
+					<th>%text_username%</th>
+					<td>%username%</td>
+				</tr>
+				<tr>
+					<th>%text_status%</th>
+					<td id='status_id'>%status%</td>
+				</tr>
+				<tr id='voice_chat_row'>
+					<th>%text_voicechat%</th>
+					<td>%voice_serverip%</td>
+				</tr>
+			</table>
+		</div>
+	</div>
+
+  <div id='user_broadcast_box' class='box'>
+    <div class='box_title'>
+      <table width='100%' border='0' cellpadding='0' cellspacing='0'>
+        <tr>
+          <td class='user_title'>%text_live_video%</td>
+          <td class='user_title' align='right'>
+            <a href=' ' href_type='broadcast_options'>%broadcast_bindings%</a>
+          </td>
+        </tr>
+      </table>
+    </div>
+    <div class='box_details' style='padding:5px'>
+      <div id='user_broadcast_id'></div>
+    </div>
+  </div>  
+
+	<div id='clans_box' class='box'>
+		<div class='box_title'>%text_clans_and_guilds%</div>
+		<div class='box_details'>
+			<table class='detail_table'>
+				<script language="JavaScript">
+				<!--
+					var user_clan_info = [ %user_clan_info% ];
+					if (user_clan_info.length)
+					{
+						for (var x = 0; x < user_clan_info.length; x++)
+						{
+							document.write("<tr>");
+							document.write("<th><a href='" + user_clan_info[x].clanurl + "' target='_blank'>" + user_clan_info[x].clanname + "</a></th>");
+							document.write("<td>" + user_clan_info[x].nickname + "</td>");
+							document.write("</tr>");
+						}
+					}
+				//-->
+				</script>
+			</table>
+		</div>
+	</div>
+	
+	<!-- WILL DISPLAY IF THERE ARE PERSONAL FILE TRANSFERS -->
+	<!-- THE ACTUAL FILE DOWNLOADS WILL DYNAMICALLY BE ADDED AS CHILDREN NODES BY JAVASCRIPT CALLS -->
+	<div id='pft_uploads_id' class='box'>
+		<div class='box_title'>%uploads_text%</div>
+		<div class='box_details'>
+			<table class='pft_table'><tbody id='pft_uploads_table_id'></tbody></table>
+		</div>
+	</div>
+	
+	<div id='pft_downloads_id' class='box'>
+		<div class='box_title'>%downloads_text%</div>
+		<div class='box_details'>
+			<table class='pft_table'><tbody id='pft_downloads_table_id'></tbody></table>
+		</div>
+	</div>
+
+	<div id='game_server_box' class='box'>
+		<div class='box_title'>
+			<span id='game_server_box_title'>%text_playinggame%</span><br>
+			<span id='refresh_server_id' class='fakelink'>%text_refresh%</span>
+		</div>
+		<div class='box_details'>
+			<table class='detail_table'>
+			<tbody id='server_tbody_id'>
+				<tr>
+					<td colspan='2'>
+						<table id='game_title_table'>
+							<tr>
+								<th id='game_icon'><img src='%game_iconfilename%' width='32' height='32' border="0" /><img src='%game_lockiconfilename%' id='game_lock' border='0' /></th>
+								<td><span class='fakelink' action='view_games_page' short_name='%game_shortname%'>%game_longname%</span></td>
+							</tr>
+						</table>
+					</td>
+				</tr>
+				<tr id='server_query_status_row'>
+					<th>%text_serverquerystatus%</th>
+					<td>%game_serverquerystatus%</td>
+				</tr>
+				<tr id='server_name_row'>
+					<th>%text_servername%</th>
+					<td id='server_name'>%game_servername%</td>
+				</tr>
+				<tr id='server_ping_row'>
+					<th>%text_serverping%</th>
+					<td>%game_serverping%</td>
+				</tr>
+				<tr id='server_info_row'>
+					<th>%text_serverinfo%</th>
+					<td>%game_serverinfo%</td>
+				</tr>
+				<tr id='server_game_type_row'>
+					<th>%text_servergametype%</th>
+					<td>%game_servergametype%</td>
+				</tr>
+
+				<!-- NOTE: render_game_stats_hash() will insert rows here -->
+
+				<tr id='rcon_row'>
+					<th>%rcon_password_text%</th>
+					<td><input class='text' type='password' name='rcon_password' id='rcon_password' value='' size='15' /></td>
+				</tr>
+				
+			</tbody>
+			</table>
+
+			<div id='player_team_list_id' style='display: none;'>
+				<!-- render_player_team_list() will insert data here -->
+			</div>
+			
+			<div id='raw_server_info_id' style='display: none;'>
+				<!-- render_raw_server_info() will insert data here -->
+			</div>
+
+			<!-- If you need em... -->
+			<div id="extraDiv1" style="display: none;"><span></span></div>
+			<div id="extraDiv2" style="display: none;"><span></span></div>
+			<div id="extraDiv3" style="display: none;"><span></span></div>
+			<div id="extraDiv4" style="display: none;"><span></span></div>
+
+		</div>
+	</div>
+
+	<div class='box' id='wow_box' style='display:none'>
+		<div class='box_title'>Character Sheet</div>
+		<div class='box_details'>
+			<div id='char_selection'></div>
+			<div id='char_box' onmouseover='showCharInfo();'>
+				<img id='char_img'>
+				<div id='char_name'><a id="char_name_anchor" target="_blank" href="%www_url%/wowstats/%username%/"></a></div>
+				<div id='guild_name'></div>
+				<div id='char_info'></div>
+			</div>
+			<div id='wow_items'>
+				<div id='char_not_found' style='display:none'>Character Not Active</div>
+				<div class='wow_slot' id='slot0'><div id='frame0' class='frame' onmouseover='mouseOn(this)' onmouseout='mouseOff(this)'></div></div>
+				<div id='wow_info'></div>
+				<div class='wow_slot' id='slot8'><div id='frame8' class='frame' onmouseover='mouseOn(this)' onmouseout='mouseOff(this)'></div></div>
+				<div class='wow_slot' id='slot1'><div id='frame1' class='frame' onmouseover='mouseOn(this)' onmouseout='mouseOff(this)'></div></div>
+				<div class='wow_slot' id='slot9'><div id='frame9' class='frame' onmouseover='mouseOn(this)' onmouseout='mouseOff(this)'></div></div>
+				<div class='wow_slot' id='slot2'><div id='frame2' class='frame' onmouseover='mouseOn(this)' onmouseout='mouseOff(this)'></div></div>
+				<div class='wow_slot' id='slot10'><div id='frame10' class='frame' onmouseover='mouseOn(this)' onmouseout='mouseOff(this)'></div></div>
+				<div class='wow_slot' id='slot3'><div id='frame3' class='frame' onmouseover='mouseOn(this)' onmouseout='mouseOff(this)'></div></div>
+				<div class='wow_slot' id='slot11'><div id='frame11' class='frame' onmouseover='mouseOn(this)' onmouseout='mouseOff(this)'></div></div>
+				<div class='wow_slot' id='slot4'><div id='frame4' class='frame' onmouseover='mouseOn(this)' onmouseout='mouseOff(this)'></div></div>
+				<div class='wow_slot' id='slot12'><div id='frame12' class='frame' onmouseover='mouseOn(this)' onmouseout='mouseOff(this)'></div></div>
+				<div class='wow_slot' id='slot5'><div id='frame5' class='frame' onmouseover='mouseOn(this)' onmouseout='mouseOff(this)'></div></div>
+				<div class='wow_slot' id='slot13'><div id='frame13' class='frame' onmouseover='mouseOn(this)' onmouseout='mouseOff(this)'></div></div>
+				<div class='wow_slot' id='slot6'><div id='frame6' class='frame' onmouseover='mouseOn(this)' onmouseout='mouseOff(this)'></div></div>
+				<div class='wow_slot' id='slot14'><div id='frame14' class='frame' onmouseover='mouseOn(this)' onmouseout='mouseOff(this)'></div></div>
+				<div class='wow_slot' id='slot7'><div id='frame7' class='frame' onmouseover='mouseOn(this)' onmouseout='mouseOff(this)'></div></div>
+				<div class='wow_slot' id='slot16'><div id='frame16' class='frame' onmouseover='mouseOn(this)' onmouseout='mouseOff(this)'></div></div>
+				<div class='wow_slot' id='slot17'><div id='frame17' class='frame' onmouseover='mouseOn(this)' onmouseout='mouseOff(this)'></div></div>
+				<div class='wow_slot' id='slot18'><div id='frame18' class='frame' onmouseover='mouseOn(this)' onmouseout='mouseOff(this)'></div></div>
+				<div class='wow_slot' id='slot15'><div id='frame15' class='frame' onmouseover='mouseOn(this)' onmouseout='mouseOff(this)'></div></div>
+			</div>
+			Data Provided by <a href='http://armory.worldofwarcraft.com/' target='_blank'>The Armory</a>
+		</div>
+	</div>
+
+  <div id='user_videos_box' class='box'>
+    <div class='box_title'>
+      <table width='100%' border='0' cellpadding='0' cellspacing='0'>
+        <tr>
+          <td>%text_videos%</td>
+          <td class='small_text' align='right'>
+            <a href=' ' href_type='video_options'>%video_capture_bindings%</a>
+          </td>
+        </tr>
+      </table>
+    </div>
+    <div class='box_details'>
+      <div id='user_videos_id'></div>
+    </div>
+  </div>
+
+  <div id='user_ss_box' class='box'>
+    <div class='box_title'>
+      <table width='100%' border='0' cellpadding='0' cellspacing='0'>
+        <tr>
+          <td>%screenshots_text%</td>
+          <td id='capture_bindings' class='small_text' align='right'>
+            <a href=' ' href_type='ingame_options'>%ss_capture_bindings%</a>
+          </td>
+        </tr> 
+        <tr>
+          <td id='take_your_own_link' class='small_text' colspan='2'>
+            <a href='%ss_tour_url%' target='_blank'>%text_take_your_own_ss%</a>
+          </td>
+        </tr>
+      </table>
+    </div>
+    <div class='box_details'>
+      <div id='user_ss_id'></div>
+    </div>
+  </div>
+
+  <!-- NEED AN ELEMENT TO FIRE AN EVENT ON -->
+	<!-- SEE RebuildEventSinks() FOR DESCRIPTION. -->
+	<span id="fire_event_id"></span>
+			
+	<script language="JavaScript">
+	<!--
+		render_user_box();
+		render_clans_box();
+		render_server_box();
+		render_user_videos();
+		render_user_ss();
+		render_user_broadcast();
+	//-->
+	</script>
+
+	<div id='char_tab'>
+		<div id='talentStr'></div>
+		<table border="0" cellspacing="0" cellpadding="0">
+			<tbody>
+				<tr>
+					<td rowspan="2"><img id="talentSpecImage"/></td>
+					<td><a id='talentLink' target='_blank'><div id="talentSpecStr"></div></a></td>
+				</tr>
+				<tr>
+					<td><span id='talentVals1'></span> / <span id='talentVals2'></span> / <span id='talentVals3'></span></td>
+				</tr>
+			</tbody>
+		</table>
+		<div>
+			<div id='healthStr'></div>
+			<div class="bar" id='healthBar'></div>
+		</div>
+		<div>
+			<div id='secondBarStr'></div>
+			<div class="bar" id='secondBar'></div>
+		</div>
+	</div>
+</div>
+</td></tr></table>
+
+</body>
+</html>

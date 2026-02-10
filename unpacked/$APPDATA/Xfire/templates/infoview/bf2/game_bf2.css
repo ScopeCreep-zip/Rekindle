@@ -1,0 +1,206 @@
+body {
+  background-color: rgb(20,20,20);
+  margin: 0;
+  padding: 0;
+  color: rgb(240,194,16);
+  font-family: Arial, sans-serif;
+}
+a {
+  color: rgb(240,194,16);
+}
+#logo {
+  background-repeat: no-repeat;
+  background-image: url("%media_template_folder%infoview/bf2/infoview_bf2_logo.gif");
+  background-position: center center;
+  height: 54px;
+  padding-top: 5px;
+  padding-bottom: 15px;
+  margin: 5px;
+}
+.box {
+  margin: 5px;
+  border-style: solid;
+  border-color: rgb(240,194,16);
+  border-width: 2px;
+  width: 300px;
+  padding-bottom: 3px;
+}
+#outter_box {
+  margin: 5px;
+  border-width: 0;
+  text-align: center;
+  width: 310px;
+  padding-bottom: 5px;
+}
+.teamflag {
+  float:left;
+  margin-top:7px;
+  margin-left:7px;
+}
+.heading {
+  background-color: rgb(64,64,64);
+  color: rgb(255,255,255);
+  height: 30px;
+  line-height: 30px;
+  font-weight: bolder;
+  vertical-align: middle;
+  text-align: center;
+  padding:-5px;
+  margin:0;
+  border-bottom: 1px solid rgb(240,194,16);
+}
+.keyvalue, .selected_keyvalue {
+  margin: 3px;
+  text-align: left;
+  height: 1.1em;
+  font-size: 14px;
+}
+.selected_keyvalue 
+{
+	border: 1px dashed rgb(240,194,16);
+}
+.key {
+  width: 130px;
+  float: right;
+  font-weight: bold;
+  color: rgb(235,235,235);
+}
+#playerQSData .key 
+{
+	width: 125px;
+}
+.value {
+  margin-left: 1px;
+  width: 159px;
+  text-align: right;
+  float: right;
+  background-color: rgb(64,64,64);
+}
+#playerQSData .value
+{
+	width: 155px;
+}
+.ex_box 
+{
+	width: 290px;
+	border-style: solid;
+	border-color: rgb(240,194,16);
+	border-width: 1px;
+}
+.expandable 
+{
+	text-align: center;
+	background-color: rgb(64,64,64);
+	cursor: pointer;
+	text-decoration: underline;
+}
+.fetching 
+{
+	text-align: center;
+	font-style: italic;
+}
+.score, .ping, .score_header, .ping_header {
+  width: 38px;
+  text-align: right;
+  float: right;
+  margin-left: 1px;
+  height: 16px;
+  line-height: 16px;
+  font-size: 12px;
+  background-color: rgb(64,64,64);
+}
+.rank, .rank_header {
+  width: 38px;
+  float: right;
+  line-height: 16px;
+  font-size: 12px;
+  background-color: rgb(64,64,64);
+  text-align: center;
+}
+.selected_keyvalue .rank, .selected_keyvalue .ping 
+{
+	width: 37px;
+}
+.name, .name_header {
+  width: 173px;
+  text-align: left;
+  float:right;
+  margin-left: 1px;
+  height: 16px;
+  line-height: 16px;
+  font-size: 12px;
+  background-color: rgb(64,64,64);
+}
+.rank_box {
+  color: rgb(175,175,50);
+  height: 16px;
+  line-height: 16px;
+  margin: 3px;
+  position: relative;
+  top: -20px;
+  margin-bottom: -20px; /*counter-acts the top*/
+}
+.rank_desc {
+  width: 173px;
+  text-align: left;
+  font-size: 0.8em;
+  float: right;
+  background-color: rgb(64,64,64);
+  margin-left:1px;
+  padding-left: 7px;
+}
+.rank_filler { 
+  width: 38px;
+  float: right;
+  background-color: rgb(64,64,64);
+  margin-left:1px;
+}
+.score_header, .ping_header, .name_header, .rank_header { 
+  //text-decoration:underline;
+  background:transparent;
+  text-align:center;
+  color:rgb(255,255,255);
+}
+.name_header { 
+  text-align:left;
+}
+.raw_data_button { 
+  float:left;
+  padding: 5px;
+  border: 1px solid rgb(240,194,16);
+  background-color: rgb(0,0,0);
+  color: rgb(240,194,16);
+  cursor: pointer;
+  margin-left: 5px;
+  font-size: 12px;
+}
+.rank_button { 
+  float:right;
+  padding: 5px;
+  border: 1px solid rgb(240,194,16);
+  background-color: rgb(0,0,0);
+  color: rgb(240,194,16);
+  cursor: pointer;
+  margin-right: 5px;
+  font-size: 12px;
+}
+.raw_data_button_highlight { 
+  float:left;
+  padding: 5px;
+  border: 1px solid rgb(240,194,16);
+  background-color: rgb(228,184,15);
+  color: rgb(0,0,0);
+  cursor: pointer;
+  margin-left: 5px;
+  font-size: 12px;
+}
+.rank_button_highlight { 
+  float:right;
+  padding: 5px;
+  border: 1px solid rgb(240,194,16);
+  background-color: rgb(228,184,15);
+  color: rgb(0,0,0);
+  cursor: pointer;
+  margin-right: 5px;
+  font-size: 12px;
+}

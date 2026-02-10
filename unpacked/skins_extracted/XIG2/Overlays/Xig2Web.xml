@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE Overlay SYSTEM "XfireSkin.dtd">
+
+<Overlay>
+    <Tile Name="WebBrowser" ResizeX="100" ResizeY="100" Features="WebBrowser" DisplayName="Browser" Component="XIGWebOverlay">
+        <!--
+        //////////////////////////////////////////////
+        // Resize Grippers
+        //////////////////////////////////////////////
+        -->
+        <Tile Name="ResizeGripperTL" Z="26" JustX="Left" JustY="Top" Component="XIGOverlaysResizeGripperTL" />
+        <Tile Name="ResizeGripperT" Z="25" JustY="Top" ResizeX="100" IndentRight="ResizeGripperTR.Width" IndentLeft="ResizeGripperTL.Width" Component="XIGOverlaysResizeGripperTop" />
+        <Tile Name="ResizeGripperTR" Z="26" JustX="Right" JustY="Top" Component="XIGOverlaysResizeGripperTR" />
+        <Tile Name="ResizeGripperL" Z="25" JustX="Left" JustY="Center" ResizeY="100" IndentTop="ResizeGripperTL.Height" IndentBottom="ResizeGripperBL.Height" Component="XIGOverlaysResizeGripperL" />
+        <Tile Name="ResizeGripperR" Z="25" JustX="Right" JustY="Center" ResizeY="100" IndentTop="ResizeGripperTR.Height" IndentBottom="ResizeGripperBR.Height" Component="XIGOverlaysResizeGripperR" />
+        <Tile Name="ResizeGripperBL" Z="26" JustX="Left" JustY="Bottom" Component="XIGOverlaysResizeGripperBL" />
+        <Tile Name="ResizeGripperBottom" Z="25" JustY="Bottom" ResizeX="100" IndentRight="ResizeGripperBR.Width" IndentLeft="ResizeGripperBL.Width"  Component="XIGOverlaysResizeGripperBottom" />
+        <Tile Name="ResizeGripperBR" X="7" Y="7" Z="26" JustX="Right" JustY="Bottom" Component="XIGOverlaysResizeGripperBR" />
+        
+        
+        
+        <!--
+        //////////////////////////////////////////////
+        // Window Draggers
+        //////////////////////////////////////////////
+        -->
+        <Tile Name="WindowDragger" Z="10" ResizeX="100" ResizeY="100" Component="XIGWindowDragger" />
+        
+        
+        
+        <!--
+        //////////////////////////////////////////////
+        // Window Frame
+        //////////////////////////////////////////////
+        -->
+        <Tile Name="TopRow" Z="1" JustY="Top" ResizeX="100" Component="XIGOverlaysTopRow" />
+        <Tile Name="LeftSide" Z="1" JustX="Left" JustY="Top" ResizeY="100" IndentTop="TopRow.Height" IndentBottom="BottomRow.Height" Component="XIGOverlaysLeftSide" />
+        <Tile Name="Background" Z="1" ResizeX="100" ResizeY="100" IndentRight="RightSide.Width" IndentBottom="BottomRow.Height" IndentLeft="LeftSide.Width" IndentTop="TopRow.Height" Component="XIGOverlaysBackground" />
+        <Tile Name="RightSide" Z="1" JustX="Right" JustY="Top" ResizeY="100" IndentTop="TopRow.Height" IndentBottom="BottomRow.Height" Component="XIGOverlaysRightSide" />
+        <Tile Name="BottomRow" Z="1" JustY="Bottom" ResizeX="100" Component="XIGOverlaysBottomRow" />
+        
+        
+        
+        <!--
+        //////////////////////////////////////////////
+        // Content
+        //////////////////////////////////////////////
+        -->
+        <!--[BEGIN] Xfire Logo -->
+        <!-- <Tile Name="XfireLogo" X="4" Y="3" Z="99" Component="XfireLogoNoLink" /> -->
+        <!--[END] Xfire Logo -->
+        
+        
+        <!--[BEGIN] Info Bar -->
+        <Tile Name="InfoBar" Y="5" Z="24" ResizeX="100" IndentLeft="5" IndentRight="5" Component="InfoBarSmall">
+            <!--[BEGIN] Window Title -->
+            <!-- <Tile Name="WindowTitle" X="4" Y="5" ResizeX="100" IndentRight="93" Component="XIGWebTitle" /> -->
+            <!--[END] Window Title -->
+            
+            
+            <!--[BEGIN] Window Control -->
+            <Tile Name="ButtonClose" X="5" Y="3" Z="25" JustX="Right" Component="XIGOverlayButtonClose" />
+            <!--[END] Window Control -->
+            
+            
+            <!--[BEGIN] Web Navigation Buttons -->
+            <Tile Name="TopNavi" Y="5" ResizeX="100" IndentRight="33" Component="XIGWebNaviContainer">
+                <!-- Some of these overlap each other by 1px -->
+                <Tile Name="ButtonBack" Z="25" ControlId="1306" AttachedControlId="1399" TabOrder="50" FocusedColor="XIGFocusedColor" Component="XIGWebButtonBack" />
+                <Tile Name="ButtonForward" X="ButtonBack.Right+2" Y="ButtonBack.Top" Z="25" ControlId="1307" AttachedControlId="1399" TabOrder="60" FocusedColor="XIGFocusedColor" Component="XIGWebButtonForward" />
+                <Tile Name="ButtonRefresh" X="ButtonForward.Right+2" Y="ButtonBack.Top" Z="25" ControlId="1308" AttachedControlId="1399" TabOrder="70" FocusedColor="XIGFocusedColor" Component="XIGWebButtonRefresh" />
+                <Tile Name="ButtonHome" X="ButtonRefresh.Right+2" Y="ButtonBack.Top" Z="25" ControlId="1313" AttachedControlId="1399" TabOrder="71" FocusedColor="XIGFocusedColor" Component="XIGWebButtonHome" />
+                <Tile Name="URLContainer" X="ButtonHome.Right+4" Y="2" Z="25" ResizeX="100" ResizeY="100" Component="XIGWebURLBG">
+                    <Tile Name="URL" X="4" Y="2" Z="26" ResizeX="100" IndentRight="4" ControlId="1301" AttachedControlId="1399" TabOrder="72" Component="XIGWebURL" />
+                </Tile>    
+            </Tile>
+            <!--[END] Web Navigation Buttons -->
+        </Tile>
+        <!--[END] Info Bar -->
+        
+        
+        <!--[BEGIN] Web Tabs -->
+        <Tile Name="TabBar" Y="InfoBar.Bottom+1" Z="24" ResizeX="100" IndentRight="4" IndentLeft="4" Component="XIGWebTabBar">
+            <Tile Name="TabContentControl" Y="3" Z="25" ResizeX="100" IndentRight="23" IndentLeft="1" ControlId="1399" AttachedControlId="1302" TabOrder="73" Component="XIGWebTabContentControl">
+                <Tile Name="TabContentLeft" JustY="Center" Component="XIGWebPreviousTab" />
+                <Tile Name="Tab" JustY="Bottom" ResizeX="100" BindX="False" Component="XIGWebTab" />
+                <Tile Name="TabContentRight" JustY="Center" Component="XIGWebNextTab" />
+                <Tile Name="TabButtonClose" Component="XIGWebButtonTabClose" />
+            </Tile>
+            <Tile Name="ButonNewTab" X="1" Z="25" JustX="Right" JustY="Center" ControlId="1310" AttachedControlId="1399" TabOrder="74" FocusedColor="XIGFocusedColor" Component="XIGWebButtonNewTab" />
+        </Tile>
+        <!--[END] Web Tabs -->
+        
+        
+        <!--[BEGIN] Content Container -->
+        <Tile Name="ContentContainer" Y="TabBar.Bottom" Z="25" ResizeX="100" ResizeY="100" IndentRight="4" IndentBottom="25" IndentLeft="4" Component="ContentContainer">
+            <!--[BEGIN] Web Page Content -->
+            <Tile Name="Content" Z="99" ResizeX="100" ResizeY="100" ControlId="1302" AttachedControlId="1399" FocusedColor="XIGFocusedColor" TabOrder="10" Default="SetFocusControl" Component="XIGWebContent" />    
+            <!--[END] Web Page Content -->
+        </Tile>
+        <!--[END] Content Container -->
+        
+        
+        <!--[BEGIN] Opacity Slider -->
+        <Tile Name="OpacSlider" X="5" Y="7" Z="75" JustX="Left" JustY="Bottom" ControlId="7" TabOrder="30" Component="XIGOpacitySlider">
+            <Tile Name="OpacTrack" ResizeX="100" Component="XIGOpacityTrack" />
+            <Tile Name="OpacGripper" ResizeX="100" ResizeY="100" Component="XIGOpacityGripper" />
+        </Tile>
+        <!--[END] Opacity Slider -->
+        
+        
+        <!--[BEGIN] Page Status -->
+        <!-- <Tile Name="PageStatus" Y="ContentContainer.Bottom+5" Z="25" ResizeX="100" IndentRight="80" IndentLeft="15" Component="XIGWebPageStatus" /> -->
+        <!--[END] Page Status -->
+    </Tile>
+</Overlay>

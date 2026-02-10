@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE Components SYSTEM "XfireSkin.dtd">
+
+<Components>
+    <Component Name="XIGMainWindow" Class="MainWindow" MinWidth="272" MinHeight="256">
+        <Triggers>
+            <Trigger Type="OnActiveMode">ShowTile</Trigger>
+            <Trigger Type="OnInActiveMode">HideTile</Trigger>
+            <Trigger Type="OnLeftButtonDown">AppDragWindow</Trigger>
+        </Triggers>
+        <Text Color_Personal="ChatPersonalNameCG" Color_PersonalText="ChatPersonalTextCG" Color_Other="ChatOtherNameCG" Color_OtherText="ChatOtherTextCG" />
+    </Component>
+    
+    
+    
+    <!--
+    //////////////////////////////////////////////
+    // Window Frame
+    //////////////////////////////////////////////
+    -->
+    <Component Name="XIGMainWindowTopRow" Class="Tile" MinHeight="13" MaxHeight="13" Stretch="ToContent" Default="Activate">
+        <Images State="Normal">
+            <Image Type="TopLeft">frame1_top_left</Image>
+            <Image Type="Top">frame1_top_middle</Image>
+            <Image Type="TopRight">frame1_top_right</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="XIGMainWindowLeftSide" Class="Tile" MinWidth="13" MaxWidth="13" Stretch="ToContent" Default="Activate">
+        <Images State="Normal">
+            <Image Type="Left">frame1_leftside_middle</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="XIGMainWindowBackground" Class="Tile" Stretch="ToContent" Default="Activate">
+        <Images State="Normal">
+            <Image Type="Middle">frame1_window_filler</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="XIGMainWindowRightSide" Class="Tile" MinWidth="13" MaxWidth="13" Stretch="ToContent" Default="Activate">
+        <Images State="Normal">
+            <Image Type="Right">frame1_rightside_middle</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="XIGMainWindowBottomRow" Class="Tile" MinHeight="13" MaxHeight="13" Stretch="ToContent" Default="Activate">
+        <Images State="Normal">
+            <Image Type="BottomLeft">frame1_bottom_left</Image>
+            <Image Type="Bottom">frame1_bottom_middle</Image>
+            <Image Type="BottomRight">frame1_bottom_right</Image>
+        </Images>
+    </Component>
+    
+    
+    
+    <!--
+    //////////////////////////////////////////////
+    // Content
+    //////////////////////////////////////////////
+    -->
+    <Component Name="XIGMainWindowTitle" Class="Text" MinHeight="14" Stretch="ToContent">
+        <Text Bold="True" Color="XIGActiveWindowTitleCG" Font="Arial" Size="11" />
+    </Component>
+    
+    <Component Name="XIGMainWindowClock" Class="Text" MinWidth="28" MinHeight="14" Stretch="ToContent">
+        <Text Bold="True" Color="XIGActiveWindowTitleCG" Font="Arial" Size="11" />
+    </Component>
+    
+    <Component Name="XIGMainWindowChatArea" Class="Text" MinHeight="14" Stretch="ToContent">
+        <Text Bold="False" Color="ListFriendTextCG" Font="Arial" Size="11" />
+    </Component>
+    
+    <Component Name="XIGMainWindowChatEdit" Class="Text" MinHeight="18" Stretch="ToContent">
+        <Text Color="ChatPersonalTextCG" Bold="False" Font="Arial" Size="11" />
+    </Component>
+    
+    <Component Name="XIGMainWindowFooter" Class="Text" MinHeight="13" Stretch="ToContent">
+        <Text Bold="True" Color="XIGActiveWindowTitleCG" Font="Arial" Size="11" />
+    </Component>
+</Components>

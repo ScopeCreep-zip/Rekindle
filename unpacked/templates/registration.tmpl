@@ -1,0 +1,764 @@
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+		<style>
+			body
+			{
+				margin:0px;
+				background-color:ThreeDFace;
+				color:WindowText;
+				font: 8pt MS Shell Dlg;
+			}
+			td
+			{
+				font: 8pt MS Shell Dlg;
+			}
+			tr
+			{
+				padding-left:2em;
+			}
+			.second_col
+			{
+				padding-left:0.6em;
+			}
+			.fakelink
+			{
+				color: rgb(0, 55, 118);
+				text-decoration: underline;
+				cursor: pointer;
+			}
+			.advice_text
+			{
+				margin-top: -21px;
+				padding-left: 3px;
+				padding-top: 6px;
+				padding-bottom: 6px;
+			}
+			.short_text
+			{
+				line-height: 21px;
+				vertical-align: middle;
+			}
+			#registering, #animation, #registering_background
+			{
+				position: absolute;
+				top:60px;
+				left:0px;
+				background-color:ThreeDFace;
+				color:WindowText;
+				text-align:center;
+				vertical-align:middle;
+				font-size: 24pt;
+			}
+		</style>
+		<script>
+%include infoview/scripts/AjaxRequest.js%
+			// Advice list
+			var advice = 
+			{
+				username:'%text_reg_advice_username%',
+				email:'%text_reg_advice_email%',
+//				first_name:'%text_reg_advice_name%',
+//				last_name:'%text_reg_advice_name%',
+				password:'%text_reg_advice_pwd%',
+				password2:'%text_reg_advice_pwd%',
+				captcha:"%text_reg_advice_bot%",
+				month:"%text_reg_advice_birthdate%",
+				day:"%text_reg_advice_birthdate%",
+				year:"%text_reg_advice_birthdate%"
+			};
+
+			var username_problems = [ "",
+						  "%text_reg_username_available%",
+						  "%text_reg_enter_username%",
+						  "%text_reg_allowed_chars%",
+						  "%text_reg_char_limits%",
+						  "%text_reg_username_taken%",
+						  "%text_reg_username_taken%"
+						];
+			
+			var password_problems = [ "%text_registration_passwords_match%",
+						  "%text_registration_password_short%"
+						];
+			var birthday_problems = [ "%text_registration_invalid_date%",
+						  "%text_registration_not_13%"
+						];
+
+/*			var inputs = [ "first_name",
+				       "last_name",
+				       "email",
+				       "username",
+				       "male",
+				       "female",
+				       "password",
+				       "password2",
+				       "captcha",
+				       "newsletter",
+				       "partner_auth",
+				       "month",
+				       "day",
+				       "year"
+				     ];	*/
+			var inputs = [ "email",
+				       "username",
+				       "male",
+				       "female",
+				       "password",
+				       "password2",
+				       "captcha",
+				       "newsletter",
+				       "partner_auth",
+				       "month",
+				       "day",
+				       "year"
+				     ];
+
+			var normal   = [ 'WindowText', '<img src="%media_template_folder%tip.gif" width="12" height="21" style="position:relative; top:6px; left:-12px;">' ];
+			var negative = [ '#8F0000', '<img src="%media_template_folder%tip_neg.gif" width="12" height="21" style="position:relative; top:6px; left:-12px;">' ];
+			var positive = [ '#006B33', '<img src="%media_template_folder%tip_pos.gif" width="12" height="21" style="position:relative; top:6px; left:-12px;">' ];
+
+			var tips = new Object();
+			var advice_ballon = null;
+			var last_advice_obj = null;
+
+			function ShowAdvice(obj)
+			{
+				if (advice_balloon)
+				{
+					if (tips[obj.id])
+					{
+						var tip = tips[obj.id];
+						var style = tip[0];
+						var color = style[0];
+						var arrow = style[1];
+						var text = tip[1];
+
+						var html_str = arrow + "<div class='advice_text'>";
+
+						if (text.length < 42)
+							html_str += "<span class='short_text'>" + text + "</span>";
+						else
+							html_str += text;
+
+						html_str += "</div>";
+
+						advice_balloon.innerHTML = html_str;
+						advice_balloon.style.top=(GetAbsoluteTop(obj) - 6) + "px";
+						advice_balloon.style.borderColor = color;
+						advice_balloon.style.display = "";
+						last_advice_obj = obj;
+					}
+					else
+					{
+						advice_balloon.style.display = "none";
+						last_advice_obj = null;
+					}
+					Resink();
+				}
+			}
+
+			function CheckUsername(obj)
+			{
+				if (!obj)
+				{
+					obj = document.getElementById("username");
+				}
+				if (obj.value.match(/^[a-z0-9]+$/))
+				{
+					AjaxRequest.get(
+					{
+						'url':'%scripting_host%/testuser/' + obj.value + '/',
+						'onSuccess':
+							function (req)
+							{
+								SetUsernameError(req.responseText, 1);
+							}
+					});
+				}
+				else
+				{
+					SetUsernameError(3, 1);
+				}
+			}
+			
+			var first_error = null;
+			function ClearErrors()
+			{
+				for (var elem in advice)
+				{
+					tips[elem] = [normal, advice[elem]];
+					var td = document.getElementById(elem + '_label');
+					if (td)
+					{
+						td.style.color = normal[0];
+					}
+				}
+				advice_balloon.style.display = "none";
+				first_error = null;
+			}
+
+			function InterruptSubmit(obj)
+			{
+				var evnt = document.createEventObject();
+				obj.fireEvent("ondataavailable", evnt);
+			}
+
+			function DoSubmit()
+			{
+				for (var i = 0; i < inputs.length; i++)
+				{
+					var input = document.getElementById(inputs[i]);
+					if (input)
+					{
+						input.blur();
+					}
+				}
+				ClearErrors();
+
+				var registering_background = document.getElementById("registering_background");
+				var registering = document.getElementById("registering");
+				var animation = document.getElementById("animation");
+				if (registering_background && registering && animation)
+				{
+					registering_background.style.display = "";
+					registering.style.display = "";
+					animation.style.display = "";
+					registering.style.top = (document.body.offsetHeight - registering.offsetHeight - 60)/2 + "px";
+					registering.style.left = ((document.body.offsetWidth - registering.offsetWidth - 56)/2 + 56) + "px";
+					animation.style.top = (document.body.offsetHeight - 110)/2 + "px";
+					animation.style.left = (document.body.offsetWidth - registering.offsetWidth - 56)/2 + "px";
+					registering_background.style.height = (document.body.offsetHeight - 60) + "px";
+					registering_background.style.zIndex = 1;
+					registering.style.zIndex = 2;
+					animation.style.zIndex = 2;
+					// IE 6 has some issues with select's
+					var month = document.getElementById('month');
+					var day = document.getElementById('day');
+					var year = document.getElementById('year');
+					if (month && day && year)
+					{
+						month.style.display = 'none';
+						day.style.display = 'none';
+						year.style.display = 'none';
+					}
+				}
+				Resink();
+
+				var f = document.getElementById("f");
+				f.onSubmit = "return true;";
+				AjaxRequest.submit(f,
+				                   {timeout:45000,
+						    onSuccess:SubmissionDone,
+						    onError:SubmissionError,
+						    onTimeout:SubmissionTimeout}
+						  );
+				f.onSubmit = "InterruptSubmit(this); return false;";
+			}
+
+			function GetUsername()
+			{
+				var username = document.getElementById("username");
+				if (username)
+					return username.value;
+				return "";
+			}
+
+			function GetPassword()
+			{
+				var password = document.getElementById("password");
+				if (password)
+					return password.value;
+				return "";
+			}
+
+			function ClearUsername()
+			{
+				if(last_advice_obj)
+					ShowAdvice(last_advice_obj);
+				else
+					ShowAdvice(document);
+			}
+
+			function SetUsernameError(code, force)
+			{
+				var td = document.getElementById('username_label');
+				if (code == 1)
+				{
+					tips['username'] = [ positive, username_problems[code] ];
+					if (td)
+					{
+						td.style.color = normal[0];
+					}
+				}
+				else
+				{
+					tips['username'] = [ negative, username_problems[code] ];
+					if (td)
+					{
+						td.style.color = negative[0];
+					}
+				}
+				if (force)
+				{
+					var inp = document.getElementById('username');
+					if (inp)
+					{
+						var saved = last_advice_obj;
+						ShowAdvice(inp);
+						last_advice_obj = saved;
+						setTimeout("ClearUsername()", 3500);
+					}
+				}
+				else
+				{
+					if (!first_error)
+						first_error = 'username';
+				}
+			}
+
+			function SetEmailError(code)
+			{
+				tips['email'] = [ negative, '%text_registration_email_invalid%' ];
+				if (!first_error)
+					first_error = 'email';
+				var td = document.getElementById('email_label');
+				if (td)
+				{
+					td.style.color = negative[0];
+				}
+			}
+
+			function SetPasswordError(code)
+			{
+				tips['password'] = [ negative, password_problems[code] ];
+				tips['password2'] = [ negative, password_problems[code] ];
+				if (!first_error)
+					first_error = 'password';
+				var td = document.getElementById('password_label');
+				if (td)
+				{
+					td.style.color = negative[0];
+				}
+				var td = document.getElementById('password2_label');
+				if (td)
+				{
+					td.style.color = negative[0];
+				}
+			}
+
+			function SetCaptchaError(code)
+			{
+				tips['captcha'] = [ negative, '%text_registration_captcha_mismatch%' ];
+				if (!first_error)
+					first_error = 'captcha';
+				var td = document.getElementById('captcha_label');
+				if (td)
+				{
+					td.style.color = negative[0];
+				}
+			}
+
+			function SetBirthdayError(code)
+			{
+//				tips['first_name'] = [ negative, birthday_problems[code] ];
+//				if (!first_error)
+//					first_error = 'first_name';
+				// first_name removed, so show tip on email instead
+				tips['email'] = [ negative, birthday_problems[code] ];
+				if (!first_error)
+					first_error = 'email';
+			}
+
+			function SetGeneralError(code)
+			{
+//				tips['first_name'] = [ negative, '%text_registration_general_error%' ];
+//				if (!first_error)
+//					first_error = 'first_name';
+				// first_name being removed.  change to email
+				tips['email'] = [ negative, '%text_registration_general_error%' ];
+				if (!first_error)
+					first_error = 'email';
+			}
+
+			function ShowErrors()
+			{
+				if (first_error)
+				{
+					var obj = document.getElementById(first_error);
+					if (obj)
+					{
+						obj.focus();
+					}
+				}
+			}
+
+			function SubmissionDone(req)
+			{
+				FinishSubmit(req.responseText);
+			}
+
+			function FinishSubmit(response_text)
+			{
+				evnt = document.createEventObject();
+				var registering_background = document.getElementById("registering_background");
+				var registering = document.getElementById("registering");
+				var animation = document.getElementById("animation");
+				if (registering_background && registering && animation)
+				{
+					registering_background.style.display = "none";
+					registering.style.display = "none";
+					animation.style.display = "none";
+					// IE 6 has some issues with select's
+					var month = document.getElementById('month');
+					var day = document.getElementById('day');
+					var year = document.getElementById('year');
+					if (month && day && year)
+					{
+						month.style.display = '';
+						day.style.display = '';
+						year.style.display = '';
+					}
+				}
+				Resink();
+				var reg_complete = document.getElementById('reg_complete');
+				reg_complete.setAttribute("response", response_text);
+				if (reg_complete)
+				{
+					reg_complete.fireEvent("ondataavailable", evnt);
+				}
+			}
+
+			function SubmissionError(req)
+			{
+				FinishSubmit("general error " + req.responseText + "\n-1\n");
+			}
+
+			function SubmissionTimeout(req)
+			{
+				FinishSubmit("timeout error\n-1\n");
+			}
+
+			function Resink()
+			{
+				var header = document.getElementById("header");
+				if (header)
+				{
+					var evnt = document.createEventObject();
+					header.fireEvent("ondataavailable", evnt);
+				}
+			}
+
+			function SetCaptcha(val)
+			{
+				var hidden_captcha = document.getElementById('hidden_captcha');
+				var captcha = document.getElementById('captcha');
+				var img_captcha = document.getElementById('img_captcha');
+				if (hidden_captcha && captcha && img_captcha)
+				{
+					hidden_captcha.value = val;
+					captcha.value = "";
+					img_captcha.src = "%scripting_host%/register/image/?number=" + val;
+					Resink();
+				}
+			}
+
+			function GetAbsoluteLeft(obj)
+			{
+				if (obj == null)
+					return 0;
+				return GetAbsoluteLeft(obj.offsetParent) + obj.offsetLeft;
+			}
+
+			function GetAbsoluteTop(obj)
+			{
+				if (obj == null)
+					return 0;
+				return GetAbsoluteTop(obj.offsetParent) + obj.offsetTop;
+			}
+
+			function CalculateAdviceWidth(left)
+			{
+				return document.body.offsetWidth - left - 8;
+			}
+
+			function CalculateGlobalLeft(obj)
+			{
+				return GetAbsoluteLeft(obj) + obj.offsetWidth + 12;
+			}
+
+			function init()
+			{
+				d=new Date();
+				document.getElementById('time_zone_offset').value=d.getTimezoneOffset();
+				var registering = document.getElementById("registering");
+				var registering_background = document.getElementById("registering_background");
+				var animation = document.getElementById("animation");
+				if (registering_background && registering && animation)
+				{
+					registering_background.style.display = "none";
+					registering.style.display = "none";
+					animation.style.display = "none";
+				}
+
+				advice_balloon = document.getElementById('advice');
+				ClearErrors();
+
+				/*
+				var first_name = document.getElementById('first_name');
+				if (first_name)
+				{
+					var left = CalculateGlobalLeft(first_name);
+					var width = CalculateAdviceWidth(left);
+					advice_balloon.style.left = left + "px";
+					advice_balloon.style.width = width + "px";
+					first_name.focus();
+				}
+				*/
+				// first_name being removed.  change to email.				
+				var email = document.getElementById('email');
+				if (email)
+				{
+					var left = CalculateGlobalLeft(email);
+					var width = CalculateAdviceWidth(left);
+					advice_balloon.style.left = left + "px";
+					advice_balloon.style.width = width + "px";
+					email.focus();
+				}
+
+			}
+		</script>
+	</head>
+	<body onload="init();">
+		<div id="header" style="height: 60px; background-color: #FFFFFF; color: #000000; vertical-align: middle; line-height: 16px;"><img src="%media_template_folder%header_image.png" width="150" height="57" style="float: left"/><span id='reg_complete' style="float: left; padding-top: 10px; padding-left: 25px;"><b>%text_new_user_registration_title%</b><br/>%text_registration_instructions%</span></div>
+		<table border="0" cellpadding="0" cellspacing="2">
+		<form id="f" action="%https_scripting_host%/register/process/" method="post" onsubmit="InterruptSubmit(this); return false;">
+			<input type="hidden" name="lang" value="%language%"/>
+			<input type="hidden" name="build_number" value="%build_number%"/>
+
+			<tr><td>&nbsp;</td></tr>
+			<tr><td>&nbsp;</td></tr>
+			<tr><td>&nbsp;</td></tr>
+
+			<tr style="line-height: 2em; vertical-align: middle; height: 2em;">
+				<td align="right">%text_registration_already_member%</td>
+				<td class="second_col"><span class="fakelink" action="close">%text_login%</span></td>
+			</tr>
+			
+<!--			
+			<tr>
+				<td id="first_name_label" align="right">%text_first_name%:</td>
+				<td class="second_col"><input value="" type="text" name="p_register_firstname" maxlength="60" id="first_name" onfocus="ShowAdvice(this); return true;" size="30"></td>
+			</tr>
+			<tr>
+				<td align="right">%text_last_name%:</td>
+				<td class="second_col"><input value="" type="text" name="p_register_lastname" maxlength="60" id="last_name" onfocus="ShowAdvice(this); return true;" size="30"></td>
+			</tr>
+-->
+			<tr>
+				<td id="email_label" align="right">%text_email_address%:</td>
+				<td class="second_col"><input value="" type="text" name="p_register_user_email" maxlength="255" id="email" onfocus="ShowAdvice(this); return true;" size="30"></td>
+			</tr>
+<!--
+			<tr>
+				<td align="right">%text_gender%:</td>
+				<td class="second_col"><input type="radio" name="p_register_user_gender" value="m" id="male" checked="checked" onfocus="ShowAdvice(this); return true;"> <label for="male">%text_male%</label>&nbsp;&nbsp;<input type="radio" name="p_register_user_gender" value="f" id="female" onfocus="ShowAdvice(this); return true;"> <label for="female">%text_female%</label></td>
+			</tr>
+-->
+			<tr>
+				<td id="month_label" align="right">%text_date_of_birth%:</td>
+				<td class="second_col">
+							<select name="p_register_birth_month" id="month" onfocus="ShowAdvice(this); return true;">
+								<option value="1">%text_january%</option>
+								<option value="2">%text_february%</option>
+								<option value="3">%text_march%</option>
+								<option value="4">%text_april%</option>
+								<option value="5">%text_may%</option>
+								<option value="6">%text_june%</option>
+								<option value="7">%text_july%</option>
+								<option value="8">%text_august%</option>
+								<option value="9">%text_september%</option>
+								<option value="10">%text_october%</option>
+								<option value="11">%text_november%</option>
+								<option value="12">%text_december%</option>
+							</select>
+							&nbsp;
+							<select name="p_register_birth_day" id="day" onfocus="ShowAdvice(this); return true;">
+								<option value="1">1</option>
+								<option value="2">2</option>
+								<option value="3">3</option>
+								<option value="4">4</option>
+								<option value="5">5</option>
+								<option value="6">6</option>
+								<option value="7">7</option>
+								<option value="8">8</option>
+								<option value="9">9</option>
+								<option value="10">10</option>
+								<option value="11">11</option>
+								<option value="12">12</option>
+								<option value="13">13</option>
+								<option value="14">14</option>
+								<option value="15">15</option>
+								<option value="16">16</option>
+								<option value="17">17</option>
+								<option value="18">18</option>
+								<option value="19">19</option>
+								<option value="20">20</option>
+								<option value="21">21</option>
+								<option value="22">22</option>
+								<option value="23">23</option>
+								<option value="24">24</option>
+								<option value="25">25</option>
+								<option value="26">26</option>
+								<option value="27">27</option>
+								<option value="28">28</option>
+								<option value="29">29</option>
+								<option value="30">30</option>
+								<option value="31">31</option>
+							</select>
+							&nbsp;
+							<select name="p_register_birth_year" id="year" onfocus="ShowAdvice(this); return true;">
+								<option value="2008">2008</option>
+								<option value="2007">2007</option>
+								<option value="2006">2006</option>
+								<option value="2005">2005</option>
+								<option value="2004">2004</option>
+								<option value="2003">2003</option>
+								<option value="2002">2002</option>
+								<option value="2001">2001</option>
+								<option value="2000">2000</option>
+								<option value="1999">1999</option>
+								<option value="1998">1998</option>
+								<option value="1997">1997</option>
+								<option value="1996">1996</option>
+								<option value="1995">1995</option>
+								<option value="1994">1994</option>
+								<option value="1993">1993</option>
+								<option value="1992">1992</option>
+								<option value="1991">1991</option>
+								<option value="1990">1990</option>
+								<option value="1989">1989</option>
+								<option value="1988">1988</option>
+								<option value="1987">1987</option>
+								<option value="1986">1986</option>
+								<option value="1985">1985</option>
+								<option value="1984">1984</option>
+								<option value="1983">1983</option>
+								<option value="1982">1982</option>
+								<option value="1981">1981</option>
+								<option value="1980">1980</option>
+								<option value="1979">1979</option>
+								<option value="1978">1978</option>
+								<option value="1977">1977</option>
+								<option value="1976">1976</option>
+								<option value="1975">1975</option>
+								<option value="1974">1974</option>
+								<option value="1973">1973</option>
+								<option value="1972">1972</option>
+								<option value="1971">1971</option>
+								<option value="1970">1970</option>
+								<option value="1969">1969</option>
+								<option value="1968">1968</option>
+								<option value="1967">1967</option>
+								<option value="1966">1966</option>
+								<option value="1965">1965</option>
+								<option value="1964">1964</option>
+								<option value="1963">1963</option>
+								<option value="1962">1962</option>
+								<option value="1961">1961</option>
+								<option value="1960">1960</option>
+								<option value="1959">1959</option>
+								<option value="1958">1958</option>
+								<option value="1957">1957</option>
+								<option value="1956">1956</option>
+								<option value="1955">1955</option>
+								<option value="1954">1954</option>
+								<option value="1953">1953</option>
+								<option value="1952">1952</option>
+								<option value="1951">1951</option>
+								<option value="1950">1950</option>
+								<option value="1949">1949</option>
+								<option value="1948">1948</option>
+								<option value="1947">1947</option>
+								<option value="1946">1946</option>
+								<option value="1945">1945</option>
+								<option value="1944">1944</option>
+								<option value="1943">1943</option>
+								<option value="1942">1942</option>
+								<option value="1941">1941</option>
+								<option value="1940">1940</option>
+								<option value="1939">1939</option>
+								<option value="1938">1938</option>
+								<option value="1937">1937</option>
+								<option value="1936">1936</option>
+								<option value="1935">1935</option>
+								<option value="1934">1934</option>
+								<option value="1933">1933</option>
+								<option value="1932">1932</option>
+								<option value="1931">1931</option>
+								<option value="1930">1930</option>
+								<option value="1929">1929</option>
+								<option value="1928">1928</option>
+								<option value="1927">1927</option>
+								<option value="1926">1926</option>
+								<option value="1925">1925</option>
+								<option value="1924">1924</option>
+								<option value="1923">1923</option>
+								<option value="1922">1922</option>
+								<option value="1921">1921</option>
+								<option value="1920">1920</option>
+								<option value="1919">1919</option>
+								<option value="1918">1918</option>
+								<option value="1917">1917</option>
+								<option value="1916">1916</option>
+								<option value="1915">1915</option>
+								<option value="1914">1914</option>
+								<option value="1913">1913</option>
+								<option value="1912">1912</option>
+								<option value="1911">1911</option>
+								<option value="1910">1910</option>
+								<option value="1909">1909</option>
+								<option value="1908">1908</option>
+								<option value="1907">1907</option>
+								<option value="1906">1906</option>
+								<option value="1905">1905</option>
+								<option value="1904">1904</option>
+								<option value="1903">1903</option>
+								<option value="1902">1902</option>
+								<option value="1901">1901</option>
+								<option value="1900">1900</option>
+							</select>
+				</td>
+			</tr>
+			<tr>
+				<td id="username_label" align="right">%text_username%:</td>
+				<td class="second_col"><input value="" type="text" name="p_register_username" maxlength="25" id="username" onfocus="ShowAdvice(this); return true;" onblur="CheckUsername(this); return true;" size="30"></td>
+			</tr>
+			<tr>
+				<td id="password_label" align="right">%text_create_password%:</td>
+				<td class="second_col"><input value="" type="password" name="p_register_password" maxlength="20" id="password" onfocus="ShowAdvice(this); return true;" size="30"></td>
+			</tr>
+			<tr>
+				<td id="password2_label" align="right">%text_verify_password%:</td>
+				<td class="second_col"><input value="" type="password" name="p_register_password2" maxlength="20" id="password2" onfocus="ShowAdvice(this); return true;" size="30"></td>
+			</tr>
+			<tr>
+				<td id="captcha_label" align="right">%text_enter_code%:</td>
+				<td class="second_col"><input id="hidden_captcha" type="hidden" name="p_register_number" value="000000"><input type="text" size="16" name="p_register_security_code" maxlength="6" id="captcha" onfocus="ShowAdvice(this); return true;"><img id="img_captcha" src="%scripting_host%/register/image/?number=000000" style="border: 1px solid #000000; position: relative; top: 3px; left: 6px;"></td>
+			</tr>
+			<tr>
+				<td align="right">&nbsp;</td>
+				<td class="second_col"><input type="checkbox" name="p_register_xfire_spam" value="1" id="newsletter" style="margin-left:-5px;" onfocus="ShowAdvice(this); return true;"><label for="newsletter">%text_reg_xfire_subscribe%</label></td>
+			</tr>
+			<tr>
+				<td align="right">&nbsp;</td>
+				<td class="second_col"><input type="checkbox" name="p_register_partner_spam" value="1" id="partner_auth" style="margin-left:-5px;" onfocus="ShowAdvice(this); return true;"><label for="partner_auth">%text_reg_partner_subscribe%</label></td>
+			</tr>
+		<input type="hidden" name="p_register_partner" value="%partner%"><input type="hidden" name="from_client" value="1"><input type="hidden" name="time_zone_offset" id="time_zone_offset" value="0">
+		</form>
+		</table>
+		<div id="advice" style="position:absolute; top:91px; left:348px; width=189px; line-height: 12px; background: #FFFFFF; border: 1px solid #000000;"><img src="%media_template_folder%tip.gif" width="12" height="21" style="position:relative; top:6px; left:-12px;"><div class="advice_text">%text_reg_advice_name%</div></div>
+		<span id="registering" style="display:none">%text_registering%</span>
+		<img src="%media_template_folder%busy.gif" width="50" height="50" id="animation" style="display:none">
+		<div id="registering_background" style="width:100%; display:none;"></div>
+	</body>
+</html>
