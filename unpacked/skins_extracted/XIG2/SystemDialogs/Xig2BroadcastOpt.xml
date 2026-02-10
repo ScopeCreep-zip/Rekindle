@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE SystemDialog SYSTEM "XfireSkin.dtd">
+
+<SystemDialog>
+    <Tile Name="BroadcastOptions" ResizeX="100" ResizeY="100" Features="BroadcastTitleDlg" Component="XIGBroadcastOptions">
+        <!--
+        //////////////////////////////////////////////
+        // Resize Grippers
+        //////////////////////////////////////////////
+        -->
+        <Tile Name="ResizeGripperTL" Z="26" JustX="Left" JustY="Top" Component="XIGSystemDialogResizeGripperTL" />
+        <Tile Name="ResizeGripperT" Z="25" JustY="Top" ResizeX="100" IndentRight="ResizeGripperTR.Width" IndentLeft="ResizeGripperTL.Width" Component="XIGSystemDialogResizeGripperTop" />
+        <Tile Name="ResizeGripperTR" Z="26" JustX="Right" JustY="Top" Component="XIGSystemDialogResizeGripperTR" />
+        <Tile Name="ResizeGripperL" Z="25" JustX="Left" JustY="Center" ResizeY="100" IndentTop="ResizeGripperTL.Height" IndentBottom="ResizeGripperBL.Height" Component="XIGSystemDialogResizeGripperL" />
+        <Tile Name="ResizeGripperR" Z="25" JustX="Left" JustY="Center" ResizeY="100" IndentTop="ResizeGripperTR.Height" IndentBottom="ResizeGripperBR.Height" Component="XIGSystemDialogResizeGripperR" />
+        <Tile Name="ResizeGripperBL" Z="26" JustX="Left" JustY="Bottom" Component="XIGSystemDialogResizeGripperBL" />
+        <Tile Name="ResizeGripperBottom" Z="25" JustY="Bottom" ResizeX="100" IndentRight="ResizeGripperBR.Width" IndentLeft="ResizeGripperBL.Width"  Component="XIGSystemDialogResizeGripperBottom" />
+        <Tile Name="ResizeGripperBR" X="4" Y="4" Z="26" JustX="Right" JustY="Bottom" Component="XIGSystemDialogResizeGripperBR" />
+        
+        
+        
+        <!--
+        //////////////////////////////////////////////
+        // Window Draggers
+        //////////////////////////////////////////////
+        -->
+        <Tile Name="WindowDragger" Z="10" ResizeX="100" ResizeY="100" Component="XIGWindowDragger" />
+        
+        
+        
+        <!--
+        //////////////////////////////////////////////
+        // Window Frame
+        //////////////////////////////////////////////
+        -->
+        <Tile Name="TopRow" Z="1" JustY="Top" ResizeX="100" Component="XIGSystemDialogTopRow" />
+        <Tile Name="LeftSide" Z="1" ResizeY="100" IndentTop="TopRow.Height" IndentBottom="BottomRow.Height" Component="XIGSystemDialogLeftSide" />
+        <Tile Name="Background" Z="1" ResizeX="100" ResizeY="100" IndentTop="TopRow.Height" IndentRight="RightSide.Width" IndentBottom="BottomRow.Height" IndentLeft="LeftSide.Width" Component="XIGSystemDialogBackground" />
+        <Tile Name="RightSide" Z="1" JustX="Right" ResizeY="100" IndentTop="TopRow.Height" IndentBottom="BottomRow.Height" Component="XIGSystemDialogRightSide" />
+        <Tile Name="BottomRow" Z="1" JustY="Bottom" ResizeX="100" Component="XIGSystemDialogBottomRow" />
+        
+        
+        
+        <!--
+        //////////////////////////////////////////////
+        // Content
+        //////////////////////////////////////////////
+        -->
+        <!--[BEGIN] Xfire Logo -->
+        <!-- <Tile Name="XfireLogo" X="13" Y="25" Z="99" Component="XfireLogoNoLink" /> -->
+        <!--[END] Xfire Logo -->
+        
+        
+        <!--[BEGIN] Info Bar -->
+        <Tile Name="InfoBar" Y="5" Z="24" ResizeX="100" IndentLeft="5" IndentRight="5" Component="InfoBar">
+            <!--[BEGIN] Window Title -->
+            <Tile Name="WindowTitle" X="4" Y="5" ResizeX="100" IndentRight="93" Component="XIGDialogTitle" />
+            <!--[END] Window Title -->
+            
+            
+            <!--[BEGIN] Window Control -->
+            <Tile Name="ButtonClose" X="5" Y="3" Z="25" JustX="Right" ControlId="2150" TabOrder="60" Component="XIGDialogButtonClose" />
+            <!--[END] Window Control -->
+        </Tile>
+        <!--[END] Info Bar -->
+        
+        
+        <!--[BEGIN] Content Container -->
+        <Tile Name="ContentContainer" Y="InfoBar.Bottom+1" Z="25" ResizeX="100" ResizeY="100" IndentRight="5" IndentBottom="51" IndentLeft="5" Component="ContentContainer">
+            <Tile Name="OptText" Y="4" ResizeX="100" IndentRight="7" IndentLeft="7" Component="XIGDialogText" />
+            
+            <Tile Name="TitleEditBackground" X="OptText.Left" Y="OptText.Bottom+9" Z="25" ResizeX="90" Component="TextContainer">
+                <Tile Name="TitleEdit" Z="26" ResizeX="100" ResizeY="100" IndentTop="2" IndentRight="2" IndentBottom="2" IndentLeft="2" ControlId="2100" TabOrder="10" Default="SetFocusControl" Component="XIGBroadcastTitleEdit" />
+            </Tile>
+            
+            <Tile Name="RecordCheckbox" X="TitleEditBackground.Left" Y="TitleEditBackground.Bottom+17" ControlId="2110" TabOrder="20" FocusedColor="XIGFocusedColor" Component="XIGBroadcastRecordCheckbox" />
+            <Tile Name="RecordText" X="RecordCheckbox.Right+6" Y="RecordCheckbox.Top-1" Component="XIGBroadcastRecordText" />
+            
+            <Tile Name="WebCamCheckbox" X="RecordCheckbox.Left" Y="RecordCheckbox.Bottom+16" ControlId="2120" TabOrder="30" FocusedColor="XIGFocusedColor" Component="XIGBroadcastDisplayWebCamCheckbox" />
+            <Tile Name="WebCamText" X="WebCamCheckbox.Right+6" Y="WebCamCheckbox.Top-1" Component="XIGEditModeOptWebCamText" />
+            
+            <Tile Name="MicrophoneCheckbox" X="RecordCheckbox.Left" Y="WebCamCheckbox.Bottom+16" ControlId="2121" TabOrder="31" FocusedColor="XIGFocusedColor" Component="XIGBroadcastDisplayWebCamCheckbox" />
+            <Tile Name="MicrophoneText" X="MicrophoneCheckbox.Right+6" Y="MicrophoneCheckbox.Top-1" Component="XIGBroadcastMicrophoneText" />
+            
+            <!-- <Tile Name="ContentBackground" Z="2" ResizeX="100" ResizeY="100" IndentTop="2" IndentRight="2" IndentBottom="2" IndentLeft="2" Component="XfireListBackdrop" /> -->
+        </Tile>
+        <!--[END] Content Container -->
+        
+        
+        
+        <!--
+        //////////////////////////////////////////////
+        // Buttons
+        //////////////////////////////////////////////
+        -->
+        <Tile Name="ConfirmationButtonBar" Y="ContentContainer.Bottom+2" Z="25" ResizeX="100" IndentRight="5" IndentLeft="5" Component="XIGDialogButtonBar">
+            <Tile Name="ButtonOk" X="1" Y="1" Z="30" ControlId="1200" TabOrder="1" Component="XIGDialogButtonOk" />
+            <Tile Name="Separator1" X="ButtonOk.Right" Z="30" Component="ButtonBarVerticalSeparator" />
+            <Tile Name="ButtonCancel" X="Separator1.Right" Y="ButtonOk.Top" Z="25" ControlId="1210" TabOrder="10" Component="XIGDialogButtonCancel" />
+            <Tile Name="Separator2" X="ButtonCancel.Right" Z="30" Component="ButtonBarVerticalSeparator" />
+        </Tile>
+    </Tile>
+</SystemDialog>

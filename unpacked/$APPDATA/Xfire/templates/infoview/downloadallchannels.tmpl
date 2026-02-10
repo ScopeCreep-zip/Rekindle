@@ -1,0 +1,169 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+	"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html>
+<head>
+	<meta http-equiv="Content-Script-Type" content="text/javascript; charset=utf-8"/>
+	<style>
+    %include styles/shared.css%
+		%include download_styles.tmpl%
+		.datatable
+		{
+			width: 100%;
+		}
+		.subscribe_link a:link, .subscribe_link a:visited, .subscribe_link a:hover, .subscribe_link a:active
+		{
+			color: rgb(%color_hyperlink%); 
+			font-weight: bold; 
+			text-decoration: underline;
+		}
+		.title_details a:link, .title_details a:visited, .title_details a:hover, .title_details a:active
+		{
+			color: rgb(%color_text%); 
+			text-decoration: underline;
+		}
+	</style>
+	<script language="JavaScript">
+	<!--
+%include scripts/AjaxRequest.js%
+	//-->
+	</script>
+	<script language="JavaScript">
+	<!--
+		function IsSubscribedChannel(nChannelId)
+		{
+			var bRet = false;
+			var vSubscribedChannels = [%subscribed_channels%];
+			for (x = 0; x < vSubscribedChannels.length; x++)
+			{
+				if (vSubscribedChannels[x] == nChannelId)
+				{
+					bRet = true;
+					break;
+				}
+			}
+			return bRet;
+		}
+		
+		function ToggleLink(element, href)
+		{
+			if (element.innerHTML == 'Remove')
+			{
+				//element.href = href;
+				element.innerHTML = 'Add';
+			}
+			else
+			{
+				//element.href = href;
+				element.innerHTML = 'Remove';
+			}
+		}
+		
+		function ToggleAction(channel_id)
+		{
+			var strActionId = "action_" + channel_id;
+			var strRemRef = "%remove_channel_url%" + channel_id;
+			var strAddRef = "%add_channel_url%" + channel_id;
+		
+			var element = document.getElementById(strActionId);
+			if (element)
+			{
+				if (element.innerHTML == 'Remove')
+				{
+					element.innerHTML = 'Add';
+					element.href = strAddRef;
+				}
+				else
+				{
+					element.innerHTML = 'Remove';
+					element.href = strRemRef;
+				}
+			}
+		}
+		
+	//-->
+	</script>
+</head>
+<body>
+<table id='main_table' width='100%' height='100%' border='0' cellpadding='0' cellspacing='0'><tr><td>
+<div id='wrap'>
+	%include download_header.tmpl%
+  
+  <div class='box'>
+    <div class='box_title'>%all_channels_text%</div>
+    <div class='box_details'>
+      <div id="middle"><i>Querying the server...</i></div>
+      <br/>
+      <p>%channels_help_text%</p>
+    </div>
+  </div>
+  
+</div>	
+  
+<script language="JavaScript">
+<!--
+	var middle_div = document.getElementById('middle');
+	function addResults(rows, div)
+	{
+		var tbl_str = "<table class='datatable'><tr><th>%channel_name_text%</th><th>%action_text%</th></tr>";
+		for (var r = 0; r < rows.length; r++)
+		{
+			var channelid_elem = rows[r].getElementsByTagName('channelid');
+			var title_elem = rows[r].getElementsByTagName('title');
+			var channelid = channelid_elem[0].firstChild.nodeValue;
+			var title = title_elem[0].firstChild.nodeValue;
+			tbl_str +="<tr><td class='title_details'><a href='%scripting_host%/channels/" + channelid + "' target='_blank'>" + title + "</a></td>";
+			var strRemRef = "%remove_channel_url%" + channelid;
+			var strAddRef = "%add_channel_url%" + channelid;
+			var strActionId = "action_" + channelid;
+			if (IsSubscribedChannel(channelid) == true)
+			{
+				tbl_str += "<td class='subscribe_link'><a id='" + strActionId + "' href='" + strRemRef + "'>Remove</a></td>";
+			}
+			else
+			{
+				tbl_str += "<td class='subscribe_link'><a id='" + strActionId + "' href='" + strAddRef + "'>Add</a></td>";
+			}
+			tbl_str += "</tr>";
+		}
+		tbl_str += "</table>";
+		div.innerHTML = tbl_str;
+	}
+
+	function requestAllChannels()
+	{
+		middle_div.innerHTML = "";
+		AjaxRequest.get(
+			{
+				'url':"%scripting_host%/v4/client/filesinfo.php?type=channels",
+				'timeout':10000,
+				'onSuccess':
+					function (req)
+					{
+						var rows = req.responseXML.getElementsByTagName('row');
+						addResults(rows, middle_div);
+						var newEvt = document.createEventObject();
+						var bRet = document.getElementById('request_finished_id').fireEvent("ondataavailable", newEvt);
+
+					},
+				'onError':
+					function (req)
+					{
+						middle_div.innerHTML = "%text_error_fetch%, <b style='cursor:pointer;text-decoration:underline' onclick='requestAllChannels();'>%text_error_retry%</b>";
+					},
+				'onTimeout':
+					function (req)
+					{
+						middle_div.innerHTML = "%text_error_timeout%, <b style='cursor:pointer;text-decoration:underline' onclick='requestAllChannels();'>%text_error_retry%</b>";
+					}
+			}
+		);
+	}
+
+	requestAllChannels();
+-->
+</script>
+<!-- NEED AN ELEMENT TO FIRE AN EVENT ON -->
+<span id="request_finished_id"></span>
+</td></tr></table>
+</body>
+</html>

@@ -1,0 +1,102 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+	<style>
+		body 
+		{ 
+			margin: 0; 
+			padding: 0; 
+			/*
+			background-color: ThreeDFace;
+			color: WindowText;
+			*/
+			background-color: White;
+			color: Black;
+			font: 8pt Tahoma, MS Shell Dlg;
+			border: 0px solid ActiveCaption;
+		}
+		table#notification_table
+		{
+			width: 100%;
+		}
+		td
+		{
+			padding-bottom: 3;
+			color: WindowText;
+			font: 8pt Tahoma, MS Shell Dlg;
+		}
+		img
+		{
+			border: none;
+			border-style: none;
+			width: 16;
+			height: 16;
+		}
+		a { text-decoration: none; }
+		a:hover
+		{
+			text-decoration: underline;
+		}
+		#title_bar
+		{
+			height: 16;
+			background-color: gray;
+			color: white;
+			font-weight: bold;
+			padding-left: 3;
+		}
+		#close_box
+		{
+			float: right;
+			margin-right: 5;
+			border: 1px solid white;
+			color: white;
+			font-weight: bold;	
+		}
+		#close_box:hover
+		{
+			text-decoration: none;
+		}
+		#see_all
+		{
+			text-align: right;
+		}
+	</style>
+	
+	<script language="Javascript">
+	function IsVoiceChecked(id)
+	{
+		var element = document.getElementById('room_invite_voice_' + id);
+		if (element)
+		{
+			if (element.checked)
+				return 'true';
+		}
+		return 'false';
+	}
+	</script>
+	
+</head>
+	
+<body>
+<table id='main_table' cellpadding='0' cellspacing='0' border='0' width='100%'><tr><td>
+<div>
+
+	<!--<div id='title_bar'><a id='close_box' href='' target='_blank'>&nbsp;x&nbsp;</a>Xfire Notifications</div>-->
+	<table id='notification_table'><tbody>
+		<script language="JavaScript">
+			var alert_notifications = [ %alert_notifications% ];
+			var index = 0;
+			while (index < alert_notifications.length)
+			{
+				document.write("<tr><td style='border-bottom: 1px solid #cccccc;'>" + alert_notifications[index].html + "</td></tr>");
+				index++;
+			}
+		</script>
+		<tr><td id='see_all'><a href_type='show_all_notifications' href='' target='_blank'>%text_see_all%</a></td></tr>
+	</tbody></table>
+	
+</div>
+</td></tr></table>
+</body>
+</html>

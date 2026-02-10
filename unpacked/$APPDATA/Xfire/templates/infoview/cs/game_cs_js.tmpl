@@ -1,0 +1,233 @@
+<script language="JavaScript">
+<!--
+
+	function drawTeam(teamstruct)
+	{
+		document.write('<table border=0><tr><td><div class="teambox">');
+		content_height += 14;
+		if (teamstruct["team_name"] == "")
+		{
+			document.write('<div class="teamname">Players</div>');
+		}
+		else
+		{
+			document.write('<div class="teamname">' + teamstruct["team_name"] + '</div>');
+		}
+		content_height += 30;
+		document.write('<div class="playerlist"><table class="playertable"><tr><th>%js:text_name%</th><th>%js:text_frags%</th></tr>');
+		content_height += 23;
+		for(var p in teamstruct["players"])
+		{
+			document.write('<tr><td align="left">' + teamstruct["players"][p]["name"] + '</td><td>' + teamstruct["players"][p]["frags"] + '</td></tr>');
+			content_height += 19;
+		}
+		document.write('</table></div></div></td></tr></table>');
+	}
+
+	var game_icon_file_name		= "%game_iconfilename%";
+	var game_has_password		= %game_haspassword%;
+	var game_lock_icon_file_name = "%game_lockiconfilename%";
+	var game_long_name			= "%js:game_longname%";
+	var voice_has_ip			= %voice_hasip%;
+	var text_voice_chat			= "%js:text_voicechat%";
+	var voice_server_ip			= "%js:voice_serverip%";
+	var game_has_ip				= %game_hasip%;
+	var server_flag_url			= "%js:server_flag_url%";
+	var country_code			= "%js:country_code%";
+	var country_code_url		= "%js:country_code_url%";
+	var text_server_ip			= "%js:text_serverip%";
+	var game_server_ip			= "%js:game_serverip%";
+	var game_has_query_status	= %game_hasquerystatus%;
+	var text_server_query_status = "%js:text_serverquerystatus%";
+	var game_server_query_status = "%js:game_serverquerystatus%";
+	var game_has_server_name	= %game_hasservername%;
+	var text_server_name		= "%js:text_servername%";
+	var game_server_name		= "%js:game_servername%";
+	var game_has_server_ping	= %game_hasserverping%;
+	var text_server_ping		= "%js:text_serverping%";
+	var game_server_ping		= "%js:game_serverping%";
+	var game_has_server_info	= %game_hasserverinfo%;
+	var text_server_info		= "%js:text_serverinfo%";
+	var game_server_info		= "%js:game_serverinfo%";
+	var game_has_server_game_type = %game_hasservergametype%;
+	var text_server_game_type	= "%js:text_servergametype%";
+	var game_server_game_type	= "%js:game_servergametype%";
+	var text_player_list		= "%js:text_playerlist%"; 
+	var team_list = [ %team_data_struct% ];
+	var raw_serverinfo = { %raw_serverinfo% };
+	// var team_list = [ 
+	//					  {team_name: 'blue', players: [{name: 'chad', frags: 1, ping: 100}, {name: 'jose', frags: 2, ping: 200}]}, 
+	//					  {team_name: 'red',  players: [{name: 'brandon', frags: -1, ping: 101}, {name: 'pepe', frags: -2, ping: 201}]}
+	//				   ];
+	
+	var is_user_ingame		= %user_ingame%;
+	var display_user			= "%js:display_user%";
+	var user_has_profile		= %user_hasprofile%;
+	var profile_url			= "%js:profile_url%";
+	var username			= "%js:username%";
+	var text_profile			= "%js:text_profile%";
+	var user_has_nickname		= %user_hasnickname%;
+	var text_user_name		= "%js:text_username%";
+	var name_col			= "%js:text_name%";
+	var ping_col			= "%js:text_ping%";
+	var frags_col			= "%js:text_frags%";
+	var total_frags_text		= "%js:text_totalfrags%";
+	var content_height		= 5;
+	var has_custom_status		= %has_custom_status%;
+	var custom_status			= "%js:custom_status%";
+	var custom_status_text		= "%js:text_status%";		
+	
+	document.write("<div id='serverbox'>");
+	content_height += 5;
+	document.write("<table border=0 cellspacing=0 cellpadding=1>");
+	content_height += 1;
+	if (is_user_ingame == true)
+	{
+		document.write("<tr>");
+		document.write("<td colspan=2><span class='user_title'>" + display_user + 
+						"</span> <span class='user_profile_link'><a href='" + profile_url + username + "' target='_blank'>" + text_profile + 
+						"</a></span><br><br></td>");
+		content_height += 40;
+		document.write("</tr>");
+
+		if (user_has_nickname == true)
+		{
+			document.write("<tr>");
+			document.write("<td><span class='field_name'>" + text_user_name + ": </span></td>");
+			document.write("<td><span class='user_data'>" + username + "<br></span></td>");
+			document.write("</tr>");
+			content_height += 13;
+		}
+
+		if (has_custom_status == true)
+		{
+			document.write("<tr>");
+			document.write("<td><span class='field_name'>" + custom_status_text + ": </span></td>");
+			document.write("<td><span class='user_data'>" + linkify(custom_status) + "<br></span></td>");
+			document.write("</tr>");
+			content_height += 13;
+		}
+
+		if (voice_has_ip == true)
+		{
+			document.write("<tr>");
+			document.write("<td><span class='field_name'>" + text_voice_chat + ": </span></td>");
+			document.write("<td><span class='user_data'>" + voice_server_ip + "<br></span></td>");
+			document.write("</tr>");
+			content_height += 13;
+		}
+	
+	}
+				
+	if (game_has_ip == true)
+	{
+		document.write("<tr>");
+		document.write("<td><span class='field_name'>" + text_server_ip + ": </span></td>");
+		if (server_flag_url.length > 0)
+		{
+			document.write("<td><span class='server_data'> <a href='" + country_code_url + "' target='_blank'><img src='" + server_flag_url + "' title='" + country_code + "' alt='' width='25' height='15' align='absbottom' border='0'></a> " + game_server_ip + "<br></span></td>");
+		}
+		else
+		{
+			document.write("<td><span class='server_data'>" + game_server_ip + "<br></span></td>");
+		}
+		document.write("<tr>");
+		content_height += 13;
+	}
+
+
+	if (game_has_query_status == true)
+	{
+		document.write("<tr>");
+		document.write("<td><span class='field_name'>" + text_server_query_status + ": </span></td>");
+		document.write("<td><span class='server_data'>" + game_server_query_status + "<br></span></td>");
+		document.write("</tr>");
+		content_height += 13;
+	}
+
+	if (game_has_server_name == true)
+	{
+		document.write("<tr>");
+		document.write("<td><span class='field_name'>" + text_server_name + ": </span></td>");
+		document.write("<td><span class='server_data'>" + game_server_name + "<br></span></td>");
+		document.write("</tr>");
+		content_height += 13;
+	}
+
+	if (game_has_server_ping == true)
+	{
+		document.write("<tr>");
+		document.write("<td><span class='field_name'>" + text_server_ping + ": </span></td>");
+		document.write("<td><span class='server_data'>" + game_server_ping + "<br></span></td>");
+		document.write("</tr>");
+		content_height += 13;
+	}
+
+	if (game_has_server_info == true)
+	{
+		document.write("<tr>");
+		document.write("<td><span class='field_name'>" + text_server_info + ": </span></td>");
+		document.write("<td><span class='server_data'>" + game_server_info + "<br></span></td>");
+		document.write("</tr>");
+		content_height += 13;
+	}
+
+	if (game_has_server_game_type == true)
+	{
+		document.write("<tr>");
+		document.write("<td><span class='field_name'>" + text_server_game_type + ": </span></td>");
+		document.write("<td><span class='server_data'>" + game_server_game_type + "<br></span></td>");
+		document.write("</tr>");
+		content_height += 13;
+	}
+	document.write("</table>");	
+	//document.write("<br>\n");
+	document.write("</div>"); // closing the serverbox
+	
+	for (var i = 0; i < team_list.length; i++)
+	{
+		drawTeam(team_list[i]);
+	}
+
+	function addIcons()
+	{
+		var height = 245; /* height of logo plus padding plus borders */
+		/* add icons to the right-hand side box */
+		/* and add spacers to the main content box */
+		var rhsb = document.getElementById('lower_box');
+		var icsb = document.getElementById('spacers');
+		icsb.innerHTML = "";
+		if (raw_serverinfo['password'] == 1)
+		{
+			rhsb.innerHTML += '<div><img width=46 height=46 src="%media_template_folder%infoview/cs/infoview_cs_source_password.gif" alt="Password Required" title="Password Required"></div>';
+			height += 46;
+		}
+		if (raw_serverinfo['secure'] == 1)
+		{
+			rhsb.innerHTML += '<div><img width=46 height=46 src="%media_template_folder%infoview/cs/infoview_cs_source_vac.gif" alt="VAC Secured" title="VAC Secured"></div>';
+			height += 46;
+		}
+		if (raw_serverinfo['os'] == 119)
+		{
+			rhsb.innerHTML += '<div><img width=46 height=42 src="%media_template_folder%infoview/cs/infoview_cs_source_windows.gif" alt="Powered by Windows" title="Powered by Windows"></div>';
+			height += 42;
+		}
+		if (raw_serverinfo['os'] == 108)
+		{
+			rhsb.innerHTML += '<div><img width=46 height=47 src="%media_template_folder%infoview/cs/infoview_cs_source_linux.gif" alt="Powered by Linux" title="Powered by Linux"></div>';
+			height += 47;
+		}
+
+		if (height > content_height)
+		{
+			content_height -= 8; // fudge factor, always make sure there are a couple pixels empty at the bottom
+			var num_spacers = (height - content_height)/21;
+			for (i = 0; i < num_spacers; i++)
+			{
+				icsb.innerHTML += '<div class="spacer"></div>';
+			}
+		}
+	}
+//-->
+</script>
+
