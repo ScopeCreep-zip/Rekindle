@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE Overlay SYSTEM "XfireSkin.dtd">
+
+<Overlay>
+    <Tile Name="EditModeOptions" ResizeX="100" ResizeY="100" Features="EditModeOptions" Component="XIGEditModeOptions">
+        <!--
+        //////////////////////////////////////////////
+        // Window Frame
+        //////////////////////////////////////////////
+        -->
+        <Tile Name="TopRow" Z="1" ResizeX="100" Component="XIGOverlaysTopRow" />
+        <Tile Name="LeftSide" Z="1" ResizeY="100" IndentTop="TopRow.Height" IndentBottom="BottomRow.Height" Component="XIGOverlaysLeftSide" />
+        <Tile Name="Background" Z="1" ResizeX="100" ResizeY="100" IndentRight="RightSide.Width" IndentBottom="BottomRow.Height" IndentLeft="LeftSide.Width" IndentTop="TopRow.Height" Component="XIGOverlaysBackground" />
+        <Tile Name="RightSide" Z="1" JustX="Right" ResizeY="100" IndentTop="TopRow.Height" IndentBottom="BottomRow.Height" Component="XIGOverlaysRightSide" />
+        <Tile Name="BottomRow" Z="1" JustY="Bottom" ResizeX="100" Component="XIGOverlaysBottomRow" />
+        
+        
+        
+        <!--
+        //////////////////////////////////////////////
+        // Window Draggers
+        //////////////////////////////////////////////
+        -->
+        <Tile Name="WindowDragger" Z="10" ResizeX="100" ResizeY="100" Component="XIGWindowDragger" />
+        
+        
+        
+        <!--
+        //////////////////////////////////////////////
+        // Content
+        //////////////////////////////////////////////
+        -->
+        <!--[BEGIN] Xfire Logo -->
+        <!-- <Tile Name="XfireLogo" X="4" Y="3" Z="99" Component="XfireLogoNoLink" /> -->
+        <!--[END] Xfire Logo -->
+        
+        
+        <!--[BEGIN] Info Bar -->
+        <Tile Name="InfoBar" Y="5" Z="24" ResizeX="100" IndentLeft="5" IndentRight="5" Component="InfoBar">
+            <!--[BEGIN] Window Title -->
+            <Tile Name="WindowTitle" X="4" Y="5" Z="25" ResizeX="100" IndentRight="53" Component="XIGEditModeOptTitle" />
+            <!--[END] Window Title -->
+            
+            <!--[BEGIN] Window Control -->
+            <Tile Name="ButtonClose" X="5" Y="3" Z="25" JustX="Right" WindowModeButtonType="Xfire" Component="XIGEditModeOptButtonBack" />
+            <!--[END] Window Control -->
+        </Tile>
+        <!--[END] Info Bar -->
+        
+        
+        <!--[BEGIN] Content Container -->
+        <Tile Name="ContentContainer" Y="InfoBar.Bottom+1" Z="25" ResizeX="100" ResizeY="100" IndentRight="5" IndentBottom="6" IndentLeft="5" Component="ContentContainer">
+            <Tile Name="Instructions" ResizeX="100" Y="2" Z="25" JustX="Center" IndentRight="5" IndentLeft="5" Multiline="True" Component="XIGEditModeOptInstructions" />
+            <Tile Name="OptionsContainer" Y="Instructions.Bottom+3" Z="25" ResizeX="100" ResizeY="100" IndentRight="5" IndentBottom="1" IndentLeft="5" Component="XIGEditModeOptContentContainer">
+                <Tile Name="AlertCheckbox" ControlId="1510" TabOrder="10" FocusedColor="XIGFocusedColor" Default="SetFocusControl" Component="XIGEditModeOptButtonAlertCheckBox" />
+                <Tile Name="AlertText" X="AlertCheckbox.Right+5" Y="AlertCheckbox.Top" Component="XIGEditModeOptAlertText" />
+                <Tile Name="ClockCheckbox" Y="AlertCheckbox.Bottom+9" ControlId="1520" TabOrder="20" FocusedColor="XIGFocusedColor" Component="XIGEditModeOptButtonClockCheckBox" />
+                <Tile Name="ClockText" X="ClockCheckbox.Right+5" Y="ClockCheckbox.Top" Component="XIGEditModeOptClockText" />
+                <Tile Name="FPSCheckbox" Y="ClockCheckbox.Bottom+9" ControlId="1530" TabOrder="30" FocusedColor="XIGFocusedColor" Component="XIGEditModeOptButtonFPSCheckBox" />
+                <Tile Name="FPSText" X="FPSCheckbox.Right+5" Y="FPSCheckbox.Top" Component="XIGEditModeOptFPSText" />
+                <Tile Name="VoiceCheckbox" Y="FPSCheckbox.Bottom+9" ControlId="1540" TabOrder="40" FocusedColor="XIGFocusedColor" Component="XIGEditModeOptButtonVoiceCheckBox" />
+                <Tile Name="VoiceText" X="VoiceCheckbox.Right+5" Y="VoiceCheckbox.Top" Component="XIGEditModeOptVoiceText" />
+                <Tile Name="BrowserCheckbox" Y="VoiceCheckbox.Bottom+9" ControlId="1550" TabOrder="50" FocusedColor="XIGFocusedColor" Component="XIGEditModeOptButtonBrowserCheckBox" />
+                <Tile Name="BrowserText" X="BrowserCheckbox.Right+5" Y="BrowserCheckbox.Top" Component="XIGEditModeOptBrowserText" />
+                <Tile Name="WebCamCheckbox" Y="BrowserCheckbox.Bottom+9" ControlId="1560" TabOrder="60" FocusedColor="XIGFocusedColor" Component="XIGEditModeOptButtonWebCamCheckBox" />
+                <Tile Name="WebCamText" X="WebCamCheckbox.Right+5" Y="WebCamCheckbox.Top" Component="XIGEditModeOptWebCamText" />
+            </Tile>
+            <!-- <Tile Name="ContentBackground" Z="1" ResizeX="100" ResizeY="100" IndentTop="1" IndentRight="1" IndentBottom="1" IndentLeft="1" Component="XfireListBackdrop" /> -->
+        </Tile>
+        <!-- <Tile Name="EditButton" X="XfireButton.Right+3" Y="XfireButton.Top" Z="10" WindowModeButtonType="Edit" Component="XIGBarButtonEdit" /> -->
+        <!-- <Tile Name="ButtonGoBack" X="12" Y="7" Z="30" JustY="Bottom" WindowModeButtonType="Xfire" Component="XIGEditModeOptButtonBack" /> -->
+        <!-- <Tile Name="GameButton" X="ButtonGoBack.Right+14" Y="5" Z="30" JustY="Bottom" WindowModeButtonType="Game" Component="XIGEditModeOptButtonGame" /> -->
+    </Tile>
+</Overlay>

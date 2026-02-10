@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE Tile SYSTEM "ACE.dtd">
+
+
+<Tile Name="XIGAlertWindow" ResizeX="100" ResizeY="100" Component="XIGAlertWindow">
+    <!--
+    //////////////////////////////////////////////
+    // Window Frame
+    //////////////////////////////////////////////
+    -->
+    <Tile Name="TopRow" Z="1" JustY="Top" ResizeX="100" Component="XIGAlertWindowTopRow" />
+    <Tile Name="LeftSide" Z="1" JustX="Left" JustY="Top" ResizeY="100" IndentTop="TopRow.Height" IndentBottom="BottomRow.Height" Component="XIGAlertWindowLeftSide" />
+    <Tile Name="Background" Z="1" ResizeX="100" ResizeY="100" IndentRight="RightSide.Width" IndentBottom="BottomRow.Height" IndentLeft="LeftSide.Width" IndentTop="TopRow.Height" Component="XIGAlertWindowBackground" />
+    <Tile Name="RightSide" Z="1" JustX="Right" JustY="Top" ResizeY="100" IndentTop="TopRow.Height" IndentBottom="BottomRow.Height" Component="XIGAlertWindowRightSide" />
+    <Tile Name="BottomRow" Z="1" JustY="Bottom" ResizeX="100" Component="XIGAlertWindowBottomRow" />
+    
+    
+    
+    <!--
+    //////////////////////////////////////////////
+    // Content
+    //////////////////////////////////////////////
+    -->
+    <Tile Name="ContentContainer" Z="24" ResizeX="100" ResizeY="100" IndentTop="6" IndentRight="6" IndentLeft="6" IndentBottom="6" Component="ContentContainer" />
+    
+    <Tile Name="TextTile" Z="24" ResizeX="100" ResizeY="100" IndentTop="8" IndentRight="13" IndentLeft="13" IndentBottom="8" Component="XIGAlertWindowContent" />
+</Tile>

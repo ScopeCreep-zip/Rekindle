@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE Components SYSTEM "XfireSkin.dtd">
+
+<Components>
+    <Component Name="XIGEditModeOptions" Class="MainWindow" MinWidth="200" MinHeight="300" MaxWidth="200" MaxHeight="300">
+        <Triggers>
+            <Trigger Type="OnActiveMode">ShowTile</Trigger>
+        </Triggers>
+    </Component>
+    
+    <Component Name="XIGEditModeOptTitle" Class="Text" Stretch="ToContent" Events="Transparent">
+        <Text Font="Arial" Size="11" Bold="True" Color="XIGOverlayTitleCG">XIGEditModeOptionsTitle</Text>
+    </Component>
+    
+    <Component Name="XIGEditModeOptInstructions" Class="Text" MinHeight="50" Stretch="ToContent" Events="Transparent">
+        <Text Font="Arial" Size="11" Bold="False" Color="XIGOverlayTextCG">%edit_mode_instructions%</Text>
+    </Component>
+    
+    <Component Name="XIGEditModeOptContentContainer" Class="Tile" Stretch="ToContent">
+    </Component>
+    
+    <Component Name="XIGEditModeOptAlertText" Class="Text" MinHeight="14" Stretch="ToContent">
+        <Text Font="Arial" Size="11" Bold="False" Color="XIGOverlayTextCG">DisplayAlertOverlay</Text>
+    </Component>
+    
+    <Component Name="XIGEditModeOptClockText" Class="Text" MinHeight="14" Stretch="ToContent">
+        <Text Font="Arial" Size="11" Bold="False" Color="XIGOverlayTextCG">DisplayClockOverlay</Text>
+    </Component>
+    
+    <Component Name="XIGEditModeOptFPSText" Class="Text" MinHeight="14" Stretch="ToContent">
+        <Text Font="Arial" Size="11" Bold="False" Color="XIGOverlayTextCG">DisplayFPSOverlay</Text>
+    </Component>
+    
+    <Component Name="XIGEditModeOptVoiceText" Class="Text" MinHeight="14" Stretch="ToContent">
+        <Text Font="Arial" Size="11" Bold="False" Color="XIGOverlayTextCG">DisplayVoiceOverlay</Text>
+    </Component>
+    
+    <Component Name="XIGEditModeOptBrowserText" Class="Text" MinHeight="14" Stretch="ToContent">
+        <Triggers>
+            <Trigger Type="OnGamePrefBrowserDisabled">State(Disabled)</Trigger>
+        </Triggers>
+        <Text State="Normal" Font="Arial" Size="11" Bold="False" Color="XIGOverlayTextCG">DisplayBrowserOverlay</Text>
+        <Text State="Disabled" Font="Arial" Size="11" Bold="False" Color="ListOfflineTextCG">DisplayBrowserOverlay</Text>
+    </Component>
+    
+    <Component Name="XIGEditModeOptWebCamText" Class="Text" MinHeight="14" Stretch="ToContent">
+        <Triggers>
+            <Trigger Type="OnEnableWebCamOverlay">State(Normal)</Trigger>
+            <Trigger Type="OnDisableWebCamOverlay">State(Disabled)</Trigger>
+        </Triggers>
+        <Text State="Normal" Font="Arial" Size="11" Bold="False" Color="XIGOverlayTextCG">DisplayWebCamOverlay</Text>
+        <Text State="Disabled" Font="Arial" Size="11" Bold="False" Color="ListOfflineTextCG">DisplayWebCamOverlay</Text>
+    </Component>
+    
+    
+    
+    <!--
+    //////////////////////////////////////////////
+    // Buttons
+    //////////////////////////////////////////////
+    -->
+    <Component Name="XIGEditModeOptButtonBack" Class="WindowModeButton" MinWidth="18" MaxWidth="18" MinHeight="16" MaxHeight="16" Stretch="ToContent" ToolTipTile="XIGToolTipPopup" ToolTipAlign="Above">
+        <Images State="Normal">
+            <Image Type="Middle">button_xig_edit_mode_opt_back_norm</Image>
+        </Images>
+        <Images State="Hover">
+            <Image Type="Middle">button_xig_edit_mode_opt_back_hover</Image>
+        </Images>
+        <Images State="Down">
+            <Image Type="Middle">button_xig_edit_mode_opt_back_down</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="XIGEditModeOptButtonGame" Class="WindowModeButton" MinWidth="24" MaxWidth="24" MinHeight="24" MaxHeight="24" Stretch="ToContent" ToolTipTile="XIGToolTipPopup" ToolTipAlign="Above">
+        <Images State="Normal">
+            <Image Type="Middle">transparent</Image>
+        </Images>
+        <Images State="Hover">
+            <Image Type="Middle">transparent</Image>
+        </Images>
+        <Images State="Down">
+            <Image Type="Middle">transparent</Image>
+        </Images>
+        <Images State="Disabled">
+            <Image Type="Middle">transparent</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="XIGEditModeOptButtonAlertCheckBox" Class="Checkbox" MinWidth="16" MaxWidth="16" MinHeight="16" MaxHeight="16" Stretch="ToContent" DrawOnTopmost="True">
+        <Triggers>
+            <Trigger Type="OnCheckboxChecked">EnableAlert</Trigger>
+            <Trigger Type="OnCheckboxUnchecked">DisableAlert</Trigger>
+            <Trigger Type="OnPrefAlertEnabled">State(Down)</Trigger>
+        </Triggers>
+        <Images State="Normal">
+            <Image Type="Middle">button_checkbox_unchecked</Image>
+        </Images>
+        <Images State="Down">
+            <Image Type="Middle">button_checkbox_checked</Image>
+        </Images>
+        <Images State="Disabled">
+            <Image Type="Middle">button_checkbox_disabled</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="XIGEditModeOptButtonClockCheckBox" Class="Checkbox" MinWidth="16" MaxWidth="16" MinHeight="16" MaxHeight="16" Stretch="ToContent" DrawOnTopmost="True">
+        <Triggers>
+            <Trigger Type="OnCheckboxChecked">EnableClock</Trigger>
+            <Trigger Type="OnCheckboxUnchecked">DisableClock</Trigger>
+            <Trigger Type="OnPrefClockEnabled">State(Down)</Trigger>
+        </Triggers>
+        <Images State="Normal">
+            <Image Type="Middle">button_checkbox_unchecked</Image>
+        </Images>
+        <Images State="Down">
+            <Image Type="Middle">button_checkbox_checked</Image>
+        </Images>
+        <Images State="Disabled">
+            <Image Type="Middle">button_checkbox_disabled</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="XIGEditModeOptButtonFPSCheckBox" Class="Checkbox" MinWidth="16" MaxWidth="16" MinHeight="16" MaxHeight="16" Stretch="ToContent" DrawOnTopmost="True">
+        <Triggers>
+            <Trigger Type="OnCheckboxChecked">EnableFPS</Trigger>
+            <Trigger Type="OnCheckboxUnchecked">DisableFPS</Trigger>
+            <Trigger Type="OnPrefFPSEnabled">State(Down)</Trigger>
+        </Triggers>
+        <Images State="Normal">
+            <Image Type="Middle">button_checkbox_unchecked</Image>
+        </Images>
+        <Images State="Down">
+            <Image Type="Middle">button_checkbox_checked</Image>
+        </Images>
+        <Images State="Disabled">
+            <Image Type="Middle">button_checkbox_disabled</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="XIGEditModeOptButtonVoiceCheckBox" Class="Checkbox" MinWidth="16" MaxWidth="16" MinHeight="16" MaxHeight="16" Stretch="ToContent" DrawOnTopmost="True">
+        <Triggers>
+            <Trigger Type="OnCheckboxChecked">EnableVoiceOverlay</Trigger>
+            <Trigger Type="OnCheckboxUnchecked">DisableVoiceOverlay</Trigger>
+            <Trigger Type="OnPrefVoiceEnabled">State(Down)</Trigger>
+        </Triggers>
+        <Images State="Normal">
+            <Image Type="Middle">button_checkbox_unchecked</Image>
+        </Images>
+        <Images State="Down">
+            <Image Type="Middle">button_checkbox_checked</Image>
+        </Images>
+        <Images State="Disabled">
+            <Image Type="Middle">button_checkbox_disabled</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="XIGEditModeOptButtonBrowserCheckBox" Class="Checkbox" MinWidth="16" MaxWidth="16" MinHeight="16" MaxHeight="16" Stretch="ToContent" DrawOnTopmost="True">
+        <Triggers>
+            <Trigger Type="OnCheckboxChecked">EnableBrowser</Trigger>
+            <Trigger Type="OnCheckboxUnchecked">DisableBrowser</Trigger>
+            <Trigger Type="OnPrefBrowserEnabled">State(Down)</Trigger>
+            <Trigger Type="OnPrefBrowserDisabled">State(Normal)</Trigger>
+            <Trigger Type="OnGamePrefBrowserDisabled">State(Disabled)</Trigger>
+        </Triggers>
+        <Images State="Normal">
+            <Image Type="Middle">button_checkbox_unchecked</Image>
+        </Images>
+        <Images State="Down">
+            <Image Type="Middle">button_checkbox_checked</Image>
+        </Images>
+        <Images State="Disabled">
+            <Image Type="Middle">button_checkbox_disabled</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="XIGEditModeOptButtonWebCamCheckBox" Class="Checkbox" MinWidth="16" MaxWidth="16" MinHeight="16" MaxHeight="16" Stretch="ToContent" DrawOnTopmost="True">
+        <Triggers>
+            <Trigger Type="OnCheckboxChecked">EnableWebCam</Trigger>
+            <Trigger Type="OnCheckboxUnchecked">DisableWebCam</Trigger>
+            <Trigger Type="OnPrefWebCamEnabled">State(Down)</Trigger>
+            <Trigger Type="OnPrefWebCamDisabled">State(Normal)</Trigger>
+            <Trigger Type="OnDisableWebCamOverlay">State(Disabled)</Trigger>
+            <Trigger Type="OnEnableWebCamOverlay">State(Normal)</Trigger>
+        </Triggers>
+        <Images State="Normal">
+            <Image Type="Middle">button_checkbox_unchecked</Image>
+        </Images>
+        <Images State="Down">
+            <Image Type="Middle">button_checkbox_checked</Image>
+        </Images>
+        <Images State="Disabled">
+            <Image Type="Middle">button_checkbox_disabled</Image>
+        </Images>
+    </Component>
+</Components>

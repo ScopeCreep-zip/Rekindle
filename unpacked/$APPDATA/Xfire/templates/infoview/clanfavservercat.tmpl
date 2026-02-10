@@ -1,0 +1,38 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+	"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html>
+<head>
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+	<style>
+		%include styles/shared.css%
+	    %include styles/clan.css%
+	</style>
+	<script language="JavaScript">
+		%include scripts/clans.js%
+	</script>
+</head>
+
+<body>
+<table id='main_table' cellpadding='0' cellspacing='0' border='0' width='100%'><tr><td><!-- needed for scrollbar determination -->
+<div id='wrap'>
+
+	<div id='clan_box' class='box'>
+		<div class='box_title'>
+		<table>
+			<tr>
+			  <td rowspan='2'><img src='%clan_logo_small%' alt='%clan_name%'/></td>
+			  <td>%clan_name%</td>
+			</tr>
+			<tr>
+			  <td><a href='%clan_url%' class='small_text' target='_blank'>%text_clan_type%</a></td>
+			</tr>
+		</table>
+		</div>
+		<div class='box_details'>%clan_fav_server_cat_text%</div>
+	</div>
+
+	
+</div>
+</td></tr></table>
+</body>
+</html>

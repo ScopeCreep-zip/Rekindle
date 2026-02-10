@@ -1,0 +1,83 @@
+div.faction_border
+{
+  position: relative;
+  height: 16px;
+  background-image: url("%media_template_folder%infoview/gw/factionbar_empty.png");
+}
+div.faction_bar
+{
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background-image: url("%media_template_folder%infoview/gw/factionbar.png");
+}
+div.faction_bar_end
+{
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+  background-position: top right;
+  background-image: url("%media_template_folder%infoview/gw/factionbar_end.png");
+}
+div.xp_border
+{
+  position: relative;
+  height: 16px;
+  background-image: url("%media_template_folder%infoview/gw/xpbar_empty.png");
+}
+div.xp_bar
+{
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background-image: url("%media_template_folder%infoview/gw/xpbar.png");
+}
+div.xp_bar_end
+{
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+  background-position: top right;
+  background-image: url("%media_template_folder%infoview/gw/xpbar_end.png");
+}
+div.xp_text
+{
+  text-align: center;
+  position: relative;
+  font-weight: italic;
+}
+
+.char_name
+{
+  font-weight: bold;
+}
+.location
+{
+  font-weight: italic;
+}
+.bar_text
+{
+  width: 90px;
+}
+.bar_value_xp
+{
+  text-align: center;
+  width: 155px;
+  background-repeat: no-repeat;
+  background-image: url("%media_template_folder%infoview/gw/xpbar.png");
+}
+.bar_value_faction
+{
+  text-align: center;
+  width: 155px;
+  background-repeat: no-repeat;
+  background-image: url("%media_template_folder%infoview/gw/factionbar.png");
+}

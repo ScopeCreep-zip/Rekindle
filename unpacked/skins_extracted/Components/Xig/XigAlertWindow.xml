@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE Components SYSTEM "XfireSkin.dtd">
+
+<Components>
+    <Component Name="XIGAlertWindow" MinWidth="200" MinHeight="100" Class="MainWindow">
+        <Triggers>
+            <Trigger Type="OnActiveMode">ShowTile</Trigger>
+            <Trigger Type="OnInActiveMode">HideTile</Trigger>
+            <Trigger Type="OnLeftButtonDown">AppDragWindow</Trigger>
+        </Triggers>
+        <Text Color_Personal="ChatPersonalNameCG" Color_PersonalText="ChatPersonalTextCG" Color_Other="ChatOtherNameCG" Color_OtherText="ChatOtherTextCG" />
+    </Component>
+    
+    
+    
+    <!--
+    //////////////////////////////////////////////
+    // Window Frame
+    //////////////////////////////////////////////
+    -->
+    <Component Name="XIGAlertWindowTopRow" Class="Tile" MinHeight="13" MaxHeight="13" Stretch="ToContent">
+        <Images State="Normal">
+            <Image Type="TopLeft">frame1_top_left</Image>
+            <Image Type="Top">frame1_top_middle</Image>
+            <Image Type="TopRight">frame1_top_right</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="XIGAlertWindowLeftSide" Class="Tile" MinWidth="13" MaxWidth="13" Stretch="ToContent">
+        <Images State="Normal">
+            <Image Type="Left">frame1_leftside_middle</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="XIGAlertWindowBackground" Class="Tile" Stretch="ToContent">
+        <Images State="Normal">
+            <Image Type="Middle">frame1_window_filler</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="XIGAlertWindowRightSide" Class="Tile" MinWidth="13" MaxWidth="13" Stretch="ToContent">
+        <Images State="Normal">
+            <Image Type="Right">frame1_rightside_middle</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="XIGAlertWindowBottomRow" Class="Tile" MinHeight="13" MaxHeight="13" Stretch="ToContent">
+        <Images State="Normal">
+            <Image Type="BottomLeft">frame1_bottom_left</Image>
+            <Image Type="Bottom">frame1_bottom_middle</Image>
+            <Image Type="BottomRight">frame1_bottom_right</Image>
+        </Images>
+    </Component>
+    
+    
+    
+    <!--
+    //////////////////////////////////////////////
+    // Content
+    //////////////////////////////////////////////
+    -->
+    <Component Name="XIGAlertWindowContent" Class="Text">
+        <Text Color="ChatOtherTextCG" Font="Arial" Size="11" />
+    </Component>
+</Components>
