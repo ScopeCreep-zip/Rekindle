@@ -1,0 +1,68 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+	"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html>
+<head>
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+	
+	<style>
+    %include styles/shared.css%
+    %include styles/video.css%
+	</style>
+	
+	<script language="JavaScript">
+    %include scripts/shared.js%
+    %include scripts/video.js%
+	</script>	
+	
+</head>
+<body>
+<table id='main_table' cellpadding='0' cellspacing='0' border='0' width='100%'><tr><td><div id='main_div'><!-- needed for scrollbar determination -->
+<div id='wrap'>
+
+	%include video_header.tmpl%
+	
+	<div class='box'>
+		<div class='box_title' id='video_title_id'></div>
+		<div class='box_details'>
+
+			<div class='thumbnail'>
+				<a href=' ' href_type='view_video'><img id='video_thumbnail' src='%video_thumb_url%' width='132' height='100' style='cursor:pointer' /></a>
+				<br/>
+				<a href=' ' href_type='view_video'>%text_view_video%</a>
+			</div>
+
+			<div id='video_details'>
+				<table class='detail_table'>
+					<tr><th>%game_text%</th><td>%video_gamename%</td></tr>
+					<tr><th>%time_taken_text%</th><td>%video_timestamp%</td></tr>
+					<tr><th>%text_totalsize%</th><td>%video_filesize%</td></tr>
+					<tr><th>%text_length%</th><td>%video_length%</td></tr>
+					<tr><th>%resolution_text%</th><td>%video_resolution%</td></tr>
+					<tr id='upload_status_id'><th>%text_status%</th><td>%media_upload_status%</td></tr>
+					<tr id='title_row_id'><th>%text_title%</th><td><textarea id='title_id' class='ta' rows='1'>%video_title%</textarea></td></tr>
+					<tr id='description_row_id'><th>%description_text%</th><td><textarea id='desc_id' class='ta' rows='5'></textarea></td></tr>
+					<tr id='save_row_id'><th>&nbsp;</th><td align='right'><input id='save_id' class='save_button' type='button' size='15' name='save' value='%save_text%'></td></tr>
+				</table>	
+			</div>
+
+			<div id='video_upload'>
+				<div>%text_upload_this_video%</div>
+				<div>
+					<input class='button' name='upload_video_button' id='upload_video_button' type='button' value='%text_upload%'/>
+				</div>
+			</div>
+			
+		</div>
+	</div>
+
+	<script language="JavaScript">
+		RenderVideoTitle();
+		RenderVideoDescription();
+		RenderThumbnail();
+		RenderVideoDetails();
+	</script>
+
+</div>	
+</td></tr></table>
+</body>
+</html>

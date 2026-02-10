@@ -1,0 +1,209 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html>
+<head>
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+	<script language="JavaScript">
+    %include scripts\shared.js%
+    %include scripts\linkify.js%
+    %include scripts\user.js%
+  </script>
+	<style type="text/css">
+		.main_page 
+		{ 
+			margin:0; 
+			padding:2px;
+			color:#FFB000;
+			background-color: #000000;
+			/*
+			This is the font specified by the loaded skin.  All children will derive 
+			from this.  To set any children font sizes use EM to be consistent with 
+			this font size.
+			*/
+			font-family: %font_name%;
+			font-size: %font_size%px;
+		}
+		#main_table
+		{
+			padding: 0;
+			margin: 0;
+		}
+		#content
+		{
+			height: 100%;
+			text-align: left;
+			margin: 2px;
+			border: 1px solid #FFB000;
+			padding-bottom: 3px;
+		}
+		#inner_content
+		{
+			margin:0;
+			padding:0;
+			padding-left:50px;
+		}
+		#serverbox
+		{
+			text-align: left;
+			padding-left: 5px;
+			padding-top: 5px;
+		}
+		#upper_box
+		{
+			position: absolute;
+			top: 5px;
+			left: 5px;
+			width: 47px; /* IE/Win has a bug so this is 46+1 for the width and the padding */
+			z-index: -1;
+			border: 0;
+			border-right: 1px solid #FFB000;
+			border-bottom: 1px solid #FFB000;
+			background: #000000;
+			margin: 0;
+			padding: 0;
+		}
+		#lower_box
+		{
+			border: 0;
+			border-top: 1px solid #FFB000;
+			background: rgb(0,0,0);
+			color: rgb(255,255,255);
+			line-height: 17px;
+		}
+		.timer
+		{
+			margin: 0;
+			padding: 0;
+		}
+		.timer img
+		{
+			float: right;
+		}
+		.timer span
+		{
+			position: absolute;
+			left: 1px;
+			z-index: +1;
+			font-weight: bold;
+			color: #FFFFFF;
+		}
+		.spacer
+		{
+			height:21px;
+		}
+		/* Styling for server info */
+		.user_title 
+		{ 
+			text-align: left; 
+			color:rgb(232,232,232); 
+			font-weight:bold; 
+			line-height:20px;
+		}
+		a:link
+		{ 
+			color:rgb(232,232,232);
+		}
+		a:visited
+		{ 
+			color:rgb(192,192,192);
+		}
+		.field_name 
+		{ 
+			text-align: left; 
+			color:#FFB000;
+			font-weight:bold; 
+			white-space: nowrap;
+			line-height:10px;
+		}
+		.user_data 
+		{ 
+			text-align: left; 
+			color:#E8E8E8;
+			font-weight:bold; 
+			line-height:10px;
+			white-space: nowrap;
+		}
+		.server_data 
+		{ 
+			text-align: left; 
+			color:#E8E8E8;
+			font-weight:bold; 
+			line-height:10px;
+			white-space: nowrap;
+		}
+		.server_data a:link
+		{ 
+			color:rgb(208,205,163);
+		}
+		.server_data a:visited
+		{ 
+			color:rgb(192,192,192);
+		}
+		/* Styling for the team list */
+		.teambox
+		{
+			border: 1px solid #FFB000;
+			background-color: #000000;
+			color: #FFB000;
+			clear: right;
+			text-align: center;
+			margin-top: 10px;
+		}
+		.teamname
+		{
+			font-size: 1.2em;
+			font-weight: 800;
+			line-height: 30px;
+		}
+		.playerlist
+		{
+			border-top: 1px solid #FFB000;
+			line-height: 15px;
+		}
+		.playertable th
+		{
+			font-size: 1.1em;
+			background-color: #FFB000;
+			color: #000000;
+			line-height: 16px;
+		}
+	</style>
+</head>
+
+<body class='main_page'>
+	<table id='main_table' width='100%' height='100%' cellspacing='0' cellpadding='0' border='0'><tr><td>
+		<div id="content">
+			<div id="upper_box">
+				<img src="%media_template_folder%infoview/css/infoview_cs_source_rv_logo.gif" alt="Counter-Strike Source" />
+				<div id="lower_box"></div>
+				&nbsp;
+			</div>
+			<div id='inner_content'>
+				%include css\game_css_js.tmpl%
+				<div id="spacers"></div>
+			</div>
+		</div>
+	</td></tr></table>
+
+  <div id='user_broadcast_box' class='box'>
+    <div class='box_title'>
+      <table width='100%' border='0' cellpadding='5' cellspacing='0'>
+        <tr>
+          <td class='user_title'>%text_live_video%</td>
+          <td class='user_title' align='right'>
+            <a href=' ' href_type='broadcast_options'>%broadcast_bindings%</a>
+          </td>
+        </tr>
+      </table>
+    </div>
+    <div class='box_details' style='padding:5px'>
+      <div id='user_broadcast_id'></div>
+    </div>
+  </div>
+  <script language="JavaScript">
+	<!--
+		addIcons();
+    render_user_broadcast();
+	-->
+	</script>
+</body>
+</html>

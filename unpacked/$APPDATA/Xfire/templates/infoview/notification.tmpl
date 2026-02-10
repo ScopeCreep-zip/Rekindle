@@ -1,0 +1,57 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+	"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html>
+<head>
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+	
+	<style>
+    %include styles/shared.css%
+	</style>
+	
+	<script language="JavaScript">
+    %include scripts/shared.js%
+    
+    var render_notification = function()
+    {
+		var notification = "%notification%";
+		var notification_element = document.getElementById('notification_id');
+		if (notification_element)
+		{
+			notification_element.innerHTML = notification;
+		}
+    }
+    
+	function IsVoiceChecked(id)
+	{
+		var element = document.getElementById('room_invite_voice_' + id);
+		if (element)
+		{
+			if (element.checked)
+				return 'true';
+		}
+		return 'false';
+	}
+	</script>	
+	
+</head>
+<body>
+<table id='main_table' cellpadding='0' cellspacing='0' border='0' width='100%'><tr><td><div id='main_div'><!-- needed for scrollbar determination -->
+<div id='wrap'>
+
+	<div class='box'>
+		<div class='box_title'>%text_notification%</div>
+		<div class='box_details'>
+			<div id='notification_id'></div>
+		</div>
+	</div>
+
+	<script language="JavaScript">
+	<!--
+		render_notification();
+	//-->
+	</script>
+
+</div>	
+</td></tr></table>
+</body>
+</html>

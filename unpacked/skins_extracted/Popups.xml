@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE Popups SYSTEM "XfireSkin.dtd">
+
+<Popups>
+    <!--
+    //////////////////////////////////////////////
+    // Main Info View
+    //////////////////////////////////////////////
+    -->
+    <Tile Name="MainInfoViewPopup" X="MainWindow.Right-13" Z="0" ResizeY="100" IndentTop="23" IndentBottom="23" Component="MainInfoViewPopup">
+        <!--
+        //////////////////////////////////////////////
+        // Resize Grippers
+        //////////////////////////////////////////////
+        -->
+        <Tile Name="MainInfoResizeR" X="13" Z="98" JustX="Right" ResizeY="100" Component="PopupResizeGripperR" />
+
+
+
+        <!--
+        //////////////////////////////////////////////
+        // Window Frame
+        //////////////////////////////////////////////
+        -->
+        <!-- <Tile Name="MainInfoViewButtonMask" X="60" Z="50" JustX="Left" ResizeY="100" Component="InfoViewButtonMask" /> -->
+        <Tile Name="MainInfoTopRow" Z="1" JustY="Top" ResizeX="100" IndentRight="13" Component="InfoViewTopRow" />
+        <Tile Name="MainInfoLeftSide" Z="1" ResizeY="100" IndentTop="MainInfoTopRow.Height" IndentBottom="MainInfoBottomRow.Height" Component="InfoViewLeftSide" />
+        <Tile Name="MainInfoBackground" Z="1" ResizeX="100" ResizeY="100" IndentTop="MainInfoTopRow.Height" IndentRight="MainInfoRightSide.Width+13" IndentBottom="MainInfoBottomRow.Height" IndentLeft="MainInfoLeftSide.Width" Component="InfoViewBackground" />
+        <Tile Name="MainInfoRightSide" X="13" Z="50" JustX="Right" ResizeY="100" IndentTop="MainInfoTopRow.Height" IndentBottom="MainInfoBottomRow.Height" Component="InfoViewRightSide" />
+        <Tile Name="MainInfoBottomRow" Z="1" JustY="Bottom" ResizeX="100" IndentRight="13" Component="InfoViewBottomRow" />
+
+
+
+        <!--
+        //////////////////////////////////////////////
+        // Content
+        //////////////////////////////////////////////
+        -->
+        <Tile Name="MainInfoContentContainer" Z="60" ResizeX="100" ResizeY="100" IndentTop="7" IndentRight="18" IndentBottom="7" Component="ContentContainer">
+            <Tile Name="MainInfoContent" Z="99" ResizeX="100" ResizeY="100" Component="MainInfoViewContent" />
+        </Tile>
+        
+        <Tile Name="MainInfoViewButton" Z="99" JustX="Right" JustY="Center" Component="ButtonMainInfoIn" />
+    </Tile>
+    
+    
+    
+    <!--
+    //////////////////////////////////////////////
+    // Chat Info View
+    //////////////////////////////////////////////
+    -->
+    <Tile Name="ChatInfoViewPopup" X="ChatWindow.Right-13" Z="0" ResizeY="100" IndentTop="23" IndentBottom="23" Component="ChatInfoViewPopup">
+        <!--
+        //////////////////////////////////////////////
+        // Resize Grippers
+        //////////////////////////////////////////////
+        -->
+        <Tile Name="ChatInfoResizeR" X="13" Z="98" JustX="Right" ResizeY="100" Component="PopupResizeGripperR" />
+
+
+
+        <!--
+        //////////////////////////////////////////////
+        // Window Frame
+        //////////////////////////////////////////////
+        -->
+        <!-- <Tile Name="ChatInfoViewButtonMask" X="83" Z="50" JustX="Left" JustY="Bottom" Component="ChatInfoViewButtonMask" /> -->
+        <Tile Name="ChatInfoTopRow" Z="1" JustY="Top" ResizeX="100" IndentRight="13" Component="InfoViewTopRow" />
+        <Tile Name="ChatInfoLeftSide" Z="1" ResizeY="100" IndentTop="ChatInfoTopRow.Height" IndentBottom="ChatInfoBottomRow.Height" Component="InfoViewLeftSide" />
+        <Tile Name="ChatInfoBackground" Z="1" ResizeX="100" ResizeY="100" IndentTop="ChatInfoTopRow.Height" IndentRight="ChatInfoRightSide.Width+13" IndentBottom="ChatInfoBottomRow.Height" IndentLeft="MainInfoLeftSide.Width" Component="InfoViewBackground" />
+        <Tile Name="ChatInfoRightSide" X="13" Z="50" JustX="Right" ResizeY="100" IndentTop="ChatInfoTopRow.Height" IndentBottom="ChatInfoBottomRow.Height" Component="InfoViewRightSide" />
+        <Tile Name="ChatInfoBottomRow" Z="1" JustY="Bottom" ResizeX="100" IndentRight="13" Component="InfoViewBottomRow" />
+
+
+
+        <!--
+        //////////////////////////////////////////////
+        // Content
+        //////////////////////////////////////////////
+        -->
+        <Tile Name="ChatInfoContentContainer" Z="60" ResizeX="100" ResizeY="100" IndentTop="7" IndentRight="18" IndentBottom="7" Component="ContentContainer">
+            <Tile Name="ChatInfoContent" Z="99" ResizeX="100" ResizeY="100" Component="ChatInfoViewContent" />
+        </Tile>
+        
+        <Tile Name="ChatInfoViewButton" Z="99" JustX="Right" JustY="Center" Component="ButtonChatInfoIn" />
+    </Tile>
+    
+    
+    
+    <!--
+    //////////////////////////////////////////////
+    // XIG Tooltip
+    //////////////////////////////////////////////
+    -->
+    <Tile Name="XIGToolTipPopup" JustX="Left" JustY="Top" Component="XIGToolTip" />
+    
+</Popups>

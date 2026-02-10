@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE Overlay SYSTEM "XfireSkin.dtd">
+
+<Overlay>
+    <Tile Name="XIGBar" ResizeX="100" Features="XfireBar" Component="XIGBarOverlay">
+        <Tile Name="Background" ResizeX="100" Component="XIGBarBG">
+            <Tile Name="XIGBarXfireLogo" WindowModeButtonType="Xfire" Component="XIGBarXfireLogoNoHover" />
+            <Tile Name="XIGBarButtonEdit" WindowModeButtonType="Edit" Component="XIGBarButtonEdit" />
+            <Tile Name="XIGBarButtonGame" WindowModeButtonType="Game" Component="XIGBarButtonGame" />
+            <Tile Name="XIGBarAlertStatus" Component="XIGBarAlertStatus" />
+            <Tile Name="XIGBarVideoStatus" Component="XIGBarVideoStatus" />
+            <Tile Name="XIGBarButtonVideo" XfireBarButtonType="Video" Component="XIGBarButtonVideo" />
+            <Tile Name="XIGBarButtonBroadcast" XfireBarButtonType="Broadcast" Component="XIGBarButtonBroadcast" />
+            <Tile Name="XIGBarButtonPictures" XfireBarButtonType="Screenshot" Component="XIGBarButtonPictures" />
+            <Tile Name="XIGBarMicReflector" Component="XIGBarButtonMic">
+                <Tile Name="XIGBarDisabledMic" JustX="Center" JustY="Center" MicState="Disabled" Component="XIGBarButtonMicDisabled" />
+                <Tile Name="XIGBarMuteMic" JustX="Center" JustY="Center" MicState="Mute" Component="XIGBarButtonMuteMic" />
+                <Tile Name="XIGBarUnmuteMic" JustX="Center" JustY="Center" MicState="Unmute" Component="XIGBarButtonUnmuteMic" />
+                <Tile Name="XIGBarTalkingMic" JustX="Center" JustY="Center" MicState="Talking" Component="XIGBarButtonTalkingMic" />
+            </Tile>
+            <Tile Name="XIGBarCallReflector" Component="XIGBarButtonCalls">
+                <Tile Name="XIGBarCall" JustX="Center" JustY="Center" CallState="Call" Component="XIGBarButtonCall" />
+                <Tile Name="XIGBarCallRinging" JustX="Center" JustY="Center" CallState="Ringing" Component="XIGBarButtonCallRinging" />
+                <Tile Name="XIGBarCallConnected" JustX="Center" JustY="Center" CallState="Connected" Component="XIGBarButtonCallConnected" />
+                <Tile Name="XIGBarCallDisabled" JustX="Center" JustY="Center" CallState="Disabled" Component="XIGBarButtonCallDisabled" />
+            </Tile>
+            <Tile Name="XIGBarButtonNewMsgs" AttachedControlId="15" Component="XIGBarButtonNewMsgs">
+                <Tile Name="XIGBar1NewMsg" JustX="Center" JustY="Center" Component="XIGIcon1NewMsg" />
+                <Tile Name="XIGBar2NewMsg" JustX="Center" JustY="Center" Component="XIGIcon2NewMsg" />
+                <Tile Name="XIGBar3NewMsg" JustX="Center" JustY="Center" Component="XIGIcon3NewMsg" />
+                <Tile Name="XIGBar4NewMsg" JustX="Center" JustY="Center" Component="XIGIcon4NewMsg" />
+                <Tile Name="XIGBar5NewMsg" JustX="Center" JustY="Center" Component="XIGIcon5NewMsg" />
+                <Tile Name="XIGBar6NewMsg" JustX="Center" JustY="Center" Component="XIGIcon6NewMsg" />
+                <Tile Name="XIGBar7NewMsg" JustX="Center" JustY="Center" Component="XIGIcon7NewMsg" />
+                <Tile Name="XIGBar8NewMsg" JustX="Center" JustY="Center" Component="XIGIcon8NewMsg" />
+                <Tile Name="XIGBar9NewMsg" JustX="Center" JustY="Center" Component="XIGIcon9NewMsg" />
+                <Tile Name="XIGBar9+NewMsg" JustX="Center" JustY="Center" Component="XIGIcon9+NewMsg" />
+            </Tile>
+            <Tile Name="XIGBarFPSContainer" JustY="Center" Component="XIGBarFPSContainer">
+                <Tile Name="XIGBarFPS" JustX="Center" JustY="Center" Component="XIGBarFPS" />
+            </Tile>
+            <Tile Name="XIGBarButtonChat" WindowModeButtonType="Chat" Component="XIGBarButtonChat" />
+            <Tile Name="XIGBarButtonWeb" WindowModeButtonType="Web" Component="XIGBarButtonWeb" />
+            <Tile Name="XIGBarClock" Component="XIGBarClock" />
+            <Tile name="VertSeperator" ResizeY="100" Component="XIGBarVertSeperator" />
+            <Tile Name="XIGBarButtonMusic" WindowModeButtonType="Music" Component="XIGBarButtonMusic" />
+        </Tile>
+    </Tile>
+</Overlay>

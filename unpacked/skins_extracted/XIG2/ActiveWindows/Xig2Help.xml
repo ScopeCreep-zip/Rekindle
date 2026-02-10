@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE ActiveWindow SYSTEM "XfireSkin.dtd">
+
+<ActiveWindow>
+    <Tile Name="Help" ResizeX="100" ResizeY="100" Component="XIGHelp">
+        <!--
+        //////////////////////////////////////////////
+        // Resize Grippers
+        //////////////////////////////////////////////
+        -->
+        <Tile Name="ResizeGripperTL" Z="26" JustX="Left" JustY="Top" Component="XIGActiveWindowsResizeGripperTL" />
+        <Tile Name="ResizeGripperT" Z="25" JustY="Top" ResizeX="100" IndentRight="ResizeGripperTR.Width" IndentLeft="ResizeGripperTL.Width" Component="XIGActiveWindowsResizeGripperTop" />
+        <Tile Name="ResizeGripperTR" Z="26" JustX="Right" JustY="Top" Component="XIGActiveWindowsResizeGripperTR" />
+        <Tile Name="ResizeGripperL" Z="25" JustX="Left" JustY="Center" ResizeY="100" IndentTop="ResizeGripperTL.Height" IndentBottom="ResizeGripperBL.Height" Component="XIGActiveWindowsResizeGripperL" />
+        <Tile Name="ResizeGripperR" Z="25" JustX="Right" JustY="Center" ResizeY="100" IndentTop="ResizeGripperTR.Height" IndentBottom="ResizeGripperBR.Height" Component="XIGActiveWindowsResizeGripperR" />
+        <Tile Name="ResizeGripperBL" Z="26" JustX="Left" JustY="Bottom" Component="XIGActiveWindowsResizeGripperBL" />
+        <Tile Name="ResizeGripperBottom" Z="25" JustY="Bottom" ResizeX="100" IndentRight="ResizeGripperBR.Width" IndentLeft="ResizeGripperBL.Width"  Component="XIGActiveWindowsResizeGripperBottom" />
+        <Tile Name="ResizeGripperBR" X="7" Y="7" Z="26" JustX="Right" JustY="Bottom" Component="XIGActiveWindowsResizeGripperBR" />
+        
+        
+        
+        <!--
+        //////////////////////////////////////////////
+        // Window Draggers
+        //////////////////////////////////////////////
+        -->
+        <Tile Name="WindowDragger" Z="10" ResizeX="100" ResizeY="100" Component="XIGWindowDragger" />
+        
+        
+        
+        <!--
+        //////////////////////////////////////////////
+        // Window Frame
+        //////////////////////////////////////////////
+        -->
+        <Tile Name="TopRow" Z="1" JustY="Top" ResizeX="100" Component="XIGActiveWindowsTopRow" />
+        <Tile Name="LeftSide" Z="1" JustX="Left" JustY="Top" ResizeY="100" IndentTop="TopRow.Height" IndentBottom="BottomRow.Height" Component="XIGActiveWindowsLeftSide" />
+        <Tile Name="Background" Z="1" ResizeX="100" ResizeY="100" IndentRight="RightSide.Width" IndentBottom="BottomRow.Height" IndentLeft="LeftSide.Width" IndentTop="TopRow.Height" Component="XIGActiveWindowsBackground" />
+        <Tile Name="RightSide" Z="1" JustX="Right" JustY="Top" ResizeY="100" IndentTop="TopRow.Height" IndentBottom="BottomRow.Height" Component="XIGActiveWindowsRightSide" />
+        <Tile Name="BottomRow" Z="1" JustY="Bottom" ResizeX="100" Component="XIGActiveWindowsBottomRow" />
+        
+        
+        
+        <!--
+        //////////////////////////////////////////////
+        // Content
+        //////////////////////////////////////////////
+        -->
+        <!--[BEGIN] Xfire Logo -->
+        <!-- <Tile Name="XfireLogo" X="13" Y="25" Z="99" Component="XfireLogoNoLink" /> -->
+        <!--[END] Xfire Logo -->
+        
+        
+        <!--[BEGIN] Info Bar -->
+        <Tile Name="InfoBar" Y="5" Z="24" ResizeX="100" IndentLeft="5" IndentRight="5" Component="InfoBar">
+            <!--[BEGIN] Username -->
+            <!-- <Tile Name="UsernameContainer" X="4" Y="5" ResizeX="100" IndentRight="93" Component="UsernameContainer">
+                <Tile Name="Username" Z="26" JustY="Center" Component="Username" />
+            </Tile> -->
+            <!--[END] Username -->
+            
+            <!--[BEGIN] Window Title -->
+            <Tile Name="WindowTitle" X="4" Y="5" Z="25" ResizeX="100" IndentRight="93" Component="XIGHelpTitle" />
+            <!--[END] Window Title -->
+            
+            
+            <!--[BEGIN] Window Control -->
+            <Tile Name="ButtonClose" X="5" Y="3" Z="25" JustX="Right" ControlId="8" TabOrder="40" Component="XIGActiveWindowsButtonClose" />
+            <!--[END] Window Control -->
+        </Tile>
+        <!--[END] Info Bar -->
+        
+        
+        <!--[BEGIN] Tabs -->
+        <Tile Name="TabsContainer" Y="InfoBar.Bottom+1" Z="25" ResizeX="100" IndentRight="5" IndentLeft="5" Component="TabButtonsContainer">
+            <Tile Name="ButtonFriendsTab" Y="2" Z="26" ControlId="330" TabOrder="30" Component="XIGActiveWindowButtonFriendsTab" />
+            <Tile Name="TabSeparator1" X="ButtonFriendsTab.Right" Z="26" Component="TabVerticalSeparator" />
+            <Tile Name="ButtonChatRoomsTab" X="TabSeparator1.Right" Y="ButtonFriendsTab.Top" Z="26" ControlId="331" TabOrder="31" Component="XIGActiveWindowButtonChatRoomsTab" />
+            <Tile Name="TabSeparator2" X="ButtonChatRoomsTab.Right" Z="26" Component="TabVerticalSeparator" />
+            <Tile Name="ButtonChatsTab" X="TabSeparator2.Right" Y="ButtonFriendsTab.Top" Z="26" ControlId="340" TabOrder="40" Component="XIGActiveWindowButtonChatsTab" />
+            <Tile Name="TabSeparator3" X="ButtonChatsTab.Right" Z="26" Component="TabVerticalSeparator" />
+            <Tile Name="ButtonOptionsTab" X="TabSeparator3.Right" Y="ButtonFriendsTab.Top" Z="26" ControlId="341" TabOrder="41" Component="XIGActiveWindowButtonOptionsTab" />
+            <Tile Name="TabSeparator4" X="ButtonOptionsTab.Right" Z="26" Component="TabVerticalSeparator" />
+            <Tile Name="ButtonHelpTab" X="TabSeparator4.Right" Y="ButtonFriendsTab.Top" Z="26" Component="XIGActiveWindowButtonHelpTabActive" />
+            <Tile Name="TabSeparator5" X="ButtonHelpTab.Right" Z="26" Component="TabVerticalSeparator" />
+        </Tile>
+        <!--[END] Tabs -->
+        
+        
+        <!--[BEGIN] Content Container -->
+        <Tile Name="ContentContainer" Y="TabsContainer.Bottom+1" Z="24" ResizeX="100" ResizeY="100" IndentRight="5" IndentBottom="91" IndentLeft="5" Component="ContentContainer">
+            <!--[BEGIN] Help Text -->
+            <Tile Name="HelpText" Y="9" Z="25" ResizeX="100" ResizeY="100" IndentRight="18" IndentBottom="4" IndentLeft="9" ControlId="450" Default="SetFocusControl" Component="XIGHelpText" />
+            <Tile Name="VertScrollBar" X="HelpText.Right" Z="25" ResizeY="100" IndentBottom="2" IndentTop="2" AttachedControlId="450" Component="XIGVertScrollBar" />
+            <!--[END] Help Text -->
+            
+            <!-- <Tile Name="ContentBackground" Z="2" ResizeX="100" ResizeY="100" IndentTop="TabsContainer.Height" IndentRight="2" IndentBottom="2" IndentLeft="2" Component="XfireListBackdrop" /> -->
+        </Tile>
+        <!--[END] Content Container -->
+        
+        
+        <!--[BEGIN] Opacity Slider -->
+        <Tile Name="OpacitySlider" X="5" Y="7" Z="75" JustX="Left" JustY="Bottom" TabOrder="2" ControlId="1802" FocusedColor="XIGFocusedColor" Component="XIGOpacitySlider">
+            <Tile Name="OpacTrack" ResizeX="100" Component="XIGOpacityTrack" />
+            <Tile Name="OpacGripper" Component="XIGOpacityGripper" />
+        </Tile>
+        <!--[END] Opacity Slider -->
+        
+        
+        
+        <!--
+        //////////////////////////////////////////////
+        // Buttons
+        //////////////////////////////////////////////
+        -->
+        <Tile Name="HelpButtonBar" Y="ContentContainer.Bottom+2" Z="25" ResizeX="100" IndentRight="5" IndentLeft="5" Component="XIGFriendsButtonBar" />
+    </Tile>
+</ActiveWindow>

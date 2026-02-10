@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE Components SYSTEM "XfireSkin.dtd">
+
+<Components>
+    <Component Name="XIGChatRooms" Class="MainWindow" MinWidth="393" MinHeight="323" DefaultWidth="393" DefaultHeight="323" DefaultX="10" DefaultY="10">
+        <Triggers>
+            <Trigger Type="OnShowChatRooms">ShowWindow</Trigger>
+        </Triggers>
+    </Component>
+    
+    <Component Name="XIGChatRoomsTitle" Class="Text" Stretch="ToContent" Events="Transparent" DrawOnTopMost="False">
+        <Text Align="Left" Font="Arial" Size="11" Bold="True" Color="XIGActiveWindowTitleCG">XIGChatRoomsTitle</Text>
+    </Component>
+    
+    <Component Name="XIGChatRoomsRoomList" Class="ChatRoomsList" ToolTipTile="XIGToolTipPopup" SelectedFocusColor="ListFriendTextCG" ItemIndentLeft="5">
+        <Triggers>
+            <Trigger Type="OnClick">JoinRoom</Trigger>
+        </Triggers>
+        <Fonts>
+            <Font Type="DisplayName" Font="Arial" Size="11" Bold="False" Color="ListFriendTextCG" />
+            <Font Type="SelectedDisplayName" Font="Arial" Size="11" Bold="False" Italics="False" Color="ListColorSelectedTextCG" />
+        </Fonts>
+    </Component>
+    
+    
+    
+    <!--
+    //////////////////////////////////////////////
+    // Buttons
+    //////////////////////////////////////////////
+    -->
+    <Component Name="XIGChatRoomsButtonBar" Class="Tile" MinHeight="84" MaxHeight="84" Stretch="ToContent" Events="Transparent">
+        <Images State="Normal">
+            <Image Type="TopLeft">button_bar_left_large</Image>
+            <Image Type="Top">button_bar_middle_large</Image>
+            <Image Type="TopRight">button_bar_right_large</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="XIGActiveWindowButtonNewRoom" Class="PushButton" MinWidth="196" MaxWidth="196" MinHeight="29" MaxHeight="29" Stretch="ToContent" ToolTip="ButtonCreateChatRoomTip" ToolTipTile="XIGToolTipPopup" DrawOnTopMost="False">
+        <Triggers>
+            <Trigger Type="OnClick">NewRoom</Trigger>
+        </Triggers>
+        <Images State="Normal">
+            <Image Type="Middle">button_chatroom_create_norm_large</Image>
+        </Images>
+        <Images State="Hover">
+            <Image Type="Middle">button_chatroom_create_hover_large</Image>
+        </Images>
+        <Images State="Down">
+            <Image Type="Middle">button_chatroom_create_down_large</Image>
+        </Images>
+        <Images State="Disabled">
+            <Image Type="Middle">button_chatroom_create_disabled_large</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="XIGActiveWindowButtonInviteUsers" Class="PushButton" MinWidth="75" MaxWidth="75" MinHeight="41" MaxHeight="41" Stretch="ToContent" ToolTip="ButtonInviteUsersTip" ToolTipTile="XIGToolTipPopup" DrawOnTopMost="False" ButtonType="RoomInvite">
+        <Triggers>
+            <Trigger Type="OnClick">InviteUsersToRoom</Trigger>
+        </Triggers>
+        <Images State="Normal">
+            <Image Type="Middle">button_chatroom_invite_norm</Image>
+        </Images>
+        <Images State="Hover">
+            <Image Type="Middle">button_chatroom_invite_hover</Image>
+        </Images>
+        <Images State="Down">
+            <Image Type="Middle">button_chatroom_invite_down</Image>
+        </Images>
+        <Images State="Disabled">
+            <Image Type="Middle">button_chatroom_invite_disabled</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="XIGActiveWindowButtonEnterChatroom" Class="PushButton" MinWidth="75" MaxWidth="75" MinHeight="41" MaxHeight="41" Stretch="ToContent" ToolTip="ButtonEnterChatRoomTip" ToolTipTile="XIGToolTipPopup" DrawOnTopMost="False">
+        <Triggers>
+            <Trigger Type="OnClick">EnterAttachedRoom</Trigger>
+        </Triggers>
+        <Images State="Normal">
+            <Image Type="Middle">button_chatroom_enter_norm</Image>
+        </Images>
+        <Images State="Hover">
+            <Image Type="Middle">button_chatroom_enter_hover</Image>
+        </Images>
+        <Images State="Down">
+            <Image Type="Middle">button_chatroom_enter_down</Image>
+        </Images>
+        <Images State="Disabled">
+            <Image Type="Middle">button_chatroom_enter_disabled</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="XIGActiveWindowRoomEdit" Class="EnterRoomEdit" Stretch="ToContent" CaretColor="XIGCaretCG" SelectionSelectorColor="XIGCaretCG" SelectionColor="ListColorSelectedCG" SelectionTextColor="ListColorSelectedTextCG" SelectionColor_InActive="TextFieldTextHighlightInactiveCG">
+        <Fonts>
+            <Font Type="Text" Font="Arial" Size="12" Bold="False" Color="TextFieldTextCG" />
+            <Font Type="DisabledText" Font="Arial" Size="12" Bold="False" Color="TextFieldTextCG" />
+        </Fonts>
+    </Component>
+</Components>

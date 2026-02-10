@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE Components SYSTEM "XfireSkin.dtd">
+
+<Components>
+    <Component Name="XIGAlertOverlay" Class="MainWindow" MinWidth="240" MinHeight="170" DefaultWidth="250" DefaultHeight="170">
+        <Triggers>
+            <Trigger Type="OnActiveMode">ShowTile</Trigger>
+        </Triggers>
+    </Component>
+    
+    
+    
+    <!--
+    //////////////////////////////////////////////
+    // Window Frame
+    //////////////////////////////////////////////
+    -->
+    <Component Name="XIGAlertOverlayTopRow" Class="Tile" MinHeight="13" MaxHeight="13" Stretch="ToContent">
+        <Images State="Normal">
+            <Image Type="TopLeft">frame1_top_left</Image>
+            <Image Type="Top">frame1_top_middle</Image>
+            <Image Type="TopRight">frame1_top_right</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="XIGAlertOverlayLeftSide" Class="Tile" MinWidth="13" MaxWidth="13" Stretch="ToContent">
+        <Images State="Normal">
+            <Image Type="Left">frame1_leftside_middle</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="XIGAlertOverlayBackground" Class="Tile" Stretch="ToContent">
+        <Images State="Normal">
+            <Image Type="Middle">frame1_window_filler</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="XIGAlertOverlayRightSide" Class="Tile" MinWidth="13" MaxWidth="13" Stretch="ToContent">
+        <Images State="Normal">
+            <Image Type="Right">frame1_rightside_middle</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="XIGAlertOverlayBottomRow" Class="Tile" MinHeight="13" MaxHeight="13" Stretch="ToContent">
+        <Images State="Normal">
+            <Image Type="BottomLeft">frame1_bottom_left</Image>
+            <Image Type="Bottom">frame1_bottom_middle</Image>
+            <Image Type="BottomRight">frame1_bottom_right</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="XIGAlertContent" Class="AlertControl">
+        <Fonts>
+            <Font Type="RoomLink" Font="Arial" Size="11" Bold="True" Underline="True" Color="ChatOtherHyperLinkCG" />
+            <Font Type="Room" Font="Arial" Size="11" Bold="False" Color="ChatOtherTextCG" />
+            <!-- Friend sent a link -->
+            <Font Type="UserLink" Font="Arial" Size="11" Bold="True" Underline="True" Color="ChatOtherHyperLinkCG" />
+            <!-- Friends name + text -->
+            <Font Type="User" Font="Arial" Size="11" Bold="False" Color="ChatOtherTextCG" />
+            <!-- You sent a link -->
+            <Font Type="SendLink" Font="Arial" Size="11" Bold="True" Color="ChatPersonalHyperLinkCG" />
+            <!-- Your name + text -->
+            <Font Type="Send" Font="Arial" Size="11" Bold="False" Color="ChatPersonalTextCG" />
+        </Fonts>
+    </Component>
+</Components>

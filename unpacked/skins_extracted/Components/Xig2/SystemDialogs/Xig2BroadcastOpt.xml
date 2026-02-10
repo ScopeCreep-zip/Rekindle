@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE Components SYSTEM "XfireSkin.dtd">
+
+<Components>
+    <Component Name="XIGBroadcastOptions" Class="MainWindow" MinWidth="344" MinHeight="260" DefaultWidth="344" DefaultHeight="260" DefaultX="470" DefaultY="10">
+        <Triggers>
+            <Trigger Type="OnActiveMode">ShowTile</Trigger>
+        </Triggers>
+    </Component>
+    
+    <Component Name="XIGBroadcastTitleEdit" Class="PrefEdit" MaxLength="64" Stretch="ToContent" ControlLabel="BroadcastTitle" CaretColor="XIGCaretCG" SelectionColor="ListColorSelectedCG" SelectionColor_InActive="TextFieldTextHighlightInactiveCG" SelectionTextColor="ListColorSelectedTextCG" SelectionSelectorColor="XIGCaretCG">
+        <Fonts>
+            <Font Type="Text" Font="Arial" Size="12" Bold="False" Color="TextFieldTextCG" />
+        </Fonts>
+    </Component>
+    
+    <Component Name="XIGBroadcastRecordCheckbox" Class="PrefCheckbox" MinWidth="16" MaxWidth="16" MinHeight="16" MaxHeight="16" Stretch="ToContent" DrawOnTopMost="True" ControlLabel="RecordBroadcast">
+        <Images State="Normal">
+            <Image Type="Middle">button_checkbox_unchecked</Image>
+        </Images>
+        <Images State="Down">
+            <Image Type="Middle">button_checkbox_checked</Image>
+        </Images>
+        <Images State="Disabled">
+            <Image Type="Middle">button_checkbox_disabled</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="XIGBroadcastRecordText" Class="Text" Stretch="ToContent">
+        <Text Font="Arial" Size="12" Bold="False" Color="ListFriendTextCG">XIGRecordLiveVideoText</Text>
+    </Component>
+    
+    <Component Name="XIGBroadcastDisplayWebCamCheckbox" Class="PrefCheckbox" MinWidth="16" MaxWidth="16" MinHeight="16" MaxHeight="16" Stretch="ToContent" DrawOnTopMost="True" ControlLabel="DisplayWebCam">
+        <Images State="Normal">
+            <Image Type="Middle">button_checkbox_unchecked</Image>
+        </Images>
+        <Images State="Down">
+            <Image Type="Middle">button_checkbox_checked</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="XIGBroadcastMicrophoneText" Class="Text" Stretch="ToContent">
+        <Text Font="Arial" Size="12" Bold="False" Color="ListFriendTextCG">XIGBroadcastMicrophone</Text>
+    </Component>
+    
+    <Component Name="XIGBroadcastMicrophoneCheckbox" Class="PrefCheckbox" MinWidth="16" MaxWidth="16" MinHeight="16" MaxHeight="16" Stretch="ToContent" DrawOnTopMost="True" ControlLabel="BroadcastMicrophone">
+        <Images State="Normal">
+            <Image Type="Middle">button_checkbox_unchecked</Image>
+        </Images>
+        <Images State="Down">
+            <Image Type="Middle">button_checkbox_checked</Image>
+        </Images>
+    </Component>
+</Components>

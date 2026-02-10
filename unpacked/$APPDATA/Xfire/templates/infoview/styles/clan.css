@@ -1,0 +1,63 @@
+﻿td.time, td.title, td.icon
+{
+	border-left: 0px;
+	border-right: 0px;
+}
+
+td.icon
+{
+	width: 32px;
+}
+
+td.time
+{
+	text-align: left;
+	border-top: 0px;
+}
+
+td.title
+{
+	font-size:1.0em;
+	border-bottom: 0px;
+}
+
+table.odd_table
+{
+	background-color: rgb(%color_shaded_x:0.03%);
+}
+
+.box .box_title
+{
+	font-weight: bold;
+}
+
+.indented_boxes
+{
+	padding-top: 4px;
+	padding-left: 6px;
+	padding-right: 6px;
+}
+
+.events_table,
+.news_table
+{
+	border-collapse: collapse;
+	margin-bottom: 10px;
+}
+
+.user_text
+{
+	margin-left: 5px;
+}
+
+th.day,
+th.sub_title
+{
+	font-size: 1.2em;
+	text-align: center;
+	padding-top: 3px;
+	padding-bottom: 3px;
+	background-color: rgb(%color_shaded_x:0.1%);
+	color: rgb(%color_text%);
+	font-weight: bold;
+}

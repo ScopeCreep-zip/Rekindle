@@ -1,0 +1,87 @@
+body
+{
+	margin:0px; /* MUST be 0 for our scrollbar calculations */
+	background:rgb(%color_background%)
+	url(%background_image%);
+	background-repeat:repeat;
+	background-attachment:fixed;
+	color:rgb(%color_text%);
+	font-size:%font_size_small%px;
+	font-family:%font_name%;
+}
+
+#main_table
+{
+	padding: 3px;
+	font-size:%font_size_small%px;
+	font-family:%font_name%;
+}
+
+#main_div
+{
+	padding: 0px;
+}
+
+a
+{
+	color:rgb(%color_hyperlink%);
+	font-weight:bold;
+	font-style:%font_buddystyle%;
+}
+
+.tab_title
+{
+	color:rgb(%color_text%);
+	font-weight:bold;
+	font-size:%font_size_big%px;
+	font-style:%font_buddystyle%;
+}
+
+.buddy_title
+{
+	color:rgb(%color_buddy%);
+	font-weight:bold;
+	font-size:%font_size_big%px;
+	font-style:%font_buddystyle%;
+}
+
+.server_title
+{
+	color:rgb(%color_server%);
+	font-weight:bold;
+	font-size:%font_size_big%px;
+}
+
+.field_header
+{
+	text-decoration:underline;
+	font-weight:bold;
+	font-size:%font_size%pt;
+}
+
+.buddy, .selected_buddy
+{
+	font-size:%font_size%pt;
+	font-style:%font_buddystyle%
+} 
+
+.selected_buddy
+{
+	border:1px solid rgb(%color_text%);
+}
+
+input.text
+{
+	border:1px solid rgb(%color_text%);
+	color: rgb(%color_text%);
+	background-color:rgb(%color_background%);
+	width: '100%'
+}
+
+input.button
+{
+	border:1px solid rgb(%color_text%);
+	background-color:rgb(%color_text%);
+	color:rgb(%color_background%)
+}
+
