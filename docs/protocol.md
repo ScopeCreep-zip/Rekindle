@@ -1,122 +1,150 @@
-# Xfire Protocol Overview
+# Network Protocol
 
-This is a contributor-friendly overview of the Xfire binary protocol. For the complete byte-level
-specification, see `.claude/docs/xfire-protocol.md`.
+Rekindle communicates over the Veilid peer-to-peer network. There is no central
+server. All messages are end-to-end encrypted, serialized with Cap'n Proto, and
+delivered through Veilid's `app_message` routing. Distributed state is stored in
+Veilid DHT records.
 
-## Basics
+## Identity Model
 
-Xfire uses a **custom binary protocol** over TCP port **25999**. It is not based on XMPP, IRC, or
-any standard IM protocol — it's entirely proprietary, reverse-engineered by the open-source
-community between 2005–2010.
-
-- **Server**: `cs.xfire.com:25999`
-- **Byte order**: Little-endian
-- **Strings**: UTF-8
-- **Handshake**: Client sends the 4 ASCII bytes `"UA01"`
-
-## Packet Structure
-
-Every message follows this format:
+Each user's identity is an Ed25519 keypair generated locally on first run. The
+public key serves as the user's permanent address. There are no usernames,
+passwords, or email addresses. The private key never leaves the device.
 
 ```
-┌──────────┬──────────┬────────────┬─────────────────┐
-│ size     │ type_id  │ attr_count │ attributes...   │
-│ 2 bytes  │ 2 bytes  │ 1 byte     │ variable        │
-│ uint16   │ uint16   │ uint8      │                 │
-└──────────┴──────────┴────────────┴─────────────────┘
+Identity creation:
+  1. Generate Ed25519 keypair
+  2. Derive X25519 key for Diffie-Hellman
+  3. Store private keys in Stronghold vault (encrypted by passphrase)
+  4. Publish public key + display name to DHT profile record
+  5. Allocate a Veilid private route for receiving messages
 ```
 
-- `size`: Total message size including header
-- `type_id`: Identifies the packet type (e.g., 1 = LoginRequest, 130 = LoginSuccess)
-- `attr_count`: Number of attribute key-value pairs that follow
-- Client-to-server packet IDs are 1–127
-- Server-to-client packet IDs are 128+
-
-## Attributes
-
-Each attribute is a typed key-value pair:
+## Node-to-Node Message Flow
 
 ```
-[1 byte: name_length][N bytes: name][1 byte: type_id][value_data]
+┌───────────┐                                              ┌───────────┐
+│  Sender   │                                              │ Receiver  │
+│           │                                              │           │
+│ plaintext │                                              │ plaintext │
+│     │     │                                              │     ▲     │
+│     ▼     │                                              │     │     │
+│  Signal   │                                              │  Signal   │
+│  encrypt  │                                              │  decrypt  │
+│     │     │                                              │     ▲     │
+│     ▼     │                                              │     │     │
+│ Cap'n Proto│                                             │ Cap'n Proto│
+│ serialize │                                              │ deserialize│
+│     │     │                                              │     ▲     │
+│     ▼     │                                              │     │     │
+│ Veilid    │    safety route    ┌─────────┐  private     │ Veilid    │
+│ app_message├──────────────────→│  Veilid │  route  ────→│ callback  │
+│           │   (sender hidden) │ Network │(rcvr hidden)  │           │
+└───────────┘                    └─────────┘               └───────────┘
 ```
 
-| Type | ID   | Encoding |
-|------|------|----------|
-| String | 0x01 | uint16 length + UTF-8 bytes |
-| Int32 | 0x02 | 4 bytes LE |
-| Session ID | 0x03 | 16 raw bytes |
-| List | 0x04 | 1 byte item_type + uint16 count + items |
-| Map (string keys) | 0x05 | 1 byte count + entries |
-| DID | 0x06 | 16 raw bytes |
-| Map (int keys) | 0x09 | 1 byte count + entries |
+Both sender and receiver privacy is protected. Safety routes hide the sender's
+IP by routing through multiple Veilid nodes. Private routes hide the receiver's
+IP in the same manner.
 
-## Authentication
+## Message Lifecycle
+
+A message passes through eight stages from composition to display:
+
+| Stage | Layer | Operation |
+|-------|-------|-----------|
+| 1. Compose | Frontend | User types message, invokes `send_message` command |
+| 2. Encrypt | rekindle-crypto | Signal Protocol Double Ratchet encryption (1:1); MEK for channels (not yet wired) |
+| 3. Sign | rekindle-crypto | Ed25519 signature over ciphertext for authenticity |
+| 4. Serialize | rekindle-protocol | Cap'n Proto `MessageEnvelope` encoding |
+| 5. Send | rekindle-protocol | Look up peer's route blob, import route, `app_message()` |
+| 6. Receive | veilid_service | `VeilidUpdate::AppMessage` callback dispatches to `message_service` |
+| 7. Decrypt | rekindle-crypto | Verify signature, Signal decrypt (1:1); channel messages currently plaintext |
+| 8. Store & Display | src-tauri | Insert into SQLite, emit `ChatEvent::MessageReceived` |
+
+## Message Envelope
+
+All application messages are wrapped in a `MessageEnvelope` Cap'n Proto
+structure:
 
 ```
-1. Client connects, sends "UA01"
-2. Client sends ClientInfo (packet 18) and ClientVersion (packet 3)
-3. Server sends LoginChallenge (packet 128) with a 40-byte salt
-4. Client sends LoginRequest (packet 1) with username + hashed password
-5. Server responds with LoginSuccess (packet 130) or LoginFailure (packet 129)
+MessageEnvelope:
+  senderPublicKey:    Data     # Ed25519 public key of sender
+  payload:            Data     # Encrypted message body
+  signature:          Data     # Ed25519 signature over payload
+  timestamp:          UInt64   # Unix milliseconds
+  messageType:        UInt16   # Discriminator for payload type
 ```
 
-### Password Hashing
+Message types include: direct message, friend request, friend accept, friend
+reject, typing indicator, presence update, community message, and voice
+signaling.
 
-```
-step1 = SHA1(username + password + "UltimateArena")
-step2 = SHA1(step1 + server_salt)
-```
+## Cap'n Proto Schema Catalog
 
-The constant `"UltimateArena"` is the original company name (Ultimate Arena, Inc., founded 2002).
-`step1` is stored locally in the client config. `step2` is what gets sent over the wire.
+| Schema File | Purpose |
+|-------------|---------|
+| `message.capnp` | `MessageEnvelope`, `DirectMessage`, `ChannelMessage` |
+| `identity.capnp` | `IdentityRecord`, `PreKeyBundle` |
+| `presence.capnp` | `PresenceRecord`, `GameInfo` |
+| `friend.capnp` | `FriendRequest`, `FriendResponse`, `FriendListEntry` |
+| `community.capnp` | `CommunityRecord`, `ChannelRecord`, `MemberRecord`, `RoleRecord` |
+| `voice.capnp` | `VoiceSignaling`, `VoicePacket` |
+| `conversation.capnp` | `ConversationRecord`, DHT-backed message history |
+| `account.capnp` | `AccountRecord`, cross-device identity recovery |
 
-## Key Packet Types
+Generated Rust modules are included at the crate root via
+`pub mod foo_capnp { include!(...) }` in each crate's `lib.rs`.
 
-### Client -> Server
-| ID | Name | Purpose |
-|----|------|---------|
-| 1 | LoginRequest | Authenticate with username + hashed password |
-| 2 | ChatMessage | Send an IM (via `peermsg` map) |
-| 3 | ClientVersion | Report client version |
-| 4 | GameStatus | Report current game + server |
-| 6 | AddFriend | Send friend request |
-| 9 | RemoveFriend | Remove a friend |
-| 11 | SetStatus | Change online status + message |
-| 12 | KeepAlive | Connection heartbeat |
+## Veilid Primitives
 
-### Server -> Client
-| ID | Name | Purpose |
-|----|------|---------|
-| 128 | LoginChallenge | Provides 40-byte salt for auth |
-| 130 | LoginSuccess | Returns userid, session ID, nickname |
-| 131 | FriendList | Full friends list (userids, names, nicks) |
-| 132 | SessionAssign | Maps online friends to session IDs |
-| 133 | ChatMessage | Incoming IM (via `peermsg` map) |
-| 135 | FriendGameInfo | Friends' game status (game ID, server IP) |
-| 138 | FriendRequest | Incoming friend request |
+| Primitive | Usage |
+|-----------|-------|
+| `app_message(target, data)` | Fire-and-forget delivery to a `RouteId` or `NodeId` |
+| `app_call(target, data)` | Request-response delivery (not currently used) |
+| `create_dht_record(schema)` | Create a new DHT record with DFLT or SMPL schema |
+| `open_dht_record(key, keypair)` | Open an existing record (keypair for write access) |
+| `set_dht_value(key, subkey, data)` | Write to a subkey of an owned record |
+| `get_dht_value(key, subkey, force)` | Read a subkey (force=true bypasses cache) |
+| `watch_dht_values(key, subkeys)` | Subscribe to change notifications on subkeys |
+| `close_dht_record(key)` | Release a record handle |
+| `new_custom_private_route(stability, sequencing)` | Allocate a private route for receiving messages |
+| `import_remote_private_route(blob)` | Import a peer's route blob for sending |
+| `RoutingContext` | Scoped handle for all DHT and message operations |
 
-## Chat Messages
+## DHT Profile Record Layout
 
-Chat uses a `peermsg` map attribute with subtypes:
+Each user publishes a DHT record with 8 subkeys:
 
-| msgtype | Purpose |
-|---------|---------|
-| 0 | Content message (actual text) |
-| 1 | Acknowledgement |
-| 2 | Client info exchange (for P2P setup) |
-| 3 | Typing notification |
+| Subkey | Content |
+|--------|---------|
+| 0 | Display name (UTF-8) |
+| 1 | Status message (UTF-8) |
+| 2 | Status enum: `online`, `away`, `busy`, `offline` |
+| 3 | Avatar (WebP, raw bytes) |
+| 4 | Game info (Cap'n Proto `GameInfo`) |
+| 5 | PreKeyBundle for Signal session establishment |
+| 6 | Private route blob (for receiving `app_message`) |
+| 7 | Metadata (reserved) |
 
-## P2P Communication
+Friends watch each other's DHT records via `watch_dht_values`. When a subkey
+changes, Veilid delivers a `VeilidUpdate::ValueChange` to the watcher, which
+the `presence_service` processes into a `PresenceEvent`.
 
-Direct messaging can bypass the server via UDP:
-1. Both clients exchange connection info (IP, port) via server-relayed peermsg type 2
-2. UDP hole punching establishes a direct channel
-3. Messages flow directly between clients
-4. Falls back to server relay if P2P fails
+## Offline Message Handling
 
-## Further Reading
+When a peer is unreachable (no valid route), messages are queued in the
+`pending_messages` SQLite table. The `sync_service` retries delivery every
+30 seconds, incrementing `retry_count` on each attempt. Messages are discarded
+after 20 failed retries.
 
-- Full byte-level spec: `.claude/docs/xfire-protocol.md`
-- OpenFire protocol docs: https://github.com/iainmcgin/openfire
-- gfire source (most complete implementation): https://github.com/gfireproject/gfire
-- PFire server emulator: https://github.com/darcymiranda/PFire
+Ephemeral messages (typing indicators) are not queued. Friend requests, accepts,
+and rejects are queued to ensure reliable delivery.
+
+## Conversation DHT Records
+
+Each friend pair maintains two DHT records — one owned by each side. When a
+message is sent, the sender writes it to their own conversation record. The
+receiver watches the sender's record and pulls new messages on change
+notification. This avoids the need for the sender to have the receiver's route
+available at send time.

@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE Overlay SYSTEM "XfireSkin.dtd">
-
-<Overlay>
-    <Tile Name="Watermark" ResizeX="100" ResizeY="100" Features="XIGWatermark" Component="XIGWatermarkOverlay">
-        <Tile Name="Background" ResizeX="100" ResizeY="100" Component="XIGWatermarkBG" />
-    </Tile>
-</Overlay>

@@ -1,0 +1,56 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicemicro/tauri-apps/tauri-v2/crates/tauri-cli/schema.json",
+  "productName": "Rekindle",
+  "version": "0.1.0",
+  "identifier": "com.rekindle.app",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "login",
+        "title": "Rekindle",
+        "url": "/login",
+        "width": 380,
+        "height": 480,
+        "minWidth": 340,
+        "minHeight": 440,
+        "decorations": false,
+        "transparent": true,
+        "resizable": true,
+        "shadow": true,
+        "center": true
+      }
+    ],
+    "trayIcon": {
+      "iconPath": "icons/icon.png",
+      "tooltip": "Rekindle"
+    },
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' asset: http://asset.localhost data:; connect-src ipc: http://ipc.localhost; font-src 'self' data:"
+    },
+    "macOSPrivateApi": true
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["rekindle"]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

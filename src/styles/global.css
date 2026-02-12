@@ -1,0 +1,55 @@
+@import "tailwindcss" source(none);
+@source "../";
+@import "./xfire-theme.css";
+@import "./animations.css";
+@import "./scrollbar.css";
+
+@font-face {
+  font-family: "Symbols Nerd Font Mono";
+  src: url("../assets/fonts/SymbolsNerdFontMono-Regular.woff2") format("woff2");
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+
+@theme {
+  --color-xfire-bg-dark: #0a0a0a;
+  --color-xfire-bg-panel: #1e1e1e;
+  --color-xfire-bg-input: #1e1e1e;
+  --color-xfire-bg-status: #181818;
+  --color-xfire-bg-tooltip: #282828;
+  --color-xfire-accent: #177cc1;
+  --color-xfire-text: #e7e7e7;
+  --color-xfire-text-dim: #8fb9d7;
+  --color-xfire-text-clan: #1ba1fd;
+  --color-xfire-text-status: #969696;
+  --color-xfire-text-timestamp: #646464;
+  --color-xfire-online: #53d769;
+  --color-xfire-away: #ffcc00;
+  --color-xfire-ingame: #4fc3f7;
+  --color-xfire-busy: #ef4444;
+  --color-xfire-offline: #7d7d7d;
+  --color-xfire-link: #0f6896;
+  --font-family-xfire: "Segoe UI", "Tahoma", sans-serif;
+  --font-family-icons: "Symbols Nerd Font Mono";
+}
+
+@layer base {
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    font-family: var(--font-family-xfire);
+    font-size: 12px;
+    color: var(--color-xfire-text);
+    overflow: hidden;
+    user-select: none;
+  }
+
+  #root {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+}

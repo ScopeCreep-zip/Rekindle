@@ -1,0 +1,16 @@
+[package]
+name = "rekindle-game-detect"
+version = "0.1.0"
+edition = "2021"
+description = "Cross-platform game detection via process scanning for Rekindle"
+
+[lints]
+workspace = true
+
+[dependencies]
+sysinfo = "0.32"
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
