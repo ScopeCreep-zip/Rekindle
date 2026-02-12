@@ -1,0 +1,27 @@
+[package]
+name = "rekindle-protocol"
+version = "0.1.0"
+edition = "2021"
+description = "Veilid networking layer and message serialization for Rekindle"
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+bytes = { workspace = true }
+futures = { workspace = true }
+parking_lot = { workspace = true }
+capnp = { workspace = true }
+hex = "0.4"
+rekindle-crypto = { path = "../rekindle-crypto" }
+rand = "0.8"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+veilid-core = { version = "0.5.2", default-features = true }
+
+[build-dependencies]
+capnpc = { workspace = true }
