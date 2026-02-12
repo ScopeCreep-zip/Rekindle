@@ -1,0 +1,64 @@
+[package]
+name = "rekindle"
+version = "0.1.0"
+edition = "2021"
+description = "Rekindle — Xfire rebuilt as a decentralized Tauri 2 app"
+default-run = "rekindle"
+
+[lints]
+workspace = true
+
+[lib]
+name = "rekindle_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+rekindle-protocol = { path = "../crates/rekindle-protocol" }
+rekindle-crypto = { path = "../crates/rekindle-crypto" }
+rekindle-game-detect = { path = "../crates/rekindle-game-detect" }
+rekindle-voice = { path = "../crates/rekindle-voice" }
+
+tauri = { version = "2", features = ["macos-private-api", "tray-icon", "image-png"] }
+tauri-plugin-notification = "2"
+# tauri-plugin-window-state removed — causes infinite windowDidMove loop on macOS
+# with prevent_exit(), see tauri#11489
+tauri-plugin-store = "2"
+
+# tauri-plugin-sql removed — using rusqlite directly for veilid-core compatibility
+tauri-plugin-single-instance = "2"
+tauri-plugin-process = "2"
+tauri-plugin-deep-link = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-global-shortcut = "2"
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+parking_lot = { workspace = true }
+rusqlite = { version = "0.37", features = ["bundled"] }
+argon2 = "0.5"
+iota_stronghold = "2.1"
+zeroize = "1"
+hex = "0.4"
+base64 = "0.22"
+rand = "0.8"
+veilid-core = { version = "0.5.2", default-features = true }
+image = { version = "0.25", default-features = false, features = ["webp", "png", "jpeg", "gif"] }
+axum = { version = "0.8", optional = true }
+tower-http = { version = "0.6", features = ["cors"], optional = true }
+
+[features]
+e2e-server = ["dep:axum", "dep:tower-http"]
+
+[[bin]]
+name = "e2e-server"
+path = "src/bin/e2e_server.rs"
+required-features = ["e2e-server"]
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,0 +1,280 @@
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+
+use parking_lot::{Mutex, RwLock};
+use serde::{Deserialize, Serialize};
+use tokio::sync::mpsc;
+
+/// Central application state shared across all Tauri commands and services.
+pub struct AppState {
+    /// Identity (loaded after Stronghold unlock).
+    pub identity: Arc<RwLock<Option<IdentityState>>>,
+    /// Friends list with presence info.
+    pub friends: Arc<RwLock<HashMap<String, FriendState>>>,
+    /// Joined communities.
+    pub communities: Arc<RwLock<HashMap<String, CommunityState>>>,
+    /// Veilid node handle (set after login/attach).
+    pub node: Arc<RwLock<Option<NodeHandle>>>,
+    /// DHT record manager for reading/writing distributed state.
+    pub dht_manager: Arc<RwLock<Option<DHTManagerHandle>>>,
+    /// Routing manager for private route lifecycle.
+    pub routing_manager: Arc<RwLock<Option<RoutingManagerHandle>>>,
+    /// Signal session manager (set after identity unlock).
+    pub signal_manager: Arc<Mutex<Option<SignalManagerHandle>>>,
+    /// Game detector state.
+    pub game_detector: Arc<Mutex<Option<GameDetectorHandle>>>,
+    /// Voice engine state.
+    pub voice_engine: Arc<Mutex<Option<VoiceEngineHandle>>>,
+    /// Channel for sending shutdown signals to background services.
+    pub shutdown_tx: Arc<RwLock<Option<mpsc::Sender<()>>>>,
+    /// Channel for sending shutdown signal to the sync service.
+    pub sync_shutdown_tx: Arc<RwLock<Option<mpsc::Sender<()>>>>,
+    /// Sender half of the watch channel that tracks Veilid public internet readiness.
+    /// Set to `true` when the network is ready for DHT operations, `false` otherwise.
+    pub network_ready_tx: Arc<tokio::sync::watch::Sender<bool>>,
+    /// Receiver half — clone and `.changed().await` to wait for readiness.
+    pub network_ready_rx: tokio::sync::watch::Receiver<bool>,
+    /// Ed25519 secret key bytes for signing `MessageEnvelope`s.
+    /// Stored after identity unlock so `message_service` can sign outgoing messages.
+    pub identity_secret: Mutex<Option<[u8; 32]>>,
+    /// Handles for spawned background tasks (DHT publish, retry init, etc.)
+    /// that don't have their own shutdown channels. Aborted on logout to prevent
+    /// stale tasks from interfering with re-login.
+    pub background_handles: Mutex<Vec<tauri::async_runtime::JoinHandle<()>>>,
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        let (network_ready_tx, network_ready_rx) = tokio::sync::watch::channel(false);
+        Self {
+            identity: Arc::new(RwLock::new(None)),
+            friends: Arc::new(RwLock::new(HashMap::new())),
+            communities: Arc::new(RwLock::new(HashMap::new())),
+            node: Arc::new(RwLock::new(None)),
+            dht_manager: Arc::new(RwLock::new(None)),
+            routing_manager: Arc::new(RwLock::new(None)),
+            signal_manager: Arc::new(Mutex::new(None)),
+            game_detector: Arc::new(Mutex::new(None)),
+            voice_engine: Arc::new(Mutex::new(None)),
+            shutdown_tx: Arc::new(RwLock::new(None)),
+            sync_shutdown_tx: Arc::new(RwLock::new(None)),
+            network_ready_tx: Arc::new(network_ready_tx),
+            network_ready_rx,
+            identity_secret: Mutex::new(None),
+            background_handles: Mutex::new(Vec::new()),
+        }
+    }
+}
+
+/// Shared reference to `AppState`, used by both Tauri commands and background services.
+pub type SharedState = Arc<AppState>;
+
+/// Handle to the live Veilid node.
+pub struct NodeHandle {
+    /// Raw Veilid `AttachmentState` string (e.g. "detached", "attaching", "attached_good").
+    pub attachment_state: String,
+    /// Whether the node is attached to the network.
+    pub is_attached: bool,
+    /// Whether the public internet is ready for DHT operations.
+    pub public_internet_ready: bool,
+    /// Veilid API handle (needed for shutdown, route import, etc.).
+    pub api: veilid_core::VeilidAPI,
+    /// Veilid routing context (needed for `app_message`, DHT ops).
+    pub routing_context: veilid_core::RoutingContext,
+    /// Our private route blob for receiving messages.
+    pub route_blob: Option<Vec<u8>>,
+    /// Our DHT profile record key.
+    pub profile_dht_key: Option<String>,
+    /// Owner keypair for our profile DHT record (needed to re-open with write access).
+    pub profile_owner_keypair: Option<veilid_core::KeyPair>,
+    /// Our DHT friend list record key.
+    pub friend_list_dht_key: Option<String>,
+    /// Owner keypair for our friend list DHT record (needed to re-open with write access).
+    pub friend_list_owner_keypair: Option<veilid_core::KeyPair>,
+    /// Our account DHT record key (Phase 3).
+    pub account_dht_key: Option<String>,
+}
+
+/// Handle to the Signal session manager.
+pub struct SignalManagerHandle {
+    /// The crypto session manager.
+    pub manager: rekindle_crypto::SignalSessionManager,
+}
+
+/// Handle to the game detector.
+pub struct GameDetectorHandle {
+    /// Shutdown sender for the game detection loop.
+    pub shutdown_tx: mpsc::Sender<()>,
+    /// Current detected game info.
+    pub current_game: Option<GameInfoState>,
+}
+
+/// Handle to the voice engine.
+pub struct VoiceEngineHandle {
+    pub engine: rekindle_voice::VoiceEngine,
+    /// Shutdown sender for the voice send loop task.
+    pub send_loop_shutdown: Option<mpsc::Sender<()>>,
+    /// Join handle for the voice send loop task.
+    pub send_loop_handle: Option<tokio::task::JoinHandle<()>>,
+}
+
+/// Handle to the DHT record manager.
+///
+/// Wraps the protocol crate's `DHTManager` (which holds a `RoutingContext`)
+/// and adds a friend-key mapping for presence tracking.
+pub struct DHTManagerHandle {
+    /// The real DHT manager from the protocol crate.
+    pub manager: rekindle_protocol::dht::DHTManager,
+    /// Mapping of DHT record keys to the friend public keys that own them.
+    /// Populated when watching friend presence records.
+    pub dht_key_to_friend: HashMap<String, String>,
+    /// Mapping of conversation DHT record keys to friend public keys.
+    /// Used to route conversation record change events to the right friend.
+    pub conversation_key_to_friend: HashMap<String, String>,
+    /// All DHT record keys opened during this session.
+    /// Closed in bulk during `shutdown_node` to prevent stale records
+    /// in Veilid's table_store causing "record already exists" on restart.
+    pub open_records: HashSet<String>,
+}
+
+impl DHTManagerHandle {
+    /// Create a new DHT manager backed by the given routing context.
+    pub fn new(routing_context: veilid_core::RoutingContext) -> Self {
+        Self {
+            manager: rekindle_protocol::dht::DHTManager::new(routing_context),
+            dht_key_to_friend: HashMap::new(),
+            conversation_key_to_friend: HashMap::new(),
+            open_records: HashSet::new(),
+        }
+    }
+
+    /// Track a DHT record key as opened in this session.
+    pub fn track_open_record(&mut self, key: String) {
+        self.open_records.insert(key);
+    }
+
+    /// Remove a record from tracking (already closed).
+    pub fn untrack_record(&mut self, key: &str) {
+        self.open_records.remove(key);
+    }
+
+    /// Register a friend's DHT record key for presence tracking.
+    pub fn register_friend_dht_key(&mut self, dht_key: String, friend_public_key: String) {
+        self.dht_key_to_friend.insert(dht_key, friend_public_key);
+    }
+
+    /// Look up which friend owns a given DHT key.
+    pub fn friend_for_dht_key(&self, dht_key: &str) -> Option<&String> {
+        self.dht_key_to_friend.get(dht_key)
+    }
+
+    /// Remove a friend's DHT key mapping.
+    pub fn unregister_friend_dht_key(&mut self, dht_key: &str) {
+        self.dht_key_to_friend.remove(dht_key);
+    }
+
+    /// Register a conversation DHT record key → friend public key mapping.
+    pub fn register_conversation_key(&mut self, conversation_key: String, friend_public_key: String) {
+        self.conversation_key_to_friend.insert(conversation_key, friend_public_key);
+    }
+
+    /// Look up which friend owns a given conversation DHT key.
+    pub fn friend_for_conversation_key(&self, conversation_key: &str) -> Option<&String> {
+        self.conversation_key_to_friend.get(conversation_key)
+    }
+
+    /// Remove a conversation key mapping.
+    pub fn unregister_conversation_key(&mut self, conversation_key: &str) {
+        self.conversation_key_to_friend.remove(conversation_key);
+    }
+}
+
+/// Handle to the Veilid routing manager (private route lifecycle).
+pub struct RoutingManagerHandle {
+    /// The real routing manager from the protocol crate.
+    pub manager: rekindle_protocol::routing::RoutingManager,
+}
+
+/// The logged-in user's identity state.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IdentityState {
+    pub public_key: String,
+    pub display_name: String,
+    pub status: UserStatus,
+    pub status_message: String,
+}
+
+/// Online status enum matching Xfire's status system.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UserStatus {
+    #[default]
+    Online,
+    Away,
+    Busy,
+    Offline,
+}
+
+/// A friend's state as seen on the buddy list.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FriendState {
+    pub public_key: String,
+    pub display_name: String,
+    pub nickname: Option<String>,
+    pub status: UserStatus,
+    pub status_message: Option<String>,
+    pub game_info: Option<GameInfoState>,
+    pub group: Option<String>,
+    pub unread_count: u32,
+    /// The friend's DHT profile record key for presence watching.
+    pub dht_record_key: Option<String>,
+    /// Unix timestamp (ms) of when this friend was last seen online.
+    pub last_seen_at: Option<i64>,
+    /// Our local conversation DHT record key for this friend.
+    pub local_conversation_key: Option<String>,
+    /// The friend's conversation DHT record key (their side).
+    pub remote_conversation_key: Option<String>,
+}
+
+/// Game presence information.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameInfoState {
+    pub game_id: u32,
+    pub game_name: String,
+    pub server_info: Option<String>,
+    pub elapsed_seconds: u32,
+}
+
+/// A joined community's state.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommunityState {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub channels: Vec<ChannelInfo>,
+    /// Our role in this community (e.g. "owner", "admin", "member").
+    pub my_role: Option<String>,
+    /// The DHT record key for this community's shared state.
+    pub dht_record_key: Option<String>,
+}
+
+/// Channel info within a community.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelInfo {
+    pub id: String,
+    pub name: String,
+    pub channel_type: ChannelType,
+    pub unread_count: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ChannelType {
+    Text,
+    Voice,
+}
