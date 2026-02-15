@@ -727,23 +727,45 @@ pub(crate) async fn send_encrypted_to_server(
         request_bytes,
     );
 
-    match api.import_remote_private_route(route_blob) {
-        Ok(route_id) => {
-            let result =
-                rekindle_protocol::messaging::sender::send_call(&rc, route_id, &envelope)
-                    .await;
+    // Use the DHTManager's route cache to avoid leaking RouteId objects.
+    // Each call to import_remote_private_route without caching creates a new
+    // RouteId that Veilid tracks internally — the cache reuses them.
+    let route_id = {
+        let mut dht_mgr = state.dht_manager.write();
+        match dht_mgr.as_mut() {
+            Some(mgr) => mgr
+                .manager
+                .get_or_import_route(&api, &route_blob)
+                .map_err(|e| format!("failed to import server route: {e}"))?,
+            None => api
+                .import_remote_private_route(route_blob.clone())
+                .map_err(|e| format!("failed to import server route: {e}"))?,
+        }
+    };
 
-            match result {
-                Ok(response_bytes) => {
-                    check_server_response(channel_id, &response_bytes)?;
-                }
-                Err(e) => {
-                    return Err(format!("failed to send channel message to server: {e}"));
-                }
-            }
+    let result = rekindle_protocol::messaging::sender::send_call(&rc, route_id, &envelope).await;
+    match result {
+        Ok(response_bytes) => {
+            check_server_response(channel_id, &response_bytes)?;
         }
         Err(e) => {
-            return Err(format!("failed to import server route: {e}"));
+            // Invalidate the stale route from DHTManager cache so the next
+            // attempt (e.g. from the pending message retry queue) forces a
+            // fresh import instead of reusing the dead RouteId.
+            {
+                let mut dht_mgr = state.dht_manager.write();
+                if let Some(mgr) = dht_mgr.as_mut() {
+                    mgr.manager.invalidate_route_blob(&route_blob);
+                }
+            }
+            // Also clear the in-memory route blob so next send fetches from DHT.
+            {
+                let mut communities = state.communities.write();
+                if let Some(c) = communities.get_mut(community_id) {
+                    c.server_route_blob = None;
+                }
+            }
+            return Err(format!("failed to send channel message to server: {e}"));
         }
     }
 
@@ -818,8 +840,9 @@ async fn send_community_rpc_ipc(
         serde_json::to_string(request).map_err(|e| format!("failed to serialize request: {e}"))?;
 
     let socket_path = crate::ipc_client::default_socket_path();
+    let cid = community_id.to_string();
     let response_json = tokio::task::spawn_blocking(move || {
-        crate::ipc_client::community_rpc_blocking(&socket_path, &pseudonym_key, &request_json)
+        crate::ipc_client::community_rpc_blocking(&socket_path, &cid, &pseudonym_key, &request_json)
     })
     .await
     .map_err(|e| format!("IPC task panicked: {e}"))??;
@@ -859,9 +882,18 @@ async fn send_community_rpc_veilid(
         &signing_key, timestamp, rand_nonce(), request_bytes,
     );
 
-    let route_id = api
-        .import_remote_private_route(server_route_blob)
-        .map_err(|e| format!("RPC call failed: {e}"))?;
+    let route_id = {
+        let mut dht_mgr = state.dht_manager.write();
+        match dht_mgr.as_mut() {
+            Some(mgr) => mgr
+                .manager
+                .get_or_import_route(&api, &server_route_blob)
+                .map_err(|e| format!("RPC call failed: {e}"))?,
+            None => api
+                .import_remote_private_route(server_route_blob)
+                .map_err(|e| format!("RPC call failed: {e}"))?,
+        }
+    };
 
     let result = rekindle_protocol::messaging::sender::send_call(&rc, route_id, &envelope).await;
 
@@ -932,10 +964,23 @@ async fn retry_rpc_with_fresh_route(
         "community RPC failed — retrying with fresh route from DHT"
     );
 
-    {
+    // Invalidate the stale route blob from DHTManager cache so the retry
+    // doesn't return the same dead RouteId (the fresh DHT fetch may return
+    // identical blob bytes if the server hasn't refreshed yet).
+    let stale_blob = {
         let mut communities = state.communities.write();
+        let old = communities
+            .get(community_id)
+            .and_then(|c| c.server_route_blob.clone());
         if let Some(c) = communities.get_mut(community_id) {
             c.server_route_blob = None;
+        }
+        old
+    };
+    if let Some(ref blob) = stale_blob {
+        let mut dht_mgr = state.dht_manager.write();
+        if let Some(mgr) = dht_mgr.as_mut() {
+            mgr.manager.invalidate_route_blob(blob);
         }
     }
 
@@ -951,9 +996,18 @@ async fn retry_rpc_with_fresh_route(
     }
     persist_route_blob_to_db(pool, state, community_id, &fresh_blob).await;
 
-    let fresh_route_id = api
-        .import_remote_private_route(fresh_blob)
-        .map_err(|e| format!("RPC retry failed: {e}"))?;
+    let fresh_route_id = {
+        let mut dht_mgr = state.dht_manager.write();
+        match dht_mgr.as_mut() {
+            Some(mgr) => mgr
+                .manager
+                .get_or_import_route(api, &fresh_blob)
+                .map_err(|e| format!("RPC retry failed: {e}"))?,
+            None => api
+                .import_remote_private_route(fresh_blob)
+                .map_err(|e| format!("RPC retry failed: {e}"))?,
+        }
+    };
 
     rekindle_protocol::messaging::sender::send_call(rc, fresh_route_id, envelope)
         .await
@@ -2464,165 +2518,120 @@ pub async fn get_community_members(
 /// Ensure the community server is running and knows about this community.
 ///
 /// If the server is not running, spawns it. If it is already running, sends an
-/// IPC `HostCommunity` command for the new community. Then fetches the server's
-/// route blob from DHT so the creator can send messages.
+/// IPC `HostCommunity` command for the new community. Then registers the creator
+/// as the first member via IPC Join, and fetches the server's route blob from DHT
+/// in the background for remote clients.
 async fn ensure_community_hosted(
     app: &tauri::AppHandle,
     state: &SharedState,
     community_id: &str,
 ) {
-    use tauri::Manager as _;
+    // Gather community data + creator pseudonym for the HostCommunity IPC.
+    // The creator is registered atomically during host_community on the server,
+    // eliminating the race condition where a separate Join RPC would need to
+    // arrive after the (slow) hosting process completes.
+    let community_data = {
+        let communities = state.communities.read();
+        communities.get(community_id).and_then(|c| {
+            let dht_key = c.dht_record_key.as_ref()?;
+            let keypair = c.dht_owner_keypair.as_ref()?;
+            let pseudonym = c.my_pseudonym_key.clone().unwrap_or_default();
+            Some((
+                c.id.clone(),
+                dht_key.clone(),
+                keypair.clone(),
+                c.name.clone(),
+                pseudonym,
+            ))
+        })
+    };
+
+    let creator_display_name = state
+        .identity
+        .read()
+        .as_ref()
+        .map(|id| id.display_name.clone())
+        .unwrap_or_default();
+
     if state.server_process.lock().is_some() {
         // Server already running — send IPC to host this new community
-        let community_data = {
-            let communities = state.communities.read();
-            communities.get(community_id).and_then(|c| {
-                let dht_key = c.dht_record_key.as_ref()?;
-                let keypair = c.dht_owner_keypair.as_ref()?;
-                Some((c.id.clone(), dht_key.clone(), keypair.clone(), c.name.clone()))
-            })
-        };
-        if let Some((cid, dht_key, keypair, nm)) = community_data {
+        if let Some((cid, dht_key, keypair, nm, pseudonym)) = community_data.clone() {
+            let cdn = creator_display_name.clone();
             let socket_path = crate::ipc_client::default_socket_path();
-            let _ = tokio::task::spawn_blocking(move || {
+            let result = tokio::task::spawn_blocking(move || {
                 crate::ipc_client::host_community_blocking(
-                    &socket_path, &cid, &dht_key, &keypair, &nm, 5,
+                    &socket_path, &cid, &dht_key, &keypair, &nm, &pseudonym, &cdn, 5,
                 )
             })
             .await;
+            match result {
+                Ok(Ok(())) => {
+                    tracing::info!(community = %community_id, "community hosted via IPC (creator registered)");
+                }
+                Ok(Err(e)) => {
+                    tracing::error!(community = %community_id, error = %e, "HostCommunity IPC failed");
+                }
+                Err(e) => {
+                    tracing::error!(community = %community_id, error = %e, "HostCommunity IPC task panicked");
+                }
+            }
         }
     } else {
-        // First community — spawn the server (it will host all owned communities)
+        // First community — spawn the server (it will host all owned communities
+        // from DB on startup, but the new community needs an explicit HostCommunity).
         super::auth::maybe_spawn_server(app, state);
-    }
 
-    // After server hosts the community, read back the server route blob from DHT
-    // so the creator can send messages through their own server.
-    if let Some(blob) = fetch_server_route_blob(state, community_id).await {
-        {
-            let mut communities = state.communities.write();
-            if let Some(c) = communities.get_mut(community_id) {
-                c.server_route_blob = Some(blob.clone());
+        // The server needs a moment to start up. Send HostCommunity with retries.
+        if let Some((cid, dht_key, keypair, nm, pseudonym)) = community_data.clone() {
+            let cdn = creator_display_name.clone();
+            let socket_path = crate::ipc_client::default_socket_path();
+            let result = tokio::task::spawn_blocking(move || {
+                crate::ipc_client::host_community_blocking(
+                    &socket_path, &cid, &dht_key, &keypair, &nm, &pseudonym, &cdn, 10,
+                )
+            })
+            .await;
+            match result {
+                Ok(Ok(())) => {
+                    tracing::info!(community = %community_id, "community hosted via IPC after server spawn");
+                }
+                Ok(Err(e)) => {
+                    tracing::error!(community = %community_id, error = %e, "HostCommunity IPC failed after spawn");
+                }
+                Err(e) => {
+                    tracing::error!(community = %community_id, error = %e, "HostCommunity task panicked");
+                }
             }
         }
-
-        // Persist route blob to SQLite so it survives logout/restart
-        persist_server_route_blob(app, community_id, &blob).await;
-
-        // Send Join RPC so the server registers the creator as the first member.
-        // Without this, the server has zero members and rejects all RPCs with 403.
-        let pool: tauri::State<'_, db::DbPool> = app.state();
-        send_creator_join_rpc(state, pool.inner(), community_id).await;
-    } else {
-        // Route not available yet — spawn a background task that keeps trying.
-        // The server may still be starting up (Veilid attach + DHT open can be slow).
-        tracing::warn!(
-            community = %community_id,
-            "server route blob not available — spawning background retry"
-        );
-        let bg_state = state.clone();
-        let bg_app = app.clone();
-        let bg_community_id = community_id.to_string();
-        tauri::async_runtime::spawn(async move {
-            retry_creator_registration(&bg_app, &bg_state, &bg_community_id).await;
-        });
     }
+
+    // Fetch the server's route blob from DHT in the background.
+    // Remote clients need this to send Veilid app_call to the server.
+    // This is NOT needed for the creator's IPC-based communication.
+    let bg_state = state.clone();
+    let bg_app = app.clone();
+    let bg_community_id = community_id.to_string();
+    tauri::async_runtime::spawn(async move {
+        fetch_and_persist_route_blob(&bg_app, &bg_state, &bg_community_id).await;
+    });
 }
 
-/// Send a `CommunityRequest::Join` RPC to register the creator on their own server.
+/// Fetch the server's route blob from DHT and persist it.
 ///
-/// The creator's server starts with zero members. This Join RPC triggers the
-/// "first member = owner" logic in `add_new_member`, giving the creator full
-/// permissions on the server side. Without this, all subsequent RPCs (e.g.
-/// `CreateChannel`) fail with "not a member".
-async fn send_creator_join_rpc(state: &SharedState, pool: &DbPool, community_id: &str) {
-    // Gather creator's pseudonym key and display name
-    let (my_pseudonym_key, display_name) = {
-        let communities = state.communities.read();
-        let pseudonym = communities
-            .get(community_id)
-            .and_then(|c| c.my_pseudonym_key.clone());
-        let name = state
-            .identity
-            .read()
-            .as_ref()
-            .map(|id| id.display_name.clone())
-            .unwrap_or_default();
-        (pseudonym.unwrap_or_default(), name)
-    };
-
-    // Get our route blob so the server can broadcast to us
-    let our_route_blob = {
-        let node = state.node.read();
-        node.as_ref().and_then(|nh| nh.route_blob.clone())
-    };
-
-    let response = send_community_rpc(
-        state,
-        pool,
-        community_id,
-        rekindle_protocol::messaging::CommunityRequest::Join {
-            pseudonym_pubkey: my_pseudonym_key,
-            invite_code: None,
-            display_name,
-            prekey_bundle: Vec::new(),
-            route_blob: our_route_blob,
-        },
-    )
-    .await;
-
-    match response {
-        Ok(rekindle_protocol::messaging::CommunityResponse::Joined {
-            mek_encrypted: _,
-            mek_generation,
-            role_ids,
-            roles: server_roles,
-            ..
-        }) => {
-            // Update local state with server-authoritative role info
-            let mut communities = state.communities.write();
-            if let Some(c) = communities.get_mut(community_id) {
-                c.my_role_ids.clone_from(&role_ids);
-                c.roles = server_roles
-                    .iter()
-                    .map(crate::state::RoleDefinition::from_dto)
-                    .collect();
-                c.my_role = Some(crate::state::display_role_name(&role_ids, &c.roles));
-                c.mek_generation = mek_generation;
-            }
-            tracing::info!(community = %community_id, "creator registered on server via Join RPC");
-        }
-        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => {
-            tracing::warn!(
-                community = %community_id, error = %message,
-                "server rejected creator join — channel creation may fail until retry"
-            );
-        }
-        other => {
-            tracing::warn!(
-                community = %community_id, ?other,
-                "unexpected response for creator join RPC"
-            );
-        }
-    }
-}
-
-/// Background retry for creator registration when the initial route fetch fails.
-///
-/// Keeps polling DHT subkey 6 for the server's route blob with increasing delays.
-/// Once the blob appears, persists it and sends the creator Join RPC. Gives up
-/// after 10 attempts (~5 minutes) to avoid infinite retries.
-async fn retry_creator_registration(
+/// This is run in the background after community creation. Remote clients
+/// need the route blob to send Veilid `app_call` to the server, but the
+/// creator's IPC-based communication doesn't need it.
+async fn fetch_and_persist_route_blob(
     app: &tauri::AppHandle,
     state: &SharedState,
     community_id: &str,
 ) {
-    use tauri::Manager as _;
-    for attempt in 1..=10u32 {
-        // Exponential backoff: 5s, 10s, 20s, 30s, 30s, ...
-        let delay = std::time::Duration::from_secs((5 * 2u64.pow(attempt - 1)).min(30));
-        tokio::time::sleep(delay).await;
-
+    // Generous retry: server needs to start, attach to Veilid, open DHT, publish route
+    for attempt in 0..20u32 {
+        if attempt > 0 {
+            let delay = std::time::Duration::from_secs((3 * u64::from(attempt)).min(30));
+            tokio::time::sleep(delay).await;
+        }
         if let Some(blob) = fetch_server_route_blob(state, community_id).await {
             {
                 let mut communities = state.communities.write();
@@ -2631,19 +2640,16 @@ async fn retry_creator_registration(
                 }
             }
             persist_server_route_blob(app, community_id, &blob).await;
-            let pool: tauri::State<'_, db::DbPool> = app.state();
-            send_creator_join_rpc(state, pool.inner(), community_id).await;
             tracing::info!(
-                community = %community_id,
-                attempt,
-                "background creator registration succeeded"
+                community = %community_id, attempt,
+                "server route blob fetched and persisted"
             );
             return;
         }
     }
     tracing::error!(
         community = %community_id,
-        "background creator registration gave up after 10 attempts"
+        "failed to fetch server route blob after 20 attempts"
     );
 }
 

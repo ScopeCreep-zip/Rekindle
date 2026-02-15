@@ -821,9 +821,23 @@ pub(super) async fn fetch_mek_from_server(
         &sk, timestamp, nonce, request_bytes,
     );
 
-    let Ok(route_id) = api.import_remote_private_route(route_blob) else {
-        tracing::warn!(community = %community_id, "failed to import server route for MEK fetch");
-        return;
+    let route_id = {
+        let mut dht_mgr = state.dht_manager.write();
+        if let Some(mgr) = dht_mgr.as_mut() {
+            match mgr.manager.get_or_import_route(&api, &route_blob) {
+                Ok(rid) => rid,
+                Err(e) => {
+                    tracing::warn!(community = %community_id, error = %e, "failed to import server route for MEK fetch");
+                    return;
+                }
+            }
+        } else {
+            let Ok(rid) = api.import_remote_private_route(route_blob) else {
+                tracing::warn!(community = %community_id, "failed to import server route for MEK fetch");
+                return;
+            };
+            rid
+        }
     };
 
     let call_result = rekindle_protocol::messaging::sender::send_call(&rc, route_id, &envelope).await;
@@ -963,7 +977,16 @@ async fn handle_route_change(
     };
 
     if our_route_died {
-        reallocate_private_route(app_handle, state).await;
+        // The route is already dead — forget it (don't call release, which would
+        // hit Veilid's "Invalid argument" error for an already-expired route).
+        // Then allocate a fresh one.
+        {
+            let mut rm = state.routing_manager.write();
+            if let Some(ref mut handle) = *rm {
+                handle.manager.forget_private_route();
+            }
+        }
+        allocate_fresh_private_route(app_handle, state).await;
     }
 
     // Invalidate cached peer routes that died (selective — only affected peers)
@@ -977,16 +1000,30 @@ async fn handle_route_change(
 }
 
 /// Release the old private route, allocate a new one, and re-publish it to DHT.
+///
+/// Used by the periodic refresh loop where the old route is still valid and
+/// should be explicitly released before allocating a replacement.
 pub(crate) async fn reallocate_private_route(app_handle: &tauri::AppHandle, state: &Arc<AppState>) {
     // Release the old route while holding the lock, then drop
     // before any .await (parking_lot guards are !Send)
     {
         let mut rm = state.routing_manager.write();
         if let Some(ref mut handle) = *rm {
-            let _ = handle.manager.release_private_route();
+            if let Err(e) = handle.manager.release_private_route() {
+                tracing::warn!(error = %e, "failed to release old private route");
+            }
         }
     }
 
+    allocate_fresh_private_route(app_handle, state).await;
+}
+
+/// Allocate a fresh private route and publish it to DHT.
+///
+/// Assumes the old route has already been released or forgotten. Called by
+/// both `reallocate_private_route` (periodic refresh) and `handle_route_change`
+/// (dead route recovery).
+async fn allocate_fresh_private_route(app_handle: &tauri::AppHandle, state: &Arc<AppState>) {
     // Clone the API handle (Arc-based) outside the lock
     let api = {
         let node = state.node.read();
@@ -1022,10 +1059,10 @@ pub(crate) async fn reallocate_private_route(app_handle: &tauri::AppHandle, stat
             {
                 tracing::warn!(error = %e, "failed to re-publish route blob to DHT");
             }
-            tracing::info!("re-allocated private route after route death");
+            tracing::info!("re-allocated private route");
         }
         Err(e) => {
-            tracing::warn!(error = %e, "failed to re-allocate private route");
+            tracing::warn!(error = %e, "failed to allocate private route");
         }
     }
 }
