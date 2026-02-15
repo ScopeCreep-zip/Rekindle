@@ -259,24 +259,48 @@ impl DHTManager {
         Ok(route_id)
     }
 
+    /// Invalidate a cached imported route by its blob bytes.
+    ///
+    /// Called when a send operation fails with a route error — ensures the
+    /// next `get_or_import_route` call for the same blob will perform a fresh
+    /// import rather than returning the stale `RouteId`.
+    pub fn invalidate_route_blob(&mut self, route_blob: &[u8]) {
+        if self.imported_routes.remove(route_blob).is_some() {
+            tracing::debug!(
+                blob_len = route_blob.len(),
+                "invalidated cached route import after send failure"
+            );
+        }
+    }
+
     /// Selectively invalidate cached routes when remote routes die.
     ///
-    /// Uses the `RouteId → pubkey` reverse map to remove only the affected
-    /// peer's cache entries, rather than clearing everything.
+    /// Clears both the peer route cache (via `RouteId → pubkey` reverse map)
+    /// and any matching entries in the `imported_routes` cache. This ensures
+    /// community server routes are also invalidated when Veilid reports them
+    /// as dead, not just peer-to-peer routes.
     pub fn invalidate_dead_routes(
         &mut self,
         dead_routes: &[veilid_core::RouteId],
     ) {
         for route_id in dead_routes {
+            // Invalidate peer route cache entry
             if let Some(pubkey) = self.route_id_to_pubkey.remove(route_id) {
                 tracing::debug!(
                     pubkey = %pubkey,
                     "selectively invalidating dead route for peer"
                 );
                 if let Some(blob) = self.route_cache.remove(&pubkey) {
-                    self.imported_routes.remove(&blob); // removes (RouteId, Instant) tuple
+                    self.imported_routes.remove(&blob);
                 }
             }
         }
+
+        // Also scan imported_routes for any matching RouteIds (covers community
+        // server routes that aren't in the peer route_id_to_pubkey map).
+        let dead_set: std::collections::HashSet<&veilid_core::RouteId> =
+            dead_routes.iter().collect();
+        self.imported_routes
+            .retain(|_blob, (route_id, _ts)| !dead_set.contains(route_id));
     }
 }

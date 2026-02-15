@@ -18,6 +18,10 @@ pub enum IpcRequest {
         dht_record_key: String,
         owner_keypair_hex: String,
         name: String,
+        /// Pseudonym key of the community creator (registered as first member/owner).
+        creator_pseudonym_key: String,
+        /// Display name of the creator.
+        creator_display_name: String,
     },
     /// Stop hosting a community.
     UnhostCommunity {
@@ -31,6 +35,7 @@ pub enum IpcRequest {
     Shutdown,
     /// Forward a community RPC request through IPC (bypasses Veilid).
     CommunityRpc {
+        community_id: String,
         sender_pseudonym_key: String,
         request_json: String,
     },
@@ -147,6 +152,8 @@ async fn handle_ipc_request(
             dht_record_key,
             owner_keypair_hex,
             name,
+            creator_pseudonym_key,
+            creator_display_name,
         } => {
             match community_host::host_community(
                 state,
@@ -154,6 +161,8 @@ async fn handle_ipc_request(
                 &dht_record_key,
                 &owner_keypair_hex,
                 &name,
+                &creator_pseudonym_key,
+                &creator_display_name,
             )
             .await
             {
@@ -198,11 +207,13 @@ async fn handle_ipc_request(
             IpcResponse::Ok
         }
         IpcRequest::CommunityRpc {
+            community_id,
             sender_pseudonym_key,
             request_json,
         } => {
             let response_bytes = crate::rpc::handle_community_rpc_direct(
                 state,
+                &community_id,
                 &sender_pseudonym_key,
                 &request_json,
             )

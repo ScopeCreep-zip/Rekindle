@@ -1062,7 +1062,14 @@ fn spawn_login_services(
 /// It communicates with this process via a Unix socket IPC.
 pub fn maybe_spawn_server(app: &tauri::AppHandle, state: &SharedState) {
     // Collect hosted communities' data for IPC commands (before any .await)
-    let hosted_communities: Vec<(String, String, String, String)> = {
+    // Tuple: (community_id, dht_key, keypair, name, creator_pseudonym, creator_display_name)
+    let creator_display_name = state
+        .identity
+        .read()
+        .as_ref()
+        .map(|id| id.display_name.clone())
+        .unwrap_or_default();
+    let hosted_communities: Vec<(String, String, String, String, String, String)> = {
         let communities = state.communities.read();
         communities
             .values()
@@ -1070,11 +1077,14 @@ pub fn maybe_spawn_server(app: &tauri::AppHandle, state: &SharedState) {
             .filter_map(|c| {
                 let dht_key = c.dht_record_key.as_ref()?;
                 let keypair = c.dht_owner_keypair.as_ref()?;
+                let pseudonym = c.my_pseudonym_key.clone().unwrap_or_default();
                 Some((
                     c.id.clone(),
                     dht_key.clone(),
                     keypair.clone(),
                     c.name.clone(),
+                    pseudonym,
+                    creator_display_name.clone(),
                 ))
             })
             .collect()
@@ -1151,19 +1161,22 @@ pub fn maybe_spawn_server(app: &tauri::AppHandle, state: &SharedState) {
 /// Send `HostCommunity` IPC commands to the server for each owned community.
 ///
 /// The server needs a moment to start up, so `host_community_blocking` retries
-/// internally with backoff.
+/// internally with backoff. The creator pseudonym key is passed so the server
+/// can register the creator atomically during hosting.
 async fn send_host_community_ipc(
     socket_path: std::path::PathBuf,
-    communities: Vec<(String, String, String, String)>,
+    communities: Vec<(String, String, String, String, String, String)>,
 ) {
-    for (community_id, dht_key, keypair, name) in &communities {
+    for (community_id, dht_key, keypair, name, pseudonym, display_name) in &communities {
         let sp = socket_path.clone();
         let cid = community_id.clone();
         let dk = dht_key.clone();
         let kp = keypair.clone();
         let nm = name.clone();
+        let ps = pseudonym.clone();
+        let dn = display_name.clone();
         let result = tokio::task::spawn_blocking(move || {
-            crate::ipc_client::host_community_blocking(&sp, &cid, &dk, &kp, &nm, 10)
+            crate::ipc_client::host_community_blocking(&sp, &cid, &dk, &kp, &nm, &ps, &dn, 10)
         })
         .await;
         match result {

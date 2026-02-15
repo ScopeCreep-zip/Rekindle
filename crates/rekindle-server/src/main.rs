@@ -325,7 +325,7 @@ async fn server_dispatch_loop(
 
 /// Load previously hosted communities from the server database.
 async fn load_persisted_communities(state: &Arc<ServerState>) {
-    let communities: Vec<(String, String, String, String)> = match load_communities_from_db(state) {
+    let communities = match load_communities_from_db(state) {
         Ok(c) => c,
         Err(e) => {
             tracing::error!(error = %e, "failed to load hosted communities from DB");
@@ -333,19 +333,23 @@ async fn load_persisted_communities(state: &Arc<ServerState>) {
         }
     };
 
-    for (id, dht_key, keypair_hex, name) in communities {
+    for (id, dht_key, keypair_hex, name, creator_pseudonym) in communities {
+        // Pass the stored creator_pseudonym — host_community will skip
+        // re-registering if the creator is already in the members table.
         if let Err(e) =
-            community_host::host_community(state, &id, &dht_key, &keypair_hex, &name).await
+            community_host::host_community(state, &id, &dht_key, &keypair_hex, &name, &creator_pseudonym, "").await
         {
             tracing::error!(community = %id, error = %e, "failed to re-host community");
         }
     }
 }
 
-fn load_communities_from_db(state: &Arc<ServerState>) -> Result<Vec<(String, String, String, String)>, String> {
+/// Load persisted community records from the server database.
+#[allow(clippy::type_complexity)]
+fn load_communities_from_db(state: &Arc<ServerState>) -> Result<Vec<(String, String, String, String, String)>, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let mut stmt = db
-        .prepare("SELECT id, dht_record_key, owner_keypair_hex, name FROM hosted_communities")
+        .prepare("SELECT id, dht_record_key, owner_keypair_hex, name, creator_pseudonym FROM hosted_communities")
         .map_err(|e| e.to_string())?;
     let rows = stmt
         .query_map([], |row| {
@@ -354,6 +358,7 @@ fn load_communities_from_db(state: &Arc<ServerState>) -> Result<Vec<(String, Str
                 row.get::<_, String>(1)?,
                 row.get::<_, String>(2)?,
                 row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
             ))
         })
         .map_err(|e| e.to_string())?;

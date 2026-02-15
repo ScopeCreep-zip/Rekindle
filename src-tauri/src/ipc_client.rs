@@ -14,6 +14,10 @@ pub enum IpcRequest {
         dht_record_key: String,
         owner_keypair_hex: String,
         name: String,
+        /// Pseudonym key of the community creator (registered as first member/owner).
+        creator_pseudonym_key: String,
+        /// Display name of the creator.
+        creator_display_name: String,
     },
     UnhostCommunity {
         community_id: String,
@@ -23,6 +27,7 @@ pub enum IpcRequest {
     Shutdown,
     /// Forward a community RPC request through the IPC socket (bypasses Veilid).
     CommunityRpc {
+        community_id: String,
         sender_pseudonym_key: String,
         request_json: String,
     },
@@ -68,12 +73,20 @@ pub struct IpcClient {
 }
 
 impl IpcClient {
-    /// Connect to the server's Unix socket with a timeout.
+    /// Connect to the server's Unix socket with default timeouts (10s read, 5s write).
     pub fn connect(socket_path: &Path) -> Result<Self, String> {
+        Self::connect_with_timeout(socket_path, Duration::from_secs(10))
+    }
+
+    /// Connect with a custom read timeout.
+    ///
+    /// `HostCommunity` can take 60+ seconds (Veilid attachment + DHT record open),
+    /// so callers that issue slow commands should use a longer timeout.
+    pub fn connect_with_timeout(socket_path: &Path, read_timeout: Duration) -> Result<Self, String> {
         let stream = UnixStream::connect(socket_path)
             .map_err(|e| format!("failed to connect to server socket at {}: {e}", socket_path.display()))?;
         stream
-            .set_read_timeout(Some(Duration::from_secs(10)))
+            .set_read_timeout(Some(read_timeout))
             .map_err(|e| format!("failed to set read timeout: {e}"))?;
         stream
             .set_write_timeout(Some(Duration::from_secs(5)))
@@ -114,12 +127,15 @@ pub fn default_socket_path() -> PathBuf {
 ///
 /// Retries connection up to `max_retries` times with a delay to allow the server
 /// to finish starting up.
+#[allow(clippy::too_many_arguments)]
 pub fn host_community_blocking(
     socket_path: &Path,
     community_id: &str,
     dht_record_key: &str,
     owner_keypair_hex: &str,
     name: &str,
+    creator_pseudonym_key: &str,
+    creator_display_name: &str,
     max_retries: u32,
 ) -> Result<(), String> {
     let request = IpcRequest::HostCommunity {
@@ -127,10 +143,16 @@ pub fn host_community_blocking(
         dht_record_key: dht_record_key.to_string(),
         owner_keypair_hex: owner_keypair_hex.to_string(),
         name: name.to_string(),
+        creator_pseudonym_key: creator_pseudonym_key.to_string(),
+        creator_display_name: creator_display_name.to_string(),
     };
 
+    // Use a 90-second read timeout — host_community can take 60+ seconds
+    // (30s Veilid attachment wait + DHT record open with exponential backoff).
+    let host_timeout = Duration::from_secs(90);
+
     for attempt in 1..=max_retries {
-        match IpcClient::connect(socket_path) {
+        match IpcClient::connect_with_timeout(socket_path, host_timeout) {
             Ok(mut client) => match client.send(&request) {
                 Ok(IpcResponse::Ok) => {
                     tracing::info!(
@@ -147,7 +169,10 @@ pub fn host_community_blocking(
                     return Ok(()); // Non-error response — treat as success
                 }
                 Err(e) => {
-                    tracing::warn!(attempt, error = %e, "IPC send failed");
+                    tracing::warn!(attempt, error = %e, "IPC send failed for HostCommunity");
+                    if attempt < max_retries {
+                        std::thread::sleep(Duration::from_millis(1000 * u64::from(attempt)));
+                    }
                 }
             },
             Err(e) => {
@@ -203,11 +228,13 @@ pub fn shutdown_server_blocking(socket_path: &Path) -> Result<(), String> {
 /// process is local. Returns the JSON-encoded `CommunityResponse`.
 pub fn community_rpc_blocking(
     socket_path: &Path,
+    community_id: &str,
     sender_pseudonym_key: &str,
     request_json: &str,
 ) -> Result<String, String> {
     let mut client = IpcClient::connect(socket_path)?;
     let request = IpcRequest::CommunityRpc {
+        community_id: community_id.to_string(),
         sender_pseudonym_key: sender_pseudonym_key.to_string(),
         request_json: request_json.to_string(),
     };
