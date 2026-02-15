@@ -139,31 +139,53 @@ schemas/                       Cap'n Proto schema definitions (.capnp)
 
 ### Prerequisites
 
-**Option A: Konductor (recommended)**
+**Option A: Nix + direnv (recommended)**
 
 ```bash
-# Enter the frontend devshell — includes Rust, Node.js, Tauri deps, and tooling
-nix develop .#frontend
+# Allow direnv to activate the .envrc (enters the devshell automatically)
+direnv allow
 ```
 
-The Konductor `frontend` shell provides Rust 1.92+, Node.js 22, pnpm, GTK/WebKitGTK,
-OpenSSL, Playwright, 13 linters, and 8 formatters — all hermetically configured.
+The project `flake.nix` extends the [Konductor](https://github.com/braincraftio/konductor)
+`frontend` devshell with Rekindle-specific build dependencies (Cap'n Proto, CMake,
+ALSA headers on Linux). You get Rust 1.92+, Node.js 22, pnpm, GTK/WebKitGTK, OpenSSL,
+Playwright, 13 linters, and 8 formatters — all hermetically provided by Nix.
+
+If you don't use direnv, enter the shell manually:
+```bash
+nix develop
+```
 
 **Option B: Manual setup**
 
 - Rust 1.92+ (via [rustup](https://rustup.rs/))
 - Node.js 22+ with [pnpm](https://pnpm.io/)
 - Tauri 2 system dependencies ([platform-specific guide](https://v2.tauri.app/start/prerequisites/))
+- [Cap'n Proto](https://capnproto.org/) compiler (`capnp`)
+- CMake
 
 macOS:
 ```bash
 xcode-select --install
+brew install capnp cmake
 ```
 
-Linux (Debian/Ubuntu):
+Linux (Debian/Ubuntu/Pop!_OS):
 ```bash
-sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
-  libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+# Rust (via rustup)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+
+# Node.js LTS (via nodesource)
+curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
+sudo apt install -y nodejs
+sudo npm install -g pnpm
+
+# System dependencies
+sudo apt install -y build-essential pkg-config curl wget cmake capnproto \
+  libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
+  libjavascriptcoregtk-4.1-dev libayatana-appindicator3-dev \
+  libssl-dev libasound2-dev libopus-dev libsodium-dev
 ```
 
 ### Development

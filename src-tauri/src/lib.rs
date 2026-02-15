@@ -20,6 +20,10 @@ use state::{AppState, SharedState};
 #[allow(clippy::too_many_lines)]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Linux: WebKitGTK environment setup — must run before tauri::Builder.
+    #[cfg(target_os = "linux")]
+    linux_display_setup();
+
     tracing_subscriber::fmt::init();
 
     let shared_state: SharedState = Arc::new(AppState::default());
@@ -433,5 +437,59 @@ fn toggle_mute(app_handle: &tauri::AppHandle, state: &SharedState) {
         let _ = app_handle.emit("voice-event", &event);
 
         tracing::debug!(muted = new_muted, "voice mute toggled via global shortcut");
+    }
+}
+
+/// Linux WebKitGTK environment setup — runs before tauri::Builder.
+///
+/// Handles two cross-platform Linux concerns:
+///
+/// 1. **Wayland discovery** — tmux/SSH/TTY sessions don't inherit
+///    WAYLAND_DISPLAY from the compositor. We scan XDG_RUNTIME_DIR.
+///
+/// 2. **NVIDIA + WebKitGTK workarounds** — NVIDIA proprietary drivers
+///    have known issues with WebKitGTK's DMABuf renderer and explicit
+///    sync. These env vars are documented in tauri-apps/tauri#9394 and
+///    affect all Linux distros, not just Nix.
+///
+/// All env vars are no-ops if already set externally, so the user or
+/// packaging system can always override.
+///
+/// References:
+/// - <https://github.com/tauri-apps/tauri/issues/9394>
+/// - <https://bugs.webkit.org/show_bug.cgi?id=202362>
+#[cfg(target_os = "linux")]
+fn linux_display_setup() {
+    use std::path::Path;
+
+    // ── Wayland display discovery ────────────────────────────────────
+    if std::env::var("WAYLAND_DISPLAY").unwrap_or_default().is_empty() {
+        if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
+            if let Ok(entries) = std::fs::read_dir(&runtime_dir) {
+                for entry in entries.flatten() {
+                    let name = entry.file_name();
+                    let name = name.to_string_lossy();
+                    if name.starts_with("wayland-")
+                        && !name.ends_with(".lock")
+                        && !name.contains("renderD")
+                    {
+                        std::env::set_var("WAYLAND_DISPLAY", &*name);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // ── NVIDIA workarounds ───────────────────────────────────────────
+    if Path::new("/proc/driver/nvidia/version").exists() {
+        // DMABuf renderer is flaky on NVIDIA (white screens, framebuffer errors).
+        if std::env::var("WEBKIT_DISABLE_DMABUF_RENDERER").is_err() {
+            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        }
+        // Explicit sync causes Protocol error on some driver versions.
+        if std::env::var("__NV_DISABLE_EXPLICIT_SYNC").is_err() {
+            std::env::set_var("__NV_DISABLE_EXPLICIT_SYNC", "1");
+        }
     }
 }
