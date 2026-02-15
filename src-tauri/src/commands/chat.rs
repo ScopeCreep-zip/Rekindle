@@ -28,22 +28,18 @@ pub async fn send_message(
 ) -> Result<(), String> {
     let owner_key = current_owner_key(state.inner())?;
     let sender_key = owner_key.clone();
+    let timestamp = db::timestamp_now();
 
     tracing::info!(to = %to, from = %sender_key, len = body.len(), "sending message");
 
-    // Delegate to message service for encryption + Veilid transport
-    services::message_service::send_message(state.inner(), pool.inner(), &to, &body).await?;
-
-    let timestamp = db::timestamp_now();
-
-    // Persist to SQLite
-    let pool = pool.inner().clone();
+    // Step 1: Persist to SQLite FIRST (before network send)
+    let pool_clone = pool.inner().clone();
     let to_clone = to.clone();
     let sender_key_clone = sender_key.clone();
     let body_clone = body.clone();
     let ok = owner_key.clone();
     tokio::task::spawn_blocking(move || {
-        let conn = pool.lock().map_err(|e| e.to_string())?;
+        let conn = pool_clone.lock().map_err(|e| e.to_string())?;
         conn.execute(
             "INSERT INTO messages (owner_key, conversation_id, conversation_type, sender_key, body, timestamp, is_read) \
              VALUES (?, ?, 'dm', ?, ?, ?, 1)",
@@ -55,7 +51,12 @@ pub async fn send_message(
     .await
     .map_err(|e| e.to_string())??;
 
-    // Acknowledge successful send to the frontend
+    // Step 2: Send via Veilid (best-effort — queues on failure internally)
+    if let Err(e) = services::message_service::send_message(state.inner(), pool.inner(), &to, &body).await {
+        tracing::warn!(error = %e, "DM send failed — message persisted locally");
+    }
+
+    // Step 3: Emit ack
     let ack = ChatEvent::MessageAck {
         message_id: timestamp.cast_unsigned(),
     };

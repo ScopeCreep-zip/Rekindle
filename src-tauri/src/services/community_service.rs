@@ -1,23 +1,10 @@
 use std::sync::Arc;
 
 use rekindle_crypto::group::media_key::MediaEncryptionKey;
+use rekindle_protocol::dht::community::{SUBKEY_CHANNELS, SUBKEY_METADATA, SUBKEY_SERVER_ROUTE};
 use rekindle_protocol::dht::DHTManager;
 
-use crate::state::{AppState, ChannelInfo, ChannelType, CommunityState};
-
-/// Minimum role required to create a channel in a community.
-const ROLE_CAN_CREATE_CHANNEL: &[&str] = &["owner", "admin"];
-
-/// Community DHT subkey layout:
-///   0 = metadata (name, description, icon)
-///   1 = channel list
-///   2 = member list
-///   3 = roles
-///   4 = invites
-///   5 = MEK (encrypted)
-const SUBKEY_METADATA: u32 = 0;
-const SUBKEY_CHANNELS: u32 = 1;
-const SUBKEY_MEMBERS: u32 = 2;
+use crate::state::{AppState, ChannelInfo, ChannelType, CommunityState, RoleDefinition};
 
 /// Create a new community and publish it to DHT.
 pub async fn create_community(
@@ -35,84 +22,96 @@ pub async fn create_community(
             .map(|nh| nh.routing_context.clone())
     };
 
-    // Create DHT record with 6 subkeys: metadata, channels, members, roles, invites, MEK
-    let dht_record_key = if let Some(rc) = routing_context {
-        let mgr = DHTManager::new(rc);
-        match mgr.create_record(6).await {
-            Ok((key, _owner_keypair)) => {
-                // Publish community metadata to subkey 0
-                let metadata = serde_json::json!({
-                    "name": name,
-                    "description": null,
-                });
-                let metadata_bytes = serde_json::to_vec(&metadata)
-                    .map_err(|e| format!("failed to serialize metadata: {e}"))?;
-                if let Err(e) = mgr.set_value(&key, SUBKEY_METADATA, metadata_bytes).await {
-                    tracing::warn!(error = %e, "failed to publish community metadata to DHT");
-                }
-
-                // Publish initial channel list to subkey 1
-                let default_channel_id = format!("channel_{}", hex::encode(rand_bytes(8)));
-                let channels_json = serde_json::json!([{
-                    "id": default_channel_id,
-                    "name": "general",
-                    "channelType": "text",
-                }]);
-                let channels_bytes = serde_json::to_vec(&channels_json)
-                    .map_err(|e| format!("failed to serialize channels: {e}"))?;
-                if let Err(e) = mgr.set_value(&key, SUBKEY_CHANNELS, channels_bytes).await {
-                    tracing::warn!(error = %e, "failed to publish channel list to DHT");
-                }
-
-                tracing::info!(dht_key = %key, "community DHT record created");
-
-                // Build channel from the ID we published
-                let default_channel = ChannelInfo {
-                    id: default_channel_id,
-                    name: "general".to_string(),
-                    channel_type: ChannelType::Text,
-                    unread_count: 0,
-                };
-
-                let community = CommunityState {
-                    id: community_id.clone(),
-                    name: name.to_string(),
-                    description: None,
-                    channels: vec![default_channel],
-                    my_role: Some("owner".to_string()),
-                    dht_record_key: Some(key.clone()),
-                };
-
-                // Generate MEK for the community (generation 1 = initial key)
-                let mek = MediaEncryptionKey::generate(1);
-                tracing::debug!(
-                    community = %community_id,
-                    mek_generation = mek.generation(),
-                    "generated initial MEK for community"
-                );
-                // TODO: Store MEK in Stronghold: VAULT_COMMUNITIES / mek_{community_id}
-                // TODO: Distribute MEK to members via their individual Signal sessions
-                drop(mek);
-
-                state
-                    .communities
-                    .write()
-                    .insert(community_id.clone(), community);
-
-                tracing::info!(community = %community_id, name = %name, dht_key = %key, "community created with DHT record");
-                return Ok(community_id);
-            }
-            Err(e) => {
-                tracing::warn!(error = %e, "failed to create DHT record for community, proceeding locally");
-                None
-            }
+    // Try DHT-backed creation first
+    if let Some(rc) = routing_context {
+        if let Some(id) = create_community_with_dht(state, &rc, &community_id, name).await? {
+            return Ok(id);
         }
     } else {
         tracing::debug!("node not attached, creating community locally only");
-        None
-    };
+    }
 
     // Fallback: create community without DHT record (e.g. node not connected yet)
+    create_community_local(state, &community_id, name);
+    Ok(community_id)
+}
+
+/// Attempt to create a community with a DHT record. Returns `Some(id)` on success.
+async fn create_community_with_dht(
+    state: &Arc<AppState>,
+    routing_context: &veilid_core::RoutingContext,
+    community_id: &str,
+    name: &str,
+) -> Result<Option<String>, String> {
+    let mgr = DHTManager::new(routing_context.clone());
+    let (key, owner_keypair) = match mgr.create_record(7).await {
+        Ok(result) => result,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to create DHT record for community, proceeding locally");
+            return Ok(None);
+        }
+    };
+
+    // Publish community metadata to subkey 0
+    let metadata = serde_json::json!({ "name": name, "description": null });
+    let metadata_bytes = serde_json::to_vec(&metadata)
+        .map_err(|e| format!("failed to serialize metadata: {e}"))?;
+    if let Err(e) = mgr.set_value(&key, SUBKEY_METADATA, metadata_bytes).await {
+        tracing::warn!(error = %e, "failed to publish community metadata to DHT");
+    }
+
+    // Publish initial channel list to subkey 1
+    let default_channel_id = format!("channel_{}", hex::encode(rand_bytes(8)));
+    let channels_json = serde_json::json!({
+        "channels": [{ "id": default_channel_id, "name": "general", "channelType": "text" }],
+        "lastRefreshed": 0,
+    });
+    let channels_bytes = serde_json::to_vec(&channels_json)
+        .map_err(|e| format!("failed to serialize channels: {e}"))?;
+    if let Err(e) = mgr.set_value(&key, SUBKEY_CHANNELS, channels_bytes).await {
+        tracing::warn!(error = %e, "failed to publish channel list to DHT");
+    }
+
+    tracing::info!(dht_key = %key, "community DHT record created");
+
+    let default_channel = ChannelInfo {
+        id: default_channel_id,
+        name: "general".to_string(),
+        channel_type: ChannelType::Text,
+        unread_count: 0,
+    };
+
+    let mek = MediaEncryptionKey::generate(1);
+    let mek_generation = mek.generation();
+    tracing::debug!(community = %community_id, mek_generation, "generated initial MEK for community");
+
+    let my_pseudonym_key = derive_pseudonym_key(state, community_id);
+    state.mek_cache.lock().insert(community_id.to_string(), mek);
+    let dht_owner_keypair = owner_keypair.map(|kp| kp.to_string());
+
+    let community = CommunityState {
+        id: community_id.to_string(),
+        name: name.to_string(),
+        description: None,
+        channels: vec![default_channel],
+        my_role_ids: vec![0, 1, 2, 3, 4], // @everyone, member, moderator, admin, owner
+        roles: default_roles(),
+        my_role: Some("owner".to_string()),
+        dht_record_key: Some(key.clone()),
+        dht_owner_keypair,
+        my_pseudonym_key,
+        mek_generation,
+        server_route_blob: None,
+        is_hosted: true,
+    };
+
+    state.communities.write().insert(community_id.to_string(), community);
+    tracing::info!(community = %community_id, name = %name, dht_key = %key, "community created with DHT record");
+    Ok(Some(community_id.to_string()))
+}
+
+/// Create a community in local state only (no DHT).
+fn create_community_local(state: &Arc<AppState>, community_id: &str, name: &str) {
     let default_channel = ChannelInfo {
         id: format!("channel_{}", hex::encode(rand_bytes(8))),
         name: "general".to_string(),
@@ -120,40 +119,51 @@ pub async fn create_community(
         unread_count: 0,
     };
 
+    let mek = MediaEncryptionKey::generate(1);
+    let mek_generation = mek.generation();
+    tracing::debug!(community = %community_id, mek_generation, "generated initial MEK for community (local only)");
+
+    let my_pseudonym_key = derive_pseudonym_key(state, community_id);
+    state.mek_cache.lock().insert(community_id.to_string(), mek);
+
     let community = CommunityState {
-        id: community_id.clone(),
+        id: community_id.to_string(),
         name: name.to_string(),
         description: None,
         channels: vec![default_channel],
+        my_role_ids: vec![0, 1, 2, 3, 4], // @everyone, member, moderator, admin, owner
+        roles: default_roles(),
         my_role: Some("owner".to_string()),
-        dht_record_key,
+        dht_record_key: None,
+        dht_owner_keypair: None,
+        my_pseudonym_key,
+        mek_generation,
+        server_route_blob: None,
+        is_hosted: true,
     };
 
-    let mek = MediaEncryptionKey::generate(1);
-    tracing::debug!(
-        community = %community_id,
-        mek_generation = mek.generation(),
-        "generated initial MEK for community"
-    );
-    // TODO: Store MEK in Stronghold: VAULT_COMMUNITIES / mek_{community_id}
-    // TODO: Distribute MEK to members via their individual Signal sessions
-    drop(mek);
-
-    state
-        .communities
-        .write()
-        .insert(community_id.clone(), community);
-
+    state.communities.write().insert(community_id.to_string(), community);
     tracing::info!(community = %community_id, name = %name, "community created (local only)");
-    Ok(community_id)
+}
+
+/// Derive the pseudonym public key hex for a community from the identity secret.
+fn derive_pseudonym_key(state: &Arc<AppState>, community_id: &str) -> Option<String> {
+    let secret = state.identity_secret.lock();
+    secret.as_ref().map(|s| {
+        let signing_key = rekindle_crypto::group::pseudonym::derive_community_pseudonym(s, community_id);
+        hex::encode(signing_key.verifying_key().to_bytes())
+    })
 }
 
 /// Join an existing community by ID or invite code.
+///
+/// Reads community metadata from DHT, then sends a `CommunityRequest::Join`
+/// RPC to the community server via `app_call`. On success, the server returns
+/// the MEK, channel list, and assigned role.
 pub async fn join_community(
     state: &Arc<AppState>,
     community_id: &str,
 ) -> Result<(), String> {
-    // Clone routing context out of the parking_lot lock before any .await
     let routing_context = {
         let node = state.node.read();
         node.as_ref()
@@ -161,59 +171,55 @@ pub async fn join_community(
             .map(|nh| nh.routing_context.clone())
     };
 
-    let (name, description, channels, dht_record_key) = if let Some(rc) = routing_context {
-        let mgr = DHTManager::new(rc);
+    let (name, description, mut channels, dht_record_key, server_route_blob) =
+        read_community_from_dht(routing_context.as_ref(), community_id).await;
 
-        // Try to open the community's DHT record (community_id may be the DHT key itself)
-        match mgr.open_record(community_id).await {
-            Ok(()) => {
-                // Read metadata from subkey 0
-                let (name, description) =
-                    match mgr.get_value(community_id, SUBKEY_METADATA).await {
-                        Ok(Some(data)) => parse_community_metadata(&data, community_id),
-                        Ok(None) => (default_community_name(community_id), None),
-                        Err(e) => {
-                            tracing::warn!(error = %e, "failed to read community metadata from DHT");
-                            (default_community_name(community_id), None)
-                        }
-                    };
-
-                // Read channel list from subkey 1
-                let channels = match mgr.get_value(community_id, SUBKEY_CHANNELS).await {
-                    Ok(Some(data)) => parse_channel_list(&data),
-                    Ok(None) | Err(_) => vec![],
-                };
-
-                // Watch the community record for changes (metadata=0, channels=1, members=2)
-                if let Err(e) = mgr.watch_record(community_id, &[0, 1, 2]).await {
-                    tracing::warn!(error = %e, "failed to watch community DHT record");
-                }
-
-                (name, description, channels, Some(community_id.to_string()))
-            }
-            Err(e) => {
-                tracing::warn!(error = %e, "failed to open community DHT record, joining locally");
-                (default_community_name(community_id), None, vec![], None)
-            }
-        }
-    } else {
-        (default_community_name(community_id), None, vec![], None)
-    };
-
-    // TODO: Receive MEK for the community (distributed via Signal session)
-
-    // Read our identity outside the parking_lot lock before any .await
-    let (our_public_key, our_display_name) = {
+    let my_pseudonym_key = derive_pseudonym_key(state, community_id);
+    let our_display_name = {
         let identity = state.identity.read();
-        match identity.as_ref() {
-            Some(id) => (id.public_key.clone(), id.display_name.clone()),
-            None => (String::new(), String::new()),
-        }
+        identity.as_ref().map(|id| id.display_name.clone()).unwrap_or_default()
     };
 
-    // Update DHT member list (subkey 2) to include ourselves
-    if let Some(ref dht_key) = dht_record_key {
-        add_self_to_dht_members(state, dht_key, &our_public_key, &our_display_name).await;
+    // Get our route blob so the server can broadcast to us
+    let our_route_blob = {
+        let node = state.node.read();
+        node.as_ref().and_then(|nh| nh.route_blob.clone())
+    };
+
+    // --- Send CommunityRequest::Join RPC to server ---
+    let mut mek_generation = 0u64;
+    let mut role = "member".to_string();
+    let mut role_ids = vec![0u32, 1]; // default: @everyone + members
+    let mut roles = default_roles();
+
+    let identity_secret = { *state.identity_secret.lock() };
+    if let (Some(ref route_blob), Some(ref rc), Some(secret)) =
+        (&server_route_blob, &routing_context, identity_secret)
+    {
+        let join_params = JoinRpcParams {
+            identity_secret: secret,
+            community_id: community_id.to_string(),
+            my_pseudonym_key: my_pseudonym_key.clone(),
+            display_name: our_display_name,
+            our_route_blob,
+        };
+        match send_join_rpc(state, rc, route_blob, &join_params).await {
+            Ok(Some(result)) => {
+                mek_generation = result.mek_generation;
+                role = result.role;
+                role_ids = result.role_ids;
+                if !result.roles.is_empty() {
+                    roles = result.roles;
+                }
+                if !result.channels.is_empty() {
+                    channels = result.channels;
+                }
+            }
+            Ok(None) => {} // RPC failed gracefully, join locally
+            Err(e) => return Err(e), // Server explicitly rejected
+        }
+    } else if server_route_blob.is_none() {
+        tracing::debug!(community = %community_id, "no server route blob — local join only");
     }
 
     let community = CommunityState {
@@ -221,8 +227,15 @@ pub async fn join_community(
         name,
         description,
         channels,
-        my_role: Some("member".to_string()),
+        my_role_ids: role_ids,
+        roles,
+        my_role: Some(role),
         dht_record_key,
+        dht_owner_keypair: None,
+        my_pseudonym_key,
+        mek_generation,
+        server_route_blob,
+        is_hosted: false,
     };
 
     state
@@ -234,57 +247,172 @@ pub async fn join_community(
     Ok(())
 }
 
-/// Add ourselves to a community's DHT member list (subkey 2) if not already present.
-async fn add_self_to_dht_members(
-    state: &Arc<AppState>,
-    dht_key: &str,
-    our_public_key: &str,
-    our_display_name: &str,
-) {
-    let routing_context = {
-        let node = state.node.read();
-        node.as_ref()
-            .filter(|nh| nh.is_attached)
-            .map(|nh| nh.routing_context.clone())
+/// Read community metadata, channels, and server route from DHT.
+///
+/// Returns `(name, description, channels, dht_record_key, server_route_blob)`.
+async fn read_community_from_dht(
+    routing_context: Option<&veilid_core::RoutingContext>,
+    community_id: &str,
+) -> (String, Option<String>, Vec<ChannelInfo>, Option<String>, Option<Vec<u8>>) {
+    let Some(rc) = routing_context else {
+        return (default_community_name(community_id), None, vec![], None, None);
     };
 
-    let Some(rc) = routing_context else { return };
-    let mgr = DHTManager::new(rc);
+    let mgr = DHTManager::new(rc.clone());
 
-    // Read existing member list from subkey 2
-    let mut members: Vec<serde_json::Value> =
-        match mgr.get_value(dht_key, SUBKEY_MEMBERS).await {
-            Ok(Some(data)) => serde_json::from_slice(&data).unwrap_or_default(),
-            Ok(None) | Err(_) => Vec::new(),
-        };
-
-    // Check if we're already in the list
-    let already_member = members.iter().any(|m| {
-        m.get("publicKey")
-            .and_then(|v| v.as_str())
-            .is_some_and(|k| k == our_public_key)
-    });
-
-    if already_member {
-        return;
+    if let Err(e) = mgr.open_record(community_id).await {
+        tracing::warn!(error = %e, "failed to open community DHT record, joining locally");
+        return (default_community_name(community_id), None, vec![], None, None);
     }
 
-    members.push(serde_json::json!({
-        "publicKey": our_public_key,
-        "displayName": our_display_name,
-        "role": "member",
-    }));
+    let (name, description) = match mgr.get_value(community_id, SUBKEY_METADATA).await {
+        Ok(Some(data)) => parse_community_metadata(&data, community_id),
+        Ok(None) => (default_community_name(community_id), None),
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to read community metadata from DHT");
+            (default_community_name(community_id), None)
+        }
+    };
 
-    match serde_json::to_vec(&members) {
-        Ok(members_bytes) => {
-            if let Err(e) = mgr.set_value(dht_key, SUBKEY_MEMBERS, members_bytes).await {
-                tracing::warn!(error = %e, "failed to update member list in DHT");
+    let channels = match mgr.get_value(community_id, SUBKEY_CHANNELS).await {
+        Ok(Some(data)) => parse_channel_list(&data),
+        Ok(None) | Err(_) => vec![],
+    };
+
+    // Watch metadata(0), channels(1), roster(2), roles(3), MEK bundles(5), server route(6)
+    if let Err(e) = mgr.watch_record(community_id, &[0, 1, 2, 3, 5, 6]).await {
+        tracing::warn!(error = %e, "failed to watch community DHT record");
+    }
+
+    let dht_key = community_id.to_string();
+    let server_route_blob = mgr.get_value(&dht_key, SUBKEY_SERVER_ROUTE).await.ok().flatten();
+
+    (name, description, channels, Some(dht_key), server_route_blob)
+}
+
+/// Result of a successful join RPC to the community server.
+struct JoinRpcResult {
+    mek_generation: u64,
+    role: String,
+    role_ids: Vec<u32>,
+    roles: Vec<RoleDefinition>,
+    channels: Vec<ChannelInfo>,
+}
+
+/// Parameters for sending a join RPC to the community server.
+struct JoinRpcParams {
+    identity_secret: [u8; 32],
+    community_id: String,
+    my_pseudonym_key: Option<String>,
+    display_name: String,
+    our_route_blob: Option<Vec<u8>>,
+}
+
+/// Send a `CommunityRequest::Join` RPC to the server.
+///
+/// Returns `Ok(Some(result))` on success, `Ok(None)` on graceful failure,
+/// or `Err` if the server explicitly rejected the join.
+async fn send_join_rpc(
+    state: &Arc<AppState>,
+    routing_context: &veilid_core::RoutingContext,
+    server_route_blob: &[u8],
+    params: &JoinRpcParams,
+) -> Result<Option<JoinRpcResult>, String> {
+    let signing_key = rekindle_crypto::group::pseudonym::derive_community_pseudonym(&params.identity_secret, &params.community_id);
+    let api = {
+        let node = state.node.read();
+        node.as_ref().map(|nh| nh.api.clone())
+    };
+    let Some(api) = api else { return Ok(None) };
+
+    let request = rekindle_protocol::messaging::CommunityRequest::Join {
+        pseudonym_pubkey: params.my_pseudonym_key.clone().unwrap_or_default(),
+        invite_code: None,
+        display_name: params.display_name.clone(),
+        prekey_bundle: Vec::new(),
+        route_blob: params.our_route_blob.clone(),
+    };
+    let request_bytes = serde_json::to_vec(&request)
+        .map_err(|e| format!("failed to serialize join request: {e}"))?;
+
+    let timestamp = crate::db::timestamp_now().cast_unsigned();
+    let envelope = rekindle_protocol::messaging::sender::build_envelope(
+        &signing_key, timestamp, rand_nonce(), request_bytes,
+    );
+
+    let route_id = match api.import_remote_private_route(server_route_blob.to_vec()) {
+        Ok(rid) => rid,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to import server route — joining locally");
+            return Ok(None);
+        }
+    };
+
+    let call_result = rekindle_protocol::messaging::sender::send_call(routing_context, route_id, &envelope).await;
+
+    let response_bytes = match call_result {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to send join RPC to server — joining locally");
+            return Ok(None);
+        }
+    };
+
+    match serde_json::from_slice::<rekindle_protocol::messaging::CommunityResponse>(&response_bytes) {
+        Ok(rekindle_protocol::messaging::CommunityResponse::Joined {
+            mek_encrypted, mek_generation, channels: server_channels, role_ids, roles: server_roles,
+        }) => {
+            let role = crate::state::display_role_name(
+                &role_ids,
+                &server_roles.iter().map(RoleDefinition::from_dto).collect::<Vec<_>>(),
+            );
+            tracing::info!(
+                community = %params.community_id, role = %role,
+                mek_generation, channels = server_channels.len(),
+                "joined community via server RPC"
+            );
+
+            let channels = server_channels.into_iter().map(|ch| ChannelInfo {
+                id: ch.id,
+                name: ch.name,
+                channel_type: match ch.channel_type.as_str() {
+                    "voice" => ChannelType::Voice,
+                    _ => ChannelType::Text,
+                },
+                unread_count: 0,
+            }).collect();
+
+            let roles = server_roles.iter().map(RoleDefinition::from_dto).collect();
+
+            if mek_encrypted.len() >= 40 {
+                let key_bytes: [u8; 32] = mek_encrypted[8..40].try_into().unwrap_or_default();
+                let mek = MediaEncryptionKey::from_bytes(key_bytes, mek_generation);
+                state.mek_cache.lock().insert(params.community_id.clone(), mek);
+                tracing::debug!(community = %params.community_id, generation = mek_generation, "MEK received and cached");
             }
+
+            Ok(Some(JoinRpcResult { mek_generation, role, role_ids, roles, channels }))
+        }
+        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => {
+            tracing::warn!(error = %message, "server rejected join request");
+            Err(format!("server rejected join: {message}"))
+        }
+        Ok(other) => {
+            tracing::warn!(?other, "unexpected response from server");
+            Ok(None)
         }
         Err(e) => {
-            tracing::warn!(error = %e, "failed to serialize member list");
+            tracing::warn!(error = %e, "failed to parse server join response");
+            Ok(None)
         }
     }
+}
+
+fn rand_nonce() -> Vec<u8> {
+    use rand::RngCore;
+    let mut nonce = vec![0u8; 24];
+    rand::rngs::OsRng.fill_bytes(&mut nonce);
+    nonce
 }
 
 /// Create a new channel within a community.
@@ -296,21 +424,28 @@ pub async fn create_channel(
     channel_name: &str,
     channel_type: &str,
 ) -> Result<String, String> {
-    // Role-based access check and collect current channels + DHT key
-    let (existing_channels, dht_record_key) = {
+    // Permission-based access check and collect current channels + DHT key
+    let (existing_channels, dht_record_key, is_hosted) = {
+        use rekindle_protocol::dht::community::permissions;
+
         let communities = state.communities.read();
         let community = communities
             .get(community_id)
             .ok_or_else(|| format!("community {community_id} not found"))?;
 
-        let role = community.my_role.as_deref().unwrap_or("member");
-        if !ROLE_CAN_CREATE_CHANNEL.contains(&role) {
-            return Err(format!(
-                "insufficient permissions: role '{role}' cannot create channels"
-            ));
+        // Compute base permissions by OR'ing all role permissions for our role IDs
+        let my_perms = community.my_role_ids.iter().fold(0u64, |acc, role_id| {
+            community.roles.iter()
+                .find(|r| r.id == *role_id)
+                .map_or(acc, |r| acc | r.permissions)
+        });
+        if !permissions::has_permission(my_perms, permissions::MANAGE_CHANNELS) {
+            return Err(
+                "insufficient permissions: you do not have MANAGE_CHANNELS permission".to_string(),
+            );
         }
 
-        (community.channels.clone(), community.dht_record_key.clone())
+        (community.channels.clone(), community.dht_record_key.clone(), community.is_hosted)
     };
 
     let channel_id = format!("channel_{}", hex::encode(rand_bytes(8)));
@@ -337,49 +472,53 @@ pub async fn create_channel(
         }
     }
 
-    // Update community DHT record subkey 1 (channel list)
-    if let Some(dht_key) = &dht_record_key {
-        let routing_context = {
-            let node = state.node.read();
-            node.as_ref()
-                .filter(|nh| nh.is_attached)
-                .map(|nh| nh.routing_context.clone())
-        };
+    // Update community DHT record subkey 1 (channel list).
+    // Only write to DHT for non-hosted communities — hosted communities have
+    // their DHT records managed exclusively by the rekindle-server process
+    // (which holds the owner keypair). The client does NOT have write access.
+    if !is_hosted {
+        if let Some(dht_key) = &dht_record_key {
+            let routing_context = {
+                let node = state.node.read();
+                node.as_ref()
+                    .filter(|nh| nh.is_attached)
+                    .map(|nh| nh.routing_context.clone())
+            };
 
-        if let Some(rc) = routing_context {
-            let mgr = DHTManager::new(rc);
+            if let Some(rc) = routing_context {
+                let mgr = DHTManager::new(rc);
 
-            // Build updated channel list including the new channel
-            let mut all_channels = existing_channels;
-            all_channels.push(ChannelInfo {
-                id: channel_id.clone(),
-                name: channel_name.to_string(),
-                channel_type: match channel_type {
-                    "voice" => ChannelType::Voice,
-                    _ => ChannelType::Text,
-                },
-                unread_count: 0,
-            });
+                let mut all_channels = existing_channels;
+                all_channels.push(ChannelInfo {
+                    id: channel_id.clone(),
+                    name: channel_name.to_string(),
+                    channel_type: match channel_type {
+                        "voice" => ChannelType::Voice,
+                        _ => ChannelType::Text,
+                    },
+                    unread_count: 0,
+                });
 
-            let channels_json: Vec<serde_json::Value> = all_channels
-                .iter()
-                .map(|ch| {
-                    serde_json::json!({
-                        "id": ch.id,
-                        "name": ch.name,
-                        "channelType": match ch.channel_type {
-                            ChannelType::Text => "text",
-                            ChannelType::Voice => "voice",
-                        },
-                    })
-                })
-                .collect();
+                let channels_wrapper = serde_json::json!({
+                    "channels": all_channels.iter().map(|ch| {
+                        serde_json::json!({
+                            "id": ch.id,
+                            "name": ch.name,
+                            "channelType": match ch.channel_type {
+                                ChannelType::Text => "text",
+                                ChannelType::Voice => "voice",
+                            },
+                        })
+                    }).collect::<Vec<_>>(),
+                    "lastRefreshed": 0,
+                });
 
-            let channels_bytes = serde_json::to_vec(&channels_json)
-                .map_err(|e| format!("failed to serialize channels: {e}"))?;
+                let channels_bytes = serde_json::to_vec(&channels_wrapper)
+                    .map_err(|e| format!("failed to serialize channels: {e}"))?;
 
-            if let Err(e) = mgr.set_value(dht_key, SUBKEY_CHANNELS, channels_bytes).await {
-                tracing::warn!(error = %e, "failed to update channel list in DHT");
+                if let Err(e) = mgr.set_value(dht_key, SUBKEY_CHANNELS, channels_bytes).await {
+                    tracing::warn!(error = %e, "failed to update channel list in DHT");
+                }
             }
         }
     }
@@ -391,19 +530,6 @@ pub async fn create_channel(
         "channel created"
     );
     Ok(channel_id)
-}
-
-/// Rotate the MEK for a community (e.g., when a member is removed).
-pub fn rotate_mek(community_id: &str, new_generation: u64) -> MediaEncryptionKey {
-    let mek = MediaEncryptionKey::generate(new_generation);
-    tracing::info!(
-        community = %community_id,
-        generation = new_generation,
-        "MEK rotated"
-    );
-    // TODO: Store new MEK in Stronghold
-    // TODO: Distribute new MEK to remaining members via Signal sessions
-    mek
 }
 
 /// Parse community metadata JSON from DHT value bytes.
@@ -426,8 +552,16 @@ fn parse_community_metadata(data: &[u8], community_id: &str) -> (String, Option<
 
 /// Parse channel list JSON from DHT value bytes.
 fn parse_channel_list(data: &[u8]) -> Vec<ChannelInfo> {
-    let Ok(channel_list) = serde_json::from_slice::<Vec<serde_json::Value>>(data) else {
-        return vec![];
+    // Support both wrapped format { channels: [...], lastRefreshed } and bare array [...]
+    let channel_list: Vec<serde_json::Value> = match serde_json::from_slice::<serde_json::Value>(data) {
+        Ok(v) => {
+            if let Some(obj) = v.as_object() {
+                obj.get("channels").and_then(|c| c.as_array().cloned()).unwrap_or_default()
+            } else {
+                v.as_array().cloned().unwrap_or_default()
+            }
+        }
+        Err(_) => return vec![],
     };
 
     channel_list
@@ -452,6 +586,61 @@ fn parse_channel_list(data: &[u8]) -> Vec<ChannelInfo> {
 /// Construct a default community display name from a (potentially long) ID.
 fn default_community_name(community_id: &str) -> String {
     format!("Community {}", &community_id[..8.min(community_id.len())])
+}
+
+/// Default role definitions for a newly created community.
+///
+/// Mirrors the server's `DEFAULT_ROLES` so the creator sees roles immediately
+/// without needing to round-trip to the server.
+fn default_roles() -> Vec<RoleDefinition> {
+    use rekindle_protocol::dht::community::permissions;
+    vec![
+        RoleDefinition {
+            id: 0,
+            name: "@everyone".to_string(),
+            color: 0,
+            permissions: permissions::everyone_permissions(),
+            position: 0,
+            hoist: false,
+            mentionable: false,
+        },
+        RoleDefinition {
+            id: 1,
+            name: "Members".to_string(),
+            color: 0,
+            permissions: permissions::member_permissions(),
+            position: 1,
+            hoist: false,
+            mentionable: false,
+        },
+        RoleDefinition {
+            id: 2,
+            name: "Moderator".to_string(),
+            color: 0x0034_98DB, // blue — matches server
+            permissions: permissions::moderator_permissions(),
+            position: 2,
+            hoist: true,
+            mentionable: true,
+        },
+        RoleDefinition {
+            id: 3,
+            name: "Admin".to_string(),
+            color: 0x00E7_4C3C, // red — matches server
+            permissions: permissions::admin_permissions(),
+            position: 3,
+            hoist: true,
+            mentionable: true,
+        },
+        RoleDefinition {
+            id: 4,
+            name: "Owner".to_string(),
+            color: 0x00F1_C40F, // gold — matches server
+            permissions: permissions::owner_permissions(),
+            position: 4,
+            hoist: true,
+            mentionable: false,
+        },
+    ]
 }
 
 fn rand_bytes(len: usize) -> Vec<u8> {

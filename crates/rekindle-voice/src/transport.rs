@@ -71,9 +71,7 @@ impl VoiceTransport {
 
     /// Disconnect from the voice channel.
     pub fn disconnect(&mut self) -> Result<(), VoiceError> {
-        if let (Some(ref api), Some(route_id)) = (&self.api, self.route_id.take()) {
-            let _ = api.release_private_route(route_id);
-        }
+        self.route_id = None;
         self.routing_context = None;
         self.api = None;
         self.is_connected = false;

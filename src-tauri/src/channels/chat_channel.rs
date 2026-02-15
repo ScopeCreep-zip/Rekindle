@@ -34,4 +34,9 @@ pub enum ChatEvent {
         public_key: String,
         display_name: String,
     },
+    /// Emitted when background server fetch completes with channel history.
+    ChannelHistoryLoaded {
+        channel_id: String,
+        messages: Vec<crate::commands::chat::Message>,
+    },
 }

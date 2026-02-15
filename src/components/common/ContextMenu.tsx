@@ -4,6 +4,7 @@ export interface ContextMenuItem {
   label: string;
   action: () => void;
   danger?: boolean;
+  icon?: string;
 }
 
 interface ContextMenuProps {
@@ -48,6 +49,9 @@ const ContextMenu: Component<ContextMenuProps> = (props) => {
               props.onClose();
             }}
           >
+            <Show when={item.icon}>
+              <span class="nf-icon context-menu-icon">{item.icon}</span>
+            </Show>
             {item.label}
           </div>
         )}

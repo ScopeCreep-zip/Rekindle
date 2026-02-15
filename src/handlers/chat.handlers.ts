@@ -118,12 +118,15 @@ export async function handleLoadHistory(
       timestamp: m.timestamp,
       isOwn: m.isOwn,
     }));
-    setChatState("conversations", peerId, {
-      peerId,
-      messages: mapped,
-      isTyping: false,
-      lastRead: 0,
-    });
+    const existing = chatState.conversations[peerId];
+    if (mapped.length > 0 || !existing || existing.messages.length === 0) {
+      setChatState("conversations", peerId, {
+        peerId,
+        messages: mapped,
+        isTyping: existing?.isTyping ?? false,
+        lastRead: existing?.lastRead ?? 0,
+      });
+    }
   } catch (e) {
     console.error("Failed to load history:", e);
   }

@@ -2,16 +2,23 @@ import { Component } from "solid-js";
 
 interface RoleTagProps {
   name: string;
-  color?: string;
+  color?: number;
+}
+
+function colorToHex(color: number): string | undefined {
+  if (!color) return undefined;
+  return `#${(color & 0xFFFFFF).toString(16).padStart(6, "0")}`;
 }
 
 const RoleTag: Component<RoleTagProps> = (props) => {
+  const hex = () => colorToHex(props.color ?? 0);
+
   return (
     <span
-      class={props.color ? "role-tag" : "role-tag role-tag-default"}
-      style={props.color ? {
-        background: `color-mix(in srgb, ${props.color} 25%, transparent)`,
-        color: props.color,
+      class={hex() ? "role-tag" : "role-tag role-tag-default"}
+      style={hex() ? {
+        background: `color-mix(in srgb, ${hex()} 25%, transparent)`,
+        color: hex(),
       } : {}}
     >
       {props.name}

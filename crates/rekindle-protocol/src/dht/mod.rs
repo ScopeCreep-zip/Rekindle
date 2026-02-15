@@ -9,12 +9,20 @@ pub mod profile;
 pub mod short_array;
 
 use std::collections::{HashMap, HashSet};
+use std::time::Instant;
 
 use veilid_core::{
     DHTSchema, RoutingContext, ValueSubkeyRangeSet, VeilidAPI, CRYPTO_KIND_VLD0,
 };
 
 use crate::error::ProtocolError;
+
+/// Maximum age for a cached imported route before re-importing.
+///
+/// Veilid routes expire after ~5 minutes. By re-importing every 90 seconds,
+/// we ensure we always have a fresh `RouteId` without relying solely on
+/// `RouteChange` events (which can be dropped).
+const IMPORTED_ROUTE_TTL_SECS: u64 = 90;
 
 /// Manages DHT record operations (profiles, friend lists, communities).
 ///
@@ -31,9 +39,10 @@ pub struct DHTManager {
     pub route_cache: HashMap<String, Vec<u8>>,
     /// All record keys opened/created in this session, for bulk close on shutdown.
     pub open_records: HashSet<String>,
-    /// Cache of imported route blobs → `RouteId` to prevent resource leaks.
+    /// Cache of imported route blobs → `(RouteId, import_time)` to prevent resource leaks.
     /// Without this, each call to `import_remote_private_route` leaks a `RouteId`.
-    pub imported_routes: HashMap<Vec<u8>, veilid_core::RouteId>,
+    /// Entries older than [`IMPORTED_ROUTE_TTL_SECS`] are evicted and re-imported.
+    pub imported_routes: HashMap<Vec<u8>, (veilid_core::RouteId, Instant)>,
     /// Reverse map from `RouteId` → pubkey hex for selective invalidation.
     pub route_id_to_pubkey: HashMap<veilid_core::RouteId, String>,
 }
@@ -211,7 +220,7 @@ impl DHTManager {
         // Import and cache RouteId for selective invalidation
         if let Ok(route_id) = api.import_remote_private_route(route_blob.clone()) {
             self.imported_routes
-                .insert(route_blob.clone(), route_id.clone());
+                .insert(route_blob.clone(), (route_id.clone(), Instant::now()));
             self.route_id_to_pubkey
                 .insert(route_id, pubkey_hex.to_string());
         }
@@ -233,14 +242,20 @@ impl DHTManager {
         api: &VeilidAPI,
         route_blob: &[u8],
     ) -> Result<veilid_core::RouteId, ProtocolError> {
-        if let Some(route_id) = self.imported_routes.get(route_blob) {
-            return Ok(route_id.clone());
+        // Check cache — evict if older than TTL
+        if let Some((route_id, imported_at)) = self.imported_routes.get(route_blob) {
+            if imported_at.elapsed().as_secs() < IMPORTED_ROUTE_TTL_SECS {
+                return Ok(route_id.clone());
+            }
+            // TTL expired — remove stale entry and re-import below
+            tracing::debug!("imported route TTL expired — re-importing");
+            self.imported_routes.remove(route_blob);
         }
         let route_id = api
             .import_remote_private_route(route_blob.to_vec())
             .map_err(|e| ProtocolError::RoutingError(format!("import: {e}")))?;
         self.imported_routes
-            .insert(route_blob.to_vec(), route_id.clone());
+            .insert(route_blob.to_vec(), (route_id.clone(), Instant::now()));
         Ok(route_id)
     }
 
@@ -250,7 +265,6 @@ impl DHTManager {
     /// peer's cache entries, rather than clearing everything.
     pub fn invalidate_dead_routes(
         &mut self,
-        api: &VeilidAPI,
         dead_routes: &[veilid_core::RouteId],
     ) {
         for route_id in dead_routes {
@@ -260,9 +274,8 @@ impl DHTManager {
                     "selectively invalidating dead route for peer"
                 );
                 if let Some(blob) = self.route_cache.remove(&pubkey) {
-                    self.imported_routes.remove(&blob);
+                    self.imported_routes.remove(&blob); // removes (RouteId, Instant) tuple
                 }
-                let _ = api.release_private_route(route_id.clone());
             }
         }
     }

@@ -84,7 +84,7 @@ const ProfileWindow: Component = () => {
   const mutualCommunities = createMemo(() => {
     const result: { id: string; name: string }[] = [];
     for (const [id, community] of Object.entries(communityState.communities)) {
-      const isMember = community.members.some((m) => m.publicKey === publicKey);
+      const isMember = community.members.some((m) => m.pseudonymKey === publicKey);
       if (isMember) {
         result.push({ id, name: community.name });
       }

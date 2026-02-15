@@ -33,7 +33,7 @@ pub struct IdentitySummary {
     pub avatar_base64: Option<String>,
 }
 
-/// Get the current identity's public key from AppState.
+/// Get the current identity's public key from `AppState`.
 ///
 /// Used by commands that need to scope SQL queries to the active identity.
 pub fn current_owner_key(state: &SharedState) -> Result<String, String> {
@@ -153,7 +153,14 @@ pub async fn create_identity(
 
     // Spawn background services (non-blocking — returns immediately)
     // New identity has no existing DHT keys or owner keypairs.
-    start_background_services(app, state.inner(), pool.inner(), &secret_bytes, None, None, None, None, None, None);
+    start_background_services(&app, state.inner(), pool.inner(), &secret_bytes, DhtKeysConfig {
+        existing_dht_key: None,
+        existing_friend_list_key: None,
+        dht_owner_keypair: None,
+        friend_list_owner_keypair: None,
+        account_dht_key: None,
+        account_owner_keypair: None,
+    });
 
     Ok(result)
 }
@@ -277,6 +284,9 @@ pub async fn login_core(
     load_friends_from_db(pool, state, public_key).await?;
     load_communities_from_db(pool, state, public_key).await?;
 
+    // Derive pseudonyms for each community and load MEKs from Stronghold
+    restore_community_pseudonyms_and_meks(state, keystore_handle, &key_array);
+
     let result = LoginResult {
         public_key: public_key.to_string(),
         display_name,
@@ -315,16 +325,18 @@ pub async fn login(
 
     // Spawn background services (non-blocking — returns immediately)
     start_background_services(
-        app,
+        &app,
         state.inner(),
         pool.inner(),
         &secret_key,
-        dht_cols.existing_dht_key,
-        dht_cols.existing_friend_list_key,
-        dht_cols.dht_owner_keypair,
-        dht_cols.friend_list_owner_keypair,
-        dht_cols.account_dht_key,
-        dht_cols.account_owner_keypair,
+        DhtKeysConfig {
+            existing_dht_key: dht_cols.existing_dht_key,
+            existing_friend_list_key: dht_cols.existing_friend_list_key,
+            dht_owner_keypair: dht_cols.dht_owner_keypair,
+            friend_list_owner_keypair: dht_cols.friend_list_owner_keypair,
+            account_dht_key: dht_cols.account_dht_key,
+            account_owner_keypair: dht_cols.account_owner_keypair,
+        },
     );
 
     Ok(result)
@@ -417,7 +429,7 @@ pub async fn logout(
 
 /// List all persisted identities (for the account picker).
 ///
-/// Returns summaries of every identity in SQLite, ordered by creation date.
+/// Returns summaries of every identity in `SQLite`, ordered by creation date.
 /// No authentication needed — this is called by the login window on mount.
 #[tauri::command]
 pub async fn list_identities(
@@ -616,18 +628,25 @@ async fn load_friends_from_db(
 }
 
 /// Load communities and channels from `SQLite` into `AppState`, scoped to the given identity.
+#[allow(clippy::too_many_lines)]
 async fn load_communities_from_db(
     pool: &DbPool,
     state: &SharedState,
     owner_key: &str,
 ) -> Result<(), String> {
+    use crate::state::RoleDefinition;
+
     let db = pool.clone();
     let ok = owner_key.to_string();
-    let (community_rows, channel_rows) = tokio::task::spawn_blocking(move || {
+    let (community_rows, channel_rows, role_rows) = tokio::task::spawn_blocking(move || {
         let conn = db.lock().map_err(|e| e.to_string())?;
 
         let mut comm_stmt = conn
-            .prepare("SELECT id, name, description, my_role, dht_record_key FROM communities WHERE owner_key = ?1")
+            .prepare(
+                "SELECT id, name, description, my_role, my_role_ids, dht_record_key, dht_owner_keypair, \
+                 my_pseudonym_key, mek_generation, server_route_blob, is_hosted \
+                 FROM communities WHERE owner_key = ?1",
+            )
             .map_err(|e| e.to_string())?;
         let communities = comm_stmt
             .query_map(rusqlite::params![ok], |row| {
@@ -636,7 +655,37 @@ async fn load_communities_from_db(
                     db::get_str(row, "name"),
                     db::get_str_opt(row, "description"),
                     db::get_str(row, "my_role"),
+                    db::get_str(row, "my_role_ids"),
                     db::get_str_opt(row, "dht_record_key"),
+                    db::get_str_opt(row, "dht_owner_keypair"),
+                    db::get_str_opt(row, "my_pseudonym_key"),
+                    row.get::<_, i64>("mek_generation").unwrap_or(0).cast_unsigned(),
+                    row.get::<_, Option<Vec<u8>>>("server_route_blob").unwrap_or(None),
+                    row.get::<_, i64>("is_hosted").unwrap_or(0) != 0,
+                ))
+            })
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+
+        // Load community roles
+        let mut role_stmt = conn
+            .prepare(
+                "SELECT community_id, role_id, name, color, permissions, position, hoist, mentionable \
+                 FROM community_roles WHERE owner_key = ?1 ORDER BY position",
+            )
+            .map_err(|e| e.to_string())?;
+        let role_rows = role_stmt
+            .query_map(rusqlite::params![ok], |row| {
+                Ok((
+                    db::get_str(row, "community_id"),
+                    row.get::<_, u32>("role_id").unwrap_or(0),
+                    db::get_str(row, "name"),
+                    row.get::<_, u32>("color").unwrap_or(0),
+                    row.get::<_, i64>("permissions").unwrap_or(0).cast_unsigned(),
+                    row.get::<_, i32>("position").unwrap_or(0),
+                    row.get::<_, i32>("hoist").unwrap_or(0) != 0,
+                    row.get::<_, i32>("mentionable").unwrap_or(0) != 0,
                 ))
             })
             .map_err(|e| e.to_string())?
@@ -659,13 +708,13 @@ async fn load_communities_from_db(
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| e.to_string())?;
 
-        Ok::<(Vec<_>, Vec<_>), String>((communities, channels))
+        Ok::<(Vec<_>, Vec<_>, Vec<_>), String>((communities, channels, role_rows))
     })
     .await
     .map_err(|e| e.to_string())??;
 
     let mut communities = state.communities.write();
-    for (community_id, name, description, my_role, dht_record_key) in &community_rows {
+    for (community_id, name, description, my_role, my_role_ids_json, dht_record_key, dht_owner_keypair, my_pseudonym_key, mek_generation, server_route_blob, is_hosted) in &community_rows {
         let channels: Vec<ChannelInfo> = channel_rows
             .iter()
             .filter(|(_, cid, _, _)| cid == community_id)
@@ -683,17 +732,188 @@ async fn load_communities_from_db(
             })
             .collect();
 
-        let community = CommunityState {
+        let my_role_ids: Vec<u32> =
+            serde_json::from_str(my_role_ids_json).unwrap_or_else(|_| vec![0, 1]);
+
+        let roles: Vec<RoleDefinition> = role_rows
+            .iter()
+            .filter(|(cid, ..)| cid == community_id)
+            .map(|(_, role_id, rname, color, permissions, position, hoist, mentionable)| {
+                RoleDefinition {
+                    id: *role_id,
+                    name: rname.clone(),
+                    color: *color,
+                    permissions: *permissions,
+                    position: *position,
+                    hoist: *hoist,
+                    mentionable: *mentionable,
+                }
+            })
+            .collect();
+
+        let mut community = CommunityState {
             id: community_id.clone(),
             name: name.clone(),
             description: description.clone(),
             channels,
+            my_role_ids,
+            roles,
             my_role: Some(my_role.clone()),
             dht_record_key: dht_record_key.clone(),
+            dht_owner_keypair: dht_owner_keypair.clone(),
+            my_pseudonym_key: my_pseudonym_key.clone(),
+            mek_generation: *mek_generation,
+            server_route_blob: server_route_blob.clone(),
+            is_hosted: *is_hosted,
         };
+        // Recalculate display role from role definitions (DB value may be stale)
+        community.my_role = Some(crate::state::display_role_name(&community.my_role_ids, &community.roles));
         communities.insert(community_id.clone(), community);
     }
     Ok(())
+}
+
+/// Re-derive pseudonym keys and load MEKs from Stronghold into `mek_cache`.
+///
+/// Called during login after communities are loaded from `SQLite`. For each
+/// community, derives the pseudonym (deterministic from `identity_secret` + `community_id`)
+/// and loads the MEK from Stronghold if stored.
+///
+/// For **hosted** (owned) communities where the MEK is missing from Stronghold
+/// (e.g. communities created before MEK persistence was added), a fresh MEK is
+/// regenerated and immediately persisted so subsequent restarts succeed.
+fn restore_community_pseudonyms_and_meks(
+    state: &SharedState,
+    keystore_handle: &KeystoreHandle,
+    secret_key: &[u8; 32],
+) {
+    use rekindle_crypto::group::media_key::MediaEncryptionKey;
+    use rekindle_crypto::group::pseudonym::derive_community_pseudonym;
+    use rekindle_crypto::keychain::{mek_key_name, VAULT_COMMUNITIES};
+    use rekindle_crypto::Keychain as _;
+
+    // Collect community IDs and is_hosted flags
+    let community_info: Vec<(String, bool)> = {
+        let communities = state.communities.read();
+        communities
+            .values()
+            .map(|c| (c.id.clone(), c.is_hosted))
+            .collect()
+    };
+
+    let mut pseudonym_updates: Vec<(String, String)> = Vec::new();
+    let mut mek_updates: Vec<(String, MediaEncryptionKey)> = Vec::new();
+    let mut regenerated_community_ids: Vec<String> = Vec::new();
+
+    for (community_id, is_hosted) in &community_info {
+        // Derive pseudonym
+        let signing_key = derive_community_pseudonym(secret_key, community_id);
+        let pseudonym_hex = hex::encode(signing_key.verifying_key().as_bytes());
+        pseudonym_updates.push((community_id.clone(), pseudonym_hex));
+
+        // Try to load MEK from Stronghold
+        let keystore = keystore_handle.lock();
+        if let Some(ref ks) = *keystore {
+            let key_name = mek_key_name(community_id);
+            match ks.load_key(VAULT_COMMUNITIES, &key_name) {
+                Ok(Some(mek_bytes)) if mek_bytes.len() >= 40 => {
+                    // MEK payload: generation (8 bytes LE) + key (32 bytes)
+                    let generation =
+                        u64::from_le_bytes(mek_bytes[..8].try_into().unwrap_or_default());
+                    let key_bytes: [u8; 32] =
+                        mek_bytes[8..40].try_into().unwrap_or_default();
+                    let mek = MediaEncryptionKey::from_bytes(key_bytes, generation);
+                    mek_updates.push((community_id.clone(), mek));
+                }
+                Ok(_) if *is_hosted => {
+                    // Owned community with no MEK in Stronghold — regenerate.
+                    // This handles communities created before MEK persistence was added.
+                    tracing::warn!(
+                        community = %community_id,
+                        "MEK missing from Stronghold for hosted community — regenerating"
+                    );
+                    let mek = MediaEncryptionKey::generate(1);
+
+                    // Persist immediately so the next restart finds it
+                    let mut mek_payload = Vec::with_capacity(40);
+                    mek_payload.extend_from_slice(&mek.generation().to_le_bytes());
+                    mek_payload.extend_from_slice(mek.as_bytes());
+                    if let Err(e) = ks.store_key(VAULT_COMMUNITIES, &key_name, &mek_payload) {
+                        tracing::warn!(error = %e, community = %community_id, "failed to persist regenerated MEK");
+                    } else if let Err(e) = ks.save() {
+                        tracing::warn!(error = %e, community = %community_id, "failed to save Stronghold after MEK regeneration");
+                    } else {
+                        tracing::info!(community = %community_id, "regenerated MEK persisted to Stronghold");
+                    }
+
+                    mek_updates.push((community_id.clone(), mek));
+                    regenerated_community_ids.push(community_id.clone());
+                }
+                Ok(_) => {
+                    // Non-hosted community with missing MEK — user needs to
+                    // re-join or wait for MEK delivery from the community server.
+                    tracing::warn!(
+                        community = %community_id,
+                        "MEK missing from Stronghold for joined community — \
+                         will be delivered when connecting to community server"
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        community = %community_id,
+                        error = %e,
+                        "failed to load MEK from Stronghold"
+                    );
+                }
+            }
+        }
+    }
+
+    // Update communities with derived pseudonyms
+    {
+        let mut communities = state.communities.write();
+        for (community_id, pseudonym_hex) in pseudonym_updates {
+            if let Some(c) = communities.get_mut(&community_id) {
+                // Only set if not already stored in DB (DB value takes precedence)
+                if c.my_pseudonym_key.is_none() {
+                    c.my_pseudonym_key = Some(pseudonym_hex);
+                }
+            }
+        }
+
+        // Fix mek_generation for communities that had their MEK regenerated
+        for community_id in &regenerated_community_ids {
+            if let Some(c) = communities.get_mut(community_id) {
+                c.mek_generation = 1;
+            }
+        }
+    }
+
+    // Load MEKs into cache
+    {
+        let mut mek_cache = state.mek_cache.lock();
+        for (community_id, mek) in mek_updates {
+            tracing::debug!(
+                community = %community_id,
+                generation = mek.generation(),
+                "restored MEK from Stronghold"
+            );
+            mek_cache.insert(community_id, mek);
+        }
+    }
+}
+
+/// Stored DHT keys and owner keypairs loaded from `SQLite` during login.
+///
+/// Passed through to background services so they can reuse existing DHT records
+/// instead of creating new ones on every login.
+pub struct DhtKeysConfig {
+    pub existing_dht_key: Option<String>,
+    pub existing_friend_list_key: Option<String>,
+    pub dht_owner_keypair: Option<String>,
+    pub friend_list_owner_keypair: Option<String>,
+    pub account_dht_key: Option<String>,
+    pub account_owner_keypair: Option<String>,
 }
 
 /// Initialize Signal encryption and spawn all background services (non-blocking).
@@ -703,16 +923,11 @@ async fn load_communities_from_db(
 /// Game detection and sync services are spawned as background tasks so login
 /// returns near-instantly to the frontend.
 fn start_background_services(
-    app: tauri::AppHandle,
+    app: &tauri::AppHandle,
     state: &SharedState,
     pool: &DbPool,
     secret_key: &[u8; 32],
-    existing_dht_key: Option<String>,
-    existing_friend_list_key: Option<String>,
-    dht_owner_keypair: Option<String>,
-    friend_list_owner_keypair: Option<String>,
-    account_dht_key: Option<String>,
-    account_owner_keypair: Option<String>,
+    dht_keys: DhtKeysConfig,
 ) {
     // Initialize Signal Protocol session manager (returns serialized PreKeyBundle)
     let prekey_bundle_bytes = initialize_signal_manager(state, secret_key);
@@ -729,49 +944,30 @@ fn start_background_services(
         services::game_service::start_game_detection(game_app, game_state, game_shutdown_rx).await;
     });
 
+    // Store the game handle so logout can abort it
+    state.background_handles.lock().push(game_handle);
+
     // The Veilid node is already running (started at app startup).
     // Just spawn sync + DHT publish as background tasks.
-    let services_state = Arc::clone(state);
-    let services_pool = pool.clone();
-    let services_handle = tauri::async_runtime::spawn(async move {
-        spawn_login_services(
-            app,
-            services_state,
-            services_pool,
-            prekey_bundle_bytes,
-            existing_dht_key,
-            existing_friend_list_key,
-            dht_owner_keypair,
-            friend_list_owner_keypair,
-            account_dht_key,
-            account_owner_keypair,
-        )
-        .await;
-    });
-
-    // Store handles so logout can abort them
-    {
-        let mut handles = state.background_handles.lock();
-        handles.push(game_handle);
-        handles.push(services_handle);
-    }
+    spawn_login_services(
+        app,
+        state,
+        pool.clone(),
+        prekey_bundle_bytes,
+        dht_keys,
+    );
 }
 
 /// Background task: start sync service and DHT publish using the existing node.
 ///
 /// The Veilid node and dispatch loop are already running (started at app startup).
 /// This function only spawns user-specific services: sync and DHT publish.
-async fn spawn_login_services(
-    app: tauri::AppHandle,
-    state: SharedState,
+fn spawn_login_services(
+    app: &tauri::AppHandle,
+    state: &SharedState,
     pool: DbPool,
     prekey_bundle_bytes: Option<Vec<u8>>,
-    existing_dht_key: Option<String>,
-    existing_friend_list_key: Option<String>,
-    dht_owner_keypair: Option<String>,
-    friend_list_owner_keypair: Option<String>,
-    account_dht_key: Option<String>,
-    account_owner_keypair: Option<String>,
+    dht_keys: DhtKeysConfig,
 ) {
     // Check that the node is running (should be — started at app startup)
     let node_alive = state.node.read().is_some();
@@ -784,10 +980,10 @@ async fn spawn_login_services(
     {
         let mut node = state.node.write();
         if let Some(ref mut nh) = *node {
-            if let Some(ref dht_key) = existing_dht_key {
+            if let Some(ref dht_key) = dht_keys.existing_dht_key {
                 nh.profile_dht_key = Some(dht_key.clone());
             }
-            if let Some(ref fl_key) = existing_friend_list_key {
+            if let Some(ref fl_key) = dht_keys.existing_friend_list_key {
                 nh.friend_list_dht_key = Some(fl_key.clone());
             }
         }
@@ -797,7 +993,7 @@ async fn spawn_login_services(
     let (sync_shutdown_tx, sync_shutdown_rx) = mpsc::channel::<()>(1);
 
     // Spawn the periodic sync service
-    let sync_state = Arc::clone(&state);
+    let sync_state = Arc::clone(state);
     let sync_pool = pool.clone();
     let sync_handle = tauri::async_runtime::spawn(async move {
         services::sync_service::start_sync_loop(sync_state, sync_pool, sync_shutdown_rx).await;
@@ -807,23 +1003,214 @@ async fn spawn_login_services(
 
     // Spawn DHT publish as a background task
     let dht_handle = tauri::async_runtime::spawn(spawn_dht_publish(
-        app,
+        app.clone(),
         state.clone(),
         pool,
         prekey_bundle_bytes,
-        existing_dht_key,
-        existing_friend_list_key,
-        dht_owner_keypair,
-        friend_list_owner_keypair,
-        account_dht_key,
-        account_owner_keypair,
+        dht_keys,
     ));
+
+    // Spawn proactive route refresh loop (re-allocates our private route every 120s)
+    let (route_refresh_shutdown_tx, route_refresh_shutdown_rx) = mpsc::channel::<()>(1);
+    let route_refresh_app = app.clone();
+    let route_refresh_state = Arc::clone(state);
+    let route_refresh_handle = tauri::async_runtime::spawn(
+        services::veilid_service::route_refresh_loop(
+            route_refresh_app,
+            route_refresh_state,
+            route_refresh_shutdown_rx,
+        ),
+    );
 
     // Store sub-task handles so they can be aborted on logout
     {
         let mut handles = state.background_handles.lock();
         handles.push(sync_handle);
         handles.push(dht_handle);
+        handles.push(route_refresh_handle);
+    }
+
+    // Keep the shutdown sender alive (dropped on logout via background_handles abort)
+    drop(route_refresh_shutdown_tx);
+
+    // Spawn community server process if user owns any communities
+    maybe_spawn_server(app, state);
+
+    // Start server health check loop (monitors and auto-restarts the server)
+    if state.server_process.lock().is_some() {
+        let (health_tx, health_rx) = tokio::sync::mpsc::channel(1);
+        let health_state = Arc::clone(state);
+        let health_app = app.clone();
+        let health_handle = tauri::async_runtime::spawn(async move {
+            services::server_health_service::server_health_loop(
+                health_state,
+                health_app,
+                health_rx,
+            )
+            .await;
+        });
+        *state.server_health_shutdown_tx.write() = Some(health_tx);
+        state.background_handles.lock().push(health_handle);
+    }
+}
+
+/// Check if the current user owns any communities and spawn the community
+/// server process if needed.
+///
+/// The server binary (`rekindle-server`) is a separate Veilid node that
+/// hosts community DHT records, processes member RPCs, and keeps records alive.
+/// It communicates with this process via a Unix socket IPC.
+pub fn maybe_spawn_server(app: &tauri::AppHandle, state: &SharedState) {
+    // Collect hosted communities' data for IPC commands (before any .await)
+    let hosted_communities: Vec<(String, String, String, String)> = {
+        let communities = state.communities.read();
+        communities
+            .values()
+            .filter(|c| c.is_hosted)
+            .filter_map(|c| {
+                let dht_key = c.dht_record_key.as_ref()?;
+                let keypair = c.dht_owner_keypair.as_ref()?;
+                Some((
+                    c.id.clone(),
+                    dht_key.clone(),
+                    keypair.clone(),
+                    c.name.clone(),
+                ))
+            })
+            .collect()
+    };
+
+    if hosted_communities.is_empty() {
+        tracing::debug!("user does not own any communities (or missing keypairs) — server not needed");
+        return;
+    }
+
+    let data_dir = match app.path().app_data_dir() {
+        Ok(d) => d,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to get app data dir for server");
+            return;
+        }
+    };
+
+    // Look for the rekindle-server binary next to the current executable
+    let server_binary = match std::env::current_exe() {
+        Ok(exe) => exe.parent().map(|p| p.join("rekindle-server")).unwrap_or_default(),
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to locate current exe for server binary");
+            return;
+        }
+    };
+
+    if !server_binary.exists() {
+        tracing::info!(
+            path = %server_binary.display(),
+            "rekindle-server binary not found — community server will not be started. \
+             This is expected during development; build with `cargo build -p rekindle-server`."
+        );
+        return;
+    }
+
+    let socket_path = std::env::temp_dir().join("rekindle-server.sock");
+
+    // Kill any stale server process from a previous app session.
+    // The old process may still hold the socket, blocking the new server.
+    kill_stale_server(state, &socket_path);
+
+    match std::process::Command::new(&server_binary)
+        .arg("--storage-dir")
+        .arg(data_dir.join("server"))
+        .arg("--socket")
+        .arg(&socket_path)
+        .arg("--db")
+        .arg(data_dir.join("server.db"))
+        .spawn()
+    {
+        Ok(child) => {
+            tracing::info!(
+                pid = child.id(),
+                socket = %socket_path.display(),
+                "rekindle-server spawned"
+            );
+            *state.server_process.lock() = Some(child);
+
+            // Send HostCommunity IPC commands in a background task
+            let sp = socket_path.clone();
+            let bg_state = Arc::clone(state);
+            let handle = tauri::async_runtime::spawn(
+                send_host_community_ipc(sp, hosted_communities),
+            );
+            bg_state.background_handles.lock().push(handle);
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "failed to spawn rekindle-server");
+        }
+    }
+}
+
+/// Send `HostCommunity` IPC commands to the server for each owned community.
+///
+/// The server needs a moment to start up, so `host_community_blocking` retries
+/// internally with backoff.
+async fn send_host_community_ipc(
+    socket_path: std::path::PathBuf,
+    communities: Vec<(String, String, String, String)>,
+) {
+    for (community_id, dht_key, keypair, name) in &communities {
+        let sp = socket_path.clone();
+        let cid = community_id.clone();
+        let dk = dht_key.clone();
+        let kp = keypair.clone();
+        let nm = name.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            crate::ipc_client::host_community_blocking(&sp, &cid, &dk, &kp, &nm, 10)
+        })
+        .await;
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                tracing::warn!(community = %community_id, error = %e, "failed to send HostCommunity IPC");
+            }
+            Err(e) => {
+                tracing::warn!(community = %community_id, error = %e, "HostCommunity IPC task panicked");
+            }
+        }
+    }
+}
+
+/// Kill any stale `rekindle-server` process from a previous app session.
+///
+/// When the app quits unexpectedly (crash, force-quit), the server child
+/// process may keep running. On next launch, `state.server_process` is `None`
+/// (fresh state) but the old process still holds the Unix socket. This
+/// function cleans up both the process and the socket file.
+fn kill_stale_server(state: &SharedState, socket_path: &std::path::Path) {
+    // First, try to kill the tracked child process (if any)
+    {
+        let mut proc = state.server_process.lock();
+        if let Some(ref mut child) = *proc {
+            let pid = child.id();
+            tracing::info!(pid, "killing tracked server process before respawn");
+            let _ = child.kill();
+            let _ = child.wait();
+            *proc = None;
+        }
+    }
+
+    // Try to send a graceful Shutdown command to any server listening on the socket
+    if socket_path.exists() {
+        match crate::ipc_client::shutdown_server_blocking(socket_path) {
+            Ok(()) => {
+                tracing::info!("sent Shutdown to stale server on socket");
+                // Give it a moment to exit
+                std::thread::sleep(std::time::Duration::from_millis(500));
+            }
+            Err(e) => {
+                tracing::debug!(error = %e, "no server responded on socket (already dead)");
+            }
+        }
+        // Remove the stale socket file so the new server can bind
+        let _ = std::fs::remove_file(socket_path);
     }
 }
 
@@ -883,12 +1270,7 @@ async fn spawn_dht_publish(
     state: SharedState,
     pool: DbPool,
     prekey_bundle_bytes: Option<Vec<u8>>,
-    existing_dht_key: Option<String>,
-    existing_friend_list_key: Option<String>,
-    dht_owner_keypair: Option<String>,
-    friend_list_owner_keypair: Option<String>,
-    account_dht_key: Option<String>,
-    account_owner_keypair: Option<String>,
+    dht_keys: DhtKeysConfig,
 ) {
     // Wait for public internet ready via watch channel
     let mut rx = state.network_ready_rx.clone();
@@ -930,8 +1312,8 @@ async fn spawn_dht_publish(
         &state,
         &pool,
         prekey_bundle_bytes,
-        existing_dht_key,
-        dht_owner_keypair,
+        dht_keys.existing_dht_key,
+        dht_keys.dht_owner_keypair,
     )
     .await
     {
@@ -939,7 +1321,7 @@ async fn spawn_dht_publish(
     }
 
     if let Err(e) =
-        publish_friend_list_to_dht(&state, &pool, existing_friend_list_key, friend_list_owner_keypair)
+        publish_friend_list_to_dht(&state, &pool, dht_keys.existing_friend_list_key, dht_keys.friend_list_owner_keypair)
             .await
     {
         tracing::warn!(error = %e, "DHT friend list publish failed — will retry on next sync");
@@ -954,8 +1336,8 @@ async fn spawn_dht_publish(
     if let Err(e) = publish_account_to_dht(
         &state,
         &pool,
-        account_dht_key,
-        account_owner_keypair,
+        dht_keys.account_dht_key,
+        dht_keys.account_owner_keypair,
     )
     .await
     {
@@ -1113,7 +1495,7 @@ async fn publish_profile_to_dht(
         let mut node = state.node.write();
         if let Some(ref mut nh) = *node {
             nh.profile_dht_key = Some(profile_key.clone());
-            nh.profile_owner_keypair = effective_keypair.clone();
+            nh.profile_owner_keypair.clone_from(&effective_keypair);
         }
     }
     {
@@ -1263,10 +1645,67 @@ async fn publish_friend_list_to_dht(
     Ok(())
 }
 
+/// Create a fresh account DHT record (helper to reduce duplication).
+async fn create_fresh_account_record(
+    routing_context: &veilid_core::RoutingContext,
+    encryption_key: rekindle_crypto::DhtRecordKey,
+    display_name: &str,
+    status_message: &str,
+) -> Result<(String, Option<veilid_core::KeyPair>), String> {
+    let (record, kp) = rekindle_protocol::dht::account::AccountRecord::create(
+        routing_context,
+        encryption_key,
+        display_name,
+        status_message,
+    )
+    .await
+    .map_err(|e| format!("create account record: {e}"))?;
+    Ok((record.record_key(), Some(kp)))
+}
+
+/// Store an account DHT key on `NodeHandle` and track records in `DHTManagerHandle`.
+fn store_account_key_on_handles(state: &SharedState, account_key: &str, record_keys: Vec<String>) {
+    if let Some(ref mut nh) = *state.node.write() {
+        nh.account_dht_key = Some(account_key.to_string());
+    }
+    let mut dht_mgr = state.dht_manager.write();
+    if let Some(ref mut mgr) = *dht_mgr {
+        for k in record_keys {
+            mgr.track_open_record(k);
+        }
+    }
+}
+
+/// Persist account DHT key and owner keypair to `SQLite`.
+async fn persist_account_key_to_db(
+    pool: &DbPool,
+    public_key: &str,
+    account_key: &str,
+    new_keypair: Option<veilid_core::KeyPair>,
+) -> Result<(), String> {
+    let keypair_str = new_keypair.map(|kp| kp.to_string());
+    let db = pool.clone();
+    let pk = public_key.to_string();
+    let ak = account_key.to_string();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "UPDATE identity SET account_dht_key = ?1, \
+             account_owner_keypair = COALESCE(?3, account_owner_keypair) \
+             WHERE public_key = ?2",
+            rusqlite::params![ak, pk, keypair_str],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Create (or reopen) the private Account DHT record after login.
 ///
 /// The account record is encrypted with a key derived from the identity's Ed25519 secret.
-/// It holds pointers to contact list, chat list, and invitation list DHTShortArrays.
+/// It holds pointers to contact list, chat list, and invitation list `DHTShortArray`s.
 async fn publish_account_to_dht(
     state: &SharedState,
     pool: &DbPool,
@@ -1310,19 +1749,7 @@ async fn publish_account_to_dht(
             {
                 Ok(record) => {
                     tracing::info!(key = %existing_key, "reusing existing account DHT record");
-                    let all_keys = record.all_record_keys();
-                    // Store account key on NodeHandle and track records
-                    if let Some(ref mut nh) = *state.node.write() {
-                        nh.account_dht_key = Some(record.record_key());
-                    }
-                    {
-                        let mut dht_mgr = state.dht_manager.write();
-                        if let Some(ref mut mgr) = *dht_mgr {
-                            for k in all_keys {
-                                mgr.track_open_record(k);
-                            }
-                        }
-                    }
+                    store_account_key_on_handles(state, &record.record_key(), record.all_record_keys());
                     return Ok(());
                 }
                 Err(e) => {
@@ -1331,83 +1758,29 @@ async fn publish_account_to_dht(
                         "failed to open existing account record — creating new one"
                     );
                     let enc_key = rekindle_crypto::DhtRecordKey::derive_account_key(&secret_bytes);
-                    let (record, kp) = rekindle_protocol::dht::account::AccountRecord::create(
-                        &routing_context,
-                        enc_key,
-                        &display_name,
-                        &status_message,
-                    )
-                    .await
-                    .map_err(|e| format!("create account record: {e}"))?;
-                    (record.record_key(), Some(kp))
+                    create_fresh_account_record(&routing_context, enc_key, &display_name, &status_message).await?
                 }
             }
         } else {
             tracing::warn!("no account owner keypair — creating new account record");
             let enc_key = rekindle_crypto::DhtRecordKey::derive_account_key(&secret_bytes);
-            let (record, kp) = rekindle_protocol::dht::account::AccountRecord::create(
-                &routing_context,
-                enc_key,
-                &display_name,
-                &status_message,
-            )
-            .await
-            .map_err(|e| format!("create account record: {e}"))?;
-            (record.record_key(), Some(kp))
+            create_fresh_account_record(&routing_context, enc_key, &display_name, &status_message).await?
         }
     } else {
-        let (record, kp) = rekindle_protocol::dht::account::AccountRecord::create(
-            &routing_context,
-            encryption_key,
-            &display_name,
-            &status_message,
-        )
-        .await
-        .map_err(|e| format!("create account record: {e}"))?;
-        (record.record_key(), Some(kp))
+        create_fresh_account_record(&routing_context, encryption_key, &display_name, &status_message).await?
     };
 
-    // Store account key on NodeHandle and track the record
-    if let Some(ref mut nh) = *state.node.write() {
-        nh.account_dht_key = Some(account_key.clone());
-    }
-    {
-        let mut dht_mgr = state.dht_manager.write();
-        if let Some(ref mut mgr) = *dht_mgr {
-            mgr.track_open_record(account_key.clone());
-        }
-    }
+    store_account_key_on_handles(state, &account_key, vec![account_key.clone()]);
+    persist_account_key_to_db(pool, &public_key, &account_key, new_keypair).await?;
 
-    // Persist to SQLite
-    let keypair_str = new_keypair.map(|kp| kp.to_string());
-    let db = pool.clone();
-    let pk = public_key;
-    let ak = account_key.clone();
-    tokio::task::spawn_blocking(move || {
-        let conn = db.lock().map_err(|e| e.to_string())?;
-        conn.execute(
-            "UPDATE identity SET account_dht_key = ?1, \
-             account_owner_keypair = COALESCE(?3, account_owner_keypair) \
-             WHERE public_key = ?2",
-            rusqlite::params![ak, pk, keypair_str],
-        )
-        .map_err(|e| e.to_string())?;
-        Ok::<(), String>(())
-    })
-    .await
-    .map_err(|e| e.to_string())??;
-
-    tracing::info!(
-        account_key = %account_key,
-        "published account record to DHT"
-    );
+    tracing::info!(account_key = %account_key, "published account record to DHT");
     Ok(())
 }
 
 /// Create a conversation record for a specific friend.
 ///
-/// Called when establishing a new contact. Creates a ConversationRecord,
-/// and persists the keys to SQLite.
+/// Called when establishing a new contact. Creates a `ConversationRecord`,
+/// and persists the keys to `SQLite`.
 pub async fn create_conversation_for_friend(
     state: &SharedState,
     pool: &DbPool,
@@ -1421,14 +1794,15 @@ pub async fn create_conversation_for_friend(
     let identity = rekindle_crypto::Identity::from_secret_bytes(&secret_bytes);
     let my_x25519_secret = identity.to_x25519_secret();
 
-    // Parse friend's Ed25519 public key and derive X25519 public key
+    // Parse friend's Ed25519 public key and derive X25519 public key.
+    // Uses Edwards→Montgomery birational map on the PUBLIC key (NOT from_secret_bytes).
     let friend_ed_bytes = hex::decode(friend_public_key)
         .map_err(|e| format!("invalid friend public key hex: {e}"))?;
     let friend_ed_bytes: [u8; 32] = friend_ed_bytes
         .try_into()
-        .map_err(|_| "friend public key must be 32 bytes")?;
-    let friend_identity = rekindle_crypto::Identity::from_secret_bytes(&friend_ed_bytes);
-    let friend_x25519_public = friend_identity.to_x25519_public();
+        .map_err(|_| "friend public key must be 32 bytes".to_string())?;
+    let friend_x25519_public = rekindle_crypto::Identity::peer_ed25519_to_x25519(&friend_ed_bytes)
+        .map_err(|e| format!("failed to convert friend key to X25519: {e}"))?;
 
     let encryption_key =
         rekindle_crypto::DhtRecordKey::derive_conversation_key(&my_x25519_secret, &friend_x25519_public);
@@ -1436,7 +1810,7 @@ pub async fn create_conversation_for_friend(
     let (display_name, status_message, owner_key) = {
         let id = state.identity.read();
         let id = id.as_ref().ok_or("not logged in")?;
-        (id.public_key.clone(), id.status_message.clone(), id.public_key.clone())
+        (id.display_name.clone(), id.status_message.clone(), id.public_key.clone())
     };
 
     let routing_context = {

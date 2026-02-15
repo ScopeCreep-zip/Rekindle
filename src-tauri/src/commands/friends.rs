@@ -22,7 +22,7 @@ pub struct FriendResponse {
     pub last_seen_at: Option<i64>,
 }
 
-/// A pending friend request stored in SQLite.
+/// A pending friend request stored in `SQLite`.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PendingFriendRequest {

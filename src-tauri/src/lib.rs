@@ -3,6 +3,7 @@
 mod channels;
 pub mod commands;
 pub mod db;
+pub mod ipc_client;
 pub mod keystore;
 mod services;
 pub mod state;
@@ -202,8 +203,24 @@ pub fn run() {
             commands::community::get_community_details,
             commands::community::get_community_members,
             commands::community::remove_community_member,
-            commands::community::update_member_role,
+            commands::community::get_roles,
+            commands::community::create_role,
+            commands::community::edit_role,
+            commands::community::delete_role,
+            commands::community::assign_role,
+            commands::community::unassign_role,
+            commands::community::timeout_member,
+            commands::community::remove_timeout,
+            commands::community::set_channel_overwrite,
+            commands::community::delete_channel_overwrite,
             commands::community::leave_community,
+            commands::community::delete_channel,
+            commands::community::rename_channel,
+            commands::community::update_community_info,
+            commands::community::ban_member,
+            commands::community::unban_member,
+            commands::community::get_ban_list,
+            commands::community::rotate_mek,
             // voice
             commands::voice::join_voice_channel,
             commands::voice::leave_voice,
@@ -297,6 +314,40 @@ async fn graceful_shutdown(state: &SharedState) {
         }
         *ve = None;
     }
+
+    // Shut down server health check loop
+    {
+        let tx = state.server_health_shutdown_tx.write().take();
+        if let Some(tx) = tx {
+            let _ = tx.send(()).await;
+        }
+    }
+
+    // Shut down community server process (if running)
+    {
+        // Try graceful shutdown via IPC first
+        let socket_path = crate::ipc_client::default_socket_path();
+        if socket_path.exists() {
+            if let Err(e) = crate::ipc_client::shutdown_server_blocking(&socket_path) {
+                tracing::debug!(error = %e, "IPC shutdown failed — will kill process");
+            }
+        }
+
+        let mut proc = state.server_process.lock();
+        if let Some(ref mut child) = *proc {
+            tracing::info!("stopping community server process");
+            // Give the server a moment to exit gracefully after IPC shutdown
+            if !matches!(child.try_wait(), Ok(Some(_))) {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+        }
+        *proc = None;
+    }
+
+    // Clear community state
+    state.mek_cache.lock().clear();
+    state.community_routes.write().clear();
 
     // Shut down the Veilid node (only on app exit)
     services::veilid_service::shutdown_app(state).await;
