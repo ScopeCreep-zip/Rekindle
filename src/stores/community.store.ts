@@ -9,25 +9,35 @@ export interface Channel {
 }
 
 export interface Member {
-  publicKey: string;
+  pseudonymKey: string;
   displayName: string;
-  role: string;
+  roleIds: number[];
+  displayRole: string;
   status: string;
+  timeoutUntil: number | null;
 }
 
 export interface Role {
-  id: string;
+  id: number;
   name: string;
-  color: string;
-  permissions: string[];
+  color: number;
+  permissions: number;
+  position: number;
+  hoist: boolean;
+  mentionable: boolean;
 }
 
 export interface Community {
   id: string;
   name: string;
+  description: string | null;
   channels: Channel[];
   members: Member[];
   roles: Role[];
+  myRoleIds: number[];
+  myPseudonymKey: string | null;
+  mekGeneration: number;
+  isHosted: boolean;
 }
 
 export interface CommunityState {

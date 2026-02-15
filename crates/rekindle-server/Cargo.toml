@@ -1,0 +1,28 @@
+[package]
+name = "rekindle-server"
+version = "0.1.0"
+edition = "2021"
+description = "Community server daemon for Rekindle — hosts communities, manages MEK, relays messages"
+
+[[bin]]
+name = "rekindle-server"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+rekindle-protocol = { path = "../rekindle-protocol" }
+rekindle-crypto = { path = "../rekindle-crypto" }
+veilid-core = { version = "0.5.2", default-features = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+rusqlite = { version = "0.37", features = ["bundled"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+hex = { workspace = true }
+rand = { workspace = true }
+thiserror = { workspace = true }
+parking_lot = { workspace = true }
+ed25519-dalek = { version = "2", features = ["rand_core"] }

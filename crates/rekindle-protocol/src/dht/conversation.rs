@@ -13,7 +13,7 @@ use rekindle_crypto::DhtRecordKey;
 
 /// A per-contact conversation DHT record.
 ///
-/// Each party creates their own ConversationRecord for each contact.
+/// Each party creates their own `ConversationRecord` for each contact.
 /// Alice's record for Bob contains Alice's profile, route blob, and
 /// outbound message log. Bob reads Alice's record, Alice reads Bob's.
 ///
@@ -27,7 +27,7 @@ pub struct ConversationRecord {
 }
 
 impl ConversationRecord {
-    /// Create a new conversation record with a child DHTLog for messages.
+    /// Create a new conversation record with a child `DHTLog` for messages.
     ///
     /// Returns the record and the owner keypair.
     pub async fn create(
@@ -56,10 +56,13 @@ impl ConversationRecord {
         let (log, _) = DHTLog::create(rc).await?;
         let message_log_key = log.spine_key();
 
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as u64;
+        let now = u64::try_from(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis(),
+        )
+        .unwrap_or(u64::MAX);
 
         let header = ConversationHeader {
             identity_public_key: identity_public_key.to_vec(),
@@ -201,10 +204,13 @@ impl ConversationRecord {
     pub async fn update_route_blob(&self, route_blob: &[u8]) -> Result<(), ProtocolError> {
         let mut header = self.read_header().await?;
         header.route_blob = route_blob.to_vec();
-        header.updated_at = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as u64;
+        header.updated_at = u64::try_from(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis(),
+        )
+        .unwrap_or(u64::MAX);
         self.write_header(&header).await
     }
 
@@ -212,10 +218,13 @@ impl ConversationRecord {
     pub async fn update_profile(&self, profile: &UserProfile) -> Result<(), ProtocolError> {
         let mut header = self.read_header().await?;
         header.profile = profile.clone();
-        header.updated_at = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as u64;
+        header.updated_at = u64::try_from(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis(),
+        )
+        .unwrap_or(u64::MAX);
         self.write_header(&header).await
     }
 

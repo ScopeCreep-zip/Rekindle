@@ -65,14 +65,19 @@ pub async fn handle_incoming_message(
     };
 
     // Step 4: Dispatch by payload type
+    let envelope_ts: i64 = envelope
+        .timestamp
+        .try_into()
+        .unwrap_or(i64::MAX);
     match payload {
         MessagePayload::DirectMessage { body, .. } => {
-            handle_direct_message(app_handle, state, pool, &sender_hex, &body).await;
+            handle_direct_message(app_handle, state, pool, &sender_hex, &body, envelope_ts).await;
         }
         MessagePayload::ChannelMessage {
             channel_id, body, ..
         } => {
-            handle_channel_message(app_handle, state, pool, &sender_hex, &channel_id, &body).await;
+            handle_channel_message(app_handle, state, pool, &sender_hex, &channel_id, &body, envelope_ts)
+                .await;
         }
         MessagePayload::TypingIndicator { typing } => {
             let event = ChatEvent::TypingIndicator {
@@ -127,13 +132,8 @@ async fn handle_direct_message(
     pool: &DbPool,
     sender_hex: &str,
     body: &str,
+    timestamp: i64,
 ) {
-    let timestamp: i64 = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis()
-        .try_into()
-        .unwrap_or(i64::MAX);
 
     // Store in SQLite (scoped to current identity)
     let owner_key = state
@@ -186,13 +186,8 @@ async fn handle_channel_message(
     sender_hex: &str,
     channel_id: &str,
     body: &str,
+    timestamp: i64,
 ) {
-    let timestamp: i64 = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis()
-        .try_into()
-        .unwrap_or(i64::MAX);
 
     let owner_key = state
         .identity
@@ -296,7 +291,7 @@ fn handle_friend_accept(
     }
 }
 
-/// Persist an incoming friend request to SQLite for crash/restart recovery.
+/// Persist an incoming friend request to `SQLite` for crash/restart recovery.
 async fn persist_friend_request(
     state: &Arc<AppState>,
     pool: &DbPool,

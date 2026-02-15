@@ -10,10 +10,15 @@ import VoicePanel from "../components/voice/VoicePanel";
 import CreateCommunityModal from "../components/community/CreateCommunityModal";
 import CreateChannelModal from "../components/community/CreateChannelModal";
 import JoinCommunityModal from "../components/community/JoinCommunityModal";
+import CommunitySettingsModal from "../components/community/CommunitySettingsModal";
+import RenameChannelModal from "../components/community/RenameChannelModal";
+import ConfirmDialog from "../components/common/ConfirmDialog";
+import ToastContainer from "../components/common/Toast";
+import { commands } from "../ipc/commands";
 import { communityState, setCommunityState } from "../stores/community.store";
 import { authState } from "../stores/auth.store";
 import { voiceState, setVoiceState } from "../stores/voice.store";
-import { subscribeChatEvents, subscribeVoiceEvents, subscribePresenceEvents } from "../ipc/channels";
+import { subscribeChatEvents, subscribeCommunityEvents, subscribeVoiceEvents, subscribePresenceEvents } from "../ipc/channels";
 import { hydrateState } from "../ipc/hydrate";
 import {
   handleLoadChannelMessages,
@@ -21,10 +26,25 @@ import {
   handleSelectCommunity as storeSyncSelectCommunity,
   handleSelectChannel as storeSyncSelectChannel,
   handleLeaveCommunity,
+  handleDeleteChannel,
+  handleRetryChannelMessage,
 } from "../handlers/community.handlers";
 import { handleJoinVoice } from "../handlers/voice.handlers";
-import type { ChatEvent, VoiceEvent, PresenceEvent } from "../ipc/channels";
+import {
+  calculateBasePermissions,
+  hasPermission,
+  MANAGE_CHANNELS,
+} from "../ipc/permissions";
+import type { ChatEvent, CommunityEvent, VoiceEvent, PresenceEvent } from "../ipc/channels";
 import type { Message } from "../stores/chat.store";
+import {
+  ICON_COMMUNITIES,
+  ICON_PLUS,
+  ICON_PLUS_BOX,
+  ICON_SETTINGS,
+  ICON_LOGOUT,
+  ICON_CHANNEL_TEXT,
+} from "../icons";
 
 function handleVoiceEvent(event: VoiceEvent): void {
   switch (event.type) {
@@ -71,6 +91,9 @@ const CommunityWindow: Component = () => {
   const [showCreateCommunity, setShowCreateCommunity] = createSignal(false);
   const [showCreateChannel, setShowCreateChannel] = createSignal(false);
   const [showJoinCommunity, setShowJoinCommunity] = createSignal(false);
+  const [showSettings, setShowSettings] = createSignal(false);
+  const [renameTarget, setRenameTarget] = createSignal<{ channelId: string; currentName: string } | null>(null);
+  const [showLeaveConfirm, setShowLeaveConfirm] = createSignal(false);
 
   const activeCommunity = createMemo(() => {
     const id = selectedCommunityId();
@@ -90,11 +113,16 @@ const CommunityWindow: Component = () => {
     return communityState.channelMessages[channelId] ?? [];
   });
 
-  const myRole = createMemo((): string | null => {
+  const myRoleIds = createMemo((): number[] => {
     const community = activeCommunity();
-    if (!community) return null;
-    const me = community.members.find((m) => m.publicKey === authState.publicKey);
-    return me?.role ?? null;
+    return community?.myRoleIds ?? [];
+  });
+
+  const canManageChannels = createMemo((): boolean => {
+    const community = activeCommunity();
+    if (!community) return false;
+    const perms = calculateBasePermissions(myRoleIds(), community.roles, community.isHosted);
+    return hasPermission(perms, MANAGE_CHANNELS);
   });
 
   // Load messages when channel changes
@@ -162,9 +190,81 @@ const CommunityWindow: Component = () => {
       // Update member status in all communities
       for (const communityId of Object.keys(communityState.communities)) {
         const community = communityState.communities[communityId];
-        const memberIdx = community.members.findIndex((m) => m.publicKey === key);
+        const memberIdx = community.members.findIndex((m) => m.pseudonymKey === key);
         if (memberIdx >= 0) {
           setCommunityState("communities", communityId, "members", memberIdx, "status", newStatus);
+        }
+      }
+    }));
+
+    // Subscribe to community events for member roster changes
+    unlisteners.push(subscribeCommunityEvents((event: CommunityEvent) => {
+      if (event.type === "memberJoined") {
+        const { communityId, pseudonymKey, displayName, roleIds } = event.data;
+        const community = communityState.communities[communityId];
+        if (community) {
+          const exists = community.members.some((m) => m.pseudonymKey === pseudonymKey);
+          if (!exists) {
+            setCommunityState("communities", communityId, "members", (prev) => [
+              ...prev,
+              { pseudonymKey, displayName, roleIds, displayRole: "", status: "online", timeoutUntil: null },
+            ]);
+          }
+        }
+      } else if (event.type === "memberRemoved") {
+        const { communityId, pseudonymKey } = event.data;
+        setCommunityState("communities", communityId, "members", (prev) =>
+          prev.filter((m) => m.pseudonymKey !== pseudonymKey),
+        );
+      } else if (event.type === "rolesChanged") {
+        const { communityId, roles } = event.data;
+        if (communityState.communities[communityId]) {
+          setCommunityState("communities", communityId, "roles", roles);
+        }
+      } else if (event.type === "memberRolesChanged") {
+        const { communityId, pseudonymKey, roleIds: newRoleIds } = event.data;
+        const community = communityState.communities[communityId];
+        if (community) {
+          const idx = community.members.findIndex((m) => m.pseudonymKey === pseudonymKey);
+          if (idx >= 0) {
+            setCommunityState("communities", communityId, "members", idx, "roleIds", newRoleIds);
+          }
+          // If it's us, update myRoleIds
+          if (pseudonymKey === community.myPseudonymKey) {
+            setCommunityState("communities", communityId, "myRoleIds", newRoleIds);
+          }
+        }
+      } else if (event.type === "memberTimedOut") {
+        const { communityId, pseudonymKey, timeoutUntil } = event.data;
+        const community = communityState.communities[communityId];
+        if (community) {
+          const idx = community.members.findIndex((m) => m.pseudonymKey === pseudonymKey);
+          if (idx >= 0) {
+            setCommunityState("communities", communityId, "members", idx, "timeoutUntil", timeoutUntil);
+          }
+        }
+      } else if (event.type === "channelOverwriteChanged") {
+        // Channel overwrites changed — re-fetch members/details to update permission state
+        const { communityId } = event.data;
+        if (communityState.communities[communityId]) {
+          commands.getCommunityDetails().then((details) => {
+            const detail = details.find((d: { id: string }) => d.id === communityId);
+            if (detail) {
+              setCommunityState("communities", communityId, "roles", detail.roles);
+            }
+          }).catch(() => {});
+        }
+      } else if (event.type === "mekRotated") {
+        const { communityId, newGeneration } = event.data;
+        if (communityState.communities[communityId]) {
+          setCommunityState("communities", communityId, "mekGeneration", newGeneration);
+        }
+      } else if (event.type === "kicked") {
+        const { communityId } = event.data;
+        setCommunityState("communities", communityId, undefined!);
+        if (communityState.activeCommunity === communityId) {
+          setCommunityState("activeCommunity", null);
+          setCommunityState("activeChannel", null);
         }
       }
     }));
@@ -174,7 +274,8 @@ const CommunityWindow: Component = () => {
     unlisteners.push(subscribeChatEvents((event: ChatEvent) => {
       if (event.type === "MessageReceived") {
         // Skip our own messages — already added optimistically
-        if (event.data.from === (authState.publicKey ?? "")) return;
+        const myPseudo = activeCommunity()?.myPseudonymKey;
+        if (myPseudo && event.data.from === myPseudo) return;
         const channelId = event.data.conversationId;
         const message: Message = {
           id: Date.now(),
@@ -191,6 +292,28 @@ const CommunityWindow: Component = () => {
           ]);
         } else {
           setCommunityState("channelMessages", channelId, [message]);
+        }
+      } else if (event.type === "ChannelHistoryLoaded") {
+        const { channelId, messages: serverMsgs } = event.data;
+        const existing = communityState.channelMessages[channelId] ?? [];
+        // Deduplicate by timestamp + senderId
+        const existingKeys = new Set(
+          existing.map((m) => `${m.timestamp}:${m.senderId}`),
+        );
+        const newMsgs: Message[] = serverMsgs
+          .filter((m) => !existingKeys.has(`${m.timestamp}:${m.senderId}`))
+          .map((m) => ({
+            id: m.id,
+            senderId: m.senderId,
+            body: m.body,
+            timestamp: m.timestamp,
+            isOwn: m.isOwn,
+          }));
+        if (newMsgs.length > 0) {
+          const merged = [...existing, ...newMsgs].sort(
+            (a, b) => a.timestamp - b.timestamp,
+          );
+          setCommunityState("channelMessages", channelId, merged);
         }
       }
     }));
@@ -216,14 +339,14 @@ const CommunityWindow: Component = () => {
                 onClick={() => setShowJoinCommunity(true)}
                 title="Join Community"
               >
-                &gt;
+                <span class="nf-icon">{ICON_COMMUNITIES}</span>
               </button>
               <button
                 class="action-bar-btn header-add-btn"
                 onClick={() => setShowCreateCommunity(true)}
                 title="Create Community"
               >
-                +
+                <span class="nf-icon">{ICON_PLUS}</span>
               </button>
             </span>
           </div>
@@ -234,18 +357,34 @@ const CommunityWindow: Component = () => {
           <Show when={activeCommunity()}>
             <div class="community-sidebar-header">
               Channels
-              <button
-                class="action-bar-btn header-add-btn"
-                onClick={() => setShowCreateChannel(true)}
-              >
-                +
-              </button>
+              <span class="header-btn-group">
+                <button
+                  class="action-bar-btn header-add-btn"
+                  onClick={() => setShowSettings(true)}
+                  title="Community Settings"
+                >
+                  <span class="nf-icon">{ICON_SETTINGS}</span>
+                </button>
+                <Show when={canManageChannels()}>
+                  <button
+                    class="action-bar-btn header-add-btn"
+                    onClick={() => setShowCreateChannel(true)}
+                    title="Create Channel"
+                  >
+                    <span class="nf-icon">{ICON_PLUS_BOX}</span>
+                  </button>
+                </Show>
+              </span>
             </div>
             <ChannelList
               channels={activeCommunity()!.channels}
               selectedId={selectedChannelId()}
+              communityId={selectedCommunityId()}
+              canManage={canManageChannels()}
               onSelect={handleSelectChannel}
               onVoiceJoin={handleJoinVoice}
+              onRename={(channelId, currentName) => setRenameTarget({ channelId, currentName })}
+              onDelete={(channelId) => handleDeleteChannel(selectedCommunityId(), channelId)}
             />
           </Show>
           <Show when={voiceState.isConnected}>
@@ -255,9 +394,9 @@ const CommunityWindow: Component = () => {
             <div class="community-header-actions">
               <button
                 class="community-leave-btn"
-                onClick={() => handleLeaveCommunity(selectedCommunityId())}
+                onClick={() => setShowLeaveConfirm(true)}
               >
-                Leave Community
+                <span class="nf-icon">{ICON_LOGOUT}</span> Leave
               </button>
             </div>
           </Show>
@@ -272,13 +411,17 @@ const CommunityWindow: Component = () => {
             </div>
           }>
             <div class="community-channel-header">
-              <span class="community-channel-header-icon">#</span>
+              <span class="nf-icon community-channel-header-icon">{ICON_CHANNEL_TEXT}</span>
               {activeChannel()!.name}
+              <Show when={activeCommunity()?.description}>
+                <span class="community-description-hint">{activeCommunity()!.description}</span>
+              </Show>
             </div>
             <MessageList
               messages={channelMessages()}
               ownName={authState.displayName ?? "You"}
               peerName="Channel"
+              onRetry={(messageId) => handleRetryChannelMessage(selectedChannelId(), messageId)}
             />
             <MessageInput peerId={selectedChannelId()} onSend={handleSendChannelMessage} />
           </Show>
@@ -290,7 +433,10 @@ const CommunityWindow: Component = () => {
             <MemberList
               members={activeCommunity()!.members}
               communityId={selectedCommunityId()}
-              myRole={myRole()}
+              myRoleIds={myRoleIds()}
+              roles={activeCommunity()!.roles}
+              myPseudonymKey={activeCommunity()?.myPseudonymKey ?? null}
+              isHosted={activeCommunity()?.isHosted ?? false}
             />
           </div>
         </Show>
@@ -310,7 +456,37 @@ const CommunityWindow: Component = () => {
           communityId={selectedCommunityId()}
           onClose={() => setShowCreateChannel(false)}
         />
+        <CommunitySettingsModal
+          isOpen={showSettings()}
+          community={activeCommunity()!}
+          myRoleIds={myRoleIds()}
+          onClose={() => setShowSettings(false)}
+        />
       </Show>
+      <Show when={renameTarget()}>
+        {(target) => (
+          <RenameChannelModal
+            isOpen={true}
+            communityId={selectedCommunityId()}
+            channelId={target().channelId}
+            currentName={target().currentName}
+            onClose={() => setRenameTarget(null)}
+          />
+        )}
+      </Show>
+      <ConfirmDialog
+        isOpen={showLeaveConfirm()}
+        title="Leave Community"
+        message={`Leave ${activeCommunity()?.name ?? "this community"}? You will need to be re-invited to rejoin.`}
+        danger
+        confirmLabel="Leave"
+        onConfirm={() => {
+          handleLeaveCommunity(selectedCommunityId());
+          setShowLeaveConfirm(false);
+        }}
+        onCancel={() => setShowLeaveConfirm(false)}
+      />
+      <ToastContainer />
     </div>
   );
 };

@@ -24,7 +24,20 @@ export type ChatEvent =
       type: "FriendAdded";
       data: { publicKey: string; displayName: string };
     }
-  | { type: "FriendRequestRejected"; data: { from: string } };
+  | { type: "FriendRequestRejected"; data: { from: string } }
+  | {
+      type: "ChannelHistoryLoaded";
+      data: {
+        channelId: string;
+        messages: {
+          id: number;
+          senderId: string;
+          body: string;
+          timestamp: number;
+          isOwn: boolean;
+        }[];
+      };
+    };
 
 export type PresenceEvent =
   | { type: "FriendOnline"; data: { publicKey: string } }
@@ -62,6 +75,48 @@ export type VoiceEvent =
       data: { publicKey: string; muted: boolean };
     }
   | { type: "ConnectionQuality"; data: { quality: string } };
+
+export type CommunityEvent =
+  | {
+      type: "memberJoined";
+      data: {
+        communityId: string;
+        pseudonymKey: string;
+        displayName: string;
+        roleIds: number[];
+      };
+    }
+  | {
+      type: "memberRemoved";
+      data: { communityId: string; pseudonymKey: string };
+    }
+  | {
+      type: "mekRotated";
+      data: { communityId: string; newGeneration: number };
+    }
+  | {
+      type: "kicked";
+      data: { communityId: string };
+    }
+  | {
+      type: "rolesChanged";
+      data: {
+        communityId: string;
+        roles: { id: number; name: string; color: number; permissions: number; position: number; hoist: boolean; mentionable: boolean }[];
+      };
+    }
+  | {
+      type: "memberRolesChanged";
+      data: { communityId: string; pseudonymKey: string; roleIds: number[] };
+    }
+  | {
+      type: "memberTimedOut";
+      data: { communityId: string; pseudonymKey: string; timeoutUntil: number | null };
+    }
+  | {
+      type: "channelOverwriteChanged";
+      data: { communityId: string; channelId: string };
+    };
 
 export type NotificationEvent =
   | { type: "SystemAlert"; data: { title: string; body: string } }
@@ -108,6 +163,14 @@ export function subscribeVoiceEvents(
   onEvent: (event: VoiceEvent) => void,
 ): Promise<UnlistenFn> {
   return safeListen<VoiceEvent>("voice-event", (event) => {
+    onEvent(event.payload);
+  });
+}
+
+export function subscribeCommunityEvents(
+  onEvent: (event: CommunityEvent) => void,
+): Promise<UnlistenFn> {
+  return safeListen<CommunityEvent>("community-event", (event) => {
     onEvent(event.payload);
   });
 }
