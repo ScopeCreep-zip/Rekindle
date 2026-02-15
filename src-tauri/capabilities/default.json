@@ -21,6 +21,7 @@
     "global-shortcut:default",
     "deep-link:default",
     "process:default",
-    "autostart:default"
+    "autostart:default",
+    "opener:default"
   ]
 }
