@@ -44,6 +44,7 @@ pub fn run() {
         // in keystore.rs with per-identity snapshot files. The plugin was registered
         // but never invoked by the frontend, and its hardcoded production Argon2
         // params conflicted with our debug-mode params.
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_autostart::init(

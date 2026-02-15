@@ -206,7 +206,7 @@ export const commands = {
   showBuddyList: () => invoke<void>("show_buddy_list"),
   openChatWindow: (publicKey: string, displayName: string) =>
     invoke<void>("open_chat_window", { publicKey, displayName }),
-  openSettingsWindow: () => invoke<void>("open_settings_window"),
+  openSettingsWindow: (tab?: string) => invoke<void>("open_settings_window", { tab: tab ?? null }),
   openCommunityWindow: (communityId: string, communityName: string) =>
     invoke<void>("open_community_window", { communityId, communityName }),
   openProfileWindow: (publicKey: string, displayName: string) =>
