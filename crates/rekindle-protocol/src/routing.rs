@@ -68,6 +68,11 @@ impl RoutingManager {
     }
 
     /// Release (destroy) the current private route.
+    ///
+    /// Calls the Veilid API to free the route. If the route has already expired
+    /// or been cleaned up by Veilid (e.g. reported via `RouteChange`), this is
+    /// a no-op — use [`forget_private_route`] instead when the route is known
+    /// to be dead.
     pub fn release_private_route(&mut self) -> Result<(), ProtocolError> {
         if let Some(route_id) = self.private_route_id.take() {
             self.api
@@ -77,6 +82,17 @@ impl RoutingManager {
         self.private_route_blob = None;
         tracing::info!("private route released");
         Ok(())
+    }
+
+    /// Clear the current private route from our state without calling Veilid.
+    ///
+    /// Used when Veilid has already reported the route as dead via a
+    /// `RouteChange` event — calling `release_private_route` on a dead route
+    /// produces an "Invalid argument" error from the Veilid API.
+    pub fn forget_private_route(&mut self) {
+        self.private_route_id = None;
+        self.private_route_blob = None;
+        tracing::info!("private route forgotten (already dead)");
     }
 
     /// Import a remote peer's private route from their route blob.

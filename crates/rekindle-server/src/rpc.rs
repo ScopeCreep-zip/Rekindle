@@ -148,6 +148,46 @@ fn find_community_for_route(
         .map(|c| c.community_id.clone())
 }
 
+/// Resolve the target community ID for a non-Join request.
+///
+/// Priority: IPC-provided `community_id` > route-based lookup > member scan.
+fn resolve_community_id(
+    state: &Arc<ServerState>,
+    sender_pseudonym: &str,
+    incoming_route_id: Option<&veilid_core::RouteId>,
+    ipc_community_id: Option<&str>,
+) -> Option<String> {
+    if let Some(cid) = ipc_community_id {
+        return Some(cid.to_string());
+    }
+    if let Some(cid) = incoming_route_id.and_then(|r| find_community_for_route(state, r)) {
+        return Some(cid);
+    }
+    find_community_for_member(state, sender_pseudonym)
+}
+
+/// Check that `sender_pseudonym` is a member of the community. Returns the
+/// "not a member" error response on failure.
+fn verify_membership(
+    community: &HostedCommunity,
+    sender_pseudonym: &str,
+) -> Result<(), CommunityResponse> {
+    if community.creator_pseudonym_hex == sender_pseudonym {
+        return Ok(());
+    }
+    if community
+        .members
+        .iter()
+        .any(|m| m.pseudonym_key_hex == sender_pseudonym)
+    {
+        return Ok(());
+    }
+    Err(CommunityResponse::Error {
+        code: 403,
+        message: "not a member".into(),
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Main RPC dispatch
 // ---------------------------------------------------------------------------
@@ -161,6 +201,7 @@ fn find_community_for_route(
 /// Returns serialized `CommunityResponse` bytes (JSON).
 pub async fn handle_community_rpc_direct(
     state: &Arc<ServerState>,
+    community_id: &str,
     sender_pseudonym_key: &str,
     request_json: &str,
 ) -> Vec<u8> {
@@ -175,7 +216,8 @@ pub async fn handle_community_rpc_direct(
         }
     };
 
-    let response = dispatch_request(state, sender_pseudonym_key, request, None).await;
+    let response =
+        dispatch_request(state, sender_pseudonym_key, request, None, Some(community_id)).await;
     serde_json::to_vec(&response).unwrap_or_else(|_| {
         serde_json::to_vec(&CommunityResponse::Error {
             code: 500,
@@ -230,7 +272,7 @@ async fn process_request(
         }
     };
 
-    dispatch_request(state, &sender_pseudonym, request, incoming_route_id).await
+    dispatch_request(state, &sender_pseudonym, request, incoming_route_id, None).await
 }
 
 #[allow(clippy::too_many_lines)]
@@ -239,30 +281,50 @@ async fn dispatch_request(
     sender_pseudonym: &str,
     request: CommunityRequest,
     incoming_route_id: Option<&veilid_core::RouteId>,
+    ipc_community_id: Option<&str>,
 ) -> CommunityResponse {
-    match request {
-        CommunityRequest::Join {
-            pseudonym_pubkey,
-            display_name,
-            route_blob,
-            ..
-        } => {
-            if pseudonym_pubkey != sender_pseudonym {
-                return CommunityResponse::Error {
-                    code: 403,
-                    message: "pseudonym mismatch: claimed key does not match envelope signature"
-                        .into(),
-                };
-            }
-            handle_join(
-                state,
-                sender_pseudonym,
-                &display_name,
-                route_blob,
-                incoming_route_id,
-            )
-            .await
+    // Handle Join separately — the sender isn't a member yet, so community_id
+    // resolution works differently (via IPC hint or route lookup).
+    if let CommunityRequest::Join {
+        pseudonym_pubkey,
+        display_name,
+        route_blob,
+        ..
+    } = request
+    {
+        if pseudonym_pubkey != sender_pseudonym {
+            return CommunityResponse::Error {
+                code: 403,
+                message: "pseudonym mismatch: claimed key does not match envelope signature"
+                    .into(),
+            };
         }
+        return handle_join(
+            state,
+            sender_pseudonym,
+            &display_name,
+            route_blob,
+            incoming_route_id,
+            ipc_community_id,
+        )
+        .await;
+    }
+
+    // For all non-Join requests, resolve the target community upfront.
+    let Some(community_id) = resolve_community_id(
+        state,
+        sender_pseudonym,
+        incoming_route_id,
+        ipc_community_id,
+    ) else {
+        return CommunityResponse::Error {
+            code: 403,
+            message: "not a member of any hosted community".into(),
+        };
+    };
+
+    match request {
+        CommunityRequest::Join { .. } => unreachable!(),
 
         CommunityRequest::SendMessage {
             channel_id,
@@ -270,6 +332,7 @@ async fn dispatch_request(
             mek_generation,
         } => handle_send_message(
             state,
+            &community_id,
             sender_pseudonym,
             &channel_id,
             ciphertext,
@@ -282,59 +345,57 @@ async fn dispatch_request(
             limit,
         } => handle_get_messages(
             state,
+            &community_id,
             sender_pseudonym,
             &channel_id,
             before_timestamp,
             limit,
         ),
 
-        CommunityRequest::RequestMEK => handle_request_mek(state, sender_pseudonym),
-        CommunityRequest::Leave => handle_leave(state, sender_pseudonym).await,
+        CommunityRequest::RequestMEK => handle_request_mek(state, &community_id, sender_pseudonym),
+        CommunityRequest::Leave => handle_leave(state, &community_id, sender_pseudonym).await,
 
         CommunityRequest::Kick { target_pseudonym } => {
-            handle_kick(state, sender_pseudonym, &target_pseudonym).await
+            handle_kick(state, &community_id, sender_pseudonym, &target_pseudonym).await
         }
 
         CommunityRequest::CreateChannel { name, channel_type } => {
-            let resp = handle_create_channel(state, sender_pseudonym, &name, &channel_type);
+            let resp = handle_create_channel(state, &community_id, sender_pseudonym, &name, &channel_type);
             if matches!(resp, CommunityResponse::ChannelCreated { .. }) {
-                if let Some(cid) = find_community_for_member(state, sender_pseudonym) {
-                    let st = Arc::clone(state);
-                    tokio::spawn(async move {
-                        community_host::publish_channels(&st, &cid).await;
-                    });
-                }
+                let st = Arc::clone(state);
+                let cid = community_id.clone();
+                tokio::spawn(async move {
+                    community_host::publish_channels(&st, &cid).await;
+                });
             }
             resp
         }
 
         CommunityRequest::DeleteChannel { channel_id } => {
-            let resp = handle_delete_channel(state, sender_pseudonym, &channel_id);
+            let resp = handle_delete_channel(state, &community_id, sender_pseudonym, &channel_id);
             if matches!(resp, CommunityResponse::Ok) {
-                if let Some(cid) = find_community_for_member(state, sender_pseudonym) {
-                    let st = Arc::clone(state);
-                    tokio::spawn(async move {
-                        community_host::publish_channels(&st, &cid).await;
-                    });
-                }
+                let st = Arc::clone(state);
+                let cid = community_id.clone();
+                tokio::spawn(async move {
+                    community_host::publish_channels(&st, &cid).await;
+                });
             }
             resp
         }
 
-        CommunityRequest::RotateMEK => handle_rotate_mek(state, sender_pseudonym).await,
+        CommunityRequest::RotateMEK => handle_rotate_mek(state, &community_id, sender_pseudonym).await,
 
         CommunityRequest::RenameChannel {
             channel_id,
             new_name,
         } => {
-            let resp = handle_rename_channel(state, sender_pseudonym, &channel_id, &new_name);
+            let resp = handle_rename_channel(state, &community_id, sender_pseudonym, &channel_id, &new_name);
             if matches!(resp, CommunityResponse::Ok) {
-                if let Some(cid) = find_community_for_member(state, sender_pseudonym) {
-                    let st = Arc::clone(state);
-                    tokio::spawn(async move {
-                        community_host::publish_channels(&st, &cid).await;
-                    });
-                }
+                let st = Arc::clone(state);
+                let cid = community_id.clone();
+                tokio::spawn(async move {
+                    community_host::publish_channels(&st, &cid).await;
+                });
             }
             resp
         }
@@ -342,6 +403,7 @@ async fn dispatch_request(
         CommunityRequest::UpdateCommunity { name, description } => {
             handle_update_community(
                 state,
+                &community_id,
                 sender_pseudonym,
                 name.as_deref(),
                 description.as_deref(),
@@ -350,16 +412,16 @@ async fn dispatch_request(
         }
 
         CommunityRequest::Ban { target_pseudonym } => {
-            handle_ban(state, sender_pseudonym, &target_pseudonym).await
+            handle_ban(state, &community_id, sender_pseudonym, &target_pseudonym).await
         }
 
         CommunityRequest::Unban { target_pseudonym } => {
-            handle_unban(state, sender_pseudonym, &target_pseudonym)
+            handle_unban(state, &community_id, sender_pseudonym, &target_pseudonym)
         }
 
-        CommunityRequest::GetBanList => handle_get_ban_list(state, sender_pseudonym),
+        CommunityRequest::GetBanList => handle_get_ban_list(state, &community_id, sender_pseudonym),
 
-        // ── New role & permission management ──
+        // ── Role & permission management ──
 
         CommunityRequest::CreateRole {
             name,
@@ -369,9 +431,9 @@ async fn dispatch_request(
             mentionable,
         } => {
             let resp =
-                handle_create_role(state, sender_pseudonym, &name, color, perms, hoist, mentionable);
+                handle_create_role(state, &community_id, sender_pseudonym, &name, color, perms, hoist, mentionable);
             if let CommunityResponse::RoleCreated { .. } = &resp {
-                broadcast_roles_changed(state, sender_pseudonym);
+                broadcast_roles_changed(state, &community_id);
             }
             resp
         }
@@ -387,6 +449,7 @@ async fn dispatch_request(
         } => {
             let resp = handle_edit_role(
                 state,
+                &community_id,
                 sender_pseudonym,
                 role_id,
                 name.as_ref(),
@@ -397,15 +460,15 @@ async fn dispatch_request(
                 mentionable,
             );
             if matches!(resp, CommunityResponse::Ok) {
-                broadcast_roles_changed(state, sender_pseudonym);
+                broadcast_roles_changed(state, &community_id);
             }
             resp
         }
 
         CommunityRequest::DeleteRole { role_id } => {
-            let resp = handle_delete_role(state, sender_pseudonym, role_id);
+            let resp = handle_delete_role(state, &community_id, sender_pseudonym, role_id);
             if matches!(resp, CommunityResponse::Ok) {
-                broadcast_roles_changed(state, sender_pseudonym);
+                broadcast_roles_changed(state, &community_id);
             }
             resp
         }
@@ -415,9 +478,9 @@ async fn dispatch_request(
             role_id,
         } => {
             let resp =
-                handle_assign_role(state, sender_pseudonym, &target_pseudonym, role_id);
+                handle_assign_role(state, &community_id, sender_pseudonym, &target_pseudonym, role_id);
             if matches!(resp, CommunityResponse::Ok) {
-                broadcast_member_roles_changed(state, sender_pseudonym, &target_pseudonym);
+                broadcast_member_roles_changed(state, &community_id, &target_pseudonym);
             }
             resp
         }
@@ -427,9 +490,9 @@ async fn dispatch_request(
             role_id,
         } => {
             let resp =
-                handle_unassign_role(state, sender_pseudonym, &target_pseudonym, role_id);
+                handle_unassign_role(state, &community_id, sender_pseudonym, &target_pseudonym, role_id);
             if matches!(resp, CommunityResponse::Ok) {
-                broadcast_member_roles_changed(state, sender_pseudonym, &target_pseudonym);
+                broadcast_member_roles_changed(state, &community_id, &target_pseudonym);
             }
             resp
         }
@@ -442,6 +505,7 @@ async fn dispatch_request(
             deny,
         } => handle_set_channel_overwrite(
             state,
+            &community_id,
             sender_pseudonym,
             &channel_id,
             &target_type,
@@ -456,6 +520,7 @@ async fn dispatch_request(
             target_id,
         } => handle_delete_channel_overwrite(
             state,
+            &community_id,
             sender_pseudonym,
             &channel_id,
             &target_type,
@@ -468,6 +533,7 @@ async fn dispatch_request(
             reason,
         } => handle_timeout_member(
             state,
+            &community_id,
             sender_pseudonym,
             &target_pseudonym,
             duration_seconds,
@@ -475,10 +541,10 @@ async fn dispatch_request(
         ),
 
         CommunityRequest::RemoveTimeout { target_pseudonym } => {
-            handle_remove_timeout(state, sender_pseudonym, &target_pseudonym)
+            handle_remove_timeout(state, &community_id, sender_pseudonym, &target_pseudonym)
         }
 
-        CommunityRequest::GetRoles => handle_get_roles(state, sender_pseudonym),
+        CommunityRequest::GetRoles => handle_get_roles(state, &community_id, sender_pseudonym),
     }
 }
 
@@ -644,14 +710,29 @@ async fn handle_join(
     display_name: &str,
     member_route_blob: Option<Vec<u8>>,
     incoming_route_id: Option<&veilid_core::RouteId>,
+    ipc_community_id: Option<&str>,
 ) -> CommunityResponse {
-    let community_id = incoming_route_id.and_then(|rid| find_community_for_route(state, rid));
+    // IPC path: community_id is provided directly. Veilid path: look up by route.
+    let community_id = ipc_community_id
+        .map(String::from)
+        .or_else(|| incoming_route_id.and_then(|rid| find_community_for_route(state, rid)));
     let Some(community_id) = community_id else {
         return CommunityResponse::Error {
             code: 404,
             message: "no hosted community matches this route".into(),
         };
     };
+
+    // Verify the community actually exists when coming via IPC
+    if ipc_community_id.is_some() {
+        let hosted = state.hosted.read();
+        if !hosted.contains_key(&community_id) {
+            return CommunityResponse::Error {
+                code: 404,
+                message: "community not found".into(),
+            };
+        }
+    }
 
     // Check if banned
     {
@@ -725,57 +806,58 @@ async fn handle_join(
 
 fn handle_send_message(
     state: &Arc<ServerState>,
+    community_id: &str,
     sender_pseudonym: &str,
     channel_id: &str,
     ciphertext: Vec<u8>,
     mek_generation: u64,
 ) -> CommunityResponse {
-    let Some(community_id) = find_community_for_member(state, sender_pseudonym) else {
-        return CommunityResponse::Error {
-            code: 403,
-            message: "not a member of any hosted community".into(),
-        };
-    };
-
     // Check SEND_MESSAGES permission (with channel overwrites)
     {
         let hosted = state.hosted.read();
-        if let Some(community) = hosted.get(&community_id) {
-            let member = community
-                .members
+        let Some(community) = hosted.get(community_id) else {
+            return CommunityResponse::Error {
+                code: 404,
+                message: "community not found".into(),
+            };
+        };
+        if let Err(e) = verify_membership(community, sender_pseudonym) {
+            return e;
+        }
+        if let Some(member) = community
+            .members
+            .iter()
+            .find(|m| m.pseudonym_key_hex == sender_pseudonym)
+        {
+            let ch_overwrites = community
+                .channels
                 .iter()
-                .find(|m| m.pseudonym_key_hex == sender_pseudonym);
-            if let Some(member) = member {
-                let ch_overwrites = community
-                    .channels
-                    .iter()
-                    .find(|ch| ch.id == channel_id)
-                    .map_or(&[][..], |ch| &ch.permission_overwrites);
-                let perms = permissions::calculate_permissions(
-                    &member.role_ids,
-                    &community.roles,
-                    ch_overwrites,
-                    sender_pseudonym,
-                    member.timeout_until,
-                );
-                if !permissions::has_permission(perms, permissions::SEND_MESSAGES) {
-                    return CommunityResponse::Error {
-                        code: 403,
-                        message: "you do not have permission to send messages in this channel"
-                            .into(),
-                    };
-                }
-            }
-
-            let current_gen = community.mek.generation();
-            if mek_generation != current_gen {
+                .find(|ch| ch.id == channel_id)
+                .map_or(&[][..], |ch| &ch.permission_overwrites);
+            let perms = permissions::calculate_permissions(
+                &member.role_ids,
+                &community.roles,
+                ch_overwrites,
+                sender_pseudonym,
+                member.timeout_until,
+            );
+            if !permissions::has_permission(perms, permissions::SEND_MESSAGES) {
                 return CommunityResponse::Error {
-                    code: 409,
-                    message: format!(
-                        "MEK generation mismatch: sent {mek_generation}, current is {current_gen}. Request new MEK."
-                    ),
+                    code: 403,
+                    message: "you do not have permission to send messages in this channel"
+                        .into(),
                 };
             }
+        }
+
+        let current_gen = community.mek.generation();
+        if mek_generation != current_gen {
+            return CommunityResponse::Error {
+                code: 409,
+                message: format!(
+                    "MEK generation mismatch: sent {mek_generation}, current is {current_gen}. Request new MEK."
+                ),
+            };
         }
     }
 
@@ -802,10 +884,10 @@ fn handle_send_message(
     let now_u64: u64 = now.try_into().unwrap_or(0u64);
     broadcast_to_members(
         state,
-        &community_id,
+        community_id,
         sender_pseudonym,
         &CommunityBroadcast::NewMessage {
-            community_id: community_id.clone(),
+            community_id: community_id.to_string(),
             channel_id: channel_id.to_string(),
             sender_pseudonym: sender_pseudonym.to_string(),
             ciphertext,
@@ -819,6 +901,7 @@ fn handle_send_message(
 
 fn handle_get_messages(
     state: &Arc<ServerState>,
+    community_id: &str,
     sender_pseudonym: &str,
     channel_id: &str,
     before_timestamp: Option<u64>,
@@ -826,12 +909,14 @@ fn handle_get_messages(
 ) -> CommunityResponse {
     let limit = limit.min(500);
 
-    let Some(community_id) = find_community_for_member(state, sender_pseudonym) else {
-        return CommunityResponse::Error {
-            code: 403,
-            message: "not a member of any hosted community".into(),
-        };
-    };
+    {
+        let hosted = state.hosted.read();
+        if let Some(community) = hosted.get(community_id) {
+            if let Err(e) = verify_membership(community, sender_pseudonym) {
+                return e;
+            }
+        }
+    }
 
     let db = state.db.lock().unwrap_or_else(|e| {
         tracing::error!(error = %e, "server db mutex poisoned — recovering");
@@ -897,29 +982,25 @@ fn handle_get_messages(
     CommunityResponse::Messages { messages }
 }
 
-fn handle_request_mek(state: &Arc<ServerState>, sender_pseudonym: &str) -> CommunityResponse {
+fn handle_request_mek(state: &Arc<ServerState>, community_id: &str, sender_pseudonym: &str) -> CommunityResponse {
     let hosted = state.hosted.read();
-    let community = hosted.values().find(|c| {
-        c.members
-            .iter()
-            .any(|m| m.pseudonym_key_hex == sender_pseudonym)
-    });
+    let Some(community) = hosted.get(community_id) else {
+        return CommunityResponse::Error {
+            code: 404,
+            message: "community not found".into(),
+        };
+    };
+    if let Err(e) = verify_membership(community, sender_pseudonym) {
+        return e;
+    }
 
-    match community {
-        Some(c) => {
-            let mut mek_payload = Vec::with_capacity(40);
-            mek_payload.extend_from_slice(&c.mek.generation().to_le_bytes());
-            mek_payload.extend_from_slice(c.mek.as_bytes());
+    let mut mek_payload = Vec::with_capacity(40);
+    mek_payload.extend_from_slice(&community.mek.generation().to_le_bytes());
+    mek_payload.extend_from_slice(community.mek.as_bytes());
 
-            CommunityResponse::MEK {
-                mek_encrypted: mek_payload,
-                mek_generation: c.mek.generation(),
-            }
-        }
-        None => CommunityResponse::Error {
-            code: 403,
-            message: "not a member".into(),
-        },
+    CommunityResponse::MEK {
+        mek_encrypted: mek_payload,
+        mek_generation: community.mek.generation(),
     }
 }
 
@@ -927,25 +1008,15 @@ fn handle_request_mek(state: &Arc<ServerState>, sender_pseudonym: &str) -> Commu
 // Leave / Kick
 // ---------------------------------------------------------------------------
 
-async fn handle_leave(state: &Arc<ServerState>, sender_pseudonym: &str) -> CommunityResponse {
-    let community_id = {
+async fn handle_leave(state: &Arc<ServerState>, community_id: &str, sender_pseudonym: &str) -> CommunityResponse {
+    {
         let hosted = state.hosted.read();
-        hosted
-            .values()
-            .find(|c| {
-                c.members
-                    .iter()
-                    .any(|m| m.pseudonym_key_hex == sender_pseudonym)
-            })
-            .map(|c| c.community_id.clone())
-    };
-
-    let Some(community_id) = community_id else {
-        return CommunityResponse::Error {
-            code: 403,
-            message: "not a member".into(),
-        };
-    };
+        if let Some(community) = hosted.get(community_id) {
+            if let Err(e) = verify_membership(community, sender_pseudonym) {
+                return e;
+            }
+        }
+    }
 
     {
         let db = state.db.lock().unwrap_or_else(|e| {
@@ -963,39 +1034,39 @@ async fn handle_leave(state: &Arc<ServerState>, sender_pseudonym: &str) -> Commu
 
     {
         let mut hosted = state.hosted.write();
-        if let Some(community) = hosted.get_mut(&community_id) {
+        if let Some(community) = hosted.get_mut(community_id) {
             community
                 .members
                 .retain(|m| m.pseudonym_key_hex != sender_pseudonym);
             let new_gen = community.mek.generation() + 1;
-            community.mek = mek::rotate_mek(state, &community_id, new_gen);
+            community.mek = mek::rotate_mek(state, community_id, new_gen);
         }
     }
 
-    community_host::publish_member_roster(state, &community_id).await;
-    community_host::publish_mek_bundle(state, &community_id).await;
+    community_host::publish_member_roster(state, community_id).await;
+    community_host::publish_mek_bundle(state, community_id).await;
 
     broadcast_to_members(
         state,
-        &community_id,
+        community_id,
         sender_pseudonym,
         &CommunityBroadcast::MemberRemoved {
-            community_id: community_id.clone(),
+            community_id: community_id.to_string(),
             pseudonym_key: sender_pseudonym.to_string(),
         },
     );
 
     let new_gen = {
         let hosted = state.hosted.read();
-        hosted.get(&community_id).map(|c| c.mek.generation())
+        hosted.get(community_id).map(|c| c.mek.generation())
     };
     if let Some(gen) = new_gen {
         broadcast_to_members(
             state,
-            &community_id,
+            community_id,
             sender_pseudonym,
             &CommunityBroadcast::MEKRotated {
-                community_id: community_id.clone(),
+                community_id: community_id.to_string(),
                 new_generation: gen,
             },
         );
@@ -1007,16 +1078,13 @@ async fn handle_leave(state: &Arc<ServerState>, sender_pseudonym: &str) -> Commu
 
 async fn handle_kick(
     state: &Arc<ServerState>,
+    community_id: &str,
     sender_pseudonym: &str,
     target_pseudonym: &str,
 ) -> CommunityResponse {
     {
         let hosted = state.hosted.read();
-        let Some(community) = hosted.values().find(|c| {
-            c.members
-                .iter()
-                .any(|m| m.pseudonym_key_hex == sender_pseudonym)
-        }) else {
+        let Some(community) = hosted.get(community_id) else {
             return CommunityResponse::Error {
                 code: 403,
                 message: "not a member".into(),
@@ -1039,7 +1107,7 @@ async fn handle_kick(
         }
     }
 
-    handle_leave(state, target_pseudonym).await
+    handle_leave(state, community_id, target_pseudonym).await
 }
 
 // ---------------------------------------------------------------------------
@@ -1048,22 +1116,22 @@ async fn handle_kick(
 
 fn handle_create_channel(
     state: &Arc<ServerState>,
+    community_id: &str,
     sender_pseudonym: &str,
     name: &str,
     channel_type: &str,
 ) -> CommunityResponse {
     let mut hosted = state.hosted.write();
 
-    let Some(community) = hosted.values_mut().find(|c| {
-        c.members
-            .iter()
-            .any(|m| m.pseudonym_key_hex == sender_pseudonym)
-    }) else {
+    let Some(community) = hosted.get_mut(community_id) else {
         return CommunityResponse::Error {
-            code: 403,
-            message: "not a member".into(),
+            code: 404,
+            message: "community not found".into(),
         };
     };
+    if let Err(e) = verify_membership(community, sender_pseudonym) {
+        return e;
+    }
 
     if let Err(e) = check_permission(community, sender_pseudonym, permissions::MANAGE_CHANNELS) {
         return e;
@@ -1109,21 +1177,21 @@ fn handle_create_channel(
 
 fn handle_delete_channel(
     state: &Arc<ServerState>,
+    community_id: &str,
     sender_pseudonym: &str,
     channel_id: &str,
 ) -> CommunityResponse {
     let mut hosted = state.hosted.write();
 
-    let Some(community) = hosted.values_mut().find(|c| {
-        c.members
-            .iter()
-            .any(|m| m.pseudonym_key_hex == sender_pseudonym)
-    }) else {
+    let Some(community) = hosted.get_mut(community_id) else {
         return CommunityResponse::Error {
-            code: 403,
-            message: "not a member".into(),
+            code: 404,
+            message: "community not found".into(),
         };
     };
+    if let Err(e) = verify_membership(community, sender_pseudonym) {
+        return e;
+    }
 
     if let Err(e) = check_permission(community, sender_pseudonym, permissions::MANAGE_CHANNELS) {
         return e;
@@ -1149,22 +1217,22 @@ fn handle_delete_channel(
 
 fn handle_rename_channel(
     state: &Arc<ServerState>,
+    community_id: &str,
     sender_pseudonym: &str,
     channel_id: &str,
     new_name: &str,
 ) -> CommunityResponse {
     let mut hosted = state.hosted.write();
 
-    let Some(community) = hosted.values_mut().find(|c| {
-        c.members
-            .iter()
-            .any(|m| m.pseudonym_key_hex == sender_pseudonym)
-    }) else {
+    let Some(community) = hosted.get_mut(community_id) else {
         return CommunityResponse::Error {
-            code: 403,
-            message: "not a member".into(),
+            code: 404,
+            message: "community not found".into(),
         };
     };
+    if let Err(e) = verify_membership(community, sender_pseudonym) {
+        return e;
+    }
 
     if let Err(e) = check_permission(community, sender_pseudonym, permissions::MANAGE_CHANNELS) {
         return e;
@@ -1201,20 +1269,20 @@ fn handle_rename_channel(
 
 async fn handle_rotate_mek(
     state: &Arc<ServerState>,
+    community_id: &str,
     sender_pseudonym: &str,
 ) -> CommunityResponse {
-    let (community_id, new_gen) = {
+    let new_gen = {
         let mut hosted = state.hosted.write();
-        let Some(community) = hosted.values_mut().find(|c| {
-            c.members
-                .iter()
-                .any(|m| m.pseudonym_key_hex == sender_pseudonym)
-        }) else {
+        let Some(community) = hosted.get_mut(community_id) else {
             return CommunityResponse::Error {
-                code: 403,
-                message: "not a member".into(),
+                code: 404,
+                message: "community not found".into(),
             };
         };
+        if let Err(e) = verify_membership(community, sender_pseudonym) {
+            return e;
+        }
 
         if let Err(e) =
             check_permission(community, sender_pseudonym, permissions::MANAGE_COMMUNITY)
@@ -1222,20 +1290,19 @@ async fn handle_rotate_mek(
             return e;
         }
 
-        let cid = community.community_id.clone();
         let new_gen = community.mek.generation() + 1;
-        community.mek = mek::rotate_mek(state, &cid, new_gen);
-        (cid, new_gen)
+        community.mek = mek::rotate_mek(state, community_id, new_gen);
+        new_gen
     };
 
-    community_host::publish_mek_bundle(state, &community_id).await;
+    community_host::publish_mek_bundle(state, community_id).await;
 
     broadcast_to_members(
         state,
-        &community_id,
+        community_id,
         "",
         &CommunityBroadcast::MEKRotated {
-            community_id: community_id.clone(),
+            community_id: community_id.to_string(),
             new_generation: new_gen,
         },
     );
@@ -1249,22 +1316,22 @@ async fn handle_rotate_mek(
 
 async fn handle_update_community(
     state: &Arc<ServerState>,
+    community_id: &str,
     sender_pseudonym: &str,
     new_name: Option<&str>,
     new_description: Option<&str>,
 ) -> CommunityResponse {
-    let community_id = {
+    {
         let mut hosted = state.hosted.write();
-        let Some(community) = hosted.values_mut().find(|c| {
-            c.members
-                .iter()
-                .any(|m| m.pseudonym_key_hex == sender_pseudonym)
-        }) else {
+        let Some(community) = hosted.get_mut(community_id) else {
             return CommunityResponse::Error {
-                code: 403,
-                message: "not a member".into(),
+                code: 404,
+                message: "community not found".into(),
             };
         };
+        if let Err(e) = verify_membership(community, sender_pseudonym) {
+            return e;
+        }
 
         if let Err(e) =
             check_permission(community, sender_pseudonym, permissions::MANAGE_COMMUNITY)
@@ -1279,8 +1346,6 @@ async fn handle_update_community(
             community.description = d.to_string();
         }
 
-        let cid = community.community_id.clone();
-
         {
             let db = state.db.lock().unwrap_or_else(|e| {
                 tracing::error!(error = %e, "server db mutex poisoned — recovering");
@@ -1289,26 +1354,24 @@ async fn handle_update_community(
             if let Some(n) = new_name {
                 let _ = db.execute(
                     "UPDATE hosted_communities SET name = ? WHERE id = ?",
-                    params![n, cid],
+                    params![n, community_id],
                 );
             }
             if let Some(d) = new_description {
                 let _ = db.execute(
                     "UPDATE hosted_communities SET description = ? WHERE id = ?",
-                    params![d, cid],
+                    params![d, community_id],
                 );
             }
         }
-
-        cid
-    };
+    }
 
     let name = {
         let hosted = state.hosted.read();
-        hosted.get(&community_id).map(|c| c.name.clone())
+        hosted.get(community_id).map(|c| c.name.clone())
     };
     if let Some(name) = name {
-        community_host::publish_metadata(state, &community_id, &name).await;
+        community_host::publish_metadata(state, community_id, &name).await;
     }
 
     CommunityResponse::CommunityUpdated
@@ -1320,21 +1383,21 @@ async fn handle_update_community(
 
 async fn handle_ban(
     state: &Arc<ServerState>,
+    community_id: &str,
     sender_pseudonym: &str,
     target_pseudonym: &str,
 ) -> CommunityResponse {
-    let (community_id, display_name) = {
+    let display_name = {
         let hosted = state.hosted.read();
-        let Some(community) = hosted.values().find(|c| {
-            c.members
-                .iter()
-                .any(|m| m.pseudonym_key_hex == sender_pseudonym)
-        }) else {
+        let Some(community) = hosted.get(community_id) else {
             return CommunityResponse::Error {
-                code: 403,
-                message: "not a member".into(),
+                code: 404,
+                message: "community not found".into(),
             };
         };
+        if let Err(e) = verify_membership(community, sender_pseudonym) {
+            return e;
+        }
 
         if let Err(e) = check_permission(community, sender_pseudonym, permissions::BAN_MEMBERS) {
             return e;
@@ -1351,13 +1414,11 @@ async fn handle_ban(
             return e;
         }
 
-        let target_name = community
+        community
             .members
             .iter()
             .find(|m| m.pseudonym_key_hex == target_pseudonym)
-            .map_or_else(String::new, |m| m.display_name.clone());
-
-        (community.community_id.clone(), target_name)
+            .map_or_else(String::new, |m| m.display_name.clone())
     };
 
     {
@@ -1374,25 +1435,25 @@ async fn handle_ban(
         }
     }
 
-    handle_leave(state, target_pseudonym).await
+    handle_leave(state, community_id, target_pseudonym).await
 }
 
 fn handle_unban(
     state: &Arc<ServerState>,
+    community_id: &str,
     sender_pseudonym: &str,
     target_pseudonym: &str,
 ) -> CommunityResponse {
     let hosted = state.hosted.read();
-    let Some(community) = hosted.values().find(|c| {
-        c.members
-            .iter()
-            .any(|m| m.pseudonym_key_hex == sender_pseudonym)
-    }) else {
+    let Some(community) = hosted.get(community_id) else {
         return CommunityResponse::Error {
-            code: 403,
-            message: "not a member".into(),
+            code: 404,
+            message: "community not found".into(),
         };
     };
+    if let Err(e) = verify_membership(community, sender_pseudonym) {
+        return e;
+    }
 
     if let Err(e) = check_permission(community, sender_pseudonym, permissions::BAN_MEMBERS) {
         return e;
@@ -1415,18 +1476,17 @@ fn handle_unban(
     CommunityResponse::Ok
 }
 
-fn handle_get_ban_list(state: &Arc<ServerState>, sender_pseudonym: &str) -> CommunityResponse {
+fn handle_get_ban_list(state: &Arc<ServerState>, community_id: &str, sender_pseudonym: &str) -> CommunityResponse {
     let hosted = state.hosted.read();
-    let Some(community) = hosted.values().find(|c| {
-        c.members
-            .iter()
-            .any(|m| m.pseudonym_key_hex == sender_pseudonym)
-    }) else {
+    let Some(community) = hosted.get(community_id) else {
         return CommunityResponse::Error {
-            code: 403,
-            message: "not a member".into(),
+            code: 404,
+            message: "community not found".into(),
         };
     };
+    if let Err(e) = verify_membership(community, sender_pseudonym) {
+        return e;
+    }
 
     if let Err(e) = check_permission(community, sender_pseudonym, permissions::BAN_MEMBERS) {
         return e;
@@ -1461,8 +1521,10 @@ fn handle_get_ban_list(state: &Arc<ServerState>, sender_pseudonym: &str) -> Comm
 // Role management
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::too_many_arguments)]
 fn handle_create_role(
     state: &Arc<ServerState>,
+    community_id: &str,
     sender_pseudonym: &str,
     name: &str,
     color: u32,
@@ -1471,16 +1533,15 @@ fn handle_create_role(
     mentionable: bool,
 ) -> CommunityResponse {
     let mut hosted = state.hosted.write();
-    let Some(community) = hosted.values_mut().find(|c| {
-        c.members
-            .iter()
-            .any(|m| m.pseudonym_key_hex == sender_pseudonym)
-    }) else {
+    let Some(community) = hosted.get_mut(community_id) else {
         return CommunityResponse::Error {
-            code: 403,
-            message: "not a member".into(),
+            code: 404,
+            message: "community not found".into(),
         };
     };
+    if let Err(e) = verify_membership(community, sender_pseudonym) {
+        return e;
+    }
 
     if let Err(e) = check_permission(community, sender_pseudonym, permissions::MANAGE_ROLES) {
         return e;
@@ -1535,6 +1596,7 @@ fn handle_create_role(
 #[allow(clippy::too_many_arguments)]
 fn handle_edit_role(
     state: &Arc<ServerState>,
+    community_id: &str,
     sender_pseudonym: &str,
     role_id: u32,
     name: Option<&String>,
@@ -1545,16 +1607,15 @@ fn handle_edit_role(
     mentionable: Option<bool>,
 ) -> CommunityResponse {
     let mut hosted = state.hosted.write();
-    let Some(community) = hosted.values_mut().find(|c| {
-        c.members
-            .iter()
-            .any(|m| m.pseudonym_key_hex == sender_pseudonym)
-    }) else {
+    let Some(community) = hosted.get_mut(community_id) else {
         return CommunityResponse::Error {
-            code: 403,
-            message: "not a member".into(),
+            code: 404,
+            message: "community not found".into(),
         };
     };
+    if let Err(e) = verify_membership(community, sender_pseudonym) {
+        return e;
+    }
 
     if let Err(e) = check_permission(community, sender_pseudonym, permissions::MANAGE_ROLES) {
         return e;
@@ -1634,6 +1695,7 @@ fn handle_edit_role(
 
 fn handle_delete_role(
     state: &Arc<ServerState>,
+    community_id: &str,
     sender_pseudonym: &str,
     role_id: u32,
 ) -> CommunityResponse {
@@ -1645,16 +1707,15 @@ fn handle_delete_role(
     }
 
     let mut hosted = state.hosted.write();
-    let Some(community) = hosted.values_mut().find(|c| {
-        c.members
-            .iter()
-            .any(|m| m.pseudonym_key_hex == sender_pseudonym)
-    }) else {
+    let Some(community) = hosted.get_mut(community_id) else {
         return CommunityResponse::Error {
-            code: 403,
-            message: "not a member".into(),
+            code: 404,
+            message: "community not found".into(),
         };
     };
+    if let Err(e) = verify_membership(community, sender_pseudonym) {
+        return e;
+    }
 
     if let Err(e) = check_permission(community, sender_pseudonym, permissions::MANAGE_ROLES) {
         return e;
@@ -1699,21 +1760,21 @@ fn handle_delete_role(
 
 fn handle_assign_role(
     state: &Arc<ServerState>,
+    community_id: &str,
     sender_pseudonym: &str,
     target_pseudonym: &str,
     role_id: u32,
 ) -> CommunityResponse {
     let mut hosted = state.hosted.write();
-    let Some(community) = hosted.values_mut().find(|c| {
-        c.members
-            .iter()
-            .any(|m| m.pseudonym_key_hex == sender_pseudonym)
-    }) else {
+    let Some(community) = hosted.get_mut(community_id) else {
         return CommunityResponse::Error {
-            code: 403,
-            message: "not a member".into(),
+            code: 404,
+            message: "community not found".into(),
         };
     };
+    if let Err(e) = verify_membership(community, sender_pseudonym) {
+        return e;
+    }
 
     if let Err(e) = check_permission(community, sender_pseudonym, permissions::MANAGE_ROLES) {
         return e;
@@ -1765,6 +1826,7 @@ fn handle_assign_role(
 
 fn handle_unassign_role(
     state: &Arc<ServerState>,
+    community_id: &str,
     sender_pseudonym: &str,
     target_pseudonym: &str,
     role_id: u32,
@@ -1777,16 +1839,15 @@ fn handle_unassign_role(
     }
 
     let mut hosted = state.hosted.write();
-    let Some(community) = hosted.values_mut().find(|c| {
-        c.members
-            .iter()
-            .any(|m| m.pseudonym_key_hex == sender_pseudonym)
-    }) else {
+    let Some(community) = hosted.get_mut(community_id) else {
         return CommunityResponse::Error {
-            code: 403,
-            message: "not a member".into(),
+            code: 404,
+            message: "community not found".into(),
         };
     };
+    if let Err(e) = verify_membership(community, sender_pseudonym) {
+        return e;
+    }
 
     if let Err(e) = check_permission(community, sender_pseudonym, permissions::MANAGE_ROLES) {
         return e;
@@ -1823,18 +1884,17 @@ fn handle_unassign_role(
     CommunityResponse::Ok
 }
 
-fn handle_get_roles(state: &Arc<ServerState>, sender_pseudonym: &str) -> CommunityResponse {
+fn handle_get_roles(state: &Arc<ServerState>, community_id: &str, sender_pseudonym: &str) -> CommunityResponse {
     let hosted = state.hosted.read();
-    let Some(community) = hosted.values().find(|c| {
-        c.members
-            .iter()
-            .any(|m| m.pseudonym_key_hex == sender_pseudonym)
-    }) else {
+    let Some(community) = hosted.get(community_id) else {
         return CommunityResponse::Error {
-            code: 403,
-            message: "not a member".into(),
+            code: 404,
+            message: "community not found".into(),
         };
     };
+    if let Err(e) = verify_membership(community, sender_pseudonym) {
+        return e;
+    }
 
     CommunityResponse::RolesList {
         roles: roles_to_dto(community),
@@ -1845,8 +1905,10 @@ fn handle_get_roles(state: &Arc<ServerState>, sender_pseudonym: &str) -> Communi
 // Channel permission overwrites
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::too_many_arguments)]
 fn handle_set_channel_overwrite(
     state: &Arc<ServerState>,
+    community_id: &str,
     sender_pseudonym: &str,
     channel_id: &str,
     target_type: &str,
@@ -1855,16 +1917,15 @@ fn handle_set_channel_overwrite(
     deny: u64,
 ) -> CommunityResponse {
     let mut hosted = state.hosted.write();
-    let Some(community) = hosted.values_mut().find(|c| {
-        c.members
-            .iter()
-            .any(|m| m.pseudonym_key_hex == sender_pseudonym)
-    }) else {
+    let Some(community) = hosted.get_mut(community_id) else {
         return CommunityResponse::Error {
-            code: 403,
-            message: "not a member".into(),
+            code: 404,
+            message: "community not found".into(),
         };
     };
+    if let Err(e) = verify_membership(community, sender_pseudonym) {
+        return e;
+    }
 
     if let Err(e) = check_permission(community, sender_pseudonym, permissions::MANAGE_ROLES) {
         return e;
@@ -1910,13 +1971,14 @@ fn handle_set_channel_overwrite(
         );
     }
 
-    let cid = community.community_id.clone();
+    drop(hosted); // Release write lock before broadcasting
+
     broadcast_to_members(
         state,
-        &cid,
+        community_id,
         "",
         &CommunityBroadcast::ChannelOverwriteChanged {
-            community_id: cid.clone(),
+            community_id: community_id.to_string(),
             channel_id: channel_id.to_string(),
         },
     );
@@ -1926,22 +1988,22 @@ fn handle_set_channel_overwrite(
 
 fn handle_delete_channel_overwrite(
     state: &Arc<ServerState>,
+    community_id: &str,
     sender_pseudonym: &str,
     channel_id: &str,
     target_type: &str,
     target_id: &str,
 ) -> CommunityResponse {
     let mut hosted = state.hosted.write();
-    let Some(community) = hosted.values_mut().find(|c| {
-        c.members
-            .iter()
-            .any(|m| m.pseudonym_key_hex == sender_pseudonym)
-    }) else {
+    let Some(community) = hosted.get_mut(community_id) else {
         return CommunityResponse::Error {
-            code: 403,
-            message: "not a member".into(),
+            code: 404,
+            message: "community not found".into(),
         };
     };
+    if let Err(e) = verify_membership(community, sender_pseudonym) {
+        return e;
+    }
 
     if let Err(e) = check_permission(community, sender_pseudonym, permissions::MANAGE_ROLES) {
         return e;
@@ -1978,22 +2040,22 @@ fn handle_delete_channel_overwrite(
 
 fn handle_timeout_member(
     state: &Arc<ServerState>,
+    community_id: &str,
     sender_pseudonym: &str,
     target_pseudonym: &str,
     duration_seconds: u64,
     reason: Option<&String>,
 ) -> CommunityResponse {
     let mut hosted = state.hosted.write();
-    let Some(community) = hosted.values_mut().find(|c| {
-        c.members
-            .iter()
-            .any(|m| m.pseudonym_key_hex == sender_pseudonym)
-    }) else {
+    let Some(community) = hosted.get_mut(community_id) else {
         return CommunityResponse::Error {
-            code: 403,
-            message: "not a member".into(),
+            code: 404,
+            message: "community not found".into(),
         };
     };
+    if let Err(e) = verify_membership(community, sender_pseudonym) {
+        return e;
+    }
 
     if let Err(e) =
         check_permission(community, sender_pseudonym, permissions::MODERATE_MEMBERS)
@@ -2035,13 +2097,14 @@ fn handle_timeout_member(
         );
     }
 
-    let cid = community.community_id.clone();
+    drop(hosted); // Release write lock before broadcasting
+
     broadcast_to_members(
         state,
-        &cid,
+        community_id,
         "",
         &CommunityBroadcast::MemberTimedOut {
-            community_id: cid.clone(),
+            community_id: community_id.to_string(),
             pseudonym_key: target_pseudonym.to_string(),
             timeout_until: Some(timeout_until),
         },
@@ -2052,20 +2115,20 @@ fn handle_timeout_member(
 
 fn handle_remove_timeout(
     state: &Arc<ServerState>,
+    community_id: &str,
     sender_pseudonym: &str,
     target_pseudonym: &str,
 ) -> CommunityResponse {
     let mut hosted = state.hosted.write();
-    let Some(community) = hosted.values_mut().find(|c| {
-        c.members
-            .iter()
-            .any(|m| m.pseudonym_key_hex == sender_pseudonym)
-    }) else {
+    let Some(community) = hosted.get_mut(community_id) else {
         return CommunityResponse::Error {
-            code: 403,
-            message: "not a member".into(),
+            code: 404,
+            message: "community not found".into(),
         };
     };
+    if let Err(e) = verify_membership(community, sender_pseudonym) {
+        return e;
+    }
 
     if let Err(e) =
         check_permission(community, sender_pseudonym, permissions::MODERATE_MEMBERS)
@@ -2092,13 +2155,14 @@ fn handle_remove_timeout(
         );
     }
 
-    let cid = community.community_id.clone();
+    drop(hosted); // Release write lock before broadcasting
+
     broadcast_to_members(
         state,
-        &cid,
+        community_id,
         "",
         &CommunityBroadcast::MemberTimedOut {
-            community_id: cid.clone(),
+            community_id: community_id.to_string(),
             pseudonym_key: target_pseudonym.to_string(),
             timeout_until: None,
         },
@@ -2111,26 +2175,21 @@ fn handle_remove_timeout(
 // Broadcast helpers
 // ---------------------------------------------------------------------------
 
-fn broadcast_roles_changed(state: &Arc<ServerState>, sender_pseudonym: &str) {
-    let hosted = state.hosted.read();
-    let Some(community) = hosted.values().find(|c| {
-        c.members
-            .iter()
-            .any(|m| m.pseudonym_key_hex == sender_pseudonym)
-    }) else {
-        return;
+fn broadcast_roles_changed(state: &Arc<ServerState>, community_id: &str) {
+    let roles = {
+        let hosted = state.hosted.read();
+        let Some(community) = hosted.get(community_id) else {
+            return;
+        };
+        roles_to_dto(community)
     };
-
-    let roles = roles_to_dto(community);
-    let cid = community.community_id.clone();
-    drop(hosted);
 
     broadcast_to_members(
         state,
-        &cid,
+        community_id,
         "",
         &CommunityBroadcast::RolesChanged {
-            community_id: cid.clone(),
+            community_id: community_id.to_string(),
             roles,
         },
     );
@@ -2138,32 +2197,27 @@ fn broadcast_roles_changed(state: &Arc<ServerState>, sender_pseudonym: &str) {
 
 fn broadcast_member_roles_changed(
     state: &Arc<ServerState>,
-    sender_pseudonym: &str,
+    community_id: &str,
     target_pseudonym: &str,
 ) {
-    let hosted = state.hosted.read();
-    let Some(community) = hosted.values().find(|c| {
-        c.members
+    let role_ids = {
+        let hosted = state.hosted.read();
+        let Some(community) = hosted.get(community_id) else {
+            return;
+        };
+        community
+            .members
             .iter()
-            .any(|m| m.pseudonym_key_hex == sender_pseudonym)
-    }) else {
-        return;
+            .find(|m| m.pseudonym_key_hex == target_pseudonym)
+            .map_or_else(Vec::new, |m| m.role_ids.clone())
     };
-
-    let role_ids = community
-        .members
-        .iter()
-        .find(|m| m.pseudonym_key_hex == target_pseudonym)
-        .map_or_else(Vec::new, |m| m.role_ids.clone());
-    let cid = community.community_id.clone();
-    drop(hosted);
 
     broadcast_to_members(
         state,
-        &cid,
+        community_id,
         "",
         &CommunityBroadcast::MemberRolesChanged {
-            community_id: cid.clone(),
+            community_id: community_id.to_string(),
             pseudonym_key: target_pseudonym.to_string(),
             role_ids,
         },

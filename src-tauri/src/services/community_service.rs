@@ -340,11 +340,23 @@ async fn send_join_rpc(
         &signing_key, timestamp, rand_nonce(), request_bytes,
     );
 
-    let route_id = match api.import_remote_private_route(server_route_blob.to_vec()) {
-        Ok(rid) => rid,
-        Err(e) => {
-            tracing::warn!(error = %e, "failed to import server route — joining locally");
-            return Ok(None);
+    let route_id = {
+        let mut dht_mgr = state.dht_manager.write();
+        match dht_mgr.as_mut() {
+            Some(mgr) => match mgr.manager.get_or_import_route(&api, server_route_blob) {
+                Ok(rid) => rid,
+                Err(e) => {
+                    tracing::warn!(error = %e, "failed to import server route — joining locally");
+                    return Ok(None);
+                }
+            },
+            None => match api.import_remote_private_route(server_route_blob.to_vec()) {
+                Ok(rid) => rid,
+                Err(e) => {
+                    tracing::warn!(error = %e, "failed to import server route — joining locally");
+                    return Ok(None);
+                }
+            },
         }
     };
 

@@ -344,12 +344,19 @@ async fn setup_dht_and_route(
 }
 
 /// Start hosting a community: load/create state, allocate route, publish to DHT.
+///
+/// The `creator_pseudonym_key` is registered as the first member with owner
+/// permissions. This avoids a race condition where a separate Join RPC might
+/// arrive before the community is fully hosted.
+#[allow(clippy::too_many_lines)]
 pub async fn host_community(
     state: &Arc<ServerState>,
     community_id: &str,
     dht_record_key: &str,
     owner_keypair_hex: &str,
     name: &str,
+    creator_pseudonym_key: &str,
+    creator_display_name: &str,
 ) -> Result<(), String> {
     // Check if already hosted
     {
@@ -383,13 +390,13 @@ pub async fn host_community(
         roles = create_default_roles(state, community_id)?;
     }
 
-    let members = load_members_from_db(state, community_id)?;
+    let mut members = load_members_from_db(state, community_id)?;
 
     let (route_id, route_blob, dht_opened) =
         setup_dht_and_route(state, community_id, dht_record_key, owner_keypair_hex).await?;
 
     // Load description and creator_pseudonym from DB
-    let (description, creator_pseudonym_hex) = {
+    let (description, mut creator_pseudonym_hex) = {
         let db = state.db.lock().map_err(|e| e.to_string())?;
         let desc = db
             .query_row(
@@ -407,6 +414,55 @@ pub async fn host_community(
             .unwrap_or_default();
         (desc, creator)
     };
+
+    // If a creator pseudonym key was provided and the creator isn't already
+    // registered (i.e. this is a brand-new community), register them atomically
+    // as the first member with owner permissions. This prevents the race
+    // condition where a separate Join RPC would need to arrive after hosting
+    // completes.
+    if !creator_pseudonym_key.is_empty()
+        && creator_pseudonym_hex.is_empty()
+        && !members.iter().any(|m| m.pseudonym_key_hex == creator_pseudonym_key)
+    {
+        #[allow(clippy::cast_possible_wrap)]
+        let now = timestamp_now_secs() as i64;
+        let owner_role_ids = vec![ROLE_EVERYONE_ID, 1, 2, 3, 4];
+
+        // Persist creator to DB
+        {
+            let db = state.db.lock().map_err(|e| e.to_string())?;
+            let _ = db.execute(
+                "INSERT OR IGNORE INTO server_members (community_id, pseudonym_key_hex, display_name, joined_at) VALUES (?,?,?,?)",
+                params![community_id, creator_pseudonym_key, creator_display_name, now],
+            );
+            for role_id in &owner_role_ids {
+                let _ = db.execute(
+                    "INSERT OR IGNORE INTO server_member_roles (community_id, pseudonym_key_hex, role_id) VALUES (?,?,?)",
+                    params![community_id, creator_pseudonym_key, role_id],
+                );
+            }
+            let _ = db.execute(
+                "UPDATE hosted_communities SET creator_pseudonym = ? WHERE id = ?",
+                params![creator_pseudonym_key, community_id],
+            );
+        }
+
+        creator_pseudonym_hex = creator_pseudonym_key.to_string();
+        members.push(ServerMember {
+            pseudonym_key_hex: creator_pseudonym_key.to_string(),
+            display_name: creator_display_name.to_string(),
+            role_ids: owner_role_ids,
+            joined_at: now,
+            route_blob: None,
+            timeout_until: None,
+        });
+
+        tracing::info!(
+            community = %community_id,
+            creator = %creator_pseudonym_key,
+            "registered creator as first member during host_community"
+        );
+    }
 
     let community = HostedCommunity {
         community_id: community_id.to_string(),
@@ -653,14 +709,14 @@ pub async fn handle_server_route_change(state: &Arc<ServerState>, dead_routes: &
 
         // Atomically take the dead route_id under a write lock to prevent
         // double-release races with keepalive_refresh_route.
-        let old_route_id = {
+        // Don't call release_private_route — the route is already dead
+        // (reported via RouteChange). Releasing a dead route produces
+        // an "Invalid argument" error from the Veilid API.
+        {
             let mut hosted = state.hosted.write();
-            hosted
-                .get_mut(&community_id)
-                .and_then(|c| c.route_id.take())
-        };
-        if let Some(old_id) = old_route_id {
-            let _ = state.api.release_private_route(old_id);
+            if let Some(c) = hosted.get_mut(&community_id) {
+                c.route_id = None;
+            }
         }
 
         match state.api.new_private_route().await {
