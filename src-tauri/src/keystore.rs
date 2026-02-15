@@ -71,7 +71,7 @@ impl StrongholdKeystore {
         let password_hash = derive_key(passphrase);
         let keyprovider = KeyProvider::try_from(Zeroizing::new(password_hash))
             .map_err(|e| CryptoError::StorageError(format!("key provider init: {e:?}")))?;
-        let snapshot_path = SnapshotPath::from_path(&snapshot_file);
+        let snapshot_path = SnapshotPath::from_path(snapshot_file);
 
         let stronghold = Stronghold::default();
 

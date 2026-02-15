@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use parking_lot::{Mutex, RwLock};
+use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
@@ -41,6 +42,15 @@ pub struct AppState {
     /// that don't have their own shutdown channels. Aborted on logout to prevent
     /// stale tasks from interfering with re-login.
     pub background_handles: Mutex<Vec<tauri::async_runtime::JoinHandle<()>>>,
+    /// MEK cache: `community_id` -> current `MediaEncryptionKey` (decrypted from server).
+    pub mek_cache: Mutex<HashMap<String, MediaEncryptionKey>>,
+    /// Community server child process handle (spawned on login if user owns communities).
+    pub server_process: Mutex<Option<std::process::Child>>,
+    /// Shutdown sender for the server health check loop.
+    pub server_health_shutdown_tx: Arc<RwLock<Option<mpsc::Sender<()>>>>,
+    /// Community server route cache: `community_id` -> imported `RouteId`.
+    /// For communities we're a MEMBER of (not owner) — the remote server's route.
+    pub community_routes: RwLock<HashMap<String, veilid_core::RouteId>>,
 }
 
 impl Default for AppState {
@@ -62,6 +72,10 @@ impl Default for AppState {
             network_ready_rx,
             identity_secret: Mutex::new(None),
             background_handles: Mutex::new(Vec::new()),
+            mek_cache: Mutex::new(HashMap::new()),
+            server_process: Mutex::new(None),
+            server_health_shutdown_tx: Arc::new(RwLock::new(None)),
+            community_routes: RwLock::new(HashMap::new()),
         }
     }
 }
@@ -71,7 +85,7 @@ pub type SharedState = Arc<AppState>;
 
 /// Handle to the live Veilid node.
 pub struct NodeHandle {
-    /// Raw Veilid `AttachmentState` string (e.g. "detached", "attaching", "attached_good").
+    /// Raw Veilid `AttachmentState` string (e.g. "detached", "attaching", "`attached_good`").
     pub attachment_state: String,
     /// Whether the node is attached to the network.
     pub is_attached: bool,
@@ -133,7 +147,7 @@ pub struct DHTManagerHandle {
     pub conversation_key_to_friend: HashMap<String, String>,
     /// All DHT record keys opened during this session.
     /// Closed in bulk during `shutdown_node` to prevent stale records
-    /// in Veilid's table_store causing "record already exists" on restart.
+    /// in Veilid's `table_store` causing "record already exists" on restart.
     pub open_records: HashSet<String>,
 }
 
@@ -256,10 +270,65 @@ pub struct CommunityState {
     pub name: String,
     pub description: Option<String>,
     pub channels: Vec<ChannelInfo>,
-    /// Our role in this community (e.g. "owner", "admin", "member").
+    /// Our role IDs in this community (multi-role, bitmask-based).
+    pub my_role_ids: Vec<u32>,
+    /// Cached role definitions from the server.
+    pub roles: Vec<RoleDefinition>,
+    /// Display string for our highest role (for backward-compat display).
     pub my_role: Option<String>,
     /// The DHT record key for this community's shared state.
     pub dht_record_key: Option<String>,
+    /// Owner keypair for the community DHT record (Veilid `KeyPair::to_string()` format).
+    /// Required for the server to open the record with write access.
+    pub dht_owner_keypair: Option<String>,
+    /// Our pseudonym pubkey hex for this community.
+    pub my_pseudonym_key: Option<String>,
+    /// Current MEK generation we have.
+    pub mek_generation: u64,
+    /// Community server's private route blob (for sending `app_call`).
+    pub server_route_blob: Option<Vec<u8>>,
+    /// Whether we host this community's server process.
+    pub is_hosted: bool,
+}
+
+/// A role definition cached from the server.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoleDefinition {
+    pub id: u32,
+    pub name: String,
+    pub color: u32,
+    pub permissions: u64,
+    pub position: i32,
+    pub hoist: bool,
+    pub mentionable: bool,
+}
+
+impl RoleDefinition {
+    /// Convert from the protocol's `RoleDto`.
+    pub fn from_dto(dto: &rekindle_protocol::messaging::RoleDto) -> Self {
+        Self {
+            id: dto.id,
+            name: dto.name.clone(),
+            color: dto.color,
+            permissions: dto.permissions,
+            position: dto.position,
+            hoist: dto.hoist,
+            mentionable: dto.mentionable,
+        }
+    }
+}
+
+/// Compute the display name for the highest-positioned role from a set of role IDs.
+pub fn display_role_name(role_ids: &[u32], roles: &[RoleDefinition]) -> String {
+    match role_ids
+        .iter()
+        .filter_map(|id| roles.iter().find(|r| r.id == *id))
+        .max_by_key(|r| r.position)
+    {
+        Some(r) => r.name.clone(),
+        None => "member".to_string(),
+    }
 }
 
 /// Channel info within a community.

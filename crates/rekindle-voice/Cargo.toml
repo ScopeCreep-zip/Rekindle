@@ -16,5 +16,5 @@ serde = { workspace = true }
 opus = "0.3"
 cpal = "0.15"
 dasp_sample = "0.11"
-veilid-core = "0.5.2"
+veilid-core = { version = "0.5.2", features = ["footgun"] }
 bincode = "1"

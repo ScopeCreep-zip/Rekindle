@@ -5778,6 +5778,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "rekindle-server"
+version = "0.1.0"
+dependencies = [
+ "ed25519-dalek",
+ "hex",
+ "parking_lot",
+ "rand 0.8.5",
+ "rekindle-crypto",
+ "rekindle-protocol",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "veilid-core",
+]
+
+[[package]]
 name = "rekindle-voice"
 version = "0.1.0"
 dependencies = [

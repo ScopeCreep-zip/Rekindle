@@ -14,7 +14,7 @@ pub enum NotificationEvent {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NetworkStatusEvent {
-    /// Raw Veilid `AttachmentState` string (e.g. "detached", "attaching", "attached_good").
+    /// Raw Veilid `AttachmentState` string (e.g. "detached", "attaching", "`attached_good`").
     pub attachment_state: String,
     pub is_attached: bool,
     pub public_internet_ready: bool,

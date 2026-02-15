@@ -11,8 +11,8 @@ use rekindle_crypto::DhtRecordKey;
 
 /// A user's private account DHT record.
 ///
-/// Contains pointers to child DHTShortArrays (contact list, chat list,
-/// invitation list) and an encrypted AccountHeader in subkey 0.
+/// Contains pointers to child `DHTShortArray`s (contact list, chat list,
+/// invitation list) and an encrypted `AccountHeader` in subkey 0.
 ///
 /// Only the owner can read this record — it's encrypted with a key derived
 /// from the identity's Ed25519 secret.
@@ -24,16 +24,16 @@ pub struct AccountRecord {
     contact_list_key: Option<String>,
     chat_list_key: Option<String>,
     invitation_list_key: Option<String>,
-    /// Owner keypair for the contact list DHTShortArray (unique per child).
+    /// Owner keypair for the contact list `DHTShortArray` (unique per child).
     contact_list_keypair: Option<KeyPair>,
-    /// Owner keypair for the chat list DHTShortArray (unique per child).
+    /// Owner keypair for the chat list `DHTShortArray` (unique per child).
     chat_list_keypair: Option<KeyPair>,
-    /// Owner keypair for the invitation list DHTShortArray (unique per child).
+    /// Owner keypair for the invitation list `DHTShortArray` (unique per child).
     invitation_list_keypair: Option<KeyPair>,
 }
 
 impl AccountRecord {
-    /// Create a new account record with child DHTShortArrays.
+    /// Create a new account record with child `DHTShortArray`s.
     ///
     /// Returns the record and the owner keypair (caller must persist both).
     pub async fn create(
@@ -67,10 +67,13 @@ impl AccountRecord {
         let chat_list_key = chats.record_key();
         let invitation_list_key = invitations.record_key();
 
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as u64;
+        let now = u64::try_from(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis(),
+        )
+        .unwrap_or(u64::MAX);
 
         let header = AccountHeader {
             contact_list_key: contact_list_key.clone(),
@@ -195,7 +198,7 @@ impl AccountRecord {
         Ok(())
     }
 
-    /// Add a contact entry to the contact list DHTShortArray.
+    /// Add a contact entry to the contact list `DHTShortArray`.
     pub async fn add_contact(&self, entry: &ContactEntry) -> Result<u32, ProtocolError> {
         let key = self
             .contact_list_key
@@ -257,7 +260,7 @@ impl AccountRecord {
             if !data.is_empty() {
                 if let Ok(entry) = decode_contact_entry(data) {
                     if entry.public_key == public_key {
-                        arr.remove(i as u32).await?;
+                        arr.remove(u32::try_from(i).unwrap_or(u32::MAX)).await?;
                         return Ok(());
                     }
                 }
@@ -269,7 +272,7 @@ impl AccountRecord {
         ))
     }
 
-    /// Add a chat entry to the chat list DHTShortArray.
+    /// Add a chat entry to the chat list `DHTShortArray`.
     pub async fn add_chat(&self, entry: &ChatEntry) -> Result<u32, ProtocolError> {
         let key = self
             .chat_list_key
@@ -312,7 +315,7 @@ impl AccountRecord {
         Ok(entries)
     }
 
-    /// Read all entries from the invitation list DHTShortArray.
+    /// Read all entries from the invitation list `DHTShortArray`.
     pub async fn read_invitations(&self) -> Result<Vec<Vec<u8>>, ProtocolError> {
         let key = self
             .invitation_list_key
@@ -329,7 +332,7 @@ impl AccountRecord {
         arr.get_all().await
     }
 
-    /// Add raw data to the invitation list DHTShortArray.
+    /// Add raw data to the invitation list `DHTShortArray`.
     pub async fn add_invitation(&self, data: &[u8]) -> Result<u32, ProtocolError> {
         let key = self
             .invitation_list_key
@@ -365,17 +368,17 @@ impl AccountRecord {
         &self.owner_keypair
     }
 
-    /// Get the invitation list DHTShortArray key (if loaded).
+    /// Get the invitation list `DHTShortArray` key (if loaded).
     pub fn invitation_list_key(&self) -> Option<&str> {
         self.invitation_list_key.as_deref()
     }
 
-    /// Get the contact list DHTShortArray key (if loaded).
+    /// Get the contact list `DHTShortArray` key (if loaded).
     pub fn contact_list_key(&self) -> Option<&str> {
         self.contact_list_key.as_deref()
     }
 
-    /// Get the chat list DHTShortArray key (if loaded).
+    /// Get the chat list `DHTShortArray` key (if loaded).
     pub fn chat_list_key(&self) -> Option<&str> {
         self.chat_list_key.as_deref()
     }

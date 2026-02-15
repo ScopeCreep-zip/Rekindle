@@ -1,9 +1,11 @@
 import { Component, JSX, Show, onMount, onCleanup } from "solid-js";
+import { ICON_CLOSE } from "../../icons";
 
 interface ModalProps {
   isOpen: boolean;
   title: string;
   onClose: () => void;
+  size?: "sm" | "md" | "lg";
   children: JSX.Element;
 }
 
@@ -31,11 +33,11 @@ const Modal: Component<ModalProps> = (props) => {
   return (
     <Show when={props.isOpen}>
       <div class="modal-overlay" onClick={handleOverlayClick}>
-        <div class="modal-container">
+        <div class={`modal-container modal-container-${props.size ?? "md"}`}>
           <div class="modal-header">
             <span class="modal-title">{props.title}</span>
             <button class="modal-close-btn" onClick={props.onClose}>
-              X
+              <span class="nf-icon">{ICON_CLOSE}</span>
             </button>
           </div>
           <div class="modal-body">{props.children}</div>

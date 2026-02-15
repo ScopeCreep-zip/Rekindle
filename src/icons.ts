@@ -26,3 +26,19 @@ export const ICON_ACCOUNT_REMOVE = "\u{F0015}";  // nf-md-account_remove
 export const ICON_DOTS = "\u{F01D8}";            // nf-md-dots_horizontal
 export const ICON_CLOSE_CIRCLE = "\u{F0159}";    // nf-md-close_circle
 export const ICON_REFRESH = "\u{F0450}";         // nf-md-refresh
+
+// Community
+export const ICON_PLUS = "\u{F0415}";            // nf-md-plus_circle — create community
+export const ICON_PLUS_BOX = "\u{F0416}";        // nf-md-plus_box — create channel/role
+export const ICON_PENCIL = "\u{F03EB}";           // nf-md-pencil
+export const ICON_DELETE = "\u{F01B4}";           // nf-md-delete
+export const ICON_COPY = "\u{F018F}";             // nf-md-content_copy
+export const ICON_SAVE = "\u{F0193}";             // nf-md-content_save
+export const ICON_CLOSE = "\u{F0156}";            // nf-md-close
+export const ICON_JOIN = "\u{F0499}";             // nf-md-login
+export const ICON_CHANNEL_TEXT = "\u{F0423}";     // nf-md-pound
+export const ICON_BAN = "\u{F0235}";              // nf-md-gavel
+export const ICON_TIMEOUT = "\u{F0954}";          // nf-md-clock_alert
+export const ICON_SHIELD = "\u{F0B56}";           // nf-md-shield_account
+export const ICON_KEY = "\u{F033E}";              // nf-md-key
+export const ICON_PERMS = "\u{F099C}";            // nf-md-shield_lock
