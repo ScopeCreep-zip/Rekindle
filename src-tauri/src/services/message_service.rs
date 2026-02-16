@@ -293,6 +293,19 @@ async fn handle_friend_request_full(
     mailbox_dht_key: &str,
 ) {
     handle_friend_request(state, sender_hex, display_name, message, prekey_bundle);
+
+    // If sender is already our friend (bidirectional add), update their display name
+    let is_existing_friend = state.friends.read().contains_key(sender_hex);
+    if is_existing_friend {
+        {
+            let mut friends = state.friends.write();
+            if let Some(friend) = friends.get_mut(sender_hex) {
+                friend.display_name = display_name.to_string();
+            }
+        }
+        update_friend_display_name(state, pool, sender_hex, display_name).await;
+    }
+
     // Cache the sender's route blob for immediate replies
     if !route_blob.is_empty() {
         let api = {
@@ -498,6 +511,34 @@ async fn persist_friend_dht_key(
     {
         tracing::error!(error = %e, "failed to persist friend DHT key");
     }
+}
+
+/// Update a friend's display name in `SQLite`.
+async fn update_friend_display_name(
+    state: &Arc<AppState>,
+    pool: &DbPool,
+    public_key: &str,
+    display_name: &str,
+) {
+    let owner_key = state
+        .identity
+        .read()
+        .as_ref()
+        .map(|id| id.public_key.clone())
+        .unwrap_or_default();
+    let pool = pool.clone();
+    let pk = public_key.to_string();
+    let dn = display_name.to_string();
+    let _ = tokio::task::spawn_blocking(move || {
+        let conn = pool.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "UPDATE friends SET display_name = ?1 WHERE owner_key = ?2 AND public_key = ?3",
+            rusqlite::params![dn, owner_key, pk],
+        )
+        .map_err(|e| format!("update friend display name: {e}"))?;
+        Ok::<(), String>(())
+    })
+    .await;
 }
 
 /// Check if a sender is in the blocked users table.

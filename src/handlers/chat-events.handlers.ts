@@ -22,6 +22,10 @@ export function subscribeBuddyListChatEvents(): Promise<UnlistenFn> {
         break;
       }
       case "friendRequest": {
+        // Update display name if sender is already a friend (bidirectional add)
+        if (friendsState.friends[event.data.from]) {
+          setFriendsState("friends", event.data.from, "displayName", event.data.displayName);
+        }
         const exists = friendsState.pendingRequests.some(
           (r) => r.publicKey === event.data.from,
         );

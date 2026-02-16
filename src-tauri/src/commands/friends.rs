@@ -210,9 +210,9 @@ pub async fn accept_request(
     let owner_key = current_owner_key(state.inner())?;
     let timestamp = db::timestamp_now();
 
-    // Read stored profile_dht_key and mailbox_dht_key BEFORE deleting the pending request
-    let (pending_profile_key, pending_mailbox_key) =
-        read_pending_keys(pool.inner(), &owner_key, &public_key).await?;
+    // Read stored profile_dht_key, mailbox_dht_key, and route_blob BEFORE deleting the pending request
+    let (pending_profile_key, pending_mailbox_key, pending_route_blob) =
+        read_pending_request_data(pool.inner(), &owner_key, &public_key).await?;
 
     // Insert into friends and delete from pending_friend_requests atomically
     let pool_clone = pool.inner().clone();
@@ -235,6 +235,19 @@ pub async fn accept_request(
     })
     .await
     .map_err(|e| e.to_string())??;
+
+    // Cache the requester's route blob so send_friend_accept() can deliver immediately
+    if let Some(ref blob) = pending_route_blob {
+        if !blob.is_empty() {
+            let api = state.node.read().as_ref().map(|nh| nh.api.clone());
+            if let Some(api) = api {
+                let mut dht_mgr = state.dht_manager.write();
+                if let Some(mgr) = dht_mgr.as_mut() {
+                    mgr.manager.cache_route(&api, &public_key, blob.clone());
+                }
+            }
+        }
+    }
 
     // Add to in-memory state with profile and mailbox keys from the request
     let friend = FriendState {
@@ -307,26 +320,29 @@ pub async fn accept_request(
     Ok(())
 }
 
-/// Read `profile_dht_key` and `mailbox_dht_key` from a pending friend request.
-async fn read_pending_keys(
+/// Pending friend request data: `(profile_dht_key, mailbox_dht_key, route_blob)`.
+type PendingRequestData = (Option<String>, Option<String>, Option<Vec<u8>>);
+
+/// Read `profile_dht_key`, `mailbox_dht_key`, and `route_blob` from a pending friend request.
+async fn read_pending_request_data(
     pool: &DbPool,
     owner_key: &str,
     public_key: &str,
-) -> Result<(Option<String>, Option<String>), String> {
+) -> Result<PendingRequestData, String> {
     let pool_clone = pool.clone();
     let ok = owner_key.to_string();
     let pk = public_key.to_string();
     tokio::task::spawn_blocking(move || {
         let conn = pool_clone.lock().map_err(|e| e.to_string())?;
-        let row: Option<(Option<String>, Option<String>)> = conn
+        let row: Option<PendingRequestData> = conn
             .query_row(
-                "SELECT profile_dht_key, mailbox_dht_key FROM pending_friend_requests WHERE owner_key = ?1 AND public_key = ?2",
+                "SELECT profile_dht_key, mailbox_dht_key, route_blob FROM pending_friend_requests WHERE owner_key = ?1 AND public_key = ?2",
                 rusqlite::params![ok, pk],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .optional()
             .map_err(|e| e.to_string())?;
-        Ok(row.unwrap_or((None, None)))
+        Ok(row.unwrap_or((None, None, None)))
     })
     .await
     .map_err(|e| e.to_string())?
