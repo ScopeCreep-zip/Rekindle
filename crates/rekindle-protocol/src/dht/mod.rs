@@ -330,4 +330,19 @@ impl DHTManager {
         self.imported_routes
             .retain(|_blob, (route_id, _ts)| !dead_set.contains(route_id));
     }
+
+    /// Invalidate all cached route state for a peer by their public key.
+    ///
+    /// Removes the route blob from `route_cache`, the imported `RouteId` from
+    /// `imported_routes`, and the reverse mapping from `route_id_to_pubkey`.
+    /// Called after a send failure to ensure the next attempt fetches a fresh
+    /// route from DHT rather than reusing the stale one.
+    pub fn invalidate_route_for_peer(&mut self, pubkey_hex: &str) {
+        if let Some(blob) = self.route_cache.remove(pubkey_hex) {
+            if let Some((route_id, _)) = self.imported_routes.remove(&blob) {
+                self.route_id_to_pubkey.remove(&route_id);
+            }
+            tracing::debug!(peer = %pubkey_hex, "invalidated cached route for peer after send failure");
+        }
+    }
 }
