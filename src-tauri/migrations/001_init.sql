@@ -177,6 +177,7 @@ CREATE TABLE IF NOT EXISTS pending_friend_requests (
     profile_dht_key TEXT,
     route_blob BLOB,
     mailbox_dht_key TEXT,
+    prekey_bundle BLOB,
     PRIMARY KEY (owner_key, public_key)
 );
 

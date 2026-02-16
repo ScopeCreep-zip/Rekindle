@@ -66,14 +66,16 @@ const ChatWindow: Component = () => {
 
   const unlisteners: Promise<UnlistenFn>[] = [];
 
-  onMount(() => {
-    hydrateState();
-    setChatState("activeConversation", peerId);
-    handleLoadHistory(peerId, 50);
-    handleResetUnread(peerId);
-
+  onMount(async () => {
+    // Register event listeners FIRST so no messages are missed during hydration
     unlisteners.push(subscribeDmChatEvents(peerId, () => authState.publicKey ?? ""));
     unlisteners.push(subscribeChatPresenceEvents(peerId, setPeerStatus));
+
+    // Await hydration so stores are populated before loading history
+    await hydrateState();
+    setChatState("activeConversation", peerId);
+    await handleLoadHistory(peerId, 50);
+    handleResetUnread(peerId);
   });
 
   onCleanup(() => {

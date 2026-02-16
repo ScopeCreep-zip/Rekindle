@@ -121,6 +121,8 @@ export const commands = {
     invoke<void>("add_friend_from_invite", { inviteString }),
   blockFriend: (publicKey: string) =>
     invoke<void>("block_friend", { publicKey }),
+  emitFriendsPresence: () =>
+    invoke<void>("emit_friends_presence"),
 
   // Community
   getCommunities: () =>

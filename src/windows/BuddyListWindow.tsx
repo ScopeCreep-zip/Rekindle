@@ -59,8 +59,8 @@ const BuddyListWindow: Component = () => {
     }
   }
 
-  onMount(() => {
-    hydrateState();
+  onMount(async () => {
+    // Register event listeners FIRST so no events are missed during hydration
     unlisteners.push(subscribeBuddyListChatEvents());
     unlisteners.push(subscribeBuddyListPresenceEvents());
     unlisteners.push(subscribeNotificationHandler());
@@ -69,6 +69,12 @@ const BuddyListWindow: Component = () => {
       setNetworkAttached(event.isAttached);
     }));
     unlisteners.push(subscribeProfileUpdates(handleProfileUpdated));
+
+    // Await hydration so store is populated before subsequent commands
+    await hydrateState();
+
+    // Re-emit presence for already-online friends (listeners are now active)
+    commands.emitFriendsPresence();
 
     // Load persisted pending friend requests from SQLite
     handleLoadPendingRequests();
