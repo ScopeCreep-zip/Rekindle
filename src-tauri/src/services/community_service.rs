@@ -11,9 +11,6 @@ pub async fn create_community(
     state: &Arc<AppState>,
     name: &str,
 ) -> Result<String, String> {
-    // Generate a unique ID for the community
-    let community_id = format!("community_{}", hex::encode(rand_bytes(16)));
-
     // Clone routing context out of the parking_lot lock before any .await
     let routing_context = {
         let node = state.node.read();
@@ -24,7 +21,7 @@ pub async fn create_community(
 
     // Try DHT-backed creation first
     if let Some(rc) = routing_context {
-        if let Some(id) = create_community_with_dht(state, &rc, &community_id, name).await? {
+        if let Some(id) = create_community_with_dht(state, &rc, name).await? {
             return Ok(id);
         }
     } else {
@@ -32,6 +29,7 @@ pub async fn create_community(
     }
 
     // Fallback: create community without DHT record (e.g. node not connected yet)
+    let community_id = format!("community_{}", hex::encode(rand_bytes(16)));
     create_community_local(state, &community_id, name);
     Ok(community_id)
 }
@@ -40,7 +38,6 @@ pub async fn create_community(
 async fn create_community_with_dht(
     state: &Arc<AppState>,
     routing_context: &veilid_core::RoutingContext,
-    community_id: &str,
     name: &str,
 ) -> Result<Option<String>, String> {
     let mgr = DHTManager::new(routing_context.clone());
@@ -83,14 +80,14 @@ async fn create_community_with_dht(
 
     let mek = MediaEncryptionKey::generate(1);
     let mek_generation = mek.generation();
-    tracing::debug!(community = %community_id, mek_generation, "generated initial MEK for community");
+    tracing::debug!(community = %key, mek_generation, "generated initial MEK for community");
 
-    let my_pseudonym_key = derive_pseudonym_key(state, community_id);
-    state.mek_cache.lock().insert(community_id.to_string(), mek);
+    let my_pseudonym_key = derive_pseudonym_key(state, &key);
+    state.mek_cache.lock().insert(key.clone(), mek);
     let dht_owner_keypair = owner_keypair.map(|kp| kp.to_string());
 
     let community = CommunityState {
-        id: community_id.to_string(),
+        id: key.clone(),
         name: name.to_string(),
         description: None,
         channels: vec![default_channel],
@@ -105,9 +102,9 @@ async fn create_community_with_dht(
         is_hosted: true,
     };
 
-    state.communities.write().insert(community_id.to_string(), community);
-    tracing::info!(community = %community_id, name = %name, dht_key = %key, "community created with DHT record");
-    Ok(Some(community_id.to_string()))
+    state.communities.write().insert(key.clone(), community);
+    tracing::info!(name = %name, dht_key = %key, "community created with DHT record");
+    Ok(Some(key))
 }
 
 /// Create a community in local state only (no DHT).

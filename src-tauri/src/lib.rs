@@ -227,6 +227,8 @@ pub fn run() {
             commands::voice::leave_voice,
             commands::voice::set_mute,
             commands::voice::set_deafen,
+            commands::voice::list_audio_devices,
+            commands::voice::set_audio_devices,
             // status
             commands::status::set_status,
             commands::status::set_nickname,
@@ -306,14 +308,38 @@ async fn graceful_shutdown(state: &SharedState) {
         let _ = tx.send(()).await;
     }
 
-    // Shut down voice engine
+    // Shut down voice engine (signal loops, await, then stop devices)
     {
-        let mut ve = state.voice_engine.lock();
-        if let Some(ref mut handle) = *ve {
-            handle.engine.stop_capture();
-            handle.engine.stop_playback();
+        let (send_tx, send_h, recv_tx, recv_h, monitor_tx, monitor_h) = {
+            let mut ve = state.voice_engine.lock();
+            if let Some(ref mut handle) = *ve {
+                (
+                    handle.send_loop_shutdown.take(),
+                    handle.send_loop_handle.take(),
+                    handle.recv_loop_shutdown.take(),
+                    handle.recv_loop_handle.take(),
+                    handle.device_monitor_shutdown.take(),
+                    handle.device_monitor_handle.take(),
+                )
+            } else {
+                (None, None, None, None, None, None)
+            }
+        };
+        if let Some(tx) = send_tx { let _ = tx.send(()).await; }
+        if let Some(tx) = recv_tx { let _ = tx.send(()).await; }
+        if let Some(tx) = monitor_tx { let _ = tx.send(()).await; }
+        if let Some(h) = send_h { let _ = h.await; }
+        if let Some(h) = recv_h { let _ = h.await; }
+        if let Some(h) = monitor_h { let _ = h.await; }
+        {
+            let mut ve = state.voice_engine.lock();
+            if let Some(ref mut handle) = *ve {
+                handle.engine.stop_capture();
+                handle.engine.stop_playback();
+            }
+            *ve = None;
         }
-        *ve = None;
+        *state.voice_packet_tx.write() = None;
     }
 
     // Shut down server health check loop
@@ -426,6 +452,7 @@ fn toggle_mute(app_handle: &tauri::AppHandle, state: &SharedState) {
     if let Some(ref mut handle) = *ve {
         let new_muted = !handle.engine.is_muted;
         handle.engine.set_muted(new_muted);
+        handle.muted_flag.store(new_muted, std::sync::atomic::Ordering::Relaxed);
 
         let event = channels::VoiceEvent::UserMuted {
             public_key,

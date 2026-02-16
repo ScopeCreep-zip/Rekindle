@@ -1,4 +1,6 @@
+import type { UnlistenFn } from "@tauri-apps/api/event";
 import { commands } from "../ipc/commands";
+import { subscribeCommunityEvents } from "../ipc/channels";
 import { setCommunityState, communityState } from "../stores/community.store";
 import { authState } from "../stores/auth.store";
 import { addToast } from "../stores/toast.store";
@@ -558,4 +560,75 @@ export async function handleDeleteRole(
     console.error("Failed to delete role:", e);
     addToast("Failed to delete role", "error");
   }
+}
+
+export function subscribeCommunityEventDispatcher(): Promise<UnlistenFn> {
+  return subscribeCommunityEvents((event) => {
+    if (event.type === "memberJoined") {
+      const { communityId, pseudonymKey, displayName, roleIds } = event.data;
+      const community = communityState.communities[communityId];
+      if (community) {
+        const exists = community.members.some((m) => m.pseudonymKey === pseudonymKey);
+        if (!exists) {
+          setCommunityState("communities", communityId, "members", (prev) => [
+            ...prev,
+            { pseudonymKey, displayName, roleIds, displayRole: "", status: "online", timeoutUntil: null },
+          ]);
+        }
+      }
+    } else if (event.type === "memberRemoved") {
+      const { communityId, pseudonymKey } = event.data;
+      setCommunityState("communities", communityId, "members", (prev) =>
+        prev.filter((m) => m.pseudonymKey !== pseudonymKey),
+      );
+    } else if (event.type === "rolesChanged") {
+      const { communityId, roles } = event.data;
+      if (communityState.communities[communityId]) {
+        setCommunityState("communities", communityId, "roles", roles);
+      }
+    } else if (event.type === "memberRolesChanged") {
+      const { communityId, pseudonymKey, roleIds: newRoleIds } = event.data;
+      const community = communityState.communities[communityId];
+      if (community) {
+        const idx = community.members.findIndex((m) => m.pseudonymKey === pseudonymKey);
+        if (idx >= 0) {
+          setCommunityState("communities", communityId, "members", idx, "roleIds", newRoleIds);
+        }
+        if (pseudonymKey === community.myPseudonymKey) {
+          setCommunityState("communities", communityId, "myRoleIds", newRoleIds);
+        }
+      }
+    } else if (event.type === "memberTimedOut") {
+      const { communityId, pseudonymKey, timeoutUntil } = event.data;
+      const community = communityState.communities[communityId];
+      if (community) {
+        const idx = community.members.findIndex((m) => m.pseudonymKey === pseudonymKey);
+        if (idx >= 0) {
+          setCommunityState("communities", communityId, "members", idx, "timeoutUntil", timeoutUntil);
+        }
+      }
+    } else if (event.type === "channelOverwriteChanged") {
+      const { communityId } = event.data;
+      if (communityState.communities[communityId]) {
+        commands.getCommunityDetails().then((details) => {
+          const detail = details.find((d: { id: string }) => d.id === communityId);
+          if (detail) {
+            setCommunityState("communities", communityId, "roles", detail.roles);
+          }
+        }).catch(() => {});
+      }
+    } else if (event.type === "mekRotated") {
+      const { communityId, newGeneration } = event.data;
+      if (communityState.communities[communityId]) {
+        setCommunityState("communities", communityId, "mekGeneration", newGeneration);
+      }
+    } else if (event.type === "kicked") {
+      const { communityId } = event.data;
+      setCommunityState("communities", communityId, undefined!);
+      if (communityState.activeCommunity === communityId) {
+        setCommunityState("activeCommunity", null);
+        setCommunityState("activeChannel", null);
+      }
+    }
+  });
 }

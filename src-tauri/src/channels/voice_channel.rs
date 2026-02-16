@@ -22,4 +22,9 @@ pub enum VoiceEvent {
     ConnectionQuality {
         quality: String,
     },
+    DeviceChanged {
+        device_type: String,
+        device_name: String,
+        reason: String,
+    },
 }

@@ -42,17 +42,45 @@ impl AudioPlayback {
     /// Spawns a dedicated thread that owns the cpal output stream. The receiver
     /// is moved into the audio callback where `try_recv` drains decoded chunks
     /// into a `VecDeque`. When no data is available, silence (0.0) is output.
-    pub fn start(&mut self, rx: mpsc::Receiver<Vec<f32>>) -> Result<(), VoiceError> {
+    ///
+    /// `device_name`: optional device name to use. `None` = system default.
+    /// `device_error_tx`: optional channel to signal device errors (e.g. device unplugged).
+    pub fn start(
+        &mut self,
+        rx: mpsc::Receiver<Vec<f32>>,
+        device_name: Option<&str>,
+        device_error_tx: Option<mpsc::Sender<String>>,
+    ) -> Result<(), VoiceError> {
         let (init_tx, init_rx) = std_mpsc::sync_channel::<Result<(), VoiceError>>(1);
         let (shutdown_tx, shutdown_rx) = std_mpsc::channel::<()>();
 
         let sample_rate = self.sample_rate;
         let channels = self.channels;
+        let device_name_owned = device_name.map(String::from);
+
+        // Bridge sync error callback → async error channel
+        let (sync_err_tx, sync_err_rx) = std_mpsc::channel::<String>();
+        if let Some(async_err_tx) = device_error_tx {
+            thread::Builder::new()
+                .name("playback-error-bridge".into())
+                .spawn(move || {
+                    if let Ok(err_msg) = sync_err_rx.recv() {
+                        let _ = async_err_tx.blocking_send(err_msg);
+                    }
+                })
+                .ok();
+        }
 
         let handle = thread::Builder::new()
             .name("audio-playback".into())
             .spawn(move || {
-                let result = build_playback_stream(sample_rate, channels, rx);
+                let result = build_playback_stream(
+                    sample_rate,
+                    channels,
+                    rx,
+                    device_name_owned.as_deref(),
+                    sync_err_tx,
+                );
                 match result {
                     Ok(stream) => {
                         if let Err(e) = stream.play() {
@@ -113,11 +141,16 @@ fn build_playback_stream(
     sample_rate: u32,
     channels: u16,
     mut rx: mpsc::Receiver<Vec<f32>>,
+    device_name: Option<&str>,
+    error_tx: std_mpsc::Sender<String>,
 ) -> Result<cpal::Stream, VoiceError> {
     let host = cpal::default_host();
-    let device = host
-        .default_output_device()
-        .ok_or_else(|| VoiceError::AudioDevice("no output device available".into()))?;
+    let device = match device_name {
+        Some(name) => find_output_device(&host, name)?,
+        None => host
+            .default_output_device()
+            .ok_or_else(|| VoiceError::AudioDevice("no output device available".into()))?,
+    };
 
     let config = cpal::StreamConfig {
         channels,
@@ -142,8 +175,26 @@ fn build_playback_stream(
                     *sample = sample_buffer.pop_front().unwrap_or(0.0);
                 }
             },
-            |err| tracing::error!("output stream error: {err}"),
+            move |err: cpal::StreamError| {
+                tracing::error!("output stream error: {err}");
+                let _ = error_tx.send(format!("output: {err}"));
+            },
             None,
         )
         .map_err(|e| VoiceError::AudioDevice(format!("failed to build output stream: {e}")))
+}
+
+/// Find an output device by name, falling back to the default if not found.
+fn find_output_device(host: &cpal::Host, name: &str) -> Result<cpal::Device, VoiceError> {
+    use cpal::traits::DeviceTrait;
+    if let Ok(devices) = host.output_devices() {
+        for device in devices {
+            if device.name().ok().as_deref() == Some(name) {
+                return Ok(device);
+            }
+        }
+    }
+    tracing::warn!(device = %name, "requested output device not found — falling back to default");
+    host.default_output_device()
+        .ok_or_else(|| VoiceError::AudioDevice("no output device available".into()))
 }

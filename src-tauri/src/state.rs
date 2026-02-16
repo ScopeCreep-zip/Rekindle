@@ -8,6 +8,8 @@ use tokio::sync::mpsc;
 
 /// Central application state shared across all Tauri commands and services.
 pub struct AppState {
+    /// Channel for routing incoming voice packets from the dispatch loop to the receive loop.
+    pub voice_packet_tx: Arc<RwLock<Option<mpsc::Sender<rekindle_voice::transport::VoicePacket>>>>,
     /// Identity (loaded after Stronghold unlock).
     pub identity: Arc<RwLock<Option<IdentityState>>>,
     /// Friends list with presence info.
@@ -57,6 +59,7 @@ impl Default for AppState {
     fn default() -> Self {
         let (network_ready_tx, network_ready_rx) = tokio::sync::watch::channel(false);
         Self {
+            voice_packet_tx: Arc::new(RwLock::new(None)),
             identity: Arc::new(RwLock::new(None)),
             friends: Arc::new(RwLock::new(HashMap::new())),
             communities: Arc::new(RwLock::new(HashMap::new())),
@@ -130,6 +133,20 @@ pub struct VoiceEngineHandle {
     pub send_loop_shutdown: Option<mpsc::Sender<()>>,
     /// Join handle for the voice send loop task.
     pub send_loop_handle: Option<tokio::task::JoinHandle<()>>,
+    /// Shutdown sender for the voice receive loop task.
+    pub recv_loop_shutdown: Option<mpsc::Sender<()>>,
+    /// Join handle for the voice receive loop task.
+    pub recv_loop_handle: Option<tokio::task::JoinHandle<()>>,
+    /// Shutdown sender for the device monitor loop task.
+    pub device_monitor_shutdown: Option<mpsc::Sender<()>>,
+    /// Join handle for the device monitor loop task.
+    pub device_monitor_handle: Option<tokio::task::JoinHandle<()>>,
+    /// Which channel/call we're currently in (prevents double-joining).
+    pub channel_id: String,
+    /// Shared mute flag — send loop checks this to skip encoding.
+    pub muted_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Shared deafen flag — receive loop checks this to send silence.
+    pub deafened_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// Handle to the DHT record manager.
