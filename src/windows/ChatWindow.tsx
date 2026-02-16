@@ -47,10 +47,14 @@ const ChatWindow: Component = () => {
     };
   });
 
-  // Spread store proxy array into a new plain array so For/mapArray detects
-  // changes — store proxies return the same object ref for the same path,
-  // which mapArray's internal memo treats as "no change" via ===.
-  const messages = createMemo(() => [...conversation().messages]);
+  // Access messages DIRECTLY from the store — NOT through conversation() —
+  // so SolidJS creates a direct fine-grained subscription at the exact path
+  // that handleIncomingMessage updates via setChatState("conversations", peerId, "messages", ...).
+  // Chaining through conversation() breaks this because the memo caches the proxy by reference.
+  const messages = createMemo(() => {
+    const convo = chatState.conversations[peerId];
+    return convo ? [...convo.messages] : [];
+  });
 
   const ownName = createMemo(() => {
     return authState.displayName ?? "You";
