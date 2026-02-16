@@ -1470,6 +1470,86 @@
     cursor: not-allowed;
   }
 
+  .add-friend-tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 12px;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+  }
+
+  .add-friend-tab {
+    flex: 1;
+    padding: 6px 12px;
+    background: transparent;
+    border: none;
+    color: var(--color-xfire-offline);
+    cursor: pointer;
+    font-size: 12px;
+    border-bottom: 2px solid transparent;
+    transition: color 0.15s, border-color 0.15s;
+  }
+
+  .add-friend-tab:hover {
+    color: var(--color-xfire-text-primary);
+  }
+
+  .add-friend-tab.active {
+    color: var(--color-xfire-accent);
+    border-bottom-color: var(--color-xfire-accent);
+  }
+
+  .add-friend-section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .add-friend-generate {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .add-friend-invite-result {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .add-friend-invite-text {
+    width: 100%;
+    background: var(--color-xfire-bg-input);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    color: var(--color-xfire-text-primary);
+    padding: 6px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-family: monospace;
+    resize: none;
+  }
+
+  .add-friend-copy-btn {
+    align-self: flex-end;
+    padding: 4px 12px;
+    background: var(--color-xfire-accent);
+    border: none;
+    border-radius: 3px;
+    color: white;
+    font-size: 11px;
+    cursor: pointer;
+  }
+
+  .add-friend-copy-btn:hover {
+    background: color-mix(in srgb, var(--color-xfire-accent) 80%, white);
+  }
+
+  .add-friend-divider {
+    text-align: center;
+    color: var(--color-xfire-offline);
+    font-size: 11px;
+    padding: 4px 0;
+  }
+
   /* Bottom action bar */
   .action-bar {
     display: flex;

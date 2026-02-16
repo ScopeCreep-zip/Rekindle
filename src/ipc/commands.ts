@@ -116,6 +116,11 @@ export const commands = {
     invoke<void>("rename_friend_group", { groupId, name }),
   moveFriendToGroup: (publicKey: string, groupId: number | null) =>
     invoke<void>("move_friend_to_group", { publicKey, groupId }),
+  generateInvite: () => invoke<string>("generate_invite"),
+  addFriendFromInvite: (inviteString: string) =>
+    invoke<void>("add_friend_from_invite", { inviteString }),
+  blockFriend: (publicKey: string) =>
+    invoke<void>("block_friend", { publicKey }),
 
   // Community
   getCommunities: () =>

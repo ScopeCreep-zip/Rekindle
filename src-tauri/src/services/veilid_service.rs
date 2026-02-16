@@ -1076,10 +1076,34 @@ async fn allocate_fresh_private_route(app_handle: &tauri::AppHandle, state: &Arc
 
             // Re-publish route blob to DHT profile subkey 6
             if let Err(e) =
-                super::message_service::push_profile_update(state, 6, route_blob.blob).await
+                super::message_service::push_profile_update(state, 6, route_blob.blob.clone()).await
             {
                 tracing::warn!(error = %e, "failed to re-publish route blob to DHT");
             }
+
+            // Also update mailbox subkey 0 with the fresh route blob
+            let mailbox_key = {
+                let node = state.node.read();
+                node.as_ref().and_then(|nh| nh.mailbox_dht_key.clone())
+            };
+            if let Some(mailbox_key) = mailbox_key {
+                let rc = {
+                    let node = state.node.read();
+                    node.as_ref().map(|nh| nh.routing_context.clone())
+                };
+                if let Some(rc) = rc {
+                    if let Err(e) = rekindle_protocol::dht::mailbox::update_mailbox_route(
+                        &rc,
+                        &mailbox_key,
+                        &route_blob.blob,
+                    )
+                    .await
+                    {
+                        tracing::warn!(error = %e, "failed to update mailbox route blob");
+                    }
+                }
+            }
+
             tracing::info!("re-allocated private route");
         }
         Err(e) => {
@@ -1178,6 +1202,7 @@ pub async fn initialize_node(
         friend_list_dht_key: None,
         friend_list_owner_keypair: None,
         account_dht_key: None,
+        mailbox_dht_key: None,
     };
     *state.node.write() = Some(node_handle);
 
@@ -1314,6 +1339,7 @@ pub async fn logout_cleanup(app_handle: Option<&tauri::AppHandle>, state: &AppSt
             nh.friend_list_dht_key = None;
             nh.friend_list_owner_keypair = None;
             nh.account_dht_key = None;
+            nh.mailbox_dht_key = None;
         }
     }
 

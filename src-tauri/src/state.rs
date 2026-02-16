@@ -110,6 +110,8 @@ pub struct NodeHandle {
     pub friend_list_owner_keypair: Option<veilid_core::KeyPair>,
     /// Our account DHT record key (Phase 3).
     pub account_dht_key: Option<String>,
+    /// Our mailbox DHT record key (deterministic, permanent).
+    pub mailbox_dht_key: Option<String>,
 }
 
 /// Handle to the Signal session manager.
@@ -267,6 +269,8 @@ pub struct FriendState {
     pub local_conversation_key: Option<String>,
     /// The friend's conversation DHT record key (their side).
     pub remote_conversation_key: Option<String>,
+    /// The friend's mailbox DHT key (for route discovery).
+    pub mailbox_dht_key: Option<String>,
 }
 
 /// Game presence information.

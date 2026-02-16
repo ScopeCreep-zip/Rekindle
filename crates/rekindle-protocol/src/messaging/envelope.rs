@@ -1,3 +1,4 @@
+use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 
 /// Wire format envelope wrapping all messages sent over Veilid.
@@ -40,11 +41,29 @@ pub enum MessagePayload {
         display_name: String,
         message: String,
         prekey_bundle: Vec<u8>,
+        /// Sender's private profile DHT key (for presence watching).
+        profile_dht_key: String,
+        /// Sender's current route blob (for immediate contact).
+        route_blob: Vec<u8>,
+        /// Sender's mailbox DHT key (for route discovery after reconnect).
+        mailbox_dht_key: String,
     },
     /// Friend request acceptance.
-    FriendAccept { prekey_bundle: Vec<u8> },
+    FriendAccept {
+        prekey_bundle: Vec<u8>,
+        /// Acceptor's private profile DHT key.
+        profile_dht_key: String,
+        /// Acceptor's current route blob.
+        route_blob: Vec<u8>,
+        /// Acceptor's mailbox DHT key.
+        mailbox_dht_key: String,
+    },
     /// Friend request rejection.
     FriendReject,
+    /// Sent to remaining friends after profile key rotation (block/unfriend).
+    ProfileKeyRotated {
+        new_profile_dht_key: String,
+    },
     /// Presence update (status, game info).
     PresenceUpdate {
         status: u8,
@@ -59,6 +78,127 @@ pub struct GameInfo {
     pub game_name: String,
     pub server_info: Option<String>,
     pub elapsed_seconds: u32,
+}
+
+// ---------------------------------------------------------------------------
+// Invite blob types
+// ---------------------------------------------------------------------------
+
+/// A signed invite blob that contains everything needed for initial contact.
+///
+/// Encoded as JSON, signed with Ed25519, then base64url-encoded for sharing
+/// as a `rekindle://` URL or plain string.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InviteBlob {
+    /// Sender's Ed25519 public key (hex).
+    pub public_key: String,
+    /// Sender's display name.
+    pub display_name: String,
+    /// Sender's mailbox DHT record key (for reading route blob).
+    pub mailbox_dht_key: String,
+    /// Sender's private profile DHT record key (for presence watching).
+    pub profile_dht_key: String,
+    /// Sender's current route blob (for immediate contact, may be stale).
+    pub route_blob: Vec<u8>,
+    /// Sender's Signal `PreKeyBundle` (serialized JSON).
+    pub prekey_bundle: Vec<u8>,
+    /// Ed25519 signature over the JSON of all fields above.
+    pub signature: Vec<u8>,
+}
+
+/// Create a signed invite blob from identity credentials.
+///
+/// Signs over a JSON-serialized form of the invite data (excluding the
+/// signature field itself) using the Ed25519 secret key.
+pub fn create_invite_blob(
+    secret_key: &[u8; 32],
+    public_key: &str,
+    display_name: &str,
+    mailbox_dht_key: &str,
+    profile_dht_key: &str,
+    route_blob: &[u8],
+    prekey_bundle: &[u8],
+) -> InviteBlob {
+    use ed25519_dalek::{Signer, SigningKey};
+
+    let signing_key = SigningKey::from_bytes(secret_key);
+
+    // Build the signable payload (all fields except signature)
+    let signable = serde_json::json!({
+        "public_key": public_key,
+        "display_name": display_name,
+        "mailbox_dht_key": mailbox_dht_key,
+        "profile_dht_key": profile_dht_key,
+        "route_blob": route_blob,
+        "prekey_bundle": prekey_bundle,
+    });
+    let signable_bytes = serde_json::to_vec(&signable).unwrap_or_default();
+    let signature = signing_key.sign(&signable_bytes);
+
+    InviteBlob {
+        public_key: public_key.to_string(),
+        display_name: display_name.to_string(),
+        mailbox_dht_key: mailbox_dht_key.to_string(),
+        profile_dht_key: profile_dht_key.to_string(),
+        route_blob: route_blob.to_vec(),
+        prekey_bundle: prekey_bundle.to_vec(),
+        signature: signature.to_bytes().to_vec(),
+    }
+}
+
+/// Verify the Ed25519 signature on an invite blob.
+///
+/// Returns `Ok(())` if the signature is valid, `Err` otherwise.
+pub fn verify_invite_blob(blob: &InviteBlob) -> Result<(), String> {
+    use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+
+    let pub_bytes = hex::decode(&blob.public_key)
+        .map_err(|e| format!("invalid public key hex: {e}"))?;
+    let pub_array: [u8; 32] = pub_bytes
+        .try_into()
+        .map_err(|_| "public key must be 32 bytes".to_string())?;
+    let verifying_key = VerifyingKey::from_bytes(&pub_array)
+        .map_err(|e| format!("invalid public key: {e}"))?;
+
+    let sig_array: [u8; 64] = blob
+        .signature
+        .clone()
+        .try_into()
+        .map_err(|_| "signature must be 64 bytes".to_string())?;
+    let signature = Signature::from_bytes(&sig_array);
+
+    // Reconstruct the signable payload
+    let signable = serde_json::json!({
+        "public_key": blob.public_key,
+        "display_name": blob.display_name,
+        "mailbox_dht_key": blob.mailbox_dht_key,
+        "profile_dht_key": blob.profile_dht_key,
+        "route_blob": blob.route_blob,
+        "prekey_bundle": blob.prekey_bundle,
+    });
+    let signable_bytes = serde_json::to_vec(&signable).unwrap_or_default();
+
+    verifying_key
+        .verify(&signable_bytes, &signature)
+        .map_err(|e| format!("invalid invite signature: {e}"))
+}
+
+/// Encode an invite blob as a `rekindle://` URL.
+pub fn encode_invite_url(blob: &InviteBlob) -> String {
+    let json = serde_json::to_vec(blob).unwrap_or_default();
+    let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&json);
+    format!("rekindle://{encoded}")
+}
+
+/// Decode an invite blob from a `rekindle://` URL or raw base64 string.
+pub fn decode_invite_url(url: &str) -> Result<InviteBlob, String> {
+    let data = url.strip_prefix("rekindle://").unwrap_or(url);
+    let json_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(data)
+        .map_err(|e| format!("invalid base64: {e}"))?;
+    let blob: InviteBlob =
+        serde_json::from_slice(&json_bytes).map_err(|e| format!("invalid invite JSON: {e}"))?;
+    Ok(blob)
 }
 
 // ---------------------------------------------------------------------------
