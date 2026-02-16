@@ -6,7 +6,7 @@ import MessageInput from "../components/chat/MessageInput";
 import TypingIndicator from "../components/chat/TypingIndicator";
 import StatusDot from "../components/status/StatusDot";
 import VoicePanel from "../components/voice/VoicePanel";
-import { chatState, setChatState } from "../stores/chat.store";
+import { chatState, setChatState, type Message } from "../stores/chat.store";
 import { authState } from "../stores/auth.store";
 import { friendsState } from "../stores/friends.store";
 import { voiceState } from "../stores/voice.store";
@@ -38,14 +38,13 @@ const ChatWindow: Component = () => {
     friendsState.friends[peerId]?.status ?? "offline",
   );
 
-  const conversation = createMemo(() => {
-    return chatState.conversations[peerId] ?? {
-      peerId,
-      messages: [],
-      isTyping: false,
-      lastRead: 0,
-    };
-  });
+  // Access messages and isTyping directly from the store so SolidJS creates
+  // fine-grained subscriptions at the exact paths that change. A createMemo
+  // wrapping the parent conversation object caches the store proxy and breaks
+  // reactivity for nested array updates (messages appends).
+  const EMPTY_MESSAGES: Message[] = [];
+  const messages = () => chatState.conversations[peerId]?.messages ?? EMPTY_MESSAGES;
+  const isTyping = () => chatState.conversations[peerId]?.isTyping ?? false;
 
   const ownName = createMemo(() => {
     return authState.displayName ?? "You";
@@ -130,7 +129,7 @@ const ChatWindow: Component = () => {
         </button>
       </div>
       <MessageList
-        messages={conversation().messages}
+        messages={messages()}
         ownName={ownName()}
         peerName={peerName()}
         onRetry={handleRetry}
@@ -138,7 +137,7 @@ const ChatWindow: Component = () => {
       <Show when={isInCallWithPeer()}>
         <VoicePanel />
       </Show>
-      <TypingIndicator isTyping={conversation().isTyping} peerName={peerName()} />
+      <TypingIndicator isTyping={isTyping()} peerName={peerName()} />
       <MessageInput peerId={peerId} />
     </div>
   );
