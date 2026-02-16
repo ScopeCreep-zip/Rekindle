@@ -15,6 +15,7 @@ use crate::state::AppState;
 pub async fn start_sync_loop(
     state: Arc<AppState>,
     pool: DbPool,
+    app_handle: tauri::AppHandle,
     mut shutdown_rx: mpsc::Receiver<()>,
 ) {
     tracing::info!("sync service started");
@@ -24,7 +25,7 @@ pub async fn start_sync_loop(
     loop {
         tokio::select! {
             _ = interval.tick() => {
-                if let Err(e) = sync_friends(&state).await {
+                if let Err(e) = sync_friends(&state, &app_handle).await {
                     tracing::warn!(error = %e, "friend sync failed");
                 }
                 if let Err(e) = sync_conversations(&state).await {
@@ -48,15 +49,15 @@ pub async fn start_sync_loop(
 /// Run a single friend sync immediately (called from auth on login).
 ///
 /// This avoids waiting 30 seconds for the first periodic tick.
-pub async fn sync_friends_now(state: &Arc<AppState>) -> Result<(), String> {
-    sync_friends(state).await
+pub async fn sync_friends_now(state: &Arc<AppState>, app_handle: &tauri::AppHandle) -> Result<(), String> {
+    sync_friends(state, app_handle).await
 }
 
 /// Sync friend list: read friend profile DHT records and update local state.
 ///
 /// Reads subkeys 2 (status), 4 (game info), 5 (prekey bundle), and 6 (route blob)
 /// for each friend with a DHT record key. Also sets up DHT watches on first encounter.
-async fn sync_friends(state: &Arc<AppState>) -> Result<(), String> {
+async fn sync_friends(state: &Arc<AppState>, app_handle: &tauri::AppHandle) -> Result<(), String> {
     // Clone routing_context out before any await (parking_lot guards are !Send)
     let routing_context = {
         let node = state.node.read();
@@ -89,30 +90,22 @@ async fn sync_friends(state: &Arc<AppState>) -> Result<(), String> {
             Err(_) => continue,
         };
 
-        // Ensure the DHT key → friend mapping is registered for value change routing.
-        // On the first encounter, also start a DHT watch for real-time presence.
-        let needs_watch = {
+        // Always register DHT key mapping (idempotent) and re-watch.
+        // Veilid watches don't survive node restarts; watch_dht_values is
+        // idempotent if a watch already exists (returns current watch count).
+        {
             let mut dht_mgr = state.dht_manager.write();
             if let Some(mgr) = dht_mgr.as_mut() {
-                if mgr.friend_for_dht_key(dht_key).is_none() {
-                    mgr.register_friend_dht_key(dht_key.clone(), friend_key.clone());
-                    true
-                } else {
-                    false
-                }
-            } else {
-                false
-            }
-        };
-        if needs_watch {
-            if let Err(e) =
-                super::presence_service::watch_friend(state, friend_key, dht_key).await
-            {
-                tracing::trace!(friend = %friend_key, error = %e, "failed to watch friend DHT");
+                mgr.register_friend_dht_key(dht_key.clone(), friend_key.clone());
             }
         }
+        if let Err(e) =
+            super::presence_service::watch_friend(state, friend_key, dht_key).await
+        {
+            tracing::trace!(friend = %friend_key, error = %e, "failed to re-watch friend DHT");
+        }
 
-        sync_friend_dht_subkeys(state, &routing_context, friend_key, record_key).await;
+        sync_friend_dht_subkeys(state, &routing_context, friend_key, record_key, app_handle).await;
     }
 
     tracing::debug!(friends = friends_with_dht.len(), "friend sync complete");
@@ -128,6 +121,7 @@ async fn sync_friend_dht_subkeys(
     routing_context: &veilid_core::RoutingContext,
     friend_key: &str,
     record_key: veilid_core::RecordKey,
+    app_handle: &tauri::AppHandle,
 ) {
     // Ensure the record is open before reading (re-opening is a no-op if already open).
     if let Err(e) = routing_context.open_dht_record(record_key.clone(), None).await {
@@ -138,9 +132,24 @@ async fn sync_friend_dht_subkeys(
         return;
     }
 
-    // Read status subkey (2) from DHT
+    sync_friend_status(state, routing_context, friend_key, &record_key, app_handle).await;
+    sync_friend_game_info(state, routing_context, friend_key, &record_key, app_handle).await;
+    sync_friend_prekey(state, routing_context, friend_key, &record_key).await;
+    sync_friend_route_blob(state, routing_context, friend_key, record_key).await;
+}
+
+/// Read status (subkey 2) from DHT and emit presence events on change.
+async fn sync_friend_status(
+    state: &Arc<AppState>,
+    routing_context: &veilid_core::RoutingContext,
+    friend_key: &str,
+    record_key: &veilid_core::RecordKey,
+    app_handle: &tauri::AppHandle,
+) {
+    use tauri::Emitter;
+
     if let Ok(Some(value_data)) = routing_context
-        .get_dht_value(record_key.clone(), 2, false)
+        .get_dht_value(record_key.clone(), 2, true)
         .await
     {
         if let Some(&status_byte) = value_data.data().first() {
@@ -150,37 +159,96 @@ async fn sync_friend_dht_subkeys(
                 2 => crate::state::UserStatus::Busy,
                 _ => crate::state::UserStatus::Offline,
             };
-            let mut friends = state.friends.write();
-            if let Some(friend) = friends.get_mut(friend_key) {
-                friend.status = status;
+            let old_status = {
+                let friends = state.friends.read();
+                friends.get(friend_key).map(|f| f.status)
+            };
+            {
+                let mut friends = state.friends.write();
+                if let Some(friend) = friends.get_mut(friend_key) {
+                    friend.status = status;
+                }
+            }
+            if old_status != Some(status) {
+                if status == crate::state::UserStatus::Offline {
+                    let _ = app_handle.emit("presence-event",
+                        &crate::channels::PresenceEvent::FriendOffline {
+                            public_key: friend_key.to_string(),
+                        });
+                } else {
+                    if old_status == Some(crate::state::UserStatus::Offline) {
+                        let _ = app_handle.emit("presence-event",
+                            &crate::channels::PresenceEvent::FriendOnline {
+                                public_key: friend_key.to_string(),
+                            });
+                    }
+                    let _ = app_handle.emit("presence-event",
+                        &crate::channels::PresenceEvent::StatusChanged {
+                            public_key: friend_key.to_string(),
+                            status: format!("{status:?}").to_lowercase(),
+                            status_message: None,
+                        });
+                }
             }
         }
     }
+}
 
-    // Read game info subkey (4) from DHT — fallback for when DHT watches fail
+/// Read game info (subkey 4) from DHT and emit `GameChanged` on change.
+async fn sync_friend_game_info(
+    state: &Arc<AppState>,
+    routing_context: &veilid_core::RoutingContext,
+    friend_key: &str,
+    record_key: &veilid_core::RecordKey,
+    app_handle: &tauri::AppHandle,
+) {
+    use tauri::Emitter;
+
     if let Ok(Some(value_data)) = routing_context
-        .get_dht_value(record_key.clone(), 4, false)
+        .get_dht_value(record_key.clone(), 4, true)
         .await
     {
         let data = value_data.data();
         if !data.is_empty() {
             let game_info: Option<crate::state::GameInfoState> =
                 serde_json::from_slice(data).ok();
-            let mut friends = state.friends.write();
-            if let Some(friend) = friends.get_mut(friend_key) {
-                friend.game_info = game_info;
+            let old_game_name = {
+                let friends = state.friends.read();
+                friends.get(friend_key).and_then(|f| f.game_info.as_ref().map(|g| g.game_name.clone()))
+            };
+            let new_game_name = game_info.as_ref().map(|g| g.game_name.clone());
+            {
+                let mut friends = state.friends.write();
+                if let Some(friend) = friends.get_mut(friend_key) {
+                    friend.game_info.clone_from(&game_info);
+                }
+            }
+            if old_game_name != new_game_name {
+                let _ = app_handle.emit("presence-event",
+                    &crate::channels::PresenceEvent::GameChanged {
+                        public_key: friend_key.to_string(),
+                        game_name: game_info.as_ref().map(|g| g.game_name.clone()),
+                        game_id: game_info.as_ref().map(|g| g.game_id),
+                        elapsed_seconds: None,
+                    });
             }
         }
     }
+}
 
-    // Read prekey bundle subkey (5) from DHT — cache for Signal session establishment
+/// Read prekey bundle (subkey 5) from DHT and establish Signal session if needed.
+async fn sync_friend_prekey(
+    state: &Arc<AppState>,
+    routing_context: &veilid_core::RoutingContext,
+    friend_key: &str,
+    record_key: &veilid_core::RecordKey,
+) {
     if let Ok(Some(value_data)) = routing_context
-        .get_dht_value(record_key.clone(), 5, false)
+        .get_dht_value(record_key.clone(), 5, true)
         .await
     {
         let data = value_data.data();
         if !data.is_empty() {
-            // Try to establish a Signal session if we don't have one yet
             let has_session = {
                 let signal = state.signal_manager.lock();
                 signal
@@ -213,10 +281,17 @@ async fn sync_friend_dht_subkeys(
             }
         }
     }
+}
 
-    // Read route blob subkey (6) from DHT and cache it
+/// Read route blob (subkey 6) from DHT and cache it.
+async fn sync_friend_route_blob(
+    state: &Arc<AppState>,
+    routing_context: &veilid_core::RoutingContext,
+    friend_key: &str,
+    record_key: veilid_core::RecordKey,
+) {
     if let Ok(Some(value_data)) = routing_context
-        .get_dht_value(record_key, 6, false)
+        .get_dht_value(record_key, 6, true)
         .await
     {
         let route_blob = value_data.data().to_vec();

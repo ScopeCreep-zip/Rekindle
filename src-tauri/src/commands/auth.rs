@@ -1001,8 +1001,9 @@ fn spawn_login_services(
     // Spawn the periodic sync service
     let sync_state = Arc::clone(state);
     let sync_pool = pool.clone();
+    let sync_app = app.clone();
     let sync_handle = tauri::async_runtime::spawn(async move {
-        services::sync_service::start_sync_loop(sync_state, sync_pool, sync_shutdown_rx).await;
+        services::sync_service::start_sync_loop(sync_state, sync_pool, sync_app, sync_shutdown_rx).await;
     });
 
     *state.sync_shutdown_tx.write() = Some(sync_shutdown_tx);
@@ -1352,7 +1353,7 @@ async fn spawn_dht_publish(
     }
 
     // Immediate friend sync now that network is up
-    if let Err(e) = services::sync_service::sync_friends_now(&state).await {
+    if let Err(e) = services::sync_service::sync_friends_now(&state, &app_handle).await {
         tracing::warn!(error = %e, "immediate friend sync failed");
     }
 
