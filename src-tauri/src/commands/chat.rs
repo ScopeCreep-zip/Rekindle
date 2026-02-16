@@ -135,6 +135,56 @@ pub async fn get_message_history(
     Ok(messages)
 }
 
+/// Proactively refresh a peer's route before sending messages.
+///
+/// Called when a chat window opens to ensure the cached route is fresh,
+/// reducing first-message delivery failures from stale routes.
+#[tauri::command]
+pub async fn prepare_chat_session(
+    peer_id: String,
+    state: State<'_, SharedState>,
+) -> Result<(), String> {
+    let dht_record_key = {
+        let friends = state.friends.read();
+        friends.get(&peer_id).and_then(|f| f.dht_record_key.clone())
+    };
+    let Some(dht_key_str) = dht_record_key else {
+        return Ok(()); // No DHT key — nothing to sync
+    };
+    let record_key: veilid_core::RecordKey = dht_key_str
+        .parse()
+        .map_err(|e| format!("invalid DHT key: {e}"))?;
+
+    let (routing_context, api) = {
+        let node = state.node.read();
+        let nh = node.as_ref().ok_or("node not initialized")?;
+        if !nh.is_attached {
+            return Ok(());
+        }
+        (nh.routing_context.clone(), nh.api.clone())
+    };
+
+    // Open (no-op if already open) and force-refresh route blob (subkey 6)
+    let _ = routing_context
+        .open_dht_record(record_key.clone(), None)
+        .await;
+    if let Ok(Some(value_data)) = routing_context
+        .get_dht_value(record_key, 6, true)
+        .await
+    {
+        let route_blob = value_data.data().to_vec();
+        if !route_blob.is_empty() {
+            let mut dht_mgr = state.dht_manager.write();
+            if let Some(mgr) = dht_mgr.as_mut() {
+                mgr.manager.cache_route(&api, &peer_id, route_blob);
+            }
+        }
+    }
+
+    tracing::debug!(peer = %peer_id, "prepared chat session — route refreshed from DHT");
+    Ok(())
+}
+
 /// Mark messages as read.
 #[tauri::command]
 pub async fn mark_read(

@@ -1,4 +1,4 @@
-import { Component, onMount, onCleanup, createMemo, createSignal, Show } from "solid-js";
+import { Component, onMount, onCleanup, createMemo, Show } from "solid-js";
 import { type UnlistenFn } from "@tauri-apps/api/event";
 import Titlebar from "../components/titlebar/Titlebar";
 import MessageList from "../components/chat/MessageList";
@@ -8,14 +8,14 @@ import StatusDot from "../components/status/StatusDot";
 import VoicePanel from "../components/voice/VoicePanel";
 import { chatState, setChatState } from "../stores/chat.store";
 import { authState } from "../stores/auth.store";
-import type { UserStatus } from "../stores/auth.store";
 import { friendsState } from "../stores/friends.store";
 import { voiceState } from "../stores/voice.store";
 import { handleLoadHistory, handleResetUnread, handleRetrySendMessage } from "../handlers/chat.handlers";
 import { handleJoinVoice, handleLeaveVoice } from "../handlers/voice.handlers";
 import { subscribeDmChatEvents } from "../handlers/chat-events.handlers";
-import { subscribeChatPresenceEvents } from "../handlers/presence-events.handlers";
+import { subscribeBuddyListPresenceEvents } from "../handlers/presence-events.handlers";
 import { hydrateState } from "../ipc/hydrate";
+import { commands } from "../ipc/commands";
 import { ICON_PHONE, ICON_HANGUP } from "../icons";
 
 function getPeerFromUrl(): string {
@@ -31,7 +31,10 @@ const ChatWindow: Component = () => {
     return friend?.displayName ?? peerId.slice(0, 12) + "...";
   });
 
-  const [peerStatus, setPeerStatus] = createSignal<UserStatus>(
+  // Reactive memo — tracks the global store, so any presence event that
+  // updates friendsState (via subscribeBuddyListPresenceEvents) is reflected
+  // immediately without maintaining a parallel local signal.
+  const peerStatus = createMemo(() =>
     friendsState.friends[peerId]?.status ?? "offline",
   );
 
@@ -65,20 +68,46 @@ const ChatWindow: Component = () => {
   }
 
   const unlisteners: Promise<UnlistenFn>[] = [];
+  let refreshInterval: ReturnType<typeof setInterval> | undefined;
 
   onMount(async () => {
-    // Register event listeners FIRST so no messages are missed during hydration
+    // Register event listeners FIRST so no events are missed during hydration.
+    // subscribeBuddyListPresenceEvents updates the global friendsState store
+    // (each Tauri webview has isolated JS context, so we need our own listener).
+    // The peerStatus memo reactively reads from that store.
     unlisteners.push(subscribeDmChatEvents(peerId, () => authState.publicKey ?? ""));
-    unlisteners.push(subscribeChatPresenceEvents(peerId, setPeerStatus));
+    unlisteners.push(subscribeBuddyListPresenceEvents());
 
     // Await hydration so stores are populated before loading history
     await hydrateState();
     setChatState("activeConversation", peerId);
     await handleLoadHistory(peerId, 50);
     handleResetUnread(peerId);
+
+    // Prepare chat session — ensure fresh route for this peer before sending
+    await commands.prepareChatSession(peerId).catch(() => {});
+
+    // Auto-retry any previously failed messages now that route is fresh
+    const convo = chatState.conversations[peerId];
+    if (convo) {
+      const failedMsgs = convo.messages.filter((m) => m.status === "failed");
+      for (const msg of failedMsgs) {
+        handleRetrySendMessage(peerId, msg.id);
+      }
+    }
+
+    // Periodic route refresh (catches route rotations during long chats)
+    refreshInterval = setInterval(() => {
+      commands.prepareChatSession(peerId).catch(() => {});
+    }, 60_000);
+
+    // Catch up: sync presence from DHT — the memo will auto-update
+    // when emitFriendsPresence updates the global friendsState store.
+    await commands.emitFriendsPresence();
   });
 
   onCleanup(() => {
+    if (refreshInterval) clearInterval(refreshInterval);
     for (const p of unlisteners) {
       p.then((unlisten) => unlisten());
     }

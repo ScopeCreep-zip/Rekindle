@@ -180,6 +180,7 @@ pub fn run() {
             commands::auth::list_identities,
             commands::auth::delete_identity,
             // chat
+            commands::chat::prepare_chat_session,
             commands::chat::send_message,
             commands::chat::send_typing,
             commands::chat::get_message_history,

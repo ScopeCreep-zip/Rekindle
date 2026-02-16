@@ -88,6 +88,8 @@ export const commands = {
     invoke<void>("delete_identity", { publicKey, passphrase }),
 
   // Chat
+  prepareChatSession: (peerId: string) =>
+    invoke<void>("prepare_chat_session", { peerId }),
   sendMessage: (to: string, body: string) =>
     invoke<void>("send_message", { to, body }),
   sendTyping: (peerId: string, typing: boolean) =>

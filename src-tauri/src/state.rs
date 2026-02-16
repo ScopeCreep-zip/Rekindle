@@ -53,6 +53,10 @@ pub struct AppState {
     /// Community server route cache: `community_id` -> imported `RouteId`.
     /// For communities we're a MEMBER of (not owner) — the remote server's route.
     pub community_routes: RwLock<HashMap<String, veilid_core::RouteId>>,
+    /// Friends whose DHT `watch_dht_values` returned false (watch not established).
+    /// Per Veilid GitLab #377, apps must poll as fallback when watching fails.
+    /// The sync service uses `force_refresh=true` for these friends.
+    pub unwatched_friends: RwLock<HashSet<String>>,
 }
 
 impl Default for AppState {
@@ -79,6 +83,7 @@ impl Default for AppState {
             server_process: Mutex::new(None),
             server_health_shutdown_tx: Arc::new(RwLock::new(None)),
             community_routes: RwLock::new(HashMap::new()),
+            unwatched_friends: RwLock::new(HashSet::new()),
         }
     }
 }

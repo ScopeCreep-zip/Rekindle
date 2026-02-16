@@ -916,17 +916,44 @@ async fn rotate_profile_key(
 ///
 /// Called by the frontend after hydration completes so that event listeners
 /// (registered before hydration) receive the current friend presence state.
+/// Waits for Veilid network readiness (up to 15s) before syncing from DHT
+/// so that `state.friends` has fresh data rather than stale Offline defaults.
 #[tauri::command]
 pub async fn emit_friends_presence(
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
+    // Wait for network readiness before attempting DHT sync (up to 15s).
+    // Without this, sync_friends_now() silently no-ops when not attached.
+    let mut rx = state.network_ready_rx.clone();
+    let _ready = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+        loop {
+            if *rx.borrow_and_update() {
+                return true;
+            }
+            if rx.changed().await.is_err() {
+                return false;
+            }
+        }
+    })
+    .await
+    .unwrap_or(false);
+
+    // Best-effort sync from DHT so we have fresh status data
+    let _ = services::sync_service::sync_friends_now(&state, &app).await;
+
     let friends: Vec<(String, UserStatus)> = {
         let friends = state.friends.read();
         friends.values().map(|f| (f.public_key.clone(), f.status)).collect()
     };
     for (key, status) in friends {
         if status != UserStatus::Offline {
+            // Emit FriendOnline first so the frontend transitions the friend
+            // out of the offline visual group before updating the specific status.
+            let _ = app.emit("presence-event",
+                &crate::channels::PresenceEvent::FriendOnline {
+                    public_key: key.clone(),
+                });
             let _ = app.emit("presence-event",
                 &crate::channels::PresenceEvent::StatusChanged {
                     public_key: key,

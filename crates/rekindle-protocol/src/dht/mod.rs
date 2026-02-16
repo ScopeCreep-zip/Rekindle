@@ -244,6 +244,10 @@ impl DHTManager {
     /// so that [`invalidate_dead_routes`] can selectively remove only the
     /// affected peer's entry.
     pub fn cache_route(&mut self, api: &VeilidAPI, pubkey_hex: &str, route_blob: Vec<u8>) {
+        if route_blob.is_empty() {
+            tracing::debug!(peer = %pubkey_hex, "ignoring empty route blob — will fetch from DHT");
+            return;
+        }
         // Import and cache RouteId for selective invalidation
         if let Ok(route_id) = api.import_remote_private_route(route_blob.clone()) {
             self.imported_routes

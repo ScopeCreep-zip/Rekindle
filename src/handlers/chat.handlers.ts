@@ -1,7 +1,7 @@
 import { commands } from "../ipc/commands";
 import { setChatState, chatState } from "../stores/chat.store";
 import { authState } from "../stores/auth.store";
-import { setFriendsState } from "../stores/friends.store";
+import { friendsState, setFriendsState } from "../stores/friends.store";
 import type { Message } from "../stores/chat.store";
 
 export async function handleSendMessage(to: string, body: string): Promise<void> {
@@ -139,7 +139,9 @@ export function handleMarkRead(peerId: string): void {
 }
 
 export function handleResetUnread(peerId: string): void {
-  setFriendsState("friends", peerId, "unreadCount", 0);
+  if (friendsState.friends[peerId]) {
+    setFriendsState("friends", peerId, "unreadCount", 0);
+  }
   commands.markRead(peerId).catch((e) => {
     console.error("Failed to mark read:", e);
   });

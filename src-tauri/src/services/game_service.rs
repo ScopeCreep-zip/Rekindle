@@ -21,11 +21,11 @@ pub async fn start_game_detection(
     tracing::info!("game detection service started");
 
     let database = rekindle_game_detect::GameDatabase::bundled();
-    let mut detector = rekindle_game_detect::GameDetector::new(database, Duration::from_secs(15));
+    let mut detector = rekindle_game_detect::GameDetector::new(database, Duration::from_secs(30));
 
     let mut last_game: Option<String> = None;
 
-    let mut interval = tokio::time::interval(Duration::from_secs(15));
+    let mut interval = tokio::time::interval(Duration::from_secs(30));
 
     loop {
         tokio::select! {
