@@ -343,6 +343,35 @@ pub async fn login(
         },
     );
 
+    // Wait for Veilid network + sync friends so hydrateState() gets real statuses.
+    // The node starts at app launch, so this is usually instant on re-login
+    // and 5-20s on cold start. The frontend shows a loading spinner.
+    {
+        let mut rx = state.network_ready_rx.clone();
+        let ready = tokio::time::timeout(std::time::Duration::from_secs(20), async {
+            loop {
+                if *rx.borrow_and_update() {
+                    return true;
+                }
+                if rx.changed().await.is_err() {
+                    return false;
+                }
+            }
+        })
+        .await
+        .unwrap_or(false);
+
+        if ready {
+            if let Err(e) =
+                services::sync_service::sync_friends_now(state.inner(), &app).await
+            {
+                tracing::warn!(error = %e, "login-time friend sync failed");
+            }
+        } else {
+            tracing::warn!("network not ready within 20s — buddy list will use fallback sync");
+        }
+    }
+
     Ok(result)
 }
 
@@ -1315,6 +1344,10 @@ async fn spawn_dht_publish(
         return;
     }
 
+    // Status is published by publish_profile_to_dht() (subkey 2) alongside the fresh
+    // route blob — no early publish here to avoid "value is not writable" (record not
+    // yet opened with keypair) and stale-route-blob races.
+
     // Brief delay to let Veilid publish peerinfo — route assembly requires
     // peerinfo to be published, which happens shortly after public_internet_ready.
     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
@@ -1495,11 +1528,7 @@ async fn try_update_existing_profile(
             .await
             .map_err(|e| format!("open writable: {e}"))?;
     } else {
-        // No keypair available — open read-only and hope for the best
-        // (will likely fail on the first write with "value is not writable")
-        dht.open_record(existing_key)
-            .await
-            .map_err(|e| format!("open: {e}"))?;
+        return Err("no owner keypair — cannot write to existing record".to_string());
     }
     tracing::info!(key = %existing_key, has_keypair, "reusing existing DHT profile record");
     rekindle_protocol::dht::profile::update_subkey(
@@ -1703,7 +1732,9 @@ async fn publish_friend_list_to_dht(
         let open_result = if let Some(ref keypair) = owner_keypair {
             temp_dht.open_record_writable(existing_key, keypair.clone()).await
         } else {
-            temp_dht.open_record(existing_key).await
+            Err(rekindle_protocol::error::ProtocolError::DhtError(
+                "no owner keypair — cannot write to existing record".to_string(),
+            ))
         };
         match open_result {
             Ok(()) => {

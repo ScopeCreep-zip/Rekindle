@@ -55,7 +55,24 @@ pub async fn handle_incoming_message(
                     tracing::warn!(
                         error = %e, from = %sender_hex,
                         payload_len = envelope.payload.len(),
-                        "encrypted message could not be decrypted — dropping"
+                        "encrypted message could not be decrypted"
+                    );
+                    // Notify the frontend so the user knows a message was lost
+                    let display_name = {
+                        let friends = state.friends.read();
+                        friends.get(&sender_hex).map(|f| f.display_name.clone())
+                    };
+                    let from_label = display_name
+                        .unwrap_or_else(|| format!("{}...", &sender_hex[..8.min(sender_hex.len())]));
+                    let _ = app_handle.emit(
+                        "notification-event",
+                        &crate::channels::NotificationEvent::SystemAlert {
+                            title: "Message Decrypt Failed".to_string(),
+                            body: format!(
+                                "A message from {from_label} could not be decrypted. \
+                                 They may need to re-establish their session."
+                            ),
+                        },
                     );
                     return;
                 }
@@ -579,9 +596,100 @@ async fn is_blocked(state: &Arc<AppState>, pool: &DbPool, sender_hex: &str) -> b
 // Sending
 // ---------------------------------------------------------------------------
 
+/// Attempt to fetch a fresh route blob from a peer's DHT profile (subkey 6).
+///
+/// Called inline during send when no cached route exists or after a send failure,
+/// to recover without waiting for the 30-second sync loop. Returns the route blob
+/// bytes on success, or `None` if the peer has no DHT key, the node is detached,
+/// or the DHT fetch fails.
+async fn try_fetch_route_from_dht(
+    state: &Arc<AppState>,
+    peer_id: &str,
+) -> Option<Vec<u8>> {
+    let dht_key_str = {
+        let friends = state.friends.read();
+        friends.get(peer_id).and_then(|f| f.dht_record_key.clone())
+    }?;
+
+    let record_key: veilid_core::RecordKey = dht_key_str.parse().ok()?;
+
+    let (routing_context, api) = {
+        let node = state.node.read();
+        let nh = node.as_ref()?;
+        if !nh.is_attached {
+            return None;
+        }
+        (nh.routing_context.clone(), nh.api.clone())
+    };
+
+    // Open (no-op if already open) and force-refresh subkey 6 (route blob)
+    let _ = routing_context
+        .open_dht_record(record_key.clone(), None)
+        .await;
+    let value_data = routing_context
+        .get_dht_value(record_key, 6, true)
+        .await
+        .ok()??;
+    let route_blob = value_data.data().to_vec();
+    if route_blob.is_empty() {
+        return None;
+    }
+
+    // Cache the fresh route blob
+    {
+        let mut dht_mgr = state.dht_manager.write();
+        if let Some(mgr) = dht_mgr.as_mut() {
+            mgr.manager.cache_route(&api, peer_id, route_blob.clone());
+        }
+    }
+
+    tracing::debug!(peer = %peer_id, "fetched fresh route blob from DHT inline");
+    Some(route_blob)
+}
+
+/// Try to fetch a fresh route from DHT and send the envelope immediately.
+///
+/// Used as an inline recovery path when no cached route exists or after a send
+/// failure, avoiding the 30-second sync loop wait. Returns `true` if the send
+/// succeeded, `false` if no route could be obtained or the send failed.
+async fn try_inline_route_refresh_and_send(
+    state: &Arc<AppState>,
+    to: &str,
+    envelope: &rekindle_protocol::messaging::envelope::MessageEnvelope,
+) -> bool {
+    let Some(fresh_blob) = try_fetch_route_from_dht(state, to).await else {
+        return false;
+    };
+
+    let retry = {
+        let node = state.node.read();
+        node.as_ref().and_then(|nh| {
+            let api = nh.api.clone();
+            let rc = nh.routing_context.clone();
+            let mut dht_mgr = state.dht_manager.write();
+            dht_mgr.as_mut().and_then(|mgr| {
+                mgr.manager
+                    .get_or_import_route(&api, &fresh_blob)
+                    .ok()
+                    .map(|rid| (rid, rc))
+            })
+        })
+    };
+
+    if let Some((rid, rc)) = retry {
+        if send_envelope(&rc, rid, envelope).await.is_ok() {
+            return true;
+        }
+    }
+
+    false
+}
+
 /// Build a `MessageEnvelope`, optionally encrypt with Signal, and send via Veilid.
 ///
 /// If no route exists for the peer, the message is queued for retry by `sync_service`.
+/// Ephemeral payloads (typing indicators) are never queued — a stale typing indicator
+/// delivered minutes later is worse than no indicator.
 async fn send_envelope_to_peer(
     state: &Arc<AppState>,
     pool: &DbPool,
@@ -589,6 +697,7 @@ async fn send_envelope_to_peer(
     payload: &MessagePayload,
     encrypt: bool,
 ) -> Result<(), String> {
+    let is_ephemeral = matches!(payload, MessagePayload::TypingIndicator { .. });
     // Serialize the payload
     let payload_bytes =
         serde_json::to_vec(payload).map_err(|e| format!("serialize payload: {e}"))?;
@@ -645,18 +754,32 @@ async fn send_envelope_to_peer(
 
         match mgr.manager.get_cached_route(to).cloned() {
             Some(blob) => {
-                let route_id = mgr
-                    .manager
-                    .get_or_import_route(&api, &blob)
-                    .map_err(|e| format!("import route: {e}"))?;
-                Some((route_id, rc))
+                match mgr.manager.get_or_import_route(&api, &blob) {
+                    Ok(route_id) => Some((route_id, rc)),
+                    Err(e) => {
+                        tracing::warn!(
+                            to = %to, error = %e, blob_len = blob.len(),
+                            "route import failed — invalidating and queuing for retry"
+                        );
+                        mgr.manager.invalidate_route_for_peer(to);
+                        None
+                    }
+                }
             }
             None => None,
         }
     };
 
     let Some((route_id, routing_context)) = route_id_and_rc else {
-        // No cached route — serialize the envelope and queue for later delivery
+        if is_ephemeral {
+            tracing::debug!(to = %to, "no cached route for peer — dropping ephemeral message");
+            return Ok(());
+        }
+        // Inline DHT route re-fetch before queuing — avoids 30s wait for sync loop
+        if try_inline_route_refresh_and_send(state, to, &envelope).await {
+            tracing::info!(to = %to, "message sent via veilid (after inline route refresh)");
+            return Ok(());
+        }
         tracing::debug!(to = %to, "no cached route for peer — queuing message for retry");
         let envelope_json =
             serde_json::to_string(&envelope).map_err(|e| format!("serialize envelope: {e}"))?;
@@ -665,7 +788,6 @@ async fn send_envelope_to_peer(
     };
 
     if let Err(e) = send_envelope(&routing_context, route_id, &envelope).await {
-        tracing::warn!(to = %to, error = %e, "send failed — queuing for retry");
         // Invalidate the stale cached route so the next retry fetches fresh from DHT
         {
             let mut dht_mgr = state.dht_manager.write();
@@ -673,6 +795,16 @@ async fn send_envelope_to_peer(
                 mgr.manager.invalidate_route_for_peer(to);
             }
         }
+        if is_ephemeral {
+            tracing::debug!(to = %to, error = %e, "send failed — dropping ephemeral message");
+            return Ok(());
+        }
+        // Inline DHT route re-fetch before queuing — avoids 30s wait for sync loop
+        if try_inline_route_refresh_and_send(state, to, &envelope).await {
+            tracing::info!(to = %to, "message sent via veilid (after send failure + inline route refresh)");
+            return Ok(());
+        }
+        tracing::warn!(to = %to, error = %e, "send failed — queuing for retry");
         let envelope_json =
             serde_json::to_string(&envelope).map_err(|e| format!("serialize envelope: {e}"))?;
         queue_pending_message(state, pool, to, &envelope_json).await?;
@@ -739,6 +871,10 @@ pub async fn send_friend_request(
         )
     };
 
+    if route_blob.is_empty() {
+        tracing::warn!("sending friend request with empty route blob — peer will fetch from DHT profile");
+    }
+
     let payload = MessagePayload::FriendRequest {
         display_name,
         message: message.to_string(),
@@ -786,6 +922,10 @@ pub async fn send_friend_accept(
             nh.mailbox_dht_key.clone().unwrap_or_default(),
         )
     };
+
+    if route_blob.is_empty() {
+        tracing::warn!("sending friend accept with empty route blob — peer will fetch from DHT profile");
+    }
 
     let payload = MessagePayload::FriendAccept {
         prekey_bundle,

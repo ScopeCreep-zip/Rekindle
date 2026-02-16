@@ -93,6 +93,9 @@ async fn sync_friends(
             .collect()
     };
 
+    // Collect unwatched friend keys for force_refresh polling (per Veilid GitLab #377)
+    let unwatched: std::collections::HashSet<String> = state.unwatched_friends.read().clone();
+
     for (friend_key, dht_key) in &friends_with_dht {
         let record_key: veilid_core::RecordKey = match dht_key.parse() {
             Ok(k) => k,
@@ -114,7 +117,9 @@ async fn sync_friends(
             watched_keys.insert(dht_key.clone());
         }
 
-        sync_friend_dht_subkeys(state, &routing_context, friend_key, record_key, app_handle, first_tick).await;
+        // Force refresh for unwatched friends (watch failed — must poll from network)
+        let force_refresh = first_tick || unwatched.contains(friend_key.as_str());
+        sync_friend_dht_subkeys(state, &routing_context, friend_key, record_key, app_handle, force_refresh).await;
     }
 
     tracing::debug!(friends = friends_with_dht.len(), "friend sync complete");
@@ -718,62 +723,7 @@ async fn retry_single_pending(
 
     // Try DM envelope first (existing logic), then channel message retry
     if let Ok(envelope) = serde_json::from_str::<MessageEnvelope>(body) {
-        // DM retry — look up route and import RouteId via cache.
-        // Clone Arc-based handles out before any .await (parking_lot guards are !Send).
-        let route_id_and_rc = {
-            let api_and_rc = {
-                let node = state.node.read();
-                node.as_ref()
-                    .map(|nh| (nh.api.clone(), nh.routing_context.clone()))
-            };
-            let Some((api, rc)) = api_and_rc else {
-                increment_retry_count(pool, id).await?;
-                return Ok(());
-            };
-
-            let mut dht_mgr = state.dht_manager.write();
-            match dht_mgr.as_mut() {
-                Some(mgr) => {
-                    match mgr.manager.get_cached_route(recipient_key).cloned() {
-                        Some(blob) => match mgr.manager.get_or_import_route(&api, &blob) {
-                            Ok(route_id) => Some((route_id, rc)),
-                            Err(_) => None,
-                        },
-                        None => None,
-                    }
-                }
-                None => None,
-            }
-        };
-
-        // If no cached route, try mailbox fallback
-        let route_id_and_rc = if route_id_and_rc.is_some() {
-            route_id_and_rc
-        } else {
-            try_mailbox_route_fallback(state, recipient_key).await
-        };
-
-        let Some((route_id, routing_context)) = route_id_and_rc else {
-            increment_retry_count(pool, id).await?;
-            return Ok(());
-        };
-
-        match rekindle_protocol::messaging::sender::send_envelope(
-            &routing_context,
-            route_id,
-            &envelope,
-        )
-        .await
-        {
-            Ok(()) => {
-                tracing::debug!(id, to = %recipient_key, "pending DM delivered successfully");
-                delete_pending_message(pool, id).await?;
-            }
-            Err(e) => {
-                tracing::debug!(id, to = %recipient_key, error = %e, "pending DM retry failed");
-                increment_retry_count(pool, id).await?;
-            }
-        }
+        retry_pending_dm(state, pool, id, recipient_key, &envelope).await?;
     } else if let Ok(channel_msg) =
         serde_json::from_str::<crate::commands::community::PendingChannelMessage>(body)
     {
@@ -812,6 +762,81 @@ async fn retry_single_pending(
     } else {
         tracing::warn!(id, "unrecognized pending message format — dropping");
         delete_pending_message(pool, id).await?;
+    }
+
+    Ok(())
+}
+
+/// Retry delivering a single pending DM envelope via cached route or mailbox fallback.
+async fn retry_pending_dm(
+    state: &Arc<AppState>,
+    pool: &DbPool,
+    id: i64,
+    recipient_key: &str,
+    envelope: &MessageEnvelope,
+) -> Result<(), String> {
+    // Look up route and import RouteId via cache.
+    // Clone Arc-based handles out before any .await (parking_lot guards are !Send).
+    let route_id_and_rc = {
+        let api_and_rc = {
+            let node = state.node.read();
+            node.as_ref()
+                .map(|nh| (nh.api.clone(), nh.routing_context.clone()))
+        };
+        let Some((api, rc)) = api_and_rc else {
+            increment_retry_count(pool, id).await?;
+            return Ok(());
+        };
+
+        let mut dht_mgr = state.dht_manager.write();
+        match dht_mgr.as_mut() {
+            Some(mgr) => {
+                match mgr.manager.get_cached_route(recipient_key).cloned() {
+                    Some(blob) => match mgr.manager.get_or_import_route(&api, &blob) {
+                        Ok(route_id) => Some((route_id, rc)),
+                        Err(e) => {
+                            tracing::debug!(
+                                to = %recipient_key, error = %e, blob_len = blob.len(),
+                                "route import failed during retry — invalidating, will try mailbox"
+                            );
+                            mgr.manager.invalidate_route_for_peer(recipient_key);
+                            None
+                        }
+                    },
+                    None => None,
+                }
+            }
+            None => None,
+        }
+    };
+
+    // If no cached route, try mailbox fallback
+    let route_id_and_rc = if route_id_and_rc.is_some() {
+        route_id_and_rc
+    } else {
+        try_mailbox_route_fallback(state, recipient_key).await
+    };
+
+    let Some((route_id, routing_context)) = route_id_and_rc else {
+        increment_retry_count(pool, id).await?;
+        return Ok(());
+    };
+
+    match rekindle_protocol::messaging::sender::send_envelope(
+        &routing_context,
+        route_id,
+        envelope,
+    )
+    .await
+    {
+        Ok(()) => {
+            tracing::debug!(id, to = %recipient_key, "pending DM delivered successfully");
+            delete_pending_message(pool, id).await?;
+        }
+        Err(e) => {
+            tracing::debug!(id, to = %recipient_key, error = %e, "pending DM retry failed");
+            increment_retry_count(pool, id).await?;
+        }
     }
 
     Ok(())

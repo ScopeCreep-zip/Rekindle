@@ -667,10 +667,23 @@ pub async fn watch_friend(
         .await
     {
         Ok(active) => {
-            tracing::info!(friend = %friend_key, dht_key = %dht_record_key, active, "watching friend presence");
+            if active {
+                tracing::info!(friend = %friend_key, dht_key = %dht_record_key, "watching friend presence");
+                // Watch succeeded — remove from unwatched set if previously there
+                state.unwatched_friends.write().remove(friend_key);
+            } else {
+                // Per Veilid GitLab #377: watch_dht_values returning false means
+                // the watch could not be established. We must poll as fallback.
+                tracing::warn!(
+                    friend = %friend_key, dht_key = %dht_record_key,
+                    "watch_dht_values returned false — adding to poll fallback set"
+                );
+                state.unwatched_friends.write().insert(friend_key.to_string());
+            }
         }
         Err(e) => {
-            tracing::warn!(error = %e, friend = %friend_key, "failed to watch friend presence");
+            tracing::warn!(error = %e, friend = %friend_key, "failed to watch friend presence — adding to poll fallback set");
+            state.unwatched_friends.write().insert(friend_key.to_string());
         }
     }
 

@@ -16,6 +16,7 @@ import BuddyJoinCommunityModal from "../components/buddy-list/BuddyJoinCommunity
 import StatusPicker from "../components/status/StatusPicker";
 import NetworkIndicator from "../components/status/NetworkIndicator";
 import { authState, setAuthState } from "../stores/auth.store";
+import { friendsState } from "../stores/friends.store";
 import { buddyListUI } from "../stores/buddylist-ui.store";
 import { switchTab } from "../stores/buddylist-ui.store";
 import { handleLoadPendingRequests } from "../handlers/buddy.handlers";
@@ -73,8 +74,22 @@ const BuddyListWindow: Component = () => {
     // Await hydration so store is populated before subsequent commands
     await hydrateState();
 
-    // Re-emit presence for already-online friends (listeners are now active)
-    commands.emitFriendsPresence();
+    // Re-emit presence for already-online friends (listeners are now active).
+    // Awaited because emit_friends_presence now syncs from DHT first.
+    await commands.emitFriendsPresence();
+
+    // If all friends are still offline (e.g., login's 20s network timeout fired),
+    // schedule a single retry after 5s as a fallback.
+    const friends = friendsState.friends;
+    const friendKeys = Object.keys(friends);
+    const allOffline =
+      friendKeys.length > 0 &&
+      friendKeys.every((k) => friends[k].status === "offline");
+    if (allOffline) {
+      setTimeout(() => {
+        commands.emitFriendsPresence();
+      }, 5000);
+    }
 
     // Load persisted pending friend requests from SQLite
     handleLoadPendingRequests();
