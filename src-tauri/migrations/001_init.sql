@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS identity (
     friend_list_owner_keypair TEXT,
     avatar_webp BLOB,
     account_dht_key TEXT,
-    account_owner_keypair TEXT
+    account_owner_keypair TEXT,
+    mailbox_dht_key TEXT
 );
 
 CREATE TABLE IF NOT EXISTS friend_groups (
@@ -36,6 +37,7 @@ CREATE TABLE IF NOT EXISTS friends (
     local_conversation_key TEXT,
     local_conversation_keypair TEXT,
     remote_conversation_key TEXT,
+    mailbox_dht_key TEXT,
     PRIMARY KEY (owner_key, public_key)
 );
 
@@ -172,5 +174,15 @@ CREATE TABLE IF NOT EXISTS pending_friend_requests (
     display_name TEXT NOT NULL,
     message TEXT NOT NULL DEFAULT '',
     received_at INTEGER NOT NULL,
+    profile_dht_key TEXT,
+    route_blob BLOB,
+    mailbox_dht_key TEXT,
+    PRIMARY KEY (owner_key, public_key)
+);
+
+CREATE TABLE IF NOT EXISTS blocked_users (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    public_key TEXT NOT NULL,
+    blocked_at INTEGER NOT NULL,
     PRIMARY KEY (owner_key, public_key)
 );

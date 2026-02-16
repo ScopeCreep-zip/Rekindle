@@ -4,6 +4,7 @@ pub mod community;
 pub mod conversation;
 pub mod friends;
 pub mod log;
+pub mod mailbox;
 pub mod presence;
 pub mod profile;
 pub mod short_array;
@@ -91,6 +92,32 @@ impl DHTManager {
 
         tracing::debug!(key = %key_string, has_keypair = owner_keypair.is_some(), "created DHT record");
         Ok((key_string, owner_keypair))
+    }
+
+    /// Create a new DHT record with DFLT schema using a specific owner keypair.
+    ///
+    /// Unlike [`create_record`] which uses a random keypair, this uses the
+    /// provided `owner` keypair, making the record key deterministic for that keypair.
+    /// Returns `(record_key, owner_keypair)`.
+    pub async fn create_record_with_owner(
+        &self,
+        subkey_count: u32,
+        owner: veilid_core::KeyPair,
+    ) -> Result<(String, veilid_core::KeyPair), ProtocolError> {
+        let count = u16::try_from(subkey_count)
+            .map_err(|_| ProtocolError::DhtError(format!("subkey_count {subkey_count} exceeds u16::MAX")))?;
+        let schema = DHTSchema::dflt(count)
+            .map_err(|e| ProtocolError::DhtError(format!("invalid schema: {e}")))?;
+
+        let descriptor = self
+            .routing_context
+            .create_dht_record(CRYPTO_KIND_VLD0, schema, Some(owner.clone()))
+            .await
+            .map_err(|e| ProtocolError::DhtError(format!("create_dht_record_with_owner: {e}")))?;
+
+        let key_string = descriptor.key().to_string();
+        tracing::debug!(key = %key_string, "created DHT record with specific owner");
+        Ok((key_string, owner))
     }
 
     /// Open an existing DHT record for **reading only** (no writer set).

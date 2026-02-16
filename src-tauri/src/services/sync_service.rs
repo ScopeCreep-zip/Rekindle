@@ -675,6 +675,13 @@ async fn retry_single_pending(
             }
         };
 
+        // If no cached route, try mailbox fallback
+        let route_id_and_rc = if route_id_and_rc.is_some() {
+            route_id_and_rc
+        } else {
+            try_mailbox_route_fallback(state, recipient_key).await
+        };
+
         let Some((route_id, routing_context)) = route_id_and_rc else {
             increment_retry_count(pool, id).await?;
             return Ok(());
@@ -750,6 +757,63 @@ async fn delete_pending_message(pool: &DbPool, id: i64) -> Result<(), String> {
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// Try to discover a peer's route via their mailbox DHT record.
+///
+/// If the friend has a `mailbox_dht_key`, read subkey 0 (route blob), cache it,
+/// and import it. Returns `Some((RouteId, RoutingContext))` on success.
+async fn try_mailbox_route_fallback(
+    state: &Arc<AppState>,
+    recipient_key: &str,
+) -> Option<(veilid_core::RouteId, veilid_core::RoutingContext)> {
+    // Look up the friend's mailbox key
+    let mailbox_key = {
+        let friends = state.friends.read();
+        friends
+            .get(recipient_key)
+            .and_then(|f| f.mailbox_dht_key.clone())
+    }?;
+
+    let rc = {
+        let node = state.node.read();
+        node.as_ref().map(|nh| nh.routing_context.clone())
+    }?;
+
+    // Read fresh route blob from mailbox
+    let route_blob =
+        match rekindle_protocol::dht::mailbox::read_peer_mailbox_route(&rc, &mailbox_key).await {
+            Ok(Some(blob)) if !blob.is_empty() => blob,
+            Ok(_) => {
+                tracing::trace!(to = %recipient_key, "mailbox route blob empty or missing");
+                return None;
+            }
+            Err(e) => {
+                tracing::trace!(to = %recipient_key, error = %e, "failed to read mailbox");
+                return None;
+            }
+        };
+
+    // Cache and import
+    let api = {
+        let node = state.node.read();
+        node.as_ref().map(|nh| nh.api.clone())
+    }?;
+
+    let mut dht_mgr = state.dht_manager.write();
+    let mgr = dht_mgr.as_mut()?;
+    mgr.manager
+        .cache_route(&api, recipient_key, route_blob.clone());
+    match mgr.manager.get_or_import_route(&api, &route_blob) {
+        Ok(route_id) => {
+            tracing::debug!(to = %recipient_key, "discovered route via mailbox fallback");
+            Some((route_id, rc))
+        }
+        Err(e) => {
+            tracing::trace!(to = %recipient_key, error = %e, "failed to import mailbox route");
+            None
+        }
+    }
 }
 
 /// Increment the `retry_count` for a pending message.

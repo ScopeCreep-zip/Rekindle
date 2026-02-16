@@ -34,6 +34,10 @@ pub enum ChatEvent {
         public_key: String,
         display_name: String,
     },
+    /// Emitted when a friend is removed (unfriended or blocked).
+    FriendRemoved {
+        public_key: String,
+    },
     /// Emitted when background server fetch completes with channel history.
     ChannelHistoryLoaded {
         channel_id: String,

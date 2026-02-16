@@ -123,6 +123,7 @@ pub async fn add_friend(
         last_seen_at: None,
         local_conversation_key: None,
         remote_conversation_key: None,
+        mailbox_dht_key: None,
     };
     state.friends.write().insert(public_key.clone(), friend);
 
@@ -209,6 +210,10 @@ pub async fn accept_request(
     let owner_key = current_owner_key(state.inner())?;
     let timestamp = db::timestamp_now();
 
+    // Read stored profile_dht_key and mailbox_dht_key BEFORE deleting the pending request
+    let (pending_profile_key, pending_mailbox_key) =
+        read_pending_keys(pool.inner(), &owner_key, &public_key).await?;
+
     // Insert into friends and delete from pending_friend_requests atomically
     let pool_clone = pool.inner().clone();
     let pk = public_key.clone();
@@ -231,7 +236,7 @@ pub async fn accept_request(
     .await
     .map_err(|e| e.to_string())??;
 
-    // Add to in-memory state
+    // Add to in-memory state with profile and mailbox keys from the request
     let friend = FriendState {
         public_key: public_key.clone(),
         display_name: display_name.clone(),
@@ -241,12 +246,35 @@ pub async fn accept_request(
         game_info: None,
         group: None,
         unread_count: 0,
-        dht_record_key: None,
+        dht_record_key: pending_profile_key.clone(),
         last_seen_at: None,
         local_conversation_key: None,
         remote_conversation_key: None,
+        mailbox_dht_key: pending_mailbox_key.clone(),
     };
     state.friends.write().insert(public_key.clone(), friend);
+
+    // Persist profile_dht_key and mailbox_dht_key to friends table
+    if pending_profile_key.is_some() || pending_mailbox_key.is_some() {
+        let pool_clone3 = pool.inner().clone();
+        let pk3 = public_key.clone();
+        let ok3 = current_owner_key(state.inner())?;
+        let pdk = pending_profile_key.clone();
+        let mdk = pending_mailbox_key;
+        tokio::task::spawn_blocking(move || {
+            let conn = pool_clone3.lock().map_err(|e| e.to_string())?;
+            conn.execute(
+                "UPDATE friends SET dht_record_key = COALESCE(?1, dht_record_key), \
+                 mailbox_dht_key = COALESCE(?2, mailbox_dht_key) \
+                 WHERE owner_key = ?3 AND public_key = ?4",
+                rusqlite::params![pdk, mdk, ok3, pk3],
+            )
+            .map_err(|e| format!("update friend keys: {e}"))?;
+            Ok::<(), String>(())
+        })
+        .await
+        .map_err(|e| e.to_string())??;
+    }
 
     // Send acceptance back via Veilid
     services::message_service::send_friend_accept(
@@ -259,6 +287,15 @@ pub async fn accept_request(
         tracing::warn!(error = %e, "failed to send friend accept via Veilid");
     });
 
+    // Start watching the friend's profile DHT record for presence
+    if let Some(ref dht_key) = pending_profile_key {
+        if let Err(e) =
+            services::presence_service::watch_friend(state.inner(), &public_key, dht_key).await
+        {
+            tracing::trace!(error = %e, "failed to watch friend DHT after accepting request");
+        }
+    }
+
     let _ = app.emit(
         "chat-event",
         &ChatEvent::FriendRequestAccepted {
@@ -268,6 +305,31 @@ pub async fn accept_request(
     );
 
     Ok(())
+}
+
+/// Read `profile_dht_key` and `mailbox_dht_key` from a pending friend request.
+async fn read_pending_keys(
+    pool: &DbPool,
+    owner_key: &str,
+    public_key: &str,
+) -> Result<(Option<String>, Option<String>), String> {
+    let pool_clone = pool.clone();
+    let ok = owner_key.to_string();
+    let pk = public_key.to_string();
+    tokio::task::spawn_blocking(move || {
+        let conn = pool_clone.lock().map_err(|e| e.to_string())?;
+        let row: Option<(Option<String>, Option<String>)> = conn
+            .query_row(
+                "SELECT profile_dht_key, mailbox_dht_key FROM pending_friend_requests WHERE owner_key = ?1 AND public_key = ?2",
+                rusqlite::params![ok, pk],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
+        Ok(row.unwrap_or((None, None)))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Get the full friends list.
@@ -426,5 +488,375 @@ pub async fn move_friend_to_group(
         }
     }
 
+    Ok(())
+}
+
+/// Generate an invite link containing everything needed for a peer to add us.
+#[tauri::command]
+pub async fn generate_invite(
+    state: State<'_, SharedState>,
+) -> Result<String, String> {
+    // Gather identity info
+    let (public_key, display_name, secret_key) = {
+        let identity = state.identity.read();
+        let id = identity.as_ref().ok_or("identity not set")?;
+        let pk = id.public_key.clone();
+        let dn = id.display_name.clone();
+        let sk = *state.identity_secret.lock();
+        let sk = sk.ok_or("signing key not initialized")?;
+        (pk, dn, sk)
+    };
+
+    let (mailbox_dht_key, profile_dht_key, route_blob) = {
+        let node = state.node.read();
+        let nh = node.as_ref().ok_or("node not initialized")?;
+        let mdk = nh.mailbox_dht_key.clone().ok_or("mailbox DHT key not set")?;
+        let pdk = nh.profile_dht_key.clone().ok_or("profile DHT key not set")?;
+        let rb = nh.route_blob.clone().unwrap_or_default();
+        (mdk, pdk, rb)
+    };
+
+    // Generate a PreKeyBundle
+    let prekey_bundle = {
+        let signal = state.signal_manager.lock();
+        let handle = signal.as_ref().ok_or("signal manager not initialized")?;
+        let bundle = handle
+            .manager
+            .generate_prekey_bundle(1, Some(1))
+            .map_err(|e| format!("generate prekey bundle: {e}"))?;
+        serde_json::to_vec(&bundle).map_err(|e| format!("serialize prekey bundle: {e}"))?
+    };
+
+    let blob = rekindle_protocol::messaging::create_invite_blob(
+        &secret_key,
+        &public_key,
+        &display_name,
+        &mailbox_dht_key,
+        &profile_dht_key,
+        &route_blob,
+        &prekey_bundle,
+    );
+    Ok(rekindle_protocol::messaging::encode_invite_url(&blob))
+}
+
+/// Add a friend from a `rekindle://` invite string.
+#[tauri::command]
+pub async fn add_friend_from_invite(
+    invite_string: String,
+    app: tauri::AppHandle,
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+) -> Result<(), String> {
+    // Decode and verify the invite
+    let blob = rekindle_protocol::messaging::decode_invite_url(&invite_string)?;
+    rekindle_protocol::messaging::verify_invite_blob(&blob)?;
+
+    let owner_key = current_owner_key(state.inner())?;
+
+    // Prevent adding yourself
+    if blob.public_key == owner_key {
+        return Err("You cannot add yourself as a friend".to_string());
+    }
+
+    let timestamp = db::timestamp_now();
+
+    // Insert into SQLite with profile and mailbox keys from the invite
+    let pool_clone = pool.inner().clone();
+    let pk = blob.public_key.clone();
+    let dn = blob.display_name.clone();
+    let ok = owner_key;
+    let profile_key = blob.profile_dht_key.clone();
+    let mailbox_key = blob.mailbox_dht_key.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = pool_clone.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "INSERT OR IGNORE INTO friends (owner_key, public_key, display_name, added_at, dht_record_key, mailbox_dht_key) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![ok, pk, dn, timestamp, profile_key, mailbox_key],
+        )
+        .map_err(|e| format!("insert friend: {e}"))?;
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    // Add to in-memory state
+    let friend = FriendState {
+        public_key: blob.public_key.clone(),
+        display_name: blob.display_name.clone(),
+        nickname: None,
+        status: UserStatus::Offline,
+        status_message: None,
+        game_info: None,
+        group: None,
+        unread_count: 0,
+        dht_record_key: Some(blob.profile_dht_key.clone()),
+        last_seen_at: None,
+        local_conversation_key: None,
+        remote_conversation_key: None,
+        mailbox_dht_key: Some(blob.mailbox_dht_key.clone()),
+    };
+    state.friends.write().insert(blob.public_key.clone(), friend);
+
+    // Cache route blob, establish Signal session, and try mailbox for fresh route
+    setup_invite_contact(state.inner(), &blob).await;
+
+    // Send friend request via Veilid (includes our profile key + route blob + mailbox key)
+    services::message_service::send_friend_request(
+        state.inner(),
+        pool.inner(),
+        &blob.public_key,
+        "Added via invite link",
+    )
+    .await
+    .unwrap_or_else(|e| {
+        tracing::warn!(error = %e, "failed to send friend request via Veilid");
+    });
+
+    // Start watching the friend's profile DHT record for presence
+    if let Err(e) = services::presence_service::watch_friend(
+        state.inner(),
+        &blob.public_key,
+        &blob.profile_dht_key,
+    )
+    .await
+    {
+        tracing::trace!(error = %e, "failed to watch friend DHT after invite add");
+    }
+
+    // Emit event so frontend updates
+    let _ = app.emit(
+        "chat-event",
+        &ChatEvent::FriendAdded {
+            public_key: blob.public_key.clone(),
+            display_name: blob.display_name.clone(),
+        },
+    );
+
+    tracing::info!(public_key = %blob.public_key, "friend added from invite");
+    Ok(())
+}
+
+/// Cache invite route blob, establish Signal session, and refresh route from mailbox.
+async fn setup_invite_contact(
+    state: &std::sync::Arc<crate::state::AppState>,
+    blob: &rekindle_protocol::messaging::envelope::InviteBlob,
+) {
+    // Cache the route blob from the invite for immediate contact
+    let api = state.node.read().as_ref().map(|nh| nh.api.clone());
+    if let Some(ref api) = api {
+        let mut dht_mgr = state.dht_manager.write();
+        if let Some(mgr) = dht_mgr.as_mut() {
+            mgr.manager.cache_route(api, &blob.public_key, blob.route_blob.clone());
+        }
+    }
+
+    // Establish Signal session from invite's PreKeyBundle
+    if let Ok(bundle) =
+        serde_json::from_slice::<rekindle_crypto::signal::PreKeyBundle>(&blob.prekey_bundle)
+    {
+        let signal = state.signal_manager.lock();
+        if let Some(handle) = signal.as_ref() {
+            if let Err(e) = handle.manager.establish_session(&blob.public_key, &bundle) {
+                tracing::warn!(error = %e, "failed to establish Signal session from invite");
+            }
+        }
+    }
+
+    // Try reading the peer's mailbox for a fresh route blob (invite may be stale)
+    let rc = state.node.read().as_ref().map(|nh| nh.routing_context.clone());
+    if let Some(rc) = rc {
+        match rekindle_protocol::dht::mailbox::read_peer_mailbox_route(&rc, &blob.mailbox_dht_key).await {
+            Ok(Some(fresh_blob)) if !fresh_blob.is_empty() => {
+                if let Some(ref api) = api {
+                    let mut dht_mgr = state.dht_manager.write();
+                    if let Some(mgr) = dht_mgr.as_mut() {
+                        mgr.manager.cache_route(api, &blob.public_key, fresh_blob);
+                    }
+                }
+                tracing::debug!("refreshed route blob from peer's mailbox");
+            }
+            _ => tracing::trace!("no fresh route blob in peer mailbox — using invite blob"),
+        }
+    }
+}
+
+/// Block a friend — removes them and rotates our profile DHT key so they
+/// can no longer watch our presence.
+#[tauri::command]
+pub async fn block_friend(
+    public_key: String,
+    app: tauri::AppHandle,
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+) -> Result<(), String> {
+    let owner_key = current_owner_key(state.inner())?;
+    let timestamp = db::timestamp_now();
+
+    // Remove from friends + add to blocked list in one transaction
+    let pool_clone = pool.inner().clone();
+    let pk = public_key.clone();
+    let ok = owner_key;
+    tokio::task::spawn_blocking(move || {
+        let conn = pool_clone.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "DELETE FROM friends WHERE owner_key = ?1 AND public_key = ?2",
+            rusqlite::params![ok, pk],
+        )
+        .map_err(|e| format!("delete friend: {e}"))?;
+        conn.execute(
+            "INSERT OR IGNORE INTO blocked_users (owner_key, public_key, blocked_at) VALUES (?1, ?2, ?3)",
+            rusqlite::params![ok, pk, timestamp],
+        )
+        .map_err(|e| format!("insert blocked user: {e}"))?;
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    // Remove from in-memory state and unregister DHT key mapping
+    let dht_key = {
+        let mut friends = state.friends.write();
+        let removed = friends.remove(&public_key);
+        removed.and_then(|f| f.dht_record_key)
+    };
+    if let Some(ref dht_key) = dht_key {
+        let mut dht_mgr = state.dht_manager.write();
+        if let Some(mgr) = dht_mgr.as_mut() {
+            mgr.unregister_friend_dht_key(dht_key);
+        }
+    }
+
+    // Rotate our profile DHT key so the blocked user can't watch us anymore
+    rotate_profile_key(state.inner(), pool.inner()).await?;
+
+    let _ = app.emit(
+        "chat-event",
+        &ChatEvent::FriendRemoved {
+            public_key: public_key.clone(),
+        },
+    );
+
+    tracing::info!(public_key = %public_key, "friend blocked and profile key rotated");
+    Ok(())
+}
+
+/// Rotate the profile DHT key: create a new profile record, copy data,
+/// update state/DB, and notify all remaining friends via `ProfileKeyRotated`.
+async fn rotate_profile_key(
+    state: &std::sync::Arc<crate::state::AppState>,
+    pool: &DbPool,
+) -> Result<(), String> {
+    // Create a new profile DHT record with a fresh keypair.
+    // Clone the routing_context out before .await (parking_lot guards are !Send).
+    let routing_context = {
+        let node = state.node.read();
+        let nh = node.as_ref().ok_or("node not initialized")?;
+        nh.routing_context.clone()
+    };
+    let temp_mgr = rekindle_protocol::dht::DHTManager::new(routing_context.clone());
+    let (new_key, new_keypair) = temp_mgr
+        .create_record(8)
+        .await
+        .map_err(|e| format!("create new profile record: {e}"))?;
+
+    // Copy current profile data to the new record
+    let (old_key_str, display_name, status_bytes, route_blob) = {
+        let node = state.node.read();
+        let nh = node.as_ref().ok_or("node not initialized")?;
+        let ok = nh.profile_dht_key.clone().unwrap_or_default();
+        let identity = state.identity.read();
+        let id = identity.as_ref().ok_or("identity not set")?;
+        let dn = id.display_name.clone();
+        let status = id.status as u8;
+        let rb = nh.route_blob.clone().unwrap_or_default();
+        (ok, dn, vec![status], rb)
+    };
+
+    // Read prekey from signal manager
+    let prekey_bytes = {
+        let signal = state.signal_manager.lock();
+        if let Some(handle) = signal.as_ref() {
+            match handle.manager.generate_prekey_bundle(1, Some(1)) {
+                Ok(bundle) => serde_json::to_vec(&bundle).unwrap_or_default(),
+                Err(_) => Vec::new(),
+            }
+        } else {
+            Vec::new()
+        }
+    };
+
+    let record_key: veilid_core::RecordKey = new_key
+        .parse()
+        .map_err(|e| format!("invalid new profile key: {e}"))?;
+
+    // Write profile subkeys to new record
+    // Subkey 0: display name, 1: status, 5: prekey, 6: route blob
+    let _ = routing_context
+        .set_dht_value(record_key.clone(), 0, display_name.into_bytes(), None)
+        .await;
+    let _ = routing_context
+        .set_dht_value(record_key.clone(), 1, status_bytes, None)
+        .await;
+    let _ = routing_context
+        .set_dht_value(record_key.clone(), 5, prekey_bytes, None)
+        .await;
+    let _ = routing_context
+        .set_dht_value(record_key.clone(), 6, route_blob, None)
+        .await;
+
+    // Update NodeHandle
+    {
+        let mut node = state.node.write();
+        if let Some(nh) = node.as_mut() {
+            nh.profile_dht_key = Some(new_key.clone());
+            nh.profile_owner_keypair.clone_from(&new_keypair);
+        }
+    }
+
+    // Update SQLite (both dht_record_key and dht_owner_keypair)
+    let pool_clone = pool.clone();
+    let nk = new_key.clone();
+    let keypair_str = new_keypair.as_ref().map(std::string::ToString::to_string);
+    let owner_key = state
+        .identity
+        .read()
+        .as_ref()
+        .map(|id| id.public_key.clone())
+        .unwrap_or_default();
+    tokio::task::spawn_blocking(move || {
+        let conn = pool_clone.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "UPDATE identity SET dht_record_key = ?1, dht_owner_keypair = COALESCE(?3, dht_owner_keypair) WHERE public_key = ?2",
+            rusqlite::params![nk, owner_key, keypair_str],
+        )
+        .map_err(|e| format!("update identity dht key: {e}"))?;
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    // Notify all remaining friends about the new profile key
+    let friend_keys: Vec<String> = {
+        let friends = state.friends.read();
+        friends.keys().cloned().collect()
+    };
+    let payload = rekindle_protocol::messaging::envelope::MessagePayload::ProfileKeyRotated {
+        new_profile_dht_key: new_key.clone(),
+    };
+    for fk in &friend_keys {
+        if let Err(e) =
+            services::message_service::send_to_peer_raw(state, pool, fk, &payload).await
+        {
+            tracing::warn!(to = %fk, error = %e, "failed to send ProfileKeyRotated");
+        }
+    }
+
+    tracing::info!(
+        old_key = %old_key_str,
+        new_key = %new_key,
+        "profile DHT key rotated — {} friends notified",
+        friend_keys.len()
+    );
     Ok(())
 }

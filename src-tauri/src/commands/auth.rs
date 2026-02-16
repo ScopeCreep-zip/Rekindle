@@ -160,6 +160,7 @@ pub async fn create_identity(
         friend_list_owner_keypair: None,
         account_dht_key: None,
         account_owner_keypair: None,
+        mailbox_dht_key: None,
     });
 
     Ok(result)
@@ -179,6 +180,7 @@ pub struct IdentityDhtColumns {
     pub friend_list_owner_keypair: Option<String>,
     pub account_dht_key: Option<String>,
     pub account_owner_keypair: Option<String>,
+    pub mailbox_dht_key: Option<String>,
 }
 
 pub async fn login_core(
@@ -204,7 +206,7 @@ pub async fn login_core(
                 .prepare(
                     "SELECT display_name, dht_record_key, friend_list_dht_key, \
                      dht_owner_keypair, friend_list_owner_keypair, \
-                     account_dht_key, account_owner_keypair \
+                     account_dht_key, account_owner_keypair, mailbox_dht_key \
                      FROM identity WHERE public_key = ?1",
                 )
                 .map_err(|e| e.to_string())?;
@@ -219,6 +221,7 @@ pub async fn login_core(
                             friend_list_owner_keypair: row.get::<_, Option<String>>("friend_list_owner_keypair")?,
                             account_dht_key: row.get::<_, Option<String>>("account_dht_key")?,
                             account_owner_keypair: row.get::<_, Option<String>>("account_owner_keypair")?,
+                            mailbox_dht_key: row.get::<_, Option<String>>("mailbox_dht_key")?,
                         },
                     ))
                 })
@@ -336,6 +339,7 @@ pub async fn login(
             friend_list_owner_keypair: dht_cols.friend_list_owner_keypair,
             account_dht_key: dht_cols.account_dht_key,
             account_owner_keypair: dht_cols.account_owner_keypair,
+            mailbox_dht_key: dht_cols.mailbox_dht_key,
         },
     );
 
@@ -589,7 +593,7 @@ async fn load_friends_from_db(
             .prepare(
                 "SELECT f.public_key, f.display_name, f.nickname, f.dht_record_key, \
                  f.last_seen_at, f.local_conversation_key, f.remote_conversation_key, \
-                 g.name AS group_name \
+                 f.mailbox_dht_key, g.name AS group_name \
                  FROM friends f LEFT JOIN friend_groups g ON f.group_id = g.id \
                  WHERE f.owner_key = ?1",
             )
@@ -609,6 +613,7 @@ async fn load_friends_from_db(
                     last_seen_at: row.get::<_, Option<i64>>("last_seen_at").unwrap_or(None),
                     local_conversation_key: db::get_str_opt(row, "local_conversation_key"),
                     remote_conversation_key: db::get_str_opt(row, "remote_conversation_key"),
+                    mailbox_dht_key: db::get_str_opt(row, "mailbox_dht_key"),
                 })
             })
             .map_err(|e| e.to_string())?
@@ -914,6 +919,7 @@ pub struct DhtKeysConfig {
     pub friend_list_owner_keypair: Option<String>,
     pub account_dht_key: Option<String>,
     pub account_owner_keypair: Option<String>,
+    pub mailbox_dht_key: Option<String>,
 }
 
 /// Initialize Signal encryption and spawn all background services (non-blocking).
@@ -1319,6 +1325,11 @@ async fn spawn_dht_publish(
         tracing::warn!("failed to allocate private route after retries — peers won't be able to message us");
     }
 
+    // Create or open mailbox DHT record
+    if let Err(e) = publish_mailbox(&state, &pool, dht_keys.mailbox_dht_key.as_ref(), route_blob.as_deref()).await {
+        tracing::warn!(error = %e, "mailbox publish failed");
+    }
+
     tracing::info!("public internet ready — publishing profile to DHT");
 
     if let Err(e) = publish_profile_to_dht(
@@ -1356,6 +1367,109 @@ async fn spawn_dht_publish(
     {
         tracing::warn!(error = %e, "DHT account publish failed — will retry on next sync");
     }
+}
+
+/// Create or open the mailbox DHT record and publish the current route blob.
+///
+/// The mailbox uses the identity Ed25519 keypair as the DHT record owner,
+/// making the record key deterministic and permanent for this identity.
+async fn publish_mailbox(
+    state: &SharedState,
+    pool: &DbPool,
+    existing_mailbox_key: Option<&String>,
+    route_blob: Option<&[u8]>,
+) -> Result<(), String> {
+    let (public_key, secret_bytes) = {
+        let identity = state.identity.read();
+        let id = identity.as_ref().ok_or("identity not set before mailbox publish")?;
+        let secret = state.identity_secret.lock();
+        let secret = *secret.as_ref().ok_or("identity secret not available")?;
+        (id.public_key.clone(), secret)
+    };
+
+    let routing_context = {
+        let node = state.node.read();
+        let nh = node.as_ref().ok_or("node not initialized before mailbox publish")?;
+        nh.routing_context.clone()
+    };
+
+    // Build a Veilid KeyPair from our Ed25519 identity keys.
+    let identity = rekindle_crypto::Identity::from_secret_bytes(&secret_bytes);
+    let pub_bytes = identity.public_key_bytes();
+    let bare_pub = veilid_core::BarePublicKey::new(&pub_bytes);
+    let bare_secret = veilid_core::BareSecretKey::new(&secret_bytes);
+    let veilid_pubkey = veilid_core::PublicKey::new(veilid_core::CRYPTO_KIND_VLD0, bare_pub);
+    let veilid_keypair = veilid_core::KeyPair::new_from_parts(veilid_pubkey, bare_secret);
+
+    let mailbox_key = if let Some(existing_key) = existing_mailbox_key {
+        // Re-open existing mailbox with write access
+        match rekindle_protocol::dht::mailbox::open_mailbox_writable(
+            &routing_context,
+            existing_key,
+            veilid_keypair.clone(),
+        )
+        .await
+        {
+            Ok(()) => {
+                tracing::info!(key = %existing_key, "reopened existing mailbox");
+                existing_key.clone()
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "failed to reopen mailbox — creating new one");
+                rekindle_protocol::dht::mailbox::create_mailbox(&routing_context, veilid_keypair)
+                    .await
+                    .map_err(|e| format!("create mailbox: {e}"))?
+            }
+        }
+    } else {
+        rekindle_protocol::dht::mailbox::create_mailbox(&routing_context, veilid_keypair)
+            .await
+            .map_err(|e| format!("create mailbox: {e}"))?
+    };
+
+    // Write route blob to mailbox subkey 0
+    if let Some(blob) = route_blob {
+        if !blob.is_empty() {
+            rekindle_protocol::dht::mailbox::update_mailbox_route(&routing_context, &mailbox_key, blob)
+                .await
+                .map_err(|e| format!("update mailbox route: {e}"))?;
+        }
+    }
+
+    // Store on NodeHandle
+    {
+        let mut node = state.node.write();
+        if let Some(ref mut nh) = *node {
+            nh.mailbox_dht_key = Some(mailbox_key.clone());
+        }
+    }
+
+    // Track the open record
+    {
+        let mut dht_mgr = state.dht_manager.write();
+        if let Some(ref mut mgr) = *dht_mgr {
+            mgr.track_open_record(mailbox_key.clone());
+        }
+    }
+
+    // Persist to SQLite
+    let db = pool.clone();
+    let pk = public_key;
+    let mk = mailbox_key.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "UPDATE identity SET mailbox_dht_key = ?1 WHERE public_key = ?2",
+            rusqlite::params![mk, pk],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    tracing::info!(mailbox_key = %mailbox_key, "mailbox published to DHT");
+    Ok(())
 }
 
 /// Try to open an existing profile DHT record and update all subkeys.

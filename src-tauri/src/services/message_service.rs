@@ -33,6 +33,12 @@ pub async fn handle_incoming_message(
     let sender_hex = hex::encode(&envelope.sender_key);
     tracing::debug!(from = %sender_hex, payload_len = envelope.payload.len(), "processing verified envelope");
 
+    // Block list filtering
+    if is_blocked(state, pool, &sender_hex).await {
+        tracing::debug!(from = %sender_hex, "dropping message from blocked user");
+        return;
+    }
+
     // Step 2: Decrypt payload if Signal session exists, otherwise use raw payload
     let payload_bytes = {
         let signal = state.signal_manager.lock();
@@ -64,64 +70,45 @@ pub async fn handle_incoming_message(
         }
     };
 
+    // Non-friend filtering: only FriendRequest allowed from non-friends
+    if !matches!(payload, MessagePayload::FriendRequest { .. })
+        && !state.friends.read().contains_key(&sender_hex)
+    {
+        tracing::debug!(from = %sender_hex, "dropping message from non-friend");
+        return;
+    }
+
     // Step 4: Dispatch by payload type
-    let envelope_ts: i64 = envelope
-        .timestamp
-        .try_into()
-        .unwrap_or(i64::MAX);
+    let ts: i64 = envelope.timestamp.try_into().unwrap_or(i64::MAX);
     match payload {
         MessagePayload::DirectMessage { body, .. } => {
-            handle_direct_message(app_handle, state, pool, &sender_hex, &body, envelope_ts).await;
+            handle_direct_message(app_handle, state, pool, &sender_hex, &body, ts).await;
         }
-        MessagePayload::ChannelMessage {
-            channel_id, body, ..
-        } => {
-            handle_channel_message(app_handle, state, pool, &sender_hex, &channel_id, &body, envelope_ts)
-                .await;
+        MessagePayload::ChannelMessage { channel_id, body, .. } => {
+            handle_channel_message(app_handle, state, pool, &sender_hex, &channel_id, &body, ts).await;
         }
         MessagePayload::TypingIndicator { typing } => {
-            let event = ChatEvent::TypingIndicator {
-                from: sender_hex,
-                typing,
-            };
-            let _ = app_handle.emit("chat-event", &event);
+            let _ = app_handle.emit("chat-event", &ChatEvent::TypingIndicator { from: sender_hex, typing });
         }
-        MessagePayload::FriendRequest {
-            display_name,
-            message,
-            prekey_bundle,
-        } => {
-            handle_friend_request(state, &sender_hex, &display_name, &message, &prekey_bundle);
-            persist_friend_request(state, pool, &sender_hex, &display_name, &message).await;
-            let event = ChatEvent::FriendRequest {
-                from: sender_hex.clone(),
-                display_name,
-                message,
-            };
-            let _ = app_handle.emit("chat-event", &event);
+        MessagePayload::FriendRequest { display_name, message, prekey_bundle, profile_dht_key, route_blob, mailbox_dht_key } => {
+            handle_friend_request_full(
+                app_handle, state, pool, &sender_hex, &display_name,
+                &message, &prekey_bundle, &profile_dht_key, &route_blob, &mailbox_dht_key,
+            ).await;
         }
-        MessagePayload::FriendAccept { prekey_bundle } => {
-            handle_friend_accept(state, &sender_hex, &prekey_bundle);
-            let display_name = {
-                let friends = state.friends.read();
-                friends
-                    .get(&sender_hex)
-                    .map_or_else(|| sender_hex.clone(), |f| f.display_name.clone())
-            };
-            let event = ChatEvent::FriendRequestAccepted {
-                from: sender_hex,
-                display_name,
-            };
-            let _ = app_handle.emit("chat-event", &event);
+        MessagePayload::FriendAccept { prekey_bundle, profile_dht_key, route_blob, mailbox_dht_key } => {
+            handle_friend_accept_full(
+                app_handle, state, pool, &sender_hex, &prekey_bundle,
+                &profile_dht_key, route_blob, &mailbox_dht_key,
+            ).await;
         }
         MessagePayload::FriendReject => {
-            let event = ChatEvent::FriendRequestRejected { from: sender_hex };
-            let _ = app_handle.emit("chat-event", &event);
+            let _ = app_handle.emit("chat-event", &ChatEvent::FriendRequestRejected { from: sender_hex });
         }
-        MessagePayload::PresenceUpdate { .. } => {
-            // Presence is handled via DHT watch, not direct messages
-            tracing::trace!(from = %sender_hex, "ignoring direct presence update (handled via DHT)");
+        MessagePayload::ProfileKeyRotated { new_profile_dht_key } => {
+            handle_profile_key_rotated(state, pool, &sender_hex, &new_profile_dht_key).await;
         }
+        MessagePayload::PresenceUpdate { .. } => {}
     }
 }
 
@@ -291,13 +278,165 @@ fn handle_friend_accept(
     }
 }
 
+/// Handle a `FriendRequest` with profile key, route blob, and mailbox key exchange.
+#[allow(clippy::too_many_arguments)]
+async fn handle_friend_request_full(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    pool: &DbPool,
+    sender_hex: &str,
+    display_name: &str,
+    message: &str,
+    prekey_bundle: &[u8],
+    profile_dht_key: &str,
+    route_blob: &[u8],
+    mailbox_dht_key: &str,
+) {
+    handle_friend_request(state, sender_hex, display_name, message, prekey_bundle);
+    // Cache the sender's route blob for immediate replies
+    if !route_blob.is_empty() {
+        let api = {
+            let node = state.node.read();
+            node.as_ref().map(|nh| nh.api.clone())
+        };
+        if let Some(api) = api {
+            let mut dht_mgr = state.dht_manager.write();
+            if let Some(mgr) = dht_mgr.as_mut() {
+                mgr.manager.cache_route(&api, sender_hex, route_blob.to_vec());
+            }
+        }
+    }
+    persist_friend_request(
+        state, pool, sender_hex, display_name, message,
+        profile_dht_key, route_blob, mailbox_dht_key,
+    )
+    .await;
+    let event = ChatEvent::FriendRequest {
+        from: sender_hex.to_string(),
+        display_name: display_name.to_string(),
+        message: message.to_string(),
+    };
+    let _ = app_handle.emit("chat-event", &event);
+}
+
+/// Handle a `FriendAccept` with profile key, route blob, and mailbox key exchange.
+#[allow(clippy::too_many_arguments)]
+async fn handle_friend_accept_full(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    pool: &DbPool,
+    sender_hex: &str,
+    prekey_bundle: &[u8],
+    profile_dht_key: &str,
+    route_blob: Vec<u8>,
+    mailbox_dht_key: &str,
+) {
+    handle_friend_accept(state, sender_hex, prekey_bundle);
+    // Cache the acceptor's route blob
+    if !route_blob.is_empty() {
+        let api = {
+            let node = state.node.read();
+            node.as_ref().map(|nh| nh.api.clone())
+        };
+        if let Some(api) = api {
+            let mut dht_mgr = state.dht_manager.write();
+            if let Some(mgr) = dht_mgr.as_mut() {
+                mgr.manager.cache_route(&api, sender_hex, route_blob);
+            }
+        }
+    }
+    // Store profile key and mailbox key on friend state
+    {
+        let mut friends = state.friends.write();
+        if let Some(friend) = friends.get_mut(sender_hex) {
+            if !profile_dht_key.is_empty() {
+                friend.dht_record_key = Some(profile_dht_key.to_string());
+            }
+            if !mailbox_dht_key.is_empty() {
+                friend.mailbox_dht_key = Some(mailbox_dht_key.to_string());
+            }
+        }
+    }
+    // Persist profile key to `SQLite`
+    if !profile_dht_key.is_empty() {
+        persist_friend_dht_key(state, pool, sender_hex, profile_dht_key).await;
+        // Start watching the friend's profile DHT record for presence
+        if let Err(e) =
+            super::presence_service::watch_friend(state, sender_hex, profile_dht_key).await
+        {
+            tracing::trace!(from = %sender_hex, error = %e, "failed to watch friend after accept");
+        }
+    }
+    let display_name = {
+        let friends = state.friends.read();
+        friends
+            .get(sender_hex)
+            .map_or_else(|| sender_hex.to_string(), |f| f.display_name.clone())
+    };
+    let event = ChatEvent::FriendRequestAccepted {
+        from: sender_hex.to_string(),
+        display_name,
+    };
+    let _ = app_handle.emit("chat-event", &event);
+}
+
+/// Handle a `ProfileKeyRotated` message from a friend.
+async fn handle_profile_key_rotated(
+    state: &Arc<AppState>,
+    pool: &DbPool,
+    sender_hex: &str,
+    new_profile_dht_key: &str,
+) {
+    let is_friend = state.friends.read().contains_key(sender_hex);
+    if !is_friend {
+        return;
+    }
+    // Unregister old DHT key
+    let old_key = {
+        let friends = state.friends.read();
+        friends
+            .get(sender_hex)
+            .and_then(|f| f.dht_record_key.clone())
+    };
+    if let Some(ref old_key) = old_key {
+        let mut dht_mgr = state.dht_manager.write();
+        if let Some(mgr) = dht_mgr.as_mut() {
+            mgr.unregister_friend_dht_key(old_key);
+        }
+    }
+    // Update in-memory state
+    {
+        let mut friends = state.friends.write();
+        if let Some(friend) = friends.get_mut(sender_hex) {
+            friend.dht_record_key = Some(new_profile_dht_key.to_string());
+        }
+    }
+    // Persist to `SQLite`
+    persist_friend_dht_key(state, pool, sender_hex, new_profile_dht_key).await;
+    // Re-watch the new profile DHT record for presence updates
+    if let Err(e) =
+        super::presence_service::watch_friend(state, sender_hex, new_profile_dht_key).await
+    {
+        tracing::warn!(from = %sender_hex, error = %e, "failed to watch new profile key");
+    }
+    tracing::info!(
+        from = %sender_hex,
+        new_key = %new_profile_dht_key,
+        "friend rotated their profile DHT key"
+    );
+}
+
 /// Persist an incoming friend request to `SQLite` for crash/restart recovery.
+#[allow(clippy::too_many_arguments)]
 async fn persist_friend_request(
     state: &Arc<AppState>,
     pool: &DbPool,
     sender_hex: &str,
     display_name: &str,
     message: &str,
+    profile_dht_key: &str,
+    route_blob: &[u8],
+    mailbox_dht_key: &str,
 ) {
     let owner_key = state
         .identity
@@ -309,13 +448,17 @@ async fn persist_friend_request(
     let pk = sender_hex.to_string();
     let dn = display_name.to_string();
     let msg = message.to_string();
+    let pdk = profile_dht_key.to_string();
+    let rb = route_blob.to_vec();
+    let mdk = mailbox_dht_key.to_string();
     let now = crate::db::timestamp_now();
     if let Err(e) = tokio::task::spawn_blocking(move || {
         let conn = pool.lock().map_err(|e| e.to_string())?;
         conn.execute(
-            "INSERT OR IGNORE INTO pending_friend_requests (owner_key, public_key, display_name, message, received_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            rusqlite::params![owner_key, pk, dn, msg, now],
+            "INSERT OR IGNORE INTO pending_friend_requests \
+             (owner_key, public_key, display_name, message, received_at, profile_dht_key, route_blob, mailbox_dht_key) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            rusqlite::params![owner_key, pk, dn, msg, now, pdk, rb, mdk],
         )
         .map_err(|e| e.to_string())
     })
@@ -324,6 +467,63 @@ async fn persist_friend_request(
     {
         tracing::error!(error = %e, "failed to persist incoming friend request");
     }
+}
+
+/// Persist a friend's profile DHT key to `SQLite`.
+async fn persist_friend_dht_key(
+    state: &Arc<AppState>,
+    pool: &DbPool,
+    friend_key: &str,
+    profile_dht_key: &str,
+) {
+    let owner_key = state
+        .identity
+        .read()
+        .as_ref()
+        .map(|id| id.public_key.clone())
+        .unwrap_or_default();
+    let pool = pool.clone();
+    let fk = friend_key.to_string();
+    let pdk = profile_dht_key.to_string();
+    if let Err(e) = tokio::task::spawn_blocking(move || {
+        let conn = pool.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "UPDATE friends SET dht_record_key = ?1 WHERE owner_key = ?2 AND public_key = ?3",
+            rusqlite::params![pdk, owner_key, fk],
+        )
+        .map_err(|e| e.to_string())
+    })
+    .await
+    .unwrap_or_else(|e| Err(e.to_string()))
+    {
+        tracing::error!(error = %e, "failed to persist friend DHT key");
+    }
+}
+
+/// Check if a sender is in the blocked users table.
+async fn is_blocked(state: &Arc<AppState>, pool: &DbPool, sender_hex: &str) -> bool {
+    let owner_key = state
+        .identity
+        .read()
+        .as_ref()
+        .map(|id| id.public_key.clone())
+        .unwrap_or_default();
+    let pool = pool.clone();
+    let pk = sender_hex.to_string();
+    tokio::task::spawn_blocking(move || {
+        let conn = pool.lock().map_err(|e| e.to_string())?;
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM blocked_users WHERE owner_key = ?1 AND public_key = ?2",
+                rusqlite::params![owner_key, pk],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        Ok::<bool, String>(count > 0)
+    })
+    .await
+    .unwrap_or(Ok(false))
+    .unwrap_or(false)
 }
 
 // ---------------------------------------------------------------------------
@@ -468,10 +668,24 @@ pub async fn send_friend_request(
         (display_name, bundle_bytes)
     };
 
+    // Gather our profile and mailbox DHT keys + route blob for the invite payload
+    let (profile_dht_key, route_blob, mailbox_dht_key) = {
+        let node = state.node.read();
+        let nh = node.as_ref().ok_or("node not initialized")?;
+        (
+            nh.profile_dht_key.clone().unwrap_or_default(),
+            nh.route_blob.clone().unwrap_or_default(),
+            nh.mailbox_dht_key.clone().unwrap_or_default(),
+        )
+    };
+
     let payload = MessagePayload::FriendRequest {
         display_name,
         message: message.to_string(),
         prekey_bundle,
+        profile_dht_key,
+        route_blob,
+        mailbox_dht_key,
     };
     // Friend requests are NOT encrypted (no session yet)
     send_envelope_to_peer(state, pool, to, &payload, false).await
@@ -500,7 +714,23 @@ pub async fn send_friend_accept(
         }
     };
 
-    let payload = MessagePayload::FriendAccept { prekey_bundle };
+    // Gather our profile and mailbox DHT keys + route blob
+    let (profile_dht_key, route_blob, mailbox_dht_key) = {
+        let node = state.node.read();
+        let nh = node.as_ref().ok_or("node not initialized")?;
+        (
+            nh.profile_dht_key.clone().unwrap_or_default(),
+            nh.route_blob.clone().unwrap_or_default(),
+            nh.mailbox_dht_key.clone().unwrap_or_default(),
+        )
+    };
+
+    let payload = MessagePayload::FriendAccept {
+        prekey_bundle,
+        profile_dht_key,
+        route_blob,
+        mailbox_dht_key,
+    };
     // Friend accepts are NOT encrypted (the requester may not have our session yet)
     send_envelope_to_peer(state, pool, to, &payload, false).await
 }
@@ -526,6 +756,19 @@ pub async fn send_typing(
     let payload = MessagePayload::TypingIndicator { typing };
     // Typing indicators use encryption if session exists
     send_envelope_to_peer(state, pool, to, &payload, true).await
+}
+
+/// Send a raw (unencrypted) payload to a peer.
+///
+/// Used for protocol-level messages like `ProfileKeyRotated` that don't need
+/// E2E encryption (the content isn't secret — it's a public DHT key).
+pub async fn send_to_peer_raw(
+    state: &Arc<AppState>,
+    pool: &DbPool,
+    to: &str,
+    payload: &MessagePayload,
+) -> Result<(), String> {
+    send_envelope_to_peer(state, pool, to, payload, false).await
 }
 
 // ---------------------------------------------------------------------------

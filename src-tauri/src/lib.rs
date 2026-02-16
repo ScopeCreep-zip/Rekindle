@@ -194,6 +194,9 @@ pub fn run() {
             commands::friends::create_friend_group,
             commands::friends::rename_friend_group,
             commands::friends::move_friend_to_group,
+            commands::friends::generate_invite,
+            commands::friends::add_friend_from_invite,
+            commands::friends::block_friend,
             // community
             commands::community::create_community,
             commands::community::join_community,
