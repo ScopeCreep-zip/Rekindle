@@ -6,7 +6,7 @@ import MessageInput from "../components/chat/MessageInput";
 import TypingIndicator from "../components/chat/TypingIndicator";
 import StatusDot from "../components/status/StatusDot";
 import VoicePanel from "../components/voice/VoicePanel";
-import { chatState, setChatState, type Message } from "../stores/chat.store";
+import { chatState, setChatState } from "../stores/chat.store";
 import { authState } from "../stores/auth.store";
 import { friendsState } from "../stores/friends.store";
 import { voiceState } from "../stores/voice.store";
@@ -38,13 +38,19 @@ const ChatWindow: Component = () => {
     friendsState.friends[peerId]?.status ?? "offline",
   );
 
-  // Access messages and isTyping directly from the store so SolidJS creates
-  // fine-grained subscriptions at the exact paths that change. A createMemo
-  // wrapping the parent conversation object caches the store proxy and breaks
-  // reactivity for nested array updates (messages appends).
-  const EMPTY_MESSAGES: Message[] = [];
-  const messages = () => chatState.conversations[peerId]?.messages ?? EMPTY_MESSAGES;
-  const isTyping = () => chatState.conversations[peerId]?.isTyping ?? false;
+  const conversation = createMemo(() => {
+    return chatState.conversations[peerId] ?? {
+      peerId,
+      messages: [],
+      isTyping: false,
+      lastRead: 0,
+    };
+  });
+
+  // Spread store proxy array into a new plain array so For/mapArray detects
+  // changes — store proxies return the same object ref for the same path,
+  // which mapArray's internal memo treats as "no change" via ===.
+  const messages = createMemo(() => [...conversation().messages]);
 
   const ownName = createMemo(() => {
     return authState.displayName ?? "You";
@@ -137,7 +143,7 @@ const ChatWindow: Component = () => {
       <Show when={isInCallWithPeer()}>
         <VoicePanel />
       </Show>
-      <TypingIndicator isTyping={isTyping()} peerName={peerName()} />
+      <TypingIndicator isTyping={conversation().isTyping} peerName={peerName()} />
       <MessageInput peerId={peerId} />
     </div>
   );
