@@ -24,14 +24,22 @@ export async function handleSendMessage(to: string, body: string): Promise<void>
   try {
     await commands.sendMessage(to, trimmed);
     // Update status to sent
-    setChatState("conversations", to, "messages", (msgs) =>
-      msgs.map((m) => (m.id === tempId ? { ...m, status: "sent" as const } : m)),
-    );
+    const convo = chatState.conversations[to];
+    if (convo) {
+      setChatState("conversations", to, {
+        ...convo,
+        messages: convo.messages.map((m) => (m.id === tempId ? { ...m, status: "sent" as const } : m)),
+      });
+    }
   } catch {
     // Update status to failed
-    setChatState("conversations", to, "messages", (msgs) =>
-      msgs.map((m) => (m.id === tempId ? { ...m, status: "failed" as const } : m)),
-    );
+    const convo = chatState.conversations[to];
+    if (convo) {
+      setChatState("conversations", to, {
+        ...convo,
+        messages: convo.messages.map((m) => (m.id === tempId ? { ...m, status: "failed" as const } : m)),
+      });
+    }
   }
 }
 
@@ -80,13 +88,13 @@ export function handleIncomingMessage(
   peerId: string,
   message: Message,
 ): void {
-  console.debug("[DM] handleIncomingMessage:", peerId, message.body?.slice(0, 30));
+  console.warn("[DM] handleIncomingMessage:", peerId, message.body?.slice(0, 30));
   const existing = chatState.conversations[peerId];
   if (existing) {
-    setChatState("conversations", peerId, "messages", (msgs) => [
-      ...msgs,
-      message,
-    ]);
+    setChatState("conversations", peerId, {
+      ...existing,
+      messages: [...existing.messages, message],
+    });
   } else {
     setChatState("conversations", peerId, {
       peerId,
@@ -101,8 +109,12 @@ export function handleTypingIndicator(
   peerId: string,
   isTyping: boolean,
 ): void {
-  if (chatState.conversations[peerId]) {
-    setChatState("conversations", peerId, "isTyping", isTyping);
+  const existing = chatState.conversations[peerId];
+  if (existing) {
+    setChatState("conversations", peerId, {
+      ...existing,
+      isTyping,
+    });
   }
 }
 

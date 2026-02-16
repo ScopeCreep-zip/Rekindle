@@ -87,7 +87,7 @@ export function subscribeDmChatEvents(
   return subscribeChatEvents((event) => {
     switch (event.type) {
       case "messageReceived": {
-        console.debug("[DM] messageReceived event:", event.data.conversationId, "peerId:", peerId);
+        console.warn("[DM] messageReceived event:", event.data.conversationId, "peerId:", peerId);
         if (event.data.from === getOwnKey()) break;
         if (event.data.conversationId === peerId) {
           handleIncomingMessage(peerId, {

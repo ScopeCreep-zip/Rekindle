@@ -1,4 +1,4 @@
-import { Component, onMount, onCleanup, createMemo, Show } from "solid-js";
+import { Component, onMount, onCleanup, createMemo, createSignal, createEffect, Show } from "solid-js";
 import { type UnlistenFn } from "@tauri-apps/api/event";
 import Titlebar from "../components/titlebar/Titlebar";
 import MessageList from "../components/chat/MessageList";
@@ -6,7 +6,7 @@ import MessageInput from "../components/chat/MessageInput";
 import TypingIndicator from "../components/chat/TypingIndicator";
 import StatusDot from "../components/status/StatusDot";
 import VoicePanel from "../components/voice/VoicePanel";
-import { chatState, setChatState } from "../stores/chat.store";
+import { chatState, setChatState, type Message } from "../stores/chat.store";
 import { authState } from "../stores/auth.store";
 import { friendsState } from "../stores/friends.store";
 import { voiceState } from "../stores/voice.store";
@@ -47,13 +47,14 @@ const ChatWindow: Component = () => {
     };
   });
 
-  // Access messages DIRECTLY from the store — NOT through conversation() —
-  // so SolidJS creates a direct fine-grained subscription at the exact path
-  // that handleIncomingMessage updates via setChatState("conversations", peerId, "messages", ...).
-  // Chaining through conversation() breaks this because the memo caches the proxy by reference.
-  const messages = createMemo(() => {
+  // Use createEffect + createSignal instead of createMemo — guarantees re-run
+  // when tracked dependencies change regardless of calling context (DOM event vs
+  // Tauri listen callback). The signal is a plain value that For/mapArray reacts
+  // to without proxy-comparison issues.
+  const [messages, setMessages] = createSignal<Message[]>([]);
+  createEffect(() => {
     const convo = chatState.conversations[peerId];
-    return convo ? [...convo.messages] : [];
+    setMessages(convo ? [...convo.messages] : []);
   });
 
   const ownName = createMemo(() => {
