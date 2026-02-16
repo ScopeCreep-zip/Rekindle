@@ -13,6 +13,32 @@ pub struct Preferences {
     pub auto_start: bool,
     pub game_detection_enabled: bool,
     pub game_scan_interval_secs: u32,
+    /// Selected input device name (None = system default).
+    #[serde(default)]
+    pub input_device: Option<String>,
+    /// Selected output device name (None = system default).
+    #[serde(default)]
+    pub output_device: Option<String>,
+    /// Input volume multiplier (0.0–1.0).
+    #[serde(default = "default_volume")]
+    pub input_volume: f32,
+    /// Output volume multiplier (0.0–1.0).
+    #[serde(default = "default_volume")]
+    pub output_volume: f32,
+    /// Whether noise suppression is enabled.
+    #[serde(default = "default_true")]
+    pub noise_suppression: bool,
+    /// Whether echo cancellation is enabled.
+    #[serde(default = "default_true")]
+    pub echo_cancellation: bool,
+}
+
+fn default_volume() -> f32 {
+    1.0
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for Preferences {
@@ -24,6 +50,12 @@ impl Default for Preferences {
             auto_start: false,
             game_detection_enabled: true,
             game_scan_interval_secs: 15,
+            input_device: None,
+            output_device: None,
+            input_volume: 1.0,
+            output_volume: 1.0,
+            noise_suppression: true,
+            echo_cancellation: true,
         }
     }
 }

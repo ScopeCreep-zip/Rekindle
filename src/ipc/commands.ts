@@ -40,6 +40,17 @@ export interface GameStatus {
   elapsedSeconds: number;
 }
 
+export interface AudioDeviceInfo {
+  id: string;
+  name: string;
+  isDefault: boolean;
+}
+
+export interface AudioDevices {
+  inputDevices: AudioDeviceInfo[];
+  outputDevices: AudioDeviceInfo[];
+}
+
 export interface Preferences {
   notificationsEnabled: boolean;
   notificationSound: boolean;
@@ -47,6 +58,12 @@ export interface Preferences {
   autoStart: boolean;
   gameDetectionEnabled: boolean;
   gameScanIntervalSecs: number;
+  inputDevice: string | null;
+  outputDevice: string | null;
+  inputVolume: number;
+  outputVolume: number;
+  noiseSuppression: boolean;
+  echoCancellation: boolean;
 }
 
 export interface NetworkStatus {
@@ -181,6 +198,12 @@ export const commands = {
   leaveVoice: () => invoke<void>("leave_voice"),
   setMute: (muted: boolean) => invoke<void>("set_mute", { muted }),
   setDeafen: (deafened: boolean) => invoke<void>("set_deafen", { deafened }),
+  listAudioDevices: () => invoke<AudioDevices>("list_audio_devices"),
+  setAudioDevices: (inputDevice?: string, outputDevice?: string) =>
+    invoke<void>("set_audio_devices", {
+      inputDevice: inputDevice ?? null,
+      outputDevice: outputDevice ?? null,
+    }),
 
   // Status
   setStatus: (status: string) => invoke<void>("set_status", { status }),

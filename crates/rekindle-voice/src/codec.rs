@@ -45,9 +45,23 @@ impl OpusCodec {
     pub fn new(sample_rate: u32, channels: u16, frame_size: usize) -> Result<Self, VoiceError> {
         let opus_channels = to_opus_channels(channels)?;
 
-        let encoder =
+        let mut encoder =
             opus::Encoder::new(sample_rate, opus_channels, opus::Application::Voip)
                 .map_err(|e| VoiceError::Codec(format!("encoder init failed: {e}")))?;
+
+        // Configure encoder for voice over Veilid:
+        // - 32kbps bitrate: good quality speech, reduces P2P relay load
+        // - In-band FEC: allows partial recovery from packet loss
+        // - 10% expected packet loss: tells Opus to include enough FEC data
+        encoder
+            .set_bitrate(opus::Bitrate::Bits(32000))
+            .map_err(|e| VoiceError::Codec(format!("set bitrate failed: {e}")))?;
+        encoder
+            .set_inband_fec(true)
+            .map_err(|e| VoiceError::Codec(format!("set FEC failed: {e}")))?;
+        encoder
+            .set_packet_loss_perc(10)
+            .map_err(|e| VoiceError::Codec(format!("set packet loss percent failed: {e}")))?;
 
         let decoder = opus::Decoder::new(sample_rate, opus_channels)
             .map_err(|e| VoiceError::Codec(format!("decoder init failed: {e}")))?;
@@ -101,6 +115,26 @@ impl OpusCodec {
         })
     }
 
+    /// Decode using forward error correction data from a subsequent packet.
+    ///
+    /// When a packet is missing but the *next* packet has arrived, call this
+    /// with the next packet's data to recover the missing frame using Opus FEC.
+    pub fn decode_fec(&mut self, next_packet_data: &[u8]) -> Result<DecodedFrame, VoiceError> {
+        let channels_usize = usize::from(self.channels);
+        let max_samples = self.frame_size * channels_usize;
+        let mut output = vec![0.0f32; max_samples];
+        let decoded_samples = self
+            .decoder
+            .decode_float(next_packet_data, &mut output, true) // fec=true
+            .map_err(|e| VoiceError::Codec(format!("FEC decode failed: {e}")))?;
+        output.truncate(decoded_samples * channels_usize);
+
+        Ok(DecodedFrame {
+            samples: output,
+            timestamp: 0,
+        })
+    }
+
     /// Perform packet-loss concealment (decode with no input).
     ///
     /// Generates a frame that smoothly fills the gap left by a missing packet.
@@ -130,6 +164,16 @@ impl OpusCodec {
 
     pub fn frame_size(&self) -> usize {
         self.frame_size
+    }
+
+    /// Update the expected packet loss percentage for the encoder.
+    ///
+    /// Affects how much FEC data Opus includes. Higher values = more redundancy
+    /// but larger packets.
+    pub fn set_packet_loss_perc(&mut self, percent: i32) -> Result<(), VoiceError> {
+        self.encoder
+            .set_packet_loss_perc(percent)
+            .map_err(|e| VoiceError::Codec(format!("set packet loss percent failed: {e}")))
     }
 }
 

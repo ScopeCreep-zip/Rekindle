@@ -89,8 +89,10 @@ async fn handle_veilid_update(
 
 /// Handle an incoming `AppMessage` by routing it through the message service.
 ///
-/// First tries to parse as a community broadcast (from community server),
-/// then falls back to the standard message envelope handling.
+/// Routing order:
+/// 1. Voice packets (prefixed with `b'V'`) → voice engine receive channel
+/// 2. Community broadcasts (JSON) → community handler
+/// 3. Everything else → standard message envelope handling
 async fn handle_app_message(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
@@ -99,13 +101,32 @@ async fn handle_app_message(
     let message = msg.message().to_vec();
     tracing::debug!(msg_len = message.len(), "app_message received");
 
-    // Try to parse as a community broadcast first
+    // 1. Check for voice packet (tagged with b'V' prefix)
+    if !message.is_empty() && message[0] == b'V' {
+        let voice_data = &message[1..];
+        match rekindle_voice::transport::VoiceTransport::receive(voice_data) {
+            Ok(packet) => {
+                let tx = state.voice_packet_tx.read().clone();
+                if let Some(tx) = tx {
+                    if tx.try_send(packet).is_err() {
+                        tracing::trace!("voice packet channel full or closed — dropping packet");
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::trace!(error = %e, "failed to deserialize voice packet");
+            }
+        }
+        return;
+    }
+
+    // 2. Try to parse as a community broadcast
     if let Ok(broadcast) = serde_json::from_slice::<rekindle_protocol::messaging::CommunityBroadcast>(&message) {
         handle_community_broadcast(app_handle, state, broadcast).await;
         return;
     }
 
-    // Fallback to standard message handling
+    // 3. Fallback to standard message handling
     let pool: tauri::State<'_, DbPool> = app_handle.state();
     super::message_service::handle_incoming_message(
         app_handle,
@@ -1188,7 +1209,42 @@ pub async fn initialize_node(
 /// 5. Clears identity, friends, communities, signal manager
 ///
 /// Does NOT call `api.shutdown()` — the node continues running for re-login.
+#[allow(clippy::too_many_lines)]
 pub async fn logout_cleanup(app_handle: Option<&tauri::AppHandle>, state: &AppState) {
+    // 0. Shut down voice if active
+    {
+        let (send_tx, send_h, recv_tx, recv_h, monitor_tx, monitor_h) = {
+            let mut ve = state.voice_engine.lock();
+            if let Some(ref mut handle) = *ve {
+                (
+                    handle.send_loop_shutdown.take(),
+                    handle.send_loop_handle.take(),
+                    handle.recv_loop_shutdown.take(),
+                    handle.recv_loop_handle.take(),
+                    handle.device_monitor_shutdown.take(),
+                    handle.device_monitor_handle.take(),
+                )
+            } else {
+                (None, None, None, None, None, None)
+            }
+        };
+        if let Some(tx) = send_tx { let _ = tx.send(()).await; }
+        if let Some(tx) = recv_tx { let _ = tx.send(()).await; }
+        if let Some(tx) = monitor_tx { let _ = tx.send(()).await; }
+        if let Some(h) = send_h { let _ = h.await; }
+        if let Some(h) = recv_h { let _ = h.await; }
+        if let Some(h) = monitor_h { let _ = h.await; }
+        {
+            let mut ve = state.voice_engine.lock();
+            if let Some(ref mut handle) = *ve {
+                handle.engine.stop_capture();
+                handle.engine.stop_playback();
+            }
+            *ve = None;
+        }
+        *state.voice_packet_tx.write() = None;
+    }
+
     // 1. Abort user-specific background tasks
     {
         let mut handles = state.background_handles.lock();

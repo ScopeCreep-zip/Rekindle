@@ -102,8 +102,14 @@ impl VoiceTransport {
             audio_data: frame.data.clone(),
         };
 
-        let data =
+        let payload =
             bincode::serialize(&packet).map_err(|e| VoiceError::Transport(format!("{e}")))?;
+
+        // Prepend voice type tag (b'V') so the dispatch loop can distinguish
+        // voice packets from chat messages and community broadcasts.
+        let mut data = Vec::with_capacity(1 + payload.len());
+        data.push(b'V');
+        data.extend_from_slice(&payload);
 
         routing_context
             .app_message(Target::RouteId(route_id), data)
@@ -114,11 +120,10 @@ impl VoiceTransport {
     }
 
     /// Deserialize an incoming voice packet from raw bytes.
-    pub fn receive(&self, data: &[u8]) -> Result<VoicePacket, VoiceError> {
-        if !self.is_connected {
-            return Err(VoiceError::NotConnected);
-        }
-
+    ///
+    /// Expects data WITHOUT the `b'V'` type tag prefix — the dispatch loop
+    /// should strip the tag before calling this.
+    pub fn receive(data: &[u8]) -> Result<VoicePacket, VoiceError> {
         bincode::deserialize(data).map_err(|e| VoiceError::Transport(format!("{e}")))
     }
 

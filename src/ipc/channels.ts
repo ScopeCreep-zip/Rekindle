@@ -2,7 +2,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 export type ChatEvent =
   | {
-      type: "MessageReceived";
+      type: "messageReceived";
       data: {
         from: string;
         body: string;
@@ -10,23 +10,23 @@ export type ChatEvent =
         conversationId: string;
       };
     }
-  | { type: "TypingIndicator"; data: { from: string; typing: boolean } }
-  | { type: "MessageAck"; data: { messageId: number } }
+  | { type: "typingIndicator"; data: { from: string; typing: boolean } }
+  | { type: "messageAck"; data: { messageId: number } }
   | {
-      type: "FriendRequest";
+      type: "friendRequest";
       data: { from: string; displayName: string; message: string };
     }
   | {
-      type: "FriendRequestAccepted";
+      type: "friendRequestAccepted";
       data: { from: string; displayName: string };
     }
   | {
-      type: "FriendAdded";
+      type: "friendAdded";
       data: { publicKey: string; displayName: string };
     }
-  | { type: "FriendRequestRejected"; data: { from: string } }
+  | { type: "friendRequestRejected"; data: { from: string } }
   | {
-      type: "ChannelHistoryLoaded";
+      type: "channelHistoryLoaded";
       data: {
         channelId: string;
         messages: {
@@ -40,10 +40,10 @@ export type ChatEvent =
     };
 
 export type PresenceEvent =
-  | { type: "FriendOnline"; data: { publicKey: string } }
-  | { type: "FriendOffline"; data: { publicKey: string } }
+  | { type: "friendOnline"; data: { publicKey: string } }
+  | { type: "friendOffline"; data: { publicKey: string } }
   | {
-      type: "StatusChanged";
+      type: "statusChanged";
       data: {
         publicKey: string;
         status: string;
@@ -51,7 +51,7 @@ export type PresenceEvent =
       };
     }
   | {
-      type: "GameChanged";
+      type: "gameChanged";
       data: {
         publicKey: string;
         gameName: string | null;
@@ -62,19 +62,23 @@ export type PresenceEvent =
 
 export type VoiceEvent =
   | {
-      type: "UserJoined";
+      type: "userJoined";
       data: { publicKey: string; displayName: string };
     }
-  | { type: "UserLeft"; data: { publicKey: string } }
+  | { type: "userLeft"; data: { publicKey: string } }
   | {
-      type: "UserSpeaking";
+      type: "userSpeaking";
       data: { publicKey: string; speaking: boolean };
     }
   | {
-      type: "UserMuted";
+      type: "userMuted";
       data: { publicKey: string; muted: boolean };
     }
-  | { type: "ConnectionQuality"; data: { quality: string } };
+  | { type: "connectionQuality"; data: { quality: string } }
+  | {
+      type: "deviceChanged";
+      data: { deviceType: string; deviceName: string; reason: string };
+    };
 
 export type CommunityEvent =
   | {
@@ -119,8 +123,8 @@ export type CommunityEvent =
     };
 
 export type NotificationEvent =
-  | { type: "SystemAlert"; data: { title: string; body: string } }
-  | { type: "UpdateAvailable"; data: { version: string } };
+  | { type: "systemAlert"; data: { title: string; body: string } }
+  | { type: "updateAvailable"; data: { version: string } };
 
 export type NetworkStatusEvent = {
   attachmentState: string;

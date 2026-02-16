@@ -11,11 +11,11 @@ import { authState } from "../stores/auth.store";
 import type { UserStatus } from "../stores/auth.store";
 import { friendsState } from "../stores/friends.store";
 import { voiceState } from "../stores/voice.store";
-import { handleLoadHistory, handleIncomingMessage, handleTypingIndicator, handleResetUnread, handleRetrySendMessage } from "../handlers/chat.handlers";
+import { handleLoadHistory, handleResetUnread, handleRetrySendMessage } from "../handlers/chat.handlers";
 import { handleJoinVoice, handleLeaveVoice } from "../handlers/voice.handlers";
-import { subscribeChatEvents, subscribePresenceEvents } from "../ipc/channels";
+import { subscribeDmChatEvents } from "../handlers/chat-events.handlers";
+import { subscribeChatPresenceEvents } from "../handlers/presence-events.handlers";
 import { hydrateState } from "../ipc/hydrate";
-import type { ChatEvent, PresenceEvent } from "../ipc/channels";
 import { ICON_PHONE, ICON_HANGUP } from "../icons";
 
 function getPeerFromUrl(): string {
@@ -72,51 +72,8 @@ const ChatWindow: Component = () => {
     handleLoadHistory(peerId, 50);
     handleResetUnread(peerId);
 
-    unlisteners.push(subscribeChatEvents((event: ChatEvent) => {
-      switch (event.type) {
-        case "MessageReceived": {
-          // Skip our own messages — already added optimistically by handleSendMessage
-          if (event.data.from === (authState.publicKey ?? "")) break;
-          if (event.data.conversationId === peerId) {
-            handleIncomingMessage(peerId, {
-              id: Date.now(),
-              senderId: event.data.from,
-              body: event.data.body,
-              timestamp: event.data.timestamp,
-              isOwn: false,
-            });
-            // Keep unread at zero while window is open
-            handleResetUnread(peerId);
-          }
-          break;
-        }
-        case "TypingIndicator": {
-          if (event.data.from === peerId) {
-            handleTypingIndicator(peerId, event.data.typing);
-          }
-          break;
-        }
-      }
-    }));
-
-    unlisteners.push(subscribePresenceEvents((event: PresenceEvent) => {
-      switch (event.type) {
-        case "FriendOnline": {
-          if (event.data.publicKey === peerId) setPeerStatus("online");
-          break;
-        }
-        case "FriendOffline": {
-          if (event.data.publicKey === peerId) setPeerStatus("offline");
-          break;
-        }
-        case "StatusChanged": {
-          if (event.data.publicKey === peerId) {
-            setPeerStatus(event.data.status as UserStatus);
-          }
-          break;
-        }
-      }
-    }));
+    unlisteners.push(subscribeDmChatEvents(peerId, () => authState.publicKey ?? ""));
+    unlisteners.push(subscribeChatPresenceEvents(peerId, setPeerStatus));
   });
 
   onCleanup(() => {

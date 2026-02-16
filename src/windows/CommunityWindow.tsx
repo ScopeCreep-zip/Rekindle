@@ -14,11 +14,13 @@ import CommunitySettingsModal from "../components/community/CommunitySettingsMod
 import RenameChannelModal from "../components/community/RenameChannelModal";
 import ConfirmDialog from "../components/common/ConfirmDialog";
 import ToastContainer from "../components/common/Toast";
-import { commands } from "../ipc/commands";
-import { communityState, setCommunityState } from "../stores/community.store";
+import { communityState } from "../stores/community.store";
 import { authState } from "../stores/auth.store";
-import { voiceState, setVoiceState } from "../stores/voice.store";
-import { subscribeChatEvents, subscribeCommunityEvents, subscribeVoiceEvents, subscribePresenceEvents } from "../ipc/channels";
+import { voiceState } from "../stores/voice.store";
+import { initVoiceEventListener } from "../handlers/voice.handlers";
+import { subscribeCommunityChannelChatEvents } from "../handlers/chat-events.handlers";
+import { subscribeCommunityPresenceEvents } from "../handlers/presence-events.handlers";
+import { subscribeCommunityEventDispatcher } from "../handlers/community.handlers";
 import { hydrateState } from "../ipc/hydrate";
 import {
   handleLoadChannelMessages,
@@ -35,7 +37,6 @@ import {
   hasPermission,
   MANAGE_CHANNELS,
 } from "../ipc/permissions";
-import type { ChatEvent, CommunityEvent, VoiceEvent, PresenceEvent } from "../ipc/channels";
 import type { Message } from "../stores/chat.store";
 import {
   ICON_COMMUNITIES,
@@ -45,40 +46,6 @@ import {
   ICON_LOGOUT,
   ICON_CHANNEL_TEXT,
 } from "../icons";
-
-function handleVoiceEvent(event: VoiceEvent): void {
-  switch (event.type) {
-    case "UserJoined": {
-      setVoiceState("participants", (prev) => [
-        ...prev,
-        {
-          publicKey: event.data.publicKey,
-          displayName: event.data.displayName,
-          isMuted: false,
-          isSpeaking: false,
-        },
-      ]);
-      break;
-    }
-    case "UserLeft": {
-      setVoiceState("participants", (prev) =>
-        prev.filter((p) => p.publicKey !== event.data.publicKey),
-      );
-      break;
-    }
-    case "UserSpeaking": {
-      setVoiceState("participants", (p) => p.publicKey === event.data.publicKey, "isSpeaking", event.data.speaking);
-      break;
-    }
-    case "UserMuted": {
-      setVoiceState("participants", (p) => p.publicKey === event.data.publicKey, "isMuted", event.data.muted);
-      break;
-    }
-    case "ConnectionQuality": {
-      break;
-    }
-  }
-}
 
 const CommunityWindow: Component = () => {
   function getCommunityFromUrl(): string {
@@ -167,156 +134,10 @@ const CommunityWindow: Component = () => {
       }
     }
 
-    unlisteners.push(subscribeVoiceEvents(handleVoiceEvent));
-
-    // Subscribe to presence events so community member status updates in real time
-    unlisteners.push(subscribePresenceEvents((event: PresenceEvent) => {
-      const key =
-        event.type === "FriendOnline" || event.type === "FriendOffline"
-          ? event.data.publicKey
-          : event.type === "StatusChanged"
-            ? event.data.publicKey
-            : null;
-      if (!key) return;
-      const newStatus =
-        event.type === "FriendOnline"
-          ? "online"
-          : event.type === "FriendOffline"
-            ? "offline"
-            : event.type === "StatusChanged"
-              ? event.data.status
-              : null;
-      if (!newStatus) return;
-      // Update member status in all communities
-      for (const communityId of Object.keys(communityState.communities)) {
-        const community = communityState.communities[communityId];
-        const memberIdx = community.members.findIndex((m) => m.pseudonymKey === key);
-        if (memberIdx >= 0) {
-          setCommunityState("communities", communityId, "members", memberIdx, "status", newStatus);
-        }
-      }
-    }));
-
-    // Subscribe to community events for member roster changes
-    unlisteners.push(subscribeCommunityEvents((event: CommunityEvent) => {
-      if (event.type === "memberJoined") {
-        const { communityId, pseudonymKey, displayName, roleIds } = event.data;
-        const community = communityState.communities[communityId];
-        if (community) {
-          const exists = community.members.some((m) => m.pseudonymKey === pseudonymKey);
-          if (!exists) {
-            setCommunityState("communities", communityId, "members", (prev) => [
-              ...prev,
-              { pseudonymKey, displayName, roleIds, displayRole: "", status: "online", timeoutUntil: null },
-            ]);
-          }
-        }
-      } else if (event.type === "memberRemoved") {
-        const { communityId, pseudonymKey } = event.data;
-        setCommunityState("communities", communityId, "members", (prev) =>
-          prev.filter((m) => m.pseudonymKey !== pseudonymKey),
-        );
-      } else if (event.type === "rolesChanged") {
-        const { communityId, roles } = event.data;
-        if (communityState.communities[communityId]) {
-          setCommunityState("communities", communityId, "roles", roles);
-        }
-      } else if (event.type === "memberRolesChanged") {
-        const { communityId, pseudonymKey, roleIds: newRoleIds } = event.data;
-        const community = communityState.communities[communityId];
-        if (community) {
-          const idx = community.members.findIndex((m) => m.pseudonymKey === pseudonymKey);
-          if (idx >= 0) {
-            setCommunityState("communities", communityId, "members", idx, "roleIds", newRoleIds);
-          }
-          // If it's us, update myRoleIds
-          if (pseudonymKey === community.myPseudonymKey) {
-            setCommunityState("communities", communityId, "myRoleIds", newRoleIds);
-          }
-        }
-      } else if (event.type === "memberTimedOut") {
-        const { communityId, pseudonymKey, timeoutUntil } = event.data;
-        const community = communityState.communities[communityId];
-        if (community) {
-          const idx = community.members.findIndex((m) => m.pseudonymKey === pseudonymKey);
-          if (idx >= 0) {
-            setCommunityState("communities", communityId, "members", idx, "timeoutUntil", timeoutUntil);
-          }
-        }
-      } else if (event.type === "channelOverwriteChanged") {
-        // Channel overwrites changed — re-fetch members/details to update permission state
-        const { communityId } = event.data;
-        if (communityState.communities[communityId]) {
-          commands.getCommunityDetails().then((details) => {
-            const detail = details.find((d: { id: string }) => d.id === communityId);
-            if (detail) {
-              setCommunityState("communities", communityId, "roles", detail.roles);
-            }
-          }).catch(() => {});
-        }
-      } else if (event.type === "mekRotated") {
-        const { communityId, newGeneration } = event.data;
-        if (communityState.communities[communityId]) {
-          setCommunityState("communities", communityId, "mekGeneration", newGeneration);
-        }
-      } else if (event.type === "kicked") {
-        const { communityId } = event.data;
-        setCommunityState("communities", communityId, undefined!);
-        if (communityState.activeCommunity === communityId) {
-          setCommunityState("activeCommunity", null);
-          setCommunityState("activeChannel", null);
-        }
-      }
-    }));
-
-    // Subscribe to chat events for incoming channel messages from other users.
-    // Our own messages are handled via optimistic insert in handleSendChannelMessage.
-    unlisteners.push(subscribeChatEvents((event: ChatEvent) => {
-      if (event.type === "MessageReceived") {
-        // Skip our own messages — already added optimistically
-        const myPseudo = activeCommunity()?.myPseudonymKey;
-        if (myPseudo && event.data.from === myPseudo) return;
-        const channelId = event.data.conversationId;
-        const message: Message = {
-          id: Date.now(),
-          senderId: event.data.from,
-          body: event.data.body,
-          timestamp: event.data.timestamp,
-          isOwn: false,
-        };
-        const existing = communityState.channelMessages[channelId];
-        if (existing) {
-          setCommunityState("channelMessages", channelId, (msgs) => [
-            ...msgs,
-            message,
-          ]);
-        } else {
-          setCommunityState("channelMessages", channelId, [message]);
-        }
-      } else if (event.type === "ChannelHistoryLoaded") {
-        const { channelId, messages: serverMsgs } = event.data;
-        const existing = communityState.channelMessages[channelId] ?? [];
-        // Deduplicate by timestamp + senderId
-        const existingKeys = new Set(
-          existing.map((m) => `${m.timestamp}:${m.senderId}`),
-        );
-        const newMsgs: Message[] = serverMsgs
-          .filter((m) => !existingKeys.has(`${m.timestamp}:${m.senderId}`))
-          .map((m) => ({
-            id: m.id,
-            senderId: m.senderId,
-            body: m.body,
-            timestamp: m.timestamp,
-            isOwn: m.isOwn,
-          }));
-        if (newMsgs.length > 0) {
-          const merged = [...existing, ...newMsgs].sort(
-            (a, b) => a.timestamp - b.timestamp,
-          );
-          setCommunityState("channelMessages", channelId, merged);
-        }
-      }
-    }));
+    unlisteners.push(initVoiceEventListener());
+    unlisteners.push(subscribeCommunityPresenceEvents());
+    unlisteners.push(subscribeCommunityEventDispatcher());
+    unlisteners.push(subscribeCommunityChannelChatEvents(() => activeCommunity()?.myPseudonymKey));
   });
 
   onCleanup(() => {
