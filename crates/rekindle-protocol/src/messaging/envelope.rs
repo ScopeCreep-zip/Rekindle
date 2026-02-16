@@ -57,6 +57,12 @@ pub enum MessagePayload {
         route_blob: Vec<u8>,
         /// Acceptor's mailbox DHT key.
         mailbox_dht_key: String,
+        /// Initiator's X25519 ephemeral public key (for responder-side X3DH).
+        ephemeral_key: Vec<u8>,
+        /// Which of the responder's signed prekeys was used by the initiator.
+        signed_prekey_id: u32,
+        /// Which of the responder's one-time prekeys was consumed (if any).
+        one_time_prekey_id: Option<u32>,
     },
     /// Friend request rejection.
     FriendReject,

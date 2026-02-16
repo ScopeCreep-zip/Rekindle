@@ -39,25 +39,30 @@ pub async fn handle_incoming_message(
         return;
     }
 
-    // Step 2: Decrypt payload if Signal session exists, otherwise use raw payload
-    let payload_bytes = {
+    // Step 2: Decrypt payload — try plaintext JSON first, then Signal decrypt.
+    // This avoids mangling payloads that were sent unencrypted (friend requests,
+    // accepts, messages sent before a session was established).
+    let payload_bytes = if serde_json::from_slice::<serde_json::Value>(&envelope.payload).is_ok() {
+        // Already valid JSON — use as-is (plaintext or unencrypted message)
+        envelope.payload.clone()
+    } else {
+        // Not valid JSON — must be Signal-encrypted ciphertext
         let signal = state.signal_manager.lock();
         if let Some(handle) = signal.as_ref() {
-            match handle.manager.has_session(&sender_hex) {
-                Ok(true) => match handle.manager.decrypt(&sender_hex, &envelope.payload) {
-                    Ok(pt) => pt,
-                    Err(e) => {
-                        tracing::warn!(
-                            error = %e, from = %sender_hex,
-                            "Signal decrypt failed — trying plaintext fallback"
-                        );
-                        envelope.payload.clone()
-                    }
-                },
-                _ => envelope.payload.clone(),
+            match handle.manager.decrypt(&sender_hex, &envelope.payload) {
+                Ok(pt) => pt,
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e, from = %sender_hex,
+                        payload_len = envelope.payload.len(),
+                        "encrypted message could not be decrypted — dropping"
+                    );
+                    return;
+                }
             }
         } else {
-            envelope.payload.clone()
+            tracing::warn!(from = %sender_hex, "received non-JSON payload but no signal manager");
+            return;
         }
     };
 
@@ -96,10 +101,11 @@ pub async fn handle_incoming_message(
                 &message, &prekey_bundle, &profile_dht_key, &route_blob, &mailbox_dht_key,
             ).await;
         }
-        MessagePayload::FriendAccept { prekey_bundle, profile_dht_key, route_blob, mailbox_dht_key } => {
+        MessagePayload::FriendAccept { prekey_bundle, profile_dht_key, route_blob, mailbox_dht_key, ephemeral_key, signed_prekey_id, one_time_prekey_id } => {
             handle_friend_accept_full(
                 app_handle, state, pool, &sender_hex, &prekey_bundle,
                 &profile_dht_key, route_blob, &mailbox_dht_key,
+                &ephemeral_key, signed_prekey_id, one_time_prekey_id,
             ).await;
         }
         MessagePayload::FriendReject => {
@@ -210,70 +216,67 @@ async fn handle_channel_message(
     let _ = app_handle.emit("chat-event", &event);
 }
 
-/// Process incoming friend request: establish Signal session from their `PreKeyBundle`.
+/// Process incoming friend request — just log receipt.
+///
+/// We do NOT establish a Signal session here. The session will be established
+/// when we accept the request (we become the initiator), and the ephemeral key
+/// is sent back in the `FriendAccept` so the requester can call `respond_to_session()`.
 fn handle_friend_request(
-    state: &Arc<AppState>,
     sender_hex: &str,
-    _display_name: &str,
-    _message: &str,
     prekey_bundle_bytes: &[u8],
 ) {
-    // Deserialize the sender's PreKeyBundle and establish a Signal session
-    // so we can send encrypted messages to them in the future
-    match serde_json::from_slice::<rekindle_crypto::signal::PreKeyBundle>(prekey_bundle_bytes) {
-        Ok(bundle) => {
-            let signal = state.signal_manager.lock();
-            if let Some(handle) = signal.as_ref() {
-                match handle.manager.establish_session(sender_hex, &bundle) {
-                    Ok(()) => {
-                        tracing::info!(from = %sender_hex, "established Signal session from friend request");
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            from = %sender_hex, error = %e,
-                            "failed to establish Signal session from friend request"
-                        );
-                    }
-                }
-            }
-        }
-        Err(e) => {
-            tracing::warn!(
-                from = %sender_hex, error = %e,
-                "failed to deserialize PreKeyBundle from friend request"
-            );
-        }
+    if prekey_bundle_bytes.is_empty() {
+        tracing::warn!(from = %sender_hex, "friend request has empty prekey bundle");
+    } else {
+        tracing::info!(
+            from = %sender_hex,
+            prekey_len = prekey_bundle_bytes.len(),
+            "received friend request — prekey bundle stored for later session establishment"
+        );
     }
 }
 
-/// Process friend accept: establish Signal session from their `PreKeyBundle`.
+/// Process friend accept: establish *responder-side* Signal session.
+///
+/// The acceptor was the initiator (they called `establish_session`), so we are
+/// the responder. We use the ephemeral key they sent us to derive a matching
+/// shared secret via `respond_to_session()`.
 fn handle_friend_accept(
     state: &Arc<AppState>,
     sender_hex: &str,
     prekey_bundle_bytes: &[u8],
+    ephemeral_key: &[u8],
+    signed_prekey_id: u32,
+    one_time_prekey_id: Option<u32>,
 ) {
-    match serde_json::from_slice::<rekindle_crypto::signal::PreKeyBundle>(prekey_bundle_bytes) {
-        Ok(bundle) => {
-            let signal = state.signal_manager.lock();
-            if let Some(handle) = signal.as_ref() {
-                match handle.manager.establish_session(sender_hex, &bundle) {
-                    Ok(()) => {
-                        tracing::info!(from = %sender_hex, "established Signal session from friend accept");
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            from = %sender_hex, error = %e,
-                            "failed to establish Signal session from friend accept"
-                        );
-                    }
-                }
-            }
-        }
+    if ephemeral_key.is_empty() {
+        tracing::warn!(
+            from = %sender_hex,
+            "FriendAccept missing ephemeral key — no Signal session (legacy accept?)"
+        );
+        return;
+    }
+
+    // Extract their identity key from the PreKeyBundle
+    let their_identity_key = match serde_json::from_slice::<rekindle_crypto::signal::PreKeyBundle>(prekey_bundle_bytes) {
+        Ok(bundle) => bundle.identity_key,
         Err(e) => {
-            tracing::warn!(
-                from = %sender_hex, error = %e,
-                "failed to deserialize PreKeyBundle from friend accept"
-            );
+            tracing::warn!(from = %sender_hex, error = %e, "failed to parse PreKeyBundle from FriendAccept");
+            return;
+        }
+    };
+
+    let signal = state.signal_manager.lock();
+    if let Some(handle) = signal.as_ref() {
+        match handle.manager.respond_to_session(
+            sender_hex,
+            &their_identity_key,
+            ephemeral_key,
+            signed_prekey_id,
+            one_time_prekey_id,
+        ) {
+            Ok(()) => tracing::info!(from = %sender_hex, "established responder Signal session from FriendAccept"),
+            Err(e) => tracing::warn!(from = %sender_hex, error = %e, "failed to establish responder Signal session"),
         }
     }
 }
@@ -292,7 +295,7 @@ async fn handle_friend_request_full(
     route_blob: &[u8],
     mailbox_dht_key: &str,
 ) {
-    handle_friend_request(state, sender_hex, display_name, message, prekey_bundle);
+    handle_friend_request(sender_hex, prekey_bundle);
 
     // If sender is already our friend (bidirectional add), update their display name
     let is_existing_friend = state.friends.read().contains_key(sender_hex);
@@ -321,7 +324,7 @@ async fn handle_friend_request_full(
     }
     persist_friend_request(
         state, pool, sender_hex, display_name, message,
-        profile_dht_key, route_blob, mailbox_dht_key,
+        profile_dht_key, route_blob, mailbox_dht_key, prekey_bundle,
     )
     .await;
     let event = ChatEvent::FriendRequest {
@@ -343,8 +346,11 @@ async fn handle_friend_accept_full(
     profile_dht_key: &str,
     route_blob: Vec<u8>,
     mailbox_dht_key: &str,
+    ephemeral_key: &[u8],
+    signed_prekey_id: u32,
+    one_time_prekey_id: Option<u32>,
 ) {
-    handle_friend_accept(state, sender_hex, prekey_bundle);
+    handle_friend_accept(state, sender_hex, prekey_bundle, ephemeral_key, signed_prekey_id, one_time_prekey_id);
     // Cache the acceptor's route blob
     if !route_blob.is_empty() {
         let api = {
@@ -450,6 +456,7 @@ async fn persist_friend_request(
     profile_dht_key: &str,
     route_blob: &[u8],
     mailbox_dht_key: &str,
+    prekey_bundle: &[u8],
 ) {
     let owner_key = state
         .identity
@@ -464,14 +471,15 @@ async fn persist_friend_request(
     let pdk = profile_dht_key.to_string();
     let rb = route_blob.to_vec();
     let mdk = mailbox_dht_key.to_string();
+    let pkb = prekey_bundle.to_vec();
     let now = crate::db::timestamp_now();
     if let Err(e) = tokio::task::spawn_blocking(move || {
         let conn = pool.lock().map_err(|e| e.to_string())?;
         conn.execute(
             "INSERT OR IGNORE INTO pending_friend_requests \
-             (owner_key, public_key, display_name, message, received_at, profile_dht_key, route_blob, mailbox_dht_key) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            rusqlite::params![owner_key, pk, dn, msg, now, pdk, rb, mdk],
+             (owner_key, public_key, display_name, message, received_at, profile_dht_key, route_blob, mailbox_dht_key, prekey_bundle) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            rusqlite::params![owner_key, pk, dn, msg, now, pdk, rb, mdk, pkb],
         )
         .map_err(|e| e.to_string())
     })
@@ -745,11 +753,13 @@ pub async fn send_friend_request(
 
 /// Send a friend acceptance to a peer via Veilid.
 ///
-/// Includes our `PreKeyBundle` so the requester can establish a Signal session back.
+/// Includes our `PreKeyBundle` and (if available) the `SessionInitInfo` from
+/// `establish_session()` so the requester can call `respond_to_session()`.
 pub async fn send_friend_accept(
     state: &Arc<AppState>,
     pool: &DbPool,
     to: &str,
+    session_init: Option<rekindle_crypto::signal::SessionInitInfo>,
 ) -> Result<(), String> {
     let prekey_bundle = {
         let signal = state.signal_manager.lock();
@@ -782,6 +792,9 @@ pub async fn send_friend_accept(
         profile_dht_key,
         route_blob,
         mailbox_dht_key,
+        ephemeral_key: session_init.as_ref().map(|s| s.ephemeral_public_key.clone()).unwrap_or_default(),
+        signed_prekey_id: session_init.as_ref().map_or(1, |s| s.signed_prekey_id),
+        one_time_prekey_id: session_init.as_ref().and_then(|s| s.one_time_prekey_id),
     };
     // Friend accepts are NOT encrypted (the requester may not have our session yet)
     send_envelope_to_peer(state, pool, to, &payload, false).await

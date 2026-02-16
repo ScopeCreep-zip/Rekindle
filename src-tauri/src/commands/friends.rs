@@ -200,6 +200,7 @@ pub async fn remove_friend(
 
 /// Accept a pending friend request.
 #[tauri::command]
+#[allow(clippy::too_many_lines)]
 pub async fn accept_request(
     public_key: String,
     display_name: String,
@@ -210,8 +211,8 @@ pub async fn accept_request(
     let owner_key = current_owner_key(state.inner())?;
     let timestamp = db::timestamp_now();
 
-    // Read stored profile_dht_key, mailbox_dht_key, and route_blob BEFORE deleting the pending request
-    let (pending_profile_key, pending_mailbox_key, pending_route_blob) =
+    // Read stored profile_dht_key, mailbox_dht_key, route_blob, and prekey_bundle BEFORE deleting the pending request
+    let (pending_profile_key, pending_mailbox_key, pending_route_blob, pending_prekey_bundle) =
         read_pending_request_data(pool.inner(), &owner_key, &public_key).await?;
 
     // Insert into friends and delete from pending_friend_requests atomically
@@ -289,11 +290,40 @@ pub async fn accept_request(
         .map_err(|e| e.to_string())??;
     }
 
-    // Send acceptance back via Veilid
+    // Establish initiator-side Signal session using the requester's stored prekey bundle.
+    // We (the acceptor) are the Signal initiator; the requester will be the responder.
+    let session_init = if let Some(ref prekey_bytes) = pending_prekey_bundle {
+        let signal = state.signal_manager.lock();
+        if let Some(handle) = signal.as_ref() {
+            if let Ok(bundle) = serde_json::from_slice::<rekindle_crypto::signal::PreKeyBundle>(prekey_bytes) {
+                match handle.manager.establish_session(&public_key, &bundle) {
+                    Ok(info) => {
+                        tracing::info!(peer = %public_key, "established initiator Signal session on accept");
+                        Some(info)
+                    }
+                    Err(e) => {
+                        tracing::warn!(peer = %public_key, error = %e, "failed to establish Signal session on accept");
+                        None
+                    }
+                }
+            } else {
+                tracing::warn!(peer = %public_key, "failed to deserialize stored prekey bundle");
+                None
+            }
+        } else {
+            None
+        }
+    } else {
+        tracing::debug!(peer = %public_key, "no stored prekey bundle for session establishment");
+        None
+    };
+
+    // Send acceptance back via Veilid (includes ephemeral key for responder session)
     services::message_service::send_friend_accept(
         state.inner(),
         pool.inner(),
         &public_key,
+        session_init,
     )
     .await
     .unwrap_or_else(|e| {
@@ -320,10 +350,10 @@ pub async fn accept_request(
     Ok(())
 }
 
-/// Pending friend request data: `(profile_dht_key, mailbox_dht_key, route_blob)`.
-type PendingRequestData = (Option<String>, Option<String>, Option<Vec<u8>>);
+/// Pending friend request data: `(profile_dht_key, mailbox_dht_key, route_blob, prekey_bundle)`.
+type PendingRequestData = (Option<String>, Option<String>, Option<Vec<u8>>, Option<Vec<u8>>);
 
-/// Read `profile_dht_key`, `mailbox_dht_key`, and `route_blob` from a pending friend request.
+/// Read `profile_dht_key`, `mailbox_dht_key`, `route_blob`, and `prekey_bundle` from a pending friend request.
 async fn read_pending_request_data(
     pool: &DbPool,
     owner_key: &str,
@@ -336,13 +366,13 @@ async fn read_pending_request_data(
         let conn = pool_clone.lock().map_err(|e| e.to_string())?;
         let row: Option<PendingRequestData> = conn
             .query_row(
-                "SELECT profile_dht_key, mailbox_dht_key, route_blob FROM pending_friend_requests WHERE owner_key = ?1 AND public_key = ?2",
+                "SELECT profile_dht_key, mailbox_dht_key, route_blob, prekey_bundle FROM pending_friend_requests WHERE owner_key = ?1 AND public_key = ?2",
                 rusqlite::params![ok, pk],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )
             .optional()
             .map_err(|e| e.to_string())?;
-        Ok(row.unwrap_or((None, None, None)))
+        Ok(row.unwrap_or((None, None, None, None)))
     })
     .await
     .map_err(|e| e.to_string())?
@@ -673,8 +703,13 @@ async fn setup_invite_contact(
     {
         let signal = state.signal_manager.lock();
         if let Some(handle) = signal.as_ref() {
-            if let Err(e) = handle.manager.establish_session(&blob.public_key, &bundle) {
-                tracing::warn!(error = %e, "failed to establish Signal session from invite");
+            match handle.manager.establish_session(&blob.public_key, &bundle) {
+                Ok(_init_info) => {
+                    tracing::info!(peer = %blob.public_key, "established Signal session from invite");
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "failed to establish Signal session from invite");
+                }
             }
         }
     }
@@ -874,5 +909,31 @@ async fn rotate_profile_key(
         "profile DHT key rotated — {} friends notified",
         friend_keys.len()
     );
+    Ok(())
+}
+
+/// Re-emit presence events for all non-offline friends.
+///
+/// Called by the frontend after hydration completes so that event listeners
+/// (registered before hydration) receive the current friend presence state.
+#[tauri::command]
+pub async fn emit_friends_presence(
+    app: tauri::AppHandle,
+    state: State<'_, SharedState>,
+) -> Result<(), String> {
+    let friends: Vec<(String, UserStatus)> = {
+        let friends = state.friends.read();
+        friends.values().map(|f| (f.public_key.clone(), f.status)).collect()
+    };
+    for (key, status) in friends {
+        if status != UserStatus::Offline {
+            let _ = app.emit("presence-event",
+                &crate::channels::PresenceEvent::StatusChanged {
+                    public_key: key,
+                    status: format!("{status:?}").to_lowercase(),
+                    status_message: None,
+                });
+        }
+    }
     Ok(())
 }

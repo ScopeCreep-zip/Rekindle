@@ -248,9 +248,16 @@ async fn sync_friend_game_info(
     }
 }
 
-/// Read prekey bundle (subkey 5) from DHT and establish Signal session if needed.
+/// Read prekey bundle (subkey 5) from DHT.
+///
+/// We no longer establish Signal sessions from DHT prekey bundles during sync.
+/// Sessions are established during the friend request accept flow:
+/// - Acceptor calls `establish_session()` (initiator) and sends ephemeral key
+/// - Requester calls `respond_to_session()` (responder) with that ephemeral key
+///
+/// This function still reads the subkey (useful for future prekey rotation).
 async fn sync_friend_prekey(
-    state: &Arc<AppState>,
+    _state: &Arc<AppState>,
     routing_context: &veilid_core::RoutingContext,
     friend_key: &str,
     record_key: &veilid_core::RecordKey,
@@ -262,36 +269,11 @@ async fn sync_friend_prekey(
     {
         let data = value_data.data();
         if !data.is_empty() {
-            let has_session = {
-                let signal = state.signal_manager.lock();
-                signal
-                    .as_ref()
-                    .and_then(|h| h.manager.has_session(friend_key).ok())
-                    .unwrap_or(false)
-            };
-            if !has_session {
-                if let Ok(bundle) =
-                    serde_json::from_slice::<rekindle_crypto::signal::PreKeyBundle>(data)
-                {
-                    let signal = state.signal_manager.lock();
-                    if let Some(handle) = signal.as_ref() {
-                        match handle.manager.establish_session(friend_key, &bundle) {
-                            Ok(()) => {
-                                tracing::info!(
-                                    friend = %friend_key,
-                                    "established Signal session from DHT prekey bundle"
-                                );
-                            }
-                            Err(e) => {
-                                tracing::trace!(
-                                    friend = %friend_key, error = %e,
-                                    "failed to establish Signal session from DHT"
-                                );
-                            }
-                        }
-                    }
-                }
-            }
+            tracing::trace!(
+                friend = %friend_key,
+                prekey_len = data.len(),
+                "read prekey bundle from DHT (session established via friend accept flow)"
+            );
         }
     }
 }
