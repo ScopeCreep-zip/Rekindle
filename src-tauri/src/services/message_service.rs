@@ -656,9 +656,20 @@ async fn send_envelope_to_peer(
         return Ok(());
     };
 
-    send_envelope(&routing_context, route_id, &envelope)
-        .await
-        .map_err(|e| format!("send_envelope: {e}"))?;
+    if let Err(e) = send_envelope(&routing_context, route_id, &envelope).await {
+        tracing::warn!(to = %to, error = %e, "send failed — queuing for retry");
+        // Invalidate the stale cached route so the next retry fetches fresh from DHT
+        {
+            let mut dht_mgr = state.dht_manager.write();
+            if let Some(mgr) = dht_mgr.as_mut() {
+                mgr.manager.invalidate_route_for_peer(to);
+            }
+        }
+        let envelope_json =
+            serde_json::to_string(&envelope).map_err(|e| format!("serialize envelope: {e}"))?;
+        queue_pending_message(state, pool, to, &envelope_json).await?;
+        return Ok(());
+    }
 
     tracing::info!(to = %to, "message sent via veilid");
     Ok(())

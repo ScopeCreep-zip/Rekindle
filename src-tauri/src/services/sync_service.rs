@@ -21,13 +21,16 @@ pub async fn start_sync_loop(
     tracing::info!("sync service started");
 
     let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+    let mut watched_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut first_tick = true;
 
     loop {
         tokio::select! {
             _ = interval.tick() => {
-                if let Err(e) = sync_friends(&state, &app_handle).await {
+                if let Err(e) = sync_friends(&state, &app_handle, &mut watched_keys, first_tick).await {
                     tracing::warn!(error = %e, "friend sync failed");
                 }
+                first_tick = false;
                 if let Err(e) = sync_conversations(&state).await {
                     tracing::warn!(error = %e, "conversation sync failed");
                 }
@@ -50,14 +53,20 @@ pub async fn start_sync_loop(
 ///
 /// This avoids waiting 30 seconds for the first periodic tick.
 pub async fn sync_friends_now(state: &Arc<AppState>, app_handle: &tauri::AppHandle) -> Result<(), String> {
-    sync_friends(state, app_handle).await
+    let mut watched_keys = std::collections::HashSet::new();
+    sync_friends(state, app_handle, &mut watched_keys, true).await
 }
 
 /// Sync friend list: read friend profile DHT records and update local state.
 ///
 /// Reads subkeys 2 (status), 4 (game info), 5 (prekey bundle), and 6 (route blob)
 /// for each friend with a DHT record key. Also sets up DHT watches on first encounter.
-async fn sync_friends(state: &Arc<AppState>, app_handle: &tauri::AppHandle) -> Result<(), String> {
+async fn sync_friends(
+    state: &Arc<AppState>,
+    app_handle: &tauri::AppHandle,
+    watched_keys: &mut std::collections::HashSet<String>,
+    first_tick: bool,
+) -> Result<(), String> {
     // Clone routing_context out before any await (parking_lot guards are !Send)
     let routing_context = {
         let node = state.node.read();
@@ -90,22 +99,22 @@ async fn sync_friends(state: &Arc<AppState>, app_handle: &tauri::AppHandle) -> R
             Err(_) => continue,
         };
 
-        // Always register DHT key mapping (idempotent) and re-watch.
-        // Veilid watches don't survive node restarts; watch_dht_values is
-        // idempotent if a watch already exists (returns current watch count).
+        // Register DHT key mapping (idempotent, no network call)
         {
             let mut dht_mgr = state.dht_manager.write();
             if let Some(mgr) = dht_mgr.as_mut() {
                 mgr.register_friend_dht_key(dht_key.clone(), friend_key.clone());
             }
         }
-        if let Err(e) =
-            super::presence_service::watch_friend(state, friend_key, dht_key).await
+
+        // Watch once per session; retry on next tick if failed
+        if !watched_keys.contains(dht_key)
+            && super::presence_service::watch_friend(state, friend_key, dht_key).await.is_ok()
         {
-            tracing::trace!(friend = %friend_key, error = %e, "failed to re-watch friend DHT");
+            watched_keys.insert(dht_key.clone());
         }
 
-        sync_friend_dht_subkeys(state, &routing_context, friend_key, record_key, app_handle).await;
+        sync_friend_dht_subkeys(state, &routing_context, friend_key, record_key, app_handle, first_tick).await;
     }
 
     tracing::debug!(friends = friends_with_dht.len(), "friend sync complete");
@@ -122,6 +131,7 @@ async fn sync_friend_dht_subkeys(
     friend_key: &str,
     record_key: veilid_core::RecordKey,
     app_handle: &tauri::AppHandle,
+    force_refresh: bool,
 ) {
     // Ensure the record is open before reading (re-opening is a no-op if already open).
     if let Err(e) = routing_context.open_dht_record(record_key.clone(), None).await {
@@ -132,10 +142,10 @@ async fn sync_friend_dht_subkeys(
         return;
     }
 
-    sync_friend_status(state, routing_context, friend_key, &record_key, app_handle).await;
-    sync_friend_game_info(state, routing_context, friend_key, &record_key, app_handle).await;
-    sync_friend_prekey(state, routing_context, friend_key, &record_key).await;
-    sync_friend_route_blob(state, routing_context, friend_key, record_key).await;
+    sync_friend_status(state, routing_context, friend_key, &record_key, app_handle, force_refresh).await;
+    sync_friend_game_info(state, routing_context, friend_key, &record_key, app_handle, force_refresh).await;
+    sync_friend_prekey(state, routing_context, friend_key, &record_key, force_refresh).await;
+    sync_friend_route_blob(state, routing_context, friend_key, record_key, force_refresh).await;
 }
 
 /// Read status (subkey 2) from DHT and emit presence events on change.
@@ -145,11 +155,12 @@ async fn sync_friend_status(
     friend_key: &str,
     record_key: &veilid_core::RecordKey,
     app_handle: &tauri::AppHandle,
+    force_refresh: bool,
 ) {
     use tauri::Emitter;
 
     if let Ok(Some(value_data)) = routing_context
-        .get_dht_value(record_key.clone(), 2, true)
+        .get_dht_value(record_key.clone(), 2, force_refresh)
         .await
     {
         if let Some(&status_byte) = value_data.data().first() {
@@ -201,11 +212,12 @@ async fn sync_friend_game_info(
     friend_key: &str,
     record_key: &veilid_core::RecordKey,
     app_handle: &tauri::AppHandle,
+    force_refresh: bool,
 ) {
     use tauri::Emitter;
 
     if let Ok(Some(value_data)) = routing_context
-        .get_dht_value(record_key.clone(), 4, true)
+        .get_dht_value(record_key.clone(), 4, force_refresh)
         .await
     {
         let data = value_data.data();
@@ -242,9 +254,10 @@ async fn sync_friend_prekey(
     routing_context: &veilid_core::RoutingContext,
     friend_key: &str,
     record_key: &veilid_core::RecordKey,
+    force_refresh: bool,
 ) {
     if let Ok(Some(value_data)) = routing_context
-        .get_dht_value(record_key.clone(), 5, true)
+        .get_dht_value(record_key.clone(), 5, force_refresh)
         .await
     {
         let data = value_data.data();
@@ -289,9 +302,10 @@ async fn sync_friend_route_blob(
     routing_context: &veilid_core::RoutingContext,
     friend_key: &str,
     record_key: veilid_core::RecordKey,
+    force_refresh: bool,
 ) {
     if let Ok(Some(value_data)) = routing_context
-        .get_dht_value(record_key, 6, true)
+        .get_dht_value(record_key, 6, force_refresh)
         .await
     {
         let route_blob = value_data.data().to_vec();
