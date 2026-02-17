@@ -85,6 +85,12 @@ result-*
 # and MUST stay ignored (git-secret adds them automatically)
 
 # ------------------------------------------------------------
+# Windows build helpers (wrapper scripts, not needed at runtime)
+# ------------------------------------------------------------
+/scripts/
+/nul
+
+# ------------------------------------------------------------
 # OS
 # ------------------------------------------------------------
 .DS_Store

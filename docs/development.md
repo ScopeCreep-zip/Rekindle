@@ -63,6 +63,32 @@ macOS:
 xcode-select --install
 ```
 
+### Windows Setup
+
+**Prerequisites:**
+- [Visual Studio 2026](https://visualstudio.microsoft.com/downloads/) (or 2022)
+  with the **"Desktop development with C++"** workload
+- [CMake](https://cmake.org/download/) (install via `winget install Kitware.CMake`)
+- [Rust](https://rustup.rs/) (install via `winget install Rustlang.Rustup`)
+- [Node.js](https://nodejs.org/) LTS (install via `winget install OpenJS.NodeJS.LTS`)
+- [pnpm](https://pnpm.io/) (`npm install -g pnpm`)
+- [Cap'n Proto](https://capnproto.org/install.html) — download the Windows
+  release and extract to `%LOCALAPPDATA%\capnproto\`. The build system will
+  automatically find it.
+
+The "Desktop development with C++" workload is required — it registers the
+Windows SDK library paths that CMake needs to detect the MSVC compiler.
+
+**Building on Windows:**
+
+```powershell
+pnpm install
+pnpm tauri dev
+```
+
+No special terminal or environment setup is needed. CMake auto-detects the
+Visual Studio installation and MSVC compiler.
+
 ## Build Commands
 
 ```bash

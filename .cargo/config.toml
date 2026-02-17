@@ -1,0 +1,12 @@
+# Cargo configuration for cross-platform builds
+
+[env]
+# CMake 4.x compatibility: Allow older CMakeLists.txt files (opus uses cmake_minimum_required < 3.5)
+CMAKE_POLICY_VERSION_MINIMUM = "3.5"
+
+[target.x86_64-pc-windows-msvc]
+# Static link the VC runtime to avoid requiring redistributables
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
