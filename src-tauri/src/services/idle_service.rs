@@ -219,11 +219,12 @@ pub fn start_idle_service(
                 if let Some(ref mut id) = *state.identity.write() {
                     id.status = UserStatus::Away;
                 }
-                let _ = crate::services::presence_service::publish_status(
-                    &state,
-                    UserStatus::Away,
-                )
-                .await;
+                if let Err(e) =
+                    crate::services::presence_service::publish_status(&state, UserStatus::Away)
+                        .await
+                {
+                    tracing::warn!(error = %e, "auto-away: failed to publish Away status");
+                }
                 let pk = state
                     .identity
                     .read()
@@ -249,8 +250,11 @@ pub fn start_idle_service(
                 if let Some(ref mut id) = *state.identity.write() {
                     id.status = restore;
                 }
-                let _ =
-                    crate::services::presence_service::publish_status(&state, restore).await;
+                if let Err(e) =
+                    crate::services::presence_service::publish_status(&state, restore).await
+                {
+                    tracing::warn!(error = %e, "auto-away restore: failed to publish status");
+                }
                 let pk = state
                     .identity
                     .read()

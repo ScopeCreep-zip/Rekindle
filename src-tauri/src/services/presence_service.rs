@@ -720,6 +720,7 @@ pub async fn publish_status(
         return Ok(());
     };
     let Some(routing_context) = routing_context else {
+        tracing::warn!(status = ?status, "no routing context, skipping status publish");
         return Ok(());
     };
 

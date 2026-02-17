@@ -923,6 +923,12 @@ async fn handle_app_call(
 }
 
 /// Handle a DHT `ValueChange` notification by forwarding to the presence service.
+///
+/// When the inline value is `None` (Veilid doesn't always include it), we fetch
+/// each changed subkey's value from DHT individually.  The previous code silently
+/// passed an empty vec which caused `parse_status` to return `None`, dropping
+/// the status change entirely — this was why automated status updates (auto-away,
+/// offline on logout) weren't visible to friends.
 async fn handle_value_change(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
@@ -930,12 +936,47 @@ async fn handle_value_change(
 ) {
     let key = change.key.to_string();
     let subkeys: Vec<u32> = change.subkeys.iter().collect();
-    let value = change
-        .value
-        .as_ref()
-        .map_or_else(Vec::new, |v| v.data().to_vec());
-    tracing::debug!(key = %key, subkeys = ?subkeys, "DHT value changed");
-    super::presence_service::handle_value_change(app_handle, state, &key, &subkeys, &value).await;
+    let inline_value = change.value.as_ref().map(|v| v.data().to_vec());
+    tracing::debug!(
+        key = %key,
+        subkeys = ?subkeys,
+        has_inline = inline_value.is_some(),
+        "DHT value changed"
+    );
+
+    // Get routing context for fetching subkey values when not provided inline
+    let routing_context = {
+        let node = state.node.read();
+        node.as_ref().map(|nh| nh.routing_context.clone())
+    };
+
+    for &subkey in &subkeys {
+        let value = if let Some(ref v) = inline_value {
+            v.clone()
+        } else if let Some(ref rc) = routing_context {
+            match rc
+                .get_dht_value(change.key.clone(), subkey, true)
+                .await
+            {
+                Ok(Some(v)) => v.data().to_vec(),
+                Ok(None) => {
+                    tracing::debug!(subkey, key = %key, "subkey has no value");
+                    continue;
+                }
+                Err(e) => {
+                    tracing::warn!(subkey, key = %key, error = %e, "failed to fetch subkey");
+                    continue;
+                }
+            }
+        } else {
+            tracing::debug!(subkey, "no routing context to fetch subkey value");
+            continue;
+        };
+        super::presence_service::handle_value_change(
+            app_handle, state, &key, &[subkey], &value,
+        )
+        .await;
+    }
 }
 
 /// Handle a network attachment state change — update node state and notify the frontend.
