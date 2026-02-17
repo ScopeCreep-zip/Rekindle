@@ -7,7 +7,7 @@ use veilid_core::{
 use crate::dht::short_array::DHTShortArray;
 use crate::error::ProtocolError;
 
-/// Default number of entries per segment DHTShortArray.
+/// Default number of entries per segment `DHTShortArray`.
 const DEFAULT_SEGMENT_CAPACITY: u16 = 255;
 
 /// Internal metadata stored in subkey 0 of the spine DHT record.
@@ -17,7 +17,7 @@ struct LogSpine {
     total_count: u64,
     /// Maximum entries per segment.
     segment_capacity: u16,
-    /// Ordered list of segment DHTShortArray record keys (oldest first).
+    /// Ordered list of segment `DHTShortArray` record keys (oldest first).
     segments: Vec<String>,
 }
 
@@ -39,7 +39,7 @@ pub struct DHTLog {
 }
 
 impl DHTLog {
-    /// Create a new empty DHTLog.
+    /// Create a new empty `DHTLog`.
     ///
     /// Returns the log and the owner keypair (which must be persisted for
     /// write access across sessions).
@@ -98,7 +98,7 @@ impl DHTLog {
         ))
     }
 
-    /// Open an existing DHTLog with write access.
+    /// Open an existing `DHTLog` with write access.
     ///
     /// The `writer` must be the keypair returned by [`create`].
     pub async fn open_write(
@@ -130,7 +130,7 @@ impl DHTLog {
         })
     }
 
-    /// Open an existing DHTLog for reading only.
+    /// Open an existing `DHTLog` for reading only.
     pub async fn open_read(
         rc: &RoutingContext,
         key: &str,
@@ -235,8 +235,8 @@ impl DHTLog {
         }
 
         let cap = u64::from(spine.segment_capacity);
-        let segment_idx = (pos / cap) as usize;
-        let offset = (pos % cap) as u32;
+        let segment_idx = usize::try_from(pos / cap).unwrap_or(usize::MAX);
+        let offset = u32::try_from(pos % cap).unwrap_or(u32::MAX);
 
         if segment_idx >= spine.segments.len() {
             return Ok(None);
@@ -278,17 +278,17 @@ impl DHTLog {
         }
 
         let start = total.saturating_sub(u64::from(count));
-        let result_count = (total - start) as usize;
+        let result_count = usize::try_from(total - start).unwrap_or(usize::MAX);
         let mut results = Vec::with_capacity(result_count);
         let cap = u64::from(spine.segment_capacity);
 
         // Group reads by segment for efficiency
-        let mut current_segment_idx = (start / cap) as usize;
+        let mut current_segment_idx = usize::try_from(start / cap).unwrap_or(usize::MAX);
         let mut current_segment: Option<DHTShortArray> = None;
 
         for pos in start..total {
-            let seg_idx = (pos / cap) as usize;
-            let offset = (pos % cap) as u32;
+            let seg_idx = usize::try_from(pos / cap).unwrap_or(usize::MAX);
+            let offset = u32::try_from(pos % cap).unwrap_or(u32::MAX);
 
             // Open new segment if we've moved to the next one
             if current_segment.is_none()

@@ -7,6 +7,7 @@ import { ICON_VOLUME_HIGH } from "../../icons";
 interface BuddyItemProps {
   publicKey: string;
   displayName: string;
+  nickname: string | null;
   status: UserStatus;
   statusMessage: string | null;
   gameInfo: string | null;
@@ -72,6 +73,9 @@ const BuddyItem: Component<BuddyItemProps> = (props) => {
     return props.gameInfo;
   };
 
+  const tooltipText = () =>
+    props.nickname ? `${props.displayName} (${props.nickname})` : props.displayName;
+
   return (
     <div
       class={`buddy-item ${props.selected ? "buddy-item-selected" : ""}`}
@@ -80,9 +84,12 @@ const BuddyItem: Component<BuddyItemProps> = (props) => {
     >
       <StatusDot status={props.status} />
       <div class="buddy-item-content">
-        <Tooltip text={props.displayName}>
+        <Tooltip text={tooltipText()}>
           <div class={`buddy-name ${isOffline() ? "buddy-name-offline" : ""}`}>
             {props.displayName}
+            <Show when={props.nickname}>
+              <span class="buddy-nickname"> ({props.nickname})</span>
+            </Show>
           </div>
         </Tooltip>
         <Show when={gameDisplay()}>

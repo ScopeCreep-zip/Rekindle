@@ -33,7 +33,7 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .on_menu_event(|app, event| match event.id.as_ref() {
             "quit" => app.exit(0),
             "settings" => {
-                let _ = windows::open_settings(app);
+                let _ = windows::open_settings(app, None);
             }
             "status-online" => set_status_from_tray(app, UserStatus::Online),
             "status-away" => set_status_from_tray(app, UserStatus::Away),

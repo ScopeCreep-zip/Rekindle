@@ -1,9 +1,9 @@
 # Rust Crate Reference
 
-Rekindle's business logic is split across four pure Rust crates with zero Tauri
-dependency. This separation ensures the protocol, cryptography, game detection,
-and voice subsystems can be tested independently and reused outside the Tauri
-shell.
+Rekindle's business logic is split across five pure Rust crates with zero Tauri
+dependency, plus a community server daemon. This separation ensures the
+protocol, cryptography, game detection, and voice subsystems can be tested
+independently and reused outside the Tauri shell.
 
 ## Workspace Structure
 
@@ -12,7 +12,8 @@ crates/
 ├── rekindle-protocol/      Veilid networking, DHT, Cap'n Proto
 ├── rekindle-crypto/        Ed25519 identity, Signal Protocol, group encryption
 ├── rekindle-game-detect/   Cross-platform game detection
-└── rekindle-voice/         Opus codec, audio I/O, VAD, transport
+├── rekindle-voice/         Opus codec, audio I/O, VAD, transport
+└── rekindle-server/        Community hosting daemon (child process)
 ```
 
 Workspace-level dependencies are defined in the root `Cargo.toml`:
@@ -39,36 +40,43 @@ src/
 ├── capnp_codec.rs          Cap'n Proto encode/decode helpers
 ├── messaging/
 │   ├── mod.rs              Message type exports
-│   ├── envelope.rs         MessageEnvelope construction and parsing
-│   ├── sender.rs           Outbound message delivery via app_message
-│   └── receiver.rs         Inbound message dispatch
+│   ├── envelope.rs         MessageEnvelope, MessagePayload, InviteBlob, CommunityRequest/Response/Broadcast
+│   ├── sender.rs           Outbound delivery via app_message + app_call (8s timeout RPC)
+│   └── receiver.rs         Inbound message dispatch and verification
 └── dht/
     ├── mod.rs              DHTManager, record operations
     ├── profile.rs          User profile record (8 subkeys)
     ├── presence.rs         Presence data read/write
     ├── friends.rs          Friend list DHT record
-    ├── community.rs        Community DHT records (SMPL)
-    ├── channel.rs          Channel DHT records
-    ├── conversation.rs     Conversation DHT records (per-friend pair)
-    ├── account.rs          Account recovery records
-    ├── short_array.rs      Short array DHT helper
-    └── log.rs              DHT operation logging
+    ├── community.rs        Community DHT records (SMPL multi-writer)
+    ├── channel.rs          Channel message batches (linked-list records, max 50/batch)
+    ├── conversation.rs     Conversation DHT records (encrypted with DH shared secret)
+    ├── account.rs          Account record (encrypted with identity secret)
+    ├── mailbox.rs          Mailbox DHT record (route blob inbox)
+    ├── short_array.rs      DHTShortArray (ordered collection, max 255 elements)
+    └── log.rs              DHTLog (append-only log across DHT records)
 ```
 
 ### Key Types
 
 | Type | Description |
 |------|-------------|
-| `NodeConfig` | Veilid startup configuration (namespace, storage paths) |
+| `RekindleNode` | Veilid node lifecycle (start, attach, shutdown) |
 | `DHTManager` | Owns a `RoutingContext`, performs all DHT read/write/watch operations |
-| `RoutingManager` | Allocates and maintains private routes for message receiving |
-| `MessageEnvelope` | Serialized wrapper for all application messages |
-| `MessageSender` | Looks up peer routes and delivers encrypted payloads |
-| `MessageReceiver` | Deserializes incoming `app_message` payloads by type |
+| `RoutingManager` | Allocates/maintains private routes, imports peer routes with 90s TTL cache |
+| `PeerManager` | Peer address resolution (public key → route blob → RouteId) |
+| `MessageEnvelope` | Serialized wrapper with Ed25519 signature for all application messages |
+| `MessagePayload` | Typed payload enum: DirectMessage, ChannelMessage, FriendRequest/Accept/Reject, TypingIndicator, ProfileKeyRotated, PresenceUpdate |
+| `InviteBlob` | Ed25519-signed invite with public key, display name, route info, prekey bundle |
+| `CommunityRequest` | RPC request enum (22 variants): Join, SendMessage, Kick, Ban, CreateRole, etc. |
+| `CommunityResponse` | RPC response enum: Ok, Joined, Messages, MEK, ChannelCreated, Error, etc. |
+| `CommunityBroadcast` | Push broadcast enum: NewMessage, MEKRotated, MemberJoined/Removed, RolesChanged, etc. |
+| `DHTLog` | Append-only log spanning multiple DHT records (spine + segments) |
+| `DHTShortArray` | Ordered collection with O(1) remove via logical index map (max 255) |
 
 ### External Dependencies
 
-`veilid-core`, `capnp`, `capnpc` (build), `tokio`, `tracing`, `thiserror`, `hex`
+`veilid-core`, `capnp`, `capnpc` (build), `tokio`, `tracing`, `thiserror`, `hex`, `base64`, `rekindle-crypto`
 
 ---
 
@@ -84,11 +92,12 @@ src/
 ├── lib.rs                  Crate root, re-exports
 ├── error.rs                Crypto error types
 ├── identity.rs             Ed25519 keypair generation and management
-├── keychain.rs             Key derivation and conversion (Ed25519 ↔ X25519)
-├── dht_crypto.rs           DHT record encryption/signing helpers
+├── keychain.rs             Key storage trait (Stronghold abstraction), vault/key constants
+├── dht_crypto.rs           DhtRecordKey: account key (HKDF from secret), conversation key (HKDF from DH shared secret), XChaCha20-Poly1305 encrypt/decrypt
 ├── group/
 │   ├── mod.rs              Group encryption exports
-│   └── media_key.rs        MEK generation, encrypt/decrypt (distribution not yet wired)
+│   ├── media_key.rs        MEK generation, AES-256-GCM encrypt/decrypt
+│   └── pseudonym.rs        Community pseudonym derivation (HKDF-SHA256 → unlinkable Ed25519 per community)
 └── signal/
     ├── mod.rs              Signal Protocol session manager
     ├── session.rs          Signal session establishment and message encrypt/decrypt
@@ -102,10 +111,13 @@ src/
 
 | Type | Description |
 |------|-------------|
-| `Identity` | Ed25519 keypair with derived X25519 key |
-| `SignalSessionManager` | Manages Signal sessions for all peers |
+| `Identity` | Ed25519 keypair with derived X25519 key, sign/verify, public key hex |
+| `SignalSessionManager` | Manages Signal sessions for all peers (X3DH + Double Ratchet) |
 | `PreKeyBundle` | Public keys published to DHT for session establishment |
-| `MediaEncryptionKey` | AES-256-GCM symmetric key for community channels |
+| `MediaEncryptionKey` | AES-256-GCM symmetric key for community channels (with generation tracking) |
+| `DhtRecordKey` | Symmetric encryption key for DHT records (account, conversation) |
+| `Keychain` | Trait abstracting key storage (vault constants, key name helpers) |
+| `derive_community_pseudonym()` | HKDF-SHA256 deterministic Ed25519 key per community (unlinkable) |
 
 ### Signal Session Flow
 
@@ -132,8 +144,8 @@ src/
 
 ### External Dependencies
 
-`ed25519-dalek`, `x25519-dalek`, `aes-gcm`, `hkdf`, `sha2`, `rand`,
-`zeroize`, `serde`, `thiserror`
+`ed25519-dalek`, `x25519-dalek`, `aes-gcm`, `chacha20poly1305`, `hkdf`, `sha2`,
+`rand`, `zeroize`, `serde`, `thiserror`
 
 ---
 
@@ -163,8 +175,8 @@ src/
 |------|-------------|
 | `GameDetector` | Main entry point — starts scan loop, reports game changes |
 | `GameDatabase` | Loaded from JSON, maps process names to game metadata |
-| `GameInfo` | Detected game: ID, name, server info, elapsed time |
-| `ProcessScanner` | Platform-specific process enumeration trait |
+| `DetectedGame` | Detected game: ID, name, process name, start timestamp |
+| `list_process_names()` | Platform-specific process enumeration function (in `platform/mod.rs`) |
 
 ### External Dependencies
 
@@ -181,15 +193,15 @@ jitter buffering, mixing, and Veilid-based transport.
 
 ```
 src/
-├── lib.rs                  VoiceEngine public API
+├── lib.rs                  VoiceEngine public API (VoiceConfig, start/stop capture/playback)
 ├── error.rs                Voice error types
-├── capture.rs              Microphone input via cpal (dedicated thread)
-├── playback.rs             Speaker output via cpal (dedicated thread)
-├── codec.rs                Opus encode/decode (48kHz mono)
-├── vad.rs                  Energy-based voice activity detection
-├── jitter.rs               Adaptive jitter buffer for network variance
-├── mixer.rs                Multi-participant audio stream mixing
-└── transport.rs            Veilid-based voice packet send/receive
+├── capture.rs              Microphone input via cpal (dedicated OS thread, mpsc bridge)
+├── playback.rs             Speaker output via cpal (dedicated OS thread, VecDeque ring buffer)
+├── codec.rs                Opus encode/decode (48kHz, VoIP mode, 32kbps, FEC enabled)
+├── audio_processing.rs     AudioProcessor: RNNoise denoising + AEC3 echo cancellation + VAD
+├── jitter.rs               Adaptive jitter buffer (BTreeMap by sequence, initial fill delay)
+├── mixer.rs                Multi-participant audio stream mixing (per-participant volume, soft clamp)
+└── transport.rs            Veilid-based voice packet send/receive (bincode serialized)
 ```
 
 ### Voice Pipeline
@@ -224,13 +236,50 @@ Veilid, bypassing privacy routing to minimize latency. The `VoiceTransport`
 
 | Type | Description |
 |------|-------------|
-| `VoiceEngine` | Central controller: capture, playback, mute/deafen state |
-| `OpusCodec` | Encoder/decoder wrapper (48kHz, mono, 20ms frames) |
-| `VoiceActivityDetector` | Energy-threshold VAD with configurable sensitivity |
-| `JitterBuffer` | Adaptive buffer compensating for network timing variance |
-| `AudioMixer` | Mixes multiple decoded participant streams |
-| `VoiceTransport` | Veilid-backed packet send/receive (unsafe safety selection) |
+| `VoiceEngine` | Central controller: capture, playback, mute/deafen, device selection |
+| `VoiceConfig` | Configuration: sample rate, channels, frame size, jitter buffer, VAD threshold, noise/echo flags |
+| `OpusCodec` | Encoder/decoder (48kHz mono, VoIP mode, 32kbps, in-band FEC, 10% loss) |
+| `AudioProcessor` | RNNoise denoising + AEC3 echo cancellation + energy-based VAD |
+| `JitterBuffer` | Adaptive buffer with initial fill delay (BTreeMap by sequence) |
+| `AudioMixer` | Mixes multiple decoded participant streams with per-participant volume |
+| `VoiceTransport` | Veilid-backed packet send/receive (unsafe safety selection, bincode) |
 
 ### External Dependencies
 
-`opus`, `cpal`, `tokio`, `tracing`, `bytes`, `thiserror`
+`opus`, `cpal`, `dasp_sample`, `nnnoiseless`, `aec3`, `tokio`, `tracing`, `bytes`,
+`thiserror`, `bincode`, `veilid-core`
+
+---
+
+## rekindle-server
+
+Community hosting daemon. Runs as a child process spawned by the Tauri app when
+a user owns communities. Handles community RPC (join, messaging, moderation),
+MEK management, and member state.
+
+### Module Structure
+
+```
+src/
+├── main.rs                 Binary entry point
+├── community_host.rs       Community hosting logic
+├── db.rs                   SQLite database for server state
+├── ipc.rs                  IPC communication with parent Tauri process
+├── mek.rs                  MEK generation, rotation, distribution
+├── rpc.rs                  RPC protocol handler (CommunityRequest → CommunityResponse)
+└── server_state.rs         Server state management
+```
+
+### Key Behavior
+
+The server process is:
+- Spawned as a child process when a user creates or owns communities
+- Health-checked every 30s by `server_health_service` in the Tauri app
+- Automatically restarted if it becomes unresponsive (2 failures, 120s cooldown)
+- Handles `CommunityRequest` RPC via Veilid `app_call`
+- Broadcasts `CommunityBroadcast` events to community members via `app_message`
+
+### External Dependencies
+
+`veilid-core`, `rusqlite`, `tokio`, `serde`, `serde_json`, `tracing`,
+`rekindle-protocol`, `rekindle-crypto`

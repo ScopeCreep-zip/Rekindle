@@ -9,6 +9,19 @@ use hkdf::Hkdf;
 use sha2::Sha256;
 use x25519_dalek::{PublicKey as X25519Public, StaticSecret};
 
+/// Metadata produced by initiator-side session establishment.
+///
+/// The ephemeral key and prekey IDs must be sent to the peer so they
+/// can call `respond_to_session()` with matching parameters.
+pub struct SessionInitInfo {
+    /// The initiator's X25519 ephemeral public key.
+    pub ephemeral_public_key: Vec<u8>,
+    /// Which of the responder's signed prekeys was used.
+    pub signed_prekey_id: u32,
+    /// Which of the responder's one-time prekeys was consumed (if any).
+    pub one_time_prekey_id: Option<u32>,
+}
+
 /// Manages Signal Protocol sessions for 1:1 encrypted messaging.
 ///
 /// Uses X3DH for session establishment and a simplified Double Ratchet
@@ -57,7 +70,7 @@ impl SignalSessionManager {
     ///
     /// This is the initiator side — called when we want to start a conversation
     /// with someone whose `PreKeyBundle` we fetched from DHT.
-    pub fn establish_session(&self, peer_address: &str, bundle: &PreKeyBundle) -> Result<(), CryptoError> {
+    pub fn establish_session(&self, peer_address: &str, bundle: &PreKeyBundle) -> Result<SessionInitInfo, CryptoError> {
         // X3DH key agreement:
         // 1. Generate ephemeral X25519 keypair
         let ephemeral_secret = StaticSecret::random_from_rng(rand::rngs::OsRng);
@@ -133,7 +146,11 @@ impl SignalSessionManager {
         // Trust their identity on first use (TOFU)
         self.identity_store.save_identity(peer_address, &bundle.identity_key)?;
 
-        Ok(())
+        Ok(SessionInitInfo {
+            ephemeral_public_key: ephemeral_public.as_bytes().to_vec(),
+            signed_prekey_id: 1, // matches generate_prekey_bundle(1, ...)
+            one_time_prekey_id: if bundle.one_time_prekey.is_some() { Some(1) } else { None },
+        })
     }
 
     /// Respond to a session initiated by a peer (responder-side X3DH).

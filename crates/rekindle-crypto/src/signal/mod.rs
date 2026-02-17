@@ -6,6 +6,6 @@ pub mod memory_stores;
 mod test_stores;
 
 pub use prekeys::PreKeyBundle;
-pub use session::SignalSessionManager;
+pub use session::{SessionInitInfo, SignalSessionManager};
 pub use store::{IdentityKeyStore, PreKeyStore, SessionStore};
 pub use memory_stores::{MemoryIdentityStore, MemoryPreKeyStore, MemorySessionStore};

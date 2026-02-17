@@ -4,6 +4,7 @@ use serde::Serialize;
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase", tag = "type", content = "data")]
 pub enum ChatEvent {
+    #[serde(rename_all = "camelCase")]
     MessageReceived {
         from: String,
         body: String,
@@ -14,14 +15,17 @@ pub enum ChatEvent {
         from: String,
         typing: bool,
     },
+    #[serde(rename_all = "camelCase")]
     MessageAck {
         message_id: u64,
     },
+    #[serde(rename_all = "camelCase")]
     FriendRequest {
         from: String,
         display_name: String,
         message: String,
     },
+    #[serde(rename_all = "camelCase")]
     FriendRequestAccepted {
         from: String,
         display_name: String,
@@ -30,8 +34,20 @@ pub enum ChatEvent {
         from: String,
     },
     /// Emitted when a friend is added to our local list (not an incoming request).
+    #[serde(rename_all = "camelCase")]
     FriendAdded {
         public_key: String,
         display_name: String,
+    },
+    /// Emitted when a friend is removed (unfriended or blocked).
+    #[serde(rename_all = "camelCase")]
+    FriendRemoved {
+        public_key: String,
+    },
+    /// Emitted when background server fetch completes with channel history.
+    #[serde(rename_all = "camelCase")]
+    ChannelHistoryLoaded {
+        channel_id: String,
+        messages: Vec<crate::commands::chat::Message>,
     },
 }

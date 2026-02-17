@@ -40,6 +40,17 @@ export interface GameStatus {
   elapsedSeconds: number;
 }
 
+export interface AudioDeviceInfo {
+  id: string;
+  name: string;
+  isDefault: boolean;
+}
+
+export interface AudioDevices {
+  inputDevices: AudioDeviceInfo[];
+  outputDevices: AudioDeviceInfo[];
+}
+
 export interface Preferences {
   notificationsEnabled: boolean;
   notificationSound: boolean;
@@ -47,6 +58,12 @@ export interface Preferences {
   autoStart: boolean;
   gameDetectionEnabled: boolean;
   gameScanIntervalSecs: number;
+  inputDevice: string | null;
+  outputDevice: string | null;
+  inputVolume: number;
+  outputVolume: number;
+  noiseSuppression: boolean;
+  echoCancellation: boolean;
 }
 
 export interface NetworkStatus {
@@ -71,6 +88,8 @@ export const commands = {
     invoke<void>("delete_identity", { publicKey, passphrase }),
 
   // Chat
+  prepareChatSession: (peerId: string) =>
+    invoke<void>("prepare_chat_session", { peerId }),
   sendMessage: (to: string, body: string) =>
     invoke<void>("send_message", { to, body }),
   sendTyping: (peerId: string, typing: boolean) =>
@@ -99,6 +118,13 @@ export const commands = {
     invoke<void>("rename_friend_group", { groupId, name }),
   moveFriendToGroup: (publicKey: string, groupId: number | null) =>
     invoke<void>("move_friend_to_group", { publicKey, groupId }),
+  generateInvite: () => invoke<string>("generate_invite"),
+  addFriendFromInvite: (inviteString: string) =>
+    invoke<void>("add_friend_from_invite", { inviteString }),
+  blockFriend: (publicKey: string) =>
+    invoke<void>("block_friend", { publicKey }),
+  emitFriendsPresence: () =>
+    invoke<void>("emit_friends_presence"),
 
   // Community
   getCommunities: () =>
@@ -110,9 +136,14 @@ export const commands = {
       description: string | null;
       channels: { id: string; name: string; channelType: string; unreadCount: number }[];
       myRole: string | null;
+      myRoleIds: number[];
+      roles: { id: number; name: string; color: number; permissions: number; position: number; hoist: boolean; mentionable: boolean }[];
+      myPseudonymKey: string | null;
+      mekGeneration: number;
+      isHosted: boolean;
     }[]>("get_community_details"),
   getCommunityMembers: (communityId: string) =>
-    invoke<{ publicKey: string; displayName: string; role: string; status: string }[]>(
+    invoke<{ pseudonymKey: string; displayName: string; roleIds: number[]; displayRole: string; status: string; timeoutUntil: number | null }[]>(
       "get_community_members", { communityId },
     ),
   createCommunity: (name: string) =>
@@ -125,12 +156,50 @@ export const commands = {
     invoke<void>("send_channel_message", { channelId, body }),
   getChannelMessages: (channelId: string, limit: number) =>
     invoke<Message[]>("get_channel_messages", { channelId, limit }),
-  removeCommunityMember: (communityId: string, publicKey: string) =>
-    invoke<void>("remove_community_member", { communityId, publicKey }),
-  updateMemberRole: (communityId: string, publicKey: string, role: string) =>
-    invoke<void>("update_member_role", { communityId, publicKey, role }),
+  removeCommunityMember: (communityId: string, pseudonymKey: string) =>
+    invoke<void>("remove_community_member", { communityId, pseudonymKey }),
   leaveCommunity: (communityId: string) =>
     invoke<void>("leave_community", { communityId }),
+  deleteChannel: (communityId: string, channelId: string) =>
+    invoke<void>("delete_channel", { communityId, channelId }),
+  renameChannel: (communityId: string, channelId: string, newName: string) =>
+    invoke<void>("rename_channel", { communityId, channelId, newName }),
+  updateCommunityInfo: (communityId: string, name: string | null, description: string | null) =>
+    invoke<void>("update_community_info", { communityId, name, description }),
+  banMember: (communityId: string, pseudonymKey: string) =>
+    invoke<void>("ban_member", { communityId, pseudonymKey }),
+  unbanMember: (communityId: string, pseudonymKey: string) =>
+    invoke<void>("unban_member", { communityId, pseudonymKey }),
+  getBanList: (communityId: string) =>
+    invoke<{ pseudonymKey: string; displayName: string; bannedAt: number }[]>(
+      "get_ban_list", { communityId },
+    ),
+  rotateMek: (communityId: string) =>
+    invoke<void>("rotate_mek", { communityId }),
+
+  // Roles
+  getRoles: (communityId: string) =>
+    invoke<{ id: number; name: string; color: number; permissions: number; position: number; hoist: boolean; mentionable: boolean }[]>(
+      "get_roles", { communityId },
+    ),
+  createRole: (communityId: string, name: string, color: number, permissions: number, hoist: boolean, mentionable: boolean) =>
+    invoke<number>("create_role", { communityId, name, color, permissions, hoist, mentionable }),
+  editRole: (communityId: string, roleId: number, name: string | null, color: number | null, permissions: number | null, position: number | null, hoist: boolean | null, mentionable: boolean | null) =>
+    invoke<void>("edit_role", { communityId, roleId, name, color, permissions, position, hoist, mentionable }),
+  deleteRole: (communityId: string, roleId: number) =>
+    invoke<void>("delete_role", { communityId, roleId }),
+  assignRole: (communityId: string, pseudonymKey: string, roleId: number) =>
+    invoke<void>("assign_role", { communityId, pseudonymKey, roleId }),
+  unassignRole: (communityId: string, pseudonymKey: string, roleId: number) =>
+    invoke<void>("unassign_role", { communityId, pseudonymKey, roleId }),
+  timeoutMember: (communityId: string, pseudonymKey: string, durationSeconds: number, reason: string | null) =>
+    invoke<void>("timeout_member", { communityId, pseudonymKey, durationSeconds, reason }),
+  removeTimeout: (communityId: string, pseudonymKey: string) =>
+    invoke<void>("remove_timeout", { communityId, pseudonymKey }),
+  setChannelOverwrite: (communityId: string, channelId: string, targetType: string, targetId: string, allow: number, deny: number) =>
+    invoke<void>("set_channel_overwrite", { communityId, channelId, targetType, targetId, allow, deny }),
+  deleteChannelOverwrite: (communityId: string, channelId: string, targetType: string, targetId: string) =>
+    invoke<void>("delete_channel_overwrite", { communityId, channelId, targetType, targetId }),
 
   // Voice
   joinVoiceChannel: (channelId: string) =>
@@ -138,6 +207,12 @@ export const commands = {
   leaveVoice: () => invoke<void>("leave_voice"),
   setMute: (muted: boolean) => invoke<void>("set_mute", { muted }),
   setDeafen: (deafened: boolean) => invoke<void>("set_deafen", { deafened }),
+  listAudioDevices: () => invoke<AudioDevices>("list_audio_devices"),
+  setAudioDevices: (inputDevice?: string, outputDevice?: string) =>
+    invoke<void>("set_audio_devices", {
+      inputDevice: inputDevice ?? null,
+      outputDevice: outputDevice ?? null,
+    }),
 
   // Status
   setStatus: (status: string) => invoke<void>("set_status", { status }),
@@ -163,7 +238,7 @@ export const commands = {
   showBuddyList: () => invoke<void>("show_buddy_list"),
   openChatWindow: (publicKey: string, displayName: string) =>
     invoke<void>("open_chat_window", { publicKey, displayName }),
-  openSettingsWindow: () => invoke<void>("open_settings_window"),
+  openSettingsWindow: (tab?: string) => invoke<void>("open_settings_window", { tab: tab ?? null }),
   openCommunityWindow: (communityId: string, communityName: string) =>
     invoke<void>("open_community_window", { communityId, communityName }),
   openProfileWindow: (publicKey: string, displayName: string) =>

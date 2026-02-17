@@ -1,4 +1,5 @@
-import { Component, createSignal, For, Show, onMount } from "solid-js";
+import { Component, createSignal, For, Show, onMount, onCleanup } from "solid-js";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import Titlebar from "../components/titlebar/Titlebar";
 import Avatar from "../components/common/Avatar";
 import { settingsState } from "../stores/settings.store";
@@ -13,10 +14,21 @@ import { commands } from "../ipc/commands";
 import { hydrateState } from "../ipc/hydrate";
 import { fetchAvatarUrl } from "../ipc/avatar";
 
-type SettingsTab = "general" | "notifications" | "audio" | "privacy" | "about";
+function getInitialTab(): SettingsTab {
+  const params = new URLSearchParams(window.location.search);
+  const tab = params.get("tab");
+  const valid: SettingsTab[] = ["profile", "application", "notifications", "audio", "privacy", "about"];
+  if (tab && valid.includes(tab as SettingsTab)) {
+    return tab as SettingsTab;
+  }
+  return "profile";
+}
+
+type SettingsTab = "profile" | "application" | "notifications" | "audio" | "privacy" | "about";
 
 const TAB_LABELS: { id: SettingsTab; label: string }[] = [
-  { id: "general", label: "General" },
+  { id: "profile", label: "Profile" },
+  { id: "application", label: "Application" },
   { id: "notifications", label: "Notifications" },
   { id: "audio", label: "Audio" },
   { id: "privacy", label: "Privacy" },
@@ -24,17 +36,30 @@ const TAB_LABELS: { id: SettingsTab; label: string }[] = [
 ];
 
 const SettingsWindow: Component = () => {
-  const [activeTab, setActiveTab] = createSignal<SettingsTab>("general");
+  const [activeTab, setActiveTab] = createSignal<SettingsTab>(getInitialTab());
   const [nameInput, setNameInput] = createSignal("");
   const [statusMsgInput, setStatusMsgInput] = createSignal("");
   const [checkingUpdates, setCheckingUpdates] = createSignal(false);
   const [updateResult, setUpdateResult] = createSignal<string | null>(null);
+
+  let unlistenSwitchTab: Promise<UnlistenFn> | undefined;
 
   onMount(() => {
     hydrateState().then(() => {
       setNameInput(authState.displayName ?? "");
     });
     handleLoadSettings();
+
+    unlistenSwitchTab = listen<string>("settings-switch-tab", (event) => {
+      const valid: SettingsTab[] = ["profile", "application", "notifications", "audio", "privacy", "about"];
+      if (valid.includes(event.payload as SettingsTab)) {
+        setActiveTab(event.payload as SettingsTab);
+      }
+    });
+  });
+
+  onCleanup(() => {
+    unlistenSwitchTab?.then((unlisten) => unlisten());
   });
 
   function handleToggle(key: keyof typeof settingsState): void {
@@ -92,10 +117,10 @@ const SettingsWindow: Component = () => {
     setCheckingUpdates(false);
   }
 
-  function renderGeneral() {
+  function renderProfile() {
     return (
       <>
-        <div class="settings-section-title">Profile</div>
+        <div class="settings-section-title">Avatar</div>
         <div class="avatar-upload-section">
           <Avatar displayName={authState.displayName ?? "?"} size={64} avatarUrl={authState.avatarUrl ?? undefined} />
           <button class="avatar-upload-btn" onClick={handleAvatarUpload}>
@@ -103,8 +128,8 @@ const SettingsWindow: Component = () => {
           </button>
           <span class="avatar-upload-hint">PNG, JPEG, or GIF (max 256KB)</span>
         </div>
+        <div class="settings-section-title">Display Name</div>
         <div class="settings-field">
-          <label class="settings-field-label">Display Name</label>
           <div class="settings-field-row">
             <input
               class="settings-input"
@@ -116,8 +141,8 @@ const SettingsWindow: Component = () => {
             <button class="settings-save-btn" onClick={handleSaveName}>Save</button>
           </div>
         </div>
+        <div class="settings-section-title">Status Message</div>
         <div class="settings-field">
-          <label class="settings-field-label">Status Message</label>
           <div class="settings-field-row">
             <input
               class="settings-input"
@@ -130,6 +155,13 @@ const SettingsWindow: Component = () => {
             <button class="settings-save-btn" onClick={handleSaveStatusMessage}>Save</button>
           </div>
         </div>
+      </>
+    );
+  }
+
+  function renderApplication() {
+    return (
+      <>
         <div class="settings-section-title">Startup</div>
         <label class="settings-option">
           <input
@@ -147,6 +179,7 @@ const SettingsWindow: Component = () => {
           />
           <span class="buddy-name">Start Minimized</span>
         </label>
+        <div class="settings-section-title">Game Detection</div>
         <label class="settings-option">
           <input
             type="checkbox"
@@ -279,7 +312,8 @@ const SettingsWindow: Component = () => {
         </For>
       </div>
       <div class="settings-content">
-        <Show when={activeTab() === "general"}>{renderGeneral()}</Show>
+        <Show when={activeTab() === "profile"}>{renderProfile()}</Show>
+        <Show when={activeTab() === "application"}>{renderApplication()}</Show>
         <Show when={activeTab() === "notifications"}>{renderNotifications()}</Show>
         <Show when={activeTab() === "audio"}>{renderAudio()}</Show>
         <Show when={activeTab() === "privacy"}>{renderPrivacy()}</Show>

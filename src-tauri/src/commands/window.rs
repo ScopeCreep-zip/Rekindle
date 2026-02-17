@@ -41,10 +41,13 @@ pub async fn open_chat_window(
     windows::open_chat_window(&app, &public_key, &display_name)
 }
 
-/// Open the settings window.
+/// Open the settings window, optionally to a specific tab.
 #[tauri::command]
-pub async fn open_settings_window(app: tauri::AppHandle) -> Result<(), String> {
-    windows::open_settings(&app)
+pub async fn open_settings_window(
+    tab: Option<String>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    windows::open_settings(&app, tab.as_deref())
 }
 
 /// Open a community window.

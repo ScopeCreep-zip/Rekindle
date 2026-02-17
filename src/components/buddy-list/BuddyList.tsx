@@ -1,5 +1,6 @@
 import { Component, createMemo, createSignal, For, Show } from "solid-js";
 import { friendsState } from "../../stores/friends.store";
+import { buddyListUI } from "../../stores/buddylist-ui.store";
 import type { Friend } from "../../stores/friends.store";
 import {
   handleDoubleClickFriend,
@@ -15,6 +16,13 @@ import ScrollArea from "../common/ScrollArea";
 import ContextMenu from "../common/ContextMenu";
 import type { ContextMenuItem } from "../common/ContextMenu";
 
+function matchesSearch(friend: Friend, query: string): boolean {
+  const q = query.toLowerCase();
+  if (friend.displayName.toLowerCase().includes(q)) return true;
+  if (friend.nickname && friend.nickname.toLowerCase().includes(q)) return true;
+  return false;
+}
+
 const BuddyList: Component = () => {
   const [selectedKey, setSelectedKey] = createSignal<string | null>(null);
   const [showGroupSubmenu, setShowGroupSubmenu] = createSignal(false);
@@ -22,8 +30,10 @@ const BuddyList: Component = () => {
   const [newGroupName, setNewGroupName] = createSignal("");
 
   const groupedFriends = createMemo(() => {
+    const query = buddyListUI.searchQuery.trim();
     const groups: Record<string, Friend[]> = {};
     for (const friend of Object.values(friendsState.friends)) {
+      if (query && !matchesSearch(friend, query)) continue;
       const group = friend.group || "Friends";
       if (!groups[group]) groups[group] = [];
       groups[group].push(friend);
@@ -38,6 +48,9 @@ const BuddyList: Component = () => {
     }
     return groups;
   });
+
+  const hasFriends = createMemo(() => Object.keys(friendsState.friends).length > 0);
+  const hasFilteredResults = createMemo(() => Object.keys(groupedFriends()).length > 0);
 
   const existingGroups = createMemo(() => {
     return Object.keys(groupedFriends());
@@ -124,17 +137,30 @@ const BuddyList: Component = () => {
 
   return (
     <ScrollArea class="buddy-list">
-      <For each={Object.entries(groupedFriends())}>
-        {([name, friends]) => (
-          <BuddyGroup
-            name={name}
-            friends={friends}
-            selectedKey={selectedKey()}
-            onDoubleClick={handleDblClick}
-            onContextMenu={handleCtxMenu}
-          />
-        )}
-      </For>
+      <Show when={hasFriends()} fallback={
+        <div class="empty-placeholder">
+          <div class="empty-placeholder-title">No Friends Yet</div>
+          <div class="empty-placeholder-subtitle">Add a friend to get started</div>
+        </div>
+      }>
+        <Show when={hasFilteredResults()} fallback={
+          <div class="empty-placeholder">
+            <div class="empty-placeholder-subtitle">No matches</div>
+          </div>
+        }>
+          <For each={Object.entries(groupedFriends())}>
+            {([name, friends]) => (
+              <BuddyGroup
+                name={name}
+                friends={friends}
+                selectedKey={selectedKey()}
+                onDoubleClick={handleDblClick}
+                onContextMenu={handleCtxMenu}
+              />
+            )}
+          </For>
+        </Show>
+      </Show>
       <Show when={friendsState.contextMenu}>
         {(menu) => (
           <>

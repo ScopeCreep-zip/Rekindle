@@ -135,6 +135,38 @@ export async function handleMoveFriendToGroup(
   }
 }
 
+export async function handleBlockFriend(publicKey: string): Promise<string | null> {
+  try {
+    await commands.blockFriend(publicKey);
+    setFriendsState("friends", (prev) => {
+      const next = { ...prev };
+      delete next[publicKey];
+      return next;
+    });
+    return null;
+  } catch (e) {
+    return String(e);
+  }
+}
+
+export async function handleGenerateInvite(): Promise<string | null> {
+  try {
+    return await commands.generateInvite();
+  } catch (e) {
+    console.error("Failed to generate invite:", e);
+    return null;
+  }
+}
+
+export async function handleAddFriendFromInvite(inviteString: string): Promise<string | null> {
+  try {
+    await commands.addFriendFromInvite(inviteString);
+    return null;
+  } catch (e) {
+    return String(e);
+  }
+}
+
 export async function handleRefreshFriends(): Promise<void> {
   try {
     const friends = await commands.getFriends();

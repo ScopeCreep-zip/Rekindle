@@ -11,7 +11,6 @@ use crate::error::CryptoError;
 /// on the network.
 #[derive(ZeroizeOnDrop)]
 pub struct Identity {
-    #[zeroize(skip)]
     signing_key: SigningKey,
 }
 
@@ -64,11 +63,14 @@ impl Identity {
 
     /// Derive an X25519 static secret from this Ed25519 key for Diffie-Hellman.
     ///
+    /// Uses the SHA-512-expanded scalar (same scalar that Ed25519 uses internally)
+    /// so that `to_x25519_public()` matches `peer_ed25519_to_x25519()` via the
+    /// standard Edwards→Montgomery birational map.
+    ///
     /// Used for Signal Protocol key agreement (X3DH).
     pub fn to_x25519_secret(&self) -> x25519_dalek::StaticSecret {
-        // Ed25519 secret key bytes can be clamped and used as X25519 secret
-        let secret_bytes = self.signing_key.to_bytes();
-        x25519_dalek::StaticSecret::from(secret_bytes)
+        let scalar_bytes = self.signing_key.to_scalar_bytes();
+        x25519_dalek::StaticSecret::from(scalar_bytes)
     }
 
     /// Get the X25519 public key derived from this identity.
@@ -79,6 +81,21 @@ impl Identity {
     /// Get the public key as a hex string (for display / sharing).
     pub fn public_key_hex(&self) -> String {
         hex::encode(self.public_key_bytes())
+    }
+
+    /// Convert a peer's Ed25519 public key bytes to an X25519 public key.
+    ///
+    /// Uses the standard Edwards→Montgomery birational map (RFC 7748).
+    /// This is the correct way to derive X25519 from a **public** Ed25519 key
+    /// (as opposed to `to_x25519_secret`/`to_x25519_public` which work from
+    /// our own secret key).
+    pub fn peer_ed25519_to_x25519(
+        ed25519_public_bytes: &[u8; 32],
+    ) -> Result<x25519_dalek::PublicKey, CryptoError> {
+        let verifying_key = VerifyingKey::from_bytes(ed25519_public_bytes)
+            .map_err(|e| CryptoError::VerificationError(format!("invalid Ed25519 public key: {e}")))?;
+        let montgomery = verifying_key.to_montgomery();
+        Ok(x25519_dalek::PublicKey::from(montgomery.to_bytes()))
     }
 }
 
@@ -123,6 +140,39 @@ mod tests {
 
         let shared_a = alice_secret.diffie_hellman(&bob_public);
         let shared_b = bob_secret.diffie_hellman(&alice_public);
+
+        assert_eq!(shared_a.as_bytes(), shared_b.as_bytes());
+    }
+
+    #[test]
+    fn peer_ed25519_to_x25519_matches_own_derivation() {
+        // Verify that peer_ed25519_to_x25519 (from public key bytes) produces
+        // the same X25519 public key as to_x25519_public (from secret key).
+        let identity = Identity::generate();
+        let from_secret = identity.to_x25519_public();
+        let from_public =
+            Identity::peer_ed25519_to_x25519(&identity.public_key_bytes()).unwrap();
+        assert_eq!(from_secret.as_bytes(), from_public.as_bytes());
+    }
+
+    #[test]
+    fn peer_x25519_dh_agreement() {
+        // Alice uses her secret + peer_ed25519_to_x25519(bob's public key)
+        // Bob uses his secret + peer_ed25519_to_x25519(alice's public key)
+        // Both should derive the same shared secret.
+        let alice = Identity::generate();
+        let bob = Identity::generate();
+
+        let alice_secret = alice.to_x25519_secret();
+        let bob_x25519_pub =
+            Identity::peer_ed25519_to_x25519(&bob.public_key_bytes()).unwrap();
+
+        let bob_secret = bob.to_x25519_secret();
+        let alice_x25519_pub =
+            Identity::peer_ed25519_to_x25519(&alice.public_key_bytes()).unwrap();
+
+        let shared_a = alice_secret.diffie_hellman(&bob_x25519_pub);
+        let shared_b = bob_secret.diffie_hellman(&alice_x25519_pub);
 
         assert_eq!(shared_a.as_bytes(), shared_b.as_bytes());
     }

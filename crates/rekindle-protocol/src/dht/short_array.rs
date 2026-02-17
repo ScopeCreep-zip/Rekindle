@@ -3,7 +3,7 @@ use veilid_core::{DHTSchema, KeyPair, RecordKey, RoutingContext, CRYPTO_KIND_VLD
 
 use crate::error::ProtocolError;
 
-/// Internal metadata stored in subkey 0 of the DHTShortArray record.
+/// Internal metadata stored in subkey 0 of the `DHTShortArray` record.
 ///
 /// Tracks the logical ordering of elements by mapping each logical index
 /// to a physical slot number. The actual DHT subkey = slot + 1.
@@ -34,7 +34,7 @@ pub struct DHTShortArray {
 }
 
 impl DHTShortArray {
-    /// Create a new DHTShortArray with the given capacity.
+    /// Create a new `DHTShortArray` with the given capacity.
     ///
     /// If `owner` is `Some`, the record is created with that keypair as owner.
     /// If `None`, a new random keypair is generated.
@@ -92,7 +92,7 @@ impl DHTShortArray {
         ))
     }
 
-    /// Open an existing DHTShortArray for reading or writing.
+    /// Open an existing `DHTShortArray` for reading or writing.
     ///
     /// Pass `writer: Some(keypair)` for write access, or `None` for read-only.
     pub async fn open(

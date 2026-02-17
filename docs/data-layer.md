@@ -35,6 +35,7 @@ support).
 | avatar_webp | BLOB | Avatar image (WebP format) |
 | account_dht_key | TEXT | Account recovery DHT record key |
 | account_owner_keypair | TEXT | Keypair for account record write access |
+| mailbox_dht_key | TEXT | Mailbox DHT record key (route blob inbox) |
 
 ### friends
 
@@ -54,8 +55,11 @@ Stores the friend list with per-identity scoping.
 | local_conversation_key | TEXT | Our conversation DHT record key |
 | local_conversation_keypair | TEXT | Keypair for our conversation record |
 | remote_conversation_key | TEXT | Friend's conversation DHT record key |
+| mailbox_dht_key | TEXT | Friend's mailbox DHT key (route blob fallback) |
 
 Primary key: `(owner_key, public_key)`
+
+Index: `idx_friends_group_id` on `(owner_key, group_id)`
 
 ### friend_groups
 
@@ -86,10 +90,12 @@ All chat messages — both 1:1 DMs and community channel messages.
 | is_read | INTEGER | 0 = unread, 1 = read |
 | reply_to_id | INTEGER FK | Referenced message (nullable) |
 | attachment_json | TEXT | Attachment metadata (JSON, nullable) |
+| mek_generation | INTEGER | MEK generation for channel message decryption |
 
 Indexes:
 - `idx_messages_conversation` on `(owner_key, conversation_id, timestamp)`
 - `idx_messages_unread` on `(owner_key, conversation_id, is_read)` where `is_read = 0`
+- `idx_messages_dedup` unique on `(owner_key, conversation_id, conversation_type, sender_key, timestamp)` (deduplication)
 
 ### communities
 
@@ -103,9 +109,15 @@ Joined communities with per-identity scoping.
 | description | TEXT | Community description |
 | icon_hash | TEXT | Icon content hash |
 | my_role | TEXT | Our role (default: `member`) |
+| my_role_ids | TEXT | Comma-separated role IDs (new multi-role system) |
 | joined_at | INTEGER | Unix timestamp |
 | last_synced | INTEGER | Last DHT sync timestamp |
 | dht_record_key | TEXT | Community DHT record key |
+| dht_owner_keypair | TEXT | Keypair for DHT record write access |
+| my_pseudonym_key | TEXT | Our unlinkable pseudonym key for this community |
+| mek_generation | INTEGER | Current MEK generation (default: 0) |
+| server_route_blob | BLOB | Community server's Veilid route blob |
+| is_hosted | INTEGER | Whether we are hosting this community's server |
 
 Primary key: `(owner_key, id)`
 
@@ -124,6 +136,8 @@ Channels within communities.
 
 Primary key: `(owner_key, id)`
 
+Index: `idx_channels_community_id` on `(owner_key, community_id)`
+
 ### community_members
 
 Membership records for communities.
@@ -131,13 +145,46 @@ Membership records for communities.
 | Column | Type | Description |
 |--------|------|-------------|
 | owner_key | TEXT FK | Identity |
-| community_id | TEXT | Community ID |
-| public_key | TEXT | Member's public key |
+| community_id | TEXT FK | Community ID |
+| pseudonym_key | TEXT | Member's pseudonym public key (unlinkable per community) |
 | display_name | TEXT | Member's display name |
-| role | TEXT | `owner`, `admin`, `moderator`, or `member` |
+| role_ids | TEXT | Comma-separated role IDs |
+| timeout_until | INTEGER | Timeout expiry timestamp (nullable) |
 | joined_at | INTEGER | Unix timestamp |
 
-Primary key: `(owner_key, community_id, public_key)`
+Primary key: `(owner_key, community_id, pseudonym_key)`
+
+Index: `idx_community_members_community` on `(owner_key, community_id, pseudonym_key)`
+
+### community_roles
+
+Role definitions for communities.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| owner_key | TEXT FK | Identity |
+| community_id | TEXT FK | Community ID |
+| role_id | INTEGER | Role ID |
+| name | TEXT | Role name |
+| color | INTEGER | RGB packed color |
+| permissions | INTEGER | Permission bitmask (u64) |
+| position | INTEGER | Display ordering |
+| hoist | INTEGER | Whether to show role separately in member list |
+| mentionable | INTEGER | Whether role can be @mentioned |
+
+### channel_overwrites
+
+Per-channel permission overrides for roles or members.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| owner_key | TEXT FK | Identity |
+| community_id | TEXT FK | Community ID |
+| channel_id | TEXT FK | Channel ID |
+| target_type | TEXT | `role` or `member` |
+| target_id | TEXT | Role ID or member pseudonym key |
+| allow | INTEGER | Permission bitmask to allow |
+| deny | INTEGER | Permission bitmask to deny |
 
 ### trusted_identities
 
@@ -187,6 +234,8 @@ Offline message queue for retry delivery.
 | created_at | INTEGER | Unix timestamp |
 | retry_count | INTEGER | Number of delivery attempts (max 20) |
 
+Index: `idx_pending_recipient` on `(owner_key, recipient_key)`
+
 ### pending_friend_requests
 
 Incoming friend requests awaiting user action.
@@ -198,6 +247,20 @@ Incoming friend requests awaiting user action.
 | display_name | TEXT | Requester's display name |
 | message | TEXT | Optional request message |
 | received_at | INTEGER | Unix timestamp |
+| profile_dht_key | TEXT | Requester's DHT profile key |
+| route_blob | BLOB | Requester's Veilid route blob |
+| mailbox_dht_key | TEXT | Requester's mailbox DHT key |
+| prekey_bundle | BLOB | Requester's Signal PreKeyBundle |
+
+### blocked_users
+
+Users blocked from sending messages.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| owner_key | TEXT FK | Identity |
+| public_key | TEXT | Blocked user's public key |
+| blocked_at | INTEGER | Unix timestamp |
 
 ## Schema Versioning
 
@@ -228,14 +291,17 @@ Each identity has a dedicated `.stronghold` file in the application config
 directory. The vault is encrypted with a key derived from the user's passphrase
 via Argon2id.
 
-| Vault Entry | Purpose |
-|-------------|---------|
-| Ed25519 seed | Identity keypair generation |
-| X25519 private key | Diffie-Hellman key agreement |
-| Signal identity keypair | Signal Protocol identity |
-| Signed prekey (private) | Signal Protocol key exchange |
-| One-time prekeys (private) | Signal Protocol first-contact |
-| Community MEKs | Per-channel symmetric keys (planned — not yet stored) |
+### Vault Namespaces
+
+| Vault | Key | Purpose |
+|-------|-----|---------|
+| `identity` | `ed25519_private` | Ed25519 signing private key |
+| `identity` | `x25519_private` | X25519 Diffie-Hellman private key |
+| `signal` | `identity_keypair` | Signal Protocol identity keypair |
+| `signal` | `signed_prekey` | Current signed prekey |
+| `signal` | `prekey_batch` | Batch of one-time prekeys |
+| `veilid` | `protected_store_key` | Veilid protected store encryption key |
+| `communities` | `mek_{community_id}` | Per-community Media Encryption Key |
 
 Stronghold is accessed through `iota_stronghold` directly (not via the Tauri
 Stronghold plugin) to allow per-identity snapshot files and configurable Argon2
@@ -262,10 +328,41 @@ A DHT record containing serialized friend list entries. Each entry holds a
 public key and display name. Used by peers to discover mutual friends and
 verify friend relationships.
 
-### Community Records
+### Mailbox Record (DFLT, 1 subkey)
+
+Each user publishes a mailbox DHT record created with their identity keypair
+(deterministic key). Contains only the user's current Veilid route blob, providing
+a fallback way for peers to find a route when the profile record's subkey 6 is stale.
+
+| Subkey | Content |
+|--------|---------|
+| 0 | Route blob (raw bytes) |
+
+### Community Records (SMPL, multi-writer, 7 subkeys)
 
 Communities use SMPL (multi-writer) DHT records to allow multiple admins to
 update community metadata, channel lists, and member rosters.
+
+| Subkey | Content |
+|--------|---------|
+| 0 | Metadata (name, description, icon, owner key) |
+| 1 | Channels list (JSON) |
+| 2 | Members list (JSON) |
+| 3 | Roles (JSON) |
+| 4 | Invites |
+| 5 | MEK (encrypted, per-member bundles) |
+| 6 | Server route blob |
+
+### Account Record (DFLT, encrypted)
+
+Private account record encrypted with `DhtRecordKey::derive_account_key()` from
+the user's Ed25519 secret. Contains three child `DHTShortArray` references for
+contacts, chats, and invitations.
+
+### Conversation Record (DFLT, encrypted)
+
+Per-friend-pair conversation record encrypted with `DhtRecordKey::derive_conversation_key()`
+from X25519 DH shared secret. Contains a child `DHTLog` for message history.
 
 ## Cap'n Proto Serialization
 

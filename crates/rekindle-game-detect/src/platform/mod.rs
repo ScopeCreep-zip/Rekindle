@@ -12,7 +12,7 @@ pub fn list_process_names() -> Vec<String> {
     use sysinfo::System;
 
     let mut sys = System::new();
-    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, false);
 
     sys.processes()
         .values()

@@ -2,7 +2,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 export type ChatEvent =
   | {
-      type: "MessageReceived";
+      type: "messageReceived";
       data: {
         from: string;
         body: string;
@@ -10,27 +10,41 @@ export type ChatEvent =
         conversationId: string;
       };
     }
-  | { type: "TypingIndicator"; data: { from: string; typing: boolean } }
-  | { type: "MessageAck"; data: { messageId: number } }
+  | { type: "typingIndicator"; data: { from: string; typing: boolean } }
+  | { type: "messageAck"; data: { messageId: number } }
   | {
-      type: "FriendRequest";
+      type: "friendRequest";
       data: { from: string; displayName: string; message: string };
     }
   | {
-      type: "FriendRequestAccepted";
+      type: "friendRequestAccepted";
       data: { from: string; displayName: string };
     }
   | {
-      type: "FriendAdded";
+      type: "friendAdded";
       data: { publicKey: string; displayName: string };
     }
-  | { type: "FriendRequestRejected"; data: { from: string } };
+  | { type: "friendRequestRejected"; data: { from: string } }
+  | { type: "friendRemoved"; data: { publicKey: string } }
+  | {
+      type: "channelHistoryLoaded";
+      data: {
+        channelId: string;
+        messages: {
+          id: number;
+          senderId: string;
+          body: string;
+          timestamp: number;
+          isOwn: boolean;
+        }[];
+      };
+    };
 
 export type PresenceEvent =
-  | { type: "FriendOnline"; data: { publicKey: string } }
-  | { type: "FriendOffline"; data: { publicKey: string } }
+  | { type: "friendOnline"; data: { publicKey: string } }
+  | { type: "friendOffline"; data: { publicKey: string } }
   | {
-      type: "StatusChanged";
+      type: "statusChanged";
       data: {
         publicKey: string;
         status: string;
@@ -38,7 +52,7 @@ export type PresenceEvent =
       };
     }
   | {
-      type: "GameChanged";
+      type: "gameChanged";
       data: {
         publicKey: string;
         gameName: string | null;
@@ -49,23 +63,69 @@ export type PresenceEvent =
 
 export type VoiceEvent =
   | {
-      type: "UserJoined";
+      type: "userJoined";
       data: { publicKey: string; displayName: string };
     }
-  | { type: "UserLeft"; data: { publicKey: string } }
+  | { type: "userLeft"; data: { publicKey: string } }
   | {
-      type: "UserSpeaking";
+      type: "userSpeaking";
       data: { publicKey: string; speaking: boolean };
     }
   | {
-      type: "UserMuted";
+      type: "userMuted";
       data: { publicKey: string; muted: boolean };
     }
-  | { type: "ConnectionQuality"; data: { quality: string } };
+  | { type: "connectionQuality"; data: { quality: string } }
+  | {
+      type: "deviceChanged";
+      data: { deviceType: string; deviceName: string; reason: string };
+    };
+
+export type CommunityEvent =
+  | {
+      type: "memberJoined";
+      data: {
+        communityId: string;
+        pseudonymKey: string;
+        displayName: string;
+        roleIds: number[];
+      };
+    }
+  | {
+      type: "memberRemoved";
+      data: { communityId: string; pseudonymKey: string };
+    }
+  | {
+      type: "mekRotated";
+      data: { communityId: string; newGeneration: number };
+    }
+  | {
+      type: "kicked";
+      data: { communityId: string };
+    }
+  | {
+      type: "rolesChanged";
+      data: {
+        communityId: string;
+        roles: { id: number; name: string; color: number; permissions: number; position: number; hoist: boolean; mentionable: boolean }[];
+      };
+    }
+  | {
+      type: "memberRolesChanged";
+      data: { communityId: string; pseudonymKey: string; roleIds: number[] };
+    }
+  | {
+      type: "memberTimedOut";
+      data: { communityId: string; pseudonymKey: string; timeoutUntil: number | null };
+    }
+  | {
+      type: "channelOverwriteChanged";
+      data: { communityId: string; channelId: string };
+    };
 
 export type NotificationEvent =
-  | { type: "SystemAlert"; data: { title: string; body: string } }
-  | { type: "UpdateAvailable"; data: { version: string } };
+  | { type: "systemAlert"; data: { title: string; body: string } }
+  | { type: "updateAvailable"; data: { version: string } };
 
 export type NetworkStatusEvent = {
   attachmentState: string;
@@ -108,6 +168,14 @@ export function subscribeVoiceEvents(
   onEvent: (event: VoiceEvent) => void,
 ): Promise<UnlistenFn> {
   return safeListen<VoiceEvent>("voice-event", (event) => {
+    onEvent(event.payload);
+  });
+}
+
+export function subscribeCommunityEvents(
+  onEvent: (event: CommunityEvent) => void,
+): Promise<UnlistenFn> {
+  return safeListen<CommunityEvent>("community-event", (event) => {
     onEvent(event.payload);
   });
 }

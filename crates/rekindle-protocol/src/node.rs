@@ -65,13 +65,22 @@ impl RekindleNode {
         );
 
         // 2. Create an mpsc channel for VeilidUpdate events
-        let (update_tx, update_rx) = mpsc::channel::<VeilidUpdate>(256);
+        let (update_tx, update_rx) = mpsc::channel::<VeilidUpdate>(1024);
 
         // 3. Build the update callback that forwards events into the channel
         let update_callback: veilid_core::UpdateCallback = Arc::new(move |update| {
             // Non-blocking send — if the channel is full we drop the event
             // rather than blocking the Veilid core thread.
-            let _ = update_tx.try_send(update);
+            if let Err(e) = update_tx.try_send(update) {
+                let dropped = match &e {
+                    mpsc::error::TrySendError::Full(u)
+                    | mpsc::error::TrySendError::Closed(u) => u,
+                };
+                tracing::error!(
+                    event = veilid_update_name(dropped),
+                    "Veilid update channel full — dropped event (consider increasing buffer)"
+                );
+            }
         });
 
         // 4. Start the Veilid core
@@ -136,5 +145,18 @@ impl RekindleNode {
         let (_, dummy_rx) = mpsc::channel(1);
         let rx = std::mem::replace(&mut self.update_rx, dummy_rx);
         Some(rx)
+    }
+}
+
+/// Return a human-readable name for a `VeilidUpdate` variant (for logging).
+fn veilid_update_name(update: &VeilidUpdate) -> &'static str {
+    match update {
+        VeilidUpdate::AppCall(_) => "AppCall",
+        VeilidUpdate::AppMessage(_) => "AppMessage",
+        VeilidUpdate::RouteChange(_) => "RouteChange",
+        VeilidUpdate::Attachment(_) => "Attachment",
+        VeilidUpdate::ValueChange(_) => "ValueChange",
+        VeilidUpdate::Shutdown => "Shutdown",
+        _ => "Other",
     }
 }

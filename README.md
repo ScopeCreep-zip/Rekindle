@@ -25,25 +25,37 @@ accounts, and control your social graph. Rekindle takes a different approach:
   1:1 messages, AES-256-GCM group keys for community channels, XChaCha20-Poly1305
   transport encryption on the wire, and Stronghold vault encryption at rest.
 
+## Status
+
+> **Early development.** 1:1 messaging is the primary tested workflow. Voice
+> calling, communities, and game detection are implemented but **not yet
+> confirmed working end-to-end**. Expect rough edges.
+
 ## Features
 
 ### Messaging
 - End-to-end encrypted 1:1 chat via Signal Protocol (X3DH + Double Ratchet)
 - Separate chat windows per conversation (classic IM style, not tabbed)
-- Typing indicators, read receipts, message history persisted in SQLite
+- Typing indicators, local read tracking, message history persisted in SQLite
 - Offline message queue — messages retry automatically when a peer comes online
 - Cap'n Proto wire format for compact, zero-copy serialization
 
 ### Communities
 - Create or join communities with text and voice channels
-- Role-based permissions (owner, admin, moderator, member)
-- Invite by code, member management, channel CRUD
-- Group encryption via per-channel Media Encryption Keys (AES-256-GCM)
+- Community server daemon (child process) for message relay and state management
+- Role-based permissions with bitmask system (create/edit/delete/assign roles)
+- Per-channel permission overwrites (role or member allow/deny)
+- Moderation: kick, ban, unban, timeout with duration
+- Invite by code or Ed25519-signed deep link (`rekindle://invite/{blob}`)
+- Unlinkable community pseudonyms (different identity per community via HKDF)
+- Group encryption via per-channel Media Encryption Keys (AES-256-GCM, primitives ready)
 
 ### Voice Chat
 - Opus codec at 48kHz mono with voice activity detection
+- Audio processing pipeline: RNNoise denoising + AEC3 echo cancellation
 - Adaptive jitter buffer and multi-participant audio mixer
 - Dedicated audio threads (cpal capture/playback) with mpsc transport
+- Audio device selection (input/output)
 - Global shortcut mute toggle (Ctrl+Shift+M)
 
 ### Game Detection
@@ -82,6 +94,7 @@ Rekindle is structured as a four-layer stack:
 │                   Pure Rust Crates                      │
 │  rekindle-protocol   rekindle-crypto                    │
 │  rekindle-game-detect   rekindle-voice                  │
+│  rekindle-server (community hosting daemon)             │
 ├─────────────────────────────────────────────────────────┤
 │                    Veilid Network                       │
 │  DHT storage, app_message routing, private routes       │
@@ -123,7 +136,7 @@ src-tauri/                     Tauri 2 Rust backend
     lib.rs                     App entry, plugin registration, setup
     commands/                  IPC command handlers (auth, chat, friends, voice, ...)
     channels/                  Event type definitions (chat, presence, voice, notification)
-    services/                  Background services (veilid, messaging, presence, sync, game)
+    services/                  Background services (7: veilid, messaging, presence, sync, game, community, server-health)
   migrations/                  SQLite schema (001_init.sql)
 
 crates/
@@ -131,6 +144,7 @@ crates/
   rekindle-crypto/             Ed25519 identity, Signal Protocol, group encryption (MEK)
   rekindle-game-detect/        Cross-platform process scanning, game database
   rekindle-voice/              Opus encode/decode, audio capture/playback, VAD, jitter buffer
+  rekindle-server/             Community hosting daemon (child process)
 
 schemas/                       Cap'n Proto schema definitions (.capnp)
 ```
@@ -139,32 +153,48 @@ schemas/                       Cap'n Proto schema definitions (.capnp)
 
 ### Prerequisites
 
-**Option A: Konductor (recommended)**
-
-```bash
-# Enter the frontend devshell — includes Rust, Node.js, Tauri deps, and tooling
-nix develop .#frontend
-```
-
-The Konductor `frontend` shell provides Rust 1.92+, Node.js 22, pnpm, GTK/WebKitGTK,
-OpenSSL, Playwright, 13 linters, and 8 formatters — all hermetically configured.
-
-**Option B: Manual setup**
-
 - Rust 1.92+ (via [rustup](https://rustup.rs/))
 - Node.js 22+ with [pnpm](https://pnpm.io/)
-- Tauri 2 system dependencies ([platform-specific guide](https://v2.tauri.app/start/prerequisites/))
+- [Cap'n Proto](https://capnproto.org/) compiler (`capnp`)
+- CMake
+- Platform-specific Tauri 2 dependencies (see below)
 
-macOS:
+**Linux (Debian/Ubuntu/Pop!_OS):**
+
+```bash
+# Rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+
+# Node.js LTS
+curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
+sudo apt install -y nodejs
+sudo npm install -g pnpm
+
+# System dependencies
+sudo apt install -y build-essential pkg-config curl wget cmake capnproto \
+  libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
+  libjavascriptcoregtk-4.1-dev libayatana-appindicator3-dev \
+  libssl-dev libasound2-dev libopus-dev libsodium-dev
+```
+
+**macOS:**
+
 ```bash
 xcode-select --install
+brew install capnp cmake libsodium opus
 ```
 
-Linux (Debian/Ubuntu):
-```bash
-sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
-  libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
-```
+Rust and Node.js are also required on macOS — install via [rustup](https://rustup.rs/)
+and [nvm](https://github.com/nvm-sh/nvm) or [Homebrew](https://brew.sh/) (`brew install node`),
+then `npm install -g pnpm`.
+
+**Nix (optional dev environment):**
+
+A `flake.nix` is included for [Nix](https://nixos.org/) users. It extends the
+[Konductor](https://github.com/braincraftio/konductor) `frontend` devshell with
+Rekindle-specific build deps. To use it, uncomment `use flake` in `.envrc` and
+run `direnv allow`, or enter the shell manually with `nix develop`.
 
 ### Development
 
@@ -225,7 +255,7 @@ online (up to 20 attempts).
 | [security.md](docs/security.md) | Four-layer encryption stack, identity model, threat analysis |
 | [data-layer.md](docs/data-layer.md) | SQLite schema, Stronghold vault, DHT record layout |
 | [frontend.md](docs/frontend.md) | SolidJS frontend, routing, stores, IPC layer |
-| [crates.md](docs/crates.md) | Pure Rust crate reference (protocol, crypto, game-detect, voice) |
+| [crates.md](docs/crates.md) | Pure Rust crate reference (protocol, crypto, game-detect, voice, server) |
 | [tauri-backend.md](docs/tauri-backend.md) | Tauri commands, events, services, state management |
 | [development.md](docs/development.md) | Build commands, testing, code conventions |
 | [roadmap.md](docs/roadmap.md) | Implementation phases and completion status |
