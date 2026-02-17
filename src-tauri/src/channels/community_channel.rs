@@ -4,42 +4,50 @@ use serde::Serialize;
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase", tag = "type", content = "data")]
 pub enum CommunityEvent {
+    #[serde(rename_all = "camelCase")]
     MemberJoined {
         community_id: String,
         pseudonym_key: String,
         display_name: String,
         role_ids: Vec<u32>,
     },
+    #[serde(rename_all = "camelCase")]
     MemberRemoved {
         community_id: String,
         pseudonym_key: String,
     },
+    #[serde(rename_all = "camelCase")]
     MekRotated {
         community_id: String,
         new_generation: u64,
     },
     /// We were kicked from a community (our pseudonym was removed by an admin).
+    #[serde(rename_all = "camelCase")]
     Kicked {
         community_id: String,
     },
     /// Role definitions changed (created, edited, deleted, reordered).
+    #[serde(rename_all = "camelCase")]
     RolesChanged {
         community_id: String,
         roles: Vec<RoleDto>,
     },
     /// A member's assigned roles were changed.
+    #[serde(rename_all = "camelCase")]
     MemberRolesChanged {
         community_id: String,
         pseudonym_key: String,
         role_ids: Vec<u32>,
     },
     /// A member was timed out or their timeout was removed.
+    #[serde(rename_all = "camelCase")]
     MemberTimedOut {
         community_id: String,
         pseudonym_key: String,
         timeout_until: Option<u64>,
     },
     /// Channel permission overwrites were changed (server-side enforcement).
+    #[serde(rename_all = "camelCase")]
     ChannelOverwriteChanged {
         community_id: String,
         channel_id: String,
