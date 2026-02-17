@@ -25,8 +25,12 @@ read-heavy access and `Arc<Mutex<T>>` for exclusive access.
 | `shutdown_tx` | `Arc<RwLock<Option<mpsc::Sender<()>>>>` | Dispatch loop shutdown |
 | `sync_shutdown_tx` | `Arc<RwLock<Option<mpsc::Sender<()>>>>` | Sync service shutdown |
 | `network_ready_tx/rx` | `watch::Sender<bool>` / `watch::Receiver<bool>` | DHT readiness flag |
+| `voice_packet_tx` | `Arc<RwLock<Option<mpsc::Sender<VoicePacket>>>>` | Incoming voice packet channel |
 | `identity_secret` | `Mutex<Option<[u8; 32]>>` | Ed25519 secret for signing |
 | `background_handles` | `Mutex<Vec<JoinHandle<()>>>` | Spawned task handles |
+| `server_health_shutdown_tx` | `Arc<RwLock<Option<mpsc::Sender<()>>>>` | Server health check shutdown |
+| `community_routes` | `Arc<RwLock<HashMap<String, String>>>` | Community ID → imported RouteId cache |
+| `unwatched_friends` | `Arc<RwLock<HashSet<String>>>` | Friends whose DHT watch failed (fallback polling) |
 
 `parking_lot` mutexes are used for synchronous access. Guards are `!Send` —
 data must be cloned out before `.await` points.
@@ -47,16 +51,17 @@ function registered in `lib.rs`.
 | `list_identities` | List all identity files on disk |
 | `delete_identity` | Remove identity from DB and delete Stronghold file |
 
-### chat (4 commands)
+### chat (5 commands)
 
 | Command | Description |
 |---------|-------------|
 | `send_message` | Encrypt and send 1:1 message to peer |
 | `send_typing` | Send typing indicator (ephemeral, not queued) |
 | `get_message_history` | Query SQLite for conversation messages |
+| `prepare_chat_session` | Ensure Signal session exists, fetch PreKeyBundle if needed |
 | `mark_read` | Mark messages as read for a conversation |
 
-### friends (9 commands)
+### friends (13 commands)
 
 | Command | Description |
 |---------|-------------|
@@ -69,24 +74,44 @@ function registered in `lib.rs`.
 | `create_friend_group` | Create a new buddy list group |
 | `rename_friend_group` | Rename an existing group |
 | `move_friend_to_group` | Move friend to a different group |
+| `generate_invite` | Generate Ed25519-signed invite blob (deep link) |
+| `add_friend_from_invite` | Accept a friend from an invite blob |
+| `block_friend` | Block a user (drop messages from them) |
+| `emit_friends_presence` | Manually trigger presence re-emit to frontend |
 
-### community (11 commands)
+### community (27 commands)
 
 | Command | Description |
 |---------|-------------|
-| `create_community` | Create community, generate DHT records |
-| `join_community` | Join by invite code |
-| `create_channel` | Add text or voice channel |
-| `send_channel_message` | Send to channel (plaintext — MEK integration pending) |
-| `get_channel_messages` | Query channel message history |
+| `create_community` | Create community, spawn server process, generate DHT records |
+| `join_community` | Join by invite code via community server RPC |
+| `create_channel` | Add text or voice channel (server RPC) |
+| `delete_channel` | Remove a channel (server RPC) |
+| `rename_channel` | Rename an existing channel (server RPC) |
+| `send_channel_message` | Send to channel via community server |
+| `get_channel_messages` | Query channel message history (server RPC) |
 | `get_communities` | List joined communities |
 | `get_community_details` | Full community info |
 | `get_community_members` | Member list with roles |
-| `remove_community_member` | Remove member from local DB (no DHT propagation) |
-| `update_member_role` | Change member's role locally (no DHT propagation) |
+| `remove_community_member` | Kick member via server RPC |
 | `leave_community` | Leave and clean up local state |
+| `update_community_info` | Update community name/description (server RPC) |
+| `get_roles` | List all roles in a community |
+| `create_role` | Create a new role with permissions bitmask |
+| `edit_role` | Update role name, color, or permissions |
+| `delete_role` | Remove a role |
+| `assign_role` | Add a role to a member |
+| `unassign_role` | Remove a role from a member |
+| `timeout_member` | Temporarily mute a member (duration-based) |
+| `remove_timeout` | Remove a member's timeout |
+| `set_channel_overwrite` | Set per-channel permission overwrite for a role/member |
+| `delete_channel_overwrite` | Remove a channel permission overwrite |
+| `ban_member` | Permanently ban a member from the community |
+| `unban_member` | Remove a ban |
+| `get_ban_list` | List all banned members |
+| `rotate_mek` | Force MEK rotation for the community |
 
-### voice (4 commands)
+### voice (6 commands)
 
 | Command | Description |
 |---------|-------------|
@@ -94,6 +119,8 @@ function registered in `lib.rs`.
 | `leave_voice` | Stop capture/playback, disconnect transport |
 | `set_mute` | Toggle microphone mute |
 | `set_deafen` | Toggle audio output deafen |
+| `list_audio_devices` | List available audio input/output devices |
+| `set_audio_devices` | Select input/output device by name |
 
 ### status (5 commands)
 
@@ -146,6 +173,8 @@ received via `listen()` on the frontend.
 | `FriendRequestAccepted` | `from`, `displayName` |
 | `FriendRequestRejected` | `from` |
 | `FriendAdded` | `publicKey`, `displayName` |
+| `FriendRemoved` | `publicKey` |
+| `ChannelHistoryLoaded` | `channelId`, `messages` |
 
 ### PresenceEvent (`presence-event`)
 
@@ -165,6 +194,20 @@ received via `listen()` on the frontend.
 | `UserSpeaking` | `publicKey`, `speaking` |
 | `UserMuted` | `publicKey`, `muted` |
 | `ConnectionQuality` | `quality` |
+| `DeviceChanged` | `deviceType`, `deviceName`, `reason` |
+
+### CommunityEvent (`community-event`)
+
+| Variant | Fields |
+|---------|--------|
+| `MemberJoined` | `communityId`, `pseudonymKey`, `displayName`, `roleIds` |
+| `MemberRemoved` | `communityId`, `pseudonymKey` |
+| `MekRotated` | `communityId`, `newGeneration` |
+| `Kicked` | `communityId` |
+| `RolesChanged` | `communityId`, `roles` |
+| `MemberRolesChanged` | `communityId`, `pseudonymKey`, `roleIds` |
+| `MemberTimedOut` | `communityId`, `pseudonymKey`, `timeoutUntil` |
+| `ChannelOverwriteChanged` | `communityId`, `channelId` |
 
 ### NotificationEvent (`notification-event`)
 
@@ -188,7 +231,7 @@ All event enums use `#[serde(rename_all = "camelCase", tag = "type", content = "
 
 ## Background Services
 
-Six services run as spawned Tokio tasks after login.
+Seven services run as spawned Tokio tasks after login.
 
 | Service | File | Responsibility |
 |---------|------|---------------|
@@ -198,10 +241,12 @@ Six services run as spawned Tokio tasks after login.
 | `sync_service` | `sync_service.rs` | Retry pending messages every 30s (max 20 retries) |
 | `community_service` | `community_service.rs` | Sync community DHT records |
 | `game_service` | `game_service.rs` | Periodic game detection, publish to DHT |
+| `server_health_service` | `server_health_service.rs` | Ping community server every 30s, restart if unresponsive |
 
 The `veilid_service` dispatch loop is the central event router. It receives
 `VeilidUpdate` variants and delegates to the appropriate service:
-- `AppMessage` → `message_service`
+- `AppMessage` → voice packets (prefixed `b'V'`), community broadcasts (JSON), or `message_service`
+- `AppCall` → community server RPC responses
 - `ValueChange` → `presence_service` (profile records) or `community_service`
 - `Attachment` → update `NodeHandle` state, emit `NetworkStatusEvent`
 - `RouteChange` → re-allocate private routes via `routing_manager`
@@ -220,9 +265,12 @@ Plugins are registered in `lib.rs` in dependency order:
 | 6 | `autostart` | Launch at system boot (LaunchAgent on macOS) |
 | 7 | `global-shortcut` | Registered in `setup()` for state access |
 
+| 8 | `opener` | URL/file opening via system default handler |
+
 Notable absences:
 - `tauri-plugin-window-state` — removed due to infinite `windowDidMove` event loop on macOS
 - `tauri-plugin-stronghold` — replaced with direct `iota_stronghold` usage for per-identity files
+- `tauri-plugin-sql` — replaced with direct `rusqlite` for veilid-core compatibility
 
 ## Window Management
 
@@ -233,6 +281,9 @@ Windows are created via helper functions in `windows.rs`:
 | `open_login()` | Login | Destroys existing, supports `?account=` preselect |
 | `open_buddy_list()` | Buddy list | Destroys existing, narrow vertical (320x650) |
 | `open_chat_window()` | Chat | Show existing or create new, label = `chat-{key prefix}` |
+| `open_community_window()` | Community | Show existing or create new, label = `community-{id}` |
+| `open_settings_window()` | Settings | Single instance (600x500) |
+| `open_profile_window()` | Profile | Show existing or create new, label = `profile-{key prefix}` |
 
 All windows use `decorations: false` and `transparent: true` for frameless
 appearance with custom titlebars.

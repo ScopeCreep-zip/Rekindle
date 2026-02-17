@@ -41,10 +41,16 @@ src/
 │   │   ├── BuddyItem.tsx             Individual friend row
 │   │   ├── UserIdentityBar.tsx       Current user's identity display
 │   │   ├── BottomActionBar.tsx       Action buttons at list bottom
-│   │   ├── AddFriendModal.tsx        Add friend by public key
-│   │   ├── PendingRequests.tsx       Incoming friend request list
+│   │   ├── MenuBar.tsx               Top menu bar with actions
+│   │   ├── SearchBar.tsx             Friend search/filter input
+│   │   ├── TabBar.tsx                Tab navigation (friends, communities)
+│   │   ├── AddFriendModal.tsx        Add friend by public key or invite link
 │   │   ├── NewChatModal.tsx          Start new conversation
-│   │   └── NotificationCenter.tsx    In-app notification display
+│   │   ├── PendingRequests.tsx       Incoming friend request list
+│   │   ├── NotificationCenter.tsx    In-app notification display
+│   │   ├── CommunityListCompact.tsx  Compact community list in buddy list sidebar
+│   │   ├── BuddyCreateCommunityModal.tsx  Create community from buddy list
+│   │   └── BuddyJoinCommunityModal.tsx    Join community from buddy list
 │   ├── chat/
 │   │   ├── MessageList.tsx           Scrollable message history
 │   │   ├── MessageBubble.tsx         Individual message display
@@ -57,7 +63,9 @@ src/
 │   │   ├── RoleTag.tsx               Role badge display
 │   │   ├── CreateCommunityModal.tsx  Community creation form
 │   │   ├── CreateChannelModal.tsx    Channel creation form
-│   │   └── JoinCommunityModal.tsx    Join by invite code
+│   │   ├── JoinCommunityModal.tsx    Join by invite code
+│   │   ├── CommunitySettingsModal.tsx  Community settings (roles, bans, info)
+│   │   └── RenameChannelModal.tsx    Rename channel dialog
 │   ├── voice/
 │   │   ├── VoicePanel.tsx            Voice channel participant panel
 │   │   └── VoiceParticipant.tsx      Individual participant display
@@ -68,31 +76,39 @@ src/
 │   └── common/
 │       ├── Avatar.tsx                User avatar display
 │       ├── ContextMenu.tsx           Right-click context menu
+│       ├── ConfirmDialog.tsx         Confirmation dialog (delete, leave, etc.)
 │       ├── Modal.tsx                 Generic modal dialog
 │       ├── Tooltip.tsx               Hover tooltip
+│       ├── Toast.tsx                 Toast notification display
 │       └── ScrollArea.tsx            Custom scrollbar container
 ├── stores/
 │   ├── auth.store.ts                 Login state, identity info
 │   ├── friends.store.ts              Friend list, presence, groups
 │   ├── chat.store.ts                 Conversations, messages, typing
 │   ├── community.store.ts            Communities, channels, members
-│   ├── voice.store.ts                Voice connection, mute/deafen
+│   ├── voice.store.ts                Voice connection, mute/deafen, participants
 │   ├── settings.store.ts             User preferences
-│   └── notification.store.ts         System notifications
+│   ├── notification.store.ts         System notifications
+│   ├── buddylist-ui.store.ts         Buddy list UI state (search, tabs, modals)
+│   └── toast.store.ts                Toast notification queue
 ├── ipc/
 │   ├── commands.ts                   Typed invoke() wrappers for all commands
 │   ├── channels.ts                   Event subscriptions via listen()
 │   ├── invoke.ts                     Conditional invoke (Tauri native / E2E HTTP)
 │   ├── hydrate.ts                    State hydration on login
-│   └── avatar.ts                     Avatar data conversion
+│   ├── avatar.ts                     Avatar data conversion
+│   └── permissions.ts                Permission bitmask constants and helpers
 ├── handlers/
-│   ├── titlebar.handlers.ts          Minimize, maximize, close
+│   ├── titlebar.handlers.ts          Minimize, maximize, close, hide
 │   ├── auth.handlers.ts              Login, create identity, logout
 │   ├── buddy.handlers.ts             Double-click, context menu, add friend
 │   ├── chat.handlers.ts              Send message, key handling
+│   ├── chat-events.handlers.ts       ChatEvent listener (messages, friend requests)
 │   ├── community.handlers.ts         Create, join, channel actions
 │   ├── voice.handlers.ts             Join/leave, mute/deafen
-│   └── settings.handlers.ts          Preference changes
+│   ├── settings.handlers.ts          Preference changes
+│   ├── presence-events.handlers.ts   PresenceEvent listener (online/offline, game, status)
+│   └── notification-events.handlers.ts  NotificationEvent listener (alerts, updates)
 ├── styles/
 │   ├── global.css                    Global Tailwind styles
 │   ├── animations.css                Keyframe animations
@@ -168,14 +184,15 @@ Friend {
 
 ```
 ChatState {
-    conversations: Record<peerId, Conversation>
+    conversations: Record<string, Conversation>
     activeConversation: string | null
 }
 
 Conversation {
+    peerId: string
     messages: Message[]
     isTyping: boolean
-    unreadCount: number
+    lastRead: number
 }
 ```
 
@@ -184,7 +201,9 @@ Conversation {
 ```
 CommunityState {
     communities: Record<id, Community>
+    activeCommunity: string | null
     activeChannel: string | null
+    channelMessages: Record<channelId, Message[]>
 }
 ```
 
@@ -197,6 +216,13 @@ VoiceState {
     isMuted: boolean
     isDeafened: boolean
     participants: VoiceParticipant[]
+    connectionQuality: string
+    activeCallType: 'dm' | 'community' | null
+    inputDevice: string | null
+    outputDevice: string | null
+    inputVolume: number
+    outputVolume: number
+    deviceChangeCount: number
 }
 ```
 
@@ -210,14 +236,17 @@ directly to a `#[tauri::command]` in the Rust backend.
 ### channels.ts
 
 Event subscriptions using `listen()` from `@tauri-apps/api/event`. Subscribes
-to four event channels:
+to seven event channels:
 
 | Event Name | Enum Type | Updates |
 |------------|-----------|---------|
-| `chat-event` | `ChatEvent` | Messages, typing, friend requests |
+| `chat-event` | `ChatEvent` | Messages, typing, friend requests, channel history |
 | `presence-event` | `PresenceEvent` | Online/offline, status, game changes |
 | `voice-event` | `VoiceEvent` | Join/leave, speaking, mute state |
 | `notification-event` | `NotificationEvent` | System alerts, update notifications |
+| `community-event` | `CommunityEvent` | Member join/leave, MEK rotation, role changes, kicks |
+| `network-status` | `NetworkStatusEvent` | Veilid attachment state, DHT readiness |
+| `profile-updated` | (no payload) | Triggers frontend to re-fetch profile data |
 
 In E2E testing mode (`VITE_E2E=true`), `safeListen()` is a no-op because the
 Tauri event system is not available in a browser context.
