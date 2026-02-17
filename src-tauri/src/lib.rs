@@ -318,6 +318,12 @@ async fn graceful_shutdown(state: &SharedState) {
         let _ = tx.send(()).await;
     }
 
+    // Signal idle service shutdown
+    let idle_tx = state.idle_shutdown_tx.write().take();
+    if let Some(tx) = idle_tx {
+        let _ = tx.send(()).await;
+    }
+
     // Signal dispatch loop shutdown
     let shutdown_tx = state.shutdown_tx.read().clone();
     if let Some(tx) = shutdown_tx {
@@ -396,7 +402,19 @@ async fn graceful_shutdown(state: &SharedState) {
         }
     }
 
-    // 6. Now clean up user-specific DHT state (close records, release route,
+    // 6. Publish Offline to DHT before cleanup closes records
+    {
+        let current_status = state.identity.read().as_ref().map(|id| id.status);
+        if current_status != Some(state::UserStatus::Offline) {
+            if let Err(e) =
+                services::presence_service::publish_status(state, state::UserStatus::Offline).await
+            {
+                tracing::warn!(error = %e, "failed to publish offline on shutdown");
+            }
+        }
+    }
+
+    // 7. Now clean up user-specific DHT state (close records, release route,
     //    abort remaining background handles).
     //    Pass None for app_handle — the app is exiting, no UI to update.
     services::veilid_service::logout_cleanup(None, state).await;
@@ -405,7 +423,7 @@ async fn graceful_shutdown(state: &SharedState) {
     state.mek_cache.lock().clear();
     state.community_routes.write().clear();
 
-    // 7. Shut down the Veilid node (only on app exit)
+    // 8. Shut down the Veilid node (only on app exit)
     services::veilid_service::shutdown_app(state).await;
 
     tracing::info!("graceful shutdown complete");

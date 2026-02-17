@@ -31,6 +31,9 @@ pub struct Preferences {
     /// Whether echo cancellation is enabled.
     #[serde(default = "default_true")]
     pub echo_cancellation: bool,
+    /// Minutes of inactivity before auto-away (0 = disabled).
+    #[serde(default = "default_auto_away")]
+    pub auto_away_minutes: u32,
 }
 
 fn default_volume() -> f32 {
@@ -39,6 +42,10 @@ fn default_volume() -> f32 {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_auto_away() -> u32 {
+    10
 }
 
 impl Default for Preferences {
@@ -56,6 +63,7 @@ impl Default for Preferences {
             output_volume: 1.0,
             noise_suppression: true,
             echo_cancellation: true,
+            auto_away_minutes: 10,
         }
     }
 }

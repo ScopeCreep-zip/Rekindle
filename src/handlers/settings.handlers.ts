@@ -12,6 +12,7 @@ export async function handleLoadSettings(): Promise<void> {
       autoStart: prefs.autoStart,
       startMinimized: prefs.startMinimized,
       showGameActivity: prefs.gameDetectionEnabled,
+      autoAwayMinutes: prefs.autoAwayMinutes,
     });
   } catch (e) {
     console.error("Failed to load settings:", e);
@@ -39,6 +40,9 @@ export async function handleSaveSettings(
       }),
       ...(settings.showGameActivity !== undefined && {
         gameDetectionEnabled: settings.showGameActivity,
+      }),
+      ...(settings.autoAwayMinutes !== undefined && {
+        autoAwayMinutes: settings.autoAwayMinutes,
       }),
     };
     await commands.setPreferences(updated);

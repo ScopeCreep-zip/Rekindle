@@ -1,6 +1,7 @@
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { subscribeNotificationEvents } from "../ipc/channels";
 import { setNotificationState } from "../stores/notification.store";
+import { authState } from "../stores/auth.store";
 
 export function subscribeNotificationHandler(): Promise<UnlistenFn> {
   return subscribeNotificationEvents((event) => {
@@ -21,6 +22,7 @@ export function subscribeNotificationHandler(): Promise<UnlistenFn> {
         break;
       }
       case "updateAvailable": {
+        if (authState.status === "busy") break;
         setNotificationState("notifications", (prev) => [
           ...prev,
           {
