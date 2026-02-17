@@ -1,3 +1,4 @@
+import { batch } from "solid-js";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { subscribeChatEvents } from "../ipc/channels";
 import { friendsState, setFriendsState } from "../stores/friends.store";
@@ -11,10 +12,12 @@ export function subscribeBuddyListChatEvents(): Promise<UnlistenFn> {
   return subscribeChatEvents((event) => {
     switch (event.type) {
       case "messageReceived": {
-        const senderId = event.data.from;
-        if (friendsState.friends[senderId]) {
-          setFriendsState("friends", senderId, "unreadCount", (c) => (c ?? 0) + 1);
-        }
+        batch(() => {
+          const senderId = event.data.from;
+          if (friendsState.friends[senderId]) {
+            setFriendsState("friends", senderId, "unreadCount", (c) => (c ?? 0) + 1);
+          }
+        });
         break;
       }
       case "typingIndicator": {
@@ -90,14 +93,16 @@ export function subscribeDmChatEvents(
         console.warn("[DM] messageReceived event:", event.data.conversationId, "peerId:", peerId);
         if (event.data.from === getOwnKey()) break;
         if (event.data.conversationId === peerId) {
-          handleIncomingMessage(peerId, {
-            id: Date.now(),
-            senderId: event.data.from,
-            body: event.data.body,
-            timestamp: event.data.timestamp,
-            isOwn: false,
+          batch(() => {
+            handleIncomingMessage(peerId, {
+              id: Date.now(),
+              senderId: event.data.from,
+              body: event.data.body,
+              timestamp: event.data.timestamp,
+              isOwn: false,
+            });
+            handleResetUnread(peerId);
           });
-          handleResetUnread(peerId);
         }
         break;
       }
