@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicemicro/tauri-apps/tauri-v2/crates/tauri-cli/schema.json",
   "productName": "Rekindle",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "identifier": "com.rekindle.app",
   "build": {
     "frontendDist": "../dist",
