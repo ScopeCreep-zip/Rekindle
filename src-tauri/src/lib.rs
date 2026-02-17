@@ -272,6 +272,7 @@ pub fn run() {
             tauri::RunEvent::Exit => {
                 // app.exit(0) was called (from tray quit or system shutdown).
                 // Run graceful shutdown with a timeout to prevent hanging.
+                tracing::info!("RunEvent::Exit fired — starting graceful shutdown");
                 let state: tauri::State<'_, SharedState> = app_handle.state();
                 let state = state.inner().clone();
                 tauri::async_runtime::block_on(async move {
@@ -283,6 +284,10 @@ pub fn run() {
                         tracing::warn!("graceful shutdown timed out after 5s — forcing exit");
                     }
                 });
+                // Force process termination. On macOS the event loop may not
+                // exit cleanly when a system tray icon is active, leaving the
+                // process alive after RunEvent::Exit returns.
+                std::process::exit(0);
             }
             _ => {}
         });
