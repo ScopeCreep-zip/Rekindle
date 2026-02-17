@@ -3,7 +3,6 @@ name = "rekindle"
 version = "0.0.1"
 edition = "2021"
 description = "Rekindle — Xfire rebuilt as a decentralized Tauri 2 app"
-default-run = "rekindle"
 
 [lints]
 workspace = true
@@ -50,16 +49,5 @@ base64 = "0.22"
 rand = "0.8"
 veilid-core = { version = "0.5.2", default-features = true }
 image = { version = "0.25", default-features = false, features = ["webp", "png", "jpeg", "gif"] }
-axum = { version = "0.8", optional = true }
-tower-http = { version = "0.6", features = ["cors"], optional = true }
-
-[features]
-e2e-server = ["dep:axum", "dep:tower-http"]
-
-[[bin]]
-name = "e2e-server"
-path = "src/bin/e2e_server.rs"
-required-features = ["e2e-server"]
-
 [dev-dependencies]
 tempfile = "3"

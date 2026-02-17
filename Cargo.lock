@@ -5984,7 +5984,6 @@ name = "rekindle"
 version = "0.0.1"
 dependencies = [
  "argon2",
- "axum",
  "base64 0.22.1",
  "hex",
  "image",
@@ -6010,7 +6009,6 @@ dependencies = [
  "tauri-plugin-store",
  "tempfile",
  "tokio",
- "tower-http",
  "tracing",
  "tracing-subscriber",
  "veilid-core",
@@ -6033,6 +6031,22 @@ dependencies = [
  "tracing",
  "x25519-dalek",
  "zeroize",
+]
+
+[[package]]
+name = "rekindle-e2e-server"
+version = "0.0.1"
+dependencies = [
+ "axum",
+ "base64 0.22.1",
+ "rekindle",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
