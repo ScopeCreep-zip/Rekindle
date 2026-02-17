@@ -20,6 +20,8 @@ pub struct AudioCapture {
     shutdown_tx: Option<std_mpsc::Sender<()>>,
     /// Handle to the dedicated audio thread.
     thread_handle: Option<thread::JoinHandle<()>>,
+    /// Handle to the error bridge thread (forwards cpal errors to async channel).
+    error_bridge_handle: Option<thread::JoinHandle<()>>,
 }
 
 impl AudioCapture {
@@ -31,6 +33,7 @@ impl AudioCapture {
             channels,
             shutdown_tx: None,
             thread_handle: None,
+            error_bridge_handle: None,
         })
     }
 
@@ -59,7 +62,7 @@ impl AudioCapture {
         // cpal's error callback runs on the audio thread (sync), so we use a std
         // channel to receive the error and a bridging task to forward it.
         let (sync_err_tx, sync_err_rx) = std_mpsc::channel::<String>();
-        if let Some(async_err_tx) = device_error_tx {
+        let error_bridge_handle = if let Some(async_err_tx) = device_error_tx {
             thread::Builder::new()
                 .name("capture-error-bridge".into())
                 .spawn(move || {
@@ -68,8 +71,10 @@ impl AudioCapture {
                         let _ = async_err_tx.blocking_send(err_msg);
                     }
                 })
-                .ok();
-        }
+                .ok()
+        } else {
+            None
+        };
 
         let handle = thread::Builder::new()
             .name("audio-capture".into())
@@ -110,6 +115,7 @@ impl AudioCapture {
 
         self.shutdown_tx = Some(shutdown_tx);
         self.thread_handle = Some(handle);
+        self.error_bridge_handle = error_bridge_handle;
         self.is_active = true;
         tracing::info!(
             sample_rate = self.sample_rate,
@@ -128,12 +134,25 @@ impl AudioCapture {
         if let Some(handle) = self.thread_handle.take() {
             let _ = handle.join();
         }
+        // Join the error bridge thread (it will exit once sync_err_tx is dropped
+        // by the audio thread, causing recv() to return Err).
+        if let Some(handle) = self.error_bridge_handle.take() {
+            let _ = handle.join();
+        }
         self.is_active = false;
         tracing::info!("audio capture stopped");
     }
 
     pub fn is_active(&self) -> bool {
         self.is_active
+    }
+}
+
+impl Drop for AudioCapture {
+    fn drop(&mut self) {
+        if self.is_active {
+            self.stop();
+        }
     }
 }
 

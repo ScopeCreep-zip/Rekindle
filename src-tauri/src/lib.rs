@@ -132,12 +132,13 @@ pub fn run() {
 
                         // Start dispatch loop (runs until app exit)
                         let dispatch_state = Arc::clone(&state_for_veilid);
-                        tokio::spawn(services::veilid_service::start_dispatch_loop(
+                        let dispatch_handle = tokio::spawn(services::veilid_service::start_dispatch_loop(
                             app_handle_clone,
                             dispatch_state,
                             update_rx,
                             shutdown_rx,
                         ));
+                        *state_for_veilid.dispatch_loop_handle.write() = Some(dispatch_handle);
                     }
                     Err(e) => tracing::error!(error = %e, "failed to start Veilid node at app startup"),
                 }
@@ -295,15 +296,9 @@ pub fn run() {
 async fn graceful_shutdown(state: &SharedState) {
     tracing::info!("graceful shutdown: stopping background services");
 
-    // Clean up user-specific DHT state first (close records, release route).
-    // Pass None for app_handle — the app is exiting, no UI to update.
-    services::veilid_service::logout_cleanup(None, state).await;
-
-    // Signal dispatch loop shutdown
-    let shutdown_tx = state.shutdown_tx.read().clone();
-    if let Some(tx) = shutdown_tx {
-        let _ = tx.send(()).await;
-    }
+    // 1. Send graceful shutdown signals to all services FIRST.
+    //    This gives them a chance to finish their current operation before
+    //    logout_cleanup aborts any remaining handles.
 
     // Signal sync service shutdown
     let sync_tx = state.sync_shutdown_tx.read().clone();
@@ -317,7 +312,19 @@ async fn graceful_shutdown(state: &SharedState) {
         let _ = tx.send(()).await;
     }
 
-    // Shut down voice engine (signal loops, await, then stop devices)
+    // Signal route refresh loop shutdown
+    let route_refresh_tx = state.route_refresh_shutdown_tx.write().take();
+    if let Some(tx) = route_refresh_tx {
+        let _ = tx.send(()).await;
+    }
+
+    // Signal dispatch loop shutdown
+    let shutdown_tx = state.shutdown_tx.read().clone();
+    if let Some(tx) = shutdown_tx {
+        let _ = tx.send(()).await;
+    }
+
+    // 2. Shut down voice engine (signal loops, await, then stop devices)
     {
         let (send_tx, send_h, recv_tx, recv_h, monitor_tx, monitor_h) = {
             let mut ve = state.voice_engine.lock();
@@ -351,7 +358,7 @@ async fn graceful_shutdown(state: &SharedState) {
         *state.voice_packet_tx.write() = None;
     }
 
-    // Shut down server health check loop
+    // 3. Shut down server health check loop
     {
         let tx = state.server_health_shutdown_tx.write().take();
         if let Some(tx) = tx {
@@ -359,7 +366,7 @@ async fn graceful_shutdown(state: &SharedState) {
         }
     }
 
-    // Shut down community server process (if running)
+    // 4. Shut down community server process (if running)
     {
         // Try graceful shutdown via IPC first
         let socket_path = crate::ipc_client::default_socket_path();
@@ -381,11 +388,24 @@ async fn graceful_shutdown(state: &SharedState) {
         *proc = None;
     }
 
+    // 5. Await the dispatch loop handle (it should have exited after the shutdown signal)
+    {
+        let dispatch_handle = state.dispatch_loop_handle.write().take();
+        if let Some(h) = dispatch_handle {
+            let _ = h.await;
+        }
+    }
+
+    // 6. Now clean up user-specific DHT state (close records, release route,
+    //    abort remaining background handles).
+    //    Pass None for app_handle — the app is exiting, no UI to update.
+    services::veilid_service::logout_cleanup(None, state).await;
+
     // Clear community state
     state.mek_cache.lock().clear();
     state.community_routes.write().clear();
 
-    // Shut down the Veilid node (only on app exit)
+    // 7. Shut down the Veilid node (only on app exit)
     services::veilid_service::shutdown_app(state).await;
 
     tracing::info!("graceful shutdown complete");

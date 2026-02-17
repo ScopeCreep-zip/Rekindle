@@ -6,6 +6,47 @@ use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
+/// Wrapper around `std::process::Child` that kills the child process on drop.
+///
+/// Prevents orphaned child processes when the parent exits unexpectedly (crash,
+/// force-quit). On normal shutdown, the process is killed and waited for so
+/// no zombie process remains.
+pub struct KillOnDropChild(std::process::Child);
+
+impl KillOnDropChild {
+    /// Wrap an existing `Child` process.
+    pub fn new(child: std::process::Child) -> Self {
+        Self(child)
+    }
+
+    /// Get the OS-assigned process ID.
+    pub fn id(&self) -> u32 {
+        self.0.id()
+    }
+
+    /// Check if the child has exited without blocking.
+    pub fn try_wait(&mut self) -> std::io::Result<Option<std::process::ExitStatus>> {
+        self.0.try_wait()
+    }
+
+    /// Send a kill signal to the child process.
+    pub fn kill(&mut self) -> std::io::Result<()> {
+        self.0.kill()
+    }
+
+    /// Block until the child process exits.
+    pub fn wait(&mut self) -> std::io::Result<std::process::ExitStatus> {
+        self.0.wait()
+    }
+}
+
+impl Drop for KillOnDropChild {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
 /// Central application state shared across all Tauri commands and services.
 pub struct AppState {
     /// Channel for routing incoming voice packets from the dispatch loop to the receive loop.
@@ -47,7 +88,8 @@ pub struct AppState {
     /// MEK cache: `community_id` -> current `MediaEncryptionKey` (decrypted from server).
     pub mek_cache: Mutex<HashMap<String, MediaEncryptionKey>>,
     /// Community server child process handle (spawned on login if user owns communities).
-    pub server_process: Mutex<Option<std::process::Child>>,
+    /// Wrapped in `KillOnDropChild` so the child is killed if the parent crashes.
+    pub server_process: Mutex<Option<KillOnDropChild>>,
     /// Shutdown sender for the server health check loop.
     pub server_health_shutdown_tx: Arc<RwLock<Option<mpsc::Sender<()>>>>,
     /// Community server route cache: `community_id` -> imported `RouteId`.
@@ -57,6 +99,10 @@ pub struct AppState {
     /// Per Veilid GitLab #377, apps must poll as fallback when watching fails.
     /// The sync service uses `force_refresh=true` for these friends.
     pub unwatched_friends: RwLock<HashSet<String>>,
+    /// `JoinHandle` for the Veilid dispatch loop (started at app launch, awaited on exit).
+    pub dispatch_loop_handle: RwLock<Option<tokio::task::JoinHandle<()>>>,
+    /// Shutdown sender for the route refresh loop (stored here so it outlives `background_handles`).
+    pub route_refresh_shutdown_tx: RwLock<Option<mpsc::Sender<()>>>,
 }
 
 impl Default for AppState {
@@ -84,6 +130,8 @@ impl Default for AppState {
             server_health_shutdown_tx: Arc::new(RwLock::new(None)),
             community_routes: RwLock::new(HashMap::new()),
             unwatched_friends: RwLock::new(HashSet::new()),
+            dispatch_loop_handle: RwLock::new(None),
+            route_refresh_shutdown_tx: RwLock::new(None),
         }
     }
 }
