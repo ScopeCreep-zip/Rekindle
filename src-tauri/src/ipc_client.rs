@@ -1,9 +1,15 @@
 use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+
+// Platform-specific stream types
+#[cfg(unix)]
+use std::os::unix::net::UnixStream;
+
+#[cfg(windows)]
+use std::net::TcpStream;
 
 /// JSON-RPC request to the rekindle-server daemon (mirrors ipc.rs on the server).
 #[derive(Debug, Serialize, Deserialize)]
@@ -64,16 +70,22 @@ pub struct HostedCommunityInfo {
     pub has_route: bool,
 }
 
-/// Synchronous IPC client that talks to the rekindle-server over a Unix socket.
+/// Synchronous IPC client that talks to the rekindle-server.
+///
+/// On Unix: Uses Unix domain sockets.
+/// On Windows: Uses TCP localhost (the server must listen on the TCP port).
 ///
 /// Uses blocking I/O since the server daemon may take a moment to respond.
 /// All methods are designed to be called from `spawn_blocking`.
 pub struct IpcClient {
+    #[cfg(unix)]
     stream: BufReader<UnixStream>,
+    #[cfg(windows)]
+    stream: BufReader<TcpStream>,
 }
 
 impl IpcClient {
-    /// Connect to the server's Unix socket with default timeouts (10s read, 5s write).
+    /// Connect to the server with default timeouts (10s read, 5s write).
     pub fn connect(socket_path: &Path) -> Result<Self, String> {
         Self::connect_with_timeout(socket_path, Duration::from_secs(10))
     }
@@ -82,9 +94,31 @@ impl IpcClient {
     ///
     /// `HostCommunity` can take 60+ seconds (Veilid attachment + DHT record open),
     /// so callers that issue slow commands should use a longer timeout.
+    #[cfg(unix)]
     pub fn connect_with_timeout(socket_path: &Path, read_timeout: Duration) -> Result<Self, String> {
         let stream = UnixStream::connect(socket_path)
             .map_err(|e| format!("failed to connect to server socket at {}: {e}", socket_path.display()))?;
+        stream
+            .set_read_timeout(Some(read_timeout))
+            .map_err(|e| format!("failed to set read timeout: {e}"))?;
+        stream
+            .set_write_timeout(Some(Duration::from_secs(5)))
+            .map_err(|e| format!("failed to set write timeout: {e}"))?;
+
+        Ok(Self {
+            stream: BufReader::new(stream),
+        })
+    }
+
+    /// Connect with a custom read timeout (Windows - uses TCP localhost).
+    ///
+    /// On Windows, the socket_path is ignored; we connect to TCP port 19280.
+    #[cfg(windows)]
+    pub fn connect_with_timeout(_socket_path: &Path, read_timeout: Duration) -> Result<Self, String> {
+        // Windows uses TCP localhost instead of Unix domain sockets
+        let addr = "127.0.0.1:19280";
+        let stream = TcpStream::connect(addr)
+            .map_err(|e| format!("failed to connect to server at {addr}: {e}"))?;
         stream
             .set_read_timeout(Some(read_timeout))
             .map_err(|e| format!("failed to set read timeout: {e}"))?;
@@ -119,6 +153,9 @@ impl IpcClient {
 }
 
 /// The default socket path for the rekindle-server daemon.
+///
+/// On Unix: Returns a path to a Unix socket in the temp directory.
+/// On Windows: Returns a placeholder path (actual connection uses TCP port 19280).
 pub fn default_socket_path() -> PathBuf {
     std::env::temp_dir().join("rekindle-server.sock")
 }
@@ -222,7 +259,7 @@ pub fn shutdown_server_blocking(socket_path: &Path) -> Result<(), String> {
     }
 }
 
-/// Send a `CommunityRpc` request through the Unix socket (blocking).
+/// Send a `CommunityRpc` request through the socket (blocking).
 ///
 /// Bypasses Veilid entirely — used for hosted communities where the server
 /// process is local. Returns the JSON-encoded `CommunityResponse`.

@@ -418,14 +418,46 @@ pub async fn logout(
         let _ = tx.send(()).await;
     }
 
-    // Shut down voice engine
+    // Shut down voice engine (signal tokio loops, await them, then stop devices)
     {
-        let mut ve = state.voice_engine.lock();
-        if let Some(ref mut handle) = *ve {
-            handle.engine.stop_capture();
-            handle.engine.stop_playback();
+        let (send_tx, send_h, recv_tx, recv_h, monitor_tx, monitor_h) = {
+            let mut ve = state.voice_engine.lock();
+            if let Some(ref mut handle) = *ve {
+                (
+                    handle.send_loop_shutdown.take(),
+                    handle.send_loop_handle.take(),
+                    handle.recv_loop_shutdown.take(),
+                    handle.recv_loop_handle.take(),
+                    handle.device_monitor_shutdown.take(),
+                    handle.device_monitor_handle.take(),
+                )
+            } else {
+                (None, None, None, None, None, None)
+            }
+        };
+        if let Some(tx) = send_tx { let _ = tx.send(()).await; }
+        if let Some(tx) = recv_tx { let _ = tx.send(()).await; }
+        if let Some(tx) = monitor_tx { let _ = tx.send(()).await; }
+        if let Some(h) = send_h { let _ = h.await; }
+        if let Some(h) = recv_h { let _ = h.await; }
+        if let Some(h) = monitor_h { let _ = h.await; }
+        {
+            let mut ve = state.voice_engine.lock();
+            if let Some(ref mut handle) = *ve {
+                handle.engine.stop_capture();
+                handle.engine.stop_playback();
+            }
+            *ve = None;
         }
-        *ve = None;
+        *state.voice_packet_tx.write() = None;
+    }
+
+    // Signal route refresh loop shutdown (stored separately from background_handles)
+    {
+        let tx = state.route_refresh_shutdown_tx.write().take();
+        if let Some(tx) = tx {
+            let _ = tx.send(()).await;
+        }
     }
 
     // Grab the active identity's key before cleanup clears it — the login window
@@ -560,14 +592,46 @@ pub async fn delete_identity(
             let _ = tx.send(()).await;
         }
 
-        // Shut down voice engine
+        // Shut down voice engine (signal tokio loops, await them, then stop devices)
         {
-            let mut ve = state.voice_engine.lock();
-            if let Some(ref mut handle) = *ve {
-                handle.engine.stop_capture();
-                handle.engine.stop_playback();
+            let (send_tx, send_h, recv_tx, recv_h, monitor_tx, monitor_h) = {
+                let mut ve = state.voice_engine.lock();
+                if let Some(ref mut handle) = *ve {
+                    (
+                        handle.send_loop_shutdown.take(),
+                        handle.send_loop_handle.take(),
+                        handle.recv_loop_shutdown.take(),
+                        handle.recv_loop_handle.take(),
+                        handle.device_monitor_shutdown.take(),
+                        handle.device_monitor_handle.take(),
+                    )
+                } else {
+                    (None, None, None, None, None, None)
+                }
+            };
+            if let Some(tx) = send_tx { let _ = tx.send(()).await; }
+            if let Some(tx) = recv_tx { let _ = tx.send(()).await; }
+            if let Some(tx) = monitor_tx { let _ = tx.send(()).await; }
+            if let Some(h) = send_h { let _ = h.await; }
+            if let Some(h) = recv_h { let _ = h.await; }
+            if let Some(h) = monitor_h { let _ = h.await; }
+            {
+                let mut ve = state.voice_engine.lock();
+                if let Some(ref mut handle) = *ve {
+                    handle.engine.stop_capture();
+                    handle.engine.stop_playback();
+                }
+                *ve = None;
             }
-            *ve = None;
+            *state.voice_packet_tx.write() = None;
+        }
+
+        // Signal route refresh loop shutdown
+        {
+            let tx = state.route_refresh_shutdown_tx.write().take();
+            if let Some(tx) = tx {
+                let _ = tx.send(()).await;
+            }
         }
 
         // Clean up user-specific DHT state (node stays alive)
@@ -1066,8 +1130,8 @@ fn spawn_login_services(
         handles.push(route_refresh_handle);
     }
 
-    // Keep the shutdown sender alive (dropped on logout via background_handles abort)
-    drop(route_refresh_shutdown_tx);
+    // Store the shutdown sender so it can be signalled on logout/exit
+    *state.route_refresh_shutdown_tx.write() = Some(route_refresh_shutdown_tx);
 
     // Spawn community server process if user owns any communities
     maybe_spawn_server(app, state);
@@ -1178,7 +1242,7 @@ pub fn maybe_spawn_server(app: &tauri::AppHandle, state: &SharedState) {
                 socket = %socket_path.display(),
                 "rekindle-server spawned"
             );
-            *state.server_process.lock() = Some(child);
+            *state.server_process.lock() = Some(crate::state::KillOnDropChild::new(child));
 
             // Send HostCommunity IPC commands in a background task
             let sp = socket_path.clone();
