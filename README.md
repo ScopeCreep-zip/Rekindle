@@ -153,32 +153,48 @@ schemas/                       Cap'n Proto schema definitions (.capnp)
 
 ### Prerequisites
 
-**Option A: Konductor (recommended)**
-
-```bash
-# Enter the frontend devshell — includes Rust, Node.js, Tauri deps, and tooling
-nix develop .#frontend
-```
-
-The Konductor `frontend` shell provides Rust 1.92+, Node.js 22, pnpm, GTK/WebKitGTK,
-OpenSSL, Playwright, 13 linters, and 8 formatters — all hermetically configured.
-
-**Option B: Manual setup**
-
 - Rust 1.92+ (via [rustup](https://rustup.rs/))
 - Node.js 22+ with [pnpm](https://pnpm.io/)
-- Tauri 2 system dependencies ([platform-specific guide](https://v2.tauri.app/start/prerequisites/))
+- [Cap'n Proto](https://capnproto.org/) compiler (`capnp`)
+- CMake
+- Platform-specific Tauri 2 dependencies (see below)
 
-macOS:
+**Linux (Debian/Ubuntu/Pop!_OS):**
+
+```bash
+# Rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+
+# Node.js LTS
+curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
+sudo apt install -y nodejs
+sudo npm install -g pnpm
+
+# System dependencies
+sudo apt install -y build-essential pkg-config curl wget cmake capnproto \
+  libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
+  libjavascriptcoregtk-4.1-dev libayatana-appindicator3-dev \
+  libssl-dev libasound2-dev libopus-dev libsodium-dev
+```
+
+**macOS:**
+
 ```bash
 xcode-select --install
+brew install capnp cmake libsodium opus
 ```
 
-Linux (Debian/Ubuntu):
-```bash
-sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
-  libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
-```
+Rust and Node.js are also required on macOS — install via [rustup](https://rustup.rs/)
+and [nvm](https://github.com/nvm-sh/nvm) or [Homebrew](https://brew.sh/) (`brew install node`),
+then `npm install -g pnpm`.
+
+**Nix (optional dev environment):**
+
+A `flake.nix` is included for [Nix](https://nixos.org/) users. It extends the
+[Konductor](https://github.com/braincraftio/konductor) `frontend` devshell with
+Rekindle-specific build deps. To use it, uncomment `use flake` in `.envrc` and
+run `direnv allow`, or enter the shell manually with `nix develop`.
 
 ### Development
 
