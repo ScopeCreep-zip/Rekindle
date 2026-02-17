@@ -167,7 +167,7 @@ async fn dispatch(server: &ServerState, cmd: &str, args: &Value) -> Result<Value
         "login" => {
             let public_key = arg_str(args, "publicKey")?;
             let passphrase = arg_str(args, "passphrase")?;
-            let (result, _, _, _, _, _) = login_core(
+            let (result, _, _) = login_core(
                 &server.config_dir,
                 &public_key,
                 &passphrase,

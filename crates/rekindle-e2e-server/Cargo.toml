@@ -1,0 +1,24 @@
+[package]
+name = "rekindle-e2e-server"
+version = "0.0.1"
+edition = "2021"
+description = "E2E test HTTP bridge — exposes Tauri IPC commands for Playwright"
+
+[[bin]]
+name = "e2e-server"
+path = "src/bin/e2e_server.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+rekindle_lib = { package = "rekindle", path = "../../src-tauri" }
+axum = "0.8"
+tower-http = { version = "0.6", features = ["cors"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+rusqlite = { version = "0.37", features = ["bundled"] }
+base64 = "0.22"
