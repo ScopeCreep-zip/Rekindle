@@ -58,15 +58,16 @@ pub fn run() {
             tray::setup_tray(app)?;
 
             // Register global keyboard shortcuts (plugin registered here for state access)
+            // macOS uses Cmd (Super), Windows/Linux use Ctrl
             let shortcut_state = Arc::clone(&state_for_setup);
+            #[cfg(target_os = "macos")]
+            let builder = tauri_plugin_global_shortcut::Builder::new()
+                .with_shortcuts(["super+shift+x", "super+shift+m"])?;
+            #[cfg(not(target_os = "macos"))]
+            let builder = tauri_plugin_global_shortcut::Builder::new()
+                .with_shortcuts(["ctrl+shift+x", "ctrl+shift+m"])?;
             app.handle().plugin(
-                tauri_plugin_global_shortcut::Builder::new()
-                    .with_shortcuts([
-                        "ctrl+shift+x",
-                        "ctrl+shift+m",
-                        "super+shift+x",
-                        "super+shift+m",
-                    ])?
+                builder
                     .with_handler(move |app_handle, shortcut, event| {
                         if event.state != ShortcutState::Pressed {
                             return;
