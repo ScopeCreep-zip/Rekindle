@@ -68,28 +68,34 @@ online — status dot updates.
 **Goal:** Create and join communities with text channels, group encryption,
 roles, and permissions.
 
-- [x] Community creation (DHT record, metadata)
-- [x] Join by invite code
-- [x] Text channel management (create/delete)
-- [~] Channel messaging (plaintext — MEK Stronghold integration pending)
-- [x] Role system (owner, admin, moderator, member)
-- [x] Community window UI (channel sidebar, message area, member list)
-- [~] Member management (local SQLite only — no DHT propagation to peers)
+- [x] Community creation (DHT record, metadata, server process)
+- [x] Join by invite code via community server RPC
+- [x] Text channel management (create/delete/rename via server RPC)
+- [x] Channel messaging via community server (server relays to members)
+- [x] Role system with permission bitmasks (create/edit/delete/assign/unassign)
+- [x] Community window UI (channel sidebar, message area, member list, settings)
+- [x] Member management via server (kick, ban, unban, timeout)
+- [x] Community server process (`rekindle-server` child daemon)
+- [x] Server health monitoring (30s ping, auto-restart on failure)
+- [x] Community broadcasts (NewMessage, MemberJoined/Removed, RolesChanged, etc.)
+- [x] Per-channel permission overwrites (role/member allow/deny bitmasks)
+- [x] Community pseudonyms (unlinkable identity per community via HKDF)
+- [~] MEK rotation via server RPC (command exists, distribution pipeline partial)
 - [ ] MEK storage in Stronghold (generated but not persisted)
 - [ ] MEK distribution to members via Signal sessions
-- [ ] MEK rotation on membership change
+- [ ] Full MEK-encrypted channel messaging (primitives exist, pipeline not wired)
 - [ ] Community browser (discover public communities)
-- [ ] Community invites via deep link (`rekindle://invite/{code}`)
+- [x] Community invites via deep link (`rekindle://invite/{blob}`)
 
-**Verification:** Create community, invite friend, exchange encrypted channel
-messages. Member leaves — MEK rotates.
+**Verification:** Create community, invite friend, exchange channel
+messages via server relay. Roles and bans work. MEK encryption not yet active.
 
-**Current status note:** Community creation, join, channel CRUD, roles, and UI
-are functional. Channel messages currently transmit as plaintext because the MEK
-is generated but never stored in Stronghold or distributed to members. The
-`send_channel_message` command logs a warning and falls through to unencrypted
-JSON. MEK encrypt/decrypt primitives exist in `rekindle-crypto` but the
-integration pipeline (Stronghold storage → Signal-session distribution →
+**Current status note:** The community system now uses a client-server
+architecture within the P2P network. The community owner spawns a
+`rekindle-server` child process that handles RPC (join, messaging, moderation)
+and broadcasts events to all members. Channel messages route through the server
+process. MEK encrypt/decrypt primitives exist in `rekindle-crypto` but the
+end-to-end pipeline (Stronghold storage → Signal-session distribution →
 per-message encryption) is not yet wired.
 
 ## Phase 5: Voice
@@ -100,7 +106,7 @@ acceptable latency.
 - [x] Audio capture via cpal (dedicated thread)
 - [x] Audio playback via cpal (dedicated thread)
 - [x] Opus encode/decode (48kHz mono)
-- [x] Voice activity detection (energy-based)
+- [x] Voice activity detection (energy-based + RNNoise denoising)
 - [x] Jitter buffer (adaptive)
 - [x] Audio mixer (multi-participant)
 - [x] Voice transport over Veilid (unsafe safety selection)
@@ -109,6 +115,8 @@ acceptable latency.
 - [x] Global shortcut: Ctrl+Shift+M toggle mute
 - [x] Voice panel UI (participants, speaking indicators)
 - [x] 1:1 voice calls from chat window
+- [x] Audio processing pipeline (RNNoise denoising + AEC3 echo cancellation)
+- [x] Audio device selection (input/output)
 - [ ] Connection quality monitoring and display
 
 **Verification:** Join voice channel — audio flows between participants.
@@ -120,7 +128,10 @@ indicator shows who is talking.
 **Goal:** File sharing, deep links, auto-update, autostart, overlay research.
 
 - [x] Autostart (tauri-plugin-autostart, LaunchAgent on macOS)
-- [~] Deep link registration (plugin registered, no handler logic yet)
+- [x] Deep link registration and invite handling (`rekindle://invite/{blob}`)
+- [x] Ed25519-signed invite blobs (generate, verify, base64url encode/decode)
+- [x] Block list (drop messages from blocked users)
+- [x] Mailbox DHT records (route blob fallback for offline peers)
 - [ ] File sharing via Veilid P2P
 - [ ] Auto-update via Tauri updater
 - [ ] Screen share (research/prototype)
