@@ -1270,6 +1270,15 @@ pub async fn logout_cleanup(app_handle: Option<&tauri::AppHandle>, state: &AppSt
         *state.voice_packet_tx.write() = None;
     }
 
+    // Shut down idle service
+    {
+        let tx = state.idle_shutdown_tx.write().take();
+        if let Some(tx) = tx {
+            let _ = tx.send(()).await;
+        }
+    }
+    *state.pre_away_status.write() = None;
+
     // 1. Abort user-specific background tasks
     {
         let mut handles = state.background_handles.lock();

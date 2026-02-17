@@ -460,6 +460,28 @@ pub async fn logout(
         }
     }
 
+    // Shut down idle service
+    {
+        let tx = state.idle_shutdown_tx.write().take();
+        if let Some(tx) = tx {
+            let _ = tx.send(()).await;
+        }
+    }
+    *state.pre_away_status.write() = None;
+
+    // Publish Offline to DHT BEFORE logout_cleanup clears the owner keypair
+    {
+        let current_status = state.identity.read().as_ref().map(|id| id.status);
+        if current_status != Some(UserStatus::Offline) {
+            if let Err(e) =
+                services::presence_service::publish_status(state.inner(), UserStatus::Offline)
+                    .await
+            {
+                tracing::warn!(error = %e, "failed to publish offline status on logout");
+            }
+        }
+    }
+
     // Grab the active identity's key before cleanup clears it — the login window
     // will pre-select this account so the user just has to re-enter their
     // passphrase instead of navigating through the picker again.
@@ -542,6 +564,7 @@ pub async fn list_identities(
 /// - The Stronghold snapshot file
 ///
 /// If deleting the currently active identity, performs logout first.
+#[allow(clippy::too_many_lines)]
 #[tauri::command]
 pub async fn delete_identity(
     public_key: String,
@@ -631,6 +654,27 @@ pub async fn delete_identity(
             let tx = state.route_refresh_shutdown_tx.write().take();
             if let Some(tx) = tx {
                 let _ = tx.send(()).await;
+            }
+        }
+
+        // Shut down idle service
+        {
+            let tx = state.idle_shutdown_tx.write().take();
+            if let Some(tx) = tx {
+                let _ = tx.send(()).await;
+            }
+        }
+        *state.pre_away_status.write() = None;
+
+        // Publish Offline before cleanup
+        {
+            let current_status = state.identity.read().as_ref().map(|id| id.status);
+            if current_status != Some(UserStatus::Offline) {
+                let _ = services::presence_service::publish_status(
+                    state.inner(),
+                    UserStatus::Offline,
+                )
+                .await;
             }
         }
 
@@ -1132,6 +1176,13 @@ fn spawn_login_services(
 
     // Store the shutdown sender so it can be signalled on logout/exit
     *state.route_refresh_shutdown_tx.write() = Some(route_refresh_shutdown_tx);
+
+    // Start idle/auto-away service
+    let idle_tx = services::idle_service::start_idle_service(
+        app.clone(),
+        Arc::clone(state),
+    );
+    *state.idle_shutdown_tx.write() = Some(idle_tx);
 
     // Spawn community server process if user owns any communities
     maybe_spawn_server(app, state);
