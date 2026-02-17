@@ -1,9 +1,17 @@
+use std::time::Duration;
+
 use ed25519_dalek::{Signer, SigningKey};
 use veilid_core::{RoutingContext, Target};
 
 use crate::capnp_codec;
 use crate::error::ProtocolError;
 use crate::messaging::envelope::MessageEnvelope;
+
+/// Application-level timeout for `app_call` RPC requests.
+///
+/// Veilid's internal timeout is 10-30s. We apply a shorter 8s timeout
+/// so the application can fail fast and retry with a fresh route.
+const APP_CALL_TIMEOUT: Duration = Duration::from_secs(8);
 
 /// Build and sign a `MessageEnvelope` from raw secret key bytes.
 ///
@@ -84,10 +92,13 @@ pub async fn send_call(
 ) -> Result<Vec<u8>, ProtocolError> {
     let data = capnp_codec::message::encode_envelope(envelope);
 
-    let response = routing_context
-        .app_call(Target::RouteId(route_id), data)
-        .await
-        .map_err(|e| ProtocolError::SendFailed(format!("app_call: {e}")))?;
+    let response = tokio::time::timeout(
+        APP_CALL_TIMEOUT,
+        routing_context.app_call(Target::RouteId(route_id), data),
+    )
+    .await
+    .map_err(|_| ProtocolError::SendFailed("app_call: Timeout (8s application limit)".to_string()))?
+    .map_err(|e| ProtocolError::SendFailed(format!("app_call: {e}")))?;
 
     tracing::debug!(
         sender = hex::encode(&envelope.sender_key),

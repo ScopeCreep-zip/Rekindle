@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 
 use crate::database::GameDatabase;
-use crate::platform;
 
 /// A detected running game.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -20,6 +19,7 @@ pub struct GameDetector {
     database: GameDatabase,
     scan_interval: Duration,
     current_game: Option<DetectedGame>,
+    system: sysinfo::System,
 }
 
 impl GameDetector {
@@ -28,12 +28,20 @@ impl GameDetector {
             database,
             scan_interval,
             current_game: None,
+            system: sysinfo::System::new(),
         }
     }
 
     /// Perform a single scan of running processes.
     pub fn scan_once(&mut self) -> Option<DetectedGame> {
-        let processes = platform::list_process_names();
+        self.system
+            .refresh_processes(sysinfo::ProcessesToUpdate::All, false);
+        let processes: Vec<String> = self
+            .system
+            .processes()
+            .values()
+            .map(|p| p.name().to_string_lossy().to_string())
+            .collect();
 
         for proc_name in &processes {
             if let Some(entry) = self.database.lookup_by_process(proc_name) {

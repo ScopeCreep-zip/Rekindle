@@ -1,4 +1,4 @@
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 /// Open (or re-show) the login window.
 ///
@@ -88,15 +88,27 @@ pub fn open_chat_window(
     Ok(())
 }
 
-/// Open the settings window (single instance).
-pub fn open_settings(app: &AppHandle) -> Result<(), String> {
+/// Open the settings window (single instance), optionally to a specific tab.
+///
+/// If the window already exists, emits a `settings-switch-tab` event to change
+/// the active tab without destroying the window (preserving unsaved state).
+/// If the window doesn't exist, creates it with the tab as a query parameter.
+pub fn open_settings(app: &AppHandle, tab: Option<&str>) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("settings") {
+        if let Some(t) = tab {
+            let _ = window.emit("settings-switch-tab", t);
+        }
         let _ = window.show();
         let _ = window.set_focus();
         return Ok(());
     }
 
-    WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("/settings".into()))
+    let path = match tab {
+        Some(t) => format!("/settings?tab={t}"),
+        None => "/settings".to_string(),
+    };
+
+    WebviewWindowBuilder::new(app, "settings", WebviewUrl::App(path.into()))
         .title("Rekindle - Settings")
         .inner_size(500.0, 550.0)
         .min_inner_size(420.0, 450.0)

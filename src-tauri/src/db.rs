@@ -11,8 +11,8 @@ pub type DbPool = Arc<Mutex<Connection>>;
 
 /// Bump this every time `001_init.sql` changes.  On mismatch the entire
 /// database is wiped and recreated from the schema — safe because the app
-/// is not live yet and identity keys live in Stronghold, not SQLite.
-const SCHEMA_VERSION: i64 = 5;
+/// is not live yet and identity keys live in Stronghold, not `SQLite`.
+const SCHEMA_VERSION: i64 = 13;
 
 /// Result of opening the database — includes a flag indicating whether the
 /// schema was recreated from scratch (so the caller can wipe dependent storage).
@@ -78,7 +78,7 @@ fn drop_all_tables(conn: &Connection) -> Result<(), String> {
     let tables: Vec<String> = stmt
         .query_map([], |row| row.get(0))
         .map_err(|e| format!("failed to query tables: {e}"))?
-        .filter_map(|r| r.ok())
+        .filter_map(std::result::Result::ok)
         .collect();
     drop(stmt);
 

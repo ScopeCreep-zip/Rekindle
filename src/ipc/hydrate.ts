@@ -61,6 +61,7 @@ export async function hydrateState(): Promise<void> {
       communityMap[c.id] = {
         id: c.id,
         name: c.name,
+        description: c.description ?? null,
         channels: c.channels.map((ch) => ({
           id: ch.id,
           name: ch.name,
@@ -68,7 +69,11 @@ export async function hydrateState(): Promise<void> {
           unreadCount: ch.unreadCount,
         })),
         members: [],
-        roles: [],
+        roles: c.roles ?? [],
+        myRoleIds: c.myRoleIds ?? [0, 1],
+        myPseudonymKey: c.myPseudonymKey ?? null,
+        mekGeneration: c.mekGeneration ?? 0,
+        isHosted: c.isHosted ?? false,
       };
     }
     setCommunityState("communities", communityMap);

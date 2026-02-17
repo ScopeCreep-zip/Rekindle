@@ -17,6 +17,7 @@ bytes = { workspace = true }
 futures = { workspace = true }
 parking_lot = { workspace = true }
 capnp = { workspace = true }
+base64 = "0.22"
 hex = "0.4"
 rekindle-crypto = { path = "../rekindle-crypto" }
 rand = "0.8"

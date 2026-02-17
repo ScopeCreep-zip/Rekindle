@@ -1,16 +1,13 @@
 import { Component, createMemo, createSignal, For, onMount, onCleanup, Show } from "solid-js";
-import { type UnlistenFn } from "@tauri-apps/api/event";
 import Titlebar from "../components/titlebar/Titlebar";
 import Avatar from "../components/common/Avatar";
 import StatusDot from "../components/status/StatusDot";
-import { friendsState, setFriendsState } from "../stores/friends.store";
+import { friendsState } from "../stores/friends.store";
 import { communityState } from "../stores/community.store";
-import { subscribePresenceEvents } from "../ipc/channels";
+import { subscribeProfilePresenceEvents } from "../handlers/presence-events.handlers";
 import { hydrateState } from "../ipc/hydrate";
 import { commands } from "../ipc/commands";
 import { handleRemoveFriend } from "../handlers/buddy.handlers";
-import type { PresenceEvent } from "../ipc/channels";
-import type { UserStatus } from "../stores/auth.store";
 import { ICON_SEND, ICON_ACCOUNT_REMOVE } from "../icons";
 
 function getKeyFromUrl(): string {
@@ -21,52 +18,11 @@ function getKeyFromUrl(): string {
 const ProfileWindow: Component = () => {
   const publicKey = getKeyFromUrl();
   const [confirmRemove, setConfirmRemove] = createSignal(false);
-  let unlistenPresence: Promise<UnlistenFn> | undefined;
+  let unlistenPresence: Promise<import("@tauri-apps/api/event").UnlistenFn> | undefined;
 
   onMount(() => {
     hydrateState();
-
-    // Subscribe to presence events so this profile updates in real-time
-    unlistenPresence = subscribePresenceEvents((event: PresenceEvent) => {
-      switch (event.type) {
-        case "FriendOnline": {
-          if (event.data.publicKey === publicKey) {
-            setFriendsState("friends", publicKey, "status", "online");
-          }
-          break;
-        }
-        case "FriendOffline": {
-          if (event.data.publicKey === publicKey) {
-            setFriendsState("friends", publicKey, "status", "offline");
-            setFriendsState("friends", publicKey, "lastSeenAt", Date.now());
-          }
-          break;
-        }
-        case "StatusChanged": {
-          if (event.data.publicKey === publicKey) {
-            setFriendsState("friends", publicKey, "status", event.data.status as UserStatus);
-            if (event.data.statusMessage !== undefined) {
-              setFriendsState("friends", publicKey, "statusMessage", event.data.statusMessage);
-            }
-          }
-          break;
-        }
-        case "GameChanged": {
-          if (event.data.publicKey === publicKey) {
-            if (event.data.gameName) {
-              setFriendsState("friends", publicKey, "gameInfo", {
-                gameName: event.data.gameName,
-                gameId: event.data.gameId,
-                startedAt: event.data.elapsedSeconds,
-              });
-            } else {
-              setFriendsState("friends", publicKey, "gameInfo", null);
-            }
-          }
-          break;
-        }
-      }
-    });
+    unlistenPresence = subscribeProfilePresenceEvents(publicKey);
   });
 
   onCleanup(() => {
@@ -84,7 +40,7 @@ const ProfileWindow: Component = () => {
   const mutualCommunities = createMemo(() => {
     const result: { id: string; name: string }[] = [];
     for (const [id, community] of Object.entries(communityState.communities)) {
-      const isMember = community.members.some((m) => m.publicKey === publicKey);
+      const isMember = community.members.some((m) => m.pseudonymKey === publicKey);
       if (isMember) {
         result.push({ id, name: community.name });
       }

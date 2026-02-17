@@ -203,13 +203,38 @@ with an optional `verified` flag for out-of-band confirmation.
 ### Adding Friends
 
 ```
-1. Alice obtains Bob's public key (out-of-band: paste, QR code, deep link)
+1. Alice obtains Bob's public key (paste, QR code, invite link, deep link)
 2. Alice sends FriendRequest via Veilid app_message to Bob's DHT route
+   - Request includes: display name, PreKeyBundle, profile DHT key, route blob, mailbox key
 3. Bob receives request, sees Alice's display name and public key
 4. Bob accepts → both add each other to their DHT friend lists
+   - Accept includes: PreKeyBundle, profile DHT key, route blob, mailbox key, session init info
 5. Signal session established via PreKeyBundle exchange
 6. Messaging begins
 ```
+
+### Invite Links
+
+Friend requests can also be initiated via Ed25519-signed invite blobs:
+- `generate_invite()` creates a signed blob with identity info and PreKeyBundle
+- Blob is base64url-encoded into a `rekindle://invite/{blob}` deep link
+- Recipient verifies the Ed25519 signature before processing
+- Prevents invite forgery — only the keypair owner can generate valid invites
+
+### Block List
+
+Incoming messages from blocked users are dropped at the `message_service`
+layer before decryption or processing. The `blocked_users` SQLite table
+tracks blocked public keys per identity.
+
+### Community Pseudonyms
+
+Users participate in communities under unlinkable pseudonyms derived via
+HKDF-SHA256 from their master secret and the community ID. This provides:
+
+- **Cross-community unlinkability** — different pseudonym in each community
+- **Deterministic** — same user always gets the same pseudonym in a given community
+- **No correlation** — observers cannot link pseudonyms to the user's real identity
 
 ## Threat Model
 

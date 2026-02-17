@@ -89,6 +89,7 @@ cargo test -p rekindle-protocol
 cargo test -p rekindle-crypto
 cargo test -p rekindle-game-detect
 cargo test -p rekindle-voice
+cargo test -p rekindle-server
 ```
 
 Rust backend commands extract `_core` functions (e.g., `create_identity_core`,
@@ -188,10 +189,16 @@ Debug-mode Argon2 is extremely slow. The workspace optimizes crypto packages
 even in dev builds:
 
 ```toml
+[profile.dev.package.argon2]
+opt-level = 3
 [profile.dev.package.rust-argon2]
 opt-level = 3
 [profile.dev.package.iota_stronghold]
 opt-level = 2
+[profile.dev.package.iota-crypto]
+opt-level = 3
+[profile.dev.package.scrypt]
+opt-level = 3
 ```
 
 `iota_stronghold` uses `rust-argon2` (not the `argon2` crate) internally.

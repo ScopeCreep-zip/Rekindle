@@ -10,8 +10,12 @@ pub const SUBKEY_MEMBERS: u32 = 2;
 pub const SUBKEY_ROLES: u32 = 3;
 pub const SUBKEY_INVITES: u32 = 4;
 pub const SUBKEY_MEK: u32 = 5;
+pub const SUBKEY_SERVER_ROUTE: u32 = 6;
 
-pub const COMMUNITY_SUBKEY_COUNT: u32 = 6;
+pub const COMMUNITY_SUBKEY_COUNT: u32 = 7;
+
+/// The @everyone role always has ID 0.
+pub const ROLE_EVERYONE_ID: u32 = 0;
 
 /// Community metadata stored in subkey 0.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -21,6 +25,10 @@ pub struct CommunityMetadata {
     pub icon_hash: Option<String>,
     pub created_at: u64,
     pub owner_key: String,
+    /// Timestamp of the last DHT keepalive refresh (seconds since epoch).
+    /// Updated each keepalive cycle so the value actually changes, forcing a DHT write.
+    #[serde(default)]
+    pub last_refreshed: u64,
 }
 
 /// A channel entry stored in the channel list (subkey 1).
@@ -31,14 +39,25 @@ pub struct ChannelEntry {
     pub channel_type: String, // "text" or "voice"
     pub sort_order: u16,
     pub latest_message_key: Option<String>,
+    #[serde(default)]
+    pub permission_overwrites: Vec<PermissionOverwrite>,
 }
 
 /// A member entry stored in the member list (subkey 2).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MemberEntry {
-    pub public_key: String,
+    pub pseudonym_key: String,
+    /// Legacy single-role field. Kept for migration compatibility.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub role: Option<String>,
+    /// New multi-role system: list of role IDs the member has.
+    #[serde(default)]
     pub role_ids: Vec<u32>,
     pub joined_at: u64,
+    /// If set, the member is timed out until this unix timestamp (seconds).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub timeout_until: Option<u64>,
 }
 
 /// A role definition stored in the roles list (subkey 3).
@@ -48,7 +67,32 @@ pub struct RoleDefinition {
     pub name: String,
     pub color: u32,
     pub permissions: u64,
-    pub sort_order: u16,
+    /// Role hierarchy position. Higher = more authority.
+    pub position: i32,
+    /// Whether to display this role separately in the member list.
+    #[serde(default)]
+    pub hoist: bool,
+    /// Whether this role can be @mentioned by anyone.
+    #[serde(default)]
+    pub mentionable: bool,
+}
+
+/// Permission overwrite for a channel, targeting either a role or a specific member.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PermissionOverwrite {
+    pub target_type: OverwriteType,
+    /// Role ID (as string) or member pseudonym key.
+    pub target_id: String,
+    pub allow: u64,
+    pub deny: u64,
+}
+
+/// Whether a permission overwrite targets a role or a member.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OverwriteType {
+    Role,
+    Member,
 }
 
 /// Create a new community DHT record.
@@ -66,11 +110,13 @@ pub async fn create_community(
     let ch_bytes = capnp_codec::community::encode_channels(&[]);
     dht.set_value(&key, SUBKEY_CHANNELS, ch_bytes).await?;
 
-    // Initialize member list with owner
+    // Initialize member list with owner (assign owner role + @everyone)
     let members = vec![MemberEntry {
-        public_key: metadata.owner_key.clone(),
-        role_ids: vec![0], // owner role
+        pseudonym_key: metadata.owner_key.clone(),
+        role: None,
+        role_ids: vec![ROLE_EVERYONE_ID, 4], // @everyone + Owner role
         joined_at: metadata.created_at,
+        timeout_until: None,
     }];
     let mem_bytes = capnp_codec::community::encode_members(&members)?;
     dht.set_value(&key, SUBKEY_MEMBERS, mem_bytes).await?;
@@ -155,7 +201,7 @@ pub async fn add_member(
     member: MemberEntry,
 ) -> Result<(), ProtocolError> {
     let mut members = read_members(dht, key).await?;
-    if members.iter().any(|m| m.public_key == member.public_key) {
+    if members.iter().any(|m| m.pseudonym_key == member.pseudonym_key) {
         return Err(ProtocolError::DhtError("member already exists".into()));
     }
     members.push(member);
@@ -163,56 +209,38 @@ pub async fn add_member(
     dht.set_value(key, SUBKEY_MEMBERS, data).await
 }
 
-/// Remove a member from the community by public key.
+/// Remove a member from the community by pseudonym key.
 pub async fn remove_member(
     dht: &DHTManager,
     key: &str,
-    public_key: &str,
+    pseudonym_key: &str,
 ) -> Result<(), ProtocolError> {
     let mut members = read_members(dht, key).await?;
     let before = members.len();
-    members.retain(|m| m.public_key != public_key);
+    members.retain(|m| m.pseudonym_key != pseudonym_key);
     if members.len() == before {
         return Err(ProtocolError::PeerNotFound(format!(
-            "member {public_key} not found"
+            "member {pseudonym_key} not found"
         )));
     }
     let data = capnp_codec::community::encode_members(&members)?;
     dht.set_value(key, SUBKEY_MEMBERS, data).await
 }
 
-/// Assign a role to a member.
-pub async fn assign_member_role(
+/// Set a member's role IDs (replaces all role assignments).
+pub async fn set_member_roles(
     dht: &DHTManager,
     key: &str,
-    public_key: &str,
-    role_id: u32,
+    pseudonym_key: &str,
+    role_ids: Vec<u32>,
 ) -> Result<(), ProtocolError> {
     let mut members = read_members(dht, key).await?;
     let member = members
         .iter_mut()
-        .find(|m| m.public_key == public_key)
-        .ok_or_else(|| ProtocolError::PeerNotFound(format!("member {public_key} not found")))?;
-    if !member.role_ids.contains(&role_id) {
-        member.role_ids.push(role_id);
-    }
-    let data = capnp_codec::community::encode_members(&members)?;
-    dht.set_value(key, SUBKEY_MEMBERS, data).await
-}
-
-/// Revoke a role from a member.
-pub async fn revoke_member_role(
-    dht: &DHTManager,
-    key: &str,
-    public_key: &str,
-    role_id: u32,
-) -> Result<(), ProtocolError> {
-    let mut members = read_members(dht, key).await?;
-    let member = members
-        .iter_mut()
-        .find(|m| m.public_key == public_key)
-        .ok_or_else(|| ProtocolError::PeerNotFound(format!("member {public_key} not found")))?;
-    member.role_ids.retain(|&id| id != role_id);
+        .find(|m| m.pseudonym_key == pseudonym_key)
+        .ok_or_else(|| ProtocolError::PeerNotFound(format!("member {pseudonym_key} not found")))?;
+    member.role_ids = role_ids;
+    member.role = None; // clear legacy field
     let data = capnp_codec::community::encode_members(&members)?;
     dht.set_value(key, SUBKEY_MEMBERS, data).await
 }
@@ -286,30 +314,252 @@ pub async fn update_role(
     dht.set_value(key, SUBKEY_ROLES, data).await
 }
 
-/// Permission bit flags for role-based access control.
+/// Permission bit flags for role-based access control (Discord-aligned bit positions).
 pub mod permissions {
-    pub const SEND_MESSAGES: u64 = 1 << 0;
-    pub const MANAGE_CHANNELS: u64 = 1 << 1;
-    pub const MANAGE_MEMBERS: u64 = 1 << 2;
-    pub const MANAGE_ROLES: u64 = 1 << 3;
-    pub const KICK_MEMBERS: u64 = 1 << 4;
-    pub const BAN_MEMBERS: u64 = 1 << 5;
-    pub const MANAGE_COMMUNITY: u64 = 1 << 6;
-    pub const INVITE_MEMBERS: u64 = 1 << 7;
-    pub const SPEAK_IN_VOICE: u64 = 1 << 8;
+    // ── General ──
+    pub const CREATE_INSTANT_INVITE: u64 = 1 << 0;
+    pub const KICK_MEMBERS: u64 = 1 << 1;
+    pub const BAN_MEMBERS: u64 = 1 << 2;
+    pub const ADMINISTRATOR: u64 = 1 << 3;
+    pub const MANAGE_CHANNELS: u64 = 1 << 4;
+    pub const MANAGE_COMMUNITY: u64 = 1 << 5;
+
+    // ── Text ──
+    pub const ADD_REACTIONS: u64 = 1 << 6;
+    pub const VIEW_AUDIT_LOG: u64 = 1 << 7;
+    pub const PRIORITY_SPEAKER: u64 = 1 << 8;
+    pub const STREAM: u64 = 1 << 9;
+    pub const VIEW_CHANNEL: u64 = 1 << 10;
+    pub const SEND_MESSAGES: u64 = 1 << 11;
+    pub const MANAGE_MESSAGES: u64 = 1 << 13;
+    pub const EMBED_LINKS: u64 = 1 << 14;
+    pub const ATTACH_FILES: u64 = 1 << 15;
+    pub const READ_MESSAGE_HISTORY: u64 = 1 << 16;
+    pub const MENTION_EVERYONE: u64 = 1 << 17;
+    pub const USE_EXTERNAL_EMOJIS: u64 = 1 << 18;
+
+    // ── Voice ──
+    pub const CONNECT: u64 = 1 << 20;
+    pub const SPEAK: u64 = 1 << 21;
+    pub const MUTE_MEMBERS: u64 = 1 << 22;
+    pub const DEAFEN_MEMBERS: u64 = 1 << 23;
+    pub const MOVE_MEMBERS: u64 = 1 << 24;
+    pub const USE_VAD: u64 = 1 << 25;
+
+    // ── Membership ──
+    pub const CHANGE_NICKNAME: u64 = 1 << 26;
+    pub const MANAGE_NICKNAMES: u64 = 1 << 27;
+    pub const MANAGE_ROLES: u64 = 1 << 28;
+
+    // ── Future ──
+    pub const MANAGE_THREADS: u64 = 1 << 34;
+    pub const CREATE_PUBLIC_THREADS: u64 = 1 << 35;
+    pub const CREATE_PRIVATE_THREADS: u64 = 1 << 36;
+
+    // ── Moderation ──
+    pub const MODERATE_MEMBERS: u64 = 1 << 40;
 
     /// Check if a permission bitmask includes a specific permission.
+    /// Returns true immediately if the member has ADMINISTRATOR.
     pub fn has_permission(member_permissions: u64, required: u64) -> bool {
+        if member_permissions & ADMINISTRATOR != 0 {
+            return true;
+        }
         member_permissions & required == required
     }
 
-    /// Default permissions for the owner role.
-    pub fn owner_permissions() -> u64 {
-        u64::MAX // All permissions
+    /// Check if permissions include ADMINISTRATOR.
+    pub fn is_administrator(perms: u64) -> bool {
+        perms & ADMINISTRATOR != 0
     }
 
-    /// Default permissions for regular members.
+    /// Default permissions for the @everyone role (id=0).
+    pub fn everyone_permissions() -> u64 {
+        VIEW_CHANNEL
+            | READ_MESSAGE_HISTORY
+            | CONNECT
+            | SEND_MESSAGES
+            | SPEAK
+            | ADD_REACTIONS
+            | EMBED_LINKS
+            | ATTACH_FILES
+            | USE_EXTERNAL_EMOJIS
+            | USE_VAD
+            | CHANGE_NICKNAME
+    }
+
+    /// Default permissions for the Member role (id=1).
     pub fn member_permissions() -> u64 {
-        SEND_MESSAGES | SPEAK_IN_VOICE
+        everyone_permissions() | CREATE_INSTANT_INVITE
+    }
+
+    /// Default permissions for the Moderator role (id=2).
+    pub fn moderator_permissions() -> u64 {
+        member_permissions()
+            | KICK_MEMBERS
+            | MANAGE_MESSAGES
+            | MUTE_MEMBERS
+            | DEAFEN_MEMBERS
+            | MODERATE_MEMBERS
+    }
+
+    /// Default permissions for the Admin role (id=3).
+    pub fn admin_permissions() -> u64 {
+        moderator_permissions()
+            | MANAGE_CHANNELS
+            | MANAGE_ROLES
+            | BAN_MEMBERS
+            | VIEW_AUDIT_LOG
+            | MANAGE_NICKNAMES
+            | MANAGE_COMMUNITY
+    }
+
+    /// All defined permission bits OR'd together. Use this instead of `u64::MAX`
+    /// to avoid integer overflow in `SQLite` (i64) and precision loss in JavaScript (f64).
+    /// The highest bit is 40 (`MODERATE_MEMBERS` ≈ 1.1 trillion), well within JS safe
+    /// integer range (2^53) and positive i64 range.
+    pub fn all_permissions() -> u64 {
+        CREATE_INSTANT_INVITE
+            | KICK_MEMBERS
+            | BAN_MEMBERS
+            | ADMINISTRATOR
+            | MANAGE_CHANNELS
+            | MANAGE_COMMUNITY
+            | ADD_REACTIONS
+            | VIEW_AUDIT_LOG
+            | PRIORITY_SPEAKER
+            | STREAM
+            | VIEW_CHANNEL
+            | SEND_MESSAGES
+            | MANAGE_MESSAGES
+            | EMBED_LINKS
+            | ATTACH_FILES
+            | READ_MESSAGE_HISTORY
+            | MENTION_EVERYONE
+            | USE_EXTERNAL_EMOJIS
+            | CONNECT
+            | SPEAK
+            | MUTE_MEMBERS
+            | DEAFEN_MEMBERS
+            | MOVE_MEMBERS
+            | USE_VAD
+            | CHANGE_NICKNAME
+            | MANAGE_NICKNAMES
+            | MANAGE_ROLES
+            | MANAGE_THREADS
+            | CREATE_PUBLIC_THREADS
+            | CREATE_PRIVATE_THREADS
+            | MODERATE_MEMBERS
+    }
+
+    /// Default permissions for the Owner role (id=4). All defined permission bits.
+    pub fn owner_permissions() -> u64 {
+        all_permissions()
+    }
+
+    use super::{OverwriteType, PermissionOverwrite, RoleDefinition};
+
+    /// Calculate the effective permissions for a member in a specific channel.
+    ///
+    /// Follows Discord's 8-step permission calculation:
+    /// 1. Start with @everyone base permissions
+    /// 2. Apply role permissions (OR all role permissions together)
+    /// 3. If ADMINISTRATOR, return ALL permissions
+    /// 4. Apply @everyone channel overwrites
+    /// 5. Apply role-specific channel overwrites (OR allow, then AND NOT deny)
+    /// 6. Apply member-specific channel overwrites
+    /// 7. If timed out, strip write permissions
+    /// 8. If no `VIEW_CHANNEL`, strip all channel-specific permissions
+    pub fn calculate_permissions(
+        member_role_ids: &[u32],
+        all_roles: &[RoleDefinition],
+        channel_overwrites: &[PermissionOverwrite],
+        member_pseudonym: &str,
+        timeout_until: Option<u64>,
+    ) -> u64 {
+        // Step 1: Find @everyone role permissions
+        let everyone_perms = all_roles
+            .iter()
+            .find(|r| r.id == super::ROLE_EVERYONE_ID)
+            .map_or(0, |r| r.permissions);
+
+        // Step 2: OR together all role permissions
+        let mut base_permissions = everyone_perms;
+        for role_id in member_role_ids {
+            if *role_id == super::ROLE_EVERYONE_ID {
+                continue; // already included
+            }
+            if let Some(role) = all_roles.iter().find(|r| r.id == *role_id) {
+                base_permissions |= role.permissions;
+            }
+        }
+
+        // Step 3: ADMINISTRATOR bypass
+        if is_administrator(base_permissions) {
+            return all_permissions();
+        }
+
+        // Steps 4-6: Apply channel overwrites
+        let mut permissions = base_permissions;
+
+        if !channel_overwrites.is_empty() {
+            // Step 4: @everyone channel overwrite
+            for ow in channel_overwrites {
+                if ow.target_type == OverwriteType::Role
+                    && ow.target_id == super::ROLE_EVERYONE_ID.to_string()
+                {
+                    permissions &= !ow.deny;
+                    permissions |= ow.allow;
+                }
+            }
+
+            // Step 5: Role-specific channel overwrites (accumulate then apply)
+            let mut role_allow: u64 = 0;
+            let mut role_deny: u64 = 0;
+            for ow in channel_overwrites {
+                if ow.target_type == OverwriteType::Role {
+                    if let Ok(role_id) = ow.target_id.parse::<u32>() {
+                        if role_id != super::ROLE_EVERYONE_ID
+                            && member_role_ids.contains(&role_id)
+                        {
+                            role_allow |= ow.allow;
+                            role_deny |= ow.deny;
+                        }
+                    }
+                }
+            }
+            permissions &= !role_deny;
+            permissions |= role_allow;
+
+            // Step 6: Member-specific channel overwrite
+            for ow in channel_overwrites {
+                if ow.target_type == OverwriteType::Member && ow.target_id == member_pseudonym {
+                    permissions &= !ow.deny;
+                    permissions |= ow.allow;
+                }
+            }
+        }
+
+        // Step 7: If timed out, strip write/voice permissions
+        if let Some(until) = timeout_until {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            if now < until {
+                permissions &= !(SEND_MESSAGES
+                    | ADD_REACTIONS
+                    | SPEAK
+                    | STREAM
+                    | CREATE_INSTANT_INVITE);
+            }
+        }
+
+        // Step 8: If no VIEW_CHANNEL, deny everything except non-channel perms
+        if permissions & VIEW_CHANNEL == 0 {
+            permissions = 0;
+        }
+
+        permissions
     }
 }

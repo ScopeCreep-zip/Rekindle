@@ -3,6 +3,7 @@
 mod channels;
 pub mod commands;
 pub mod db;
+pub mod ipc_client;
 pub mod keystore;
 mod services;
 pub mod state;
@@ -19,6 +20,9 @@ use state::{AppState, SharedState};
 #[allow(clippy::too_many_lines)]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    linux_display_setup();
+
     tracing_subscriber::fmt::init();
 
     let shared_state: SharedState = Arc::new(AppState::default());
@@ -43,6 +47,7 @@ pub fn run() {
         // in keystore.rs with per-identity snapshot files. The plugin was registered
         // but never invoked by the frontend, and its hardcoded production Argon2
         // params conflicted with our debug-mode params.
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_autostart::init(
@@ -178,6 +183,7 @@ pub fn run() {
             commands::auth::list_identities,
             commands::auth::delete_identity,
             // chat
+            commands::chat::prepare_chat_session,
             commands::chat::send_message,
             commands::chat::send_typing,
             commands::chat::get_message_history,
@@ -192,6 +198,10 @@ pub fn run() {
             commands::friends::create_friend_group,
             commands::friends::rename_friend_group,
             commands::friends::move_friend_to_group,
+            commands::friends::generate_invite,
+            commands::friends::add_friend_from_invite,
+            commands::friends::block_friend,
+            commands::friends::emit_friends_presence,
             // community
             commands::community::create_community,
             commands::community::join_community,
@@ -202,13 +212,31 @@ pub fn run() {
             commands::community::get_community_details,
             commands::community::get_community_members,
             commands::community::remove_community_member,
-            commands::community::update_member_role,
+            commands::community::get_roles,
+            commands::community::create_role,
+            commands::community::edit_role,
+            commands::community::delete_role,
+            commands::community::assign_role,
+            commands::community::unassign_role,
+            commands::community::timeout_member,
+            commands::community::remove_timeout,
+            commands::community::set_channel_overwrite,
+            commands::community::delete_channel_overwrite,
             commands::community::leave_community,
+            commands::community::delete_channel,
+            commands::community::rename_channel,
+            commands::community::update_community_info,
+            commands::community::ban_member,
+            commands::community::unban_member,
+            commands::community::get_ban_list,
+            commands::community::rotate_mek,
             // voice
             commands::voice::join_voice_channel,
             commands::voice::leave_voice,
             commands::voice::set_mute,
             commands::voice::set_deafen,
+            commands::voice::list_audio_devices,
+            commands::voice::set_audio_devices,
             // status
             commands::status::set_status,
             commands::status::set_nickname,
@@ -288,15 +316,73 @@ async fn graceful_shutdown(state: &SharedState) {
         let _ = tx.send(()).await;
     }
 
-    // Shut down voice engine
+    // Shut down voice engine (signal loops, await, then stop devices)
     {
-        let mut ve = state.voice_engine.lock();
-        if let Some(ref mut handle) = *ve {
-            handle.engine.stop_capture();
-            handle.engine.stop_playback();
+        let (send_tx, send_h, recv_tx, recv_h, monitor_tx, monitor_h) = {
+            let mut ve = state.voice_engine.lock();
+            if let Some(ref mut handle) = *ve {
+                (
+                    handle.send_loop_shutdown.take(),
+                    handle.send_loop_handle.take(),
+                    handle.recv_loop_shutdown.take(),
+                    handle.recv_loop_handle.take(),
+                    handle.device_monitor_shutdown.take(),
+                    handle.device_monitor_handle.take(),
+                )
+            } else {
+                (None, None, None, None, None, None)
+            }
+        };
+        if let Some(tx) = send_tx { let _ = tx.send(()).await; }
+        if let Some(tx) = recv_tx { let _ = tx.send(()).await; }
+        if let Some(tx) = monitor_tx { let _ = tx.send(()).await; }
+        if let Some(h) = send_h { let _ = h.await; }
+        if let Some(h) = recv_h { let _ = h.await; }
+        if let Some(h) = monitor_h { let _ = h.await; }
+        {
+            let mut ve = state.voice_engine.lock();
+            if let Some(ref mut handle) = *ve {
+                handle.engine.stop_capture();
+                handle.engine.stop_playback();
+            }
+            *ve = None;
         }
-        *ve = None;
+        *state.voice_packet_tx.write() = None;
     }
+
+    // Shut down server health check loop
+    {
+        let tx = state.server_health_shutdown_tx.write().take();
+        if let Some(tx) = tx {
+            let _ = tx.send(()).await;
+        }
+    }
+
+    // Shut down community server process (if running)
+    {
+        // Try graceful shutdown via IPC first
+        let socket_path = crate::ipc_client::default_socket_path();
+        if socket_path.exists() {
+            if let Err(e) = crate::ipc_client::shutdown_server_blocking(&socket_path) {
+                tracing::debug!(error = %e, "IPC shutdown failed — will kill process");
+            }
+        }
+
+        let mut proc = state.server_process.lock();
+        if let Some(ref mut child) = *proc {
+            tracing::info!("stopping community server process");
+            // Give the server a moment to exit gracefully after IPC shutdown
+            if !matches!(child.try_wait(), Ok(Some(_))) {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+        }
+        *proc = None;
+    }
+
+    // Clear community state
+    state.mek_cache.lock().clear();
+    state.community_routes.write().clear();
 
     // Shut down the Veilid node (only on app exit)
     services::veilid_service::shutdown_app(state).await;
@@ -374,6 +460,7 @@ fn toggle_mute(app_handle: &tauri::AppHandle, state: &SharedState) {
     if let Some(ref mut handle) = *ve {
         let new_muted = !handle.engine.is_muted;
         handle.engine.set_muted(new_muted);
+        handle.muted_flag.store(new_muted, std::sync::atomic::Ordering::Relaxed);
 
         let event = channels::VoiceEvent::UserMuted {
             public_key,
@@ -382,5 +469,47 @@ fn toggle_mute(app_handle: &tauri::AppHandle, state: &SharedState) {
         let _ = app_handle.emit("voice-event", &event);
 
         tracing::debug!(muted = new_muted, "voice mute toggled via global shortcut");
+    }
+}
+
+/// Linux WebKitGTK environment setup — must run before tauri::Builder.
+///
+/// 1. Wayland discovery — tmux/SSH/TTY sessions don't inherit WAYLAND_DISPLAY
+///    from the compositor. Scan XDG_RUNTIME_DIR for the socket.
+///
+/// 2. NVIDIA + WebKitGTK workarounds — proprietary drivers have known issues
+///    with WebKitGTK's DMABuf renderer and explicit sync on all distros.
+///
+/// All vars are skipped if already set, so users can always override.
+///
+/// See: https://github.com/tauri-apps/tauri/issues/9394
+#[cfg(target_os = "linux")]
+fn linux_display_setup() {
+    use std::path::Path;
+
+    // Wayland display discovery
+    if std::env::var("WAYLAND_DISPLAY").unwrap_or_default().is_empty() {
+        if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
+            if let Ok(entries) = std::fs::read_dir(&runtime_dir) {
+                for entry in entries.flatten() {
+                    let name = entry.file_name();
+                    let name = name.to_string_lossy();
+                    if name.starts_with("wayland-") && !name.ends_with(".lock") {
+                        std::env::set_var("WAYLAND_DISPLAY", &*name);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // NVIDIA workarounds
+    if Path::new("/proc/driver/nvidia/version").exists() {
+        if std::env::var("WEBKIT_DISABLE_DMABUF_RENDERER").is_err() {
+            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        }
+        if std::env::var("__NV_DISABLE_EXPLICIT_SYNC").is_err() {
+            std::env::set_var("__NV_DISABLE_EXPLICIT_SYNC", "1");
+        }
     }
 }

@@ -83,6 +83,7 @@ const BuddyGroup: Component<BuddyGroupProps> = (props) => {
             <BuddyItem
               publicKey={friend.publicKey}
               displayName={friend.displayName}
+              nickname={friend.nickname}
               status={friend.status}
               statusMessage={friend.statusMessage}
               gameInfo={friend.gameInfo?.gameName ?? null}
