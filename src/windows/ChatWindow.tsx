@@ -1,5 +1,6 @@
 import { Component, onMount, onCleanup, createMemo, createSignal, createEffect, Show } from "solid-js";
-import { type UnlistenFn } from "@tauri-apps/api/event";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { ChatEvent } from "../ipc/channels";
 import Titlebar from "../components/titlebar/Titlebar";
 import MessageList from "../components/chat/MessageList";
 import MessageInput from "../components/chat/MessageInput";
@@ -47,15 +48,16 @@ const ChatWindow: Component = () => {
     };
   });
 
-  // Use createEffect + createSignal instead of createMemo — guarantees re-run
-  // when tracked dependencies change regardless of calling context (DOM event vs
-  // Tauri listen callback). The signal is a plain value that For/mapArray reacts
-  // to without proxy-comparison issues.
   const [messages, setMessages] = createSignal<Message[]>([]);
-  createEffect(() => {
+
+  // Extracted so both createEffect and the direct event listener can call it
+  function syncMessages() {
     const convo = chatState.conversations[peerId];
     setMessages(convo ? [...convo.messages] : []);
-  });
+  }
+
+  // Handles history load, sent messages, and any store-driven updates
+  createEffect(syncMessages);
 
   const ownName = createMemo(() => {
     return authState.displayName ?? "You";
@@ -81,6 +83,16 @@ const ChatWindow: Component = () => {
   let refreshInterval: ReturnType<typeof setInterval> | undefined;
 
   onMount(async () => {
+    // Direct event listener — bypasses store reactivity for incoming DMs.
+    // queueMicrotask ensures handleIncomingMessage has already updated the store.
+    const directUnsub = await listen<ChatEvent>("chat-event", (event) => {
+      const p = event.payload;
+      if (p.type === "messageReceived" && p.data.conversationId === peerId) {
+        queueMicrotask(syncMessages);
+      }
+    });
+    unlisteners.push(Promise.resolve(directUnsub));
+
     // Register event listeners FIRST so no events are missed during hydration.
     // subscribeBuddyListPresenceEvents updates the global friendsState store
     // (each Tauri webview has isolated JS context, so we need our own listener).
