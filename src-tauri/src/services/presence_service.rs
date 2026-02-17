@@ -716,39 +716,44 @@ pub async fn publish_status(
     };
 
     let Some(profile_key) = profile_key else {
-        tracing::debug!(status = ?status, "no profile DHT key yet, skipping status publish");
-        return Ok(());
+        tracing::warn!(status = ?status, "publish_status: no profile DHT key — node may not be ready");
+        return Err("no profile DHT key".to_string());
     };
     let Some(routing_context) = routing_context else {
-        tracing::warn!(status = ?status, "no routing context, skipping status publish");
-        return Ok(());
+        tracing::warn!(status = ?status, "publish_status: no routing context");
+        return Err("no routing context".to_string());
     };
+
+    tracing::info!(
+        status = ?status,
+        has_owner_keypair = owner_keypair.is_some(),
+        profile_key = %profile_key,
+        "publish_status: writing to DHT"
+    );
 
     let record_key: veilid_core::RecordKey = profile_key
         .parse()
         .map_err(|e| format!("invalid profile key: {e}"))?;
 
     // Ensure the record is open with write access before writing.
+    // Re-opening an already-open record is a no-op in Veilid.
     if let Err(e) = routing_context
         .open_dht_record(record_key.clone(), owner_keypair)
         .await
     {
-        tracing::warn!(error = %e, "failed to open profile record for status publish");
-        return Ok(());
+        tracing::warn!(error = %e, "publish_status: failed to open profile record");
+        return Err(format!("failed to open profile record: {e}"));
     }
 
-    match routing_context
+    routing_context
         .set_dht_value(record_key, 2, vec![status_byte], None)
         .await
-    {
-        Ok(_) => {
-            tracing::info!(status = ?status, "published status to DHT");
-        }
-        Err(e) => {
-            tracing::warn!(error = %e, "failed to publish status to DHT");
-        }
-    }
+        .map_err(|e| {
+            tracing::warn!(error = %e, status = ?status, "publish_status: set_dht_value failed");
+            format!("failed to publish status to DHT: {e}")
+        })?;
 
+    tracing::info!(status = ?status, "published status to DHT");
     Ok(())
 }
 
