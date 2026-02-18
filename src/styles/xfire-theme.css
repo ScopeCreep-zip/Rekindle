@@ -143,6 +143,20 @@
     white-space: nowrap;
   }
 
+  /* Pending friend requests (Awaiting Response group) */
+  .buddy-group-pending .buddy-item {
+    opacity: 0.6;
+  }
+
+  .buddy-group-pending .buddy-name {
+    font-style: italic;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .buddy-group-pending .buddy-group-header {
+    color: var(--color-xfire-away);
+  }
+
   /* Status dots */
   .status-dot {
     width: 8px;

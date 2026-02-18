@@ -45,6 +45,10 @@ export function subscribeBuddyListChatEvents(): Promise<UnlistenFn> {
         break;
       }
       case "friendRequestAccepted": {
+        // Transition the friend to accepted state immediately
+        if (friendsState.friends[event.data.from]) {
+          setFriendsState("friends", event.data.from, "friendshipState", "accepted");
+        }
         handleRefreshFriends();
         break;
       }
@@ -60,10 +64,19 @@ export function subscribeBuddyListChatEvents(): Promise<UnlistenFn> {
           unreadCount: 0,
           lastSeenAt: null,
           voiceChannel: null,
+          friendshipState: "pendingOut",
         });
         break;
       }
       case "friendRequestRejected": {
+        // Remove the pending-out friend from the list
+        if (friendsState.friends[event.data.from]) {
+          setFriendsState("friends", (prev) => {
+            const next = { ...prev };
+            delete next[event.data.from];
+            return next;
+          });
+        }
         const truncatedKey = event.data.from.slice(0, 8);
         setNotificationState("notifications", (prev) => [
           ...prev,
@@ -77,6 +90,18 @@ export function subscribeBuddyListChatEvents(): Promise<UnlistenFn> {
           },
         ]);
         setNotificationState("unreadCount", (c) => c + 1);
+        break;
+      }
+      case "friendRemoved": {
+        setFriendsState("friends", (prev) => {
+          const next = { ...prev };
+          delete next[event.data.publicKey];
+          return next;
+        });
+        break;
+      }
+      case "friendRequestDelivered": {
+        // Optional: could show a delivery indicator on the pending friend
         break;
       }
     }

@@ -7,6 +7,7 @@ import {
   handleContextMenuFriend,
   handleCloseContextMenu,
   handleRemoveFriend,
+  handleCancelRequest,
   handleCreateFriendGroup,
   handleMoveFriendToGroup,
 } from "../../handlers/buddy.handlers";
@@ -32,8 +33,13 @@ const BuddyList: Component = () => {
   const groupedFriends = createMemo(() => {
     const query = buddyListUI.searchQuery.trim();
     const groups: Record<string, Friend[]> = {};
+    const pendingOut: Friend[] = [];
     for (const friend of Object.values(friendsState.friends)) {
       if (query && !matchesSearch(friend, query)) continue;
+      if (friend.friendshipState === "pendingOut") {
+        pendingOut.push(friend);
+        continue;
+      }
       const group = friend.group || "Friends";
       if (!groups[group]) groups[group] = [];
       groups[group].push(friend);
@@ -45,6 +51,9 @@ const BuddyList: Component = () => {
         (a, b) =>
           (statusOrder[a.status] ?? 3) - (statusOrder[b.status] ?? 3),
       );
+    }
+    if (pendingOut.length > 0) {
+      groups["Awaiting Response"] = pendingOut;
     }
     return groups;
   });
@@ -80,6 +89,22 @@ const BuddyList: Component = () => {
     if (!key) return [];
     const friend = friendsState.friends[key];
     const name = friend?.displayName ?? key.slice(0, 12);
+
+    // Pending-out friends get a different context menu
+    if (friend?.friendshipState === "pendingOut") {
+      return [
+        {
+          label: "Cancel Request",
+          action: () => handleCancelRequest(key),
+          danger: true,
+        },
+        {
+          label: "Copy Public Key",
+          action: () => navigator.clipboard.writeText(key),
+        },
+      ];
+    }
+
     return [
       {
         label: "Chat",

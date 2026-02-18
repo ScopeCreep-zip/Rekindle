@@ -3,25 +3,6 @@
     "deepwiki": {
       "type": "http",
       "url": "https://mcp.deepwiki.com/mcp"
-    },
-    "nixos": {
-      "command": "nix",
-      "args": ["run", "github:utensils/mcp-nixos", "--"]
-    },
-    "github": {
-      "command": "github-mcp-server",
-      "args": ["stdio"],
-      "env": {
-        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"
-      }
-    },
-    "gitea": {
-      "command": "gitea-mcp",
-      "args": ["-host", "${GITEA_URL:-https://git.braincraft.io}", "-token", "${GITEA_TOKEN}"]
-    },
-    "kubernetes": {
-      "command": "mcp-k8s-go",
-      "args": []
     }
   }
 }

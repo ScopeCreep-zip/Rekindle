@@ -7,6 +7,8 @@ export interface GameInfo {
   startedAt: number | null;
 }
 
+export type FriendshipState = "pendingOut" | "accepted";
+
 export interface Friend {
   publicKey: string;
   displayName: string;
@@ -18,6 +20,7 @@ export interface Friend {
   unreadCount: number;
   lastSeenAt: number | null;
   voiceChannel: string | null;
+  friendshipState: FriendshipState;
 }
 
 export interface PendingRequest {

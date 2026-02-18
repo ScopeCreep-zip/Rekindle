@@ -6,7 +6,7 @@ use crate::channels::ChatEvent;
 use crate::commands::auth::current_owner_key;
 use crate::db::{self, DbPool};
 use crate::services;
-use crate::state::{FriendState, SharedState, UserStatus};
+use crate::state::{FriendState, FriendshipState, SharedState, UserStatus};
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -20,6 +20,7 @@ pub struct FriendResponse {
     pub group: Option<String>,
     pub unread_count: u32,
     pub last_seen_at: Option<i64>,
+    pub friendship_state: FriendshipState,
 }
 
 /// A pending friend request stored in `SQLite`.
@@ -100,7 +101,7 @@ pub async fn add_friend(
     tokio::task::spawn_blocking(move || {
         let conn = pool_clone.lock().map_err(|e| e.to_string())?;
         conn.execute(
-            "INSERT OR IGNORE INTO friends (owner_key, public_key, display_name, added_at) VALUES (?1, ?2, ?3, ?4)",
+            "INSERT OR IGNORE INTO friends (owner_key, public_key, display_name, added_at, friendship_state) VALUES (?1, ?2, ?3, ?4, 'pending_out')",
             rusqlite::params![ok, pk, dn, timestamp],
         )
         .map_err(|e| format!("insert friend: {e}"))?;
@@ -109,7 +110,7 @@ pub async fn add_friend(
     .await
     .map_err(|e| e.to_string())??;
 
-    // Add to in-memory state
+    // Add to in-memory state as pending (not yet accepted by peer)
     let friend = FriendState {
         public_key: public_key.clone(),
         display_name: display_name.clone(),
@@ -125,6 +126,7 @@ pub async fn add_friend(
         remote_conversation_key: None,
         mailbox_dht_key: None,
         last_heartbeat_at: None,
+        friendship_state: FriendshipState::PendingOut,
     };
     state.friends.write().insert(public_key.clone(), friend);
 
@@ -267,6 +269,7 @@ pub async fn accept_request(
         remote_conversation_key: None,
         mailbox_dht_key: pending_mailbox_key.clone(),
         last_heartbeat_at: None,
+        friendship_state: FriendshipState::Accepted,
     };
     state.friends.write().insert(public_key.clone(), friend);
 
@@ -396,6 +399,7 @@ pub async fn get_friends(state: State<'_, SharedState>) -> Result<Vec<FriendResp
             group: f.group.clone(),
             unread_count: f.unread_count,
             last_seen_at: f.last_seen_at,
+            friendship_state: f.friendship_state,
         })
         .collect();
     Ok(list)
@@ -439,6 +443,60 @@ pub async fn reject_request(
     });
 
     tracing::info!(public_key = %public_key, "friend request rejected");
+    Ok(())
+}
+
+/// Cancel an outbound pending friend request.
+///
+/// Only works for friends in `PendingOut` state — removes them from the
+/// friends table and in-memory state.
+#[tauri::command]
+pub async fn cancel_request(
+    public_key: String,
+    app: tauri::AppHandle,
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+) -> Result<(), String> {
+    let owner_key = current_owner_key(state.inner())?;
+
+    // Only cancel pending_out friends
+    let is_pending = state
+        .friends
+        .read()
+        .get(&public_key)
+        .is_some_and(|f| f.friendship_state == FriendshipState::PendingOut);
+    if !is_pending {
+        return Err("Not a pending outbound request".to_string());
+    }
+
+    // Delete from DB
+    let pool_clone = pool.inner().clone();
+    let pk = public_key.clone();
+    let ok = owner_key;
+    tokio::task::spawn_blocking(move || {
+        let conn = pool_clone.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "DELETE FROM friends WHERE owner_key = ?1 AND public_key = ?2",
+            rusqlite::params![ok, pk],
+        )
+        .map_err(|e| format!("delete pending friend: {e}"))?;
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    // Remove from in-memory state
+    state.friends.write().remove(&public_key);
+
+    // Emit FriendRemoved so frontend updates
+    let _ = app.emit(
+        "chat-event",
+        &ChatEvent::FriendRemoved {
+            public_key: public_key.clone(),
+        },
+    );
+
+    tracing::info!(public_key = %public_key, "pending friend request cancelled");
     Ok(())
 }
 
@@ -628,7 +686,7 @@ pub async fn add_friend_from_invite(
     .await
     .map_err(|e| e.to_string())??;
 
-    // Add to in-memory state
+    // Add to in-memory state (invite-based adds are immediately accepted)
     let friend = FriendState {
         public_key: blob.public_key.clone(),
         display_name: blob.display_name.clone(),
@@ -644,6 +702,7 @@ pub async fn add_friend_from_invite(
         remote_conversation_key: None,
         mailbox_dht_key: Some(blob.mailbox_dht_key.clone()),
         last_heartbeat_at: None,
+        friendship_state: FriendshipState::Accepted,
     };
     state.friends.write().insert(blob.public_key.clone(), friend);
 

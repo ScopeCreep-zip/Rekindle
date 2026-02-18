@@ -70,6 +70,9 @@ pub enum MessagePayload {
     ProfileKeyRotated {
         new_profile_dht_key: String,
     },
+    /// Lightweight ACK confirming a `FriendRequest` was received and stored.
+    /// Does NOT mean acceptance — just delivery confirmation.
+    FriendRequestReceived,
     /// Presence update (status, game info).
     PresenceUpdate {
         status: u8,

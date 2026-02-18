@@ -167,6 +167,20 @@ export async function handleAddFriendFromInvite(inviteString: string): Promise<s
   }
 }
 
+export async function handleCancelRequest(publicKey: string): Promise<string | null> {
+  try {
+    await commands.cancelRequest(publicKey);
+    setFriendsState("friends", (prev) => {
+      const next = { ...prev };
+      delete next[publicKey];
+      return next;
+    });
+    return null;
+  } catch (e) {
+    return String(e);
+  }
+}
+
 export async function handleRefreshFriends(): Promise<void> {
   try {
     const friends = await commands.getFriends();
@@ -185,6 +199,7 @@ export async function handleRefreshFriends(): Promise<void> {
         unreadCount: f.unreadCount,
         lastSeenAt: f.lastSeenAt ?? null,
         voiceChannel: null,
+        friendshipState: (f.friendshipState as Friend["friendshipState"]) ?? "accepted",
       };
     }
     setFriendsState("friends", friendMap);

@@ -26,6 +26,7 @@ export type ChatEvent =
     }
   | { type: "friendRequestRejected"; data: { from: string } }
   | { type: "friendRemoved"; data: { publicKey: string } }
+  | { type: "friendRequestDelivered"; data: { to: string } }
   | {
       type: "channelHistoryLoaded";
       data: {

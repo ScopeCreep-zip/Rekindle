@@ -48,8 +48,10 @@ const BuddyGroup: Component<BuddyGroupProps> = (props) => {
     }
   }
 
+  const isPendingGroup = () => props.name === "Awaiting Response";
+
   return (
-    <div>
+    <div class={isPendingGroup() ? "buddy-group-pending" : ""}>
       <Show when={!renaming()} fallback={
         <div class="group-create-inline">
           <input
