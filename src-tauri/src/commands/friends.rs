@@ -148,6 +148,7 @@ pub async fn add_friend(
         &ChatEvent::FriendAdded {
             public_key,
             display_name,
+            friendship_state: "pendingOut".to_string(),
         },
     );
 
@@ -756,6 +757,7 @@ pub async fn add_friend_from_invite(
         &ChatEvent::FriendAdded {
             public_key: blob.public_key.clone(),
             display_name: blob.display_name.clone(),
+            friendship_state: "accepted".to_string(),
         },
     );
 

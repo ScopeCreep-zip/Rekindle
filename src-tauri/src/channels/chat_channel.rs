@@ -38,6 +38,7 @@ pub enum ChatEvent {
     FriendAdded {
         public_key: String,
         display_name: String,
+        friendship_state: String,
     },
     /// Emitted when a friend is removed (unfriended or blocked).
     #[serde(rename_all = "camelCase")]
