@@ -936,10 +936,10 @@ async fn handle_value_change(
 ) {
     let key = change.key.to_string();
 
-    // Detect watch death: count == 0 or empty subkeys means the watch has died.
+    // Detect watch death: empty subkeys means the watch has died.
     // Per veilid-core VeilidValueChange docs: "If the subkey range is empty,
     // any watch present on the value has died."
-    if change.count == 0 || change.subkeys.is_empty() {
+    if change.subkeys.is_empty() {
         tracing::warn!(
             key = %key, count = change.count,
             "DHT watch died — moving friend to poll fallback"
@@ -954,6 +954,25 @@ async fn handle_value_change(
             state.unwatched_friends.write().insert(fk);
         }
         return;
+    }
+
+    // count == 0 with non-empty subkeys means this is the last change notification
+    // before the watch expires. Process the change AND schedule a re-watch.
+    if change.count == 0 {
+        tracing::info!(
+            key = %key,
+            "DHT watch expiring (count=0) — will re-establish on next sync tick"
+        );
+        let friend_key = {
+            let dht_mgr = state.dht_manager.read();
+            dht_mgr
+                .as_ref()
+                .and_then(|mgr| mgr.friend_for_dht_key(&key).cloned())
+        };
+        if let Some(fk) = friend_key {
+            state.unwatched_friends.write().insert(fk);
+        }
+        // Fall through to process the change below
     }
 
     let subkeys: Vec<u32> = change.subkeys.iter().collect();
