@@ -64,6 +64,7 @@ export interface Preferences {
   outputVolume: number;
   noiseSuppression: boolean;
   echoCancellation: boolean;
+  autoAwayMinutes: number;
 }
 
 export interface NetworkStatus {

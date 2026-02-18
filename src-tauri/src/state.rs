@@ -103,6 +103,13 @@ pub struct AppState {
     pub dispatch_loop_handle: RwLock<Option<tokio::task::JoinHandle<()>>>,
     /// Shutdown sender for the route refresh loop (stored here so it outlives `background_handles`).
     pub route_refresh_shutdown_tx: RwLock<Option<mpsc::Sender<()>>>,
+    /// Shutdown sender for the idle/auto-away service.
+    pub idle_shutdown_tx: RwLock<Option<mpsc::Sender<()>>>,
+    /// Shutdown sender for the presence heartbeat loop.
+    pub heartbeat_shutdown_tx: RwLock<Option<mpsc::Sender<()>>>,
+    /// The status the user had before auto-away kicked in.
+    /// When activity resumes, we restore to this status.
+    pub pre_away_status: RwLock<Option<UserStatus>>,
 }
 
 impl Default for AppState {
@@ -132,6 +139,9 @@ impl Default for AppState {
             unwatched_friends: RwLock::new(HashSet::new()),
             dispatch_loop_handle: RwLock::new(None),
             route_refresh_shutdown_tx: RwLock::new(None),
+            idle_shutdown_tx: RwLock::new(None),
+            heartbeat_shutdown_tx: RwLock::new(None),
+            pre_away_status: RwLock::new(None),
         }
     }
 }
@@ -324,6 +334,9 @@ pub struct FriendState {
     pub remote_conversation_key: Option<String>,
     /// The friend's mailbox DHT key (for route discovery).
     pub mailbox_dht_key: Option<String>,
+    /// Unix timestamp (ms) from the friend's last DHT heartbeat.
+    /// Used for stale presence detection.
+    pub last_heartbeat_at: Option<i64>,
 }
 
 /// Game presence information.

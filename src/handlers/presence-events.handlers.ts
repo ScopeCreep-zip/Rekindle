@@ -2,6 +2,7 @@ import type { UnlistenFn } from "@tauri-apps/api/event";
 import { subscribePresenceEvents } from "../ipc/channels";
 import { friendsState, setFriendsState } from "../stores/friends.store";
 import { communityState, setCommunityState } from "../stores/community.store";
+import { authState, setAuthState } from "../stores/auth.store";
 import type { UserStatus } from "../stores/auth.store";
 
 export function subscribeBuddyListPresenceEvents(): Promise<UnlistenFn> {
@@ -21,6 +22,10 @@ export function subscribeBuddyListPresenceEvents(): Promise<UnlistenFn> {
         break;
       }
       case "statusChanged": {
+        // Sync own status when auto-away changes it from the backend
+        if (event.data.publicKey === authState.publicKey) {
+          setAuthState("status", event.data.status as UserStatus);
+        }
         if (friendsState.friends[event.data.publicKey]) {
           setFriendsState(
             "friends",

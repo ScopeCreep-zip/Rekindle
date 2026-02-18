@@ -124,6 +124,7 @@ pub async fn add_friend(
         local_conversation_key: None,
         remote_conversation_key: None,
         mailbox_dht_key: None,
+        last_heartbeat_at: None,
     };
     state.friends.write().insert(public_key.clone(), friend);
 
@@ -265,6 +266,7 @@ pub async fn accept_request(
         local_conversation_key: None,
         remote_conversation_key: None,
         mailbox_dht_key: pending_mailbox_key.clone(),
+        last_heartbeat_at: None,
     };
     state.friends.write().insert(public_key.clone(), friend);
 
@@ -641,6 +643,7 @@ pub async fn add_friend_from_invite(
         local_conversation_key: None,
         remote_conversation_key: None,
         mailbox_dht_key: Some(blob.mailbox_dht_key.clone()),
+        last_heartbeat_at: None,
     };
     state.friends.write().insert(blob.public_key.clone(), friend);
 
