@@ -147,6 +147,7 @@ async fn handle_reset(AxumState(server): AxumState<SharedServer>) -> impl IntoRe
 }
 
 /// Route commands to the appropriate core function.
+#[allow(clippy::too_many_lines)]
 async fn dispatch(server: &ServerState, cmd: &str, args: &Value) -> Result<Value, String> {
     match cmd {
         // ── Auth ─────────────────────────────────────────────────────

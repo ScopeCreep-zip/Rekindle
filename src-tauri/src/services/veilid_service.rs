@@ -923,19 +923,100 @@ async fn handle_app_call(
 }
 
 /// Handle a DHT `ValueChange` notification by forwarding to the presence service.
+///
+/// When the inline value is `None` (Veilid doesn't always include it), we fetch
+/// each changed subkey's value from DHT individually.  The previous code silently
+/// passed an empty vec which caused `parse_status` to return `None`, dropping
+/// the status change entirely — this was why automated status updates (auto-away,
+/// offline on logout) weren't visible to friends.
 async fn handle_value_change(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     change: veilid_core::VeilidValueChange,
 ) {
     let key = change.key.to_string();
+
+    // Detect watch death: empty subkeys means the watch has died.
+    // Per veilid-core VeilidValueChange docs: "If the subkey range is empty,
+    // any watch present on the value has died."
+    if change.subkeys.is_empty() {
+        tracing::warn!(
+            key = %key, count = change.count,
+            "DHT watch died — moving friend to poll fallback"
+        );
+        let friend_key = {
+            let dht_mgr = state.dht_manager.read();
+            dht_mgr
+                .as_ref()
+                .and_then(|mgr| mgr.friend_for_dht_key(&key).cloned())
+        };
+        if let Some(fk) = friend_key {
+            state.unwatched_friends.write().insert(fk);
+        }
+        return;
+    }
+
+    // count == 0 with non-empty subkeys means this is the last change notification
+    // before the watch expires. Process the change AND schedule a re-watch.
+    if change.count == 0 {
+        tracing::info!(
+            key = %key,
+            "DHT watch expiring (count=0) — will re-establish on next sync tick"
+        );
+        let friend_key = {
+            let dht_mgr = state.dht_manager.read();
+            dht_mgr
+                .as_ref()
+                .and_then(|mgr| mgr.friend_for_dht_key(&key).cloned())
+        };
+        if let Some(fk) = friend_key {
+            state.unwatched_friends.write().insert(fk);
+        }
+        // Fall through to process the change below
+    }
+
     let subkeys: Vec<u32> = change.subkeys.iter().collect();
-    let value = change
-        .value
-        .as_ref()
-        .map_or_else(Vec::new, |v| v.data().to_vec());
-    tracing::debug!(key = %key, subkeys = ?subkeys, "DHT value changed");
-    super::presence_service::handle_value_change(app_handle, state, &key, &subkeys, &value).await;
+    let inline_value = change.value.as_ref().map(|v| v.data().to_vec());
+    tracing::debug!(
+        key = %key,
+        subkeys = ?subkeys,
+        has_inline = inline_value.is_some(),
+        "DHT value changed"
+    );
+
+    // Get routing context for fetching subkey values when not provided inline
+    let routing_context = {
+        let node = state.node.read();
+        node.as_ref().map(|nh| nh.routing_context.clone())
+    };
+
+    for &subkey in &subkeys {
+        let value = if let Some(ref v) = inline_value {
+            v.clone()
+        } else if let Some(ref rc) = routing_context {
+            match rc
+                .get_dht_value(change.key.clone(), subkey, true)
+                .await
+            {
+                Ok(Some(v)) => v.data().to_vec(),
+                Ok(None) => {
+                    tracing::debug!(subkey, key = %key, "subkey has no value");
+                    continue;
+                }
+                Err(e) => {
+                    tracing::warn!(subkey, key = %key, error = %e, "failed to fetch subkey");
+                    continue;
+                }
+            }
+        } else {
+            tracing::debug!(subkey, "no routing context to fetch subkey value");
+            continue;
+        };
+        super::presence_service::handle_value_change(
+            app_handle, state, &key, &[subkey], &value,
+        )
+        .await;
+    }
 }
 
 /// Handle a network attachment state change — update node state and notify the frontend.
@@ -1268,6 +1349,23 @@ pub async fn logout_cleanup(app_handle: Option<&tauri::AppHandle>, state: &AppSt
             *ve = None;
         }
         *state.voice_packet_tx.write() = None;
+    }
+
+    // Shut down idle service
+    {
+        let tx = state.idle_shutdown_tx.write().take();
+        if let Some(tx) = tx {
+            let _ = tx.send(()).await;
+        }
+    }
+    *state.pre_away_status.write() = None;
+
+    // Shut down heartbeat service
+    {
+        let tx = state.heartbeat_shutdown_tx.write().take();
+        if let Some(tx) = tx {
+            let _ = tx.send(()).await;
+        }
     }
 
     // 1. Abort user-specific background tasks

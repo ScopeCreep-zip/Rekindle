@@ -272,6 +272,7 @@ pub fn run() {
             tauri::RunEvent::Exit => {
                 // app.exit(0) was called (from tray quit or system shutdown).
                 // Run graceful shutdown with a timeout to prevent hanging.
+                tracing::info!("RunEvent::Exit fired — starting graceful shutdown");
                 let state: tauri::State<'_, SharedState> = app_handle.state();
                 let state = state.inner().clone();
                 tauri::async_runtime::block_on(async move {
@@ -293,6 +294,7 @@ pub fn run() {
 /// First cleans up user-specific state (DHT records, routes), then sends
 /// shutdown signals to the dispatch loop, and finally shuts down the
 /// Veilid node itself.
+#[allow(clippy::too_many_lines)]
 async fn graceful_shutdown(state: &SharedState) {
     tracing::info!("graceful shutdown: stopping background services");
 
@@ -315,6 +317,18 @@ async fn graceful_shutdown(state: &SharedState) {
     // Signal route refresh loop shutdown
     let route_refresh_tx = state.route_refresh_shutdown_tx.write().take();
     if let Some(tx) = route_refresh_tx {
+        let _ = tx.send(()).await;
+    }
+
+    // Signal idle service shutdown
+    let idle_tx = state.idle_shutdown_tx.write().take();
+    if let Some(tx) = idle_tx {
+        let _ = tx.send(()).await;
+    }
+
+    // Signal heartbeat shutdown
+    let heartbeat_tx = state.heartbeat_shutdown_tx.write().take();
+    if let Some(tx) = heartbeat_tx {
         let _ = tx.send(()).await;
     }
 
@@ -396,7 +410,19 @@ async fn graceful_shutdown(state: &SharedState) {
         }
     }
 
-    // 6. Now clean up user-specific DHT state (close records, release route,
+    // 6. Publish Offline to DHT before cleanup closes records
+    {
+        let current_status = state.identity.read().as_ref().map(|id| id.status);
+        if current_status != Some(state::UserStatus::Offline) {
+            if let Err(e) =
+                services::presence_service::publish_status(state, state::UserStatus::Offline).await
+            {
+                tracing::warn!(error = %e, "failed to publish offline on shutdown");
+            }
+        }
+    }
+
+    // 7. Now clean up user-specific DHT state (close records, release route,
     //    abort remaining background handles).
     //    Pass None for app_handle — the app is exiting, no UI to update.
     services::veilid_service::logout_cleanup(None, state).await;
@@ -405,7 +431,7 @@ async fn graceful_shutdown(state: &SharedState) {
     state.mek_cache.lock().clear();
     state.community_routes.write().clear();
 
-    // 7. Shut down the Veilid node (only on app exit)
+    // 8. Shut down the Veilid node (only on app exit)
     services::veilid_service::shutdown_app(state).await;
 
     tracing::info!("graceful shutdown complete");

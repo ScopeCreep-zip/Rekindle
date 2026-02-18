@@ -460,6 +460,36 @@ pub async fn logout(
         }
     }
 
+    // Shut down idle service
+    {
+        let tx = state.idle_shutdown_tx.write().take();
+        if let Some(tx) = tx {
+            let _ = tx.send(()).await;
+        }
+    }
+    *state.pre_away_status.write() = None;
+
+    // Shut down heartbeat service
+    {
+        let tx = state.heartbeat_shutdown_tx.write().take();
+        if let Some(tx) = tx {
+            let _ = tx.send(()).await;
+        }
+    }
+
+    // Publish Offline to DHT BEFORE logout_cleanup clears the owner keypair
+    {
+        let current_status = state.identity.read().as_ref().map(|id| id.status);
+        if current_status != Some(UserStatus::Offline) {
+            if let Err(e) =
+                services::presence_service::publish_status(state.inner(), UserStatus::Offline)
+                    .await
+            {
+                tracing::warn!(error = %e, "failed to publish offline status on logout");
+            }
+        }
+    }
+
     // Grab the active identity's key before cleanup clears it — the login window
     // will pre-select this account so the user just has to re-enter their
     // passphrase instead of navigating through the picker again.
@@ -542,6 +572,7 @@ pub async fn list_identities(
 /// - The Stronghold snapshot file
 ///
 /// If deleting the currently active identity, performs logout first.
+#[allow(clippy::too_many_lines)]
 #[tauri::command]
 pub async fn delete_identity(
     public_key: String,
@@ -634,6 +665,27 @@ pub async fn delete_identity(
             }
         }
 
+        // Shut down idle service
+        {
+            let tx = state.idle_shutdown_tx.write().take();
+            if let Some(tx) = tx {
+                let _ = tx.send(()).await;
+            }
+        }
+        *state.pre_away_status.write() = None;
+
+        // Publish Offline before cleanup
+        {
+            let current_status = state.identity.read().as_ref().map(|id| id.status);
+            if current_status != Some(UserStatus::Offline) {
+                let _ = services::presence_service::publish_status(
+                    state.inner(),
+                    UserStatus::Offline,
+                )
+                .await;
+            }
+        }
+
         // Clean up user-specific DHT state (node stays alive)
         services::veilid_service::logout_cleanup(Some(&app), state.inner()).await;
 
@@ -707,6 +759,7 @@ async fn load_friends_from_db(
                     local_conversation_key: db::get_str_opt(row, "local_conversation_key"),
                     remote_conversation_key: db::get_str_opt(row, "remote_conversation_key"),
                     mailbox_dht_key: db::get_str_opt(row, "mailbox_dht_key"),
+                    last_heartbeat_at: None,
                 })
             })
             .map_err(|e| e.to_string())?
@@ -1132,6 +1185,22 @@ fn spawn_login_services(
 
     // Store the shutdown sender so it can be signalled on logout/exit
     *state.route_refresh_shutdown_tx.write() = Some(route_refresh_shutdown_tx);
+
+    // Start idle/auto-away service
+    let idle_tx = services::idle_service::start_idle_service(
+        app.clone(),
+        Arc::clone(state),
+    );
+    *state.idle_shutdown_tx.write() = Some(idle_tx);
+
+    // Start presence heartbeat loop (re-publishes status with fresh timestamp every 120s)
+    let (heartbeat_tx, heartbeat_rx) = mpsc::channel::<()>(1);
+    let heartbeat_state = Arc::clone(state);
+    let heartbeat_handle = tauri::async_runtime::spawn(
+        services::presence_service::start_heartbeat_loop(heartbeat_state, heartbeat_rx),
+    );
+    *state.heartbeat_shutdown_tx.write() = Some(heartbeat_tx);
+    state.background_handles.lock().push(heartbeat_handle);
 
     // Spawn community server process if user owns any communities
     maybe_spawn_server(app, state);

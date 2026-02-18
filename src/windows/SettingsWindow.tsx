@@ -188,6 +188,24 @@ const SettingsWindow: Component = () => {
           />
           <span class="buddy-name">Show Game Activity</span>
         </label>
+        <div class="settings-section-title">Auto-Away</div>
+        <div class="settings-field">
+          <label class="settings-field-label">Go away after inactivity</label>
+          <select
+            class="settings-select"
+            value={settingsState.autoAwayMinutes}
+            onChange={(e) =>
+              handleSaveSettings({ autoAwayMinutes: parseInt(e.currentTarget.value) })
+            }
+          >
+            <option value={0}>Disabled</option>
+            <option value={5}>5 minutes</option>
+            <option value={10}>10 minutes</option>
+            <option value={15}>15 minutes</option>
+            <option value={30}>30 minutes</option>
+            <option value={60}>1 hour</option>
+          </select>
+        </div>
       </>
     );
   }

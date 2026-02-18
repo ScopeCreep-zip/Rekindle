@@ -20,17 +20,23 @@ pub async fn start_sync_loop(
 ) {
     tracing::info!("sync service started");
 
-    let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
     let mut watched_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut first_tick = true;
+    let mut tick_count: u32 = 0;
 
     loop {
         tokio::select! {
             _ = interval.tick() => {
+                tick_count += 1;
                 if let Err(e) = sync_friends(&state, &app_handle, &mut watched_keys, first_tick).await {
                     tracing::warn!(error = %e, "friend sync failed");
                 }
                 first_tick = false;
+                // After the first 3 rapid ticks, switch to the normal 30s cadence
+                if tick_count == 3 {
+                    interval = tokio::time::interval(std::time::Duration::from_secs(30));
+                }
                 if let Err(e) = sync_conversations(&state).await {
                     tracing::warn!(error = %e, "conversation sync failed");
                 }
@@ -96,6 +102,18 @@ async fn sync_friends(
     // Collect unwatched friend keys for force_refresh polling (per Veilid GitLab #377)
     let unwatched: std::collections::HashSet<String> = state.unwatched_friends.read().clone();
 
+    // Clear watched_keys for friends whose watches died, so they get re-watched
+    {
+        let friends = state.friends.read();
+        for fk in &unwatched {
+            if let Some(f) = friends.get(fk.as_str()) {
+                if let Some(ref dk) = f.dht_record_key {
+                    watched_keys.remove(dk);
+                }
+            }
+        }
+    }
+
     for (friend_key, dht_key) in &friends_with_dht {
         let record_key: veilid_core::RecordKey = match dht_key.parse() {
             Ok(k) => k,
@@ -122,8 +140,54 @@ async fn sync_friends(
         sync_friend_dht_subkeys(state, &routing_context, friend_key, record_key, app_handle, force_refresh).await;
     }
 
+    // Check for stale presences (friends whose heartbeat is expired)
+    check_stale_presences(state, app_handle);
+
     tracing::debug!(friends = friends_with_dht.len(), "friend sync complete");
     Ok(())
+}
+
+/// Scan friends for stale heartbeats and mark them offline.
+///
+/// Called at the end of each `sync_friends()` tick. If a friend's
+/// `last_heartbeat_at` is older than `STALE_PRESENCE_THRESHOLD_MS`,
+/// they're treated as offline (crash without clean shutdown).
+fn check_stale_presences(state: &Arc<AppState>, app_handle: &tauri::AppHandle) {
+    use tauri::Emitter;
+    let now = crate::db::timestamp_now();
+    let threshold = super::presence_service::STALE_PRESENCE_THRESHOLD_MS;
+
+    // Collect stale friends while holding the read lock
+    let stale_friends: Vec<String> = {
+        let friends = state.friends.read();
+        friends
+            .values()
+            .filter(|f| {
+                f.status != crate::state::UserStatus::Offline
+                    && f.last_heartbeat_at
+                        .is_some_and(|ts| now - ts > threshold)
+            })
+            .map(|f| f.public_key.clone())
+            .collect()
+    };
+
+    // Mark stale friends offline and emit events (no lock held during emit)
+    for pk in stale_friends {
+        {
+            let mut friends = state.friends.write();
+            if let Some(friend) = friends.get_mut(&pk) {
+                tracing::info!(friend = %pk, "stale heartbeat — marking offline");
+                friend.status = crate::state::UserStatus::Offline;
+                friend.last_seen_at = Some(now);
+            }
+        }
+        let _ = app_handle.emit(
+            "presence-event",
+            &crate::channels::PresenceEvent::FriendOffline {
+                public_key: pk,
+            },
+        );
+    }
 }
 
 /// Read DHT subkeys for a single friend and update local state.
@@ -140,9 +204,9 @@ async fn sync_friend_dht_subkeys(
 ) {
     // Ensure the record is open before reading (re-opening is a no-op if already open).
     if let Err(e) = routing_context.open_dht_record(record_key.clone(), None).await {
-        tracing::trace!(
+        tracing::debug!(
             friend = %friend_key, error = %e,
-            "failed to open friend DHT record for sync — skipping"
+            "failed to open friend DHT record — will retry next tick"
         );
         return;
     }
@@ -154,6 +218,8 @@ async fn sync_friend_dht_subkeys(
 }
 
 /// Read status (subkey 2) from DHT and emit presence events on change.
+///
+/// Uses the 9-byte format `[status_byte, timestamp_be(8)]` with stale detection.
 async fn sync_friend_status(
     state: &Arc<AppState>,
     routing_context: &veilid_core::RoutingContext,
@@ -163,49 +229,78 @@ async fn sync_friend_status(
     force_refresh: bool,
 ) {
     use tauri::Emitter;
+    use super::presence_service::{parse_status, parse_status_timestamp, STALE_PRESENCE_THRESHOLD_MS};
 
-    if let Ok(Some(value_data)) = routing_context
+    let Some(value_data) = routing_context
         .get_dht_value(record_key.clone(), 2, force_refresh)
         .await
+        .ok()
+        .flatten()
+    else {
+        return;
+    };
+
+    let data = value_data.data();
+    let Some(mut status) = parse_status(data) else {
+        return;
+    };
+
+    // Store heartbeat timestamp
+    let heartbeat_ts = parse_status_timestamp(data);
+    if let Some(ts) = heartbeat_ts {
+        let mut friends = state.friends.write();
+        if let Some(friend) = friends.get_mut(friend_key) {
+            friend.last_heartbeat_at = Some(ts);
+        }
+    }
+
+    // Stale override: if timestamp > 5 min old, treat as offline
+    if status != crate::state::UserStatus::Offline {
+        if let Some(ts) = heartbeat_ts {
+            let now = crate::db::timestamp_now();
+            if now - ts > STALE_PRESENCE_THRESHOLD_MS {
+                tracing::info!(friend = %friend_key, age_ms = now - ts, "stale heartbeat — treating as offline");
+                status = crate::state::UserStatus::Offline;
+            }
+        }
+    }
+
+    // Compare with old status and emit events
+    let old_status = {
+        let friends = state.friends.read();
+        friends.get(friend_key).map(|f| f.status)
+    };
     {
-        if let Some(&status_byte) = value_data.data().first() {
-            let status = match status_byte {
-                0 => crate::state::UserStatus::Online,
-                1 => crate::state::UserStatus::Away,
-                2 => crate::state::UserStatus::Busy,
-                _ => crate::state::UserStatus::Offline,
-            };
-            let old_status = {
-                let friends = state.friends.read();
-                friends.get(friend_key).map(|f| f.status)
-            };
-            {
-                let mut friends = state.friends.write();
-                if let Some(friend) = friends.get_mut(friend_key) {
-                    friend.status = status;
-                }
+        let mut friends = state.friends.write();
+        if let Some(friend) = friends.get_mut(friend_key) {
+            friend.status = status;
+        }
+    }
+    if old_status != Some(status) {
+        if status == crate::state::UserStatus::Offline {
+            let _ = app_handle.emit(
+                "presence-event",
+                &crate::channels::PresenceEvent::FriendOffline {
+                    public_key: friend_key.to_string(),
+                },
+            );
+        } else {
+            if old_status == Some(crate::state::UserStatus::Offline) {
+                let _ = app_handle.emit(
+                    "presence-event",
+                    &crate::channels::PresenceEvent::FriendOnline {
+                        public_key: friend_key.to_string(),
+                    },
+                );
             }
-            if old_status != Some(status) {
-                if status == crate::state::UserStatus::Offline {
-                    let _ = app_handle.emit("presence-event",
-                        &crate::channels::PresenceEvent::FriendOffline {
-                            public_key: friend_key.to_string(),
-                        });
-                } else {
-                    if old_status == Some(crate::state::UserStatus::Offline) {
-                        let _ = app_handle.emit("presence-event",
-                            &crate::channels::PresenceEvent::FriendOnline {
-                                public_key: friend_key.to_string(),
-                            });
-                    }
-                    let _ = app_handle.emit("presence-event",
-                        &crate::channels::PresenceEvent::StatusChanged {
-                            public_key: friend_key.to_string(),
-                            status: format!("{status:?}").to_lowercase(),
-                            status_message: None,
-                        });
-                }
-            }
+            let _ = app_handle.emit(
+                "presence-event",
+                &crate::channels::PresenceEvent::StatusChanged {
+                    public_key: friend_key.to_string(),
+                    status: format!("{status:?}").to_lowercase(),
+                    status_message: None,
+                },
+            );
         }
     }
 }

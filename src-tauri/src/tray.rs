@@ -67,6 +67,9 @@ fn set_status_from_tray(app: &tauri::AppHandle, status: UserStatus) {
         }
     }
 
+    // Clear auto-away state — user is manually setting status from tray
+    state.pre_away_status.write().take();
+
     tracing::info!(status = ?status, "status changed from tray");
 
     // Clone the Arc<AppState> so we can move it into the async task

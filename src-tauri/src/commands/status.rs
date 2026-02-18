@@ -31,6 +31,9 @@ pub async fn set_status(
         );
     }
 
+    // Clear auto-away state — user is manually setting status
+    *state.pre_away_status.write() = None;
+
     // Publish to DHT profile subkey 2
     services::presence_service::publish_status(state.inner(), status_enum).await?;
 
