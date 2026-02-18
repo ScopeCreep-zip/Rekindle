@@ -787,9 +787,13 @@ pub async fn publish_status(
 /// 5 minutes — if a friend's last heartbeat is older than this, assume offline.
 pub const STALE_PRESENCE_THRESHOLD_MS: i64 = 5 * 60 * 1000;
 
-/// Parse status byte from the 9-byte status payload `[status, timestamp_be]`.
+/// Parse status byte from a status payload.
+///
+/// Accepts both the legacy 1-byte format `[status]` and the new 9-byte
+/// format `[status, timestamp_be]`. The timestamp is extracted separately
+/// via `parse_status_timestamp`.
 pub fn parse_status(data: &[u8]) -> Option<UserStatus> {
-    if data.len() < 9 {
+    if data.is_empty() {
         return None;
     }
     Some(match data[0] {

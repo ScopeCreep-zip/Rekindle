@@ -284,10 +284,6 @@ pub fn run() {
                         tracing::warn!("graceful shutdown timed out after 5s — forcing exit");
                     }
                 });
-                // Force process termination. On macOS the event loop may not
-                // exit cleanly when a system tray icon is active, leaving the
-                // process alive after RunEvent::Exit returns.
-                std::process::exit(0);
             }
             _ => {}
         });
