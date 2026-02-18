@@ -158,10 +158,23 @@ pub async fn add_friend(
 #[tauri::command]
 pub async fn remove_friend(
     public_key: String,
+    app: tauri::AppHandle,
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
     let owner_key = current_owner_key(state.inner())?;
+
+    // Notify the peer BEFORE local removal so we still have their route info
+    if let Err(e) = services::message_service::send_to_peer_raw(
+        state.inner(),
+        pool.inner(),
+        &public_key,
+        &rekindle_protocol::messaging::envelope::MessagePayload::Unfriended,
+    )
+    .await
+    {
+        tracing::warn!(to = %public_key, error = %e, "failed to send unfriend notification (continuing with local removal)");
+    }
 
     // Remove from SQLite
     let pool_clone = pool.inner().clone();
@@ -196,6 +209,11 @@ pub async fn remove_friend(
     if let Err(e) = services::message_service::push_friend_list_update(state.inner()).await {
         tracing::warn!(error = %e, "failed to update DHT friend list after removal");
     }
+
+    // Emit event so ALL windows update (not just the one that called the command)
+    let _ = app.emit("chat-event", &ChatEvent::FriendRemoved {
+        public_key: public_key.clone(),
+    });
 
     tracing::info!(public_key = %public_key, "friend removed");
     Ok(())

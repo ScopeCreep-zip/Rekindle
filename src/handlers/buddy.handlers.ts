@@ -1,3 +1,4 @@
+import { reconcile } from "solid-js/store";
 import { commands } from "../ipc/commands";
 import { setFriendsState, friendsState } from "../stores/friends.store";
 import { authState } from "../stores/auth.store";
@@ -25,11 +26,8 @@ export function handleCloseContextMenu(): void {
 export async function handleRemoveFriend(publicKey: string): Promise<void> {
   try {
     await commands.removeFriend(publicKey);
-    setFriendsState("friends", (prev) => {
-      const next = { ...prev };
-      delete next[publicKey];
-      return next;
-    });
+    // Backend emits FriendRemoved event which handles store update via reconcile.
+    // No inline store mutation needed here.
   } catch (e) {
     console.error("Failed to remove friend:", e);
   }
@@ -138,11 +136,9 @@ export async function handleMoveFriendToGroup(
 export async function handleBlockFriend(publicKey: string): Promise<string | null> {
   try {
     await commands.blockFriend(publicKey);
-    setFriendsState("friends", (prev) => {
-      const next = { ...prev };
-      delete next[publicKey];
-      return next;
-    });
+    const next = { ...friendsState.friends };
+    delete next[publicKey];
+    setFriendsState("friends", reconcile(next));
     return null;
   } catch (e) {
     return String(e);
@@ -170,11 +166,9 @@ export async function handleAddFriendFromInvite(inviteString: string): Promise<s
 export async function handleCancelRequest(publicKey: string): Promise<string | null> {
   try {
     await commands.cancelRequest(publicKey);
-    setFriendsState("friends", (prev) => {
-      const next = { ...prev };
-      delete next[publicKey];
-      return next;
-    });
+    const next = { ...friendsState.friends };
+    delete next[publicKey];
+    setFriendsState("friends", reconcile(next));
     return null;
   } catch (e) {
     return String(e);
@@ -202,7 +196,7 @@ export async function handleRefreshFriends(): Promise<void> {
         friendshipState: (f.friendshipState as Friend["friendshipState"]) ?? "accepted",
       };
     }
-    setFriendsState("friends", friendMap);
+    setFriendsState("friends", reconcile(friendMap));
   } catch (e) {
     console.error("Failed to refresh friends:", e);
   }

@@ -15,6 +15,7 @@ use crate::state::AppState;
 ///
 /// Flow: parse envelope → verify signature → decrypt if session exists →
 /// parse payload → dispatch by type (DM, friend request, typing, etc.)
+#[allow(clippy::too_many_lines)]
 pub async fn handle_incoming_message(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
@@ -135,6 +136,9 @@ pub async fn handle_incoming_message(
             handle_profile_key_rotated(state, pool, &sender_hex, &new_profile_dht_key).await;
         }
         MessagePayload::PresenceUpdate { .. } => {}
+        MessagePayload::Unfriended => {
+            handle_unfriended(app_handle, state, pool, &sender_hex).await;
+        }
     }
 }
 
@@ -642,6 +646,67 @@ async fn handle_friend_reject(
             from: sender_hex.to_string(),
         },
     );
+}
+
+/// Handle an incoming `Unfriended` message: the peer has removed us as a friend.
+///
+/// Removes the peer from our friends list (DB + in-memory), unregisters their
+/// DHT presence key, and emits `FriendRemoved` so the frontend updates.
+async fn handle_unfriended(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    pool: &DbPool,
+    sender_hex: &str,
+) {
+    // Only act if the sender is actually in our friends list
+    let has_friend = state.friends.read().contains_key(sender_hex);
+    if !has_friend {
+        tracing::debug!(from = %sender_hex, "ignoring Unfriended from non-friend");
+        return;
+    }
+
+    // Remove from DB
+    let owner_key = state
+        .identity
+        .read()
+        .as_ref()
+        .map(|id| id.public_key.clone())
+        .unwrap_or_default();
+    let pool_clone = pool.clone();
+    let pk = sender_hex.to_string();
+    let ok = owner_key;
+    let _ = tokio::task::spawn_blocking(move || {
+        let conn = pool_clone.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "DELETE FROM friends WHERE owner_key = ?1 AND public_key = ?2",
+            rusqlite::params![ok, pk],
+        )
+        .map_err(|e| format!("delete unfriended peer: {e}"))?;
+        Ok::<(), String>(())
+    })
+    .await;
+
+    // Remove from in-memory state and unregister DHT key
+    let dht_key = {
+        let mut friends = state.friends.write();
+        let removed = friends.remove(sender_hex);
+        removed.and_then(|f| f.dht_record_key)
+    };
+    if let Some(ref dht_key) = dht_key {
+        let mut dht_mgr = state.dht_manager.write();
+        if let Some(mgr) = dht_mgr.as_mut() {
+            mgr.unregister_friend_dht_key(dht_key);
+        }
+    }
+
+    let _ = app_handle.emit(
+        "chat-event",
+        &ChatEvent::FriendRemoved {
+            public_key: sender_hex.to_string(),
+        },
+    );
+
+    tracing::info!(from = %sender_hex, "removed by peer (Unfriended)");
 }
 
 /// Auto-accept a cross-request: both parties sent friend requests to each other.
