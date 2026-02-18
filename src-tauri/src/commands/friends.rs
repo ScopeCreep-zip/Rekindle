@@ -695,8 +695,8 @@ pub async fn add_friend_from_invite(
     tokio::task::spawn_blocking(move || {
         let conn = pool_clone.lock().map_err(|e| e.to_string())?;
         conn.execute(
-            "INSERT OR IGNORE INTO friends (owner_key, public_key, display_name, added_at, dht_record_key, mailbox_dht_key) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT OR IGNORE INTO friends (owner_key, public_key, display_name, added_at, dht_record_key, mailbox_dht_key, friendship_state) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'pending_out')",
             rusqlite::params![ok, pk, dn, timestamp, profile_key, mailbox_key],
         )
         .map_err(|e| format!("insert friend: {e}"))?;
@@ -705,7 +705,7 @@ pub async fn add_friend_from_invite(
     .await
     .map_err(|e| e.to_string())??;
 
-    // Add to in-memory state (invite-based adds are immediately accepted)
+    // Add to in-memory state (pending until peer accepts)
     let friend = FriendState {
         public_key: blob.public_key.clone(),
         display_name: blob.display_name.clone(),
@@ -721,7 +721,7 @@ pub async fn add_friend_from_invite(
         remote_conversation_key: None,
         mailbox_dht_key: Some(blob.mailbox_dht_key.clone()),
         last_heartbeat_at: None,
-        friendship_state: FriendshipState::Accepted,
+        friendship_state: FriendshipState::PendingOut,
     };
     state.friends.write().insert(blob.public_key.clone(), friend);
 
@@ -757,7 +757,7 @@ pub async fn add_friend_from_invite(
         &ChatEvent::FriendAdded {
             public_key: blob.public_key.clone(),
             display_name: blob.display_name.clone(),
-            friendship_state: "accepted".to_string(),
+            friendship_state: "pendingOut".to_string(),
         },
     );
 
