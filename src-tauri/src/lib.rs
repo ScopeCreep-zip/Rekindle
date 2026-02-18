@@ -298,6 +298,7 @@ pub fn run() {
 /// First cleans up user-specific state (DHT records, routes), then sends
 /// shutdown signals to the dispatch loop, and finally shuts down the
 /// Veilid node itself.
+#[allow(clippy::too_many_lines)]
 async fn graceful_shutdown(state: &SharedState) {
     tracing::info!("graceful shutdown: stopping background services");
 
@@ -326,6 +327,12 @@ async fn graceful_shutdown(state: &SharedState) {
     // Signal idle service shutdown
     let idle_tx = state.idle_shutdown_tx.write().take();
     if let Some(tx) = idle_tx {
+        let _ = tx.send(()).await;
+    }
+
+    // Signal heartbeat shutdown
+    let heartbeat_tx = state.heartbeat_shutdown_tx.write().take();
+    if let Some(tx) = heartbeat_tx {
         let _ = tx.send(()).await;
     }
 

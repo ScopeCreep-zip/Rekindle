@@ -52,9 +52,31 @@ fn handle_status_change(
     friend_key: &str,
     value: &[u8],
 ) {
-    let Some(status) = parse_status(value) else {
+    let Some(mut status) = parse_status(value) else {
         return;
     };
+
+    // Override non-offline status to offline if timestamp is stale
+    if status != UserStatus::Offline {
+        if let Some(ts) = parse_status_timestamp(value) {
+            let now = db::timestamp_now();
+            if now - ts > STALE_PRESENCE_THRESHOLD_MS {
+                tracing::info!(
+                    friend = %friend_key, age_ms = now - ts,
+                    "stale presence — treating as offline"
+                );
+                status = UserStatus::Offline;
+            }
+        }
+    }
+
+    // Store heartbeat timestamp on friend state
+    if let Some(ts) = parse_status_timestamp(value) {
+        let mut friends = state.friends.write();
+        if let Some(friend) = friends.get_mut(friend_key) {
+            friend.last_heartbeat_at = Some(ts);
+        }
+    }
 
     let event = if status == UserStatus::Offline {
         let now = db::timestamp_now();
@@ -745,8 +767,13 @@ pub async fn publish_status(
         return Err(format!("failed to open profile record: {e}"));
     }
 
+    let timestamp = crate::db::timestamp_now();
+    let mut payload = Vec::with_capacity(9);
+    payload.push(status_byte);
+    payload.extend_from_slice(&timestamp.to_be_bytes());
+
     routing_context
-        .set_dht_value(record_key, 2, vec![status_byte], None)
+        .set_dht_value(record_key, 2, payload, None)
         .await
         .map_err(|e| {
             tracing::warn!(error = %e, status = ?status, "publish_status: set_dht_value failed");
@@ -757,13 +784,29 @@ pub async fn publish_status(
     Ok(())
 }
 
-fn parse_status(data: &[u8]) -> Option<UserStatus> {
-    data.first().map(|b| match b {
+/// 5 minutes — if a friend's last heartbeat is older than this, assume offline.
+pub const STALE_PRESENCE_THRESHOLD_MS: i64 = 5 * 60 * 1000;
+
+/// Parse status byte from the 9-byte status payload `[status, timestamp_be]`.
+pub fn parse_status(data: &[u8]) -> Option<UserStatus> {
+    if data.len() < 9 {
+        return None;
+    }
+    Some(match data[0] {
         0 => UserStatus::Online,
         1 => UserStatus::Away,
         2 => UserStatus::Busy,
         _ => UserStatus::Offline,
     })
+}
+
+/// Extract the heartbeat timestamp from the 9-byte status payload.
+pub fn parse_status_timestamp(data: &[u8]) -> Option<i64> {
+    if data.len() < 9 {
+        return None;
+    }
+    let bytes: [u8; 8] = data[1..9].try_into().ok()?;
+    Some(i64::from_be_bytes(bytes))
 }
 
 fn parse_game_info(data: &[u8]) -> Option<GameInfoState> {
@@ -773,4 +816,38 @@ fn parse_game_info(data: &[u8]) -> Option<GameInfoState> {
     }
     // Placeholder: try JSON deserialization
     serde_json::from_slice(data).ok()
+}
+
+/// Periodically re-publish our current status with a fresh timestamp.
+///
+/// This serves as a keepalive: friends detect stale timestamps and infer
+/// that we've gone offline (crashed without publishing Offline).
+/// Runs every 120 seconds, matching the route refresh cadence.
+pub async fn start_heartbeat_loop(
+    state: Arc<AppState>,
+    mut shutdown_rx: tokio::sync::mpsc::Receiver<()>,
+) {
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(120));
+    interval.tick().await; // Skip immediate first tick
+
+    loop {
+        tokio::select! {
+            _ = interval.tick() => {
+                let status = {
+                    let id = state.identity.read();
+                    match id.as_ref() {
+                        Some(id) if id.status != UserStatus::Offline => id.status,
+                        _ => continue, // Not logged in or already offline — skip
+                    }
+                };
+                if let Err(e) = publish_status(&state, status).await {
+                    tracing::debug!(error = %e, "heartbeat publish failed");
+                }
+            }
+            _ = shutdown_rx.recv() => {
+                tracing::debug!("presence heartbeat loop shutting down");
+                break;
+            }
+        }
+    }
 }

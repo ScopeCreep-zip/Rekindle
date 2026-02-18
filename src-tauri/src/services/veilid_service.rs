@@ -935,6 +935,27 @@ async fn handle_value_change(
     change: veilid_core::VeilidValueChange,
 ) {
     let key = change.key.to_string();
+
+    // Detect watch death: count == 0 or empty subkeys means the watch has died.
+    // Per veilid-core VeilidValueChange docs: "If the subkey range is empty,
+    // any watch present on the value has died."
+    if change.count == 0 || change.subkeys.is_empty() {
+        tracing::warn!(
+            key = %key, count = change.count,
+            "DHT watch died — moving friend to poll fallback"
+        );
+        let friend_key = {
+            let dht_mgr = state.dht_manager.read();
+            dht_mgr
+                .as_ref()
+                .and_then(|mgr| mgr.friend_for_dht_key(&key).cloned())
+        };
+        if let Some(fk) = friend_key {
+            state.unwatched_friends.write().insert(fk);
+        }
+        return;
+    }
+
     let subkeys: Vec<u32> = change.subkeys.iter().collect();
     let inline_value = change.value.as_ref().map(|v| v.data().to_vec());
     tracing::debug!(
@@ -1319,6 +1340,14 @@ pub async fn logout_cleanup(app_handle: Option<&tauri::AppHandle>, state: &AppSt
         }
     }
     *state.pre_away_status.write() = None;
+
+    // Shut down heartbeat service
+    {
+        let tx = state.heartbeat_shutdown_tx.write().take();
+        if let Some(tx) = tx {
+            let _ = tx.send(()).await;
+        }
+    }
 
     // 1. Abort user-specific background tasks
     {

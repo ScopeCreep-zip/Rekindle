@@ -29,7 +29,16 @@ pub async fn create_profile(
     // Set initial values
     dht.set_value(&key, SUBKEY_DISPLAY_NAME, display_name.as_bytes().to_vec()).await?;
     dht.set_value(&key, SUBKEY_STATUS_MESSAGE, status_message.as_bytes().to_vec()).await?;
-    dht.set_value(&key, SUBKEY_STATUS, vec![0]).await?; // 0 = online
+    let ts: i64 = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        .try_into()
+        .unwrap_or(i64::MAX);
+    let mut status_payload = Vec::with_capacity(9);
+    status_payload.push(0u8);
+    status_payload.extend_from_slice(&ts.to_be_bytes());
+    dht.set_value(&key, SUBKEY_STATUS, status_payload).await?; // 0 = online
     dht.set_value(&key, SUBKEY_PREKEY_BUNDLE, prekey_bundle.to_vec()).await?;
     dht.set_value(&key, SUBKEY_ROUTE_BLOB, route_blob.to_vec()).await?;
 
