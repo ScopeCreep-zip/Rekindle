@@ -61,6 +61,7 @@ export function subscribeBuddyListChatEvents(): Promise<UnlistenFn> {
         break;
       }
       case "friendAdded": {
+        const state = event.data.friendshipState === "accepted" ? "accepted" : "pendingOut";
         setFriendsState("friends", event.data.publicKey, {
           publicKey: event.data.publicKey,
           displayName: event.data.displayName,
@@ -72,7 +73,7 @@ export function subscribeBuddyListChatEvents(): Promise<UnlistenFn> {
           unreadCount: 0,
           lastSeenAt: null,
           voiceChannel: null,
-          friendshipState: "pendingOut",
+          friendshipState: state as "pendingOut" | "accepted",
         });
         break;
       }
