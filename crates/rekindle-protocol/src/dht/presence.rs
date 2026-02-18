@@ -17,12 +17,17 @@ pub async fn watch_friend_presence(
 
 /// Publish our status to DHT (subkey 2).
 /// Status: 0 = online, 1 = away, 2 = busy, 3 = offline.
+/// Writes a 9-byte payload: `[status_byte, timestamp_ms_be(8)]`.
 pub async fn publish_status(
     dht: &DHTManager,
     profile_key: &str,
     status: u8,
+    timestamp_ms: i64,
 ) -> Result<(), ProtocolError> {
-    dht.set_value(profile_key, SUBKEY_STATUS, vec![status]).await
+    let mut payload = Vec::with_capacity(9);
+    payload.push(status);
+    payload.extend_from_slice(&timestamp_ms.to_be_bytes());
+    dht.set_value(profile_key, SUBKEY_STATUS, payload).await
 }
 
 /// Publish our game info to DHT (subkey 4).

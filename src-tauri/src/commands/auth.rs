@@ -469,6 +469,14 @@ pub async fn logout(
     }
     *state.pre_away_status.write() = None;
 
+    // Shut down heartbeat service
+    {
+        let tx = state.heartbeat_shutdown_tx.write().take();
+        if let Some(tx) = tx {
+            let _ = tx.send(()).await;
+        }
+    }
+
     // Publish Offline to DHT BEFORE logout_cleanup clears the owner keypair
     {
         let current_status = state.identity.read().as_ref().map(|id| id.status);
@@ -751,6 +759,7 @@ async fn load_friends_from_db(
                     local_conversation_key: db::get_str_opt(row, "local_conversation_key"),
                     remote_conversation_key: db::get_str_opt(row, "remote_conversation_key"),
                     mailbox_dht_key: db::get_str_opt(row, "mailbox_dht_key"),
+                    last_heartbeat_at: None,
                 })
             })
             .map_err(|e| e.to_string())?
@@ -1183,6 +1192,15 @@ fn spawn_login_services(
         Arc::clone(state),
     );
     *state.idle_shutdown_tx.write() = Some(idle_tx);
+
+    // Start presence heartbeat loop (re-publishes status with fresh timestamp every 120s)
+    let (heartbeat_tx, heartbeat_rx) = mpsc::channel::<()>(1);
+    let heartbeat_state = Arc::clone(state);
+    let heartbeat_handle = tauri::async_runtime::spawn(
+        services::presence_service::start_heartbeat_loop(heartbeat_state, heartbeat_rx),
+    );
+    *state.heartbeat_shutdown_tx.write() = Some(heartbeat_tx);
+    state.background_handles.lock().push(heartbeat_handle);
 
     // Spawn community server process if user owns any communities
     maybe_spawn_server(app, state);
