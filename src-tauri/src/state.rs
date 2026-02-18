@@ -312,6 +312,15 @@ pub enum UserStatus {
     Offline,
 }
 
+/// Whether a friendship is pending (outbound request sent) or fully accepted.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FriendshipState {
+    PendingOut,
+    #[default]
+    Accepted,
+}
+
 /// A friend's state as seen on the buddy list.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -337,6 +346,8 @@ pub struct FriendState {
     /// Unix timestamp (ms) from the friend's last DHT heartbeat.
     /// Used for stale presence detection.
     pub last_heartbeat_at: Option<i64>,
+    /// Whether this friendship is pending (request sent) or fully accepted.
+    pub friendship_state: FriendshipState,
 }
 
 /// Game presence information.

@@ -738,13 +738,18 @@ async fn load_friends_from_db(
             .prepare(
                 "SELECT f.public_key, f.display_name, f.nickname, f.dht_record_key, \
                  f.last_seen_at, f.local_conversation_key, f.remote_conversation_key, \
-                 f.mailbox_dht_key, g.name AS group_name \
+                 f.mailbox_dht_key, f.friendship_state, g.name AS group_name \
                  FROM friends f LEFT JOIN friend_groups g ON f.group_id = g.id \
                  WHERE f.owner_key = ?1",
             )
             .map_err(|e| e.to_string())?;
         let rows = stmt
             .query_map(rusqlite::params![ok], |row| {
+                let fs_str: String = row.get::<_, String>("friendship_state").unwrap_or_else(|_| "accepted".to_string());
+                let friendship_state = match fs_str.as_str() {
+                    "pending_out" => crate::state::FriendshipState::PendingOut,
+                    _ => crate::state::FriendshipState::Accepted,
+                };
                 Ok(FriendState {
                     public_key: db::get_str(row, "public_key"),
                     display_name: db::get_str(row, "display_name"),
@@ -760,6 +765,7 @@ async fn load_friends_from_db(
                     remote_conversation_key: db::get_str_opt(row, "remote_conversation_key"),
                     mailbox_dht_key: db::get_str_opt(row, "mailbox_dht_key"),
                     last_heartbeat_at: None,
+                    friendship_state,
                 })
             })
             .map_err(|e| e.to_string())?

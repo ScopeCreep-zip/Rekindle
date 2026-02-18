@@ -31,6 +31,7 @@ export interface FriendInfo {
   group: string | null;
   unreadCount: number;
   lastSeenAt: number | null;
+  friendshipState: "pendingOut" | "accepted";
 }
 
 export interface GameStatus {
@@ -124,6 +125,8 @@ export const commands = {
     invoke<void>("add_friend_from_invite", { inviteString }),
   blockFriend: (publicKey: string) =>
     invoke<void>("block_friend", { publicKey }),
+  cancelRequest: (publicKey: string) =>
+    invoke<void>("cancel_request", { publicKey }),
   emitFriendsPresence: () =>
     invoke<void>("emit_friends_presence"),
 

@@ -47,6 +47,7 @@ export async function hydrateState(): Promise<void> {
         unreadCount: f.unreadCount,
         lastSeenAt: f.lastSeenAt ?? null,
         voiceChannel: null,
+        friendshipState: (f.friendshipState as Friend["friendshipState"]) ?? "accepted",
       };
     }
     setFriendsState("friends", friendMap);

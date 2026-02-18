@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS friends (
     local_conversation_keypair TEXT,
     remote_conversation_key TEXT,
     mailbox_dht_key TEXT,
+    friendship_state TEXT NOT NULL DEFAULT 'accepted',
     PRIMARY KEY (owner_key, public_key)
 );
 
