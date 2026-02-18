@@ -78,6 +78,8 @@ pub enum MessagePayload {
         status: u8,
         game_info: Option<GameInfo>,
     },
+    /// Notify the peer that we have removed them as a friend.
+    Unfriended,
 }
 
 /// Game information for rich presence.

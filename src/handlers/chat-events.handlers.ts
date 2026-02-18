@@ -1,4 +1,5 @@
 import { batch } from "solid-js";
+import { reconcile } from "solid-js/store";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { subscribeChatEvents } from "../ipc/channels";
 import { friendsState, setFriendsState } from "../stores/friends.store";
@@ -45,9 +46,16 @@ export function subscribeBuddyListChatEvents(): Promise<UnlistenFn> {
         break;
       }
       case "friendRequestAccepted": {
-        // Transition the friend to accepted state immediately
-        if (friendsState.friends[event.data.from]) {
-          setFriendsState("friends", event.data.from, "friendshipState", "accepted");
+        // Use reconcile to force SolidJS to diff and fire all changed signals.
+        // Plain nested setters (setStore("friends", key, "prop", val)) can miss
+        // memo recomputation when the memo iterates via Object.values().
+        const accepted = friendsState.friends[event.data.from];
+        if (accepted) {
+          setFriendsState("friends", event.data.from, reconcile({
+            ...accepted,
+            friendshipState: "accepted" as const,
+            displayName: event.data.displayName || accepted.displayName,
+          }));
         }
         handleRefreshFriends();
         break;
@@ -71,11 +79,9 @@ export function subscribeBuddyListChatEvents(): Promise<UnlistenFn> {
       case "friendRequestRejected": {
         // Remove the pending-out friend from the list
         if (friendsState.friends[event.data.from]) {
-          setFriendsState("friends", (prev) => {
-            const next = { ...prev };
-            delete next[event.data.from];
-            return next;
-          });
+          const next = { ...friendsState.friends };
+          delete next[event.data.from];
+          setFriendsState("friends", reconcile(next));
         }
         const truncatedKey = event.data.from.slice(0, 8);
         setNotificationState("notifications", (prev) => [
@@ -93,11 +99,9 @@ export function subscribeBuddyListChatEvents(): Promise<UnlistenFn> {
         break;
       }
       case "friendRemoved": {
-        setFriendsState("friends", (prev) => {
-          const next = { ...prev };
-          delete next[event.data.publicKey];
-          return next;
-        });
+        const next = { ...friendsState.friends };
+        delete next[event.data.publicKey];
+        setFriendsState("friends", reconcile(next));
         break;
       }
       case "friendRequestDelivered": {
