@@ -319,6 +319,10 @@ pub enum FriendshipState {
     PendingOut,
     #[default]
     Accepted,
+    /// Friend removal in progress — kept in state so `sync_service` can retry
+    /// the `Unfriended` notification using the friend's routing info.
+    /// Hidden from the UI via `get_friends` filtering.
+    Removing,
 }
 
 /// A friend's state as seen on the buddy list.

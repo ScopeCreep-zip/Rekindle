@@ -93,9 +93,16 @@ pub async fn handle_incoming_message(
         }
     };
 
-    // Non-friend filtering: only FriendRequest and FriendRequestReceived allowed from non-friends
-    if !matches!(payload, MessagePayload::FriendRequest { .. } | MessagePayload::FriendRequestReceived)
-        && !state.friends.read().contains_key(&sender_hex)
+    // Non-friend filtering: only protocol-level messages allowed from non-friends.
+    // Unfriended/FriendReject must pass so delayed deliveries still work even if
+    // the sender was already removed from our friends list by some other path.
+    if !matches!(
+        payload,
+        MessagePayload::FriendRequest { .. }
+            | MessagePayload::FriendRequestReceived
+            | MessagePayload::Unfriended
+            | MessagePayload::FriendReject
+    ) && !state.friends.read().contains_key(&sender_hex)
     {
         tracing::debug!(from = %sender_hex, "dropping message from non-friend");
         return;
@@ -652,7 +659,8 @@ async fn handle_friend_reject(
 /// Handle an incoming `Unfriended` message: the peer has removed us as a friend.
 ///
 /// Removes the peer from our friends list (DB + in-memory), unregisters their
-/// DHT presence key, and emits `FriendRemoved` so the frontend updates.
+/// DHT presence key, updates our DHT friend list, and emits `FriendRemoved`
+/// so the frontend updates.
 async fn handle_unfriended(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
@@ -660,7 +668,12 @@ async fn handle_unfriended(
     sender_hex: &str,
 ) {
     // Only act if the sender is actually in our friends list
-    let has_friend = state.friends.read().contains_key(sender_hex);
+    let has_friend = {
+        let friends = state.friends.read();
+        friends.get(sender_hex).is_some_and(|f| {
+            !matches!(f.friendship_state, crate::state::FriendshipState::Removing)
+        })
+    };
     if !has_friend {
         tracing::debug!(from = %sender_hex, "ignoring Unfriended from non-friend");
         return;
@@ -698,6 +711,11 @@ async fn handle_unfriended(
         if let Some(mgr) = dht_mgr.as_mut() {
             mgr.unregister_friend_dht_key(dht_key);
         }
+    }
+
+    // Update our DHT friend list to reflect the removal
+    if let Err(e) = push_friend_list_update(state).await {
+        tracing::warn!(error = %e, "failed to update DHT friend list after peer unfriended us");
     }
 
     let _ = app_handle.emit(
@@ -1354,7 +1372,11 @@ pub async fn push_friend_list_update(state: &Arc<AppState>) -> Result<(), String
         let rc = nh.routing_context.clone();
         let kp = nh.friend_list_owner_keypair.clone();
         let friends = state.friends.read();
-        let keys: Vec<String> = friends.keys().cloned().collect();
+        let keys: Vec<String> = friends
+            .iter()
+            .filter(|(_, f)| !matches!(f.friendship_state, crate::state::FriendshipState::Removing))
+            .map(|(k, _)| k.clone())
+            .collect();
         (flk, rc, kp, keys)
     };
 
