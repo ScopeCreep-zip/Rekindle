@@ -38,12 +38,15 @@ jobs:
             librsvg2-dev \
             patchelf \
             libasound2-dev \
+            libopus-dev \
+            libxdo-dev \
             capnproto \
+            cmake \
             libssl-dev
 
       - name: Install macOS dependencies
         if: contains(matrix.platform, 'macos')
-        run: brew install capnp
+        run: brew install capnp opus cmake
 
       - name: Install Windows dependencies
         if: matrix.platform == 'windows-latest'
