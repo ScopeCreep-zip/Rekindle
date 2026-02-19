@@ -91,6 +91,11 @@ pub async fn add_friend(
         return Err("You cannot add yourself as a friend".to_string());
     }
 
+    // Prevent adding a blocked user
+    if is_user_blocked(pool.inner(), &owner_key, &public_key).await {
+        return Err("Cannot add a blocked user. Unblock them first.".to_string());
+    }
+
     let timestamp = db::timestamp_now();
 
     // Insert into SQLite
@@ -741,6 +746,11 @@ pub async fn add_friend_from_invite(
         return Err("You cannot add yourself as a friend".to_string());
     }
 
+    // Prevent adding a blocked user
+    if is_user_blocked(pool.inner(), &owner_key, &blob.public_key).await {
+        return Err("Cannot add a blocked user. Unblock them first.".to_string());
+    }
+
     let timestamp = db::timestamp_now();
 
     // Clean up any stale state from a previous friendship (e.g., re-adding after removal).
@@ -900,11 +910,44 @@ async fn setup_invite_contact(
     }
 }
 
-/// Block a friend — removes them and rotates our profile DHT key so they
-/// can no longer watch our presence.
+/// A blocked user entry returned by `get_blocked_users`.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BlockedUser {
+    pub public_key: String,
+    pub display_name: String,
+    pub blocked_at: i64,
+}
+
+/// Check if a user is in the blocked list for the current identity.
+pub(crate) async fn is_user_blocked(pool: &DbPool, owner_key: &str, public_key: &str) -> bool {
+    let pool = pool.clone();
+    let ok = owner_key.to_string();
+    let pk = public_key.to_string();
+    tokio::task::spawn_blocking(move || {
+        let conn = pool.lock().map_err(|e| e.to_string())?;
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM blocked_users WHERE owner_key = ?1 AND public_key = ?2",
+                rusqlite::params![ok, pk],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        Ok::<bool, String>(count > 0)
+    })
+    .await
+    .unwrap_or(Ok(false))
+    .unwrap_or(false)
+}
+
+/// Block a user — works for any public key (friend, pending, invite, or raw key).
+///
+/// Removes them from friends/pending requests, adds to blocked list, cleans up
+/// Signal session, pending messages, DHT state, and rotates our profile key.
 #[tauri::command]
-pub async fn block_friend(
+pub async fn block_user(
     public_key: String,
+    display_name: Option<String>,
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
@@ -912,20 +955,41 @@ pub async fn block_friend(
     let owner_key = current_owner_key(state.inner())?;
     let timestamp = db::timestamp_now();
 
-    // Remove from friends + add to blocked list in one transaction
+    // Resolve display name: in-memory friends → pending requests store → param → truncated key
+    let resolved_name = {
+        let friends = state.friends.read();
+        friends.get(&public_key).map(|f| f.display_name.clone())
+    }
+    .or_else(|| display_name.clone())
+    .unwrap_or_else(|| {
+        let truncated = if public_key.len() > 12 {
+            format!("{}...", &public_key[..12])
+        } else {
+            public_key.clone()
+        };
+        truncated
+    });
+
+    // DB transaction: DELETE from friends + pending_friend_requests + INSERT into blocked_users
     let pool_clone = pool.inner().clone();
     let pk = public_key.clone();
     let ok = owner_key;
+    let dn = resolved_name;
     tokio::task::spawn_blocking(move || {
         let conn = pool_clone.lock().map_err(|e| e.to_string())?;
         conn.execute(
             "DELETE FROM friends WHERE owner_key = ?1 AND public_key = ?2",
             rusqlite::params![ok, pk],
         )
-        .map_err(|e| format!("delete friend: {e}"))?;
+        .map_err(|e| format!("delete friend on block: {e}"))?;
         conn.execute(
-            "INSERT OR IGNORE INTO blocked_users (owner_key, public_key, blocked_at) VALUES (?1, ?2, ?3)",
-            rusqlite::params![ok, pk, timestamp],
+            "DELETE FROM pending_friend_requests WHERE owner_key = ?1 AND public_key = ?2",
+            rusqlite::params![ok, pk],
+        )
+        .map_err(|e| format!("delete pending request on block: {e}"))?;
+        conn.execute(
+            "INSERT OR REPLACE INTO blocked_users (owner_key, public_key, display_name, blocked_at) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![ok, pk, dn, timestamp],
         )
         .map_err(|e| format!("insert blocked user: {e}"))?;
         Ok::<(), String>(())
@@ -933,16 +997,35 @@ pub async fn block_friend(
     .await
     .map_err(|e| e.to_string())??;
 
-    // Remove from in-memory state and unregister DHT key mapping
+    // Delete queued pending_messages to this user
+    services::message_service::delete_pending_messages_to_recipient(
+        state.inner(),
+        pool.inner(),
+        &public_key,
+    )
+    .await;
+
+    // Remove from in-memory state and unregister DHT key mapping + invalidate route
     let dht_key = {
         let mut friends = state.friends.write();
         let removed = friends.remove(&public_key);
         removed.and_then(|f| f.dht_record_key)
     };
-    if let Some(ref dht_key) = dht_key {
+    {
         let mut dht_mgr = state.dht_manager.write();
         if let Some(mgr) = dht_mgr.as_mut() {
-            mgr.unregister_friend_dht_key(dht_key);
+            if let Some(ref dht_key) = dht_key {
+                mgr.unregister_friend_dht_key(dht_key);
+            }
+            mgr.manager.invalidate_route_for_peer(&public_key);
+        }
+    }
+
+    // Delete Signal session for the blocked user
+    {
+        let signal = state.signal_manager.lock();
+        if let Some(handle) = signal.as_ref() {
+            let _ = handle.manager.delete_session(&public_key);
         }
     }
 
@@ -956,8 +1039,72 @@ pub async fn block_friend(
         },
     );
 
-    tracing::info!(public_key = %public_key, "friend blocked and profile key rotated");
+    tracing::info!(public_key = %public_key, "user blocked and profile key rotated");
     Ok(())
+}
+
+/// Unblock a user — removes them from the blocked list.
+///
+/// Does NOT re-add them as a friend. The user must manually re-add if desired.
+#[tauri::command]
+pub async fn unblock_user(
+    public_key: String,
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+) -> Result<(), String> {
+    let owner_key = current_owner_key(state.inner())?;
+    let pool_clone = pool.inner().clone();
+    let pk = public_key.clone();
+    let ok = owner_key;
+    tokio::task::spawn_blocking(move || {
+        let conn = pool_clone.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "DELETE FROM blocked_users WHERE owner_key = ?1 AND public_key = ?2",
+            rusqlite::params![ok, pk],
+        )
+        .map_err(|e| format!("unblock user: {e}"))?;
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    tracing::info!(public_key = %public_key, "user unblocked");
+    Ok(())
+}
+
+/// Get all blocked users for the current identity.
+#[tauri::command]
+pub async fn get_blocked_users(
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+) -> Result<Vec<BlockedUser>, String> {
+    let owner_key = current_owner_key(state.inner())?;
+    let pool_clone = pool.inner().clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = pool_clone.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT public_key, display_name, blocked_at \
+                 FROM blocked_users WHERE owner_key = ?1 ORDER BY blocked_at DESC",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(rusqlite::params![owner_key], |row| {
+                Ok(BlockedUser {
+                    public_key: row.get(0)?,
+                    display_name: row.get(1)?,
+                    blocked_at: row.get(2)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row.map_err(|e| e.to_string())?);
+        }
+        Ok(results)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Rotate the profile DHT key: create a new profile record, copy data,

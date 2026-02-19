@@ -10,6 +10,7 @@ import {
   handleCancelRequest,
   handleCreateFriendGroup,
   handleMoveFriendToGroup,
+  handleBlockUser,
 } from "../../handlers/buddy.handlers";
 import { commands } from "../../ipc/commands";
 import BuddyGroup from "./BuddyGroup";
@@ -99,6 +100,11 @@ const BuddyList: Component = () => {
           danger: true,
         },
         {
+          label: "Block",
+          action: () => handleBlockUser(key, friend?.displayName),
+          danger: true,
+        },
+        {
           label: "Copy Public Key",
           action: () => navigator.clipboard.writeText(key),
         },
@@ -127,6 +133,11 @@ const BuddyList: Component = () => {
       {
         label: "Remove Friend",
         action: () => handleRemoveFriend(key),
+        danger: true,
+      },
+      {
+        label: "Block",
+        action: () => handleBlockUser(key, name),
         danger: true,
       },
     ];

@@ -3,6 +3,7 @@ import { friendsState } from "../../stores/friends.store";
 import {
   handleAcceptRequest,
   handleRejectRequest,
+  handleBlockUser,
 } from "../../handlers/buddy.handlers";
 
 const PendingRequests: Component = () => {
@@ -17,6 +18,12 @@ const PendingRequests: Component = () => {
   async function onReject(publicKey: string): Promise<void> {
     setError(null);
     const err = await handleRejectRequest(publicKey);
+    if (err) setError(err);
+  }
+
+  async function onBlock(publicKey: string, displayName: string): Promise<void> {
+    setError(null);
+    const err = await handleBlockUser(publicKey, displayName);
     if (err) setError(err);
   }
 
@@ -51,6 +58,12 @@ const PendingRequests: Component = () => {
                 onClick={() => onReject(request.publicKey)}
               >
                 Reject
+              </button>
+              <button
+                class="pending-btn-block"
+                onClick={() => onBlock(request.publicKey, request.displayName)}
+              >
+                Block
               </button>
             </div>
           )}

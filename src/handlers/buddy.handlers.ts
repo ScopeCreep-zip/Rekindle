@@ -133,12 +133,26 @@ export async function handleMoveFriendToGroup(
   }
 }
 
-export async function handleBlockFriend(publicKey: string): Promise<string | null> {
+export async function handleBlockUser(publicKey: string, displayName?: string): Promise<string | null> {
   try {
-    await commands.blockFriend(publicKey);
+    await commands.blockUser(publicKey, displayName);
+    // Remove from friends store
     const next = { ...friendsState.friends };
     delete next[publicKey];
     setFriendsState("friends", reconcile(next));
+    // Remove from pending requests store
+    setFriendsState("pendingRequests", (reqs) =>
+      reqs.filter((r) => r.publicKey !== publicKey),
+    );
+    return null;
+  } catch (e) {
+    return String(e);
+  }
+}
+
+export async function handleUnblockUser(publicKey: string): Promise<string | null> {
+  try {
+    await commands.unblockUser(publicKey);
     return null;
   } catch (e) {
     return String(e);
