@@ -359,6 +359,7 @@ async fn handle_friend_request_full(
             }
         }
         update_friend_display_name(state, pool, sender_hex, display_name).await;
+        return;
     }
 
     persist_friend_request(
