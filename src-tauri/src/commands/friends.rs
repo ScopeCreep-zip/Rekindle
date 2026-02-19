@@ -179,6 +179,7 @@ pub async fn remove_friend(
     }
 
     // Remove from SQLite (permanent — friend won't reappear on restart)
+    // Also delete any pending_friend_requests row to prevent stale rows blocking future invites
     let pool_clone = pool.inner().clone();
     let pk = public_key.clone();
     let ok = owner_key;
@@ -189,6 +190,11 @@ pub async fn remove_friend(
             rusqlite::params![ok, pk],
         )
         .map_err(|e| format!("delete friend: {e}"))?;
+        conn.execute(
+            "DELETE FROM pending_friend_requests WHERE owner_key = ?1 AND public_key = ?2",
+            rusqlite::params![ok, pk],
+        )
+        .map_err(|e| format!("delete pending request on removal: {e}"))?;
         Ok::<(), String>(())
     })
     .await
