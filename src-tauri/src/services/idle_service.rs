@@ -6,6 +6,217 @@ use tokio::sync::mpsc;
 
 use crate::state::{AppState, UserStatus};
 
+/// Wayland `ext-idle-notify-v1` idle monitor for Linux.
+///
+/// Connects to the compositor as a persistent Wayland client and subscribes to
+/// idle/resumed events with a 1-second timeout. This works on COSMIC, Sway, and
+/// any other compositor implementing the `ext-idle-notify-v1` protocol — unlike
+/// `xprintidle` (X11-only) or Mutter D-Bus (GNOME-only).
+#[cfg(target_os = "linux")]
+mod wayland_idle {
+    use std::sync::atomic::{AtomicI64, Ordering};
+    use std::sync::{Arc, OnceLock};
+    use std::time::Instant;
+
+    use wayland_client::globals::{registry_queue_init, GlobalListContents};
+    use wayland_client::protocol::{wl_registry, wl_seat};
+    use wayland_client::{delegate_noop, Connection, Dispatch, QueueHandle};
+    use wayland_protocols::ext::idle_notify::v1::client::{
+        ext_idle_notification_v1, ext_idle_notifier_v1,
+    };
+
+    /// Global singleton — set once when the Wayland monitor thread starts.
+    /// Persists for process lifetime (Wayland connection is long-lived).
+    static WAYLAND_IDLE: OnceLock<Arc<WaylandIdleState>> = OnceLock::new();
+
+    /// Shared idle state updated by the Wayland event thread, read by the
+    /// polling idle service.
+    pub struct WaylandIdleState {
+        /// Monotonic offset (seconds since `start`) when user became idle.
+        /// `-1` means user is currently active.
+        idle_since: AtomicI64,
+        /// Process-local monotonic reference point.
+        start: Instant,
+    }
+
+    impl WaylandIdleState {
+        fn new() -> Self {
+            Self {
+                idle_since: AtomicI64::new(-1),
+                start: Instant::now(),
+            }
+        }
+
+        fn mark_idle(&self) {
+            #[allow(
+                clippy::cast_possible_truncation,
+                clippy::cast_possible_wrap,
+                reason = "Instant elapsed as i64 seconds won't overflow for process lifetime"
+            )]
+            let now = self.start.elapsed().as_secs() as i64;
+            self.idle_since.store(now, Ordering::Relaxed);
+        }
+
+        fn mark_active(&self) {
+            self.idle_since.store(-1, Ordering::Relaxed);
+        }
+
+        /// Returns idle duration in seconds, or `Some(0)` if active.
+        /// The 1-second notification timeout is added to the elapsed idle time.
+        pub fn get_idle_seconds(&self) -> Option<u64> {
+            let since = self.idle_since.load(Ordering::Relaxed);
+            if since < 0 {
+                return Some(0);
+            }
+            #[allow(
+                clippy::cast_possible_truncation,
+                clippy::cast_possible_wrap,
+                reason = "Instant elapsed as i64 seconds won't overflow for process lifetime"
+            )]
+            let now = self.start.elapsed().as_secs() as i64;
+            // Add 1s for the notification timeout (user was idle 1s before we got notified)
+            #[allow(
+                clippy::cast_sign_loss,
+                reason = "now >= since is guaranteed (monotonic clock); result is non-negative"
+            )]
+            Some((now - since) as u64 + 1)
+        }
+    }
+
+    /// Wayland client state for event dispatching.
+    struct WlState {
+        idle: Arc<WaylandIdleState>,
+    }
+
+    // Registry — required by `registry_queue_init`, no events we need
+    impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for WlState {
+        fn event(
+            _state: &mut Self,
+            _registry: &wl_registry::WlRegistry,
+            _event: wl_registry::Event,
+            _data: &GlobalListContents,
+            _conn: &Connection,
+            _qh: &QueueHandle<Self>,
+        ) {
+        }
+    }
+
+    // Notifier global emits no client-side events
+    delegate_noop!(WlState: ext_idle_notifier_v1::ExtIdleNotifierV1);
+
+    // Seat events not needed here
+    delegate_noop!(WlState: ignore wl_seat::WlSeat);
+
+    // Idle/resumed event handler
+    impl Dispatch<ext_idle_notification_v1::ExtIdleNotificationV1, ()> for WlState {
+        fn event(
+            state: &mut Self,
+            _proxy: &ext_idle_notification_v1::ExtIdleNotificationV1,
+            event: ext_idle_notification_v1::Event,
+            _data: &(),
+            _conn: &Connection,
+            _qh: &QueueHandle<Self>,
+        ) {
+            match event {
+                ext_idle_notification_v1::Event::Idled => {
+                    tracing::debug!("wayland idle monitor: user idle");
+                    state.idle.mark_idle();
+                }
+                ext_idle_notification_v1::Event::Resumed => {
+                    tracing::debug!("wayland idle monitor: user resumed");
+                    state.idle.mark_active();
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// Spawn a background thread that connects to the Wayland compositor and
+    /// listens for idle/resumed events. The thread runs for the process lifetime.
+    fn start_wayland_monitor(idle: Arc<WaylandIdleState>) {
+        std::thread::Builder::new()
+            .name("wayland-idle-monitor".into())
+            .spawn(move || {
+                let conn = match Connection::connect_to_env() {
+                    Ok(c) => c,
+                    Err(e) => {
+                        tracing::debug!("wayland idle monitor: failed to connect: {e}");
+                        return;
+                    }
+                };
+
+                let (globals, mut event_queue) = match registry_queue_init::<WlState>(&conn) {
+                    Ok(g) => g,
+                    Err(e) => {
+                        tracing::debug!("wayland idle monitor: registry init failed: {e}");
+                        return;
+                    }
+                };
+
+                let qh = event_queue.handle();
+
+                let notifier = match globals
+                    .bind::<ext_idle_notifier_v1::ExtIdleNotifierV1, _, _>(&qh, 1..=1, ())
+                {
+                    Ok(n) => n,
+                    Err(e) => {
+                        tracing::debug!(
+                            "wayland idle monitor: ext-idle-notify-v1 not supported: {e}"
+                        );
+                        return;
+                    }
+                };
+
+                let seat = match globals.bind::<wl_seat::WlSeat, _, _>(&qh, 1..=1, ()) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        tracing::debug!("wayland idle monitor: no wl_seat: {e}");
+                        return;
+                    }
+                };
+
+                // 1-second timeout — we get notified 1s after last input, then
+                // compute actual idle duration from the timestamp.
+                let _notification = notifier.get_idle_notification(1000, &seat, &qh, ());
+
+                let mut state = WlState {
+                    idle: idle.clone(),
+                };
+
+                tracing::info!("wayland idle monitor: started (ext-idle-notify-v1)");
+
+                loop {
+                    if let Err(e) = event_queue.blocking_dispatch(&mut state) {
+                        tracing::debug!("wayland idle monitor: dispatch error: {e}");
+                        break;
+                    }
+                }
+
+                tracing::debug!("wayland idle monitor: exiting");
+            })
+            .ok();
+    }
+
+    /// Try to initialize the Wayland idle monitor (called once at service start).
+    pub fn try_init() {
+        if std::env::var("WAYLAND_DISPLAY").is_ok()
+            || std::env::var("WAYLAND_SOCKET").is_ok()
+        {
+            if WAYLAND_IDLE.get().is_none() {
+                let state = Arc::new(WaylandIdleState::new());
+                if WAYLAND_IDLE.set(state.clone()).is_ok() {
+                    start_wayland_monitor(state);
+                }
+            }
+        }
+    }
+
+    /// Query idle seconds from the Wayland monitor, if running.
+    pub fn get_idle_seconds() -> Option<u64> {
+        WAYLAND_IDLE.get()?.get_idle_seconds()
+    }
+}
+
 /// Get system idle time in seconds (platform-specific).
 fn get_idle_seconds() -> Option<u64> {
     #[cfg(target_os = "macos")]
@@ -22,36 +233,40 @@ fn get_idle_seconds() -> Option<u64> {
     }
 }
 
-/// macOS: Read `HIDIdleTime` from `IOKit`'s `IOHIDSystem`.
+/// macOS: Use `CGEventSourceSecondsSinceLastEventType` from CoreGraphics.
 ///
-/// This is the reliable approach — unlike `CGEventSourceSecondsSinceLastEventType`
-/// which resets on system/app events (notifications, timers, presence updates),
-/// `HIDIdleTime` only tracks actual hardware input (mouse, keyboard, trackpad).
+/// This is the same approach used by Chromium (and thus Discord, Slack, Signal
+/// Desktop, and every Electron app) for idle detection since 2012. It returns
+/// seconds since the last user input event (mouse, keyboard, trackpad).
 ///
-/// Reference: <https://www.dssw.co.uk/blog/2015-01-21-inactivity-and-idle-time/>
-/// Implementation based on: <https://github.com/olback/user-idle-rs/blob/master/src/macos_impl.rs>
+/// The previous `ioreg -c IOHIDSystem` approach fails to parse `HIDIdleTime`
+/// on Darwin 25.x (macOS Tahoe). `CGEventSource` is a single FFI call with
+/// no subprocess spawning or stdout parsing.
+///
+/// Reference: Chromium `ui/base/idle/idle_mac.mm`
 #[cfg(target_os = "macos")]
 fn macos_idle_seconds() -> Option<u64> {
-    // ioreg -c IOHIDSystem | grep HIDIdleTime
-    // Parse the nanoseconds value from the IOKit registry.
-    let output = std::process::Command::new("ioreg")
-        .args(["-c", "IOHIDSystem", "-d", "4"])
-        .output()
-        .ok()?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    for line in stdout.lines() {
-        if let Some(pos) = line.find("HIDIdleTime") {
-            // Line looks like: `"HIDIdleTime" = 1234567890`
-            let rest = &line[pos..];
-            if let Some(eq_pos) = rest.find('=') {
-                let num_str = rest[eq_pos + 1..].trim();
-                if let Ok(nanos) = num_str.parse::<u64>() {
-                    return Some(nanos / 1_000_000_000);
-                }
-            }
-        }
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGEventSourceSecondsSinceLastEventType(
+            source_state_id: i32,
+            event_type: u32,
+        ) -> f64;
     }
-    None
+    // kCGEventSourceStateCombinedSessionState = 0
+    // kCGAnyInputEventType = 0xFFFFFFFF (u32::MAX)
+    let secs = unsafe { CGEventSourceSecondsSinceLastEventType(0, u32::MAX) };
+    // Negative means error; NaN/Inf are also invalid
+    if secs.is_finite() && secs >= 0.0 {
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "secs is validated non-negative and finite; truncation to u64 is intentional"
+        )]
+        Some(secs as u64)
+    } else {
+        None
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -79,20 +294,25 @@ fn windows_idle_seconds() -> Option<u64> {
 
 /// Linux: try multiple idle detection methods for X11 and Wayland coverage.
 ///
-/// 1. `xprintidle` — works on X11 (returns ms)
-/// 2. GNOME Mutter `IdleMonitor.GetIdletime` via DBus — works on GNOME Wayland (returns ms)
-/// 3. `org.freedesktop.ScreenSaver.GetSessionIdleTime` via DBus — works on KDE/Sway (returns seconds)
+/// 1. Wayland `ext-idle-notify-v1` — works on COSMIC, Sway, and modern Wayland compositors
+/// 2. `xprintidle` — works on X11 (returns ms)
+/// 3. GNOME Mutter `IdleMonitor.GetIdletime` via DBus — works on GNOME Wayland (returns ms)
+/// 4. `org.freedesktop.ScreenSaver.GetSessionIdleTime` via DBus — works on KDE/Sway (returns seconds)
 #[cfg(target_os = "linux")]
 fn linux_idle_seconds() -> Option<u64> {
-    // 1. xprintidle (X11)
+    // 1. Wayland ext-idle-notify-v1 (COSMIC, Sway, etc.)
+    if let Some(secs) = wayland_idle::get_idle_seconds() {
+        return Some(secs);
+    }
+    // 2. xprintidle (X11)
     if let Some(secs) = linux_xprintidle() {
         return Some(secs);
     }
-    // 2. GNOME Mutter IdleMonitor (Wayland)
+    // 3. GNOME Mutter IdleMonitor (Wayland)
     if let Some(secs) = linux_mutter_idle() {
         return Some(secs);
     }
-    // 3. freedesktop ScreenSaver (KDE/Sway Wayland)
+    // 4. freedesktop ScreenSaver (KDE/Sway Wayland)
     linux_screensaver_idle()
 }
 
@@ -163,6 +383,30 @@ fn linux_screensaver_idle() -> Option<u64> {
     None
 }
 
+/// Emit a presence status change event to the frontend.
+fn emit_status_change(app_handle: &tauri::AppHandle, state: &AppState, status: UserStatus) {
+    let pk = state
+        .identity
+        .read()
+        .as_ref()
+        .map(|id| id.public_key.clone())
+        .unwrap_or_default();
+    let status_str = match status {
+        UserStatus::Online => "online",
+        UserStatus::Away => "away",
+        UserStatus::Busy => "busy",
+        UserStatus::Offline => "offline",
+    };
+    let _ = app_handle.emit(
+        "presence-event",
+        &crate::channels::PresenceEvent::StatusChanged {
+            public_key: pk,
+            status: status_str.to_string(),
+            status_message: None,
+        },
+    );
+}
+
 /// Start the idle/auto-away background service.
 ///
 /// Polls OS idle time every 30 seconds. When idle time exceeds the configured
@@ -173,6 +417,10 @@ pub fn start_idle_service(
     state: Arc<AppState>,
 ) -> mpsc::Sender<()> {
     let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
+
+    // On Wayland, start the ext-idle-notify-v1 monitor thread before polling
+    #[cfg(target_os = "linux")]
+    wayland_idle::try_init();
 
     tracing::info!("idle service started");
 
@@ -225,20 +473,7 @@ pub fn start_idle_service(
                 {
                     tracing::warn!(error = %e, "auto-away: failed to publish Away status");
                 }
-                let pk = state
-                    .identity
-                    .read()
-                    .as_ref()
-                    .map(|id| id.public_key.clone())
-                    .unwrap_or_default();
-                let _ = app_handle.emit(
-                    "presence-event",
-                    &crate::channels::PresenceEvent::StatusChanged {
-                        public_key: pk,
-                        status: "away".to_string(),
-                        status_message: None,
-                    },
-                );
+                emit_status_change(&app_handle, &state, UserStatus::Away);
                 tracing::info!(idle_secs, "auto-away activated");
             } else if idle_secs < threshold && is_auto_away {
                 // Restore previous status
@@ -255,26 +490,7 @@ pub fn start_idle_service(
                 {
                     tracing::warn!(error = %e, "auto-away restore: failed to publish status");
                 }
-                let pk = state
-                    .identity
-                    .read()
-                    .as_ref()
-                    .map(|id| id.public_key.clone())
-                    .unwrap_or_default();
-                let status_str = match restore {
-                    UserStatus::Online => "online",
-                    UserStatus::Away => "away",
-                    UserStatus::Busy => "busy",
-                    UserStatus::Offline => "offline",
-                };
-                let _ = app_handle.emit(
-                    "presence-event",
-                    &crate::channels::PresenceEvent::StatusChanged {
-                        public_key: pk,
-                        status: status_str.to_string(),
-                        status_message: None,
-                    },
-                );
+                emit_status_change(&app_handle, &state, restore);
                 tracing::info!(?restore, "auto-away deactivated");
             }
         }
