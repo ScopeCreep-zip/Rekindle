@@ -101,7 +101,7 @@ pub async fn add_friend(
     tokio::task::spawn_blocking(move || {
         let conn = pool_clone.lock().map_err(|e| e.to_string())?;
         conn.execute(
-            "INSERT OR REPLACE INTO friends (owner_key, public_key, display_name, added_at, friendship_state) VALUES (?1, ?2, ?3, ?4, 'pending_out')",
+            "INSERT OR IGNORE INTO friends (owner_key, public_key, display_name, added_at, friendship_state) VALUES (?1, ?2, ?3, ?4, 'pending_out')",
             rusqlite::params![ok, pk, dn, timestamp],
         )
         .map_err(|e| format!("insert friend: {e}"))?;
@@ -205,25 +205,19 @@ pub async fn remove_friend(
         }
     }
 
-    // Clean up Signal session so a fresh one can be established on re-add
-    {
-        let signal = state.signal_manager.lock();
-        if let Some(handle) = signal.as_ref() {
-            if let Err(e) = handle.manager.delete_session(&public_key) {
-                tracing::warn!(peer = %public_key, error = %e, "failed to delete Signal session on friend removal");
-            }
-        }
-    }
-
     // Unregister DHT presence key mapping (stops watching their status)
+    // and invalidate route cache so stale routes aren't reused on re-add
     let dht_key = {
         let friends = state.friends.read();
         friends.get(&public_key).and_then(|f| f.dht_record_key.clone())
     };
-    if let Some(ref dht_key) = dht_key {
+    {
         let mut dht_mgr = state.dht_manager.write();
         if let Some(mgr) = dht_mgr.as_mut() {
-            mgr.unregister_friend_dht_key(dht_key);
+            if let Some(ref dht_key) = dht_key {
+                mgr.unregister_friend_dht_key(dht_key);
+            }
+            mgr.manager.invalidate_route_for_peer(&public_key);
         }
     }
 
@@ -249,6 +243,11 @@ pub async fn remove_friend(
         // Only remove if still in Removing state (user may have re-added them)
         if friends.get(&pk_clone).is_some_and(|f| matches!(f.friendship_state, FriendshipState::Removing)) {
             friends.remove(&pk_clone);
+            // Clean up Signal session now that retries are done
+            let signal = state_clone.signal_manager.lock();
+            if let Some(handle) = signal.as_ref() {
+                let _ = handle.manager.delete_session(&pk_clone);
+            }
             tracing::debug!(public_key = %pk_clone, "cleaned up Removing friend after grace period");
         }
     });
@@ -282,7 +281,7 @@ pub async fn accept_request(
     tokio::task::spawn_blocking(move || {
         let conn = pool_clone.lock().map_err(|e| e.to_string())?;
         conn.execute(
-            "INSERT OR REPLACE INTO friends (owner_key, public_key, display_name, added_at) VALUES (?1, ?2, ?3, ?4)",
+            "INSERT OR IGNORE INTO friends (owner_key, public_key, display_name, added_at) VALUES (?1, ?2, ?3, ?4)",
             rusqlite::params![ok, pk, dn, timestamp],
         )
         .map_err(|e| format!("insert friend: {e}"))?;
@@ -725,7 +724,26 @@ pub async fn add_friend_from_invite(
 
     let timestamp = db::timestamp_now();
 
+    // Clean up any stale state from a previous friendship (e.g., re-adding after removal).
+    // The Removing grace period keeps in-memory state alive for unfriend retries,
+    // but on re-add we must clear it so fresh connections are established.
+    {
+        let friends = state.friends.read();
+        let is_stale = friends.get(&blob.public_key).is_some();
+        drop(friends);
+        if is_stale {
+            // Invalidate stale route cache so fresh route from invite is used
+            let mut dht_mgr = state.dht_manager.write();
+            if let Some(mgr) = dht_mgr.as_mut() {
+                mgr.manager.invalidate_route_for_peer(&blob.public_key);
+            }
+            // Remove stale in-memory entry (the .insert() below will create fresh state)
+            state.friends.write().remove(&blob.public_key);
+        }
+    }
+
     // Insert into SQLite with profile and mailbox keys from the invite
+    // (remove_friend already DELETEd the old row; this creates a fresh one)
     let pool_clone = pool.inner().clone();
     let pk = blob.public_key.clone();
     let dn = blob.display_name.clone();
@@ -734,8 +752,15 @@ pub async fn add_friend_from_invite(
     let mailbox_key = blob.mailbox_dht_key.clone();
     tokio::task::spawn_blocking(move || {
         let conn = pool_clone.lock().map_err(|e| e.to_string())?;
+        // DELETE first to handle any leftover rows (e.g., race with grace period cleanup),
+        // then INSERT fresh so all columns are populated from the invite.
         conn.execute(
-            "INSERT OR REPLACE INTO friends (owner_key, public_key, display_name, added_at, dht_record_key, mailbox_dht_key, friendship_state) \
+            "DELETE FROM friends WHERE owner_key = ?1 AND public_key = ?2",
+            rusqlite::params![ok, pk],
+        )
+        .map_err(|e| format!("cleanup stale friend row: {e}"))?;
+        conn.execute(
+            "INSERT INTO friends (owner_key, public_key, display_name, added_at, dht_record_key, mailbox_dht_key, friendship_state) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'pending_out')",
             rusqlite::params![ok, pk, dn, timestamp, profile_key, mailbox_key],
         )
