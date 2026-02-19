@@ -800,8 +800,8 @@ pub async fn publish_status(
     Ok(())
 }
 
-/// 5 minutes — if a friend's last heartbeat is older than this, assume offline.
-pub const STALE_PRESENCE_THRESHOLD_MS: i64 = 5 * 60 * 1000;
+/// 2.5× the 60s heartbeat — allows one missed heartbeat + jitter before marking offline.
+pub const STALE_PRESENCE_THRESHOLD_MS: i64 = 150 * 1000;
 
 /// Parse status byte from a status payload.
 ///
@@ -842,12 +842,12 @@ fn parse_game_info(data: &[u8]) -> Option<GameInfoState> {
 ///
 /// This serves as a keepalive: friends detect stale timestamps and infer
 /// that we've gone offline (crashed without publishing Offline).
-/// Runs every 120 seconds, matching the route refresh cadence.
+/// Runs every 60 seconds to keep friends' stale detection fresh.
 pub async fn start_heartbeat_loop(
     state: Arc<AppState>,
     mut shutdown_rx: tokio::sync::mpsc::Receiver<()>,
 ) {
-    let mut interval = tokio::time::interval(std::time::Duration::from_secs(120));
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
     interval.tick().await; // Skip immediate first tick
 
     loop {
