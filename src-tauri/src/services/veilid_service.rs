@@ -1101,23 +1101,80 @@ async fn handle_route_change(
     }
 }
 
-/// Release the old private route, allocate a new one, and re-publish it to DHT.
+/// Allocate a new private route, then release the old one (make-before-break).
 ///
-/// Used by the periodic refresh loop where the old route is still valid and
-/// should be explicitly released before allocating a replacement.
+/// Used by the periodic refresh loop where the old route is still valid.
+/// By allocating the new route FIRST, we avoid a window where `NodeHandle.route_blob`
+/// holds a stale (released) blob. If allocation fails, the old route stays active.
 pub(crate) async fn reallocate_private_route(app_handle: &tauri::AppHandle, state: &Arc<AppState>) {
-    // Release the old route while holding the lock, then drop
-    // before any .await (parking_lot guards are !Send)
+    // Clone the API handle (Arc-based) outside the lock
+    let api = {
+        let node = state.node.read();
+        node.as_ref().map(|nh| nh.api.clone())
+    };
+    let Some(api) = api else { return };
+
+    // Allocate new route FIRST (make-before-break)
+    let new_route = match api.new_private_route().await {
+        Ok(rb) => rb,
+        Err(e) => {
+            tracing::warn!(error = %e, "route refresh: failed to allocate new route — keeping old");
+            return;
+        }
+    };
+
+    // New route allocated — NOW release the old one and store the new one
     {
         let mut rm = state.routing_manager.write();
         if let Some(ref mut handle) = *rm {
             if let Err(e) = handle.manager.release_private_route() {
                 tracing::warn!(error = %e, "failed to release old private route");
             }
+            handle.manager.set_allocated_route(
+                new_route.route_id.clone(),
+                new_route.blob.clone(),
+            );
+        }
+    }
+    // Update NodeHandle
+    if let Some(ref mut nh) = *state.node.write() {
+        nh.route_blob = Some(new_route.blob.clone());
+    }
+
+    // Notify frontend
+    emit_network_status(app_handle, state);
+
+    // Re-publish route blob to DHT profile subkey 6
+    if let Err(e) =
+        super::message_service::push_profile_update(state, 6, new_route.blob.clone()).await
+    {
+        tracing::warn!(error = %e, "failed to re-publish route blob to DHT");
+    }
+
+    // Also update mailbox subkey 0 with the fresh route blob
+    let mailbox_key = {
+        let node = state.node.read();
+        node.as_ref().and_then(|nh| nh.mailbox_dht_key.clone())
+    };
+    if let Some(mailbox_key) = mailbox_key {
+        let rc = {
+            let node = state.node.read();
+            node.as_ref().map(|nh| nh.routing_context.clone())
+        };
+        if let Some(rc) = rc {
+            if let Err(e) = rekindle_protocol::dht::mailbox::update_mailbox_route(
+                &rc,
+                &mailbox_key,
+                &new_route.blob,
+            )
+            .await
+            {
+                tracing::warn!(error = %e, "failed to update mailbox route blob");
+            }
         }
     }
 
-    allocate_fresh_private_route(app_handle, state).await;
+    tracing::info!("re-allocated private route (make-before-break)");
 }
 
 /// Allocate a fresh private route and publish it to DHT.

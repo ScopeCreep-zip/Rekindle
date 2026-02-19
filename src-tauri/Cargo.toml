@@ -49,5 +49,9 @@ base64 = "0.22"
 rand = "0.8"
 veilid-core = { version = "0.5.2", default-features = true }
 image = { version = "0.25", default-features = false, features = ["webp", "png", "jpeg", "gif"] }
+[target.'cfg(target_os = "linux")'.dependencies]
+wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["client", "staging"] }
+
 [dev-dependencies]
 tempfile = "3"
