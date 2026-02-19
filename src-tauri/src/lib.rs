@@ -210,7 +210,9 @@ pub fn run() {
             commands::friends::move_friend_to_group,
             commands::friends::generate_invite,
             commands::friends::add_friend_from_invite,
-            commands::friends::block_friend,
+            commands::friends::block_user,
+            commands::friends::unblock_user,
+            commands::friends::get_blocked_users,
             commands::friends::cancel_request,
             commands::friends::emit_friends_presence,
             // community

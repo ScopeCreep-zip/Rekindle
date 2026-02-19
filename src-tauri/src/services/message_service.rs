@@ -634,7 +634,7 @@ async fn delete_pending_request_row(
 ///
 /// Called when the peer ACKs our `Unfriended` message (no longer need retries)
 /// or when a peer unfriends us (drop any queued messages to them).
-async fn delete_pending_messages_to_recipient(
+pub(crate) async fn delete_pending_messages_to_recipient(
     state: &Arc<AppState>,
     pool: &DbPool,
     recipient_key: &str,

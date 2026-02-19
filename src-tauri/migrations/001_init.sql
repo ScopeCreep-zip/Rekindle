@@ -185,6 +185,7 @@ CREATE TABLE IF NOT EXISTS pending_friend_requests (
 CREATE TABLE IF NOT EXISTS blocked_users (
     owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
     public_key TEXT NOT NULL,
+    display_name TEXT NOT NULL DEFAULT '',
     blocked_at INTEGER NOT NULL,
     PRIMARY KEY (owner_key, public_key)
 );

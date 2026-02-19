@@ -1438,6 +1438,29 @@
     background: #ef4444;
   }
 
+  .pending-btn-block {
+    padding: 2px 8px;
+    font-size: 10px;
+    font-weight: 600;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    background: color-mix(in srgb, var(--color-xfire-offline) 60%, transparent);
+    color: white;
+    font-family: var(--font-family-xfire);
+  }
+
+  .pending-btn-block:hover {
+    background: var(--color-xfire-offline);
+  }
+
+  .blocked-user-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px;
+  }
+
   /* Add friend / create form */
   .add-friend-form {
     display: flex;
