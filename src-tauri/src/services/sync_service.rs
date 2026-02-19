@@ -4,7 +4,7 @@ use rekindle_protocol::messaging::envelope::MessageEnvelope;
 use tokio::sync::mpsc;
 
 use crate::db::DbPool;
-use crate::state::AppState;
+use crate::state::{AppState, FriendshipState};
 
 /// Start the periodic sync service.
 ///
@@ -177,20 +177,26 @@ fn check_stale_presences(state: &Arc<AppState>, app_handle: &tauri::AppHandle) {
 
     // Mark stale friends offline and emit events (no lock held during emit)
     for pk in stale_friends {
-        {
+        let is_accepted = {
             let mut friends = state.friends.write();
             if let Some(friend) = friends.get_mut(&pk) {
                 tracing::info!(friend = %pk, "stale heartbeat — marking offline");
                 friend.status = crate::state::UserStatus::Offline;
                 friend.last_seen_at = Some(now);
+                friend.friendship_state == FriendshipState::Accepted
+            } else {
+                false
             }
+        };
+        // Only emit for accepted friends (privacy: hide status from pending)
+        if is_accepted {
+            let _ = app_handle.emit(
+                "presence-event",
+                &crate::channels::PresenceEvent::FriendOffline {
+                    public_key: pk,
+                },
+            );
         }
-        let _ = app_handle.emit(
-            "presence-event",
-            &crate::channels::PresenceEvent::FriendOffline {
-                public_key: pk,
-            },
-        );
     }
 }
 
@@ -369,7 +375,13 @@ async fn sync_friend_status(
             friend.status = status;
         }
     }
-    if old_status != Some(status) {
+
+    // Only emit presence events for accepted friends (privacy: hide status from pending)
+    let is_accepted = {
+        let friends = state.friends.read();
+        friends.get(friend_key).is_some_and(|f| f.friendship_state == FriendshipState::Accepted)
+    };
+    if old_status != Some(status) && is_accepted {
         if status == crate::state::UserStatus::Offline {
             let _ = app_handle.emit(
                 "presence-event",
@@ -428,7 +440,12 @@ async fn sync_friend_game_info(
                     friend.game_info.clone_from(&game_info);
                 }
             }
-            if old_game_name != new_game_name {
+            // Only emit game events for accepted friends (privacy)
+            let is_accepted = {
+                let friends = state.friends.read();
+                friends.get(friend_key).is_some_and(|f| f.friendship_state == FriendshipState::Accepted)
+            };
+            if old_game_name != new_game_name && is_accepted {
                 let _ = app_handle.emit("presence-event",
                     &crate::channels::PresenceEvent::GameChanged {
                         public_key: friend_key.to_string(),

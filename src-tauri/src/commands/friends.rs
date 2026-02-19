@@ -453,17 +453,20 @@ pub async fn get_friends(state: State<'_, SharedState>) -> Result<Vec<FriendResp
     let list: Vec<FriendResponse> = friends
         .values()
         .filter(|f| !matches!(f.friendship_state, FriendshipState::Removing))
-        .map(|f| FriendResponse {
-            public_key: f.public_key.clone(),
-            display_name: f.display_name.clone(),
-            nickname: f.nickname.clone(),
-            status: f.status,
-            status_message: f.status_message.clone(),
-            game_info: f.game_info.clone(),
-            group: f.group.clone(),
-            unread_count: f.unread_count,
-            last_seen_at: f.last_seen_at,
-            friendship_state: f.friendship_state,
+        .map(|f| {
+            let is_accepted = f.friendship_state == FriendshipState::Accepted;
+            FriendResponse {
+                public_key: f.public_key.clone(),
+                display_name: f.display_name.clone(),
+                nickname: f.nickname.clone(),
+                status: if is_accepted { f.status } else { UserStatus::Offline },
+                status_message: if is_accepted { f.status_message.clone() } else { None },
+                game_info: if is_accepted { f.game_info.clone() } else { None },
+                group: f.group.clone(),
+                unread_count: f.unread_count,
+                last_seen_at: f.last_seen_at,
+                friendship_state: f.friendship_state,
+            }
         })
         .collect();
     Ok(list)
@@ -1099,7 +1102,10 @@ pub async fn emit_friends_presence(
 
     let friends: Vec<(String, UserStatus)> = {
         let friends = state.friends.read();
-        friends.values().map(|f| (f.public_key.clone(), f.status)).collect()
+        friends.values()
+            .filter(|f| f.friendship_state == FriendshipState::Accepted)
+            .map(|f| (f.public_key.clone(), f.status))
+            .collect()
     };
     for (key, status) in friends {
         if status != UserStatus::Offline {
