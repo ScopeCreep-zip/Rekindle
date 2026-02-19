@@ -360,15 +360,22 @@ async fn handle_friend_request_full(
             ).await;
             return;
         }
-        // Already accepted friend — just update display name
-        {
-            let mut friends = state.friends.write();
-            if let Some(friend) = friends.get_mut(sender_hex) {
-                friend.display_name = display_name.to_string();
+        if fs == crate::state::FriendshipState::Removing {
+            // Previous friendship being removed — clear stale state and treat
+            // as a fresh incoming request (fall through to persist_friend_request).
+            state.friends.write().remove(sender_hex);
+            tracing::info!(from = %sender_hex, "received friend request from Removing peer — treating as new request");
+        } else {
+            // Already accepted friend — just update display name
+            {
+                let mut friends = state.friends.write();
+                if let Some(friend) = friends.get_mut(sender_hex) {
+                    friend.display_name = display_name.to_string();
+                }
             }
+            update_friend_display_name(state, pool, sender_hex, display_name).await;
+            return;
         }
-        update_friend_display_name(state, pool, sender_hex, display_name).await;
-        return;
     }
 
     persist_friend_request(
