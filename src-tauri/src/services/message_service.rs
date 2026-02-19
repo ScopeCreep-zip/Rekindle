@@ -299,6 +299,8 @@ fn handle_friend_accept(
 
     let signal = state.signal_manager.lock();
     if let Some(handle) = signal.as_ref() {
+        // Clear any stale session first (e.g., from a previous friendship that was removed)
+        let _ = handle.manager.delete_session(sender_hex);
         match handle.manager.respond_to_session(
             sender_hex,
             &their_identity_key,
@@ -770,11 +772,13 @@ async fn auto_accept_cross_request(
     }
 
     // 2. Establish Signal session from their prekey bundle
+    // Clear any stale session first (e.g., from a previous friendship that was removed)
     let session_init = if prekey_bundle.is_empty() {
         None
     } else {
         let signal = state.signal_manager.lock();
         if let Some(handle) = signal.as_ref() {
+            let _ = handle.manager.delete_session(sender_hex);
             if let Ok(bundle) = serde_json::from_slice::<rekindle_crypto::signal::PreKeyBundle>(prekey_bundle) {
                 match handle.manager.establish_session(sender_hex, &bundle) {
                     Ok(info) => {
