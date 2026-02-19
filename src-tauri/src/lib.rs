@@ -23,7 +23,15 @@ pub fn run() {
     #[cfg(target_os = "linux")]
     linux_display_setup();
 
-    tracing_subscriber::fmt::init();
+    // Suppress Veilid's noisy internal ERROR logs (e.g. "no compatible crypto
+    // kinds in route" from stale route imports — our code handles these gracefully).
+    // The veilid_api target only emits import/routing errors we already catch.
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info,veilid_api=warn,veilid_core=warn")),
+        )
+        .init();
 
     let shared_state: SharedState = Arc::new(AppState::default());
     let state_for_setup = Arc::clone(&shared_state);
