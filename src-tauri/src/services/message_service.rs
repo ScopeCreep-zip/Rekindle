@@ -360,13 +360,46 @@ async fn handle_friend_request_full(
             ).await;
             return;
         }
-        if fs == crate::state::FriendshipState::Removing {
-            // Previous friendship being removed — clear stale state and treat
-            // as a fresh incoming request (fall through to persist_friend_request).
+        if fs == crate::state::FriendshipState::Removing
+            || fs == crate::state::FriendshipState::Accepted
+        {
+            // Removing: previous friendship being removed — clear stale state.
+            // Accepted: peer removed us (their Unfriended was lost/delayed) and
+            // re-added us. Following Briar's "re-add = new contact" pattern:
+            // remove stale friendship state and treat as fresh incoming request.
             state.friends.write().remove(sender_hex);
-            tracing::info!(from = %sender_hex, "received friend request from Removing peer — treating as new request");
+
+            // Delete stale DB rows so future accept creates a clean entry
+            let owner_key = state
+                .identity
+                .read()
+                .as_ref()
+                .map(|id| id.public_key.clone())
+                .unwrap_or_default();
+            let pool_clone = pool.clone();
+            let pk = sender_hex.to_string();
+            let _ = tokio::task::spawn_blocking(move || {
+                let conn = pool_clone.lock().map_err(|e| e.to_string())?;
+                conn.execute(
+                    "DELETE FROM friends WHERE owner_key = ?1 AND public_key = ?2",
+                    rusqlite::params![owner_key, pk],
+                )
+                .map_err(|e| format!("delete stale friend for re-add: {e}"))?;
+                Ok::<(), String>(())
+            })
+            .await;
+
+            // Clean up any lingering pending request row
+            delete_pending_request_row(state, pool, sender_hex).await;
+
+            tracing::info!(
+                from = %sender_hex,
+                previous_state = ?fs,
+                "received friend request from {} peer — treating as new request",
+                if fs == crate::state::FriendshipState::Removing { "Removing" } else { "Accepted" }
+            );
         } else {
-            // Already accepted friend — just update display name
+            // PendingIn or other unexpected state — just update display name
             {
                 let mut friends = state.friends.write();
                 if let Some(friend) = friends.get_mut(sender_hex) {
@@ -538,7 +571,7 @@ async fn persist_friend_request(
     if let Err(e) = tokio::task::spawn_blocking(move || {
         let conn = pool.lock().map_err(|e| e.to_string())?;
         conn.execute(
-            "INSERT OR IGNORE INTO pending_friend_requests \
+            "INSERT OR REPLACE INTO pending_friend_requests \
              (owner_key, public_key, display_name, message, received_at, profile_dht_key, route_blob, mailbox_dht_key, prekey_bundle) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             rusqlite::params![owner_key, pk, dn, msg, now, pdk, rb, mdk, pkb],
@@ -550,6 +583,35 @@ async fn persist_friend_request(
     {
         tracing::error!(error = %e, "failed to persist incoming friend request");
     }
+}
+
+/// Delete a `pending_friend_requests` row for a given peer.
+///
+/// Called during cross-request auto-accept, unfriend handling, and friend removal
+/// to ensure stale rows don't block future `INSERT OR REPLACE`.
+async fn delete_pending_request_row(
+    state: &Arc<AppState>,
+    pool: &DbPool,
+    peer_key: &str,
+) {
+    let owner_key = state
+        .identity
+        .read()
+        .as_ref()
+        .map(|id| id.public_key.clone())
+        .unwrap_or_default();
+    let pool = pool.clone();
+    let pk = peer_key.to_string();
+    let _ = tokio::task::spawn_blocking(move || {
+        let conn = pool.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "DELETE FROM pending_friend_requests WHERE owner_key = ?1 AND public_key = ?2",
+            rusqlite::params![owner_key, pk],
+        )
+        .map_err(|e| format!("delete pending request: {e}"))?;
+        Ok::<(), String>(())
+    })
+    .await;
 }
 
 /// Persist a friend's profile DHT key to `SQLite`.
@@ -709,6 +771,9 @@ async fn handle_unfriended(
     })
     .await;
 
+    // Clean up any pending request from this peer to prevent stale rows blocking future requests
+    delete_pending_request_row(state, pool, sender_hex).await;
+
     // Remove from in-memory state and unregister DHT key
     let dht_key = {
         let mut friends = state.friends.write();
@@ -753,6 +818,9 @@ async fn auto_accept_cross_request(
     _route_blob: &[u8],
     mailbox_dht_key: &str,
 ) {
+    // 0. Clean up any lingering pending_friend_requests row so future requests start fresh
+    delete_pending_request_row(state, pool, sender_hex).await;
+
     // 1. Transition local friend to Accepted + update keys
     {
         let mut friends = state.friends.write();
