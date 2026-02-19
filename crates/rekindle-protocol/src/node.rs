@@ -65,7 +65,7 @@ impl RekindleNode {
         );
 
         // 2. Create an mpsc channel for VeilidUpdate events
-        let (update_tx, update_rx) = mpsc::channel::<VeilidUpdate>(1024);
+        let (update_tx, update_rx) = mpsc::channel::<VeilidUpdate>(4096);
 
         // 3. Build the update callback that forwards events into the channel
         let update_callback: veilid_core::UpdateCallback = Arc::new(move |update| {
@@ -76,10 +76,19 @@ impl RekindleNode {
                     mpsc::error::TrySendError::Full(u)
                     | mpsc::error::TrySendError::Closed(u) => u,
                 };
-                tracing::error!(
-                    event = veilid_update_name(dropped),
-                    "Veilid update channel full — dropped event (consider increasing buffer)"
-                );
+                // During shutdown Veilid emits many "Other" events which are
+                // safe to drop — log those at debug, everything else at warn.
+                if veilid_update_name(dropped) == "Other" {
+                    tracing::debug!(
+                        event = "Other",
+                        "Veilid update channel full — dropped non-critical event"
+                    );
+                } else {
+                    tracing::warn!(
+                        event = veilid_update_name(dropped),
+                        "Veilid update channel full — dropped event"
+                    );
+                }
             }
         });
 
