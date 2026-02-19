@@ -364,6 +364,11 @@ impl SignalSessionManager {
         self.session_store.has_session(peer_address)
     }
 
+    /// Delete an existing session with a peer (e.g., on friend removal).
+    pub fn delete_session(&self, peer_address: &str) -> Result<(), CryptoError> {
+        self.session_store.delete_session(peer_address)
+    }
+
     /// Generate a `PreKeyBundle` for publication to DHT.
     ///
     /// Creates a signed prekey and optional one-time prekey, stores them

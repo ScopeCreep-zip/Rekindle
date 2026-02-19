@@ -101,7 +101,7 @@ pub async fn add_friend(
     tokio::task::spawn_blocking(move || {
         let conn = pool_clone.lock().map_err(|e| e.to_string())?;
         conn.execute(
-            "INSERT OR IGNORE INTO friends (owner_key, public_key, display_name, added_at, friendship_state) VALUES (?1, ?2, ?3, ?4, 'pending_out')",
+            "INSERT OR REPLACE INTO friends (owner_key, public_key, display_name, added_at, friendship_state) VALUES (?1, ?2, ?3, ?4, 'pending_out')",
             rusqlite::params![ok, pk, dn, timestamp],
         )
         .map_err(|e| format!("insert friend: {e}"))?;
@@ -205,6 +205,16 @@ pub async fn remove_friend(
         }
     }
 
+    // Clean up Signal session so a fresh one can be established on re-add
+    {
+        let signal = state.signal_manager.lock();
+        if let Some(handle) = signal.as_ref() {
+            if let Err(e) = handle.manager.delete_session(&public_key) {
+                tracing::warn!(peer = %public_key, error = %e, "failed to delete Signal session on friend removal");
+            }
+        }
+    }
+
     // Unregister DHT presence key mapping (stops watching their status)
     let dht_key = {
         let friends = state.friends.read();
@@ -272,7 +282,7 @@ pub async fn accept_request(
     tokio::task::spawn_blocking(move || {
         let conn = pool_clone.lock().map_err(|e| e.to_string())?;
         conn.execute(
-            "INSERT OR IGNORE INTO friends (owner_key, public_key, display_name, added_at) VALUES (?1, ?2, ?3, ?4)",
+            "INSERT OR REPLACE INTO friends (owner_key, public_key, display_name, added_at) VALUES (?1, ?2, ?3, ?4)",
             rusqlite::params![ok, pk, dn, timestamp],
         )
         .map_err(|e| format!("insert friend: {e}"))?;
@@ -343,9 +353,11 @@ pub async fn accept_request(
 
     // Establish initiator-side Signal session using the requester's stored prekey bundle.
     // We (the acceptor) are the Signal initiator; the requester will be the responder.
+    // Clear any stale session first (e.g., from a previous friendship that was removed).
     let session_init = if let Some(ref prekey_bytes) = pending_prekey_bundle {
         let signal = state.signal_manager.lock();
         if let Some(handle) = signal.as_ref() {
+            let _ = handle.manager.delete_session(&public_key);
             if let Ok(bundle) = serde_json::from_slice::<rekindle_crypto::signal::PreKeyBundle>(prekey_bytes) {
                 match handle.manager.establish_session(&public_key, &bundle) {
                     Ok(info) => {
@@ -723,7 +735,7 @@ pub async fn add_friend_from_invite(
     tokio::task::spawn_blocking(move || {
         let conn = pool_clone.lock().map_err(|e| e.to_string())?;
         conn.execute(
-            "INSERT OR IGNORE INTO friends (owner_key, public_key, display_name, added_at, dht_record_key, mailbox_dht_key, friendship_state) \
+            "INSERT OR REPLACE INTO friends (owner_key, public_key, display_name, added_at, dht_record_key, mailbox_dht_key, friendship_state) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'pending_out')",
             rusqlite::params![ok, pk, dn, timestamp, profile_key, mailbox_key],
         )
@@ -808,11 +820,13 @@ async fn setup_invite_contact(
     }
 
     // Establish Signal session from invite's PreKeyBundle
+    // Clear any stale session first (e.g., from a previous friendship that was removed)
     if let Ok(bundle) =
         serde_json::from_slice::<rekindle_crypto::signal::PreKeyBundle>(&blob.prekey_bundle)
     {
         let signal = state.signal_manager.lock();
         if let Some(handle) = signal.as_ref() {
+            let _ = handle.manager.delete_session(&blob.public_key);
             match handle.manager.establish_session(&blob.public_key, &bundle) {
                 Ok(_init_info) => {
                     tracing::info!(peer = %blob.public_key, "established Signal session from invite");
