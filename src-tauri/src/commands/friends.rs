@@ -178,6 +178,16 @@ pub async fn remove_friend(
         tracing::warn!(to = %public_key, error = %e, "failed to send unfriend notification (continuing with local removal)");
     }
 
+    // Always queue for retry — Veilid app_message has no delivery guarantee.
+    // Cleared when peer sends UnfriendedAck, or dropped after max retries (20 × 30s).
+    let _ = services::message_service::build_and_queue_envelope(
+        state.inner(),
+        pool.inner(),
+        &public_key,
+        &rekindle_protocol::messaging::envelope::MessagePayload::Unfriended,
+    )
+    .await;
+
     // Remove from SQLite (permanent — friend won't reappear on restart)
     // Also delete any pending_friend_requests row to prevent stale rows blocking future invites
     let pool_clone = pool.inner().clone();

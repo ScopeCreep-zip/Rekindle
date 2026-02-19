@@ -93,6 +93,7 @@ const BuddyGroup: Component<BuddyGroupProps> = (props) => {
               lastSeenAt={friend.lastSeenAt}
               unreadCount={friend.unreadCount}
               voiceChannel={friend.voiceChannel}
+              friendshipState={friend.friendshipState}
               selected={props.selectedKey === friend.publicKey}
               onDoubleClick={props.onDoubleClick}
               onContextMenu={props.onContextMenu}
