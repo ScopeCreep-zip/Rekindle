@@ -27,9 +27,9 @@ accounts, and control your social graph. Rekindle takes a different approach:
 
 ## Status
 
-> **Early development.** 1:1 messaging is the primary tested workflow. Voice
-> calling, communities, and game detection are implemented but **not yet
-> confirmed working end-to-end**. Expect rough edges.
+> **Early development.** 1:1 messaging is the primary tested workflow.
+> Voice calling, communities, and game detection are implemented but **not yet confirmed working end-to-end**. Expect rough edges.
+> AI is used on this project. If it seems vibe coded, it probably is. **THAT SAID**, Contributors are expected to audit and correct every line by hand before major ver. releases
 
 ## Features
 
