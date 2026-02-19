@@ -29,7 +29,8 @@ pub async fn start_sync_loop(
         tokio::select! {
             _ = interval.tick() => {
                 tick_count += 1;
-                if let Err(e) = sync_friends(&state, &app_handle, &mut watched_keys, first_tick).await {
+                let force_all = tick_count.is_multiple_of(10);
+                if let Err(e) = sync_friends(&state, &app_handle, &mut watched_keys, first_tick, force_all).await {
                     tracing::warn!(error = %e, "friend sync failed");
                 }
                 first_tick = false;
@@ -64,7 +65,7 @@ pub async fn start_sync_loop(
 /// This avoids waiting 30 seconds for the first periodic tick.
 pub async fn sync_friends_now(state: &Arc<AppState>, app_handle: &tauri::AppHandle) -> Result<(), String> {
     let mut watched_keys = std::collections::HashSet::new();
-    sync_friends(state, app_handle, &mut watched_keys, true).await
+    sync_friends(state, app_handle, &mut watched_keys, true, true).await
 }
 
 /// Sync friend list: read friend profile DHT records and update local state.
@@ -76,6 +77,7 @@ async fn sync_friends(
     app_handle: &tauri::AppHandle,
     watched_keys: &mut std::collections::HashSet<String>,
     first_tick: bool,
+    force_all: bool,
 ) -> Result<(), String> {
     // Clone routing_context out before any await (parking_lot guards are !Send)
     let routing_context = {
@@ -140,7 +142,7 @@ async fn sync_friends(
         }
 
         // Force refresh for unwatched friends (watch failed — must poll from network)
-        let force_refresh = first_tick || unwatched.contains(friend_key.as_str());
+        let force_refresh = first_tick || force_all || unwatched.contains(friend_key.as_str());
         sync_friend_dht_subkeys(state, &routing_context, friend_key, record_key, app_handle, force_refresh).await;
     }
 
