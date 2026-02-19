@@ -15,6 +15,7 @@ interface BuddyItemProps {
   lastSeenAt: number | null;
   unreadCount: number;
   voiceChannel: string | null;
+  friendshipState?: string;
   selected: boolean;
   onDoubleClick: (publicKey: string, displayName: string) => void;
   onContextMenu: (e: MouseEvent, publicKey: string) => void;
@@ -82,7 +83,9 @@ const BuddyItem: Component<BuddyItemProps> = (props) => {
       onDblClick={handleDblClick}
       onContextMenu={handleCtxMenu}
     >
-      <StatusDot status={props.status} />
+      <Show when={(props.friendshipState ?? "accepted") !== "pendingOut"}>
+        <StatusDot status={props.status} />
+      </Show>
       <div class="buddy-item-content">
         <Tooltip text={tooltipText()}>
           <div class={`buddy-name ${isOffline() ? "buddy-name-offline" : ""}`}>

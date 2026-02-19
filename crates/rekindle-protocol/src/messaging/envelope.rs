@@ -80,6 +80,8 @@ pub enum MessagePayload {
     },
     /// Notify the peer that we have removed them as a friend.
     Unfriended,
+    /// ACK confirming an `Unfriended` message was received and processed.
+    UnfriendedAck,
 }
 
 /// Game information for rich presence.

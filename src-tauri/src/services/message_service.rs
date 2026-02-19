@@ -101,6 +101,7 @@ pub async fn handle_incoming_message(
         MessagePayload::FriendRequest { .. }
             | MessagePayload::FriendRequestReceived
             | MessagePayload::Unfriended
+            | MessagePayload::UnfriendedAck
             | MessagePayload::FriendReject
     ) && !state.friends.read().contains_key(&sender_hex)
     {
@@ -145,6 +146,9 @@ pub async fn handle_incoming_message(
         MessagePayload::PresenceUpdate { .. } => {}
         MessagePayload::Unfriended => {
             handle_unfriended(app_handle, state, pool, &sender_hex).await;
+        }
+        MessagePayload::UnfriendedAck => {
+            handle_unfriended_ack(state, pool, &sender_hex).await;
         }
     }
 }
@@ -442,6 +446,18 @@ async fn handle_friend_accept_full(
     signed_prekey_id: u32,
     one_time_prekey_id: Option<u32>,
 ) {
+    // Guard: ignore FriendAccept if we are in the process of removing this friend
+    let is_removing = {
+        let friends = state.friends.read();
+        friends.get(sender_hex).is_some_and(|f| {
+            matches!(f.friendship_state, crate::state::FriendshipState::Removing)
+        })
+    };
+    if is_removing {
+        tracing::info!(from = %sender_hex, "ignoring FriendAccept — friend is being removed");
+        return;
+    }
+
     handle_friend_accept(state, sender_hex, prekey_bundle, ephemeral_key, signed_prekey_id, one_time_prekey_id);
     // Cache the acceptor's route blob
     if !route_blob.is_empty() {
@@ -614,6 +630,46 @@ async fn delete_pending_request_row(
     .await;
 }
 
+/// Delete all `pending_messages` rows addressed to a given recipient.
+///
+/// Called when the peer ACKs our `Unfriended` message (no longer need retries)
+/// or when a peer unfriends us (drop any queued messages to them).
+async fn delete_pending_messages_to_recipient(
+    state: &Arc<AppState>,
+    pool: &DbPool,
+    recipient_key: &str,
+) {
+    let owner_key = state
+        .identity
+        .read()
+        .as_ref()
+        .map(|id| id.public_key.clone())
+        .unwrap_or_default();
+    let pool = pool.clone();
+    let rk = recipient_key.to_string();
+    let _ = tokio::task::spawn_blocking(move || {
+        let conn = pool.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "DELETE FROM pending_messages WHERE owner_key = ?1 AND recipient_key = ?2",
+            rusqlite::params![owner_key, rk],
+        )
+        .map_err(|e| format!("delete pending messages to recipient: {e}"))?;
+        Ok::<(), String>(())
+    })
+    .await;
+}
+
+/// Handle an incoming `UnfriendedAck`: the peer confirms they processed our
+/// `Unfriended` message. Clear any remaining retry queue entries for them.
+async fn handle_unfriended_ack(
+    state: &Arc<AppState>,
+    pool: &DbPool,
+    sender_hex: &str,
+) {
+    delete_pending_messages_to_recipient(state, pool, sender_hex).await;
+    tracing::info!(from = %sender_hex, "received UnfriendedAck — cleared pending messages");
+}
+
 /// Persist a friend's profile DHT key to `SQLite`.
 async fn persist_friend_dht_key(
     state: &Arc<AppState>,
@@ -773,6 +829,12 @@ async fn handle_unfriended(
 
     // Clean up any pending request from this peer to prevent stale rows blocking future requests
     delete_pending_request_row(state, pool, sender_hex).await;
+
+    // Drop any queued messages we were going to send them (they've unfriended us)
+    delete_pending_messages_to_recipient(state, pool, sender_hex).await;
+
+    // Send ACK back so the peer can clear their retry queue
+    let _ = send_to_peer_raw(state, pool, sender_hex, &MessagePayload::UnfriendedAck).await;
 
     // Remove from in-memory state and unregister DHT key
     let dht_key = {
@@ -1368,6 +1430,47 @@ pub async fn send_to_peer_raw(
 // ---------------------------------------------------------------------------
 // Pending message queue
 // ---------------------------------------------------------------------------
+
+/// Build a signed `MessageEnvelope` for the given payload and queue it in
+/// `pending_messages` for retry by `sync_service`.
+///
+/// Used by `friends.rs` to always-queue an `Unfriended` message regardless of
+/// whether the initial `send_to_peer_raw` succeeded (Veilid `app_message` has
+/// no delivery guarantee). The queued entry is cleared when the peer sends an
+/// `UnfriendedAck`, or dropped after max retries (20 x 30s).
+pub(crate) async fn build_and_queue_envelope(
+    state: &Arc<AppState>,
+    pool: &DbPool,
+    to: &str,
+    payload: &MessagePayload,
+) -> Result<(), String> {
+    let payload_bytes =
+        serde_json::to_vec(payload).map_err(|e| format!("serialize payload: {e}"))?;
+
+    let secret_key = {
+        let sk = state.identity_secret.lock();
+        *sk.as_ref().ok_or("signing key not initialized")?
+    };
+
+    let timestamp = u64::try_from(
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis(),
+    )
+    .unwrap_or(u64::MAX);
+
+    let nonce = {
+        let mut buf = [0u8; 16];
+        rand::thread_rng().fill_bytes(&mut buf);
+        buf.to_vec()
+    };
+
+    let envelope = build_envelope_from_secret(&secret_key, timestamp, nonce, payload_bytes);
+    let envelope_json =
+        serde_json::to_string(&envelope).map_err(|e| format!("serialize envelope: {e}"))?;
+    queue_pending_message(state, pool, to, &envelope_json).await
+}
 
 /// Insert a message into the `pending_messages` table for later retry.
 async fn queue_pending_message(

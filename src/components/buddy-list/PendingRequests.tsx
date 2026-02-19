@@ -32,7 +32,6 @@ const PendingRequests: Component = () => {
         <For each={friendsState.pendingRequests}>
           {(request) => (
             <div class="pending-item">
-              <div class="status-dot status-dot-offline" />
               <div class="pending-info">
                 <span class="buddy-name">
                   {request.displayName || request.publicKey.slice(0, 12) + "..."}
