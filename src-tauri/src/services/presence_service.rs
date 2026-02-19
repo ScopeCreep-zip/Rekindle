@@ -4,7 +4,7 @@ use tauri::{Emitter, Manager};
 
 use crate::channels::{NotificationEvent, PresenceEvent};
 use crate::db::{self, DbPool};
-use crate::state::{AppState, GameInfoState, UserStatus};
+use crate::state::{AppState, FriendshipState, GameInfoState, UserStatus};
 
 /// Handle a DHT value change event from a watched friend record.
 ///
@@ -78,6 +78,12 @@ fn handle_status_change(
         }
     }
 
+    // Only emit presence events for accepted friends (privacy: hide status from pending)
+    let is_accepted = {
+        let friends = state.friends.read();
+        friends.get(friend_key).is_some_and(|f| f.friendship_state == FriendshipState::Accepted)
+    };
+
     let event = if status == UserStatus::Offline {
         let now = db::timestamp_now();
         {
@@ -121,7 +127,7 @@ fn handle_status_change(
             }
         };
 
-        if was_offline {
+        if was_offline && is_accepted {
             let online_event = PresenceEvent::FriendOnline {
                 public_key: friend_key.to_string(),
             };
@@ -134,7 +140,9 @@ fn handle_status_change(
             status_message: None,
         }
     };
-    let _ = app_handle.emit("presence-event", &event);
+    if is_accepted {
+        let _ = app_handle.emit("presence-event", &event);
+    }
 }
 
 /// Handle a friend's game info change (subkey 4).
@@ -150,6 +158,14 @@ fn handle_game_change(
         if let Some(friend) = friends.get_mut(friend_key) {
             friend.game_info.clone_from(&game_info);
         }
+    }
+    // Only emit game events for accepted friends (privacy: hide from pending)
+    let is_accepted = {
+        let friends = state.friends.read();
+        friends.get(friend_key).is_some_and(|f| f.friendship_state == FriendshipState::Accepted)
+    };
+    if !is_accepted {
+        return;
     }
     let event = PresenceEvent::GameChanged {
         public_key: friend_key.to_string(),
