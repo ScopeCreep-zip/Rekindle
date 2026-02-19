@@ -4,7 +4,7 @@ use tauri::{Emitter, Manager};
 
 use crate::channels::{NotificationEvent, PresenceEvent};
 use crate::db::{self, DbPool};
-use crate::state::{AppState, GameInfoState, UserStatus};
+use crate::state::{AppState, FriendshipState, GameInfoState, UserStatus};
 
 /// Handle a DHT value change event from a watched friend record.
 ///
@@ -78,6 +78,12 @@ fn handle_status_change(
         }
     }
 
+    // Only emit presence events for accepted friends (privacy: hide status from pending)
+    let is_accepted = {
+        let friends = state.friends.read();
+        friends.get(friend_key).is_some_and(|f| f.friendship_state == FriendshipState::Accepted)
+    };
+
     let event = if status == UserStatus::Offline {
         let now = db::timestamp_now();
         {
@@ -121,7 +127,7 @@ fn handle_status_change(
             }
         };
 
-        if was_offline {
+        if was_offline && is_accepted {
             let online_event = PresenceEvent::FriendOnline {
                 public_key: friend_key.to_string(),
             };
@@ -134,7 +140,9 @@ fn handle_status_change(
             status_message: None,
         }
     };
-    let _ = app_handle.emit("presence-event", &event);
+    if is_accepted {
+        let _ = app_handle.emit("presence-event", &event);
+    }
 }
 
 /// Handle a friend's game info change (subkey 4).
@@ -150,6 +158,14 @@ fn handle_game_change(
         if let Some(friend) = friends.get_mut(friend_key) {
             friend.game_info.clone_from(&game_info);
         }
+    }
+    // Only emit game events for accepted friends (privacy: hide from pending)
+    let is_accepted = {
+        let friends = state.friends.read();
+        friends.get(friend_key).is_some_and(|f| f.friendship_state == FriendshipState::Accepted)
+    };
+    if !is_accepted {
+        return;
     }
     let event = PresenceEvent::GameChanged {
         public_key: friend_key.to_string(),
@@ -784,8 +800,8 @@ pub async fn publish_status(
     Ok(())
 }
 
-/// 5 minutes — if a friend's last heartbeat is older than this, assume offline.
-pub const STALE_PRESENCE_THRESHOLD_MS: i64 = 5 * 60 * 1000;
+/// 2.5× the 60s heartbeat — allows one missed heartbeat + jitter before marking offline.
+pub const STALE_PRESENCE_THRESHOLD_MS: i64 = 150 * 1000;
 
 /// Parse status byte from a status payload.
 ///
@@ -826,12 +842,12 @@ fn parse_game_info(data: &[u8]) -> Option<GameInfoState> {
 ///
 /// This serves as a keepalive: friends detect stale timestamps and infer
 /// that we've gone offline (crashed without publishing Offline).
-/// Runs every 120 seconds, matching the route refresh cadence.
+/// Runs every 60 seconds to keep friends' stale detection fresh.
 pub async fn start_heartbeat_loop(
     state: Arc<AppState>,
     mut shutdown_rx: tokio::sync::mpsc::Receiver<()>,
 ) {
-    let mut interval = tokio::time::interval(std::time::Duration::from_secs(120));
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
     interval.tick().await; // Skip immediate first tick
 
     loop {

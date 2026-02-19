@@ -922,6 +922,25 @@ async fn handle_app_call(
     }
 }
 
+/// Attempt to re-establish a DHT watch for the friend owning `dht_key`.
+/// Falls back to adding to `unwatched_friends` poll set if re-watch fails.
+async fn try_rewatch_friend(state: &Arc<AppState>, dht_key: &str) {
+    let friend_info = {
+        let dht_mgr = state.dht_manager.read();
+        dht_mgr
+            .as_ref()
+            .and_then(|mgr| mgr.friend_for_dht_key(dht_key).cloned())
+            .map(|fk| (fk, dht_key.to_string()))
+    };
+    let Some((fk, dk)) = friend_info else { return };
+    if super::presence_service::watch_friend(state, &fk, &dk)
+        .await
+        .is_err()
+    {
+        state.unwatched_friends.write().insert(fk);
+    }
+}
+
 /// Handle a DHT `ValueChange` notification by forwarding to the presence service.
 ///
 /// When the inline value is `None` (Veilid doesn't always include it), we fetch
@@ -940,38 +959,16 @@ async fn handle_value_change(
     // Per veilid-core VeilidValueChange docs: "If the subkey range is empty,
     // any watch present on the value has died."
     if change.subkeys.is_empty() {
-        tracing::warn!(
-            key = %key, count = change.count,
-            "DHT watch died — moving friend to poll fallback"
-        );
-        let friend_key = {
-            let dht_mgr = state.dht_manager.read();
-            dht_mgr
-                .as_ref()
-                .and_then(|mgr| mgr.friend_for_dht_key(&key).cloned())
-        };
-        if let Some(fk) = friend_key {
-            state.unwatched_friends.write().insert(fk);
-        }
+        tracing::warn!(key = %key, count = change.count, "DHT watch died — attempting immediate re-watch");
+        try_rewatch_friend(state, &key).await;
         return;
     }
 
     // count == 0 with non-empty subkeys means this is the last change notification
     // before the watch expires. Process the change AND schedule a re-watch.
     if change.count == 0 {
-        tracing::info!(
-            key = %key,
-            "DHT watch expiring (count=0) — will re-establish on next sync tick"
-        );
-        let friend_key = {
-            let dht_mgr = state.dht_manager.read();
-            dht_mgr
-                .as_ref()
-                .and_then(|mgr| mgr.friend_for_dht_key(&key).cloned())
-        };
-        if let Some(fk) = friend_key {
-            state.unwatched_friends.write().insert(fk);
-        }
+        tracing::info!(key = %key, "DHT watch expiring (count=0) — attempting immediate re-watch");
+        try_rewatch_friend(state, &key).await;
         // Fall through to process the change below
     }
 
@@ -1019,7 +1016,30 @@ async fn handle_value_change(
     }
 }
 
+/// Move all friends with DHT keys into the unwatched set, forcing re-watch.
+/// Called on network reconnection when all existing Veilid DHT watches are dead.
+fn invalidate_all_watches(state: &Arc<AppState>) {
+    let friend_keys: Vec<String> = {
+        let friends = state.friends.read();
+        friends
+            .values()
+            .filter(|f| f.dht_record_key.is_some())
+            .map(|f| f.public_key.clone())
+            .collect()
+    };
+    if !friend_keys.is_empty() {
+        let mut unwatched = state.unwatched_friends.write();
+        for key in &friend_keys {
+            unwatched.insert(key.clone());
+        }
+        tracing::info!(count = friend_keys.len(), "invalidated all friend watches for re-establishment");
+    }
+}
+
 /// Handle a network attachment state change — update node state and notify the frontend.
+///
+/// Detects detached→attached transitions (reconnection) and triggers an immediate
+/// friend resync to re-establish DHT watches that died during the disconnection.
 fn handle_attachment(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
@@ -1033,6 +1053,14 @@ fn handle_attachment(
         public_internet_ready,
         "network attachment changed"
     );
+
+    // Detect transition: was detached, now attached
+    let was_attached = {
+        let node = state.node.read();
+        node.as_ref().is_some_and(|nh| nh.is_attached)
+    };
+    let reconnected = !was_attached && attached;
+
     {
         if let Some(ref mut node) = *state.node.write() {
             node.attachment_state = state_str;
@@ -1052,6 +1080,21 @@ fn handle_attachment(
         body: format!("Veilid network {status}"),
     };
     let _ = app_handle.emit("notification-event", &notification);
+
+    // On reconnection: invalidate all watches and resync friend statuses in background.
+    // Gate on public_internet_ready (DHT must be usable) and identity (must be logged in).
+    // This filters out the initial startup false→true transition (no identity yet) and
+    // intermediate attachment states where DHT isn't available.
+    // The resync runs via tokio::spawn so the dispatch loop is never blocked.
+    if reconnected && public_internet_ready && state.identity.read().is_some() {
+        tracing::info!("network reconnected — invalidating watches and triggering friend resync");
+        invalidate_all_watches(state);
+        let state = state.clone();
+        let app_handle = app_handle.clone();
+        tokio::spawn(async move {
+            let _ = super::sync_service::sync_friends_now(&state, &app_handle).await;
+        });
+    }
 }
 
 /// Handle a route change — re-allocate our private route if it died, and
@@ -1101,23 +1144,80 @@ async fn handle_route_change(
     }
 }
 
-/// Release the old private route, allocate a new one, and re-publish it to DHT.
+/// Allocate a new private route, then release the old one (make-before-break).
 ///
-/// Used by the periodic refresh loop where the old route is still valid and
-/// should be explicitly released before allocating a replacement.
+/// Used by the periodic refresh loop where the old route is still valid.
+/// By allocating the new route FIRST, we avoid a window where `NodeHandle.route_blob`
+/// holds a stale (released) blob. If allocation fails, the old route stays active.
 pub(crate) async fn reallocate_private_route(app_handle: &tauri::AppHandle, state: &Arc<AppState>) {
-    // Release the old route while holding the lock, then drop
-    // before any .await (parking_lot guards are !Send)
+    // Clone the API handle (Arc-based) outside the lock
+    let api = {
+        let node = state.node.read();
+        node.as_ref().map(|nh| nh.api.clone())
+    };
+    let Some(api) = api else { return };
+
+    // Allocate new route FIRST (make-before-break)
+    let new_route = match api.new_private_route().await {
+        Ok(rb) => rb,
+        Err(e) => {
+            tracing::warn!(error = %e, "route refresh: failed to allocate new route — keeping old");
+            return;
+        }
+    };
+
+    // New route allocated — NOW release the old one and store the new one
     {
         let mut rm = state.routing_manager.write();
         if let Some(ref mut handle) = *rm {
             if let Err(e) = handle.manager.release_private_route() {
                 tracing::warn!(error = %e, "failed to release old private route");
             }
+            handle.manager.set_allocated_route(
+                new_route.route_id.clone(),
+                new_route.blob.clone(),
+            );
+        }
+    }
+    // Update NodeHandle
+    if let Some(ref mut nh) = *state.node.write() {
+        nh.route_blob = Some(new_route.blob.clone());
+    }
+
+    // Notify frontend
+    emit_network_status(app_handle, state);
+
+    // Re-publish route blob to DHT profile subkey 6
+    if let Err(e) =
+        super::message_service::push_profile_update(state, 6, new_route.blob.clone()).await
+    {
+        tracing::warn!(error = %e, "failed to re-publish route blob to DHT");
+    }
+
+    // Also update mailbox subkey 0 with the fresh route blob
+    let mailbox_key = {
+        let node = state.node.read();
+        node.as_ref().and_then(|nh| nh.mailbox_dht_key.clone())
+    };
+    if let Some(mailbox_key) = mailbox_key {
+        let rc = {
+            let node = state.node.read();
+            node.as_ref().map(|nh| nh.routing_context.clone())
+        };
+        if let Some(rc) = rc {
+            if let Err(e) = rekindle_protocol::dht::mailbox::update_mailbox_route(
+                &rc,
+                &mailbox_key,
+                &new_route.blob,
+            )
+            .await
+            {
+                tracing::warn!(error = %e, "failed to update mailbox route blob");
+            }
         }
     }
 
-    allocate_fresh_private_route(app_handle, state).await;
+    tracing::info!("re-allocated private route (make-before-break)");
 }
 
 /// Allocate a fresh private route and publish it to DHT.

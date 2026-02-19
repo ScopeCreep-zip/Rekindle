@@ -15,6 +15,7 @@ use crate::state::AppState;
 ///
 /// Flow: parse envelope → verify signature → decrypt if session exists →
 /// parse payload → dispatch by type (DM, friend request, typing, etc.)
+#[allow(clippy::too_many_lines)]
 pub async fn handle_incoming_message(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
@@ -92,9 +93,17 @@ pub async fn handle_incoming_message(
         }
     };
 
-    // Non-friend filtering: only FriendRequest allowed from non-friends
-    if !matches!(payload, MessagePayload::FriendRequest { .. })
-        && !state.friends.read().contains_key(&sender_hex)
+    // Non-friend filtering: only protocol-level messages allowed from non-friends.
+    // Unfriended/FriendReject must pass so delayed deliveries still work even if
+    // the sender was already removed from our friends list by some other path.
+    if !matches!(
+        payload,
+        MessagePayload::FriendRequest { .. }
+            | MessagePayload::FriendRequestReceived
+            | MessagePayload::Unfriended
+            | MessagePayload::UnfriendedAck
+            | MessagePayload::FriendReject
+    ) && !state.friends.read().contains_key(&sender_hex)
     {
         tracing::debug!(from = %sender_hex, "dropping message from non-friend");
         return;
@@ -126,12 +135,21 @@ pub async fn handle_incoming_message(
             ).await;
         }
         MessagePayload::FriendReject => {
-            let _ = app_handle.emit("chat-event", &ChatEvent::FriendRequestRejected { from: sender_hex });
+            handle_friend_reject(app_handle, state, pool, &sender_hex).await;
+        }
+        MessagePayload::FriendRequestReceived => {
+            let _ = app_handle.emit("chat-event", &ChatEvent::FriendRequestDelivered { to: sender_hex });
         }
         MessagePayload::ProfileKeyRotated { new_profile_dht_key } => {
             handle_profile_key_rotated(state, pool, &sender_hex, &new_profile_dht_key).await;
         }
         MessagePayload::PresenceUpdate { .. } => {}
+        MessagePayload::Unfriended => {
+            handle_unfriended(app_handle, state, pool, &sender_hex).await;
+        }
+        MessagePayload::UnfriendedAck => {
+            handle_unfriended_ack(state, pool, &sender_hex).await;
+        }
     }
 }
 
@@ -285,6 +303,8 @@ fn handle_friend_accept(
 
     let signal = state.signal_manager.lock();
     if let Some(handle) = signal.as_ref() {
+        // Clear any stale session first (e.g., from a previous friendship that was removed)
+        let _ = handle.manager.delete_session(sender_hex);
         match handle.manager.respond_to_session(
             sender_hex,
             &their_identity_key,
@@ -314,18 +334,6 @@ async fn handle_friend_request_full(
 ) {
     handle_friend_request(sender_hex, prekey_bundle);
 
-    // If sender is already our friend (bidirectional add), update their display name
-    let is_existing_friend = state.friends.read().contains_key(sender_hex);
-    if is_existing_friend {
-        {
-            let mut friends = state.friends.write();
-            if let Some(friend) = friends.get_mut(sender_hex) {
-                friend.display_name = display_name.to_string();
-            }
-        }
-        update_friend_display_name(state, pool, sender_hex, display_name).await;
-    }
-
     // Cache the sender's route blob for immediate replies
     if !route_blob.is_empty() {
         let api = {
@@ -339,6 +347,74 @@ async fn handle_friend_request_full(
             }
         }
     }
+
+    // If sender is already in our friend list, check for cross-request auto-accept
+    let existing_friendship_state = {
+        let friends = state.friends.read();
+        friends.get(sender_hex).map(|f| f.friendship_state)
+    };
+
+    if let Some(fs) = existing_friendship_state {
+        if fs == crate::state::FriendshipState::PendingOut {
+            // Cross-request: both parties want the friendship — auto-accept
+            tracing::info!(from = %sender_hex, "cross-request detected — auto-accepting");
+            auto_accept_cross_request(
+                app_handle, state, pool, sender_hex, display_name,
+                prekey_bundle, profile_dht_key, route_blob, mailbox_dht_key,
+            ).await;
+            return;
+        }
+        if fs == crate::state::FriendshipState::Removing
+            || fs == crate::state::FriendshipState::Accepted
+        {
+            // Removing: previous friendship being removed — clear stale state.
+            // Accepted: peer removed us (their Unfriended was lost/delayed) and
+            // re-added us. Following Briar's "re-add = new contact" pattern:
+            // remove stale friendship state and treat as fresh incoming request.
+            state.friends.write().remove(sender_hex);
+
+            // Delete stale DB rows so future accept creates a clean entry
+            let owner_key = state
+                .identity
+                .read()
+                .as_ref()
+                .map(|id| id.public_key.clone())
+                .unwrap_or_default();
+            let pool_clone = pool.clone();
+            let pk = sender_hex.to_string();
+            let _ = tokio::task::spawn_blocking(move || {
+                let conn = pool_clone.lock().map_err(|e| e.to_string())?;
+                conn.execute(
+                    "DELETE FROM friends WHERE owner_key = ?1 AND public_key = ?2",
+                    rusqlite::params![owner_key, pk],
+                )
+                .map_err(|e| format!("delete stale friend for re-add: {e}"))?;
+                Ok::<(), String>(())
+            })
+            .await;
+
+            // Clean up any lingering pending request row
+            delete_pending_request_row(state, pool, sender_hex).await;
+
+            tracing::info!(
+                from = %sender_hex,
+                previous_state = ?fs,
+                "received friend request from {} peer — treating as new request",
+                if fs == crate::state::FriendshipState::Removing { "Removing" } else { "Accepted" }
+            );
+        } else {
+            // PendingIn or other unexpected state — just update display name
+            {
+                let mut friends = state.friends.write();
+                if let Some(friend) = friends.get_mut(sender_hex) {
+                    friend.display_name = display_name.to_string();
+                }
+            }
+            update_friend_display_name(state, pool, sender_hex, display_name).await;
+            return;
+        }
+    }
+
     persist_friend_request(
         state, pool, sender_hex, display_name, message,
         profile_dht_key, route_blob, mailbox_dht_key, prekey_bundle,
@@ -350,6 +426,9 @@ async fn handle_friend_request_full(
         message: message.to_string(),
     };
     let _ = app_handle.emit("chat-event", &event);
+
+    // Send delivery ACK back to the requester
+    let _ = send_to_peer_raw(state, pool, sender_hex, &MessagePayload::FriendRequestReceived).await;
 }
 
 /// Handle a `FriendAccept` with profile key, route blob, and mailbox key exchange.
@@ -367,6 +446,18 @@ async fn handle_friend_accept_full(
     signed_prekey_id: u32,
     one_time_prekey_id: Option<u32>,
 ) {
+    // Guard: ignore FriendAccept if we are in the process of removing this friend
+    let is_removing = {
+        let friends = state.friends.read();
+        friends.get(sender_hex).is_some_and(|f| {
+            matches!(f.friendship_state, crate::state::FriendshipState::Removing)
+        })
+    };
+    if is_removing {
+        tracing::info!(from = %sender_hex, "ignoring FriendAccept — friend is being removed");
+        return;
+    }
+
     handle_friend_accept(state, sender_hex, prekey_bundle, ephemeral_key, signed_prekey_id, one_time_prekey_id);
     // Cache the acceptor's route blob
     if !route_blob.is_empty() {
@@ -381,7 +472,7 @@ async fn handle_friend_accept_full(
             }
         }
     }
-    // Store profile key and mailbox key on friend state
+    // Store profile key, mailbox key, and transition friendship to Accepted
     {
         let mut friends = state.friends.write();
         if let Some(friend) = friends.get_mut(sender_hex) {
@@ -391,8 +482,11 @@ async fn handle_friend_accept_full(
             if !mailbox_dht_key.is_empty() {
                 friend.mailbox_dht_key = Some(mailbox_dht_key.to_string());
             }
+            friend.friendship_state = crate::state::FriendshipState::Accepted;
         }
     }
+    // Persist friendship_state transition to DB
+    persist_friendship_state(state, pool, sender_hex, "accepted").await;
     // Persist profile key to `SQLite`
     if !profile_dht_key.is_empty() {
         persist_friend_dht_key(state, pool, sender_hex, profile_dht_key).await;
@@ -493,7 +587,7 @@ async fn persist_friend_request(
     if let Err(e) = tokio::task::spawn_blocking(move || {
         let conn = pool.lock().map_err(|e| e.to_string())?;
         conn.execute(
-            "INSERT OR IGNORE INTO pending_friend_requests \
+            "INSERT OR REPLACE INTO pending_friend_requests \
              (owner_key, public_key, display_name, message, received_at, profile_dht_key, route_blob, mailbox_dht_key, prekey_bundle) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             rusqlite::params![owner_key, pk, dn, msg, now, pdk, rb, mdk, pkb],
@@ -505,6 +599,75 @@ async fn persist_friend_request(
     {
         tracing::error!(error = %e, "failed to persist incoming friend request");
     }
+}
+
+/// Delete a `pending_friend_requests` row for a given peer.
+///
+/// Called during cross-request auto-accept, unfriend handling, and friend removal
+/// to ensure stale rows don't block future `INSERT OR REPLACE`.
+async fn delete_pending_request_row(
+    state: &Arc<AppState>,
+    pool: &DbPool,
+    peer_key: &str,
+) {
+    let owner_key = state
+        .identity
+        .read()
+        .as_ref()
+        .map(|id| id.public_key.clone())
+        .unwrap_or_default();
+    let pool = pool.clone();
+    let pk = peer_key.to_string();
+    let _ = tokio::task::spawn_blocking(move || {
+        let conn = pool.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "DELETE FROM pending_friend_requests WHERE owner_key = ?1 AND public_key = ?2",
+            rusqlite::params![owner_key, pk],
+        )
+        .map_err(|e| format!("delete pending request: {e}"))?;
+        Ok::<(), String>(())
+    })
+    .await;
+}
+
+/// Delete all `pending_messages` rows addressed to a given recipient.
+///
+/// Called when the peer ACKs our `Unfriended` message (no longer need retries)
+/// or when a peer unfriends us (drop any queued messages to them).
+pub(crate) async fn delete_pending_messages_to_recipient(
+    state: &Arc<AppState>,
+    pool: &DbPool,
+    recipient_key: &str,
+) {
+    let owner_key = state
+        .identity
+        .read()
+        .as_ref()
+        .map(|id| id.public_key.clone())
+        .unwrap_or_default();
+    let pool = pool.clone();
+    let rk = recipient_key.to_string();
+    let _ = tokio::task::spawn_blocking(move || {
+        let conn = pool.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "DELETE FROM pending_messages WHERE owner_key = ?1 AND recipient_key = ?2",
+            rusqlite::params![owner_key, rk],
+        )
+        .map_err(|e| format!("delete pending messages to recipient: {e}"))?;
+        Ok::<(), String>(())
+    })
+    .await;
+}
+
+/// Handle an incoming `UnfriendedAck`: the peer confirms they processed our
+/// `Unfriended` message. Clear any remaining retry queue entries for them.
+async fn handle_unfriended_ack(
+    state: &Arc<AppState>,
+    pool: &DbPool,
+    sender_hex: &str,
+) {
+    delete_pending_messages_to_recipient(state, pool, sender_hex).await;
+    tracing::info!(from = %sender_hex, "received UnfriendedAck — cleared pending messages");
 }
 
 /// Persist a friend's profile DHT key to `SQLite`.
@@ -561,6 +724,294 @@ async fn update_friend_display_name(
             rusqlite::params![dn, owner_key, pk],
         )
         .map_err(|e| format!("update friend display name: {e}"))?;
+        Ok::<(), String>(())
+    })
+    .await;
+}
+
+/// Handle a `FriendReject` — if the rejected peer is in our `pending_out` list,
+/// remove them. Otherwise, just emit the event.
+async fn handle_friend_reject(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    pool: &DbPool,
+    sender_hex: &str,
+) {
+    let is_pending_out = state
+        .friends
+        .read()
+        .get(sender_hex)
+        .is_some_and(|f| f.friendship_state == crate::state::FriendshipState::PendingOut);
+
+    if is_pending_out {
+        // Remove pending-out friend from DB and in-memory state
+        let owner_key = state
+            .identity
+            .read()
+            .as_ref()
+            .map(|id| id.public_key.clone())
+            .unwrap_or_default();
+        let pool_clone = pool.clone();
+        let pk = sender_hex.to_string();
+        let ok = owner_key;
+        let _ = tokio::task::spawn_blocking(move || {
+            let conn = pool_clone.lock().map_err(|e| e.to_string())?;
+            conn.execute(
+                "DELETE FROM friends WHERE owner_key = ?1 AND public_key = ?2",
+                rusqlite::params![ok, pk],
+            )
+            .map_err(|e| format!("delete rejected friend: {e}"))?;
+            Ok::<(), String>(())
+        })
+        .await;
+        state.friends.write().remove(sender_hex);
+
+        let _ = app_handle.emit(
+            "chat-event",
+            &ChatEvent::FriendRemoved {
+                public_key: sender_hex.to_string(),
+            },
+        );
+    }
+
+    // Always emit the rejection notification
+    let _ = app_handle.emit(
+        "chat-event",
+        &ChatEvent::FriendRequestRejected {
+            from: sender_hex.to_string(),
+        },
+    );
+}
+
+/// Handle an incoming `Unfriended` message: the peer has removed us as a friend.
+///
+/// Removes the peer from our friends list (DB + in-memory), unregisters their
+/// DHT presence key, updates our DHT friend list, and emits `FriendRemoved`
+/// so the frontend updates.
+async fn handle_unfriended(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    pool: &DbPool,
+    sender_hex: &str,
+) {
+    // Only act if the sender is actually in our friends list
+    let has_friend = {
+        let friends = state.friends.read();
+        friends.get(sender_hex).is_some_and(|f| {
+            !matches!(f.friendship_state, crate::state::FriendshipState::Removing)
+        })
+    };
+    if !has_friend {
+        tracing::debug!(from = %sender_hex, "ignoring Unfriended from non-friend");
+        return;
+    }
+
+    // Remove from DB
+    let owner_key = state
+        .identity
+        .read()
+        .as_ref()
+        .map(|id| id.public_key.clone())
+        .unwrap_or_default();
+    let pool_clone = pool.clone();
+    let pk = sender_hex.to_string();
+    let ok = owner_key;
+    let _ = tokio::task::spawn_blocking(move || {
+        let conn = pool_clone.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "DELETE FROM friends WHERE owner_key = ?1 AND public_key = ?2",
+            rusqlite::params![ok, pk],
+        )
+        .map_err(|e| format!("delete unfriended peer: {e}"))?;
+        Ok::<(), String>(())
+    })
+    .await;
+
+    // Clean up any pending request from this peer to prevent stale rows blocking future requests
+    delete_pending_request_row(state, pool, sender_hex).await;
+
+    // Drop any queued messages we were going to send them (they've unfriended us)
+    delete_pending_messages_to_recipient(state, pool, sender_hex).await;
+
+    // Send ACK back so the peer can clear their retry queue
+    let _ = send_to_peer_raw(state, pool, sender_hex, &MessagePayload::UnfriendedAck).await;
+
+    // Remove from in-memory state and unregister DHT key
+    let dht_key = {
+        let mut friends = state.friends.write();
+        let removed = friends.remove(sender_hex);
+        removed.and_then(|f| f.dht_record_key)
+    };
+    if let Some(ref dht_key) = dht_key {
+        let mut dht_mgr = state.dht_manager.write();
+        if let Some(mgr) = dht_mgr.as_mut() {
+            mgr.unregister_friend_dht_key(dht_key);
+        }
+    }
+
+    // Update our DHT friend list to reflect the removal
+    if let Err(e) = push_friend_list_update(state).await {
+        tracing::warn!(error = %e, "failed to update DHT friend list after peer unfriended us");
+    }
+
+    let _ = app_handle.emit(
+        "chat-event",
+        &ChatEvent::FriendRemoved {
+            public_key: sender_hex.to_string(),
+        },
+    );
+
+    tracing::info!(from = %sender_hex, "removed by peer (Unfriended)");
+}
+
+/// Auto-accept a cross-request: both parties sent friend requests to each other.
+///
+/// Transitions the local friend from `PendingOut` to `Accepted`, establishes
+/// a Signal session, sends a `FriendAccept` back, and starts watching their DHT.
+#[allow(clippy::too_many_arguments)]
+async fn auto_accept_cross_request(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    pool: &DbPool,
+    sender_hex: &str,
+    display_name: &str,
+    prekey_bundle: &[u8],
+    profile_dht_key: &str,
+    _route_blob: &[u8],
+    mailbox_dht_key: &str,
+) {
+    // 0. Clean up any lingering pending_friend_requests row so future requests start fresh
+    delete_pending_request_row(state, pool, sender_hex).await;
+
+    // 1. Transition local friend to Accepted + update keys
+    {
+        let mut friends = state.friends.write();
+        if let Some(friend) = friends.get_mut(sender_hex) {
+            friend.friendship_state = crate::state::FriendshipState::Accepted;
+            friend.display_name = display_name.to_string();
+            if !profile_dht_key.is_empty() {
+                friend.dht_record_key = Some(profile_dht_key.to_string());
+            }
+            if !mailbox_dht_key.is_empty() {
+                friend.mailbox_dht_key = Some(mailbox_dht_key.to_string());
+            }
+        }
+    }
+    persist_friendship_state(state, pool, sender_hex, "accepted").await;
+    update_friend_display_name(state, pool, sender_hex, display_name).await;
+
+    // Persist profile/mailbox keys
+    if !profile_dht_key.is_empty() {
+        persist_friend_dht_key(state, pool, sender_hex, profile_dht_key).await;
+    }
+    if !mailbox_dht_key.is_empty() {
+        persist_friend_mailbox_key(state, pool, sender_hex, mailbox_dht_key).await;
+    }
+
+    // 2. Establish Signal session from their prekey bundle
+    // Clear any stale session first (e.g., from a previous friendship that was removed)
+    let session_init = if prekey_bundle.is_empty() {
+        None
+    } else {
+        let signal = state.signal_manager.lock();
+        if let Some(handle) = signal.as_ref() {
+            let _ = handle.manager.delete_session(sender_hex);
+            if let Ok(bundle) = serde_json::from_slice::<rekindle_crypto::signal::PreKeyBundle>(prekey_bundle) {
+                match handle.manager.establish_session(sender_hex, &bundle) {
+                    Ok(info) => {
+                        tracing::info!(peer = %sender_hex, "established Signal session on cross-request auto-accept");
+                        Some(info)
+                    }
+                    Err(e) => {
+                        tracing::warn!(peer = %sender_hex, error = %e, "failed to establish Signal session on cross-request");
+                        None
+                    }
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    };
+
+    // 3. Send FriendAccept back
+    super::message_service::send_friend_accept(state, pool, sender_hex, session_init)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "failed to send friend accept for cross-request");
+        });
+
+    // 4. Watch their DHT profile for presence
+    if !profile_dht_key.is_empty() {
+        if let Err(e) =
+            super::presence_service::watch_friend(state, sender_hex, profile_dht_key).await
+        {
+            tracing::trace!(error = %e, "failed to watch friend DHT after cross-request accept");
+        }
+    }
+
+    // 5. Emit accepted event
+    let _ = app_handle.emit(
+        "chat-event",
+        &ChatEvent::FriendRequestAccepted {
+            from: sender_hex.to_string(),
+            display_name: display_name.to_string(),
+        },
+    );
+}
+
+/// Persist the `friendship_state` column to `SQLite` for a friend.
+async fn persist_friendship_state(
+    state: &Arc<AppState>,
+    pool: &DbPool,
+    friend_key: &str,
+    friendship_state: &str,
+) {
+    let owner_key = state
+        .identity
+        .read()
+        .as_ref()
+        .map(|id| id.public_key.clone())
+        .unwrap_or_default();
+    let pool = pool.clone();
+    let fk = friend_key.to_string();
+    let fs = friendship_state.to_string();
+    let _ = tokio::task::spawn_blocking(move || {
+        let conn = pool.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "UPDATE friends SET friendship_state = ?1 WHERE owner_key = ?2 AND public_key = ?3",
+            rusqlite::params![fs, owner_key, fk],
+        )
+        .map_err(|e| format!("update friendship_state: {e}"))?;
+        Ok::<(), String>(())
+    })
+    .await;
+}
+
+/// Persist a friend's mailbox DHT key to `SQLite`.
+async fn persist_friend_mailbox_key(
+    state: &Arc<AppState>,
+    pool: &DbPool,
+    friend_key: &str,
+    mailbox_dht_key: &str,
+) {
+    let owner_key = state
+        .identity
+        .read()
+        .as_ref()
+        .map(|id| id.public_key.clone())
+        .unwrap_or_default();
+    let pool = pool.clone();
+    let fk = friend_key.to_string();
+    let mdk = mailbox_dht_key.to_string();
+    let _ = tokio::task::spawn_blocking(move || {
+        let conn = pool.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "UPDATE friends SET mailbox_dht_key = ?1 WHERE owner_key = ?2 AND public_key = ?3",
+            rusqlite::params![mdk, owner_key, fk],
+        )
+        .map_err(|e| format!("update friend mailbox key: {e}"))?;
         Ok::<(), String>(())
     })
     .await;
@@ -980,6 +1431,47 @@ pub async fn send_to_peer_raw(
 // Pending message queue
 // ---------------------------------------------------------------------------
 
+/// Build a signed `MessageEnvelope` for the given payload and queue it in
+/// `pending_messages` for retry by `sync_service`.
+///
+/// Used by `friends.rs` to always-queue an `Unfriended` message regardless of
+/// whether the initial `send_to_peer_raw` succeeded (Veilid `app_message` has
+/// no delivery guarantee). The queued entry is cleared when the peer sends an
+/// `UnfriendedAck`, or dropped after max retries (20 x 30s).
+pub(crate) async fn build_and_queue_envelope(
+    state: &Arc<AppState>,
+    pool: &DbPool,
+    to: &str,
+    payload: &MessagePayload,
+) -> Result<(), String> {
+    let payload_bytes =
+        serde_json::to_vec(payload).map_err(|e| format!("serialize payload: {e}"))?;
+
+    let secret_key = {
+        let sk = state.identity_secret.lock();
+        *sk.as_ref().ok_or("signing key not initialized")?
+    };
+
+    let timestamp = u64::try_from(
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis(),
+    )
+    .unwrap_or(u64::MAX);
+
+    let nonce = {
+        let mut buf = [0u8; 16];
+        rand::thread_rng().fill_bytes(&mut buf);
+        buf.to_vec()
+    };
+
+    let envelope = build_envelope_from_secret(&secret_key, timestamp, nonce, payload_bytes);
+    let envelope_json =
+        serde_json::to_string(&envelope).map_err(|e| format!("serialize envelope: {e}"))?;
+    queue_pending_message(state, pool, to, &envelope_json).await
+}
+
 /// Insert a message into the `pending_messages` table for later retry.
 async fn queue_pending_message(
     state: &Arc<AppState>,
@@ -1062,7 +1554,11 @@ pub async fn push_friend_list_update(state: &Arc<AppState>) -> Result<(), String
         let rc = nh.routing_context.clone();
         let kp = nh.friend_list_owner_keypair.clone();
         let friends = state.friends.read();
-        let keys: Vec<String> = friends.keys().cloned().collect();
+        let keys: Vec<String> = friends
+            .iter()
+            .filter(|(_, f)| !matches!(f.friendship_state, crate::state::FriendshipState::Removing))
+            .map(|(k, _)| k.clone())
+            .collect();
         (flk, rc, kp, keys)
     };
 

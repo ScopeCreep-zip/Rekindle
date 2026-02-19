@@ -4,7 +4,7 @@ use rekindle_protocol::messaging::envelope::MessageEnvelope;
 use tokio::sync::mpsc;
 
 use crate::db::DbPool;
-use crate::state::AppState;
+use crate::state::{AppState, FriendshipState};
 
 /// Start the periodic sync service.
 ///
@@ -29,7 +29,8 @@ pub async fn start_sync_loop(
         tokio::select! {
             _ = interval.tick() => {
                 tick_count += 1;
-                if let Err(e) = sync_friends(&state, &app_handle, &mut watched_keys, first_tick).await {
+                let force_all = tick_count.is_multiple_of(10);
+                if let Err(e) = sync_friends(&state, &app_handle, &mut watched_keys, first_tick, force_all).await {
                     tracing::warn!(error = %e, "friend sync failed");
                 }
                 first_tick = false;
@@ -46,6 +47,10 @@ pub async fn start_sync_loop(
                 if let Err(e) = retry_pending_messages(&state, &pool).await {
                     tracing::warn!(error = %e, "pending message retry failed");
                 }
+                // Every ~6th tick (~3 minutes) — expire stale pending requests
+                if tick_count.is_multiple_of(6) {
+                    expire_stale_requests(&state, &pool, &app_handle).await;
+                }
             }
             _ = shutdown_rx.recv() => {
                 tracing::info!("sync service shutting down");
@@ -60,7 +65,7 @@ pub async fn start_sync_loop(
 /// This avoids waiting 30 seconds for the first periodic tick.
 pub async fn sync_friends_now(state: &Arc<AppState>, app_handle: &tauri::AppHandle) -> Result<(), String> {
     let mut watched_keys = std::collections::HashSet::new();
-    sync_friends(state, app_handle, &mut watched_keys, true).await
+    sync_friends(state, app_handle, &mut watched_keys, true, true).await
 }
 
 /// Sync friend list: read friend profile DHT records and update local state.
@@ -72,6 +77,7 @@ async fn sync_friends(
     app_handle: &tauri::AppHandle,
     watched_keys: &mut std::collections::HashSet<String>,
     first_tick: bool,
+    force_all: bool,
 ) -> Result<(), String> {
     // Clone routing_context out before any await (parking_lot guards are !Send)
     let routing_context = {
@@ -136,7 +142,7 @@ async fn sync_friends(
         }
 
         // Force refresh for unwatched friends (watch failed — must poll from network)
-        let force_refresh = first_tick || unwatched.contains(friend_key.as_str());
+        let force_refresh = first_tick || force_all || unwatched.contains(friend_key.as_str());
         sync_friend_dht_subkeys(state, &routing_context, friend_key, record_key, app_handle, force_refresh).await;
     }
 
@@ -173,20 +179,115 @@ fn check_stale_presences(state: &Arc<AppState>, app_handle: &tauri::AppHandle) {
 
     // Mark stale friends offline and emit events (no lock held during emit)
     for pk in stale_friends {
-        {
+        let is_accepted = {
             let mut friends = state.friends.write();
             if let Some(friend) = friends.get_mut(&pk) {
                 tracing::info!(friend = %pk, "stale heartbeat — marking offline");
                 friend.status = crate::state::UserStatus::Offline;
                 friend.last_seen_at = Some(now);
+                friend.friendship_state == FriendshipState::Accepted
+            } else {
+                false
             }
+        };
+        // Only emit for accepted friends (privacy: hide status from pending)
+        if is_accepted {
+            let _ = app_handle.emit(
+                "presence-event",
+                &crate::channels::PresenceEvent::FriendOffline {
+                    public_key: pk,
+                },
+            );
         }
+    }
+}
+
+/// Expire stale pending friend requests and pending-out friends.
+///
+/// - Pending incoming requests older than 30 days are deleted from `pending_friend_requests`.
+/// - Pending-out friends older than 30 days are removed from `friends` and the frontend is notified.
+async fn expire_stale_requests(
+    state: &Arc<AppState>,
+    pool: &DbPool,
+    app_handle: &tauri::AppHandle,
+) {
+    use tauri::Emitter;
+
+    let owner_key = state
+        .identity
+        .read()
+        .as_ref()
+        .map(|id| id.public_key.clone())
+        .unwrap_or_default();
+    if owner_key.is_empty() {
+        return;
+    }
+
+    let thirty_days_ms: i64 = 30 * 24 * 60 * 60 * 1000;
+    let cutoff = crate::db::timestamp_now() - thirty_days_ms;
+
+    // 1. Delete expired pending_friend_requests
+    let pool_clone = pool.clone();
+    let ok = owner_key.clone();
+    let _ = tokio::task::spawn_blocking(move || {
+        let conn = pool_clone.lock().map_err(|e| e.to_string())?;
+        let deleted = conn
+            .execute(
+                "DELETE FROM pending_friend_requests WHERE owner_key = ?1 AND received_at < ?2",
+                rusqlite::params![ok, cutoff],
+            )
+            .unwrap_or(0);
+        if deleted > 0 {
+            tracing::info!(deleted, "expired stale incoming friend requests");
+        }
+        Ok::<(), String>(())
+    })
+    .await;
+
+    // 2. Find and remove expired pending_out friends
+    let expired_pending: Vec<String> = {
+        let pool_clone = pool.clone();
+        let ok = owner_key;
+        tokio::task::spawn_blocking(move || {
+            let conn = pool_clone.lock().map_err(|e| e.to_string())?;
+            let mut stmt = conn
+                .prepare(
+                    "SELECT public_key FROM friends \
+                     WHERE owner_key = ?1 AND friendship_state = 'pending_out' AND added_at < ?2",
+                )
+                .map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map(rusqlite::params![ok, cutoff], |row| row.get::<_, String>(0))
+                .map_err(|e| e.to_string())?
+                .filter_map(std::result::Result::ok)
+                .collect::<Vec<_>>();
+
+            // Delete them
+            for pk in &rows {
+                let _ = conn.execute(
+                    "DELETE FROM friends WHERE owner_key = ?1 AND public_key = ?2",
+                    rusqlite::params![ok, pk],
+                );
+            }
+
+            Ok::<Vec<String>, String>(rows)
+        })
+        .await
+        .unwrap_or(Ok(Vec::new()))
+        .unwrap_or_default()
+    };
+
+    for pk in &expired_pending {
+        state.friends.write().remove(pk);
         let _ = app_handle.emit(
-            "presence-event",
-            &crate::channels::PresenceEvent::FriendOffline {
-                public_key: pk,
+            "chat-event",
+            &crate::channels::ChatEvent::FriendRemoved {
+                public_key: pk.clone(),
             },
         );
+    }
+    if !expired_pending.is_empty() {
+        tracing::info!(count = expired_pending.len(), "expired stale pending-out friends");
     }
 }
 
@@ -276,7 +377,13 @@ async fn sync_friend_status(
             friend.status = status;
         }
     }
-    if old_status != Some(status) {
+
+    // Only emit presence events for accepted friends (privacy: hide status from pending)
+    let is_accepted = {
+        let friends = state.friends.read();
+        friends.get(friend_key).is_some_and(|f| f.friendship_state == FriendshipState::Accepted)
+    };
+    if old_status != Some(status) && is_accepted {
         if status == crate::state::UserStatus::Offline {
             let _ = app_handle.emit(
                 "presence-event",
@@ -335,7 +442,12 @@ async fn sync_friend_game_info(
                     friend.game_info.clone_from(&game_info);
                 }
             }
-            if old_game_name != new_game_name {
+            // Only emit game events for accepted friends (privacy)
+            let is_accepted = {
+                let friends = state.friends.read();
+                friends.get(friend_key).is_some_and(|f| f.friendship_state == FriendshipState::Accepted)
+            };
+            if old_game_name != new_game_name && is_accepted {
                 let _ = app_handle.emit("presence-event",
                     &crate::channels::PresenceEvent::GameChanged {
                         public_key: friend_key.to_string(),

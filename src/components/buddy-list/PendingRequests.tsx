@@ -3,6 +3,7 @@ import { friendsState } from "../../stores/friends.store";
 import {
   handleAcceptRequest,
   handleRejectRequest,
+  handleBlockUser,
 } from "../../handlers/buddy.handlers";
 
 const PendingRequests: Component = () => {
@@ -20,6 +21,12 @@ const PendingRequests: Component = () => {
     if (err) setError(err);
   }
 
+  async function onBlock(publicKey: string, displayName: string): Promise<void> {
+    setError(null);
+    const err = await handleBlockUser(publicKey, displayName);
+    if (err) setError(err);
+  }
+
   return (
     <Show when={friendsState.pendingRequests.length > 0}>
       <div class="pending-section">
@@ -32,7 +39,6 @@ const PendingRequests: Component = () => {
         <For each={friendsState.pendingRequests}>
           {(request) => (
             <div class="pending-item">
-              <div class="status-dot status-dot-offline" />
               <div class="pending-info">
                 <span class="buddy-name">
                   {request.displayName || request.publicKey.slice(0, 12) + "..."}
@@ -52,6 +58,12 @@ const PendingRequests: Component = () => {
                 onClick={() => onReject(request.publicKey)}
               >
                 Reject
+              </button>
+              <button
+                class="pending-btn-block"
+                onClick={() => onBlock(request.publicKey, request.displayName)}
+              >
+                Block
               </button>
             </div>
           )}

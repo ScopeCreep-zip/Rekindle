@@ -248,15 +248,27 @@ impl DHTManager {
             tracing::debug!(peer = %pubkey_hex, "ignoring empty route blob — will fetch from DHT");
             return;
         }
-        // Import and cache RouteId for selective invalidation
-        if let Ok(route_id) = api.import_remote_private_route(route_blob.clone()) {
-            self.imported_routes
-                .insert(route_blob.clone(), (route_id.clone(), Instant::now()));
-            self.route_id_to_pubkey
-                .insert(route_id, pubkey_hex.to_string());
+        // Import and cache RouteId for selective invalidation.
+        // Only cache the blob if the import succeeds — stale/expired route
+        // blobs (e.g. from old invites) must not linger in the cache.
+        match api.import_remote_private_route(route_blob.clone()) {
+            Ok(route_id) => {
+                self.imported_routes
+                    .insert(route_blob.clone(), (route_id.clone(), Instant::now()));
+                self.route_id_to_pubkey
+                    .insert(route_id, pubkey_hex.to_string());
+                self.route_cache
+                    .insert(pubkey_hex.to_string(), route_blob);
+            }
+            Err(e) => {
+                tracing::debug!(
+                    peer = %pubkey_hex,
+                    error = %e,
+                    blob_len = route_blob.len(),
+                    "route blob import failed (stale?) — will fetch fresh route from DHT"
+                );
+            }
         }
-        self.route_cache
-            .insert(pubkey_hex.to_string(), route_blob);
     }
 
     /// Look up a cached route blob for a peer.

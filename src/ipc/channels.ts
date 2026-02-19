@@ -22,10 +22,11 @@ export type ChatEvent =
     }
   | {
       type: "friendAdded";
-      data: { publicKey: string; displayName: string };
+      data: { publicKey: string; displayName: string; friendshipState: string };
     }
   | { type: "friendRequestRejected"; data: { from: string } }
   | { type: "friendRemoved"; data: { publicKey: string } }
+  | { type: "friendRequestDelivered"; data: { to: string } }
   | {
       type: "channelHistoryLoaded";
       data: {

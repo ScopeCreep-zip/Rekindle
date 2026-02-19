@@ -143,6 +143,20 @@
     white-space: nowrap;
   }
 
+  /* Pending friend requests (Awaiting Response group) */
+  .buddy-group-pending .buddy-item {
+    opacity: 0.6;
+  }
+
+  .buddy-group-pending .buddy-name {
+    font-style: italic;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .buddy-group-pending .buddy-group-header {
+    color: var(--color-xfire-away);
+  }
+
   /* Status dots */
   .status-dot {
     width: 8px;
@@ -1422,6 +1436,29 @@
 
   .pending-btn-reject:hover {
     background: #ef4444;
+  }
+
+  .pending-btn-block {
+    padding: 2px 8px;
+    font-size: 10px;
+    font-weight: 600;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    background: color-mix(in srgb, var(--color-xfire-offline) 60%, transparent);
+    color: white;
+    font-family: var(--font-family-xfire);
+  }
+
+  .pending-btn-block:hover {
+    background: var(--color-xfire-offline);
+  }
+
+  .blocked-user-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px;
   }
 
   /* Add friend / create form */

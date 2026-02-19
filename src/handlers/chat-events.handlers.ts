@@ -1,4 +1,5 @@
 import { batch } from "solid-js";
+import { reconcile } from "solid-js/store";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { subscribeChatEvents } from "../ipc/channels";
 import { friendsState, setFriendsState } from "../stores/friends.store";
@@ -45,10 +46,22 @@ export function subscribeBuddyListChatEvents(): Promise<UnlistenFn> {
         break;
       }
       case "friendRequestAccepted": {
+        // Use reconcile to force SolidJS to diff and fire all changed signals.
+        // Plain nested setters (setStore("friends", key, "prop", val)) can miss
+        // memo recomputation when the memo iterates via Object.values().
+        const accepted = friendsState.friends[event.data.from];
+        if (accepted) {
+          setFriendsState("friends", event.data.from, reconcile({
+            ...accepted,
+            friendshipState: "accepted" as const,
+            displayName: event.data.displayName || accepted.displayName,
+          }));
+        }
         handleRefreshFriends();
         break;
       }
       case "friendAdded": {
+        const state = event.data.friendshipState === "accepted" ? "accepted" : "pendingOut";
         setFriendsState("friends", event.data.publicKey, {
           publicKey: event.data.publicKey,
           displayName: event.data.displayName,
@@ -60,10 +73,17 @@ export function subscribeBuddyListChatEvents(): Promise<UnlistenFn> {
           unreadCount: 0,
           lastSeenAt: null,
           voiceChannel: null,
+          friendshipState: state as "pendingOut" | "accepted",
         });
         break;
       }
       case "friendRequestRejected": {
+        // Remove the pending-out friend from the list
+        if (friendsState.friends[event.data.from]) {
+          const next = { ...friendsState.friends };
+          delete next[event.data.from];
+          setFriendsState("friends", reconcile(next));
+        }
         const truncatedKey = event.data.from.slice(0, 8);
         setNotificationState("notifications", (prev) => [
           ...prev,
@@ -77,6 +97,16 @@ export function subscribeBuddyListChatEvents(): Promise<UnlistenFn> {
           },
         ]);
         setNotificationState("unreadCount", (c) => c + 1);
+        break;
+      }
+      case "friendRemoved": {
+        const next = { ...friendsState.friends };
+        delete next[event.data.publicKey];
+        setFriendsState("friends", reconcile(next));
+        break;
+      }
+      case "friendRequestDelivered": {
+        // Optional: could show a delivery indicator on the pending friend
         break;
       }
     }

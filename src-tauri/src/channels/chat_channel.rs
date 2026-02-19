@@ -38,11 +38,17 @@ pub enum ChatEvent {
     FriendAdded {
         public_key: String,
         display_name: String,
+        friendship_state: String,
     },
     /// Emitted when a friend is removed (unfriended or blocked).
     #[serde(rename_all = "camelCase")]
     FriendRemoved {
         public_key: String,
+    },
+    /// Emitted when a sent friend request was confirmed received by the peer.
+    #[serde(rename_all = "camelCase")]
+    FriendRequestDelivered {
+        to: String,
     },
     /// Emitted when background server fetch completes with channel history.
     #[serde(rename_all = "camelCase")]
