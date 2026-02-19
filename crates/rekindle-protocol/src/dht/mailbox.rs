@@ -71,7 +71,7 @@ pub async fn read_peer_mailbox_route(
         .map_err(|e| ProtocolError::DhtError(format!("open peer mailbox: {e}")))?;
 
     let value = rc
-        .get_dht_value(record_key, MAILBOX_SUBKEY_ROUTE_BLOB, false)
+        .get_dht_value(record_key, MAILBOX_SUBKEY_ROUTE_BLOB, true)
         .await
         .map_err(|e| ProtocolError::DhtError(format!("read peer mailbox route: {e}")))?;
 

@@ -1,4 +1,4 @@
-import { Component, createSignal, For, Show, onMount, onCleanup } from "solid-js";
+import { Component, createSignal, createEffect, For, Show, onMount, onCleanup } from "solid-js";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import Titlebar from "../components/titlebar/Titlebar";
 import Avatar from "../components/common/Avatar";
@@ -41,6 +41,7 @@ const SettingsWindow: Component = () => {
   const [statusMsgInput, setStatusMsgInput] = createSignal("");
   const [checkingUpdates, setCheckingUpdates] = createSignal(false);
   const [updateResult, setUpdateResult] = createSignal<string | null>(null);
+  const [blockedUsers, setBlockedUsers] = createSignal<{ publicKey: string; displayName: string; blockedAt: number }[]>([]);
 
   let unlistenSwitchTab: Promise<UnlistenFn> | undefined;
 
@@ -60,6 +61,15 @@ const SettingsWindow: Component = () => {
 
   onCleanup(() => {
     unlistenSwitchTab?.then((unlisten) => unlisten());
+  });
+
+  // Load blocked users when privacy tab is selected
+  createEffect(() => {
+    if (activeTab() === "privacy") {
+      commands.getBlockedUsers().then(setBlockedUsers).catch((e) => {
+        console.error("Failed to load blocked users:", e);
+      });
+    }
   });
 
   function handleToggle(key: keyof typeof settingsState): void {
@@ -255,6 +265,15 @@ const SettingsWindow: Component = () => {
     );
   }
 
+  async function handleUnblock(publicKey: string): Promise<void> {
+    try {
+      await commands.unblockUser(publicKey);
+      setBlockedUsers((prev) => prev.filter((u) => u.publicKey !== publicKey));
+    } catch (e) {
+      console.error("Failed to unblock user:", e);
+    }
+  }
+
   function renderPrivacy() {
     return (
       <>
@@ -269,6 +288,21 @@ const SettingsWindow: Component = () => {
           <button class="settings-action-btn" disabled>Import Identity</button>
         </div>
         <div class="settings-hint">Identity export/import requires Stronghold integration.</div>
+        <div class="settings-section-title">Blocked Users</div>
+        <Show when={blockedUsers().length > 0} fallback={
+          <div class="settings-hint">No blocked users.</div>
+        }>
+          <For each={blockedUsers()}>
+            {(user) => (
+              <div class="blocked-user-item">
+                <span class="buddy-name">{user.displayName || user.publicKey.slice(0, 12) + "..."}</span>
+                <button class="settings-action-btn" onClick={() => handleUnblock(user.publicKey)}>
+                  Unblock
+                </button>
+              </div>
+            )}
+          </For>
+        </Show>
       </>
     );
   }

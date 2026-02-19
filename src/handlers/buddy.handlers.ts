@@ -1,3 +1,4 @@
+import { reconcile } from "solid-js/store";
 import { commands } from "../ipc/commands";
 import { setFriendsState, friendsState } from "../stores/friends.store";
 import { authState } from "../stores/auth.store";
@@ -25,11 +26,8 @@ export function handleCloseContextMenu(): void {
 export async function handleRemoveFriend(publicKey: string): Promise<void> {
   try {
     await commands.removeFriend(publicKey);
-    setFriendsState("friends", (prev) => {
-      const next = { ...prev };
-      delete next[publicKey];
-      return next;
-    });
+    // Backend emits FriendRemoved event which handles store update via reconcile.
+    // No inline store mutation needed here.
   } catch (e) {
     console.error("Failed to remove friend:", e);
   }
@@ -135,14 +133,26 @@ export async function handleMoveFriendToGroup(
   }
 }
 
-export async function handleBlockFriend(publicKey: string): Promise<string | null> {
+export async function handleBlockUser(publicKey: string, displayName?: string): Promise<string | null> {
   try {
-    await commands.blockFriend(publicKey);
-    setFriendsState("friends", (prev) => {
-      const next = { ...prev };
-      delete next[publicKey];
-      return next;
-    });
+    await commands.blockUser(publicKey, displayName);
+    // Remove from friends store
+    const next = { ...friendsState.friends };
+    delete next[publicKey];
+    setFriendsState("friends", reconcile(next));
+    // Remove from pending requests store
+    setFriendsState("pendingRequests", (reqs) =>
+      reqs.filter((r) => r.publicKey !== publicKey),
+    );
+    return null;
+  } catch (e) {
+    return String(e);
+  }
+}
+
+export async function handleUnblockUser(publicKey: string): Promise<string | null> {
+  try {
+    await commands.unblockUser(publicKey);
     return null;
   } catch (e) {
     return String(e);
@@ -167,6 +177,18 @@ export async function handleAddFriendFromInvite(inviteString: string): Promise<s
   }
 }
 
+export async function handleCancelRequest(publicKey: string): Promise<string | null> {
+  try {
+    await commands.cancelRequest(publicKey);
+    const next = { ...friendsState.friends };
+    delete next[publicKey];
+    setFriendsState("friends", reconcile(next));
+    return null;
+  } catch (e) {
+    return String(e);
+  }
+}
+
 export async function handleRefreshFriends(): Promise<void> {
   try {
     const friends = await commands.getFriends();
@@ -185,9 +207,10 @@ export async function handleRefreshFriends(): Promise<void> {
         unreadCount: f.unreadCount,
         lastSeenAt: f.lastSeenAt ?? null,
         voiceChannel: null,
+        friendshipState: (f.friendshipState as Friend["friendshipState"]) ?? "accepted",
       };
     }
-    setFriendsState("friends", friendMap);
+    setFriendsState("friends", reconcile(friendMap));
   } catch (e) {
     console.error("Failed to refresh friends:", e);
   }

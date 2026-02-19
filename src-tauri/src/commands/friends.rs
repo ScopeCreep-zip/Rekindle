@@ -6,7 +6,7 @@ use crate::channels::ChatEvent;
 use crate::commands::auth::current_owner_key;
 use crate::db::{self, DbPool};
 use crate::services;
-use crate::state::{FriendState, SharedState, UserStatus};
+use crate::state::{FriendState, FriendshipState, SharedState, UserStatus};
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -20,6 +20,7 @@ pub struct FriendResponse {
     pub group: Option<String>,
     pub unread_count: u32,
     pub last_seen_at: Option<i64>,
+    pub friendship_state: FriendshipState,
 }
 
 /// A pending friend request stored in `SQLite`.
@@ -90,6 +91,11 @@ pub async fn add_friend(
         return Err("You cannot add yourself as a friend".to_string());
     }
 
+    // Prevent adding a blocked user
+    if is_user_blocked(pool.inner(), &owner_key, &public_key).await {
+        return Err("Cannot add a blocked user. Unblock them first.".to_string());
+    }
+
     let timestamp = db::timestamp_now();
 
     // Insert into SQLite
@@ -100,7 +106,7 @@ pub async fn add_friend(
     tokio::task::spawn_blocking(move || {
         let conn = pool_clone.lock().map_err(|e| e.to_string())?;
         conn.execute(
-            "INSERT OR IGNORE INTO friends (owner_key, public_key, display_name, added_at) VALUES (?1, ?2, ?3, ?4)",
+            "INSERT OR IGNORE INTO friends (owner_key, public_key, display_name, added_at, friendship_state) VALUES (?1, ?2, ?3, ?4, 'pending_out')",
             rusqlite::params![ok, pk, dn, timestamp],
         )
         .map_err(|e| format!("insert friend: {e}"))?;
@@ -109,7 +115,7 @@ pub async fn add_friend(
     .await
     .map_err(|e| e.to_string())??;
 
-    // Add to in-memory state
+    // Add to in-memory state as pending (not yet accepted by peer)
     let friend = FriendState {
         public_key: public_key.clone(),
         display_name: display_name.clone(),
@@ -125,6 +131,7 @@ pub async fn add_friend(
         remote_conversation_key: None,
         mailbox_dht_key: None,
         last_heartbeat_at: None,
+        friendship_state: FriendshipState::PendingOut,
     };
     state.friends.write().insert(public_key.clone(), friend);
 
@@ -146,6 +153,7 @@ pub async fn add_friend(
         &ChatEvent::FriendAdded {
             public_key,
             display_name,
+            friendship_state: "pendingOut".to_string(),
         },
     );
 
@@ -156,12 +164,37 @@ pub async fn add_friend(
 #[tauri::command]
 pub async fn remove_friend(
     public_key: String,
+    app: tauri::AppHandle,
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
     let owner_key = current_owner_key(state.inner())?;
 
-    // Remove from SQLite
+    // Notify the peer BEFORE local cleanup so we still have their route info.
+    // send_envelope_to_peer queues the message for retry if the initial send fails.
+    if let Err(e) = services::message_service::send_to_peer_raw(
+        state.inner(),
+        pool.inner(),
+        &public_key,
+        &rekindle_protocol::messaging::envelope::MessagePayload::Unfriended,
+    )
+    .await
+    {
+        tracing::warn!(to = %public_key, error = %e, "failed to send unfriend notification (continuing with local removal)");
+    }
+
+    // Always queue for retry — Veilid app_message has no delivery guarantee.
+    // Cleared when peer sends UnfriendedAck, or dropped after max retries (20 × 30s).
+    let _ = services::message_service::build_and_queue_envelope(
+        state.inner(),
+        pool.inner(),
+        &public_key,
+        &rekindle_protocol::messaging::envelope::MessagePayload::Unfriended,
+    )
+    .await;
+
+    // Remove from SQLite (permanent — friend won't reappear on restart)
+    // Also delete any pending_friend_requests row to prevent stale rows blocking future invites
     let pool_clone = pool.inner().clone();
     let pk = public_key.clone();
     let ok = owner_key;
@@ -172,28 +205,73 @@ pub async fn remove_friend(
             rusqlite::params![ok, pk],
         )
         .map_err(|e| format!("delete friend: {e}"))?;
+        conn.execute(
+            "DELETE FROM pending_friend_requests WHERE owner_key = ?1 AND public_key = ?2",
+            rusqlite::params![ok, pk],
+        )
+        .map_err(|e| format!("delete pending request on removal: {e}"))?;
         Ok::<(), String>(())
     })
     .await
     .map_err(|e| e.to_string())??;
 
-    // Remove from in-memory state and unregister DHT key mapping
-    let dht_key = {
+    // Mark as Removing in-memory (instead of deleting immediately) so that
+    // sync_service can still look up the friend's routing info (mailbox key,
+    // DHT record key) when retrying the queued Unfriended notification.
+    // The entry is hidden from get_friends and cleaned up after a grace period.
+    {
         let mut friends = state.friends.write();
-        let removed = friends.remove(&public_key);
-        removed.and_then(|f| f.dht_record_key)
-    };
-    if let Some(ref dht_key) = dht_key {
-        let mut dht_mgr = state.dht_manager.write();
-        if let Some(mgr) = dht_mgr.as_mut() {
-            mgr.unregister_friend_dht_key(dht_key);
+        if let Some(friend) = friends.get_mut(&public_key) {
+            friend.friendship_state = FriendshipState::Removing;
         }
     }
 
-    // Update DHT friend list record
+    // Unregister DHT presence key mapping (stops watching their status)
+    // and invalidate route cache so stale routes aren't reused on re-add
+    let dht_key = {
+        let friends = state.friends.read();
+        friends.get(&public_key).and_then(|f| f.dht_record_key.clone())
+    };
+    {
+        let mut dht_mgr = state.dht_manager.write();
+        if let Some(mgr) = dht_mgr.as_mut() {
+            if let Some(ref dht_key) = dht_key {
+                mgr.unregister_friend_dht_key(dht_key);
+            }
+            mgr.manager.invalidate_route_for_peer(&public_key);
+        }
+    }
+
+    // Update DHT friend list record (publishes list without the removed friend)
     if let Err(e) = services::message_service::push_friend_list_update(state.inner()).await {
         tracing::warn!(error = %e, "failed to update DHT friend list after removal");
     }
+
+    // Emit event so ALL windows update (not just the one that called the command)
+    let _ = app.emit("chat-event", &ChatEvent::FriendRemoved {
+        public_key: public_key.clone(),
+    });
+
+    // Spawn a background task to fully remove the friend from in-memory state
+    // after a grace period. This gives sync_service enough time to retry the
+    // Unfriended notification using the friend's cached routing info.
+    // 10 minutes matches the max retry window (20 retries × 30s intervals).
+    let state_clone = state.inner().clone();
+    let pk_clone = public_key.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(600)).await;
+        let mut friends = state_clone.friends.write();
+        // Only remove if still in Removing state (user may have re-added them)
+        if friends.get(&pk_clone).is_some_and(|f| matches!(f.friendship_state, FriendshipState::Removing)) {
+            friends.remove(&pk_clone);
+            // Clean up Signal session now that retries are done
+            let signal = state_clone.signal_manager.lock();
+            if let Some(handle) = signal.as_ref() {
+                let _ = handle.manager.delete_session(&pk_clone);
+            }
+            tracing::debug!(public_key = %pk_clone, "cleaned up Removing friend after grace period");
+        }
+    });
 
     tracing::info!(public_key = %public_key, "friend removed");
     Ok(())
@@ -267,6 +345,7 @@ pub async fn accept_request(
         remote_conversation_key: None,
         mailbox_dht_key: pending_mailbox_key.clone(),
         last_heartbeat_at: None,
+        friendship_state: FriendshipState::Accepted,
     };
     state.friends.write().insert(public_key.clone(), friend);
 
@@ -294,9 +373,11 @@ pub async fn accept_request(
 
     // Establish initiator-side Signal session using the requester's stored prekey bundle.
     // We (the acceptor) are the Signal initiator; the requester will be the responder.
+    // Clear any stale session first (e.g., from a previous friendship that was removed).
     let session_init = if let Some(ref prekey_bytes) = pending_prekey_bundle {
         let signal = state.signal_manager.lock();
         if let Some(handle) = signal.as_ref() {
+            let _ = handle.manager.delete_session(&public_key);
             if let Ok(bundle) = serde_json::from_slice::<rekindle_crypto::signal::PreKeyBundle>(prekey_bytes) {
                 match handle.manager.establish_session(&public_key, &bundle) {
                     Ok(info) => {
@@ -386,16 +467,21 @@ pub async fn get_friends(state: State<'_, SharedState>) -> Result<Vec<FriendResp
     let friends = state.friends.read();
     let list: Vec<FriendResponse> = friends
         .values()
-        .map(|f| FriendResponse {
-            public_key: f.public_key.clone(),
-            display_name: f.display_name.clone(),
-            nickname: f.nickname.clone(),
-            status: f.status,
-            status_message: f.status_message.clone(),
-            game_info: f.game_info.clone(),
-            group: f.group.clone(),
-            unread_count: f.unread_count,
-            last_seen_at: f.last_seen_at,
+        .filter(|f| !matches!(f.friendship_state, FriendshipState::Removing))
+        .map(|f| {
+            let is_accepted = f.friendship_state == FriendshipState::Accepted;
+            FriendResponse {
+                public_key: f.public_key.clone(),
+                display_name: f.display_name.clone(),
+                nickname: f.nickname.clone(),
+                status: if is_accepted { f.status } else { UserStatus::Offline },
+                status_message: if is_accepted { f.status_message.clone() } else { None },
+                game_info: if is_accepted { f.game_info.clone() } else { None },
+                group: f.group.clone(),
+                unread_count: f.unread_count,
+                last_seen_at: f.last_seen_at,
+                friendship_state: f.friendship_state,
+            }
         })
         .collect();
     Ok(list)
@@ -439,6 +525,60 @@ pub async fn reject_request(
     });
 
     tracing::info!(public_key = %public_key, "friend request rejected");
+    Ok(())
+}
+
+/// Cancel an outbound pending friend request.
+///
+/// Only works for friends in `PendingOut` state — removes them from the
+/// friends table and in-memory state.
+#[tauri::command]
+pub async fn cancel_request(
+    public_key: String,
+    app: tauri::AppHandle,
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+) -> Result<(), String> {
+    let owner_key = current_owner_key(state.inner())?;
+
+    // Only cancel pending_out friends
+    let is_pending = state
+        .friends
+        .read()
+        .get(&public_key)
+        .is_some_and(|f| f.friendship_state == FriendshipState::PendingOut);
+    if !is_pending {
+        return Err("Not a pending outbound request".to_string());
+    }
+
+    // Delete from DB
+    let pool_clone = pool.inner().clone();
+    let pk = public_key.clone();
+    let ok = owner_key;
+    tokio::task::spawn_blocking(move || {
+        let conn = pool_clone.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "DELETE FROM friends WHERE owner_key = ?1 AND public_key = ?2",
+            rusqlite::params![ok, pk],
+        )
+        .map_err(|e| format!("delete pending friend: {e}"))?;
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    // Remove from in-memory state
+    state.friends.write().remove(&public_key);
+
+    // Emit FriendRemoved so frontend updates
+    let _ = app.emit(
+        "chat-event",
+        &ChatEvent::FriendRemoved {
+            public_key: public_key.clone(),
+        },
+    );
+
+    tracing::info!(public_key = %public_key, "pending friend request cancelled");
     Ok(())
 }
 
@@ -560,7 +700,7 @@ pub async fn generate_invite(
         let nh = node.as_ref().ok_or("node not initialized")?;
         let mdk = nh.mailbox_dht_key.clone().ok_or("mailbox DHT key not set")?;
         let pdk = nh.profile_dht_key.clone().ok_or("profile DHT key not set")?;
-        let rb = nh.route_blob.clone().unwrap_or_default();
+        let rb = nh.route_blob.clone().ok_or("route not allocated yet — try again in a moment")?;
         (mdk, pdk, rb)
     };
 
@@ -606,9 +746,33 @@ pub async fn add_friend_from_invite(
         return Err("You cannot add yourself as a friend".to_string());
     }
 
+    // Prevent adding a blocked user
+    if is_user_blocked(pool.inner(), &owner_key, &blob.public_key).await {
+        return Err("Cannot add a blocked user. Unblock them first.".to_string());
+    }
+
     let timestamp = db::timestamp_now();
 
+    // Clean up any stale state from a previous friendship (e.g., re-adding after removal).
+    // The Removing grace period keeps in-memory state alive for unfriend retries,
+    // but on re-add we must clear it so fresh connections are established.
+    {
+        let friends = state.friends.read();
+        let is_stale = friends.get(&blob.public_key).is_some();
+        drop(friends);
+        if is_stale {
+            // Invalidate stale route cache so fresh route from invite is used
+            let mut dht_mgr = state.dht_manager.write();
+            if let Some(mgr) = dht_mgr.as_mut() {
+                mgr.manager.invalidate_route_for_peer(&blob.public_key);
+            }
+            // Remove stale in-memory entry (the .insert() below will create fresh state)
+            state.friends.write().remove(&blob.public_key);
+        }
+    }
+
     // Insert into SQLite with profile and mailbox keys from the invite
+    // (remove_friend already DELETEd the old row; this creates a fresh one)
     let pool_clone = pool.inner().clone();
     let pk = blob.public_key.clone();
     let dn = blob.display_name.clone();
@@ -617,9 +781,16 @@ pub async fn add_friend_from_invite(
     let mailbox_key = blob.mailbox_dht_key.clone();
     tokio::task::spawn_blocking(move || {
         let conn = pool_clone.lock().map_err(|e| e.to_string())?;
+        // DELETE first to handle any leftover rows (e.g., race with grace period cleanup),
+        // then INSERT fresh so all columns are populated from the invite.
         conn.execute(
-            "INSERT OR IGNORE INTO friends (owner_key, public_key, display_name, added_at, dht_record_key, mailbox_dht_key) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "DELETE FROM friends WHERE owner_key = ?1 AND public_key = ?2",
+            rusqlite::params![ok, pk],
+        )
+        .map_err(|e| format!("cleanup stale friend row: {e}"))?;
+        conn.execute(
+            "INSERT INTO friends (owner_key, public_key, display_name, added_at, dht_record_key, mailbox_dht_key, friendship_state) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'pending_out')",
             rusqlite::params![ok, pk, dn, timestamp, profile_key, mailbox_key],
         )
         .map_err(|e| format!("insert friend: {e}"))?;
@@ -628,7 +799,7 @@ pub async fn add_friend_from_invite(
     .await
     .map_err(|e| e.to_string())??;
 
-    // Add to in-memory state
+    // Add to in-memory state (pending until peer accepts)
     let friend = FriendState {
         public_key: blob.public_key.clone(),
         display_name: blob.display_name.clone(),
@@ -644,6 +815,7 @@ pub async fn add_friend_from_invite(
         remote_conversation_key: None,
         mailbox_dht_key: Some(blob.mailbox_dht_key.clone()),
         last_heartbeat_at: None,
+        friendship_state: FriendshipState::PendingOut,
     };
     state.friends.write().insert(blob.public_key.clone(), friend);
 
@@ -679,6 +851,7 @@ pub async fn add_friend_from_invite(
         &ChatEvent::FriendAdded {
             public_key: blob.public_key.clone(),
             display_name: blob.display_name.clone(),
+            friendship_state: "pendingOut".to_string(),
         },
     );
 
@@ -701,11 +874,13 @@ async fn setup_invite_contact(
     }
 
     // Establish Signal session from invite's PreKeyBundle
+    // Clear any stale session first (e.g., from a previous friendship that was removed)
     if let Ok(bundle) =
         serde_json::from_slice::<rekindle_crypto::signal::PreKeyBundle>(&blob.prekey_bundle)
     {
         let signal = state.signal_manager.lock();
         if let Some(handle) = signal.as_ref() {
+            let _ = handle.manager.delete_session(&blob.public_key);
             match handle.manager.establish_session(&blob.public_key, &bundle) {
                 Ok(_init_info) => {
                     tracing::info!(peer = %blob.public_key, "established Signal session from invite");
@@ -735,11 +910,44 @@ async fn setup_invite_contact(
     }
 }
 
-/// Block a friend — removes them and rotates our profile DHT key so they
-/// can no longer watch our presence.
+/// A blocked user entry returned by `get_blocked_users`.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BlockedUser {
+    pub public_key: String,
+    pub display_name: String,
+    pub blocked_at: i64,
+}
+
+/// Check if a user is in the blocked list for the current identity.
+pub(crate) async fn is_user_blocked(pool: &DbPool, owner_key: &str, public_key: &str) -> bool {
+    let pool = pool.clone();
+    let ok = owner_key.to_string();
+    let pk = public_key.to_string();
+    tokio::task::spawn_blocking(move || {
+        let conn = pool.lock().map_err(|e| e.to_string())?;
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM blocked_users WHERE owner_key = ?1 AND public_key = ?2",
+                rusqlite::params![ok, pk],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        Ok::<bool, String>(count > 0)
+    })
+    .await
+    .unwrap_or(Ok(false))
+    .unwrap_or(false)
+}
+
+/// Block a user — works for any public key (friend, pending, invite, or raw key).
+///
+/// Removes them from friends/pending requests, adds to blocked list, cleans up
+/// Signal session, pending messages, DHT state, and rotates our profile key.
 #[tauri::command]
-pub async fn block_friend(
+pub async fn block_user(
     public_key: String,
+    display_name: Option<String>,
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
@@ -747,20 +955,41 @@ pub async fn block_friend(
     let owner_key = current_owner_key(state.inner())?;
     let timestamp = db::timestamp_now();
 
-    // Remove from friends + add to blocked list in one transaction
+    // Resolve display name: in-memory friends → pending requests store → param → truncated key
+    let resolved_name = {
+        let friends = state.friends.read();
+        friends.get(&public_key).map(|f| f.display_name.clone())
+    }
+    .or_else(|| display_name.clone())
+    .unwrap_or_else(|| {
+        let truncated = if public_key.len() > 12 {
+            format!("{}...", &public_key[..12])
+        } else {
+            public_key.clone()
+        };
+        truncated
+    });
+
+    // DB transaction: DELETE from friends + pending_friend_requests + INSERT into blocked_users
     let pool_clone = pool.inner().clone();
     let pk = public_key.clone();
     let ok = owner_key;
+    let dn = resolved_name;
     tokio::task::spawn_blocking(move || {
         let conn = pool_clone.lock().map_err(|e| e.to_string())?;
         conn.execute(
             "DELETE FROM friends WHERE owner_key = ?1 AND public_key = ?2",
             rusqlite::params![ok, pk],
         )
-        .map_err(|e| format!("delete friend: {e}"))?;
+        .map_err(|e| format!("delete friend on block: {e}"))?;
         conn.execute(
-            "INSERT OR IGNORE INTO blocked_users (owner_key, public_key, blocked_at) VALUES (?1, ?2, ?3)",
-            rusqlite::params![ok, pk, timestamp],
+            "DELETE FROM pending_friend_requests WHERE owner_key = ?1 AND public_key = ?2",
+            rusqlite::params![ok, pk],
+        )
+        .map_err(|e| format!("delete pending request on block: {e}"))?;
+        conn.execute(
+            "INSERT OR REPLACE INTO blocked_users (owner_key, public_key, display_name, blocked_at) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![ok, pk, dn, timestamp],
         )
         .map_err(|e| format!("insert blocked user: {e}"))?;
         Ok::<(), String>(())
@@ -768,16 +997,35 @@ pub async fn block_friend(
     .await
     .map_err(|e| e.to_string())??;
 
-    // Remove from in-memory state and unregister DHT key mapping
+    // Delete queued pending_messages to this user
+    services::message_service::delete_pending_messages_to_recipient(
+        state.inner(),
+        pool.inner(),
+        &public_key,
+    )
+    .await;
+
+    // Remove from in-memory state and unregister DHT key mapping + invalidate route
     let dht_key = {
         let mut friends = state.friends.write();
         let removed = friends.remove(&public_key);
         removed.and_then(|f| f.dht_record_key)
     };
-    if let Some(ref dht_key) = dht_key {
+    {
         let mut dht_mgr = state.dht_manager.write();
         if let Some(mgr) = dht_mgr.as_mut() {
-            mgr.unregister_friend_dht_key(dht_key);
+            if let Some(ref dht_key) = dht_key {
+                mgr.unregister_friend_dht_key(dht_key);
+            }
+            mgr.manager.invalidate_route_for_peer(&public_key);
+        }
+    }
+
+    // Delete Signal session for the blocked user
+    {
+        let signal = state.signal_manager.lock();
+        if let Some(handle) = signal.as_ref() {
+            let _ = handle.manager.delete_session(&public_key);
         }
     }
 
@@ -791,8 +1039,72 @@ pub async fn block_friend(
         },
     );
 
-    tracing::info!(public_key = %public_key, "friend blocked and profile key rotated");
+    tracing::info!(public_key = %public_key, "user blocked and profile key rotated");
     Ok(())
+}
+
+/// Unblock a user — removes them from the blocked list.
+///
+/// Does NOT re-add them as a friend. The user must manually re-add if desired.
+#[tauri::command]
+pub async fn unblock_user(
+    public_key: String,
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+) -> Result<(), String> {
+    let owner_key = current_owner_key(state.inner())?;
+    let pool_clone = pool.inner().clone();
+    let pk = public_key.clone();
+    let ok = owner_key;
+    tokio::task::spawn_blocking(move || {
+        let conn = pool_clone.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "DELETE FROM blocked_users WHERE owner_key = ?1 AND public_key = ?2",
+            rusqlite::params![ok, pk],
+        )
+        .map_err(|e| format!("unblock user: {e}"))?;
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    tracing::info!(public_key = %public_key, "user unblocked");
+    Ok(())
+}
+
+/// Get all blocked users for the current identity.
+#[tauri::command]
+pub async fn get_blocked_users(
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+) -> Result<Vec<BlockedUser>, String> {
+    let owner_key = current_owner_key(state.inner())?;
+    let pool_clone = pool.inner().clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = pool_clone.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT public_key, display_name, blocked_at \
+                 FROM blocked_users WHERE owner_key = ?1 ORDER BY blocked_at DESC",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(rusqlite::params![owner_key], |row| {
+                Ok(BlockedUser {
+                    public_key: row.get(0)?,
+                    display_name: row.get(1)?,
+                    blocked_at: row.get(2)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row.map_err(|e| e.to_string())?);
+        }
+        Ok(results)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Rotate the profile DHT key: create a new profile record, copy data,
@@ -947,7 +1259,10 @@ pub async fn emit_friends_presence(
 
     let friends: Vec<(String, UserStatus)> = {
         let friends = state.friends.read();
-        friends.values().map(|f| (f.public_key.clone(), f.status)).collect()
+        friends.values()
+            .filter(|f| f.friendship_state == FriendshipState::Accepted)
+            .map(|f| (f.public_key.clone(), f.status))
+            .collect()
     };
     for (key, status) in friends {
         if status != UserStatus::Offline {
