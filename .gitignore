@@ -85,9 +85,8 @@ result-*
 # and MUST stay ignored (git-secret adds them automatically)
 
 # ------------------------------------------------------------
-# Windows build helpers (wrapper scripts, not needed at runtime)
+# Windows build artifacts
 # ------------------------------------------------------------
-/scripts/
 /nul
 
 # ------------------------------------------------------------
