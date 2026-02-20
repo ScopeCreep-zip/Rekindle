@@ -53,24 +53,17 @@ async fn create_identity_persists_to_db_and_stronghold() {
     }
 
     // Identity persisted in SQLite
-    let db = pool.clone();
     let pk = result.public_key.clone();
-    let row = tokio::task::spawn_blocking(move || {
-        let conn = db.lock().unwrap();
-        conn.query_row(
-            "SELECT public_key, display_name FROM identity WHERE public_key = ?",
-            rusqlite::params![pk],
-            |row| {
-                Ok((
-                    row.get::<_, String>(0).unwrap(),
-                    row.get::<_, String>(1).unwrap(),
-                ))
-            },
-        )
-        .unwrap()
-    })
-    .await
-    .unwrap();
+    let row = pool
+        .call(move |conn| {
+            conn.query_row(
+                "SELECT public_key, display_name FROM identity WHERE public_key = ?",
+                rusqlite::params![pk],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            )
+        })
+        .await
+        .unwrap();
     assert_eq!(row.0, result.public_key);
     assert_eq!(row.1, "Alice");
 

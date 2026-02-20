@@ -49,7 +49,10 @@ impl StrongholdKeystore {
     }
 
     /// Delete the Stronghold snapshot file for a specific identity.
-    pub fn delete_snapshot(snapshot_dir: &Path, public_key_hex: &str) -> Result<(), std::io::Error> {
+    pub fn delete_snapshot(
+        snapshot_dir: &Path,
+        public_key_hex: &str,
+    ) -> Result<(), std::io::Error> {
         let filename = format!("{public_key_hex}.stronghold");
         let snapshot_file = snapshot_dir.join(filename);
         if snapshot_file.exists() {
@@ -85,9 +88,10 @@ impl StrongholdKeystore {
         let client_name = b"rekindle".to_vec();
 
         // Try to load the client from the snapshot, or create a new one
-        let _client = stronghold.load_client(&client_name).or_else(|_| {
-            stronghold.create_client(&client_name)
-        }).map_err(|e| CryptoError::StorageError(format!("client init: {e}")))?;
+        let _client = stronghold
+            .load_client(&client_name)
+            .or_else(|_| stronghold.create_client(&client_name))
+            .map_err(|e| CryptoError::StorageError(format!("client init: {e}")))?;
 
         Ok(Self {
             stronghold,
@@ -245,7 +249,10 @@ mod tests {
 
         // Attempt to open with wrong passphrase — should fail
         let result = StrongholdKeystore::initialize(dir.path(), "wrong-pass");
-        assert!(result.is_err(), "wrong passphrase should fail to load snapshot");
+        assert!(
+            result.is_err(),
+            "wrong passphrase should fail to load snapshot"
+        );
     }
 
     #[test]

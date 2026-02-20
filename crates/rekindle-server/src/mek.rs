@@ -6,10 +6,7 @@ use rusqlite::params;
 use crate::server_state::ServerState;
 
 /// Generate the initial MEK when a community is first hosted.
-pub fn create_initial_mek(
-    state: &Arc<ServerState>,
-    community_id: &str,
-) -> MediaEncryptionKey {
+pub fn create_initial_mek(state: &Arc<ServerState>, community_id: &str) -> MediaEncryptionKey {
     let mek = MediaEncryptionKey::generate(1);
 
     let db = state.db.lock().unwrap_or_else(|e| {
@@ -63,10 +60,7 @@ pub fn rotate_mek(
 }
 
 /// Load the latest MEK for a community from the server database.
-pub fn load_latest_mek(
-    state: &Arc<ServerState>,
-    community_id: &str,
-) -> Option<MediaEncryptionKey> {
+pub fn load_latest_mek(state: &Arc<ServerState>, community_id: &str) -> Option<MediaEncryptionKey> {
     let db = state.db.lock().unwrap_or_else(|e| {
         tracing::error!(error = %e, "server db mutex poisoned — recovering");
         e.into_inner()
@@ -86,7 +80,10 @@ pub fn load_latest_mek(
             if bytes.len() == 32 {
                 let mut key = [0u8; 32];
                 key.copy_from_slice(&bytes);
-                Some(MediaEncryptionKey::from_bytes(key, gen.try_into().unwrap_or(0u64)))
+                Some(MediaEncryptionKey::from_bytes(
+                    key,
+                    gen.try_into().unwrap_or(0u64),
+                ))
             } else {
                 tracing::error!(community = %community_id, "MEK key_bytes has wrong length");
                 None

@@ -270,8 +270,13 @@ impl DHTManagerHandle {
     }
 
     /// Register a conversation DHT record key → friend public key mapping.
-    pub fn register_conversation_key(&mut self, conversation_key: String, friend_public_key: String) {
-        self.conversation_key_to_friend.insert(conversation_key, friend_public_key);
+    pub fn register_conversation_key(
+        &mut self,
+        conversation_key: String,
+        friend_public_key: String,
+    ) {
+        self.conversation_key_to_friend
+            .insert(conversation_key, friend_public_key);
     }
 
     /// Look up which friend owns a given conversation DHT key.

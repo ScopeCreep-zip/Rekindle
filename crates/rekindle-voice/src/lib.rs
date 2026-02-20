@@ -44,7 +44,7 @@ impl Default for VoiceConfig {
         Self {
             sample_rate: 48000,
             channels: 1,
-            frame_size: 960, // 20ms at 48kHz
+            frame_size: 960,       // 20ms at 48kHz
             jitter_buffer_ms: 200, // Veilid has 100-500ms jitter
             vad_threshold: 0.02,
             vad_hold_ms: 300,
@@ -134,8 +134,7 @@ impl VoiceEngine {
         // Channel capacity: ~100 frames ≈ 2 seconds of audio at 20ms per frame.
         let (tx, rx) = mpsc::channel::<Vec<f32>>(100);
 
-        let mut capture =
-            AudioCapture::new(self.config.sample_rate, self.config.channels)?;
+        let mut capture = AudioCapture::new(self.config.sample_rate, self.config.channels)?;
         capture.start(
             tx,
             self.config.input_device.as_deref(),
@@ -219,11 +218,7 @@ impl VoiceEngine {
     /// Update the audio device names in the config.
     ///
     /// Takes effect on the next `start_capture`/`start_playback` call.
-    pub fn set_devices(
-        &mut self,
-        input_device: Option<String>,
-        output_device: Option<String>,
-    ) {
+    pub fn set_devices(&mut self, input_device: Option<String>, output_device: Option<String>) {
         self.config.input_device = input_device;
         self.config.output_device = output_device;
     }

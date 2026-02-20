@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use crate::CryptoError;
 use crate::signal::store::{IdentityKeyStore, PreKeyStore, SessionStore};
+use crate::CryptoError;
 
 /// In-memory identity store for tests.
 pub struct MemoryIdentityStore {
@@ -41,7 +41,10 @@ impl IdentityKeyStore for MemoryIdentityStore {
     }
 
     fn save_identity(&self, address: &str, identity_key: &[u8]) -> Result<(), CryptoError> {
-        self.trusted.lock().unwrap().insert(address.to_string(), identity_key.to_vec());
+        self.trusted
+            .lock()
+            .unwrap()
+            .insert(address.to_string(), identity_key.to_vec());
         Ok(())
     }
 }
@@ -67,7 +70,10 @@ impl PreKeyStore for MemoryPreKeyStore {
     }
 
     fn store_prekey(&self, prekey_id: u32, key_data: &[u8]) -> Result<(), CryptoError> {
-        self.prekeys.lock().unwrap().insert(prekey_id, key_data.to_vec());
+        self.prekeys
+            .lock()
+            .unwrap()
+            .insert(prekey_id, key_data.to_vec());
         Ok(())
     }
 
@@ -77,11 +83,23 @@ impl PreKeyStore for MemoryPreKeyStore {
     }
 
     fn load_signed_prekey(&self, signed_prekey_id: u32) -> Result<Option<Vec<u8>>, CryptoError> {
-        Ok(self.signed_prekeys.lock().unwrap().get(&signed_prekey_id).cloned())
+        Ok(self
+            .signed_prekeys
+            .lock()
+            .unwrap()
+            .get(&signed_prekey_id)
+            .cloned())
     }
 
-    fn store_signed_prekey(&self, signed_prekey_id: u32, key_data: &[u8]) -> Result<(), CryptoError> {
-        self.signed_prekeys.lock().unwrap().insert(signed_prekey_id, key_data.to_vec());
+    fn store_signed_prekey(
+        &self,
+        signed_prekey_id: u32,
+        key_data: &[u8],
+    ) -> Result<(), CryptoError> {
+        self.signed_prekeys
+            .lock()
+            .unwrap()
+            .insert(signed_prekey_id, key_data.to_vec());
         Ok(())
     }
 }
@@ -95,7 +113,10 @@ impl SessionStore for SharedSessionStore {
     }
 
     fn store_session(&self, address: &str, session_data: &[u8]) -> Result<(), CryptoError> {
-        self.0.lock().unwrap().insert(address.to_string(), session_data.to_vec());
+        self.0
+            .lock()
+            .unwrap()
+            .insert(address.to_string(), session_data.to_vec());
         Ok(())
     }
 
@@ -129,8 +150,8 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::Identity;
     use crate::signal::SignalSessionManager;
+    use crate::Identity;
 
     /// Create a basic SignalSessionManager for a given identity (no shared store).
     fn make_manager(identity: &Identity) -> SignalSessionManager {
@@ -190,7 +211,12 @@ mod tests {
         alice_mgr.establish_session(&bob_addr, &bob_bundle).unwrap();
 
         // Step 3: Extract Alice's ephemeral key from her stored session
-        let alice_session_data = alice_sessions.lock().unwrap().get(&bob_addr).unwrap().clone();
+        let alice_session_data = alice_sessions
+            .lock()
+            .unwrap()
+            .get(&bob_addr)
+            .unwrap()
+            .clone();
         let alice_ephemeral = extract_ephemeral_from_session(&alice_session_data);
 
         // Step 4: Bob responds to session as responder
@@ -263,7 +289,9 @@ mod tests {
     fn tampered_ciphertext_fails() {
         let (alice_mgr, bob_mgr, alice_addr, bob_addr) = establish_session_pair();
 
-        let ciphertext = alice_mgr.encrypt(&bob_addr, b"don't tamper with me").unwrap();
+        let ciphertext = alice_mgr
+            .encrypt(&bob_addr, b"don't tamper with me")
+            .unwrap();
 
         // Flip a byte in the ciphertext portion (after 8-byte counter + 12-byte nonce)
         let mut tampered = ciphertext.clone();

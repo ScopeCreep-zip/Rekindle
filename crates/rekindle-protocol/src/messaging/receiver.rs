@@ -66,7 +66,9 @@ pub fn process_incoming(raw: &[u8]) -> Result<MessageEnvelope, ProtocolError> {
     let envelope = parse_envelope(raw)?;
     let valid = verify_envelope(&envelope)?;
     if !valid {
-        return Err(ProtocolError::Verification("invalid envelope signature".into()));
+        return Err(ProtocolError::Verification(
+            "invalid envelope signature".into(),
+        ));
     }
     Ok(envelope)
 }

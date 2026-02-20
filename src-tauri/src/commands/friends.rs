@@ -3,10 +3,11 @@ use serde::{Deserialize, Serialize};
 use tauri::{Emitter, State};
 
 use crate::channels::ChatEvent;
-use crate::commands::auth::current_owner_key;
 use crate::db::{self, DbPool};
+use crate::db_helpers::{db_call, db_call_or_default};
 use crate::services;
 use crate::state::{FriendState, FriendshipState, SharedState, UserStatus};
+use crate::state_helpers;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -39,34 +40,27 @@ pub async fn get_pending_requests(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<Vec<PendingFriendRequest>, String> {
-    let owner_key = current_owner_key(state.inner())?;
-    let pool_clone = pool.inner().clone();
-    tokio::task::spawn_blocking(move || {
-        let conn = pool_clone.lock().map_err(|e| e.to_string())?;
-        let mut stmt = conn
-            .prepare(
-                "SELECT public_key, display_name, message, received_at \
-                 FROM pending_friend_requests WHERE owner_key = ?1 ORDER BY received_at",
-            )
-            .map_err(|e| e.to_string())?;
-        let rows = stmt
-            .query_map(rusqlite::params![owner_key], |row| {
-                Ok(PendingFriendRequest {
-                    public_key: row.get(0)?,
-                    display_name: row.get(1)?,
-                    message: row.get(2)?,
-                    received_at: row.get(3)?,
-                })
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
+    db_call(pool.inner(), move |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT public_key, display_name, message, received_at \
+             FROM pending_friend_requests WHERE owner_key = ?1 ORDER BY received_at",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![owner_key], |row| {
+            Ok(PendingFriendRequest {
+                public_key: row.get(0)?,
+                display_name: row.get(1)?,
+                message: row.get(2)?,
+                received_at: row.get(3)?,
             })
-            .map_err(|e| e.to_string())?;
+        })?;
         let mut results = Vec::new();
         for row in rows {
-            results.push(row.map_err(|e| e.to_string())?);
+            results.push(row?);
         }
         Ok(results)
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 /// Add a friend by their public key.
@@ -84,7 +78,7 @@ pub async fn add_friend(
         return Err("Invalid public key — must be a 64-character hex string".to_string());
     }
 
-    let owner_key = current_owner_key(state.inner())?;
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
 
     // Prevent adding yourself
     if public_key == owner_key {
@@ -99,21 +93,17 @@ pub async fn add_friend(
     let timestamp = db::timestamp_now();
 
     // Insert into SQLite
-    let pool_clone = pool.inner().clone();
     let pk = public_key.clone();
     let dn = display_name.clone();
     let ok = owner_key.clone();
-    tokio::task::spawn_blocking(move || {
-        let conn = pool_clone.lock().map_err(|e| e.to_string())?;
+    db_call(pool.inner(), move |conn| {
         conn.execute(
             "INSERT OR IGNORE INTO friends (owner_key, public_key, display_name, added_at, friendship_state) VALUES (?1, ?2, ?3, ?4, 'pending_out')",
             rusqlite::params![ok, pk, dn, timestamp],
-        )
-        .map_err(|e| format!("insert friend: {e}"))?;
-        Ok::<(), String>(())
+        )?;
+        Ok(())
     })
-    .await
-    .map_err(|e| e.to_string())??;
+    .await?;
 
     // Add to in-memory state as pending (not yet accepted by peer)
     let friend = FriendState {
@@ -168,7 +158,7 @@ pub async fn remove_friend(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let owner_key = current_owner_key(state.inner())?;
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
 
     // Notify the peer BEFORE local cleanup so we still have their route info.
     // send_envelope_to_peer queues the message for retry if the initial send fails.
@@ -195,25 +185,20 @@ pub async fn remove_friend(
 
     // Remove from SQLite (permanent — friend won't reappear on restart)
     // Also delete any pending_friend_requests row to prevent stale rows blocking future invites
-    let pool_clone = pool.inner().clone();
     let pk = public_key.clone();
     let ok = owner_key;
-    tokio::task::spawn_blocking(move || {
-        let conn = pool_clone.lock().map_err(|e| e.to_string())?;
+    db_call(pool.inner(), move |conn| {
         conn.execute(
             "DELETE FROM friends WHERE owner_key = ?1 AND public_key = ?2",
             rusqlite::params![ok, pk],
-        )
-        .map_err(|e| format!("delete friend: {e}"))?;
+        )?;
         conn.execute(
             "DELETE FROM pending_friend_requests WHERE owner_key = ?1 AND public_key = ?2",
             rusqlite::params![ok, pk],
-        )
-        .map_err(|e| format!("delete pending request on removal: {e}"))?;
-        Ok::<(), String>(())
+        )?;
+        Ok(())
     })
-    .await
-    .map_err(|e| e.to_string())??;
+    .await?;
 
     // Mark as Removing in-memory (instead of deleting immediately) so that
     // sync_service can still look up the friend's routing info (mailbox key,
@@ -228,10 +213,7 @@ pub async fn remove_friend(
 
     // Unregister DHT presence key mapping (stops watching their status)
     // and invalidate route cache so stale routes aren't reused on re-add
-    let dht_key = {
-        let friends = state.friends.read();
-        friends.get(&public_key).and_then(|f| f.dht_record_key.clone())
-    };
+    let dht_key = state_helpers::friend_dht_key(state.inner(), &public_key);
     {
         let mut dht_mgr = state.dht_manager.write();
         if let Some(mgr) = dht_mgr.as_mut() {
@@ -248,9 +230,12 @@ pub async fn remove_friend(
     }
 
     // Emit event so ALL windows update (not just the one that called the command)
-    let _ = app.emit("chat-event", &ChatEvent::FriendRemoved {
-        public_key: public_key.clone(),
-    });
+    let _ = app.emit(
+        "chat-event",
+        &ChatEvent::FriendRemoved {
+            public_key: public_key.clone(),
+        },
+    );
 
     // Spawn a background task to fully remove the friend from in-memory state
     // after a grace period. This gives sync_service enough time to retry the
@@ -262,7 +247,10 @@ pub async fn remove_friend(
         tokio::time::sleep(std::time::Duration::from_secs(600)).await;
         let mut friends = state_clone.friends.write();
         // Only remove if still in Removing state (user may have re-added them)
-        if friends.get(&pk_clone).is_some_and(|f| matches!(f.friendship_state, FriendshipState::Removing)) {
+        if friends
+            .get(&pk_clone)
+            .is_some_and(|f| matches!(f.friendship_state, FriendshipState::Removing))
+        {
             friends.remove(&pk_clone);
             // Clean up Signal session now that retries are done
             let signal = state_clone.signal_manager.lock();
@@ -287,7 +275,7 @@ pub async fn accept_request(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let owner_key = current_owner_key(state.inner())?;
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
     let timestamp = db::timestamp_now();
 
     // Read stored profile_dht_key, mailbox_dht_key, route_blob, and prekey_bundle BEFORE deleting the pending request
@@ -295,31 +283,26 @@ pub async fn accept_request(
         read_pending_request_data(pool.inner(), &owner_key, &public_key).await?;
 
     // Insert into friends and delete from pending_friend_requests atomically
-    let pool_clone = pool.inner().clone();
     let pk = public_key.clone();
     let dn = display_name.clone();
     let ok = owner_key;
-    tokio::task::spawn_blocking(move || {
-        let conn = pool_clone.lock().map_err(|e| e.to_string())?;
+    db_call(pool.inner(), move |conn| {
         conn.execute(
             "INSERT OR IGNORE INTO friends (owner_key, public_key, display_name, added_at) VALUES (?1, ?2, ?3, ?4)",
             rusqlite::params![ok, pk, dn, timestamp],
-        )
-        .map_err(|e| format!("insert friend: {e}"))?;
+        )?;
         conn.execute(
             "DELETE FROM pending_friend_requests WHERE owner_key = ?1 AND public_key = ?2",
             rusqlite::params![ok, pk],
-        )
-        .map_err(|e| format!("delete pending request: {e}"))?;
-        Ok::<(), String>(())
+        )?;
+        Ok(())
     })
-    .await
-    .map_err(|e| e.to_string())??;
+    .await?;
 
     // Cache the requester's route blob so send_friend_accept() can deliver immediately
     if let Some(ref blob) = pending_route_blob {
         if !blob.is_empty() {
-            let api = state.node.read().as_ref().map(|nh| nh.api.clone());
+            let api = state_helpers::veilid_api(state.inner());
             if let Some(api) = api {
                 let mut dht_mgr = state.dht_manager.write();
                 if let Some(mgr) = dht_mgr.as_mut() {
@@ -351,24 +334,20 @@ pub async fn accept_request(
 
     // Persist profile_dht_key and mailbox_dht_key to friends table
     if pending_profile_key.is_some() || pending_mailbox_key.is_some() {
-        let pool_clone3 = pool.inner().clone();
         let pk3 = public_key.clone();
-        let ok3 = current_owner_key(state.inner())?;
+        let ok3 = state_helpers::current_owner_key(state.inner())?;
         let pdk = pending_profile_key.clone();
         let mdk = pending_mailbox_key;
-        tokio::task::spawn_blocking(move || {
-            let conn = pool_clone3.lock().map_err(|e| e.to_string())?;
+        db_call(pool.inner(), move |conn| {
             conn.execute(
                 "UPDATE friends SET dht_record_key = COALESCE(?1, dht_record_key), \
                  mailbox_dht_key = COALESCE(?2, mailbox_dht_key) \
                  WHERE owner_key = ?3 AND public_key = ?4",
                 rusqlite::params![pdk, mdk, ok3, pk3],
-            )
-            .map_err(|e| format!("update friend keys: {e}"))?;
-            Ok::<(), String>(())
+            )?;
+            Ok(())
         })
-        .await
-        .map_err(|e| e.to_string())??;
+        .await?;
     }
 
     // Establish initiator-side Signal session using the requester's stored prekey bundle.
@@ -378,7 +357,9 @@ pub async fn accept_request(
         let signal = state.signal_manager.lock();
         if let Some(handle) = signal.as_ref() {
             let _ = handle.manager.delete_session(&public_key);
-            if let Ok(bundle) = serde_json::from_slice::<rekindle_crypto::signal::PreKeyBundle>(prekey_bytes) {
+            if let Ok(bundle) =
+                serde_json::from_slice::<rekindle_crypto::signal::PreKeyBundle>(prekey_bytes)
+            {
                 match handle.manager.establish_session(&public_key, &bundle) {
                     Ok(info) => {
                         tracing::info!(peer = %public_key, "established initiator Signal session on accept");
@@ -434,7 +415,12 @@ pub async fn accept_request(
 }
 
 /// Pending friend request data: `(profile_dht_key, mailbox_dht_key, route_blob, prekey_bundle)`.
-type PendingRequestData = (Option<String>, Option<String>, Option<Vec<u8>>, Option<Vec<u8>>);
+type PendingRequestData = (
+    Option<String>,
+    Option<String>,
+    Option<Vec<u8>>,
+    Option<Vec<u8>>,
+);
 
 /// Read `profile_dht_key`, `mailbox_dht_key`, `route_blob`, and `prekey_bundle` from a pending friend request.
 async fn read_pending_request_data(
@@ -442,23 +428,19 @@ async fn read_pending_request_data(
     owner_key: &str,
     public_key: &str,
 ) -> Result<PendingRequestData, String> {
-    let pool_clone = pool.clone();
     let ok = owner_key.to_string();
     let pk = public_key.to_string();
-    tokio::task::spawn_blocking(move || {
-        let conn = pool_clone.lock().map_err(|e| e.to_string())?;
+    db_call(pool, move |conn| {
         let row: Option<PendingRequestData> = conn
             .query_row(
                 "SELECT profile_dht_key, mailbox_dht_key, route_blob, prekey_bundle FROM pending_friend_requests WHERE owner_key = ?1 AND public_key = ?2",
                 rusqlite::params![ok, pk],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )
-            .optional()
-            .map_err(|e| e.to_string())?;
+            .optional()?;
         Ok(row.unwrap_or((None, None, None, None)))
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 /// Get the full friends list.
@@ -474,9 +456,21 @@ pub async fn get_friends(state: State<'_, SharedState>) -> Result<Vec<FriendResp
                 public_key: f.public_key.clone(),
                 display_name: f.display_name.clone(),
                 nickname: f.nickname.clone(),
-                status: if is_accepted { f.status } else { UserStatus::Offline },
-                status_message: if is_accepted { f.status_message.clone() } else { None },
-                game_info: if is_accepted { f.game_info.clone() } else { None },
+                status: if is_accepted {
+                    f.status
+                } else {
+                    UserStatus::Offline
+                },
+                status_message: if is_accepted {
+                    f.status_message.clone()
+                } else {
+                    None
+                },
+                game_info: if is_accepted {
+                    f.game_info.clone()
+                } else {
+                    None
+                },
                 group: f.group.clone(),
                 unread_count: f.unread_count,
                 last_seen_at: f.last_seen_at,
@@ -495,23 +489,19 @@ pub async fn reject_request(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let owner_key = current_owner_key(state.inner())?;
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
 
     // Delete from pending_friend_requests
-    let pool_clone = pool.inner().clone();
     let pk = public_key.clone();
     let ok = owner_key;
-    tokio::task::spawn_blocking(move || {
-        let conn = pool_clone.lock().map_err(|e| e.to_string())?;
+    db_call(pool.inner(), move |conn| {
         conn.execute(
             "DELETE FROM pending_friend_requests WHERE owner_key = ?1 AND public_key = ?2",
             rusqlite::params![ok, pk],
-        )
-        .map_err(|e| format!("delete pending request: {e}"))?;
-        Ok::<(), String>(())
+        )?;
+        Ok(())
     })
-    .await
-    .map_err(|e| e.to_string())??;
+    .await?;
 
     // Send rejection to the peer via Veilid
     services::message_service::send_friend_reject(
@@ -539,7 +529,7 @@ pub async fn cancel_request(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let owner_key = current_owner_key(state.inner())?;
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
 
     // Only cancel pending_out friends
     let is_pending = state
@@ -552,20 +542,16 @@ pub async fn cancel_request(
     }
 
     // Delete from DB
-    let pool_clone = pool.inner().clone();
     let pk = public_key.clone();
     let ok = owner_key;
-    tokio::task::spawn_blocking(move || {
-        let conn = pool_clone.lock().map_err(|e| e.to_string())?;
+    db_call(pool.inner(), move |conn| {
         conn.execute(
             "DELETE FROM friends WHERE owner_key = ?1 AND public_key = ?2",
             rusqlite::params![ok, pk],
-        )
-        .map_err(|e| format!("delete pending friend: {e}"))?;
-        Ok::<(), String>(())
+        )?;
+        Ok(())
     })
-    .await
-    .map_err(|e| e.to_string())??;
+    .await?;
 
     // Remove from in-memory state
     state.friends.write().remove(&public_key);
@@ -589,19 +575,15 @@ pub async fn create_friend_group(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<i64, String> {
-    let owner_key = current_owner_key(state.inner())?;
-    let pool_clone = pool.inner().clone();
-    tokio::task::spawn_blocking(move || {
-        let conn = pool_clone.lock().map_err(|e| e.to_string())?;
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
+    db_call(pool.inner(), move |conn| {
         conn.execute(
             "INSERT INTO friend_groups (owner_key, name) VALUES (?1, ?2)",
             rusqlite::params![owner_key, name],
-        )
-        .map_err(|e| format!("create friend group: {e}"))?;
-        Ok::<i64, String>(conn.last_insert_rowid())
+        )?;
+        Ok(conn.last_insert_rowid())
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 /// Rename a friend group.
@@ -611,18 +593,14 @@ pub async fn rename_friend_group(
     name: String,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let pool_clone = pool.inner().clone();
-    tokio::task::spawn_blocking(move || {
-        let conn = pool_clone.lock().map_err(|e| e.to_string())?;
+    db_call(pool.inner(), move |conn| {
         conn.execute(
             "UPDATE friend_groups SET name = ?1 WHERE id = ?2",
             rusqlite::params![name, group_id],
-        )
-        .map_err(|e| format!("rename friend group: {e}"))?;
-        Ok::<(), String>(())
+        )?;
+        Ok(())
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 /// Move a friend into a group (or remove from group with `group_id` = null).
@@ -633,37 +611,31 @@ pub async fn move_friend_to_group(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let owner_key = current_owner_key(state.inner())?;
-    let pool_clone = pool.inner().clone();
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
     let pk = public_key.clone();
     let ok = owner_key;
-    tokio::task::spawn_blocking(move || {
-        let conn = pool_clone.lock().map_err(|e| e.to_string())?;
+    db_call(pool.inner(), move |conn| {
         conn.execute(
             "UPDATE friends SET group_id = ?1 WHERE owner_key = ?2 AND public_key = ?3",
             rusqlite::params![group_id, ok, pk],
-        )
-        .map_err(|e| format!("move friend to group: {e}"))?;
-        Ok::<(), String>(())
+        )?;
+        Ok(())
     })
-    .await
-    .map_err(|e| e.to_string())??;
+    .await?;
 
     // Update in-memory — resolve group name from DB
     if let Some(group_id) = group_id {
-        let pool_clone2 = pool.inner().clone();
-        let group_name: Option<String> = tokio::task::spawn_blocking(move || {
-            let conn = pool_clone2.lock().map_err(|e| e.to_string())?;
-            conn.query_row(
-                "SELECT name FROM friend_groups WHERE id = ?1",
-                rusqlite::params![group_id],
-                |row| row.get(0),
-            )
-            .optional()
-            .map_err(|e| format!("query group name: {e}"))
+        let group_name: Option<String> = db_call(pool.inner(), move |conn| {
+            let name = conn
+                .query_row(
+                    "SELECT name FROM friend_groups WHERE id = ?1",
+                    rusqlite::params![group_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            Ok(name)
         })
-        .await
-        .map_err(|e| e.to_string())??;
+        .await?;
 
         let mut friends = state.friends.write();
         if let Some(friend) = friends.get_mut(&public_key) {
@@ -681,9 +653,7 @@ pub async fn move_friend_to_group(
 
 /// Generate an invite link containing everything needed for a peer to add us.
 #[tauri::command]
-pub async fn generate_invite(
-    state: State<'_, SharedState>,
-) -> Result<String, String> {
+pub async fn generate_invite(state: State<'_, SharedState>) -> Result<String, String> {
     // Gather identity info
     let (public_key, display_name, secret_key) = {
         let identity = state.identity.read();
@@ -695,14 +665,8 @@ pub async fn generate_invite(
         (pk, dn, sk)
     };
 
-    let (mailbox_dht_key, profile_dht_key, route_blob) = {
-        let node = state.node.read();
-        let nh = node.as_ref().ok_or("node not initialized")?;
-        let mdk = nh.mailbox_dht_key.clone().ok_or("mailbox DHT key not set")?;
-        let pdk = nh.profile_dht_key.clone().ok_or("profile DHT key not set")?;
-        let rb = nh.route_blob.clone().ok_or("route not allocated yet — try again in a moment")?;
-        (mdk, pdk, rb)
-    };
+    let (profile_dht_key, route_blob, mailbox_dht_key) =
+        state_helpers::profile_dht_info(state.inner())?;
 
     // Generate a PreKeyBundle
     let prekey_bundle = {
@@ -739,7 +703,7 @@ pub async fn add_friend_from_invite(
     let blob = rekindle_protocol::messaging::decode_invite_url(&invite_string)?;
     rekindle_protocol::messaging::verify_invite_blob(&blob)?;
 
-    let owner_key = current_owner_key(state.inner())?;
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
 
     // Prevent adding yourself
     if blob.public_key == owner_key {
@@ -757,9 +721,7 @@ pub async fn add_friend_from_invite(
     // The Removing grace period keeps in-memory state alive for unfriend retries,
     // but on re-add we must clear it so fresh connections are established.
     {
-        let friends = state.friends.read();
-        let is_stale = friends.get(&blob.public_key).is_some();
-        drop(friends);
+        let is_stale = state_helpers::is_friend(state.inner(), &blob.public_key);
         if is_stale {
             // Invalidate stale route cache so fresh route from invite is used
             let mut dht_mgr = state.dht_manager.write();
@@ -773,31 +735,26 @@ pub async fn add_friend_from_invite(
 
     // Insert into SQLite with profile and mailbox keys from the invite
     // (remove_friend already DELETEd the old row; this creates a fresh one)
-    let pool_clone = pool.inner().clone();
     let pk = blob.public_key.clone();
     let dn = blob.display_name.clone();
     let ok = owner_key;
     let profile_key = blob.profile_dht_key.clone();
     let mailbox_key = blob.mailbox_dht_key.clone();
-    tokio::task::spawn_blocking(move || {
-        let conn = pool_clone.lock().map_err(|e| e.to_string())?;
+    db_call(pool.inner(), move |conn| {
         // DELETE first to handle any leftover rows (e.g., race with grace period cleanup),
         // then INSERT fresh so all columns are populated from the invite.
         conn.execute(
             "DELETE FROM friends WHERE owner_key = ?1 AND public_key = ?2",
             rusqlite::params![ok, pk],
-        )
-        .map_err(|e| format!("cleanup stale friend row: {e}"))?;
+        )?;
         conn.execute(
             "INSERT INTO friends (owner_key, public_key, display_name, added_at, dht_record_key, mailbox_dht_key, friendship_state) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'pending_out')",
             rusqlite::params![ok, pk, dn, timestamp, profile_key, mailbox_key],
-        )
-        .map_err(|e| format!("insert friend: {e}"))?;
-        Ok::<(), String>(())
+        )?;
+        Ok(())
     })
-    .await
-    .map_err(|e| e.to_string())??;
+    .await?;
 
     // Add to in-memory state (pending until peer accepts)
     let friend = FriendState {
@@ -817,7 +774,10 @@ pub async fn add_friend_from_invite(
         last_heartbeat_at: None,
         friendship_state: FriendshipState::PendingOut,
     };
-    state.friends.write().insert(blob.public_key.clone(), friend);
+    state
+        .friends
+        .write()
+        .insert(blob.public_key.clone(), friend);
 
     // Cache route blob, establish Signal session, and try mailbox for fresh route
     setup_invite_contact(state.inner(), &blob).await;
@@ -865,11 +825,12 @@ async fn setup_invite_contact(
     blob: &rekindle_protocol::messaging::envelope::InviteBlob,
 ) {
     // Cache the route blob from the invite for immediate contact
-    let api = state.node.read().as_ref().map(|nh| nh.api.clone());
+    let api = state_helpers::veilid_api(state);
     if let Some(ref api) = api {
         let mut dht_mgr = state.dht_manager.write();
         if let Some(mgr) = dht_mgr.as_mut() {
-            mgr.manager.cache_route(api, &blob.public_key, blob.route_blob.clone());
+            mgr.manager
+                .cache_route(api, &blob.public_key, blob.route_blob.clone());
         }
     }
 
@@ -893,9 +854,15 @@ async fn setup_invite_contact(
     }
 
     // Try reading the peer's mailbox for a fresh route blob (invite may be stale)
-    let rc = state.node.read().as_ref().map(|nh| nh.routing_context.clone());
+    let rc = state
+        .node
+        .read()
+        .as_ref()
+        .map(|nh| nh.routing_context.clone());
     if let Some(rc) = rc {
-        match rekindle_protocol::dht::mailbox::read_peer_mailbox_route(&rc, &blob.mailbox_dht_key).await {
+        match rekindle_protocol::dht::mailbox::read_peer_mailbox_route(&rc, &blob.mailbox_dht_key)
+            .await
+        {
             Ok(Some(fresh_blob)) if !fresh_blob.is_empty() => {
                 if let Some(ref api) = api {
                     let mut dht_mgr = state.dht_manager.write();
@@ -921,11 +888,9 @@ pub struct BlockedUser {
 
 /// Check if a user is in the blocked list for the current identity.
 pub(crate) async fn is_user_blocked(pool: &DbPool, owner_key: &str, public_key: &str) -> bool {
-    let pool = pool.clone();
     let ok = owner_key.to_string();
     let pk = public_key.to_string();
-    tokio::task::spawn_blocking(move || {
-        let conn = pool.lock().map_err(|e| e.to_string())?;
+    db_call_or_default(pool, move |conn| {
         let count: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM blocked_users WHERE owner_key = ?1 AND public_key = ?2",
@@ -933,11 +898,9 @@ pub(crate) async fn is_user_blocked(pool: &DbPool, owner_key: &str, public_key: 
                 |row| row.get(0),
             )
             .unwrap_or(0);
-        Ok::<bool, String>(count > 0)
+        Ok(count > 0)
     })
     .await
-    .unwrap_or(Ok(false))
-    .unwrap_or(false)
 }
 
 /// Block a user — works for any public key (friend, pending, invite, or raw key).
@@ -952,58 +915,48 @@ pub async fn block_user(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let owner_key = current_owner_key(state.inner())?;
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
     let timestamp = db::timestamp_now();
 
     // Resolve display name: in-memory friends → pending requests store → param → truncated key
-    let resolved_name = {
-        let friends = state.friends.read();
-        friends.get(&public_key).map(|f| f.display_name.clone())
-    }
-    .or_else(|| display_name.clone())
-    .unwrap_or_else(|| {
-        let truncated = if public_key.len() > 12 {
-            format!("{}...", &public_key[..12])
-        } else {
-            public_key.clone()
-        };
-        truncated
-    });
+    let resolved_name = state_helpers::friend_display_name(state.inner(), &public_key)
+        .or_else(|| display_name.clone())
+        .unwrap_or_else(|| {
+            let truncated = if public_key.len() > 12 {
+                format!("{}...", &public_key[..12])
+            } else {
+                public_key.clone()
+            };
+            truncated
+        });
 
     // DB transaction: DELETE from friends + pending_friend_requests + INSERT into blocked_users
-    let pool_clone = pool.inner().clone();
     let pk = public_key.clone();
     let ok = owner_key;
     let dn = resolved_name;
-    tokio::task::spawn_blocking(move || {
-        let conn = pool_clone.lock().map_err(|e| e.to_string())?;
+    db_call(pool.inner(), move |conn| {
         conn.execute(
             "DELETE FROM friends WHERE owner_key = ?1 AND public_key = ?2",
             rusqlite::params![ok, pk],
-        )
-        .map_err(|e| format!("delete friend on block: {e}"))?;
+        )?;
         conn.execute(
             "DELETE FROM pending_friend_requests WHERE owner_key = ?1 AND public_key = ?2",
             rusqlite::params![ok, pk],
-        )
-        .map_err(|e| format!("delete pending request on block: {e}"))?;
+        )?;
         conn.execute(
             "INSERT OR REPLACE INTO blocked_users (owner_key, public_key, display_name, blocked_at) VALUES (?1, ?2, ?3, ?4)",
             rusqlite::params![ok, pk, dn, timestamp],
-        )
-        .map_err(|e| format!("insert blocked user: {e}"))?;
-        Ok::<(), String>(())
+        )?;
+        Ok(())
     })
-    .await
-    .map_err(|e| e.to_string())??;
+    .await?;
 
     // Delete queued pending_messages to this user
     services::message_service::delete_pending_messages_to_recipient(
         state.inner(),
         pool.inner(),
         &public_key,
-    )
-    .await;
+    );
 
     // Remove from in-memory state and unregister DHT key mapping + invalidate route
     let dht_key = {
@@ -1052,21 +1005,17 @@ pub async fn unblock_user(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let owner_key = current_owner_key(state.inner())?;
-    let pool_clone = pool.inner().clone();
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
     let pk = public_key.clone();
     let ok = owner_key;
-    tokio::task::spawn_blocking(move || {
-        let conn = pool_clone.lock().map_err(|e| e.to_string())?;
+    db_call(pool.inner(), move |conn| {
         conn.execute(
             "DELETE FROM blocked_users WHERE owner_key = ?1 AND public_key = ?2",
             rusqlite::params![ok, pk],
-        )
-        .map_err(|e| format!("unblock user: {e}"))?;
-        Ok::<(), String>(())
+        )?;
+        Ok(())
     })
-    .await
-    .map_err(|e| e.to_string())??;
+    .await?;
 
     tracing::info!(public_key = %public_key, "user unblocked");
     Ok(())
@@ -1078,33 +1027,26 @@ pub async fn get_blocked_users(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<Vec<BlockedUser>, String> {
-    let owner_key = current_owner_key(state.inner())?;
-    let pool_clone = pool.inner().clone();
-    tokio::task::spawn_blocking(move || {
-        let conn = pool_clone.lock().map_err(|e| e.to_string())?;
-        let mut stmt = conn
-            .prepare(
-                "SELECT public_key, display_name, blocked_at \
-                 FROM blocked_users WHERE owner_key = ?1 ORDER BY blocked_at DESC",
-            )
-            .map_err(|e| e.to_string())?;
-        let rows = stmt
-            .query_map(rusqlite::params![owner_key], |row| {
-                Ok(BlockedUser {
-                    public_key: row.get(0)?,
-                    display_name: row.get(1)?,
-                    blocked_at: row.get(2)?,
-                })
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
+    db_call(pool.inner(), move |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT public_key, display_name, blocked_at \
+             FROM blocked_users WHERE owner_key = ?1 ORDER BY blocked_at DESC",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![owner_key], |row| {
+            Ok(BlockedUser {
+                public_key: row.get(0)?,
+                display_name: row.get(1)?,
+                blocked_at: row.get(2)?,
             })
-            .map_err(|e| e.to_string())?;
+        })?;
         let mut results = Vec::new();
         for row in rows {
-            results.push(row.map_err(|e| e.to_string())?);
+            results.push(row?);
         }
         Ok(results)
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 /// Rotate the profile DHT key: create a new profile record, copy data,
@@ -1181,26 +1123,17 @@ async fn rotate_profile_key(
     }
 
     // Update SQLite (both dht_record_key and dht_owner_keypair)
-    let pool_clone = pool.clone();
     let nk = new_key.clone();
     let keypair_str = new_keypair.as_ref().map(std::string::ToString::to_string);
-    let owner_key = state
-        .identity
-        .read()
-        .as_ref()
-        .map(|id| id.public_key.clone())
-        .unwrap_or_default();
-    tokio::task::spawn_blocking(move || {
-        let conn = pool_clone.lock().map_err(|e| e.to_string())?;
+    let owner_key = state_helpers::owner_key_or_default(state);
+    db_call(pool, move |conn| {
         conn.execute(
             "UPDATE identity SET dht_record_key = ?1, dht_owner_keypair = COALESCE(?3, dht_owner_keypair) WHERE public_key = ?2",
             rusqlite::params![nk, owner_key, keypair_str],
-        )
-        .map_err(|e| format!("update identity dht key: {e}"))?;
-        Ok::<(), String>(())
+        )?;
+        Ok(())
     })
-    .await
-    .map_err(|e| e.to_string())??;
+    .await?;
 
     // Notify all remaining friends about the new profile key
     let friend_keys: Vec<String> = {
@@ -1211,8 +1144,7 @@ async fn rotate_profile_key(
         new_profile_dht_key: new_key.clone(),
     };
     for fk in &friend_keys {
-        if let Err(e) =
-            services::message_service::send_to_peer_raw(state, pool, fk, &payload).await
+        if let Err(e) = services::message_service::send_to_peer_raw(state, pool, fk, &payload).await
         {
             tracing::warn!(to = %fk, error = %e, "failed to send ProfileKeyRotated");
         }
@@ -1259,7 +1191,8 @@ pub async fn emit_friends_presence(
 
     let friends: Vec<(String, UserStatus)> = {
         let friends = state.friends.read();
-        friends.values()
+        friends
+            .values()
             .filter(|f| f.friendship_state == FriendshipState::Accepted)
             .map(|f| (f.public_key.clone(), f.status))
             .collect()
@@ -1268,16 +1201,20 @@ pub async fn emit_friends_presence(
         if status != UserStatus::Offline {
             // Emit FriendOnline first so the frontend transitions the friend
             // out of the offline visual group before updating the specific status.
-            let _ = app.emit("presence-event",
+            let _ = app.emit(
+                "presence-event",
                 &crate::channels::PresenceEvent::FriendOnline {
                     public_key: key.clone(),
-                });
-            let _ = app.emit("presence-event",
+                },
+            );
+            let _ = app.emit(
+                "presence-event",
                 &crate::channels::PresenceEvent::StatusChanged {
                     public_key: key,
                     status: format!("{status:?}").to_lowercase(),
                     status_message: None,
-                });
+                },
+            );
         }
     }
     Ok(())

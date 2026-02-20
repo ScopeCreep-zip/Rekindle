@@ -2,10 +2,11 @@ use serde::{Deserialize, Serialize};
 use tauri::{Emitter, State};
 
 use crate::channels::ChatEvent;
-use crate::commands::auth::current_owner_key;
 use crate::db::{self, DbPool};
+use crate::db_helpers::db_call;
 use crate::services;
 use crate::state::SharedState;
+use crate::state_helpers;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -26,33 +27,31 @@ pub async fn send_message(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let owner_key = current_owner_key(state.inner())?;
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
     let sender_key = owner_key.clone();
     let timestamp = db::timestamp_now();
 
     tracing::info!(to = %to, from = %sender_key, len = body.len(), "sending message");
 
     // Step 1: Persist to SQLite FIRST (before network send)
-    let pool_clone = pool.inner().clone();
     let to_clone = to.clone();
     let sender_key_clone = sender_key.clone();
     let body_clone = body.clone();
     let ok = owner_key.clone();
-    tokio::task::spawn_blocking(move || {
-        let conn = pool_clone.lock().map_err(|e| e.to_string())?;
+    db_call(pool.inner(), move |conn| {
         conn.execute(
             "INSERT INTO messages (owner_key, conversation_id, conversation_type, sender_key, body, timestamp, is_read) \
              VALUES (?, ?, 'dm', ?, ?, ?, 1)",
             rusqlite::params![ok, to_clone, sender_key_clone, body_clone, timestamp],
-        )
-        .map_err(|e| e.to_string())?;
-        Ok::<_, String>(())
+        )?;
+        Ok(())
     })
-    .await
-    .map_err(|e| e.to_string())??;
+    .await?;
 
     // Step 2: Send via Veilid (best-effort — queues on failure internally)
-    if let Err(e) = services::message_service::send_message(state.inner(), pool.inner(), &to, &body).await {
+    if let Err(e) =
+        services::message_service::send_message(state.inner(), pool.inner(), &to, &body).await
+    {
         tracing::warn!(error = %e, "DM send failed — message persisted locally");
     }
 
@@ -77,11 +76,7 @@ pub async fn send_typing(
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
     // Verify identity is loaded
-    state
-        .identity
-        .read()
-        .as_ref()
-        .ok_or("not logged in")?;
+    state.identity.read().as_ref().ok_or("not logged in")?;
 
     services::message_service::send_typing(state.inner(), pool.inner(), &peer_id, typing).await
 }
@@ -94,45 +89,35 @@ pub async fn get_message_history(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<Vec<Message>, String> {
-    let our_key = current_owner_key(state.inner()).unwrap_or_default();
+    let our_key = state_helpers::owner_key_or_default(state.inner());
 
-    let pool = pool.inner().clone();
-    let peer_id_clone = peer_id.clone();
     let ok = our_key.clone();
-    let messages = tokio::task::spawn_blocking(move || {
-        let conn = pool.lock().map_err(|e| e.to_string())?;
-        let mut stmt = conn
-            .prepare(
-                "SELECT id, sender_key, body, timestamp FROM messages \
+    db_call(pool.inner(), move |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT id, sender_key, body, timestamp FROM messages \
                  WHERE owner_key = ? AND conversation_id = ? AND conversation_type = 'dm' \
                  ORDER BY timestamp ASC LIMIT ?",
-            )
-            .map_err(|e| e.to_string())?;
+        )?;
 
-        let rows = stmt
-            .query_map(rusqlite::params![ok, peer_id_clone, limit], |row| {
-                let sender = db::get_str(row, "sender_key");
-                let is_own = sender == our_key;
-                Ok(Message {
-                    id: db::get_i64(row, "id"),
-                    sender_id: sender,
-                    body: db::get_str(row, "body"),
-                    timestamp: db::get_i64(row, "timestamp"),
-                    is_own,
-                })
+        let rows = stmt.query_map(rusqlite::params![ok, peer_id, limit], |row| {
+            let sender = db::get_str(row, "sender_key");
+            let is_own = sender == our_key;
+            Ok(Message {
+                id: db::get_i64(row, "id"),
+                sender_id: sender,
+                body: db::get_str(row, "body"),
+                timestamp: db::get_i64(row, "timestamp"),
+                is_own,
             })
-            .map_err(|e| e.to_string())?;
+        })?;
 
         let mut messages = Vec::new();
         for row in rows {
-            messages.push(row.map_err(|e| e.to_string())?);
+            messages.push(row?);
         }
-        Ok::<_, String>(messages)
+        Ok(messages)
     })
     .await
-    .map_err(|e| e.to_string())??;
-
-    Ok(messages)
 }
 
 /// Proactively refresh a peer's route before sending messages.
@@ -144,10 +129,7 @@ pub async fn prepare_chat_session(
     peer_id: String,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
-    let dht_record_key = {
-        let friends = state.friends.read();
-        friends.get(&peer_id).and_then(|f| f.dht_record_key.clone())
-    };
+    let dht_record_key = state_helpers::friend_dht_key(state.inner(), &peer_id);
     let Some(dht_key_str) = dht_record_key else {
         return Ok(()); // No DHT key — nothing to sync
     };
@@ -155,29 +137,19 @@ pub async fn prepare_chat_session(
         .parse()
         .map_err(|e| format!("invalid DHT key: {e}"))?;
 
-    let (routing_context, api) = {
-        let node = state.node.read();
-        let nh = node.as_ref().ok_or("node not initialized")?;
-        if !nh.is_attached {
-            return Ok(());
-        }
-        (nh.routing_context.clone(), nh.api.clone())
+    let Some((_api, routing_context)) = state_helpers::api_and_routing_context(state.inner())
+    else {
+        return Ok(());
     };
 
     // Open (no-op if already open) and force-refresh route blob (subkey 6)
     let _ = routing_context
         .open_dht_record(record_key.clone(), None)
         .await;
-    if let Ok(Some(value_data)) = routing_context
-        .get_dht_value(record_key, 6, true)
-        .await
-    {
+    if let Ok(Some(value_data)) = routing_context.get_dht_value(record_key, 6, true).await {
         let route_blob = value_data.data().to_vec();
         if !route_blob.is_empty() {
-            let mut dht_mgr = state.dht_manager.write();
-            if let Some(mgr) = dht_mgr.as_mut() {
-                mgr.manager.cache_route(&api, &peer_id, route_blob);
-            }
+            state_helpers::cache_peer_route(state.inner(), &peer_id, route_blob);
         }
     }
 
@@ -192,25 +164,21 @@ pub async fn mark_read(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let owner_key = current_owner_key(state.inner())?;
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
 
     if let Some(friend) = state.friends.write().get_mut(&peer_id) {
         friend.unread_count = 0;
     }
 
-    let pool = pool.inner().clone();
     let peer_id_clone = peer_id.clone();
-    tokio::task::spawn_blocking(move || {
-        let conn = pool.lock().map_err(|e| e.to_string())?;
+    db_call(pool.inner(), move |conn| {
         conn.execute(
             "UPDATE messages SET is_read = 1 WHERE owner_key = ? AND conversation_id = ? AND is_read = 0",
             rusqlite::params![owner_key, peer_id_clone],
-        )
-        .map_err(|e| e.to_string())?;
-        Ok::<_, String>(())
+        )?;
+        Ok(())
     })
-    .await
-    .map_err(|e| e.to_string())??;
+    .await?;
 
     Ok(())
 }

@@ -36,10 +36,7 @@ impl DhtRecordKey {
     ///
     /// Performs X25519 DH, then runs HKDF-SHA256 with info containing both
     /// public keys sorted lexicographically (so both parties derive the same key).
-    pub fn derive_conversation_key(
-        my_secret: &StaticSecret,
-        their_public: &PublicKey,
-    ) -> Self {
+    pub fn derive_conversation_key(my_secret: &StaticSecret, their_public: &PublicKey) -> Self {
         let shared = my_secret.diffie_hellman(their_public);
         let my_public = PublicKey::from(my_secret);
 

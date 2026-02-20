@@ -3,17 +3,15 @@ use std::io::Cursor;
 use image::ImageReader;
 use tauri::{Emitter as _, State};
 
-use crate::commands::auth::current_owner_key;
 use crate::db::DbPool;
+use crate::db_helpers::db_call;
 use crate::services;
 use crate::state::{SharedState, UserStatus};
+use crate::state_helpers;
 
 /// Set online status and publish to DHT.
 #[tauri::command]
-pub async fn set_status(
-    status: String,
-    state: State<'_, SharedState>,
-) -> Result<(), String> {
+pub async fn set_status(status: String, state: State<'_, SharedState>) -> Result<(), String> {
     let status_enum = match status.as_str() {
         "online" => UserStatus::Online,
         "away" => UserStatus::Away,
@@ -56,31 +54,22 @@ pub async fn set_nickname(
     };
 
     // Persist to SQLite
-    let pool = pool.inner().clone();
     let nickname_clone = nickname.clone();
     let pk_clone = public_key.clone();
-    tokio::task::spawn_blocking(move || {
-        let conn = pool.lock().map_err(|e| e.to_string())?;
+    db_call(pool.inner(), move |conn| {
         conn.execute(
             "UPDATE identity SET display_name = ? WHERE public_key = ?",
             rusqlite::params![nickname_clone, pk_clone],
-        )
-        .map_err(|e| e.to_string())?;
-        Ok::<_, String>(())
+        )?;
+        Ok(())
     })
-    .await
-    .map_err(|e| e.to_string())??;
+    .await?;
 
     // Notify all windows so they refresh their local auth store
     let _ = app.emit("profile-updated", ());
 
     // Push display name to DHT profile subkey 0
-    services::message_service::push_profile_update(
-        state.inner(),
-        0,
-        nickname.into_bytes(),
-    )
-    .await
+    services::message_service::push_profile_update(state.inner(), 0, nickname.into_bytes()).await
 }
 
 /// Maximum avatar dimension (width or height) in pixels.
@@ -110,10 +99,7 @@ fn compress_avatar_to_webp(raw: &[u8]) -> Result<Vec<u8>, String> {
     // Encode to WebP
     let mut webp_buf: Vec<u8> = Vec::new();
     resized
-        .write_to(
-            &mut Cursor::new(&mut webp_buf),
-            image::ImageFormat::WebP,
-        )
+        .write_to(&mut Cursor::new(&mut webp_buf), image::ImageFormat::WebP)
         .map_err(|e| format!("failed to encode WebP: {e}"))?;
 
     Ok(webp_buf)
@@ -133,30 +119,19 @@ pub async fn set_avatar(
         .map_err(|e| e.to_string())??;
 
     // Get our public key from identity (clone out before .await)
-    let public_key = {
-        let identity = state.identity.read();
-        identity
-            .as_ref()
-            .ok_or("not logged in")?
-            .public_key
-            .clone()
-    };
+    let public_key = state_helpers::current_owner_key(state.inner())?;
 
     // Persist to SQLite
-    let pool_clone = pool.inner().clone();
     let pk_clone = public_key.clone();
     let webp_for_db = webp_bytes.clone();
-    tokio::task::spawn_blocking(move || {
-        let conn = pool_clone.lock().map_err(|e| e.to_string())?;
+    db_call(pool.inner(), move |conn| {
         conn.execute(
             "UPDATE identity SET avatar_webp = ? WHERE public_key = ?",
             rusqlite::params![webp_for_db, pk_clone],
-        )
-        .map_err(|e| e.to_string())?;
-        Ok::<_, String>(())
+        )?;
+        Ok(())
     })
-    .await
-    .map_err(|e| e.to_string())??;
+    .await?;
 
     tracing::info!(
         public_key = %public_key,
@@ -182,11 +157,8 @@ pub async fn get_avatar(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<Option<Vec<u8>>, String> {
-    let owner_key = current_owner_key(state.inner()).unwrap_or_default();
-    let pool = pool.inner().clone();
-    tokio::task::spawn_blocking(move || {
-        let conn = pool.lock().map_err(|e| e.to_string())?;
-
+    let owner_key = state_helpers::owner_key_or_default(state.inner());
+    db_call(pool.inner(), move |conn| {
         // Try identity table first (our own avatar)
         let own: Option<Vec<u8>> = conn
             .query_row(
@@ -214,7 +186,6 @@ pub async fn get_avatar(
         Ok(friend)
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 /// Set status message and push update to DHT.
@@ -227,10 +198,5 @@ pub async fn set_status_message(
         identity.status_message.clone_from(&message);
     }
     // Push status message to DHT profile subkey 1
-    services::message_service::push_profile_update(
-        state.inner(),
-        1,
-        message.into_bytes(),
-    )
-    .await
+    services::message_service::push_profile_update(state.inner(), 1, message.into_bytes()).await
 }

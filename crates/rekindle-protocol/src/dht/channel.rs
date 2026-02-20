@@ -44,8 +44,8 @@ pub async fn create_batch(
     };
 
     let (key, _owner_keypair) = dht.create_record(1).await?;
-    let data = serde_json::to_vec(&batch)
-        .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+    let data =
+        serde_json::to_vec(&batch).map_err(|e| ProtocolError::Serialization(e.to_string()))?;
     dht.set_value(&key, 0, data).await?;
 
     Ok(key)
@@ -74,21 +74,19 @@ pub async fn append_message(
     }
 
     batch.messages.push(message);
-    let data = serde_json::to_vec(&batch)
-        .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+    let data =
+        serde_json::to_vec(&batch).map_err(|e| ProtocolError::Serialization(e.to_string()))?;
     dht.set_value(batch_key, 0, data).await?;
 
     Ok(None) // No new batch created
 }
 
 /// Read a message batch from DHT.
-pub async fn read_batch(
-    dht: &DHTManager,
-    key: &str,
-) -> Result<MessageBatch, ProtocolError> {
+pub async fn read_batch(dht: &DHTManager, key: &str) -> Result<MessageBatch, ProtocolError> {
     match dht.get_value(key, 0).await? {
-        Some(data) => serde_json::from_slice(&data)
-            .map_err(|e| ProtocolError::Deserialization(e.to_string())),
+        Some(data) => {
+            serde_json::from_slice(&data).map_err(|e| ProtocolError::Deserialization(e.to_string()))
+        }
         None => Ok(MessageBatch {
             prev_record_key: None,
             messages: vec![],

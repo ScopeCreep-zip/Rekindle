@@ -1,5 +1,5 @@
-use crate::dht::DHTManager;
 use crate::dht::profile::{SUBKEY_GAME_INFO, SUBKEY_ROUTE_BLOB, SUBKEY_STATUS};
+use crate::dht::DHTManager;
 use crate::error::ProtocolError;
 
 /// The subkeys we watch for friend presence updates.
@@ -46,5 +46,6 @@ pub async fn publish_route_blob(
     profile_key: &str,
     route_blob: Vec<u8>,
 ) -> Result<(), ProtocolError> {
-    dht.set_value(profile_key, SUBKEY_ROUTE_BLOB, route_blob).await
+    dht.set_value(profile_key, SUBKEY_ROUTE_BLOB, route_blob)
+        .await
 }

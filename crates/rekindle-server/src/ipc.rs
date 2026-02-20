@@ -24,9 +24,7 @@ pub enum IpcRequest {
         creator_display_name: String,
     },
     /// Stop hosting a community.
-    UnhostCommunity {
-        community_id: String,
-    },
+    UnhostCommunity { community_id: String },
     /// List currently hosted communities.
     ListHosted,
     /// Get server status.
@@ -58,13 +56,9 @@ pub enum IpcResponse {
         veilid_attached: bool,
     },
     /// Error.
-    Error {
-        message: String,
-    },
+    Error { message: String },
     /// Response carrying a community RPC result (JSON-encoded `CommunityResponse`).
-    RpcResult {
-        response_json: String,
-    },
+    RpcResult { response_json: String },
 }
 
 /// Summary info for a hosted community.

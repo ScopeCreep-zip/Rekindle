@@ -70,7 +70,11 @@ impl SignalSessionManager {
     ///
     /// This is the initiator side — called when we want to start a conversation
     /// with someone whose `PreKeyBundle` we fetched from DHT.
-    pub fn establish_session(&self, peer_address: &str, bundle: &PreKeyBundle) -> Result<SessionInitInfo, CryptoError> {
+    pub fn establish_session(
+        &self,
+        peer_address: &str,
+        bundle: &PreKeyBundle,
+    ) -> Result<SessionInitInfo, CryptoError> {
         // X3DH key agreement:
         // 1. Generate ephemeral X25519 keypair
         let ephemeral_secret = StaticSecret::random_from_rng(rand::rngs::OsRng);
@@ -141,15 +145,21 @@ impl SignalSessionManager {
         };
 
         let session_data = serialize_ratchet(&ratchet);
-        self.session_store.store_session(peer_address, &session_data)?;
+        self.session_store
+            .store_session(peer_address, &session_data)?;
 
         // Trust their identity on first use (TOFU)
-        self.identity_store.save_identity(peer_address, &bundle.identity_key)?;
+        self.identity_store
+            .save_identity(peer_address, &bundle.identity_key)?;
 
         Ok(SessionInitInfo {
             ephemeral_public_key: ephemeral_public.as_bytes().to_vec(),
             signed_prekey_id: 1, // matches generate_prekey_bundle(1, ...)
-            one_time_prekey_id: if bundle.one_time_prekey.is_some() { Some(1) } else { None },
+            one_time_prekey_id: if bundle.one_time_prekey.is_some() {
+                Some(1)
+            } else {
+                None
+            },
         })
     }
 
@@ -251,10 +261,12 @@ impl SignalSessionManager {
         };
 
         let session_data = serialize_ratchet(&ratchet);
-        self.session_store.store_session(peer_address, &session_data)?;
+        self.session_store
+            .store_session(peer_address, &session_data)?;
 
         // Trust their identity on first use (TOFU)
-        self.identity_store.save_identity(peer_address, their_identity_key)?;
+        self.identity_store
+            .save_identity(peer_address, their_identity_key)?;
 
         Ok(())
     }
@@ -301,7 +313,8 @@ impl SignalSessionManager {
 
         // Save updated ratchet state
         let new_session_data = serialize_ratchet(&ratchet);
-        self.session_store.store_session(peer_address, &new_session_data)?;
+        self.session_store
+            .store_session(peer_address, &new_session_data)?;
 
         Ok(output)
     }
@@ -354,7 +367,8 @@ impl SignalSessionManager {
 
         // Save updated ratchet state
         let new_session_data = serialize_ratchet(&ratchet);
-        self.session_store.store_session(peer_address, &new_session_data)?;
+        self.session_store
+            .store_session(peer_address, &new_session_data)?;
 
         Ok(plaintext)
     }
@@ -388,10 +402,10 @@ impl SignalSessionManager {
             .store_signed_prekey(signed_prekey_id, signed_prekey_secret.as_bytes())?;
 
         // Sign the prekey public key bytes with our Ed25519 identity key
-        let signing_key = SigningKey::from_bytes(
-            &<[u8; 32]>::try_from(&identity_private[..32])
-                .map_err(|_| CryptoError::InvalidKey("identity key wrong length for signing".into()))?,
-        );
+        let signing_key =
+            SigningKey::from_bytes(&<[u8; 32]>::try_from(&identity_private[..32]).map_err(
+                |_| CryptoError::InvalidKey("identity key wrong length for signing".into()),
+            )?);
         let signature = signing_key.sign(signed_prekey_public.as_bytes());
         let signed_prekey_signature = signature.to_bytes().to_vec();
 
@@ -458,7 +472,8 @@ fn deserialize_ratchet(data: &[u8]) -> Result<RatchetState, CryptoError> {
         data[pos..pos + 4]
             .try_into()
             .map_err(|_| CryptoError::SessionError("corrupt session".into()))?,
-    )).map_err(|_| CryptoError::SessionError("ratchet secret length overflow".into()))?;
+    ))
+    .map_err(|_| CryptoError::SessionError("ratchet secret length overflow".into()))?;
     pos += 4;
     let our_ratchet_secret = data[pos..pos + our_len].to_vec();
     pos += our_len;
@@ -467,7 +482,8 @@ fn deserialize_ratchet(data: &[u8]) -> Result<RatchetState, CryptoError> {
         data[pos..pos + 4]
             .try_into()
             .map_err(|_| CryptoError::SessionError("corrupt session".into()))?,
-    )).map_err(|_| CryptoError::SessionError("ratchet public length overflow".into()))?;
+    ))
+    .map_err(|_| CryptoError::SessionError("ratchet public length overflow".into()))?;
     pos += 4;
     let their_ratchet_public = data[pos..pos + their_len].to_vec();
     pos += their_len;

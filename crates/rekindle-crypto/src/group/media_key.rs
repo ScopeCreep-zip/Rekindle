@@ -44,8 +44,8 @@ impl MediaEncryptionKey {
 
     /// Encrypt a plaintext message.
     pub fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>, CryptoError> {
-        let cipher =
-            Aes256Gcm::new_from_slice(&self.key).map_err(|e| CryptoError::EncryptionError(e.to_string()))?;
+        let cipher = Aes256Gcm::new_from_slice(&self.key)
+            .map_err(|e| CryptoError::EncryptionError(e.to_string()))?;
 
         let mut nonce_bytes = [0u8; 12];
         rand::rngs::OsRng.fill_bytes(&mut nonce_bytes);
@@ -68,8 +68,8 @@ impl MediaEncryptionKey {
             return Err(CryptoError::DecryptionError("data too short".into()));
         }
 
-        let cipher =
-            Aes256Gcm::new_from_slice(&self.key).map_err(|e| CryptoError::DecryptionError(e.to_string()))?;
+        let cipher = Aes256Gcm::new_from_slice(&self.key)
+            .map_err(|e| CryptoError::DecryptionError(e.to_string()))?;
 
         let nonce = Nonce::from_slice(&data[..12]);
         let ciphertext = &data[12..];

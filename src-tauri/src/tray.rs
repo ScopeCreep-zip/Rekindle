@@ -14,8 +14,7 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let away = MenuItem::with_id(app, "status-away", "Away", true, None::<&str>)?;
     let busy = MenuItem::with_id(app, "status-busy", "Busy", true, None::<&str>)?;
     let offline = MenuItem::with_id(app, "status-offline", "Offline", true, None::<&str>)?;
-    let status_menu =
-        Submenu::with_items(app, "Status", true, &[&online, &away, &busy, &offline])?;
+    let status_menu = Submenu::with_items(app, "Status", true, &[&online, &away, &busy, &offline])?;
 
     let sep = PredefinedMenuItem::separator(app)?;
     let settings = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;

@@ -161,11 +161,7 @@ impl AudioProcessor {
     /// Process a single 480-sample (10ms) sub-frame through the full pipeline.
     ///
     /// Returns (`output_samples`, `vad_probability`).
-    fn process_sub_frame(
-        &mut self,
-        input: &[f32],
-        speaker_ref: Option<&[f32]>,
-    ) -> (Vec<f32>, f32) {
+    fn process_sub_frame(&mut self, input: &[f32], speaker_ref: Option<&[f32]>) -> (Vec<f32>, f32) {
         let sub_frame_size = DenoiseState::FRAME_SIZE;
 
         // Step 1: Echo cancellation (operates on normalized [-1, 1] floats)
@@ -266,11 +262,10 @@ impl AudioProcessor {
 
         // Re-create AEC3 if it was enabled
         if self.echo_cancellation_enabled {
-            self.echo_canceller =
-                aec3::voip::VoipAec3::builder(SAMPLE_RATE, CHANNELS, CHANNELS)
-                    .build()
-                    .ok()
-                    .map(SendableAec3);
+            self.echo_canceller = aec3::voip::VoipAec3::builder(SAMPLE_RATE, CHANNELS, CHANNELS)
+                .build()
+                .ok()
+                .map(SendableAec3);
         }
     }
 

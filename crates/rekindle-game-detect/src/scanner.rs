@@ -52,7 +52,9 @@ impl GameDetector {
                     started_at_epoch_ms: std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap_or_default()
-                        .as_millis().try_into().unwrap_or(u64::MAX),
+                        .as_millis()
+                        .try_into()
+                        .unwrap_or(u64::MAX),
                 };
                 self.current_game = Some(game.clone());
                 return Some(game);

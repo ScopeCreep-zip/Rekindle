@@ -20,7 +20,9 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tower_http::cors::{Any, CorsLayer};
 
-use rekindle_lib::commands::auth::{create_identity_core, login_core, LoginResult, IdentitySummary};
+use rekindle_lib::commands::auth::{
+    create_identity_core, login_core, IdentitySummary, LoginResult,
+};
 use rekindle_lib::db::{self, DbPool};
 use rekindle_lib::keystore::{self, KeystoreHandle, StrongholdKeystore};
 use rekindle_lib::state::{AppState, SharedState, UserStatus};
@@ -93,10 +95,7 @@ async fn handle_invoke(
         Ok(result) => (StatusCode::OK, Json(json!({ "result": result }))),
         Err(e) => {
             tracing::warn!(cmd = %req.cmd, error = %e, "command failed");
-            (
-                StatusCode::BAD_REQUEST,
-                Json(json!({ "error": e })),
-            )
+            (StatusCode::BAD_REQUEST, Json(json!({ "error": e })))
         }
     }
 }
@@ -112,10 +111,11 @@ async fn handle_reset(AxumState(server): AxumState<SharedServer>) -> impl IntoRe
     *server.keystore_handle.lock() = None;
 
     // Recreate SQLite database (drop all tables and re-run schema)
-    {
-        let conn = server.pool.lock().expect("db lock");
-        conn.execute_batch(
-            "DELETE FROM pending_messages; \
+    server
+        .pool
+        .call(|conn| -> Result<(), rusqlite::Error> {
+            conn.execute_batch(
+                "DELETE FROM pending_messages; \
              DELETE FROM prekeys; \
              DELETE FROM signal_sessions; \
              DELETE FROM trusted_identities; \
@@ -126,9 +126,11 @@ async fn handle_reset(AxumState(server): AxumState<SharedServer>) -> impl IntoRe
              DELETE FROM friends; \
              DELETE FROM friend_groups; \
              DELETE FROM identity;",
-        )
+            )?;
+            Ok(())
+        })
+        .await
         .expect("failed to clear database");
-    }
 
     // Delete Stronghold snapshot files
     if let Ok(entries) = std::fs::read_dir(&server.config_dir) {
@@ -180,39 +182,35 @@ async fn dispatch(server: &ServerState, cmd: &str, args: &Value) -> Result<Value
             Ok(serde_json::to_value(result).unwrap())
         }
         "list_identities" => {
-            let pool = server.pool.clone();
-            let summaries = tokio::task::spawn_blocking(move || {
-                let conn = pool.lock().map_err(|e| e.to_string())?;
-                let mut stmt = conn
-                    .prepare(
+            let summaries = server
+                .pool
+                .call(|conn| -> Result<Vec<IdentitySummary>, rusqlite::Error> {
+                    let mut stmt = conn.prepare(
                         "SELECT public_key, display_name, created_at, avatar_webp \
                          FROM identity ORDER BY created_at ASC",
-                    )
-                    .map_err(|e| e.to_string())?;
-                let rows = stmt
-                    .query_map([], |row| {
-                        let avatar_base64 = row
-                            .get::<_, Option<Vec<u8>>>("avatar_webp")
-                            .unwrap_or(None)
-                            .map(|bytes| {
-                                use base64::Engine as _;
-                                base64::engine::general_purpose::STANDARD.encode(&bytes)
-                            });
-                        Ok(IdentitySummary {
-                            public_key: row.get::<_, String>(0)?,
-                            display_name: row.get::<_, String>(1).unwrap_or_default(),
-                            created_at: row.get::<_, i64>(2)?,
-                            has_avatar: avatar_base64.is_some(),
-                            avatar_base64,
-                        })
-                    })
-                    .map_err(|e| e.to_string())?
-                    .collect::<Result<Vec<_>, _>>()
-                    .map_err(|e| e.to_string())?;
-                Ok::<Vec<IdentitySummary>, String>(rows)
-            })
-            .await
-            .map_err(|e| e.to_string())??;
+                    )?;
+                    let rows = stmt
+                        .query_map([], |row| {
+                            let avatar_base64 = row
+                                .get::<_, Option<Vec<u8>>>("avatar_webp")
+                                .unwrap_or(None)
+                                .map(|bytes| {
+                                    use base64::Engine as _;
+                                    base64::engine::general_purpose::STANDARD.encode(&bytes)
+                                });
+                            Ok(IdentitySummary {
+                                public_key: row.get::<_, String>(0)?,
+                                display_name: row.get::<_, String>(1).unwrap_or_default(),
+                                created_at: row.get::<_, i64>(2)?,
+                                has_avatar: avatar_base64.is_some(),
+                                avatar_base64,
+                            })
+                        })?
+                        .collect::<Result<Vec<_>, _>>()?;
+                    Ok(rows)
+                })
+                .await
+                .map_err(|e| e.to_string())?;
             Ok(serde_json::to_value(summaries).unwrap())
         }
         "delete_identity" => {
@@ -220,18 +218,25 @@ async fn dispatch(server: &ServerState, cmd: &str, args: &Value) -> Result<Value
             let passphrase = arg_str(args, "passphrase")?;
 
             // Verify passphrase
-            StrongholdKeystore::initialize_for_identity(&server.config_dir, &public_key, &passphrase)
-                .map_err(|e| {
-                    let msg = e.to_string();
-                    if msg.contains("snapshot") || msg.contains("decrypt") {
-                        "Wrong passphrase".to_string()
-                    } else {
-                        msg
-                    }
-                })?;
+            StrongholdKeystore::initialize_for_identity(
+                &server.config_dir,
+                &public_key,
+                &passphrase,
+            )
+            .map_err(|e| {
+                let msg = e.to_string();
+                if msg.contains("snapshot") || msg.contains("decrypt") {
+                    "Wrong passphrase".to_string()
+                } else {
+                    msg
+                }
+            })?;
 
             // If deleting active identity, clear state
-            let is_active = server.state.identity.read()
+            let is_active = server
+                .state
+                .identity
+                .read()
                 .as_ref()
                 .is_some_and(|id| id.public_key == public_key);
             if is_active {
@@ -242,16 +247,18 @@ async fn dispatch(server: &ServerState, cmd: &str, args: &Value) -> Result<Value
             }
 
             // Delete from DB
-            let pool = server.pool.clone();
             let pk = public_key.clone();
-            tokio::task::spawn_blocking(move || {
-                let conn = pool.lock().map_err(|e| e.to_string())?;
-                conn.execute("DELETE FROM identity WHERE public_key = ?1", rusqlite::params![pk])
-                    .map_err(|e| e.to_string())?;
-                Ok::<(), String>(())
-            })
-            .await
-            .map_err(|e| e.to_string())??;
+            server
+                .pool
+                .call(move |conn| -> Result<(), rusqlite::Error> {
+                    conn.execute(
+                        "DELETE FROM identity WHERE public_key = ?1",
+                        rusqlite::params![pk],
+                    )?;
+                    Ok(())
+                })
+                .await
+                .map_err(|e| e.to_string())?;
 
             // Delete Stronghold file
             let _ = StrongholdKeystore::delete_snapshot(&server.config_dir, &public_key);
@@ -327,10 +334,19 @@ async fn dispatch(server: &ServerState, cmd: &str, args: &Value) -> Result<Value
         })),
 
         // ── No-op commands (window management, status, etc.) ─────────
-        "get_game_status" | "show_buddy_list" | "open_chat_window"
-        | "open_settings_window" | "open_community_window" | "open_profile_window"
-        | "set_status" | "set_nickname" | "set_avatar" | "set_status_message"
-        | "set_mute" | "set_deafen" | "check_for_updates" => Ok(Value::Null),
+        "get_game_status"
+        | "show_buddy_list"
+        | "open_chat_window"
+        | "open_settings_window"
+        | "open_community_window"
+        | "open_profile_window"
+        | "set_status"
+        | "set_nickname"
+        | "set_avatar"
+        | "set_status_message"
+        | "set_mute"
+        | "set_deafen"
+        | "check_for_updates" => Ok(Value::Null),
 
         _ => Err(format!("unknown command: {cmd}")),
     }

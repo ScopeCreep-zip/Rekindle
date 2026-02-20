@@ -12,9 +12,7 @@ pub mod short_array;
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
-use veilid_core::{
-    DHTSchema, RoutingContext, ValueSubkeyRangeSet, VeilidAPI, CRYPTO_KIND_VLD0,
-};
+use veilid_core::{DHTSchema, RoutingContext, ValueSubkeyRangeSet, VeilidAPI, CRYPTO_KIND_VLD0};
 
 use crate::error::ProtocolError;
 
@@ -71,8 +69,9 @@ impl DHTManager {
         &self,
         subkey_count: u32,
     ) -> Result<(String, Option<veilid_core::KeyPair>), ProtocolError> {
-        let count = u16::try_from(subkey_count)
-            .map_err(|_| ProtocolError::DhtError(format!("subkey_count {subkey_count} exceeds u16::MAX")))?;
+        let count = u16::try_from(subkey_count).map_err(|_| {
+            ProtocolError::DhtError(format!("subkey_count {subkey_count} exceeds u16::MAX"))
+        })?;
         let schema = DHTSchema::dflt(count)
             .map_err(|e| ProtocolError::DhtError(format!("invalid schema: {e}")))?;
 
@@ -86,9 +85,9 @@ impl DHTManager {
         // Extract the owner keypair so the caller can persist it for future writes.
         // owner_secret() is Some immediately after create — Veilid generates a random
         // keypair and passes it as the writer.
-        let owner_keypair = descriptor
-            .owner_secret()
-            .map(|secret| veilid_core::KeyPair::new_from_parts(descriptor.owner().clone(), secret.value()));
+        let owner_keypair = descriptor.owner_secret().map(|secret| {
+            veilid_core::KeyPair::new_from_parts(descriptor.owner().clone(), secret.value())
+        });
 
         tracing::debug!(key = %key_string, has_keypair = owner_keypair.is_some(), "created DHT record");
         Ok((key_string, owner_keypair))
@@ -104,8 +103,9 @@ impl DHTManager {
         subkey_count: u32,
         owner: veilid_core::KeyPair,
     ) -> Result<(String, veilid_core::KeyPair), ProtocolError> {
-        let count = u16::try_from(subkey_count)
-            .map_err(|_| ProtocolError::DhtError(format!("subkey_count {subkey_count} exceeds u16::MAX")))?;
+        let count = u16::try_from(subkey_count).map_err(|_| {
+            ProtocolError::DhtError(format!("subkey_count {subkey_count} exceeds u16::MAX"))
+        })?;
         let schema = DHTSchema::dflt(count)
             .map_err(|e| ProtocolError::DhtError(format!("invalid schema: {e}")))?;
 
@@ -257,8 +257,7 @@ impl DHTManager {
                     .insert(route_blob.clone(), (route_id.clone(), Instant::now()));
                 self.route_id_to_pubkey
                     .insert(route_id, pubkey_hex.to_string());
-                self.route_cache
-                    .insert(pubkey_hex.to_string(), route_blob);
+                self.route_cache.insert(pubkey_hex.to_string(), route_blob);
             }
             Err(e) => {
                 tracing::debug!(
@@ -322,10 +321,7 @@ impl DHTManager {
     /// and any matching entries in the `imported_routes` cache. This ensures
     /// community server routes are also invalidated when Veilid reports them
     /// as dead, not just peer-to-peer routes.
-    pub fn invalidate_dead_routes(
-        &mut self,
-        dead_routes: &[veilid_core::RouteId],
-    ) {
+    pub fn invalidate_dead_routes(&mut self, dead_routes: &[veilid_core::RouteId]) {
         for route_id in dead_routes {
             // Invalidate peer route cache entry
             if let Some(pubkey) = self.route_id_to_pubkey.remove(route_id) {

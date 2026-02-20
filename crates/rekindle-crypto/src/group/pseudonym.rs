@@ -10,14 +10,8 @@ use x25519_dalek::StaticSecret;
 /// - Same user gets different pseudonyms in different communities
 /// - Pseudonym is reproducible from the same inputs (no storage needed)
 /// - No correlation between a user's pseudonyms across communities
-pub fn derive_community_pseudonym(
-    master_secret: &[u8; 32],
-    community_id: &str,
-) -> SigningKey {
-    let hkdf = Hkdf::<Sha256>::new(
-        Some(b"rekindle-community-pseudonym-v1"),
-        master_secret,
-    );
+pub fn derive_community_pseudonym(master_secret: &[u8; 32], community_id: &str) -> SigningKey {
+    let hkdf = Hkdf::<Sha256>::new(Some(b"rekindle-community-pseudonym-v1"), master_secret);
     let mut seed = [0u8; 32];
     hkdf.expand(community_id.as_bytes(), &mut seed)
         .expect("32-byte output is a valid HKDF-SHA256 length");

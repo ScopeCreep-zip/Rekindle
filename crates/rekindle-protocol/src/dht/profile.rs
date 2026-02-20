@@ -27,8 +27,14 @@ pub async fn create_profile(
     let (key, owner_keypair) = dht.create_record(PROFILE_SUBKEY_COUNT).await?;
 
     // Set initial values
-    dht.set_value(&key, SUBKEY_DISPLAY_NAME, display_name.as_bytes().to_vec()).await?;
-    dht.set_value(&key, SUBKEY_STATUS_MESSAGE, status_message.as_bytes().to_vec()).await?;
+    dht.set_value(&key, SUBKEY_DISPLAY_NAME, display_name.as_bytes().to_vec())
+        .await?;
+    dht.set_value(
+        &key,
+        SUBKEY_STATUS_MESSAGE,
+        status_message.as_bytes().to_vec(),
+    )
+    .await?;
     let ts: i64 = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -39,8 +45,10 @@ pub async fn create_profile(
     status_payload.push(0u8);
     status_payload.extend_from_slice(&ts.to_be_bytes());
     dht.set_value(&key, SUBKEY_STATUS, status_payload).await?; // 0 = online
-    dht.set_value(&key, SUBKEY_PREKEY_BUNDLE, prekey_bundle.to_vec()).await?;
-    dht.set_value(&key, SUBKEY_ROUTE_BLOB, route_blob.to_vec()).await?;
+    dht.set_value(&key, SUBKEY_PREKEY_BUNDLE, prekey_bundle.to_vec())
+        .await?;
+    dht.set_value(&key, SUBKEY_ROUTE_BLOB, route_blob.to_vec())
+        .await?;
 
     tracing::info!(key = %key, name = %display_name, "profile record created");
     Ok((key, owner_keypair))
@@ -71,19 +79,17 @@ pub async fn read_display_name(
     profile_key: &str,
 ) -> Result<Option<String>, ProtocolError> {
     match dht.get_value(profile_key, SUBKEY_DISPLAY_NAME).await? {
-        Some(bytes) => Ok(Some(
-            String::from_utf8(bytes)
-                .map_err(|e| ProtocolError::Deserialization(e.to_string()))?,
-        )),
+        Some(bytes) => {
+            Ok(Some(String::from_utf8(bytes).map_err(|e| {
+                ProtocolError::Deserialization(e.to_string())
+            })?))
+        }
         None => Ok(None),
     }
 }
 
 /// Read the status from a profile record.
-pub async fn read_status(
-    dht: &DHTManager,
-    profile_key: &str,
-) -> Result<Option<u8>, ProtocolError> {
+pub async fn read_status(dht: &DHTManager, profile_key: &str) -> Result<Option<u8>, ProtocolError> {
     match dht.get_value(profile_key, SUBKEY_STATUS).await? {
         Some(bytes) => Ok(bytes.first().copied()),
         None => Ok(None),

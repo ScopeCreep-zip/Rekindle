@@ -216,8 +216,14 @@ pub async fn handle_community_rpc_direct(
         }
     };
 
-    let response =
-        dispatch_request(state, sender_pseudonym_key, request, None, Some(community_id)).await;
+    let response = dispatch_request(
+        state,
+        sender_pseudonym_key,
+        request,
+        None,
+        Some(community_id),
+    )
+    .await;
     serde_json::to_vec(&response).unwrap_or_else(|_| {
         serde_json::to_vec(&CommunityResponse::Error {
             code: 500,
@@ -295,8 +301,7 @@ async fn dispatch_request(
         if pseudonym_pubkey != sender_pseudonym {
             return CommunityResponse::Error {
                 code: 403,
-                message: "pseudonym mismatch: claimed key does not match envelope signature"
-                    .into(),
+                message: "pseudonym mismatch: claimed key does not match envelope signature".into(),
             };
         }
         return handle_join(
@@ -311,12 +316,9 @@ async fn dispatch_request(
     }
 
     // For all non-Join requests, resolve the target community upfront.
-    let Some(community_id) = resolve_community_id(
-        state,
-        sender_pseudonym,
-        incoming_route_id,
-        ipc_community_id,
-    ) else {
+    let Some(community_id) =
+        resolve_community_id(state, sender_pseudonym, incoming_route_id, ipc_community_id)
+    else {
         return CommunityResponse::Error {
             code: 403,
             message: "not a member of any hosted community".into(),
@@ -360,7 +362,8 @@ async fn dispatch_request(
         }
 
         CommunityRequest::CreateChannel { name, channel_type } => {
-            let resp = handle_create_channel(state, &community_id, sender_pseudonym, &name, &channel_type);
+            let resp =
+                handle_create_channel(state, &community_id, sender_pseudonym, &name, &channel_type);
             if matches!(resp, CommunityResponse::ChannelCreated { .. }) {
                 let st = Arc::clone(state);
                 let cid = community_id.clone();
@@ -383,13 +386,21 @@ async fn dispatch_request(
             resp
         }
 
-        CommunityRequest::RotateMEK => handle_rotate_mek(state, &community_id, sender_pseudonym).await,
+        CommunityRequest::RotateMEK => {
+            handle_rotate_mek(state, &community_id, sender_pseudonym).await
+        }
 
         CommunityRequest::RenameChannel {
             channel_id,
             new_name,
         } => {
-            let resp = handle_rename_channel(state, &community_id, sender_pseudonym, &channel_id, &new_name);
+            let resp = handle_rename_channel(
+                state,
+                &community_id,
+                sender_pseudonym,
+                &channel_id,
+                &new_name,
+            );
             if matches!(resp, CommunityResponse::Ok) {
                 let st = Arc::clone(state);
                 let cid = community_id.clone();
@@ -422,7 +433,6 @@ async fn dispatch_request(
         CommunityRequest::GetBanList => handle_get_ban_list(state, &community_id, sender_pseudonym),
 
         // ── Role & permission management ──
-
         CommunityRequest::CreateRole {
             name,
             color,
@@ -430,8 +440,16 @@ async fn dispatch_request(
             hoist,
             mentionable,
         } => {
-            let resp =
-                handle_create_role(state, &community_id, sender_pseudonym, &name, color, perms, hoist, mentionable);
+            let resp = handle_create_role(
+                state,
+                &community_id,
+                sender_pseudonym,
+                &name,
+                color,
+                perms,
+                hoist,
+                mentionable,
+            );
             if let CommunityResponse::RoleCreated { .. } = &resp {
                 broadcast_roles_changed(state, &community_id);
             }
@@ -477,8 +495,13 @@ async fn dispatch_request(
             target_pseudonym,
             role_id,
         } => {
-            let resp =
-                handle_assign_role(state, &community_id, sender_pseudonym, &target_pseudonym, role_id);
+            let resp = handle_assign_role(
+                state,
+                &community_id,
+                sender_pseudonym,
+                &target_pseudonym,
+                role_id,
+            );
             if matches!(resp, CommunityResponse::Ok) {
                 broadcast_member_roles_changed(state, &community_id, &target_pseudonym);
             }
@@ -489,8 +512,13 @@ async fn dispatch_request(
             target_pseudonym,
             role_id,
         } => {
-            let resp =
-                handle_unassign_role(state, &community_id, sender_pseudonym, &target_pseudonym, role_id);
+            let resp = handle_unassign_role(
+                state,
+                &community_id,
+                sender_pseudonym,
+                &target_pseudonym,
+                role_id,
+            );
             if matches!(resp, CommunityResponse::Ok) {
                 broadcast_member_roles_changed(state, &community_id, &target_pseudonym);
             }
@@ -619,7 +647,9 @@ fn add_new_member(
     // Determine role IDs — first member is the creator (gets Owner + Admin + Mod + Member + @everyone)
     let is_first_member = {
         let hosted = state.hosted.read();
-        hosted.get(community_id).is_some_and(|c| c.members.is_empty())
+        hosted
+            .get(community_id)
+            .is_some_and(|c| c.members.is_empty())
     };
     let default_role_ids = if is_first_member {
         vec![ROLE_EVERYONE_ID, 1, 2, 3, 4] // @everyone, Member, Moderator, Admin, Owner
@@ -701,7 +731,13 @@ fn add_new_member(
     mek_payload.extend_from_slice(&mek_generation.to_le_bytes());
     mek_payload.extend_from_slice(community.mek.as_bytes());
 
-    Some((mek_payload, mek_generation, channels, default_role_ids, roles_dto))
+    Some((
+        mek_payload,
+        mek_generation,
+        channels,
+        default_role_ids,
+        roles_dto,
+    ))
 }
 
 async fn handle_join(
@@ -844,8 +880,7 @@ fn handle_send_message(
             if !permissions::has_permission(perms, permissions::SEND_MESSAGES) {
                 return CommunityResponse::Error {
                     code: 403,
-                    message: "you do not have permission to send messages in this channel"
-                        .into(),
+                    message: "you do not have permission to send messages in this channel".into(),
                 };
             }
         }
@@ -982,7 +1017,11 @@ fn handle_get_messages(
     CommunityResponse::Messages { messages }
 }
 
-fn handle_request_mek(state: &Arc<ServerState>, community_id: &str, sender_pseudonym: &str) -> CommunityResponse {
+fn handle_request_mek(
+    state: &Arc<ServerState>,
+    community_id: &str,
+    sender_pseudonym: &str,
+) -> CommunityResponse {
     let hosted = state.hosted.read();
     let Some(community) = hosted.get(community_id) else {
         return CommunityResponse::Error {
@@ -1008,7 +1047,11 @@ fn handle_request_mek(state: &Arc<ServerState>, community_id: &str, sender_pseud
 // Leave / Kick
 // ---------------------------------------------------------------------------
 
-async fn handle_leave(state: &Arc<ServerState>, community_id: &str, sender_pseudonym: &str) -> CommunityResponse {
+async fn handle_leave(
+    state: &Arc<ServerState>,
+    community_id: &str,
+    sender_pseudonym: &str,
+) -> CommunityResponse {
     {
         let hosted = state.hosted.read();
         if let Some(community) = hosted.get(community_id) {
@@ -1284,8 +1327,7 @@ async fn handle_rotate_mek(
             return e;
         }
 
-        if let Err(e) =
-            check_permission(community, sender_pseudonym, permissions::MANAGE_COMMUNITY)
+        if let Err(e) = check_permission(community, sender_pseudonym, permissions::MANAGE_COMMUNITY)
         {
             return e;
         }
@@ -1333,8 +1375,7 @@ async fn handle_update_community(
             return e;
         }
 
-        if let Err(e) =
-            check_permission(community, sender_pseudonym, permissions::MANAGE_COMMUNITY)
+        if let Err(e) = check_permission(community, sender_pseudonym, permissions::MANAGE_COMMUNITY)
         {
             return e;
         }
@@ -1476,7 +1517,11 @@ fn handle_unban(
     CommunityResponse::Ok
 }
 
-fn handle_get_ban_list(state: &Arc<ServerState>, community_id: &str, sender_pseudonym: &str) -> CommunityResponse {
+fn handle_get_ban_list(
+    state: &Arc<ServerState>,
+    community_id: &str,
+    sender_pseudonym: &str,
+) -> CommunityResponse {
     let hosted = state.hosted.read();
     let Some(community) = hosted.get(community_id) else {
         return CommunityResponse::Error {
@@ -1622,10 +1667,15 @@ fn handle_edit_role(
     }
 
     let sender_pos = highest_role_position(community, sender_pseudonym);
-    let sender_is_admin = permissions::is_administrator(member_base_permissions(community, sender_pseudonym));
+    let sender_is_admin =
+        permissions::is_administrator(member_base_permissions(community, sender_pseudonym));
 
     // Check role exists and position constraint before mutating
-    let target_pos = community.roles.iter().find(|r| r.id == role_id).map(|r| r.position);
+    let target_pos = community
+        .roles
+        .iter()
+        .find(|r| r.id == role_id)
+        .map(|r| r.position);
     let Some(target_position) = target_pos else {
         return CommunityResponse::Error {
             code: 404,
@@ -1884,7 +1934,11 @@ fn handle_unassign_role(
     CommunityResponse::Ok
 }
 
-fn handle_get_roles(state: &Arc<ServerState>, community_id: &str, sender_pseudonym: &str) -> CommunityResponse {
+fn handle_get_roles(
+    state: &Arc<ServerState>,
+    community_id: &str,
+    sender_pseudonym: &str,
+) -> CommunityResponse {
     let hosted = state.hosted.read();
     let Some(community) = hosted.get(community_id) else {
         return CommunityResponse::Error {
@@ -2057,9 +2111,7 @@ fn handle_timeout_member(
         return e;
     }
 
-    if let Err(e) =
-        check_permission(community, sender_pseudonym, permissions::MODERATE_MEMBERS)
-    {
+    if let Err(e) = check_permission(community, sender_pseudonym, permissions::MODERATE_MEMBERS) {
         return e;
     }
 
@@ -2130,9 +2182,7 @@ fn handle_remove_timeout(
         return e;
     }
 
-    if let Err(e) =
-        check_permission(community, sender_pseudonym, permissions::MODERATE_MEMBERS)
-    {
+    if let Err(e) = check_permission(community, sender_pseudonym, permissions::MODERATE_MEMBERS) {
         return e;
     }
 

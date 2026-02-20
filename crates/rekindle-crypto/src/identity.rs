@@ -92,8 +92,9 @@ impl Identity {
     pub fn peer_ed25519_to_x25519(
         ed25519_public_bytes: &[u8; 32],
     ) -> Result<x25519_dalek::PublicKey, CryptoError> {
-        let verifying_key = VerifyingKey::from_bytes(ed25519_public_bytes)
-            .map_err(|e| CryptoError::VerificationError(format!("invalid Ed25519 public key: {e}")))?;
+        let verifying_key = VerifyingKey::from_bytes(ed25519_public_bytes).map_err(|e| {
+            CryptoError::VerificationError(format!("invalid Ed25519 public key: {e}"))
+        })?;
         let montgomery = verifying_key.to_montgomery();
         Ok(x25519_dalek::PublicKey::from(montgomery.to_bytes()))
     }
@@ -150,8 +151,7 @@ mod tests {
         // the same X25519 public key as to_x25519_public (from secret key).
         let identity = Identity::generate();
         let from_secret = identity.to_x25519_public();
-        let from_public =
-            Identity::peer_ed25519_to_x25519(&identity.public_key_bytes()).unwrap();
+        let from_public = Identity::peer_ed25519_to_x25519(&identity.public_key_bytes()).unwrap();
         assert_eq!(from_secret.as_bytes(), from_public.as_bytes());
     }
 
@@ -164,12 +164,10 @@ mod tests {
         let bob = Identity::generate();
 
         let alice_secret = alice.to_x25519_secret();
-        let bob_x25519_pub =
-            Identity::peer_ed25519_to_x25519(&bob.public_key_bytes()).unwrap();
+        let bob_x25519_pub = Identity::peer_ed25519_to_x25519(&bob.public_key_bytes()).unwrap();
 
         let bob_secret = bob.to_x25519_secret();
-        let alice_x25519_pub =
-            Identity::peer_ed25519_to_x25519(&alice.public_key_bytes()).unwrap();
+        let alice_x25519_pub = Identity::peer_ed25519_to_x25519(&alice.public_key_bytes()).unwrap();
 
         let shared_a = alice_secret.diffie_hellman(&bob_x25519_pub);
         let shared_b = bob_secret.diffie_hellman(&alice_x25519_pub);

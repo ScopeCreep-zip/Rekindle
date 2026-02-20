@@ -103,7 +103,9 @@ impl RoutingManager {
         let route_id = self
             .api
             .import_remote_private_route(route_blob.to_vec())
-            .map_err(|e| ProtocolError::RoutingError(format!("import_remote_private_route: {e}")))?;
+            .map_err(|e| {
+                ProtocolError::RoutingError(format!("import_remote_private_route: {e}"))
+            })?;
 
         Ok(route_id.to_string())
     }

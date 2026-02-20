@@ -1,14 +1,23 @@
 use std::path::Path;
 
 const SCHEMAS: &[&str] = &[
-    "message", "identity", "presence", "community", "friend", "voice",
-    "account", "conversation",
+    "message",
+    "identity",
+    "presence",
+    "community",
+    "friend",
+    "voice",
+    "account",
+    "conversation",
 ];
 
 /// Find the capnp binary, checking standard installation locations on Windows
 fn find_capnp() -> Option<std::path::PathBuf> {
     // First, try the PATH
-    if let Ok(output) = std::process::Command::new("capnp").arg("--version").output() {
+    if let Ok(output) = std::process::Command::new("capnp")
+        .arg("--version")
+        .output()
+    {
         if output.status.success() {
             return Some(std::path::PathBuf::from("capnp"));
         }
@@ -103,11 +112,8 @@ fn main() {
         for schema in SCHEMAS {
             let path = Path::new(&out_dir).join(format!("{schema}_capnp.rs"));
             if !path.exists() {
-                std::fs::write(
-                    &path,
-                    "// stub — install capnp to generate real bindings\n",
-                )
-                .expect("failed to write stub file");
+                std::fs::write(&path, "// stub — install capnp to generate real bindings\n")
+                    .expect("failed to write stub file");
             }
         }
     }

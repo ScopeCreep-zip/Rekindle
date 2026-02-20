@@ -1,10 +1,9 @@
 use veilid_core::{
-    DHTSchema, KeyPair, RecordKey, RoutingContext, ValueSubkeyRangeSet,
-    CRYPTO_KIND_VLD0,
+    DHTSchema, KeyPair, RecordKey, RoutingContext, ValueSubkeyRangeSet, CRYPTO_KIND_VLD0,
 };
 
 use crate::capnp_codec::conversation::{
-    ConversationHeader, decode_conversation_header, encode_conversation_header,
+    decode_conversation_header, encode_conversation_header, ConversationHeader,
 };
 use crate::capnp_codec::identity::{PreKeyBundle, UserProfile};
 use crate::dht::log::DHTLog;

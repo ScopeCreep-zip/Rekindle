@@ -7,8 +7,7 @@ const SERVER_SCHEMA_VERSION: i64 = 4;
 
 /// Open (or create) the server `SQLite` database and run migrations.
 pub fn open_server_db(path: &str) -> Result<Arc<Mutex<Connection>>, String> {
-    let conn =
-        Connection::open(path).map_err(|e| format!("failed to open server db: {e}"))?;
+    let conn = Connection::open(path).map_err(|e| format!("failed to open server db: {e}"))?;
 
     conn.execute_batch("PRAGMA journal_mode=WAL;")
         .map_err(|e| format!("failed to set WAL mode: {e}"))?;

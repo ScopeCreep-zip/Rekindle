@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use veilid_core::{
-    DHTSchema, KeyPair, RecordKey, RoutingContext, ValueSubkeyRangeSet,
-    CRYPTO_KIND_VLD0,
+    DHTSchema, KeyPair, RecordKey, RoutingContext, ValueSubkeyRangeSet, CRYPTO_KIND_VLD0,
 };
 
 use crate::dht::short_array::DHTShortArray;
@@ -43,48 +42,31 @@ impl DHTLog {
     ///
     /// Returns the log and the owner keypair (which must be persisted for
     /// write access across sessions).
-    pub async fn create(
-        rc: &RoutingContext,
-    ) -> Result<(Self, KeyPair), ProtocolError> {
+    pub async fn create(rc: &RoutingContext) -> Result<(Self, KeyPair), ProtocolError> {
         let schema = DHTSchema::dflt(1)
-            .map_err(|e| {
-                ProtocolError::DhtError(format!("invalid schema: {e}"))
-            })?;
+            .map_err(|e| ProtocolError::DhtError(format!("invalid schema: {e}")))?;
 
         let descriptor = rc
             .create_dht_record(CRYPTO_KIND_VLD0, schema, None)
             .await
-            .map_err(|e| {
-                ProtocolError::DhtError(format!("create log spine: {e}"))
-            })?;
+            .map_err(|e| ProtocolError::DhtError(format!("create log spine: {e}")))?;
 
         let key = descriptor.key().clone();
         let keypair = descriptor
             .owner_secret()
-            .map(|secret| {
-                KeyPair::new_from_parts(
-                    descriptor.owner().clone(),
-                    secret.value(),
-                )
-            })
-            .ok_or_else(|| {
-                ProtocolError::DhtError(
-                    "no owner secret after create".into(),
-                )
-            })?;
+            .map(|secret| KeyPair::new_from_parts(descriptor.owner().clone(), secret.value()))
+            .ok_or_else(|| ProtocolError::DhtError("no owner secret after create".into()))?;
 
         let spine = LogSpine {
             total_count: 0,
             segment_capacity: DEFAULT_SEGMENT_CAPACITY,
             segments: Vec::new(),
         };
-        let spine_bytes = serde_json::to_vec(&spine)
-            .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+        let spine_bytes =
+            serde_json::to_vec(&spine).map_err(|e| ProtocolError::Serialization(e.to_string()))?;
         rc.set_dht_value(key.clone(), 0, spine_bytes, None)
             .await
-            .map_err(|e| {
-                ProtocolError::DhtError(format!("write spine: {e}"))
-            })?;
+            .map_err(|e| ProtocolError::DhtError(format!("write spine: {e}")))?;
 
         tracing::debug!(key = %key, "DHTLog created");
 
@@ -108,18 +90,12 @@ impl DHTLog {
     ) -> Result<Self, ProtocolError> {
         let spine_key: RecordKey = key
             .parse()
-            .map_err(|e| {
-                ProtocolError::DhtError(format!(
-                    "invalid key '{key}': {e}"
-                ))
-            })?;
+            .map_err(|e| ProtocolError::DhtError(format!("invalid key '{key}': {e}")))?;
 
         let _ = rc
             .open_dht_record(spine_key.clone(), Some(writer.clone()))
             .await
-            .map_err(|e| {
-                ProtocolError::DhtError(format!("open log spine: {e}"))
-            })?;
+            .map_err(|e| ProtocolError::DhtError(format!("open log spine: {e}")))?;
 
         tracing::debug!(key, "DHTLog opened (write)");
 
@@ -131,24 +107,15 @@ impl DHTLog {
     }
 
     /// Open an existing `DHTLog` for reading only.
-    pub async fn open_read(
-        rc: &RoutingContext,
-        key: &str,
-    ) -> Result<Self, ProtocolError> {
+    pub async fn open_read(rc: &RoutingContext, key: &str) -> Result<Self, ProtocolError> {
         let spine_key: RecordKey = key
             .parse()
-            .map_err(|e| {
-                ProtocolError::DhtError(format!(
-                    "invalid key '{key}': {e}"
-                ))
-            })?;
+            .map_err(|e| ProtocolError::DhtError(format!("invalid key '{key}': {e}")))?;
 
         let _ = rc
             .open_dht_record(spine_key.clone(), None)
             .await
-            .map_err(|e| {
-                ProtocolError::DhtError(format!("open log spine: {e}"))
-            })?;
+            .map_err(|e| ProtocolError::DhtError(format!("open log spine: {e}")))?;
 
         tracing::debug!(key, "DHTLog opened (read)");
 
@@ -163,32 +130,23 @@ impl DHTLog {
     ///
     /// Allocates a new segment if the latest segment is full.
     /// Returns the absolute position of the new entry.
-    pub async fn append(
-        &self,
-        data: &[u8],
-    ) -> Result<u64, ProtocolError> {
-        let writer = self.owner_keypair.as_ref().ok_or_else(|| {
-            ProtocolError::DhtError(
-                "cannot append to read-only log".into(),
-            )
-        })?;
+    pub async fn append(&self, data: &[u8]) -> Result<u64, ProtocolError> {
+        let writer = self
+            .owner_keypair
+            .as_ref()
+            .ok_or_else(|| ProtocolError::DhtError("cannot append to read-only log".into()))?;
 
         let mut spine = self.read_spine().await?;
         let cap = spine.segment_capacity;
 
         // Determine if the latest segment is full (or no segments exist)
         let needs_new_segment = spine.segments.is_empty()
-            || (spine.total_count > 0
-                && spine.total_count % u64::from(cap) == 0);
+            || (spine.total_count > 0 && spine.total_count % u64::from(cap) == 0);
 
         if needs_new_segment {
             // Allocate a new segment with the same owner keypair
-            let (segment, _) = DHTShortArray::create(
-                &self.routing_context,
-                cap,
-                Some(writer.clone()),
-            )
-            .await?;
+            let (segment, _) =
+                DHTShortArray::create(&self.routing_context, cap, Some(writer.clone())).await?;
 
             spine.segments.push(segment.record_key());
 
@@ -196,19 +154,14 @@ impl DHTLog {
             segment.add(data).await?;
         } else {
             // Open and write to the latest segment
-            let latest_key =
-                spine.segments.last().ok_or_else(|| {
-                    ProtocolError::DhtError(
-                        "no segments in spine".into(),
-                    )
-                })?;
+            let latest_key = spine
+                .segments
+                .last()
+                .ok_or_else(|| ProtocolError::DhtError("no segments in spine".into()))?;
 
-            let segment = DHTShortArray::open(
-                &self.routing_context,
-                latest_key,
-                Some(writer.clone()),
-            )
-            .await?;
+            let segment =
+                DHTShortArray::open(&self.routing_context, latest_key, Some(writer.clone()))
+                    .await?;
 
             segment.add(data).await?;
         }
@@ -224,10 +177,7 @@ impl DHTLog {
     /// Read an entry at the given absolute position.
     ///
     /// Returns `None` if the position is beyond the current length.
-    pub async fn get(
-        &self,
-        pos: u64,
-    ) -> Result<Option<Vec<u8>>, ProtocolError> {
+    pub async fn get(&self, pos: u64) -> Result<Option<Vec<u8>>, ProtocolError> {
         let spine = self.read_spine().await?;
 
         if pos >= spine.total_count {
@@ -266,10 +216,7 @@ impl DHTLog {
     /// Read the last `count` entries from the log.
     ///
     /// Returns entries in chronological order (oldest first).
-    pub async fn tail(
-        &self,
-        count: u32,
-    ) -> Result<Vec<Vec<u8>>, ProtocolError> {
+    pub async fn tail(&self, count: u32) -> Result<Vec<Vec<u8>>, ProtocolError> {
         let spine = self.read_spine().await?;
         let total = spine.total_count;
 
@@ -291,9 +238,7 @@ impl DHTLog {
             let offset = u32::try_from(pos % cap).unwrap_or(u32::MAX);
 
             // Open new segment if we've moved to the next one
-            if current_segment.is_none()
-                || seg_idx != current_segment_idx
-            {
+            if current_segment.is_none() || seg_idx != current_segment_idx {
                 current_segment_idx = seg_idx;
                 if seg_idx < spine.segments.len() {
                     current_segment = Some(
@@ -324,21 +269,13 @@ impl DHTLog {
     /// When entries are appended, the spine's `total_count` changes,
     /// triggering a `VeilidUpdate::ValueChange` notification.
     pub async fn watch(&self) -> Result<bool, ProtocolError> {
-        let subkeys: ValueSubkeyRangeSet =
-            [0u32].iter().copied().collect();
+        let subkeys: ValueSubkeyRangeSet = [0u32].iter().copied().collect();
 
         let active = self
             .routing_context
-            .watch_dht_values(
-                self.spine_key.clone(),
-                Some(subkeys),
-                None,
-                None,
-            )
+            .watch_dht_values(self.spine_key.clone(), Some(subkeys), None, None)
             .await
-            .map_err(|e| {
-                ProtocolError::DhtError(format!("watch spine: {e}"))
-            })?;
+            .map_err(|e| ProtocolError::DhtError(format!("watch spine: {e}")))?;
 
         tracing::debug!(
             key = %self.spine_key,
@@ -353,13 +290,8 @@ impl DHTLog {
         // Best-effort close all segments
         if let Ok(spine) = self.read_spine().await {
             for seg_key_str in &spine.segments {
-                if let Ok(seg_key) =
-                    seg_key_str.parse::<RecordKey>()
-                {
-                    let _ = self
-                        .routing_context
-                        .close_dht_record(seg_key)
-                        .await;
+                if let Ok(seg_key) = seg_key_str.parse::<RecordKey>() {
+                    let _ = self.routing_context.close_dht_record(seg_key).await;
                 }
             }
         }
@@ -368,9 +300,7 @@ impl DHTLog {
         self.routing_context
             .close_dht_record(self.spine_key.clone())
             .await
-            .map_err(|e| {
-                ProtocolError::DhtError(format!("close spine: {e}"))
-            })?;
+            .map_err(|e| ProtocolError::DhtError(format!("close spine: {e}")))?;
 
         Ok(())
     }
@@ -387,36 +317,22 @@ impl DHTLog {
             .routing_context
             .get_dht_value(self.spine_key.clone(), 0, false)
             .await
-            .map_err(|e| {
-                ProtocolError::DhtError(format!("read spine: {e}"))
-            })?;
+            .map_err(|e| ProtocolError::DhtError(format!("read spine: {e}")))?;
 
         match value {
-            Some(v) => serde_json::from_slice(v.data()).map_err(
-                |e| {
-                    ProtocolError::Deserialization(format!(
-                        "spine parse: {e}"
-                    ))
-                },
-            ),
-            None => Err(ProtocolError::DhtError(
-                "spine subkey not set".into(),
-            )),
+            Some(v) => serde_json::from_slice(v.data())
+                .map_err(|e| ProtocolError::Deserialization(format!("spine parse: {e}"))),
+            None => Err(ProtocolError::DhtError("spine subkey not set".into())),
         }
     }
 
-    async fn write_spine(
-        &self,
-        spine: &LogSpine,
-    ) -> Result<(), ProtocolError> {
-        let bytes = serde_json::to_vec(spine)
-            .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+    async fn write_spine(&self, spine: &LogSpine) -> Result<(), ProtocolError> {
+        let bytes =
+            serde_json::to_vec(spine).map_err(|e| ProtocolError::Serialization(e.to_string()))?;
         self.routing_context
             .set_dht_value(self.spine_key.clone(), 0, bytes, None)
             .await
-            .map_err(|e| {
-                ProtocolError::DhtError(format!("write spine: {e}"))
-            })?;
+            .map_err(|e| ProtocolError::DhtError(format!("write spine: {e}")))?;
         Ok(())
     }
 }

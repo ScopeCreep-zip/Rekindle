@@ -1,13 +1,11 @@
-use std::sync::{Arc, Mutex};
-
 use rusqlite::Connection;
 
-/// Thread-safe database handle wrapping a single `rusqlite::Connection`.
+/// Async database handle backed by a dedicated background thread.
 ///
-/// `rusqlite::Connection` is `Send` but not `Sync`, so we guard it with
-/// `std::sync::Mutex` (not `parking_lot` — its guards are `!Send` which can
-/// cause issues with async runtimes).
-pub type DbPool = Arc<Mutex<Connection>>;
+/// [`tokio_rusqlite::Connection`] wraps a single [`rusqlite::Connection`] on a
+/// background thread and exposes an async `call()` API.  It is Clone + Send
+/// + Sync, so Tauri's `State<'_, DbPool>` works out of the box.
+pub type DbPool = tokio_rusqlite::Connection;
 
 /// Bump this every time `001_init.sql` changes.  On mismatch the entire
 /// database is wiped and recreated from the schema — safe because the app
@@ -26,9 +24,13 @@ pub struct DbOpenResult {
 
 /// Open (or create) a `SQLite` database at `db_path` and run the initial schema
 /// migration.  Returns a `DbOpenResult` with the pool and a reset flag.
+///
+/// The raw `rusqlite::Connection` is created and configured synchronously
+/// (PRAGMAs, schema check), then wrapped in `tokio_rusqlite::Connection`
+/// which spawns a dedicated background thread for all future DB access.
 pub fn create_pool(db_path: &str) -> Result<DbOpenResult, String> {
-    let conn = Connection::open(db_path)
-        .map_err(|e| format!("failed to connect to database: {e}"))?;
+    let conn =
+        Connection::open(db_path).map_err(|e| format!("failed to connect to database: {e}"))?;
 
     // Enable WAL mode for better concurrent-read performance.
     conn.execute_batch("PRAGMA journal_mode=WAL;")
@@ -60,8 +62,9 @@ pub fn create_pool(db_path: &str) -> Result<DbOpenResult, String> {
             .map_err(|e| format!("failed to set schema version: {e}"))?;
     }
 
+    // Wrap configured connection — spawns the background thread.
     Ok(DbOpenResult {
-        pool: Arc::new(Mutex::new(conn)),
+        pool: tokio_rusqlite::Connection::from(conn),
         schema_reset,
     })
 }

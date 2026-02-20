@@ -41,10 +41,7 @@ pub async fn create_friend_list(
 }
 
 /// Read the full friend list from DHT.
-pub async fn read_friend_list(
-    dht: &DHTManager,
-    key: &str,
-) -> Result<FriendList, ProtocolError> {
+pub async fn read_friend_list(dht: &DHTManager, key: &str) -> Result<FriendList, ProtocolError> {
     match dht.get_value(key, 0).await? {
         Some(data) => {
             let friends = capnp_codec::friend::decode_friend_list(&data)?;
@@ -63,7 +60,11 @@ pub async fn add_friend(
     let mut list = read_friend_list(dht, key).await?;
 
     // Avoid duplicates
-    if list.friends.iter().any(|f| f.public_key == entry.public_key) {
+    if list
+        .friends
+        .iter()
+        .any(|f| f.public_key == entry.public_key)
+    {
         return Ok(());
     }
 

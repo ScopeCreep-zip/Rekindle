@@ -6,9 +6,9 @@ use veilid_core::VeilidUpdate;
 
 use crate::channels::{NetworkStatusEvent, NotificationEvent};
 use crate::db::DbPool;
-use crate::state::{
-    AppState, DHTManagerHandle, NodeHandle, RoutingManagerHandle,
-};
+use crate::db_helpers::db_fire;
+use crate::state::{AppState, DHTManagerHandle, NodeHandle, RoutingManagerHandle};
+use crate::state_helpers;
 
 /// Build and emit a `NetworkStatusEvent` from current `NodeHandle` state.
 ///
@@ -121,20 +121,17 @@ async fn handle_app_message(
     }
 
     // 2. Try to parse as a community broadcast
-    if let Ok(broadcast) = serde_json::from_slice::<rekindle_protocol::messaging::CommunityBroadcast>(&message) {
+    if let Ok(broadcast) =
+        serde_json::from_slice::<rekindle_protocol::messaging::CommunityBroadcast>(&message)
+    {
         handle_community_broadcast(app_handle, state, broadcast).await;
         return;
     }
 
     // 3. Fallback to standard message handling
     let pool: tauri::State<'_, DbPool> = app_handle.state();
-    super::message_service::handle_incoming_message(
-        app_handle,
-        state,
-        pool.inner(),
-        &message,
-    )
-    .await;
+    super::message_service::handle_incoming_message(app_handle, state, pool.inner(), &message)
+        .await;
 }
 
 /// Handle a community broadcast from the community server.
@@ -155,8 +152,12 @@ async fn handle_community_broadcast(
             timestamp,
         } => {
             let msg = BroadcastNewMessage {
-                community_id, channel_id, sender_pseudonym,
-                ciphertext, mek_generation, timestamp,
+                community_id,
+                channel_id,
+                sender_pseudonym,
+                ciphertext,
+                mek_generation,
+                timestamp,
             };
             handle_broadcast_new_message(app_handle, state, &msg).await;
         }
@@ -173,34 +174,51 @@ async fn handle_community_broadcast(
             role_ids,
         } => {
             handle_broadcast_member_joined(
-                app_handle, state, &community_id, &pseudonym_key, &display_name, &role_ids,
-            ).await;
+                app_handle,
+                state,
+                &community_id,
+                &pseudonym_key,
+                &display_name,
+                &role_ids,
+            );
         }
         CommunityBroadcast::MemberRemoved {
             community_id,
             pseudonym_key,
         } => {
-            handle_broadcast_member_removed(app_handle, state, &community_id, &pseudonym_key).await;
+            handle_broadcast_member_removed(app_handle, state, &community_id, &pseudonym_key);
         }
         CommunityBroadcast::RolesChanged {
             community_id,
             roles,
         } => {
-            handle_broadcast_roles_changed(app_handle, state, &community_id, roles).await;
+            handle_broadcast_roles_changed(app_handle, state, &community_id, &roles);
         }
         CommunityBroadcast::MemberRolesChanged {
             community_id,
             pseudonym_key,
             role_ids,
         } => {
-            handle_broadcast_member_roles_changed(app_handle, state, &community_id, &pseudonym_key, &role_ids).await;
+            handle_broadcast_member_roles_changed(
+                app_handle,
+                state,
+                &community_id,
+                &pseudonym_key,
+                &role_ids,
+            );
         }
         CommunityBroadcast::MemberTimedOut {
             community_id,
             pseudonym_key,
             timeout_until,
         } => {
-            handle_broadcast_member_timed_out(app_handle, state, &community_id, &pseudonym_key, timeout_until).await;
+            handle_broadcast_member_timed_out(
+                app_handle,
+                state,
+                &community_id,
+                &pseudonym_key,
+                timeout_until,
+            );
         }
         CommunityBroadcast::ChannelOverwriteChanged {
             community_id,
@@ -261,7 +279,12 @@ async fn handle_broadcast_new_message(
 
     let first_attempt = {
         let mek_cache = state.mek_cache.lock();
-        decrypt_with_cached_mek(&mek_cache, &msg.community_id, &msg.ciphertext, msg.mek_generation)
+        decrypt_with_cached_mek(
+            &mek_cache,
+            &msg.community_id,
+            &msg.ciphertext,
+            msg.mek_generation,
+        )
     }; // guard dropped here — safe to .await
 
     let body = match first_attempt {
@@ -272,7 +295,12 @@ async fn handle_broadcast_new_message(
 
             // Retry with refreshed MEK
             let mek_cache = state.mek_cache.lock();
-            if let MekDecryptResult::Decrypted(body) = decrypt_with_cached_mek(&mek_cache, &msg.community_id, &msg.ciphertext, msg.mek_generation) {
+            if let MekDecryptResult::Decrypted(body) = decrypt_with_cached_mek(
+                &mek_cache,
+                &msg.community_id,
+                &msg.ciphertext,
+                msg.mek_generation,
+            ) {
                 body
             } else {
                 tracing::warn!("MEK still mismatched after refresh — dropping message");
@@ -282,30 +310,22 @@ async fn handle_broadcast_new_message(
     };
 
     // Store locally
-    let owner_key = state
-        .identity
-        .read()
-        .as_ref()
-        .map(|id| id.public_key.clone())
-        .unwrap_or_default();
+    let owner_key = state_helpers::owner_key_or_default(state);
 
-    let pool: tauri::State<'_, crate::db::DbPool> = app_handle.state();
-    let pool = pool.inner().clone();
+    let pool: tauri::State<'_, DbPool> = app_handle.state();
     let cid = msg.channel_id.clone();
     let spn = msg.sender_pseudonym.clone();
     let body_text = body.clone();
     let ts = msg.timestamp.cast_signed();
     let mg = msg.mek_generation.cast_signed();
-    let _ = tokio::task::spawn_blocking(move || {
-        let conn = pool.lock().map_err(|e| e.to_string())?;
+    db_fire(pool.inner(), "store community message", move |conn| {
         conn.execute(
             "INSERT INTO messages (owner_key, conversation_id, conversation_type, sender_key, body, timestamp, is_read, mek_generation) \
              VALUES (?, ?, 'channel', ?, ?, ?, 0, ?)",
             rusqlite::params![owner_key, cid, spn, body_text, ts, mg],
-        )
-        .map_err(|e| e.to_string())
-    })
-    .await;
+        )?;
+        Ok(())
+    });
 
     // Emit to frontend
     let event = crate::channels::ChatEvent::MessageReceived {
@@ -319,23 +339,24 @@ async fn handle_broadcast_new_message(
 
 /// Try to decrypt ciphertext using the cached MEK for a community.
 fn decrypt_with_cached_mek(
-    mek_cache: &std::collections::HashMap<String, rekindle_crypto::group::media_key::MediaEncryptionKey>,
+    mek_cache: &std::collections::HashMap<
+        String,
+        rekindle_crypto::group::media_key::MediaEncryptionKey,
+    >,
     community_id: &str,
     ciphertext: &[u8],
     mek_generation: u64,
 ) -> MekDecryptResult {
     match mek_cache.get(community_id) {
-        Some(mek) if mek.generation() == mek_generation => {
-            match mek.decrypt(ciphertext) {
-                Ok(plaintext) => MekDecryptResult::Decrypted(
-                    String::from_utf8(plaintext).unwrap_or_default(),
-                ),
-                Err(e) => {
-                    tracing::warn!(error = %e, "failed to decrypt community message");
-                    MekDecryptResult::Failed
-                }
+        Some(mek) if mek.generation() == mek_generation => match mek.decrypt(ciphertext) {
+            Ok(plaintext) => {
+                MekDecryptResult::Decrypted(String::from_utf8(plaintext).unwrap_or_default())
             }
-        }
+            Err(e) => {
+                tracing::warn!(error = %e, "failed to decrypt community message");
+                MekDecryptResult::Failed
+            }
+        },
         Some(mek) => {
             tracing::warn!(
                 have = mek.generation(),
@@ -373,7 +394,7 @@ async fn handle_broadcast_mek_rotated(
 }
 
 /// Handle a `MemberJoined` community broadcast: persist and notify.
-async fn handle_broadcast_member_joined(
+fn handle_broadcast_member_joined(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     community_id: &str,
@@ -386,29 +407,21 @@ async fn handle_broadcast_member_joined(
         member = %pseudonym_key,
         "member joined community"
     );
-    let owner_key = state
-        .identity
-        .read()
-        .as_ref()
-        .map(|id| id.public_key.clone())
-        .unwrap_or_default();
-    let pool: tauri::State<'_, crate::db::DbPool> = app_handle.state();
-    let pool = pool.inner().clone();
+    let owner_key = state_helpers::owner_key_or_default(state);
+    let pool: tauri::State<'_, DbPool> = app_handle.state();
     let cid = community_id.to_string();
     let pk = pseudonym_key.to_string();
     let dn = display_name.to_string();
     let role_ids_json = serde_json::to_string(role_ids).unwrap_or_else(|_| "[0,1]".to_string());
     let now = crate::db::timestamp_now();
-    let _ = tokio::task::spawn_blocking(move || {
-        let conn = pool.lock().map_err(|e| e.to_string())?;
+    db_fire(pool.inner(), "insert community member", move |conn| {
         conn.execute(
             "INSERT OR IGNORE INTO community_members (owner_key, community_id, pseudonym_key, display_name, role_ids, joined_at) \
              VALUES (?, ?, ?, ?, ?, ?)",
             rusqlite::params![owner_key, cid, pk, dn, role_ids_json, now],
-        )
-        .map_err(|e| e.to_string())
-    })
-    .await;
+        )?;
+        Ok(())
+    });
 
     let event = crate::channels::CommunityEvent::MemberJoined {
         community_id: community_id.to_string(),
@@ -423,7 +436,7 @@ async fn handle_broadcast_member_joined(
 ///
 /// If the removed member is US (our pseudonym), clean up local state
 /// (remove community, clear MEK) and emit a Kicked event.
-async fn handle_broadcast_member_removed(
+fn handle_broadcast_member_removed(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     community_id: &str,
@@ -463,24 +476,16 @@ async fn handle_broadcast_member_removed(
         state.communities.write().remove(community_id);
 
         // Remove from SQLite
-        let owner_key = state
-            .identity
-            .read()
-            .as_ref()
-            .map(|id| id.public_key.clone())
-            .unwrap_or_default();
-        let pool: tauri::State<'_, crate::db::DbPool> = app_handle.state();
-        let pool = pool.inner().clone();
+        let owner_key = state_helpers::owner_key_or_default(state);
+        let pool: tauri::State<'_, DbPool> = app_handle.state();
         let cid = community_id.to_string();
-        let _ = tokio::task::spawn_blocking(move || {
-            let conn = pool.lock().map_err(|e| e.to_string())?;
+        db_fire(pool.inner(), "delete kicked community", move |conn| {
             conn.execute(
                 "DELETE FROM communities WHERE owner_key = ? AND id = ?",
                 rusqlite::params![owner_key, cid],
-            )
-            .map_err(|e| e.to_string())
-        })
-        .await;
+            )?;
+            Ok(())
+        });
 
         // Emit kicked event to frontend
         let event = crate::channels::CommunityEvent::Kicked {
@@ -495,25 +500,17 @@ async fn handle_broadcast_member_removed(
         member = %pseudonym_key,
         "member removed from community"
     );
-    let owner_key = state
-        .identity
-        .read()
-        .as_ref()
-        .map(|id| id.public_key.clone())
-        .unwrap_or_default();
-    let pool: tauri::State<'_, crate::db::DbPool> = app_handle.state();
-    let pool = pool.inner().clone();
+    let owner_key = state_helpers::owner_key_or_default(state);
+    let pool: tauri::State<'_, DbPool> = app_handle.state();
     let cid = community_id.to_string();
     let pk = pseudonym_key.to_string();
-    let _ = tokio::task::spawn_blocking(move || {
-        let conn = pool.lock().map_err(|e| e.to_string())?;
+    db_fire(pool.inner(), "delete community member", move |conn| {
         conn.execute(
             "DELETE FROM community_members WHERE owner_key = ? AND community_id = ? AND pseudonym_key = ?",
             rusqlite::params![owner_key, cid, pk],
-        )
-        .map_err(|e| e.to_string())
-    })
-    .await;
+        )?;
+        Ok(())
+    });
 
     let event = crate::channels::CommunityEvent::MemberRemoved {
         community_id: community_id.to_string(),
@@ -523,11 +520,11 @@ async fn handle_broadcast_member_removed(
 }
 
 /// Handle a `RolesChanged` community broadcast: update state, persist, notify.
-async fn handle_broadcast_roles_changed(
+fn handle_broadcast_roles_changed(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     community_id: &str,
-    roles: Vec<rekindle_protocol::messaging::RoleDto>,
+    roles: &[rekindle_protocol::messaging::RoleDto],
 ) {
     tracing::info!(
         community = %community_id,
@@ -535,8 +532,10 @@ async fn handle_broadcast_roles_changed(
         "community roles changed"
     );
 
-    let role_defs: Vec<crate::state::RoleDefinition> =
-        roles.iter().map(crate::state::RoleDefinition::from_dto).collect();
+    let role_defs: Vec<crate::state::RoleDefinition> = roles
+        .iter()
+        .map(crate::state::RoleDefinition::from_dto)
+        .collect();
 
     // Update in-memory state and recompute our display role
     {
@@ -548,24 +547,16 @@ async fn handle_broadcast_roles_changed(
     }
 
     // Persist to community_roles table
-    let owner_key = state
-        .identity
-        .read()
-        .as_ref()
-        .map(|id| id.public_key.clone())
-        .unwrap_or_default();
-    let pool: tauri::State<'_, crate::db::DbPool> = app_handle.state();
-    let pool = pool.inner().clone();
+    let owner_key = state_helpers::owner_key_or_default(state);
+    let pool: tauri::State<'_, DbPool> = app_handle.state();
     let cid = community_id.to_string();
     let roles_clone = role_defs.clone();
-    let _ = tokio::task::spawn_blocking(move || {
-        let conn = pool.lock().map_err(|e| e.to_string())?;
+    db_fire(pool.inner(), "update community roles", move |conn| {
         // Replace all roles for this community
         conn.execute(
             "DELETE FROM community_roles WHERE owner_key = ? AND community_id = ?",
             rusqlite::params![owner_key, cid],
-        )
-        .map_err(|e| e.to_string())?;
+        )?;
         for r in &roles_clone {
             conn.execute(
                 "INSERT INTO community_roles (owner_key, community_id, role_id, name, color, permissions, position, hoist, mentionable) \
@@ -581,12 +572,10 @@ async fn handle_broadcast_roles_changed(
                     i32::from(r.hoist),
                     i32::from(r.mentionable),
                 ],
-            )
-            .map_err(|e| e.to_string())?;
+            )?;
         }
-        Ok::<(), String>(())
-    })
-    .await;
+        Ok(())
+    });
 
     // Emit event to frontend
     let event = crate::channels::CommunityEvent::RolesChanged {
@@ -600,7 +589,7 @@ async fn handle_broadcast_roles_changed(
 }
 
 /// Handle a `MemberRolesChanged` community broadcast: update state, persist, notify.
-async fn handle_broadcast_member_roles_changed(
+fn handle_broadcast_member_roles_changed(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     community_id: &str,
@@ -630,14 +619,9 @@ async fn handle_broadcast_member_roles_changed(
     }
 
     // Persist to community_members table
-    let owner_key = state
-        .identity
-        .read()
-        .as_ref()
-        .map(|id| id.public_key.clone())
-        .unwrap_or_default();
+    let owner_key = state_helpers::owner_key_or_default(state);
 
-    // Check if this is us before the first spawn_blocking (need owner_key available for both)
+    // Check if this is us before the DB writes (need owner_key available for both)
     let is_self = {
         let communities = state.communities.read();
         communities
@@ -646,37 +630,31 @@ async fn handle_broadcast_member_roles_changed(
             .is_some_and(|pk| pk == pseudonym_key)
     };
 
-    let pool: tauri::State<'_, crate::db::DbPool> = app_handle.state();
-    let pool_clone = pool.inner().clone();
+    let pool: tauri::State<'_, DbPool> = app_handle.state();
     let cid = community_id.to_string();
     let pk = pseudonym_key.to_string();
     let ok = owner_key.clone();
     let role_ids_json = serde_json::to_string(role_ids).unwrap_or_else(|_| "[0,1]".to_string());
-    let _ = tokio::task::spawn_blocking(move || {
-        let conn = pool_clone.lock().map_err(|e| e.to_string())?;
+    db_fire(pool.inner(), "update member roles", move |conn| {
         conn.execute(
             "UPDATE community_members SET role_ids = ? WHERE owner_key = ? AND community_id = ? AND pseudonym_key = ?",
             rusqlite::params![role_ids_json, ok, cid, pk],
-        )
-        .map_err(|e| e.to_string())
-    })
-    .await;
+        )?;
+        Ok(())
+    });
 
     // Also update our my_role_ids in the communities table if this is us
     if is_self {
-        let pool_clone2 = pool.inner().clone();
         let cid2 = community_id.to_string();
         let ok2 = owner_key;
         let rids = serde_json::to_string(role_ids).unwrap_or_else(|_| "[0,1]".to_string());
-        let _ = tokio::task::spawn_blocking(move || {
-            let conn = pool_clone2.lock().map_err(|e| e.to_string())?;
+        db_fire(pool.inner(), "update our community role_ids", move |conn| {
             conn.execute(
                 "UPDATE communities SET my_role_ids = ? WHERE owner_key = ? AND id = ?",
                 rusqlite::params![rids, ok2, cid2],
-            )
-            .map_err(|e| e.to_string())
-        })
-        .await;
+            )?;
+            Ok(())
+        });
     }
 
     let event = crate::channels::CommunityEvent::MemberRolesChanged {
@@ -688,7 +666,7 @@ async fn handle_broadcast_member_roles_changed(
 }
 
 /// Handle a `MemberTimedOut` community broadcast: update state, persist, notify.
-async fn handle_broadcast_member_timed_out(
+fn handle_broadcast_member_timed_out(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     community_id: &str,
@@ -703,26 +681,18 @@ async fn handle_broadcast_member_timed_out(
     );
 
     // Persist to community_members table
-    let owner_key = state
-        .identity
-        .read()
-        .as_ref()
-        .map(|id| id.public_key.clone())
-        .unwrap_or_default();
-    let pool: tauri::State<'_, crate::db::DbPool> = app_handle.state();
-    let pool = pool.inner().clone();
+    let owner_key = state_helpers::owner_key_or_default(state);
+    let pool: tauri::State<'_, DbPool> = app_handle.state();
     let cid = community_id.to_string();
     let pk = pseudonym_key.to_string();
     let timeout_i64 = timeout_until.map(u64::cast_signed);
-    let _ = tokio::task::spawn_blocking(move || {
-        let conn = pool.lock().map_err(|e| e.to_string())?;
+    db_fire(pool.inner(), "update member timeout", move |conn| {
         conn.execute(
             "UPDATE community_members SET timeout_until = ? WHERE owner_key = ? AND community_id = ? AND pseudonym_key = ?",
             rusqlite::params![timeout_i64, owner_key, cid, pk],
-        )
-        .map_err(|e| e.to_string())
-    })
-    .await;
+        )?;
+        Ok(())
+    });
 
     let event = crate::channels::CommunityEvent::MemberTimedOut {
         community_id: community_id.to_string(),
@@ -733,7 +703,7 @@ async fn handle_broadcast_member_timed_out(
 }
 
 /// Persist MEK to in-memory state, Stronghold, and the database.
-async fn persist_mek(
+fn persist_mek(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     community_id: &str,
@@ -767,25 +737,17 @@ async fn persist_mek(
 
     // Persist mek_generation to SQLite
     {
-        let pool: tauri::State<'_, crate::db::DbPool> = app_handle.state();
-        let pool = pool.inner().clone();
+        let pool: tauri::State<'_, DbPool> = app_handle.state();
         let cid = community_id.to_string();
-        let owner_key = state
-            .identity
-            .read()
-            .as_ref()
-            .map(|id| id.public_key.clone())
-            .unwrap_or_default();
+        let owner_key = state_helpers::owner_key_or_default(state);
         let gen_i64 = i64::try_from(mek_generation).unwrap_or(i64::MAX);
-        let _ = tokio::task::spawn_blocking(move || {
-            if let Ok(conn) = pool.lock() {
-                let _ = conn.execute(
-                    "UPDATE communities SET mek_generation = ? WHERE owner_key = ? AND id = ?",
-                    rusqlite::params![gen_i64, owner_key, cid],
-                );
-            }
-        })
-        .await;
+        db_fire(pool.inner(), "persist mek_generation", move |conn| {
+            conn.execute(
+                "UPDATE communities SET mek_generation = ? WHERE owner_key = ? AND id = ?",
+                rusqlite::params![gen_i64, owner_key, cid],
+            )?;
+            Ok(())
+        });
     }
 
     tracing::info!(
@@ -804,17 +766,9 @@ pub(super) async fn fetch_mek_from_server(
     state: &Arc<AppState>,
     community_id: &str,
 ) {
-    let server_route_blob = {
-        let communities = state.communities.read();
-        communities.get(community_id).and_then(|c| c.server_route_blob.clone())
-    };
+    let server_route_blob = state_helpers::community_server_route(state, community_id);
 
-    let node_info = {
-        let node = state.node.read();
-        node.as_ref()
-            .filter(|n| n.is_attached)
-            .map(|nh| (nh.routing_context.clone(), nh.api.clone()))
-    };
+    let node_info = state_helpers::api_and_routing_context(state);
 
     let signing_key = {
         let secret = state.identity_secret.lock();
@@ -823,8 +777,7 @@ pub(super) async fn fetch_mek_from_server(
         })
     };
 
-    let (Some(route_blob), Some((rc, api)), Some(sk)) =
-        (server_route_blob, node_info, signing_key)
+    let (Some(route_blob), Some((api, rc)), Some(sk)) = (server_route_blob, node_info, signing_key)
     else {
         tracing::warn!(community = %community_id, "cannot fetch MEK — missing route/node/key");
         return;
@@ -838,9 +791,8 @@ pub(super) async fn fetch_mek_from_server(
     let timestamp = crate::db::timestamp_now().cast_unsigned();
     let mut nonce = vec![0u8; 24];
     rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut nonce);
-    let envelope = rekindle_protocol::messaging::sender::build_envelope(
-        &sk, timestamp, nonce, request_bytes,
-    );
+    let envelope =
+        rekindle_protocol::messaging::sender::build_envelope(&sk, timestamp, nonce, request_bytes);
 
     let route_id = {
         let mut dht_mgr = state.dht_manager.write();
@@ -861,7 +813,8 @@ pub(super) async fn fetch_mek_from_server(
         }
     };
 
-    let call_result = rekindle_protocol::messaging::sender::send_call(&rc, route_id, &envelope).await;
+    let call_result =
+        rekindle_protocol::messaging::sender::send_call(&rc, route_id, &envelope).await;
 
     match call_result {
         Ok(response_bytes) => {
@@ -871,14 +824,19 @@ pub(super) async fn fetch_mek_from_server(
             }) = serde_json::from_slice(&response_bytes)
             {
                 if mek_encrypted.len() >= 40 {
-                    let key_bytes: [u8; 32] = mek_encrypted[8..40]
-                        .try_into()
-                        .unwrap_or_default();
+                    let key_bytes: [u8; 32] = mek_encrypted[8..40].try_into().unwrap_or_default();
                     let mek = rekindle_crypto::group::media_key::MediaEncryptionKey::from_bytes(
-                        key_bytes, mek_generation,
+                        key_bytes,
+                        mek_generation,
                     );
                     state.mek_cache.lock().insert(community_id.to_string(), mek);
-                    persist_mek(app_handle, state, community_id, mek_generation, &mek_encrypted).await;
+                    persist_mek(
+                        app_handle,
+                        state,
+                        community_id,
+                        mek_generation,
+                        &mek_encrypted,
+                    );
                 }
             }
         }
@@ -901,21 +859,11 @@ async fn handle_app_call(
     // then reply with an acknowledgment
     let message = call.message().to_vec();
     let pool: tauri::State<'_, DbPool> = app_handle.state();
-    super::message_service::handle_incoming_message(
-        app_handle,
-        state,
-        pool.inner(),
-        &message,
-    )
-    .await;
+    super::message_service::handle_incoming_message(app_handle, state, pool.inner(), &message)
+        .await;
 
     // Reply with ACK so the caller's app_call future resolves.
-    // Clone the API handle outside the lock (parking_lot guards are !Send).
-    let api = {
-        let node = state.node.read();
-        node.as_ref().map(|nh| nh.api.clone())
-    };
-    if let Some(api) = api {
+    if let Some(api) = state_helpers::veilid_api(state) {
         if let Err(e) = api.app_call_reply(call_id, b"ACK".to_vec()).await {
             tracing::warn!(error = %e, "failed to reply to app_call");
         }
@@ -925,13 +873,8 @@ async fn handle_app_call(
 /// Attempt to re-establish a DHT watch for the friend owning `dht_key`.
 /// Falls back to adding to `unwatched_friends` poll set if re-watch fails.
 async fn try_rewatch_friend(state: &Arc<AppState>, dht_key: &str) {
-    let friend_info = {
-        let dht_mgr = state.dht_manager.read();
-        dht_mgr
-            .as_ref()
-            .and_then(|mgr| mgr.friend_for_dht_key(dht_key).cloned())
-            .map(|fk| (fk, dht_key.to_string()))
-    };
+    let friend_info =
+        { state_helpers::friend_for_dht_key(state, dht_key).map(|fk| (fk, dht_key.to_string())) };
     let Some((fk, dk)) = friend_info else { return };
     if super::presence_service::watch_friend(state, &fk, &dk)
         .await
@@ -982,6 +925,8 @@ async fn handle_value_change(
     );
 
     // Get routing context for fetching subkey values when not provided inline
+    // NOTE: We intentionally don't filter on is_attached here — the routing context
+    // is still usable for local DHT reads even during brief detach windows.
     let routing_context = {
         let node = state.node.read();
         node.as_ref().map(|nh| nh.routing_context.clone())
@@ -991,10 +936,7 @@ async fn handle_value_change(
         let value = if let Some(ref v) = inline_value {
             v.clone()
         } else if let Some(ref rc) = routing_context {
-            match rc
-                .get_dht_value(change.key.clone(), subkey, true)
-                .await
-            {
+            match rc.get_dht_value(change.key.clone(), subkey, true).await {
                 Ok(Some(v)) => v.data().to_vec(),
                 Ok(None) => {
                     tracing::debug!(subkey, key = %key, "subkey has no value");
@@ -1009,10 +951,8 @@ async fn handle_value_change(
             tracing::debug!(subkey, "no routing context to fetch subkey value");
             continue;
         };
-        super::presence_service::handle_value_change(
-            app_handle, state, &key, &[subkey], &value,
-        )
-        .await;
+        super::presence_service::handle_value_change(app_handle, state, &key, &[subkey], &value)
+            .await;
     }
 }
 
@@ -1032,7 +972,10 @@ fn invalidate_all_watches(state: &Arc<AppState>) {
         for key in &friend_keys {
             unwatched.insert(key.clone());
         }
-        tracing::info!(count = friend_keys.len(), "invalidated all friend watches for re-establishment");
+        tracing::info!(
+            count = friend_keys.len(),
+            "invalidated all friend watches for re-establishment"
+        );
     }
 }
 
@@ -1055,10 +998,7 @@ fn handle_attachment(
     );
 
     // Detect transition: was detached, now attached
-    let was_attached = {
-        let node = state.node.read();
-        node.as_ref().is_some_and(|nh| nh.is_attached)
-    };
+    let was_attached = state_helpers::is_attached(state);
     let reconnected = !was_attached && attached;
 
     {
@@ -1074,7 +1014,11 @@ fn handle_attachment(
     // Push structured event so the frontend's NetworkIndicator can react immediately
     emit_network_status(app_handle, state);
 
-    let status = if attached { "connected" } else { "disconnected" };
+    let status = if attached {
+        "connected"
+    } else {
+        "disconnected"
+    };
     let notification = NotificationEvent::SystemAlert {
         title: "Network".to_string(),
         body: format!("Veilid network {status}"),
@@ -1150,12 +1094,9 @@ async fn handle_route_change(
 /// By allocating the new route FIRST, we avoid a window where `NodeHandle.route_blob`
 /// holds a stale (released) blob. If allocation fails, the old route stays active.
 pub(crate) async fn reallocate_private_route(app_handle: &tauri::AppHandle, state: &Arc<AppState>) {
-    // Clone the API handle (Arc-based) outside the lock
-    let api = {
-        let node = state.node.read();
-        node.as_ref().map(|nh| nh.api.clone())
+    let Some(api) = state_helpers::veilid_api(state) else {
+        return;
     };
-    let Some(api) = api else { return };
 
     // Allocate new route FIRST (make-before-break)
     let new_route = match api.new_private_route().await {
@@ -1173,10 +1114,9 @@ pub(crate) async fn reallocate_private_route(app_handle: &tauri::AppHandle, stat
             if let Err(e) = handle.manager.release_private_route() {
                 tracing::warn!(error = %e, "failed to release old private route");
             }
-            handle.manager.set_allocated_route(
-                new_route.route_id.clone(),
-                new_route.blob.clone(),
-            );
+            handle
+                .manager
+                .set_allocated_route(new_route.route_id.clone(), new_route.blob.clone());
         }
     }
     // Update NodeHandle
@@ -1200,6 +1140,8 @@ pub(crate) async fn reallocate_private_route(app_handle: &tauri::AppHandle, stat
         node.as_ref().and_then(|nh| nh.mailbox_dht_key.clone())
     };
     if let Some(mailbox_key) = mailbox_key {
+        // NOTE: We intentionally don't filter on is_attached here — routing context
+        // is Arc-based and always valid once created.
         let rc = {
             let node = state.node.read();
             node.as_ref().map(|nh| nh.routing_context.clone())
@@ -1226,13 +1168,7 @@ pub(crate) async fn reallocate_private_route(app_handle: &tauri::AppHandle, stat
 /// both `reallocate_private_route` (periodic refresh) and `handle_route_change`
 /// (dead route recovery).
 async fn allocate_fresh_private_route(app_handle: &tauri::AppHandle, state: &Arc<AppState>) {
-    // Clone the API handle (Arc-based) outside the lock
-    let api = {
-        let node = state.node.read();
-        node.as_ref().map(|nh| nh.api.clone())
-    };
-
-    let Some(api) = api else {
+    let Some(api) = state_helpers::veilid_api(state) else {
         return;
     };
 
@@ -1242,10 +1178,9 @@ async fn allocate_fresh_private_route(app_handle: &tauri::AppHandle, state: &Arc
             {
                 let mut rm = state.routing_manager.write();
                 if let Some(ref mut handle) = *rm {
-                    handle.manager.set_allocated_route(
-                        route_blob.route_id.clone(),
-                        route_blob.blob.clone(),
-                    );
+                    handle
+                        .manager
+                        .set_allocated_route(route_blob.route_id.clone(), route_blob.blob.clone());
                 }
             }
             // Also store on node handle
@@ -1434,12 +1369,24 @@ pub async fn logout_cleanup(app_handle: Option<&tauri::AppHandle>, state: &AppSt
                 (None, None, None, None, None, None)
             }
         };
-        if let Some(tx) = send_tx { let _ = tx.send(()).await; }
-        if let Some(tx) = recv_tx { let _ = tx.send(()).await; }
-        if let Some(tx) = monitor_tx { let _ = tx.send(()).await; }
-        if let Some(h) = send_h { let _ = h.await; }
-        if let Some(h) = recv_h { let _ = h.await; }
-        if let Some(h) = monitor_h { let _ = h.await; }
+        if let Some(tx) = send_tx {
+            let _ = tx.send(()).await;
+        }
+        if let Some(tx) = recv_tx {
+            let _ = tx.send(()).await;
+        }
+        if let Some(tx) = monitor_tx {
+            let _ = tx.send(()).await;
+        }
+        if let Some(h) = send_h {
+            let _ = h.await;
+        }
+        if let Some(h) = recv_h {
+            let _ = h.await;
+        }
+        if let Some(h) = monitor_h {
+            let _ = h.await;
+        }
         {
             let mut ve = state.voice_engine.lock();
             if let Some(ref mut handle) = *ve {

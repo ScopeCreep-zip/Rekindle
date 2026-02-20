@@ -1,9 +1,8 @@
 use veilid_core::{DHTSchema, KeyPair, RecordKey, RoutingContext, CRYPTO_KIND_VLD0};
 
 use crate::capnp_codec::account::{
-    AccountHeader, ChatEntry, ContactEntry,
-    decode_account_header, decode_chat_entry, decode_contact_entry,
-    encode_account_header, encode_chat_entry, encode_contact_entry,
+    decode_account_header, decode_chat_entry, decode_contact_entry, encode_account_header,
+    encode_chat_entry, encode_contact_entry, AccountHeader, ChatEntry, ContactEntry,
 };
 use crate::dht::short_array::DHTShortArray;
 use crate::error::ProtocolError;
@@ -138,8 +137,14 @@ impl AccountRecord {
             .await
             .map_err(|e| ProtocolError::DhtError(format!("read account header: {e}")))?;
 
-        let (contact_list_key, chat_list_key, invitation_list_key,
-             contact_list_keypair, chat_list_keypair, invitation_list_keypair) = match value {
+        let (
+            contact_list_key,
+            chat_list_key,
+            invitation_list_key,
+            contact_list_keypair,
+            chat_list_keypair,
+            invitation_list_keypair,
+        ) = match value {
             Some(v) => {
                 let plaintext = encryption_key.decrypt(v.data())?;
                 let header = decode_account_header(&plaintext)?;
@@ -267,9 +272,7 @@ impl AccountRecord {
             }
         }
 
-        Err(ProtocolError::DhtError(
-            "contact not found in list".into(),
-        ))
+        Err(ProtocolError::DhtError("contact not found in list".into()))
     }
 
     /// Add a chat entry to the chat list `DHTShortArray`.
@@ -279,12 +282,8 @@ impl AccountRecord {
             .as_ref()
             .ok_or_else(|| ProtocolError::DhtError("chat list key not set".into()))?;
 
-        let arr = DHTShortArray::open(
-            &self.routing_context,
-            key,
-            self.chat_list_keypair.clone(),
-        )
-        .await?;
+        let arr =
+            DHTShortArray::open(&self.routing_context, key, self.chat_list_keypair.clone()).await?;
 
         let data = encode_chat_entry(entry);
         let index = arr.add(&data).await?;
@@ -298,12 +297,8 @@ impl AccountRecord {
             .as_ref()
             .ok_or_else(|| ProtocolError::DhtError("chat list key not set".into()))?;
 
-        let arr = DHTShortArray::open(
-            &self.routing_context,
-            key,
-            self.chat_list_keypair.clone(),
-        )
-        .await?;
+        let arr =
+            DHTShortArray::open(&self.routing_context, key, self.chat_list_keypair.clone()).await?;
 
         let all_data = arr.get_all().await?;
         let mut entries = Vec::with_capacity(all_data.len());

@@ -104,9 +104,7 @@ impl AudioCapture {
                     }
                 }
             })
-            .map_err(|e| {
-                VoiceError::AudioDevice(format!("failed to spawn capture thread: {e}"))
-            })?;
+            .map_err(|e| VoiceError::AudioDevice(format!("failed to spawn capture thread: {e}")))?;
 
         // Wait for the audio thread to report success or failure
         init_rx
@@ -203,8 +201,10 @@ fn build_capture_stream(
         cpal::SampleFormat::I16 => device.build_input_stream(
             &config,
             move |data: &[i16], _: &cpal::InputCallbackInfo| {
-                let samples: Vec<f32> =
-                    data.iter().map(|&s| f32::from(s) / f32::from(i16::MAX)).collect();
+                let samples: Vec<f32> = data
+                    .iter()
+                    .map(|&s| f32::from(s) / f32::from(i16::MAX))
+                    .collect();
                 let _ = tx.try_send(samples);
             },
             make_error_callback(error_tx),
@@ -242,12 +242,8 @@ pub struct EnumeratedDevices {
 /// Enumerate all available audio input and output devices.
 pub fn enumerate_audio_devices() -> Result<EnumeratedDevices, VoiceError> {
     let host = cpal::default_host();
-    let default_input_name = host
-        .default_input_device()
-        .and_then(|d| d.name().ok());
-    let default_output_name = host
-        .default_output_device()
-        .and_then(|d| d.name().ok());
+    let default_input_name = host.default_input_device().and_then(|d| d.name().ok());
+    let default_output_name = host.default_output_device().and_then(|d| d.name().ok());
 
     let mut input_devices = Vec::new();
     if let Ok(devices) = host.input_devices() {

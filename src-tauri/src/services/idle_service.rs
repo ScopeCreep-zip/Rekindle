@@ -5,6 +5,7 @@ use tauri_plugin_store::StoreExt;
 use tokio::sync::mpsc;
 
 use crate::state::{AppState, UserStatus};
+use crate::state_helpers;
 
 /// Wayland `ext-idle-notify-v1` idle monitor for Linux.
 ///
@@ -155,9 +156,11 @@ mod wayland_idle {
 
                 let qh = event_queue.handle();
 
-                let notifier = match globals
-                    .bind::<ext_idle_notifier_v1::ExtIdleNotifierV1, _, _>(&qh, 1..=1, ())
-                {
+                let notifier = match globals.bind::<ext_idle_notifier_v1::ExtIdleNotifierV1, _, _>(
+                    &qh,
+                    1..=1,
+                    (),
+                ) {
                     Ok(n) => n,
                     Err(e) => {
                         tracing::debug!(
@@ -179,9 +182,7 @@ mod wayland_idle {
                 // compute actual idle duration from the timestamp.
                 let _notification = notifier.get_idle_notification(1000, &seat, &qh, ());
 
-                let mut state = WlState {
-                    idle: idle.clone(),
-                };
+                let mut state = WlState { idle: idle.clone() };
 
                 tracing::info!("wayland idle monitor: started (ext-idle-notify-v1)");
 
@@ -199,9 +200,7 @@ mod wayland_idle {
 
     /// Try to initialize the Wayland idle monitor (called once at service start).
     pub fn try_init() {
-        if std::env::var("WAYLAND_DISPLAY").is_ok()
-            || std::env::var("WAYLAND_SOCKET").is_ok()
-        {
+        if std::env::var("WAYLAND_DISPLAY").is_ok() || std::env::var("WAYLAND_SOCKET").is_ok() {
             if WAYLAND_IDLE.get().is_none() {
                 let state = Arc::new(WaylandIdleState::new());
                 if WAYLAND_IDLE.set(state.clone()).is_ok() {
@@ -248,10 +247,7 @@ fn get_idle_seconds() -> Option<u64> {
 fn macos_idle_seconds() -> Option<u64> {
     #[link(name = "CoreGraphics", kind = "framework")]
     extern "C" {
-        fn CGEventSourceSecondsSinceLastEventType(
-            source_state_id: i32,
-            event_type: u32,
-        ) -> f64;
+        fn CGEventSourceSecondsSinceLastEventType(source_state_id: i32, event_type: u32) -> f64;
     }
     // kCGEventSourceStateCombinedSessionState = 0
     // kCGAnyInputEventType = 0xFFFFFFFF (u32::MAX)
@@ -384,13 +380,8 @@ fn linux_screensaver_idle() -> Option<u64> {
 }
 
 /// Emit a presence status change event to the frontend.
-fn emit_status_change(app_handle: &tauri::AppHandle, state: &AppState, status: UserStatus) {
-    let pk = state
-        .identity
-        .read()
-        .as_ref()
-        .map(|id| id.public_key.clone())
-        .unwrap_or_default();
+fn emit_status_change(app_handle: &tauri::AppHandle, state: &Arc<AppState>, status: UserStatus) {
+    let pk = state_helpers::owner_key_or_default(state);
     let status_str = match status {
         UserStatus::Online => "online",
         UserStatus::Away => "away",
@@ -412,10 +403,7 @@ fn emit_status_change(app_handle: &tauri::AppHandle, state: &AppState, status: U
 /// Polls OS idle time every 30 seconds. When idle time exceeds the configured
 /// `auto_away_minutes`, sets status to Away and stores the previous status.
 /// When activity resumes, restores the previous status.
-pub fn start_idle_service(
-    app_handle: tauri::AppHandle,
-    state: Arc<AppState>,
-) -> mpsc::Sender<()> {
+pub fn start_idle_service(app_handle: tauri::AppHandle, state: Arc<AppState>) -> mpsc::Sender<()> {
     let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
 
     // On Wayland, start the ext-idle-notify-v1 monitor thread before polling
@@ -447,7 +435,7 @@ pub fn start_idle_service(
                 continue;
             };
 
-            let current_status = state.identity.read().as_ref().map(|id| id.status);
+            let current_status = state_helpers::identity_status(&state);
             let is_auto_away = state.pre_away_status.read().is_some();
 
             tracing::debug!(
@@ -458,9 +446,7 @@ pub fn start_idle_service(
                 "idle service tick"
             );
 
-            if idle_secs >= threshold
-                && current_status == Some(UserStatus::Online)
-                && !is_auto_away
+            if idle_secs >= threshold && current_status == Some(UserStatus::Online) && !is_auto_away
             {
                 // Activate auto-away
                 *state.pre_away_status.write() = Some(UserStatus::Online);
