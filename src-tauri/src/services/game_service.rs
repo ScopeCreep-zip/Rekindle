@@ -6,6 +6,7 @@ use tokio::sync::mpsc;
 
 use crate::channels::PresenceEvent;
 use crate::state::{AppState, GameDetectorHandle, GameInfoState};
+use crate::state_helpers;
 
 /// Start the game detection polling loop.
 ///
@@ -57,9 +58,7 @@ pub async fn start_game_detection(
 
                     // Emit presence event to frontend
                     let event = PresenceEvent::GameChanged {
-                        public_key: state.identity.read().as_ref()
-                            .map(|id| id.public_key.clone())
-                            .unwrap_or_default(),
+                        public_key: state_helpers::owner_key_or_default(&state),
                         game_name: game_info.as_ref().map(|g| g.game_name.clone()),
                         game_id: game_info.as_ref().map(|g| g.game_id),
                         elapsed_seconds: game_info.as_ref().map(|g| g.elapsed_seconds),

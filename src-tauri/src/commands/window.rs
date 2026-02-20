@@ -72,9 +72,7 @@ pub async fn open_profile_window(
 
 /// Get the current Veilid network status.
 #[tauri::command]
-pub async fn get_network_status(
-    state: State<'_, SharedState>,
-) -> Result<NetworkStatus, String> {
+pub async fn get_network_status(state: State<'_, SharedState>) -> Result<NetworkStatus, String> {
     let node = state.node.read();
     match node.as_ref() {
         Some(handle) => Ok(NetworkStatus {

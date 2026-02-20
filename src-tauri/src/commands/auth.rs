@@ -8,12 +8,14 @@ use tauri::{Manager as _, State};
 use tokio::sync::mpsc;
 
 use crate::db::{self, DbPool};
+use crate::db_helpers::db_call;
 use crate::keystore::{KeystoreHandle, StrongholdKeystore};
 use crate::services;
 use crate::state::{
-    ChannelInfo, ChannelType, CommunityState, FriendState, IdentityState,
-    SharedState, SignalManagerHandle, UserStatus,
+    ChannelInfo, ChannelType, CommunityState, FriendState, IdentityState, SharedState,
+    SignalManagerHandle, UserStatus,
 };
+use crate::state_helpers;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -31,18 +33,6 @@ pub struct IdentitySummary {
     pub created_at: i64,
     pub has_avatar: bool,
     pub avatar_base64: Option<String>,
-}
-
-/// Get the current identity's public key from `AppState`.
-///
-/// Used by commands that need to scope SQL queries to the active identity.
-pub fn current_owner_key(state: &SharedState) -> Result<String, String> {
-    state
-        .identity
-        .read()
-        .as_ref()
-        .map(|id| id.public_key.clone())
-        .ok_or_else(|| "not logged in".to_string())
 }
 
 /// Core identity creation logic, separated from `AppHandle` for testability.
@@ -67,8 +57,7 @@ pub async fn create_identity_core(
     state.communities.write().clear();
 
     // Ensure config directory exists for Stronghold snapshot
-    std::fs::create_dir_all(config_dir)
-        .map_err(|e| format!("failed to create config dir: {e}"))?;
+    std::fs::create_dir_all(config_dir).map_err(|e| format!("failed to create config dir: {e}"))?;
 
     let identity = rekindle_crypto::Identity::generate();
     let public_key = identity.public_key_hex();
@@ -79,9 +68,8 @@ pub async fn create_identity_core(
     let now = db::timestamp_now();
 
     // Initialize per-identity Stronghold and store the private key
-    let keystore =
-        StrongholdKeystore::initialize_for_identity(config_dir, &public_key, passphrase)
-            .map_err(|e| e.to_string())?;
+    let keystore = StrongholdKeystore::initialize_for_identity(config_dir, &public_key, passphrase)
+        .map_err(|e| e.to_string())?;
     keystore
         .store_key(VAULT_IDENTITY, KEY_ED25519_PRIVATE, &secret_bytes)
         .map_err(|e| e.to_string())?;
@@ -91,20 +79,16 @@ pub async fn create_identity_core(
     *keystore_handle.lock() = Some(keystore);
 
     // Persist identity to SQLite (alongside any existing identities)
-    let db = pool.clone();
     let pk = public_key.clone();
     let dn = display_name.clone();
-    tokio::task::spawn_blocking(move || {
-        let conn = db.lock().map_err(|e| e.to_string())?;
+    db_call(pool, move |conn| {
         conn.execute(
             "INSERT INTO identity (public_key, display_name, created_at) VALUES (?, ?, ?)",
             rusqlite::params![pk, dn, now],
-        )
-        .map_err(|e| e.to_string())?;
-        Ok::<(), String>(())
+        )?;
+        Ok(())
     })
-    .await
-    .map_err(|e| e.to_string())??;
+    .await?;
 
     // Store the identity in AppState
     let identity_state = IdentityState {
@@ -136,10 +120,7 @@ pub async fn create_identity(
     pool: State<'_, DbPool>,
     keystore_handle: State<'_, KeystoreHandle>,
 ) -> Result<LoginResult, String> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| e.to_string())?;
+    let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
 
     let (result, secret_bytes) = create_identity_core(
         &config_dir,
@@ -153,15 +134,21 @@ pub async fn create_identity(
 
     // Spawn background services (non-blocking — returns immediately)
     // New identity has no existing DHT keys or owner keypairs.
-    start_background_services(&app, state.inner(), pool.inner(), &secret_bytes, DhtKeysConfig {
-        existing_dht_key: None,
-        existing_friend_list_key: None,
-        dht_owner_keypair: None,
-        friend_list_owner_keypair: None,
-        account_dht_key: None,
-        account_owner_keypair: None,
-        mailbox_dht_key: None,
-    });
+    start_background_services(
+        &app,
+        state.inner(),
+        pool.inner(),
+        &secret_bytes,
+        DhtKeysConfig {
+            existing_dht_key: None,
+            existing_friend_list_key: None,
+            dht_owner_keypair: None,
+            friend_list_owner_keypair: None,
+            account_dht_key: None,
+            account_owner_keypair: None,
+            mailbox_dht_key: None,
+        },
+    );
 
     Ok(result)
 }
@@ -197,58 +184,60 @@ pub async fn login_core(
     state.communities.write().clear();
 
     // Load identity metadata from SQLite by public key
-    let db = pool.clone();
     let pk_query = public_key.to_string();
-    let (display_name, dht_cols) =
-        tokio::task::spawn_blocking(move || {
-            let conn = db.lock().map_err(|e| e.to_string())?;
-            let mut stmt = conn
-                .prepare(
-                    "SELECT display_name, dht_record_key, friend_list_dht_key, \
+    let (display_name, dht_cols) = db_call(pool, move |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT display_name, dht_record_key, friend_list_dht_key, \
                      dht_owner_keypair, friend_list_owner_keypair, \
                      account_dht_key, account_owner_keypair, mailbox_dht_key \
                      FROM identity WHERE public_key = ?1",
-                )
-                .map_err(|e| e.to_string())?;
-            let row = stmt
-                .query_row(rusqlite::params![pk_query], |row| {
-                    Ok((
-                        row.get::<_, String>("display_name").unwrap_or_default(),
-                        IdentityDhtColumns {
-                            existing_dht_key: row.get::<_, Option<String>>("dht_record_key")?,
-                            existing_friend_list_key: row.get::<_, Option<String>>("friend_list_dht_key")?,
-                            dht_owner_keypair: row.get::<_, Option<String>>("dht_owner_keypair")?,
-                            friend_list_owner_keypair: row.get::<_, Option<String>>("friend_list_owner_keypair")?,
-                            account_dht_key: row.get::<_, Option<String>>("account_dht_key")?,
-                            account_owner_keypair: row.get::<_, Option<String>>("account_owner_keypair")?,
-                            mailbox_dht_key: row.get::<_, Option<String>>("mailbox_dht_key")?,
-                        },
-                    ))
-                })
-                .optional()
-                .map_err(|e| e.to_string())?
-                .ok_or_else(|| "no identity found — please create one first".to_string())?;
-            Ok::<(String, IdentityDhtColumns), String>(row)
-        })
-        .await
-        .map_err(|e| e.to_string())??;
+        )?;
+        let row = stmt
+            .query_row(rusqlite::params![pk_query], |row| {
+                Ok((
+                    row.get::<_, String>("display_name").unwrap_or_default(),
+                    IdentityDhtColumns {
+                        existing_dht_key: row.get::<_, Option<String>>("dht_record_key")?,
+                        existing_friend_list_key: row
+                            .get::<_, Option<String>>("friend_list_dht_key")?,
+                        dht_owner_keypair: row.get::<_, Option<String>>("dht_owner_keypair")?,
+                        friend_list_owner_keypair: row
+                            .get::<_, Option<String>>("friend_list_owner_keypair")?,
+                        account_dht_key: row.get::<_, Option<String>>("account_dht_key")?,
+                        account_owner_keypair: row
+                            .get::<_, Option<String>>("account_owner_keypair")?,
+                        mailbox_dht_key: row.get::<_, Option<String>>("mailbox_dht_key")?,
+                    },
+                ))
+            })
+            .optional()?
+            .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows)?;
+        Ok(row)
+    })
+    .await
+    .map_err(|e| {
+        if e.contains("Query returned no rows") {
+            "no identity found — please create one first".to_string()
+        } else {
+            e
+        }
+    })?;
 
     // Unlock per-identity Stronghold with passphrase and load private key
-    let keystore =
-        StrongholdKeystore::initialize_for_identity(config_dir, public_key, passphrase)
-            .map_err(|e| {
-                let msg = e.to_string();
-                tracing::warn!(
-                    public_key = %public_key,
-                    error = %msg,
-                    "Stronghold unlock failed"
-                );
-                if msg.contains("snapshot") || msg.contains("decrypt") {
-                    "Wrong passphrase — unable to unlock keystore".to_string()
-                } else {
-                    msg
-                }
-            })?;
+    let keystore = StrongholdKeystore::initialize_for_identity(config_dir, public_key, passphrase)
+        .map_err(|e| {
+            let msg = e.to_string();
+            tracing::warn!(
+                public_key = %public_key,
+                error = %msg,
+                "Stronghold unlock failed"
+            );
+            if msg.contains("snapshot") || msg.contains("decrypt") {
+                "Wrong passphrase — unable to unlock keystore".to_string()
+            } else {
+                msg
+            }
+        })?;
 
     let secret_bytes = keystore
         .load_key(VAULT_IDENTITY, KEY_ED25519_PRIVATE)
@@ -267,9 +256,7 @@ pub async fn login_core(
     let restored = rekindle_crypto::Identity::from_secret_bytes(&key_array);
     let restored_pub = restored.public_key_hex();
     if restored_pub != public_key {
-        return Err(
-            "Wrong passphrase — decrypted key does not match stored identity".to_string(),
-        );
+        return Err("Wrong passphrase — decrypted key does not match stored identity".to_string());
     }
 
     // Keep the keystore unlocked for the session
@@ -311,10 +298,7 @@ pub async fn login(
     pool: State<'_, DbPool>,
     keystore_handle: State<'_, KeystoreHandle>,
 ) -> Result<LoginResult, String> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| e.to_string())?;
+    let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
 
     let (result, secret_key, dht_cols) = login_core(
         &config_dir,
@@ -362,9 +346,7 @@ pub async fn login(
         .unwrap_or(false);
 
         if ready {
-            if let Err(e) =
-                services::sync_service::sync_friends_now(state.inner(), &app).await
-            {
+            if let Err(e) = services::sync_service::sync_friends_now(state.inner(), &app).await {
                 tracing::warn!(error = %e, "login-time friend sync failed");
             }
         } else {
@@ -380,14 +362,58 @@ pub async fn login(
 /// Used by newly opened windows to hydrate their local auth state
 /// from the shared Rust backend (each webview has isolated JS context).
 #[tauri::command]
-pub async fn get_identity(
-    state: State<'_, SharedState>,
-) -> Result<Option<LoginResult>, String> {
+pub async fn get_identity(state: State<'_, SharedState>) -> Result<Option<LoginResult>, String> {
     let identity = state.identity.read();
     Ok(identity.as_ref().map(|id| LoginResult {
         public_key: id.public_key.clone(),
         display_name: id.display_name.clone(),
     }))
+}
+
+/// Shut down the voice engine: signal all tokio loops, await them, then stop devices.
+async fn shutdown_voice_engine(state: &SharedState) {
+    let (send_tx, send_h, recv_tx, recv_h, monitor_tx, monitor_h) = {
+        let mut ve = state.voice_engine.lock();
+        if let Some(ref mut handle) = *ve {
+            (
+                handle.send_loop_shutdown.take(),
+                handle.send_loop_handle.take(),
+                handle.recv_loop_shutdown.take(),
+                handle.recv_loop_handle.take(),
+                handle.device_monitor_shutdown.take(),
+                handle.device_monitor_handle.take(),
+            )
+        } else {
+            (None, None, None, None, None, None)
+        }
+    };
+    if let Some(tx) = send_tx {
+        let _ = tx.send(()).await;
+    }
+    if let Some(tx) = recv_tx {
+        let _ = tx.send(()).await;
+    }
+    if let Some(tx) = monitor_tx {
+        let _ = tx.send(()).await;
+    }
+    if let Some(h) = send_h {
+        let _ = h.await;
+    }
+    if let Some(h) = recv_h {
+        let _ = h.await;
+    }
+    if let Some(h) = monitor_h {
+        let _ = h.await;
+    }
+    {
+        let mut ve = state.voice_engine.lock();
+        if let Some(ref mut handle) = *ve {
+            handle.engine.stop_capture();
+            handle.engine.stop_playback();
+        }
+        *ve = None;
+    }
+    *state.voice_packet_tx.write() = None;
 }
 
 /// Log out: save and lock Stronghold, clean up user state, keep node alive.
@@ -418,39 +444,7 @@ pub async fn logout(
         let _ = tx.send(()).await;
     }
 
-    // Shut down voice engine (signal tokio loops, await them, then stop devices)
-    {
-        let (send_tx, send_h, recv_tx, recv_h, monitor_tx, monitor_h) = {
-            let mut ve = state.voice_engine.lock();
-            if let Some(ref mut handle) = *ve {
-                (
-                    handle.send_loop_shutdown.take(),
-                    handle.send_loop_handle.take(),
-                    handle.recv_loop_shutdown.take(),
-                    handle.recv_loop_handle.take(),
-                    handle.device_monitor_shutdown.take(),
-                    handle.device_monitor_handle.take(),
-                )
-            } else {
-                (None, None, None, None, None, None)
-            }
-        };
-        if let Some(tx) = send_tx { let _ = tx.send(()).await; }
-        if let Some(tx) = recv_tx { let _ = tx.send(()).await; }
-        if let Some(tx) = monitor_tx { let _ = tx.send(()).await; }
-        if let Some(h) = send_h { let _ = h.await; }
-        if let Some(h) = recv_h { let _ = h.await; }
-        if let Some(h) = monitor_h { let _ = h.await; }
-        {
-            let mut ve = state.voice_engine.lock();
-            if let Some(ref mut handle) = *ve {
-                handle.engine.stop_capture();
-                handle.engine.stop_playback();
-            }
-            *ve = None;
-        }
-        *state.voice_packet_tx.write() = None;
-    }
+    shutdown_voice_engine(state.inner()).await;
 
     // Signal route refresh loop shutdown (stored separately from background_handles)
     {
@@ -479,11 +473,9 @@ pub async fn logout(
 
     // Publish Offline to DHT BEFORE logout_cleanup clears the owner keypair
     {
-        let current_status = state.identity.read().as_ref().map(|id| id.status);
-        if current_status != Some(UserStatus::Offline) {
+        if state_helpers::identity_status(state.inner()) != Some(UserStatus::Offline) {
             if let Err(e) =
-                services::presence_service::publish_status(state.inner(), UserStatus::Offline)
-                    .await
+                services::presence_service::publish_status(state.inner(), UserStatus::Offline).await
             {
                 tracing::warn!(error = %e, "failed to publish offline status on logout");
             }
@@ -527,18 +519,12 @@ pub async fn logout(
 /// Returns summaries of every identity in `SQLite`, ordered by creation date.
 /// No authentication needed — this is called by the login window on mount.
 #[tauri::command]
-pub async fn list_identities(
-    pool: State<'_, DbPool>,
-) -> Result<Vec<IdentitySummary>, String> {
-    let db = pool.inner().clone();
-    tokio::task::spawn_blocking(move || {
-        let conn = db.lock().map_err(|e| e.to_string())?;
-        let mut stmt = conn
-            .prepare(
-                "SELECT public_key, display_name, created_at, avatar_webp \
+pub async fn list_identities(pool: State<'_, DbPool>) -> Result<Vec<IdentitySummary>, String> {
+    db_call(pool.inner(), move |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT public_key, display_name, created_at, avatar_webp \
                  FROM identity ORDER BY created_at ASC",
-            )
-            .map_err(|e| e.to_string())?;
+        )?;
         let rows = stmt
             .query_map([], |row| {
                 let avatar_base64 = row
@@ -555,14 +541,11 @@ pub async fn list_identities(
                     has_avatar: avatar_base64.is_some(),
                     avatar_base64,
                 })
-            })
-            .map_err(|e| e.to_string())?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| e.to_string())?;
-        Ok::<Vec<IdentitySummary>, String>(rows)
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 /// Delete a specific identity after verifying the passphrase.
@@ -582,21 +565,19 @@ pub async fn delete_identity(
     pool: State<'_, DbPool>,
     keystore_handle: State<'_, KeystoreHandle>,
 ) -> Result<(), String> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| e.to_string())?;
+    let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
 
     // Verify passphrase by attempting to open the identity's Stronghold
-    StrongholdKeystore::initialize_for_identity(&config_dir, &public_key, &passphrase)
-        .map_err(|e| {
+    StrongholdKeystore::initialize_for_identity(&config_dir, &public_key, &passphrase).map_err(
+        |e| {
             let msg = e.to_string();
             if msg.contains("snapshot") || msg.contains("decrypt") {
                 "Wrong passphrase".to_string()
             } else {
                 msg
             }
-        })?;
+        },
+    )?;
 
     // If deleting the active identity, logout first
     let is_active = state
@@ -640,12 +621,24 @@ pub async fn delete_identity(
                     (None, None, None, None, None, None)
                 }
             };
-            if let Some(tx) = send_tx { let _ = tx.send(()).await; }
-            if let Some(tx) = recv_tx { let _ = tx.send(()).await; }
-            if let Some(tx) = monitor_tx { let _ = tx.send(()).await; }
-            if let Some(h) = send_h { let _ = h.await; }
-            if let Some(h) = recv_h { let _ = h.await; }
-            if let Some(h) = monitor_h { let _ = h.await; }
+            if let Some(tx) = send_tx {
+                let _ = tx.send(()).await;
+            }
+            if let Some(tx) = recv_tx {
+                let _ = tx.send(()).await;
+            }
+            if let Some(tx) = monitor_tx {
+                let _ = tx.send(()).await;
+            }
+            if let Some(h) = send_h {
+                let _ = h.await;
+            }
+            if let Some(h) = recv_h {
+                let _ = h.await;
+            }
+            if let Some(h) = monitor_h {
+                let _ = h.await;
+            }
             {
                 let mut ve = state.voice_engine.lock();
                 if let Some(ref mut handle) = *ve {
@@ -676,13 +669,10 @@ pub async fn delete_identity(
 
         // Publish Offline before cleanup
         {
-            let current_status = state.identity.read().as_ref().map(|id| id.status);
-            if current_status != Some(UserStatus::Offline) {
-                let _ = services::presence_service::publish_status(
-                    state.inner(),
-                    UserStatus::Offline,
-                )
-                .await;
+            if state_helpers::identity_status(state.inner()) != Some(UserStatus::Offline) {
+                let _ =
+                    services::presence_service::publish_status(state.inner(), UserStatus::Offline)
+                        .await;
             }
         }
 
@@ -702,19 +692,15 @@ pub async fn delete_identity(
     }
 
     // Delete from SQLite (CASCADE deletes all scoped data)
-    let db = pool.inner().clone();
     let pk = public_key.clone();
-    tokio::task::spawn_blocking(move || {
-        let conn = db.lock().map_err(|e| e.to_string())?;
+    db_call(pool.inner(), move |conn| {
         conn.execute(
             "DELETE FROM identity WHERE public_key = ?1",
             rusqlite::params![pk],
-        )
-        .map_err(|e| e.to_string())?;
-        Ok::<(), String>(())
+        )?;
+        Ok(())
     })
-    .await
-    .map_err(|e| e.to_string())??;
+    .await?;
 
     // Delete the Stronghold snapshot file
     StrongholdKeystore::delete_snapshot(&config_dir, &public_key)
@@ -730,22 +716,20 @@ async fn load_friends_from_db(
     state: &SharedState,
     owner_key: &str,
 ) -> Result<(), String> {
-    let db = pool.clone();
     let ok = owner_key.to_string();
-    let friend_rows = tokio::task::spawn_blocking(move || {
-        let conn = db.lock().map_err(|e| e.to_string())?;
-        let mut stmt = conn
-            .prepare(
-                "SELECT f.public_key, f.display_name, f.nickname, f.dht_record_key, \
+    let friend_rows = db_call(pool, move |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT f.public_key, f.display_name, f.nickname, f.dht_record_key, \
                  f.last_seen_at, f.local_conversation_key, f.remote_conversation_key, \
                  f.mailbox_dht_key, f.friendship_state, g.name AS group_name \
                  FROM friends f LEFT JOIN friend_groups g ON f.group_id = g.id \
                  WHERE f.owner_key = ?1",
-            )
-            .map_err(|e| e.to_string())?;
+        )?;
         let rows = stmt
             .query_map(rusqlite::params![ok], |row| {
-                let fs_str: String = row.get::<_, String>("friendship_state").unwrap_or_else(|_| "accepted".to_string());
+                let fs_str: String = row
+                    .get::<_, String>("friendship_state")
+                    .unwrap_or_else(|_| "accepted".to_string());
                 let friendship_state = match fs_str.as_str() {
                     "pending_out" => crate::state::FriendshipState::PendingOut,
                     _ => crate::state::FriendshipState::Accepted,
@@ -767,14 +751,11 @@ async fn load_friends_from_db(
                     last_heartbeat_at: None,
                     friendship_state,
                 })
-            })
-            .map_err(|e| e.to_string())?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| e.to_string())?;
-        Ok::<Vec<FriendState>, String>(rows)
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
     })
-    .await
-    .map_err(|e| e.to_string())??;
+    .await?;
 
     let mut friends = state.friends.write();
     for friend in friend_rows {
@@ -793,18 +774,14 @@ async fn load_communities_from_db(
 ) -> Result<(), String> {
     use crate::state::RoleDefinition;
 
-    let db = pool.clone();
     let ok = owner_key.to_string();
-    let (community_rows, channel_rows, role_rows) = tokio::task::spawn_blocking(move || {
-        let conn = db.lock().map_err(|e| e.to_string())?;
-
+    let (community_rows, channel_rows, role_rows) = db_call(pool, move |conn| {
         let mut comm_stmt = conn
             .prepare(
                 "SELECT id, name, description, my_role, my_role_ids, dht_record_key, dht_owner_keypair, \
                  my_pseudonym_key, mek_generation, server_route_blob, is_hosted \
                  FROM communities WHERE owner_key = ?1",
-            )
-            .map_err(|e| e.to_string())?;
+            )?;
         let communities = comm_stmt
             .query_map(rusqlite::params![ok], |row| {
                 Ok((
@@ -820,18 +797,15 @@ async fn load_communities_from_db(
                     row.get::<_, Option<Vec<u8>>>("server_route_blob").unwrap_or(None),
                     row.get::<_, i64>("is_hosted").unwrap_or(0) != 0,
                 ))
-            })
-            .map_err(|e| e.to_string())?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| e.to_string())?;
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
 
         // Load community roles
         let mut role_stmt = conn
             .prepare(
                 "SELECT community_id, role_id, name, color, permissions, position, hoist, mentionable \
                  FROM community_roles WHERE owner_key = ?1 ORDER BY position",
-            )
-            .map_err(|e| e.to_string())?;
+            )?;
         let role_rows = role_stmt
             .query_map(rusqlite::params![ok], |row| {
                 Ok((
@@ -844,14 +818,11 @@ async fn load_communities_from_db(
                     row.get::<_, i32>("hoist").unwrap_or(0) != 0,
                     row.get::<_, i32>("mentionable").unwrap_or(0) != 0,
                 ))
-            })
-            .map_err(|e| e.to_string())?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| e.to_string())?;
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
 
         let mut chan_stmt = conn
-            .prepare("SELECT id, community_id, name, channel_type FROM channels WHERE owner_key = ?1 ORDER BY sort_order")
-            .map_err(|e| e.to_string())?;
+            .prepare("SELECT id, community_id, name, channel_type FROM channels WHERE owner_key = ?1 ORDER BY sort_order")?;
         let channels = chan_stmt
             .query_map(rusqlite::params![ok], |row| {
                 Ok((
@@ -860,18 +831,28 @@ async fn load_communities_from_db(
                     db::get_str(row, "name"),
                     db::get_str(row, "channel_type"),
                 ))
-            })
-            .map_err(|e| e.to_string())?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| e.to_string())?;
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
 
-        Ok::<(Vec<_>, Vec<_>, Vec<_>), String>((communities, channels, role_rows))
+        Ok((communities, channels, role_rows))
     })
-    .await
-    .map_err(|e| e.to_string())??;
+    .await?;
 
     let mut communities = state.communities.write();
-    for (community_id, name, description, my_role, my_role_ids_json, dht_record_key, dht_owner_keypair, my_pseudonym_key, mek_generation, server_route_blob, is_hosted) in &community_rows {
+    for (
+        community_id,
+        name,
+        description,
+        my_role,
+        my_role_ids_json,
+        dht_record_key,
+        dht_owner_keypair,
+        my_pseudonym_key,
+        mek_generation,
+        server_route_blob,
+        is_hosted,
+    ) in &community_rows
+    {
         let channels: Vec<ChannelInfo> = channel_rows
             .iter()
             .filter(|(_, cid, _, _)| cid == community_id)
@@ -895,17 +876,19 @@ async fn load_communities_from_db(
         let roles: Vec<RoleDefinition> = role_rows
             .iter()
             .filter(|(cid, ..)| cid == community_id)
-            .map(|(_, role_id, rname, color, permissions, position, hoist, mentionable)| {
-                RoleDefinition {
-                    id: *role_id,
-                    name: rname.clone(),
-                    color: *color,
-                    permissions: *permissions,
-                    position: *position,
-                    hoist: *hoist,
-                    mentionable: *mentionable,
-                }
-            })
+            .map(
+                |(_, role_id, rname, color, permissions, position, hoist, mentionable)| {
+                    RoleDefinition {
+                        id: *role_id,
+                        name: rname.clone(),
+                        color: *color,
+                        permissions: *permissions,
+                        position: *position,
+                        hoist: *hoist,
+                        mentionable: *mentionable,
+                    }
+                },
+            )
             .collect();
 
         let mut community = CommunityState {
@@ -924,7 +907,10 @@ async fn load_communities_from_db(
             is_hosted: *is_hosted,
         };
         // Recalculate display role from role definitions (DB value may be stale)
-        community.my_role = Some(crate::state::display_role_name(&community.my_role_ids, &community.roles));
+        community.my_role = Some(crate::state::display_role_name(
+            &community.my_role_ids,
+            &community.roles,
+        ));
         communities.insert(community_id.clone(), community);
     }
     Ok(())
@@ -977,8 +963,7 @@ fn restore_community_pseudonyms_and_meks(
                     // MEK payload: generation (8 bytes LE) + key (32 bytes)
                     let generation =
                         u64::from_le_bytes(mek_bytes[..8].try_into().unwrap_or_default());
-                    let key_bytes: [u8; 32] =
-                        mek_bytes[8..40].try_into().unwrap_or_default();
+                    let key_bytes: [u8; 32] = mek_bytes[8..40].try_into().unwrap_or_default();
                     let mek = MediaEncryptionKey::from_bytes(key_bytes, generation);
                     mek_updates.push((community_id.clone(), mek));
                 }
@@ -1107,13 +1092,7 @@ fn start_background_services(
 
     // The Veilid node is already running (started at app startup).
     // Just spawn sync + DHT publish as background tasks.
-    spawn_login_services(
-        app,
-        state,
-        pool.clone(),
-        prekey_bundle_bytes,
-        dht_keys,
-    );
+    spawn_login_services(app, state, pool.clone(), prekey_bundle_bytes, dht_keys);
 }
 
 /// Background task: start sync service and DHT publish using the existing node.
@@ -1155,7 +1134,8 @@ fn spawn_login_services(
     let sync_pool = pool.clone();
     let sync_app = app.clone();
     let sync_handle = tauri::async_runtime::spawn(async move {
-        services::sync_service::start_sync_loop(sync_state, sync_pool, sync_app, sync_shutdown_rx).await;
+        services::sync_service::start_sync_loop(sync_state, sync_pool, sync_app, sync_shutdown_rx)
+            .await;
     });
 
     *state.sync_shutdown_tx.write() = Some(sync_shutdown_tx);
@@ -1173,13 +1153,12 @@ fn spawn_login_services(
     let (route_refresh_shutdown_tx, route_refresh_shutdown_rx) = mpsc::channel::<()>(1);
     let route_refresh_app = app.clone();
     let route_refresh_state = Arc::clone(state);
-    let route_refresh_handle = tauri::async_runtime::spawn(
-        services::veilid_service::route_refresh_loop(
+    let route_refresh_handle =
+        tauri::async_runtime::spawn(services::veilid_service::route_refresh_loop(
             route_refresh_app,
             route_refresh_state,
             route_refresh_shutdown_rx,
-        ),
-    );
+        ));
 
     // Store sub-task handles so they can be aborted on logout
     {
@@ -1193,10 +1172,7 @@ fn spawn_login_services(
     *state.route_refresh_shutdown_tx.write() = Some(route_refresh_shutdown_tx);
 
     // Start idle/auto-away service
-    let idle_tx = services::idle_service::start_idle_service(
-        app.clone(),
-        Arc::clone(state),
-    );
+    let idle_tx = services::idle_service::start_idle_service(app.clone(), Arc::clone(state));
     *state.idle_shutdown_tx.write() = Some(idle_tx);
 
     // Start presence heartbeat loop (re-publishes status with fresh timestamp every 120s)
@@ -1238,12 +1214,7 @@ fn spawn_login_services(
 pub fn maybe_spawn_server(app: &tauri::AppHandle, state: &SharedState) {
     // Collect hosted communities' data for IPC commands (before any .await)
     // Tuple: (community_id, dht_key, keypair, name, creator_pseudonym, creator_display_name)
-    let creator_display_name = state
-        .identity
-        .read()
-        .as_ref()
-        .map(|id| id.display_name.clone())
-        .unwrap_or_default();
+    let creator_display_name = state_helpers::identity_display_name(state);
     let hosted_communities: Vec<(String, String, String, String, String, String)> = {
         let communities = state.communities.read();
         communities
@@ -1266,7 +1237,9 @@ pub fn maybe_spawn_server(app: &tauri::AppHandle, state: &SharedState) {
     };
 
     if hosted_communities.is_empty() {
-        tracing::debug!("user does not own any communities (or missing keypairs) — server not needed");
+        tracing::debug!(
+            "user does not own any communities (or missing keypairs) — server not needed"
+        );
         return;
     }
 
@@ -1280,7 +1253,10 @@ pub fn maybe_spawn_server(app: &tauri::AppHandle, state: &SharedState) {
 
     // Look for the rekindle-server binary next to the current executable
     let server_binary = match std::env::current_exe() {
-        Ok(exe) => exe.parent().map(|p| p.join("rekindle-server")).unwrap_or_default(),
+        Ok(exe) => exe
+            .parent()
+            .map(|p| p.join("rekindle-server"))
+            .unwrap_or_default(),
         Err(e) => {
             tracing::warn!(error = %e, "failed to locate current exe for server binary");
             return;
@@ -1322,9 +1298,8 @@ pub fn maybe_spawn_server(app: &tauri::AppHandle, state: &SharedState) {
             // Send HostCommunity IPC commands in a background task
             let sp = socket_path.clone();
             let bg_state = Arc::clone(state);
-            let handle = tauri::async_runtime::spawn(
-                send_host_community_ipc(sp, hosted_communities),
-            );
+            let handle =
+                tauri::async_runtime::spawn(send_host_community_ipc(sp, hosted_communities));
             bg_state.background_handles.lock().push(handle);
         }
         Err(e) => {
@@ -1407,12 +1382,13 @@ fn kill_stale_server(state: &SharedState, socket_path: &std::path::Path) {
 /// Route allocation can fail transiently after the network becomes ready because
 /// peerinfo may not have been published yet. We retry up to `max_attempts` times
 /// with a 3-second delay between attempts.
-async fn allocate_route_with_retry(app_handle: &tauri::AppHandle, state: &SharedState, max_attempts: u32) -> Option<Vec<u8>> {
+async fn allocate_route_with_retry(
+    app_handle: &tauri::AppHandle,
+    state: &SharedState,
+    max_attempts: u32,
+) -> Option<Vec<u8>> {
     for attempt in 1..=max_attempts {
-        let api = {
-            let node = state.node.read();
-            node.as_ref().map(|nh| nh.api.clone())
-        }?;
+        let api = state_helpers::veilid_api(state)?;
 
         match api.new_private_route().await {
             Ok(route_blob) => {
@@ -1495,11 +1471,20 @@ async fn spawn_dht_publish(
     // 15 attempts × 3s delay = up to 45s window for peerinfo publication.
     let route_blob = allocate_route_with_retry(&app_handle, &state, 15).await;
     if route_blob.is_none() {
-        tracing::warn!("failed to allocate private route after retries — peers won't be able to message us");
+        tracing::warn!(
+            "failed to allocate private route after retries — peers won't be able to message us"
+        );
     }
 
     // Create or open mailbox DHT record
-    if let Err(e) = publish_mailbox(&state, &pool, dht_keys.mailbox_dht_key.as_ref(), route_blob.as_deref()).await {
+    if let Err(e) = publish_mailbox(
+        &state,
+        &pool,
+        dht_keys.mailbox_dht_key.as_ref(),
+        route_blob.as_deref(),
+    )
+    .await
+    {
         tracing::warn!(error = %e, "mailbox publish failed");
     }
 
@@ -1517,9 +1502,13 @@ async fn spawn_dht_publish(
         tracing::warn!(error = %e, "DHT profile publish failed — will retry on next sync");
     }
 
-    if let Err(e) =
-        publish_friend_list_to_dht(&state, &pool, dht_keys.existing_friend_list_key, dht_keys.friend_list_owner_keypair)
-            .await
+    if let Err(e) = publish_friend_list_to_dht(
+        &state,
+        &pool,
+        dht_keys.existing_friend_list_key,
+        dht_keys.friend_list_owner_keypair,
+    )
+    .await
     {
         tracing::warn!(error = %e, "DHT friend list publish failed — will retry on next sync");
     }
@@ -1552,17 +1541,18 @@ async fn publish_mailbox(
     existing_mailbox_key: Option<&String>,
     route_blob: Option<&[u8]>,
 ) -> Result<(), String> {
-    let (public_key, secret_bytes) = {
-        let identity = state.identity.read();
-        let id = identity.as_ref().ok_or("identity not set before mailbox publish")?;
+    let public_key = state_helpers::current_owner_key(state)
+        .map_err(|_| "identity not set before mailbox publish".to_string())?;
+    let secret_bytes = {
         let secret = state.identity_secret.lock();
-        let secret = *secret.as_ref().ok_or("identity secret not available")?;
-        (id.public_key.clone(), secret)
+        *secret.as_ref().ok_or("identity secret not available")?
     };
 
     let routing_context = {
         let node = state.node.read();
-        let nh = node.as_ref().ok_or("node not initialized before mailbox publish")?;
+        let nh = node
+            .as_ref()
+            .ok_or("node not initialized before mailbox publish")?;
         nh.routing_context.clone()
     };
 
@@ -1603,9 +1593,13 @@ async fn publish_mailbox(
     // Write route blob to mailbox subkey 0
     if let Some(blob) = route_blob {
         if !blob.is_empty() {
-            rekindle_protocol::dht::mailbox::update_mailbox_route(&routing_context, &mailbox_key, blob)
-                .await
-                .map_err(|e| format!("update mailbox route: {e}"))?;
+            rekindle_protocol::dht::mailbox::update_mailbox_route(
+                &routing_context,
+                &mailbox_key,
+                blob,
+            )
+            .await
+            .map_err(|e| format!("update mailbox route: {e}"))?;
         }
     }
 
@@ -1626,20 +1620,16 @@ async fn publish_mailbox(
     }
 
     // Persist to SQLite
-    let db = pool.clone();
     let pk = public_key;
     let mk = mailbox_key.clone();
-    tokio::task::spawn_blocking(move || {
-        let conn = db.lock().map_err(|e| e.to_string())?;
+    db_call(pool, move |conn| {
         conn.execute(
             "UPDATE identity SET mailbox_dht_key = ?1 WHERE public_key = ?2",
             rusqlite::params![mk, pk],
-        )
-        .map_err(|e| e.to_string())?;
-        Ok::<(), String>(())
+        )?;
+        Ok(())
     })
-    .await
-    .map_err(|e| e.to_string())??;
+    .await?;
 
     tracing::info!(mailbox_key = %mailbox_key, "mailbox published to DHT");
     Ok(())
@@ -1671,30 +1661,35 @@ async fn try_update_existing_profile(
     }
     tracing::info!(key = %existing_key, has_keypair, "reusing existing DHT profile record");
     rekindle_protocol::dht::profile::update_subkey(
-        dht, existing_key, 0, display_name.as_bytes().to_vec(),
+        dht,
+        existing_key,
+        0,
+        display_name.as_bytes().to_vec(),
     )
     .await
     .map_err(|e| format!("display name: {e}"))?;
     rekindle_protocol::dht::profile::update_subkey(
-        dht, existing_key, 1, status_message.as_bytes().to_vec(),
+        dht,
+        existing_key,
+        1,
+        status_message.as_bytes().to_vec(),
     )
     .await
     .map_err(|e| format!("status message: {e}"))?;
     rekindle_protocol::dht::profile::update_subkey(
-        dht, existing_key, 2, vec![0], // online
+        dht,
+        existing_key,
+        2,
+        vec![0], // online
     )
     .await
     .map_err(|e| format!("status: {e}"))?;
-    rekindle_protocol::dht::profile::update_subkey(
-        dht, existing_key, 5, prekey_bundle.to_vec(),
-    )
-    .await
-    .map_err(|e| format!("prekey bundle: {e}"))?;
-    rekindle_protocol::dht::profile::update_subkey(
-        dht, existing_key, 6, route_blob.to_vec(),
-    )
-    .await
-    .map_err(|e| format!("route blob: {e}"))?;
+    rekindle_protocol::dht::profile::update_subkey(dht, existing_key, 5, prekey_bundle.to_vec())
+        .await
+        .map_err(|e| format!("prekey bundle: {e}"))?;
+    rekindle_protocol::dht::profile::update_subkey(dht, existing_key, 6, route_blob.to_vec())
+        .await
+        .map_err(|e| format!("route blob: {e}"))?;
     Ok(())
 }
 
@@ -1708,6 +1703,50 @@ async fn try_update_existing_profile(
 /// attempts to open and reuse that record. Falls back to creating a new one if the
 /// open or any write fails (e.g., record expired, or "value is not writable" when
 /// the owner keypair isn't available).
+/// Extract identity + node data needed for DHT profile publishing.
+fn profile_publish_inputs(
+    state: &SharedState,
+) -> Result<
+    (
+        String,
+        String,
+        String,
+        Vec<u8>,
+        rekindle_protocol::dht::DHTManager,
+    ),
+    String,
+> {
+    let (public_key, display_name, status_message) = {
+        let identity = state.identity.read();
+        let id = identity
+            .as_ref()
+            .ok_or("identity not set before DHT publish")?;
+        (
+            id.public_key.clone(),
+            id.display_name.clone(),
+            id.status_message.clone(),
+        )
+    };
+    let (route_blob, routing_context) = {
+        let node = state.node.read();
+        let nh = node
+            .as_ref()
+            .ok_or("node not initialized before DHT publish")?;
+        (
+            nh.route_blob.clone().unwrap_or_default(),
+            nh.routing_context.clone(),
+        )
+    };
+    let temp_dht = rekindle_protocol::dht::DHTManager::new(routing_context);
+    Ok((
+        public_key,
+        display_name,
+        status_message,
+        route_blob,
+        temp_dht,
+    ))
+}
+
 async fn publish_profile_to_dht(
     state: &SharedState,
     pool: &DbPool,
@@ -1715,28 +1754,8 @@ async fn publish_profile_to_dht(
     existing_dht_key: Option<String>,
     dht_owner_keypair_str: Option<String>,
 ) -> Result<(), String> {
-    // Extract identity data (clone out before .await — parking_lot guards are !Send)
-    let (public_key, display_name, status_message) = {
-        let identity = state.identity.read();
-        let id = identity.as_ref().ok_or("identity not set before DHT publish")?;
-        (id.public_key.clone(), id.display_name.clone(), id.status_message.clone())
-    };
-
-    // Extract route blob from node handle
-    let route_blob = {
-        let node = state.node.read();
-        let nh = node.as_ref().ok_or("node not initialized before DHT publish")?;
-        nh.route_blob.clone().unwrap_or_default()
-    };
-
-    // Clone the routing context out of the DHT manager before .await
-    // (parking_lot guards are !Send — must drop before any await point)
-    let routing_context = {
-        let node = state.node.read();
-        let nh = node.as_ref().ok_or("node not initialized before DHT profile creation")?;
-        nh.routing_context.clone()
-    };
-    let temp_dht = rekindle_protocol::dht::DHTManager::new(routing_context);
+    let (public_key, display_name, status_message, route_blob, temp_dht) =
+        profile_publish_inputs(state)?;
 
     let bundle = prekey_bundle_bytes.as_deref().unwrap_or(&[]);
 
@@ -1769,7 +1788,11 @@ async fn publish_profile_to_dht(
                     "failed to reuse existing DHT profile — creating new one"
                 );
                 rekindle_protocol::dht::profile::create_profile(
-                    &temp_dht, &display_name, &status_message, bundle, &route_blob,
+                    &temp_dht,
+                    &display_name,
+                    &status_message,
+                    bundle,
+                    &route_blob,
                 )
                 .await
                 .map_err(|e| format!("failed to create DHT profile: {e}"))?
@@ -1777,7 +1800,11 @@ async fn publish_profile_to_dht(
         }
     } else {
         rekindle_protocol::dht::profile::create_profile(
-            &temp_dht, &display_name, &status_message, bundle, &route_blob,
+            &temp_dht,
+            &display_name,
+            &status_message,
+            bundle,
+            &route_blob,
         )
         .await
         .map_err(|e| format!("failed to create DHT profile: {e}"))?
@@ -1806,21 +1833,17 @@ async fn publish_profile_to_dht(
     // The keypair string is stored via KeyPair's Display impl and loaded via FromStr.
     let keypair_str = new_keypair.map(|kp| kp.to_string());
     let has_new_keypair = keypair_str.is_some();
-    let db = pool.clone();
     let pk = public_key;
     let dht_key = profile_key.clone();
-    tokio::task::spawn_blocking(move || {
-        let conn = db.lock().map_err(|e| e.to_string())?;
+    db_call(pool, move |conn| {
         conn.execute(
             "UPDATE identity SET dht_record_key = ?1, dht_owner_keypair = COALESCE(?3, dht_owner_keypair) \
              WHERE public_key = ?2",
             rusqlite::params![dht_key, pk, keypair_str],
-        )
-        .map_err(|e| e.to_string())?;
-        Ok::<(), String>(())
+        )?;
+        Ok(())
     })
-    .await
-    .map_err(|e| e.to_string())??;
+    .await?;
 
     tracing::info!(
         profile_key = %profile_key,
@@ -1844,15 +1867,14 @@ async fn publish_friend_list_to_dht(
     existing_friend_list_key: Option<String>,
     friend_list_owner_keypair_str: Option<String>,
 ) -> Result<(), String> {
-    let public_key = {
-        let identity = state.identity.read();
-        let id = identity.as_ref().ok_or("identity not set before friend list publish")?;
-        id.public_key.clone()
-    };
+    let public_key = state_helpers::current_owner_key(state)
+        .map_err(|_| "identity not set before friend list publish".to_string())?;
 
     let routing_context = {
         let node = state.node.read();
-        let nh = node.as_ref().ok_or("node not initialized before friend list creation")?;
+        let nh = node
+            .as_ref()
+            .ok_or("node not initialized before friend list creation")?;
         nh.routing_context.clone()
     };
     let temp_dht = rekindle_protocol::dht::DHTManager::new(routing_context);
@@ -1869,7 +1891,9 @@ async fn publish_friend_list_to_dht(
     let has_keypair = owner_keypair.is_some();
     let (friend_list_key, new_keypair) = if let Some(ref existing_key) = existing_friend_list_key {
         let open_result = if let Some(ref keypair) = owner_keypair {
-            temp_dht.open_record_writable(existing_key, keypair.clone()).await
+            temp_dht
+                .open_record_writable(existing_key, keypair.clone())
+                .await
         } else {
             Err(rekindle_protocol::error::ProtocolError::DhtError(
                 "no owner keypair — cannot write to existing record".to_string(),
@@ -1918,22 +1942,18 @@ async fn publish_friend_list_to_dht(
     // Persist friend_list_dht_key and owner keypair to SQLite so they survive restarts
     let keypair_str = new_keypair.map(|kp| kp.to_string());
     let has_new_keypair = keypair_str.is_some();
-    let db = pool.clone();
     let pk = public_key;
     let fl_key = friend_list_key.clone();
-    tokio::task::spawn_blocking(move || {
-        let conn = db.lock().map_err(|e| e.to_string())?;
+    db_call(pool, move |conn| {
         conn.execute(
             "UPDATE identity SET friend_list_dht_key = ?1, \
              friend_list_owner_keypair = COALESCE(?3, friend_list_owner_keypair) \
              WHERE public_key = ?2",
             rusqlite::params![fl_key, pk, keypair_str],
-        )
-        .map_err(|e| e.to_string())?;
-        Ok::<(), String>(())
+        )?;
+        Ok(())
     })
-    .await
-    .map_err(|e| e.to_string())??;
+    .await?;
 
     tracing::info!(
         friend_list_key = %friend_list_key,
@@ -1982,22 +2002,18 @@ async fn persist_account_key_to_db(
     new_keypair: Option<veilid_core::KeyPair>,
 ) -> Result<(), String> {
     let keypair_str = new_keypair.map(|kp| kp.to_string());
-    let db = pool.clone();
     let pk = public_key.to_string();
     let ak = account_key.to_string();
-    tokio::task::spawn_blocking(move || {
-        let conn = db.lock().map_err(|e| e.to_string())?;
+    db_call(pool, move |conn| {
         conn.execute(
             "UPDATE identity SET account_dht_key = ?1, \
              account_owner_keypair = COALESCE(?3, account_owner_keypair) \
              WHERE public_key = ?2",
             rusqlite::params![ak, pk, keypair_str],
-        )
-        .map_err(|e| e.to_string())?;
-        Ok::<(), String>(())
+        )?;
+        Ok(())
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 /// Create (or reopen) the private Account DHT record after login.
@@ -2010,11 +2026,10 @@ async fn publish_account_to_dht(
     existing_account_key: Option<String>,
     account_owner_keypair_str: Option<String>,
 ) -> Result<(), String> {
-    let (public_key, display_name, status_message) = {
-        let identity = state.identity.read();
-        let id = identity.as_ref().ok_or("identity not set before account publish")?;
-        (id.public_key.clone(), id.display_name.clone(), id.status_message.clone())
-    };
+    let id = state_helpers::current_identity(state)
+        .map_err(|_| "identity not set before account publish".to_string())?;
+    let (public_key, display_name, status_message) =
+        (id.public_key, id.display_name, id.status_message);
 
     let secret_bytes = state
         .identity_secret
@@ -2024,16 +2039,21 @@ async fn publish_account_to_dht(
 
     let routing_context = {
         let node = state.node.read();
-        let nh = node.as_ref().ok_or("node not initialized before account publish")?;
+        let nh = node
+            .as_ref()
+            .ok_or("node not initialized before account publish")?;
         nh.routing_context.clone()
     };
 
-    let owner_keypair: Option<veilid_core::KeyPair> = account_owner_keypair_str.as_ref().and_then(|s| {
-        s.parse().map_err(|e| {
-            tracing::warn!(error = %e, "failed to parse stored account owner keypair");
-            e
-        }).ok()
-    });
+    let owner_keypair: Option<veilid_core::KeyPair> =
+        account_owner_keypair_str.as_ref().and_then(|s| {
+            s.parse()
+                .map_err(|e| {
+                    tracing::warn!(error = %e, "failed to parse stored account owner keypair");
+                    e
+                })
+                .ok()
+        });
 
     let (account_key, new_keypair) = if let Some(ref existing_key) = existing_account_key {
         if let Some(keypair) = owner_keypair {
@@ -2047,7 +2067,11 @@ async fn publish_account_to_dht(
             {
                 Ok(record) => {
                     tracing::info!(key = %existing_key, "reusing existing account DHT record");
-                    store_account_key_on_handles(state, &record.record_key(), record.all_record_keys());
+                    store_account_key_on_handles(
+                        state,
+                        &record.record_key(),
+                        record.all_record_keys(),
+                    );
                     return Ok(());
                 }
                 Err(e) => {
@@ -2056,16 +2080,29 @@ async fn publish_account_to_dht(
                         "failed to open existing account record — creating new one"
                     );
                     let enc_key = rekindle_crypto::DhtRecordKey::derive_account_key(&secret_bytes);
-                    create_fresh_account_record(&routing_context, enc_key, &display_name, &status_message).await?
+                    create_fresh_account_record(
+                        &routing_context,
+                        enc_key,
+                        &display_name,
+                        &status_message,
+                    )
+                    .await?
                 }
             }
         } else {
             tracing::warn!("no account owner keypair — creating new account record");
             let enc_key = rekindle_crypto::DhtRecordKey::derive_account_key(&secret_bytes);
-            create_fresh_account_record(&routing_context, enc_key, &display_name, &status_message).await?
+            create_fresh_account_record(&routing_context, enc_key, &display_name, &status_message)
+                .await?
         }
     } else {
-        create_fresh_account_record(&routing_context, encryption_key, &display_name, &status_message).await?
+        create_fresh_account_record(
+            &routing_context,
+            encryption_key,
+            &display_name,
+            &status_message,
+        )
+        .await?
     };
 
     store_account_key_on_handles(state, &account_key, vec![account_key.clone()]);
@@ -2093,7 +2130,7 @@ pub async fn create_conversation_for_friend(
     let my_x25519_secret = identity.to_x25519_secret();
 
     // Parse friend's Ed25519 public key and derive X25519 public key.
-    // Uses Edwards→Montgomery birational map on the PUBLIC key (NOT from_secret_bytes).
+    // Uses Edwards->Montgomery birational map on the PUBLIC key (NOT from_secret_bytes).
     let friend_ed_bytes = hex::decode(friend_public_key)
         .map_err(|e| format!("invalid friend public key hex: {e}"))?;
     let friend_ed_bytes: [u8; 32] = friend_ed_bytes
@@ -2102,14 +2139,14 @@ pub async fn create_conversation_for_friend(
     let friend_x25519_public = rekindle_crypto::Identity::peer_ed25519_to_x25519(&friend_ed_bytes)
         .map_err(|e| format!("failed to convert friend key to X25519: {e}"))?;
 
-    let encryption_key =
-        rekindle_crypto::DhtRecordKey::derive_conversation_key(&my_x25519_secret, &friend_x25519_public);
+    let encryption_key = rekindle_crypto::DhtRecordKey::derive_conversation_key(
+        &my_x25519_secret,
+        &friend_x25519_public,
+    );
 
-    let (display_name, status_message, owner_key) = {
-        let id = state.identity.read();
-        let id = id.as_ref().ok_or("not logged in")?;
-        (id.display_name.clone(), id.status_message.clone(), id.public_key.clone())
-    };
+    let id = state_helpers::current_identity(state)?;
+    let (display_name, status_message, owner_key) =
+        (id.display_name, id.status_message, id.public_key);
 
     let routing_context = {
         let node = state.node.read();
@@ -2117,10 +2154,7 @@ pub async fn create_conversation_for_friend(
         nh.routing_context.clone()
     };
 
-    let route_blob = {
-        let node = state.node.read();
-        node.as_ref().and_then(|nh| nh.route_blob.clone()).unwrap_or_default()
-    };
+    let route_blob = state_helpers::our_route_blob(state).unwrap_or_default();
 
     let profile = rekindle_protocol::capnp_codec::identity::UserProfile {
         display_name: display_name.clone(),
@@ -2162,21 +2196,17 @@ pub async fn create_conversation_for_friend(
     }
 
     // Persist to SQLite
-    let db = pool.clone();
     let ok = owner_key;
     let fpk = friend_public_key.to_string();
     let ck = conversation_key.clone();
-    tokio::task::spawn_blocking(move || {
-        let conn = db.lock().map_err(|e| e.to_string())?;
+    db_call(pool, move |conn| {
         conn.execute(
             "UPDATE friends SET local_conversation_key = ?1 WHERE owner_key = ?2 AND public_key = ?3",
             rusqlite::params![ck, ok, fpk],
-        )
-        .map_err(|e| e.to_string())?;
-        Ok::<(), String>(())
+        )?;
+        Ok(())
     })
-    .await
-    .map_err(|e| e.to_string())??;
+    .await?;
 
     // Update in-memory state
     {
@@ -2202,10 +2232,7 @@ pub async fn create_conversation_for_friend(
 ///
 /// Returns the serialized `PreKeyBundle` bytes if generation succeeded,
 /// so the caller can publish them to DHT profile subkey 5.
-fn initialize_signal_manager(
-    state: &SharedState,
-    secret_key: &[u8; 32],
-) -> Option<Vec<u8>> {
+fn initialize_signal_manager(state: &SharedState, secret_key: &[u8; 32]) -> Option<Vec<u8>> {
     use rekindle_crypto::signal::{
         MemoryIdentityStore, MemoryPreKeyStore, MemorySessionStore, SignalSessionManager,
     };
@@ -2221,9 +2248,11 @@ fn initialize_signal_manager(
 
     // Registration ID — derive deterministically from the public key so it's stable
     let pub_bytes = identity.public_key_bytes();
-    let registration_id = u32::from_le_bytes([pub_bytes[0], pub_bytes[1], pub_bytes[2], pub_bytes[3]]);
+    let registration_id =
+        u32::from_le_bytes([pub_bytes[0], pub_bytes[1], pub_bytes[2], pub_bytes[3]]);
 
-    let identity_store = MemoryIdentityStore::new(identity_private, identity_public, registration_id);
+    let identity_store =
+        MemoryIdentityStore::new(identity_private, identity_public, registration_id);
     let prekey_store = MemoryPreKeyStore::new();
     let session_store = MemorySessionStore::new();
 

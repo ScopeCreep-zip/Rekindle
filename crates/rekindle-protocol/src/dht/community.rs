@@ -154,10 +154,7 @@ pub async fn read_channels(
 }
 
 /// Read member list from DHT.
-pub async fn read_members(
-    dht: &DHTManager,
-    key: &str,
-) -> Result<Vec<MemberEntry>, ProtocolError> {
+pub async fn read_members(dht: &DHTManager, key: &str) -> Result<Vec<MemberEntry>, ProtocolError> {
     match dht.get_value(key, SUBKEY_MEMBERS).await? {
         Some(data) => capnp_codec::community::decode_members(&data),
         None => Ok(vec![]),
@@ -201,7 +198,10 @@ pub async fn add_member(
     member: MemberEntry,
 ) -> Result<(), ProtocolError> {
     let mut members = read_members(dht, key).await?;
-    if members.iter().any(|m| m.pseudonym_key == member.pseudonym_key) {
+    if members
+        .iter()
+        .any(|m| m.pseudonym_key == member.pseudonym_key)
+    {
         return Err(ProtocolError::DhtError("member already exists".into()));
     }
     members.push(member);
@@ -246,10 +246,7 @@ pub async fn set_member_roles(
 }
 
 /// Read role definitions from DHT.
-pub async fn read_roles(
-    dht: &DHTManager,
-    key: &str,
-) -> Result<Vec<RoleDefinition>, ProtocolError> {
+pub async fn read_roles(dht: &DHTManager, key: &str) -> Result<Vec<RoleDefinition>, ProtocolError> {
     match dht.get_value(key, SUBKEY_ROLES).await? {
         Some(data) => {
             let (_, _, roles) = capnp_codec::community::decode_community(&data, "")?;
@@ -278,18 +275,12 @@ pub async fn add_role(
 }
 
 /// Remove a role definition by ID.
-pub async fn remove_role(
-    dht: &DHTManager,
-    key: &str,
-    role_id: u32,
-) -> Result<(), ProtocolError> {
+pub async fn remove_role(dht: &DHTManager, key: &str, role_id: u32) -> Result<(), ProtocolError> {
     let mut roles = read_roles(dht, key).await?;
     let before = roles.len();
     roles.retain(|r| r.id != role_id);
     if roles.len() == before {
-        return Err(ProtocolError::DhtError(format!(
-            "role {role_id} not found"
-        )));
+        return Err(ProtocolError::DhtError(format!("role {role_id} not found")));
     }
     let data = capnp_codec::community::encode_roles(&roles);
     dht.set_value(key, SUBKEY_ROLES, data).await
@@ -302,13 +293,10 @@ pub async fn update_role(
     role: RoleDefinition,
 ) -> Result<(), ProtocolError> {
     let mut roles = read_roles(dht, key).await?;
-    let entry = roles
-        .iter_mut()
-        .find(|r| r.id == role.id)
-        .ok_or_else(|| {
-            let id = role.id;
-            ProtocolError::DhtError(format!("role {id} not found"))
-        })?;
+    let entry = roles.iter_mut().find(|r| r.id == role.id).ok_or_else(|| {
+        let id = role.id;
+        ProtocolError::DhtError(format!("role {id} not found"))
+    })?;
     *entry = role;
     let data = capnp_codec::community::encode_roles(&roles);
     dht.set_value(key, SUBKEY_ROLES, data).await
@@ -519,8 +507,7 @@ pub mod permissions {
             for ow in channel_overwrites {
                 if ow.target_type == OverwriteType::Role {
                     if let Ok(role_id) = ow.target_id.parse::<u32>() {
-                        if role_id != super::ROLE_EVERYONE_ID
-                            && member_role_ids.contains(&role_id)
+                        if role_id != super::ROLE_EVERYONE_ID && member_role_ids.contains(&role_id)
                         {
                             role_allow |= ow.allow;
                             role_deny |= ow.deny;
@@ -547,11 +534,8 @@ pub mod permissions {
                 .unwrap_or_default()
                 .as_secs();
             if now < until {
-                permissions &= !(SEND_MESSAGES
-                    | ADD_REACTIONS
-                    | SPEAK
-                    | STREAM
-                    | CREATE_INSTANT_INVITE);
+                permissions &=
+                    !(SEND_MESSAGES | ADD_REACTIONS | SPEAK | STREAM | CREATE_INSTANT_INVITE);
             }
         }
 

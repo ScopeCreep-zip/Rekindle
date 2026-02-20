@@ -128,7 +128,11 @@ pub fn open_community_window(
     community_id: &str,
     community_name: &str,
 ) -> Result<(), String> {
-    let id_part = if community_id.is_empty() { "browser" } else { &community_id[..16.min(community_id.len())] };
+    let id_part = if community_id.is_empty() {
+        "browser"
+    } else {
+        &community_id[..16.min(community_id.len())]
+    };
     let label = format!("community-{id_part}");
 
     if let Some(window) = app.get_webview_window(&label) {

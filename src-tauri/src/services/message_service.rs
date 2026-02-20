@@ -9,7 +9,9 @@ use tauri::Emitter;
 
 use crate::channels::ChatEvent;
 use crate::db::DbPool;
+use crate::db_helpers::{db_call, db_call_or_default, db_fire};
 use crate::state::AppState;
+use crate::state_helpers;
 
 /// Handle an incoming message from the Veilid network.
 ///
@@ -59,12 +61,10 @@ pub async fn handle_incoming_message(
                         "encrypted message could not be decrypted"
                     );
                     // Notify the frontend so the user knows a message was lost
-                    let display_name = {
-                        let friends = state.friends.read();
-                        friends.get(&sender_hex).map(|f| f.display_name.clone())
-                    };
-                    let from_label = display_name
-                        .unwrap_or_else(|| format!("{}...", &sender_hex[..8.min(sender_hex.len())]));
+                    let display_name = state_helpers::friend_display_name(state, &sender_hex);
+                    let from_label = display_name.unwrap_or_else(|| {
+                        format!("{}...", &sender_hex[..8.min(sender_hex.len())])
+                    });
                     let _ = app_handle.emit(
                         "notification-event",
                         &crate::channels::NotificationEvent::SystemAlert {
@@ -103,7 +103,7 @@ pub async fn handle_incoming_message(
             | MessagePayload::Unfriended
             | MessagePayload::UnfriendedAck
             | MessagePayload::FriendReject
-    ) && !state.friends.read().contains_key(&sender_hex)
+    ) && !state_helpers::is_friend(state, &sender_hex)
     {
         tracing::debug!(from = %sender_hex, "dropping message from non-friend");
         return;
@@ -113,34 +113,80 @@ pub async fn handle_incoming_message(
     let ts: i64 = envelope.timestamp.try_into().unwrap_or(i64::MAX);
     match payload {
         MessagePayload::DirectMessage { body, .. } => {
-            handle_direct_message(app_handle, state, pool, &sender_hex, &body, ts).await;
+            handle_direct_message(app_handle, state, pool, &sender_hex, &body, ts);
         }
-        MessagePayload::ChannelMessage { channel_id, body, .. } => {
-            handle_channel_message(app_handle, state, pool, &sender_hex, &channel_id, &body, ts).await;
+        MessagePayload::ChannelMessage {
+            channel_id, body, ..
+        } => {
+            handle_channel_message(app_handle, state, pool, &sender_hex, &channel_id, &body, ts);
         }
         MessagePayload::TypingIndicator { typing } => {
-            let _ = app_handle.emit("chat-event", &ChatEvent::TypingIndicator { from: sender_hex, typing });
+            let _ = app_handle.emit(
+                "chat-event",
+                &ChatEvent::TypingIndicator {
+                    from: sender_hex,
+                    typing,
+                },
+            );
         }
-        MessagePayload::FriendRequest { display_name, message, prekey_bundle, profile_dht_key, route_blob, mailbox_dht_key } => {
+        MessagePayload::FriendRequest {
+            display_name,
+            message,
+            prekey_bundle,
+            profile_dht_key,
+            route_blob,
+            mailbox_dht_key,
+        } => {
             handle_friend_request_full(
-                app_handle, state, pool, &sender_hex, &display_name,
-                &message, &prekey_bundle, &profile_dht_key, &route_blob, &mailbox_dht_key,
-            ).await;
+                app_handle,
+                state,
+                pool,
+                &sender_hex,
+                &display_name,
+                &message,
+                &prekey_bundle,
+                &profile_dht_key,
+                &route_blob,
+                &mailbox_dht_key,
+            )
+            .await;
         }
-        MessagePayload::FriendAccept { prekey_bundle, profile_dht_key, route_blob, mailbox_dht_key, ephemeral_key, signed_prekey_id, one_time_prekey_id } => {
+        MessagePayload::FriendAccept {
+            prekey_bundle,
+            profile_dht_key,
+            route_blob,
+            mailbox_dht_key,
+            ephemeral_key,
+            signed_prekey_id,
+            one_time_prekey_id,
+        } => {
             handle_friend_accept_full(
-                app_handle, state, pool, &sender_hex, &prekey_bundle,
-                &profile_dht_key, route_blob, &mailbox_dht_key,
-                &ephemeral_key, signed_prekey_id, one_time_prekey_id,
-            ).await;
+                app_handle,
+                state,
+                pool,
+                &sender_hex,
+                &prekey_bundle,
+                &profile_dht_key,
+                route_blob,
+                &mailbox_dht_key,
+                &ephemeral_key,
+                signed_prekey_id,
+                one_time_prekey_id,
+            )
+            .await;
         }
         MessagePayload::FriendReject => {
-            handle_friend_reject(app_handle, state, pool, &sender_hex).await;
+            handle_friend_reject(app_handle, state, pool, &sender_hex);
         }
         MessagePayload::FriendRequestReceived => {
-            let _ = app_handle.emit("chat-event", &ChatEvent::FriendRequestDelivered { to: sender_hex });
+            let _ = app_handle.emit(
+                "chat-event",
+                &ChatEvent::FriendRequestDelivered { to: sender_hex },
+            );
         }
-        MessagePayload::ProfileKeyRotated { new_profile_dht_key } => {
+        MessagePayload::ProfileKeyRotated {
+            new_profile_dht_key,
+        } => {
             handle_profile_key_rotated(state, pool, &sender_hex, &new_profile_dht_key).await;
         }
         MessagePayload::PresenceUpdate { .. } => {}
@@ -148,13 +194,13 @@ pub async fn handle_incoming_message(
             handle_unfriended(app_handle, state, pool, &sender_hex).await;
         }
         MessagePayload::UnfriendedAck => {
-            handle_unfriended_ack(state, pool, &sender_hex).await;
+            handle_unfriended_ack(state, pool, &sender_hex);
         }
     }
 }
 
 /// Store a direct message in `SQLite` and emit `ChatEvent` to frontend.
-async fn handle_direct_message(
+fn handle_direct_message(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     pool: &DbPool,
@@ -162,31 +208,18 @@ async fn handle_direct_message(
     body: &str,
     timestamp: i64,
 ) {
-
     // Store in SQLite (scoped to current identity)
-    let owner_key = state
-        .identity
-        .read()
-        .as_ref()
-        .map(|id| id.public_key.clone())
-        .unwrap_or_default();
-    let pool_clone = pool.clone();
+    let owner_key = state_helpers::owner_key_or_default(state);
     let sender = sender_hex.to_string();
     let body_clone = body.to_string();
-    if let Err(e) = tokio::task::spawn_blocking(move || {
-        let conn = pool_clone.lock().map_err(|e| e.to_string())?;
+    db_fire(pool, "persist incoming message", move |conn| {
         conn.execute(
             "INSERT INTO messages (owner_key, conversation_id, conversation_type, sender_key, body, timestamp, is_read) \
              VALUES (?, ?, 'dm', ?, ?, ?, 0)",
             rusqlite::params![owner_key, sender, sender, body_clone, timestamp],
-        )
-        .map_err(|e| e.to_string())
-    })
-    .await
-    .unwrap_or_else(|e| Err(e.to_string()))
-    {
-        tracing::error!(error = %e, "failed to persist incoming message");
-    }
+        )?;
+        Ok(())
+    });
 
     // Update unread count
     {
@@ -207,7 +240,7 @@ async fn handle_direct_message(
 }
 
 /// Store a channel message in `SQLite` and emit `ChatEvent` to frontend.
-async fn handle_channel_message(
+fn handle_channel_message(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     pool: &DbPool,
@@ -216,31 +249,18 @@ async fn handle_channel_message(
     body: &str,
     timestamp: i64,
 ) {
-
-    let owner_key = state
-        .identity
-        .read()
-        .as_ref()
-        .map(|id| id.public_key.clone())
-        .unwrap_or_default();
-    let pool_clone = pool.clone();
+    let owner_key = state_helpers::owner_key_or_default(state);
     let sender = sender_hex.to_string();
     let ch_id = channel_id.to_string();
     let body_clone = body.to_string();
-    if let Err(e) = tokio::task::spawn_blocking(move || {
-        let conn = pool_clone.lock().map_err(|e| e.to_string())?;
+    db_fire(pool, "persist channel message", move |conn| {
         conn.execute(
             "INSERT INTO messages (owner_key, conversation_id, conversation_type, sender_key, body, timestamp, is_read) \
              VALUES (?, ?, 'channel', ?, ?, ?, 0)",
             rusqlite::params![owner_key, ch_id, sender, body_clone, timestamp],
-        )
-        .map_err(|e| e.to_string())
-    })
-    .await
-    .unwrap_or_else(|e| Err(e.to_string()))
-    {
-        tracing::error!(error = %e, "failed to persist channel message");
-    }
+        )?;
+        Ok(())
+    });
 
     let event = ChatEvent::MessageReceived {
         from: sender_hex.to_string(),
@@ -256,10 +276,7 @@ async fn handle_channel_message(
 /// We do NOT establish a Signal session here. The session will be established
 /// when we accept the request (we become the initiator), and the ephemeral key
 /// is sent back in the `FriendAccept` so the requester can call `respond_to_session()`.
-fn handle_friend_request(
-    sender_hex: &str,
-    prekey_bundle_bytes: &[u8],
-) {
+fn handle_friend_request(sender_hex: &str, prekey_bundle_bytes: &[u8]) {
     if prekey_bundle_bytes.is_empty() {
         tracing::warn!(from = %sender_hex, "friend request has empty prekey bundle");
     } else {
@@ -293,7 +310,9 @@ fn handle_friend_accept(
     }
 
     // Extract their identity key from the PreKeyBundle
-    let their_identity_key = match serde_json::from_slice::<rekindle_crypto::signal::PreKeyBundle>(prekey_bundle_bytes) {
+    let their_identity_key = match serde_json::from_slice::<rekindle_crypto::signal::PreKeyBundle>(
+        prekey_bundle_bytes,
+    ) {
         Ok(bundle) => bundle.identity_key,
         Err(e) => {
             tracing::warn!(from = %sender_hex, error = %e, "failed to parse PreKeyBundle from FriendAccept");
@@ -312,8 +331,12 @@ fn handle_friend_accept(
             signed_prekey_id,
             one_time_prekey_id,
         ) {
-            Ok(()) => tracing::info!(from = %sender_hex, "established responder Signal session from FriendAccept"),
-            Err(e) => tracing::warn!(from = %sender_hex, error = %e, "failed to establish responder Signal session"),
+            Ok(()) => {
+                tracing::info!(from = %sender_hex, "established responder Signal session from FriendAccept");
+            }
+            Err(e) => {
+                tracing::warn!(from = %sender_hex, error = %e, "failed to establish responder Signal session");
+            }
         }
     }
 }
@@ -336,32 +359,29 @@ async fn handle_friend_request_full(
 
     // Cache the sender's route blob for immediate replies
     if !route_blob.is_empty() {
-        let api = {
-            let node = state.node.read();
-            node.as_ref().map(|nh| nh.api.clone())
-        };
-        if let Some(api) = api {
-            let mut dht_mgr = state.dht_manager.write();
-            if let Some(mgr) = dht_mgr.as_mut() {
-                mgr.manager.cache_route(&api, sender_hex, route_blob.to_vec());
-            }
-        }
+        state_helpers::cache_peer_route(state, sender_hex, route_blob.to_vec());
     }
 
     // If sender is already in our friend list, check for cross-request auto-accept
-    let existing_friendship_state = {
-        let friends = state.friends.read();
-        friends.get(sender_hex).map(|f| f.friendship_state)
-    };
+    let existing_friendship_state =
+        state_helpers::friend_field(state, sender_hex, |f| Some(f.friendship_state));
 
     if let Some(fs) = existing_friendship_state {
         if fs == crate::state::FriendshipState::PendingOut {
             // Cross-request: both parties want the friendship — auto-accept
             tracing::info!(from = %sender_hex, "cross-request detected — auto-accepting");
             auto_accept_cross_request(
-                app_handle, state, pool, sender_hex, display_name,
-                prekey_bundle, profile_dht_key, route_blob, mailbox_dht_key,
-            ).await;
+                app_handle,
+                state,
+                pool,
+                sender_hex,
+                display_name,
+                prekey_bundle,
+                profile_dht_key,
+                route_blob,
+                mailbox_dht_key,
+            )
+            .await;
             return;
         }
         if fs == crate::state::FriendshipState::Removing
@@ -374,27 +394,18 @@ async fn handle_friend_request_full(
             state.friends.write().remove(sender_hex);
 
             // Delete stale DB rows so future accept creates a clean entry
-            let owner_key = state
-                .identity
-                .read()
-                .as_ref()
-                .map(|id| id.public_key.clone())
-                .unwrap_or_default();
-            let pool_clone = pool.clone();
+            let owner_key = state_helpers::owner_key_or_default(state);
             let pk = sender_hex.to_string();
-            let _ = tokio::task::spawn_blocking(move || {
-                let conn = pool_clone.lock().map_err(|e| e.to_string())?;
+            db_fire(pool, "delete stale friend for re-add", move |conn| {
                 conn.execute(
                     "DELETE FROM friends WHERE owner_key = ?1 AND public_key = ?2",
                     rusqlite::params![owner_key, pk],
-                )
-                .map_err(|e| format!("delete stale friend for re-add: {e}"))?;
-                Ok::<(), String>(())
-            })
-            .await;
+                )?;
+                Ok(())
+            });
 
             // Clean up any lingering pending request row
-            delete_pending_request_row(state, pool, sender_hex).await;
+            delete_pending_request_row(state, pool, sender_hex);
 
             tracing::info!(
                 from = %sender_hex,
@@ -410,16 +421,22 @@ async fn handle_friend_request_full(
                     friend.display_name = display_name.to_string();
                 }
             }
-            update_friend_display_name(state, pool, sender_hex, display_name).await;
+            update_friend_display_name(state, pool, sender_hex, display_name);
             return;
         }
     }
 
     persist_friend_request(
-        state, pool, sender_hex, display_name, message,
-        profile_dht_key, route_blob, mailbox_dht_key, prekey_bundle,
-    )
-    .await;
+        state,
+        pool,
+        sender_hex,
+        display_name,
+        message,
+        profile_dht_key,
+        route_blob,
+        mailbox_dht_key,
+        prekey_bundle,
+    );
     let event = ChatEvent::FriendRequest {
         from: sender_hex.to_string(),
         display_name: display_name.to_string(),
@@ -428,7 +445,13 @@ async fn handle_friend_request_full(
     let _ = app_handle.emit("chat-event", &event);
 
     // Send delivery ACK back to the requester
-    let _ = send_to_peer_raw(state, pool, sender_hex, &MessagePayload::FriendRequestReceived).await;
+    let _ = send_to_peer_raw(
+        state,
+        pool,
+        sender_hex,
+        &MessagePayload::FriendRequestReceived,
+    )
+    .await;
 }
 
 /// Handle a `FriendAccept` with profile key, route blob, and mailbox key exchange.
@@ -447,30 +470,29 @@ async fn handle_friend_accept_full(
     one_time_prekey_id: Option<u32>,
 ) {
     // Guard: ignore FriendAccept if we are in the process of removing this friend
-    let is_removing = {
-        let friends = state.friends.read();
-        friends.get(sender_hex).is_some_and(|f| {
-            matches!(f.friendship_state, crate::state::FriendshipState::Removing)
-        })
-    };
+    let is_removing = state_helpers::friend_field(state, sender_hex, |f| {
+        Some(matches!(
+            f.friendship_state,
+            crate::state::FriendshipState::Removing
+        ))
+    })
+    .unwrap_or(false);
     if is_removing {
         tracing::info!(from = %sender_hex, "ignoring FriendAccept — friend is being removed");
         return;
     }
 
-    handle_friend_accept(state, sender_hex, prekey_bundle, ephemeral_key, signed_prekey_id, one_time_prekey_id);
+    handle_friend_accept(
+        state,
+        sender_hex,
+        prekey_bundle,
+        ephemeral_key,
+        signed_prekey_id,
+        one_time_prekey_id,
+    );
     // Cache the acceptor's route blob
     if !route_blob.is_empty() {
-        let api = {
-            let node = state.node.read();
-            node.as_ref().map(|nh| nh.api.clone())
-        };
-        if let Some(api) = api {
-            let mut dht_mgr = state.dht_manager.write();
-            if let Some(mgr) = dht_mgr.as_mut() {
-                mgr.manager.cache_route(&api, sender_hex, route_blob);
-            }
-        }
+        state_helpers::cache_peer_route(state, sender_hex, route_blob);
     }
     // Store profile key, mailbox key, and transition friendship to Accepted
     {
@@ -486,10 +508,10 @@ async fn handle_friend_accept_full(
         }
     }
     // Persist friendship_state transition to DB
-    persist_friendship_state(state, pool, sender_hex, "accepted").await;
+    persist_friendship_state(state, pool, sender_hex, "accepted");
     // Persist profile key to `SQLite`
     if !profile_dht_key.is_empty() {
-        persist_friend_dht_key(state, pool, sender_hex, profile_dht_key).await;
+        persist_friend_dht_key(state, pool, sender_hex, profile_dht_key);
         // Start watching the friend's profile DHT record for presence
         if let Err(e) =
             super::presence_service::watch_friend(state, sender_hex, profile_dht_key).await
@@ -497,12 +519,8 @@ async fn handle_friend_accept_full(
             tracing::trace!(from = %sender_hex, error = %e, "failed to watch friend after accept");
         }
     }
-    let display_name = {
-        let friends = state.friends.read();
-        friends
-            .get(sender_hex)
-            .map_or_else(|| sender_hex.to_string(), |f| f.display_name.clone())
-    };
+    let display_name = state_helpers::friend_display_name(state, sender_hex)
+        .unwrap_or_else(|| sender_hex.to_string());
     let event = ChatEvent::FriendRequestAccepted {
         from: sender_hex.to_string(),
         display_name,
@@ -517,17 +535,11 @@ async fn handle_profile_key_rotated(
     sender_hex: &str,
     new_profile_dht_key: &str,
 ) {
-    let is_friend = state.friends.read().contains_key(sender_hex);
-    if !is_friend {
+    if !state_helpers::is_friend(state, sender_hex) {
         return;
     }
     // Unregister old DHT key
-    let old_key = {
-        let friends = state.friends.read();
-        friends
-            .get(sender_hex)
-            .and_then(|f| f.dht_record_key.clone())
-    };
+    let old_key = state_helpers::friend_dht_key(state, sender_hex);
     if let Some(ref old_key) = old_key {
         let mut dht_mgr = state.dht_manager.write();
         if let Some(mgr) = dht_mgr.as_mut() {
@@ -542,7 +554,7 @@ async fn handle_profile_key_rotated(
         }
     }
     // Persist to `SQLite`
-    persist_friend_dht_key(state, pool, sender_hex, new_profile_dht_key).await;
+    persist_friend_dht_key(state, pool, sender_hex, new_profile_dht_key);
     // Re-watch the new profile DHT record for presence updates
     if let Err(e) =
         super::presence_service::watch_friend(state, sender_hex, new_profile_dht_key).await
@@ -558,7 +570,7 @@ async fn handle_profile_key_rotated(
 
 /// Persist an incoming friend request to `SQLite` for crash/restart recovery.
 #[allow(clippy::too_many_arguments)]
-async fn persist_friend_request(
+fn persist_friend_request(
     state: &Arc<AppState>,
     pool: &DbPool,
     sender_hex: &str,
@@ -569,13 +581,7 @@ async fn persist_friend_request(
     mailbox_dht_key: &str,
     prekey_bundle: &[u8],
 ) {
-    let owner_key = state
-        .identity
-        .read()
-        .as_ref()
-        .map(|id| id.public_key.clone())
-        .unwrap_or_default();
-    let pool = pool.clone();
+    let owner_key = state_helpers::owner_key_or_default(state);
     let pk = sender_hex.to_string();
     let dn = display_name.to_string();
     let msg = message.to_string();
@@ -584,186 +590,122 @@ async fn persist_friend_request(
     let mdk = mailbox_dht_key.to_string();
     let pkb = prekey_bundle.to_vec();
     let now = crate::db::timestamp_now();
-    if let Err(e) = tokio::task::spawn_blocking(move || {
-        let conn = pool.lock().map_err(|e| e.to_string())?;
+    db_fire(pool, "persist incoming friend request", move |conn| {
         conn.execute(
             "INSERT OR REPLACE INTO pending_friend_requests \
              (owner_key, public_key, display_name, message, received_at, profile_dht_key, route_blob, mailbox_dht_key, prekey_bundle) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             rusqlite::params![owner_key, pk, dn, msg, now, pdk, rb, mdk, pkb],
-        )
-        .map_err(|e| e.to_string())
-    })
-    .await
-    .unwrap_or_else(|e| Err(e.to_string()))
-    {
-        tracing::error!(error = %e, "failed to persist incoming friend request");
-    }
+        )?;
+        Ok(())
+    });
 }
 
 /// Delete a `pending_friend_requests` row for a given peer.
 ///
 /// Called during cross-request auto-accept, unfriend handling, and friend removal
 /// to ensure stale rows don't block future `INSERT OR REPLACE`.
-async fn delete_pending_request_row(
-    state: &Arc<AppState>,
-    pool: &DbPool,
-    peer_key: &str,
-) {
-    let owner_key = state
-        .identity
-        .read()
-        .as_ref()
-        .map(|id| id.public_key.clone())
-        .unwrap_or_default();
-    let pool = pool.clone();
+fn delete_pending_request_row(state: &Arc<AppState>, pool: &DbPool, peer_key: &str) {
+    let owner_key = state_helpers::owner_key_or_default(state);
     let pk = peer_key.to_string();
-    let _ = tokio::task::spawn_blocking(move || {
-        let conn = pool.lock().map_err(|e| e.to_string())?;
+    db_fire(pool, "delete pending request row", move |conn| {
         conn.execute(
             "DELETE FROM pending_friend_requests WHERE owner_key = ?1 AND public_key = ?2",
             rusqlite::params![owner_key, pk],
-        )
-        .map_err(|e| format!("delete pending request: {e}"))?;
-        Ok::<(), String>(())
-    })
-    .await;
+        )?;
+        Ok(())
+    });
 }
 
 /// Delete all `pending_messages` rows addressed to a given recipient.
 ///
 /// Called when the peer ACKs our `Unfriended` message (no longer need retries)
 /// or when a peer unfriends us (drop any queued messages to them).
-pub(crate) async fn delete_pending_messages_to_recipient(
+pub(crate) fn delete_pending_messages_to_recipient(
     state: &Arc<AppState>,
     pool: &DbPool,
     recipient_key: &str,
 ) {
-    let owner_key = state
-        .identity
-        .read()
-        .as_ref()
-        .map(|id| id.public_key.clone())
-        .unwrap_or_default();
-    let pool = pool.clone();
+    let owner_key = state_helpers::owner_key_or_default(state);
     let rk = recipient_key.to_string();
-    let _ = tokio::task::spawn_blocking(move || {
-        let conn = pool.lock().map_err(|e| e.to_string())?;
+    db_fire(pool, "delete pending messages to recipient", move |conn| {
         conn.execute(
             "DELETE FROM pending_messages WHERE owner_key = ?1 AND recipient_key = ?2",
             rusqlite::params![owner_key, rk],
-        )
-        .map_err(|e| format!("delete pending messages to recipient: {e}"))?;
-        Ok::<(), String>(())
-    })
-    .await;
+        )?;
+        Ok(())
+    });
 }
 
 /// Handle an incoming `UnfriendedAck`: the peer confirms they processed our
 /// `Unfriended` message. Clear any remaining retry queue entries for them.
-async fn handle_unfriended_ack(
-    state: &Arc<AppState>,
-    pool: &DbPool,
-    sender_hex: &str,
-) {
-    delete_pending_messages_to_recipient(state, pool, sender_hex).await;
+fn handle_unfriended_ack(state: &Arc<AppState>, pool: &DbPool, sender_hex: &str) {
+    delete_pending_messages_to_recipient(state, pool, sender_hex);
     tracing::info!(from = %sender_hex, "received UnfriendedAck — cleared pending messages");
 }
 
 /// Persist a friend's profile DHT key to `SQLite`.
-async fn persist_friend_dht_key(
+fn persist_friend_dht_key(
     state: &Arc<AppState>,
     pool: &DbPool,
     friend_key: &str,
     profile_dht_key: &str,
 ) {
-    let owner_key = state
-        .identity
-        .read()
-        .as_ref()
-        .map(|id| id.public_key.clone())
-        .unwrap_or_default();
-    let pool = pool.clone();
+    let owner_key = state_helpers::owner_key_or_default(state);
     let fk = friend_key.to_string();
     let pdk = profile_dht_key.to_string();
-    if let Err(e) = tokio::task::spawn_blocking(move || {
-        let conn = pool.lock().map_err(|e| e.to_string())?;
+    db_fire(pool, "persist friend DHT key", move |conn| {
         conn.execute(
             "UPDATE friends SET dht_record_key = ?1 WHERE owner_key = ?2 AND public_key = ?3",
             rusqlite::params![pdk, owner_key, fk],
-        )
-        .map_err(|e| e.to_string())
-    })
-    .await
-    .unwrap_or_else(|e| Err(e.to_string()))
-    {
-        tracing::error!(error = %e, "failed to persist friend DHT key");
-    }
+        )?;
+        Ok(())
+    });
 }
 
 /// Update a friend's display name in `SQLite`.
-async fn update_friend_display_name(
+fn update_friend_display_name(
     state: &Arc<AppState>,
     pool: &DbPool,
     public_key: &str,
     display_name: &str,
 ) {
-    let owner_key = state
-        .identity
-        .read()
-        .as_ref()
-        .map(|id| id.public_key.clone())
-        .unwrap_or_default();
-    let pool = pool.clone();
+    let owner_key = state_helpers::owner_key_or_default(state);
     let pk = public_key.to_string();
     let dn = display_name.to_string();
-    let _ = tokio::task::spawn_blocking(move || {
-        let conn = pool.lock().map_err(|e| e.to_string())?;
+    db_fire(pool, "update friend display name", move |conn| {
         conn.execute(
             "UPDATE friends SET display_name = ?1 WHERE owner_key = ?2 AND public_key = ?3",
             rusqlite::params![dn, owner_key, pk],
-        )
-        .map_err(|e| format!("update friend display name: {e}"))?;
-        Ok::<(), String>(())
-    })
-    .await;
+        )?;
+        Ok(())
+    });
 }
 
 /// Handle a `FriendReject` — if the rejected peer is in our `pending_out` list,
 /// remove them. Otherwise, just emit the event.
-async fn handle_friend_reject(
+fn handle_friend_reject(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     pool: &DbPool,
     sender_hex: &str,
 ) {
-    let is_pending_out = state
-        .friends
-        .read()
-        .get(sender_hex)
-        .is_some_and(|f| f.friendship_state == crate::state::FriendshipState::PendingOut);
+    let is_pending_out = state_helpers::friend_field(state, sender_hex, |f| {
+        Some(f.friendship_state == crate::state::FriendshipState::PendingOut)
+    })
+    .unwrap_or(false);
 
     if is_pending_out {
         // Remove pending-out friend from DB and in-memory state
-        let owner_key = state
-            .identity
-            .read()
-            .as_ref()
-            .map(|id| id.public_key.clone())
-            .unwrap_or_default();
-        let pool_clone = pool.clone();
+        let owner_key = state_helpers::owner_key_or_default(state);
         let pk = sender_hex.to_string();
-        let ok = owner_key;
-        let _ = tokio::task::spawn_blocking(move || {
-            let conn = pool_clone.lock().map_err(|e| e.to_string())?;
+        db_fire(pool, "delete rejected friend", move |conn| {
             conn.execute(
                 "DELETE FROM friends WHERE owner_key = ?1 AND public_key = ?2",
-                rusqlite::params![ok, pk],
-            )
-            .map_err(|e| format!("delete rejected friend: {e}"))?;
-            Ok::<(), String>(())
-        })
-        .await;
+                rusqlite::params![owner_key, pk],
+            )?;
+            Ok(())
+        });
         state.friends.write().remove(sender_hex);
 
         let _ = app_handle.emit(
@@ -795,43 +737,34 @@ async fn handle_unfriended(
     sender_hex: &str,
 ) {
     // Only act if the sender is actually in our friends list
-    let has_friend = {
-        let friends = state.friends.read();
-        friends.get(sender_hex).is_some_and(|f| {
-            !matches!(f.friendship_state, crate::state::FriendshipState::Removing)
-        })
-    };
+    let has_friend = state_helpers::friend_field(state, sender_hex, |f| {
+        Some(!matches!(
+            f.friendship_state,
+            crate::state::FriendshipState::Removing
+        ))
+    })
+    .unwrap_or(false);
     if !has_friend {
         tracing::debug!(from = %sender_hex, "ignoring Unfriended from non-friend");
         return;
     }
 
     // Remove from DB
-    let owner_key = state
-        .identity
-        .read()
-        .as_ref()
-        .map(|id| id.public_key.clone())
-        .unwrap_or_default();
-    let pool_clone = pool.clone();
+    let owner_key = state_helpers::owner_key_or_default(state);
     let pk = sender_hex.to_string();
-    let ok = owner_key;
-    let _ = tokio::task::spawn_blocking(move || {
-        let conn = pool_clone.lock().map_err(|e| e.to_string())?;
+    db_fire(pool, "delete unfriended peer", move |conn| {
         conn.execute(
             "DELETE FROM friends WHERE owner_key = ?1 AND public_key = ?2",
-            rusqlite::params![ok, pk],
-        )
-        .map_err(|e| format!("delete unfriended peer: {e}"))?;
-        Ok::<(), String>(())
-    })
-    .await;
+            rusqlite::params![owner_key, pk],
+        )?;
+        Ok(())
+    });
 
     // Clean up any pending request from this peer to prevent stale rows blocking future requests
-    delete_pending_request_row(state, pool, sender_hex).await;
+    delete_pending_request_row(state, pool, sender_hex);
 
     // Drop any queued messages we were going to send them (they've unfriended us)
-    delete_pending_messages_to_recipient(state, pool, sender_hex).await;
+    delete_pending_messages_to_recipient(state, pool, sender_hex);
 
     // Send ACK back so the peer can clear their retry queue
     let _ = send_to_peer_raw(state, pool, sender_hex, &MessagePayload::UnfriendedAck).await;
@@ -881,7 +814,7 @@ async fn auto_accept_cross_request(
     mailbox_dht_key: &str,
 ) {
     // 0. Clean up any lingering pending_friend_requests row so future requests start fresh
-    delete_pending_request_row(state, pool, sender_hex).await;
+    delete_pending_request_row(state, pool, sender_hex);
 
     // 1. Transition local friend to Accepted + update keys
     {
@@ -897,15 +830,15 @@ async fn auto_accept_cross_request(
             }
         }
     }
-    persist_friendship_state(state, pool, sender_hex, "accepted").await;
-    update_friend_display_name(state, pool, sender_hex, display_name).await;
+    persist_friendship_state(state, pool, sender_hex, "accepted");
+    update_friend_display_name(state, pool, sender_hex, display_name);
 
     // Persist profile/mailbox keys
     if !profile_dht_key.is_empty() {
-        persist_friend_dht_key(state, pool, sender_hex, profile_dht_key).await;
+        persist_friend_dht_key(state, pool, sender_hex, profile_dht_key);
     }
     if !mailbox_dht_key.is_empty() {
-        persist_friend_mailbox_key(state, pool, sender_hex, mailbox_dht_key).await;
+        persist_friend_mailbox_key(state, pool, sender_hex, mailbox_dht_key);
     }
 
     // 2. Establish Signal session from their prekey bundle
@@ -916,7 +849,9 @@ async fn auto_accept_cross_request(
         let signal = state.signal_manager.lock();
         if let Some(handle) = signal.as_ref() {
             let _ = handle.manager.delete_session(sender_hex);
-            if let Ok(bundle) = serde_json::from_slice::<rekindle_crypto::signal::PreKeyBundle>(prekey_bundle) {
+            if let Ok(bundle) =
+                serde_json::from_slice::<rekindle_crypto::signal::PreKeyBundle>(prekey_bundle)
+            {
                 match handle.manager.establish_session(sender_hex, &bundle) {
                     Ok(info) => {
                         tracing::info!(peer = %sender_hex, "established Signal session on cross-request auto-accept");
@@ -962,85 +897,56 @@ async fn auto_accept_cross_request(
 }
 
 /// Persist the `friendship_state` column to `SQLite` for a friend.
-async fn persist_friendship_state(
+fn persist_friendship_state(
     state: &Arc<AppState>,
     pool: &DbPool,
     friend_key: &str,
     friendship_state: &str,
 ) {
-    let owner_key = state
-        .identity
-        .read()
-        .as_ref()
-        .map(|id| id.public_key.clone())
-        .unwrap_or_default();
-    let pool = pool.clone();
+    let owner_key = state_helpers::owner_key_or_default(state);
     let fk = friend_key.to_string();
     let fs = friendship_state.to_string();
-    let _ = tokio::task::spawn_blocking(move || {
-        let conn = pool.lock().map_err(|e| e.to_string())?;
+    db_fire(pool, "update friendship_state", move |conn| {
         conn.execute(
             "UPDATE friends SET friendship_state = ?1 WHERE owner_key = ?2 AND public_key = ?3",
             rusqlite::params![fs, owner_key, fk],
-        )
-        .map_err(|e| format!("update friendship_state: {e}"))?;
-        Ok::<(), String>(())
-    })
-    .await;
+        )?;
+        Ok(())
+    });
 }
 
 /// Persist a friend's mailbox DHT key to `SQLite`.
-async fn persist_friend_mailbox_key(
+fn persist_friend_mailbox_key(
     state: &Arc<AppState>,
     pool: &DbPool,
     friend_key: &str,
     mailbox_dht_key: &str,
 ) {
-    let owner_key = state
-        .identity
-        .read()
-        .as_ref()
-        .map(|id| id.public_key.clone())
-        .unwrap_or_default();
-    let pool = pool.clone();
+    let owner_key = state_helpers::owner_key_or_default(state);
     let fk = friend_key.to_string();
     let mdk = mailbox_dht_key.to_string();
-    let _ = tokio::task::spawn_blocking(move || {
-        let conn = pool.lock().map_err(|e| e.to_string())?;
+    db_fire(pool, "update friend mailbox key", move |conn| {
         conn.execute(
             "UPDATE friends SET mailbox_dht_key = ?1 WHERE owner_key = ?2 AND public_key = ?3",
             rusqlite::params![mdk, owner_key, fk],
-        )
-        .map_err(|e| format!("update friend mailbox key: {e}"))?;
-        Ok::<(), String>(())
-    })
-    .await;
+        )?;
+        Ok(())
+    });
 }
 
 /// Check if a sender is in the blocked users table.
 async fn is_blocked(state: &Arc<AppState>, pool: &DbPool, sender_hex: &str) -> bool {
-    let owner_key = state
-        .identity
-        .read()
-        .as_ref()
-        .map(|id| id.public_key.clone())
-        .unwrap_or_default();
-    let pool = pool.clone();
+    let owner_key = state_helpers::owner_key_or_default(state);
     let pk = sender_hex.to_string();
-    tokio::task::spawn_blocking(move || {
-        let conn = pool.lock().map_err(|e| e.to_string())?;
-        let count: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM blocked_users WHERE owner_key = ?1 AND public_key = ?2",
-                rusqlite::params![owner_key, pk],
-                |row| row.get(0),
-            )
-            .unwrap_or(0);
-        Ok::<bool, String>(count > 0)
+    db_call_or_default(pool, move |conn| {
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM blocked_users WHERE owner_key = ?1 AND public_key = ?2",
+            rusqlite::params![owner_key, pk],
+            |row| row.get(0),
+        )?;
+        Ok(count > 0)
     })
     .await
-    .unwrap_or(Ok(false))
-    .unwrap_or(false)
 }
 
 // ---------------------------------------------------------------------------
@@ -1053,25 +959,12 @@ async fn is_blocked(state: &Arc<AppState>, pool: &DbPool, sender_hex: &str) -> b
 /// to recover without waiting for the 30-second sync loop. Returns the route blob
 /// bytes on success, or `None` if the peer has no DHT key, the node is detached,
 /// or the DHT fetch fails.
-async fn try_fetch_route_from_dht(
-    state: &Arc<AppState>,
-    peer_id: &str,
-) -> Option<Vec<u8>> {
-    let dht_key_str = {
-        let friends = state.friends.read();
-        friends.get(peer_id).and_then(|f| f.dht_record_key.clone())
-    }?;
+async fn try_fetch_route_from_dht(state: &Arc<AppState>, peer_id: &str) -> Option<Vec<u8>> {
+    let dht_key_str = state_helpers::friend_dht_key(state, peer_id)?;
 
     let record_key: veilid_core::RecordKey = dht_key_str.parse().ok()?;
 
-    let (routing_context, api) = {
-        let node = state.node.read();
-        let nh = node.as_ref()?;
-        if !nh.is_attached {
-            return None;
-        }
-        (nh.routing_context.clone(), nh.api.clone())
-    };
+    let (api, routing_context) = state_helpers::api_and_routing_context(state)?;
 
     // Open (no-op if already open) and force-refresh subkey 6 (route blob)
     let _ = routing_context
@@ -1204,19 +1097,17 @@ async fn send_envelope_to_peer(
         let mgr = dht_mgr.as_mut().ok_or("DHT manager not initialized")?;
 
         match mgr.manager.get_cached_route(to).cloned() {
-            Some(blob) => {
-                match mgr.manager.get_or_import_route(&api, &blob) {
-                    Ok(route_id) => Some((route_id, rc)),
-                    Err(e) => {
-                        tracing::warn!(
-                            to = %to, error = %e, blob_len = blob.len(),
-                            "route import failed — invalidating and queuing for retry"
-                        );
-                        mgr.manager.invalidate_route_for_peer(to);
-                        None
-                    }
+            Some(blob) => match mgr.manager.get_or_import_route(&api, &blob) {
+                Ok(route_id) => Some((route_id, rc)),
+                Err(e) => {
+                    tracing::warn!(
+                        to = %to, error = %e, blob_len = blob.len(),
+                        "route import failed — invalidating and queuing for retry"
+                    );
+                    mgr.manager.invalidate_route_for_peer(to);
+                    None
                 }
-            }
+            },
             None => None,
         }
     };
@@ -1291,13 +1182,13 @@ pub async fn send_friend_request(
     to: &str,
     message: &str,
 ) -> Result<(), String> {
-    let (display_name, prekey_bundle) = {
-        let identity = state.identity.read();
-        let id = identity.as_ref().ok_or("identity not set")?;
-        let display_name = id.display_name.clone();
+    let display_name = state_helpers::current_identity(state)
+        .map_err(|_| "identity not set".to_string())?
+        .display_name;
 
+    let prekey_bundle = {
         let signal = state.signal_manager.lock();
-        let bundle_bytes = if let Some(handle) = signal.as_ref() {
+        if let Some(handle) = signal.as_ref() {
             match handle.manager.generate_prekey_bundle(1, Some(1)) {
                 Ok(bundle) => serde_json::to_vec(&bundle).unwrap_or_default(),
                 Err(e) => {
@@ -1307,8 +1198,7 @@ pub async fn send_friend_request(
             }
         } else {
             Vec::new()
-        };
-        (display_name, bundle_bytes)
+        }
     };
 
     // Gather our profile and mailbox DHT keys + route blob for the invite payload
@@ -1323,7 +1213,9 @@ pub async fn send_friend_request(
     };
 
     if route_blob.is_empty() {
-        tracing::warn!("sending friend request with empty route blob — peer will fetch from DHT profile");
+        tracing::warn!(
+            "sending friend request with empty route blob — peer will fetch from DHT profile"
+        );
     }
 
     let payload = MessagePayload::FriendRequest {
@@ -1375,7 +1267,9 @@ pub async fn send_friend_accept(
     };
 
     if route_blob.is_empty() {
-        tracing::warn!("sending friend accept with empty route blob — peer will fetch from DHT profile");
+        tracing::warn!(
+            "sending friend accept with empty route blob — peer will fetch from DHT profile"
+        );
     }
 
     let payload = MessagePayload::FriendAccept {
@@ -1383,7 +1277,10 @@ pub async fn send_friend_accept(
         profile_dht_key,
         route_blob,
         mailbox_dht_key,
-        ephemeral_key: session_init.as_ref().map(|s| s.ephemeral_public_key.clone()).unwrap_or_default(),
+        ephemeral_key: session_init
+            .as_ref()
+            .map(|s| s.ephemeral_public_key.clone())
+            .unwrap_or_default(),
         signed_prekey_id: session_init.as_ref().map_or(1, |s| s.signed_prekey_id),
         one_time_prekey_id: session_init.as_ref().and_then(|s| s.one_time_prekey_id),
     };
@@ -1479,27 +1376,18 @@ async fn queue_pending_message(
     recipient_key: &str,
     body: &str,
 ) -> Result<(), String> {
-    let owner_key = state
-        .identity
-        .read()
-        .as_ref()
-        .map(|id| id.public_key.clone())
-        .unwrap_or_default();
-    let pool = pool.clone();
+    let owner_key = state_helpers::owner_key_or_default(state);
     let recipient = recipient_key.to_string();
     let body = body.to_string();
     let now = crate::db::timestamp_now();
-    tokio::task::spawn_blocking(move || {
-        let conn = pool.lock().map_err(|e| e.to_string())?;
+    db_call(pool, move |conn| {
         conn.execute(
             "INSERT INTO pending_messages (owner_key, recipient_key, body, created_at) VALUES (?1, ?2, ?3, ?4)",
             rusqlite::params![owner_key, recipient, body, now],
-        )
-        .map_err(|e| format!("queue pending message: {e}"))?;
-        Ok::<(), String>(())
+        )?;
+        Ok(())
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 // ---------------------------------------------------------------------------
@@ -1516,7 +1404,11 @@ pub async fn push_profile_update(
         let node = state.node.read();
         let nh = node.as_ref().ok_or("node not initialized")?;
         let pk = nh.profile_dht_key.clone().ok_or("no profile DHT key")?;
-        (pk, nh.routing_context.clone(), nh.profile_owner_keypair.clone())
+        (
+            pk,
+            nh.routing_context.clone(),
+            nh.profile_owner_keypair.clone(),
+        )
     };
 
     let record_key: veilid_core::RecordKey = profile_key
@@ -1572,8 +1464,8 @@ pub async fn push_friend_list_update(state: &Arc<AppState>) -> Result<(), String
         .await
         .map_err(|e| format!("failed to open friend list record for push: {e}"))?;
 
-    let value = serde_json::to_vec(&friend_keys)
-        .map_err(|e| format!("serialize friend list: {e}"))?;
+    let value =
+        serde_json::to_vec(&friend_keys).map_err(|e| format!("serialize friend list: {e}"))?;
 
     routing_context
         .set_dht_value(record_key, 0, value, None)

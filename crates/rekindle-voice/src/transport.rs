@@ -90,10 +90,7 @@ impl VoiceTransport {
             .as_ref()
             .ok_or(VoiceError::NotConnected)?;
 
-        let route_id = self
-            .route_id
-            .clone()
-            .ok_or(VoiceError::NotConnected)?;
+        let route_id = self.route_id.clone().ok_or(VoiceError::NotConnected)?;
 
         let packet = VoicePacket {
             sender_key: self.sender_key.clone(),

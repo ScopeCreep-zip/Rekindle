@@ -10,8 +10,8 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use crate::CryptoError;
 use crate::signal::store::{IdentityKeyStore, PreKeyStore, SessionStore};
+use crate::CryptoError;
 
 /// In-memory identity key store.
 ///

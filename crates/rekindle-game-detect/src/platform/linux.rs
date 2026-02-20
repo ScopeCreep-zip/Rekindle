@@ -36,9 +36,9 @@ pub fn read_cmdline(pid: u32) -> Option<Vec<String>> {
 /// visible in the command line.
 pub fn is_wine_process(pid: u32) -> bool {
     if let Some(cmdline) = read_cmdline(pid) {
-        cmdline.iter().any(|arg| {
-            arg.contains("wine") || arg.contains("proton") || arg.ends_with(".exe")
-        })
+        cmdline
+            .iter()
+            .any(|arg| arg.contains("wine") || arg.contains("proton") || arg.ends_with(".exe"))
     } else {
         false
     }

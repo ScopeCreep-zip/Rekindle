@@ -5,13 +5,9 @@ use serde::Serialize;
 #[serde(rename_all = "camelCase", tag = "type", content = "data")]
 pub enum PresenceEvent {
     #[serde(rename_all = "camelCase")]
-    FriendOnline {
-        public_key: String,
-    },
+    FriendOnline { public_key: String },
     #[serde(rename_all = "camelCase")]
-    FriendOffline {
-        public_key: String,
-    },
+    FriendOffline { public_key: String },
     #[serde(rename_all = "camelCase")]
     StatusChanged {
         public_key: String,

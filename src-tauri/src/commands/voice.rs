@@ -9,6 +9,7 @@ use tokio::sync::{broadcast, mpsc};
 
 use crate::channels::{NotificationEvent, VoiceEvent};
 use crate::state::{SharedState, VoiceEngineHandle};
+use crate::state_helpers;
 
 /// Join a voice channel — initialize the voice engine and emit join event.
 #[allow(clippy::too_many_lines)]
@@ -29,11 +30,7 @@ pub async fn join_voice_channel(
         }
     }
 
-    let identity = state
-        .identity
-        .read()
-        .clone()
-        .ok_or("not logged in")?;
+    let identity = state_helpers::current_identity(state.inner())?;
 
     // Load audio device preferences from persistent store
     let prefs: crate::commands::settings::Preferences = app
@@ -91,18 +88,10 @@ pub async fn join_voice_channel(
     let mut transport = rekindle_voice::transport::VoiceTransport::new(channel_id.clone());
 
     // Try to look up a route blob for this channel
-    let route_blob = {
-        let dht_mgr = state.dht_manager.read();
-        dht_mgr
-            .as_ref()
-            .and_then(|mgr| mgr.manager.get_cached_route(&channel_id).cloned())
-    };
+    let route_blob = state_helpers::cached_route_blob(state.inner(), &channel_id);
 
     // Clone API handle out before await
-    let api = {
-        let node = state.node.read();
-        node.as_ref().map(|nh| nh.api.clone())
-    };
+    let api = state_helpers::veilid_api(state.inner());
 
     if let (Some(blob), Some(api)) = (route_blob, api) {
         let sender_key = hex::decode(&identity.public_key).unwrap_or_default();
@@ -227,12 +216,7 @@ pub async fn leave_voice(
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
-    let public_key = state
-        .identity
-        .read()
-        .as_ref()
-        .map(|id| id.public_key.clone())
-        .unwrap_or_default();
+    let public_key = state_helpers::owner_key_or_default(state.inner());
 
     shutdown_voice_loops(&state).await;
 
@@ -390,15 +374,12 @@ pub async fn set_mute(
 ) -> Result<(), String> {
     if let Some(ref mut handle) = *state.voice_engine.lock() {
         handle.engine.set_muted(muted);
-        handle.muted_flag.store(muted, std::sync::atomic::Ordering::Relaxed);
+        handle
+            .muted_flag
+            .store(muted, std::sync::atomic::Ordering::Relaxed);
     }
 
-    let public_key = state
-        .identity
-        .read()
-        .as_ref()
-        .map(|id| id.public_key.clone())
-        .unwrap_or_default();
+    let public_key = state_helpers::owner_key_or_default(state.inner());
 
     let event = VoiceEvent::UserMuted { public_key, muted };
     let _ = app.emit("voice-event", &event);
@@ -414,7 +395,9 @@ pub async fn set_mute(
 pub async fn set_deafen(deafened: bool, state: State<'_, SharedState>) -> Result<(), String> {
     if let Some(ref mut handle) = *state.voice_engine.lock() {
         handle.engine.set_deafened(deafened);
-        handle.deafened_flag.store(deafened, std::sync::atomic::Ordering::Relaxed);
+        handle
+            .deafened_flag
+            .store(deafened, std::sync::atomic::Ordering::Relaxed);
     }
     Ok(())
 }
@@ -451,18 +434,19 @@ pub fn list_audio_devices() -> Result<AudioDevices, String> {
 ///
 /// Assumes loops are already shut down and capture/playback are stopped.
 /// Used by hot-swap (device change mid-call) and could be used for reconnect.
-fn restart_voice_loops(
-    state: &SharedState,
-    app: &tauri::AppHandle,
-) -> Result<(), String> {
-    let identity = state
-        .identity
-        .read()
-        .clone()
-        .ok_or("not logged in")?;
+fn restart_voice_loops(state: &SharedState, app: &tauri::AppHandle) -> Result<(), String> {
+    let identity = state_helpers::current_identity(state)?;
 
     // Restart capture and playback, take channels
-    let (capture_rx, playback_tx, channel_id, muted_flag, deafened_flag, noise_suppression, echo_cancellation) = {
+    let (
+        capture_rx,
+        playback_tx,
+        channel_id,
+        muted_flag,
+        deafened_flag,
+        noise_suppression,
+        echo_cancellation,
+    ) = {
         let mut ve = state.voice_engine.lock();
         let handle = ve.as_mut().ok_or("no active voice engine")?;
 
@@ -490,16 +474,8 @@ fn restart_voice_loops(
 
     // Create new transport and try to connect
     let mut transport = rekindle_voice::transport::VoiceTransport::new(channel_id.clone());
-    let route_blob = {
-        let dht_mgr = state.dht_manager.read();
-        dht_mgr
-            .as_ref()
-            .and_then(|mgr| mgr.manager.get_cached_route(&channel_id).cloned())
-    };
-    let api = {
-        let node = state.node.read();
-        node.as_ref().map(|nh| nh.api.clone())
-    };
+    let route_blob = state_helpers::cached_route_blob(state, &channel_id);
+    let api = state_helpers::veilid_api(state);
     if let (Some(blob), Some(api)) = (route_blob, api) {
         let sender_key = hex::decode(&identity.public_key).unwrap_or_default();
         if let Err(e) = transport.connect(api, &blob, sender_key) {
@@ -543,7 +519,8 @@ fn restart_voice_loops(
     // Respawn device monitor with fresh error channel
     let device_error_rx = {
         let mut ve = state.voice_engine.lock();
-        ve.as_mut().map(|h| h.engine.refresh_device_error_channels())
+        ve.as_mut()
+            .map(|h| h.engine.refresh_device_error_channels())
     };
     let (monitor_shutdown_tx, monitor_shutdown_rx) = mpsc::channel::<()>(1);
     let monitor_handle = if let Some(error_rx) = device_error_rx {
@@ -864,8 +841,8 @@ async fn voice_send_loop(
     let mut audio_processor = rekindle_voice::audio_processing::AudioProcessor::new(
         noise_suppression,
         echo_cancellation,
-        0.02,  // vad_threshold
-        300,   // vad_hold_ms
+        0.02, // vad_threshold
+        300,  // vad_hold_ms
         frame_duration_ms,
     );
 

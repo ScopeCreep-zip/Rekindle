@@ -2,12 +2,13 @@ use serde::{Deserialize, Serialize};
 use tauri::{Emitter, State};
 
 use crate::channels::ChatEvent;
-use crate::commands::auth::current_owner_key;
 use crate::commands::chat::Message;
 use crate::db::{self, DbPool};
+use crate::db_helpers::{db_call, db_fire};
 use crate::keystore::KeystoreHandle;
 use crate::services;
 use crate::state::{ChannelType, SharedState};
+use crate::state_helpers;
 
 /// A community member for the frontend.
 #[derive(Debug, Serialize)]
@@ -34,9 +35,7 @@ pub struct CommunityInfo {
 
 /// Get the list of joined communities.
 #[tauri::command]
-pub async fn get_communities(
-    state: State<'_, SharedState>,
-) -> Result<Vec<CommunityInfo>, String> {
+pub async fn get_communities(state: State<'_, SharedState>) -> Result<Vec<CommunityInfo>, String> {
     let communities = state.communities.read();
     let list = communities
         .values()
@@ -125,9 +124,8 @@ pub async fn create_community(
     pool: State<'_, DbPool>,
     keystore_handle: State<'_, KeystoreHandle>,
 ) -> Result<String, String> {
-    let owner_key = current_owner_key(state.inner())?;
-    let community_id =
-        services::community_service::create_community(state.inner(), &name).await?;
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
+    let community_id = services::community_service::create_community(state.inner(), &name).await?;
 
     // Persist MEK to Stronghold for login restoration
     {
@@ -164,50 +162,44 @@ pub async fn create_community(
             .ok_or("community not found after creation")?
     };
 
-    // Read creator identity outside spawn_blocking (parking_lot guard is !Send)
+    // Read creator identity outside db_call (parking_lot guard is !Send)
     let creator_key = owner_key.clone();
-    let creator_name = state
-        .identity
-        .read()
-        .as_ref()
-        .map(|id| id.display_name.clone())
-        .unwrap_or_default();
+    let creator_name = state_helpers::identity_display_name(state.inner());
 
     // Get pseudonym key for this community
     let my_pseudonym_key = {
         let communities = state.communities.read();
-        communities.get(&community_id).and_then(|c| c.my_pseudonym_key.clone())
+        communities
+            .get(&community_id)
+            .and_then(|c| c.my_pseudonym_key.clone())
     };
 
     let now = db::timestamp_now();
-    let pool = pool.inner().clone();
     let community_id_clone = community_id.clone();
     let name_clone = name.clone();
     let dht_record_key = community.dht_record_key.clone();
     let dht_owner_keypair = community.dht_owner_keypair.clone();
-    let pseudonym_key = my_pseudonym_key.clone().unwrap_or_else(|| creator_key.clone());
+    let pseudonym_key = my_pseudonym_key
+        .clone()
+        .unwrap_or_else(|| creator_key.clone());
     let roles_to_persist = community.roles.clone();
     let mek_gen = community.mek_generation.cast_signed();
     let ok = owner_key;
-    tokio::task::spawn_blocking(move || {
-        let conn = pool.lock().map_err(|e| e.to_string())?;
-
+    db_call(pool.inner(), move |conn| {
         // Owner gets all default role IDs: @everyone(0), members(1), moderator(2), admin(3), owner(4)
         let owner_role_ids = serde_json::to_string(&[0u32, 1, 2, 3, 4]).unwrap_or_default();
         conn.execute(
             "INSERT INTO communities (owner_key, id, name, my_role, my_role_ids, joined_at, dht_record_key, dht_owner_keypair, my_pseudonym_key, is_hosted, mek_generation) \
              VALUES (?, ?, ?, 'owner', ?, ?, ?, ?, ?, 1, ?)",
             rusqlite::params![ok, community_id_clone, name_clone, owner_role_ids, now, dht_record_key, dht_owner_keypair, pseudonym_key, mek_gen],
-        )
-        .map_err(|e| e.to_string())?;
+        )?;
 
         // Insert the creator as the first member (using pseudonym)
         conn.execute(
             "INSERT INTO community_members (owner_key, community_id, pseudonym_key, display_name, role_ids, joined_at) \
              VALUES (?, ?, ?, ?, ?, ?)",
             rusqlite::params![ok, community_id_clone, pseudonym_key, creator_name, owner_role_ids, now],
-        )
-        .map_err(|e| e.to_string())?;
+        )?;
 
         // Insert default channels
         for channel in &community.channels {
@@ -218,8 +210,7 @@ pub async fn create_community(
             conn.execute(
                 "INSERT INTO channels (owner_key, id, community_id, name, channel_type) VALUES (?, ?, ?, ?, ?)",
                 rusqlite::params![ok, channel.id, community_id_clone, channel.name, ch_type],
-            )
-            .map_err(|e| e.to_string())?;
+            )?;
         }
 
         // Persist default roles
@@ -231,14 +222,12 @@ pub async fn create_community(
                     ok, community_id_clone, r.id, r.name, r.color,
                     r.permissions.cast_signed(), r.position, i32::from(r.hoist), i32::from(r.mentionable),
                 ],
-            )
-            .map_err(|e| e.to_string())?;
+            )?;
         }
 
-        Ok::<_, String>(())
+        Ok(())
     })
-    .await
-    .map_err(|e| e.to_string())??;
+    .await?;
 
     ensure_community_hosted(&app, state.inner(), &community_id).await;
 
@@ -254,7 +243,7 @@ pub async fn join_community(
     pool: State<'_, DbPool>,
     keystore_handle: State<'_, KeystoreHandle>,
 ) -> Result<(), String> {
-    let owner_key = current_owner_key(state.inner())?;
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
     services::community_service::join_community(state.inner(), &community_id).await?;
 
     let (name, dht_record_key) = {
@@ -265,25 +254,22 @@ pub async fn join_community(
             .unwrap_or_default()
     };
 
-    // Read joiner identity outside spawn_blocking (parking_lot guard is !Send)
-    let joiner_name = state
-        .identity
-        .read()
-        .as_ref()
-        .map(|id| id.display_name.clone())
-        .unwrap_or_default();
+    // Read joiner identity outside db_call (parking_lot guard is !Send)
+    let joiner_name = state_helpers::identity_display_name(state.inner());
 
     // Get pseudonym key, server_route_blob, mek_generation, and channels from the community state
     let (my_pseudonym_key, server_route_blob, mek_generation, channels) = {
         let communities = state.communities.read();
         communities
             .get(&community_id)
-            .map(|c| (
-                c.my_pseudonym_key.clone(),
-                c.server_route_blob.clone(),
-                c.mek_generation,
-                c.channels.clone(),
-            ))
+            .map(|c| {
+                (
+                    c.my_pseudonym_key.clone(),
+                    c.server_route_blob.clone(),
+                    c.mek_generation,
+                    c.channels.clone(),
+                )
+            })
             .unwrap_or_default()
     };
     let pseudonym_key = my_pseudonym_key.unwrap_or_else(|| owner_key.clone());
@@ -325,29 +311,25 @@ pub async fn join_community(
     let role_ids_json = serde_json::to_string(&my_role_ids).unwrap_or_else(|_| "[0,1]".to_string());
 
     let now = db::timestamp_now();
-    let pool = pool.inner().clone();
     let community_id_clone = community_id.clone();
     let ok = owner_key;
     let pk = pseudonym_key.clone();
     let srb = server_route_blob.clone();
     let mg = mek_generation.cast_signed();
     let rij = role_ids_json.clone();
-    tokio::task::spawn_blocking(move || {
-        let conn = pool.lock().map_err(|e| e.to_string())?;
+    db_call(pool.inner(), move |conn| {
         conn.execute(
             "INSERT OR IGNORE INTO communities (owner_key, id, name, my_role, my_role_ids, joined_at, dht_record_key, my_pseudonym_key, server_route_blob, mek_generation) \
              VALUES (?, ?, ?, 'member', ?, ?, ?, ?, ?, ?)",
             rusqlite::params![ok, community_id_clone, name, rij, now, dht_record_key, pk, srb, mg],
-        )
-        .map_err(|e| e.to_string())?;
+        )?;
 
         // Add ourselves to the community_members table (using pseudonym)
         conn.execute(
             "INSERT OR IGNORE INTO community_members (owner_key, community_id, pseudonym_key, display_name, role_ids, joined_at) \
              VALUES (?, ?, ?, ?, ?, ?)",
             rusqlite::params![ok, community_id_clone, pk, joiner_name, rij, now],
-        )
-        .map_err(|e| e.to_string())?;
+        )?;
 
         // Persist channels to SQLite so they survive re-login
         for channel in &channels {
@@ -358,8 +340,7 @@ pub async fn join_community(
             conn.execute(
                 "INSERT OR IGNORE INTO channels (owner_key, id, community_id, name, channel_type) VALUES (?, ?, ?, ?, ?)",
                 rusqlite::params![ok, channel.id, community_id_clone, channel.name, ch_type],
-            )
-            .map_err(|e| e.to_string())?;
+            )?;
         }
 
         // Persist roles from server
@@ -371,14 +352,12 @@ pub async fn join_community(
                     ok, community_id_clone, r.id, r.name, r.color,
                     r.permissions.cast_signed(), r.position, i32::from(r.hoist), i32::from(r.mentionable),
                 ],
-            )
-            .map_err(|e| e.to_string())?;
+            )?;
         }
 
-        Ok::<_, String>(())
+        Ok(())
     })
-    .await
-    .map_err(|e| e.to_string())??;
+    .await?;
 
     Ok(())
 }
@@ -395,7 +374,7 @@ pub async fn create_channel(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<String, String> {
-    let owner_key = current_owner_key(state.inner())?;
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
 
     // If this is a hosted community, send CreateChannel RPC to the server.
     // send_community_rpc will on-demand fetch the route blob if missing.
@@ -436,22 +415,18 @@ pub async fn create_channel(
                 }
 
                 // Persist to local SQLite
-                let pool = pool.inner().clone();
                 let comm_id = community_id.clone();
                 let chan_id = channel_id.clone();
                 let n = name.clone();
                 let ct = channel_type.clone();
-                tokio::task::spawn_blocking(move || {
-                    let conn = pool.lock().map_err(|e| e.to_string())?;
+                db_call(pool.inner(), move |conn| {
                     conn.execute(
                         "INSERT INTO channels (owner_key, id, community_id, name, channel_type) VALUES (?, ?, ?, ?, ?)",
                         rusqlite::params![owner_key, chan_id, comm_id, n, ct],
-                    )
-                    .map_err(|e| e.to_string())?;
-                    Ok::<_, String>(())
+                    )?;
+                    Ok(())
                 })
-                .await
-                .map_err(|e| e.to_string())??;
+                .await?;
 
                 return Ok(channel_id);
             }
@@ -459,7 +434,9 @@ pub async fn create_channel(
                 return Err(format!("server rejected channel creation: {message}"));
             }
             Ok(other) => {
-                return Err(format!("unexpected server response for CreateChannel: {other:?}"));
+                return Err(format!(
+                    "unexpected server response for CreateChannel: {other:?}"
+                ));
             }
             Err(e) => {
                 tracing::warn!(
@@ -480,22 +457,18 @@ pub async fn create_channel(
     )
     .await?;
 
-    let pool = pool.inner().clone();
     let channel_id_clone = channel_id.clone();
     let community_id_clone = community_id.clone();
     let name_clone = name.clone();
     let channel_type_clone = channel_type.clone();
-    tokio::task::spawn_blocking(move || {
-        let conn = pool.lock().map_err(|e| e.to_string())?;
+    db_call(pool.inner(), move |conn| {
         conn.execute(
             "INSERT INTO channels (owner_key, id, community_id, name, channel_type) VALUES (?, ?, ?, ?, ?)",
             rusqlite::params![owner_key, channel_id_clone, community_id_clone, name_clone, channel_type_clone],
-        )
-        .map_err(|e| e.to_string())?;
-        Ok::<_, String>(())
+        )?;
+        Ok(())
     })
-    .await
-    .map_err(|e| e.to_string())??;
+    .await?;
 
     Ok(channel_id)
 }
@@ -513,7 +486,7 @@ pub async fn send_channel_message(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let owner_key = current_owner_key(state.inner())?;
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
 
     let timestamp = db::timestamp_now();
 
@@ -553,43 +526,55 @@ pub async fn send_channel_message(
 
     // --- Step 3: Store plaintext in local SQLite FIRST (persist before send) ---
     let pool_for_queue = pool.inner().clone();
-    let pool = pool.inner().clone();
     let channel_id_clone = channel_id.clone();
     let sender_key_clone = sender_key.clone();
     let body_clone = body.clone();
     let ok = owner_key;
-    tokio::task::spawn_blocking(move || {
-        let conn = pool.lock().map_err(|e| e.to_string())?;
+    db_call(pool.inner(), move |conn| {
         conn.execute(
             "INSERT INTO messages (owner_key, conversation_id, conversation_type, sender_key, body, timestamp, is_read, mek_generation) \
              VALUES (?, ?, 'channel', ?, ?, ?, 1, ?)",
             rusqlite::params![ok, channel_id_clone, sender_key_clone, body_clone, timestamp, mek_generation.cast_signed()],
-        )
-        .map_err(|e| e.to_string())?;
-        Ok::<_, String>(())
+        )?;
+        Ok(())
     })
-    .await
-    .map_err(|e| e.to_string())??;
+    .await?;
 
     // --- Step 4: Send to community server (best-effort — message already persisted) ---
     if let Some(route_blob) = server_route_blob {
         if let Err(e) = send_encrypted_to_server(
-            &state, &channel_id, &community_id, ciphertext.clone(), mek_generation, timestamp, route_blob,
+            &state,
+            &channel_id,
+            &community_id,
+            ciphertext.clone(),
+            mek_generation,
+            timestamp,
+            route_blob,
         )
         .await
         {
             tracing::warn!(error = %e, "server delivery failed — queuing for retry");
             queue_pending_channel_message(
-                &state, &pool_for_queue, &community_id, &channel_id, &ciphertext, mek_generation, timestamp,
-            )
-            .await;
+                &state,
+                &pool_for_queue,
+                &community_id,
+                &channel_id,
+                &ciphertext,
+                mek_generation,
+                timestamp,
+            );
         }
     } else {
         tracing::warn!("no server route — message stored locally, queuing for retry");
         queue_pending_channel_message(
-            &state, &pool_for_queue, &community_id, &channel_id, &ciphertext, mek_generation, timestamp,
-        )
-        .await;
+            &state,
+            &pool_for_queue,
+            &community_id,
+            &channel_id,
+            &ciphertext,
+            mek_generation,
+            timestamp,
+        );
     }
 
     // --- Step 5: Emit local echo to frontend ---
@@ -620,7 +605,7 @@ pub(crate) struct PendingChannelMessage {
 ///
 /// Serializes as JSON into the `body` column. Uses `community_id` as `recipient_key`
 /// so `sync_service` can distinguish channel retries from DM retries.
-async fn queue_pending_channel_message(
+fn queue_pending_channel_message(
     state: &SharedState,
     pool: &DbPool,
     community_id: &str,
@@ -650,23 +635,15 @@ async fn queue_pending_channel_message(
         .as_ref()
         .map(|id| id.public_key.clone())
         .unwrap_or_default();
-    let pool = pool.clone();
     let recipient = community_id.to_string();
     let now = crate::db::timestamp_now();
-    if let Err(e) = tokio::task::spawn_blocking(move || {
-        let conn = pool.lock().map_err(|e| e.to_string())?;
+    db_fire(pool, "queue pending channel message", move |conn| {
         conn.execute(
             "INSERT INTO pending_messages (owner_key, recipient_key, body, created_at) VALUES (?1, ?2, ?3, ?4)",
             rusqlite::params![owner_key, recipient, body, now],
-        )
-        .map_err(|e| format!("queue pending channel message: {e}"))?;
-        Ok::<(), String>(())
-    })
-    .await
-    .unwrap_or_else(|e| Err(e.to_string()))
-    {
-        tracing::error!(error = %e, "failed to queue pending channel message");
-    }
+        )?;
+        Ok(())
+    });
 }
 
 fn rand_nonce() -> Vec<u8> {
@@ -691,14 +668,7 @@ pub(crate) async fn send_encrypted_to_server(
     timestamp: i64,
     route_blob: Vec<u8>,
 ) -> Result<(), String> {
-    let routing_context = {
-        let node = state.node.read();
-        node.as_ref()
-            .filter(|nh| nh.is_attached)
-            .map(|nh| (nh.routing_context.clone(), nh.api.clone()))
-    };
-
-    let Some((rc, api)) = routing_context else {
+    let Some((api, rc)) = state_helpers::api_and_routing_context(state) else {
         return Ok(());
     };
 
@@ -707,8 +677,8 @@ pub(crate) async fn send_encrypted_to_server(
         ciphertext,
         mek_generation,
     };
-    let request_bytes = serde_json::to_vec(&request)
-        .map_err(|e| format!("failed to serialize request: {e}"))?;
+    let request_bytes =
+        serde_json::to_vec(&request).map_err(|e| format!("failed to serialize request: {e}"))?;
 
     let identity_secret = {
         let secret = state.identity_secret.lock();
@@ -847,8 +817,7 @@ async fn send_community_rpc_ipc(
     .await
     .map_err(|e| format!("IPC task panicked: {e}"))??;
 
-    serde_json::from_str(&response_json)
-        .map_err(|e| format!("invalid IPC response: {e}"))
+    serde_json::from_str(&response_json).map_err(|e| format!("invalid IPC response: {e}"))
 }
 
 /// Veilid path: sign + envelope + `app_call` for remote communities.
@@ -860,14 +829,8 @@ async fn send_community_rpc_veilid(
 ) -> Result<rekindle_protocol::messaging::CommunityResponse, String> {
     let server_route_blob = resolve_server_route_blob(state, pool, community_id).await?;
 
-    let (rc, api) = {
-        let node = state.node.read();
-        let nh = node
-            .as_ref()
-            .filter(|n| n.is_attached)
-            .ok_or_else(|| "Veilid network not attached".to_string())?;
-        (nh.routing_context.clone(), nh.api.clone())
-    };
+    let (api, rc) = state_helpers::api_and_routing_context(state)
+        .ok_or_else(|| "Veilid network not attached".to_string())?;
 
     let signing_key = {
         let secret = state.identity_secret.lock();
@@ -879,7 +842,10 @@ async fn send_community_rpc_veilid(
         serde_json::to_vec(&request).map_err(|e| format!("failed to serialize request: {e}"))?;
     let timestamp = crate::db::timestamp_now().cast_unsigned();
     let envelope = rekindle_protocol::messaging::sender::build_envelope(
-        &signing_key, timestamp, rand_nonce(), request_bytes,
+        &signing_key,
+        timestamp,
+        rand_nonce(),
+        request_bytes,
     );
 
     let route_id = {
@@ -935,7 +901,7 @@ async fn resolve_server_route_blob(
             c.server_route_blob = Some(blob.clone());
         }
     }
-    persist_route_blob_to_db(pool, state, community_id, &blob).await;
+    persist_route_blob_to_db(pool, state, community_id, &blob);
 
     Ok(blob)
 }
@@ -944,8 +910,7 @@ async fn resolve_server_route_blob(
 fn parse_community_response(
     response_bytes: &[u8],
 ) -> Result<rekindle_protocol::messaging::CommunityResponse, String> {
-    serde_json::from_slice(response_bytes)
-        .map_err(|e| format!("invalid response from server: {e}"))
+    serde_json::from_slice(response_bytes).map_err(|e| format!("invalid response from server: {e}"))
 }
 
 /// On RPC failure, clear the stale route, fetch a fresh one from DHT, and retry once.
@@ -994,7 +959,7 @@ async fn retry_rpc_with_fresh_route(
             c.server_route_blob = Some(fresh_blob.clone());
         }
     }
-    persist_route_blob_to_db(pool, state, community_id, &fresh_blob).await;
+    persist_route_blob_to_db(pool, state, community_id, &fresh_blob);
 
     let fresh_route_id = {
         let mut dht_mgr = state.dht_manager.write();
@@ -1023,10 +988,7 @@ async fn retry_rpc_with_fresh_route(
 /// Used by `send_community_rpc` to self-heal when the blob is missing from
 /// in-memory state. Faster than the full `fetch_server_route_blob` (10 retries,
 /// 3s apart) since the server is likely already running.
-async fn fetch_server_route_blob_quick(
-    state: &SharedState,
-    community_id: &str,
-) -> Option<Vec<u8>> {
+async fn fetch_server_route_blob_quick(state: &SharedState, community_id: &str) -> Option<Vec<u8>> {
     let dht_record_key = {
         let communities = state.communities.read();
         communities.get(community_id)?.dht_record_key.clone()?
@@ -1077,7 +1039,7 @@ async fn fetch_server_route_blob_quick(
 }
 
 /// Persist a server route blob to `SQLite` (without requiring `AppHandle`).
-async fn persist_route_blob_to_db(
+fn persist_route_blob_to_db(
     pool: &DbPool,
     state: &SharedState,
     community_id: &str,
@@ -1089,23 +1051,15 @@ async fn persist_route_blob_to_db(
         .as_ref()
         .map(|id| id.public_key.clone())
         .unwrap_or_default();
-    let pool = pool.clone();
     let cid = community_id.to_string();
     let blob = route_blob.to_vec();
-    if let Err(e) = tokio::task::spawn_blocking(move || {
-        let conn = pool.lock().map_err(|e| e.to_string())?;
+    db_fire(pool, "persist server_route_blob", move |conn| {
         conn.execute(
             "UPDATE communities SET server_route_blob = ?1 WHERE owner_key = ?2 AND id = ?3",
             rusqlite::params![blob, owner_key, cid],
-        )
-        .map_err(|e| format!("persist server_route_blob: {e}"))?;
-        Ok::<(), String>(())
-    })
-    .await
-    .unwrap_or_else(|e| Err(e.to_string()))
-    {
-        tracing::error!(error = %e, community = %community_id, "failed to persist server_route_blob to SQLite");
-    }
+        )?;
+        Ok(())
+    });
 }
 
 /// Leave a community and clean up local state.
@@ -1153,20 +1107,16 @@ pub async fn leave_community(
     state.communities.write().remove(&community_id);
 
     // Remove from SQLite (CASCADE on communities handles channels)
-    let owner_key = current_owner_key(state.inner())?;
-    let pool = pool.inner().clone();
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
     let community_id_clone = community_id.clone();
-    tokio::task::spawn_blocking(move || {
-        let conn = pool.lock().map_err(|e| e.to_string())?;
+    db_call(pool.inner(), move |conn| {
         conn.execute(
             "DELETE FROM communities WHERE owner_key = ? AND id = ?",
             rusqlite::params![owner_key, community_id_clone],
-        )
-        .map_err(|e| e.to_string())?;
-        Ok::<_, String>(())
+        )?;
+        Ok(())
     })
-    .await
-    .map_err(|e| e.to_string())??;
+    .await?;
 
     tracing::info!(community = %community_id, "left community");
     Ok(())
@@ -1185,7 +1135,7 @@ pub async fn get_channel_messages(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<Vec<Message>, String> {
-    let our_key = current_owner_key(state.inner()).unwrap_or_default();
+    let our_key = state_helpers::current_owner_key(state.inner()).unwrap_or_default();
 
     // Our pseudonym key for this channel's community (for is_own detection)
     let (community_id, my_pseudonym_key) = {
@@ -1203,43 +1153,36 @@ pub async fn get_channel_messages(
     };
 
     // --- Step 1: Query local SQLite (returns immediately) ---
-    let pool_clone = pool.inner().clone();
     let channel_id_clone = channel_id.clone();
     let ok = our_key.clone();
     let mpk = my_pseudonym_key.clone();
-    let mut messages = tokio::task::spawn_blocking(move || {
-        let conn = pool_clone.lock().map_err(|e| e.to_string())?;
-        let mut stmt = conn
-            .prepare(
-                "SELECT id, sender_key, body, timestamp FROM messages \
+    let mut messages = db_call(pool.inner(), move |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT id, sender_key, body, timestamp FROM messages \
                  WHERE owner_key = ? AND conversation_id = ? AND conversation_type = 'channel' \
                  ORDER BY timestamp DESC LIMIT ?",
-            )
-            .map_err(|e| e.to_string())?;
+        )?;
 
-        let rows = stmt
-            .query_map(rusqlite::params![ok, channel_id_clone, limit], |row| {
-                let sender = db::get_str(row, "sender_key");
-                // is_own: match against either our owner_key or pseudonym_key
-                let is_own = sender == ok || sender == mpk;
-                Ok(Message {
-                    id: db::get_i64(row, "id"),
-                    sender_id: sender,
-                    body: db::get_str(row, "body"),
-                    timestamp: db::get_i64(row, "timestamp"),
-                    is_own,
-                })
+        let rows = stmt.query_map(rusqlite::params![ok, channel_id_clone, limit], |row| {
+            let sender = db::get_str(row, "sender_key");
+            // is_own: match against either our owner_key or pseudonym_key
+            let is_own = sender == ok || sender == mpk;
+            Ok(Message {
+                id: db::get_i64(row, "id"),
+                sender_id: sender,
+                body: db::get_str(row, "body"),
+                timestamp: db::get_i64(row, "timestamp"),
+                is_own,
             })
-            .map_err(|e| e.to_string())?;
+        })?;
 
         let mut messages = Vec::new();
         for row in rows {
-            messages.push(row.map_err(|e| e.to_string())?);
+            messages.push(row?);
         }
-        Ok::<_, String>(messages)
+        Ok(messages)
     })
-    .await
-    .map_err(|e| e.to_string())??;
+    .await?;
 
     // Reverse so messages are in chronological order (query was DESC for most-recent)
     messages.reverse();
@@ -1312,7 +1255,10 @@ async fn fetch_channel_history_from_server(
     )
     .await;
 
-    let Ok(rekindle_protocol::messaging::CommunityResponse::Messages { messages: server_messages }) = response else {
+    let Ok(rekindle_protocol::messaging::CommunityResponse::Messages {
+        messages: server_messages,
+    }) = response
+    else {
         return Vec::new();
     };
 
@@ -1356,14 +1302,12 @@ async fn fetch_channel_history_from_server(
         result
     };
 
-    // Store decrypted messages in local SQLite
-    let pool = pool.clone();
+    // Store decrypted messages in local SQLite (fire-and-forget)
     let ok = owner_key.to_string();
     let cid = channel_id.to_string();
     let mpk = my_pseudonym_key.to_string();
     let decrypted_clone = decrypted.clone();
-    let _ = tokio::task::spawn_blocking(move || {
-        let conn = pool.lock().map_err(|e| e.to_string())?;
+    db_fire(pool, "store decrypted channel history", move |conn| {
         for (sender, body, ts, mg) in &decrypted_clone {
             let _ = conn.execute(
                 "INSERT OR IGNORE INTO messages (owner_key, conversation_id, conversation_type, sender_key, body, timestamp, is_read, mek_generation) \
@@ -1371,9 +1315,8 @@ async fn fetch_channel_history_from_server(
                 rusqlite::params![ok, cid, sender, body, ts, mg],
             );
         }
-        Ok::<_, String>(())
-    })
-    .await;
+        Ok(())
+    });
 
     // Build Message structs for the frontend
     decrypted
@@ -1404,7 +1347,7 @@ pub async fn remove_community_member(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let owner_key = current_owner_key(state.inner())?;
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
 
     // Check caller's role — use display role for backward-compat permission check
     let my_role = {
@@ -1416,7 +1359,9 @@ pub async fn remove_community_member(
     };
 
     if my_role != "owner" && my_role != "admin" {
-        return Err("insufficient permissions: must be owner or admin to remove members".to_string());
+        return Err(
+            "insufficient permissions: must be owner or admin to remove members".to_string(),
+        );
     }
 
     // Send Kick RPC to the community server (local validation passed)
@@ -1436,20 +1381,16 @@ pub async fn remove_community_member(
     }
 
     // Remove from local DB
-    let pool = pool.inner().clone();
     let community_id_clone = community_id.clone();
     let pseudonym_key_clone = pseudonym_key.clone();
-    tokio::task::spawn_blocking(move || {
-        let conn = pool.lock().map_err(|e| e.to_string())?;
+    db_call(pool.inner(), move |conn| {
         conn.execute(
             "DELETE FROM community_members WHERE owner_key = ? AND community_id = ? AND pseudonym_key = ?",
             rusqlite::params![owner_key, community_id_clone, pseudonym_key_clone],
-        )
-        .map_err(|e| e.to_string())?;
-        Ok::<_, String>(())
+        )?;
+        Ok(())
     })
-    .await
-    .map_err(|e| e.to_string())??;
+    .await?;
 
     tracing::info!(
         community = %community_id,
@@ -1466,7 +1407,7 @@ pub async fn get_roles(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<Vec<CommunityRoleDto>, String> {
-    let owner_key = current_owner_key(state.inner())?;
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
     let response = send_community_rpc(
         state.inner(),
         pool.inner(),
@@ -1490,15 +1431,13 @@ pub async fn get_roles(
                 }
             }
             // Persist to SQLite (DELETE + INSERT)
-            let pool = pool.inner().clone();
             let cid = community_id.clone();
             let defs = role_defs;
-            tokio::task::spawn_blocking(move || {
-                let conn = pool.lock().map_err(|e| e.to_string())?;
+            db_call(pool.inner(), move |conn| {
                 conn.execute(
                     "DELETE FROM community_roles WHERE owner_key = ? AND community_id = ?",
                     rusqlite::params![owner_key, cid],
-                ).map_err(|e| e.to_string())?;
+                )?;
                 for r in &defs {
                     conn.execute(
                         "INSERT INTO community_roles (owner_key, community_id, role_id, name, color, permissions, position, hoist, mentionable) \
@@ -1507,10 +1446,10 @@ pub async fn get_roles(
                             owner_key, cid, r.id, r.name, r.color,
                             r.permissions.cast_signed(), r.position, i32::from(r.hoist), i32::from(r.mentionable),
                         ],
-                    ).map_err(|e| e.to_string())?;
+                    )?;
                 }
-                Ok::<_, String>(())
-            }).await.map_err(|e| e.to_string())??;
+                Ok(())
+            }).await?;
             Ok(roles.iter().map(CommunityRoleDto::from).collect())
         }
         Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => {
@@ -1540,7 +1479,7 @@ pub async fn create_role(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<u32, String> {
-    let owner_key = current_owner_key(state.inner())?;
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
     let response = send_community_rpc(
         state.inner(),
         pool.inner(),
@@ -1574,16 +1513,14 @@ pub async fn create_role(
                 }
             }
             // Persist to SQLite
-            let pool = pool.inner().clone();
             let cid = community_id.clone();
-            tokio::task::spawn_blocking(move || {
-                let conn = pool.lock().map_err(|e| e.to_string())?;
+            db_call(pool.inner(), move |conn| {
                 conn.execute(
                     "INSERT OR REPLACE INTO community_roles (owner_key, community_id, role_id, name, color, permissions, position, hoist, mentionable) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)",
                     rusqlite::params![owner_key, cid, role_id, name, color, permissions.cast_signed(), hoist, mentionable],
-                ).map_err(|e| e.to_string())?;
-                Ok::<_, String>(())
-            }).await.map_err(|e| e.to_string())??;
+                )?;
+                Ok(())
+            }).await?;
             Ok(role_id)
         }
         Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => {
@@ -1609,7 +1546,7 @@ pub async fn edit_role(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let owner_key = current_owner_key(state.inner())?;
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
     let response = send_community_rpc(
         state.inner(),
         pool.inner(),
@@ -1633,22 +1570,32 @@ pub async fn edit_role(
                 let mut communities = state.communities.write();
                 if let Some(c) = communities.get_mut(&community_id) {
                     if let Some(r) = c.roles.iter_mut().find(|r| r.id == role_id) {
-                        if let Some(ref n) = name { r.name.clone_from(n); }
-                        if let Some(col) = color { r.color = col; }
-                        if let Some(p) = permissions { r.permissions = p; }
-                        if let Some(pos) = position { r.position = pos; }
-                        if let Some(h) = hoist { r.hoist = h; }
-                        if let Some(m) = mentionable { r.mentionable = m; }
+                        if let Some(ref n) = name {
+                            r.name.clone_from(n);
+                        }
+                        if let Some(col) = color {
+                            r.color = col;
+                        }
+                        if let Some(p) = permissions {
+                            r.permissions = p;
+                        }
+                        if let Some(pos) = position {
+                            r.position = pos;
+                        }
+                        if let Some(h) = hoist {
+                            r.hoist = h;
+                        }
+                        if let Some(m) = mentionable {
+                            r.mentionable = m;
+                        }
                     }
                     // Recompute display role in case permissions/name changed
                     c.my_role = Some(crate::state::display_role_name(&c.my_role_ids, &c.roles));
                 }
             }
             // Persist to SQLite
-            let pool = pool.inner().clone();
             let cid = community_id.clone();
-            tokio::task::spawn_blocking(move || {
-                let conn = pool.lock().map_err(|e| e.to_string())?;
+            db_call(pool.inner(), move |conn| {
                 // Build dynamic UPDATE — only set fields that were provided
                 let mut sets = Vec::new();
                 let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -1667,10 +1614,10 @@ pub async fn edit_role(
                     params.push(Box::new(cid));
                     params.push(Box::new(role_id));
                     let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(std::convert::AsRef::as_ref).collect();
-                    conn.execute(&sql, param_refs.as_slice()).map_err(|e| e.to_string())?;
+                    conn.execute(&sql, param_refs.as_slice())?;
                 }
-                Ok::<_, String>(())
-            }).await.map_err(|e| e.to_string())??;
+                Ok(())
+            }).await?;
             Ok(())
         }
         Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => {
@@ -1689,7 +1636,7 @@ pub async fn delete_role(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let owner_key = current_owner_key(state.inner())?;
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
     let response = send_community_rpc(
         state.inner(),
         pool.inner(),
@@ -1710,22 +1657,20 @@ pub async fn delete_role(
                 }
             }
             // Remove from SQLite + scrub from all members' role_ids
-            let pool = pool.inner().clone();
             let cid = community_id.clone();
-            tokio::task::spawn_blocking(move || {
-                let conn = pool.lock().map_err(|e| e.to_string())?;
+            db_call(pool.inner(), move |conn| {
                 conn.execute(
                     "DELETE FROM community_roles WHERE owner_key = ? AND community_id = ? AND role_id = ?",
                     rusqlite::params![owner_key, cid, role_id],
-                ).map_err(|e| e.to_string())?;
+                )?;
                 // Scrub the deleted role_id from all members' role_ids JSON
                 let mut stmt = conn.prepare(
                     "SELECT pseudonym_key, role_ids FROM community_members WHERE owner_key = ? AND community_id = ?",
-                ).map_err(|e| e.to_string())?;
+                )?;
                 let members: Vec<(String, String)> = stmt.query_map(
                     rusqlite::params![owner_key, cid],
                     |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
-                ).map_err(|e| e.to_string())?
+                )?
                 .filter_map(std::result::Result::ok)
                 .collect();
                 drop(stmt);
@@ -1738,7 +1683,7 @@ pub async fn delete_role(
                         conn.execute(
                             "UPDATE community_members SET role_ids = ? WHERE owner_key = ? AND community_id = ? AND pseudonym_key = ?",
                             rusqlite::params![new_json, owner_key, cid, pk],
-                        ).map_err(|e| e.to_string())?;
+                        )?;
                     }
                 }
                 // Also scrub from the communities.my_role_ids
@@ -1754,10 +1699,10 @@ pub async fn delete_role(
                     conn.execute(
                         "UPDATE communities SET my_role_ids = ? WHERE owner_key = ? AND id = ?",
                         rusqlite::params![new_json, owner_key, cid],
-                    ).map_err(|e| e.to_string())?;
+                    )?;
                 }
-                Ok::<_, String>(())
-            }).await.map_err(|e| e.to_string())??;
+                Ok(())
+            }).await?;
             Ok(())
         }
         Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => {
@@ -1777,7 +1722,7 @@ pub async fn assign_role(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let owner_key = current_owner_key(state.inner())?;
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
     let response = send_community_rpc(
         state.inner(),
         pool.inner(),
@@ -1794,7 +1739,8 @@ pub async fn assign_role(
             // Update in-memory state if target is self
             let is_self = {
                 let communities = state.communities.read();
-                communities.get(&community_id)
+                communities
+                    .get(&community_id)
                     .is_some_and(|c| c.my_pseudonym_key.as_deref() == Some(&pseudonym_key))
             };
             if is_self {
@@ -1807,11 +1753,9 @@ pub async fn assign_role(
                 }
             }
             // Update SQLite member role_ids
-            let pool = pool.inner().clone();
             let cid = community_id.clone();
             let pk = pseudonym_key.clone();
-            tokio::task::spawn_blocking(move || {
-                let conn = pool.lock().map_err(|e| e.to_string())?;
+            db_call(pool.inner(), move |conn| {
                 let current: String = conn.query_row(
                     "SELECT role_ids FROM community_members WHERE owner_key = ? AND community_id = ? AND pseudonym_key = ?",
                     rusqlite::params![owner_key, cid, pk],
@@ -1825,9 +1769,9 @@ pub async fn assign_role(
                 conn.execute(
                     "UPDATE community_members SET role_ids = ? WHERE owner_key = ? AND community_id = ? AND pseudonym_key = ?",
                     rusqlite::params![new_json, owner_key, cid, pk],
-                ).map_err(|e| e.to_string())?;
-                Ok::<_, String>(())
-            }).await.map_err(|e| e.to_string())??;
+                )?;
+                Ok(())
+            }).await?;
             Ok(())
         }
         Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => {
@@ -1847,7 +1791,7 @@ pub async fn unassign_role(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let owner_key = current_owner_key(state.inner())?;
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
     let response = send_community_rpc(
         state.inner(),
         pool.inner(),
@@ -1864,7 +1808,8 @@ pub async fn unassign_role(
             // Update in-memory state if target is self
             let is_self = {
                 let communities = state.communities.read();
-                communities.get(&community_id)
+                communities
+                    .get(&community_id)
                     .is_some_and(|c| c.my_pseudonym_key.as_deref() == Some(&pseudonym_key))
             };
             if is_self {
@@ -1875,11 +1820,9 @@ pub async fn unassign_role(
                 }
             }
             // Update SQLite member role_ids
-            let pool = pool.inner().clone();
             let cid = community_id.clone();
             let pk = pseudonym_key.clone();
-            tokio::task::spawn_blocking(move || {
-                let conn = pool.lock().map_err(|e| e.to_string())?;
+            db_call(pool.inner(), move |conn| {
                 let current: String = conn.query_row(
                     "SELECT role_ids FROM community_members WHERE owner_key = ? AND community_id = ? AND pseudonym_key = ?",
                     rusqlite::params![owner_key, cid, pk],
@@ -1891,9 +1834,9 @@ pub async fn unassign_role(
                 conn.execute(
                     "UPDATE community_members SET role_ids = ? WHERE owner_key = ? AND community_id = ? AND pseudonym_key = ?",
                     rusqlite::params![new_json, owner_key, cid, pk],
-                ).map_err(|e| e.to_string())?;
-                Ok::<_, String>(())
-            }).await.map_err(|e| e.to_string())??;
+                )?;
+                Ok(())
+            }).await?;
             Ok(())
         }
         Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => {
@@ -1914,7 +1857,7 @@ pub async fn timeout_member(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let owner_key = current_owner_key(state.inner())?;
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
     let response = send_community_rpc(
         state.inner(),
         pool.inner(),
@@ -1931,17 +1874,15 @@ pub async fn timeout_member(
         Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => {
             // Compute timeout_until and persist to SQLite
             let timeout_until = db::timestamp_now() / 1000 + duration_seconds.cast_signed();
-            let pool = pool.inner().clone();
             let cid = community_id.clone();
             let pk = pseudonym_key.clone();
-            tokio::task::spawn_blocking(move || {
-                let conn = pool.lock().map_err(|e| e.to_string())?;
+            db_call(pool.inner(), move |conn| {
                 conn.execute(
                     "UPDATE community_members SET timeout_until = ? WHERE owner_key = ? AND community_id = ? AND pseudonym_key = ?",
                     rusqlite::params![timeout_until, owner_key, cid, pk],
-                ).map_err(|e| e.to_string())?;
-                Ok::<_, String>(())
-            }).await.map_err(|e| e.to_string())??;
+                )?;
+                Ok(())
+            }).await?;
             Ok(())
         }
         Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => {
@@ -1960,7 +1901,7 @@ pub async fn remove_timeout(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let owner_key = current_owner_key(state.inner())?;
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
     let response = send_community_rpc(
         state.inner(),
         pool.inner(),
@@ -1974,17 +1915,15 @@ pub async fn remove_timeout(
     match response {
         Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => {
             // Clear timeout in SQLite
-            let pool = pool.inner().clone();
             let cid = community_id.clone();
             let pk = pseudonym_key.clone();
-            tokio::task::spawn_blocking(move || {
-                let conn = pool.lock().map_err(|e| e.to_string())?;
+            db_call(pool.inner(), move |conn| {
                 conn.execute(
                     "UPDATE community_members SET timeout_until = NULL WHERE owner_key = ? AND community_id = ? AND pseudonym_key = ?",
                     rusqlite::params![owner_key, cid, pk],
-                ).map_err(|e| e.to_string())?;
-                Ok::<_, String>(())
-            }).await.map_err(|e| e.to_string())??;
+                )?;
+                Ok(())
+            }).await?;
             Ok(())
         }
         Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => {
@@ -2008,7 +1947,7 @@ pub async fn set_channel_overwrite(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let owner_key = current_owner_key(state.inner())?;
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
     let response = send_community_rpc(
         state.inner(),
         pool.inner(),
@@ -2026,19 +1965,17 @@ pub async fn set_channel_overwrite(
     match response {
         Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => {
             // Persist overwrite to local SQLite
-            let pool = pool.inner().clone();
             let comm_id = community_id.clone();
             let chan_id = channel_id.clone();
             let tgt_type = target_type.clone();
             let tgt_id = target_id.clone();
-            tokio::task::spawn_blocking(move || {
-                let conn = pool.lock().map_err(|e| e.to_string())?;
+            db_call(pool.inner(), move |conn| {
                 conn.execute(
                     "INSERT OR REPLACE INTO channel_overwrites (owner_key, community_id, channel_id, target_type, target_id, allow, deny) VALUES (?, ?, ?, ?, ?, ?, ?)",
                     rusqlite::params![owner_key, comm_id, chan_id, tgt_type, tgt_id, allow.cast_signed(), deny.cast_signed()],
-                ).map_err(|e| e.to_string())?;
-                Ok::<_, String>(())
-            }).await.map_err(|e| e.to_string())??;
+                )?;
+                Ok(())
+            }).await?;
             Ok(())
         }
         Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => {
@@ -2059,7 +1996,7 @@ pub async fn delete_channel_overwrite(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let owner_key = current_owner_key(state.inner())?;
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
     let response = send_community_rpc(
         state.inner(),
         pool.inner(),
@@ -2075,24 +2012,22 @@ pub async fn delete_channel_overwrite(
     match response {
         Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => {
             // Remove overwrite from local SQLite
-            let pool = pool.inner().clone();
             let comm_id = community_id.clone();
             let chan_id = channel_id.clone();
             let tgt_type = target_type.clone();
             let tgt_id = target_id.clone();
-            tokio::task::spawn_blocking(move || {
-                let conn = pool.lock().map_err(|e| e.to_string())?;
+            db_call(pool.inner(), move |conn| {
                 conn.execute(
                     "DELETE FROM channel_overwrites WHERE owner_key = ? AND community_id = ? AND channel_id = ? AND target_type = ? AND target_id = ?",
                     rusqlite::params![owner_key, comm_id, chan_id, tgt_type, tgt_id],
-                ).map_err(|e| e.to_string())?;
-                Ok::<_, String>(())
-            }).await.map_err(|e| e.to_string())??;
+                )?;
+                Ok(())
+            }).await?;
             Ok(())
         }
-        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => {
-            Err(format!("server rejected delete_channel_overwrite: {message}"))
-        }
+        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(format!(
+            "server rejected delete_channel_overwrite: {message}"
+        )),
         Ok(_) => Err("unexpected response from server".into()),
         Err(e) => Err(e),
     }
@@ -2109,7 +2044,7 @@ pub async fn delete_channel(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let owner_key = current_owner_key(state.inner())?;
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
 
     let response = send_community_rpc(
         state.inner(),
@@ -2134,20 +2069,16 @@ pub async fn delete_channel(
     }
 
     // Remove from local SQLite
-    let pool = pool.inner().clone();
     let community_id_clone = community_id.clone();
     let channel_id_clone = channel_id.clone();
-    tokio::task::spawn_blocking(move || {
-        let conn = pool.lock().map_err(|e| e.to_string())?;
+    db_call(pool.inner(), move |conn| {
         conn.execute(
             "DELETE FROM channels WHERE owner_key = ? AND id = ? AND community_id = ?",
             rusqlite::params![owner_key, channel_id_clone, community_id_clone],
-        )
-        .map_err(|e| e.to_string())?;
-        Ok::<_, String>(())
+        )?;
+        Ok(())
     })
-    .await
-    .map_err(|e| e.to_string())??;
+    .await?;
 
     tracing::info!(community = %community_id, channel = %channel_id, "channel deleted");
     Ok(())
@@ -2162,7 +2093,7 @@ pub async fn rename_channel(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let owner_key = current_owner_key(state.inner())?;
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
 
     let response = send_community_rpc(
         state.inner(),
@@ -2190,21 +2121,17 @@ pub async fn rename_channel(
     }
 
     // Update local SQLite
-    let pool = pool.inner().clone();
     let community_id_clone = community_id.clone();
     let channel_id_clone = channel_id.clone();
     let name_clone = new_name.clone();
-    tokio::task::spawn_blocking(move || {
-        let conn = pool.lock().map_err(|e| e.to_string())?;
+    db_call(pool.inner(), move |conn| {
         conn.execute(
             "UPDATE channels SET name = ? WHERE owner_key = ? AND id = ? AND community_id = ?",
             rusqlite::params![name_clone, owner_key, channel_id_clone, community_id_clone],
-        )
-        .map_err(|e| e.to_string())?;
-        Ok::<_, String>(())
+        )?;
+        Ok(())
     })
-    .await
-    .map_err(|e| e.to_string())??;
+    .await?;
 
     tracing::info!(community = %community_id, channel = %channel_id, "channel renamed");
     Ok(())
@@ -2219,7 +2146,7 @@ pub async fn update_community_info(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let owner_key = current_owner_key(state.inner())?;
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
 
     let response = send_community_rpc(
         state.inner(),
@@ -2259,28 +2186,23 @@ pub async fn update_community_info(
     }
 
     // Update local SQLite
-    let pool = pool.inner().clone();
     let cid = community_id.clone();
-    tokio::task::spawn_blocking(move || {
-        let conn = pool.lock().map_err(|e| e.to_string())?;
+    db_call(pool.inner(), move |conn| {
         if let Some(ref n) = name {
             conn.execute(
                 "UPDATE communities SET name = ? WHERE owner_key = ? AND id = ?",
                 rusqlite::params![n, owner_key, cid],
-            )
-            .map_err(|e| e.to_string())?;
+            )?;
         }
         if let Some(ref d) = description {
             conn.execute(
                 "UPDATE communities SET description = ? WHERE owner_key = ? AND id = ?",
                 rusqlite::params![d, owner_key, cid],
-            )
-            .map_err(|e| e.to_string())?;
+            )?;
         }
-        Ok::<_, String>(())
+        Ok(())
     })
-    .await
-    .map_err(|e| e.to_string())??;
+    .await?;
 
     tracing::info!(community = %community_id, "community info updated");
     Ok(())
@@ -2374,16 +2296,14 @@ pub async fn get_ban_list(
     .await;
 
     match response {
-        Ok(rekindle_protocol::messaging::CommunityResponse::BanList { banned }) => {
-            Ok(banned
-                .into_iter()
-                .map(|b| BannedMemberInfo {
-                    pseudonym_key: b.pseudonym_key,
-                    display_name: b.display_name,
-                    banned_at: b.banned_at,
-                })
-                .collect())
-        }
+        Ok(rekindle_protocol::messaging::CommunityResponse::BanList { banned }) => Ok(banned
+            .into_iter()
+            .map(|b| BannedMemberInfo {
+                pseudonym_key: b.pseudonym_key,
+                display_name: b.display_name,
+                banned_at: b.banned_at,
+            })
+            .collect()),
         Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => {
             Err(format!("server rejected ban list request: {message}"))
         }
@@ -2437,12 +2357,8 @@ pub async fn get_community_members(
             .and_then(|c| c.my_pseudonym_key.clone())
     };
     // Get our own status to show for ourselves
-    let my_status = {
-        let identity = state.identity.read();
-        identity
-            .as_ref()
-            .map_or(crate::state::UserStatus::Online, |id| id.status)
-    };
+    let my_status =
+        state_helpers::identity_status(state.inner()).unwrap_or(crate::state::UserStatus::Online);
 
     // Get cached role definitions for display name computation
     let role_defs = {
@@ -2453,64 +2369,59 @@ pub async fn get_community_members(
             .unwrap_or_default()
     };
 
-    let owner_key = current_owner_key(state.inner())?;
-    let pool = pool.inner().clone();
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
     let community_id_clone = community_id.clone();
-    let members = tokio::task::spawn_blocking(move || {
-        let conn = pool.lock().map_err(|e| e.to_string())?;
-        let mut stmt = conn
-            .prepare(
-                "SELECT pseudonym_key, display_name, role_ids, timeout_until FROM community_members \
+    let members = db_call(pool.inner(), move |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT pseudonym_key, display_name, role_ids, timeout_until FROM community_members \
                  WHERE owner_key = ? AND community_id = ? ORDER BY display_name",
-            )
-            .map_err(|e| e.to_string())?;
+        )?;
 
-        let rows = stmt
-            .query_map(rusqlite::params![owner_key, community_id_clone], |row| {
-                let pseudonym_key = db::get_str(row, "pseudonym_key");
+        let rows = stmt.query_map(rusqlite::params![owner_key, community_id_clone], |row| {
+            let pseudonym_key = db::get_str(row, "pseudonym_key");
 
-                // Pseudonym keys are per-community and unlinkable to real identity,
-                // so we can't cross-reference with the friends list for presence.
-                // Show our own real status; other members default to online
-                // (presence tracking via server is a future enhancement).
-                let status_str = if my_pseudonym.as_deref() == Some(&pseudonym_key) {
-                    match my_status {
-                        crate::state::UserStatus::Online => "online",
-                        crate::state::UserStatus::Away => "away",
-                        crate::state::UserStatus::Busy => "busy",
-                        crate::state::UserStatus::Offline => "offline",
-                    }
-                } else {
-                    "online" // default for other members — server presence tracking TODO
-                };
+            // Pseudonym keys are per-community and unlinkable to real identity,
+            // so we can't cross-reference with the friends list for presence.
+            // Show our own real status; other members default to online
+            // (presence tracking via server is a future enhancement).
+            let status_str = if my_pseudonym.as_deref() == Some(&pseudonym_key) {
+                match my_status {
+                    crate::state::UserStatus::Online => "online",
+                    crate::state::UserStatus::Away => "away",
+                    crate::state::UserStatus::Busy => "busy",
+                    crate::state::UserStatus::Offline => "offline",
+                }
+            } else {
+                "online" // default for other members — server presence tracking TODO
+            };
 
-                let role_ids_json = db::get_str(row, "role_ids");
-                let role_ids: Vec<u32> = serde_json::from_str(&role_ids_json).unwrap_or_else(|_| vec![0, 1]);
-                let display_role = crate::state::display_role_name(&role_ids, &role_defs);
-                let timeout_until: Option<u64> = row.get::<_, Option<i64>>("timeout_until")
-                    .ok()
-                    .flatten()
-                    .map(i64::cast_unsigned);
+            let role_ids_json = db::get_str(row, "role_ids");
+            let role_ids: Vec<u32> =
+                serde_json::from_str(&role_ids_json).unwrap_or_else(|_| vec![0, 1]);
+            let display_role = crate::state::display_role_name(&role_ids, &role_defs);
+            let timeout_until: Option<u64> = row
+                .get::<_, Option<i64>>("timeout_until")
+                .ok()
+                .flatten()
+                .map(i64::cast_unsigned);
 
-                Ok(MemberDto {
-                    pseudonym_key,
-                    display_name: db::get_str(row, "display_name"),
-                    role_ids,
-                    display_role,
-                    status: status_str.to_string(),
-                    timeout_until,
-                })
+            Ok(MemberDto {
+                pseudonym_key,
+                display_name: db::get_str(row, "display_name"),
+                role_ids,
+                display_role,
+                status: status_str.to_string(),
+                timeout_until,
             })
-            .map_err(|e| e.to_string())?;
+        })?;
 
         let mut members = Vec::new();
         for row in rows {
-            members.push(row.map_err(|e| e.to_string())?);
+            members.push(row?);
         }
-        Ok::<_, String>(members)
+        Ok(members)
     })
-    .await
-    .map_err(|e| e.to_string())??;
+    .await?;
 
     Ok(members)
 }
@@ -2521,11 +2432,7 @@ pub async fn get_community_members(
 /// IPC `HostCommunity` command for the new community. Then registers the creator
 /// as the first member via IPC Join, and fetches the server's route blob from DHT
 /// in the background for remote clients.
-async fn ensure_community_hosted(
-    app: &tauri::AppHandle,
-    state: &SharedState,
-    community_id: &str,
-) {
+async fn ensure_community_hosted(app: &tauri::AppHandle, state: &SharedState, community_id: &str) {
     // Gather community data + creator pseudonym for the HostCommunity IPC.
     // The creator is registered atomically during host_community on the server,
     // eliminating the race condition where a separate Join RPC would need to
@@ -2560,7 +2467,14 @@ async fn ensure_community_hosted(
             let socket_path = crate::ipc_client::default_socket_path();
             let result = tokio::task::spawn_blocking(move || {
                 crate::ipc_client::host_community_blocking(
-                    &socket_path, &cid, &dht_key, &keypair, &nm, &pseudonym, &cdn, 5,
+                    &socket_path,
+                    &cid,
+                    &dht_key,
+                    &keypair,
+                    &nm,
+                    &pseudonym,
+                    &cdn,
+                    5,
                 )
             })
             .await;
@@ -2587,7 +2501,14 @@ async fn ensure_community_hosted(
             let socket_path = crate::ipc_client::default_socket_path();
             let result = tokio::task::spawn_blocking(move || {
                 crate::ipc_client::host_community_blocking(
-                    &socket_path, &cid, &dht_key, &keypair, &nm, &pseudonym, &cdn, 10,
+                    &socket_path,
+                    &cid,
+                    &dht_key,
+                    &keypair,
+                    &nm,
+                    &pseudonym,
+                    &cdn,
+                    10,
                 )
             })
             .await;
@@ -2639,7 +2560,7 @@ async fn fetch_and_persist_route_blob(
                     c.server_route_blob = Some(blob.clone());
                 }
             }
-            persist_server_route_blob(app, community_id, &blob).await;
+            persist_server_route_blob(app, community_id, &blob);
             tracing::info!(
                 community = %community_id, attempt,
                 "server route blob fetched and persisted"
@@ -2657,10 +2578,7 @@ async fn fetch_and_persist_route_blob(
 ///
 /// Retries a few times with delay since the server may still be publishing
 /// after startup. Returns `None` if the route blob is not yet available.
-async fn fetch_server_route_blob(
-    state: &SharedState,
-    community_id: &str,
-) -> Option<Vec<u8>> {
+async fn fetch_server_route_blob(state: &SharedState, community_id: &str) -> Option<Vec<u8>> {
     let dht_record_key = {
         let communities = state.communities.read();
         communities.get(community_id)?.dht_record_key.clone()?
@@ -2717,16 +2635,14 @@ async fn fetch_server_route_blob(
 /// Called when the route blob is first fetched from DHT (after creation) or
 /// when a DHT watch notifies us of a route change. Ensures the route survives
 /// logout/restart without needing to re-fetch from DHT.
-pub(crate) async fn persist_server_route_blob(
+pub(crate) fn persist_server_route_blob(
     app: &tauri::AppHandle,
     community_id: &str,
     route_blob: &[u8],
 ) {
     use tauri::Manager as _;
     let pool: tauri::State<'_, db::DbPool> = app.state();
-    let pool = pool.inner().clone();
     let state: tauri::State<'_, SharedState> = app.state();
-    let state = state.inner().clone();
     let owner_key = state
         .identity
         .read()
@@ -2735,18 +2651,11 @@ pub(crate) async fn persist_server_route_blob(
         .unwrap_or_default();
     let cid = community_id.to_string();
     let blob = route_blob.to_vec();
-    if let Err(e) = tokio::task::spawn_blocking(move || {
-        let conn = pool.lock().map_err(|e| e.to_string())?;
+    db_fire(pool.inner(), "persist server_route_blob", move |conn| {
         conn.execute(
             "UPDATE communities SET server_route_blob = ?1 WHERE owner_key = ?2 AND id = ?3",
             rusqlite::params![blob, owner_key, cid],
-        )
-        .map_err(|e| format!("persist server_route_blob: {e}"))?;
-        Ok::<(), String>(())
-    })
-    .await
-    .unwrap_or_else(|e| Err(e.to_string()))
-    {
-        tracing::error!(error = %e, community = %community_id, "failed to persist server_route_blob to SQLite");
-    }
+        )?;
+        Ok(())
+    });
 }

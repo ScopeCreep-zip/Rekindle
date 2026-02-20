@@ -45,9 +45,8 @@ impl OpusCodec {
     pub fn new(sample_rate: u32, channels: u16, frame_size: usize) -> Result<Self, VoiceError> {
         let opus_channels = to_opus_channels(channels)?;
 
-        let mut encoder =
-            opus::Encoder::new(sample_rate, opus_channels, opus::Application::Voip)
-                .map_err(|e| VoiceError::Codec(format!("encoder init failed: {e}")))?;
+        let mut encoder = opus::Encoder::new(sample_rate, opus_channels, opus::Application::Voip)
+            .map_err(|e| VoiceError::Codec(format!("encoder init failed: {e}")))?;
 
         // Configure encoder for voice over Veilid:
         // - 32kbps bitrate: good quality speech, reduces P2P relay load

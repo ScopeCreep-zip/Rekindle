@@ -46,9 +46,9 @@ impl DHTShortArray {
         capacity: u16,
         owner: Option<KeyPair>,
     ) -> Result<(Self, KeyPair), ProtocolError> {
-        let total_subkeys = capacity.checked_add(1).ok_or_else(|| {
-            ProtocolError::DhtError("capacity overflow (max 65534)".into())
-        })?;
+        let total_subkeys = capacity
+            .checked_add(1)
+            .ok_or_else(|| ProtocolError::DhtError("capacity overflow (max 65534)".into()))?;
 
         let schema = DHTSchema::dflt(total_subkeys)
             .map_err(|e| ProtocolError::DhtError(format!("invalid schema: {e}")))?;
@@ -61,20 +61,16 @@ impl DHTShortArray {
         let key = descriptor.key().clone();
         let keypair = descriptor
             .owner_secret()
-            .map(|secret| {
-                KeyPair::new_from_parts(descriptor.owner().clone(), secret.value())
-            })
-            .ok_or_else(|| {
-                ProtocolError::DhtError("no owner secret after create".into())
-            })?;
+            .map(|secret| KeyPair::new_from_parts(descriptor.owner().clone(), secret.value()))
+            .ok_or_else(|| ProtocolError::DhtError("no owner secret after create".into()))?;
 
         // Write initial empty head
         let head = ShortArrayHead {
             stride: capacity,
             slots: Vec::new(),
         };
-        let head_bytes = serde_json::to_vec(&head)
-            .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+        let head_bytes =
+            serde_json::to_vec(&head).map_err(|e| ProtocolError::Serialization(e.to_string()))?;
         rc.set_dht_value(key.clone(), 0, head_bytes, None)
             .await
             .map_err(|e| ProtocolError::DhtError(format!("write head: {e}")))?;
@@ -102,16 +98,12 @@ impl DHTShortArray {
     ) -> Result<Self, ProtocolError> {
         let record_key: RecordKey = key
             .parse()
-            .map_err(|e| {
-                ProtocolError::DhtError(format!("invalid key '{key}': {e}"))
-            })?;
+            .map_err(|e| ProtocolError::DhtError(format!("invalid key '{key}': {e}")))?;
 
         let _ = rc
             .open_dht_record(record_key.clone(), writer.clone())
             .await
-            .map_err(|e| {
-                ProtocolError::DhtError(format!("open short array: {e}"))
-            })?;
+            .map_err(|e| ProtocolError::DhtError(format!("open short array: {e}")))?;
 
         let head = read_head_raw(rc, &record_key).await?;
 
@@ -147,9 +139,7 @@ impl DHTShortArray {
         self.routing_context
             .set_dht_value(self.record_key.clone(), subkey, data.to_vec(), None)
             .await
-            .map_err(|e| {
-                ProtocolError::DhtError(format!("write slot {slot}: {e}"))
-            })?;
+            .map_err(|e| ProtocolError::DhtError(format!("write slot {slot}: {e}")))?;
 
         // Append slot to index map
         let index = u32::try_from(head.slots.len())
@@ -202,9 +192,7 @@ impl DHTShortArray {
         self.routing_context
             .set_dht_value(self.record_key.clone(), subkey, vec![], None)
             .await
-            .map_err(|e| {
-                ProtocolError::DhtError(format!("clear slot {slot}: {e}"))
-            })?;
+            .map_err(|e| ProtocolError::DhtError(format!("clear slot {slot}: {e}")))?;
 
         // Remove from index map
         head.slots.remove(idx);
@@ -235,9 +223,7 @@ impl DHTShortArray {
             self.routing_context
                 .set_dht_value(self.record_key.clone(), subkey, vec![], None)
                 .await
-                .map_err(|e| {
-                    ProtocolError::DhtError(format!("clear slot {slot}: {e}"))
-                })?;
+                .map_err(|e| ProtocolError::DhtError(format!("clear slot {slot}: {e}")))?;
         }
 
         // Reset head to empty
@@ -259,12 +245,8 @@ impl DHTShortArray {
                 .routing_context
                 .get_dht_value(self.record_key.clone(), subkey, false)
                 .await
-                .map_err(|e| {
-                    ProtocolError::DhtError(format!("read slot: {e}"))
-                })?;
-            results.push(
-                value.map(|v| v.data().to_vec()).unwrap_or_default(),
-            );
+                .map_err(|e| ProtocolError::DhtError(format!("read slot: {e}")))?;
+            results.push(value.map(|v| v.data().to_vec()).unwrap_or_default());
         }
 
         Ok(results)
@@ -300,12 +282,9 @@ impl DHTShortArray {
         read_head_raw(&self.routing_context, &self.record_key).await
     }
 
-    async fn write_head(
-        &self,
-        head: &ShortArrayHead,
-    ) -> Result<(), ProtocolError> {
-        let bytes = serde_json::to_vec(head)
-            .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+    async fn write_head(&self, head: &ShortArrayHead) -> Result<(), ProtocolError> {
+        let bytes =
+            serde_json::to_vec(head).map_err(|e| ProtocolError::Serialization(e.to_string()))?;
         self.routing_context
             .set_dht_value(self.record_key.clone(), 0, bytes, None)
             .await
@@ -326,9 +305,7 @@ async fn read_head_raw(
 
     match value {
         Some(v) => serde_json::from_slice(v.data())
-            .map_err(|e| {
-                ProtocolError::Deserialization(format!("head parse: {e}"))
-            }),
+            .map_err(|e| ProtocolError::Deserialization(format!("head parse: {e}"))),
         None => Err(ProtocolError::DhtError("head subkey not set".into())),
     }
 }

@@ -67,9 +67,7 @@ pub enum MessagePayload {
     /// Friend request rejection.
     FriendReject,
     /// Sent to remaining friends after profile key rotation (block/unfriend).
-    ProfileKeyRotated {
-        new_profile_dht_key: String,
-    },
+    ProfileKeyRotated { new_profile_dht_key: String },
     /// Lightweight ACK confirming a `FriendRequest` was received and stored.
     /// Does NOT mean acceptance — just delivery confirmation.
     FriendRequestReceived,
@@ -165,13 +163,13 @@ pub fn create_invite_blob(
 pub fn verify_invite_blob(blob: &InviteBlob) -> Result<(), String> {
     use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 
-    let pub_bytes = hex::decode(&blob.public_key)
-        .map_err(|e| format!("invalid public key hex: {e}"))?;
+    let pub_bytes =
+        hex::decode(&blob.public_key).map_err(|e| format!("invalid public key hex: {e}"))?;
     let pub_array: [u8; 32] = pub_bytes
         .try_into()
         .map_err(|_| "public key must be 32 bytes".to_string())?;
-    let verifying_key = VerifyingKey::from_bytes(&pub_array)
-        .map_err(|e| format!("invalid public key: {e}"))?;
+    let verifying_key =
+        VerifyingKey::from_bytes(&pub_array).map_err(|e| format!("invalid public key: {e}"))?;
 
     let sig_array: [u8; 64] = blob
         .signature
@@ -252,18 +250,11 @@ pub enum CommunityRequest {
     /// Leave the community.
     Leave,
     /// Admin: kick a member.
-    Kick {
-        target_pseudonym: String,
-    },
+    Kick { target_pseudonym: String },
     /// Admin: create a channel.
-    CreateChannel {
-        name: String,
-        channel_type: String,
-    },
+    CreateChannel { name: String, channel_type: String },
     /// Admin: delete a channel.
-    DeleteChannel {
-        channel_id: String,
-    },
+    DeleteChannel { channel_id: String },
     /// Admin: force MEK rotation.
     RotateMEK,
     /// Admin: rename a channel.
@@ -277,18 +268,13 @@ pub enum CommunityRequest {
         description: Option<String>,
     },
     /// Admin: ban a member (kick + prevent rejoin).
-    Ban {
-        target_pseudonym: String,
-    },
+    Ban { target_pseudonym: String },
     /// Admin: unban a member.
-    Unban {
-        target_pseudonym: String,
-    },
+    Unban { target_pseudonym: String },
     /// Admin: get ban list.
     GetBanList,
 
     // ── New role & permission management ──
-
     /// Create a new role.
     CreateRole {
         name: String,
@@ -308,9 +294,7 @@ pub enum CommunityRequest {
         mentionable: Option<bool>,
     },
     /// Delete a role.
-    DeleteRole {
-        role_id: u32,
-    },
+    DeleteRole { role_id: u32 },
     /// Assign a role to a member (additive — does not remove other roles).
     AssignRole {
         target_pseudonym: String,
@@ -342,9 +326,7 @@ pub enum CommunityRequest {
         reason: Option<String>,
     },
     /// Remove a member's timeout.
-    RemoveTimeout {
-        target_pseudonym: String,
-    },
+    RemoveTimeout { target_pseudonym: String },
     /// Get all role definitions.
     GetRoles,
 }
@@ -364,37 +346,24 @@ pub enum CommunityResponse {
         roles: Vec<RoleDto>,
     },
     /// Message history.
-    Messages {
-        messages: Vec<ChannelMessageDto>,
-    },
+    Messages { messages: Vec<ChannelMessageDto> },
     /// MEK delivery.
     MEK {
         mek_encrypted: Vec<u8>,
         mek_generation: u64,
     },
     /// Channel created.
-    ChannelCreated {
-        channel_id: String,
-    },
+    ChannelCreated { channel_id: String },
     /// Community metadata updated.
     CommunityUpdated,
     /// Ban list response.
-    BanList {
-        banned: Vec<BannedMemberDto>,
-    },
+    BanList { banned: Vec<BannedMemberDto> },
     /// Role created successfully.
-    RoleCreated {
-        role_id: u32,
-    },
+    RoleCreated { role_id: u32 },
     /// List of all roles.
-    RolesList {
-        roles: Vec<RoleDto>,
-    },
+    RolesList { roles: Vec<RoleDto> },
     /// Error.
-    Error {
-        code: u32,
-        message: String,
-    },
+    Error { code: u32, message: String },
 }
 
 /// A role definition as returned by the server over RPC.

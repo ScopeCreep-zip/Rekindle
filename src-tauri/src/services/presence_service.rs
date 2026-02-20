@@ -4,7 +4,9 @@ use tauri::{Emitter, Manager};
 
 use crate::channels::{NotificationEvent, PresenceEvent};
 use crate::db::{self, DbPool};
-use crate::state::{AppState, FriendshipState, GameInfoState, UserStatus};
+use crate::db_helpers::db_fire;
+use crate::state::{AppState, GameInfoState, UserStatus};
+use crate::state_helpers;
 
 /// Handle a DHT value change event from a watched friend record.
 ///
@@ -21,12 +23,7 @@ pub async fn handle_value_change(
     value: &[u8],
 ) {
     // Find which friend this DHT key belongs to via the DHT manager mapping
-    let friend_key = {
-        let dht_mgr = state.dht_manager.read();
-        dht_mgr
-            .as_ref()
-            .and_then(|mgr| mgr.friend_for_dht_key(dht_key).cloned())
-    };
+    let friend_key = state_helpers::friend_for_dht_key(state, dht_key);
 
     let Some(friend_key) = friend_key else {
         tracing::debug!(dht_key, "value change for unknown DHT key");
@@ -79,10 +76,7 @@ fn handle_status_change(
     }
 
     // Only emit presence events for accepted friends (privacy: hide status from pending)
-    let is_accepted = {
-        let friends = state.friends.read();
-        friends.get(friend_key).is_some_and(|f| f.friendship_state == FriendshipState::Accepted)
-    };
+    let is_accepted = state_helpers::is_friend_accepted(state, friend_key);
 
     let event = if status == UserStatus::Offline {
         let now = db::timestamp_now();
@@ -95,22 +89,15 @@ fn handle_status_change(
         }
 
         let pool: tauri::State<'_, DbPool> = app_handle.state();
-        let pool_clone = pool.inner().clone();
+        let ok = state_helpers::owner_key_or_default(state);
         let fk = friend_key.to_string();
-        let ok = state
-            .identity
-            .read()
-            .as_ref()
-            .map(|id| id.public_key.clone())
-            .unwrap_or_default();
-        drop(tokio::task::spawn_blocking(move || {
-            if let Ok(conn) = pool_clone.lock() {
-                let _ = conn.execute(
-                    "UPDATE friends SET last_seen_at = ?1 WHERE owner_key = ?2 AND public_key = ?3",
-                    rusqlite::params![now, ok, fk],
-                );
-            }
-        }));
+        db_fire(pool.inner(), "update friend last_seen_at", move |conn| {
+            conn.execute(
+                "UPDATE friends SET last_seen_at = ?1 WHERE owner_key = ?2 AND public_key = ?3",
+                rusqlite::params![now, ok, fk],
+            )?;
+            Ok(())
+        });
 
         PresenceEvent::FriendOffline {
             public_key: friend_key.to_string(),
@@ -160,11 +147,7 @@ fn handle_game_change(
         }
     }
     // Only emit game events for accepted friends (privacy: hide from pending)
-    let is_accepted = {
-        let friends = state.friends.read();
-        friends.get(friend_key).is_some_and(|f| f.friendship_state == FriendshipState::Accepted)
-    };
-    if !is_accepted {
+    if !state_helpers::is_friend_accepted(state, friend_key) {
         return;
     }
     let event = PresenceEvent::GameChanged {
@@ -177,18 +160,10 @@ fn handle_game_change(
 }
 
 /// Handle a friend's route blob change (subkey 6).
-fn handle_route_change(
-    state: &Arc<AppState>,
-    friend_key: &str,
-    value: &[u8],
-) {
+fn handle_route_change(state: &Arc<AppState>, friend_key: &str, value: &[u8]) {
     tracing::debug!(friend = %friend_key, "friend route blob updated");
     if !value.is_empty() {
-        let api = {
-            let node = state.node.read();
-            node.as_ref().map(|nh| nh.api.clone())
-        };
-        if let Some(api) = api {
+        if let Some(api) = state_helpers::veilid_api(state) {
             let mut dht_mgr = state.dht_manager.write();
             if let Some(mgr) = dht_mgr.as_mut() {
                 mgr.manager.cache_route(&api, friend_key, value.to_vec());
@@ -223,24 +198,65 @@ async fn handle_community_value_change(
     };
 
     // Clone routing context out before any .await (parking_lot guards are !Send)
-    let routing_context = {
-        let node = state.node.read();
-        node.as_ref()
-            .filter(|nh| nh.is_attached)
-            .map(|nh| nh.routing_context.clone())
-    };
+    let routing_context = state_helpers::routing_context(state);
 
     // Use a DHTManager to re-read subkeys that may have stale inline values
     let mgr = routing_context.map(rekindle_protocol::dht::DHTManager::new);
 
     for &subkey in subkeys {
         match subkey {
-            0 => handle_community_metadata_change(app_handle, state, &community_id, mgr.as_ref(), dht_key, value).await,
-            1 => handle_community_channel_list_change(app_handle, state, &community_id, mgr.as_ref(), dht_key).await,
-            2 => handle_community_member_list_change(app_handle, state, &community_id, mgr.as_ref(), dht_key).await,
-            3 => handle_community_roles_change(app_handle, state, &community_id, mgr.as_ref(), dht_key).await,
+            0 => {
+                handle_community_metadata_change(
+                    app_handle,
+                    state,
+                    &community_id,
+                    mgr.as_ref(),
+                    dht_key,
+                    value,
+                )
+                .await;
+            }
+            1 => {
+                handle_community_channel_list_change(
+                    app_handle,
+                    state,
+                    &community_id,
+                    mgr.as_ref(),
+                    dht_key,
+                )
+                .await;
+            }
+            2 => {
+                handle_community_member_list_change(
+                    app_handle,
+                    state,
+                    &community_id,
+                    mgr.as_ref(),
+                    dht_key,
+                )
+                .await;
+            }
+            3 => {
+                handle_community_roles_change(
+                    app_handle,
+                    state,
+                    &community_id,
+                    mgr.as_ref(),
+                    dht_key,
+                )
+                .await;
+            }
             5 => handle_community_mek_change(app_handle, state, &community_id).await,
-            6 => handle_community_route_change(app_handle, state, &community_id, mgr.as_ref(), dht_key).await,
+            6 => {
+                handle_community_route_change(
+                    app_handle,
+                    state,
+                    &community_id,
+                    mgr.as_ref(),
+                    dht_key,
+                )
+                .await;
+            }
             _ => {
                 tracing::trace!(community = %community_id, subkey, "unhandled community subkey");
             }
@@ -292,19 +308,17 @@ async fn handle_community_metadata_change(
             };
             // Persist to SQLite
             if let Some(name) = new_name {
-                let owner_key = state.identity.read().as_ref().map(|id| id.public_key.clone()).unwrap_or_default();
+                let owner_key = state_helpers::owner_key_or_default(state);
                 let pool: tauri::State<'_, DbPool> = app_handle.state();
-                let pool = pool.inner().clone();
                 let cid = community_id.to_string();
                 let desc = new_desc;
-                let _ = tokio::task::spawn_blocking(move || {
-                    let conn = pool.lock().map_err(|e| e.to_string())?;
+                db_fire(pool.inner(), "update community metadata", move |conn| {
                     conn.execute(
                         "UPDATE communities SET name = ?, description = ? WHERE owner_key = ? AND id = ?",
                         rusqlite::params![name, desc, owner_key, cid],
-                    ).map_err(|e| e.to_string())?;
-                    Ok::<_, String>(())
-                }).await;
+                    )?;
+                    Ok(())
+                });
             }
         }
     }
@@ -366,16 +380,14 @@ async fn handle_community_channel_list_change(
             }
 
             // Persist to SQLite: DELETE + INSERT
-            let owner_key = state.identity.read().as_ref().map(|id| id.public_key.clone()).unwrap_or_default();
+            let owner_key = state_helpers::owner_key_or_default(state);
             let pool: tauri::State<'_, DbPool> = app_handle.state();
-            let pool = pool.inner().clone();
             let cid = community_id.to_string();
-            let _ = tokio::task::spawn_blocking(move || {
-                let conn = pool.lock().map_err(|e| e.to_string())?;
+            db_fire(pool.inner(), "update community channel list", move |conn| {
                 conn.execute(
                     "DELETE FROM channels WHERE owner_key = ? AND community_id = ?",
                     rusqlite::params![owner_key, cid],
-                ).map_err(|e| e.to_string())?;
+                )?;
                 for ch in &channels {
                     let ch_type = match ch.channel_type {
                         crate::state::ChannelType::Text => "text",
@@ -384,10 +396,10 @@ async fn handle_community_channel_list_change(
                     conn.execute(
                         "INSERT OR IGNORE INTO channels (owner_key, id, community_id, name, channel_type) VALUES (?, ?, ?, ?, ?)",
                         rusqlite::params![owner_key, ch.id, cid, ch.name, ch_type],
-                    ).map_err(|e| e.to_string())?;
+                    )?;
                 }
-                Ok::<_, String>(())
-            }).await;
+                Ok(())
+            });
         }
     }
     tracing::debug!(community = %community_id, "community channel list updated");
@@ -415,16 +427,19 @@ async fn handle_community_member_list_change(
     };
 
     // Parse member list JSON: wrapped { members: [...], lastRefreshed } or bare [...]
-    let member_list: Vec<serde_json::Value> = match serde_json::from_slice::<serde_json::Value>(&data) {
-        Ok(v) => {
-            if let Some(obj) = v.as_object() {
-                obj.get("members").and_then(|m| m.as_array().cloned()).unwrap_or_default()
-            } else {
-                v.as_array().cloned().unwrap_or_default()
+    let member_list: Vec<serde_json::Value> =
+        match serde_json::from_slice::<serde_json::Value>(&data) {
+            Ok(v) => {
+                if let Some(obj) = v.as_object() {
+                    obj.get("members")
+                        .and_then(|m| m.as_array().cloned())
+                        .unwrap_or_default()
+                } else {
+                    v.as_array().cloned().unwrap_or_default()
+                }
             }
-        }
-        Err(_) => return,
-    };
+            Err(_) => return,
+        };
     if member_list.is_empty() && data.len() > 2 {
         // Data was non-trivial but couldn't parse — skip silently
         return;
@@ -432,16 +447,9 @@ async fn handle_community_member_list_change(
 
     let member_count = member_list.len();
     let pool: tauri::State<'_, DbPool> = app_handle.state();
-    let pool = pool.inner().clone();
     let cid = community_id.to_string();
-    let owner_key = state
-        .identity
-        .read()
-        .as_ref()
-        .map(|id| id.public_key.clone())
-        .unwrap_or_default();
-    if let Err(e) = tokio::task::spawn_blocking(move || {
-        let conn = pool.lock().map_err(|e| e.to_string())?;
+    let owner_key = state_helpers::owner_key_or_default(state);
+    db_fire(pool.inner(), "persist community member list", move |conn| {
         for member in &member_list {
             let Some(pk) = member.get("pseudonymKey").and_then(|v| v.as_str()) else {
                 continue;
@@ -462,20 +470,10 @@ async fn handle_community_member_list_change(
                  (owner_key, community_id, pseudonym_key, display_name, role_ids, joined_at) \
                  VALUES (?, ?, ?, ?, ?, ?)",
                 rusqlite::params![owner_key, cid, pk, dn, role_ids, joined_at],
-            )
-            .map_err(|e| e.to_string())?;
+            )?;
         }
-        Ok::<_, String>(())
-    })
-    .await
-    .unwrap_or_else(|e| Err(e.to_string()))
-    {
-        tracing::warn!(
-            community = %community_id,
-            error = %e,
-            "failed to persist community member list"
-        );
-    }
+        Ok(())
+    });
     tracing::debug!(
         community = %community_id,
         members = member_count,
@@ -529,23 +527,15 @@ async fn handle_community_roles_change(
     }
 
     // Persist to SQLite
-    let owner_key = state
-        .identity
-        .read()
-        .as_ref()
-        .map(|id| id.public_key.clone())
-        .unwrap_or_default();
+    let owner_key = state_helpers::owner_key_or_default(state);
     let pool: tauri::State<'_, DbPool> = app_handle.state();
-    let pool = pool.inner().clone();
     let cid = community_id.to_string();
     let role_defs_for_db = role_defs.clone();
-    let _ = tokio::task::spawn_blocking(move || {
-        let conn = pool.lock().map_err(|e| e.to_string())?;
+    db_fire(pool.inner(), "persist community roles", move |conn| {
         conn.execute(
             "DELETE FROM community_roles WHERE owner_key = ? AND community_id = ?",
             rusqlite::params![owner_key, cid],
-        )
-        .map_err(|e| e.to_string())?;
+        )?;
         for r in &role_defs_for_db {
             conn.execute(
                 "INSERT INTO community_roles \
@@ -562,12 +552,10 @@ async fn handle_community_roles_change(
                     r.hoist,
                     r.mentionable,
                 ],
-            )
-            .map_err(|e| e.to_string())?;
+            )?;
         }
-        Ok::<_, String>(())
-    })
-    .await;
+        Ok(())
+    });
 
     // Emit frontend event
     let event = crate::channels::CommunityEvent::RolesChanged {
@@ -623,7 +611,13 @@ async fn handle_community_route_change(
         return;
     };
 
-    match mgr.get_value(dht_key, rekindle_protocol::dht::community::SUBKEY_SERVER_ROUTE).await {
+    match mgr
+        .get_value(
+            dht_key,
+            rekindle_protocol::dht::community::SUBKEY_SERVER_ROUTE,
+        )
+        .await
+    {
         Ok(Some(route_blob)) => {
             {
                 let mut communities = state.communities.write();
@@ -634,9 +628,10 @@ async fn handle_community_route_change(
 
             // Persist to SQLite so the route survives logout/restart
             crate::commands::community::persist_server_route_blob(
-                app_handle, community_id, &route_blob,
-            )
-            .await;
+                app_handle,
+                community_id,
+                &route_blob,
+            );
 
             tracing::info!(community = %community_id, "updated server route blob from DHT");
         }
@@ -686,7 +681,10 @@ pub async fn watch_friend(
         .map_err(|e| format!("invalid DHT key: {e}"))?;
 
     // Open the record
-    if let Err(e) = routing_context.open_dht_record(record_key.clone(), None).await {
+    if let Err(e) = routing_context
+        .open_dht_record(record_key.clone(), None)
+        .await
+    {
         tracing::warn!(error = %e, dht_key = %dht_record_key, "failed to open DHT record for watching");
         return Ok(()); // Non-fatal: friend will be synced on next interval
     }
@@ -716,12 +714,18 @@ pub async fn watch_friend(
                     friend = %friend_key, dht_key = %dht_record_key,
                     "watch_dht_values returned false — adding to poll fallback set"
                 );
-                state.unwatched_friends.write().insert(friend_key.to_string());
+                state
+                    .unwatched_friends
+                    .write()
+                    .insert(friend_key.to_string());
             }
         }
         Err(e) => {
             tracing::warn!(error = %e, friend = %friend_key, "failed to watch friend presence — adding to poll fallback set");
-            state.unwatched_friends.write().insert(friend_key.to_string());
+            state
+                .unwatched_friends
+                .write()
+                .insert(friend_key.to_string());
         }
     }
 
@@ -729,10 +733,7 @@ pub async fn watch_friend(
 }
 
 /// Publish our own status to DHT profile subkey 2.
-pub async fn publish_status(
-    state: &Arc<AppState>,
-    status: UserStatus,
-) -> Result<(), String> {
+pub async fn publish_status(state: &Arc<AppState>, status: UserStatus) -> Result<(), String> {
     let status_byte = match status {
         UserStatus::Online => 0u8,
         UserStatus::Away => 1,
@@ -800,7 +801,7 @@ pub async fn publish_status(
     Ok(())
 }
 
-/// 2.5× the 60s heartbeat — allows one missed heartbeat + jitter before marking offline.
+/// 2.5x the 60s heartbeat — allows one missed heartbeat + jitter before marking offline.
 pub const STALE_PRESENCE_THRESHOLD_MS: i64 = 150 * 1000;
 
 /// Parse status byte from a status payload.
@@ -853,12 +854,9 @@ pub async fn start_heartbeat_loop(
     loop {
         tokio::select! {
             _ = interval.tick() => {
-                let status = {
-                    let id = state.identity.read();
-                    match id.as_ref() {
-                        Some(id) if id.status != UserStatus::Offline => id.status,
-                        _ => continue, // Not logged in or already offline — skip
-                    }
+                let status = match state_helpers::identity_status(&state) {
+                    Some(s) if s != UserStatus::Offline => s,
+                    _ => continue, // Not logged in or already offline — skip
                 };
                 if let Err(e) = publish_status(&state, status).await {
                     tracing::debug!(error = %e, "heartbeat publish failed");

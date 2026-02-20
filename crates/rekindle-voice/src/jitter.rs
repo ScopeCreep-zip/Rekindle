@@ -46,7 +46,11 @@ impl JitterBuffer {
 
         // Drop packets that are too old (already played)
         if self.initial_fill_done && seq < self.next_playback_seq {
-            tracing::trace!(seq, expected = self.next_playback_seq, "dropping late packet");
+            tracing::trace!(
+                seq,
+                expected = self.next_playback_seq,
+                "dropping late packet"
+            );
             return;
         }
 

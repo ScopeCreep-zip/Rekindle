@@ -95,9 +95,16 @@ impl IpcClient {
     /// `HostCommunity` can take 60+ seconds (Veilid attachment + DHT record open),
     /// so callers that issue slow commands should use a longer timeout.
     #[cfg(unix)]
-    pub fn connect_with_timeout(socket_path: &Path, read_timeout: Duration) -> Result<Self, String> {
-        let stream = UnixStream::connect(socket_path)
-            .map_err(|e| format!("failed to connect to server socket at {}: {e}", socket_path.display()))?;
+    pub fn connect_with_timeout(
+        socket_path: &Path,
+        read_timeout: Duration,
+    ) -> Result<Self, String> {
+        let stream = UnixStream::connect(socket_path).map_err(|e| {
+            format!(
+                "failed to connect to server socket at {}: {e}",
+                socket_path.display()
+            )
+        })?;
         stream
             .set_read_timeout(Some(read_timeout))
             .map_err(|e| format!("failed to set read timeout: {e}"))?;
@@ -114,7 +121,10 @@ impl IpcClient {
     ///
     /// On Windows, the socket_path is ignored; we connect to TCP port 19280.
     #[cfg(windows)]
-    pub fn connect_with_timeout(_socket_path: &Path, read_timeout: Duration) -> Result<Self, String> {
+    pub fn connect_with_timeout(
+        _socket_path: &Path,
+        read_timeout: Duration,
+    ) -> Result<Self, String> {
         // Windows uses TCP localhost instead of Unix domain sockets
         let addr = "127.0.0.1:19280";
         let stream = TcpStream::connect(addr)

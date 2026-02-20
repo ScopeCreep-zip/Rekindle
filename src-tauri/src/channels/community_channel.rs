@@ -23,9 +23,7 @@ pub enum CommunityEvent {
     },
     /// We were kicked from a community (our pseudonym was removed by an admin).
     #[serde(rename_all = "camelCase")]
-    Kicked {
-        community_id: String,
-    },
+    Kicked { community_id: String },
     /// Role definitions changed (created, edited, deleted, reordered).
     #[serde(rename_all = "camelCase")]
     RolesChanged {

@@ -3,10 +3,12 @@
 mod channels;
 pub mod commands;
 pub mod db;
+pub mod db_helpers;
 pub mod ipc_client;
 pub mod keystore;
 mod services;
 pub mod state;
+pub mod state_helpers;
 mod tray;
 mod windows;
 
@@ -28,8 +30,9 @@ pub fn run() {
     // The veilid_api target only emits import/routing errors we already catch.
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info,veilid_api=warn,veilid_core=warn")),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                tracing_subscriber::EnvFilter::new("info,veilid_api=warn,veilid_core=warn")
+            }),
         )
         .init();
 
@@ -99,10 +102,7 @@ pub fn run() {
             )?;
 
             // Ensure config directory exists on first launch
-            let config_dir = app
-                .path()
-                .app_config_dir()
-                .map_err(|e| e.to_string())?;
+            let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
             std::fs::create_dir_all(&config_dir)
                 .map_err(|e| format!("failed to create config dir: {e}"))?;
 
@@ -132,7 +132,12 @@ pub fn run() {
             let state_for_veilid = Arc::clone(&state_for_setup);
             let app_handle_clone = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                match services::veilid_service::initialize_node(&app_handle_clone, &state_for_veilid).await {
+                match services::veilid_service::initialize_node(
+                    &app_handle_clone,
+                    &state_for_veilid,
+                )
+                .await
+                {
                     Ok(update_rx) => {
                         // Create shutdown channel for the dispatch loop
                         let (shutdown_tx, shutdown_rx) = tokio::sync::mpsc::channel(1);
@@ -140,15 +145,18 @@ pub fn run() {
 
                         // Start dispatch loop (runs until app exit)
                         let dispatch_state = Arc::clone(&state_for_veilid);
-                        let dispatch_handle = tokio::spawn(services::veilid_service::start_dispatch_loop(
-                            app_handle_clone,
-                            dispatch_state,
-                            update_rx,
-                            shutdown_rx,
-                        ));
+                        let dispatch_handle =
+                            tokio::spawn(services::veilid_service::start_dispatch_loop(
+                                app_handle_clone,
+                                dispatch_state,
+                                update_rx,
+                                shutdown_rx,
+                            ));
                         *state_for_veilid.dispatch_loop_handle.write() = Some(dispatch_handle);
                     }
-                    Err(e) => tracing::error!(error = %e, "failed to start Veilid node at app startup"),
+                    Err(e) => {
+                        tracing::error!(error = %e, "failed to start Veilid node at app startup");
+                    }
                 }
             });
 
@@ -286,6 +294,8 @@ pub fn run() {
                 tracing::info!("RunEvent::Exit fired — starting graceful shutdown");
                 let state: tauri::State<'_, SharedState> = app_handle.state();
                 let state = state.inner().clone();
+                let pool: tauri::State<'_, db::DbPool> = app_handle.state();
+                let pool = pool.inner().clone();
                 tauri::async_runtime::block_on(async move {
                     let shutdown = graceful_shutdown(&state);
                     if tokio::time::timeout(std::time::Duration::from_secs(5), shutdown)
@@ -294,6 +304,14 @@ pub fn run() {
                     {
                         tracing::warn!("graceful shutdown timed out after 5s — forcing exit");
                     }
+                    // Checkpoint WAL to prevent Windows NTFS file lock issues.
+                    // tokio_rusqlite::Connection drops gracefully after this.
+                    let _: Result<(), tokio_rusqlite::Error<rusqlite::Error>> = pool
+                        .call(|conn| {
+                            conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")?;
+                            Ok(())
+                        })
+                        .await;
                 });
             }
             _ => {}
@@ -320,7 +338,11 @@ async fn graceful_shutdown(state: &SharedState) {
     }
 
     // Signal game detection shutdown
-    let game_tx = state.game_detector.lock().as_ref().map(|h| h.shutdown_tx.clone());
+    let game_tx = state
+        .game_detector
+        .lock()
+        .as_ref()
+        .map(|h| h.shutdown_tx.clone());
     if let Some(tx) = game_tx {
         let _ = tx.send(()).await;
     }
@@ -366,12 +388,24 @@ async fn graceful_shutdown(state: &SharedState) {
                 (None, None, None, None, None, None)
             }
         };
-        if let Some(tx) = send_tx { let _ = tx.send(()).await; }
-        if let Some(tx) = recv_tx { let _ = tx.send(()).await; }
-        if let Some(tx) = monitor_tx { let _ = tx.send(()).await; }
-        if let Some(h) = send_h { let _ = h.await; }
-        if let Some(h) = recv_h { let _ = h.await; }
-        if let Some(h) = monitor_h { let _ = h.await; }
+        if let Some(tx) = send_tx {
+            let _ = tx.send(()).await;
+        }
+        if let Some(tx) = recv_tx {
+            let _ = tx.send(()).await;
+        }
+        if let Some(tx) = monitor_tx {
+            let _ = tx.send(()).await;
+        }
+        if let Some(h) = send_h {
+            let _ = h.await;
+        }
+        if let Some(h) = recv_h {
+            let _ = h.await;
+        }
+        if let Some(h) = monitor_h {
+            let _ = h.await;
+        }
         {
             let mut ve = state.voice_engine.lock();
             if let Some(ref mut handle) = *ve {
@@ -423,7 +457,7 @@ async fn graceful_shutdown(state: &SharedState) {
 
     // 6. Publish Offline to DHT before cleanup closes records
     {
-        let current_status = state.identity.read().as_ref().map(|id| id.status);
+        let current_status = state_helpers::identity_status(state);
         if current_status != Some(state::UserStatus::Offline) {
             if let Err(e) =
                 services::presence_service::publish_status(state, state::UserStatus::Offline).await
@@ -507,18 +541,15 @@ fn toggle_buddy_list(app_handle: &tauri::AppHandle) {
 /// event so the frontend stays in sync.
 fn toggle_mute(app_handle: &tauri::AppHandle, state: &SharedState) {
     // Read identity key first to avoid holding two locks simultaneously
-    let public_key = state
-        .identity
-        .read()
-        .as_ref()
-        .map(|id| id.public_key.clone())
-        .unwrap_or_default();
+    let public_key = state_helpers::owner_key_or_default(state);
 
     let mut ve = state.voice_engine.lock();
     if let Some(ref mut handle) = *ve {
         let new_muted = !handle.engine.is_muted;
         handle.engine.set_muted(new_muted);
-        handle.muted_flag.store(new_muted, std::sync::atomic::Ordering::Relaxed);
+        handle
+            .muted_flag
+            .store(new_muted, std::sync::atomic::Ordering::Relaxed);
 
         let event = channels::VoiceEvent::UserMuted {
             public_key,
@@ -546,7 +577,10 @@ fn linux_display_setup() {
     use std::path::Path;
 
     // Wayland display discovery
-    if std::env::var("WAYLAND_DISPLAY").unwrap_or_default().is_empty() {
+    if std::env::var("WAYLAND_DISPLAY")
+        .unwrap_or_default()
+        .is_empty()
+    {
         if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
             if let Ok(entries) = std::fs::read_dir(&runtime_dir) {
                 for entry in entries.flatten() {

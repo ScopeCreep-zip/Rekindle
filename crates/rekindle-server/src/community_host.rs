@@ -2,9 +2,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use rekindle_protocol::dht::community::{
-    OverwriteType, PermissionOverwrite, RoleDefinition,
+    permissions, OverwriteType, PermissionOverwrite, RoleDefinition, ROLE_EVERYONE_ID,
     SUBKEY_CHANNELS, SUBKEY_MEK, SUBKEY_MEMBERS, SUBKEY_METADATA, SUBKEY_SERVER_ROUTE,
-    ROLE_EVERYONE_ID, permissions,
 };
 use rekindle_protocol::dht::DHTManager;
 use rusqlite::params;
@@ -32,7 +31,7 @@ fn load_members_from_db(
                 role_ids: Vec::new(), // filled below
                 joined_at: row.get(2)?,
                 route_blob: row.get(3)?,
-                timeout_until: None,  // filled below
+                timeout_until: None, // filled below
             })
         })
         .map_err(|e| e.to_string())?;
@@ -41,7 +40,9 @@ fn load_members_from_db(
     // Load role_ids from junction table
     {
         let mut role_stmt = db
-            .prepare("SELECT pseudonym_key_hex, role_id FROM server_member_roles WHERE community_id = ?")
+            .prepare(
+                "SELECT pseudonym_key_hex, role_id FROM server_member_roles WHERE community_id = ?",
+            )
             .map_err(|e| e.to_string())?;
         let role_rows = role_stmt
             .query_map(params![community_id], |row| {
@@ -283,7 +284,10 @@ async fn setup_dht_and_route(
     let mgr = DHTManager::new(state.routing_context.clone());
     let mut dht_opened = false;
     for attempt in 0..5 {
-        match mgr.open_record_writable(dht_record_key, keypair.clone()).await {
+        match mgr
+            .open_record_writable(dht_record_key, keypair.clone())
+            .await
+        {
             Ok(()) => {
                 tracing::debug!(community = %community_id, "opened DHT record with write access");
                 dht_opened = true;
@@ -422,7 +426,9 @@ pub async fn host_community(
     // completes.
     if !creator_pseudonym_key.is_empty()
         && creator_pseudonym_hex.is_empty()
-        && !members.iter().any(|m| m.pseudonym_key_hex == creator_pseudonym_key)
+        && !members
+            .iter()
+            .any(|m| m.pseudonym_key_hex == creator_pseudonym_key)
     {
         #[allow(clippy::cast_possible_wrap)]
         let now = timestamp_now_secs() as i64;
@@ -532,10 +538,7 @@ pub fn unhost_community(state: &Arc<ServerState>, community_id: &str) {
 ///
 /// Veilid private routes have a TTL of ~5 minutes. By re-allocating every 2 minutes
 /// we ensure routes are always fresh before they expire.
-pub async fn dht_keepalive_loop(
-    state: Arc<ServerState>,
-    mut shutdown_rx: mpsc::Receiver<()>,
-) {
+pub async fn dht_keepalive_loop(state: Arc<ServerState>, mut shutdown_rx: mpsc::Receiver<()>) {
     let mut interval = tokio::time::interval(Duration::from_secs(120));
 
     loop {
@@ -624,13 +627,17 @@ async fn rewrite_all_communities(state: &Arc<ServerState>) {
         hosted
             .values()
             .map(|c| {
-                let name = state.db.lock().ok()
+                let name = state
+                    .db
+                    .lock()
+                    .ok()
                     .and_then(|db| {
                         db.query_row(
                             "SELECT name FROM hosted_communities WHERE id = ?",
                             params![c.community_id],
                             |row| row.get::<_, String>(0),
-                        ).ok()
+                        )
+                        .ok()
                     })
                     .unwrap_or_default();
                 KeepaliveData {
@@ -689,7 +696,10 @@ async fn rewrite_all_communities(state: &Arc<ServerState>) {
 }
 
 /// Handle a route change event: re-allocate routes for affected communities.
-pub async fn handle_server_route_change(state: &Arc<ServerState>, dead_routes: &[veilid_core::RouteId]) {
+pub async fn handle_server_route_change(
+    state: &Arc<ServerState>,
+    dead_routes: &[veilid_core::RouteId],
+) {
     // Collect affected community IDs outside the lock (parking_lot guards are !Send)
     let affected: Vec<(String, String)> = {
         let hosted = state.hosted.read();
@@ -734,10 +744,7 @@ pub async fn handle_server_route_change(state: &Arc<ServerState>, dead_routes: &
 
                 // Publish new route to DHT
                 let mgr = DHTManager::new(state.routing_context.clone());
-                if let Err(e) = mgr
-                    .set_value(&dht_key, SUBKEY_SERVER_ROUTE, new_blob)
-                    .await
-                {
+                if let Err(e) = mgr.set_value(&dht_key, SUBKEY_SERVER_ROUTE, new_blob).await {
                     tracing::warn!(error = %e, community = %community_id, "failed to publish new route to DHT");
                 }
             }
@@ -874,10 +881,7 @@ pub async fn publish_member_roster(state: &Arc<ServerState>, community_id: &str)
     };
 
     let mgr = DHTManager::new(state.routing_context.clone());
-    if let Err(e) = mgr
-        .set_value(&dht_key, SUBKEY_MEMBERS, roster_json)
-        .await
-    {
+    if let Err(e) = mgr.set_value(&dht_key, SUBKEY_MEMBERS, roster_json).await {
         tracing::warn!(
             error = %e,
             community = %community_id,

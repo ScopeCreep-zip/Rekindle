@@ -91,9 +91,14 @@ pub async fn update_mailbox_route(
         ProtocolError::DhtError(format!("invalid mailbox key '{mailbox_key}': {e}"))
     })?;
 
-    rc.set_dht_value(record_key, MAILBOX_SUBKEY_ROUTE_BLOB, route_blob.to_vec(), None)
-        .await
-        .map_err(|e| ProtocolError::DhtError(format!("update_mailbox_route: {e}")))?;
+    rc.set_dht_value(
+        record_key,
+        MAILBOX_SUBKEY_ROUTE_BLOB,
+        route_blob.to_vec(),
+        None,
+    )
+    .await
+    .map_err(|e| ProtocolError::DhtError(format!("update_mailbox_route: {e}")))?;
 
     tracing::debug!(key = %mailbox_key, "updated mailbox route blob");
     Ok(())

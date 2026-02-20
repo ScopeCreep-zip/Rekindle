@@ -57,7 +57,8 @@ impl GameDatabase {
 
     /// Get the number of games in the database.
     pub fn game_count(&self) -> usize {
-        let unique: std::collections::HashSet<u32> = self.by_process.values().map(|e| e.id).collect();
+        let unique: std::collections::HashSet<u32> =
+            self.by_process.values().map(|e| e.id).collect();
         unique.len()
     }
 }

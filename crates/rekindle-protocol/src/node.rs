@@ -2,9 +2,7 @@ use std::sync::Arc;
 
 use tokio::sync::mpsc;
 use tracing::info;
-use veilid_core::{
-    RoutingContext, VeilidAPI, VeilidConfig, VeilidUpdate,
-};
+use veilid_core::{RoutingContext, VeilidAPI, VeilidConfig, VeilidUpdate};
 
 use crate::error::ProtocolError;
 
@@ -57,11 +55,11 @@ impl RekindleNode {
 
         // 1. Build VeilidConfig from our NodeConfig
         let veilid_config = VeilidConfig::new(
-            &config.app_namespace,   // program_name
-            "com",                   // organization
-            "rekindle",              // qualifier
+            &config.app_namespace,     // program_name
+            "com",                     // organization
+            "rekindle",                // qualifier
             Some(&config.storage_dir), // storage_directory override
-            None,                    // config_directory (use default)
+            None,                      // config_directory (use default)
         );
 
         // 2. Create an mpsc channel for VeilidUpdate events
@@ -73,8 +71,7 @@ impl RekindleNode {
             // rather than blocking the Veilid core thread.
             if let Err(e) = update_tx.try_send(update) {
                 let dropped = match &e {
-                    mpsc::error::TrySendError::Full(u)
-                    | mpsc::error::TrySendError::Closed(u) => u,
+                    mpsc::error::TrySendError::Full(u) | mpsc::error::TrySendError::Closed(u) => u,
                 };
                 // During shutdown Veilid emits many "Other" events which are
                 // safe to drop — log those at debug, everything else at warn.

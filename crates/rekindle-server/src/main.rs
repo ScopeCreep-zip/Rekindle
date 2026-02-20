@@ -198,10 +198,7 @@ async fn retry_failed_routes(state: Arc<ServerState>) {
 
                     // Publish route to DHT
                     let mgr = DHTManager::new(state.routing_context.clone());
-                    if let Err(e) = mgr
-                        .set_value(dht_key, SUBKEY_SERVER_ROUTE, rb.blob)
-                        .await
-                    {
+                    if let Err(e) = mgr.set_value(dht_key, SUBKEY_SERVER_ROUTE, rb.blob).await {
                         tracing::warn!(
                             error = %e,
                             community = %community_id,
@@ -250,8 +247,7 @@ async fn start_veilid_node(
         // Non-blocking send — if the channel is full we drop the event
         if let Err(e) = update_tx.try_send(update) {
             let dropped = match &e {
-                mpsc::error::TrySendError::Full(u)
-                | mpsc::error::TrySendError::Closed(u) => u,
+                mpsc::error::TrySendError::Full(u) | mpsc::error::TrySendError::Closed(u) => u,
             };
             tracing::error!(
                 event = server_update_name(dropped),
@@ -264,18 +260,20 @@ async fn start_veilid_node(
     // including any newly added fields like `consensus_width`. The storage_dir
     // override ensures the server uses its own separate storage from the client.
     let veilid_config = veilid_core::VeilidConfig::new(
-        "rekindle-server",          // program_name
-        "com",                      // organization
-        "rekindle-server",          // qualifier (different from client to avoid collisions)
-        Some(storage_dir),          // storage_directory override
-        None,                       // config_directory (use default)
+        "rekindle-server", // program_name
+        "com",             // organization
+        "rekindle-server", // qualifier (different from client to avoid collisions)
+        Some(storage_dir), // storage_directory override
+        None,              // config_directory (use default)
     );
 
     let api = veilid_core::api_startup(update_callback, veilid_config)
         .await
         .map_err(|e| format!("veilid api_startup failed: {e}"))?;
 
-    api.attach().await.map_err(|e| format!("veilid attach failed: {e}"))?;
+    api.attach()
+        .await
+        .map_err(|e| format!("veilid attach failed: {e}"))?;
 
     tracing::info!("Veilid node started for server");
     Ok(api)
@@ -297,7 +295,8 @@ async fn server_dispatch_loop(
                         &state,
                         call.message(),
                         incoming_route_id.as_ref(),
-                    ).await;
+                    )
+                    .await;
                     if let Err(e) = state.api.app_call_reply(call.id(), response).await {
                         tracing::error!(error = %e, "failed to send app_call reply — caller will hang");
                     }
@@ -336,8 +335,16 @@ async fn load_persisted_communities(state: &Arc<ServerState>) {
     for (id, dht_key, keypair_hex, name, creator_pseudonym) in communities {
         // Pass the stored creator_pseudonym — host_community will skip
         // re-registering if the creator is already in the members table.
-        if let Err(e) =
-            community_host::host_community(state, &id, &dht_key, &keypair_hex, &name, &creator_pseudonym, "").await
+        if let Err(e) = community_host::host_community(
+            state,
+            &id,
+            &dht_key,
+            &keypair_hex,
+            &name,
+            &creator_pseudonym,
+            "",
+        )
+        .await
         {
             tracing::error!(community = %id, error = %e, "failed to re-host community");
         }
@@ -346,7 +353,9 @@ async fn load_persisted_communities(state: &Arc<ServerState>) {
 
 /// Load persisted community records from the server database.
 #[allow(clippy::type_complexity)]
-fn load_communities_from_db(state: &Arc<ServerState>) -> Result<Vec<(String, String, String, String, String)>, String> {
+fn load_communities_from_db(
+    state: &Arc<ServerState>,
+) -> Result<Vec<(String, String, String, String, String)>, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let mut stmt = db
         .prepare("SELECT id, dht_record_key, owner_keypair_hex, name, creator_pseudonym FROM hosted_communities")
