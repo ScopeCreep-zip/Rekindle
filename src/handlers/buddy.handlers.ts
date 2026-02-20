@@ -2,7 +2,7 @@ import { reconcile } from "solid-js/store";
 import { commands } from "../ipc/commands";
 import { setFriendsState, friendsState } from "../stores/friends.store";
 import { authState } from "../stores/auth.store";
-import type { Friend } from "../stores/friends.store";
+import type { Friend, OutgoingInvite } from "../stores/friends.store";
 
 export function handleDoubleClickFriend(
   publicKey: string,
@@ -159,12 +159,55 @@ export async function handleUnblockUser(publicKey: string): Promise<string | nul
   }
 }
 
-export async function handleGenerateInvite(): Promise<string | null> {
+export async function handleGenerateInvite(): Promise<{ url: string; inviteId: string } | string> {
   try {
-    return await commands.generateInvite();
+    const result = await commands.generateInvite();
+    // Append to store so the invite list updates immediately
+    const now = Date.now();
+    const newInvite: OutgoingInvite = {
+      inviteId: result.inviteId,
+      url: result.url,
+      createdAt: now,
+      expiresAt: now + 48 * 60 * 60 * 1000, // 48h default
+      status: "pending",
+      acceptedBy: null,
+    };
+    setFriendsState("outgoingInvites", (prev) => [...prev, newInvite]);
+    return result;
   } catch (e) {
     console.error("Failed to generate invite:", e);
+    return String(e);
+  }
+}
+
+export async function handleCancelInvite(inviteId: string): Promise<string | null> {
+  try {
+    await commands.cancelInvite(inviteId);
+    setFriendsState("outgoingInvites", (prev) =>
+      prev.filter((inv) => inv.inviteId !== inviteId),
+    );
     return null;
+  } catch (e) {
+    return String(e);
+  }
+}
+
+export async function handleLoadOutgoingInvites(): Promise<void> {
+  try {
+    const invites = await commands.getOutgoingInvites();
+    setFriendsState(
+      "outgoingInvites",
+      invites.map((inv) => ({
+        inviteId: inv.inviteId,
+        url: inv.url,
+        createdAt: inv.createdAt,
+        expiresAt: inv.expiresAt,
+        status: inv.status,
+        acceptedBy: inv.acceptedBy,
+      })),
+    );
+  } catch (e) {
+    console.error("Failed to load outgoing invites:", e);
   }
 }
 

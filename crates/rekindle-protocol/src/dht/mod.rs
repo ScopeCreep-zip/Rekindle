@@ -260,11 +260,12 @@ impl DHTManager {
                 self.route_cache.insert(pubkey_hex.to_string(), route_blob);
             }
             Err(e) => {
-                tracing::debug!(
+                tracing::warn!(
                     peer = %pubkey_hex,
                     error = %e,
                     blob_len = route_blob.len(),
-                    "route blob import failed (stale?) — will fetch fresh route from DHT"
+                    route_count_byte = route_blob.first().copied().unwrap_or(0),
+                    "route blob import failed — will fetch fresh route from DHT"
                 );
             }
         }

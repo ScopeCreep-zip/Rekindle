@@ -131,6 +131,7 @@ pub async fn add_friend(
         pool.inner(),
         &public_key,
         &message,
+        None,
     )
     .await
     .unwrap_or_else(|e| {
@@ -278,9 +279,14 @@ pub async fn accept_request(
     let owner_key = state_helpers::current_owner_key(state.inner())?;
     let timestamp = db::timestamp_now();
 
-    // Read stored profile_dht_key, mailbox_dht_key, route_blob, and prekey_bundle BEFORE deleting the pending request
-    let (pending_profile_key, pending_mailbox_key, pending_route_blob, pending_prekey_bundle) =
-        read_pending_request_data(pool.inner(), &owner_key, &public_key).await?;
+    // Read stored profile_dht_key, mailbox_dht_key, route_blob, prekey_bundle, and invite_id BEFORE deleting the pending request
+    let (
+        pending_profile_key,
+        pending_mailbox_key,
+        pending_route_blob,
+        pending_prekey_bundle,
+        pending_invite_id,
+    ) = read_pending_request_data(pool.inner(), &owner_key, &public_key).await?;
 
     // Insert into friends and delete from pending_friend_requests atomically
     let pk = public_key.clone();
@@ -403,6 +409,12 @@ pub async fn accept_request(
         }
     }
 
+    // Mark the originating invite as 'accepted' (if this request came from one)
+    if let Some(ref iid) = pending_invite_id {
+        let ok = state_helpers::current_owner_key(state.inner()).unwrap_or_default();
+        crate::invite_helpers::mark_invite_accepted(pool.inner(), &ok, iid);
+    }
+
     let _ = app.emit(
         "chat-event",
         &ChatEvent::FriendRequestAccepted {
@@ -414,15 +426,16 @@ pub async fn accept_request(
     Ok(())
 }
 
-/// Pending friend request data: `(profile_dht_key, mailbox_dht_key, route_blob, prekey_bundle)`.
+/// Pending friend request data: `(profile_dht_key, mailbox_dht_key, route_blob, prekey_bundle, invite_id)`.
 type PendingRequestData = (
     Option<String>,
     Option<String>,
     Option<Vec<u8>>,
     Option<Vec<u8>>,
+    Option<String>,
 );
 
-/// Read `profile_dht_key`, `mailbox_dht_key`, `route_blob`, and `prekey_bundle` from a pending friend request.
+/// Read `profile_dht_key`, `mailbox_dht_key`, `route_blob`, `prekey_bundle`, and `invite_id` from a pending friend request.
 async fn read_pending_request_data(
     pool: &DbPool,
     owner_key: &str,
@@ -433,12 +446,12 @@ async fn read_pending_request_data(
     db_call(pool, move |conn| {
         let row: Option<PendingRequestData> = conn
             .query_row(
-                "SELECT profile_dht_key, mailbox_dht_key, route_blob, prekey_bundle FROM pending_friend_requests WHERE owner_key = ?1 AND public_key = ?2",
+                "SELECT profile_dht_key, mailbox_dht_key, route_blob, prekey_bundle, invite_id FROM pending_friend_requests WHERE owner_key = ?1 AND public_key = ?2",
                 rusqlite::params![ok, pk],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
             )
             .optional()?;
-        Ok(row.unwrap_or((None, None, None, None)))
+        Ok(row.unwrap_or((None, None, None, None, None)))
     })
     .await
 }
@@ -491,9 +504,13 @@ pub async fn reject_request(
 ) -> Result<(), String> {
     let owner_key = state_helpers::current_owner_key(state.inner())?;
 
+    // Read invite_id before deleting the pending request (for invite tracking)
+    let (_, _, _, _, invite_id) =
+        read_pending_request_data(pool.inner(), &owner_key, &public_key).await?;
+
     // Delete from pending_friend_requests
     let pk = public_key.clone();
-    let ok = owner_key;
+    let ok = owner_key.clone();
     db_call(pool.inner(), move |conn| {
         conn.execute(
             "DELETE FROM pending_friend_requests WHERE owner_key = ?1 AND public_key = ?2",
@@ -502,6 +519,11 @@ pub async fn reject_request(
         Ok(())
     })
     .await?;
+
+    // Mark the originating invite as 'rejected' (if this request came from one)
+    if let Some(ref iid) = invite_id {
+        crate::invite_helpers::mark_invite_rejected(pool.inner(), &owner_key, iid);
+    }
 
     // Send rejection to the peer via Veilid
     services::message_service::send_friend_reject(
@@ -651,9 +673,20 @@ pub async fn move_friend_to_group(
     Ok(())
 }
 
+/// Result of generating an invite: URL + tracking token.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GenerateInviteResult {
+    pub url: String,
+    pub invite_id: String,
+}
+
 /// Generate an invite link containing everything needed for a peer to add us.
 #[tauri::command]
-pub async fn generate_invite(state: State<'_, SharedState>) -> Result<String, String> {
+pub async fn generate_invite(
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+) -> Result<GenerateInviteResult, String> {
     // Gather identity info
     let (public_key, display_name, secret_key) = {
         let identity = state.identity.read();
@@ -665,8 +698,40 @@ pub async fn generate_invite(state: State<'_, SharedState>) -> Result<String, St
         (pk, dn, sk)
     };
 
-    let (profile_dht_key, route_blob, mailbox_dht_key) =
-        state_helpers::profile_dht_info(state.inner())?;
+    // Wait up to 30s for DHT publish to complete (route_blob, profile key, mailbox key)
+    let (profile_dht_key, route_blob, mailbox_dht_key) = tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        async {
+            loop {
+                match state_helpers::profile_dht_info(state.inner()) {
+                    Ok(info) => return info,
+                    Err(_) => tokio::time::sleep(std::time::Duration::from_millis(500)).await,
+                }
+            }
+        },
+    )
+    .await
+    .map_err(|_| "Network not ready — please wait a moment and try again".to_string())?;
+
+    tracing::info!(
+        route_blob_len = route_blob.len(),
+        route_count = route_blob.first().copied().unwrap_or(0),
+        route_blob_hex_preview = %hex::encode(&route_blob[..route_blob.len().min(32)]),
+        profile_dht_key = %profile_dht_key,
+        mailbox_dht_key = %mailbox_dht_key,
+        "generate_invite: route blob from state"
+    );
+
+    // Validate that our own route blob is importable (sanity check)
+    if let Some(api) = state_helpers::veilid_api(state.inner()) {
+        match api.import_remote_private_route(route_blob.clone()) {
+            Ok(_) => tracing::info!("generate_invite: route blob self-import OK"),
+            Err(e) => {
+                tracing::error!(error = %e, "generate_invite: OUR OWN route blob fails to import!");
+                return Err(format!("route blob is invalid: {e}"));
+            }
+        }
+    }
 
     // Generate a PreKeyBundle
     let prekey_bundle = {
@@ -679,6 +744,9 @@ pub async fn generate_invite(state: State<'_, SharedState>) -> Result<String, St
         serde_json::to_vec(&bundle).map_err(|e| format!("serialize prekey bundle: {e}"))?
     };
 
+    // Generate a unique invite_id
+    let invite_id = uuid::Uuid::new_v4().to_string();
+
     let blob = rekindle_protocol::messaging::create_invite_blob(
         &secret_key,
         &public_key,
@@ -687,8 +755,17 @@ pub async fn generate_invite(state: State<'_, SharedState>) -> Result<String, St
         &profile_dht_key,
         &route_blob,
         &prekey_bundle,
+        Some(&invite_id),
     );
-    Ok(rekindle_protocol::messaging::encode_invite_url(&blob))
+    let url = rekindle_protocol::messaging::encode_invite_url(&blob);
+
+    // Track in the database (store URL so it can be re-copied later)
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
+    crate::invite_helpers::create_outgoing_invite(pool.inner(), &owner_key, &invite_id, &url)
+        .await?;
+
+    tracing::info!(%invite_id, "generated tracked invite");
+    Ok(GenerateInviteResult { url, invite_id })
 }
 
 /// Add a friend from a `rekindle://` invite string.
@@ -788,6 +865,7 @@ pub async fn add_friend_from_invite(
         pool.inner(),
         &blob.public_key,
         "Added via invite link",
+        blob.invite_id.as_deref(),
     )
     .await
     .unwrap_or_else(|e| {
@@ -825,6 +903,13 @@ async fn setup_invite_contact(
     blob: &rekindle_protocol::messaging::envelope::InviteBlob,
 ) {
     // Cache the route blob from the invite for immediate contact
+    tracing::info!(
+        peer = %blob.public_key,
+        route_blob_len = blob.route_blob.len(),
+        route_count = blob.route_blob.first().copied().unwrap_or(0),
+        route_blob_hex_preview = %hex::encode(&blob.route_blob[..blob.route_blob.len().min(32)]),
+        "setup_invite_contact: received route blob from invite"
+    );
     let api = state_helpers::veilid_api(state);
     if let Some(ref api) = api {
         let mut dht_mgr = state.dht_manager.write();
@@ -832,6 +917,8 @@ async fn setup_invite_contact(
             mgr.manager
                 .cache_route(api, &blob.public_key, blob.route_blob.clone());
         }
+    } else {
+        tracing::warn!("setup_invite_contact: no veilid API available — cannot cache route");
     }
 
     // Establish Signal session from invite's PreKeyBundle
@@ -1218,4 +1305,27 @@ pub async fn emit_friends_presence(
         }
     }
     Ok(())
+}
+
+/// Cancel a pending outgoing invite by its `invite_id`.
+#[tauri::command]
+pub async fn cancel_invite(
+    invite_id: String,
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+) -> Result<(), String> {
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
+    crate::invite_helpers::cancel_outgoing_invite(pool.inner(), &owner_key, &invite_id).await?;
+    tracing::info!(%invite_id, "invite cancelled");
+    Ok(())
+}
+
+/// Get all active (pending/responded) outgoing invites.
+#[tauri::command]
+pub async fn get_outgoing_invites(
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+) -> Result<Vec<crate::invite_helpers::OutgoingInvite>, String> {
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
+    crate::invite_helpers::get_pending_invites(pool.inner(), &owner_key).await
 }

@@ -10,7 +10,7 @@ pub type DbPool = tokio_rusqlite::Connection;
 /// Bump this every time `001_init.sql` changes.  On mismatch the entire
 /// database is wiped and recreated from the schema — safe because the app
 /// is not live yet and identity keys live in Stronghold, not `SQLite`.
-const SCHEMA_VERSION: i64 = 16;
+const SCHEMA_VERSION: i64 = 18;
 
 /// Result of opening the database — includes a flag indicating whether the
 /// schema was recreated from scratch (so the caller can wipe dependent storage).
