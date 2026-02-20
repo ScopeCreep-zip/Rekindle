@@ -47,6 +47,9 @@ pub enum MessagePayload {
         route_blob: Vec<u8>,
         /// Sender's mailbox DHT key (for route discovery after reconnect).
         mailbox_dht_key: String,
+        /// Correlation token linking this request back to a specific invite.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        invite_id: Option<String>,
     },
     /// Friend request acceptance.
     FriendAccept {
@@ -113,6 +116,9 @@ pub struct InviteBlob {
     pub route_blob: Vec<u8>,
     /// Sender's Signal `PreKeyBundle` (serialized JSON).
     pub prekey_bundle: Vec<u8>,
+    /// Correlation token linking this invite to tracked outgoing invites.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invite_id: Option<String>,
     /// Ed25519 signature over the JSON of all fields above.
     pub signature: Vec<u8>,
 }
@@ -121,6 +127,7 @@ pub struct InviteBlob {
 ///
 /// Signs over a JSON-serialized form of the invite data (excluding the
 /// signature field itself) using the Ed25519 secret key.
+#[allow(clippy::too_many_arguments)]
 pub fn create_invite_blob(
     secret_key: &[u8; 32],
     public_key: &str,
@@ -129,6 +136,7 @@ pub fn create_invite_blob(
     profile_dht_key: &str,
     route_blob: &[u8],
     prekey_bundle: &[u8],
+    invite_id: Option<&str>,
 ) -> InviteBlob {
     use ed25519_dalek::{Signer, SigningKey};
 
@@ -142,6 +150,7 @@ pub fn create_invite_blob(
         "profile_dht_key": profile_dht_key,
         "route_blob": route_blob,
         "prekey_bundle": prekey_bundle,
+        "invite_id": invite_id,
     });
     let signable_bytes = serde_json::to_vec(&signable).unwrap_or_default();
     let signature = signing_key.sign(&signable_bytes);
@@ -153,6 +162,7 @@ pub fn create_invite_blob(
         profile_dht_key: profile_dht_key.to_string(),
         route_blob: route_blob.to_vec(),
         prekey_bundle: prekey_bundle.to_vec(),
+        invite_id: invite_id.map(str::to_string),
         signature: signature.to_bytes().to_vec(),
     }
 }
@@ -186,6 +196,7 @@ pub fn verify_invite_blob(blob: &InviteBlob) -> Result<(), String> {
         "profile_dht_key": blob.profile_dht_key,
         "route_blob": blob.route_blob,
         "prekey_bundle": blob.prekey_bundle,
+        "invite_id": blob.invite_id,
     });
     let signable_bytes = serde_json::to_vec(&signable).unwrap_or_default();
 

@@ -120,9 +120,16 @@ export const commands = {
     invoke<void>("rename_friend_group", { groupId, name }),
   moveFriendToGroup: (publicKey: string, groupId: number | null) =>
     invoke<void>("move_friend_to_group", { publicKey, groupId }),
-  generateInvite: () => invoke<string>("generate_invite"),
+  generateInvite: () =>
+    invoke<{ url: string; inviteId: string }>("generate_invite"),
   addFriendFromInvite: (inviteString: string) =>
     invoke<void>("add_friend_from_invite", { inviteString }),
+  cancelInvite: (inviteId: string) =>
+    invoke<void>("cancel_invite", { inviteId }),
+  getOutgoingInvites: () =>
+    invoke<{ inviteId: string; url: string; createdAt: number; expiresAt: number; status: string; acceptedBy: string | null }[]>(
+      "get_outgoing_invites",
+    ),
   blockUser: (publicKey: string, displayName?: string) =>
     invoke<void>("block_user", { publicKey, displayName: displayName ?? null }),
   unblockUser: (publicKey: string) =>

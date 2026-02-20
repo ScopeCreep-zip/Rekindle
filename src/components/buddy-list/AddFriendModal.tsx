@@ -1,24 +1,78 @@
-import { Component, Show, createSignal } from "solid-js";
+import { Component, Show, For, createSignal, createEffect, on } from "solid-js";
 import Modal from "../common/Modal";
 import { friendsState, setFriendsState } from "../../stores/friends.store";
-import { handleAddFriend, handleGenerateInvite, handleAddFriendFromInvite } from "../../handlers/buddy.handlers";
+import {
+  handleAddFriend,
+  handleGenerateInvite,
+  handleAddFriendFromInvite,
+  handleCancelInvite,
+  handleLoadOutgoingInvites,
+} from "../../handlers/buddy.handlers";
+import { maskInviteUrl } from "../../utils/masking";
 
 type Tab = "invite" | "key";
+
+function formatRelativeTime(epochMs: number): string {
+  const now = Date.now();
+  const diffMs = Math.abs(now - epochMs);
+  const minutes = Math.floor(diffMs / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+function formatTimeUntil(epochMs: number): string {
+  const now = Date.now();
+  const diffMs = epochMs - now;
+  if (diffMs <= 0) return "expired";
+  const minutes = Math.floor(diffMs / 60000);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  return `${days}d`;
+}
 
 const AddFriendModal: Component = () => {
   const [tab, setTab] = createSignal<Tab>("invite");
   const [inviteString, setInviteString] = createSignal("");
   const [generatedInvite, setGeneratedInvite] = createSignal("");
+  const [currentInviteId, setCurrentInviteId] = createSignal<string | null>(null);
   const [publicKey, setPublicKey] = createSignal("");
   const [message, setMessage] = createSignal("Hey, add me!");
   const [error, setError] = createSignal<string | null>(null);
   const [generating, setGenerating] = createSignal(false);
   const [copied, setCopied] = createSignal(false);
 
+  // Load outgoing invites when modal opens on invite tab
+  createEffect(
+    on(
+      () => friendsState.showAddFriend,
+      (isOpen) => {
+        if (isOpen && tab() === "invite") {
+          handleLoadOutgoingInvites();
+        }
+      },
+    ),
+  );
+
+  // Also load when switching to invite tab while modal is open
+  createEffect(
+    on(tab, (currentTab) => {
+      if (friendsState.showAddFriend && currentTab === "invite") {
+        handleLoadOutgoingInvites();
+      }
+    }),
+  );
+
   function handleClose(): void {
     setFriendsState("showAddFriend", false);
     setInviteString("");
     setGeneratedInvite("");
+    setCurrentInviteId(null);
     setPublicKey("");
     setMessage("Hey, add me!");
     setError(null);
@@ -29,12 +83,39 @@ const AddFriendModal: Component = () => {
   async function handleGenerate(): Promise<void> {
     setGenerating(true);
     setError(null);
-    const invite = await handleGenerateInvite();
+    const result = await handleGenerateInvite();
     setGenerating(false);
-    if (invite) {
-      setGeneratedInvite(invite);
+    if (typeof result === "string") {
+      setError(result);
     } else {
-      setError("Failed to generate invite link");
+      setGeneratedInvite(result.url);
+      setCurrentInviteId(result.inviteId);
+    }
+  }
+
+  async function handleCancelCurrentInvite(): Promise<void> {
+    const inviteId = currentInviteId();
+    if (!inviteId) return;
+    setError(null);
+    const err = await handleCancelInvite(inviteId);
+    if (err) {
+      setError(err);
+    } else {
+      setGeneratedInvite("");
+      setCurrentInviteId(null);
+    }
+  }
+
+  async function handleCancelListInvite(inviteId: string): Promise<void> {
+    setError(null);
+    const err = await handleCancelInvite(inviteId);
+    if (err) {
+      setError(err);
+    }
+    // If this was the currently displayed invite, clear it
+    if (currentInviteId() === inviteId) {
+      setGeneratedInvite("");
+      setCurrentInviteId(null);
     }
   }
 
@@ -73,6 +154,12 @@ const AddFriendModal: Component = () => {
       handleClose();
     }
   }
+
+  // Filter out the currently-displayed invite from the list to avoid duplication
+  const activeInvites = () =>
+    friendsState.outgoingInvites.filter(
+      (inv) => inv.inviteId !== currentInviteId(),
+    );
 
   return (
     <Modal
@@ -115,12 +202,64 @@ const AddFriendModal: Component = () => {
                   value={generatedInvite()}
                   rows={3}
                 />
-                <button class="add-friend-copy-btn" onClick={handleCopy}>
-                  {copied() ? "Copied!" : "Copy"}
-                </button>
+                <div class="add-friend-invite-actions">
+                  <button class="add-friend-copy-btn" onClick={handleCopy}>
+                    {copied() ? "Copied!" : "Copy"}
+                  </button>
+                  <button class="add-friend-cancel-btn" onClick={handleCancelCurrentInvite}>
+                    Cancel Invite
+                  </button>
+                </div>
               </div>
             </Show>
           </div>
+
+          <Show when={activeInvites().length > 0}>
+            <div class="add-friend-invite-list">
+              <div class="add-friend-invite-list-header">Active Invites</div>
+              <For each={activeInvites()}>
+                {(invite) => (
+                  <div class="add-friend-invite-item">
+                    <span
+                      class="invite-status-badge"
+                      classList={{ responded: invite.status === "accepted" }}
+                    >
+                      {invite.status === "accepted" ? "Responded" : "Waiting"}
+                    </span>
+                    <Show when={invite.url}>
+                      <span
+                        class="invite-url-masked"
+                        title="Click to copy invite URL"
+                        onClick={() => navigator.clipboard.writeText(invite.url)}
+                      >
+                        {maskInviteUrl(invite.url)}
+                      </span>
+                    </Show>
+                    <span class="invite-time">
+                      {formatRelativeTime(invite.createdAt)}
+                    </span>
+                    <span class="invite-time">
+                      expires in {formatTimeUntil(invite.expiresAt)}
+                    </span>
+                    <Show when={invite.url}>
+                      <button
+                        class="invite-copy-btn"
+                        onClick={() => navigator.clipboard.writeText(invite.url)}
+                      >
+                        Copy
+                      </button>
+                    </Show>
+                    <button
+                      class="invite-cancel-btn"
+                      onClick={() => handleCancelListInvite(invite.inviteId)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
 
           <div class="add-friend-divider">or paste a friend's invite</div>
 

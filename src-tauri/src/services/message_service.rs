@@ -136,6 +136,7 @@ pub async fn handle_incoming_message(
             profile_dht_key,
             route_blob,
             mailbox_dht_key,
+            invite_id,
         } => {
             handle_friend_request_full(
                 app_handle,
@@ -148,6 +149,7 @@ pub async fn handle_incoming_message(
                 &profile_dht_key,
                 &route_blob,
                 &mailbox_dht_key,
+                invite_id.as_deref(),
             )
             .await;
         }
@@ -354,10 +356,17 @@ async fn handle_friend_request_full(
     profile_dht_key: &str,
     route_blob: &[u8],
     mailbox_dht_key: &str,
+    invite_id: Option<&str>,
 ) {
     handle_friend_request(sender_hex, prekey_bundle);
 
     // Cache the sender's route blob for immediate replies
+    tracing::info!(
+        from = %sender_hex,
+        route_blob_len = route_blob.len(),
+        route_count = route_blob.first().copied().unwrap_or(0),
+        "handle_friend_request_full: received peer route blob"
+    );
     if !route_blob.is_empty() {
         state_helpers::cache_peer_route(state, sender_hex, route_blob.to_vec());
     }
@@ -426,6 +435,17 @@ async fn handle_friend_request_full(
         }
     }
 
+    // Invite correlation: if this request carries an invite_id, check if cancelled
+    if let Some(iid) = invite_id {
+        let owner_key = state_helpers::owner_key_or_default(state);
+        if crate::invite_helpers::is_invite_cancelled(pool, &owner_key, iid).await {
+            tracing::info!(from = %sender_hex, %iid, "rejecting request for cancelled invite");
+            let _ = send_friend_reject(state, pool, sender_hex).await;
+            return;
+        }
+        crate::invite_helpers::mark_invite_responded(pool, &owner_key, iid, sender_hex);
+    }
+
     persist_friend_request(
         state,
         pool,
@@ -436,6 +456,7 @@ async fn handle_friend_request_full(
         route_blob,
         mailbox_dht_key,
         prekey_bundle,
+        invite_id,
     );
     let event = ChatEvent::FriendRequest {
         from: sender_hex.to_string(),
@@ -580,6 +601,7 @@ fn persist_friend_request(
     route_blob: &[u8],
     mailbox_dht_key: &str,
     prekey_bundle: &[u8],
+    invite_id: Option<&str>,
 ) {
     let owner_key = state_helpers::owner_key_or_default(state);
     let pk = sender_hex.to_string();
@@ -589,13 +611,14 @@ fn persist_friend_request(
     let rb = route_blob.to_vec();
     let mdk = mailbox_dht_key.to_string();
     let pkb = prekey_bundle.to_vec();
+    let iid = invite_id.map(str::to_string);
     let now = crate::db::timestamp_now();
     db_fire(pool, "persist incoming friend request", move |conn| {
         conn.execute(
             "INSERT OR REPLACE INTO pending_friend_requests \
-             (owner_key, public_key, display_name, message, received_at, profile_dht_key, route_blob, mailbox_dht_key, prekey_bundle) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            rusqlite::params![owner_key, pk, dn, msg, now, pdk, rb, mdk, pkb],
+             (owner_key, public_key, display_name, message, received_at, profile_dht_key, route_blob, mailbox_dht_key, prekey_bundle, invite_id) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            rusqlite::params![owner_key, pk, dn, msg, now, pdk, rb, mdk, pkb, iid],
         )?;
         Ok(())
     });
@@ -1181,6 +1204,7 @@ pub async fn send_friend_request(
     pool: &DbPool,
     to: &str,
     message: &str,
+    invite_id: Option<&str>,
 ) -> Result<(), String> {
     let display_name = state_helpers::current_identity(state)
         .map_err(|_| "identity not set".to_string())?
@@ -1212,6 +1236,12 @@ pub async fn send_friend_request(
         )
     };
 
+    tracing::info!(
+        to = %to,
+        route_blob_len = route_blob.len(),
+        route_count = route_blob.first().copied().unwrap_or(0),
+        "send_friend_request: our route blob info"
+    );
     if route_blob.is_empty() {
         tracing::warn!(
             "sending friend request with empty route blob — peer will fetch from DHT profile"
@@ -1225,6 +1255,7 @@ pub async fn send_friend_request(
         profile_dht_key,
         route_blob,
         mailbox_dht_key,
+        invite_id: invite_id.map(str::to_string),
     };
     // Friend requests are NOT encrypted (no session yet)
     send_envelope_to_peer(state, pool, to, &payload, false).await

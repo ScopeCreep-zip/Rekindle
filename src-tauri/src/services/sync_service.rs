@@ -49,9 +49,13 @@ pub async fn start_sync_loop(
                 if let Err(e) = retry_pending_messages(&state, &pool).await {
                     tracing::warn!(error = %e, "pending message retry failed");
                 }
-                // Every ~6th tick (~3 minutes) — expire stale pending requests
+                // Every ~6th tick (~3 minutes) — expire stale pending requests + invites
                 if tick_count.is_multiple_of(6) {
                     expire_stale_requests(&state, &pool, &app_handle).await;
+                    let owner_key = state_helpers::owner_key_or_default(&state);
+                    if !owner_key.is_empty() {
+                        crate::invite_helpers::expire_stale_invites(&pool, &owner_key);
+                    }
                 }
             }
             _ = shutdown_rx.recv() => {

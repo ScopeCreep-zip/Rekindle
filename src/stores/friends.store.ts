@@ -29,6 +29,15 @@ export interface PendingRequest {
   message: string;
 }
 
+export interface OutgoingInvite {
+  inviteId: string;
+  url: string;
+  createdAt: number;
+  expiresAt: number;
+  status: string;
+  acceptedBy: string | null;
+}
+
 export interface ContextMenuState {
   x: number;
   y: number;
@@ -38,6 +47,7 @@ export interface ContextMenuState {
 export interface FriendsState {
   friends: Record<string, Friend>;
   pendingRequests: PendingRequest[];
+  outgoingInvites: OutgoingInvite[];
   contextMenu: ContextMenuState | null;
   showAddFriend: boolean;
   showNewChat: boolean;
@@ -46,6 +56,7 @@ export interface FriendsState {
 const [friendsState, setFriendsState] = createStore<FriendsState>({
   friends: {},
   pendingRequests: [],
+  outgoingInvites: [],
   contextMenu: null,
   showAddFriend: false,
   showNewChat: false,

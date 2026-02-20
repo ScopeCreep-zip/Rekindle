@@ -4,6 +4,7 @@ mod channels;
 pub mod commands;
 pub mod db;
 pub mod db_helpers;
+pub mod invite_helpers;
 pub mod ipc_client;
 pub mod keystore;
 mod services;
@@ -222,6 +223,8 @@ pub fn run() {
             commands::friends::unblock_user,
             commands::friends::get_blocked_users,
             commands::friends::cancel_request,
+            commands::friends::cancel_invite,
+            commands::friends::get_outgoing_invites,
             commands::friends::emit_friends_presence,
             // community
             commands::community::create_community,

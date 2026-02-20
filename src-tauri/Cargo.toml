@@ -48,6 +48,7 @@ zeroize = "1"
 hex = "0.4"
 base64 = "0.22"
 rand = "0.8"
+uuid = { version = "1", features = ["v4"] }
 veilid-core = { version = "0.5.2", default-features = true }
 image = { version = "0.25", default-features = false, features = ["webp", "png", "jpeg", "gif"] }
 [target.'cfg(target_os = "linux")'.dependencies]

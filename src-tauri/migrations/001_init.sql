@@ -179,6 +179,7 @@ CREATE TABLE IF NOT EXISTS pending_friend_requests (
     route_blob BLOB,
     mailbox_dht_key TEXT,
     prekey_bundle BLOB,
+    invite_id TEXT,
     PRIMARY KEY (owner_key, public_key)
 );
 
@@ -188,4 +189,16 @@ CREATE TABLE IF NOT EXISTS blocked_users (
     display_name TEXT NOT NULL DEFAULT '',
     blocked_at INTEGER NOT NULL,
     PRIMARY KEY (owner_key, public_key)
+);
+
+CREATE TABLE IF NOT EXISTS outgoing_invites (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    invite_id TEXT NOT NULL,
+    url TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK(status IN ('pending', 'responded', 'accepted', 'rejected', 'cancelled', 'expired')),
+    accepted_by TEXT,
+    PRIMARY KEY (owner_key, invite_id)
 );

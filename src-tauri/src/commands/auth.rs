@@ -1408,7 +1408,12 @@ async fn allocate_route_with_retry(
                 }
                 // Notify the frontend immediately about the new route
                 services::veilid_service::emit_network_status(app_handle, state);
-                tracing::info!(attempt, "private route allocated");
+                tracing::info!(
+                    attempt,
+                    blob_len = route_blob.blob.len(),
+                    route_count = route_blob.blob.first().copied().unwrap_or(0),
+                    "private route allocated"
+                );
                 return Some(route_blob.blob);
             }
             Err(e) => {
