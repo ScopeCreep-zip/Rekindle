@@ -1360,50 +1360,11 @@ pub async fn initialize_node(
 #[allow(clippy::too_many_lines)]
 pub async fn logout_cleanup(app_handle: Option<&tauri::AppHandle>, state: &AppState) {
     // 0. Shut down voice if active
-    {
-        let (send_tx, send_h, recv_tx, recv_h, monitor_tx, monitor_h) = {
-            let mut ve = state.voice_engine.lock();
-            if let Some(ref mut handle) = *ve {
-                (
-                    handle.send_loop_shutdown.take(),
-                    handle.send_loop_handle.take(),
-                    handle.recv_loop_shutdown.take(),
-                    handle.recv_loop_handle.take(),
-                    handle.device_monitor_shutdown.take(),
-                    handle.device_monitor_handle.take(),
-                )
-            } else {
-                (None, None, None, None, None, None)
-            }
-        };
-        if let Some(tx) = send_tx {
-            let _ = tx.send(()).await;
-        }
-        if let Some(tx) = recv_tx {
-            let _ = tx.send(()).await;
-        }
-        if let Some(tx) = monitor_tx {
-            let _ = tx.send(()).await;
-        }
-        if let Some(h) = send_h {
-            let _ = h.await;
-        }
-        if let Some(h) = recv_h {
-            let _ = h.await;
-        }
-        if let Some(h) = monitor_h {
-            let _ = h.await;
-        }
-        {
-            let mut ve = state.voice_engine.lock();
-            if let Some(ref mut handle) = *ve {
-                handle.engine.stop_capture();
-                handle.engine.stop_playback();
-            }
-            *ve = None;
-        }
-        *state.voice_packet_tx.write() = None;
-    }
+    crate::services::voice::shutdown::shutdown_voice(
+        state,
+        &crate::services::voice::shutdown::VoiceShutdownOpts::FULL,
+    )
+    .await;
 
     // Shut down idle service
     {
