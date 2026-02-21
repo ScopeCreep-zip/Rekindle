@@ -989,13 +989,8 @@ async fn try_mailbox_route_fallback(
         };
 
     // Cache and import
-    let api = state_helpers::veilid_api(state)?;
-
-    let mut dht_mgr = state.dht_manager.write();
-    let mgr = dht_mgr.as_mut()?;
-    mgr.manager
-        .cache_route(&api, recipient_key, route_blob.clone());
-    match mgr.manager.get_or_import_route(&api, &route_blob) {
+    state_helpers::cache_peer_route(state, recipient_key, route_blob.clone());
+    match state_helpers::import_route_blob(state, &route_blob) {
         Ok(route_id) => {
             tracing::debug!(to = %recipient_key, "discovered route via mailbox fallback");
             Some((route_id, rc))

@@ -330,9 +330,6 @@ async fn send_join_rpc(
         &params.identity_secret,
         &params.community_id,
     );
-    let Some(api) = state_helpers::veilid_api(state) else {
-        return Ok(None);
-    };
 
     let request = rekindle_protocol::messaging::CommunityRequest::Join {
         pseudonym_pubkey: params.my_pseudonym_key.clone().unwrap_or_default(),
@@ -352,23 +349,11 @@ async fn send_join_rpc(
         request_bytes,
     );
 
-    let route_id = {
-        let mut dht_mgr = state.dht_manager.write();
-        match dht_mgr.as_mut() {
-            Some(mgr) => match mgr.manager.get_or_import_route(&api, server_route_blob) {
-                Ok(rid) => rid,
-                Err(e) => {
-                    tracing::warn!(error = %e, "failed to import server route — joining locally");
-                    return Ok(None);
-                }
-            },
-            None => match api.import_remote_private_route(server_route_blob.to_vec()) {
-                Ok(rid) => rid,
-                Err(e) => {
-                    tracing::warn!(error = %e, "failed to import server route — joining locally");
-                    return Ok(None);
-                }
-            },
+    let route_id = match state_helpers::import_route_blob(state, server_route_blob) {
+        Ok(rid) => rid,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to import server route — joining locally");
+            return Ok(None);
         }
     };
 

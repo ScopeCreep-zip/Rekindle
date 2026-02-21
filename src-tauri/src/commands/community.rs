@@ -638,7 +638,7 @@ pub(crate) async fn send_encrypted_to_server(
     timestamp: i64,
     route_blob: Vec<u8>,
 ) -> Result<(), String> {
-    let Some((api, rc)) = state_helpers::api_and_routing_context(state) else {
+    let Some(rc) = state_helpers::routing_context(state) else {
         return Ok(());
     };
 
@@ -670,18 +670,8 @@ pub(crate) async fn send_encrypted_to_server(
     // Use the DHTManager's route cache to avoid leaking RouteId objects.
     // Each call to import_remote_private_route without caching creates a new
     // RouteId that Veilid tracks internally — the cache reuses them.
-    let route_id = {
-        let mut dht_mgr = state.dht_manager.write();
-        match dht_mgr.as_mut() {
-            Some(mgr) => mgr
-                .manager
-                .get_or_import_route(&api, &route_blob)
-                .map_err(|e| format!("failed to import server route: {e}"))?,
-            None => api
-                .import_remote_private_route(route_blob.clone())
-                .map_err(|e| format!("failed to import server route: {e}"))?,
-        }
-    };
+    let route_id = state_helpers::import_route_blob(state, &route_blob)
+        .map_err(|e| format!("failed to import server route: {e}"))?;
 
     let result = rekindle_protocol::messaging::sender::send_call(&rc, route_id, &envelope).await;
     match result {
@@ -799,7 +789,7 @@ async fn send_community_rpc_veilid(
 ) -> Result<rekindle_protocol::messaging::CommunityResponse, String> {
     let server_route_blob = resolve_server_route_blob(state, pool, community_id).await?;
 
-    let (api, rc) = state_helpers::api_and_routing_context(state)
+    let rc = state_helpers::routing_context(state)
         .ok_or_else(|| "Veilid network not attached".to_string())?;
 
     let signing_key = {
@@ -818,25 +808,15 @@ async fn send_community_rpc_veilid(
         request_bytes,
     );
 
-    let route_id = {
-        let mut dht_mgr = state.dht_manager.write();
-        match dht_mgr.as_mut() {
-            Some(mgr) => mgr
-                .manager
-                .get_or_import_route(&api, &server_route_blob)
-                .map_err(|e| format!("RPC call failed: {e}"))?,
-            None => api
-                .import_remote_private_route(server_route_blob)
-                .map_err(|e| format!("RPC call failed: {e}"))?,
-        }
-    };
+    let route_id = state_helpers::import_route_blob(state, &server_route_blob)
+        .map_err(|e| format!("RPC call failed: {e}"))?;
 
     let result = rekindle_protocol::messaging::sender::send_call(&rc, route_id, &envelope).await;
 
     match result {
         Ok(response_bytes) => parse_community_response(&response_bytes),
         Err(e) => {
-            retry_rpc_with_fresh_route(state, pool, community_id, &rc, &api, &envelope, &e).await
+            retry_rpc_with_fresh_route(state, pool, community_id, &rc, &envelope, &e).await
         }
     }
 }
@@ -889,7 +869,6 @@ async fn retry_rpc_with_fresh_route(
     pool: &DbPool,
     community_id: &str,
     rc: &veilid_core::RoutingContext,
-    api: &veilid_core::VeilidAPI,
     envelope: &rekindle_protocol::messaging::envelope::MessageEnvelope,
     original_error: &rekindle_protocol::error::ProtocolError,
 ) -> Result<rekindle_protocol::messaging::CommunityResponse, String> {
@@ -931,18 +910,8 @@ async fn retry_rpc_with_fresh_route(
     }
     persist_route_blob_to_db(pool, state, community_id, &fresh_blob);
 
-    let fresh_route_id = {
-        let mut dht_mgr = state.dht_manager.write();
-        match dht_mgr.as_mut() {
-            Some(mgr) => mgr
-                .manager
-                .get_or_import_route(api, &fresh_blob)
-                .map_err(|e| format!("RPC retry failed: {e}"))?,
-            None => api
-                .import_remote_private_route(fresh_blob)
-                .map_err(|e| format!("RPC retry failed: {e}"))?,
-        }
-    };
+    let fresh_route_id = state_helpers::import_route_blob(state, &fresh_blob)
+        .map_err(|e| format!("RPC retry failed: {e}"))?;
 
     rekindle_protocol::messaging::sender::send_call(rc, fresh_route_id, envelope)
         .await
