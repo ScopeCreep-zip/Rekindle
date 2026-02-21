@@ -507,8 +507,9 @@ pub async fn reject_request(
 ) -> Result<(), String> {
     let owner_key = state_helpers::current_owner_key(state.inner())?;
 
-    // Read invite_id before deleting the pending request (for invite tracking)
-    let (_, _, _, _, invite_id) =
+    // Read pending request data BEFORE deleting — we need the route blob for delivery
+    // and invite_id for tracking.
+    let (_, _, pending_route_blob, _, invite_id) =
         read_pending_request_data(pool.inner(), &owner_key, &public_key).await?;
 
     // Delete from pending_friend_requests
@@ -526,6 +527,22 @@ pub async fn reject_request(
     // Mark the originating invite as 'rejected' (if this request came from one)
     if let Some(ref iid) = invite_id {
         crate::invite_helpers::mark_invite_rejected(pool.inner(), &owner_key, iid);
+    }
+
+    // Cache the requester's route blob so send_friend_reject can deliver immediately.
+    // The requester is NOT in state.friends (only in pending_friend_requests), so
+    // without this cache, send_envelope_to_peer's route lookup would fail.
+    // Mirrors accept_request's route caching at lines 311-322.
+    if let Some(ref blob) = pending_route_blob {
+        if !blob.is_empty() {
+            let api = state_helpers::veilid_api(state.inner());
+            if let Some(api) = api {
+                let mut dht_mgr = state.dht_manager.write();
+                if let Some(mgr) = dht_mgr.as_mut() {
+                    mgr.manager.cache_route(&api, &public_key, blob.clone());
+                }
+            }
+        }
     }
 
     // Send rejection to the peer via Veilid
