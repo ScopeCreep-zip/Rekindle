@@ -1,4 +1,5 @@
 pub mod community_service;
+pub mod dht_publish_service;
 pub mod game_service;
 pub mod idle_service;
 pub mod message_service;

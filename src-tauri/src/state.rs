@@ -177,6 +177,34 @@ pub struct NodeHandle {
     pub mailbox_dht_key: Option<String>,
 }
 
+impl NodeHandle {
+    /// Store profile DHT key and owner keypair after publishing.
+    pub fn set_profile_dht(&mut self, key: String, keypair: Option<veilid_core::KeyPair>) {
+        self.profile_dht_key = Some(key);
+        if keypair.is_some() {
+            self.profile_owner_keypair = keypair;
+        }
+    }
+
+    /// Store friend list DHT key and owner keypair after publishing.
+    pub fn set_friend_list_dht(&mut self, key: String, keypair: Option<veilid_core::KeyPair>) {
+        self.friend_list_dht_key = Some(key);
+        if keypair.is_some() {
+            self.friend_list_owner_keypair = keypair;
+        }
+    }
+
+    /// Store account DHT key after publishing.
+    pub fn set_account_dht(&mut self, key: String) {
+        self.account_dht_key = Some(key);
+    }
+
+    /// Store mailbox DHT key after publishing.
+    pub fn set_mailbox_dht(&mut self, key: String) {
+        self.mailbox_dht_key = Some(key);
+    }
+}
+
 /// Handle to the Signal session manager.
 pub struct SignalManagerHandle {
     /// The crypto session manager.
@@ -287,6 +315,18 @@ impl DHTManagerHandle {
     /// Remove a conversation key mapping.
     pub fn unregister_conversation_key(&mut self, conversation_key: &str) {
         self.conversation_key_to_friend.remove(conversation_key);
+    }
+
+    /// Set the profile DHT key on the inner manager and track the record.
+    pub fn set_profile_key(&mut self, key: &str) {
+        self.manager.profile_key = Some(key.to_string());
+        self.track_open_record(key.to_string());
+    }
+
+    /// Set the friend list DHT key on the inner manager and track the record.
+    pub fn set_friend_list_key(&mut self, key: &str) {
+        self.manager.friend_list_key = Some(key.to_string());
+        self.track_open_record(key.to_string());
     }
 }
 
