@@ -994,20 +994,11 @@ async fn try_inline_route_refresh_and_send(
         return false;
     };
 
-    let retry = {
-        let node = state.node.read();
-        node.as_ref().and_then(|nh| {
-            let api = nh.api.clone();
-            let rc = nh.routing_context.clone();
-            let mut dht_mgr = state.dht_manager.write();
-            dht_mgr.as_mut().and_then(|mgr| {
-                mgr.manager
-                    .get_or_import_route(&api, &fresh_blob)
-                    .ok()
-                    .map(|rid| (rid, rc))
-            })
-        })
-    };
+    let retry = state_helpers::routing_context(state).and_then(|rc| {
+        state_helpers::import_route_blob(state, &fresh_blob)
+            .ok()
+            .map(|rid| (rid, rc))
+    });
 
     if let Some((rid, rc)) = retry {
         if send_envelope(&rc, rid, envelope).await.is_ok() {

@@ -760,8 +760,7 @@ pub(super) async fn fetch_mek_from_server(
     community_id: &str,
 ) {
     let server_route_blob = state_helpers::community_server_route(state, community_id);
-
-    let node_info = state_helpers::api_and_routing_context(state);
+    let rc = state_helpers::routing_context(state);
 
     let signing_key = {
         let secret = state.identity_secret.lock();
@@ -770,8 +769,7 @@ pub(super) async fn fetch_mek_from_server(
         })
     };
 
-    let (Some(route_blob), Some((api, rc)), Some(sk)) = (server_route_blob, node_info, signing_key)
-    else {
+    let (Some(route_blob), Some(rc), Some(sk)) = (server_route_blob, rc, signing_key) else {
         tracing::warn!(community = %community_id, "cannot fetch MEK — missing route/node/key");
         return;
     };
@@ -787,22 +785,11 @@ pub(super) async fn fetch_mek_from_server(
     let envelope =
         rekindle_protocol::messaging::sender::build_envelope(&sk, timestamp, nonce, request_bytes);
 
-    let route_id = {
-        let mut dht_mgr = state.dht_manager.write();
-        if let Some(mgr) = dht_mgr.as_mut() {
-            match mgr.manager.get_or_import_route(&api, &route_blob) {
-                Ok(rid) => rid,
-                Err(e) => {
-                    tracing::warn!(community = %community_id, error = %e, "failed to import server route for MEK fetch");
-                    return;
-                }
-            }
-        } else {
-            let Ok(rid) = api.import_remote_private_route(route_blob) else {
-                tracing::warn!(community = %community_id, "failed to import server route for MEK fetch");
-                return;
-            };
-            rid
+    let route_id = match state_helpers::import_route_blob(state, &route_blob) {
+        Ok(rid) => rid,
+        Err(e) => {
+            tracing::warn!(community = %community_id, error = %e, "failed to import server route for MEK fetch");
+            return;
         }
     };
 

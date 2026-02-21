@@ -258,6 +258,27 @@ pub fn try_import_peer_route(
     }
 }
 
+/// Import a route blob via `DHTManager` cache (preferred) or raw `VeilidAPI` fallback.
+///
+/// Consolidates the repeated lock → match Some/None → `get_or_import_route` pattern.
+/// Acquires and drops the `dht_manager` write lock synchronously.
+pub fn import_route_blob(
+    state: &Arc<AppState>,
+    route_blob: &[u8],
+) -> Result<veilid_core::RouteId, String> {
+    let api = veilid_api(state).ok_or("Veilid not connected")?;
+    let mut dht_mgr = state.dht_manager.write();
+    match dht_mgr.as_mut() {
+        Some(mgr) => mgr
+            .manager
+            .get_or_import_route(&api, route_blob)
+            .map_err(|e| e.to_string()),
+        None => api
+            .import_remote_private_route(route_blob.to_vec())
+            .map_err(|e| e.to_string()),
+    }
+}
+
 // ── Communities ──────────────────────────────────────────────────────
 
 /// Get a community's server route blob.
