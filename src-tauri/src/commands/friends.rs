@@ -161,20 +161,9 @@ pub async fn remove_friend(
 ) -> Result<(), String> {
     let owner_key = state_helpers::current_owner_key(state.inner())?;
 
-    // Notify the peer BEFORE local cleanup so we still have their route info.
-    // send_envelope_to_peer queues the message for retry if the initial send fails.
-    if let Err(e) = services::message_service::send_to_peer_raw(
-        state.inner(),
-        pool.inner(),
-        &public_key,
-        &rekindle_protocol::messaging::envelope::MessagePayload::Unfriended,
-    )
-    .await
-    {
-        tracing::warn!(to = %public_key, error = %e, "failed to send unfriend notification (continuing with local removal)");
-    }
+    // ── Local cleanup (fast, never blocks on network) ────────────────
 
-    // Always queue for retry — Veilid app_message has no delivery guarantee.
+    // Queue Unfriended message for reliable retry delivery (DB insert only).
     // Cleared when peer sends UnfriendedAck, or dropped after max retries (20 × 30s).
     let _ = services::message_service::build_and_queue_envelope(
         state.inner(),
@@ -212,25 +201,7 @@ pub async fn remove_friend(
         }
     }
 
-    // Unregister DHT presence key mapping (stops watching their status)
-    // and invalidate route cache so stale routes aren't reused on re-add
-    let dht_key = state_helpers::friend_dht_key(state.inner(), &public_key);
-    {
-        let mut dht_mgr = state.dht_manager.write();
-        if let Some(mgr) = dht_mgr.as_mut() {
-            if let Some(ref dht_key) = dht_key {
-                mgr.unregister_friend_dht_key(dht_key);
-            }
-            mgr.manager.invalidate_route_for_peer(&public_key);
-        }
-    }
-
-    // Update DHT friend list record (publishes list without the removed friend)
-    if let Err(e) = services::message_service::push_friend_list_update(state.inner()).await {
-        tracing::warn!(error = %e, "failed to update DHT friend list after removal");
-    }
-
-    // Emit event so ALL windows update (not just the one that called the command)
+    // Emit event so ALL windows update immediately
     let _ = app.emit(
         "chat-event",
         &ChatEvent::FriendRemoved {
@@ -238,13 +209,46 @@ pub async fn remove_friend(
         },
     );
 
-    // Spawn a background task to fully remove the friend from in-memory state
-    // after a grace period. This gives sync_service enough time to retry the
-    // Unfriended notification using the friend's cached routing info.
-    // 10 minutes matches the max retry window (20 retries × 30s intervals).
+    tracing::info!(public_key = %public_key, "friend removed");
+
+    // ── Background network operations (can be slow — DHT reads/writes) ──
+
     let state_clone = state.inner().clone();
+    let pool_clone = pool.inner().clone();
     let pk_clone = public_key.clone();
     tokio::spawn(async move {
+        // Best-effort immediate send — peer may be offline or route stale
+        if let Err(e) = services::message_service::send_to_peer_raw(
+            &state_clone,
+            &pool_clone,
+            &pk_clone,
+            &rekindle_protocol::messaging::envelope::MessagePayload::Unfriended,
+        )
+        .await
+        {
+            tracing::warn!(to = %pk_clone, error = %e, "failed to send unfriend notification");
+        }
+
+        // Unregister DHT presence key mapping (stops watching their status)
+        // and invalidate route cache so stale routes aren't reused on re-add
+        let dht_key = state_helpers::friend_dht_key(&state_clone, &pk_clone);
+        {
+            let mut dht_mgr = state_clone.dht_manager.write();
+            if let Some(mgr) = dht_mgr.as_mut() {
+                if let Some(ref dht_key) = dht_key {
+                    mgr.unregister_friend_dht_key(dht_key);
+                }
+                mgr.manager.invalidate_route_for_peer(&pk_clone);
+            }
+        }
+
+        // Update DHT friend list record (publishes list without the removed friend)
+        if let Err(e) = services::message_service::push_friend_list_update(&state_clone).await {
+            tracing::warn!(error = %e, "failed to update DHT friend list after removal");
+        }
+
+        // Grace period: fully remove from in-memory state after retries are exhausted.
+        // 10 minutes matches the max retry window (20 retries × 30s intervals).
         tokio::time::sleep(std::time::Duration::from_secs(600)).await;
         let mut friends = state_clone.friends.write();
         // Only remove if still in Removing state (user may have re-added them)
@@ -262,7 +266,6 @@ pub async fn remove_friend(
         }
     });
 
-    tracing::info!(public_key = %public_key, "friend removed");
     Ok(())
 }
 
