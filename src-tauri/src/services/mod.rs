@@ -7,3 +7,4 @@ pub mod presence_service;
 pub mod server_health_service;
 pub mod sync_service;
 pub mod veilid_service;
+pub mod voice;
