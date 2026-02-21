@@ -111,3 +111,94 @@ pub async fn read_prekey_bundle(
 ) -> Result<Option<Vec<u8>>, ProtocolError> {
     dht.get_value(profile_key, SUBKEY_PREKEY_BUNDLE).await
 }
+
+/// Open an existing profile DHT record and update all subkeys, or create a new one.
+///
+/// On reopen: opens with write access via the owner keypair, then updates subkeys
+/// 0 (display name), 1 (status message), 2 (status=online), 5 (prekey bundle),
+/// and 6 (route blob). If the open or any subkey write fails, falls back to
+/// creating a fresh profile record.
+///
+/// Returns `(key, keypair, is_new)`. When `is_new` is true the keypair must be
+/// persisted to `SQLite`.
+pub async fn open_or_create_profile(
+    dht: &DHTManager,
+    existing_key: Option<&str>,
+    owner_keypair: Option<veilid_core::KeyPair>,
+    display_name: &str,
+    status_message: &str,
+    prekey_bundle: &[u8],
+    route_blob: &[u8],
+) -> Result<(String, Option<veilid_core::KeyPair>, bool), ProtocolError> {
+    // Try to reopen and update existing record
+    if let (Some(key), Some(ref keypair)) = (existing_key, &owner_keypair) {
+        match try_reopen_and_update(
+            dht,
+            key,
+            keypair.clone(),
+            display_name,
+            status_message,
+            prekey_bundle,
+            route_blob,
+        )
+        .await
+        {
+            Ok(()) => {
+                tracing::info!(key, "reusing existing DHT profile record");
+                return Ok((key.to_string(), owner_keypair, false));
+            }
+            Err(e) => {
+                tracing::warn!(
+                    key, error = %e,
+                    "failed to reuse existing DHT profile — creating new one"
+                );
+            }
+        }
+    } else if existing_key.is_some() {
+        tracing::warn!("no owner keypair for existing profile — creating new one");
+    }
+
+    let (key, keypair) =
+        create_profile(dht, display_name, status_message, prekey_bundle, route_blob).await?;
+    Ok((key, keypair, true))
+}
+
+/// Open an existing profile record writable and update all content subkeys.
+///
+/// Returns `Err` if the open fails OR any subkey write fails — the caller
+/// should fall back to creating a new record.
+async fn try_reopen_and_update(
+    dht: &DHTManager,
+    key: &str,
+    owner_keypair: veilid_core::KeyPair,
+    display_name: &str,
+    status_message: &str,
+    prekey_bundle: &[u8],
+    route_blob: &[u8],
+) -> Result<(), ProtocolError> {
+    dht.open_record_writable(key, owner_keypair).await?;
+
+    update_subkey(dht, key, SUBKEY_DISPLAY_NAME, display_name.as_bytes().to_vec()).await?;
+    update_subkey(
+        dht,
+        key,
+        SUBKEY_STATUS_MESSAGE,
+        status_message.as_bytes().to_vec(),
+    )
+    .await?;
+    // Status = online (0) + timestamp
+    let ts: i64 = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        .try_into()
+        .unwrap_or(i64::MAX);
+    let mut status_payload = Vec::with_capacity(9);
+    status_payload.push(0u8);
+    status_payload.extend_from_slice(&ts.to_be_bytes());
+    update_subkey(dht, key, SUBKEY_STATUS, status_payload).await?;
+    update_subkey(dht, key, SUBKEY_PREKEY_BUNDLE, prekey_bundle.to_vec()).await?;
+    update_subkey(dht, key, SUBKEY_ROUTE_BLOB, route_blob.to_vec()).await?;
+
+    Ok(())
+}

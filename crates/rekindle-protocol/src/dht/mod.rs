@@ -29,6 +29,16 @@ pub fn parse_record_key(key: &str) -> Result<veilid_core::RecordKey, ProtocolErr
 /// `RouteChange` events (which can be dropped).
 const IMPORTED_ROUTE_TTL_SECS: u64 = 90;
 
+/// Result of an open-or-create DHT record operation.
+pub struct OpenOrCreateResult {
+    /// The DHT record key string.
+    pub key: String,
+    /// Owner keypair — the stored one on reuse, or freshly generated on create.
+    pub keypair: Option<veilid_core::KeyPair>,
+    /// `true` if a new record was created (keypair must be persisted).
+    pub is_new: bool,
+}
+
 /// Manages DHT record operations (profiles, friend lists, communities).
 ///
 /// Wraps a Veilid `RoutingContext` to perform record CRUD, watch, and get/set
@@ -211,6 +221,48 @@ impl DHTManager {
             .map_err(|e| ProtocolError::DhtError(format!("set_dht_value: {e}")))?;
 
         Ok(())
+    }
+
+    /// Try to reopen an existing DHT record with write access, falling back to
+    /// creating a new one if the open fails or no key/keypair is available.
+    ///
+    /// Returns the resolved key, effective keypair, and whether a new record was
+    /// created. When `is_new` is true, the caller **must** persist the keypair.
+    pub async fn open_or_create_record(
+        &self,
+        existing_key: Option<&str>,
+        owner_keypair: Option<veilid_core::KeyPair>,
+        subkey_count: u32,
+        label: &str,
+    ) -> Result<OpenOrCreateResult, ProtocolError> {
+        if let (Some(key), Some(keypair)) = (existing_key, owner_keypair) {
+            match self.open_record_writable(key, keypair.clone()).await {
+                Ok(()) => {
+                    tracing::info!(key, label, "reusing existing DHT record");
+                    return Ok(OpenOrCreateResult {
+                        key: key.to_string(),
+                        keypair: Some(keypair),
+                        is_new: false,
+                    });
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        key, label, error = %e,
+                        "failed to open existing DHT record — creating new one"
+                    );
+                }
+            }
+        } else if existing_key.is_some() {
+            tracing::warn!(label, "no owner keypair for existing record — creating new one");
+        }
+
+        let (key, keypair) = self.create_record(subkey_count).await?;
+        tracing::info!(key = %key, label, "created new DHT record");
+        Ok(OpenOrCreateResult {
+            key,
+            keypair,
+            is_new: true,
+        })
     }
 
     /// Watch specific subkeys on a DHT record for changes.
