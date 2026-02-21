@@ -707,9 +707,10 @@ fn persist_mek(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     community_id: &str,
-    mek_generation: u64,
-    mek_encrypted: &[u8],
+    mek: &rekindle_crypto::group::media_key::MediaEncryptionKey,
 ) {
+    let mek_generation = mek.generation();
+
     // Update generation in community state
     {
         let mut communities = state.communities.write();
@@ -718,20 +719,12 @@ fn persist_mek(
         }
     }
 
-    // Persist to Stronghold
+    // Persist to Stronghold — delegate to keystore helper
     {
-        use rekindle_crypto::keychain::{mek_key_name, VAULT_COMMUNITIES};
-        use rekindle_crypto::Keychain as _;
-
         let ks_handle: tauri::State<'_, crate::keystore::KeystoreHandle> = app_handle.state();
         let ks = ks_handle.lock();
         if let Some(ref keystore) = *ks {
-            let key_name = mek_key_name(community_id);
-            if let Err(e) = keystore.store_key(VAULT_COMMUNITIES, &key_name, mek_encrypted) {
-                tracing::warn!(error = %e, "failed to persist refreshed MEK to Stronghold");
-            } else if let Err(e) = keystore.save() {
-                tracing::warn!(error = %e, "failed to save Stronghold snapshot after MEK refresh");
-            }
+            crate::keystore::persist_mek(keystore, community_id, mek);
         }
     }
 
@@ -820,23 +813,17 @@ pub(super) async fn fetch_mek_from_server(
         Ok(response_bytes) => {
             if let Ok(rekindle_protocol::messaging::CommunityResponse::MEK {
                 mek_encrypted,
-                mek_generation,
+                ..
             }) = serde_json::from_slice(&response_bytes)
             {
-                if mek_encrypted.len() >= 40 {
-                    let key_bytes: [u8; 32] = mek_encrypted[8..40].try_into().unwrap_or_default();
-                    let mek = rekindle_crypto::group::media_key::MediaEncryptionKey::from_bytes(
-                        key_bytes,
-                        mek_generation,
-                    );
-                    state.mek_cache.lock().insert(community_id.to_string(), mek);
-                    persist_mek(
-                        app_handle,
-                        state,
-                        community_id,
-                        mek_generation,
+                if let Some(mek) =
+                    rekindle_crypto::group::media_key::MediaEncryptionKey::from_wire_bytes(
                         &mek_encrypted,
-                    );
+                    )
+                {
+                    // Persist first (borrows mek), then move into cache
+                    persist_mek(app_handle, state, community_id, &mek);
+                    state.mek_cache.lock().insert(community_id.to_string(), mek);
                 }
             }
         }

@@ -597,9 +597,7 @@ fn build_rejoin_response(community: &HostedCommunity, pseudonym_pubkey: &str) ->
         .find(|m| m.pseudonym_key_hex == pseudonym_pubkey)
         .map_or_else(Vec::new, |m| m.role_ids.clone());
 
-    let mut mek_payload = Vec::with_capacity(40);
-    mek_payload.extend_from_slice(&community.mek.generation().to_le_bytes());
-    mek_payload.extend_from_slice(community.mek.as_bytes());
+    let mek_payload = community.mek.to_wire_bytes();
 
     CommunityResponse::Joined {
         mek_encrypted: mek_payload,
@@ -727,9 +725,7 @@ fn add_new_member(
     let roles_dto = roles_to_dto(community);
 
     let mek_generation = community.mek.generation();
-    let mut mek_payload = Vec::with_capacity(40);
-    mek_payload.extend_from_slice(&mek_generation.to_le_bytes());
-    mek_payload.extend_from_slice(community.mek.as_bytes());
+    let mek_payload = community.mek.to_wire_bytes();
 
     Some((
         mek_payload,
@@ -1033,9 +1029,7 @@ fn handle_request_mek(
         return e;
     }
 
-    let mut mek_payload = Vec::with_capacity(40);
-    mek_payload.extend_from_slice(&community.mek.generation().to_le_bytes());
-    mek_payload.extend_from_slice(community.mek.as_bytes());
+    let mek_payload = community.mek.to_wire_bytes();
 
     CommunityResponse::MEK {
         mek_encrypted: mek_payload,

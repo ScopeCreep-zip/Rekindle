@@ -428,14 +428,12 @@ fn parse_join_response(
 
             let roles = server_roles.iter().map(RoleDefinition::from_dto).collect();
 
-            if mek_encrypted.len() >= 40 {
-                let key_bytes: [u8; 32] = mek_encrypted[8..40].try_into().unwrap_or_default();
-                let mek = MediaEncryptionKey::from_bytes(key_bytes, mek_generation);
+            if let Some(mek) = MediaEncryptionKey::from_wire_bytes(&mek_encrypted) {
+                tracing::debug!(community = %params.community_id, generation = mek.generation(), "MEK received and cached");
                 state
                     .mek_cache
                     .lock()
                     .insert(params.community_id.clone(), mek);
-                tracing::debug!(community = %params.community_id, generation = mek_generation, "MEK received and cached");
             }
 
             Ok(Some(JoinRpcResult {

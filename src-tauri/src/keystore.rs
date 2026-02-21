@@ -190,9 +190,7 @@ pub fn persist_mek(
     use rekindle_crypto::keychain::{mek_key_name, VAULT_COMMUNITIES};
     use rekindle_crypto::Keychain as _;
 
-    let mut payload = Vec::with_capacity(40);
-    payload.extend_from_slice(&mek.generation().to_le_bytes());
-    payload.extend_from_slice(mek.as_bytes());
+    let payload = mek.to_wire_bytes();
 
     let key_name = mek_key_name(community_id);
     if let Err(e) = keystore.store_key(VAULT_COMMUNITIES, &key_name, &payload) {
@@ -216,14 +214,25 @@ pub fn load_mek(
 
     let key_name = mek_key_name(community_id);
     match keystore.load_key(VAULT_COMMUNITIES, &key_name) {
-        Ok(Some(bytes)) if bytes.len() >= 40 => {
-            let generation = u64::from_le_bytes(bytes[..8].try_into().unwrap_or_default());
-            let key_bytes: [u8; 32] = bytes[8..40].try_into().unwrap_or_default();
-            Some(rekindle_crypto::group::media_key::MediaEncryptionKey::from_bytes(
-                key_bytes, generation,
-            ))
+        Ok(Some(bytes)) => {
+            rekindle_crypto::group::media_key::MediaEncryptionKey::from_wire_bytes(&bytes)
         }
         _ => None,
+    }
+}
+
+/// Delete a community's MEK from the open Stronghold keystore.
+pub fn delete_mek(keystore: &StrongholdKeystore, community_id: &str) {
+    use rekindle_crypto::keychain::{mek_key_name, VAULT_COMMUNITIES};
+    use rekindle_crypto::Keychain as _;
+
+    let key_name = mek_key_name(community_id);
+    if let Err(e) = keystore.delete_key(VAULT_COMMUNITIES, &key_name) {
+        tracing::warn!(error = %e, community = %community_id, "failed to delete MEK from Stronghold");
+    } else if let Err(e) = keystore.save() {
+        tracing::warn!(error = %e, community = %community_id, "failed to save Stronghold snapshot after MEK delete");
+    } else {
+        tracing::debug!(community = %community_id, "MEK deleted from Stronghold");
     }
 }
 
