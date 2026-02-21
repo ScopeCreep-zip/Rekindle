@@ -916,6 +916,10 @@ async fn handle_value_change(
     }
 
     let subkeys: Vec<u32> = change.subkeys.iter().collect();
+    // Per veilid-core docs: "The (optional) value data for the first subkey
+    // in the subkeys range. If 'subkeys' is not a single value, other values
+    // than the first value must be retrieved with RoutingContext::get_dht_value()."
+    let first_subkey = subkeys.first().copied();
     let inline_value = change.value.as_ref().map(|v| v.data().to_vec());
     tracing::debug!(
         key = %key,
@@ -933,8 +937,11 @@ async fn handle_value_change(
     };
 
     for &subkey in &subkeys {
-        let value = if let Some(ref v) = inline_value {
-            v.clone()
+        // Inline value is only valid for the first subkey in the range;
+        // all other subkeys must be fetched from DHT individually.
+        let use_inline = Some(subkey) == first_subkey;
+        let value = if use_inline && inline_value.is_some() {
+            inline_value.clone().unwrap()
         } else if let Some(ref rc) = routing_context {
             match rc.get_dht_value(change.key.clone(), subkey, true).await {
                 Ok(Some(v)) => v.data().to_vec(),
