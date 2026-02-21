@@ -1,5 +1,6 @@
 use veilid_core::{DHTSchema, RoutingContext, CRYPTO_KIND_VLD0};
 
+use super::parse_record_key;
 use crate::error::ProtocolError;
 
 /// Subkey index for the route blob in the mailbox DHT record.
@@ -40,9 +41,7 @@ pub async fn open_mailbox_writable(
     key: &str,
     identity_keypair: veilid_core::KeyPair,
 ) -> Result<(), ProtocolError> {
-    let record_key = key
-        .parse()
-        .map_err(|e| ProtocolError::DhtError(format!("invalid mailbox key '{key}': {e}")))?;
+    let record_key = parse_record_key(key)?;
 
     let _ = rc
         .open_dht_record(record_key, Some(identity_keypair))
@@ -60,9 +59,7 @@ pub async fn read_peer_mailbox_route(
     rc: &RoutingContext,
     mailbox_key: &str,
 ) -> Result<Option<Vec<u8>>, ProtocolError> {
-    let record_key: veilid_core::RecordKey = mailbox_key.parse().map_err(|e| {
-        ProtocolError::DhtError(format!("invalid mailbox key '{mailbox_key}': {e}"))
-    })?;
+    let record_key = parse_record_key(mailbox_key)?;
 
     // Open read-only (no writer keypair)
     let _ = rc
@@ -87,9 +84,7 @@ pub async fn update_mailbox_route(
     mailbox_key: &str,
     route_blob: &[u8],
 ) -> Result<(), ProtocolError> {
-    let record_key = mailbox_key.parse().map_err(|e| {
-        ProtocolError::DhtError(format!("invalid mailbox key '{mailbox_key}': {e}"))
-    })?;
+    let record_key = parse_record_key(mailbox_key)?;
 
     rc.set_dht_value(
         record_key,

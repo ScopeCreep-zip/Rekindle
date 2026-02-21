@@ -273,15 +273,5 @@ pub fn enumerate_audio_devices() -> Result<EnumeratedDevices, VoiceError> {
 
 /// Find an input device by name, falling back to the default if not found.
 fn find_input_device(host: &cpal::Host, name: &str) -> Result<cpal::Device, VoiceError> {
-    use cpal::traits::DeviceTrait;
-    if let Ok(devices) = host.input_devices() {
-        for device in devices {
-            if device.name().ok().as_deref() == Some(name) {
-                return Ok(device);
-            }
-        }
-    }
-    tracing::warn!(device = %name, "requested input device not found — falling back to default");
-    host.default_input_device()
-        .ok_or_else(|| VoiceError::AudioDevice("no input device available".into()))
+    crate::device::find_device(host, name, &crate::device::DeviceDirection::Input)
 }

@@ -13,6 +13,30 @@ use crate::db_helpers::{db_call, db_call_or_default, db_fire};
 use crate::state::AppState;
 use crate::state_helpers;
 
+/// Consolidated parameters for an incoming friend request.
+struct IncomingFriendRequest<'a> {
+    sender_hex: &'a str,
+    display_name: &'a str,
+    message: &'a str,
+    prekey_bundle: &'a [u8],
+    profile_dht_key: &'a str,
+    route_blob: &'a [u8],
+    mailbox_dht_key: &'a str,
+    invite_id: Option<&'a str>,
+}
+
+/// Consolidated parameters for an incoming friend accept.
+struct IncomingFriendAccept<'a> {
+    sender_hex: &'a str,
+    prekey_bundle: &'a [u8],
+    profile_dht_key: &'a str,
+    route_blob: Vec<u8>,
+    mailbox_dht_key: &'a str,
+    ephemeral_key: &'a [u8],
+    signed_prekey_id: u32,
+    one_time_prekey_id: Option<u32>,
+}
+
 /// Handle an incoming message from the Veilid network.
 ///
 /// Flow: parse envelope → verify signature → decrypt if session exists →
@@ -138,20 +162,17 @@ pub async fn handle_incoming_message(
             mailbox_dht_key,
             invite_id,
         } => {
-            handle_friend_request_full(
-                app_handle,
-                state,
-                pool,
-                &sender_hex,
-                &display_name,
-                &message,
-                &prekey_bundle,
-                &profile_dht_key,
-                &route_blob,
-                &mailbox_dht_key,
-                invite_id.as_deref(),
-            )
-            .await;
+            let req = IncomingFriendRequest {
+                sender_hex: &sender_hex,
+                display_name: &display_name,
+                message: &message,
+                prekey_bundle: &prekey_bundle,
+                profile_dht_key: &profile_dht_key,
+                route_blob: &route_blob,
+                mailbox_dht_key: &mailbox_dht_key,
+                invite_id: invite_id.as_deref(),
+            };
+            handle_friend_request_full(app_handle, state, pool, &req).await;
         }
         MessagePayload::FriendAccept {
             prekey_bundle,
@@ -162,20 +183,17 @@ pub async fn handle_incoming_message(
             signed_prekey_id,
             one_time_prekey_id,
         } => {
-            handle_friend_accept_full(
-                app_handle,
-                state,
-                pool,
-                &sender_hex,
-                &prekey_bundle,
-                &profile_dht_key,
+            let accept = IncomingFriendAccept {
+                sender_hex: &sender_hex,
+                prekey_bundle: &prekey_bundle,
+                profile_dht_key: &profile_dht_key,
                 route_blob,
-                &mailbox_dht_key,
-                &ephemeral_key,
+                mailbox_dht_key: &mailbox_dht_key,
+                ephemeral_key: &ephemeral_key,
                 signed_prekey_id,
                 one_time_prekey_id,
-            )
-            .await;
+            };
+            handle_friend_accept_full(app_handle, state, pool, &accept).await;
         }
         MessagePayload::FriendReject => {
             handle_friend_reject(app_handle, state, pool, &sender_hex);
@@ -344,53 +362,34 @@ fn handle_friend_accept(
 }
 
 /// Handle a `FriendRequest` with profile key, route blob, and mailbox key exchange.
-#[allow(clippy::too_many_arguments)]
 async fn handle_friend_request_full(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     pool: &DbPool,
-    sender_hex: &str,
-    display_name: &str,
-    message: &str,
-    prekey_bundle: &[u8],
-    profile_dht_key: &str,
-    route_blob: &[u8],
-    mailbox_dht_key: &str,
-    invite_id: Option<&str>,
+    req: &IncomingFriendRequest<'_>,
 ) {
-    handle_friend_request(sender_hex, prekey_bundle);
+    handle_friend_request(req.sender_hex, req.prekey_bundle);
 
     // Cache the sender's route blob for immediate replies
     tracing::info!(
-        from = %sender_hex,
-        route_blob_len = route_blob.len(),
-        route_count = route_blob.first().copied().unwrap_or(0),
+        from = %req.sender_hex,
+        route_blob_len = req.route_blob.len(),
+        route_count = req.route_blob.first().copied().unwrap_or(0),
         "handle_friend_request_full: received peer route blob"
     );
-    if !route_blob.is_empty() {
-        state_helpers::cache_peer_route(state, sender_hex, route_blob.to_vec());
+    if !req.route_blob.is_empty() {
+        state_helpers::cache_peer_route(state, req.sender_hex, req.route_blob.to_vec());
     }
 
     // If sender is already in our friend list, check for cross-request auto-accept
     let existing_friendship_state =
-        state_helpers::friend_field(state, sender_hex, |f| Some(f.friendship_state));
+        state_helpers::friend_field(state, req.sender_hex, |f| Some(f.friendship_state));
 
     if let Some(fs) = existing_friendship_state {
         if fs == crate::state::FriendshipState::PendingOut {
             // Cross-request: both parties want the friendship — auto-accept
-            tracing::info!(from = %sender_hex, "cross-request detected — auto-accepting");
-            auto_accept_cross_request(
-                app_handle,
-                state,
-                pool,
-                sender_hex,
-                display_name,
-                prekey_bundle,
-                profile_dht_key,
-                route_blob,
-                mailbox_dht_key,
-            )
-            .await;
+            tracing::info!(from = %req.sender_hex, "cross-request detected — auto-accepting");
+            auto_accept_cross_request(app_handle, state, pool, req).await;
             return;
         }
         if fs == crate::state::FriendshipState::Removing
@@ -400,11 +399,11 @@ async fn handle_friend_request_full(
             // Accepted: peer removed us (their Unfriended was lost/delayed) and
             // re-added us. Following Briar's "re-add = new contact" pattern:
             // remove stale friendship state and treat as fresh incoming request.
-            state.friends.write().remove(sender_hex);
+            state.friends.write().remove(req.sender_hex);
 
             // Delete stale DB rows so future accept creates a clean entry
             let owner_key = state_helpers::owner_key_or_default(state);
-            let pk = sender_hex.to_string();
+            let pk = req.sender_hex.to_string();
             db_fire(pool, "delete stale friend for re-add", move |conn| {
                 conn.execute(
                     "DELETE FROM friends WHERE owner_key = ?1 AND public_key = ?2",
@@ -414,10 +413,10 @@ async fn handle_friend_request_full(
             });
 
             // Clean up any lingering pending request row
-            delete_pending_request_row(state, pool, sender_hex);
+            delete_pending_request_row(state, pool, req.sender_hex);
 
             tracing::info!(
-                from = %sender_hex,
+                from = %req.sender_hex,
                 previous_state = ?fs,
                 "received friend request from {} peer — treating as new request",
                 if fs == crate::state::FriendshipState::Removing { "Removing" } else { "Accepted" }
@@ -426,42 +425,31 @@ async fn handle_friend_request_full(
             // PendingIn or other unexpected state — just update display name
             {
                 let mut friends = state.friends.write();
-                if let Some(friend) = friends.get_mut(sender_hex) {
-                    friend.display_name = display_name.to_string();
+                if let Some(friend) = friends.get_mut(req.sender_hex) {
+                    friend.display_name = req.display_name.to_string();
                 }
             }
-            update_friend_display_name(state, pool, sender_hex, display_name);
+            update_friend_display_name(state, pool, req.sender_hex, req.display_name);
             return;
         }
     }
 
     // Invite correlation: if this request carries an invite_id, check if cancelled
-    if let Some(iid) = invite_id {
+    if let Some(iid) = req.invite_id {
         let owner_key = state_helpers::owner_key_or_default(state);
         if crate::invite_helpers::is_invite_cancelled(pool, &owner_key, iid).await {
-            tracing::info!(from = %sender_hex, %iid, "rejecting request for cancelled invite");
-            let _ = send_friend_reject(state, pool, sender_hex).await;
+            tracing::info!(from = %req.sender_hex, %iid, "rejecting request for cancelled invite");
+            let _ = send_friend_reject(state, pool, req.sender_hex).await;
             return;
         }
-        crate::invite_helpers::mark_invite_responded(pool, &owner_key, iid, sender_hex);
+        crate::invite_helpers::mark_invite_responded(pool, &owner_key, iid, req.sender_hex);
     }
 
-    persist_friend_request(
-        state,
-        pool,
-        sender_hex,
-        display_name,
-        message,
-        profile_dht_key,
-        route_blob,
-        mailbox_dht_key,
-        prekey_bundle,
-        invite_id,
-    );
+    persist_friend_request(state, pool, req);
     let event = ChatEvent::FriendRequest {
-        from: sender_hex.to_string(),
-        display_name: display_name.to_string(),
-        message: message.to_string(),
+        from: req.sender_hex.to_string(),
+        display_name: req.display_name.to_string(),
+        message: req.message.to_string(),
     };
     let _ = app_handle.emit("chat-event", &event);
 
@@ -469,29 +457,21 @@ async fn handle_friend_request_full(
     let _ = send_to_peer_raw(
         state,
         pool,
-        sender_hex,
+        req.sender_hex,
         &MessagePayload::FriendRequestReceived,
     )
     .await;
 }
 
 /// Handle a `FriendAccept` with profile key, route blob, and mailbox key exchange.
-#[allow(clippy::too_many_arguments)]
 async fn handle_friend_accept_full(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     pool: &DbPool,
-    sender_hex: &str,
-    prekey_bundle: &[u8],
-    profile_dht_key: &str,
-    route_blob: Vec<u8>,
-    mailbox_dht_key: &str,
-    ephemeral_key: &[u8],
-    signed_prekey_id: u32,
-    one_time_prekey_id: Option<u32>,
+    a: &IncomingFriendAccept<'_>,
 ) {
     // Guard: ignore FriendAccept if we are in the process of removing this friend
-    let is_removing = state_helpers::friend_field(state, sender_hex, |f| {
+    let is_removing = state_helpers::friend_field(state, a.sender_hex, |f| {
         Some(matches!(
             f.friendship_state,
             crate::state::FriendshipState::Removing
@@ -499,51 +479,51 @@ async fn handle_friend_accept_full(
     })
     .unwrap_or(false);
     if is_removing {
-        tracing::info!(from = %sender_hex, "ignoring FriendAccept — friend is being removed");
+        tracing::info!(from = %a.sender_hex, "ignoring FriendAccept — friend is being removed");
         return;
     }
 
     handle_friend_accept(
         state,
-        sender_hex,
-        prekey_bundle,
-        ephemeral_key,
-        signed_prekey_id,
-        one_time_prekey_id,
+        a.sender_hex,
+        a.prekey_bundle,
+        a.ephemeral_key,
+        a.signed_prekey_id,
+        a.one_time_prekey_id,
     );
     // Cache the acceptor's route blob
-    if !route_blob.is_empty() {
-        state_helpers::cache_peer_route(state, sender_hex, route_blob);
+    if !a.route_blob.is_empty() {
+        state_helpers::cache_peer_route(state, a.sender_hex, a.route_blob.clone());
     }
     // Store profile key, mailbox key, and transition friendship to Accepted
     {
         let mut friends = state.friends.write();
-        if let Some(friend) = friends.get_mut(sender_hex) {
-            if !profile_dht_key.is_empty() {
-                friend.dht_record_key = Some(profile_dht_key.to_string());
+        if let Some(friend) = friends.get_mut(a.sender_hex) {
+            if !a.profile_dht_key.is_empty() {
+                friend.dht_record_key = Some(a.profile_dht_key.to_string());
             }
-            if !mailbox_dht_key.is_empty() {
-                friend.mailbox_dht_key = Some(mailbox_dht_key.to_string());
+            if !a.mailbox_dht_key.is_empty() {
+                friend.mailbox_dht_key = Some(a.mailbox_dht_key.to_string());
             }
             friend.friendship_state = crate::state::FriendshipState::Accepted;
         }
     }
     // Persist friendship_state transition to DB
-    persist_friendship_state(state, pool, sender_hex, "accepted");
+    persist_friendship_state(state, pool, a.sender_hex, "accepted");
     // Persist profile key to `SQLite`
-    if !profile_dht_key.is_empty() {
-        persist_friend_dht_key(state, pool, sender_hex, profile_dht_key);
+    if !a.profile_dht_key.is_empty() {
+        persist_friend_dht_key(state, pool, a.sender_hex, a.profile_dht_key);
         // Start watching the friend's profile DHT record for presence
         if let Err(e) =
-            super::presence_service::watch_friend(state, sender_hex, profile_dht_key).await
+            super::presence_service::watch_friend(state, a.sender_hex, a.profile_dht_key).await
         {
-            tracing::trace!(from = %sender_hex, error = %e, "failed to watch friend after accept");
+            tracing::trace!(from = %a.sender_hex, error = %e, "failed to watch friend after accept");
         }
     }
-    let display_name = state_helpers::friend_display_name(state, sender_hex)
-        .unwrap_or_else(|| sender_hex.to_string());
+    let display_name = state_helpers::friend_display_name(state, a.sender_hex)
+        .unwrap_or_else(|| a.sender_hex.to_string());
     let event = ChatEvent::FriendRequestAccepted {
-        from: sender_hex.to_string(),
+        from: a.sender_hex.to_string(),
         display_name,
     };
     let _ = app_handle.emit("chat-event", &event);
@@ -590,28 +570,20 @@ async fn handle_profile_key_rotated(
 }
 
 /// Persist an incoming friend request to `SQLite` for crash/restart recovery.
-#[allow(clippy::too_many_arguments)]
 fn persist_friend_request(
     state: &Arc<AppState>,
     pool: &DbPool,
-    sender_hex: &str,
-    display_name: &str,
-    message: &str,
-    profile_dht_key: &str,
-    route_blob: &[u8],
-    mailbox_dht_key: &str,
-    prekey_bundle: &[u8],
-    invite_id: Option<&str>,
+    req: &IncomingFriendRequest<'_>,
 ) {
     let owner_key = state_helpers::owner_key_or_default(state);
-    let pk = sender_hex.to_string();
-    let dn = display_name.to_string();
-    let msg = message.to_string();
-    let pdk = profile_dht_key.to_string();
-    let rb = route_blob.to_vec();
-    let mdk = mailbox_dht_key.to_string();
-    let pkb = prekey_bundle.to_vec();
-    let iid = invite_id.map(str::to_string);
+    let pk = req.sender_hex.to_string();
+    let dn = req.display_name.to_string();
+    let msg = req.message.to_string();
+    let pdk = req.profile_dht_key.to_string();
+    let rb = req.route_blob.to_vec();
+    let mdk = req.mailbox_dht_key.to_string();
+    let pkb = req.prekey_bundle.to_vec();
+    let iid = req.invite_id.map(str::to_string);
     let now = crate::db::timestamp_now();
     db_fire(pool, "persist incoming friend request", move |conn| {
         conn.execute(
@@ -824,64 +796,58 @@ async fn handle_unfriended(
 ///
 /// Transitions the local friend from `PendingOut` to `Accepted`, establishes
 /// a Signal session, sends a `FriendAccept` back, and starts watching their DHT.
-#[allow(clippy::too_many_arguments)]
 async fn auto_accept_cross_request(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     pool: &DbPool,
-    sender_hex: &str,
-    display_name: &str,
-    prekey_bundle: &[u8],
-    profile_dht_key: &str,
-    _route_blob: &[u8],
-    mailbox_dht_key: &str,
+    req: &IncomingFriendRequest<'_>,
 ) {
     // 0. Clean up any lingering pending_friend_requests row so future requests start fresh
-    delete_pending_request_row(state, pool, sender_hex);
+    delete_pending_request_row(state, pool, req.sender_hex);
 
     // 1. Transition local friend to Accepted + update keys
     {
         let mut friends = state.friends.write();
-        if let Some(friend) = friends.get_mut(sender_hex) {
+        if let Some(friend) = friends.get_mut(req.sender_hex) {
             friend.friendship_state = crate::state::FriendshipState::Accepted;
-            friend.display_name = display_name.to_string();
-            if !profile_dht_key.is_empty() {
-                friend.dht_record_key = Some(profile_dht_key.to_string());
+            friend.display_name = req.display_name.to_string();
+            if !req.profile_dht_key.is_empty() {
+                friend.dht_record_key = Some(req.profile_dht_key.to_string());
             }
-            if !mailbox_dht_key.is_empty() {
-                friend.mailbox_dht_key = Some(mailbox_dht_key.to_string());
+            if !req.mailbox_dht_key.is_empty() {
+                friend.mailbox_dht_key = Some(req.mailbox_dht_key.to_string());
             }
         }
     }
-    persist_friendship_state(state, pool, sender_hex, "accepted");
-    update_friend_display_name(state, pool, sender_hex, display_name);
+    persist_friendship_state(state, pool, req.sender_hex, "accepted");
+    update_friend_display_name(state, pool, req.sender_hex, req.display_name);
 
     // Persist profile/mailbox keys
-    if !profile_dht_key.is_empty() {
-        persist_friend_dht_key(state, pool, sender_hex, profile_dht_key);
+    if !req.profile_dht_key.is_empty() {
+        persist_friend_dht_key(state, pool, req.sender_hex, req.profile_dht_key);
     }
-    if !mailbox_dht_key.is_empty() {
-        persist_friend_mailbox_key(state, pool, sender_hex, mailbox_dht_key);
+    if !req.mailbox_dht_key.is_empty() {
+        persist_friend_mailbox_key(state, pool, req.sender_hex, req.mailbox_dht_key);
     }
 
     // 2. Establish Signal session from their prekey bundle
     // Clear any stale session first (e.g., from a previous friendship that was removed)
-    let session_init = if prekey_bundle.is_empty() {
+    let session_init = if req.prekey_bundle.is_empty() {
         None
     } else {
         let signal = state.signal_manager.lock();
         if let Some(handle) = signal.as_ref() {
-            let _ = handle.manager.delete_session(sender_hex);
+            let _ = handle.manager.delete_session(req.sender_hex);
             if let Ok(bundle) =
-                serde_json::from_slice::<rekindle_crypto::signal::PreKeyBundle>(prekey_bundle)
+                serde_json::from_slice::<rekindle_crypto::signal::PreKeyBundle>(req.prekey_bundle)
             {
-                match handle.manager.establish_session(sender_hex, &bundle) {
+                match handle.manager.establish_session(req.sender_hex, &bundle) {
                     Ok(info) => {
-                        tracing::info!(peer = %sender_hex, "established Signal session on cross-request auto-accept");
+                        tracing::info!(peer = %req.sender_hex, "established Signal session on cross-request auto-accept");
                         Some(info)
                     }
                     Err(e) => {
-                        tracing::warn!(peer = %sender_hex, error = %e, "failed to establish Signal session on cross-request");
+                        tracing::warn!(peer = %req.sender_hex, error = %e, "failed to establish Signal session on cross-request");
                         None
                     }
                 }
@@ -894,16 +860,16 @@ async fn auto_accept_cross_request(
     };
 
     // 3. Send FriendAccept back
-    super::message_service::send_friend_accept(state, pool, sender_hex, session_init)
+    super::message_service::send_friend_accept(state, pool, req.sender_hex, session_init)
         .await
         .unwrap_or_else(|e| {
             tracing::warn!(error = %e, "failed to send friend accept for cross-request");
         });
 
     // 4. Watch their DHT profile for presence
-    if !profile_dht_key.is_empty() {
+    if !req.profile_dht_key.is_empty() {
         if let Err(e) =
-            super::presence_service::watch_friend(state, sender_hex, profile_dht_key).await
+            super::presence_service::watch_friend(state, req.sender_hex, req.profile_dht_key).await
         {
             tracing::trace!(error = %e, "failed to watch friend DHT after cross-request accept");
         }
@@ -913,8 +879,8 @@ async fn auto_accept_cross_request(
     let _ = app_handle.emit(
         "chat-event",
         &ChatEvent::FriendRequestAccepted {
-            from: sender_hex.to_string(),
-            display_name: display_name.to_string(),
+            from: req.sender_hex.to_string(),
+            display_name: req.display_name.to_string(),
         },
     );
 }
@@ -1110,30 +1076,7 @@ async fn send_envelope_to_peer(
     let envelope = build_envelope_from_secret(&secret_key, timestamp, nonce, final_payload);
 
     // Look up the peer's cached route blob and import the RouteId via cache
-    let route_id_and_rc = {
-        let node = state.node.read();
-        let nh = node.as_ref().ok_or("node not initialized")?;
-        let api = nh.api.clone();
-        let rc = nh.routing_context.clone();
-
-        let mut dht_mgr = state.dht_manager.write();
-        let mgr = dht_mgr.as_mut().ok_or("DHT manager not initialized")?;
-
-        match mgr.manager.get_cached_route(to).cloned() {
-            Some(blob) => match mgr.manager.get_or_import_route(&api, &blob) {
-                Ok(route_id) => Some((route_id, rc)),
-                Err(e) => {
-                    tracing::warn!(
-                        to = %to, error = %e, blob_len = blob.len(),
-                        "route import failed — invalidating and queuing for retry"
-                    );
-                    mgr.manager.invalidate_route_for_peer(to);
-                    None
-                }
-            },
-            None => None,
-        }
-    };
+    let route_id_and_rc = state_helpers::try_import_peer_route(state, to);
 
     let Some((route_id, routing_context)) = route_id_and_rc else {
         if is_ephemeral {

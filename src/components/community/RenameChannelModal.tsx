@@ -29,16 +29,16 @@ const RenameChannelModal: Component<RenameChannelModalProps> = (props) => {
 
   return (
     <Modal isOpen={props.isOpen} title="Rename Channel" onClose={props.onClose}>
-      <form class="add-friend-form" onSubmit={handleSubmit}>
+      <form class="modal-form" onSubmit={handleSubmit}>
         <input
-          class="add-friend-input"
+          class="modal-input"
           type="text"
           placeholder="Channel name..."
           value={name()}
           onInput={(e) => setName(e.currentTarget.value)}
         />
         <button
-          class="add-friend-btn"
+          class="modal-btn"
           type="submit"
           disabled={!name().trim() || name().trim() === props.currentName}
         >

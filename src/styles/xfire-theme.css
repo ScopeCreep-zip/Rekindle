@@ -1462,13 +1462,13 @@
   }
 
   /* Add friend / create form */
-  .add-friend-form {
+  .modal-form {
     display: flex;
     flex-direction: column;
     gap: 10px;
   }
 
-  .add-friend-input {
+  .modal-input {
     width: 100%;
     background: var(--color-xfire-bg-input);
     border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
@@ -1480,11 +1480,11 @@
     font-family: var(--font-family-xfire);
   }
 
-  .add-friend-input:focus {
+  .modal-input:focus {
     border-color: var(--color-xfire-accent);
   }
 
-  .add-friend-btn {
+  .modal-btn {
     width: 100%;
     padding: 8px;
     background: var(--color-xfire-accent);
@@ -1498,11 +1498,11 @@
     transition: background 0.15s;
   }
 
-  .add-friend-btn:hover {
+  .modal-btn:hover {
     background: color-mix(in srgb, var(--color-xfire-accent) 80%, white);
   }
 
-  .add-friend-btn:disabled {
+  .modal-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }

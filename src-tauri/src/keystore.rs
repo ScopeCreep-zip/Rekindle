@@ -165,6 +165,68 @@ impl Keychain for StrongholdKeystore {
     }
 }
 
+/// Map a Stronghold initialization error to a user-friendly string.
+///
+/// If the error message mentions "snapshot" or "decrypt", the passphrase
+/// was wrong; otherwise, surface the original error text.
+pub fn map_stronghold_error(e: &rekindle_crypto::CryptoError) -> String {
+    let msg = e.to_string();
+    if msg.contains("snapshot") || msg.contains("decrypt") {
+        "Wrong passphrase — unable to unlock keystore".to_string()
+    } else {
+        msg
+    }
+}
+
+/// Persist a community's MEK to the open Stronghold keystore.
+///
+/// Serializes as `generation (8 bytes LE) + key (32 bytes)`, stores under
+/// `VAULT_COMMUNITIES / mek_<community_id>`, and saves the snapshot.
+pub fn persist_mek(
+    keystore: &StrongholdKeystore,
+    community_id: &str,
+    mek: &rekindle_crypto::group::media_key::MediaEncryptionKey,
+) {
+    use rekindle_crypto::keychain::{mek_key_name, VAULT_COMMUNITIES};
+    use rekindle_crypto::Keychain as _;
+
+    let mut payload = Vec::with_capacity(40);
+    payload.extend_from_slice(&mek.generation().to_le_bytes());
+    payload.extend_from_slice(mek.as_bytes());
+
+    let key_name = mek_key_name(community_id);
+    if let Err(e) = keystore.store_key(VAULT_COMMUNITIES, &key_name, &payload) {
+        tracing::warn!(error = %e, community = %community_id, "failed to persist MEK to Stronghold");
+    } else if let Err(e) = keystore.save() {
+        tracing::warn!(error = %e, community = %community_id, "failed to save Stronghold snapshot after MEK persist");
+    } else {
+        tracing::debug!(community = %community_id, "MEK persisted to Stronghold");
+    }
+}
+
+/// Load a community's MEK from the open Stronghold keystore.
+///
+/// Returns `Some(mek)` if successfully deserialized, `None` otherwise.
+pub fn load_mek(
+    keystore: &StrongholdKeystore,
+    community_id: &str,
+) -> Option<rekindle_crypto::group::media_key::MediaEncryptionKey> {
+    use rekindle_crypto::keychain::{mek_key_name, VAULT_COMMUNITIES};
+    use rekindle_crypto::Keychain as _;
+
+    let key_name = mek_key_name(community_id);
+    match keystore.load_key(VAULT_COMMUNITIES, &key_name) {
+        Ok(Some(bytes)) if bytes.len() >= 40 => {
+            let generation = u64::from_le_bytes(bytes[..8].try_into().unwrap_or_default());
+            let key_bytes: [u8; 32] = bytes[8..40].try_into().unwrap_or_default();
+            Some(rekindle_crypto::group::media_key::MediaEncryptionKey::from_bytes(
+                key_bytes, generation,
+            ))
+        }
+        _ => None,
+    }
+}
+
 /// Derive a 32-byte encryption key from a passphrase using `Argon2id`.
 ///
 /// Production: `m=65536, t=3, p=4` (standard security).

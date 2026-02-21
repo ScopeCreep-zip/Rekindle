@@ -127,7 +127,7 @@ pub struct InviteBlob {
 ///
 /// Signs over a JSON-serialized form of the invite data (excluding the
 /// signature field itself) using the Ed25519 secret key.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // Each param is a distinct invite blob field
 pub fn create_invite_blob(
     secret_key: &[u8; 32],
     public_key: &str,

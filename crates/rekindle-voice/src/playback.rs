@@ -205,15 +205,5 @@ fn build_playback_stream(
 
 /// Find an output device by name, falling back to the default if not found.
 fn find_output_device(host: &cpal::Host, name: &str) -> Result<cpal::Device, VoiceError> {
-    use cpal::traits::DeviceTrait;
-    if let Ok(devices) = host.output_devices() {
-        for device in devices {
-            if device.name().ok().as_deref() == Some(name) {
-                return Ok(device);
-            }
-        }
-    }
-    tracing::warn!(device = %name, "requested output device not found — falling back to default");
-    host.default_output_device()
-        .ok_or_else(|| VoiceError::AudioDevice("no output device available".into()))
+    crate::device::find_device(host, name, &crate::device::DeviceDirection::Output)
 }

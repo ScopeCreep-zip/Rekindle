@@ -11,13 +11,13 @@ import CommunityListCompact from "../components/buddy-list/CommunityListCompact"
 import BottomActionBar from "../components/buddy-list/BottomActionBar";
 import AddFriendModal from "../components/buddy-list/AddFriendModal";
 import NewChatModal from "../components/buddy-list/NewChatModal";
-import BuddyCreateCommunityModal from "../components/buddy-list/BuddyCreateCommunityModal";
-import BuddyJoinCommunityModal from "../components/buddy-list/BuddyJoinCommunityModal";
+import CreateCommunityModal from "../components/community/CreateCommunityModal";
+import JoinCommunityModal from "../components/community/JoinCommunityModal";
 import StatusPicker from "../components/status/StatusPicker";
 import NetworkIndicator from "../components/status/NetworkIndicator";
 import { authState, setAuthState } from "../stores/auth.store";
 import { friendsState } from "../stores/friends.store";
-import { buddyListUI } from "../stores/buddylist-ui.store";
+import { buddyListUI, setBuddyListUI } from "../stores/buddylist-ui.store";
 import { switchTab } from "../stores/buddylist-ui.store";
 import { handleLoadPendingRequests } from "../handlers/buddy.handlers";
 import { handleGetGameStatus } from "../handlers/settings.handlers";
@@ -134,8 +134,14 @@ const BuddyListWindow: Component = () => {
       </div>
       <AddFriendModal />
       <NewChatModal />
-      <BuddyCreateCommunityModal />
-      <BuddyJoinCommunityModal />
+      <CreateCommunityModal
+        isOpen={buddyListUI.showCreateCommunity}
+        onClose={() => setBuddyListUI("showCreateCommunity", false)}
+      />
+      <JoinCommunityModal
+        isOpen={buddyListUI.showJoinCommunity}
+        onClose={() => setBuddyListUI("showJoinCommunity", false)}
+      />
     </div>
   );
 };

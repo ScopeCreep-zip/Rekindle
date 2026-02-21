@@ -1,6 +1,7 @@
 import { commands } from "../ipc/commands";
 import { authState, setAuthState } from "../stores/auth.store";
 import { fetchAvatarUrl } from "../ipc/avatar";
+import { errorMessage } from "../utils/error";
 
 export async function handleLogin(
   publicKey: string,
@@ -18,7 +19,7 @@ export async function handleLogin(
     });
     return { success: true };
   } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
+    const message = errorMessage(e);
     console.error("Login failed:", message);
     return { success: false, error: message };
   }
@@ -39,7 +40,7 @@ export async function handleCreateIdentity(
     });
     return { success: true };
   } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
+    const message = errorMessage(e);
     console.error("Create identity failed:", message);
     return { success: false, error: message };
   }

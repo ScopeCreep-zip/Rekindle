@@ -454,3 +454,39 @@ pub enum ChannelType {
     Text,
     Voice,
 }
+
+/// Parse a DHT channel list blob into `Vec<ChannelInfo>`.
+///
+/// Supports both the wrapped format `{ "channels": [...] }` and a bare JSON array `[...]`.
+pub(crate) fn parse_dht_channel_list(data: &[u8]) -> Vec<ChannelInfo> {
+    let channel_list: Vec<serde_json::Value> =
+        match serde_json::from_slice::<serde_json::Value>(data) {
+            Ok(v) => {
+                if let Some(obj) = v.as_object() {
+                    obj.get("channels")
+                        .and_then(|c| c.as_array().cloned())
+                        .unwrap_or_default()
+                } else {
+                    v.as_array().cloned().unwrap_or_default()
+                }
+            }
+            Err(_) => return vec![],
+        };
+    channel_list
+        .iter()
+        .filter_map(|ch| {
+            let id = ch.get("id")?.as_str()?.to_string();
+            let name = ch.get("name")?.as_str()?.to_string();
+            let ch_type = match ch.get("channelType").and_then(|v| v.as_str()) {
+                Some("voice") => ChannelType::Voice,
+                _ => ChannelType::Text,
+            };
+            Some(ChannelInfo {
+                id,
+                name,
+                channel_type: ch_type,
+                unread_count: 0,
+            })
+        })
+        .collect()
+}

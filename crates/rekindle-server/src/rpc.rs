@@ -1566,7 +1566,7 @@ fn handle_get_ban_list(
 // Role management
 // ---------------------------------------------------------------------------
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // Mirrors Tauri IPC command signature
 fn handle_create_role(
     state: &Arc<ServerState>,
     community_id: &str,
@@ -1638,7 +1638,7 @@ fn handle_create_role(
     CommunityResponse::RoleCreated { role_id: next_id }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // Mirrors Tauri IPC command signature
 fn handle_edit_role(
     state: &Arc<ServerState>,
     community_id: &str,
@@ -1959,7 +1959,7 @@ fn handle_get_roles(
 // Channel permission overwrites
 // ---------------------------------------------------------------------------
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // Mirrors Tauri IPC command signature
 fn handle_set_channel_overwrite(
     state: &Arc<ServerState>,
     community_id: &str,

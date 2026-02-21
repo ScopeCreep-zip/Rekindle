@@ -4,6 +4,7 @@ import Avatar from "../components/common/Avatar";
 import Modal from "../components/common/Modal";
 import { handleLogin, handleCreateIdentity } from "../handlers/auth.handlers";
 import { commands, avatarDataUrl, IdentitySummary } from "../ipc/commands";
+import { errorMessage } from "../utils/error";
 
 type Mode = "picker" | "login" | "create";
 
@@ -88,7 +89,7 @@ const LoginWindow: Component = () => {
       try {
         await commands.showBuddyList();
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = errorMessage(err);
         console.error("Failed to open buddy list:", msg);
         setError(msg);
         setLoading(false);
@@ -112,7 +113,7 @@ const LoginWindow: Component = () => {
       try {
         await commands.showBuddyList();
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = errorMessage(err);
         console.error("Failed to open buddy list:", msg);
         setError(msg);
         setLoading(false);
@@ -145,8 +146,7 @@ const LoginWindow: Component = () => {
       cancelDelete();
       await loadIdentities();
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setDeleteError(message);
+      setDeleteError(errorMessage(err));
     }
   }
 

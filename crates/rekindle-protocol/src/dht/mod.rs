@@ -16,6 +16,12 @@ use veilid_core::{DHTSchema, RoutingContext, ValueSubkeyRangeSet, VeilidAPI, CRY
 
 use crate::error::ProtocolError;
 
+/// Parse a DHT record key string into a Veilid `RecordKey`.
+pub fn parse_record_key(key: &str) -> Result<veilid_core::RecordKey, ProtocolError> {
+    key.parse()
+        .map_err(|e| ProtocolError::DhtError(format!("invalid record key '{key}': {e}")))
+}
+
 /// Maximum age for a cached imported route before re-importing.
 ///
 /// Veilid routes expire after ~5 minutes. By re-importing every 90 seconds,
@@ -124,9 +130,7 @@ impl DHTManager {
     ///
     /// Use [`open_record_writable`] instead when you need to write to records you own.
     pub async fn open_record(&self, key: &str) -> Result<(), ProtocolError> {
-        let record_key = key
-            .parse()
-            .map_err(|e| ProtocolError::DhtError(format!("invalid record key '{key}': {e}")))?;
+        let record_key = parse_record_key(key)?;
 
         let _descriptor = self
             .routing_context
@@ -148,9 +152,7 @@ impl DHTManager {
         key: &str,
         writer: veilid_core::KeyPair,
     ) -> Result<(), ProtocolError> {
-        let record_key = key
-            .parse()
-            .map_err(|e| ProtocolError::DhtError(format!("invalid record key '{key}': {e}")))?;
+        let record_key = parse_record_key(key)?;
 
         let _descriptor = self
             .routing_context
@@ -164,9 +166,7 @@ impl DHTManager {
 
     /// Close a DHT record.
     pub async fn close_record(&self, key: &str) -> Result<(), ProtocolError> {
-        let record_key = key
-            .parse()
-            .map_err(|e| ProtocolError::DhtError(format!("invalid record key '{key}': {e}")))?;
+        let record_key = parse_record_key(key)?;
 
         self.routing_context
             .close_dht_record(record_key)
@@ -185,9 +185,7 @@ impl DHTManager {
         key: &str,
         subkey: u32,
     ) -> Result<Option<Vec<u8>>, ProtocolError> {
-        let record_key = key
-            .parse()
-            .map_err(|e| ProtocolError::DhtError(format!("invalid record key '{key}': {e}")))?;
+        let record_key = parse_record_key(key)?;
 
         let value = self
             .routing_context
@@ -205,9 +203,7 @@ impl DHTManager {
         subkey: u32,
         value: Vec<u8>,
     ) -> Result<(), ProtocolError> {
-        let record_key = key
-            .parse()
-            .map_err(|e| ProtocolError::DhtError(format!("invalid record key '{key}': {e}")))?;
+        let record_key = parse_record_key(key)?;
 
         self.routing_context
             .set_dht_value(record_key, subkey, value, None)
@@ -221,9 +217,7 @@ impl DHTManager {
     ///
     /// Returns `true` if the watch is active, `false` if it was cancelled.
     pub async fn watch_record(&self, key: &str, subkeys: &[u32]) -> Result<bool, ProtocolError> {
-        let record_key = key
-            .parse()
-            .map_err(|e| ProtocolError::DhtError(format!("invalid record key '{key}': {e}")))?;
+        let record_key = parse_record_key(key)?;
 
         // Build a ValueSubkeyRangeSet from the provided subkey indices
         let subkey_range: ValueSubkeyRangeSet = subkeys.iter().copied().collect();

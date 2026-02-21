@@ -235,6 +235,29 @@ pub fn cached_route_blob(state: &Arc<AppState>, peer_key: &str) -> Option<Vec<u8
         .and_then(|mgr| mgr.manager.get_cached_route(peer_key).cloned())
 }
 
+/// Look up a peer's cached route, import its `RouteId`, and return it with the
+/// `RoutingContext`. Invalidates the cached route on import failure and returns `None`.
+pub fn try_import_peer_route(
+    state: &Arc<AppState>,
+    peer_key: &str,
+) -> Option<(veilid_core::RouteId, veilid_core::RoutingContext)> {
+    let (api, rc) = api_and_routing_context(state)?;
+    let mut dht_mgr = state.dht_manager.write();
+    let mgr = dht_mgr.as_mut()?;
+    let blob = mgr.manager.get_cached_route(peer_key)?.clone();
+    match mgr.manager.get_or_import_route(&api, &blob) {
+        Ok(route_id) => Some((route_id, rc)),
+        Err(e) => {
+            tracing::debug!(
+                to = %peer_key, error = %e, blob_len = blob.len(),
+                "route import failed — invalidating cached route"
+            );
+            mgr.manager.invalidate_route_for_peer(peer_key);
+            None
+        }
+    }
+}
+
 // ── Communities ──────────────────────────────────────────────────────
 
 /// Get a community's server route blob.

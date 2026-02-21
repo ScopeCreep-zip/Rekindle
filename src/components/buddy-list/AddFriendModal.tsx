@@ -188,7 +188,7 @@ const AddFriendModal: Component = () => {
         <div class="add-friend-section">
           <div class="add-friend-generate">
             <button
-              class="add-friend-btn"
+              class="modal-btn"
               onClick={handleGenerate}
               disabled={generating()}
             >
@@ -263,9 +263,9 @@ const AddFriendModal: Component = () => {
 
           <div class="add-friend-divider">or paste a friend's invite</div>
 
-          <form class="add-friend-form" onSubmit={handleInviteSubmit}>
+          <form class="modal-form" onSubmit={handleInviteSubmit}>
             <input
-              class="add-friend-input"
+              class="modal-input"
               type="text"
               placeholder="Paste invite link (rekindle://...)"
               value={inviteString()}
@@ -274,7 +274,7 @@ const AddFriendModal: Component = () => {
             <Show when={error()}>
               <div class="login-error">{error()}</div>
             </Show>
-            <button class="add-friend-btn" type="submit" disabled={!inviteString().trim()}>
+            <button class="modal-btn" type="submit" disabled={!inviteString().trim()}>
               Add from Invite
             </button>
           </form>
@@ -282,16 +282,16 @@ const AddFriendModal: Component = () => {
       </Show>
 
       <Show when={tab() === "key"}>
-        <form class="add-friend-form" onSubmit={handleKeySubmit}>
+        <form class="modal-form" onSubmit={handleKeySubmit}>
           <input
-            class="add-friend-input"
+            class="modal-input"
             type="text"
             placeholder="Enter public key..."
             value={publicKey()}
             onInput={(e) => setPublicKey(e.currentTarget.value)}
           />
           <input
-            class="add-friend-input"
+            class="modal-input"
             type="text"
             placeholder="Message (optional)"
             value={message()}
@@ -300,7 +300,7 @@ const AddFriendModal: Component = () => {
           <Show when={error()}>
             <div class="login-error">{error()}</div>
           </Show>
-          <button class="add-friend-btn" type="submit" disabled={!publicKey().trim()}>
+          <button class="modal-btn" type="submit" disabled={!publicKey().trim()}>
             Send Friend Request
           </button>
         </form>

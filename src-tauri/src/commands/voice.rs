@@ -130,17 +130,17 @@ pub async fn join_voice_channel(
     let send_app = app.clone();
     let send_public_key = identity.public_key.clone();
     let send_muted = Arc::clone(&muted_flag);
-    let send_handle = tokio::spawn(voice_send_loop(
+    let send_handle = tokio::spawn(voice_send_loop(VoiceSendParams {
         capture_rx,
         transport,
-        send_shutdown_rx,
-        send_app,
-        send_public_key,
+        shutdown_rx: send_shutdown_rx,
+        app: send_app,
+        public_key: send_public_key,
         noise_suppression,
         echo_cancellation,
-        send_muted,
+        muted_flag: send_muted,
         speaker_ref_rx,
-    ));
+    }));
 
     // Spawn voice receive loop
     let (recv_shutdown_tx, recv_shutdown_rx) = mpsc::channel::<()>(1);
@@ -218,7 +218,7 @@ pub async fn leave_voice(
 ) -> Result<(), String> {
     let public_key = state_helpers::owner_key_or_default(state.inner());
 
-    shutdown_voice_loops(&state).await;
+    shutdown_voice(&state, &VoiceShutdownOpts::FULL).await;
 
     // Emit leave event
     let event = VoiceEvent::UserLeft { public_key };
@@ -230,25 +230,68 @@ pub async fn leave_voice(
 /// Shut down voice send/receive loops, stop audio devices, and clear state.
 ///
 /// Used by both `leave_voice` and lifecycle cleanup (logout, app exit).
-pub(crate) async fn shutdown_voice_loops(state: &SharedState) {
+/// What to shut down when tearing down voice state.
+pub(crate) struct VoiceShutdownOpts {
+    /// Stop send and receive loops.
+    pub stop_loops: bool,
+    /// Stop the device monitor loop.
+    pub stop_monitor: bool,
+    /// Stop audio capture/playback devices and clear the engine handle.
+    pub stop_devices: bool,
+}
+
+impl VoiceShutdownOpts {
+    /// Shut down everything: loops, monitor, and devices.
+    pub const FULL: Self = Self {
+        stop_loops: true,
+        stop_monitor: true,
+        stop_devices: true,
+    };
+    /// Shut down only send/receive loops; keep monitor and engine alive.
+    pub const LOOPS_ONLY: Self = Self {
+        stop_loops: true,
+        stop_monitor: false,
+        stop_devices: false,
+    };
+    /// Shut down loops and monitor but keep the engine alive (for device hot-swap).
+    pub const KEEP_ENGINE: Self = Self {
+        stop_loops: true,
+        stop_monitor: true,
+        stop_devices: false,
+    };
+}
+
+/// Consolidated voice shutdown — replaces five near-identical shutdown functions.
+pub(crate) async fn shutdown_voice(state: &SharedState, opts: &VoiceShutdownOpts) {
     // Extract shutdown senders and join handles outside the lock
     let (send_tx, send_h, recv_tx, recv_h, monitor_tx, monitor_h) = {
         let mut ve = state.voice_engine.lock();
         if let Some(ref mut handle) = *ve {
-            (
-                handle.send_loop_shutdown.take(),
-                handle.send_loop_handle.take(),
-                handle.recv_loop_shutdown.take(),
-                handle.recv_loop_handle.take(),
-                handle.device_monitor_shutdown.take(),
-                handle.device_monitor_handle.take(),
-            )
+            let loops = if opts.stop_loops {
+                (
+                    handle.send_loop_shutdown.take(),
+                    handle.send_loop_handle.take(),
+                    handle.recv_loop_shutdown.take(),
+                    handle.recv_loop_handle.take(),
+                )
+            } else {
+                (None, None, None, None)
+            };
+            let monitor = if opts.stop_monitor {
+                (
+                    handle.device_monitor_shutdown.take(),
+                    handle.device_monitor_handle.take(),
+                )
+            } else {
+                (None, None)
+            };
+            (loops.0, loops.1, loops.2, loops.3, monitor.0, monitor.1)
         } else {
             (None, None, None, None, None, None)
         }
     };
 
-    // Signal all loops to shut down
+    // Signal loops to shut down
     if let Some(tx) = send_tx {
         let _ = tx.send(()).await;
     }
@@ -259,7 +302,7 @@ pub(crate) async fn shutdown_voice_loops(state: &SharedState) {
         let _ = tx.send(()).await;
     }
 
-    // Await all loop handles
+    // Await loop handles
     if let Some(h) = send_h {
         let _ = h.await;
     }
@@ -270,8 +313,8 @@ pub(crate) async fn shutdown_voice_loops(state: &SharedState) {
         let _ = h.await;
     }
 
-    // Stop audio devices and clear engine
-    {
+    // Stop audio devices and clear engine (when requested)
+    if opts.stop_devices {
         let mut ve = state.voice_engine.lock();
         if let Some(ref mut handle) = *ve {
             handle.engine.stop_capture();
@@ -281,84 +324,6 @@ pub(crate) async fn shutdown_voice_loops(state: &SharedState) {
     }
 
     // Clear voice packet channel
-    *state.voice_packet_tx.write() = None;
-}
-
-/// Shut down send and receive loops only, leaving the engine and device monitor alive.
-///
-/// Used by `handle_device_swap` (called from within the monitor loop — cannot
-/// await its own `JoinHandle`).
-async fn shutdown_send_recv_only(state: &SharedState) {
-    let (send_tx, send_h, recv_tx, recv_h) = {
-        let mut ve = state.voice_engine.lock();
-        if let Some(ref mut handle) = *ve {
-            (
-                handle.send_loop_shutdown.take(),
-                handle.send_loop_handle.take(),
-                handle.recv_loop_shutdown.take(),
-                handle.recv_loop_handle.take(),
-            )
-        } else {
-            (None, None, None, None)
-        }
-    };
-
-    if let Some(tx) = send_tx {
-        let _ = tx.send(()).await;
-    }
-    if let Some(tx) = recv_tx {
-        let _ = tx.send(()).await;
-    }
-    if let Some(h) = send_h {
-        let _ = h.await;
-    }
-    if let Some(h) = recv_h {
-        let _ = h.await;
-    }
-
-    *state.voice_packet_tx.write() = None;
-}
-
-/// Shut down voice loops AND device monitor but keep the engine alive (for device hot-swap).
-///
-/// Unlike `shutdown_voice_loops`, this does NOT stop audio devices or clear the engine.
-/// Called from external commands (e.g. `set_audio_devices`) — NOT from within the monitor loop.
-async fn shutdown_voice_loops_keep_engine(state: &SharedState) {
-    let (send_tx, send_h, recv_tx, recv_h, monitor_tx, monitor_h) = {
-        let mut ve = state.voice_engine.lock();
-        if let Some(ref mut handle) = *ve {
-            (
-                handle.send_loop_shutdown.take(),
-                handle.send_loop_handle.take(),
-                handle.recv_loop_shutdown.take(),
-                handle.recv_loop_handle.take(),
-                handle.device_monitor_shutdown.take(),
-                handle.device_monitor_handle.take(),
-            )
-        } else {
-            (None, None, None, None, None, None)
-        }
-    };
-
-    if let Some(tx) = send_tx {
-        let _ = tx.send(()).await;
-    }
-    if let Some(tx) = recv_tx {
-        let _ = tx.send(()).await;
-    }
-    if let Some(tx) = monitor_tx {
-        let _ = tx.send(()).await;
-    }
-    if let Some(h) = send_h {
-        let _ = h.await;
-    }
-    if let Some(h) = recv_h {
-        let _ = h.await;
-    }
-    if let Some(h) = monitor_h {
-        let _ = h.await;
-    }
-
     *state.voice_packet_tx.write() = None;
 }
 
@@ -492,17 +457,17 @@ fn restart_voice_loops(state: &SharedState, app: &tauri::AppHandle) -> Result<()
 
     // Spawn send loop
     let (send_shutdown_tx, send_shutdown_rx) = mpsc::channel::<()>(1);
-    let send_handle = tokio::spawn(voice_send_loop(
+    let send_handle = tokio::spawn(voice_send_loop(VoiceSendParams {
         capture_rx,
         transport,
-        send_shutdown_rx,
-        app.clone(),
-        identity.public_key.clone(),
+        shutdown_rx: send_shutdown_rx,
+        app: app.clone(),
+        public_key: identity.public_key.clone(),
         noise_suppression,
         echo_cancellation,
-        Arc::clone(&muted_flag),
+        muted_flag: Arc::clone(&muted_flag),
         speaker_ref_rx,
-    ));
+    }));
 
     // Spawn receive loop
     let (recv_shutdown_tx, recv_shutdown_rx) = mpsc::channel::<()>(1);
@@ -585,7 +550,7 @@ pub async fn set_audio_devices(
         );
 
         // Shut down current loops
-        shutdown_voice_loops_keep_engine(&state).await;
+        shutdown_voice(&state, &VoiceShutdownOpts::KEEP_ENGINE).await;
 
         // Stop current capture/playback and update device config
         {
@@ -763,7 +728,7 @@ async fn handle_device_swap(
     }
 
     // Shut down send/recv loops only — NOT the monitor (we ARE the monitor)
-    shutdown_send_recv_only(state).await;
+    shutdown_voice(state, &VoiceShutdownOpts::LOOPS_ONLY).await;
 
     // Stop capture/playback and switch to default devices
     {
@@ -804,22 +769,35 @@ async fn handle_device_swap(
 
 // ── Send Loop ────────────────────────────────────────────────────────────
 
-/// Voice send loop: drains `capture_rx`, runs `AudioProcessor`, encodes with Opus, sends via transport.
-///
-/// This task owns the `VoiceTransport` and runs until a shutdown signal is received
-/// or the capture channel closes. On exit it disconnects the transport.
-#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
-async fn voice_send_loop(
+struct VoiceSendParams {
     capture_rx: Option<mpsc::Receiver<Vec<f32>>>,
-    mut transport: rekindle_voice::transport::VoiceTransport,
-    mut shutdown_rx: mpsc::Receiver<()>,
+    transport: rekindle_voice::transport::VoiceTransport,
+    shutdown_rx: mpsc::Receiver<()>,
     app: tauri::AppHandle,
     public_key: String,
     noise_suppression: bool,
     echo_cancellation: bool,
     muted_flag: Arc<AtomicBool>,
-    mut speaker_ref_rx: broadcast::Receiver<Vec<f32>>,
-) {
+    speaker_ref_rx: broadcast::Receiver<Vec<f32>>,
+}
+
+/// Voice send loop: drains `capture_rx`, runs `AudioProcessor`, encodes with Opus, sends via transport.
+///
+/// This task owns the `VoiceTransport` and runs until a shutdown signal is received
+/// or the capture channel closes. On exit it disconnects the transport.
+#[allow(clippy::too_many_lines)]
+async fn voice_send_loop(params: VoiceSendParams) {
+    let VoiceSendParams {
+        capture_rx,
+        mut transport,
+        mut shutdown_rx,
+        app,
+        public_key,
+        noise_suppression,
+        echo_cancellation,
+        muted_flag,
+        mut speaker_ref_rx,
+    } = params;
     let Some(mut capture_rx) = capture_rx else {
         tracing::warn!("voice send loop started without capture_rx — exiting");
         return;
