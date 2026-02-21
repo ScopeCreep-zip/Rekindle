@@ -226,17 +226,12 @@ pub async fn login_core(
     // Unlock per-identity Stronghold with passphrase and load private key
     let keystore = StrongholdKeystore::initialize_for_identity(config_dir, public_key, passphrase)
         .map_err(|e| {
-            let msg = e.to_string();
             tracing::warn!(
                 public_key = %public_key,
-                error = %msg,
+                error = %e,
                 "Stronghold unlock failed"
             );
-            if msg.contains("snapshot") || msg.contains("decrypt") {
-                "Wrong passphrase — unable to unlock keystore".to_string()
-            } else {
-                msg
-            }
+            crate::keystore::map_stronghold_error(&e)
         })?;
 
     let secret_bytes = keystore
@@ -371,50 +366,7 @@ pub async fn get_identity(state: State<'_, SharedState>) -> Result<Option<LoginR
 }
 
 /// Shut down the voice engine: signal all tokio loops, await them, then stop devices.
-async fn shutdown_voice_engine(state: &SharedState) {
-    let (send_tx, send_h, recv_tx, recv_h, monitor_tx, monitor_h) = {
-        let mut ve = state.voice_engine.lock();
-        if let Some(ref mut handle) = *ve {
-            (
-                handle.send_loop_shutdown.take(),
-                handle.send_loop_handle.take(),
-                handle.recv_loop_shutdown.take(),
-                handle.recv_loop_handle.take(),
-                handle.device_monitor_shutdown.take(),
-                handle.device_monitor_handle.take(),
-            )
-        } else {
-            (None, None, None, None, None, None)
-        }
-    };
-    if let Some(tx) = send_tx {
-        let _ = tx.send(()).await;
-    }
-    if let Some(tx) = recv_tx {
-        let _ = tx.send(()).await;
-    }
-    if let Some(tx) = monitor_tx {
-        let _ = tx.send(()).await;
-    }
-    if let Some(h) = send_h {
-        let _ = h.await;
-    }
-    if let Some(h) = recv_h {
-        let _ = h.await;
-    }
-    if let Some(h) = monitor_h {
-        let _ = h.await;
-    }
-    {
-        let mut ve = state.voice_engine.lock();
-        if let Some(ref mut handle) = *ve {
-            handle.engine.stop_capture();
-            handle.engine.stop_playback();
-        }
-        *ve = None;
-    }
-    *state.voice_packet_tx.write() = None;
-}
+use crate::commands::voice::{shutdown_voice, VoiceShutdownOpts};
 
 /// Log out: save and lock Stronghold, clean up user state, keep node alive.
 #[tauri::command]
@@ -444,7 +396,7 @@ pub async fn logout(
         let _ = tx.send(()).await;
     }
 
-    shutdown_voice_engine(state.inner()).await;
+    shutdown_voice(state.inner(), &VoiceShutdownOpts::FULL).await;
 
     // Signal route refresh loop shutdown (stored separately from background_handles)
     {
@@ -568,16 +520,8 @@ pub async fn delete_identity(
     let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
 
     // Verify passphrase by attempting to open the identity's Stronghold
-    StrongholdKeystore::initialize_for_identity(&config_dir, &public_key, &passphrase).map_err(
-        |e| {
-            let msg = e.to_string();
-            if msg.contains("snapshot") || msg.contains("decrypt") {
-                "Wrong passphrase".to_string()
-            } else {
-                msg
-            }
-        },
-    )?;
+    StrongholdKeystore::initialize_for_identity(&config_dir, &public_key, &passphrase)
+        .map_err(|e| crate::keystore::map_stronghold_error(&e))?;
 
     // If deleting the active identity, logout first
     let is_active = state
@@ -605,50 +549,7 @@ pub async fn delete_identity(
         }
 
         // Shut down voice engine (signal tokio loops, await them, then stop devices)
-        {
-            let (send_tx, send_h, recv_tx, recv_h, monitor_tx, monitor_h) = {
-                let mut ve = state.voice_engine.lock();
-                if let Some(ref mut handle) = *ve {
-                    (
-                        handle.send_loop_shutdown.take(),
-                        handle.send_loop_handle.take(),
-                        handle.recv_loop_shutdown.take(),
-                        handle.recv_loop_handle.take(),
-                        handle.device_monitor_shutdown.take(),
-                        handle.device_monitor_handle.take(),
-                    )
-                } else {
-                    (None, None, None, None, None, None)
-                }
-            };
-            if let Some(tx) = send_tx {
-                let _ = tx.send(()).await;
-            }
-            if let Some(tx) = recv_tx {
-                let _ = tx.send(()).await;
-            }
-            if let Some(tx) = monitor_tx {
-                let _ = tx.send(()).await;
-            }
-            if let Some(h) = send_h {
-                let _ = h.await;
-            }
-            if let Some(h) = recv_h {
-                let _ = h.await;
-            }
-            if let Some(h) = monitor_h {
-                let _ = h.await;
-            }
-            {
-                let mut ve = state.voice_engine.lock();
-                if let Some(ref mut handle) = *ve {
-                    handle.engine.stop_capture();
-                    handle.engine.stop_playback();
-                }
-                *ve = None;
-            }
-            *state.voice_packet_tx.write() = None;
-        }
+        shutdown_voice(state.inner(), &VoiceShutdownOpts::FULL).await;
 
         // Signal route refresh loop shutdown
         {
@@ -932,8 +833,6 @@ fn restore_community_pseudonyms_and_meks(
 ) {
     use rekindle_crypto::group::media_key::MediaEncryptionKey;
     use rekindle_crypto::group::pseudonym::derive_community_pseudonym;
-    use rekindle_crypto::keychain::{mek_key_name, VAULT_COMMUNITIES};
-    use rekindle_crypto::Keychain as _;
 
     // Collect community IDs and is_hosted flags
     let community_info: Vec<(String, bool)> = {
@@ -957,56 +856,25 @@ fn restore_community_pseudonyms_and_meks(
         // Try to load MEK from Stronghold
         let keystore = keystore_handle.lock();
         if let Some(ref ks) = *keystore {
-            let key_name = mek_key_name(community_id);
-            match ks.load_key(VAULT_COMMUNITIES, &key_name) {
-                Ok(Some(mek_bytes)) if mek_bytes.len() >= 40 => {
-                    // MEK payload: generation (8 bytes LE) + key (32 bytes)
-                    let generation =
-                        u64::from_le_bytes(mek_bytes[..8].try_into().unwrap_or_default());
-                    let key_bytes: [u8; 32] = mek_bytes[8..40].try_into().unwrap_or_default();
-                    let mek = MediaEncryptionKey::from_bytes(key_bytes, generation);
-                    mek_updates.push((community_id.clone(), mek));
-                }
-                Ok(_) if *is_hosted => {
-                    // Owned community with no MEK in Stronghold — regenerate.
-                    // This handles communities created before MEK persistence was added.
-                    tracing::warn!(
-                        community = %community_id,
-                        "MEK missing from Stronghold for hosted community — regenerating"
-                    );
-                    let mek = MediaEncryptionKey::generate(1);
-
-                    // Persist immediately so the next restart finds it
-                    let mut mek_payload = Vec::with_capacity(40);
-                    mek_payload.extend_from_slice(&mek.generation().to_le_bytes());
-                    mek_payload.extend_from_slice(mek.as_bytes());
-                    if let Err(e) = ks.store_key(VAULT_COMMUNITIES, &key_name, &mek_payload) {
-                        tracing::warn!(error = %e, community = %community_id, "failed to persist regenerated MEK");
-                    } else if let Err(e) = ks.save() {
-                        tracing::warn!(error = %e, community = %community_id, "failed to save Stronghold after MEK regeneration");
-                    } else {
-                        tracing::info!(community = %community_id, "regenerated MEK persisted to Stronghold");
-                    }
-
-                    mek_updates.push((community_id.clone(), mek));
-                    regenerated_community_ids.push(community_id.clone());
-                }
-                Ok(_) => {
-                    // Non-hosted community with missing MEK — user needs to
-                    // re-join or wait for MEK delivery from the community server.
-                    tracing::warn!(
-                        community = %community_id,
-                        "MEK missing from Stronghold for joined community — \
-                         will be delivered when connecting to community server"
-                    );
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        community = %community_id,
-                        error = %e,
-                        "failed to load MEK from Stronghold"
-                    );
-                }
+            if let Some(mek) = crate::keystore::load_mek(ks, community_id) {
+                mek_updates.push((community_id.clone(), mek));
+            } else if *is_hosted {
+                // Owned community with no MEK in Stronghold — regenerate.
+                // This handles communities created before MEK persistence was added.
+                tracing::warn!(
+                    community = %community_id,
+                    "MEK missing from Stronghold for hosted community — regenerating"
+                );
+                let mek = MediaEncryptionKey::generate(1);
+                crate::keystore::persist_mek(ks, community_id, &mek);
+                mek_updates.push((community_id.clone(), mek));
+                regenerated_community_ids.push(community_id.clone());
+            } else {
+                tracing::warn!(
+                    community = %community_id,
+                    "MEK missing from Stronghold for joined community — \
+                     will be delivered when connecting to community server"
+                );
             }
         }
     }
@@ -1764,13 +1632,7 @@ async fn publish_profile_to_dht(
 
     let bundle = prekey_bundle_bytes.as_deref().unwrap_or(&[]);
 
-    // Parse the stored owner keypair (if any) for writable DHT access.
-    let owner_keypair: Option<veilid_core::KeyPair> = dht_owner_keypair_str.as_ref().and_then(|s| {
-        s.parse().map_err(|e| {
-            tracing::warn!(error = %e, "failed to parse stored DHT owner keypair — will create new record");
-            e
-        }).ok()
-    });
+    let owner_keypair = parse_stored_keypair(dht_owner_keypair_str.as_ref(), "profile");
 
     // Try to reuse existing DHT record with the owner keypair for write access.
     // If no keypair is stored, writes will fail and we fall back to creating fresh.
@@ -1815,40 +1677,11 @@ async fn publish_profile_to_dht(
         .map_err(|e| format!("failed to create DHT profile: {e}"))?
     };
 
-    // Determine the effective owner keypair: either the new one (just created) or the existing one (reused)
     let effective_keypair = new_keypair.clone().or(owner_keypair);
 
-    // Store the profile DHT key and owner keypair on both the node handle and the DHT manager
-    {
-        let mut node = state.node.write();
-        if let Some(ref mut nh) = *node {
-            nh.profile_dht_key = Some(profile_key.clone());
-            nh.profile_owner_keypair.clone_from(&effective_keypair);
-        }
-    }
-    {
-        let mut dht_mgr = state.dht_manager.write();
-        if let Some(ref mut mgr) = *dht_mgr {
-            mgr.manager.profile_key = Some(profile_key.clone());
-            mgr.track_open_record(profile_key.clone());
-        }
-    }
-
-    // Persist profile_dht_key and owner keypair to SQLite so they survive restarts.
-    // The keypair string is stored via KeyPair's Display impl and loaded via FromStr.
-    let keypair_str = new_keypair.map(|kp| kp.to_string());
-    let has_new_keypair = keypair_str.is_some();
-    let pk = public_key;
-    let dht_key = profile_key.clone();
-    db_call(pool, move |conn| {
-        conn.execute(
-            "UPDATE identity SET dht_record_key = ?1, dht_owner_keypair = COALESCE(?3, dht_owner_keypair) \
-             WHERE public_key = ?2",
-            rusqlite::params![dht_key, pk, keypair_str],
-        )?;
-        Ok(())
-    })
-    .await?;
+    store_profile_key_on_handles(state, &profile_key, effective_keypair.as_ref());
+    let has_new_keypair = new_keypair.is_some();
+    persist_profile_key_to_db(pool, &public_key, &profile_key, new_keypair).await?;
 
     tracing::info!(
         profile_key = %profile_key,
@@ -1884,13 +1717,7 @@ async fn publish_friend_list_to_dht(
     };
     let temp_dht = rekindle_protocol::dht::DHTManager::new(routing_context);
 
-    // Parse the stored owner keypair (if any) for writable DHT access.
-    let owner_keypair: Option<veilid_core::KeyPair> = friend_list_owner_keypair_str.as_ref().and_then(|s| {
-        s.parse().map_err(|e| {
-            tracing::warn!(error = %e, "failed to parse stored friend list owner keypair — will create new record");
-            e
-        }).ok()
-    });
+    let owner_keypair = parse_stored_keypair(friend_list_owner_keypair_str.as_ref(), "friend list");
 
     // Try to reuse existing record with writable access, fall back to creating new one
     let has_keypair = owner_keypair.is_some();
@@ -1925,40 +1752,11 @@ async fn publish_friend_list_to_dht(
             .map_err(|e| format!("failed to create friend list DHT record: {e}"))?
     };
 
-    // Determine the effective owner keypair: either the existing one (reused) or the new one (just created)
     let effective_keypair = new_keypair.clone().or(owner_keypair);
 
-    // Store the friend list DHT key and owner keypair on NodeHandle and DHTManagerHandle
-    {
-        let mut node = state.node.write();
-        if let Some(ref mut nh) = *node {
-            nh.friend_list_dht_key = Some(friend_list_key.clone());
-            nh.friend_list_owner_keypair = effective_keypair;
-        }
-    }
-    {
-        let mut dht_mgr = state.dht_manager.write();
-        if let Some(ref mut mgr) = *dht_mgr {
-            mgr.manager.friend_list_key = Some(friend_list_key.clone());
-            mgr.track_open_record(friend_list_key.clone());
-        }
-    }
-
-    // Persist friend_list_dht_key and owner keypair to SQLite so they survive restarts
-    let keypair_str = new_keypair.map(|kp| kp.to_string());
-    let has_new_keypair = keypair_str.is_some();
-    let pk = public_key;
-    let fl_key = friend_list_key.clone();
-    db_call(pool, move |conn| {
-        conn.execute(
-            "UPDATE identity SET friend_list_dht_key = ?1, \
-             friend_list_owner_keypair = COALESCE(?3, friend_list_owner_keypair) \
-             WHERE public_key = ?2",
-            rusqlite::params![fl_key, pk, keypair_str],
-        )?;
-        Ok(())
-    })
-    .await?;
+    store_friend_list_key_on_handles(state, &friend_list_key, effective_keypair);
+    let has_new_keypair = new_keypair.is_some();
+    persist_friend_list_key_to_db(pool, &public_key, &friend_list_key, new_keypair).await?;
 
     tracing::info!(
         friend_list_key = %friend_list_key,
@@ -1984,6 +1782,108 @@ async fn create_fresh_account_record(
     .await
     .map_err(|e| format!("create account record: {e}"))?;
     Ok((record.record_key(), Some(kp)))
+}
+
+/// Parse an optional keypair string into a `KeyPair`, logging a warning on failure.
+fn parse_stored_keypair(
+    keypair_str: Option<&String>,
+    label: &str,
+) -> Option<veilid_core::KeyPair> {
+    keypair_str.and_then(|s| {
+        s.parse()
+            .map_err(|e| {
+                tracing::warn!(error = %e, "failed to parse stored {label} owner keypair — will create new record");
+                e
+            })
+            .ok()
+    })
+}
+
+/// Store profile DHT key and owner keypair on `NodeHandle` and `DHTManagerHandle`.
+fn store_profile_key_on_handles(
+    state: &SharedState,
+    profile_key: &str,
+    effective_keypair: Option<&veilid_core::KeyPair>,
+) {
+    {
+        let mut node = state.node.write();
+        if let Some(ref mut nh) = *node {
+            nh.profile_dht_key = Some(profile_key.to_string());
+            nh.profile_owner_keypair = effective_keypair.cloned();
+        }
+    }
+    {
+        let mut dht_mgr = state.dht_manager.write();
+        if let Some(ref mut mgr) = *dht_mgr {
+            mgr.manager.profile_key = Some(profile_key.to_string());
+            mgr.track_open_record(profile_key.to_string());
+        }
+    }
+}
+
+/// Persist profile DHT key and owner keypair to `SQLite`.
+async fn persist_profile_key_to_db(
+    pool: &DbPool,
+    public_key: &str,
+    profile_key: &str,
+    new_keypair: Option<veilid_core::KeyPair>,
+) -> Result<(), String> {
+    let keypair_str = new_keypair.map(|kp| kp.to_string());
+    let pk = public_key.to_string();
+    let dk = profile_key.to_string();
+    db_call(pool, move |conn| {
+        conn.execute(
+            "UPDATE identity SET dht_record_key = ?1, dht_owner_keypair = COALESCE(?3, dht_owner_keypair) \
+             WHERE public_key = ?2",
+            rusqlite::params![dk, pk, keypair_str],
+        )?;
+        Ok(())
+    })
+    .await
+}
+
+/// Store friend list DHT key and owner keypair on `NodeHandle` and `DHTManagerHandle`.
+fn store_friend_list_key_on_handles(
+    state: &SharedState,
+    friend_list_key: &str,
+    effective_keypair: Option<veilid_core::KeyPair>,
+) {
+    {
+        let mut node = state.node.write();
+        if let Some(ref mut nh) = *node {
+            nh.friend_list_dht_key = Some(friend_list_key.to_string());
+            nh.friend_list_owner_keypair = effective_keypair;
+        }
+    }
+    {
+        let mut dht_mgr = state.dht_manager.write();
+        if let Some(ref mut mgr) = *dht_mgr {
+            mgr.manager.friend_list_key = Some(friend_list_key.to_string());
+            mgr.track_open_record(friend_list_key.to_string());
+        }
+    }
+}
+
+/// Persist friend list DHT key and owner keypair to `SQLite`.
+async fn persist_friend_list_key_to_db(
+    pool: &DbPool,
+    public_key: &str,
+    friend_list_key: &str,
+    new_keypair: Option<veilid_core::KeyPair>,
+) -> Result<(), String> {
+    let keypair_str = new_keypair.map(|kp| kp.to_string());
+    let pk = public_key.to_string();
+    let fk = friend_list_key.to_string();
+    db_call(pool, move |conn| {
+        conn.execute(
+            "UPDATE identity SET friend_list_dht_key = ?1, \
+             friend_list_owner_keypair = COALESCE(?3, friend_list_owner_keypair) \
+             WHERE public_key = ?2",
+            rusqlite::params![fk, pk, keypair_str],
+        )?;
+        Ok(())
+    })
+    .await
 }
 
 /// Store an account DHT key on `NodeHandle` and track records in `DHTManagerHandle`.
@@ -2050,15 +1950,7 @@ async fn publish_account_to_dht(
         nh.routing_context.clone()
     };
 
-    let owner_keypair: Option<veilid_core::KeyPair> =
-        account_owner_keypair_str.as_ref().and_then(|s| {
-            s.parse()
-                .map_err(|e| {
-                    tracing::warn!(error = %e, "failed to parse stored account owner keypair");
-                    e
-                })
-                .ok()
-        });
+    let owner_keypair = parse_stored_keypair(account_owner_keypair_str.as_ref(), "account");
 
     let (account_key, new_keypair) = if let Some(ref existing_key) = existing_account_key {
         if let Some(keypair) = owner_keypair {

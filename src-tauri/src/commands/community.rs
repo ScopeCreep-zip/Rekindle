@@ -129,26 +129,11 @@ pub async fn create_community(
 
     // Persist MEK to Stronghold for login restoration
     {
-        use rekindle_crypto::keychain::{mek_key_name, VAULT_COMMUNITIES};
-        use rekindle_crypto::Keychain as _;
-
         let mek_cache = state.mek_cache.lock();
         if let Some(mek) = mek_cache.get(&community_id) {
-            let mut mek_payload = Vec::with_capacity(40);
-            mek_payload.extend_from_slice(&mek.generation().to_le_bytes());
-            mek_payload.extend_from_slice(mek.as_bytes());
-
             let ks = keystore_handle.lock();
             if let Some(ref keystore) = *ks {
-                let key_name = mek_key_name(&community_id);
-                if let Err(e) = keystore.store_key(VAULT_COMMUNITIES, &key_name, &mek_payload) {
-                    tracing::warn!(error = %e, "failed to persist MEK to Stronghold for new community");
-                } else {
-                    if let Err(e) = keystore.save() {
-                        tracing::warn!(error = %e, "failed to save Stronghold snapshot after MEK persist");
-                    }
-                    tracing::debug!(community = %community_id, "MEK persisted to Stronghold");
-                }
+                crate::keystore::persist_mek(keystore, &community_id, mek);
             }
         }
     }
@@ -276,26 +261,11 @@ pub async fn join_community(
 
     // Persist MEK to Stronghold for login restoration
     {
-        use rekindle_crypto::keychain::{mek_key_name, VAULT_COMMUNITIES};
-        use rekindle_crypto::Keychain as _;
-
         let mek_cache = state.mek_cache.lock();
         if let Some(mek) = mek_cache.get(&community_id) {
-            let mut mek_payload = Vec::with_capacity(40);
-            mek_payload.extend_from_slice(&mek.generation().to_le_bytes());
-            mek_payload.extend_from_slice(mek.as_bytes());
-
             let ks = keystore_handle.lock();
             if let Some(ref keystore) = *ks {
-                let key_name = mek_key_name(&community_id);
-                if let Err(e) = keystore.store_key(VAULT_COMMUNITIES, &key_name, &mek_payload) {
-                    tracing::warn!(error = %e, "failed to persist MEK to Stronghold");
-                } else {
-                    if let Err(e) = keystore.save() {
-                        tracing::warn!(error = %e, "failed to save Stronghold snapshot after MEK persist");
-                    }
-                    tracing::debug!(community = %community_id, "MEK persisted to Stronghold");
-                }
+                crate::keystore::persist_mek(keystore, &community_id, mek);
             }
         }
     }
@@ -1468,7 +1438,7 @@ pub async fn get_roles(
 
 /// Create a new role in a community.
 #[tauri::command]
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // Tauri IPC: each param is a distinct frontend field
 pub async fn create_role(
     community_id: String,
     name: String,
@@ -1533,7 +1503,7 @@ pub async fn create_role(
 
 /// Edit an existing role in a community.
 #[tauri::command]
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // Tauri IPC: each param is a distinct frontend field
 pub async fn edit_role(
     community_id: String,
     role_id: u32,
@@ -1936,7 +1906,7 @@ pub async fn remove_timeout(
 
 /// Set a channel permission overwrite.
 #[tauri::command]
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // Tauri IPC: each param is a distinct frontend field
 pub async fn set_channel_overwrite(
     community_id: String,
     channel_id: String,

@@ -23,22 +23,22 @@ const JoinCommunityModal: Component<JoinCommunityModalProps> = (props) => {
 
   return (
     <Modal isOpen={props.isOpen} title="Join Community" onClose={props.onClose}>
-      <form class="add-friend-form" onSubmit={handleSubmit}>
+      <form class="modal-form" onSubmit={handleSubmit}>
         <input
-          class="add-friend-input"
+          class="modal-input"
           type="text"
           placeholder="Community ID..."
           value={communityId()}
           onInput={(e) => setCommunityId(e.currentTarget.value)}
         />
         <input
-          class="add-friend-input"
+          class="modal-input"
           type="text"
           placeholder="Name (optional)"
           value={name()}
           onInput={(e) => setName(e.currentTarget.value)}
         />
-        <button class="add-friend-btn" type="submit" disabled={!communityId().trim()}>
+        <button class="modal-btn" type="submit" disabled={!communityId().trim()}>
           Join
         </button>
       </form>

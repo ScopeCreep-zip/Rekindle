@@ -24,23 +24,23 @@ const CreateChannelModal: Component<CreateChannelModalProps> = (props) => {
 
   return (
     <Modal isOpen={props.isOpen} title="Create Channel" onClose={props.onClose}>
-      <form class="add-friend-form" onSubmit={handleSubmit}>
+      <form class="modal-form" onSubmit={handleSubmit}>
         <input
-          class="add-friend-input"
+          class="modal-input"
           type="text"
           placeholder="Channel name..."
           value={name()}
           onInput={(e) => setName(e.currentTarget.value)}
         />
         <select
-          class="add-friend-input"
+          class="modal-input"
           value={channelType()}
           onChange={(e) => setChannelType(e.currentTarget.value as "text" | "voice")}
         >
           <option value="text">Text Channel</option>
           <option value="voice">Voice Channel</option>
         </select>
-        <button class="add-friend-btn" type="submit" disabled={!name().trim()}>
+        <button class="modal-btn" type="submit" disabled={!name().trim()}>
           Create
         </button>
       </form>

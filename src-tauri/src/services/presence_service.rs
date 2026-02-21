@@ -342,36 +342,8 @@ async fn handle_community_channel_list_change(
     };
 
     if let Some(data) = channel_data {
-        // Support both wrapped format { channels: [...], lastRefreshed } and bare array [...]
-        let channel_list_opt: Option<Vec<serde_json::Value>> =
-            serde_json::from_slice::<serde_json::Value>(&data)
-                .ok()
-                .and_then(|v| {
-                    if let Some(obj) = v.as_object() {
-                        obj.get("channels").and_then(|c| c.as_array().cloned())
-                    } else {
-                        v.as_array().cloned()
-                    }
-                });
-        if let Some(channel_list) = channel_list_opt {
-            let channels: Vec<crate::state::ChannelInfo> = channel_list
-                .iter()
-                .filter_map(|ch| {
-                    let id = ch.get("id")?.as_str()?.to_string();
-                    let name = ch.get("name")?.as_str()?.to_string();
-                    let ch_type = match ch.get("channelType").and_then(|v| v.as_str()) {
-                        Some("voice") => crate::state::ChannelType::Voice,
-                        _ => crate::state::ChannelType::Text,
-                    };
-                    Some(crate::state::ChannelInfo {
-                        id,
-                        name,
-                        channel_type: ch_type,
-                        unread_count: 0,
-                    })
-                })
-                .collect();
-
+        let channels = crate::state::parse_dht_channel_list(&data);
+        if !channels.is_empty() {
             {
                 let mut communities = state.communities.write();
                 if let Some(community) = communities.get_mut(community_id) {

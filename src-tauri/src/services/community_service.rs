@@ -273,7 +273,7 @@ async fn read_community_from_dht(
     };
 
     let channels = match mgr.get_value(community_id, SUBKEY_CHANNELS).await {
-        Ok(Some(data)) => parse_channel_list(&data),
+        Ok(Some(data)) => crate::state::parse_dht_channel_list(&data),
         Ok(None) | Err(_) => vec![],
     };
 
@@ -608,41 +608,6 @@ fn parse_community_metadata(data: &[u8], community_id: &str) -> (String, Option<
 }
 
 /// Parse channel list JSON from DHT value bytes.
-fn parse_channel_list(data: &[u8]) -> Vec<ChannelInfo> {
-    // Support both wrapped format { channels: [...], lastRefreshed } and bare array [...]
-    let channel_list: Vec<serde_json::Value> =
-        match serde_json::from_slice::<serde_json::Value>(data) {
-            Ok(v) => {
-                if let Some(obj) = v.as_object() {
-                    obj.get("channels")
-                        .and_then(|c| c.as_array().cloned())
-                        .unwrap_or_default()
-                } else {
-                    v.as_array().cloned().unwrap_or_default()
-                }
-            }
-            Err(_) => return vec![],
-        };
-
-    channel_list
-        .iter()
-        .filter_map(|ch| {
-            let id = ch.get("id")?.as_str()?.to_string();
-            let ch_name = ch.get("name")?.as_str()?.to_string();
-            let ch_type = match ch.get("channelType").and_then(|v| v.as_str()) {
-                Some("voice") => ChannelType::Voice,
-                _ => ChannelType::Text,
-            };
-            Some(ChannelInfo {
-                id,
-                name: ch_name,
-                channel_type: ch_type,
-                unread_count: 0,
-            })
-        })
-        .collect()
-}
-
 /// Construct a default community display name from a (potentially long) ID.
 fn default_community_name(community_id: &str) -> String {
     format!("Community {}", &community_id[..8.min(community_id.len())])

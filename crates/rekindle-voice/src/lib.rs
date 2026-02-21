@@ -1,6 +1,7 @@
 pub mod audio_processing;
 pub mod capture;
 pub mod codec;
+pub mod device;
 pub mod error;
 pub mod jitter;
 pub mod mixer;

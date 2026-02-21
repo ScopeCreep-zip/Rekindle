@@ -2,7 +2,9 @@ import { reconcile } from "solid-js/store";
 import { commands } from "../ipc/commands";
 import { setFriendsState, friendsState } from "../stores/friends.store";
 import { authState } from "../stores/auth.store";
-import type { Friend, OutgoingInvite } from "../stores/friends.store";
+import type { OutgoingInvite } from "../stores/friends.store";
+import { transformFriendMap } from "../utils/transformers";
+import { errorMessage } from "../utils/error";
 
 export function handleDoubleClickFriend(
   publicKey: string,
@@ -42,7 +44,7 @@ export async function handleAddFriend(
     await commands.addFriend(publicKey, displayName, message);
     return null;
   } catch (e) {
-    return String(e);
+    return errorMessage(e);
   }
 }
 
@@ -57,7 +59,7 @@ export async function handleAcceptRequest(publicKey: string): Promise<string | n
     );
     return null;
   } catch (e) {
-    return String(e);
+    return errorMessage(e);
   }
 }
 
@@ -69,7 +71,7 @@ export async function handleRejectRequest(publicKey: string): Promise<string | n
     );
     return null;
   } catch (e) {
-    return String(e);
+    return errorMessage(e);
   }
 }
 
@@ -146,7 +148,7 @@ export async function handleBlockUser(publicKey: string, displayName?: string): 
     );
     return null;
   } catch (e) {
-    return String(e);
+    return errorMessage(e);
   }
 }
 
@@ -155,7 +157,7 @@ export async function handleUnblockUser(publicKey: string): Promise<string | nul
     await commands.unblockUser(publicKey);
     return null;
   } catch (e) {
-    return String(e);
+    return errorMessage(e);
   }
 }
 
@@ -176,7 +178,7 @@ export async function handleGenerateInvite(): Promise<{ url: string; inviteId: s
     return result;
   } catch (e) {
     console.error("Failed to generate invite:", e);
-    return String(e);
+    return errorMessage(e);
   }
 }
 
@@ -188,7 +190,7 @@ export async function handleCancelInvite(inviteId: string): Promise<string | nul
     );
     return null;
   } catch (e) {
-    return String(e);
+    return errorMessage(e);
   }
 }
 
@@ -216,7 +218,7 @@ export async function handleAddFriendFromInvite(inviteString: string): Promise<s
     await commands.addFriendFromInvite(inviteString);
     return null;
   } catch (e) {
-    return String(e);
+    return errorMessage(e);
   }
 }
 
@@ -228,32 +230,14 @@ export async function handleCancelRequest(publicKey: string): Promise<string | n
     setFriendsState("friends", reconcile(next));
     return null;
   } catch (e) {
-    return String(e);
+    return errorMessage(e);
   }
 }
 
 export async function handleRefreshFriends(): Promise<void> {
   try {
     const friends = await commands.getFriends();
-    const friendMap: Record<string, Friend> = {};
-    for (const f of friends) {
-      friendMap[f.publicKey] = {
-        publicKey: f.publicKey,
-        displayName: f.displayName,
-        nickname: f.nickname,
-        status: (f.status as Friend["status"]) ?? "offline",
-        statusMessage: f.statusMessage ?? null,
-        gameInfo: f.gameInfo
-          ? { gameName: f.gameInfo.gameName, gameId: f.gameInfo.gameId, startedAt: null }
-          : null,
-        group: f.group ?? "Friends",
-        unreadCount: f.unreadCount,
-        lastSeenAt: f.lastSeenAt ?? null,
-        voiceChannel: null,
-        friendshipState: (f.friendshipState as Friend["friendshipState"]) ?? "accepted",
-      };
-    }
-    setFriendsState("friends", reconcile(friendMap));
+    setFriendsState("friends", reconcile(transformFriendMap(friends)));
   } catch (e) {
     console.error("Failed to refresh friends:", e);
   }

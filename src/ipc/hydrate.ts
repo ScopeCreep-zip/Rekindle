@@ -3,8 +3,8 @@ import { setAuthState } from "../stores/auth.store";
 import { fetchAvatarUrl } from "./avatar";
 import { setFriendsState } from "../stores/friends.store";
 import { setCommunityState } from "../stores/community.store";
-import type { Friend } from "../stores/friends.store";
 import type { Community } from "../stores/community.store";
+import { transformFriendMap } from "../utils/transformers";
 
 /**
  * Hydrate frontend stores from the Rust backend.
@@ -32,25 +32,7 @@ export async function hydrateState(): Promise<void> {
 
   try {
     const friends = await commands.getFriends();
-    const friendMap: Record<string, Friend> = {};
-    for (const f of friends) {
-      friendMap[f.publicKey] = {
-        publicKey: f.publicKey,
-        displayName: f.displayName,
-        nickname: f.nickname,
-        status: (f.status as Friend["status"]) ?? "offline",
-        statusMessage: f.statusMessage ?? null,
-        gameInfo: f.gameInfo
-          ? { gameName: f.gameInfo.gameName, gameId: f.gameInfo.gameId, startedAt: null }
-          : null,
-        group: f.group ?? "Friends",
-        unreadCount: f.unreadCount,
-        lastSeenAt: f.lastSeenAt ?? null,
-        voiceChannel: null,
-        friendshipState: (f.friendshipState as Friend["friendshipState"]) ?? "accepted",
-      };
-    }
-    setFriendsState("friends", friendMap);
+    setFriendsState("friends", transformFriendMap(friends));
   } catch (e) {
     console.error("Failed to hydrate friends:", e);
   }

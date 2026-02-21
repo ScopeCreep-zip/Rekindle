@@ -174,7 +174,7 @@ pub fn default_socket_path() -> PathBuf {
 ///
 /// Retries connection up to `max_retries` times with a delay to allow the server
 /// to finish starting up.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // IPC request: each param is a distinct server field
 pub fn host_community_blocking(
     socket_path: &Path,
     community_id: &str,

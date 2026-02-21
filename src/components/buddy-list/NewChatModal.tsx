@@ -36,16 +36,16 @@ const NewChatModal: Component = () => {
       title="New Chat"
       onClose={handleClose}
     >
-      <form class="add-friend-form" onSubmit={handleSubmit}>
+      <form class="modal-form" onSubmit={handleSubmit}>
         <input
-          class="add-friend-input"
+          class="modal-input"
           type="text"
           placeholder="Enter public key..."
           value={publicKey()}
           onInput={(e) => setPublicKey(e.currentTarget.value)}
         />
         <input
-          class="add-friend-input"
+          class="modal-input"
           type="text"
           placeholder="Display name (optional)"
           value={displayName()}
@@ -54,7 +54,7 @@ const NewChatModal: Component = () => {
         <Show when={error()}>
           <div class="login-error">{error()}</div>
         </Show>
-        <button class="add-friend-btn" type="submit" disabled={!publicKey().trim()}>
+        <button class="modal-btn" type="submit" disabled={!publicKey().trim()}>
           <span class="nf-icon">{ICON_NEW_CHAT}</span> Start Chat
         </button>
       </form>

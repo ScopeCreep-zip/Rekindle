@@ -650,38 +650,8 @@ async fn sync_single_conversation(
 }
 
 /// Parse a DHT channel list from JSON (supports both wrapped and bare array format).
-fn parse_dht_channel_list(data: &[u8]) -> Vec<crate::state::ChannelInfo> {
-    let channel_list: Vec<serde_json::Value> =
-        match serde_json::from_slice::<serde_json::Value>(data) {
-            Ok(v) => {
-                if let Some(obj) = v.as_object() {
-                    obj.get("channels")
-                        .and_then(|c| c.as_array().cloned())
-                        .unwrap_or_default()
-                } else {
-                    v.as_array().cloned().unwrap_or_default()
-                }
-            }
-            Err(_) => return vec![],
-        };
-    channel_list
-        .iter()
-        .filter_map(|ch| {
-            let id = ch.get("id")?.as_str()?.to_string();
-            let name = ch.get("name")?.as_str()?.to_string();
-            let ch_type = match ch.get("channelType").and_then(|v| v.as_str()) {
-                Some("voice") => crate::state::ChannelType::Voice,
-                _ => crate::state::ChannelType::Text,
-            };
-            Some(crate::state::ChannelInfo {
-                id,
-                name,
-                channel_type: ch_type,
-                unread_count: 0,
-            })
-        })
-        .collect()
-}
+/// Re-export the shared channel list parser from state.
+use crate::state::parse_dht_channel_list;
 
 /// Sync communities: read community DHT records and update local state.
 ///
@@ -945,32 +915,11 @@ async fn retry_pending_dm(
     envelope: &MessageEnvelope,
 ) -> Result<(), String> {
     // Look up route and import RouteId via cache.
-    // Clone Arc-based handles out before any .await (parking_lot guards are !Send).
-    let route_id_and_rc = {
-        let Some((api, rc)) = state_helpers::api_and_routing_context(state) else {
-            increment_retry_count(pool, id).await?;
-            return Ok(());
-        };
-
-        let mut dht_mgr = state.dht_manager.write();
-        match dht_mgr.as_mut() {
-            Some(mgr) => match mgr.manager.get_cached_route(recipient_key).cloned() {
-                Some(blob) => match mgr.manager.get_or_import_route(&api, &blob) {
-                    Ok(route_id) => Some((route_id, rc)),
-                    Err(e) => {
-                        tracing::debug!(
-                            to = %recipient_key, error = %e, blob_len = blob.len(),
-                            "route import failed during retry — invalidating, will try mailbox"
-                        );
-                        mgr.manager.invalidate_route_for_peer(recipient_key);
-                        None
-                    }
-                },
-                None => None,
-            },
-            None => None,
-        }
-    };
+    let route_id_and_rc = state_helpers::try_import_peer_route(state, recipient_key);
+    if route_id_and_rc.is_none() && state_helpers::api_and_routing_context(state).is_none() {
+        increment_retry_count(pool, id).await?;
+        return Ok(());
+    }
 
     // If no cached route, try mailbox fallback
     let route_id_and_rc = if route_id_and_rc.is_some() {
