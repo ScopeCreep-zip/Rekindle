@@ -62,6 +62,26 @@ impl MediaEncryptionKey {
         Ok(output)
     }
 
+    /// Serialize to the 40-byte wire format: generation (8 LE) + key (32).
+    ///
+    /// Used for Stronghold persistence and network transport.
+    pub fn to_wire_bytes(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(40);
+        buf.extend_from_slice(&self.generation.to_le_bytes());
+        buf.extend_from_slice(&self.key);
+        buf
+    }
+
+    /// Deserialize from the 40-byte wire format. Returns `None` if too short.
+    pub fn from_wire_bytes(bytes: &[u8]) -> Option<Self> {
+        if bytes.len() < 40 {
+            return None;
+        }
+        let generation = u64::from_le_bytes(bytes[..8].try_into().ok()?);
+        let key: [u8; 32] = bytes[8..40].try_into().ok()?;
+        Some(Self { key, generation })
+    }
+
     /// Decrypt a ciphertext message (expects nonce prepended).
     pub fn decrypt(&self, data: &[u8]) -> Result<Vec<u8>, CryptoError> {
         if data.len() < 12 {
@@ -93,6 +113,23 @@ mod tests {
         let decrypted = mek.decrypt(&encrypted).unwrap();
 
         assert_eq!(plaintext.as_slice(), &decrypted);
+    }
+
+    #[test]
+    fn wire_bytes_roundtrip() {
+        let mek = MediaEncryptionKey::generate(42);
+        let wire = mek.to_wire_bytes();
+        assert_eq!(wire.len(), 40);
+
+        let restored = MediaEncryptionKey::from_wire_bytes(&wire).unwrap();
+        assert_eq!(restored.generation(), 42);
+        assert_eq!(restored.as_bytes(), mek.as_bytes());
+    }
+
+    #[test]
+    fn wire_bytes_too_short() {
+        assert!(MediaEncryptionKey::from_wire_bytes(&[0u8; 39]).is_none());
+        assert!(MediaEncryptionKey::from_wire_bytes(&[]).is_none());
     }
 
     #[test]
