@@ -233,12 +233,7 @@ fn handle_direct_message(
     let sender = sender_hex.to_string();
     let body_clone = body.to_string();
     db_fire(pool, "persist incoming message", move |conn| {
-        conn.execute(
-            "INSERT INTO messages (owner_key, conversation_id, conversation_type, sender_key, body, timestamp, is_read) \
-             VALUES (?, ?, 'dm', ?, ?, ?, 0)",
-            rusqlite::params![owner_key, sender, sender, body_clone, timestamp],
-        )?;
-        Ok(())
+        crate::message_repo::insert_dm(conn, &owner_key, &sender, &sender, &body_clone, timestamp, false)
     });
 
     // Update unread count
@@ -274,12 +269,7 @@ fn handle_channel_message(
     let ch_id = channel_id.to_string();
     let body_clone = body.to_string();
     db_fire(pool, "persist channel message", move |conn| {
-        conn.execute(
-            "INSERT INTO messages (owner_key, conversation_id, conversation_type, sender_key, body, timestamp, is_read) \
-             VALUES (?, ?, 'channel', ?, ?, ?, 0)",
-            rusqlite::params![owner_key, ch_id, sender, body_clone, timestamp],
-        )?;
-        Ok(())
+        crate::message_repo::insert_channel_message(conn, &owner_key, &ch_id, &sender, &body_clone, timestamp, false, None)
     });
 
     let event = ChatEvent::MessageReceived {

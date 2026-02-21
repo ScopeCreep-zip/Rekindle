@@ -39,12 +39,7 @@ pub async fn send_message(
     let body_clone = body.clone();
     let ok = owner_key.clone();
     db_call(pool.inner(), move |conn| {
-        conn.execute(
-            "INSERT INTO messages (owner_key, conversation_id, conversation_type, sender_key, body, timestamp, is_read) \
-             VALUES (?, ?, 'dm', ?, ?, ?, 1)",
-            rusqlite::params![ok, to_clone, sender_key_clone, body_clone, timestamp],
-        )?;
-        Ok(())
+        crate::message_repo::insert_dm(conn, &ok, &to_clone, &sender_key_clone, &body_clone, timestamp, true)
     })
     .await?;
 

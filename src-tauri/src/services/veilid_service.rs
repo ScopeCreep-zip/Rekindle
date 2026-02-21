@@ -319,12 +319,7 @@ async fn handle_broadcast_new_message(
     let ts = msg.timestamp.cast_signed();
     let mg = msg.mek_generation.cast_signed();
     db_fire(pool.inner(), "store community message", move |conn| {
-        conn.execute(
-            "INSERT INTO messages (owner_key, conversation_id, conversation_type, sender_key, body, timestamp, is_read, mek_generation) \
-             VALUES (?, ?, 'channel', ?, ?, ?, 0, ?)",
-            rusqlite::params![owner_key, cid, spn, body_text, ts, mg],
-        )?;
-        Ok(())
+        crate::message_repo::insert_channel_message(conn, &owner_key, &cid, &spn, &body_text, ts, false, Some(mg))
     });
 
     // Emit to frontend
