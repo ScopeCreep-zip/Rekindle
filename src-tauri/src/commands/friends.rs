@@ -178,10 +178,7 @@ pub async fn remove_friend(
     let pk = public_key.clone();
     let ok = owner_key;
     db_call(pool.inner(), move |conn| {
-        conn.execute(
-            "DELETE FROM friends WHERE owner_key = ?1 AND public_key = ?2",
-            rusqlite::params![ok, pk],
-        )?;
+        crate::friend_repo::delete_friend(conn, &ok, &pk)?;
         conn.execute(
             "DELETE FROM pending_friend_requests WHERE owner_key = ?1 AND public_key = ?2",
             rusqlite::params![ok, pk],
@@ -348,13 +345,13 @@ pub async fn accept_request(
         let pdk = pending_profile_key.clone();
         let mdk = pending_mailbox_key;
         db_call(pool.inner(), move |conn| {
-            conn.execute(
-                "UPDATE friends SET dht_record_key = COALESCE(?1, dht_record_key), \
-                 mailbox_dht_key = COALESCE(?2, mailbox_dht_key) \
-                 WHERE owner_key = ?3 AND public_key = ?4",
-                rusqlite::params![pdk, mdk, ok3, pk3],
-            )?;
-            Ok(())
+            crate::friend_repo::update_dht_and_mailbox_keys(
+                conn,
+                &ok3,
+                &pk3,
+                pdk.as_deref(),
+                mdk.as_deref(),
+            )
         })
         .await?;
     }
@@ -587,11 +584,7 @@ pub async fn cancel_request(
     let pk = public_key.clone();
     let ok = owner_key;
     db_call(pool.inner(), move |conn| {
-        conn.execute(
-            "DELETE FROM friends WHERE owner_key = ?1 AND public_key = ?2",
-            rusqlite::params![ok, pk],
-        )?;
-        Ok(())
+        crate::friend_repo::delete_friend(conn, &ok, &pk)
     })
     .await?;
 
@@ -657,11 +650,7 @@ pub async fn move_friend_to_group(
     let pk = public_key.clone();
     let ok = owner_key;
     db_call(pool.inner(), move |conn| {
-        conn.execute(
-            "UPDATE friends SET group_id = ?1 WHERE owner_key = ?2 AND public_key = ?3",
-            rusqlite::params![group_id, ok, pk],
-        )?;
-        Ok(())
+        crate::friend_repo::update_group_id(conn, &ok, &pk, group_id)
     })
     .await?;
 
@@ -840,10 +829,7 @@ pub async fn add_friend_from_invite(
     db_call(pool.inner(), move |conn| {
         // DELETE first to handle any leftover rows (e.g., race with grace period cleanup),
         // then INSERT fresh so all columns are populated from the invite.
-        conn.execute(
-            "DELETE FROM friends WHERE owner_key = ?1 AND public_key = ?2",
-            rusqlite::params![ok, pk],
-        )?;
+        crate::friend_repo::delete_friend(conn, &ok, &pk)?;
         conn.execute(
             "INSERT INTO friends (owner_key, public_key, display_name, added_at, dht_record_key, mailbox_dht_key, friendship_state) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'pending_out')",
@@ -1042,10 +1028,7 @@ pub async fn block_user(
     let ok = owner_key;
     let dn = resolved_name;
     db_call(pool.inner(), move |conn| {
-        conn.execute(
-            "DELETE FROM friends WHERE owner_key = ?1 AND public_key = ?2",
-            rusqlite::params![ok, pk],
-        )?;
+        crate::friend_repo::delete_friend(conn, &ok, &pk)?;
         conn.execute(
             "DELETE FROM pending_friend_requests WHERE owner_key = ?1 AND public_key = ?2",
             rusqlite::params![ok, pk],

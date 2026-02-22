@@ -8,6 +8,7 @@ pub mod invite_helpers;
 pub mod ipc_client;
 pub mod keystore;
 pub mod channel_repo;
+pub mod friend_repo;
 pub mod message_repo;
 mod services;
 pub mod state;

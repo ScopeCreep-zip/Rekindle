@@ -392,15 +392,7 @@ async fn handle_friend_request_full(
             state.friends.write().remove(req.sender_hex);
 
             // Delete stale DB rows so future accept creates a clean entry
-            let owner_key = state_helpers::owner_key_or_default(state);
-            let pk = req.sender_hex.to_string();
-            db_fire(pool, "delete stale friend for re-add", move |conn| {
-                conn.execute(
-                    "DELETE FROM friends WHERE owner_key = ?1 AND public_key = ?2",
-                    rusqlite::params![owner_key, pk],
-                )?;
-                Ok(())
-            });
+            crate::friend_repo::fire_delete_friend(state, pool, req.sender_hex);
 
             // Clean up any lingering pending request row
             delete_pending_request_row(state, pool, req.sender_hex);
@@ -419,7 +411,7 @@ async fn handle_friend_request_full(
                     friend.display_name = req.display_name.to_string();
                 }
             }
-            update_friend_display_name(state, pool, req.sender_hex, req.display_name);
+            crate::friend_repo::fire_update_display_name(state, pool, req.sender_hex, req.display_name);
             return;
         }
     }
@@ -499,10 +491,10 @@ async fn handle_friend_accept_full(
         }
     }
     // Persist friendship_state transition to DB
-    persist_friendship_state(state, pool, a.sender_hex, "accepted");
+    crate::friend_repo::fire_update_friendship_state(state, pool, a.sender_hex, "accepted");
     // Persist profile key to `SQLite`
     if !a.profile_dht_key.is_empty() {
-        persist_friend_dht_key(state, pool, a.sender_hex, a.profile_dht_key);
+        crate::friend_repo::fire_update_dht_record_key(state, pool, a.sender_hex, a.profile_dht_key);
         // Start watching the friend's profile DHT record for presence
         if let Err(e) =
             super::presence_service::watch_friend(state, a.sender_hex, a.profile_dht_key).await
@@ -545,7 +537,7 @@ async fn handle_profile_key_rotated(
         }
     }
     // Persist to `SQLite`
-    persist_friend_dht_key(state, pool, sender_hex, new_profile_dht_key);
+    crate::friend_repo::fire_update_dht_record_key(state, pool, sender_hex, new_profile_dht_key);
     // Re-watch the new profile DHT record for presence updates
     if let Err(e) =
         super::presence_service::watch_friend(state, sender_hex, new_profile_dht_key).await
@@ -629,43 +621,6 @@ fn handle_unfriended_ack(state: &Arc<AppState>, pool: &DbPool, sender_hex: &str)
     tracing::info!(from = %sender_hex, "received UnfriendedAck — cleared pending messages");
 }
 
-/// Persist a friend's profile DHT key to `SQLite`.
-fn persist_friend_dht_key(
-    state: &Arc<AppState>,
-    pool: &DbPool,
-    friend_key: &str,
-    profile_dht_key: &str,
-) {
-    let owner_key = state_helpers::owner_key_or_default(state);
-    let fk = friend_key.to_string();
-    let pdk = profile_dht_key.to_string();
-    db_fire(pool, "persist friend DHT key", move |conn| {
-        conn.execute(
-            "UPDATE friends SET dht_record_key = ?1 WHERE owner_key = ?2 AND public_key = ?3",
-            rusqlite::params![pdk, owner_key, fk],
-        )?;
-        Ok(())
-    });
-}
-
-/// Update a friend's display name in `SQLite`.
-fn update_friend_display_name(
-    state: &Arc<AppState>,
-    pool: &DbPool,
-    public_key: &str,
-    display_name: &str,
-) {
-    let owner_key = state_helpers::owner_key_or_default(state);
-    let pk = public_key.to_string();
-    let dn = display_name.to_string();
-    db_fire(pool, "update friend display name", move |conn| {
-        conn.execute(
-            "UPDATE friends SET display_name = ?1 WHERE owner_key = ?2 AND public_key = ?3",
-            rusqlite::params![dn, owner_key, pk],
-        )?;
-        Ok(())
-    });
-}
 
 /// Handle a `FriendReject` — if the rejected peer is in our `pending_out` list,
 /// remove them. Otherwise, just emit the event.
@@ -682,15 +637,7 @@ fn handle_friend_reject(
 
     if is_pending_out {
         // Remove pending-out friend from DB and in-memory state
-        let owner_key = state_helpers::owner_key_or_default(state);
-        let pk = sender_hex.to_string();
-        db_fire(pool, "delete rejected friend", move |conn| {
-            conn.execute(
-                "DELETE FROM friends WHERE owner_key = ?1 AND public_key = ?2",
-                rusqlite::params![owner_key, pk],
-            )?;
-            Ok(())
-        });
+        crate::friend_repo::fire_delete_friend(state, pool, sender_hex);
         state.friends.write().remove(sender_hex);
 
         let _ = app_handle.emit(
@@ -735,15 +682,7 @@ async fn handle_unfriended(
     }
 
     // Remove from DB
-    let owner_key = state_helpers::owner_key_or_default(state);
-    let pk = sender_hex.to_string();
-    db_fire(pool, "delete unfriended peer", move |conn| {
-        conn.execute(
-            "DELETE FROM friends WHERE owner_key = ?1 AND public_key = ?2",
-            rusqlite::params![owner_key, pk],
-        )?;
-        Ok(())
-    });
+    crate::friend_repo::fire_delete_friend(state, pool, sender_hex);
 
     // Clean up any pending request from this peer to prevent stale rows blocking future requests
     delete_pending_request_row(state, pool, sender_hex);
@@ -809,15 +748,15 @@ async fn auto_accept_cross_request(
             }
         }
     }
-    persist_friendship_state(state, pool, req.sender_hex, "accepted");
-    update_friend_display_name(state, pool, req.sender_hex, req.display_name);
+    crate::friend_repo::fire_update_friendship_state(state, pool, req.sender_hex, "accepted");
+    crate::friend_repo::fire_update_display_name(state, pool, req.sender_hex, req.display_name);
 
     // Persist profile/mailbox keys
     if !req.profile_dht_key.is_empty() {
-        persist_friend_dht_key(state, pool, req.sender_hex, req.profile_dht_key);
+        crate::friend_repo::fire_update_dht_record_key(state, pool, req.sender_hex, req.profile_dht_key);
     }
     if !req.mailbox_dht_key.is_empty() {
-        persist_friend_mailbox_key(state, pool, req.sender_hex, req.mailbox_dht_key);
+        crate::friend_repo::fire_update_mailbox_dht_key(state, pool, req.sender_hex, req.mailbox_dht_key);
     }
 
     // 2. Establish Signal session from their prekey bundle
@@ -873,44 +812,6 @@ async fn auto_accept_cross_request(
             display_name: req.display_name.to_string(),
         },
     );
-}
-
-/// Persist the `friendship_state` column to `SQLite` for a friend.
-fn persist_friendship_state(
-    state: &Arc<AppState>,
-    pool: &DbPool,
-    friend_key: &str,
-    friendship_state: &str,
-) {
-    let owner_key = state_helpers::owner_key_or_default(state);
-    let fk = friend_key.to_string();
-    let fs = friendship_state.to_string();
-    db_fire(pool, "update friendship_state", move |conn| {
-        conn.execute(
-            "UPDATE friends SET friendship_state = ?1 WHERE owner_key = ?2 AND public_key = ?3",
-            rusqlite::params![fs, owner_key, fk],
-        )?;
-        Ok(())
-    });
-}
-
-/// Persist a friend's mailbox DHT key to `SQLite`.
-fn persist_friend_mailbox_key(
-    state: &Arc<AppState>,
-    pool: &DbPool,
-    friend_key: &str,
-    mailbox_dht_key: &str,
-) {
-    let owner_key = state_helpers::owner_key_or_default(state);
-    let fk = friend_key.to_string();
-    let mdk = mailbox_dht_key.to_string();
-    db_fire(pool, "update friend mailbox key", move |conn| {
-        conn.execute(
-            "UPDATE friends SET mailbox_dht_key = ?1 WHERE owner_key = ?2 AND public_key = ?3",
-            rusqlite::params![mdk, owner_key, fk],
-        )?;
-        Ok(())
-    });
 }
 
 /// Check if a sender is in the blocked users table.

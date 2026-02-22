@@ -245,10 +245,7 @@ async fn expire_stale_requests(
 
         // Delete them
         for pk in &rows {
-            conn.execute(
-                "DELETE FROM friends WHERE owner_key = ?1 AND public_key = ?2",
-                rusqlite::params![ok, pk],
-            )?;
+            crate::friend_repo::delete_friend(conn, &ok, pk)?;
         }
 
         Ok(rows)
