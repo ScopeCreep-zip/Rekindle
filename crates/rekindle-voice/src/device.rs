@@ -37,3 +37,43 @@ pub fn find_device(
     };
     default.ok_or_else(|| VoiceError::AudioDevice(format!("no {label} device available")))
 }
+
+/// Enumerated audio devices (input and output).
+pub struct EnumeratedDevices {
+    /// Input devices: `(name, is_default)`.
+    pub input_devices: Vec<(String, bool)>,
+    /// Output devices: `(name, is_default)`.
+    pub output_devices: Vec<(String, bool)>,
+}
+
+/// Enumerate all available audio input and output devices.
+pub fn enumerate_audio_devices() -> Result<EnumeratedDevices, VoiceError> {
+    let host = cpal::default_host();
+    let default_input_name = host.default_input_device().and_then(|d| d.name().ok());
+    let default_output_name = host.default_output_device().and_then(|d| d.name().ok());
+
+    let mut input_devices = Vec::new();
+    if let Ok(devices) = host.input_devices() {
+        for device in devices {
+            if let Ok(name) = device.name() {
+                let is_default = default_input_name.as_deref() == Some(&name);
+                input_devices.push((name, is_default));
+            }
+        }
+    }
+
+    let mut output_devices = Vec::new();
+    if let Ok(devices) = host.output_devices() {
+        for device in devices {
+            if let Ok(name) = device.name() {
+                let is_default = default_output_name.as_deref() == Some(&name);
+                output_devices.push((name, is_default));
+            }
+        }
+    }
+
+    Ok(EnumeratedDevices {
+        input_devices,
+        output_devices,
+    })
+}

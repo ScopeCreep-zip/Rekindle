@@ -1,4 +1,5 @@
 pub mod audio_processing;
+pub(crate) mod audio_thread;
 pub mod capture;
 pub mod codec;
 pub mod device;
