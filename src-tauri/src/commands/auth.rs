@@ -69,7 +69,7 @@ pub async fn create_identity_core(
 
     // Initialize per-identity Stronghold and store the private key
     let keystore = StrongholdKeystore::initialize_for_identity(config_dir, &public_key, passphrase)
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| crate::keystore::map_stronghold_error(&e))?;
     keystore
         .store_key(VAULT_IDENTITY, KEY_ED25519_PRIVATE, &secret_bytes)
         .map_err(|e| e.to_string())?;
