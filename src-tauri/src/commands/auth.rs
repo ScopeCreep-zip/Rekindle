@@ -1434,11 +1434,7 @@ pub async fn create_conversation_for_friend(
     let (display_name, status_message, owner_key) =
         (id.display_name, id.status_message, id.public_key);
 
-    let routing_context = {
-        let node = state.node.read();
-        let nh = node.as_ref().ok_or("node not initialized")?;
-        nh.routing_context.clone()
-    };
+    let routing_context = state_helpers::require_routing_context(state)?;
 
     let route_blob = state_helpers::our_route_blob(state).unwrap_or_default();
 
@@ -1471,15 +1467,7 @@ pub async fn create_conversation_for_friend(
 
     let conversation_key = record.record_key();
 
-    // Track all record keys (parent + message log)
-    {
-        let mut dht_mgr = state.dht_manager.write();
-        if let Some(ref mut mgr) = *dht_mgr {
-            for k in record.all_record_keys() {
-                mgr.track_open_record(k);
-            }
-        }
-    }
+    state_helpers::track_open_records(state, &record.all_record_keys());
 
     // Persist to SQLite
     let ok = owner_key;

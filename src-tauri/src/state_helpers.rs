@@ -1,13 +1,74 @@
-//! Read-only helpers for extracting commonly-accessed fields from [`AppState`].
+//! State access helpers for extracting and storing commonly-accessed fields
+//! from [`AppState`].
 //!
-//! Each function acquires a read lock, clones out the needed value(s), and
-//! drops the guard immediately — safe to call before `.await` points.
-//!
-//! Write patterns are too varied for generic helpers and stay inline.
+//! Read helpers acquire a read lock, clone out the needed value(s), and drop
+//! the guard immediately — safe to call before `.await` points. Write helpers
+//! (`store_dht_record`, `track_open_records`, `cache_peer_route`, etc.) acquire
+//! write locks with the same acquire-then-drop discipline.
 
 use std::sync::Arc;
 
 use crate::state::{AppState, FriendState, FriendshipState, IdentityState, UserStatus};
+
+// ── DHT Record Storage ─────────────────────────────────────────────
+
+/// Which type of DHT record is being stored on the node/manager handles.
+///
+/// `Profile` and `FriendList` carry an optional owner keypair (set on creation,
+/// `None` on reopen). Account and Mailbox never carry a keypair.
+pub enum DhtRecordType {
+    Profile(Option<veilid_core::KeyPair>),
+    FriendList(Option<veilid_core::KeyPair>),
+    Account,
+    Mailbox,
+}
+
+/// Store a DHT record key on `NodeHandle` and track it in `DHTManagerHandle`.
+///
+/// Acquires `node.write()` then `dht_manager.write()` sequentially (matching
+/// the lock ordering used everywhere else). Each guard is dropped before the
+/// next is acquired — safe with `parking_lot`'s `!Send` guards.
+pub fn store_dht_record(state: &Arc<AppState>, key: &str, record_type: &DhtRecordType) {
+    {
+        let mut node = state.node.write();
+        if let Some(ref mut nh) = *node {
+            match &record_type {
+                DhtRecordType::Profile(kp) => nh.set_profile_dht(key.to_string(), kp.clone()),
+                DhtRecordType::FriendList(kp) => {
+                    nh.set_friend_list_dht(key.to_string(), kp.clone());
+                }
+                DhtRecordType::Account => nh.set_account_dht(key.to_string()),
+                DhtRecordType::Mailbox => nh.set_mailbox_dht(key.to_string()),
+            }
+        }
+    }
+    {
+        let mut dht_mgr = state.dht_manager.write();
+        if let Some(ref mut mgr) = *dht_mgr {
+            match &record_type {
+                DhtRecordType::Profile(_) => mgr.set_profile_key(key),
+                DhtRecordType::FriendList(_) => mgr.set_friend_list_key(key),
+                DhtRecordType::Account | DhtRecordType::Mailbox => {
+                    mgr.track_open_record(key.to_string());
+                }
+            }
+        }
+    }
+}
+
+/// Track multiple DHT record keys as opened in this session.
+///
+/// Acquires `dht_manager.write()` once and inserts all keys. Useful for
+/// compound records (account children, conversation children) where several
+/// sub-records are created together.
+pub fn track_open_records(state: &Arc<AppState>, keys: &[String]) {
+    let mut dht_mgr = state.dht_manager.write();
+    if let Some(ref mut mgr) = *dht_mgr {
+        for k in keys {
+            mgr.track_open_record(k.clone());
+        }
+    }
+}
 
 // ── Identity ──────────────────────────────────────────────────────────
 
