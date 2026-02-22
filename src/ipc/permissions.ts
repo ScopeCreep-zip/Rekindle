@@ -149,6 +149,18 @@ export function highestPosition(
 }
 
 /**
+ * Toggle a permission bit in a permission set.
+ * Handles high bits (> 31) using arithmetic instead of bitwise XOR.
+ */
+export function togglePermBit(current: number, bit: number): number {
+  if (bit > 0x7FFF_FFFF) {
+    const hasBit = Math.floor(current / bit) % 2 === 1;
+    return hasBit ? current - bit : current + bit;
+  }
+  return current ^ bit;
+}
+
+/**
  * All permission constants grouped by category, for use in the role editor UI.
  */
 export const PERMISSION_CATEGORIES = [

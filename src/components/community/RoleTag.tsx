@@ -1,17 +1,16 @@
 import { Component } from "solid-js";
+import { colorIntToHex } from "../../utils/color";
 
 interface RoleTagProps {
   name: string;
   color?: number;
 }
 
-function colorToHex(color: number): string | undefined {
-  if (!color) return undefined;
-  return `#${(color & 0xFFFFFF).toString(16).padStart(6, "0")}`;
-}
-
 const RoleTag: Component<RoleTagProps> = (props) => {
-  const hex = () => colorToHex(props.color ?? 0);
+  const hex = () => {
+    const c = props.color ?? 0;
+    return c ? colorIntToHex(c) : undefined;
+  };
 
   return (
     <span

@@ -1,5 +1,5 @@
-import { Component, createSignal } from "solid-js";
-import Modal from "../common/Modal";
+import { Component } from "solid-js";
+import SimpleInputModal from "../common/SimpleInputModal";
 import { handleJoinCommunity } from "../../handlers/community.handlers";
 
 interface JoinCommunityModalProps {
@@ -7,43 +7,16 @@ interface JoinCommunityModalProps {
   onClose: () => void;
 }
 
-const JoinCommunityModal: Component<JoinCommunityModalProps> = (props) => {
-  const [communityId, setCommunityId] = createSignal("");
-  const [name, setName] = createSignal("");
-
-  async function handleSubmit(e: Event): Promise<void> {
-    e.preventDefault();
-    const id = communityId().trim();
-    if (!id) return;
-    await handleJoinCommunity(id, name().trim() || id.slice(0, 12) + "...");
-    setCommunityId("");
-    setName("");
-    props.onClose();
-  }
-
-  return (
-    <Modal isOpen={props.isOpen} title="Join Community" onClose={props.onClose}>
-      <form class="modal-form" onSubmit={handleSubmit}>
-        <input
-          class="modal-input"
-          type="text"
-          placeholder="Community ID..."
-          value={communityId()}
-          onInput={(e) => setCommunityId(e.currentTarget.value)}
-        />
-        <input
-          class="modal-input"
-          type="text"
-          placeholder="Name (optional)"
-          value={name()}
-          onInput={(e) => setName(e.currentTarget.value)}
-        />
-        <button class="modal-btn" type="submit" disabled={!communityId().trim()}>
-          Join
-        </button>
-      </form>
-    </Modal>
-  );
-};
+const JoinCommunityModal: Component<JoinCommunityModalProps> = (props) => (
+  <SimpleInputModal
+    isOpen={props.isOpen}
+    title="Join Community"
+    onClose={props.onClose}
+    onSubmit={(id, name) => handleJoinCommunity(id, name || id.slice(0, 12) + "...")}
+    placeholder="Community ID..."
+    submitLabel="Join"
+    secondaryPlaceholder="Name (optional)"
+  />
+);
 
 export default JoinCommunityModal;

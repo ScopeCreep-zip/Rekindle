@@ -1,4 +1,4 @@
-import { Component, createSignal } from "solid-js";
+import { Component, createSignal, createEffect } from "solid-js";
 import Modal from "../common/Modal";
 import { handleCreateChannel } from "../../handlers/community.handlers";
 
@@ -11,6 +11,13 @@ interface CreateChannelModalProps {
 const CreateChannelModal: Component<CreateChannelModalProps> = (props) => {
   const [name, setName] = createSignal("");
   const [channelType, setChannelType] = createSignal<"text" | "voice">("text");
+
+  createEffect(() => {
+    if (props.isOpen) {
+      setName("");
+      setChannelType("text");
+    }
+  });
 
   async function handleSubmit(e: Event): Promise<void> {
     e.preventDefault();
