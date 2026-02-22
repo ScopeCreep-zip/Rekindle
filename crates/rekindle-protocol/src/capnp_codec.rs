@@ -21,13 +21,147 @@ fn text_to_string(t: capnp::text::Reader<'_>) -> Result<String, ProtocolError> {
         .map_err(|e| ProtocolError::Deserialization(format!("invalid UTF-8 in capnp text: {e}")))
 }
 
+/// Serialize a Cap'n Proto builder into packed bytes.
+fn pack(builder: &capnp::message::Builder<capnp::message::HeapAllocator>) -> Vec<u8> {
+    let mut output = Vec::new();
+    capnp::serialize_packed::write_message(&mut output, builder)
+        .expect("write to Vec never fails");
+    output
+}
+
+/// Deserialize packed bytes into a Cap'n Proto message reader.
+fn unpack(
+    data: &[u8],
+) -> Result<capnp::message::Reader<capnp::serialize::OwnedSegments>, ProtocolError> {
+    capnp::serialize_packed::read_message(data, capnp::message::ReaderOptions::new())
+        .map_err(|e| capnp_err(&e))
+}
+
+/// Read an optional text field, returning `None` when absent or empty.
+fn text_or_none(
+    has: bool,
+    get: Result<capnp::text::Reader<'_>, capnp::Error>,
+) -> Result<Option<String>, ProtocolError> {
+    if !has {
+        return Ok(None);
+    }
+    let s = text_to_string(get.map_err(|e| capnp_err(&e))?)?;
+    Ok(if s.is_empty() { None } else { Some(s) })
+}
+
+/// Read an optional text field, returning an empty string when absent.
+fn text_or_default(
+    has: bool,
+    get: Result<capnp::text::Reader<'_>, capnp::Error>,
+) -> Result<String, ProtocolError> {
+    if !has {
+        return Ok(String::new());
+    }
+    text_to_string(get.map_err(|e| capnp_err(&e))?)
+}
+
+/// Read an optional bytes field, returning an empty vec when absent.
+fn bytes_or_empty(
+    has: bool,
+    get: Result<&[u8], capnp::Error>,
+) -> Result<Vec<u8>, ProtocolError> {
+    if !has {
+        return Ok(Vec::new());
+    }
+    Ok(get.map_err(|e| capnp_err(&e))?.to_vec())
+}
+
+/// Convert a status byte to the capnp `UserProfile::Status` enum.
+fn status_to_capnp(status: u8) -> crate::identity_capnp::user_profile::Status {
+    match status {
+        0 => crate::identity_capnp::user_profile::Status::Online,
+        1 => crate::identity_capnp::user_profile::Status::Away,
+        2 => crate::identity_capnp::user_profile::Status::Busy,
+        _ => crate::identity_capnp::user_profile::Status::Offline,
+    }
+}
+
+/// Convert a capnp `UserProfile::Status` enum to a status byte.
+fn status_from_capnp(
+    status: Result<crate::identity_capnp::user_profile::Status, capnp::NotInSchema>,
+) -> Result<u8, ProtocolError> {
+    match status.map_err(not_in_schema)? {
+        crate::identity_capnp::user_profile::Status::Online => Ok(0),
+        crate::identity_capnp::user_profile::Status::Away => Ok(1),
+        crate::identity_capnp::user_profile::Status::Busy => Ok(2),
+        crate::identity_capnp::user_profile::Status::Offline => Ok(3),
+    }
+}
+
+/// Write a `GameInfo` into a capnp `GameStatus` builder.
+fn write_game_status(
+    mut gs: crate::presence_capnp::game_status::Builder<'_>,
+    game: &crate::messaging::envelope::GameInfo,
+) {
+    gs.set_game_id(game.game_id);
+    gs.set_game_name(&game.game_name);
+    if let Some(ref si) = game.server_info {
+        gs.set_server_info(si.as_str());
+    }
+    gs.set_elapsed_seconds(game.elapsed_seconds);
+}
+
+/// Read a capnp `GameStatus` reader into a `GameInfo`.
+fn read_game_status(
+    gs: crate::presence_capnp::game_status::Reader<'_>,
+) -> Result<crate::messaging::envelope::GameInfo, ProtocolError> {
+    Ok(crate::messaging::envelope::GameInfo {
+        game_id: gs.get_game_id(),
+        game_name: text_to_string(gs.get_game_name().map_err(|e| capnp_err(&e))?)?,
+        server_info: text_or_none(gs.has_server_info(), gs.get_server_info())?,
+        elapsed_seconds: gs.get_elapsed_seconds(),
+    })
+}
+
+/// Write a `UserProfile` into a capnp `user_profile` builder.
+fn write_profile(
+    mut b: crate::identity_capnp::user_profile::Builder<'_>,
+    profile: &identity::UserProfile,
+) {
+    b.set_display_name(&profile.display_name);
+    b.set_status_message(&profile.status_message);
+    b.set_status(status_to_capnp(profile.status));
+    if !profile.avatar_hash.is_empty() {
+        b.set_avatar_hash(&profile.avatar_hash);
+    }
+    if let Some(ref g) = profile.game_status {
+        write_game_status(b.init_game_status(), g);
+    }
+}
+
+/// Read a capnp `user_profile` reader into a `UserProfile`.
+fn read_profile(
+    r: crate::identity_capnp::user_profile::Reader<'_>,
+) -> Result<identity::UserProfile, ProtocolError> {
+    let status = status_from_capnp(r.get_status())?;
+    let game_status = if r.has_game_status() {
+        Some(read_game_status(
+            r.get_game_status().map_err(|e| capnp_err(&e))?,
+        )?)
+    } else {
+        None
+    };
+    Ok(identity::UserProfile {
+        display_name: text_to_string(r.get_display_name().map_err(|e| capnp_err(&e))?)?,
+        status_message: text_or_default(r.has_status_message(), r.get_status_message())?,
+        status,
+        avatar_hash: bytes_or_empty(r.has_avatar_hash(), r.get_avatar_hash())?,
+        game_status,
+    })
+}
+
 // ---------------------------------------------------------------------------
 // message.capnp — MessageEnvelope, ChatMessage, Attachment
 // ---------------------------------------------------------------------------
 pub mod message {
-    use super::{capnp_err, text_to_string, ProtocolError};
+    use super::{capnp_err, pack, text_to_string, unpack, ProtocolError};
     use crate::message_capnp;
-    use crate::messaging::envelope::{GameInfo, MessageEnvelope};
+    use crate::messaging::envelope::MessageEnvelope;
 
     /// Encode a `MessageEnvelope` into packed Cap'n Proto bytes.
     pub fn encode_envelope(env: &MessageEnvelope) -> Vec<u8> {
@@ -40,18 +174,12 @@ pub mod message {
             root.set_payload(&env.payload);
             root.set_signature(&env.signature);
         }
-        let mut output = Vec::new();
-        capnp::serialize_packed::write_message(&mut output, &builder)
-            .expect("write to Vec never fails");
-        output
+        pack(&builder)
     }
 
     /// Decode packed Cap'n Proto bytes into a `MessageEnvelope`.
     pub fn decode_envelope(data: &[u8]) -> Result<MessageEnvelope, ProtocolError> {
-        let reader =
-            capnp::serialize_packed::read_message(data, capnp::message::ReaderOptions::new())
-                .map_err(|e| capnp_err(&e))?;
-
+        let reader = unpack(data)?;
         let root = reader
             .get_root::<message_capnp::message_envelope::Reader<'_>>()
             .map_err(|e| capnp_err(&e))?;
@@ -76,18 +204,12 @@ pub mod message {
             }
             // attachments left empty for now
         }
-        let mut output = Vec::new();
-        capnp::serialize_packed::write_message(&mut output, &builder)
-            .expect("write to Vec never fails");
-        output
+        pack(&builder)
     }
 
     /// Decode packed bytes into (body, optional `reply_to` nonce).
     pub fn decode_chat_message(data: &[u8]) -> Result<(String, Option<Vec<u8>>), ProtocolError> {
-        let reader =
-            capnp::serialize_packed::read_message(data, capnp::message::ReaderOptions::new())
-                .map_err(|e| capnp_err(&e))?;
-
+        let reader = unpack(data)?;
         let root = reader
             .get_root::<message_capnp::chat_message::Reader<'_>>()
             .map_err(|e| capnp_err(&e))?;
@@ -105,12 +227,14 @@ pub mod message {
     /// Encode a `GameInfo` into packed Cap'n Proto presence `GameStatus` bytes.
     ///
     /// Re-uses the presence schema's `GameStatus` since it's the same structure.
-    pub fn encode_game_info(info: &GameInfo) -> Vec<u8> {
+    pub fn encode_game_info(info: &crate::messaging::envelope::GameInfo) -> Vec<u8> {
         super::presence::encode_game_status(info)
     }
 
     /// Decode packed bytes into a `GameInfo`.
-    pub fn decode_game_info(data: &[u8]) -> Result<GameInfo, ProtocolError> {
+    pub fn decode_game_info(
+        data: &[u8],
+    ) -> Result<crate::messaging::envelope::GameInfo, ProtocolError> {
         super::presence::decode_game_status(data)
     }
 }
@@ -119,7 +243,7 @@ pub mod message {
 // presence.capnp — PresenceUpdate, GameStatus
 // ---------------------------------------------------------------------------
 pub mod presence {
-    use super::{capnp_err, text_to_string, ProtocolError};
+    use super::{capnp_err, pack, read_game_status, unpack, write_game_status, ProtocolError};
     use crate::messaging::envelope::GameInfo;
     use crate::presence_capnp;
 
@@ -139,27 +263,15 @@ pub mod presence {
                 .unwrap_or(u64::MAX),
             );
             if let Some(g) = game {
-                let mut gs = root.init_game_status();
-                gs.set_game_id(g.game_id);
-                gs.set_game_name(&g.game_name);
-                if let Some(ref si) = g.server_info {
-                    gs.set_server_info(si.as_str());
-                }
-                gs.set_elapsed_seconds(g.elapsed_seconds);
+                write_game_status(root.init_game_status(), g);
             }
         }
-        let mut output = Vec::new();
-        capnp::serialize_packed::write_message(&mut output, &builder)
-            .expect("write to Vec never fails");
-        output
+        pack(&builder)
     }
 
     /// Decode packed bytes into (status, Option<GameInfo>).
     pub fn decode_update(data: &[u8]) -> Result<(u8, Option<GameInfo>), ProtocolError> {
-        let reader =
-            capnp::serialize_packed::read_message(data, capnp::message::ReaderOptions::new())
-                .map_err(|e| capnp_err(&e))?;
-
+        let reader = unpack(data)?;
         let root = reader
             .get_root::<presence_capnp::presence_update::Reader<'_>>()
             .map_err(|e| capnp_err(&e))?;
@@ -179,52 +291,20 @@ pub mod presence {
     pub fn encode_game_status(info: &GameInfo) -> Vec<u8> {
         let mut builder = capnp::message::Builder::new_default();
         {
-            let mut root = builder.init_root::<presence_capnp::game_status::Builder<'_>>();
-            root.set_game_id(info.game_id);
-            root.set_game_name(&info.game_name);
-            if let Some(ref si) = info.server_info {
-                root.set_server_info(si.as_str());
-            }
-            root.set_elapsed_seconds(info.elapsed_seconds);
+            let root = builder.init_root::<presence_capnp::game_status::Builder<'_>>();
+            write_game_status(root, info);
         }
-        let mut output = Vec::new();
-        capnp::serialize_packed::write_message(&mut output, &builder)
-            .expect("write to Vec never fails");
-        output
+        pack(&builder)
     }
 
     /// Decode packed bytes into a `GameInfo`.
     pub fn decode_game_status(data: &[u8]) -> Result<GameInfo, ProtocolError> {
-        let reader =
-            capnp::serialize_packed::read_message(data, capnp::message::ReaderOptions::new())
-                .map_err(|e| capnp_err(&e))?;
-
+        let reader = unpack(data)?;
         let root = reader
             .get_root::<presence_capnp::game_status::Reader<'_>>()
             .map_err(|e| capnp_err(&e))?;
 
         read_game_status(root)
-    }
-
-    /// Helper: read a `GameStatus` reader into our `GameInfo` struct.
-    fn read_game_status(
-        gs: presence_capnp::game_status::Reader<'_>,
-    ) -> Result<GameInfo, ProtocolError> {
-        Ok(GameInfo {
-            game_id: gs.get_game_id(),
-            game_name: text_to_string(gs.get_game_name().map_err(|e| capnp_err(&e))?)?,
-            server_info: if gs.has_server_info() {
-                let s = text_to_string(gs.get_server_info().map_err(|e| capnp_err(&e))?)?;
-                if s.is_empty() {
-                    None
-                } else {
-                    Some(s)
-                }
-            } else {
-                None
-            },
-            elapsed_seconds: gs.get_elapsed_seconds(),
-        })
     }
 }
 
@@ -232,9 +312,8 @@ pub mod presence {
 // identity.capnp — UserProfile, PreKeyBundle
 // ---------------------------------------------------------------------------
 pub mod identity {
-    use super::{capnp_err, not_in_schema, text_to_string, ProtocolError};
+    use super::{bytes_or_empty, capnp_err, pack, read_profile, unpack, write_profile, ProtocolError};
     use crate::identity_capnp;
-    use crate::messaging::envelope::GameInfo;
 
     /// Domain struct for a user profile (used across account and conversation records).
     #[derive(Debug, Clone)]
@@ -243,7 +322,7 @@ pub mod identity {
         pub status_message: String,
         pub status: u8, // 0=online, 1=away, 2=busy, 3=offline
         pub avatar_hash: Vec<u8>,
-        pub game_status: Option<GameInfo>,
+        pub game_status: Option<crate::messaging::envelope::GameInfo>,
     }
 
     /// Domain struct for a Signal Protocol pre-key bundle.
@@ -258,91 +337,19 @@ pub mod identity {
 
     pub fn encode_profile(profile: &UserProfile) -> Vec<u8> {
         let mut builder = capnp::message::Builder::new_default();
-        {
-            let mut root = builder.init_root::<identity_capnp::user_profile::Builder<'_>>();
-            root.set_display_name(&profile.display_name);
-            root.set_status_message(&profile.status_message);
-
-            let status_enum = match profile.status {
-                0 => identity_capnp::user_profile::Status::Online,
-                1 => identity_capnp::user_profile::Status::Away,
-                2 => identity_capnp::user_profile::Status::Busy,
-                _ => identity_capnp::user_profile::Status::Offline,
-            };
-            root.set_status(status_enum);
-
-            if !profile.avatar_hash.is_empty() {
-                root.set_avatar_hash(&profile.avatar_hash);
-            }
-
-            if let Some(ref g) = profile.game_status {
-                let mut gs = root.init_game_status();
-                gs.set_game_id(g.game_id);
-                gs.set_game_name(&g.game_name);
-                if let Some(ref si) = g.server_info {
-                    gs.set_server_info(si.as_str());
-                }
-                gs.set_elapsed_seconds(g.elapsed_seconds);
-            }
-        }
-        let mut output = Vec::new();
-        capnp::serialize_packed::write_message(&mut output, &builder)
-            .expect("write to Vec never fails");
-        output
+        write_profile(
+            builder.init_root::<identity_capnp::user_profile::Builder<'_>>(),
+            profile,
+        );
+        pack(&builder)
     }
 
     pub fn decode_profile(data: &[u8]) -> Result<UserProfile, ProtocolError> {
-        let reader =
-            capnp::serialize_packed::read_message(data, capnp::message::ReaderOptions::new())
-                .map_err(|e| capnp_err(&e))?;
-
+        let reader = unpack(data)?;
         let root = reader
             .get_root::<identity_capnp::user_profile::Reader<'_>>()
             .map_err(|e| capnp_err(&e))?;
-
-        let status = match root.get_status().map_err(not_in_schema)? {
-            identity_capnp::user_profile::Status::Online => 0u8,
-            identity_capnp::user_profile::Status::Away => 1,
-            identity_capnp::user_profile::Status::Busy => 2,
-            identity_capnp::user_profile::Status::Offline => 3,
-        };
-
-        let game_status = if root.has_game_status() {
-            let gs = root.get_game_status().map_err(|e| capnp_err(&e))?;
-            Some(GameInfo {
-                game_id: gs.get_game_id(),
-                game_name: text_to_string(gs.get_game_name().map_err(|e| capnp_err(&e))?)?,
-                server_info: if gs.has_server_info() {
-                    let s = text_to_string(gs.get_server_info().map_err(|e| capnp_err(&e))?)?;
-                    if s.is_empty() {
-                        None
-                    } else {
-                        Some(s)
-                    }
-                } else {
-                    None
-                },
-                elapsed_seconds: gs.get_elapsed_seconds(),
-            })
-        } else {
-            None
-        };
-
-        Ok(UserProfile {
-            display_name: text_to_string(root.get_display_name().map_err(|e| capnp_err(&e))?)?,
-            status_message: if root.has_status_message() {
-                text_to_string(root.get_status_message().map_err(|e| capnp_err(&e))?)?
-            } else {
-                String::new()
-            },
-            status,
-            avatar_hash: if root.has_avatar_hash() {
-                root.get_avatar_hash().map_err(|e| capnp_err(&e))?.to_vec()
-            } else {
-                Vec::new()
-            },
-            game_status,
-        })
+        read_profile(root)
     }
 
     pub fn encode_prekey_bundle(bundle: &PreKeyBundle) -> Vec<u8> {
@@ -355,17 +362,11 @@ pub mod identity {
             root.set_one_time_pre_key(&bundle.one_time_pre_key);
             root.set_registration_id(bundle.registration_id);
         }
-        let mut output = Vec::new();
-        capnp::serialize_packed::write_message(&mut output, &builder)
-            .expect("write to Vec never fails");
-        output
+        pack(&builder)
     }
 
     pub fn decode_prekey_bundle(data: &[u8]) -> Result<PreKeyBundle, ProtocolError> {
-        let reader =
-            capnp::serialize_packed::read_message(data, capnp::message::ReaderOptions::new())
-                .map_err(|e| capnp_err(&e))?;
-
+        let reader = unpack(data)?;
         let root = reader
             .get_root::<identity_capnp::pre_key_bundle::Reader<'_>>()
             .map_err(|e| capnp_err(&e))?;
@@ -380,13 +381,10 @@ pub mod identity {
                 .get_signed_pre_key_sig()
                 .map_err(|e| capnp_err(&e))?
                 .to_vec(),
-            one_time_pre_key: if root.has_one_time_pre_key() {
-                root.get_one_time_pre_key()
-                    .map_err(|e| capnp_err(&e))?
-                    .to_vec()
-            } else {
-                Vec::new()
-            },
+            one_time_pre_key: bytes_or_empty(
+                root.has_one_time_pre_key(),
+                root.get_one_time_pre_key(),
+            )?,
             registration_id: root.get_registration_id(),
         })
     }
@@ -396,7 +394,7 @@ pub mod identity {
 // friend.capnp — FriendRequest, FriendList, FriendEntry
 // ---------------------------------------------------------------------------
 pub mod friend {
-    use super::{capnp_err, text_to_string, ProtocolError};
+    use super::{capnp_err, pack, text_or_none, text_to_string, unpack, ProtocolError};
     use crate::dht::friends::FriendEntry;
     use crate::friend_capnp;
 
@@ -418,17 +416,11 @@ pub mod friend {
             root.set_message(&req.message);
             root.set_pre_key_bundle(&req.prekey_bundle);
         }
-        let mut output = Vec::new();
-        capnp::serialize_packed::write_message(&mut output, &builder)
-            .expect("write to Vec never fails");
-        output
+        pack(&builder)
     }
 
     pub fn decode_request(data: &[u8]) -> Result<FriendRequest, ProtocolError> {
-        let reader =
-            capnp::serialize_packed::read_message(data, capnp::message::ReaderOptions::new())
-                .map_err(|e| capnp_err(&e))?;
-
+        let reader = unpack(data)?;
         let root = reader
             .get_root::<friend_capnp::friend_request::Reader<'_>>()
             .map_err(|e| capnp_err(&e))?;
@@ -461,17 +453,11 @@ pub mod friend {
                 fe.set_added_at(entry.added_at);
             }
         }
-        let mut output = Vec::new();
-        capnp::serialize_packed::write_message(&mut output, &builder)
-            .expect("write to Vec never fails");
-        output
+        pack(&builder)
     }
 
     pub fn decode_friend_list(data: &[u8]) -> Result<Vec<FriendEntry>, ProtocolError> {
-        let reader =
-            capnp::serialize_packed::read_message(data, capnp::message::ReaderOptions::new())
-                .map_err(|e| capnp_err(&e))?;
-
+        let reader = unpack(data)?;
         let root = reader
             .get_root::<friend_capnp::friend_list::Reader<'_>>()
             .map_err(|e| capnp_err(&e))?;
@@ -486,27 +472,8 @@ pub mod friend {
                 ProtocolError::Deserialization(format!("invalid UTF-8 public key: {e}"))
             })?;
 
-            let nickname = if fe.has_nickname() {
-                let s = text_to_string(fe.get_nickname().map_err(|e| capnp_err(&e))?)?;
-                if s.is_empty() {
-                    None
-                } else {
-                    Some(s)
-                }
-            } else {
-                None
-            };
-
-            let group = if fe.has_group_name() {
-                let s = text_to_string(fe.get_group_name().map_err(|e| capnp_err(&e))?)?;
-                if s.is_empty() {
-                    None
-                } else {
-                    Some(s)
-                }
-            } else {
-                None
-            };
+            let nickname = text_or_none(fe.has_nickname(), fe.get_nickname())?;
+            let group = text_or_none(fe.has_group_name(), fe.get_group_name())?;
 
             entries.push(FriendEntry {
                 public_key,
@@ -525,7 +492,7 @@ pub mod friend {
 // community.capnp — Community, Channel, Role
 // ---------------------------------------------------------------------------
 pub mod community {
-    use super::{capnp_err, not_in_schema, text_to_string, ProtocolError};
+    use super::{capnp_err, not_in_schema, pack, text_or_none, text_to_string, unpack, ProtocolError};
     use crate::community_capnp;
     use crate::dht::community::{
         ChannelEntry, CommunityMetadata, MemberEntry, OverwriteType, PermissionOverwrite,
@@ -605,10 +572,7 @@ pub mod community {
                 r.set_mentionable(role.mentionable);
             }
         }
-        let mut output = Vec::new();
-        capnp::serialize_packed::write_message(&mut output, &builder)
-            .expect("write to Vec never fails");
-        output
+        pack(&builder)
     }
 
     /// Decode a full community record (metadata + channels + roles).
@@ -616,26 +580,14 @@ pub mod community {
         data: &[u8],
         owner_key: &str,
     ) -> Result<(CommunityMetadata, Vec<ChannelEntry>, Vec<RoleDefinition>), ProtocolError> {
-        let reader =
-            capnp::serialize_packed::read_message(data, capnp::message::ReaderOptions::new())
-                .map_err(|e| capnp_err(&e))?;
-
+        let reader = unpack(data)?;
         let root = reader
             .get_root::<community_capnp::community::Reader<'_>>()
             .map_err(|e| capnp_err(&e))?;
 
         let meta = CommunityMetadata {
             name: text_to_string(root.get_name().map_err(|e| capnp_err(&e))?)?,
-            description: if root.has_description() {
-                let s = text_to_string(root.get_description().map_err(|e| capnp_err(&e))?)?;
-                if s.is_empty() {
-                    None
-                } else {
-                    Some(s)
-                }
-            } else {
-                None
-            },
+            description: text_or_none(root.has_description(), root.get_description())?,
             icon_hash: if root.has_icon_hash() {
                 let bytes = root.get_icon_hash().map_err(|e| capnp_err(&e))?;
                 if bytes.is_empty() {
@@ -764,7 +716,7 @@ pub mod community {
 // voice.capnp — VoiceSignaling
 // ---------------------------------------------------------------------------
 pub mod voice {
-    use super::{capnp_err, not_in_schema, text_to_string, ProtocolError};
+    use super::{capnp_err, not_in_schema, pack, text_to_string, unpack, ProtocolError};
     use crate::voice_capnp;
 
     /// Voice signaling types matching the capnp enum.
@@ -802,17 +754,11 @@ pub mod voice {
             root.set_sender_key(&sig.sender_key);
             root.set_payload(&sig.payload);
         }
-        let mut output = Vec::new();
-        capnp::serialize_packed::write_message(&mut output, &builder)
-            .expect("write to Vec never fails");
-        output
+        pack(&builder)
     }
 
     pub fn decode_signaling(data: &[u8]) -> Result<VoiceSignaling, ProtocolError> {
-        let reader =
-            capnp::serialize_packed::read_message(data, capnp::message::ReaderOptions::new())
-                .map_err(|e| capnp_err(&e))?;
-
+        let reader = unpack(data)?;
         let root = reader
             .get_root::<voice_capnp::voice_signaling::Reader<'_>>()
             .map_err(|e| capnp_err(&e))?;
@@ -838,7 +784,10 @@ pub mod voice {
 // account.capnp — AccountHeader, ContactEntry, ChatEntry
 // ---------------------------------------------------------------------------
 pub mod account {
-    use super::{capnp_err, text_to_string, ProtocolError};
+    use super::{
+        bytes_or_empty, capnp_err, pack, text_or_default, text_or_none, text_to_string, unpack,
+        ProtocolError,
+    };
     use crate::account_capnp;
 
     /// Domain struct for the account header stored in the account DHT record.
@@ -908,17 +857,11 @@ pub mod account {
                 root.set_invitation_list_keypair(kp);
             }
         }
-        let mut output = Vec::new();
-        capnp::serialize_packed::write_message(&mut output, &builder)
-            .expect("write to Vec never fails");
-        output
+        pack(&builder)
     }
 
     pub fn decode_account_header(data: &[u8]) -> Result<AccountHeader, ProtocolError> {
-        let reader =
-            capnp::serialize_packed::read_message(data, capnp::message::ReaderOptions::new())
-                .map_err(|e| capnp_err(&e))?;
-
+        let reader = unpack(data)?;
         let root = reader
             .get_root::<account_capnp::account_header::Reader<'_>>()
             .map_err(|e| capnp_err(&e))?;
@@ -932,52 +875,25 @@ pub mod account {
                 root.get_invitation_list_key().map_err(|e| capnp_err(&e))?,
             )?,
             display_name: text_to_string(root.get_display_name().map_err(|e| capnp_err(&e))?)?,
-            status_message: if root.has_status_message() {
-                text_to_string(root.get_status_message().map_err(|e| capnp_err(&e))?)?
-            } else {
-                String::new()
-            },
-            avatar_hash: if root.has_avatar_hash() {
-                root.get_avatar_hash().map_err(|e| capnp_err(&e))?.to_vec()
-            } else {
-                Vec::new()
-            },
+            status_message: text_or_default(
+                root.has_status_message(),
+                root.get_status_message(),
+            )?,
+            avatar_hash: bytes_or_empty(root.has_avatar_hash(), root.get_avatar_hash())?,
             created_at: root.get_created_at(),
             updated_at: root.get_updated_at(),
-            contact_list_keypair: if root.has_contact_list_keypair() {
-                let s =
-                    text_to_string(root.get_contact_list_keypair().map_err(|e| capnp_err(&e))?)?;
-                if s.is_empty() {
-                    None
-                } else {
-                    Some(s)
-                }
-            } else {
-                None
-            },
-            chat_list_keypair: if root.has_chat_list_keypair() {
-                let s = text_to_string(root.get_chat_list_keypair().map_err(|e| capnp_err(&e))?)?;
-                if s.is_empty() {
-                    None
-                } else {
-                    Some(s)
-                }
-            } else {
-                None
-            },
-            invitation_list_keypair: if root.has_invitation_list_keypair() {
-                let s = text_to_string(
-                    root.get_invitation_list_keypair()
-                        .map_err(|e| capnp_err(&e))?,
-                )?;
-                if s.is_empty() {
-                    None
-                } else {
-                    Some(s)
-                }
-            } else {
-                None
-            },
+            contact_list_keypair: text_or_none(
+                root.has_contact_list_keypair(),
+                root.get_contact_list_keypair(),
+            )?,
+            chat_list_keypair: text_or_none(
+                root.has_chat_list_keypair(),
+                root.get_chat_list_keypair(),
+            )?,
+            invitation_list_keypair: text_or_none(
+                root.has_invitation_list_keypair(),
+                root.get_invitation_list_keypair(),
+            )?,
         })
     }
 
@@ -994,17 +910,11 @@ pub mod account {
             root.set_added_at(entry.added_at);
             root.set_updated_at(entry.updated_at);
         }
-        let mut output = Vec::new();
-        capnp::serialize_packed::write_message(&mut output, &builder)
-            .expect("write to Vec never fails");
-        output
+        pack(&builder)
     }
 
     pub fn decode_contact_entry(data: &[u8]) -> Result<ContactEntry, ProtocolError> {
-        let reader =
-            capnp::serialize_packed::read_message(data, capnp::message::ReaderOptions::new())
-                .map_err(|e| capnp_err(&e))?;
-
+        let reader = unpack(data)?;
         let root = reader
             .get_root::<account_capnp::contact_entry::Reader<'_>>()
             .map_err(|e| capnp_err(&e))?;
@@ -1012,28 +922,16 @@ pub mod account {
         Ok(ContactEntry {
             public_key: root.get_public_key().map_err(|e| capnp_err(&e))?.to_vec(),
             display_name: text_to_string(root.get_display_name().map_err(|e| capnp_err(&e))?)?,
-            nickname: if root.has_nickname() {
-                text_to_string(root.get_nickname().map_err(|e| capnp_err(&e))?)?
-            } else {
-                String::new()
-            },
-            group: if root.has_group() {
-                text_to_string(root.get_group().map_err(|e| capnp_err(&e))?)?
-            } else {
-                String::new()
-            },
+            nickname: text_or_default(root.has_nickname(), root.get_nickname())?,
+            group: text_or_default(root.has_group(), root.get_group())?,
             local_conversation_key: text_to_string(
                 root.get_local_conversation_key()
                     .map_err(|e| capnp_err(&e))?,
             )?,
-            remote_conversation_key: if root.has_remote_conversation_key() {
-                text_to_string(
-                    root.get_remote_conversation_key()
-                        .map_err(|e| capnp_err(&e))?,
-                )?
-            } else {
-                String::new()
-            },
+            remote_conversation_key: text_or_default(
+                root.has_remote_conversation_key(),
+                root.get_remote_conversation_key(),
+            )?,
             added_at: root.get_added_at(),
             updated_at: root.get_updated_at(),
         })
@@ -1050,17 +948,11 @@ pub mod account {
             root.set_is_pinned(entry.is_pinned);
             root.set_is_muted(entry.is_muted);
         }
-        let mut output = Vec::new();
-        capnp::serialize_packed::write_message(&mut output, &builder)
-            .expect("write to Vec never fails");
-        output
+        pack(&builder)
     }
 
     pub fn decode_chat_entry(data: &[u8]) -> Result<ChatEntry, ProtocolError> {
-        let reader =
-            capnp::serialize_packed::read_message(data, capnp::message::ReaderOptions::new())
-                .map_err(|e| capnp_err(&e))?;
-
+        let reader = unpack(data)?;
         let root = reader
             .get_root::<account_capnp::chat_entry::Reader<'_>>()
             .map_err(|e| capnp_err(&e))?;
@@ -1086,10 +978,8 @@ pub mod account {
 // conversation.capnp — ConversationHeader
 // ---------------------------------------------------------------------------
 pub mod conversation {
-    use super::{capnp_err, not_in_schema, text_to_string, ProtocolError};
+    use super::{bytes_or_empty, capnp_err, pack, read_profile, text_to_string, unpack, write_profile, ProtocolError};
     use crate::conversation_capnp;
-    use crate::identity_capnp;
-    use crate::messaging::envelope::GameInfo;
 
     /// Domain struct for the conversation header stored in a conversation DHT record.
     #[derive(Debug, Clone)]
@@ -1111,30 +1001,7 @@ pub mod conversation {
             root.set_identity_public_key(&header.identity_public_key);
 
             // Write embedded profile
-            {
-                let mut profile = root.reborrow().init_profile();
-                profile.set_display_name(&header.profile.display_name);
-                profile.set_status_message(&header.profile.status_message);
-                let status_enum = match header.profile.status {
-                    0 => identity_capnp::user_profile::Status::Online,
-                    1 => identity_capnp::user_profile::Status::Away,
-                    2 => identity_capnp::user_profile::Status::Busy,
-                    _ => identity_capnp::user_profile::Status::Offline,
-                };
-                profile.set_status(status_enum);
-                if !header.profile.avatar_hash.is_empty() {
-                    profile.set_avatar_hash(&header.profile.avatar_hash);
-                }
-                if let Some(ref g) = header.profile.game_status {
-                    let mut gs = profile.init_game_status();
-                    gs.set_game_id(g.game_id);
-                    gs.set_game_name(&g.game_name);
-                    if let Some(ref si) = g.server_info {
-                        gs.set_server_info(si.as_str());
-                    }
-                    gs.set_elapsed_seconds(g.elapsed_seconds);
-                }
-            }
+            write_profile(root.reborrow().init_profile(), &header.profile);
 
             root.set_message_log_key(&header.message_log_key);
             root.set_route_blob(&header.route_blob);
@@ -1154,84 +1021,16 @@ pub mod conversation {
             root.set_created_at(header.created_at);
             root.set_updated_at(header.updated_at);
         }
-        let mut output = Vec::new();
-        capnp::serialize_packed::write_message(&mut output, &builder)
-            .expect("write to Vec never fails");
-        output
-    }
-
-    fn decode_user_profile(
-        profile_reader: identity_capnp::user_profile::Reader<'_>,
-    ) -> Result<super::identity::UserProfile, ProtocolError> {
-        let status = match profile_reader.get_status().map_err(not_in_schema)? {
-            identity_capnp::user_profile::Status::Online => 0u8,
-            identity_capnp::user_profile::Status::Away => 1,
-            identity_capnp::user_profile::Status::Busy => 2,
-            identity_capnp::user_profile::Status::Offline => 3,
-        };
-
-        let game_status = if profile_reader.has_game_status() {
-            let gs = profile_reader
-                .get_game_status()
-                .map_err(|e| capnp_err(&e))?;
-            Some(GameInfo {
-                game_id: gs.get_game_id(),
-                game_name: text_to_string(gs.get_game_name().map_err(|e| capnp_err(&e))?)?,
-                server_info: if gs.has_server_info() {
-                    let s = text_to_string(gs.get_server_info().map_err(|e| capnp_err(&e))?)?;
-                    if s.is_empty() {
-                        None
-                    } else {
-                        Some(s)
-                    }
-                } else {
-                    None
-                },
-                elapsed_seconds: gs.get_elapsed_seconds(),
-            })
-        } else {
-            None
-        };
-
-        Ok(super::identity::UserProfile {
-            display_name: text_to_string(
-                profile_reader
-                    .get_display_name()
-                    .map_err(|e| capnp_err(&e))?,
-            )?,
-            status_message: if profile_reader.has_status_message() {
-                text_to_string(
-                    profile_reader
-                        .get_status_message()
-                        .map_err(|e| capnp_err(&e))?,
-                )?
-            } else {
-                String::new()
-            },
-            status,
-            avatar_hash: if profile_reader.has_avatar_hash() {
-                profile_reader
-                    .get_avatar_hash()
-                    .map_err(|e| capnp_err(&e))?
-                    .to_vec()
-            } else {
-                Vec::new()
-            },
-            game_status,
-        })
+        pack(&builder)
     }
 
     pub fn decode_conversation_header(data: &[u8]) -> Result<ConversationHeader, ProtocolError> {
-        let reader =
-            capnp::serialize_packed::read_message(data, capnp::message::ReaderOptions::new())
-                .map_err(|e| capnp_err(&e))?;
-
+        let reader = unpack(data)?;
         let root = reader
             .get_root::<conversation_capnp::conversation_header::Reader<'_>>()
             .map_err(|e| capnp_err(&e))?;
 
-        let profile_reader = root.get_profile().map_err(|e| capnp_err(&e))?;
-        let profile = decode_user_profile(profile_reader)?;
+        let profile = read_profile(root.get_profile().map_err(|e| capnp_err(&e))?)?;
 
         // Read embedded prekey bundle
         let pkb_reader = root.get_pre_key_bundle().map_err(|e| capnp_err(&e))?;
@@ -1248,14 +1047,10 @@ pub mod conversation {
                 .get_signed_pre_key_sig()
                 .map_err(|e| capnp_err(&e))?
                 .to_vec(),
-            one_time_pre_key: if pkb_reader.has_one_time_pre_key() {
-                pkb_reader
-                    .get_one_time_pre_key()
-                    .map_err(|e| capnp_err(&e))?
-                    .to_vec()
-            } else {
-                Vec::new()
-            },
+            one_time_pre_key: bytes_or_empty(
+                pkb_reader.has_one_time_pre_key(),
+                pkb_reader.get_one_time_pre_key(),
+            )?,
             registration_id: pkb_reader.get_registration_id(),
         };
 
@@ -1268,11 +1063,7 @@ pub mod conversation {
             message_log_key: text_to_string(
                 root.get_message_log_key().map_err(|e| capnp_err(&e))?,
             )?,
-            route_blob: if root.has_route_blob() {
-                root.get_route_blob().map_err(|e| capnp_err(&e))?.to_vec()
-            } else {
-                Vec::new()
-            },
+            route_blob: bytes_or_empty(root.has_route_blob(), root.get_route_blob())?,
             prekey_bundle,
             created_at: root.get_created_at(),
             updated_at: root.get_updated_at(),
