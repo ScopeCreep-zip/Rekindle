@@ -1,4 +1,6 @@
 use std::collections::{HashMap, HashSet};
+use std::fmt;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use parking_lot::{Mutex, RwLock};
@@ -495,6 +497,46 @@ pub enum ChannelType {
     Voice,
 }
 
+impl AsRef<str> for ChannelType {
+    fn as_ref(&self) -> &str {
+        match self {
+            Self::Text => "text",
+            Self::Voice => "voice",
+        }
+    }
+}
+
+impl fmt::Display for ChannelType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_ref())
+    }
+}
+
+impl FromStr for ChannelType {
+    type Err = std::convert::Infallible;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "voice" => Self::Voice,
+            _ => Self::Text,
+        })
+    }
+}
+
+impl rusqlite::types::ToSql for ChannelType {
+    fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
+        Ok(rusqlite::types::ToSqlOutput::Borrowed(
+            rusqlite::types::ValueRef::Text(self.as_ref().as_bytes()),
+        ))
+    }
+}
+
+impl rusqlite::types::FromSql for ChannelType {
+    fn column_result(value: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
+        let s = value.as_str()?;
+        Ok(s.parse().unwrap_or(Self::Text))
+    }
+}
+
 /// Parse a DHT channel list blob into `Vec<ChannelInfo>`.
 ///
 /// Supports both the wrapped format `{ "channels": [...] }` and a bare JSON array `[...]`.
@@ -517,10 +559,12 @@ pub(crate) fn parse_dht_channel_list(data: &[u8]) -> Vec<ChannelInfo> {
         .filter_map(|ch| {
             let id = ch.get("id")?.as_str()?.to_string();
             let name = ch.get("name")?.as_str()?.to_string();
-            let ch_type = match ch.get("channelType").and_then(|v| v.as_str()) {
-                Some("voice") => ChannelType::Voice,
-                _ => ChannelType::Text,
-            };
+            let ch_type: ChannelType = ch
+                .get("channelType")
+                .and_then(|v| v.as_str())
+                .unwrap_or("text")
+                .parse()
+                .unwrap_or(ChannelType::Text);
             Some(ChannelInfo {
                 id,
                 name,
@@ -529,4 +573,24 @@ pub(crate) fn parse_dht_channel_list(data: &[u8]) -> Vec<ChannelInfo> {
             })
         })
         .collect()
+}
+
+/// Serialize a channel list into the DHT JSON wire format:
+/// `{ "channels": [...], "lastRefreshed": N }`.
+///
+/// Counterpart to [`parse_dht_channel_list`].
+pub(crate) fn serialize_channel_list_for_dht(
+    channels: &[ChannelInfo],
+    last_refreshed: i64,
+) -> serde_json::Value {
+    serde_json::json!({
+        "channels": channels.iter().map(|ch| {
+            serde_json::json!({
+                "id": ch.id,
+                "name": ch.name,
+                "channelType": ch.channel_type.as_ref(),
+            })
+        }).collect::<Vec<_>>(),
+        "lastRefreshed": last_refreshed,
+    })
 }

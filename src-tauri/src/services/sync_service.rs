@@ -707,10 +707,7 @@ async fn sync_communities(state: &Arc<AppState>, pool: &DbPool) -> Result<(), St
             Ok(Some(data)) => {
                 let channels = parse_dht_channel_list(&data);
                 if !channels.is_empty() {
-                    let mut communities = state.communities.write();
-                    if let Some(community) = communities.get_mut(community_id) {
-                        community.channels = channels;
-                    }
+                    state_helpers::set_community_channels(state, community_id, channels);
                 }
             }
             Ok(None) => {}

@@ -51,11 +51,14 @@ async fn create_community_with_dht(
     }
 
     // Publish initial channel list to subkey 1
-    let default_channel_id = format!("channel_{}", hex::encode(rand_bytes(8)));
-    let channels_json = serde_json::json!({
-        "channels": [{ "id": default_channel_id, "name": "general", "channelType": "text" }],
-        "lastRefreshed": 0,
-    });
+    let default_channel = ChannelInfo {
+        id: format!("channel_{}", hex::encode(rand_bytes(8))),
+        name: "general".to_string(),
+        channel_type: ChannelType::Text,
+        unread_count: 0,
+    };
+    let channels_json =
+        crate::state::serialize_channel_list_for_dht(std::slice::from_ref(&default_channel), 0);
     let channels_bytes = serde_json::to_vec(&channels_json)
         .map_err(|e| format!("failed to serialize channels: {e}"))?;
     if let Err(e) = mgr.set_value(&key, SUBKEY_CHANNELS, channels_bytes).await {
@@ -63,13 +66,6 @@ async fn create_community_with_dht(
     }
 
     tracing::info!(dht_key = %key, "community DHT record created");
-
-    let default_channel = ChannelInfo {
-        id: default_channel_id,
-        name: "general".to_string(),
-        channel_type: ChannelType::Text,
-        unread_count: 0,
-    };
 
     let mek = MediaEncryptionKey::generate(1);
     let mek_generation = mek.generation();
@@ -403,10 +399,7 @@ fn parse_join_response(
                 .map(|ch| ChannelInfo {
                     id: ch.id,
                     name: ch.name,
-                    channel_type: match ch.channel_type.as_str() {
-                        "voice" => ChannelType::Voice,
-                        _ => ChannelType::Text,
-                    },
+                    channel_type: ch.channel_type.parse().unwrap_or(ChannelType::Text),
                     unread_count: 0,
                 })
                 .collect();
@@ -492,27 +485,21 @@ pub async fn create_channel(
 
     let channel_id = format!("channel_{}", hex::encode(rand_bytes(8)));
 
-    let ch_type = match channel_type {
-        "voice" => ChannelType::Voice,
-        _ => ChannelType::Text,
-    };
-
     let channel = ChannelInfo {
         id: channel_id.clone(),
         name: channel_name.to_string(),
-        channel_type: ch_type,
+        channel_type: channel_type.parse().unwrap_or(ChannelType::Text),
         unread_count: 0,
     };
 
     // Add to community state
     {
-        let mut communities = state.communities.write();
-        if let Some(community) = communities.get_mut(community_id) {
-            community.channels.push(channel);
-        } else {
+        let communities = state.communities.read();
+        if !communities.contains_key(community_id) {
             return Err(format!("community {community_id} not found"));
         }
     }
+    state_helpers::push_community_channel(state, community_id, channel);
 
     // Update community DHT record subkey 1 (channel list).
     // Only write to DHT for non-hosted communities — hosted communities have
@@ -529,27 +516,12 @@ pub async fn create_channel(
                 all_channels.push(ChannelInfo {
                     id: channel_id.clone(),
                     name: channel_name.to_string(),
-                    channel_type: match channel_type {
-                        "voice" => ChannelType::Voice,
-                        _ => ChannelType::Text,
-                    },
+                    channel_type: channel_type.parse().unwrap_or(ChannelType::Text),
                     unread_count: 0,
                 });
 
-                let channels_wrapper = serde_json::json!({
-                    "channels": all_channels.iter().map(|ch| {
-                        serde_json::json!({
-                            "id": ch.id,
-                            "name": ch.name,
-                            "channelType": match ch.channel_type {
-                                ChannelType::Text => "text",
-                                ChannelType::Voice => "voice",
-                            },
-                        })
-                    }).collect::<Vec<_>>(),
-                    "lastRefreshed": 0,
-                });
-
+                let channels_wrapper =
+                    crate::state::serialize_channel_list_for_dht(&all_channels, 0);
                 let channels_bytes = serde_json::to_vec(&channels_wrapper)
                     .map_err(|e| format!("failed to serialize channels: {e}"))?;
 

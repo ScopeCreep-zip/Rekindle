@@ -97,10 +97,7 @@ pub async fn get_community_details(
                 .map(|ch| ChannelInfoDto {
                     id: ch.id.clone(),
                     name: ch.name.clone(),
-                    channel_type: match ch.channel_type {
-                        ChannelType::Text => "text".to_string(),
-                        ChannelType::Voice => "voice".to_string(),
-                    },
+                    channel_type: ch.channel_type.to_string(),
                     unread_count: ch.unread_count,
                 })
                 .collect(),
@@ -188,14 +185,7 @@ pub async fn create_community(
 
         // Insert default channels
         for channel in &community.channels {
-            let ch_type = match channel.channel_type {
-                ChannelType::Text => "text",
-                ChannelType::Voice => "voice",
-            };
-            conn.execute(
-                "INSERT INTO channels (owner_key, id, community_id, name, channel_type) VALUES (?, ?, ?, ?, ?)",
-                rusqlite::params![ok, channel.id, community_id_clone, channel.name, ch_type],
-            )?;
+            crate::channel_repo::insert_channel(conn, &ok, channel, &community_id_clone)?;
         }
 
         // Persist default roles
@@ -303,14 +293,7 @@ pub async fn join_community(
 
         // Persist channels to SQLite so they survive re-login
         for channel in &channels {
-            let ch_type = match channel.channel_type {
-                crate::state::ChannelType::Text => "text",
-                crate::state::ChannelType::Voice => "voice",
-            };
-            conn.execute(
-                "INSERT OR IGNORE INTO channels (owner_key, id, community_id, name, channel_type) VALUES (?, ?, ?, ?, ?)",
-                rusqlite::params![ok, channel.id, community_id_clone, channel.name, ch_type],
-            )?;
+            crate::channel_repo::upsert_channel(conn, &ok, channel, &community_id_clone)?;
         }
 
         // Persist roles from server
@@ -368,32 +351,19 @@ pub async fn create_channel(
         match response {
             Ok(rekindle_protocol::messaging::CommunityResponse::ChannelCreated { channel_id }) => {
                 // Server created the channel — add it to local state too
-                let ch_type = match channel_type.as_str() {
-                    "voice" => ChannelType::Voice,
-                    _ => ChannelType::Text,
+                let ch_type: ChannelType = channel_type.parse().unwrap_or(ChannelType::Text);
+                let channel = crate::state::ChannelInfo {
+                    id: channel_id.clone(),
+                    name: name.clone(),
+                    channel_type: ch_type,
+                    unread_count: 0,
                 };
-                {
-                    let mut communities = state.communities.write();
-                    if let Some(community) = communities.get_mut(&community_id) {
-                        community.channels.push(crate::state::ChannelInfo {
-                            id: channel_id.clone(),
-                            name: name.clone(),
-                            channel_type: ch_type,
-                            unread_count: 0,
-                        });
-                    }
-                }
+                state_helpers::push_community_channel(state.inner(), &community_id, channel.clone());
 
                 // Persist to local SQLite
                 let comm_id = community_id.clone();
-                let chan_id = channel_id.clone();
-                let n = name.clone();
-                let ct = channel_type.clone();
                 db_call(pool.inner(), move |conn| {
-                    conn.execute(
-                        "INSERT INTO channels (owner_key, id, community_id, name, channel_type) VALUES (?, ?, ?, ?, ?)",
-                        rusqlite::params![owner_key, chan_id, comm_id, n, ct],
-                    )?;
+                    crate::channel_repo::insert_channel(conn, &owner_key, &channel, &comm_id)?;
                     Ok(())
                 })
                 .await?;
@@ -427,15 +397,16 @@ pub async fn create_channel(
     )
     .await?;
 
-    let channel_id_clone = channel_id.clone();
+    let ch_type: ChannelType = channel_type.parse().unwrap_or(ChannelType::Text);
+    let channel = crate::state::ChannelInfo {
+        id: channel_id.clone(),
+        name: name.clone(),
+        channel_type: ch_type,
+        unread_count: 0,
+    };
     let community_id_clone = community_id.clone();
-    let name_clone = name.clone();
-    let channel_type_clone = channel_type.clone();
     db_call(pool.inner(), move |conn| {
-        conn.execute(
-            "INSERT INTO channels (owner_key, id, community_id, name, channel_type) VALUES (?, ?, ?, ?, ?)",
-            rusqlite::params![owner_key, channel_id_clone, community_id_clone, name_clone, channel_type_clone],
-        )?;
+        crate::channel_repo::insert_channel(conn, &owner_key, &channel, &community_id_clone)?;
         Ok(())
     })
     .await?;
@@ -2009,10 +1980,7 @@ pub async fn delete_channel(
     let community_id_clone = community_id.clone();
     let channel_id_clone = channel_id.clone();
     db_call(pool.inner(), move |conn| {
-        conn.execute(
-            "DELETE FROM channels WHERE owner_key = ? AND id = ? AND community_id = ?",
-            rusqlite::params![owner_key, channel_id_clone, community_id_clone],
-        )?;
+        crate::channel_repo::delete_channel(conn, &owner_key, &channel_id_clone, &community_id_clone)?;
         Ok(())
     })
     .await?;

@@ -279,6 +279,32 @@ pub fn import_route_blob(
     }
 }
 
+// ── Communities (write helpers) ───────────────────────────────────────
+
+/// Replace the entire channel list for a community.
+pub fn set_community_channels(
+    state: &Arc<AppState>,
+    community_id: &str,
+    channels: Vec<crate::state::ChannelInfo>,
+) {
+    let mut communities = state.communities.write();
+    if let Some(community) = communities.get_mut(community_id) {
+        community.channels = channels;
+    }
+}
+
+/// Append a single channel to a community's channel list.
+pub fn push_community_channel(
+    state: &Arc<AppState>,
+    community_id: &str,
+    channel: crate::state::ChannelInfo,
+) {
+    let mut communities = state.communities.write();
+    if let Some(community) = communities.get_mut(community_id) {
+        community.channels.push(channel);
+    }
+}
+
 // ── Communities ──────────────────────────────────────────────────────
 
 /// Get a community's server route blob.
