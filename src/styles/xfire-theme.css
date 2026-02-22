@@ -1507,6 +1507,12 @@
     cursor: not-allowed;
   }
 
+  .modal-error {
+    font-size: 11px;
+    color: #ef4444;
+    text-align: center;
+  }
+
   .add-friend-tabs {
     display: flex;
     gap: 0;

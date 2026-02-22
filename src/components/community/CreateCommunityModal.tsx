@@ -1,5 +1,5 @@
-import { Component, createSignal } from "solid-js";
-import Modal from "../common/Modal";
+import { Component } from "solid-js";
+import SimpleInputModal from "../common/SimpleInputModal";
 import { handleCreateCommunity } from "../../handlers/community.handlers";
 
 interface CreateCommunityModalProps {
@@ -7,34 +7,15 @@ interface CreateCommunityModalProps {
   onClose: () => void;
 }
 
-const CreateCommunityModal: Component<CreateCommunityModalProps> = (props) => {
-  const [name, setName] = createSignal("");
-
-  async function handleSubmit(e: Event): Promise<void> {
-    e.preventDefault();
-    const n = name().trim();
-    if (!n) return;
-    await handleCreateCommunity(n);
-    setName("");
-    props.onClose();
-  }
-
-  return (
-    <Modal isOpen={props.isOpen} title="Create Community" onClose={props.onClose}>
-      <form class="modal-form" onSubmit={handleSubmit}>
-        <input
-          class="modal-input"
-          type="text"
-          placeholder="Community name..."
-          value={name()}
-          onInput={(e) => setName(e.currentTarget.value)}
-        />
-        <button class="modal-btn" type="submit" disabled={!name().trim()}>
-          Create
-        </button>
-      </form>
-    </Modal>
-  );
-};
+const CreateCommunityModal: Component<CreateCommunityModalProps> = (props) => (
+  <SimpleInputModal
+    isOpen={props.isOpen}
+    title="Create Community"
+    onClose={props.onClose}
+    onSubmit={(name) => handleCreateCommunity(name)}
+    placeholder="Community name..."
+    submitLabel="Create"
+  />
+);
 
 export default CreateCommunityModal;

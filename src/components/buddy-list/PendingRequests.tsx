@@ -34,7 +34,7 @@ const PendingRequests: Component = () => {
           Pending Requests ({friendsState.pendingRequests.length})
         </div>
         <Show when={error()}>
-          <div class="login-error">{error()}</div>
+          <div class="modal-error">{error()}</div>
         </Show>
         <For each={friendsState.pendingRequests}>
           {(request) => (
