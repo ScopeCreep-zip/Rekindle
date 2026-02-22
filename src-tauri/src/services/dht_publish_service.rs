@@ -9,6 +9,7 @@ use crate::db::DbPool;
 use crate::db_helpers::db_call;
 use crate::state::SharedState;
 use crate::state_helpers;
+use crate::state_helpers::DhtRecordType;
 
 // ── Column mapping for generic persist ──────────────────────────────────────
 
@@ -99,44 +100,6 @@ fn parse_stored_keypair(
     })
 }
 
-/// Extract identity + node data needed for DHT profile publishing.
-fn profile_publish_inputs(
-    state: &SharedState,
-) -> Result<
-    (
-        String,                                   // public_key
-        String,                                   // display_name
-        String,                                   // status_message
-        Vec<u8>,                                  // route_blob
-        rekindle_protocol::dht::DHTManager,       // temp DHTManager
-    ),
-    String,
-> {
-    let (public_key, display_name, status_message) = {
-        let identity = state.identity.read();
-        let id = identity
-            .as_ref()
-            .ok_or("identity not set before DHT publish")?;
-        (
-            id.public_key.clone(),
-            id.display_name.clone(),
-            id.status_message.clone(),
-        )
-    };
-    let (route_blob, routing_context) = {
-        let node = state.node.read();
-        let nh = node
-            .as_ref()
-            .ok_or("node not initialized before DHT publish")?;
-        (
-            nh.route_blob.clone().unwrap_or_default(),
-            nh.routing_context.clone(),
-        )
-    };
-    let temp_dht = rekindle_protocol::dht::DHTManager::new(routing_context);
-    Ok((public_key, display_name, status_message, route_blob, temp_dht))
-}
-
 /// Create a fresh account DHT record (helper for `publish_account`).
 async fn create_fresh_account_record(
     routing_context: &veilid_core::RoutingContext,
@@ -174,13 +137,7 @@ pub async fn publish_mailbox(
         *secret.as_ref().ok_or("identity secret not available")?
     };
 
-    let routing_context = {
-        let node = state.node.read();
-        let nh = node
-            .as_ref()
-            .ok_or("node not initialized before mailbox publish")?;
-        nh.routing_context.clone()
-    };
+    let routing_context = state_helpers::require_routing_context(state)?;
 
     // Build a Veilid KeyPair from our Ed25519 identity keys.
     let identity = rekindle_crypto::Identity::from_secret_bytes(&secret_bytes);
@@ -228,19 +185,7 @@ pub async fn publish_mailbox(
         }
     }
 
-    // Store on handles
-    {
-        let mut node = state.node.write();
-        if let Some(ref mut nh) = *node {
-            nh.set_mailbox_dht(mailbox_key.clone());
-        }
-    }
-    {
-        let mut dht_mgr = state.dht_manager.write();
-        if let Some(ref mut mgr) = *dht_mgr {
-            mgr.track_open_record(mailbox_key.clone());
-        }
-    }
+    state_helpers::store_dht_record(state, &mailbox_key, &DhtRecordType::Mailbox);
 
     persist_dht_key_to_db(pool, &public_key, &mailbox_key, None, &MAILBOX_COLUMNS).await?;
 
@@ -259,8 +204,13 @@ pub async fn publish_profile(
     existing_dht_key: Option<String>,
     dht_owner_keypair_str: Option<String>,
 ) -> Result<(), String> {
-    let (public_key, display_name, status_message, route_blob, temp_dht) =
-        profile_publish_inputs(state)?;
+    let id = state_helpers::current_identity(state)
+        .map_err(|_| "identity not set before DHT publish".to_string())?;
+    let (public_key, display_name, status_message) =
+        (id.public_key, id.display_name, id.status_message);
+    let route_blob = state_helpers::our_route_blob(state).unwrap_or_default();
+    let routing_context = state_helpers::require_routing_context(state)?;
+    let temp_dht = rekindle_protocol::dht::DHTManager::new(routing_context);
 
     let bundle = prekey_bundle_bytes.as_deref().unwrap_or(&[]);
     let owner_keypair = parse_stored_keypair(dht_owner_keypair_str.as_ref(), "profile");
@@ -278,19 +228,11 @@ pub async fn publish_profile(
         .await
         .map_err(|e| format!("DHT profile publish: {e}"))?;
 
-    // Store on handles
-    {
-        let mut node = state.node.write();
-        if let Some(ref mut nh) = *node {
-            nh.set_profile_dht(profile_key.clone(), keypair.clone());
-        }
-    }
-    {
-        let mut dht_mgr = state.dht_manager.write();
-        if let Some(ref mut mgr) = *dht_mgr {
-            mgr.set_profile_key(&profile_key);
-        }
-    }
+    state_helpers::store_dht_record(
+        state,
+        &profile_key,
+        &DhtRecordType::Profile(keypair.clone()),
+    );
 
     let new_keypair = if is_new { keypair } else { None };
     persist_dht_key_to_db(pool, &public_key, &profile_key, new_keypair, &PROFILE_COLUMNS).await?;
@@ -315,13 +257,7 @@ pub async fn publish_friend_list(
     let public_key = state_helpers::current_owner_key(state)
         .map_err(|_| "identity not set before friend list publish".to_string())?;
 
-    let routing_context = {
-        let node = state.node.read();
-        let nh = node
-            .as_ref()
-            .ok_or("node not initialized before friend list creation")?;
-        nh.routing_context.clone()
-    };
+    let routing_context = state_helpers::require_routing_context(state)?;
     let temp_dht = rekindle_protocol::dht::DHTManager::new(routing_context);
 
     let owner_keypair =
@@ -336,19 +272,11 @@ pub async fn publish_friend_list(
         .await
         .map_err(|e| format!("DHT friend list publish: {e}"))?;
 
-    // Store on handles
-    {
-        let mut node = state.node.write();
-        if let Some(ref mut nh) = *node {
-            nh.set_friend_list_dht(friend_list_key.clone(), keypair.clone());
-        }
-    }
-    {
-        let mut dht_mgr = state.dht_manager.write();
-        if let Some(ref mut mgr) = *dht_mgr {
-            mgr.set_friend_list_key(&friend_list_key);
-        }
-    }
+    state_helpers::store_dht_record(
+        state,
+        &friend_list_key,
+        &DhtRecordType::FriendList(keypair.clone()),
+    );
 
     let new_keypair = if is_new { keypair } else { None };
     persist_dht_key_to_db(
@@ -390,13 +318,7 @@ pub async fn publish_account(
         .ok_or("identity secret not available for account key derivation")?;
     let encryption_key = rekindle_crypto::DhtRecordKey::derive_account_key(&secret_bytes);
 
-    let routing_context = {
-        let node = state.node.read();
-        let nh = node
-            .as_ref()
-            .ok_or("node not initialized before account publish")?;
-        nh.routing_context.clone()
-    };
+    let routing_context = state_helpers::require_routing_context(state)?;
 
     let owner_keypair = parse_stored_keypair(account_owner_keypair_str.as_ref(), "account");
 
@@ -412,21 +334,12 @@ pub async fn publish_account(
             {
                 Ok(record) => {
                     tracing::info!(key = %existing_key, "reusing existing account DHT record");
-                    // Store on handles — account tracks all child keys
-                    {
-                        let mut node = state.node.write();
-                        if let Some(ref mut nh) = *node {
-                            nh.set_account_dht(record.record_key());
-                        }
-                    }
-                    {
-                        let mut dht_mgr = state.dht_manager.write();
-                        if let Some(ref mut mgr) = *dht_mgr {
-                            for k in record.all_record_keys() {
-                                mgr.track_open_record(k);
-                            }
-                        }
-                    }
+                    state_helpers::store_dht_record(
+                        state,
+                        &record.record_key(),
+                        &DhtRecordType::Account,
+                    );
+                    state_helpers::track_open_records(state, &record.all_record_keys());
                     return Ok(());
                 }
                 Err(e) => {
@@ -461,19 +374,7 @@ pub async fn publish_account(
         .await?
     };
 
-    // Store on handles (new record — only parent key to track)
-    {
-        let mut node = state.node.write();
-        if let Some(ref mut nh) = *node {
-            nh.set_account_dht(account_key.clone());
-        }
-    }
-    {
-        let mut dht_mgr = state.dht_manager.write();
-        if let Some(ref mut mgr) = *dht_mgr {
-            mgr.track_open_record(account_key.clone());
-        }
-    }
+    state_helpers::store_dht_record(state, &account_key, &DhtRecordType::Account);
 
     persist_dht_key_to_db(
         pool,
