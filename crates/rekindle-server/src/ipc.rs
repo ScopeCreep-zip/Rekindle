@@ -182,7 +182,7 @@ async fn handle_ipc_request(
             IpcResponse::Hosted { communities }
         }
         IpcRequest::GetStatus => {
-            let now = timestamp_now();
+            let now = rekindle_utils::timestamp_secs();
             let uptime_secs = now.saturating_sub(state.started_at);
             let community_count = state.hosted.read().len();
             let veilid_attached = match state.api.get_state().await {
@@ -222,9 +222,3 @@ async fn handle_ipc_request(
     }
 }
 
-fn timestamp_now() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
-}

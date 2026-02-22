@@ -35,12 +35,7 @@ pub async fn create_profile(
         status_message.as_bytes().to_vec(),
     )
     .await?;
-    let ts: i64 = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis()
-        .try_into()
-        .unwrap_or(i64::MAX);
+    let ts: i64 = rekindle_utils::timestamp_ms_i64();
     let mut status_payload = Vec::with_capacity(9);
     status_payload.push(0u8);
     status_payload.extend_from_slice(&ts.to_be_bytes());
@@ -187,12 +182,7 @@ async fn try_reopen_and_update(
     )
     .await?;
     // Status = online (0) + timestamp
-    let ts: i64 = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis()
-        .try_into()
-        .unwrap_or(i64::MAX);
+    let ts: i64 = rekindle_utils::timestamp_ms_i64();
     let mut status_payload = Vec::with_capacity(9);
     status_payload.push(0u8);
     status_payload.extend_from_slice(&ts.to_be_bytes());

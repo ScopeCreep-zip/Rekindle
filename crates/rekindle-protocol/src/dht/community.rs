@@ -529,10 +529,7 @@ pub mod permissions {
 
         // Step 7: If timed out, strip write/voice permissions
         if let Some(until) = timeout_until {
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs();
+            let now = rekindle_utils::timestamp_secs();
             if now < until {
                 permissions &=
                     !(SEND_MESSAGES | ADD_REACTIONS | SPEAK | STREAM | CREATE_INSTANT_INVITE);

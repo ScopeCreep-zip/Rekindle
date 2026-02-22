@@ -253,15 +253,7 @@ pub mod presence {
         {
             let mut root = builder.init_root::<presence_capnp::presence_update::Builder<'_>>();
             root.set_status(status);
-            root.set_timestamp(
-                u64::try_from(
-                    std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_millis(),
-                )
-                .unwrap_or(u64::MAX),
-            );
+            root.set_timestamp(rekindle_utils::timestamp_ms());
             if let Some(g) = game {
                 write_game_status(root.init_game_status(), g);
             }

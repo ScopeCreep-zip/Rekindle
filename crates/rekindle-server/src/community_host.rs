@@ -66,7 +66,7 @@ fn load_members_from_db(
                 Ok((row.get::<_, String>(0)?, row.get::<_, u64>(1)?))
             })
             .map_err(|e| e.to_string())?;
-        let now = timestamp_now_secs();
+        let now = rekindle_utils::timestamp_secs();
         for row in to_rows.flatten() {
             if row.1 > now {
                 if let Some(member) = members.iter_mut().find(|m| m.pseudonym_key_hex == row.0) {
@@ -377,7 +377,7 @@ pub async fn host_community(
         let db = state.db.lock().map_err(|e| e.to_string())?;
         if let Err(e) = db.execute(
             "INSERT OR IGNORE INTO hosted_communities (id, dht_record_key, owner_keypair_hex, name, created_at) VALUES (?,?,?,?,?)",
-            params![community_id, dht_record_key, owner_keypair_hex, name, timestamp_now_secs()],
+            params![community_id, dht_record_key, owner_keypair_hex, name, rekindle_utils::timestamp_secs()],
         ) {
             tracing::error!(error = %e, community = %community_id, "failed to persist hosted community to DB");
         }
@@ -430,8 +430,7 @@ pub async fn host_community(
             .iter()
             .any(|m| m.pseudonym_key_hex == creator_pseudonym_key)
     {
-        #[allow(clippy::cast_possible_wrap)]
-        let now = timestamp_now_secs() as i64;
+        let now = rekindle_utils::timestamp_secs_i64();
         let owner_role_ids = vec![ROLE_EVERYONE_ID, 1, 2, 3, 4];
 
         // Persist creator to DB
@@ -802,7 +801,7 @@ pub async fn publish_metadata(state: &Arc<ServerState>, community_id: &str, name
         (community.dht_record_key.clone(), owner_key)
     };
 
-    let now = timestamp_now_secs();
+    let now = rekindle_utils::timestamp_secs();
     let metadata = rekindle_protocol::dht::community::CommunityMetadata {
         name: name.to_string(),
         description: None,
@@ -835,7 +834,7 @@ pub async fn publish_channels(state: &Arc<ServerState>, community_id: &str) {
                     "sortOrder": ch.sort_order,
                 })
             }).collect::<Vec<_>>(),
-            "lastRefreshed": timestamp_now_secs(),
+            "lastRefreshed": rekindle_utils::timestamp_secs(),
         });
         (
             community.dht_record_key.clone(),
@@ -871,7 +870,7 @@ pub async fn publish_member_roster(state: &Arc<ServerState>, community_id: &str)
                     "joinedAt": m.joined_at,
                 })
             }).collect::<Vec<_>>(),
-            "lastRefreshed": timestamp_now_secs(),
+            "lastRefreshed": rekindle_utils::timestamp_secs(),
         });
 
         (
@@ -903,7 +902,7 @@ pub async fn publish_mek_bundle(state: &Arc<ServerState>, community_id: &str) {
         };
         let bundle = serde_json::json!({
             "generation": community.mek.generation(),
-            "lastRefreshed": timestamp_now_secs(),
+            "lastRefreshed": rekindle_utils::timestamp_secs(),
         });
         (
             community.dht_record_key.clone(),
@@ -926,9 +925,3 @@ fn parse_owner_keypair(hex_str: &str) -> Result<veilid_core::KeyPair, String> {
         .map_err(|e| format!("invalid owner keypair: {e}"))
 }
 
-fn timestamp_now_secs() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
-}

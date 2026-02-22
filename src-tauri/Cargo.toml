@@ -19,6 +19,7 @@ rekindle-protocol = { path = "../crates/rekindle-protocol" }
 rekindle-crypto = { path = "../crates/rekindle-crypto" }
 rekindle-game-detect = { path = "../crates/rekindle-game-detect" }
 rekindle-voice = { path = "../crates/rekindle-voice" }
+rekindle-utils = { path = "../crates/rekindle-utils" }
 
 tauri = { version = "2", features = ["macos-private-api", "tray-icon", "image-png"] }
 tauri-plugin-notification = "2"

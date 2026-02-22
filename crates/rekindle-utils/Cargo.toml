@@ -1,0 +1,10 @@
+[package]
+name = "rekindle-utils"
+version = "0.1.0"
+edition = "2021"
+description = "Shared utility functions for Rekindle workspace crates"
+
+[lints]
+workspace = true
+
+# Zero external dependencies — only uses std
