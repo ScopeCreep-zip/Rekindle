@@ -730,7 +730,7 @@ async fn load_communities_from_db(
                     db::get_str(row, "id"),
                     db::get_str(row, "community_id"),
                     db::get_str(row, "name"),
-                    db::get_str(row, "channel_type"),
+                    row.get::<_, ChannelType>("channel_type")?,
                 ))
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -757,17 +757,11 @@ async fn load_communities_from_db(
         let channels: Vec<ChannelInfo> = channel_rows
             .iter()
             .filter(|(_, cid, _, _)| cid == community_id)
-            .map(|(id, _, ch_name, ch_type)| {
-                let channel_type = match ch_type.as_str() {
-                    "voice" => ChannelType::Voice,
-                    _ => ChannelType::Text,
-                };
-                ChannelInfo {
-                    id: id.clone(),
-                    name: ch_name.clone(),
-                    channel_type,
-                    unread_count: 0,
-                }
+            .map(|(id, _, ch_name, ch_type)| ChannelInfo {
+                id: id.clone(),
+                name: ch_name.clone(),
+                channel_type: ch_type.clone(),
+                unread_count: 0,
             })
             .collect();
 

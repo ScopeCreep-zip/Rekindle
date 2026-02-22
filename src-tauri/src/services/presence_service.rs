@@ -344,32 +344,14 @@ async fn handle_community_channel_list_change(
     if let Some(data) = channel_data {
         let channels = crate::state::parse_dht_channel_list(&data);
         if !channels.is_empty() {
-            {
-                let mut communities = state.communities.write();
-                if let Some(community) = communities.get_mut(community_id) {
-                    community.channels.clone_from(&channels);
-                }
-            }
+            state_helpers::set_community_channels(state, community_id, channels.clone());
 
             // Persist to SQLite: DELETE + INSERT
             let owner_key = state_helpers::owner_key_or_default(state);
             let pool: tauri::State<'_, DbPool> = app_handle.state();
             let cid = community_id.to_string();
             db_fire(pool.inner(), "update community channel list", move |conn| {
-                conn.execute(
-                    "DELETE FROM channels WHERE owner_key = ? AND community_id = ?",
-                    rusqlite::params![owner_key, cid],
-                )?;
-                for ch in &channels {
-                    let ch_type = match ch.channel_type {
-                        crate::state::ChannelType::Text => "text",
-                        crate::state::ChannelType::Voice => "voice",
-                    };
-                    conn.execute(
-                        "INSERT OR IGNORE INTO channels (owner_key, id, community_id, name, channel_type) VALUES (?, ?, ?, ?, ?)",
-                        rusqlite::params![owner_key, ch.id, cid, ch.name, ch_type],
-                    )?;
-                }
+                crate::channel_repo::replace_channels(conn, &owner_key, &cid, &channels)?;
                 Ok(())
             });
         }
