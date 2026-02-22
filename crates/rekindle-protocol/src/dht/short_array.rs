@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use veilid_core::{DHTSchema, KeyPair, RecordKey, RoutingContext, CRYPTO_KIND_VLD0};
 
+use super::parse_record_key;
 use crate::error::ProtocolError;
 
 /// Internal metadata stored in subkey 0 of the `DHTShortArray` record.
@@ -96,9 +97,7 @@ impl DHTShortArray {
         key: &str,
         writer: Option<KeyPair>,
     ) -> Result<Self, ProtocolError> {
-        let record_key: RecordKey = key
-            .parse()
-            .map_err(|e| ProtocolError::DhtError(format!("invalid key '{key}': {e}")))?;
+        let record_key = parse_record_key(key)?;
 
         let _ = rc
             .open_dht_record(record_key.clone(), writer.clone())

@@ -2,6 +2,7 @@ use veilid_core::{
     DHTSchema, KeyPair, RecordKey, RoutingContext, ValueSubkeyRangeSet, CRYPTO_KIND_VLD0,
 };
 
+use super::parse_record_key;
 use crate::capnp_codec::conversation::{
     decode_conversation_header, encode_conversation_header, ConversationHeader,
 };
@@ -101,9 +102,7 @@ impl ConversationRecord {
         owner_keypair: KeyPair,
         encryption_key: DhtRecordKey,
     ) -> Result<Self, ProtocolError> {
-        let record_key: RecordKey = key
-            .parse()
-            .map_err(|e| ProtocolError::DhtError(format!("invalid key '{key}': {e}")))?;
+        let record_key = parse_record_key(key)?;
 
         let _ = rc
             .open_dht_record(record_key.clone(), Some(owner_keypair.clone()))
@@ -141,9 +140,7 @@ impl ConversationRecord {
         key: &str,
         encryption_key: DhtRecordKey,
     ) -> Result<Self, ProtocolError> {
-        let record_key: RecordKey = key
-            .parse()
-            .map_err(|e| ProtocolError::DhtError(format!("invalid key '{key}': {e}")))?;
+        let record_key = parse_record_key(key)?;
 
         let _ = rc
             .open_dht_record(record_key.clone(), None)
