@@ -3,6 +3,7 @@ use veilid_core::{
     DHTSchema, KeyPair, RecordKey, RoutingContext, ValueSubkeyRangeSet, CRYPTO_KIND_VLD0,
 };
 
+use super::parse_record_key;
 use crate::dht::short_array::DHTShortArray;
 use crate::error::ProtocolError;
 
@@ -88,9 +89,7 @@ impl DHTLog {
         key: &str,
         writer: KeyPair,
     ) -> Result<Self, ProtocolError> {
-        let spine_key: RecordKey = key
-            .parse()
-            .map_err(|e| ProtocolError::DhtError(format!("invalid key '{key}': {e}")))?;
+        let spine_key = parse_record_key(key)?;
 
         let _ = rc
             .open_dht_record(spine_key.clone(), Some(writer.clone()))
@@ -108,9 +107,7 @@ impl DHTLog {
 
     /// Open an existing `DHTLog` for reading only.
     pub async fn open_read(rc: &RoutingContext, key: &str) -> Result<Self, ProtocolError> {
-        let spine_key: RecordKey = key
-            .parse()
-            .map_err(|e| ProtocolError::DhtError(format!("invalid key '{key}': {e}")))?;
+        let spine_key = parse_record_key(key)?;
 
         let _ = rc
             .open_dht_record(spine_key.clone(), None)

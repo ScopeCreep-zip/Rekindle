@@ -1,5 +1,6 @@
 use veilid_core::{DHTSchema, KeyPair, RecordKey, RoutingContext, CRYPTO_KIND_VLD0};
 
+use super::parse_record_key;
 use crate::capnp_codec::account::{
     decode_account_header, decode_chat_entry, decode_contact_entry, encode_account_header,
     encode_chat_entry, encode_contact_entry, AccountHeader, ChatEntry, ContactEntry,
@@ -122,9 +123,7 @@ impl AccountRecord {
         owner_keypair: KeyPair,
         encryption_key: DhtRecordKey,
     ) -> Result<Self, ProtocolError> {
-        let record_key: RecordKey = key
-            .parse()
-            .map_err(|e| ProtocolError::DhtError(format!("invalid key '{key}': {e}")))?;
+        let record_key = parse_record_key(key)?;
 
         let _ = rc
             .open_dht_record(record_key.clone(), Some(owner_keypair.clone()))
