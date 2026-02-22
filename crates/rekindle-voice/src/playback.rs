@@ -1,11 +1,11 @@
 use std::collections::VecDeque;
 use std::sync::mpsc as std_mpsc;
 
-use cpal::traits::{DeviceTrait, HostTrait};
+use cpal::traits::DeviceTrait;
 use tokio::sync::mpsc;
 
 use crate::audio_thread::{AudioThread, AudioThreadLabels};
-use crate::device::DeviceDirection;
+use crate::device::{resolve_device, DeviceDirection};
 use crate::error::VoiceError;
 
 const PLAYBACK_LABELS: AudioThreadLabels = AudioThreadLabels {
@@ -78,12 +78,7 @@ fn build_playback_stream(
     error_tx: std_mpsc::Sender<String>,
 ) -> Result<cpal::Stream, VoiceError> {
     let host = cpal::default_host();
-    let device = match device_name {
-        Some(name) => crate::device::find_device(&host, name, &DeviceDirection::Output)?,
-        None => host
-            .default_output_device()
-            .ok_or_else(|| VoiceError::AudioDevice("no output device available".into()))?,
-    };
+    let device = resolve_device(&host, device_name, &DeviceDirection::Output)?;
 
     let config = cpal::StreamConfig {
         channels,

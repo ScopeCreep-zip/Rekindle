@@ -1,10 +1,10 @@
 use std::sync::mpsc as std_mpsc;
 
-use cpal::traits::{DeviceTrait, HostTrait};
+use cpal::traits::DeviceTrait;
 use tokio::sync::mpsc;
 
 use crate::audio_thread::{AudioThread, AudioThreadLabels};
-use crate::device::DeviceDirection;
+use crate::device::{resolve_device, DeviceDirection};
 use crate::error::VoiceError;
 
 // Re-export for backward compatibility — external callers use
@@ -79,12 +79,7 @@ fn build_capture_stream(
     error_tx: std_mpsc::Sender<String>,
 ) -> Result<cpal::Stream, VoiceError> {
     let host = cpal::default_host();
-    let device = match device_name {
-        Some(name) => crate::device::find_device(&host, name, &DeviceDirection::Input)?,
-        None => host
-            .default_input_device()
-            .ok_or_else(|| VoiceError::AudioDevice("no input device available".into()))?,
-    };
+    let device = resolve_device(&host, device_name, &DeviceDirection::Input)?;
 
     let supported = device
         .default_input_config()
