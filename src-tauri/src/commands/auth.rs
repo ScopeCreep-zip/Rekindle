@@ -1486,11 +1486,7 @@ pub async fn create_conversation_for_friend(
     let fpk = friend_public_key.to_string();
     let ck = conversation_key.clone();
     db_call(pool, move |conn| {
-        conn.execute(
-            "UPDATE friends SET local_conversation_key = ?1 WHERE owner_key = ?2 AND public_key = ?3",
-            rusqlite::params![ck, ok, fpk],
-        )?;
-        Ok(())
+        crate::friend_repo::update_local_conversation_key(conn, &ok, &fpk, &ck)
     })
     .await?;
 

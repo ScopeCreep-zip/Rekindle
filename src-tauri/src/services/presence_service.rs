@@ -89,15 +89,7 @@ fn handle_status_change(
         }
 
         let pool: tauri::State<'_, DbPool> = app_handle.state();
-        let ok = state_helpers::owner_key_or_default(state);
-        let fk = friend_key.to_string();
-        db_fire(pool.inner(), "update friend last_seen_at", move |conn| {
-            conn.execute(
-                "UPDATE friends SET last_seen_at = ?1 WHERE owner_key = ?2 AND public_key = ?3",
-                rusqlite::params![now, ok, fk],
-            )?;
-            Ok(())
-        });
+        crate::friend_repo::fire_update_last_seen_at(state, pool.inner(), friend_key, now);
 
         PresenceEvent::FriendOffline {
             public_key: friend_key.to_string(),
