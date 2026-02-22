@@ -49,12 +49,7 @@ impl GameDetector {
                     game_id: entry.id,
                     game_name: entry.name.clone(),
                     process_name: proc_name.clone(),
-                    started_at_epoch_ms: std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_millis()
-                        .try_into()
-                        .unwrap_or(u64::MAX),
+                    started_at_epoch_ms: rekindle_utils::timestamp_ms(),
                 };
                 self.current_game = Some(game.clone());
                 return Some(game);

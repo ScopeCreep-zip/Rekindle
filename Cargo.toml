@@ -8,6 +8,7 @@ members = [
     "crates/rekindle-voice",
     "crates/rekindle-server",
     "crates/rekindle-e2e-server",
+    "crates/rekindle-utils",
 ]
 
 [workspace.dependencies]

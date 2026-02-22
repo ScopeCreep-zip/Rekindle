@@ -113,10 +113,5 @@ pub fn get_i64(row: &rusqlite::Row<'_>, col: &str) -> i64 {
 
 /// Current UNIX timestamp in milliseconds.
 pub fn timestamp_now() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis()
-        .try_into()
-        .unwrap_or(i64::MAX)
+    rekindle_utils::timestamp_ms_i64()
 }

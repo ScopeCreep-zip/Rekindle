@@ -15,7 +15,7 @@ pub fn create_initial_mek(state: &Arc<ServerState>, community_id: &str) -> Media
     });
     if let Err(e) = db.execute(
         "INSERT OR REPLACE INTO server_mek (community_id, generation, key_bytes, created_at) VALUES (?,?,?,?)",
-        params![community_id, 1i64, mek.as_bytes().as_slice(), timestamp_now()],
+        params![community_id, 1i64, mek.as_bytes().as_slice(), rekindle_utils::timestamp_secs_i64()],
     ) {
         tracing::error!(error = %e, community = %community_id, "failed to persist initial MEK to DB");
     }
@@ -45,7 +45,7 @@ pub fn rotate_mek(
             community_id,
             i64::try_from(new_generation).unwrap_or(i64::MAX),
             mek.as_bytes().as_slice(),
-            timestamp_now()
+            rekindle_utils::timestamp_secs_i64()
         ],
     ) {
         tracing::error!(error = %e, community = %community_id, generation = new_generation, "failed to persist rotated MEK to DB");
@@ -93,11 +93,3 @@ pub fn load_latest_mek(state: &Arc<ServerState>, community_id: &str) -> Option<M
     }
 }
 
-fn timestamp_now() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
-        .try_into()
-        .unwrap_or(i64::MAX)
-}

@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use rand::RngCore as _;
 use rekindle_protocol::messaging::envelope::MessagePayload;
@@ -941,13 +940,7 @@ async fn send_envelope_to_peer(
         *sk.as_ref().ok_or("signing key not initialized")?
     };
 
-    let timestamp = u64::try_from(
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis(),
-    )
-    .unwrap_or(u64::MAX);
+    let timestamp = rekindle_utils::timestamp_ms();
 
     let nonce = {
         let mut buf = [0u8; 16];
@@ -1205,13 +1198,7 @@ pub(crate) async fn build_and_queue_envelope(
         *sk.as_ref().ok_or("signing key not initialized")?
     };
 
-    let timestamp = u64::try_from(
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis(),
-    )
-    .unwrap_or(u64::MAX);
+    let timestamp = rekindle_utils::timestamp_ms();
 
     let nonce = {
         let mut buf = [0u8; 16];

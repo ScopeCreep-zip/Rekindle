@@ -6,7 +6,7 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use tauri::Emitter;
 use tokio::sync::{broadcast, mpsc};
@@ -180,10 +180,7 @@ impl VoiceSendLoop {
         };
 
         encoded.sequence = self.sequence;
-        encoded.timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
-            .unwrap_or(0);
+        encoded.timestamp = rekindle_utils::timestamp_ms();
         self.sequence = self.sequence.wrapping_add(1);
 
         if self.transport.is_connected() {

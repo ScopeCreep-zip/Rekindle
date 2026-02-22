@@ -67,13 +67,7 @@ impl AccountRecord {
         let chat_list_key = chats.record_key();
         let invitation_list_key = invitations.record_key();
 
-        let now = u64::try_from(
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis(),
-        )
-        .unwrap_or(u64::MAX);
+        let now = rekindle_utils::timestamp_ms();
 
         let header = AccountHeader {
             contact_list_key: contact_list_key.clone(),

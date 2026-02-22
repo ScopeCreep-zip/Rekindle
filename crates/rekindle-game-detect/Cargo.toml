@@ -14,3 +14,4 @@ serde_json = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+rekindle-utils = { path = "../rekindle-utils" }

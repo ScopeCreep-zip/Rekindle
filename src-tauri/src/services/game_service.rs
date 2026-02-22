@@ -37,10 +37,7 @@ pub async fn start_game_detection(
 
                 // Only emit events when game state changes
                 if current_name != last_game {
-                    let now_ms = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_millis().try_into().unwrap_or(u64::MAX);
+                    let now_ms = rekindle_utils::timestamp_ms();
                     let game_info = detected.as_ref().map(|g| GameInfoState {
                         game_id: g.game_id,
                         game_name: g.game_name.clone(),

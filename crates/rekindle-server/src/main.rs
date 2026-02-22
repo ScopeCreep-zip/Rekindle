@@ -86,7 +86,7 @@ async fn main() {
         routing_context,
         db,
         hosted: RwLock::new(std::collections::HashMap::new()),
-        started_at: timestamp_now_secs(),
+        started_at: rekindle_utils::timestamp_secs(),
     });
 
     // Start the DHT keep-alive loop
@@ -374,12 +374,6 @@ fn load_communities_from_db(
     Ok(rows.filter_map(Result::ok).collect())
 }
 
-fn timestamp_now_secs() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
-}
 
 fn dirs_fallback(subpath: &str) -> String {
     let base = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());

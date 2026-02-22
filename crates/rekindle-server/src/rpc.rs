@@ -640,7 +640,7 @@ fn add_new_member(
     display_name: &str,
     member_route_blob: Option<&[u8]>,
 ) -> Option<JoinResult> {
-    let now = timestamp_now();
+    let now = rekindle_utils::timestamp_secs_i64();
 
     // Determine role IDs — first member is the creator (gets Owner + Admin + Mod + Member + @everyone)
     let is_first_member = {
@@ -892,7 +892,7 @@ fn handle_send_message(
         }
     }
 
-    let now = timestamp_now();
+    let now = rekindle_utils::timestamp_secs_i64();
 
     {
         let db = state.db.lock().unwrap_or_else(|e| {
@@ -1457,7 +1457,7 @@ async fn handle_ban(
     };
 
     {
-        let now = timestamp_now();
+        let now = rekindle_utils::timestamp_secs_i64();
         let db = state.db.lock().unwrap_or_else(|e| {
             tracing::error!(error = %e, "server db mutex poisoned — recovering");
             e.into_inner()
@@ -2113,10 +2113,7 @@ fn handle_timeout_member(
         return e;
     }
 
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
+    let now = rekindle_utils::timestamp_secs();
     let timeout_until = now + duration_seconds;
 
     let Some(member) = community
@@ -2316,14 +2313,6 @@ fn broadcast_to_members(
 // Utilities
 // ---------------------------------------------------------------------------
 
-fn timestamp_now() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
-        .try_into()
-        .unwrap_or(i64::MAX)
-}
 
 fn rand_bytes(len: usize) -> Vec<u8> {
     use rand::RngCore;

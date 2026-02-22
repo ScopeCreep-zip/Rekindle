@@ -20,6 +20,7 @@ capnp = { workspace = true }
 base64 = "0.22"
 hex = "0.4"
 rekindle-crypto = { path = "../rekindle-crypto" }
+rekindle-utils = { path = "../rekindle-utils" }
 rand = "0.8"
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 veilid-core = { version = "0.5.2", default-features = true }

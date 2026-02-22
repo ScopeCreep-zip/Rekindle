@@ -5999,6 +5999,7 @@ dependencies = [
  "rekindle-crypto",
  "rekindle-game-detect",
  "rekindle-protocol",
+ "rekindle-utils",
  "rekindle-voice",
  "rusqlite",
  "serde",
@@ -6063,6 +6064,7 @@ dependencies = [
 name = "rekindle-game-detect"
 version = "0.1.0"
 dependencies = [
+ "rekindle-utils",
  "serde",
  "serde_json",
  "sysinfo 0.32.1",
@@ -6085,6 +6087,7 @@ dependencies = [
  "parking_lot",
  "rand 0.8.5",
  "rekindle-crypto",
+ "rekindle-utils",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -6103,6 +6106,7 @@ dependencies = [
  "rand 0.8.5",
  "rekindle-crypto",
  "rekindle-protocol",
+ "rekindle-utils",
  "rusqlite",
  "serde",
  "serde_json",
@@ -6112,6 +6116,10 @@ dependencies = [
  "tracing-subscriber",
  "veilid-core",
 ]
+
+[[package]]
+name = "rekindle-utils"
+version = "0.1.0"
 
 [[package]]
 name = "rekindle-voice"
