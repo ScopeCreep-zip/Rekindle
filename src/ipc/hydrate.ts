@@ -3,8 +3,7 @@ import { setAuthState } from "../stores/auth.store";
 import { fetchAvatarUrl } from "./avatar";
 import { setFriendsState } from "../stores/friends.store";
 import { setCommunityState } from "../stores/community.store";
-import type { Community } from "../stores/community.store";
-import { transformFriendMap } from "../utils/transformers";
+import { transformFriendMap, transformCommunityMap } from "../utils/transformers";
 
 /**
  * Hydrate frontend stores from the Rust backend.
@@ -39,27 +38,7 @@ export async function hydrateState(): Promise<void> {
 
   try {
     const details = await commands.getCommunityDetails();
-    const communityMap: Record<string, Community> = {};
-    for (const c of details) {
-      communityMap[c.id] = {
-        id: c.id,
-        name: c.name,
-        description: c.description ?? null,
-        channels: c.channels.map((ch) => ({
-          id: ch.id,
-          name: ch.name,
-          type: ch.channelType as "text" | "voice",
-          unreadCount: ch.unreadCount,
-        })),
-        members: [],
-        roles: c.roles ?? [],
-        myRoleIds: c.myRoleIds ?? [0, 1],
-        myPseudonymKey: c.myPseudonymKey ?? null,
-        mekGeneration: c.mekGeneration ?? 0,
-        isHosted: c.isHosted ?? false,
-      };
-    }
-    setCommunityState("communities", communityMap);
+    setCommunityState("communities", transformCommunityMap(details));
   } catch (e) {
     console.error("Failed to hydrate communities:", e);
   }

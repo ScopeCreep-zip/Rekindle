@@ -4,6 +4,7 @@ import { friendsState, setFriendsState } from "../stores/friends.store";
 import { communityState, setCommunityState } from "../stores/community.store";
 import { authState, setAuthState } from "../stores/auth.store";
 import type { UserStatus } from "../stores/auth.store";
+import { transformGameInfo } from "../utils/transformers";
 
 export function subscribeBuddyListPresenceEvents(): Promise<UnlistenFn> {
   return subscribePresenceEvents((event) => {
@@ -46,12 +47,9 @@ export function subscribeBuddyListPresenceEvents(): Promise<UnlistenFn> {
       }
       case "gameChanged": {
         if (friendsState.friends[event.data.publicKey]) {
-          if (event.data.gameName) {
-            setFriendsState("friends", event.data.publicKey, "gameInfo", {
-              gameName: event.data.gameName,
-              gameId: event.data.gameId,
-              startedAt: event.data.elapsedSeconds,
-            });
+          const { gameName, gameId, elapsedSeconds } = event.data;
+          if (gameName) {
+            setFriendsState("friends", event.data.publicKey, "gameInfo", transformGameInfo({ gameName, gameId, elapsedSeconds }));
           } else {
             setFriendsState("friends", event.data.publicKey, "gameInfo", null);
           }
@@ -143,12 +141,9 @@ export function subscribeProfilePresenceEvents(
       }
       case "gameChanged": {
         if (event.data.publicKey === publicKey && friendsState.friends[publicKey]) {
-          if (event.data.gameName) {
-            setFriendsState("friends", publicKey, "gameInfo", {
-              gameName: event.data.gameName,
-              gameId: event.data.gameId,
-              startedAt: event.data.elapsedSeconds,
-            });
+          const { gameName, gameId, elapsedSeconds } = event.data;
+          if (gameName) {
+            setFriendsState("friends", publicKey, "gameInfo", transformGameInfo({ gameName, gameId, elapsedSeconds }));
           } else {
             setFriendsState("friends", publicKey, "gameInfo", null);
           }

@@ -5,6 +5,7 @@ import { setCommunityState, communityState } from "../stores/community.store";
 import { authState } from "../stores/auth.store";
 import { addToast } from "../stores/toast.store";
 import type { Message } from "../stores/chat.store";
+import { transformCommunityDetail, transformMember, transformMessages } from "../utils/transformers";
 
 export async function handleCreateCommunity(name: string): Promise<void> {
   try {
@@ -13,23 +14,7 @@ export async function handleCreateCommunity(name: string): Promise<void> {
     const details = await commands.getCommunityDetails();
     const created = details.find((c) => c.id === id);
     if (created) {
-      setCommunityState("communities", id, {
-        id: created.id,
-        name: created.name,
-        description: created.description ?? null,
-        channels: created.channels.map((ch) => ({
-          id: ch.id,
-          name: ch.name,
-          type: ch.channelType as "text" | "voice",
-          unreadCount: ch.unreadCount,
-        })),
-        members: [],
-        roles: created.roles ?? [],
-        myRoleIds: created.myRoleIds ?? [0, 1],
-        myPseudonymKey: created.myPseudonymKey ?? null,
-        mekGeneration: created.mekGeneration ?? 0,
-        isHosted: created.isHosted ?? true,
-      });
+      setCommunityState("communities", id, transformCommunityDetail(created));
     } else {
       setCommunityState("communities", id, {
         id,
@@ -60,23 +45,7 @@ export async function handleJoinCommunity(
     const details = await commands.getCommunityDetails();
     const joined = details.find((c) => c.id === communityId);
     if (joined) {
-      setCommunityState("communities", communityId, {
-        id: joined.id,
-        name: joined.name,
-        description: joined.description ?? null,
-        channels: joined.channels.map((ch) => ({
-          id: ch.id,
-          name: ch.name,
-          type: ch.channelType as "text" | "voice",
-          unreadCount: ch.unreadCount,
-        })),
-        members: [],
-        roles: joined.roles ?? [],
-        myRoleIds: joined.myRoleIds ?? [0, 1],
-        myPseudonymKey: joined.myPseudonymKey ?? null,
-        mekGeneration: joined.mekGeneration ?? 0,
-        isHosted: joined.isHosted ?? false,
-      });
+      setCommunityState("communities", communityId, transformCommunityDetail(joined));
     } else {
       setCommunityState("communities", communityId, {
         id: communityId,
@@ -195,13 +164,7 @@ export async function handleLoadChannelMessages(
 ): Promise<void> {
   try {
     const messages = await commands.getChannelMessages(channelId, limit);
-    const mapped: Message[] = messages.map((m) => ({
-      id: m.id,
-      senderId: m.senderId,
-      body: m.body,
-      timestamp: m.timestamp,
-      isOwn: m.isOwn,
-    }));
+    const mapped = transformMessages(messages);
     const existing = communityState.channelMessages[channelId];
     if (mapped.length > 0 || !existing || existing.length === 0) {
       setCommunityState("channelMessages", channelId, mapped);
@@ -216,14 +179,7 @@ export function handleSelectCommunity(communityId: string): void {
   setCommunityState("activeCommunity", communityId);
   // Fetch members for the selected community
   commands.getCommunityMembers(communityId).then((members) => {
-    setCommunityState("communities", communityId, "members", members.map((m) => ({
-      pseudonymKey: m.pseudonymKey,
-      displayName: m.displayName,
-      roleIds: m.roleIds,
-      displayRole: m.displayRole,
-      status: m.status,
-      timeoutUntil: m.timeoutUntil ?? null,
-    })));
+    setCommunityState("communities", communityId, "members", members.map(transformMember));
   }).catch((e) => {
     console.error("Failed to load community members:", e);
     addToast("Failed to load members", "error");
@@ -572,7 +528,7 @@ export function subscribeCommunityEventDispatcher(): Promise<UnlistenFn> {
         if (!exists) {
           setCommunityState("communities", communityId, "members", (prev) => [
             ...prev,
-            { pseudonymKey, displayName, roleIds, displayRole: "", status: "online", timeoutUntil: null },
+            transformMember({ pseudonymKey, displayName, roleIds, displayRole: "", status: "online", timeoutUntil: null }),
           ]);
         }
       }

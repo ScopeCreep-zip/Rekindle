@@ -8,6 +8,7 @@ import { communityState, setCommunityState } from "../stores/community.store";
 import { handleTypingIndicator, handleIncomingMessage, handleResetUnread } from "./chat.handlers";
 import { handleRefreshFriends } from "./buddy.handlers";
 import type { Message } from "../stores/chat.store";
+import { transformMessage, transformNewFriend } from "../utils/transformers";
 
 export function subscribeBuddyListChatEvents(): Promise<UnlistenFn> {
   return subscribeChatEvents((event) => {
@@ -61,20 +62,9 @@ export function subscribeBuddyListChatEvents(): Promise<UnlistenFn> {
         break;
       }
       case "friendAdded": {
-        const state = event.data.friendshipState === "accepted" ? "accepted" : "pendingOut";
-        setFriendsState("friends", event.data.publicKey, {
-          publicKey: event.data.publicKey,
-          displayName: event.data.displayName,
-          nickname: null,
-          status: "offline" as const,
-          statusMessage: null,
-          gameInfo: null,
-          group: "Friends",
-          unreadCount: 0,
-          lastSeenAt: null,
-          voiceChannel: null,
-          friendshipState: state as "pendingOut" | "accepted",
-        });
+        setFriendsState("friends", event.data.publicKey,
+          transformNewFriend(event.data.publicKey, event.data.displayName, event.data.friendshipState),
+        );
         break;
       }
       case "friendRequestRejected": {
@@ -176,15 +166,9 @@ export function subscribeCommunityChannelChatEvents(
       const existingKeys = new Set(
         existing.map((m) => `${m.timestamp}:${m.senderId}`),
       );
-      const newMsgs: Message[] = serverMsgs
+      const newMsgs = serverMsgs
         .filter((m) => !existingKeys.has(`${m.timestamp}:${m.senderId}`))
-        .map((m) => ({
-          id: m.id,
-          senderId: m.senderId,
-          body: m.body,
-          timestamp: m.timestamp,
-          isOwn: m.isOwn,
-        }));
+        .map(transformMessage);
       if (newMsgs.length > 0) {
         const merged = [...existing, ...newMsgs].sort(
           (a, b) => a.timestamp - b.timestamp,

@@ -3,6 +3,7 @@ import { setChatState, chatState } from "../stores/chat.store";
 import { authState } from "../stores/auth.store";
 import { friendsState, setFriendsState } from "../stores/friends.store";
 import type { Message } from "../stores/chat.store";
+import { transformMessages } from "../utils/transformers";
 
 export async function handleSendMessage(to: string, body: string): Promise<void> {
   const trimmed = body.trim();
@@ -124,13 +125,7 @@ export async function handleLoadHistory(
 ): Promise<void> {
   try {
     const messages = await commands.getMessageHistory(peerId, limit);
-    const mapped: Message[] = messages.map((m) => ({
-      id: m.id,
-      senderId: m.senderId,
-      body: m.body,
-      timestamp: m.timestamp,
-      isOwn: m.isOwn,
-    }));
+    const mapped = transformMessages(messages);
     const existing = chatState.conversations[peerId];
     if (mapped.length > 0 || !existing || existing.messages.length === 0) {
       setChatState("conversations", peerId, {
