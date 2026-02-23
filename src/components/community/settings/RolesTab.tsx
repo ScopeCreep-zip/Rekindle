@@ -3,6 +3,7 @@ import type { Community } from "../../../stores/community.store";
 import type { ConfirmOptions } from "../CommunitySettingsModal";
 import RoleTag from "../RoleTag";
 import PermissionCheckboxList from "./PermissionCheckboxList";
+import FormField from "../../common/FormField";
 import { colorIntToHex, hexToColorInt } from "../../../utils/color";
 import { togglePermBit } from "../../../ipc/permissions";
 import {
@@ -122,7 +123,7 @@ const RolesTab: Component<RolesTabProps> = (props) => {
               <div class="settings-role-actions">
                 <Show when={role.id > 1}>
                   <button
-                    class="settings-danger-btn"
+                    class="form-btn-danger"
                     onClick={(e) => { e.stopPropagation(); confirmDeleteRole(role.id, role.name); }}
                     title="Delete Role"
                   >
@@ -133,18 +134,16 @@ const RolesTab: Component<RolesTabProps> = (props) => {
             </div>
           }>
             <div class="settings-section" style={{ "padding-left": "8px", "border-left": "2px solid var(--color-xfire-accent)" }}>
-              <div class="settings-field">
-                <label class="settings-field-label">Name</label>
+              <FormField label="Name">
                 <input
-                  class="settings-input"
+                  class="form-input"
                   type="text"
                   value={editRoleName()}
                   onInput={(e) => setEditRoleName(e.currentTarget.value)}
                 />
-              </div>
-              <div class="settings-field">
-                <label class="settings-field-label">Color</label>
-                <div class="settings-field-row">
+              </FormField>
+              <FormField label="Color">
+                <div class="form-field-row">
                   <input
                     type="color"
                     value={editRoleColor()}
@@ -152,10 +151,9 @@ const RolesTab: Component<RolesTabProps> = (props) => {
                   />
                   <span class="settings-value">{editRoleColor()}</span>
                 </div>
-              </div>
-              <div class="settings-field">
-                <label class="settings-field-label">Options</label>
-                <div class="settings-field-row">
+              </FormField>
+              <FormField label="Options">
+                <div class="form-field-row">
                   <label class="settings-option">
                     <input
                       type="checkbox"
@@ -165,7 +163,7 @@ const RolesTab: Component<RolesTabProps> = (props) => {
                     Hoist (show separately in member list)
                   </label>
                 </div>
-                <div class="settings-field-row">
+                <div class="form-field-row">
                   <label class="settings-option">
                     <input
                       type="checkbox"
@@ -175,19 +173,18 @@ const RolesTab: Component<RolesTabProps> = (props) => {
                     Mentionable
                   </label>
                 </div>
-              </div>
-              <div class="settings-field">
-                <label class="settings-field-label">Permissions</label>
+              </FormField>
+              <FormField label="Permissions">
                 <PermissionCheckboxList
                   permissions={editRolePerms()}
                   onToggle={(bit) => setEditRolePerms(togglePermBit(editRolePerms(), bit))}
                 />
-              </div>
-              <div class="settings-field-row">
-                <button class="settings-save-btn" onClick={handleSaveEditRole}>
+              </FormField>
+              <div class="form-field-row">
+                <button class="form-btn-save" onClick={handleSaveEditRole}>
                   <span class="nf-icon">{ICON_SAVE}</span> Save
                 </button>
-                <button class="settings-action-btn" onClick={() => setEditingRoleId(null)}>
+                <button class="form-btn-secondary" onClick={() => setEditingRoleId(null)}>
                   <span class="nf-icon">{ICON_CLOSE}</span> Cancel
                 </button>
               </div>
@@ -197,26 +194,24 @@ const RolesTab: Component<RolesTabProps> = (props) => {
       </For>
       <Show when={showNewRole()} fallback={
         <button
-          class="settings-action-btn"
+          class="form-btn-secondary"
           onClick={() => setShowNewRole(true)}
         >
           <span class="nf-icon">{ICON_PLUS_BOX}</span> Create Role
         </button>
       }>
         <div class="settings-section" style={{ "padding-left": "8px", "border-left": "2px solid var(--color-xfire-online)" }}>
-          <div class="settings-field">
-            <label class="settings-field-label">Name</label>
+          <FormField label="Name">
             <input
-              class="settings-input"
+              class="form-input"
               type="text"
               placeholder="Role name..."
               value={newRoleName()}
               onInput={(e) => setNewRoleName(e.currentTarget.value)}
             />
-          </div>
-          <div class="settings-field">
-            <label class="settings-field-label">Color</label>
-            <div class="settings-field-row">
+          </FormField>
+          <FormField label="Color">
+            <div class="form-field-row">
               <input
                 type="color"
                 value={newRoleColor()}
@@ -224,10 +219,9 @@ const RolesTab: Component<RolesTabProps> = (props) => {
               />
               <span class="settings-value">{newRoleColor()}</span>
             </div>
-          </div>
-          <div class="settings-field">
-            <label class="settings-field-label">Options</label>
-            <div class="settings-field-row">
+          </FormField>
+          <FormField label="Options">
+            <div class="form-field-row">
               <label class="settings-option">
                 <input
                   type="checkbox"
@@ -237,7 +231,7 @@ const RolesTab: Component<RolesTabProps> = (props) => {
                 Hoist (show separately)
               </label>
             </div>
-            <div class="settings-field-row">
+            <div class="form-field-row">
               <label class="settings-option">
                 <input
                   type="checkbox"
@@ -247,24 +241,23 @@ const RolesTab: Component<RolesTabProps> = (props) => {
                 Mentionable
               </label>
             </div>
-          </div>
-          <div class="settings-field">
-            <label class="settings-field-label">Permissions</label>
+          </FormField>
+          <FormField label="Permissions">
             <PermissionCheckboxList
               permissions={newRolePerms()}
               onToggle={(bit) => setNewRolePerms(togglePermBit(newRolePerms(), bit))}
             />
-          </div>
-          <div class="settings-field-row">
+          </FormField>
+          <div class="form-field-row">
             <button
-              class="settings-save-btn"
+              class="form-btn-save"
               onClick={handleCreateNewRole}
               disabled={!newRoleName().trim() || creatingRole()}
             >
               <span class="nf-icon">{ICON_SAVE}</span> {creatingRole() ? "Creating..." : "Create"}
             </button>
             <button
-              class="settings-action-btn"
+              class="form-btn-secondary"
               onClick={() => setShowNewRole(false)}
             >
               <span class="nf-icon">{ICON_CLOSE}</span> Cancel

@@ -75,11 +75,11 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
 
   return (
     <Modal isOpen={props.isOpen} title="Community Settings" onClose={props.onClose} size="lg">
-      <div class="settings-tabs">
+      <div class="form-tabs">
         <For each={tabs()}>
           {(tab) => (
             <button
-              class={`settings-tab ${activeTab() === tab.id ? "settings-tab-active" : ""}`}
+              class={`form-tab ${activeTab() === tab.id ? "form-tab-active" : ""}`}
               onClick={() => setActiveTab(tab.id)}
             >
               {tab.label}

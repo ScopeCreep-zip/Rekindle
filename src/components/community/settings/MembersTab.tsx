@@ -96,7 +96,7 @@ const MembersTab: Component<MembersTabProps> = (props) => {
               <div class="settings-member-actions">
                 <Show when={props.canManageRoles}>
                   <button
-                    class="settings-action-btn"
+                    class="form-btn-secondary"
                     onClick={() => setRolePickerTarget(
                       rolePickerTarget() === member.pseudonymKey ? null : member.pseudonymKey
                     )}
@@ -107,7 +107,7 @@ const MembersTab: Component<MembersTabProps> = (props) => {
                 <Show when={props.canModerate}>
                   <Show when={!member.timeoutUntil} fallback={
                     <button
-                      class="settings-action-btn"
+                      class="form-btn-secondary"
                       onClick={() => handleRemoveTimeout(props.community.id, member.pseudonymKey)}
                     >
                       <span class="nf-icon">{ICON_TIMEOUT}</span> Untimeout
@@ -135,7 +135,7 @@ const MembersTab: Component<MembersTabProps> = (props) => {
                 </Show>
                 <Show when={props.canKick}>
                   <button
-                    class="settings-action-btn"
+                    class="form-btn-secondary"
                     onClick={() => confirmKick(member)}
                   >
                     <span class="nf-icon">{ICON_ACCOUNT_REMOVE}</span> Kick
@@ -143,7 +143,7 @@ const MembersTab: Component<MembersTabProps> = (props) => {
                 </Show>
                 <Show when={props.canBan}>
                   <button
-                    class="settings-danger-btn"
+                    class="form-btn-danger"
                     onClick={() => confirmBan(member)}
                   >
                     <span class="nf-icon">{ICON_BAN}</span> Ban

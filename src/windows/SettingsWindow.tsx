@@ -2,6 +2,7 @@ import { Component, createSignal, createEffect, For, Show, onMount, onCleanup } 
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import Titlebar from "../components/titlebar/Titlebar";
 import Avatar from "../components/common/Avatar";
+import FormField from "../components/common/FormField";
 import { settingsState } from "../stores/settings.store";
 import { authState, setAuthState } from "../stores/auth.store";
 import {
@@ -139,32 +140,32 @@ const SettingsWindow: Component = () => {
           <span class="avatar-upload-hint">PNG, JPEG, or GIF (max 256KB)</span>
         </div>
         <div class="settings-section-title">Display Name</div>
-        <div class="settings-field">
-          <div class="settings-field-row">
+        <FormField>
+          <div class="form-field-row">
             <input
-              class="settings-input"
+              class="form-input"
               type="text"
               value={nameInput()}
               onInput={(e: InputEvent) => setNameInput((e.target as HTMLInputElement).value)}
               onKeyDown={(e: KeyboardEvent) => { if (e.key === "Enter") handleSaveName(); }}
             />
-            <button class="settings-save-btn" onClick={handleSaveName}>Save</button>
+            <button class="form-btn-save" onClick={handleSaveName}>Save</button>
           </div>
-        </div>
+        </FormField>
         <div class="settings-section-title">Status Message</div>
-        <div class="settings-field">
-          <div class="settings-field-row">
+        <FormField>
+          <div class="form-field-row">
             <input
-              class="settings-input"
+              class="form-input"
               type="text"
               placeholder="What's on your mind?"
               value={statusMsgInput()}
               onInput={(e: InputEvent) => setStatusMsgInput((e.target as HTMLInputElement).value)}
               onKeyDown={(e: KeyboardEvent) => { if (e.key === "Enter") handleSaveStatusMessage(); }}
             />
-            <button class="settings-save-btn" onClick={handleSaveStatusMessage}>Save</button>
+            <button class="form-btn-save" onClick={handleSaveStatusMessage}>Save</button>
           </div>
-        </div>
+        </FormField>
       </>
     );
   }
@@ -199,10 +200,9 @@ const SettingsWindow: Component = () => {
           <span class="buddy-name">Show Game Activity</span>
         </label>
         <div class="settings-section-title">Auto-Away</div>
-        <div class="settings-field">
-          <label class="settings-field-label">Go away after inactivity</label>
+        <FormField label="Go away after inactivity">
           <select
-            class="settings-select"
+            class="form-select"
             value={settingsState.autoAwayMinutes}
             onChange={(e) =>
               handleSaveSettings({ autoAwayMinutes: parseInt(e.currentTarget.value) })
@@ -215,7 +215,7 @@ const SettingsWindow: Component = () => {
             <option value={30}>30 minutes</option>
             <option value={60}>1 hour</option>
           </select>
-        </div>
+        </FormField>
       </>
     );
   }
@@ -248,18 +248,16 @@ const SettingsWindow: Component = () => {
     return (
       <>
         <div class="settings-section-title">Audio Devices</div>
-        <div class="settings-field">
-          <label class="settings-field-label">Input Device</label>
-          <select class="settings-select" disabled>
+        <FormField label="Input Device">
+          <select class="form-select" disabled>
             <option>Default Microphone</option>
           </select>
-        </div>
-        <div class="settings-field">
-          <label class="settings-field-label">Output Device</label>
-          <select class="settings-select" disabled>
+        </FormField>
+        <FormField label="Output Device">
+          <select class="form-select" disabled>
             <option>Default Speakers</option>
           </select>
-        </div>
+        </FormField>
         <div class="settings-hint">Audio device selection requires voice to be connected.</div>
       </>
     );
@@ -278,14 +276,13 @@ const SettingsWindow: Component = () => {
     return (
       <>
         <div class="settings-section-title">Privacy</div>
-        <div class="settings-field">
-          <label class="settings-field-label">Public Key</label>
+        <FormField label="Public Key">
           <div class="profile-key-display">{authState.publicKey ?? "Not logged in"}</div>
-        </div>
+        </FormField>
         <div class="settings-section-title">Identity</div>
-        <div class="settings-field-row">
-          <button class="settings-action-btn" disabled>Export Identity</button>
-          <button class="settings-action-btn" disabled>Import Identity</button>
+        <div class="form-field-row">
+          <button class="form-btn-secondary" disabled>Export Identity</button>
+          <button class="form-btn-secondary" disabled>Import Identity</button>
         </div>
         <div class="settings-hint">Identity export/import requires Stronghold integration.</div>
         <div class="settings-section-title">Blocked Users</div>
@@ -296,7 +293,7 @@ const SettingsWindow: Component = () => {
             {(user) => (
               <div class="blocked-user-item">
                 <span class="buddy-name">{user.displayName || user.publicKey.slice(0, 12) + "..."}</span>
-                <button class="settings-action-btn" onClick={() => handleUnblock(user.publicKey)}>
+                <button class="form-btn-secondary" onClick={() => handleUnblock(user.publicKey)}>
                   Unblock
                 </button>
               </div>
@@ -316,21 +313,21 @@ const SettingsWindow: Component = () => {
           rebuilt with modern technology for the decentralized era.
         </div>
         <div class="settings-about-row">
-          <span class="settings-field-label">Version</span>
+          <span class="form-field-label">Version</span>
           <span class="settings-about-value">0.1.0-dev</span>
         </div>
         <div class="settings-about-row">
-          <span class="settings-field-label">Stack</span>
+          <span class="form-field-label">Stack</span>
           <span class="settings-about-value">Tauri 2 + SolidJS + Veilid</span>
         </div>
         <div class="settings-about-row">
-          <span class="settings-field-label">License</span>
+          <span class="form-field-label">License</span>
           <span class="settings-about-value">MIT</span>
         </div>
         <div class="settings-section-title">Updates</div>
         <div class="update-check-row">
           <button
-            class="settings-action-btn"
+            class="form-btn-secondary"
             onClick={handleCheckUpdates}
             disabled={checkingUpdates()}
           >
@@ -351,11 +348,11 @@ const SettingsWindow: Component = () => {
   return (
     <div class="app-frame">
       <Titlebar title="Settings" />
-      <div class="settings-tabs">
+      <div class="form-tabs">
         <For each={TAB_LABELS}>
           {(tab) => (
             <button
-              class={`settings-tab ${activeTab() === tab.id ? "settings-tab-active" : ""}`}
+              class={`form-tab ${activeTab() === tab.id ? "form-tab-active" : ""}`}
               onClick={() => setActiveTab(tab.id)}
             >
               {tab.label}
