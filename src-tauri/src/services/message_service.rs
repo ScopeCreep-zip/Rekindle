@@ -36,118 +36,49 @@ struct IncomingFriendAccept<'a> {
     one_time_prekey_id: Option<u32>,
 }
 
+/// Result of parsing, decrypting, and validating an incoming Veilid message.
+struct PreparedMessage {
+    sender_hex: String,
+    payload: MessagePayload,
+    timestamp: i64,
+}
+
 /// Handle an incoming message from the Veilid network.
 ///
 /// Flow: parse envelope → verify signature → decrypt if session exists →
 /// parse payload → dispatch by type (DM, friend request, typing, etc.)
-#[allow(clippy::too_many_lines)]
 pub async fn handle_incoming_message(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     pool: &DbPool,
     raw_message: &[u8],
 ) {
-    // Step 1: Parse and verify envelope signature
-    let envelope = match process_incoming(raw_message) {
-        Ok(env) => env,
-        Err(e) => {
-            tracing::error!(error = %e, "failed to parse/verify incoming message envelope");
-            return;
-        }
-    };
-
-    let sender_hex = hex::encode(&envelope.sender_key);
-    tracing::debug!(from = %sender_hex, payload_len = envelope.payload.len(), "processing verified envelope");
-
-    // Block list filtering
-    if is_blocked(state, pool, &sender_hex).await {
-        tracing::debug!(from = %sender_hex, "dropping message from blocked user");
+    let Some(msg) = prepare_incoming(app_handle, state, pool, raw_message).await else {
         return;
-    }
-
-    // Step 2: Decrypt payload — try plaintext JSON first, then Signal decrypt.
-    // This avoids mangling payloads that were sent unencrypted (friend requests,
-    // accepts, messages sent before a session was established).
-    let payload_bytes = if serde_json::from_slice::<serde_json::Value>(&envelope.payload).is_ok() {
-        // Already valid JSON — use as-is (plaintext or unencrypted message)
-        envelope.payload.clone()
-    } else {
-        // Not valid JSON — must be Signal-encrypted ciphertext
-        let signal = state.signal_manager.lock();
-        if let Some(handle) = signal.as_ref() {
-            match handle.manager.decrypt(&sender_hex, &envelope.payload) {
-                Ok(pt) => pt,
-                Err(e) => {
-                    tracing::warn!(
-                        error = %e, from = %sender_hex,
-                        payload_len = envelope.payload.len(),
-                        "encrypted message could not be decrypted"
-                    );
-                    // Notify the frontend so the user knows a message was lost
-                    let display_name = state_helpers::friend_display_name(state, &sender_hex);
-                    let from_label = display_name.unwrap_or_else(|| {
-                        format!("{}...", &sender_hex[..8.min(sender_hex.len())])
-                    });
-                    let _ = app_handle.emit(
-                        "notification-event",
-                        &crate::channels::NotificationEvent::SystemAlert {
-                            title: "Message Decrypt Failed".to_string(),
-                            body: format!(
-                                "A message from {from_label} could not be decrypted. \
-                                 They may need to re-establish their session."
-                            ),
-                        },
-                    );
-                    return;
-                }
-            }
-        } else {
-            tracing::warn!(from = %sender_hex, "received non-JSON payload but no signal manager");
-            return;
-        }
     };
 
-    // Step 3: Deserialize the payload into a structured MessagePayload
-    let payload = match parse_payload(&payload_bytes) {
-        Ok(p) => p,
-        Err(e) => {
-            tracing::error!(error = %e, from = %sender_hex, "failed to parse message payload");
-            return;
-        }
-    };
-
-    // Non-friend filtering: only protocol-level messages allowed from non-friends.
-    // Unfriended/FriendReject must pass so delayed deliveries still work even if
-    // the sender was already removed from our friends list by some other path.
-    if !matches!(
-        payload,
-        MessagePayload::FriendRequest { .. }
-            | MessagePayload::FriendRequestReceived
-            | MessagePayload::Unfriended
-            | MessagePayload::UnfriendedAck
-            | MessagePayload::FriendReject
-    ) && !state_helpers::is_friend(state, &sender_hex)
-    {
-        tracing::debug!(from = %sender_hex, "dropping message from non-friend");
-        return;
-    }
-
-    // Step 4: Dispatch by payload type
-    let ts: i64 = envelope.timestamp.try_into().unwrap_or(i64::MAX);
-    match payload {
+    match msg.payload {
         MessagePayload::DirectMessage { body, .. } => {
-            handle_direct_message(app_handle, state, pool, &sender_hex, &body, ts);
+            handle_direct_message(app_handle, state, pool, &msg.sender_hex, &body, msg.timestamp);
         }
         MessagePayload::ChannelMessage {
             channel_id, body, ..
         } => {
-            handle_channel_message(app_handle, state, pool, &sender_hex, &channel_id, &body, ts);
+            handle_channel_message(
+                app_handle,
+                state,
+                pool,
+                &msg.sender_hex,
+                &channel_id,
+                &body,
+                msg.timestamp,
+            );
         }
         MessagePayload::TypingIndicator { typing } => {
             let _ = app_handle.emit(
                 "chat-event",
                 &ChatEvent::TypingIndicator {
-                    from: sender_hex,
+                    from: msg.sender_hex,
                     typing,
                 },
             );
@@ -162,7 +93,7 @@ pub async fn handle_incoming_message(
             invite_id,
         } => {
             let req = IncomingFriendRequest {
-                sender_hex: &sender_hex,
+                sender_hex: &msg.sender_hex,
                 display_name: &display_name,
                 message: &message,
                 prekey_bundle: &prekey_bundle,
@@ -183,7 +114,7 @@ pub async fn handle_incoming_message(
             one_time_prekey_id,
         } => {
             let accept = IncomingFriendAccept {
-                sender_hex: &sender_hex,
+                sender_hex: &msg.sender_hex,
                 prekey_bundle: &prekey_bundle,
                 profile_dht_key: &profile_dht_key,
                 route_blob,
@@ -195,26 +126,131 @@ pub async fn handle_incoming_message(
             handle_friend_accept_full(app_handle, state, pool, &accept).await;
         }
         MessagePayload::FriendReject => {
-            handle_friend_reject(app_handle, state, pool, &sender_hex);
+            handle_friend_reject(app_handle, state, pool, &msg.sender_hex);
         }
         MessagePayload::FriendRequestReceived => {
             let _ = app_handle.emit(
                 "chat-event",
-                &ChatEvent::FriendRequestDelivered { to: sender_hex },
+                &ChatEvent::FriendRequestDelivered {
+                    to: msg.sender_hex,
+                },
             );
         }
         MessagePayload::ProfileKeyRotated {
             new_profile_dht_key,
         } => {
-            handle_profile_key_rotated(state, pool, &sender_hex, &new_profile_dht_key).await;
+            handle_profile_key_rotated(state, pool, &msg.sender_hex, &new_profile_dht_key).await;
         }
         MessagePayload::PresenceUpdate { .. } => {}
         MessagePayload::Unfriended => {
-            handle_unfriended(app_handle, state, pool, &sender_hex).await;
+            handle_unfriended(app_handle, state, pool, &msg.sender_hex).await;
         }
         MessagePayload::UnfriendedAck => {
-            handle_unfriended_ack(state, pool, &sender_hex);
+            handle_unfriended_ack(state, pool, &msg.sender_hex);
         }
+    }
+}
+
+/// Parse envelope, check block list, decrypt, deserialize payload, and filter non-friends.
+///
+/// Returns `None` (with appropriate logging) for any rejection reason.
+async fn prepare_incoming(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    pool: &DbPool,
+    raw_message: &[u8],
+) -> Option<PreparedMessage> {
+    let envelope = match process_incoming(raw_message) {
+        Ok(env) => env,
+        Err(e) => {
+            tracing::error!(error = %e, "failed to parse/verify incoming message envelope");
+            return None;
+        }
+    };
+
+    let sender_hex = hex::encode(&envelope.sender_key);
+    tracing::debug!(from = %sender_hex, payload_len = envelope.payload.len(), "processing verified envelope");
+
+    if is_blocked(state, pool, &sender_hex).await {
+        tracing::debug!(from = %sender_hex, "dropping message from blocked user");
+        return None;
+    }
+
+    let payload_bytes = decrypt_payload(state, app_handle, &sender_hex, &envelope.payload)?;
+
+    let payload = match parse_payload(&payload_bytes) {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::error!(error = %e, from = %sender_hex, "failed to parse message payload");
+            return None;
+        }
+    };
+
+    if !matches!(
+        payload,
+        MessagePayload::FriendRequest { .. }
+            | MessagePayload::FriendRequestReceived
+            | MessagePayload::Unfriended
+            | MessagePayload::UnfriendedAck
+            | MessagePayload::FriendReject
+    ) && !state_helpers::is_friend(state, &sender_hex)
+    {
+        tracing::debug!(from = %sender_hex, "dropping message from non-friend");
+        return None;
+    }
+
+    let ts: i64 = envelope.timestamp.try_into().unwrap_or(i64::MAX);
+    Some(PreparedMessage {
+        sender_hex,
+        payload,
+        timestamp: ts,
+    })
+}
+
+/// Attempt Signal decryption; pass through if already valid JSON (plaintext).
+///
+/// Returns `None` on decrypt failure (after emitting a notification to the frontend)
+/// or if no Signal manager is available for a non-JSON payload.
+fn decrypt_payload(
+    state: &Arc<AppState>,
+    app_handle: &tauri::AppHandle,
+    sender_hex: &str,
+    raw_payload: &[u8],
+) -> Option<Vec<u8>> {
+    if serde_json::from_slice::<serde_json::Value>(raw_payload).is_ok() {
+        return Some(raw_payload.to_vec());
+    }
+
+    let signal = state.signal_manager.lock();
+    if let Some(handle) = signal.as_ref() {
+        match handle.manager.decrypt(sender_hex, raw_payload) {
+            Ok(pt) => Some(pt),
+            Err(e) => {
+                tracing::warn!(
+                    error = %e, from = %sender_hex,
+                    payload_len = raw_payload.len(),
+                    "encrypted message could not be decrypted"
+                );
+                let display_name = state_helpers::friend_display_name(state, sender_hex);
+                let from_label = display_name.unwrap_or_else(|| {
+                    format!("{}...", &sender_hex[..8.min(sender_hex.len())])
+                });
+                let _ = app_handle.emit(
+                    "notification-event",
+                    &crate::channels::NotificationEvent::SystemAlert {
+                        title: "Message Decrypt Failed".to_string(),
+                        body: format!(
+                            "A message from {from_label} could not be decrypted. \
+                             They may need to re-establish their session."
+                        ),
+                    },
+                );
+                None
+            }
+        }
+    } else {
+        tracing::warn!(from = %sender_hex, "received non-JSON payload but no signal manager");
+        None
     }
 }
 
