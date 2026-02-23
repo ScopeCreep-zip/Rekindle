@@ -4,8 +4,6 @@ import { buddyListUI } from "../../stores/buddylist-ui.store";
 import type { Friend } from "../../stores/friends.store";
 import {
   handleDoubleClickFriend,
-  handleContextMenuFriend,
-  handleCloseContextMenu,
   handleRemoveFriend,
   handleCancelRequest,
   handleCreateFriendGroup,
@@ -17,6 +15,7 @@ import BuddyGroup from "./BuddyGroup";
 import ScrollArea from "../common/ScrollArea";
 import ContextMenu from "../common/ContextMenu";
 import type { ContextMenuItem } from "../common/ContextMenu";
+import { createContextMenu } from "../../hooks/createContextMenu";
 
 function matchesSearch(friend: Friend, query: string): boolean {
   const q = query.toLowerCase();
@@ -30,6 +29,7 @@ const BuddyList: Component = () => {
   const [showGroupSubmenu, setShowGroupSubmenu] = createSignal(false);
   const [creatingGroup, setCreatingGroup] = createSignal(false);
   const [newGroupName, setNewGroupName] = createSignal("");
+  const menu = createContextMenu<string>();
 
   const groupedFriends = createMemo(() => {
     const query = buddyListUI.searchQuery.trim();
@@ -73,20 +73,20 @@ const BuddyList: Component = () => {
 
   function handleCtxMenu(e: MouseEvent, publicKey: string): void {
     setSelectedKey(publicKey);
-    handleContextMenuFriend(e, publicKey);
+    menu.open(e, publicKey);
     setShowGroupSubmenu(false);
     setCreatingGroup(false);
   }
 
   function handleCloseAllMenus(): void {
-    handleCloseContextMenu();
+    menu.close();
     setShowGroupSubmenu(false);
     setCreatingGroup(false);
     setNewGroupName("");
   }
 
   function contextMenuItems(): ContextMenuItem[] {
-    const key = friendsState.contextMenu?.publicKey;
+    const key = menu.state()?.data;
     if (!key) return [];
     const friend = friendsState.friends[key];
     const name = friend?.displayName ?? key.slice(0, 12);
@@ -144,7 +144,7 @@ const BuddyList: Component = () => {
   }
 
   async function handleMoveToExistingGroup(groupName: string): Promise<void> {
-    const key = friendsState.contextMenu?.publicKey;
+    const key = menu.state()?.data;
     if (!key) return;
     // We pass null for the default group or create/reuse groups.
     // The backend expects a group ID but our friends store only tracks group name.
@@ -161,7 +161,7 @@ const BuddyList: Component = () => {
   }
 
   async function handleCreateAndMoveToGroup(): Promise<void> {
-    const key = friendsState.contextMenu?.publicKey;
+    const key = menu.state()?.data;
     const name = newGroupName().trim();
     if (!key || !name) return;
     const groupId = await handleCreateFriendGroup(name);
@@ -197,14 +197,14 @@ const BuddyList: Component = () => {
           </For>
         </Show>
       </Show>
-      <Show when={friendsState.contextMenu}>
-        {(menu) => (
+      <Show when={menu.state()}>
+        {(pos) => (
           <>
             <Show when={!showGroupSubmenu()}>
               <ContextMenu
                 items={contextMenuItems()}
-                x={menu().x}
-                y={menu().y}
+                x={pos().x}
+                y={pos().y}
                 onClose={handleCloseAllMenus}
               />
             </Show>
@@ -212,8 +212,8 @@ const BuddyList: Component = () => {
               <div
                 class="context-menu"
                 style={{
-                  left: `${menu().x}px`,
-                  top: `${menu().y}px`,
+                  left: `${pos().x}px`,
+                  top: `${pos().y}px`,
                 }}
               >
                 <div class="context-menu-header">Move to Group</div>

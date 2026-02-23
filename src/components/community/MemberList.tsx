@@ -11,6 +11,7 @@ import {
   ICON_BAN,
   ICON_CHECK,
 } from "../../icons";
+import { createContextMenu } from "../../hooks/createContextMenu";
 import {
   handleRemoveCommunityMember,
   handleBanMember,
@@ -38,11 +39,7 @@ interface MemberListProps {
 }
 
 const MemberList: Component<MemberListProps> = (props) => {
-  const [contextMenu, setContextMenu] = createSignal<{
-    x: number;
-    y: number;
-    member: Member;
-  } | null>(null);
+  const menu = createContextMenu<Member>();
 
   const [rolePickerTarget, setRolePickerTarget] = createSignal<{
     x: number;
@@ -66,22 +63,21 @@ const MemberList: Component<MemberListProps> = (props) => {
   }
 
   function handleMemberContextMenu(e: MouseEvent, member: Member): void {
-    e.preventDefault();
     if (member.pseudonymKey === props.myPseudonymKey) return;
     if (!canManage(member)) return;
-    setContextMenu({ x: e.clientX, y: e.clientY, member });
+    menu.open(e, member);
     setRolePickerTarget(null);
   }
 
   function handleCloseContextMenu(): void {
-    setContextMenu(null);
+    menu.close();
     setRolePickerTarget(null);
   }
 
   function contextMenuItems(): ContextMenuItem[] {
-    const ctx = contextMenu();
+    const ctx = menu.state();
     if (!ctx) return [];
-    const member = ctx.member;
+    const member = ctx.data;
     const perms = myPerms();
     const items: ContextMenuItem[] = [];
 
@@ -91,7 +87,7 @@ const MemberList: Component<MemberListProps> = (props) => {
         icon: ICON_SHIELD,
         action: () => {
           setRolePickerTarget({ x: ctx.x, y: ctx.y + 30, member });
-          setContextMenu(null);
+          menu.close();
         },
       });
     }
@@ -229,12 +225,12 @@ const MemberList: Component<MemberListProps> = (props) => {
           </>
         )}
       </For>
-      <Show when={contextMenu()}>
-        {(menu) => (
+      <Show when={menu.state()}>
+        {(pos) => (
           <ContextMenu
             items={contextMenuItems()}
-            x={menu().x}
-            y={menu().y}
+            x={pos().x}
+            y={pos().y}
             onClose={handleCloseContextMenu}
           />
         )}
