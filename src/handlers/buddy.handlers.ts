@@ -13,18 +13,6 @@ export function handleDoubleClickFriend(
   commands.openChatWindow(publicKey, displayName);
 }
 
-export function handleContextMenuFriend(
-  e: MouseEvent,
-  publicKey: string,
-): void {
-  e.preventDefault();
-  setFriendsState("contextMenu", { x: e.clientX, y: e.clientY, publicKey });
-}
-
-export function handleCloseContextMenu(): void {
-  setFriendsState("contextMenu", null);
-}
-
 export async function handleRemoveFriend(publicKey: string): Promise<void> {
   try {
     await commands.removeFriend(publicKey);

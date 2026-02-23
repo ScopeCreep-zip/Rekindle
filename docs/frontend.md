@@ -161,7 +161,6 @@ AuthState {
 FriendsState {
     friends: Record<publicKey, Friend>
     pendingRequests: PendingRequest[]
-    contextMenu: ContextMenuState | null
     showAddFriend: boolean
     showNewChat: boolean
 }

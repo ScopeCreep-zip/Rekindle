@@ -1,4 +1,4 @@
-import { Component, For, Show, createMemo, createSignal } from "solid-js";
+import { Component, For, Show, createMemo } from "solid-js";
 import { Channel } from "../../stores/community.store";
 import ContextMenu from "../common/ContextMenu";
 import type { ContextMenuItem } from "../common/ContextMenu";
@@ -9,6 +9,7 @@ import {
   ICON_PENCIL,
   ICON_DELETE,
 } from "../../icons";
+import { createContextMenu } from "../../hooks/createContextMenu";
 
 interface ChannelListProps {
   channels: Channel[];
@@ -30,34 +31,29 @@ const ChannelList: Component<ChannelListProps> = (props) => {
     props.channels.filter((c) => c.type === "voice")
   );
 
-  const [contextMenu, setContextMenu] = createSignal<{
-    x: number;
-    y: number;
-    channel: Channel;
-  } | null>(null);
+  const menu = createContextMenu<Channel>();
 
   function handleContextMenu(e: MouseEvent, channel: Channel): void {
-    e.preventDefault();
     if (!props.canManage) return;
-    setContextMenu({ x: e.clientX, y: e.clientY, channel });
+    menu.open(e, channel);
   }
 
   function contextMenuItems(): ContextMenuItem[] {
-    const ctx = contextMenu();
+    const ctx = menu.state();
     if (!ctx) return [];
     return [
       {
         label: "Rename Channel",
         icon: ICON_PENCIL,
         action: () => {
-          props.onRename?.(ctx.channel.id, ctx.channel.name);
+          props.onRename?.(ctx.data.id, ctx.data.name);
         },
       },
       {
         label: "Delete Channel",
         icon: ICON_DELETE,
         action: () => {
-          props.onDelete?.(ctx.channel.id);
+          props.onDelete?.(ctx.data.id);
         },
         danger: true,
       },
@@ -111,13 +107,13 @@ const ChannelList: Component<ChannelListProps> = (props) => {
         </>
       )}
 
-      <Show when={contextMenu()}>
-        {(menu) => (
+      <Show when={menu.state()}>
+        {(pos) => (
           <ContextMenu
             items={contextMenuItems()}
-            x={menu().x}
-            y={menu().y}
-            onClose={() => setContextMenu(null)}
+            x={pos().x}
+            y={pos().y}
+            onClose={menu.close}
           />
         )}
       </Show>
