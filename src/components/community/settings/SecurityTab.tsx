@@ -3,6 +3,7 @@ import type { Community } from "../../../stores/community.store";
 import type { ConfirmOptions } from "../CommunitySettingsModal";
 import { handleRotateMek } from "../../../handlers/community.handlers";
 import { ICON_KEY } from "../../../icons";
+import FormField from "../../common/FormField";
 
 interface SecurityTabProps {
   community: Community;
@@ -21,27 +22,24 @@ const SecurityTab: Component<SecurityTabProps> = (props) => {
 
   return (
     <div class="settings-section">
-      <div class="settings-field">
-        <label class="settings-field-label">MEK Generation</label>
+      <FormField label="MEK Generation">
         <div class="settings-value">{props.community.mekGeneration}</div>
-      </div>
-      <div class="settings-field">
-        <label class="settings-field-label">Encryption Key Rotation</label>
+      </FormField>
+      <FormField label="Encryption Key Rotation">
         <div class="settings-hint">
           Rotating the encryption key generates a new Media Encryption Key (MEK).
           All members will automatically receive the new key. Messages encrypted
           with previous keys remain readable.
         </div>
-        <button class="settings-danger-btn" onClick={confirmRotateKey}>
+        <button class="form-btn-danger" onClick={confirmRotateKey}>
           <span class="nf-icon">{ICON_KEY}</span> Rotate Encryption Key
         </button>
-      </div>
-      <div class="settings-field">
-        <label class="settings-field-label">Server Status</label>
+      </FormField>
+      <FormField label="Server Status">
         <div class="settings-value">
           {props.community.isHosted ? "Hosted by you" : "Remote server"}
         </div>
-      </div>
+      </FormField>
     </div>
   );
 };

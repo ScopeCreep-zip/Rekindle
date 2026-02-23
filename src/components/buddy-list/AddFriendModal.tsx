@@ -39,16 +39,16 @@ const AddFriendModal: Component = () => {
       title="Add Friend"
       onClose={handleClose}
     >
-      <div class="add-friend-tabs">
+      <div class="form-tabs-equal">
         <button
-          class="add-friend-tab"
+          class="form-tab"
           classList={{ active: tab() === "invite" }}
           onClick={() => setTab("invite")}
         >
           Invite Link
         </button>
         <button
-          class="add-friend-tab"
+          class="form-tab"
           classList={{ active: tab() === "key" }}
           onClick={() => setTab("key")}
         >

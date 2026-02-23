@@ -139,7 +139,7 @@ const ChannelsTab: Component<ChannelsTabProps> = (props) => {
                 <span class="channel-manage-name">{channel.name}</span>
               }>
                 <input
-                  class="settings-input channel-rename-input"
+                  class="form-input channel-rename-input"
                   type="text"
                   value={renameValue()}
                   onInput={(e) => setRenameValue(e.currentTarget.value)}
@@ -153,7 +153,7 @@ const ChannelsTab: Component<ChannelsTabProps> = (props) => {
               <Show when={props.canManageChannels}>
                 <Show when={renamingChannelId() !== channel.id}>
                   <button
-                    class="settings-action-btn channel-manage-btn"
+                    class="form-btn-secondary channel-manage-btn"
                     onClick={() => startRename(channel)}
                     title="Rename"
                   >
@@ -162,7 +162,7 @@ const ChannelsTab: Component<ChannelsTabProps> = (props) => {
                 </Show>
                 <Show when={renamingChannelId() === channel.id}>
                   <button
-                    class="settings-save-btn channel-manage-btn"
+                    class="form-btn-save channel-manage-btn"
                     onClick={() => submitRename(channel.id)}
                     title="Save"
                   >
@@ -170,14 +170,14 @@ const ChannelsTab: Component<ChannelsTabProps> = (props) => {
                   </button>
                 </Show>
                 <button
-                  class="settings-danger-btn channel-manage-btn"
+                  class="form-btn-danger channel-manage-btn"
                   onClick={() => confirmDeleteChannel(channel)}
                   title="Delete"
                 >
                   <span class="nf-icon">{ICON_DELETE}</span>
                 </button>
                 <button
-                  class="settings-action-btn channel-manage-btn"
+                  class="form-btn-secondary channel-manage-btn"
                   onClick={() => {
                     const next = overwriteChannelId() === channel.id ? null : channel.id;
                     setOverwriteChannelId(next);
@@ -193,9 +193,9 @@ const ChannelsTab: Component<ChannelsTabProps> = (props) => {
             </div>
             <Show when={overwriteChannelId() === channel.id && props.canManageChannels}>
               <div class="overwrite-editor">
-                <div class="settings-field-row">
+                <div class="form-field-row">
                   <select
-                    class="settings-select"
+                    class="form-select"
                     value={overwriteTargetType()}
                     onChange={(e) => {
                       setOverwriteTargetType(e.currentTarget.value);
@@ -205,7 +205,7 @@ const ChannelsTab: Component<ChannelsTabProps> = (props) => {
                     <option value="role">Role</option>
                   </select>
                   <select
-                    class="settings-select"
+                    class="form-select"
                     value={overwriteTargetId()}
                     onChange={(e) => setOverwriteTargetId(e.currentTarget.value)}
                   >
@@ -256,11 +256,11 @@ const ChannelsTab: Component<ChannelsTabProps> = (props) => {
                       )}
                     </For>
                   </div>
-                  <div class="settings-field-row">
-                    <button class="settings-save-btn" onClick={handleSaveOverwrite}>
+                  <div class="form-field-row">
+                    <button class="form-btn-save" onClick={handleSaveOverwrite}>
                       <span class="nf-icon">{ICON_SAVE}</span> Save Overwrite
                     </button>
-                    <button class="settings-danger-btn" onClick={handleDeleteOverwrite}>
+                    <button class="form-btn-danger" onClick={handleDeleteOverwrite}>
                       <span class="nf-icon">{ICON_DELETE}</span> Remove Overwrite
                     </button>
                   </div>
@@ -273,7 +273,7 @@ const ChannelsTab: Component<ChannelsTabProps> = (props) => {
       <Show when={props.canManageChannels}>
         <Show when={showNewChannel()} fallback={
           <button
-            class="settings-action-btn"
+            class="form-btn-secondary"
             onClick={() => setShowNewChannel(true)}
           >
             <span class="nf-icon">{ICON_PLUS_BOX}</span> Create Channel
@@ -281,14 +281,14 @@ const ChannelsTab: Component<ChannelsTabProps> = (props) => {
         }>
           <div class="channel-create-inline">
             <input
-              class="settings-input"
+              class="form-input"
               type="text"
               placeholder="Channel name..."
               value={newChannelName()}
               onInput={(e) => setNewChannelName(e.currentTarget.value)}
             />
             <select
-              class="settings-select channel-type-select"
+              class="form-select channel-type-select"
               value={newChannelType()}
               onChange={(e) => setNewChannelType(e.currentTarget.value as "text" | "voice")}
             >
@@ -296,14 +296,14 @@ const ChannelsTab: Component<ChannelsTabProps> = (props) => {
               <option value="voice">Voice</option>
             </select>
             <button
-              class="settings-save-btn"
+              class="form-btn-save"
               onClick={handleCreateCh}
               disabled={!newChannelName().trim() || creatingChannel()}
             >
               {creatingChannel() ? "Creating..." : "Create"}
             </button>
             <button
-              class="settings-action-btn"
+              class="form-btn-secondary"
               onClick={() => setShowNewChannel(false)}
             >
               Cancel

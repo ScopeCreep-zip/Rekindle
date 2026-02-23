@@ -24,25 +24,25 @@ const PublicKeyTab: Component<PublicKeyTabProps> = (props) => {
   }
 
   return (
-    <form class="modal-form" onSubmit={handleKeySubmit}>
+    <form class="form-group" onSubmit={handleKeySubmit}>
       <input
-        class="modal-input"
+        class="form-input"
         type="text"
         placeholder="Enter public key..."
         value={publicKey()}
         onInput={(e) => setPublicKey(e.currentTarget.value)}
       />
       <input
-        class="modal-input"
+        class="form-input"
         type="text"
         placeholder="Message (optional)"
         value={message()}
         onInput={(e) => setMessage(e.currentTarget.value)}
       />
       <Show when={error()}>
-        <div class="modal-error">{error()}</div>
+        <div class="form-error">{error()}</div>
       </Show>
-      <button class="modal-btn" type="submit" disabled={!publicKey().trim()}>
+      <button class="form-btn-primary" type="submit" disabled={!publicKey().trim()}>
         Send Friend Request
       </button>
     </form>

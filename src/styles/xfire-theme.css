@@ -68,6 +68,237 @@
     flex: 1;
   }
 
+  /* ─── Form primitives ─── */
+  .form-input {
+    width: 100%;
+    background: var(--color-xfire-bg-input);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    border-radius: 0.25rem;
+    padding: 8px 12px;
+    font-size: 13px;
+    color: var(--color-xfire-text);
+    outline: none;
+    font-family: var(--font-family-xfire);
+  }
+
+  .form-input:focus {
+    border-color: var(--color-xfire-accent);
+  }
+
+  .form-select {
+    width: 100%;
+    background: var(--color-xfire-bg-input);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    border-radius: 0.25rem;
+    padding: 8px 12px;
+    font-size: 13px;
+    color: var(--color-xfire-text);
+    outline: none;
+    font-family: var(--font-family-xfire);
+  }
+
+  .form-select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .form-textarea {
+    width: 100%;
+    background: var(--color-xfire-bg-input);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    border-radius: 0.25rem;
+    padding: 8px 12px;
+    font-size: 13px;
+    color: var(--color-xfire-text);
+    outline: none;
+    font-family: var(--font-family-xfire);
+    resize: vertical;
+    min-height: 48px;
+  }
+
+  .form-textarea:focus {
+    border-color: var(--color-xfire-accent);
+  }
+
+  .form-error {
+    font-size: 11px;
+    color: #ef4444;
+    text-align: center;
+  }
+
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .form-btn-primary {
+    width: 100%;
+    padding: 8px;
+    background: var(--color-xfire-accent);
+    color: white;
+    border: none;
+    border-radius: 0.25rem;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: var(--font-family-xfire);
+    transition: background 0.15s;
+  }
+
+  .form-btn-primary:hover {
+    background: color-mix(in srgb, var(--color-xfire-accent) 80%, white);
+  }
+
+  .form-btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .form-btn-save {
+    padding: 6px 12px;
+    background: var(--color-xfire-accent);
+    color: white;
+    border: none;
+    border-radius: 0.25rem;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: var(--font-family-xfire);
+    transition: background 0.15s;
+    white-space: nowrap;
+  }
+
+  .form-btn-save:hover {
+    background: color-mix(in srgb, var(--color-xfire-accent) 80%, white);
+  }
+
+  .form-btn-save:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .form-btn-secondary {
+    padding: 8px 16px;
+    background: color-mix(in srgb, white 8%, transparent);
+    color: var(--color-xfire-text);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    border-radius: 0.25rem;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: var(--font-family-xfire);
+    transition: background 0.15s;
+  }
+
+  .form-btn-secondary:hover {
+    background: color-mix(in srgb, white 12%, transparent);
+  }
+
+  .form-btn-secondary:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .form-btn-danger {
+    padding: 6px 12px;
+    background: color-mix(in srgb, #ef4444 60%, transparent);
+    color: white;
+    border: none;
+    border-radius: 0.25rem;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: var(--font-family-xfire);
+    transition: background 0.15s;
+    white-space: nowrap;
+  }
+
+  .form-btn-danger:hover {
+    background: #ef4444;
+  }
+
+  .form-btn-danger:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .form-field {
+    padding: 4px 12px;
+    margin-bottom: 12px;
+  }
+
+  .form-field-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-xfire-text-dim);
+    text-transform: uppercase;
+    margin-bottom: 4px;
+    display: block;
+  }
+
+  .form-field-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+
+  .form-field-row .form-input {
+    flex: 1;
+    margin: 0;
+  }
+
+  .form-field-row .form-btn-primary {
+    margin: 0;
+    padding: 6px 12px;
+    min-width: auto;
+  }
+
+  .form-tabs {
+    display: flex;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    flex-shrink: 0;
+    padding: 0 8px;
+    gap: 2px;
+    background: var(--color-xfire-bg-dark);
+  }
+
+  .form-tabs-equal {
+    display: flex;
+    gap: 0;
+    margin-bottom: 12px;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+  }
+
+  .form-tabs-equal .form-tab {
+    flex: 1;
+    color: var(--color-xfire-offline);
+    font-size: 12px;
+  }
+
+  .form-tab {
+    padding: 6px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-xfire-text-dim);
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    font-family: var(--font-family-xfire);
+    transition: color 0.15s, border-color 0.15s;
+  }
+
+  .form-tab:hover {
+    color: var(--color-xfire-text);
+  }
+
+  .form-tab-active,
+  .form-tab.active {
+    color: var(--color-xfire-accent);
+    border-bottom-color: var(--color-xfire-accent);
+  }
+
   /* Buddy list */
   .buddy-list {
     flex: 1;
@@ -304,12 +535,6 @@
     text-align: center;
   }
 
-  .login-error {
-    font-size: 11px;
-    color: #ef4444;
-    text-align: center;
-  }
-
   .login-toggle-btn {
     background: none;
     border: none;
@@ -322,45 +547,6 @@
 
   .login-toggle-btn:hover {
     color: var(--color-xfire-text);
-  }
-
-  .login-input {
-    width: 100%;
-    background: var(--color-xfire-bg-input);
-    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
-    border-radius: 0.25rem;
-    padding: 8px 12px;
-    font-size: 13px;
-    color: var(--color-xfire-text);
-    outline: none;
-    font-family: var(--font-family-xfire);
-  }
-
-  .login-input:focus {
-    border-color: var(--color-xfire-accent);
-  }
-
-  .login-btn {
-    width: 100%;
-    padding: 8px;
-    background: var(--color-xfire-accent);
-    color: white;
-    border: none;
-    border-radius: 0.25rem;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    font-family: var(--font-family-xfire);
-    transition: background 0.15s;
-  }
-
-  .login-btn:hover {
-    background: color-mix(in srgb, var(--color-xfire-accent) 80%, white);
-  }
-
-  .login-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 
   /* Account Picker */
@@ -575,142 +761,6 @@
 
   .settings-option:hover {
     background: color-mix(in srgb, white 5%, transparent);
-  }
-
-  .settings-field {
-    padding: 4px 12px;
-    margin-bottom: 12px;
-  }
-
-  .settings-field-label {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--color-xfire-text-dim);
-    text-transform: uppercase;
-    margin-bottom: 4px;
-    display: block;
-  }
-
-  .settings-field-row {
-    display: flex;
-    gap: 6px;
-    align-items: center;
-  }
-
-  .settings-field-row .login-input {
-    flex: 1;
-    margin: 0;
-  }
-
-  .settings-field-row .login-btn {
-    margin: 0;
-    padding: 6px 12px;
-    min-width: auto;
-  }
-
-  /* Settings tabs */
-  .settings-tabs {
-    display: flex;
-    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
-    flex-shrink: 0;
-    padding: 0 8px;
-    gap: 2px;
-    background: var(--color-xfire-bg-dark);
-  }
-
-  .settings-tab {
-    padding: 6px 12px;
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--color-xfire-text-dim);
-    background: transparent;
-    border: none;
-    border-bottom: 2px solid transparent;
-    cursor: pointer;
-    font-family: var(--font-family-xfire);
-    transition: color 0.15s, border-color 0.15s;
-  }
-
-  .settings-tab:hover {
-    color: var(--color-xfire-text);
-  }
-
-  .settings-tab-active {
-    color: var(--color-xfire-accent);
-    border-bottom-color: var(--color-xfire-accent);
-  }
-
-  .settings-input {
-    width: 100%;
-    background: var(--color-xfire-bg-input);
-    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
-    border-radius: 0.25rem;
-    padding: 8px 12px;
-    font-size: 13px;
-    color: var(--color-xfire-text);
-    outline: none;
-    font-family: var(--font-family-xfire);
-  }
-
-  .settings-input:focus {
-    border-color: var(--color-xfire-accent);
-  }
-
-  .settings-save-btn {
-    padding: 6px 12px;
-    background: var(--color-xfire-accent);
-    color: white;
-    border: none;
-    border-radius: 0.25rem;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    font-family: var(--font-family-xfire);
-    transition: background 0.15s;
-    white-space: nowrap;
-  }
-
-  .settings-save-btn:hover {
-    background: color-mix(in srgb, var(--color-xfire-accent) 80%, white);
-  }
-
-  .settings-select {
-    width: 100%;
-    background: var(--color-xfire-bg-input);
-    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
-    border-radius: 0.25rem;
-    padding: 8px 12px;
-    font-size: 13px;
-    color: var(--color-xfire-text);
-    outline: none;
-    font-family: var(--font-family-xfire);
-  }
-
-  .settings-select:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .settings-action-btn {
-    padding: 8px 16px;
-    background: color-mix(in srgb, white 8%, transparent);
-    color: var(--color-xfire-text);
-    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
-    border-radius: 0.25rem;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    font-family: var(--font-family-xfire);
-    transition: background 0.15s;
-  }
-
-  .settings-action-btn:hover {
-    background: color-mix(in srgb, white 12%, transparent);
-  }
-
-  .settings-action-btn:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
   }
 
   .settings-hint {
@@ -1461,86 +1511,6 @@
     padding: 6px 12px;
   }
 
-  /* Add friend / create form */
-  .modal-form {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-
-  .modal-input {
-    width: 100%;
-    background: var(--color-xfire-bg-input);
-    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
-    border-radius: 0.25rem;
-    padding: 8px 12px;
-    font-size: 13px;
-    color: var(--color-xfire-text);
-    outline: none;
-    font-family: var(--font-family-xfire);
-  }
-
-  .modal-input:focus {
-    border-color: var(--color-xfire-accent);
-  }
-
-  .modal-btn {
-    width: 100%;
-    padding: 8px;
-    background: var(--color-xfire-accent);
-    color: white;
-    border: none;
-    border-radius: 0.25rem;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    font-family: var(--font-family-xfire);
-    transition: background 0.15s;
-  }
-
-  .modal-btn:hover {
-    background: color-mix(in srgb, var(--color-xfire-accent) 80%, white);
-  }
-
-  .modal-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .modal-error {
-    font-size: 11px;
-    color: #ef4444;
-    text-align: center;
-  }
-
-  .add-friend-tabs {
-    display: flex;
-    gap: 0;
-    margin-bottom: 12px;
-    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
-  }
-
-  .add-friend-tab {
-    flex: 1;
-    padding: 6px 12px;
-    background: transparent;
-    border: none;
-    color: var(--color-xfire-offline);
-    cursor: pointer;
-    font-size: 12px;
-    border-bottom: 2px solid transparent;
-    transition: color 0.15s, border-color 0.15s;
-  }
-
-  .add-friend-tab:hover {
-    color: var(--color-xfire-text-primary);
-  }
-
-  .add-friend-tab.active {
-    color: var(--color-xfire-accent);
-    border-bottom-color: var(--color-xfire-accent);
-  }
-
   .add-friend-section {
     display: flex;
     flex-direction: column;
@@ -1563,7 +1533,7 @@
     width: 100%;
     background: var(--color-xfire-bg-input);
     border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
-    color: var(--color-xfire-text-primary);
+    color: var(--color-xfire-text);
     padding: 6px 8px;
     border-radius: 4px;
     font-size: 11px;
@@ -2203,7 +2173,7 @@
     flex-shrink: 0;
   }
 
-  .settings-role-actions .settings-danger-btn {
+  .settings-role-actions .form-btn-danger {
     padding: 2px 6px;
     font-size: 10px;
   }
@@ -2216,7 +2186,7 @@
     padding: 8px;
   }
 
-  .settings-role-create .settings-input {
+  .settings-role-create .form-input {
     flex: 1;
     padding: 4px 8px;
     font-size: 12px;
@@ -2447,24 +2417,6 @@
     color: var(--color-xfire-text-status);
   }
 
-  .settings-textarea {
-    width: 100%;
-    background: var(--color-xfire-bg-input);
-    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
-    border-radius: 0.25rem;
-    padding: 8px 12px;
-    font-size: 13px;
-    color: var(--color-xfire-text);
-    outline: none;
-    font-family: var(--font-family-xfire);
-    resize: vertical;
-    min-height: 48px;
-  }
-
-  .settings-textarea:focus {
-    border-color: var(--color-xfire-accent);
-  }
-
   .settings-copy-btn {
     padding: 4px 10px;
     background: color-mix(in srgb, white 8%, transparent);
@@ -2481,24 +2433,6 @@
 
   .settings-copy-btn:hover {
     background: color-mix(in srgb, white 15%, transparent);
-  }
-
-  .settings-danger-btn {
-    padding: 6px 12px;
-    background: color-mix(in srgb, #ef4444 60%, transparent);
-    color: white;
-    border: none;
-    border-radius: 0.25rem;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    font-family: var(--font-family-xfire);
-    transition: background 0.15s;
-    white-space: nowrap;
-  }
-
-  .settings-danger-btn:hover {
-    background: #ef4444;
   }
 
   /* Channel management row in settings */
@@ -2586,8 +2520,8 @@
     flex-shrink: 0;
   }
 
-  .settings-member-actions .settings-action-btn,
-  .settings-member-actions .settings-danger-btn {
+  .settings-member-actions .form-btn-secondary,
+  .settings-member-actions .form-btn-danger {
     padding: 2px 6px;
     font-size: 10px;
   }
@@ -2797,13 +2731,6 @@
     font-size: 12px;
     margin-right: 6px;
     opacity: 0.7;
-  }
-
-  /* Disabled button states */
-  .settings-save-btn:disabled,
-  .settings-danger-btn:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
   }
 
   /* Toast notifications */

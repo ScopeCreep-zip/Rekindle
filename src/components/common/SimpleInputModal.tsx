@@ -51,9 +51,9 @@ const SimpleInputModal: Component<SimpleInputModalProps> = (props) => {
 
   return (
     <Modal isOpen={props.isOpen} title={props.title} onClose={props.onClose}>
-      <form class="modal-form" onSubmit={handleSubmit}>
+      <form class="form-group" onSubmit={handleSubmit}>
         <input
-          class="modal-input"
+          class="form-input"
           type="text"
           placeholder={props.placeholder ?? ""}
           value={value()}
@@ -61,7 +61,7 @@ const SimpleInputModal: Component<SimpleInputModalProps> = (props) => {
         />
         <Show when={props.secondaryPlaceholder}>
           <input
-            class="modal-input"
+            class="form-input"
             type="text"
             placeholder={props.secondaryPlaceholder}
             value={secondary()}
@@ -69,9 +69,9 @@ const SimpleInputModal: Component<SimpleInputModalProps> = (props) => {
           />
         </Show>
         <Show when={error()}>
-          <div class="modal-error">{error()}</div>
+          <div class="form-error">{error()}</div>
         </Show>
-        <button class="modal-btn" type="submit" disabled={!value().trim() || submitting()}>
+        <button class="form-btn-primary" type="submit" disabled={!value().trim() || submitting()}>
           {submitting() ? "..." : (props.submitLabel ?? "Submit")}
         </button>
       </form>

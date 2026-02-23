@@ -198,7 +198,7 @@ const LoginWindow: Component = () => {
           <div class="lock-name">{selected()!.displayName}</div>
           <div class="account-card-key">{truncateKey(selected()!.publicKey)}</div>
           <input
-            class="login-input"
+            class="form-input"
             type="password"
             placeholder="Passphrase"
             value={passphrase()}
@@ -206,9 +206,9 @@ const LoginWindow: Component = () => {
             autofocus
           />
           <Show when={error() !== null}>
-            <div class="login-error">{error()}</div>
+            <div class="form-error">{error()}</div>
           </Show>
-          <button class="login-btn" type="submit" disabled={loading()}>
+          <button class="form-btn-primary" type="submit" disabled={loading()}>
             {loading() ? "..." : "Unlock"}
           </button>
           <button type="button" class="account-back-btn" onClick={goBack}>
@@ -228,14 +228,14 @@ const LoginWindow: Component = () => {
           <div class="login-title">Rekindle</div>
           <div class="login-subtitle">Create a passphrase for your new identity</div>
           <input
-            class="login-input"
+            class="form-input"
             type="text"
             placeholder="Display Name (optional)"
             value={displayName()}
             onInput={(e: InputEvent) => setDisplayName((e.target as HTMLInputElement).value)}
           />
           <input
-            class="login-input"
+            class="form-input"
             type="password"
             placeholder="Passphrase"
             value={passphrase()}
@@ -243,9 +243,9 @@ const LoginWindow: Component = () => {
             autofocus
           />
           <Show when={error() !== null}>
-            <div class="login-error">{error()}</div>
+            <div class="form-error">{error()}</div>
           </Show>
-          <button class="login-btn" type="submit" disabled={loading()}>
+          <button class="form-btn-primary" type="submit" disabled={loading()}>
             {loading() ? "..." : "Create Identity"}
           </button>
         </form>
@@ -261,14 +261,14 @@ const LoginWindow: Component = () => {
           Enter passphrase for "{deleteTarget()?.displayName}" to confirm deletion.
         </div>
         <input
-          class="login-input"
+          class="form-input"
           type="password"
           placeholder="Passphrase"
           value={deletePass()}
           onInput={(e: InputEvent) => setDeletePass((e.target as HTMLInputElement).value)}
         />
         <Show when={deleteError() !== null}>
-          <div class="login-error">{deleteError()}</div>
+          <div class="form-error">{deleteError()}</div>
         </Show>
         <button
           class="delete-confirm-btn"

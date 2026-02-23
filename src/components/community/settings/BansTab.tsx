@@ -38,7 +38,7 @@ const BansTab: Component<BansTabProps> = (props) => {
                 </span>
               </div>
               <button
-                class="settings-action-btn"
+                class="form-btn-secondary"
                 onClick={() => handleUnban(banned.pseudonymKey)}
               >
                 <span class="nf-icon">{ICON_REFRESH}</span> Unban

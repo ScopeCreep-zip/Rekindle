@@ -90,7 +90,7 @@ const InviteLinkTab: Component<InviteLinkTabProps> = (props) => {
     <div class="add-friend-section">
       <div class="add-friend-generate">
         <button
-          class="modal-btn"
+          class="form-btn-primary"
           onClick={handleGenerate}
           disabled={generating()}
         >
@@ -165,18 +165,18 @@ const InviteLinkTab: Component<InviteLinkTabProps> = (props) => {
 
       <div class="add-friend-divider">or paste a friend's invite</div>
 
-      <form class="modal-form" onSubmit={handleInviteSubmit}>
+      <form class="form-group" onSubmit={handleInviteSubmit}>
         <input
-          class="modal-input"
+          class="form-input"
           type="text"
           placeholder="Paste invite link (rekindle://...)"
           value={inviteString()}
           onInput={(e) => setInviteString(e.currentTarget.value)}
         />
         <Show when={error()}>
-          <div class="modal-error">{error()}</div>
+          <div class="form-error">{error()}</div>
         </Show>
-        <button class="modal-btn" type="submit" disabled={!inviteString().trim()}>
+        <button class="form-btn-primary" type="submit" disabled={!inviteString().trim()}>
           Add from Invite
         </button>
       </form>

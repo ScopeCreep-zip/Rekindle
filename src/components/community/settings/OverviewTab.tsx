@@ -3,6 +3,7 @@ import type { Community } from "../../../stores/community.store";
 import { handleUpdateCommunityInfo } from "../../../handlers/community.handlers";
 import { addToast } from "../../../stores/toast.store";
 import { ICON_SAVE, ICON_COPY } from "../../../icons";
+import FormField from "../../common/FormField";
 
 interface OverviewTabProps {
   community: Community;
@@ -47,45 +48,42 @@ const OverviewTab: Component<OverviewTabProps> = (props) => {
 
   return (
     <div class="settings-section">
-      <div class="settings-field">
-        <label class="settings-field-label">Community Name</label>
+      <FormField label="Community Name">
         <Show when={props.canManage} fallback={
           <div class="settings-value">{props.community.name}</div>
         }>
           <input
-            class="settings-input"
+            class="form-input"
             type="text"
             value={editName()}
             onInput={(e) => setEditName(e.currentTarget.value)}
           />
         </Show>
-      </div>
-      <div class="settings-field">
-        <label class="settings-field-label">Description</label>
+      </FormField>
+      <FormField label="Description">
         <Show when={props.canManage} fallback={
           <div class="settings-value">{props.community.description || "No description set."}</div>
         }>
           <textarea
-            class="settings-textarea"
+            class="form-textarea"
             rows={3}
             value={editDescription()}
             onInput={(e) => setEditDescription(e.currentTarget.value)}
             placeholder="Community description..."
           />
         </Show>
-      </div>
-      <div class="settings-field">
-        <label class="settings-field-label">Community ID</label>
-        <div class="settings-field-row">
+      </FormField>
+      <FormField label="Community ID">
+        <div class="form-field-row">
           <span class="settings-value settings-value-mono">{props.community.id}</span>
           <button class="settings-copy-btn" onClick={handleCopyId}>
             <span class="nf-icon">{ICON_COPY}</span> {copied() ? "Copied" : "Copy"}
           </button>
         </div>
-      </div>
+      </FormField>
       <Show when={props.canManage}>
-        <div class="settings-field">
-          <button class="settings-save-btn" onClick={handleSaveOverview} disabled={savingOverview()}>
+        <div class="form-field">
+          <button class="form-btn-save" onClick={handleSaveOverview} disabled={savingOverview()}>
             <span class="nf-icon">{ICON_SAVE}</span> {savingOverview() ? "Saving..." : "Save Changes"}
           </button>
         </div>
