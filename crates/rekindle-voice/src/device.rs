@@ -98,7 +98,7 @@ fn collect_device_names(
 }
 
 /// Enumerate all available audio input and output devices.
-pub fn enumerate_audio_devices() -> Result<EnumeratedDevices, VoiceError> {
+pub fn enumerate_audio_devices() -> EnumeratedDevices {
     let host = cpal::default_host();
     let default_input_name = DeviceDirection::Input
         .default_device(&host)
@@ -107,7 +107,7 @@ pub fn enumerate_audio_devices() -> Result<EnumeratedDevices, VoiceError> {
         .default_device(&host)
         .and_then(|d| d.name().ok());
 
-    Ok(EnumeratedDevices {
+    EnumeratedDevices {
         input_devices: collect_device_names(
             &host,
             &DeviceDirection::Input,
@@ -118,5 +118,5 @@ pub fn enumerate_audio_devices() -> Result<EnumeratedDevices, VoiceError> {
             &DeviceDirection::Output,
             default_output_name.as_deref(),
         ),
-    })
+    }
 }

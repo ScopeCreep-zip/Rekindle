@@ -143,9 +143,8 @@ impl AudioProcessor {
 
         // Average VAD probability across sub-frames
         let avg_vad_prob = if num_sub_frames > 0 {
-            #[allow(clippy::cast_precision_loss)]
-            let avg = vad_prob_sum / num_sub_frames as f32;
-            avg
+            let n = u16::try_from(num_sub_frames).unwrap_or(1);
+            vad_prob_sum / f32::from(n)
         } else {
             0.0
         };
@@ -297,10 +296,9 @@ mod tests {
     fn test_noise_suppression_scaling() {
         // Verify output is normalized [-1, 1] despite internal 16-bit scaling
         let mut proc = AudioProcessor::new(true, false, 0.01, 100, 20);
-        let signal: Vec<f32> = (0..960)
-            .map(|i: i32| {
-                #[allow(clippy::cast_precision_loss)]
-                let t = i as f32;
+        let signal: Vec<f32> = (0i16..960)
+            .map(|i| {
+                let t = f32::from(i);
                 (t * 440.0 * std::f32::consts::TAU / 48000.0).sin() * 0.3
             })
             .collect();

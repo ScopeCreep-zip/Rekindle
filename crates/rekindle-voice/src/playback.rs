@@ -31,10 +31,10 @@ pub struct AudioPlayback {
 
 impl AudioPlayback {
     /// Create a new audio playback instance.
-    pub fn new(sample_rate: u32, channels: u16) -> Result<Self, VoiceError> {
-        Ok(Self {
+    pub fn new(sample_rate: u32, channels: u16) -> Self {
+        Self {
             thread: AudioThread::new(sample_rate, channels, PLAYBACK_LABELS),
-        })
+        }
     }
 
     /// Start playback, reading mixed PCM frames from the provided receiver.

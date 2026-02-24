@@ -186,10 +186,9 @@ mod tests {
         let mut codec = OpusCodec::new(48000, 1, frame_size).unwrap();
 
         // Generate a simple sine wave
-        let pcm: Vec<f32> = (0..frame_size)
-            .map(|i: usize| {
-                #[allow(clippy::cast_precision_loss)]
-                let t = i as f32;
+        let pcm: Vec<f32> = (0i16..960)
+            .map(|i| {
+                let t = f32::from(i);
                 (t * 440.0 * std::f32::consts::TAU / 48000.0).sin() * 0.5
             })
             .collect();

@@ -104,6 +104,9 @@ fn write_game_status(
         gs.set_server_info(si.as_str());
     }
     gs.set_elapsed_seconds(game.elapsed_seconds);
+    if let Some(ref addr) = game.server_address {
+        gs.set_server_address(addr.as_str());
+    }
 }
 
 /// Read a capnp `GameStatus` reader into a `GameInfo`.
@@ -115,6 +118,7 @@ fn read_game_status(
         game_name: text_to_string(gs.get_game_name().map_err(|e| capnp_err(&e))?)?,
         server_info: text_or_none(gs.has_server_info(), gs.get_server_info())?,
         elapsed_seconds: gs.get_elapsed_seconds(),
+        server_address: text_or_none(gs.has_server_address(), gs.get_server_address())?,
     })
 }
 
@@ -1076,7 +1080,7 @@ mod tests {
 
         let env = MessageEnvelope {
             sender_key: vec![1u8; 32],
-            timestamp: 1234567890,
+            timestamp: 1_234_567_890,
             nonce: vec![42u8; 16],
             payload: b"encrypted content".to_vec(),
             signature: vec![99u8; 64],
@@ -1117,6 +1121,7 @@ mod tests {
             game_name: "Counter-Strike".to_string(),
             server_info: Some("de_dust2 @ 192.168.1.1:27015".to_string()),
             elapsed_seconds: 3600,
+            server_address: Some("192.168.1.1:27015".to_string()),
         };
 
         let encoded = presence::encode_update(1, Some(&game));
@@ -1130,6 +1135,10 @@ mod tests {
             Some("de_dust2 @ 192.168.1.1:27015".to_string())
         );
         assert_eq!(g.elapsed_seconds, 3600);
+        assert_eq!(
+            g.server_address,
+            Some("192.168.1.1:27015".to_string())
+        );
 
         // Without game
         let encoded2 = presence::encode_update(3, None);
@@ -1152,6 +1161,7 @@ mod tests {
                 game_name: "Halo".to_string(),
                 server_info: None,
                 elapsed_seconds: 120,
+                server_address: None,
             }),
         };
 
@@ -1269,6 +1279,7 @@ mod tests {
             game_name: "Team Fortress 2".to_string(),
             server_info: Some("2fort @ 10.0.0.1:27015".to_string()),
             elapsed_seconds: 7200,
+            server_address: Some("10.0.0.1:27015".to_string()),
         };
 
         let encoded = presence::encode_game_status(&info);
@@ -1281,6 +1292,10 @@ mod tests {
             Some("2fort @ 10.0.0.1:27015".to_string())
         );
         assert_eq!(decoded.elapsed_seconds, 7200);
+        assert_eq!(
+            decoded.server_address,
+            Some("10.0.0.1:27015".to_string())
+        );
     }
 
     #[test]
@@ -1382,6 +1397,7 @@ mod tests {
                     game_name: "Portal 2".to_string(),
                     server_info: None,
                     elapsed_seconds: 600,
+                    server_address: None,
                 }),
             },
             message_log_key: "VLD0:msglog123".to_string(),

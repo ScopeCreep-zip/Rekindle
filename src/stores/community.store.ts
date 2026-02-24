@@ -1,11 +1,21 @@
 import { createStore } from "solid-js/store";
 import type { Message } from "./chat.store";
+import type { GameInfo, InviteDto } from "./types";
 
 export interface Channel {
   id: string;
   name: string;
-  type: "text" | "voice";
+  type: "text" | "voice" | "announcement";
   unreadCount: number;
+  categoryId?: string;
+  topic?: string;
+  slowmodeSeconds?: number;
+}
+
+export interface Category {
+  id: string;
+  name: string;
+  sortOrder: number;
 }
 
 export interface Member {
@@ -15,6 +25,7 @@ export interface Member {
   displayRole: string;
   status: string;
   timeoutUntil: number | null;
+  gameInfo: GameInfo | null;
 }
 
 export interface Role {
@@ -27,17 +38,60 @@ export interface Role {
   mentionable: boolean;
 }
 
+export interface EventRsvp {
+  pseudonymKey: string;
+  status: "going" | "maybe" | "declined";
+}
+
+export interface Thread {
+  id: string;
+  channelId: string;
+  name: string;
+  starterMessageId: string;
+  creatorPseudonym: string;
+  createdAt: number;
+  archived: boolean;
+  autoArchiveSeconds: number;
+  lastMessageAt: number;
+  messageCount: number;
+}
+
+export interface CommunityEvent {
+  id: string;
+  title: string;
+  description: string;
+  creatorPseudonym: string;
+  startTime: number;
+  endTime: number | null;
+  channelId: string | null;
+  maxAttendees: number | null;
+  createdAt: number;
+  status: "scheduled" | "active" | "completed" | "canceled";
+  rsvps: EventRsvp[];
+}
+
+export interface GameServer {
+  id: string;
+  gameId: string;
+  label: string;
+  address: string;
+  addedBy: string;
+  createdAt: number;
+}
+
 export interface Community {
   id: string;
   name: string;
   description: string | null;
   channels: Channel[];
+  categories: Category[];
   members: Member[];
   roles: Role[];
   myRoleIds: number[];
   myPseudonymKey: string | null;
   mekGeneration: number;
   isHosted: boolean;
+  events: CommunityEvent[];
 }
 
 export interface CommunityState {
@@ -45,6 +99,12 @@ export interface CommunityState {
   activeCommunity: string | null;
   activeChannel: string | null;
   channelMessages: Record<string, Message[]>;
+  channelThreads: Record<string, Thread[]>;
+  threadMessages: Record<string, Message[]>;
+  activeThread: string | null;
+  gameServers: Record<string, GameServer[]>;
+  notificationOverrides: Record<string, "all" | "mentions" | "none">;
+  communityInvites: Record<string, InviteDto[]>;
 }
 
 const [communityState, setCommunityState] = createStore<CommunityState>({
@@ -52,6 +112,12 @@ const [communityState, setCommunityState] = createStore<CommunityState>({
   activeCommunity: null,
   activeChannel: null,
   channelMessages: {},
+  channelThreads: {},
+  threadMessages: {},
+  activeThread: null,
+  gameServers: {},
+  notificationOverrides: {},
+  communityInvites: {},
 });
 
 export { communityState, setCommunityState };

@@ -5,13 +5,9 @@ import Modal from "../components/common/Modal";
 import { handleLogin, handleCreateIdentity } from "../handlers/auth.handlers";
 import { commands, avatarDataUrl, IdentitySummary } from "../ipc/commands";
 import { errorMessage } from "../utils/error";
+import { truncateKey } from "../utils/formatting";
 
 type Mode = "picker" | "login" | "create";
-
-function truncateKey(key: string): string {
-  if (key.length <= 16) return key;
-  return `${key.slice(0, 8)}...${key.slice(-8)}`;
-}
 
 const LoginWindow: Component = () => {
   const [identities, setIdentities] = createSignal<IdentitySummary[]>([]);

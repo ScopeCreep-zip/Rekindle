@@ -32,10 +32,10 @@ pub struct AudioCapture {
 
 impl AudioCapture {
     /// Create a new audio capture instance.
-    pub fn new(sample_rate: u32, channels: u16) -> Result<Self, VoiceError> {
-        Ok(Self {
+    pub fn new(sample_rate: u32, channels: u16) -> Self {
+        Self {
             thread: AudioThread::new(sample_rate, channels, CAPTURE_LABELS),
-        })
+        }
     }
 
     /// Start capturing audio, sending PCM frames to the provided sender.

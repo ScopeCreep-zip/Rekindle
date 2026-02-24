@@ -150,6 +150,8 @@ export function subscribeCommunityChannelChatEvents(
         body: event.data.body,
         timestamp: event.data.timestamp,
         isOwn: false,
+        serverMessageId: event.data.serverMessageId,
+        replyToId: event.data.replyToId,
       };
       const existing = communityState.channelMessages[channelId];
       if (existing) {
@@ -159,6 +161,20 @@ export function subscribeCommunityChannelChatEvents(
         ]);
       } else {
         setCommunityState("channelMessages", channelId, [message]);
+      }
+
+      // Increment unread count if the channel is NOT the currently active one
+      if (channelId !== communityState.activeChannel) {
+        // Find which community this channel belongs to
+        for (const [communityId, community] of Object.entries(communityState.communities)) {
+          const chIdx = community.channels.findIndex((ch) => ch.id === channelId);
+          if (chIdx >= 0) {
+            setCommunityState("communities", communityId, "channels", chIdx, "unreadCount",
+              (prev: number) => (prev ?? 0) + 1,
+            );
+            break;
+          }
+        }
       }
     } else if (event.type === "channelHistoryLoaded") {
       const { channelId, messages: serverMsgs } = event.data;

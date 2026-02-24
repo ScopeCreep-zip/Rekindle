@@ -13,6 +13,7 @@ interface BuddyItemProps {
   statusMessage: string | null;
   gameInfo: string | null;
   gameElapsed: number | null;
+  serverAddress: string | null;
   lastSeenAt: number | null;
   unreadCount: number;
   voiceChannel: string | null;
@@ -49,10 +50,14 @@ const BuddyItem: Component<BuddyItemProps> = (props) => {
 
   const gameDisplay = () => {
     if (!props.gameInfo) return null;
-    if (props.gameElapsed && props.gameElapsed > 0) {
-      return `${props.gameInfo} (${formatElapsed(props.gameElapsed)})`;
+    let text = props.gameInfo;
+    if (props.serverAddress) {
+      text += ` on ${props.serverAddress}`;
     }
-    return props.gameInfo;
+    if (props.gameElapsed && props.gameElapsed > 0) {
+      text += ` (${formatElapsed(props.gameElapsed)})`;
+    }
+    return text;
   };
 
   const tooltipText = () =>

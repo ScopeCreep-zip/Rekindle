@@ -5,19 +5,7 @@ import {
   markAllNotificationsRead,
 } from "../../stores/notification.store";
 import { ICON_BELL, ICON_CHECK } from "../../icons";
-
-function formatTimestamp(ts: number): string {
-  const now = Date.now();
-  const diff = now - ts;
-  const seconds = Math.floor(diff / 1000);
-  if (seconds < 60) return "just now";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
+import { formatRelativeTime } from "../../utils/formatting";
 
 const NotificationCenter: Component = () => {
   const [open, setOpen] = createSignal(false);
@@ -92,7 +80,7 @@ const NotificationCenter: Component = () => {
                         {notification.body}
                       </span>
                       <span class="notification-time">
-                        {formatTimestamp(notification.timestamp)}
+                        {formatRelativeTime(notification.timestamp)}
                       </span>
                     </div>
                     <Show when={!notification.read}>

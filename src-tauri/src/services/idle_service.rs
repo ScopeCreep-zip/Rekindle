@@ -15,7 +15,7 @@ use crate::state_helpers;
 /// `xprintidle` (X11-only) or Mutter D-Bus (GNOME-only).
 #[cfg(target_os = "linux")]
 mod wayland_idle {
-    use std::sync::atomic::{AtomicI64, Ordering};
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::{Arc, OnceLock};
     use std::time::Instant;
 
@@ -30,12 +30,15 @@ mod wayland_idle {
     /// Persists for process lifetime (Wayland connection is long-lived).
     static WAYLAND_IDLE: OnceLock<Arc<WaylandIdleState>> = OnceLock::new();
 
+    /// Sentinel value for "user is currently active" (no idle timestamp).
+    const ACTIVE_SENTINEL: u64 = u64::MAX;
+
     /// Shared idle state updated by the Wayland event thread, read by the
     /// polling idle service.
     pub struct WaylandIdleState {
         /// Monotonic offset (seconds since `start`) when user became idle.
-        /// `-1` means user is currently active.
-        idle_since: AtomicI64,
+        /// `u64::MAX` means user is currently active.
+        idle_since: AtomicU64,
         /// Process-local monotonic reference point.
         start: Instant,
     }
@@ -43,44 +46,30 @@ mod wayland_idle {
     impl WaylandIdleState {
         fn new() -> Self {
             Self {
-                idle_since: AtomicI64::new(-1),
+                idle_since: AtomicU64::new(ACTIVE_SENTINEL),
                 start: Instant::now(),
             }
         }
 
         fn mark_idle(&self) {
-            #[allow(
-                clippy::cast_possible_truncation,
-                clippy::cast_possible_wrap,
-                reason = "Instant elapsed as i64 seconds won't overflow for process lifetime"
-            )]
-            let now = self.start.elapsed().as_secs() as i64;
+            let now = self.start.elapsed().as_secs();
             self.idle_since.store(now, Ordering::Relaxed);
         }
 
         fn mark_active(&self) {
-            self.idle_since.store(-1, Ordering::Relaxed);
+            self.idle_since.store(ACTIVE_SENTINEL, Ordering::Relaxed);
         }
 
         /// Returns idle duration in seconds, or `Some(0)` if active.
         /// The 1-second notification timeout is added to the elapsed idle time.
         pub fn get_idle_seconds(&self) -> Option<u64> {
             let since = self.idle_since.load(Ordering::Relaxed);
-            if since < 0 {
+            if since == ACTIVE_SENTINEL {
                 return Some(0);
             }
-            #[allow(
-                clippy::cast_possible_truncation,
-                clippy::cast_possible_wrap,
-                reason = "Instant elapsed as i64 seconds won't overflow for process lifetime"
-            )]
-            let now = self.start.elapsed().as_secs() as i64;
+            let now = self.start.elapsed().as_secs();
             // Add 1s for the notification timeout (user was idle 1s before we got notified)
-            #[allow(
-                clippy::cast_sign_loss,
-                reason = "now >= since is guaranteed (monotonic clock); result is non-negative"
-            )]
-            Some((now - since) as u64 + 1)
+            Some(now.saturating_sub(since) + 1)
         }
     }
 
@@ -251,14 +240,13 @@ fn macos_idle_seconds() -> Option<u64> {
     }
     // kCGEventSourceStateCombinedSessionState = 0
     // kCGAnyInputEventType = 0xFFFFFFFF (u32::MAX)
+    // SAFETY: CGEventSourceSecondsSinceLastEventType is a pure query with no side effects;
+    // arguments are valid constants (source state 0, event type u32::MAX).
     let secs = unsafe { CGEventSourceSecondsSinceLastEventType(0, u32::MAX) };
     // Negative means error; NaN/Inf are also invalid
     if secs.is_finite() && secs >= 0.0 {
-        #[allow(
-            clippy::cast_possible_truncation,
-            clippy::cast_sign_loss,
-            reason = "secs is validated non-negative and finite; truncation to u64 is intentional"
-        )]
+        #[expect(clippy::cast_possible_truncation, clippy::cast_sign_loss,
+                 reason = "f64→u64: no From impl in std; value is validated finite and non-negative")]
         Some(secs as u64)
     } else {
         None
@@ -280,6 +268,8 @@ fn windows_idle_seconds() -> Option<u64> {
         cb_size: 8,
         dw_time: 0,
     };
+    // SAFETY: lii is a valid, initialized LastInputInfo with correct cb_size.
+    // GetLastInputInfo and GetTickCount are safe Win32 query functions.
     if unsafe { GetLastInputInfo(&mut lii) } != 0 {
         let idle_ms = unsafe { GetTickCount() }.wrapping_sub(lii.dw_time);
         Some(u64::from(idle_ms) / 1000)

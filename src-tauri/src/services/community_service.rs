@@ -3,8 +3,9 @@ use std::sync::Arc;
 use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use rekindle_protocol::dht::community::{SUBKEY_CHANNELS, SUBKEY_METADATA, SUBKEY_SERVER_ROUTE};
 use rekindle_protocol::dht::DHTManager;
+use rekindle_protocol::messaging::CategoryDto;
 
-use crate::state::{AppState, ChannelInfo, ChannelType, CommunityState, RoleDefinition};
+use crate::state::{AppState, CategoryInfo, ChannelInfo, ChannelType, CommunityState, RoleDefinition};
 use crate::state_helpers;
 
 /// Create a new community and publish it to DHT.
@@ -56,6 +57,9 @@ async fn create_community_with_dht(
         name: "general".to_string(),
         channel_type: ChannelType::Text,
         unread_count: 0,
+        category_id: None,
+        topic: String::new(),
+        slowmode_seconds: None,
     };
     let channels_json =
         crate::state::serialize_channel_list_for_dht(std::slice::from_ref(&default_channel), 0);
@@ -80,6 +84,7 @@ async fn create_community_with_dht(
         name: name.to_string(),
         description: None,
         channels: vec![default_channel],
+        categories: Vec::new(),
         my_role_ids: vec![0, 1, 2, 3, 4], // @everyone, member, moderator, admin, owner
         roles: default_roles(),
         my_role: Some("owner".to_string()),
@@ -103,6 +108,9 @@ fn create_community_local(state: &Arc<AppState>, community_id: &str, name: &str)
         name: "general".to_string(),
         channel_type: ChannelType::Text,
         unread_count: 0,
+        category_id: None,
+        topic: String::new(),
+        slowmode_seconds: None,
     };
 
     let mek = MediaEncryptionKey::generate(1);
@@ -117,6 +125,7 @@ fn create_community_local(state: &Arc<AppState>, community_id: &str, name: &str)
         name: name.to_string(),
         description: None,
         channels: vec![default_channel],
+        categories: Vec::new(),
         my_role_ids: vec![0, 1, 2, 3, 4], // @everyone, member, moderator, admin, owner
         roles: default_roles(),
         my_role: Some("owner".to_string()),
@@ -150,7 +159,11 @@ fn derive_pseudonym_key(state: &Arc<AppState>, community_id: &str) -> Option<Str
 /// Reads community metadata from DHT, then sends a `CommunityRequest::Join`
 /// RPC to the community server via `app_call`. On success, the server returns
 /// the MEK, channel list, and assigned role.
-pub async fn join_community(state: &Arc<AppState>, community_id: &str) -> Result<(), String> {
+pub async fn join_community(
+    state: &Arc<AppState>,
+    community_id: &str,
+    invite_code: Option<&str>,
+) -> Result<(), String> {
     let routing_context = state_helpers::routing_context(state);
 
     let (name, description, mut channels, dht_record_key, server_route_blob) =
@@ -167,6 +180,7 @@ pub async fn join_community(state: &Arc<AppState>, community_id: &str) -> Result
     let mut role = "member".to_string();
     let mut role_ids = vec![0u32, 1]; // default: @everyone + members
     let mut roles = default_roles();
+    let mut categories: Vec<CategoryInfo> = Vec::new();
 
     let identity_secret = { *state.identity_secret.lock() };
     if let (Some(ref route_blob), Some(ref rc), Some(secret)) =
@@ -178,6 +192,7 @@ pub async fn join_community(state: &Arc<AppState>, community_id: &str) -> Result
             my_pseudonym_key: my_pseudonym_key.clone(),
             display_name: our_display_name,
             our_route_blob: &our_route_blob,
+            invite_code: invite_code.map(String::from),
         };
         match send_join_rpc(state, rc, route_blob, &join_params).await {
             Ok(Some(result)) => {
@@ -190,6 +205,7 @@ pub async fn join_community(state: &Arc<AppState>, community_id: &str) -> Result
                 if !result.channels.is_empty() {
                     channels = result.channels;
                 }
+                categories = result.categories;
             }
             Ok(None) => {}           // RPC failed gracefully, join locally
             Err(e) => return Err(e), // Server explicitly rejected
@@ -203,6 +219,7 @@ pub async fn join_community(state: &Arc<AppState>, community_id: &str) -> Result
         name,
         description,
         channels,
+        categories,
         my_role_ids: role_ids,
         roles,
         my_role: Some(role),
@@ -301,6 +318,7 @@ struct JoinRpcResult {
     role_ids: Vec<u32>,
     roles: Vec<RoleDefinition>,
     channels: Vec<ChannelInfo>,
+    categories: Vec<CategoryInfo>,
 }
 
 /// Parameters for sending a join RPC to the community server.
@@ -310,6 +328,7 @@ struct JoinRpcParams<'a> {
     my_pseudonym_key: Option<String>,
     display_name: String,
     our_route_blob: &'a Option<Vec<u8>>,
+    invite_code: Option<String>,
 }
 
 /// Send a `CommunityRequest::Join` RPC to the server.
@@ -329,7 +348,7 @@ async fn send_join_rpc(
 
     let request = rekindle_protocol::messaging::CommunityRequest::Join {
         pseudonym_pubkey: params.my_pseudonym_key.clone().unwrap_or_default(),
-        invite_code: None,
+        invite_code: params.invite_code.clone(),
         display_name: params.display_name.clone(),
         prekey_bundle: Vec::new(),
         route_blob: params.our_route_blob.clone(),
@@ -378,6 +397,7 @@ fn parse_join_response(
             mek_encrypted,
             mek_generation,
             channels: server_channels,
+            categories,
             role_ids,
             roles: server_roles,
         }) => {
@@ -401,6 +421,22 @@ fn parse_join_response(
                     name: ch.name,
                     channel_type: ch.channel_type.parse().unwrap_or(ChannelType::Text),
                     unread_count: 0,
+                    category_id: ch.category_id,
+                    topic: ch.topic,
+                    slowmode_seconds: if ch.slowmode_seconds > 0 {
+                        Some(ch.slowmode_seconds)
+                    } else {
+                        None
+                    },
+                })
+                .collect();
+
+            let categories: Vec<CategoryInfo> = categories
+                .into_iter()
+                .map(|cat: CategoryDto| CategoryInfo {
+                    id: cat.id,
+                    name: cat.name,
+                    sort_order: cat.sort_order,
                 })
                 .collect();
 
@@ -420,6 +456,7 @@ fn parse_join_response(
                 role_ids,
                 roles,
                 channels,
+                categories,
             }))
         }
         Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => {
@@ -490,6 +527,9 @@ pub async fn create_channel(
         name: channel_name.to_string(),
         channel_type: channel_type.parse().unwrap_or(ChannelType::Text),
         unread_count: 0,
+        category_id: None,
+        topic: String::new(),
+        slowmode_seconds: None,
     };
 
     // Add to community state
@@ -518,6 +558,9 @@ pub async fn create_channel(
                     name: channel_name.to_string(),
                     channel_type: channel_type.parse().unwrap_or(ChannelType::Text),
                     unread_count: 0,
+                    category_id: None,
+                    topic: String::new(),
+                    slowmode_seconds: None,
                 });
 
                 let channels_wrapper =

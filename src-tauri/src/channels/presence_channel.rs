@@ -20,5 +20,6 @@ pub enum PresenceEvent {
         game_name: Option<String>,
         game_id: Option<u32>,
         elapsed_seconds: Option<u32>,
+        server_address: Option<String>,
     },
 }

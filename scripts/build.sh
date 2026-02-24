@@ -36,6 +36,10 @@ if [[ ! -d node_modules ]]; then
 fi
 
 # ── Build ────────────────────────────────────────────────────────────
+# pnpm tauri build triggers beforeBuildCommand ("pnpm build") which runs
+# copy-sidecar.mjs --release to build rekindle-server and copy it to
+# src-tauri/binaries/ with the target-triple suffix. Tauri's externalBin
+# config then includes it in the production bundle automatically.
 info "Building Rekindle..."
 pnpm tauri build
 

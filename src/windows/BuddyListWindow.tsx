@@ -25,6 +25,7 @@ import { subscribeBuddyListChatEvents } from "../handlers/chat-events.handlers";
 import { subscribeBuddyListPresenceEvents } from "../handlers/presence-events.handlers";
 import { subscribeNotificationHandler } from "../handlers/notification-events.handlers";
 import { subscribeBuddyListVoiceEvents } from "../handlers/voice.handlers";
+import { subscribeDeepLinkHandler } from "../handlers/deep-link.handler";
 import { hydrateState } from "../ipc/hydrate";
 import {
   subscribeNetworkStatus,
@@ -70,6 +71,7 @@ const BuddyListWindow: Component = () => {
       setNetworkAttached(event.isAttached);
     }));
     unlisteners.push(subscribeProfileUpdates(handleProfileUpdated));
+    unlisteners.push(subscribeDeepLinkHandler());
 
     // Await hydration so store is populated before subsequent commands
     await hydrateState();

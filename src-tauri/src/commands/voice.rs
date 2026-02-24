@@ -77,11 +77,10 @@ pub async fn set_deafen(deafened: bool, state: State<'_, SharedState>) -> Result
 
 /// List available audio input and output devices.
 #[tauri::command]
-pub fn list_audio_devices() -> Result<AudioDevices, String> {
-    let devices = rekindle_voice::capture::enumerate_audio_devices()
-        .map_err(|e| format!("failed to enumerate devices: {e}"))?;
+pub fn list_audio_devices() -> AudioDevices {
+    let devices = rekindle_voice::capture::enumerate_audio_devices();
 
-    Ok(AudioDevices {
+    AudioDevices {
         input_devices: devices
             .input_devices
             .into_iter()
@@ -100,7 +99,7 @@ pub fn list_audio_devices() -> Result<AudioDevices, String> {
                 is_default,
             })
             .collect(),
-    })
+    }
 }
 
 /// Set the preferred audio devices for voice calls.

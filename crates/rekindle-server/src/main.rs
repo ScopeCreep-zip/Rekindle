@@ -1,85 +1,118 @@
 #![recursion_limit = "512"]
 
+mod audit;
+mod automod;
 mod community_host;
 mod db;
+mod db_helpers;
+mod identity;
+mod invite_util;
 mod ipc;
 mod mek;
 mod rpc;
 mod server_state;
+mod tasks;
 
 use std::sync::Arc;
 
+use clap::{Parser, Subcommand};
 use parking_lot::RwLock;
+use rekindle_protocol::node::{NodeConfig, RekindleNode};
 use tokio::sync::mpsc;
 use veilid_core::VeilidUpdate;
 
 use server_state::ServerState;
 
-/// Command-line arguments for the server daemon.
-struct Args {
+#[derive(Parser)]
+#[command(name = "rekindle-server", about = "Community server daemon for Rekindle")]
+struct Cli {
+    /// Directory for Veilid storage
+    #[arg(long, default_value_t = dirs_fallback("rekindle-server/veilid"))]
     storage_dir: String,
-    socket_path: String,
-    db_path: String,
+
+    /// Unix socket path for IPC
+    #[arg(long, default_value_t = default_socket_path())]
+    socket: String,
+
+    /// SQLite database path
+    #[arg(long, default_value_t = dirs_fallback("rekindle-server/server.db"))]
+    db: String,
+
+    #[command(subcommand)]
+    command: Option<Command>,
 }
 
-fn parse_args() -> Args {
-    let mut args = std::env::args().skip(1);
-    let mut storage_dir = String::new();
-    let mut socket_path = String::new();
-    let mut db_path = String::new();
-
-    while let Some(arg) = args.next() {
-        match arg.as_str() {
-            "--storage-dir" => storage_dir = args.next().unwrap_or_default(),
-            "--socket" => socket_path = args.next().unwrap_or_default(),
-            "--db" => db_path = args.next().unwrap_or_default(),
-            _ => {}
-        }
-    }
-
-    if storage_dir.is_empty() {
-        storage_dir = dirs_fallback("rekindle-server/veilid");
-    }
-    if socket_path.is_empty() {
-        socket_path = default_socket_path();
-    }
-    if db_path.is_empty() {
-        db_path = dirs_fallback("rekindle-server/server.db");
-    }
-
-    Args {
-        storage_dir,
-        socket_path,
-        db_path,
-    }
+#[derive(Subcommand)]
+enum Command {
+    /// Query server status
+    Status,
+    /// Generate a community invite code
+    Invite {
+        /// Community ID to generate invite for
+        community_id: String,
+        /// Maximum number of uses (unlimited if not set)
+        #[arg(long)]
+        max_uses: Option<u32>,
+        /// Expiry duration (e.g., "24h", "7d", "30m")
+        #[arg(long)]
+        expires: Option<String>,
+    },
 }
 
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
+
+    let cli = Cli::parse();
+
+    match cli.command {
+        Some(Command::Status) => {
+            handle_status_command(&cli.socket).await;
+            return;
+        }
+        Some(Command::Invite {
+            community_id,
+            max_uses,
+            expires,
+        }) => {
+            handle_invite_command(&cli.socket, &community_id, max_uses, expires.as_deref()).await;
+            return;
+        }
+        None => {
+            // Default: start daemon
+        }
+    }
+
     tracing::info!("rekindle-server starting");
 
-    let args = parse_args();
-
     // Ensure storage directory exists
-    std::fs::create_dir_all(&args.storage_dir).expect("failed to create storage dir");
-    if let Some(parent) = std::path::Path::new(&args.db_path).parent() {
+    std::fs::create_dir_all(&cli.storage_dir).expect("failed to create storage dir");
+    if let Some(parent) = std::path::Path::new(&cli.db).parent() {
         std::fs::create_dir_all(parent).expect("failed to create db dir");
     }
 
     // Open server database
-    let db = db::open_server_db(&args.db_path).expect("failed to open server database");
+    let db = db::open_server_db(&cli.db).expect("failed to open server database");
 
-    // Start Veilid node
-    let (update_tx, update_rx) = mpsc::channel::<VeilidUpdate>(1024);
+    // Load or create server identity
+    let (identity, public_key_hex) =
+        identity::load_or_create_identity(&db).expect("failed to load/create server identity");
 
-    let veilid_api = start_veilid_node(&args.storage_dir, update_tx)
+    // Start Veilid node via rekindle-protocol's RekindleNode
+    let node_config = NodeConfig {
+        storage_dir: cli.storage_dir.clone(),
+        app_namespace: "rekindle-server".into(),
+        qualifier: "rekindle-server".into(),
+    };
+    let mut node = RekindleNode::start(node_config)
         .await
         .expect("failed to start Veilid node");
-
-    let routing_context = veilid_api
-        .routing_context()
-        .expect("failed to create routing context");
+    let veilid_api = node.api().clone();
+    let routing_context = node.routing_context().clone();
+    let update_rx = node.take_update_receiver();
+    // api and routing_context are Arc-based — safe to drop the node wrapper.
+    // Explicit shutdown is at process exit via state.api.clone().shutdown().await.
+    drop(node);
 
     let state = Arc::new(ServerState {
         api: veilid_api,
@@ -87,7 +120,13 @@ async fn main() {
         db,
         hosted: RwLock::new(std::collections::HashMap::new()),
         started_at: rekindle_utils::timestamp_secs(),
+        identity,
+        public_key_hex,
+        slowmode_last_message: RwLock::new(std::collections::HashMap::new()),
+        rate_limiter: automod::RateLimiter::new(10, 10),
     });
+
+    tracing::info!(public_key = %state.public_key_hex, "server identity loaded");
 
     // Start the DHT keep-alive loop
     let (keepalive_shutdown_tx, keepalive_shutdown_rx) = mpsc::channel(1);
@@ -97,14 +136,19 @@ async fn main() {
         keepalive_shutdown_rx,
     ));
 
-    // Start the IPC listener
+    // Start the async IPC listener as a tokio task.
+    // All IPC handling is fully async — no block_on() bridges, no OS-level
+    // socket timeouts. Sync handlers execute inline without yielding; async
+    // handlers (HostCommunity, CommunityRpc, GetStatus) .await directly.
     let (shutdown_tx, mut shutdown_rx) = mpsc::channel(1);
     let ipc_state = Arc::clone(&state);
-    let socket = args.socket_path.clone();
+    let socket = cli.socket.clone();
     let ipc_shutdown_tx = shutdown_tx.clone();
-    tokio::spawn(async move {
-        ipc::start_ipc_listener(&socket, ipc_state, ipc_shutdown_tx).await;
-    });
+    tokio::spawn(ipc::start_ipc_listener(
+        socket,
+        ipc_state,
+        ipc_shutdown_tx,
+    ));
 
     // Start the Veilid dispatch loop
     let dispatch_state = Arc::clone(&state);
@@ -117,12 +161,96 @@ async fn main() {
     let route_retry_state = Arc::clone(&state);
     tokio::spawn(retry_failed_routes(route_retry_state));
 
-    tracing::info!(socket = %args.socket_path, "rekindle-server ready");
+    // Broadcast channel for graceful shutdown of periodic tasks
+    let (task_shutdown_tx, _) = tokio::sync::broadcast::channel::<()>(1);
 
-    // Wait for shutdown signal
-    shutdown_rx.recv().await;
+    // Spawn automod cleanup task (every 60s)
+    let cleanup_state = Arc::clone(&state);
+    let mut cleanup_shutdown = task_shutdown_tx.subscribe();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+        loop {
+            tokio::select! {
+                _ = interval.tick() => {
+                    tasks::cleanup_rate_limiter(&cleanup_state);
+                    tasks::cleanup_slowmode_tracker(&cleanup_state);
+                },
+                _ = cleanup_shutdown.recv() => break,
+            }
+        }
+    });
+
+    // Spawn thread auto-archive task (every 10 min)
+    let archive_state = Arc::clone(&state);
+    let mut archive_shutdown = task_shutdown_tx.subscribe();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(600));
+        loop {
+            tokio::select! {
+                _ = interval.tick() => tasks::auto_archive_stale_threads(&archive_state),
+                _ = archive_shutdown.recv() => break,
+            }
+        }
+    });
+
+    // Spawn event lifecycle + reminder task (every 5 min)
+    let reminder_state = Arc::clone(&state);
+    let mut reminder_shutdown = task_shutdown_tx.subscribe();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(300));
+        loop {
+            tokio::select! {
+                _ = interval.tick() => {
+                    tasks::advance_event_lifecycle(&reminder_state);
+                    tasks::cleanup_past_events(&reminder_state);
+                    let reminders = tasks::check_event_reminders(&reminder_state);
+                    for (community_id, event_id, title, minutes) in reminders {
+                        rpc::broadcast_event_reminder(
+                            &reminder_state,
+                            &community_id,
+                            &event_id,
+                            &title,
+                            minutes,
+                        );
+                    }
+                }
+                _ = reminder_shutdown.recv() => break,
+            }
+        }
+    });
+
+    tracing::info!(socket = %cli.socket, "rekindle-server ready");
+
+    // Wait for shutdown signal (IPC or OS signals)
+    tokio::select! {
+        () = async { let _ = shutdown_rx.recv().await; } => {
+            tracing::info!("shutdown requested via IPC");
+        }
+        () = async { let _ = tokio::signal::ctrl_c().await; } => {
+            tracing::info!("received SIGINT — shutting down");
+        }
+        () = async {
+            #[cfg(unix)]
+            {
+                let mut term = tokio::signal::unix::signal(
+                    tokio::signal::unix::SignalKind::terminate(),
+                ).expect("failed to register SIGTERM handler");
+                term.recv().await;
+            }
+            #[cfg(not(unix))]
+            {
+                // On non-Unix, just pend forever (ctrl_c handles it)
+                std::future::pending::<()>().await;
+            }
+        } => {
+            tracing::info!("received SIGTERM — shutting down");
+        }
+    }
 
     tracing::info!("rekindle-server shutting down");
+
+    // Stop periodic tasks
+    let _ = task_shutdown_tx.send(());
 
     // Stop keep-alive loop
     let _ = keepalive_shutdown_tx.send(()).await;
@@ -141,9 +269,183 @@ async fn main() {
     state.api.clone().shutdown().await;
 
     // Clean up socket file
-    let _ = std::fs::remove_file(&args.socket_path);
+    let _ = std::fs::remove_file(&cli.socket);
 
     tracing::info!("rekindle-server stopped");
+}
+
+/// Parse a duration string like "30m", "24h", "7d" into seconds.
+fn parse_duration_to_seconds(s: &str) -> Result<u64, String> {
+    let s = s.trim();
+    if s.is_empty() {
+        return Err("empty duration".into());
+    }
+    let (num_str, unit) = s.split_at(s.len() - 1);
+    let num: u64 = num_str
+        .parse()
+        .map_err(|_| format!("invalid number: {num_str}"))?;
+    match unit {
+        "s" => Ok(num),
+        "m" => Ok(num * 60),
+        "h" => Ok(num * 3600),
+        "d" => Ok(num * 86400),
+        _ => Err(format!("unknown unit: {unit} (use s/m/h/d)")),
+    }
+}
+
+/// Connect to the running daemon's IPC socket and send a `GetStatus` request.
+#[allow(clippy::print_stdout, clippy::print_stderr, clippy::single_match_else)]
+async fn handle_status_command(socket_path: &str) {
+    use ipc::{IpcRequest, IpcResponse};
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    use tokio::net::UnixStream;
+
+    let stream = match UnixStream::connect(socket_path).await {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("failed to connect to server at {socket_path}: {e}");
+            eprintln!("is the server running?");
+            std::process::exit(1);
+        }
+    };
+
+    let (reader, mut writer) = stream.into_split();
+
+    // Send a GetStatus request (newline-delimited JSON matching IpcRequest)
+    let request = IpcRequest::GetStatus;
+    let mut request_bytes = serde_json::to_vec(&request).unwrap();
+    request_bytes.push(b'\n');
+    if let Err(e) = writer.write_all(&request_bytes).await {
+        eprintln!("failed to send request: {e}");
+        std::process::exit(1);
+    }
+    if let Err(e) = writer.flush().await {
+        eprintln!("failed to flush request: {e}");
+        std::process::exit(1);
+    }
+
+    // Read the response line
+    let mut lines = BufReader::new(reader).lines();
+    match lines.next_line().await {
+        Ok(Some(line)) => {
+            let response: IpcResponse = match serde_json::from_str(&line) {
+                Ok(r) => r,
+                Err(_) => {
+                    eprintln!("invalid response from server: {line}");
+                    std::process::exit(1);
+                }
+            };
+            match response {
+                IpcResponse::Status {
+                    uptime_secs,
+                    community_count,
+                    veilid_attached,
+                    server_public_key,
+                } => {
+                    println!("Server Public Key: {server_public_key}");
+                    println!("Uptime:           {uptime_secs}s");
+                    println!("Communities:      {community_count}");
+                    println!("Veilid Attached:  {veilid_attached}");
+                }
+                IpcResponse::Error { message } => {
+                    eprintln!("server error: {message}");
+                    std::process::exit(1);
+                }
+                other => {
+                    println!("{}", serde_json::to_string_pretty(&other).unwrap_or_default());
+                }
+            }
+        }
+        Ok(None) => {
+            eprintln!("server closed connection without responding");
+            std::process::exit(1);
+        }
+        Err(e) => {
+            eprintln!("failed to read response: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
+/// Connect to the running daemon's IPC socket and send a `CreateInvite` request.
+#[allow(clippy::print_stdout, clippy::print_stderr, clippy::single_match_else)]
+async fn handle_invite_command(
+    socket_path: &str,
+    community_id: &str,
+    max_uses: Option<u32>,
+    expires: Option<&str>,
+) {
+    use ipc::{IpcRequest, IpcResponse};
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    use tokio::net::UnixStream;
+
+    let expires_in_seconds = expires.map(|e| {
+        parse_duration_to_seconds(e).unwrap_or_else(|err| {
+            eprintln!("invalid --expires value: {err}");
+            std::process::exit(1);
+        })
+    });
+
+    let stream = match UnixStream::connect(socket_path).await {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("failed to connect to server at {socket_path}: {e}");
+            eprintln!("is the server running?");
+            std::process::exit(1);
+        }
+    };
+
+    let (reader, mut writer) = stream.into_split();
+
+    let request = IpcRequest::CreateInvite {
+        community_id: community_id.to_string(),
+        max_uses,
+        expires_in_seconds,
+    };
+    let mut request_bytes = serde_json::to_vec(&request).unwrap();
+    request_bytes.push(b'\n');
+    if let Err(e) = writer.write_all(&request_bytes).await {
+        eprintln!("failed to send request: {e}");
+        std::process::exit(1);
+    }
+    if let Err(e) = writer.flush().await {
+        eprintln!("failed to flush request: {e}");
+        std::process::exit(1);
+    }
+
+    let mut lines = BufReader::new(reader).lines();
+    match lines.next_line().await {
+        Ok(Some(line)) => {
+            let response: IpcResponse = match serde_json::from_str(&line) {
+                Ok(r) => r,
+                Err(_) => {
+                    eprintln!("invalid response from server: {line}");
+                    std::process::exit(1);
+                }
+            };
+            match response {
+                IpcResponse::InviteCreated { code, signature } => {
+                    println!("Invite code: {code}");
+                    println!("Signature:   {signature}");
+                }
+                IpcResponse::Error { message } => {
+                    eprintln!("server error: {message}");
+                    std::process::exit(1);
+                }
+                other => {
+                    println!("{}", serde_json::to_string_pretty(&other).unwrap_or_default());
+                }
+            }
+        }
+        Ok(None) => {
+            eprintln!("server closed connection without responding");
+            std::process::exit(1);
+        }
+        Err(e) => {
+            eprintln!("failed to read response: {e}");
+            std::process::exit(1);
+        }
+    }
 }
 
 /// Retry route allocation for communities that failed during initial setup.
@@ -232,53 +534,6 @@ async fn retry_failed_routes(state: Arc<ServerState>) {
     }
 }
 
-/// Start the Veilid node with server-specific configuration.
-///
-/// Uses `VeilidConfig::new()` to generate a complete config with all required
-/// fields (including any added in future veilid-core versions), then passes it
-/// to `api_startup`. This is the same approach the client uses via
-/// `RekindleNode::start()` — avoids the fragile hand-crafted JSON that breaks
-/// when veilid-core adds new required config fields.
-async fn start_veilid_node(
-    storage_dir: &str,
-    update_tx: mpsc::Sender<VeilidUpdate>,
-) -> Result<veilid_core::VeilidAPI, String> {
-    let update_callback: veilid_core::UpdateCallback = Arc::new(move |update: VeilidUpdate| {
-        // Non-blocking send — if the channel is full we drop the event
-        if let Err(e) = update_tx.try_send(update) {
-            let dropped = match &e {
-                mpsc::error::TrySendError::Full(u) | mpsc::error::TrySendError::Closed(u) => u,
-            };
-            tracing::error!(
-                event = server_update_name(dropped),
-                "Veilid update channel full — dropped event"
-            );
-        }
-    });
-
-    // VeilidConfig::new() generates a complete config with all defaults,
-    // including any newly added fields like `consensus_width`. The storage_dir
-    // override ensures the server uses its own separate storage from the client.
-    let veilid_config = veilid_core::VeilidConfig::new(
-        "rekindle-server", // program_name
-        "com",             // organization
-        "rekindle-server", // qualifier (different from client to avoid collisions)
-        Some(storage_dir), // storage_directory override
-        None,              // config_directory (use default)
-    );
-
-    let api = veilid_core::api_startup(update_callback, veilid_config)
-        .await
-        .map_err(|e| format!("veilid api_startup failed: {e}"))?;
-
-    api.attach()
-        .await
-        .map_err(|e| format!("veilid attach failed: {e}"))?;
-
-    tracing::info!("Veilid node started for server");
-    Ok(api)
-}
-
 /// Server-side Veilid dispatch loop — routes incoming events.
 async fn server_dispatch_loop(
     state: Arc<ServerState>,
@@ -332,46 +587,53 @@ async fn load_persisted_communities(state: &Arc<ServerState>) {
         }
     };
 
-    for (id, dht_key, keypair_hex, name, creator_pseudonym) in communities {
+    for c in communities {
         // Pass the stored creator_pseudonym — host_community will skip
         // re-registering if the creator is already in the members table.
         if let Err(e) = community_host::host_community(
             state,
-            &id,
-            &dht_key,
-            &keypair_hex,
-            &name,
-            &creator_pseudonym,
+            &c.id,
+            &c.dht_record_key,
+            &c.owner_keypair_hex,
+            &c.name,
+            &c.creator_pseudonym,
             "",
         )
         .await
         {
-            tracing::error!(community = %id, error = %e, "failed to re-host community");
+            tracing::error!(community = %c.id, error = %e, "failed to re-host community");
         }
     }
 }
 
+/// A community record loaded from the server database.
+struct PersistedCommunity {
+    id: String,
+    dht_record_key: String,
+    owner_keypair_hex: String,
+    name: String,
+    creator_pseudonym: String,
+}
+
 /// Load persisted community records from the server database.
-#[allow(clippy::type_complexity)]
 fn load_communities_from_db(
     state: &Arc<ServerState>,
-) -> Result<Vec<(String, String, String, String, String)>, String> {
-    let db = state.db.lock().map_err(|e| e.to_string())?;
-    let mut stmt = db
-        .prepare("SELECT id, dht_record_key, owner_keypair_hex, name, creator_pseudonym FROM hosted_communities")
-        .map_err(|e| e.to_string())?;
-    let rows = stmt
-        .query_map([], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, String>(3)?,
-                row.get::<_, String>(4)?,
-            ))
-        })
-        .map_err(|e| e.to_string())?;
-    Ok(rows.filter_map(Result::ok).collect())
+) -> Result<Vec<PersistedCommunity>, String> {
+    db_helpers::db_call(&state.db, |db| {
+        let mut stmt = db.prepare(
+            "SELECT id, dht_record_key, owner_keypair_hex, name, creator_pseudonym FROM hosted_communities",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(PersistedCommunity {
+                id: row.get(0)?,
+                dht_record_key: row.get(1)?,
+                owner_keypair_hex: row.get(2)?,
+                name: row.get(3)?,
+                creator_pseudonym: row.get(4)?,
+            })
+        })?;
+        Ok(rows.filter_map(Result::ok).collect())
+    })
 }
 
 
@@ -387,15 +649,3 @@ fn default_socket_path() -> String {
         .to_string()
 }
 
-/// Return a human-readable name for a `VeilidUpdate` variant (for logging).
-fn server_update_name(update: &VeilidUpdate) -> &'static str {
-    match update {
-        VeilidUpdate::AppCall(_) => "AppCall",
-        VeilidUpdate::AppMessage(_) => "AppMessage",
-        VeilidUpdate::RouteChange(_) => "RouteChange",
-        VeilidUpdate::Attachment(_) => "Attachment",
-        VeilidUpdate::ValueChange(_) => "ValueChange",
-        VeilidUpdate::Shutdown => "Shutdown",
-        _ => "Other",
-    }
-}

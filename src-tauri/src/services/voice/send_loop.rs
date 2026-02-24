@@ -199,19 +199,17 @@ impl VoiceSendLoop {
             return;
         }
 
-        let loss_pct = if self.packets_sent > 0 {
-            #[allow(clippy::cast_precision_loss)]
-            let pct = (self.send_failures as f64 / self.packets_sent as f64) * 100.0;
-            pct
+        let loss_pct_u32 = if self.packets_sent > 0 {
+            // Multiply first to avoid truncation to 0; values are tiny (reset every 5s)
+            u32::try_from(self.send_failures.saturating_mul(100) / self.packets_sent)
+                .unwrap_or(100)
         } else {
-            0.0
+            0
         };
-        let quality = if loss_pct < 5.0 {
-            "good"
-        } else if loss_pct < 15.0 {
-            "fair"
-        } else {
-            "poor"
+        let quality = match loss_pct_u32 {
+            0..5 => "good",
+            5..15 => "fair",
+            _ => "poor",
         };
         let event = VoiceEvent::ConnectionQuality {
             quality: quality.to_string(),
@@ -219,8 +217,7 @@ impl VoiceSendLoop {
         let _ = self.app.emit("voice-event", &event);
 
         // Update Opus FEC based on measured loss
-        #[allow(clippy::cast_possible_truncation)]
-        let loss_i32 = (loss_pct as i32).clamp(0, 100);
+        let loss_i32 = i32::try_from(loss_pct_u32.min(100)).unwrap_or(100);
         let _ = self.codec.set_packet_loss_perc(loss_i32);
 
         self.packets_sent = 0;
@@ -229,9 +226,7 @@ impl VoiceSendLoop {
     }
 
     fn cleanup(mut self) {
-        if let Err(e) = self.transport.disconnect() {
-            tracing::warn!(error = %e, "voice send loop: transport disconnect failed");
-        }
+        self.transport.disconnect();
 
         if self.was_speaking {
             let event = VoiceEvent::UserSpeaking {

@@ -37,6 +37,12 @@ pub enum IpcRequest {
         sender_pseudonym_key: String,
         request_json: String,
     },
+    /// Generate a community invite code via the server daemon.
+    CreateInvite {
+        community_id: String,
+        max_uses: Option<u32>,
+        expires_in_seconds: Option<u64>,
+    },
 }
 
 /// JSON-RPC response from the rekindle-server daemon.
@@ -51,6 +57,7 @@ pub enum IpcResponse {
         uptime_secs: u64,
         community_count: usize,
         veilid_attached: bool,
+        server_public_key: String,
     },
     Error {
         message: String,
@@ -58,6 +65,11 @@ pub enum IpcResponse {
     /// Response carrying a community RPC result (JSON-encoded `CommunityResponse`).
     RpcResult {
         response_json: String,
+    },
+    /// Server generated an invite code.
+    InviteCreated {
+        code: String,
+        signature: String,
     },
 }
 
@@ -151,6 +163,10 @@ impl IpcClient {
             .get_mut()
             .write_all(&buf)
             .map_err(|e| format!("failed to write to server socket: {e}"))?;
+        self.stream
+            .get_mut()
+            .flush()
+            .map_err(|e| format!("failed to flush server socket: {e}"))?;
 
         let mut response_line = String::new();
         self.stream
@@ -174,7 +190,6 @@ pub fn default_socket_path() -> PathBuf {
 ///
 /// Retries connection up to `max_retries` times with a delay to allow the server
 /// to finish starting up.
-#[allow(clippy::too_many_arguments)] // IPC request: each param is a distinct server field
 pub fn host_community_blocking(
     socket_path: &Path,
     community_id: &str,
@@ -253,6 +268,7 @@ pub fn get_status_blocking(socket_path: &Path) -> Result<(u64, usize, bool), Str
             uptime_secs,
             community_count,
             veilid_attached,
+            ..
         }) => Ok((uptime_secs, community_count, veilid_attached)),
         Ok(IpcResponse::Error { message }) => Err(message),
         Ok(other) => Err(format!("unexpected response to GetStatus: {other:?}")),
@@ -290,5 +306,219 @@ pub fn community_rpc_blocking(
         Ok(IpcResponse::Error { message }) => Err(format!("server error: {message}")),
         Ok(other) => Err(format!("unexpected IPC response: {other:?}")),
         Err(e) => Err(e),
+    }
+}
+
+/// Generate a community invite via the server daemon (blocking).
+///
+/// Returns `(code, signature)` on success.
+pub fn create_invite_blocking(
+    socket_path: &Path,
+    community_id: &str,
+    max_uses: Option<u32>,
+    expires_in_seconds: Option<u64>,
+) -> Result<(String, String), String> {
+    let mut client = IpcClient::connect(socket_path)?;
+    let request = IpcRequest::CreateInvite {
+        community_id: community_id.to_string(),
+        max_uses,
+        expires_in_seconds,
+    };
+    match client.send(&request) {
+        Ok(IpcResponse::InviteCreated { code, signature }) => Ok((code, signature)),
+        Ok(IpcResponse::Error { message }) => Err(message),
+        Ok(other) => Err(format!("unexpected response to CreateInvite: {other:?}")),
+        Err(e) => Err(e),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Async IPC client functions
+//
+// These use `tokio::net::UnixStream` (Unix) / `tokio::net::TcpStream` (Windows)
+// with `tokio::time::timeout` for cancellation. No OS-level socket timeouts,
+// no EAGAIN. Call directly from async contexts — no `spawn_blocking` needed.
+// ---------------------------------------------------------------------------
+
+/// Connect to the server asynchronously.
+#[cfg(unix)]
+async fn connect_async(socket_path: &Path) -> Result<tokio::net::UnixStream, String> {
+    tokio::net::UnixStream::connect(socket_path)
+        .await
+        .map_err(|e| {
+            format!(
+                "failed to connect to server at {}: {e}",
+                socket_path.display()
+            )
+        })
+}
+
+/// Connect to the server asynchronously (Windows — TCP localhost).
+#[cfg(windows)]
+async fn connect_async(_socket_path: &Path) -> Result<tokio::net::TcpStream, String> {
+    tokio::net::TcpStream::connect("127.0.0.1:19280")
+        .await
+        .map_err(|e| format!("failed to connect to server at 127.0.0.1:19280: {e}"))
+}
+
+/// Send an IPC request and read the response over an async connection.
+///
+/// Uses `tokio::time::timeout` for cancellation instead of OS socket timeouts.
+async fn send_async(
+    socket_path: &Path,
+    request: &IpcRequest,
+    timeout_duration: Duration,
+) -> Result<IpcResponse, String> {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+    let stream = connect_async(socket_path).await?;
+    let (reader, mut writer) = stream.into_split();
+
+    let mut buf =
+        serde_json::to_vec(request).map_err(|e| format!("failed to serialize IPC request: {e}"))?;
+    buf.push(b'\n');
+
+    writer
+        .write_all(&buf)
+        .await
+        .map_err(|e| format!("failed to write to server socket: {e}"))?;
+    writer
+        .flush()
+        .await
+        .map_err(|e| format!("failed to flush server socket: {e}"))?;
+
+    let mut lines = BufReader::new(reader).lines();
+    let line = tokio::time::timeout(timeout_duration, lines.next_line())
+        .await
+        .map_err(|_| format!("IPC request timed out after {}s", timeout_duration.as_secs()))?
+        .map_err(|e| format!("failed to read from server socket: {e}"))?
+        .ok_or_else(|| "server closed connection without responding".to_string())?;
+
+    serde_json::from_str::<IpcResponse>(line.trim())
+        .map_err(|e| format!("failed to parse server response: {e}"))
+}
+
+/// Send a `CommunityRpc` request asynchronously.
+///
+/// Uses tokio async I/O — no OS-level socket timeouts. A per-request
+/// `tokio::time::timeout()` provides cancellation without EAGAIN.
+pub async fn community_rpc_async(
+    socket_path: &Path,
+    community_id: &str,
+    sender_pseudonym_key: &str,
+    request_json: &str,
+) -> Result<String, String> {
+    let request = IpcRequest::CommunityRpc {
+        community_id: community_id.to_string(),
+        sender_pseudonym_key: sender_pseudonym_key.to_string(),
+        request_json: request_json.to_string(),
+    };
+    match send_async(socket_path, &request, Duration::from_secs(30)).await? {
+        IpcResponse::RpcResult { response_json } => Ok(response_json),
+        IpcResponse::Error { message } => Err(format!("server error: {message}")),
+        other => Err(format!("unexpected IPC response: {other:?}")),
+    }
+}
+
+/// Send a `HostCommunity` command asynchronously with retry.
+///
+/// Retries connection up to `max_retries` times with backoff to allow the
+/// server to finish starting up.
+pub async fn host_community_async(
+    socket_path: &Path,
+    community_id: &str,
+    dht_record_key: &str,
+    owner_keypair_hex: &str,
+    name: &str,
+    creator_pseudonym_key: &str,
+    creator_display_name: &str,
+    max_retries: u32,
+) -> Result<(), String> {
+    let request = IpcRequest::HostCommunity {
+        community_id: community_id.to_string(),
+        dht_record_key: dht_record_key.to_string(),
+        owner_keypair_hex: owner_keypair_hex.to_string(),
+        name: name.to_string(),
+        creator_pseudonym_key: creator_pseudonym_key.to_string(),
+        creator_display_name: creator_display_name.to_string(),
+    };
+
+    // 90-second timeout — host_community can take 60+ seconds
+    let timeout_duration = Duration::from_secs(90);
+
+    for attempt in 1..=max_retries {
+        match send_async(socket_path, &request, timeout_duration).await {
+            Ok(IpcResponse::Ok) => {
+                tracing::info!(community = %community_id, "HostCommunity IPC succeeded");
+                return Ok(());
+            }
+            Ok(IpcResponse::Error { message }) => {
+                return Err(format!("server rejected HostCommunity: {message}"));
+            }
+            Ok(_other) => {
+                return Ok(()); // Non-error response — treat as success
+            }
+            Err(e) => {
+                tracing::warn!(attempt, error = %e, "IPC send failed for HostCommunity");
+                if attempt < max_retries {
+                    tokio::time::sleep(Duration::from_millis(
+                        if e.contains("failed to connect") {
+                            500 * u64::from(attempt)
+                        } else {
+                            1000 * u64::from(attempt)
+                        },
+                    ))
+                    .await;
+                }
+            }
+        }
+    }
+
+    Err("exhausted retries".to_string())
+}
+
+/// Send a `GetStatus` command asynchronously.
+///
+/// Returns `(uptime_secs, community_count, veilid_attached)` on success.
+pub async fn get_status_async(socket_path: &Path) -> Result<(u64, usize, bool), String> {
+    match send_async(socket_path, &IpcRequest::GetStatus, Duration::from_secs(10)).await? {
+        IpcResponse::Status {
+            uptime_secs,
+            community_count,
+            veilid_attached,
+            ..
+        } => Ok((uptime_secs, community_count, veilid_attached)),
+        IpcResponse::Error { message } => Err(message),
+        other => Err(format!("unexpected response to GetStatus: {other:?}")),
+    }
+}
+
+/// Send a `Shutdown` command asynchronously.
+pub async fn shutdown_server_async(socket_path: &Path) -> Result<(), String> {
+    match send_async(socket_path, &IpcRequest::Shutdown, Duration::from_secs(10)).await {
+        Ok(IpcResponse::Error { message }) => Err(message),
+        // Connection refused / socket not found is expected if server is already dead
+        Ok(_) | Err(_) => Ok(()),
+    }
+}
+
+/// Generate a community invite asynchronously.
+///
+/// Returns `(code, signature)` on success.
+pub async fn create_invite_async(
+    socket_path: &Path,
+    community_id: &str,
+    max_uses: Option<u32>,
+    expires_in_seconds: Option<u64>,
+) -> Result<(String, String), String> {
+    let request = IpcRequest::CreateInvite {
+        community_id: community_id.to_string(),
+        max_uses,
+        expires_in_seconds,
+    };
+    match send_async(socket_path, &request, Duration::from_secs(30)).await? {
+        IpcResponse::InviteCreated { code, signature } => Ok((code, signature)),
+        IpcResponse::Error { message } => Err(message),
+        other => Err(format!("unexpected response to CreateInvite: {other:?}")),
     }
 }

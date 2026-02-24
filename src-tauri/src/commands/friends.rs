@@ -268,7 +268,6 @@ pub async fn remove_friend(
 
 /// Accept a pending friend request.
 #[tauri::command]
-#[allow(clippy::too_many_lines)]
 pub async fn accept_request(
     public_key: String,
     display_name: String,

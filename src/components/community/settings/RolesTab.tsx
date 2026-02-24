@@ -11,6 +11,7 @@ import {
   handleEditRole,
   handleDeleteRole,
 } from "../../../handlers/community.handlers";
+import { addToast } from "../../../stores/toast.store";
 import {
   ICON_SAVE,
   ICON_DELETE,
@@ -37,6 +38,7 @@ const RolesTab: Component<RolesTabProps> = (props) => {
   const [editRolePerms, setEditRolePerms] = createSignal(0);
   const [editRoleHoist, setEditRoleHoist] = createSignal(false);
   const [editRoleMentionable, setEditRoleMentionable] = createSignal(false);
+  const [savingRole, setSavingRole] = createSignal(false);
 
   function startEditRole(role: { id: number; name: string; color: number; permissions: number; hoist: boolean; mentionable: boolean }): void {
     setEditingRoleId(role.id);
@@ -74,17 +76,26 @@ const RolesTab: Component<RolesTabProps> = (props) => {
   async function handleSaveEditRole(): Promise<void> {
     const id = editingRoleId();
     if (id === null) return;
-    await handleEditRole(
-      props.community.id,
-      id,
-      editRoleName().trim() || null,
-      hexToColorInt(editRoleColor()),
-      editRolePerms(),
-      null,
-      editRoleHoist(),
-      editRoleMentionable(),
-    );
-    setEditingRoleId(null);
+    setSavingRole(true);
+    try {
+      await handleEditRole(
+        props.community.id,
+        id,
+        editRoleName().trim() || null,
+        hexToColorInt(editRoleColor()),
+        editRolePerms(),
+        null,
+        editRoleHoist(),
+        editRoleMentionable(),
+      );
+      addToast("Role updated", "success");
+      setEditingRoleId(null);
+    } catch (e) {
+      const msg = typeof e === "string" ? e : "Failed to save role";
+      addToast(msg, "error");
+    } finally {
+      setSavingRole(false);
+    }
   }
 
   function confirmDeleteRole(roleId: number, roleName: string): void {
@@ -181,10 +192,10 @@ const RolesTab: Component<RolesTabProps> = (props) => {
                 />
               </FormField>
               <div class="form-field-row">
-                <button class="form-btn-save" onClick={handleSaveEditRole}>
-                  <span class="nf-icon">{ICON_SAVE}</span> Save
+                <button class="form-btn-save" onClick={handleSaveEditRole} disabled={savingRole()}>
+                  <span class="nf-icon">{ICON_SAVE}</span> {savingRole() ? "Saving..." : "Save"}
                 </button>
-                <button class="form-btn-secondary" onClick={() => setEditingRoleId(null)}>
+                <button class="form-btn-secondary" onClick={() => setEditingRoleId(null)} disabled={savingRole()}>
                   <span class="nf-icon">{ICON_CLOSE}</span> Cancel
                 </button>
               </div>

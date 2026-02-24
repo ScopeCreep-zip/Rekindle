@@ -19,6 +19,9 @@ export interface Message {
   body: string;
   timestamp: number;
   isOwn: boolean;
+  serverMessageId?: string;
+  reactions?: { emoji: string; count: number; reactors: string[] }[];
+  pinned?: boolean;
 }
 
 export interface FriendInfo {
@@ -39,6 +42,7 @@ export interface GameStatus {
   gameName: string;
   serverInfo: string | null;
   elapsedSeconds: number;
+  serverAddress: string | null;
 }
 
 export interface AudioDeviceInfo {
@@ -149,7 +153,8 @@ export const commands = {
       id: string;
       name: string;
       description: string | null;
-      channels: { id: string; name: string; channelType: string; unreadCount: number }[];
+      channels: { id: string; name: string; channelType: string; unreadCount: number; categoryId?: string; topic?: string }[];
+      categories?: { id: string; name: string; sortOrder: number }[];
       myRole: string | null;
       myRoleIds: number[];
       roles: { id: number; name: string; color: number; permissions: number; position: number; hoist: boolean; mentionable: boolean }[];
@@ -163,14 +168,20 @@ export const commands = {
     ),
   createCommunity: (name: string) =>
     invoke<string>("create_community", { name }),
-  joinCommunity: (communityId: string) =>
-    invoke<void>("join_community", { communityId }),
-  createChannel: (communityId: string, name: string, channelType: string) =>
-    invoke<string>("create_channel", { communityId, name, channelType }),
-  sendChannelMessage: (channelId: string, body: string) =>
-    invoke<void>("send_channel_message", { channelId, body }),
+  joinCommunity: (communityId: string, inviteCode?: string) =>
+    invoke<void>("join_community", { communityId, inviteCode: inviteCode ?? null }),
+  createChannel: (communityId: string, name: string, channelType: string, categoryId?: string) =>
+    invoke<string>("create_channel", { communityId, name, channelType, categoryId: categoryId ?? null }),
+  sendChannelMessage: (channelId: string, body: string, replyToId?: string) =>
+    invoke<string>("send_channel_message", { channelId, body, replyToId: replyToId ?? null }),
+  editChannelMessage: (channelId: string, messageId: string, newBody: string) =>
+    invoke<void>("edit_channel_message", { channelId, messageId, newBody }),
+  deleteChannelMessage: (channelId: string, messageId: string) =>
+    invoke<void>("delete_channel_message", { channelId, messageId }),
   getChannelMessages: (channelId: string, limit: number) =>
     invoke<Message[]>("get_channel_messages", { channelId, limit }),
+  getOlderChannelMessages: (communityId: string, channelId: string, beforeTimestamp: number, limit: number) =>
+    invoke<Message[]>("get_older_channel_messages", { communityId, channelId, beforeTimestamp, limit }),
   removeCommunityMember: (communityId: string, pseudonymKey: string) =>
     invoke<void>("remove_community_member", { communityId, pseudonymKey }),
   leaveCommunity: (communityId: string) =>
@@ -191,6 +202,62 @@ export const commands = {
     ),
   rotateMek: (communityId: string) =>
     invoke<void>("rotate_mek", { communityId }),
+
+  // Reactions
+  addReaction: (communityId: string, channelId: string, messageId: string, emoji: string) =>
+    invoke<void>("add_reaction", { communityId, channelId, messageId, emoji }),
+  removeReaction: (communityId: string, channelId: string, messageId: string, emoji: string) =>
+    invoke<void>("remove_reaction", { communityId, channelId, messageId, emoji }),
+
+  // Pins
+  pinMessage: (communityId: string, channelId: string, messageId: string) =>
+    invoke<void>("pin_message", { communityId, channelId, messageId }),
+  unpinMessage: (communityId: string, channelId: string, messageId: string) =>
+    invoke<void>("unpin_message", { communityId, channelId, messageId }),
+  getChannelPins: (communityId: string, channelId: string) =>
+    invoke<{ messageId: string; channelId: string; pinnedBy: string; pinnedAt: number }[]>(
+      "get_channel_pins",
+      { communityId, channelId },
+    ),
+
+  sendChannelTyping: (communityId: string, channelId: string) =>
+    invoke<void>("send_channel_typing", { communityId, channelId }),
+
+  updateCommunityPresence: (communityId: string, status: string, gameName?: string, gameId?: number, elapsedSeconds?: number, serverAddress?: string) =>
+    invoke<void>("update_community_presence", { communityId, status, gameName, gameId, elapsedSeconds, serverAddress }),
+
+  // Audit log
+  getAuditLog: (communityId: string, beforeTimestamp?: number, limit: number = 50) =>
+    invoke<{ action: string; actorPseudonym: string; target: string | null; details: string | null; timestamp: number }[]>(
+      "get_audit_log",
+      { communityId, beforeTimestamp, limit },
+    ),
+
+  // Categories
+  createCategory: (communityId: string, name: string) =>
+    invoke<{ categoryId: string }>("create_category", { communityId, name }),
+  deleteCategory: (communityId: string, categoryId: string) =>
+    invoke<void>("delete_category", { communityId, categoryId }),
+  renameCategory: (communityId: string, categoryId: string, newName: string) =>
+    invoke<void>("rename_category", { communityId, categoryId, newName }),
+  moveChannel: (communityId: string, channelId: string, categoryId: string | null) =>
+    invoke<void>("move_channel", { communityId, channelId, categoryId }),
+  reorderCategories: (communityId: string, categoryIds: string[]) =>
+    invoke<void>("reorder_categories", { communityId, categoryIds }),
+  setChannelTopic: (communityId: string, channelId: string, topic: string) =>
+    invoke<void>("set_channel_topic", { communityId, channelId, topic }),
+  reorderChannels: (communityId: string, channelIds: string[]) =>
+    invoke<void>("reorder_channels", { communityId, channelIds }),
+
+  // Community invites
+  createCommunityInvite: (communityId: string, maxUses?: number, expiresInSeconds?: number) =>
+    invoke<{ code: string; signature: string }>("create_community_invite", { communityId, maxUses: maxUses ?? null, expiresInSeconds: expiresInSeconds ?? null }),
+  revokeCommunityInvite: (communityId: string, code: string) =>
+    invoke<void>("revoke_community_invite", { communityId, code }),
+  listCommunityInvites: (communityId: string) =>
+    invoke<{ code: string; createdBy: string; maxUses: number | null; uses: number; expiresAt: number | null; createdAt: number }[]>(
+      "list_community_invites", { communityId }
+    ),
 
   // Roles
   getRoles: (communityId: string) =>
@@ -215,6 +282,54 @@ export const commands = {
     invoke<void>("set_channel_overwrite", { communityId, channelId, targetType, targetId, allow, deny }),
   deleteChannelOverwrite: (communityId: string, channelId: string, targetType: string, targetId: string) =>
     invoke<void>("delete_channel_overwrite", { communityId, channelId, targetType, targetId }),
+  setSlowmode: (communityId: string, channelId: string, seconds: number) =>
+    invoke<void>("set_slowmode", { communityId, channelId, seconds }),
+
+  // Threads
+  createThread: (communityId: string, channelId: string, name: string, starterMessageId: string) =>
+    invoke<string>("create_thread", { communityId, channelId, name, starterMessageId }),
+  getChannelThreads: (communityId: string, channelId: string) =>
+    invoke<{ id: string; channelId: string; name: string; starterMessageId: string; creatorPseudonym: string; createdAt: number; archived: boolean; autoArchiveSeconds: number; lastMessageAt: number; messageCount: number }[]>(
+      "get_channel_threads", { communityId, channelId }),
+  sendThreadMessage: (communityId: string, threadId: string, body: string) =>
+    invoke<void>("send_thread_message", { communityId, threadId, body }),
+  getThreadMessages: (communityId: string, threadId: string, limit: number, beforeTimestamp?: number) =>
+    invoke<Message[]>("get_thread_messages", { communityId, threadId, limit, beforeTimestamp: beforeTimestamp ?? null }),
+  archiveThread: (communityId: string, threadId: string) =>
+    invoke<void>("archive_thread", { communityId, threadId }),
+  unarchiveThread: (communityId: string, threadId: string) =>
+    invoke<void>("unarchive_thread", { communityId, threadId }),
+
+  // Community Events
+  createEvent: (communityId: string, title: string, description: string, startTime: number, endTime?: number, channelId?: string, maxAttendees?: number) =>
+    invoke<string>("create_event", { communityId, title, description, startTime, endTime: endTime ?? null, channelId: channelId ?? null, maxAttendees: maxAttendees ?? null }),
+  editEvent: (communityId: string, eventId: string, title?: string, description?: string, startTime?: number, endTime?: number, channelId?: string, maxAttendees?: number) =>
+    invoke<void>("edit_event", { communityId, eventId, title: title ?? null, description: description ?? null, startTime: startTime ?? null, endTime: endTime ?? null, channelId: channelId ?? null, maxAttendees: maxAttendees ?? null }),
+  deleteEvent: (communityId: string, eventId: string) =>
+    invoke<void>("delete_event", { communityId, eventId }),
+  cancelEvent: (communityId: string, eventId: string) =>
+    invoke<void>("cancel_event", { communityId, eventId }),
+  rsvpEvent: (communityId: string, eventId: string, status: string) =>
+    invoke<void>("rsvp_event", { communityId, eventId, status }),
+  getEvents: (communityId: string) =>
+    invoke<{ id: string; title: string; description: string; creatorPseudonym: string; startTime: number; endTime: number | null; channelId: string | null; maxAttendees: number | null; createdAt: number; status: string; rsvps: { pseudonymKey: string; status: string }[] }[]>(
+      "get_events", { communityId },
+    ),
+
+  // Game Servers
+  addGameServer: (communityId: string, gameId: string, label: string, address: string) =>
+    invoke<string>("add_game_server", { communityId, gameId, label, address }),
+  removeGameServer: (communityId: string, serverId: string) =>
+    invoke<void>("remove_game_server", { communityId, serverId }),
+  getGameServers: (communityId: string) =>
+    invoke<{ id: string; gameId: string; label: string; address: string; addedBy: string; createdAt: number }[]>(
+      "get_game_servers", { communityId }),
+
+  // Unread tracking
+  markChannelRead: (communityId: string, channelId: string, lastMessageId: string) =>
+    invoke<void>("mark_channel_read", { communityId, channelId, lastMessageId }),
+  getUnreadCounts: (communityId: string) =>
+    invoke<{ channelId: string; unreadCount: number }[]>("get_unread_counts", { communityId }),
 
   // Voice
   joinVoiceChannel: (channelId: string) =>
@@ -242,6 +357,9 @@ export const commands = {
 
   // Game
   getGameStatus: () => invoke<GameStatus | null>("get_game_status"),
+  getGameName: (gameId: number) => invoke<string | null>("get_game_name", { gameId }),
+  launchGameToServer: (gameId: number, serverAddress: string) =>
+    invoke<void>("launch_game_to_server", { gameId, serverAddress }),
 
   // Settings
   getPreferences: () => invoke<Preferences>("get_preferences"),

@@ -457,6 +457,7 @@ async fn sync_friend_game_info(
                         game_name: game_info.as_ref().map(|g| g.game_name.clone()),
                         game_id: game_info.as_ref().map(|g| g.game_id),
                         elapsed_seconds: None,
+                        server_address: game_info.as_ref().and_then(|g| g.server_address.clone()),
                     },
                 );
             }
@@ -865,24 +866,50 @@ async fn retry_single_pending(
     } else if let Ok(channel_msg) =
         serde_json::from_str::<crate::commands::community::PendingChannelMessage>(body)
     {
-        // Channel message retry — look up server route from community state
-        let route_blob = state_helpers::community_server_route(state, &channel_msg.community_id);
-        let Some(route_blob) = route_blob else {
-            increment_retry_count(pool, id).await?;
-            return Ok(());
+        // Check if this is a hosted community — use IPC fast path if so
+        let is_hosted = {
+            let communities = state.communities.read();
+            communities
+                .get(&channel_msg.community_id)
+                .is_some_and(|c| c.is_hosted)
         };
 
-        match crate::commands::community::send_encrypted_to_server(
-            state,
-            &channel_msg.channel_id,
-            &channel_msg.community_id,
-            channel_msg.ciphertext,
-            channel_msg.mek_generation,
-            channel_msg.timestamp,
-            route_blob,
-        )
-        .await
-        {
+        let result = if is_hosted {
+            crate::commands::community::send_community_rpc(
+                state,
+                pool,
+                &channel_msg.community_id,
+                rekindle_protocol::messaging::CommunityRequest::SendMessage {
+                    channel_id: channel_msg.channel_id.clone(),
+                    ciphertext: channel_msg.ciphertext,
+                    mek_generation: channel_msg.mek_generation,
+                    reply_to_id: None,
+                },
+            )
+            .await
+            .map(|_| ())
+        } else {
+            // Remote community — use Veilid path
+            let route_blob =
+                state_helpers::community_server_route(state, &channel_msg.community_id);
+            let Some(route_blob) = route_blob else {
+                increment_retry_count(pool, id).await?;
+                return Ok(());
+            };
+            crate::commands::community::send_encrypted_to_server(
+                state,
+                &channel_msg.channel_id,
+                &channel_msg.community_id,
+                channel_msg.ciphertext,
+                channel_msg.mek_generation,
+                channel_msg.timestamp,
+                route_blob,
+                None, // Retried messages don't carry reply_to_id
+            )
+            .await
+        };
+
+        match result {
             Ok(()) => {
                 tracing::debug!(id, "pending channel message delivered");
                 delete_pending_message(pool, id).await?;

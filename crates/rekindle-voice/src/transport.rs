@@ -70,13 +70,12 @@ impl VoiceTransport {
     }
 
     /// Disconnect from the voice channel.
-    pub fn disconnect(&mut self) -> Result<(), VoiceError> {
+    pub fn disconnect(&mut self) {
         self.route_id = None;
         self.routing_context = None;
         self.api = None;
         self.is_connected = false;
         tracing::info!(channel = %self.channel_id, "voice transport disconnected");
-        Ok(())
     }
 
     /// Send an encoded audio frame to the remote participant.

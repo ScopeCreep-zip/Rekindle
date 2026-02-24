@@ -22,7 +22,6 @@ pub fn insert_dm(
 }
 
 /// Insert a channel message (community or legacy plaintext).
-#[allow(clippy::too_many_arguments)]
 pub fn insert_channel_message(
     conn: &rusqlite::Connection,
     owner_key: &str,

@@ -349,6 +349,9 @@ pub async fn login(
         }
     }
 
+    // Replay any deep link that arrived before authentication
+    crate::deep_links::emit_pending_deep_link(&app);
+
     Ok(result)
 }
 
@@ -507,7 +510,6 @@ pub async fn list_identities(pool: State<'_, DbPool>) -> Result<Vec<IdentitySumm
 /// - The Stronghold snapshot file
 ///
 /// If deleting the currently active identity, performs logout first.
-#[allow(clippy::too_many_lines)]
 #[tauri::command]
 pub async fn delete_identity(
     public_key: String,
@@ -667,7 +669,6 @@ async fn load_friends_from_db(
 }
 
 /// Load communities and channels from `SQLite` into `AppState`, scoped to the given identity.
-#[allow(clippy::too_many_lines)]
 async fn load_communities_from_db(
     pool: &DbPool,
     state: &SharedState,
@@ -762,6 +763,9 @@ async fn load_communities_from_db(
                 name: ch_name.clone(),
                 channel_type: ch_type.clone(),
                 unread_count: 0,
+                category_id: None,
+                topic: String::new(),
+                slowmode_seconds: None,
             })
             .collect();
 
@@ -791,6 +795,7 @@ async fn load_communities_from_db(
             name: name.clone(),
             description: description.clone(),
             channels,
+            categories: Vec::new(),
             my_role_ids,
             roles,
             my_role: Some(my_role.clone()),
@@ -945,8 +950,9 @@ fn start_background_services(
     services::game_service::initialize(state, game_shutdown_tx);
     let game_app = app.clone();
     let game_state = Arc::clone(state);
+    let game_pool = pool.clone();
     let game_handle = tauri::async_runtime::spawn(async move {
-        services::game_service::start_game_detection(game_app, game_state, game_shutdown_rx).await;
+        services::game_service::start_game_detection(game_app, game_state, game_pool, game_shutdown_rx).await;
     });
 
     // Store the game handle so logout can abort it
@@ -1113,12 +1119,26 @@ pub fn maybe_spawn_server(app: &tauri::AppHandle, state: &SharedState) {
         }
     };
 
-    // Look for the rekindle-server binary next to the current executable
+    // Look for the rekindle-server binary next to the current executable.
+    // Production bundles use the sidecar name with target-triple suffix;
+    // dev builds fall back to the bare binary name in target/debug/.
     let server_binary = match std::env::current_exe() {
-        Ok(exe) => exe
-            .parent()
-            .map(|p| p.join("rekindle-server"))
-            .unwrap_or_default(),
+        Ok(exe) => {
+            let dir = exe.parent().unwrap_or(std::path::Path::new("."));
+            let ext = if cfg!(windows) { ".exe" } else { "" };
+            // Production: Tauri bundles sidecar with target-triple suffix
+            let sidecar = dir.join(format!(
+                "rekindle-server-{}{}",
+                env!("REKINDLE_TARGET"),
+                ext
+            ));
+            if sidecar.exists() {
+                sidecar
+            } else {
+                // Dev: bare name in target/debug/ alongside the Tauri binary
+                dir.join(format!("rekindle-server{ext}"))
+            }
+        }
         Err(e) => {
             tracing::warn!(error = %e, "failed to locate current exe for server binary");
             return;
@@ -1140,6 +1160,27 @@ pub fn maybe_spawn_server(app: &tauri::AppHandle, state: &SharedState) {
     // The old process may still hold the socket, blocking the new server.
     kill_stale_server(state, &socket_path);
 
+    // Redirect server stdout/stderr to a log file so tracing output is visible.
+    let log_dir = app.path().app_log_dir().unwrap_or_else(|_| data_dir.clone());
+    let _ = std::fs::create_dir_all(&log_dir);
+    let (stdout_cfg, stderr_cfg) =
+        match std::fs::File::create(log_dir.join("rekindle-server.log")) {
+            Ok(f) => {
+                let stderr_f = f.try_clone().unwrap_or_else(|_| {
+                    std::fs::File::create(log_dir.join("rekindle-server-err.log"))
+                        .expect("failed to create server stderr log")
+                });
+                (
+                    std::process::Stdio::from(f),
+                    std::process::Stdio::from(stderr_f),
+                )
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "failed to create server log file, using inherited stdio");
+                (std::process::Stdio::inherit(), std::process::Stdio::inherit())
+            }
+        };
+
     match std::process::Command::new(&server_binary)
         .arg("--storage-dir")
         .arg(data_dir.join("server"))
@@ -1147,6 +1188,8 @@ pub fn maybe_spawn_server(app: &tauri::AppHandle, state: &SharedState) {
         .arg(&socket_path)
         .arg("--db")
         .arg(data_dir.join("server.db"))
+        .stdout(stdout_cfg)
+        .stderr(stderr_cfg)
         .spawn()
     {
         Ok(child) => {
@@ -1180,24 +1223,21 @@ async fn send_host_community_ipc(
     communities: Vec<(String, String, String, String, String, String)>,
 ) {
     for (community_id, dht_key, keypair, name, pseudonym, display_name) in &communities {
-        let sp = socket_path.clone();
-        let cid = community_id.clone();
-        let dk = dht_key.clone();
-        let kp = keypair.clone();
-        let nm = name.clone();
-        let ps = pseudonym.clone();
-        let dn = display_name.clone();
-        let result = tokio::task::spawn_blocking(move || {
-            crate::ipc_client::host_community_blocking(&sp, &cid, &dk, &kp, &nm, &ps, &dn, 10)
-        })
-        .await;
-        match result {
-            Ok(Ok(())) => {}
-            Ok(Err(e)) => {
-                tracing::warn!(community = %community_id, error = %e, "failed to send HostCommunity IPC");
-            }
+        match crate::ipc_client::host_community_async(
+            &socket_path,
+            community_id,
+            dht_key,
+            keypair,
+            name,
+            pseudonym,
+            display_name,
+            10,
+        )
+        .await
+        {
+            Ok(()) => {}
             Err(e) => {
-                tracing::warn!(community = %community_id, error = %e, "HostCommunity IPC task panicked");
+                tracing::warn!(community = %community_id, error = %e, "failed to send HostCommunity IPC");
             }
         }
     }

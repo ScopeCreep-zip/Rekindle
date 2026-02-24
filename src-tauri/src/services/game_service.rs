@@ -5,7 +5,8 @@ use tauri::Emitter;
 use tokio::sync::mpsc;
 
 use crate::channels::PresenceEvent;
-use crate::state::{AppState, GameDetectorHandle, GameInfoState};
+use crate::db::DbPool;
+use crate::state::{AppState, GameDetectorHandle, GameInfoState, SharedState, UserStatus};
 use crate::state_helpers;
 
 /// Start the game detection polling loop.
@@ -14,9 +15,11 @@ use crate::state_helpers;
 /// 1. Updates `AppState` with current game info
 /// 2. Publishes game status to DHT profile subkey 4
 /// 3. Emits presence event to frontend
+/// 4. Fans out presence updates to all joined communities
 pub async fn start_game_detection(
     app_handle: tauri::AppHandle,
     state: Arc<AppState>,
+    pool: DbPool,
     mut shutdown_rx: mpsc::Receiver<()>,
 ) {
     tracing::info!("game detection service started");
@@ -41,8 +44,9 @@ pub async fn start_game_detection(
                     let game_info = detected.as_ref().map(|g| GameInfoState {
                         game_id: g.game_id,
                         game_name: g.game_name.clone(),
-                        server_info: None,
+                        server_info: g.rich_presence.as_ref().and_then(|rp| rp.details.clone()),
                         elapsed_seconds: u32::try_from((now_ms.saturating_sub(g.started_at_epoch_ms)) / 1000).unwrap_or(u32::MAX),
+                        server_address: g.rich_presence.as_ref().and_then(rekindle_game_detect::rich_presence::RichPresence::server_address),
                     });
 
                     // Update AppState
@@ -59,6 +63,7 @@ pub async fn start_game_detection(
                         game_name: game_info.as_ref().map(|g| g.game_name.clone()),
                         game_id: game_info.as_ref().map(|g| g.game_id),
                         elapsed_seconds: game_info.as_ref().map(|g| g.elapsed_seconds),
+                        server_address: game_info.as_ref().and_then(|g| g.server_address.clone()),
                     };
                     let _ = app_handle.emit("presence-event", &event);
 
@@ -67,6 +72,9 @@ pub async fn start_game_detection(
                     if let Err(e) = super::message_service::push_profile_update(&state, 4, game_bytes).await {
                         tracing::warn!(error = %e, "failed to publish game info to DHT");
                     }
+
+                    // Fan out presence update to all joined communities
+                    fan_out_community_presence(&state, &pool, game_info.as_ref());
 
                     if let Some(ref name) = current_name {
                         tracing::info!(game = %name, "game detected");
@@ -82,6 +90,54 @@ pub async fn start_game_detection(
                 break;
             }
         }
+    }
+}
+
+/// Send `UpdatePresence` RPC to every joined community so members see our game status.
+fn fan_out_community_presence(
+    state: &SharedState,
+    pool: &DbPool,
+    game_info: Option<&GameInfoState>,
+) {
+    let community_ids: Vec<String> = {
+        let communities = state.communities.read();
+        communities.keys().cloned().collect()
+    };
+
+    if community_ids.is_empty() {
+        return;
+    }
+
+    let status = if game_info.is_some() {
+        "online".to_string()
+    } else {
+        let user_status = state_helpers::identity_status(state).unwrap_or(UserStatus::Online);
+        match user_status {
+            UserStatus::Online => "online",
+            UserStatus::Away => "away",
+            UserStatus::Busy => "busy",
+            UserStatus::Offline => "offline",
+        }.to_string()
+    };
+
+    for community_id in community_ids {
+        let request = rekindle_protocol::messaging::CommunityRequest::UpdatePresence {
+            status: status.clone(),
+            game_name: game_info.as_ref().map(|g| g.game_name.clone()),
+            game_id: game_info.as_ref().map(|g| g.game_id),
+            elapsed_seconds: game_info.as_ref().map(|g| g.elapsed_seconds),
+            server_address: game_info.as_ref().and_then(|g| g.server_address.clone()),
+        };
+
+        // Fire-and-forget — don't block detection loop on RPC responses
+        let s = Arc::clone(state);
+        let p = pool.clone();
+        let cid = community_id.clone();
+        tokio::spawn(async move {
+            if let Err(e) = crate::commands::community::send_community_rpc(&s, &p, &cid, request).await {
+                tracing::debug!(community = %cid, error = %e, "failed to fan out game presence");
+            }
+        });
     }
 }
 

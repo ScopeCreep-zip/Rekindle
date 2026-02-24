@@ -4,6 +4,7 @@ import { fetchAvatarUrl } from "./avatar";
 import { setFriendsState } from "../stores/friends.store";
 import { setCommunityState } from "../stores/community.store";
 import { transformFriendMap, transformCommunityMap } from "../utils/transformers";
+import { loadNotificationOverrides } from "../handlers/community.handlers";
 
 /**
  * Hydrate frontend stores from the Rust backend.
@@ -42,4 +43,6 @@ export async function hydrateState(): Promise<void> {
   } catch (e) {
     console.error("Failed to hydrate communities:", e);
   }
+
+  await loadNotificationOverrides();
 }

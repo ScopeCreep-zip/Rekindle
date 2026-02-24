@@ -112,6 +112,9 @@ pub struct AppState {
     /// The status the user had before auto-away kicked in.
     /// When activity resumes, we restore to this status.
     pub pre_away_status: RwLock<Option<UserStatus>>,
+    /// Deep link action received before the user was authenticated.
+    /// Replayed after successful login so the user isn't silently dropped.
+    pub pending_deep_link: Mutex<Option<crate::deep_links::DeepLinkAction>>,
 }
 
 impl Default for AppState {
@@ -144,6 +147,7 @@ impl Default for AppState {
             idle_shutdown_tx: RwLock::new(None),
             heartbeat_shutdown_tx: RwLock::new(None),
             pre_away_status: RwLock::new(None),
+            pending_deep_link: Mutex::new(None),
         }
     }
 }
@@ -409,6 +413,9 @@ pub struct GameInfoState {
     pub game_name: String,
     pub server_info: Option<String>,
     pub elapsed_seconds: u32,
+    /// Direct server address ("ip:port") for join-game functionality.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_address: Option<String>,
 }
 
 /// A joined community's state.
@@ -419,6 +426,7 @@ pub struct CommunityState {
     pub name: String,
     pub description: Option<String>,
     pub channels: Vec<ChannelInfo>,
+    pub categories: Vec<CategoryInfo>,
     /// Our role IDs in this community (multi-role, bitmask-based).
     pub my_role_ids: Vec<u32>,
     /// Cached role definitions from the server.
@@ -488,6 +496,21 @@ pub struct ChannelInfo {
     pub name: String,
     pub channel_type: ChannelType,
     pub unread_count: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category_id: Option<String>,
+    #[serde(default)]
+    pub topic: String,
+    #[serde(default)]
+    pub slowmode_seconds: Option<u32>,
+}
+
+/// Category info within a community.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CategoryInfo {
+    pub id: String,
+    pub name: String,
+    pub sort_order: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -495,6 +518,7 @@ pub struct ChannelInfo {
 pub enum ChannelType {
     Text,
     Voice,
+    Announcement,
 }
 
 impl AsRef<str> for ChannelType {
@@ -502,6 +526,7 @@ impl AsRef<str> for ChannelType {
         match self {
             Self::Text => "text",
             Self::Voice => "voice",
+            Self::Announcement => "announcement",
         }
     }
 }
@@ -517,6 +542,7 @@ impl FromStr for ChannelType {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(match s {
             "voice" => Self::Voice,
+            "announcement" => Self::Announcement,
             _ => Self::Text,
         })
     }
@@ -565,11 +591,27 @@ pub(crate) fn parse_dht_channel_list(data: &[u8]) -> Vec<ChannelInfo> {
                 .unwrap_or("text")
                 .parse()
                 .unwrap_or(ChannelType::Text);
+            let category_id = ch
+                .get("categoryId")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            let topic = ch
+                .get("topic")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let slowmode_seconds = ch
+                .get("slowmodeSeconds")
+                .and_then(serde_json::Value::as_u64)
+                .and_then(|v| u32::try_from(v).ok());
             Some(ChannelInfo {
                 id,
                 name,
                 channel_type: ch_type,
                 unread_count: 0,
+                category_id,
+                topic,
+                slowmode_seconds,
             })
         })
         .collect()

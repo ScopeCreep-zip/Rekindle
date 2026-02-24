@@ -4,6 +4,7 @@ mod channels;
 pub mod commands;
 pub mod db;
 pub mod db_helpers;
+mod deep_links;
 pub mod invite_helpers;
 pub mod ipc_client;
 pub mod keystore;
@@ -19,11 +20,12 @@ mod windows;
 use std::sync::Arc;
 
 use tauri::{Emitter, Manager, WindowEvent};
+#[cfg(target_os = "macos")]
+use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_global_shortcut::{Code, Modifiers, ShortcutState};
 
 use state::{AppState, SharedState};
 
-#[allow(clippy::too_many_lines)]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(target_os = "linux")]
@@ -45,7 +47,15 @@ pub fn run() {
 
     tauri::Builder::default()
         // MUST be first — prevents multiple instances
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            // Check if launched via deep link (e.g. rekindle://community/abc123)
+            for arg in &args {
+                if arg.starts_with("rekindle://") {
+                    deep_links::handle_deep_link_url(app, arg);
+                    return;
+                }
+            }
+
             if let Some(w) = app.get_webview_window("buddy-list") {
                 let _ = w.show();
                 let _ = w.set_focus();
@@ -71,6 +81,19 @@ pub fn run() {
         ))
         .setup(move |app| {
             tray::setup_tray(app)?;
+
+            // macOS: register deep link handler for when the app is already running.
+            // On Windows/Linux, the single-instance plugin callback handles deep link
+            // args instead (the OS re-launches the exe with the URL as an argument).
+            #[cfg(target_os = "macos")]
+            {
+                let dl_handle = app.handle().clone();
+                app.deep_link().on_open_url(move |event| {
+                    for url in event.urls() {
+                        deep_links::handle_deep_link_url(&dl_handle, url.as_str());
+                    }
+                });
+            }
 
             // Register global keyboard shortcuts (plugin registered here for state access)
             // macOS uses Cmd (Super), Windows/Linux use Ctrl
@@ -233,7 +256,17 @@ pub fn run() {
             commands::community::create_community,
             commands::community::join_community,
             commands::community::create_channel,
+            commands::community::create_category,
+            commands::community::delete_category,
+            commands::community::rename_category,
+            commands::community::move_channel,
+            commands::community::reorder_categories,
+            commands::community::create_community_invite,
+            commands::community::revoke_community_invite,
+            commands::community::list_community_invites,
             commands::community::send_channel_message,
+            commands::community::edit_channel_message,
+            commands::community::delete_channel_message,
             commands::community::get_channel_messages,
             commands::community::get_communities,
             commands::community::get_community_details,
@@ -249,6 +282,7 @@ pub fn run() {
             commands::community::remove_timeout,
             commands::community::set_channel_overwrite,
             commands::community::delete_channel_overwrite,
+            commands::community::set_slowmode,
             commands::community::leave_community,
             commands::community::delete_channel,
             commands::community::rename_channel,
@@ -257,6 +291,38 @@ pub fn run() {
             commands::community::unban_member,
             commands::community::get_ban_list,
             commands::community::rotate_mek,
+            commands::community::add_reaction,
+            commands::community::remove_reaction,
+            commands::community::pin_message,
+            commands::community::unpin_message,
+            commands::community::get_channel_pins,
+            commands::community::get_audit_log,
+            commands::community::send_channel_typing,
+            commands::community::update_community_presence,
+            commands::community::get_older_channel_messages,
+            commands::community::set_channel_topic,
+            commands::community::reorder_channels,
+            // community threads
+            commands::community::create_thread,
+            commands::community::get_channel_threads,
+            commands::community::send_thread_message,
+            commands::community::get_thread_messages,
+            commands::community::archive_thread,
+            commands::community::unarchive_thread,
+            // community events
+            commands::community::create_event,
+            commands::community::edit_event,
+            commands::community::delete_event,
+            commands::community::cancel_event,
+            commands::community::rsvp_event,
+            commands::community::get_events,
+            // community game servers
+            commands::community::add_game_server,
+            commands::community::remove_game_server,
+            commands::community::get_game_servers,
+            // community unread tracking
+            commands::community::mark_channel_read,
+            commands::community::get_unread_counts,
             // voice
             commands::voice::join_voice_channel,
             commands::voice::leave_voice,
@@ -272,6 +338,8 @@ pub fn run() {
             commands::status::set_status_message,
             // game
             commands::game::get_game_status,
+            commands::game::get_game_name,
+            commands::game::launch_game_to_server,
             // settings
             commands::settings::get_preferences,
             commands::settings::set_preferences,
@@ -329,7 +397,6 @@ pub fn run() {
 /// First cleans up user-specific state (DHT records, routes), then sends
 /// shutdown signals to the dispatch loop, and finally shuts down the
 /// Veilid node itself.
-#[allow(clippy::too_many_lines)]
 async fn graceful_shutdown(state: &SharedState) {
     tracing::info!("graceful shutdown: stopping background services");
 
@@ -393,7 +460,7 @@ async fn graceful_shutdown(state: &SharedState) {
         // Try graceful shutdown via IPC first
         let socket_path = crate::ipc_client::default_socket_path();
         if socket_path.exists() {
-            if let Err(e) = crate::ipc_client::shutdown_server_blocking(&socket_path) {
+            if let Err(e) = crate::ipc_client::shutdown_server_async(&socket_path).await {
                 tracing::debug!(error = %e, "IPC shutdown failed — will kill process");
             }
         }

@@ -43,14 +43,10 @@ pub async fn server_health_loop(
                 }
 
                 let socket_path = ipc_client::default_socket_path();
-                let sp = socket_path.clone();
-                let status = tokio::task::spawn_blocking(move || {
-                    ipc_client::get_status_blocking(&sp)
-                })
-                .await;
+                let status = ipc_client::get_status_async(&socket_path).await;
 
                 match status {
-                    Ok(Ok((uptime, communities, attached))) => {
+                    Ok((uptime, communities, attached)) => {
                         if consecutive_failures > 0 {
                             tracing::info!(
                                 uptime_secs = uptime,
@@ -62,20 +58,12 @@ pub async fn server_health_loop(
                         }
                         consecutive_failures = 0;
                     }
-                    Ok(Err(e)) => {
-                        consecutive_failures += 1;
-                        tracing::warn!(
-                            error = %e,
-                            consecutive = consecutive_failures,
-                            "server health check failed"
-                        );
-                    }
                     Err(e) => {
                         consecutive_failures += 1;
                         tracing::warn!(
                             error = %e,
                             consecutive = consecutive_failures,
-                            "server health check task panicked"
+                            "server health check failed"
                         );
                     }
                 }
