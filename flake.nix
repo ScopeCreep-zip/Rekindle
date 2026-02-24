@@ -8,41 +8,73 @@
   };
 
   outputs = { self, nixpkgs, flake-utils, konductor, ... }:
-    flake-utils.lib.eachDefaultSystem (system:
-      let
-        pkgs = import nixpkgs { inherit system; };
+    let
+      supportedSystems = [ "x86_64-linux" "aarch64-linux" ];
+      forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
+      pkgsFor = system: import nixpkgs { inherit system; };
+    in
+    {
+      packages = forAllSystems (system: {
+        default = (pkgsFor system).callPackage ./nix/package.nix { };
+        rekindle = self.packages.${system}.default;
+      });
 
-        rekindlePackages = with pkgs; [
-          capnproto
-          cmake
-          libsodium.dev
-        ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
-          alsa-lib.dev
-          libopus.dev
-        ];
+      overlays.default = final: prev: {
+        rekindle = final.callPackage ./nix/package.nix { };
+      };
 
-        # Runtime library path for Nix-provided shared libs on Linux.
-        rekindleLibPath = pkgs.lib.optionalString pkgs.stdenv.isLinux
-          (pkgs.lib.makeLibraryPath (with pkgs; [
-            libsodium
-            libopus
-            alsa-lib
-          ]));
+      homeManagerModules.default = { config, lib, pkgs, ... }:
+        let
+          cfg = config.programs.rekindle;
+          defaultPkg = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
+        in
+        {
+          options.programs.rekindle = {
+            enable = lib.mkEnableOption "Rekindle — decentralized gaming social platform";
 
-      in {
-        devShells.default = pkgs.mkShell {
-          name = "rekindle";
-          packages = rekindlePackages;
-          inputsFrom = [ konductor.devShells.${system}.frontend ];
+            package = lib.mkOption {
+              type = lib.types.package;
+              default = defaultPkg;
+              description = "The rekindle package to use.";
+            };
+          };
 
-          # Use env instead of shellHook — direnv's use flake does NOT
-          # execute shellHook, only captures env attrs.
-          env = {
-            KONDUCTOR_SHELL = "rekindle";
-            SODIUM_USE_PKG_CONFIG = "1";
-            REKINDLE_LIB_PATH = rekindleLibPath;
+          config = lib.mkIf cfg.enable {
+            home.packages = [ cfg.package ];
           };
         };
-      }
-    );
+
+      devShells = forAllSystems (system:
+        let
+          pkgs = pkgsFor system;
+
+          rekindlePackages = with pkgs; [
+            capnproto
+            cmake
+            libsodium.dev
+          ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
+            alsa-lib.dev
+            libopus.dev
+          ];
+
+          rekindleLibPath = pkgs.lib.optionalString pkgs.stdenv.isLinux
+            (pkgs.lib.makeLibraryPath (with pkgs; [
+              libsodium
+              libopus
+              alsa-lib
+            ]));
+        in {
+          default = pkgs.mkShell {
+            name = "rekindle";
+            packages = rekindlePackages;
+            inputsFrom = [ konductor.devShells.${system}.frontend ];
+
+            env = {
+              KONDUCTOR_SHELL = "rekindle";
+              SODIUM_USE_PKG_CONFIG = "1";
+              REKINDLE_LIB_PATH = rekindleLibPath;
+            };
+          };
+        });
+    };
 }
