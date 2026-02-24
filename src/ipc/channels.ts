@@ -351,6 +351,10 @@ export type CommunityEvent =
   | {
       type: "inviteUsed";
       data: { communityId: string; code: string; newUseCount: number };
+    }
+  | {
+      type: "membersRefreshed";
+      data: { communityId: string };
     };
 
 export type NotificationEvent =

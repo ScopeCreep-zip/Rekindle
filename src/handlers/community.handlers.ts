@@ -80,6 +80,14 @@ export async function handleJoinCommunity(
         events: [],
       });
     }
+    // Fetch members for the newly joined community
+    try {
+      const members = await commands.getCommunityMembers(communityId);
+      setCommunityState("communities", communityId, "members", members.map(transformMember));
+    } catch (e) {
+      console.error("Failed to load community members after join:", e);
+    }
+
     // Notify the server of our online presence after joining
     handleUpdateCommunityPresence(communityId, "online");
   } catch (e) {
@@ -1667,6 +1675,15 @@ export function subscribeCommunityEventDispatcher(): Promise<UnlistenFn> {
           inv.code === code ? { ...inv, uses: newUseCount } : inv,
         ),
       );
+    } else if (event.type === "membersRefreshed") {
+      const { communityId } = event.data;
+      if (communityState.communities[communityId]) {
+        commands.getCommunityMembers(communityId).then((members) => {
+          setCommunityState("communities", communityId, "members", members.map(transformMember));
+        }).catch((e) => {
+          console.error(`Failed to refresh members for ${communityId}:`, e);
+        });
+      }
     }
   });
 }

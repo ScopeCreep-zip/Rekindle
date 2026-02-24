@@ -556,7 +556,7 @@ pub enum CommunityRequest {
 pub enum CommunityResponse {
     /// Generic success.
     Ok,
-    /// Join succeeded — includes encrypted MEK, channel list, and categories.
+    /// Join succeeded — includes encrypted MEK, channel list, categories, and members.
     Joined {
         mek_encrypted: Vec<u8>,
         mek_generation: u64,
@@ -565,6 +565,8 @@ pub enum CommunityResponse {
         categories: Vec<CategoryDto>,
         role_ids: Vec<u32>,
         roles: Vec<RoleDto>,
+        #[serde(default)]
+        members: Vec<MemberInfoDto>,
     },
     /// Message history.
     Messages { messages: Vec<ChannelMessageDto> },
@@ -624,6 +626,15 @@ pub struct RoleDto {
     pub position: i32,
     pub hoist: bool,
     pub mentionable: bool,
+}
+
+/// A community member as returned by the server in the join/rejoin response.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MemberInfoDto {
+    pub pseudonym_key: String,
+    pub display_name: String,
+    pub role_ids: Vec<u32>,
 }
 
 /// A banned member as returned by the server.

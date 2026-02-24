@@ -43,6 +43,11 @@ pub enum IpcRequest {
         max_uses: Option<u32>,
         expires_in_seconds: Option<u64>,
     },
+    /// Subscribe to receive broadcasts for hosted communities.
+    /// The connection is held open and broadcasts are streamed as newline-delimited JSON.
+    SubscribeBroadcasts {
+        pseudonym_keys: Vec<String>,
+    },
 }
 
 /// JSON-RPC response from the rekindle-server daemon.
@@ -500,6 +505,75 @@ pub async fn shutdown_server_async(socket_path: &Path) -> Result<(), String> {
         // Connection refused / socket not found is expected if server is already dead
         Ok(_) | Err(_) => Ok(()),
     }
+}
+
+/// Subscribe to receive real-time broadcasts for hosted communities.
+///
+/// Opens a persistent IPC connection that streams broadcast lines.
+/// Returns an `UnboundedReceiver` of raw broadcast JSON bytes.
+/// The connection stays open until the receiver is dropped.
+pub async fn subscribe_broadcasts(
+    socket_path: &Path,
+    pseudonym_keys: Vec<String>,
+) -> Result<tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>, String> {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+    let stream = connect_async(socket_path).await?;
+    let (reader, mut writer) = stream.into_split();
+
+    let request = IpcRequest::SubscribeBroadcasts { pseudonym_keys };
+    let mut buf =
+        serde_json::to_vec(&request).map_err(|e| format!("failed to serialize IPC request: {e}"))?;
+    buf.push(b'\n');
+
+    writer
+        .write_all(&buf)
+        .await
+        .map_err(|e| format!("failed to write to server socket: {e}"))?;
+    writer
+        .flush()
+        .await
+        .map_err(|e| format!("failed to flush server socket: {e}"))?;
+
+    // Read the initial OK response
+    let mut lines = BufReader::new(reader);
+    let mut first_line = String::new();
+    lines
+        .read_line(&mut first_line)
+        .await
+        .map_err(|e| format!("failed to read subscription response: {e}"))?;
+
+    let initial: IpcResponse = serde_json::from_str(first_line.trim())
+        .map_err(|e| format!("failed to parse subscription response: {e}"))?;
+    match initial {
+        IpcResponse::Ok => {}
+        IpcResponse::Error { message } => return Err(format!("subscription rejected: {message}")),
+        other => return Err(format!("unexpected subscription response: {other:?}")),
+    }
+
+    // Spawn a task to read broadcast lines and forward them to the channel
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+    tokio::spawn(async move {
+        let _writer = writer; // Keep writer alive to maintain the connection
+        let mut line_buf = String::new();
+        loop {
+            line_buf.clear();
+            match lines.read_line(&mut line_buf).await {
+                Ok(0) | Err(_) => break, // Connection closed or read error
+                Ok(_) => {
+                    let trimmed = line_buf.trim();
+                    if trimmed.is_empty() {
+                        continue;
+                    }
+                    if tx.send(trimmed.as_bytes().to_vec()).is_err() {
+                        break; // Receiver dropped
+                    }
+                }
+            }
+        }
+    });
+
+    Ok(rx)
 }
 
 /// Generate a community invite asynchronously.

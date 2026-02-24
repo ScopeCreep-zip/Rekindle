@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use rekindle_protocol::dht::community::{permissions, ROLE_EVERYONE_ID};
 use rekindle_protocol::messaging::envelope::{
-    CategoryDto, ChannelInfoDto, CommunityBroadcast, CommunityResponse, RoleDto,
+    CategoryDto, ChannelInfoDto, CommunityBroadcast, CommunityResponse, MemberInfoDto, RoleDto,
 };
 use rusqlite::params;
 
@@ -20,6 +20,19 @@ use super::permissions::{
 
 /// Result tuple returned by `add_new_member` on successful join.
 type JoinResult = (Vec<u8>, u64, Vec<ChannelInfoDto>, Vec<CategoryDto>, Vec<u32>, Vec<RoleDto>);
+
+/// Build a `Vec<MemberInfoDto>` from the community's current member list.
+fn members_to_dto(community: &HostedCommunity) -> Vec<MemberInfoDto> {
+    community
+        .members
+        .iter()
+        .map(|m| MemberInfoDto {
+            pseudonym_key: m.pseudonym_key_hex.clone(),
+            display_name: m.display_name.clone(),
+            role_ids: m.role_ids.clone(),
+        })
+        .collect()
+}
 
 // ---------------------------------------------------------------------------
 // Join / Rejoin
@@ -47,6 +60,8 @@ fn build_rejoin_response(community: &HostedCommunity, pseudonym_pubkey: &str) ->
 
     let mek_payload = community.mek.to_wire_bytes();
 
+    let members = members_to_dto(community);
+
     CommunityResponse::Joined {
         mek_encrypted: mek_payload,
         mek_generation: community.mek.generation(),
@@ -54,6 +69,7 @@ fn build_rejoin_response(community: &HostedCommunity, pseudonym_pubkey: &str) ->
         categories,
         role_ids,
         roles: roles_to_dto(community),
+        members,
     }
 }
 
@@ -274,6 +290,15 @@ pub(super) async fn handle_join(
         },
     );
 
+    // Build member list after adding the new member (includes the joiner)
+    let members = {
+        let hosted = state.hosted.read();
+        hosted
+            .get(&community_id)
+            .map(members_to_dto)
+            .unwrap_or_default()
+    };
+
     CommunityResponse::Joined {
         mek_encrypted: mek_payload,
         mek_generation,
@@ -281,6 +306,7 @@ pub(super) async fn handle_join(
         categories,
         role_ids,
         roles,
+        members,
     }
 }
 

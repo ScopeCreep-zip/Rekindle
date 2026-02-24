@@ -135,7 +135,7 @@ async fn handle_app_message(
 }
 
 /// Handle a community broadcast from the community server.
-async fn handle_community_broadcast(
+pub(crate) async fn handle_community_broadcast(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     broadcast: rekindle_protocol::messaging::CommunityBroadcast,
@@ -1803,6 +1803,24 @@ pub(crate) async fn route_refresh_loop(
                 if should_refresh {
                     tracing::debug!("proactive route refresh: re-allocating private route");
                     reallocate_private_route(&app_handle, &state).await;
+
+                    // After route reallocation, re-announce to community servers
+                    // so they update our stale route_blob
+                    let communities_to_rejoin: Vec<String> = {
+                        let communities = state.communities.read();
+                        communities
+                            .iter()
+                            .filter(|(_, c)| !c.is_hosted && c.server_route_blob.is_some())
+                            .map(|(id, _)| id.clone())
+                            .collect()
+                    };
+                    for community_id in &communities_to_rejoin {
+                        let _ = crate::services::community_service::rejoin_community(
+                            &state,
+                            community_id,
+                        )
+                        .await;
+                    }
                 }
             }
             _ = shutdown_rx.recv() => {

@@ -3,7 +3,7 @@ import { setAuthState } from "../stores/auth.store";
 import { fetchAvatarUrl } from "./avatar";
 import { setFriendsState } from "../stores/friends.store";
 import { setCommunityState } from "../stores/community.store";
-import { transformFriendMap, transformCommunityMap } from "../utils/transformers";
+import { transformFriendMap, transformCommunityMap, transformMember } from "../utils/transformers";
 import { loadNotificationOverrides } from "../handlers/community.handlers";
 
 /**
@@ -40,6 +40,14 @@ export async function hydrateState(): Promise<void> {
   try {
     const details = await commands.getCommunityDetails();
     setCommunityState("communities", transformCommunityMap(details));
+    // Hydrate members for each community (fire-and-forget, parallel)
+    for (const c of details) {
+      commands.getCommunityMembers(c.id).then((members) => {
+        setCommunityState("communities", c.id, "members", members.map(transformMember));
+      }).catch((e) => {
+        console.error(`Failed to hydrate members for ${c.id}:`, e);
+      });
+    }
   } catch (e) {
     console.error("Failed to hydrate communities:", e);
   }

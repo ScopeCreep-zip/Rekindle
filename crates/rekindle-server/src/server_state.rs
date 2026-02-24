@@ -31,6 +31,9 @@ pub struct ServerState {
     pub slowmode_last_message: RwLock<HashMap<(String, String), i64>>,
     /// Rate limiter for spam detection (auto-moderation).
     pub rate_limiter: RateLimiter,
+    /// Active IPC broadcast listeners. Key = pseudonym_key, Value = broadcast sender.
+    /// Used to deliver real-time broadcasts to the hosted community owner on the same machine.
+    pub broadcast_listeners: RwLock<HashMap<String, tokio::sync::mpsc::UnboundedSender<Vec<u8>>>>,
 }
 
 /// State for a single hosted community.

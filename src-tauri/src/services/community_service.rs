@@ -163,7 +163,7 @@ pub async fn join_community(
     state: &Arc<AppState>,
     community_id: &str,
     invite_code: Option<&str>,
-) -> Result<(), String> {
+) -> Result<Vec<rekindle_protocol::messaging::MemberInfoDto>, String> {
     let routing_context = state_helpers::routing_context(state);
 
     let (name, description, mut channels, dht_record_key, server_route_blob) =
@@ -181,6 +181,7 @@ pub async fn join_community(
     let mut role_ids = vec![0u32, 1]; // default: @everyone + members
     let mut roles = default_roles();
     let mut categories: Vec<CategoryInfo> = Vec::new();
+    let mut members: Vec<rekindle_protocol::messaging::MemberInfoDto> = Vec::new();
 
     let identity_secret = { *state.identity_secret.lock() };
     if let (Some(ref route_blob), Some(ref rc), Some(secret)) =
@@ -206,6 +207,7 @@ pub async fn join_community(
                     channels = result.channels;
                 }
                 categories = result.categories;
+                members = result.members;
             }
             Ok(None) => {}           // RPC failed gracefully, join locally
             Err(e) => return Err(e), // Server explicitly rejected
@@ -237,7 +239,7 @@ pub async fn join_community(
         .insert(community_id.to_string(), community);
 
     tracing::info!(community = %community_id, "joined community");
-    Ok(())
+    Ok(members)
 }
 
 /// Read community metadata, channels, and server route from DHT.
@@ -312,30 +314,31 @@ async fn read_community_from_dht(
 }
 
 /// Result of a successful join RPC to the community server.
-struct JoinRpcResult {
+pub(crate) struct JoinRpcResult {
     mek_generation: u64,
     role: String,
     role_ids: Vec<u32>,
     roles: Vec<RoleDefinition>,
     channels: Vec<ChannelInfo>,
     categories: Vec<CategoryInfo>,
+    members: Vec<rekindle_protocol::messaging::MemberInfoDto>,
 }
 
 /// Parameters for sending a join RPC to the community server.
-struct JoinRpcParams<'a> {
-    identity_secret: [u8; 32],
-    community_id: String,
-    my_pseudonym_key: Option<String>,
-    display_name: String,
-    our_route_blob: &'a Option<Vec<u8>>,
-    invite_code: Option<String>,
+pub(crate) struct JoinRpcParams<'a> {
+    pub(crate) identity_secret: [u8; 32],
+    pub(crate) community_id: String,
+    pub(crate) my_pseudonym_key: Option<String>,
+    pub(crate) display_name: String,
+    pub(crate) our_route_blob: &'a Option<Vec<u8>>,
+    pub(crate) invite_code: Option<String>,
 }
 
 /// Send a `CommunityRequest::Join` RPC to the server.
 ///
 /// Returns `Ok(Some(result))` on success, `Ok(None)` on graceful failure,
 /// or `Err` if the server explicitly rejected the join.
-async fn send_join_rpc(
+pub(crate) async fn send_join_rpc(
     state: &Arc<AppState>,
     routing_context: &veilid_core::RoutingContext,
     server_route_blob: &[u8],
@@ -400,6 +403,7 @@ fn parse_join_response(
             categories,
             role_ids,
             roles: server_roles,
+            members: server_members,
         }) => {
             let role = crate::state::display_role_name(
                 &role_ids,
@@ -457,6 +461,7 @@ fn parse_join_response(
                 roles,
                 channels,
                 categories,
+                members: server_members,
             }))
         }
         Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => {
@@ -664,6 +669,54 @@ fn default_roles() -> Vec<RoleDefinition> {
             mentionable: false,
         },
     ]
+}
+
+/// Re-announce our route to a community server after restart.
+///
+/// Sends a `CommunityRequest::Join` RPC — the server calls `handle_rejoin` for
+/// existing members, which updates the member's `route_blob` so broadcasts
+/// can reach us again.
+pub async fn rejoin_community(state: &Arc<AppState>, community_id: &str) -> Result<(), String> {
+    let (server_route_blob, my_pseudonym_key) = {
+        let communities = state.communities.read();
+        let c = communities
+            .get(community_id)
+            .ok_or("community not found")?;
+        (c.server_route_blob.clone(), c.my_pseudonym_key.clone())
+    };
+    let Some(server_blob) = server_route_blob else {
+        return Ok(());
+    };
+    let Some(rc) = state_helpers::routing_context(state) else {
+        return Ok(());
+    };
+    let Some(identity_secret) = *state.identity_secret.lock() else {
+        return Ok(());
+    };
+
+    let our_route_blob = state_helpers::our_route_blob(state);
+    let display_name = state_helpers::identity_display_name(state);
+
+    let join_params = JoinRpcParams {
+        identity_secret,
+        community_id: community_id.to_string(),
+        my_pseudonym_key,
+        display_name,
+        our_route_blob: &our_route_blob,
+        invite_code: None,
+    };
+
+    // Send join RPC — if member exists, server calls handle_rejoin which updates route_blob
+    match send_join_rpc(state, &rc, &server_blob, &join_params).await {
+        Ok(_) => {
+            tracing::debug!(community = %community_id, "re-announced route to server");
+            Ok(())
+        }
+        Err(e) => {
+            tracing::warn!(community = %community_id, error = %e, "rejoin RPC failed");
+            Err(e)
+        }
+    }
 }
 
 fn rand_bytes(len: usize) -> Vec<u8> {
