@@ -147,6 +147,7 @@ fn handle_game_change(
         game_name: game_info.as_ref().map(|g| g.game_name.clone()),
         game_id: game_info.as_ref().map(|g| g.game_id),
         elapsed_seconds: game_info.as_ref().map(|g| g.elapsed_seconds),
+        server_address: game_info.as_ref().and_then(|g| g.server_address.clone()),
     };
     let _ = app_handle.emit("presence-event", &event);
 }

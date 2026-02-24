@@ -13,6 +13,8 @@ pub struct NodeConfig {
     pub storage_dir: String,
     /// Namespace for this application on the Veilid network.
     pub app_namespace: String,
+    /// Qualifier passed to `VeilidConfig::new()` (e.g. "rekindle" or "rekindle-server").
+    pub qualifier: String,
 }
 
 impl Default for NodeConfig {
@@ -20,6 +22,7 @@ impl Default for NodeConfig {
         Self {
             storage_dir: "~/.rekindle".into(),
             app_namespace: "rekindle".into(),
+            qualifier: "rekindle".into(),
         }
     }
 }
@@ -57,7 +60,7 @@ impl RekindleNode {
         let veilid_config = VeilidConfig::new(
             &config.app_namespace,     // program_name
             "com",                     // organization
-            "rekindle",                // qualifier
+            &config.qualifier,         // qualifier
             Some(&config.storage_dir), // storage_directory override
             None,                      // config_directory (use default)
         );
@@ -143,19 +146,17 @@ impl RekindleNode {
 
     /// Take ownership of the `VeilidUpdate` event receiver.
     ///
-    /// The caller is expected to drive this in its own dispatch loop. This can
-    /// only be called once; subsequent calls will receive `None`.
-    pub fn take_update_receiver(&mut self) -> Option<mpsc::Receiver<VeilidUpdate>> {
-        // We use Option trickery via std::mem::take — once taken, the field is
-        // replaced with a dummy closed receiver.
+    /// The caller is expected to drive this in its own dispatch loop. The
+    /// receiver is replaced with a dummy closed channel on each call, so only
+    /// the first caller gets the real event stream.
+    pub fn take_update_receiver(&mut self) -> mpsc::Receiver<VeilidUpdate> {
         let (_, dummy_rx) = mpsc::channel(1);
-        let rx = std::mem::replace(&mut self.update_rx, dummy_rx);
-        Some(rx)
+        std::mem::replace(&mut self.update_rx, dummy_rx)
     }
 }
 
 /// Return a human-readable name for a `VeilidUpdate` variant (for logging).
-fn veilid_update_name(update: &VeilidUpdate) -> &'static str {
+pub fn veilid_update_name(update: &VeilidUpdate) -> &'static str {
     match update {
         VeilidUpdate::AppCall(_) => "AppCall",
         VeilidUpdate::AppMessage(_) => "AppMessage",

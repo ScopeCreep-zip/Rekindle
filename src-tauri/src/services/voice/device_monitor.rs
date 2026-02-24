@@ -100,13 +100,7 @@ impl DeviceMonitor {
         }
 
         // Enumerate current devices
-        let devices = match rekindle_voice::capture::enumerate_audio_devices() {
-            Ok(d) => d,
-            Err(e) => {
-                tracing::debug!(error = %e, "device monitor: enumeration failed");
-                return None;
-            }
-        };
+        let devices = rekindle_voice::capture::enumerate_audio_devices();
 
         let input_names: Vec<&str> = devices
             .input_devices

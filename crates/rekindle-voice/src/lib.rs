@@ -136,7 +136,7 @@ impl VoiceEngine {
         // Channel capacity: ~100 frames ≈ 2 seconds of audio at 20ms per frame.
         let (tx, rx) = mpsc::channel::<Vec<f32>>(100);
 
-        let mut capture = AudioCapture::new(self.config.sample_rate, self.config.channels)?;
+        let mut capture = AudioCapture::new(self.config.sample_rate, self.config.channels);
         capture.start(
             tx,
             self.config.input_device.as_deref(),
@@ -165,7 +165,7 @@ impl VoiceEngine {
     pub fn start_playback(&mut self) -> Result<(), VoiceError> {
         let (tx, rx) = mpsc::channel::<Vec<f32>>(100);
 
-        let mut pb = AudioPlayback::new(self.config.sample_rate, self.config.channels)?;
+        let mut pb = AudioPlayback::new(self.config.sample_rate, self.config.channels);
         pb.start(
             rx,
             self.config.output_device.as_deref(),

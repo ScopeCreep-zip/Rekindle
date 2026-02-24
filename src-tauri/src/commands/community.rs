@@ -58,10 +58,55 @@ pub struct ChannelInfoDto {
     pub name: String,
     pub channel_type: String,
     pub unread_count: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category_id: Option<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub topic: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slowmode_seconds: Option<u32>,
 }
 
 /// Role DTO for frontend consumption (re-exports the channel's `RoleDto`).
 pub use crate::channels::community_channel::RoleDto as CommunityRoleDto;
+
+/// Category info for the frontend.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CategoryInfoDto {
+    pub id: String,
+    pub name: String,
+    pub sort_order: i32,
+}
+
+/// Response from creating a community invite.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InviteCreatedDto {
+    pub code: String,
+    pub signature: String,
+}
+
+/// Invite info for the frontend.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InviteInfoDto {
+    pub code: String,
+    pub created_by: String,
+    pub max_uses: Option<u32>,
+    pub uses: u32,
+    pub expires_at: Option<u64>,
+    pub created_at: u64,
+}
+
+/// Pinned message info for the frontend.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PinnedMessageInfoDto {
+    pub message_id: String,
+    pub channel_id: String,
+    pub pinned_by: String,
+    pub pinned_at: u64,
+}
 
 /// Full community detail with channels for the frontend.
 #[derive(Debug, Serialize)]
@@ -71,6 +116,7 @@ pub struct CommunityDetail {
     pub name: String,
     pub description: Option<String>,
     pub channels: Vec<ChannelInfoDto>,
+    pub categories: Vec<CategoryInfoDto>,
     pub my_role: Option<String>,
     pub my_role_ids: Vec<u32>,
     pub roles: Vec<CommunityRoleDto>,
@@ -99,6 +145,18 @@ pub async fn get_community_details(
                     name: ch.name.clone(),
                     channel_type: ch.channel_type.to_string(),
                     unread_count: ch.unread_count,
+                    category_id: ch.category_id.clone(),
+                    topic: ch.topic.clone(),
+                    slowmode_seconds: ch.slowmode_seconds,
+                })
+                .collect(),
+            categories: c
+                .categories
+                .iter()
+                .map(|cat| CategoryInfoDto {
+                    id: cat.id.clone(),
+                    name: cat.name.clone(),
+                    sort_order: cat.sort_order,
                 })
                 .collect(),
             my_role: c.my_role.clone(),
@@ -209,17 +267,18 @@ pub async fn create_community(
     Ok(community_id)
 }
 
-/// Join an existing community by ID.
+/// Join an existing community by ID, optionally with an invite code.
 #[tauri::command]
-#[allow(clippy::too_many_lines)]
 pub async fn join_community(
     community_id: String,
+    invite_code: Option<String>,
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
     keystore_handle: State<'_, KeystoreHandle>,
 ) -> Result<(), String> {
     let owner_key = state_helpers::current_owner_key(state.inner())?;
-    services::community_service::join_community(state.inner(), &community_id).await?;
+    services::community_service::join_community(state.inner(), &community_id, invite_code.as_deref())
+        .await?;
 
     let (name, dht_record_key) = {
         let communities = state.communities.read();
@@ -324,6 +383,7 @@ pub async fn create_channel(
     community_id: String,
     name: String,
     channel_type: String,
+    category_id: Option<String>,
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<String, String> {
@@ -344,6 +404,7 @@ pub async fn create_channel(
             rekindle_protocol::messaging::CommunityRequest::CreateChannel {
                 name: name.clone(),
                 channel_type: channel_type.clone(),
+                category_id: category_id.clone(),
             },
         )
         .await;
@@ -357,6 +418,9 @@ pub async fn create_channel(
                     name: name.clone(),
                     channel_type: ch_type,
                     unread_count: 0,
+                    category_id: None,
+                    topic: String::new(),
+                    slowmode_seconds: None,
                 };
                 state_helpers::push_community_channel(state.inner(), &community_id, channel.clone());
 
@@ -403,6 +467,9 @@ pub async fn create_channel(
         name: name.clone(),
         channel_type: ch_type,
         unread_count: 0,
+        category_id: None,
+        topic: String::new(),
+        slowmode_seconds: None,
     };
     let community_id_clone = community_id.clone();
     db_call(pool.inner(), move |conn| {
@@ -414,6 +481,303 @@ pub async fn create_channel(
     Ok(channel_id)
 }
 
+// ---------------------------------------------------------------------------
+// Category management
+// ---------------------------------------------------------------------------
+
+/// Create a new channel category within a community.
+#[tauri::command]
+pub async fn create_category(
+    community_id: String,
+    name: String,
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+) -> Result<String, String> {
+    let response = send_community_rpc(
+        state.inner(),
+        pool.inner(),
+        &community_id,
+        rekindle_protocol::messaging::CommunityRequest::CreateCategory { name: name.clone() },
+    )
+    .await?;
+
+    match response {
+        rekindle_protocol::messaging::CommunityResponse::CategoryCreated { category_id } => {
+            let mut communities = state.communities.write();
+            if let Some(community) = communities.get_mut(&community_id) {
+                let sort_order =
+                    i32::try_from(community.categories.len()).unwrap_or(i32::MAX);
+                community.categories.push(crate::state::CategoryInfo {
+                    id: category_id.clone(),
+                    name,
+                    sort_order,
+                });
+            }
+            Ok(category_id)
+        }
+        rekindle_protocol::messaging::CommunityResponse::Error { message, .. } => {
+            Err(format!("server rejected category creation: {message}"))
+        }
+        other => Err(format!(
+            "unexpected server response for CreateCategory: {other:?}"
+        )),
+    }
+}
+
+/// Delete a channel category.
+#[tauri::command]
+pub async fn delete_category(
+    community_id: String,
+    category_id: String,
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+) -> Result<(), String> {
+    let response = send_community_rpc(
+        state.inner(),
+        pool.inner(),
+        &community_id,
+        rekindle_protocol::messaging::CommunityRequest::DeleteCategory {
+            category_id: category_id.clone(),
+        },
+    )
+    .await?;
+
+    match response {
+        rekindle_protocol::messaging::CommunityResponse::Ok => {
+            let mut communities = state.communities.write();
+            if let Some(community) = communities.get_mut(&community_id) {
+                community.categories.retain(|c| c.id != category_id);
+                for ch in &mut community.channels {
+                    if ch.category_id.as_deref() == Some(&category_id) {
+                        ch.category_id = None;
+                    }
+                }
+            }
+            Ok(())
+        }
+        rekindle_protocol::messaging::CommunityResponse::Error { message, .. } => {
+            Err(format!("server rejected category deletion: {message}"))
+        }
+        other => Err(format!(
+            "unexpected server response for DeleteCategory: {other:?}"
+        )),
+    }
+}
+
+/// Rename a channel category.
+#[tauri::command]
+pub async fn rename_category(
+    community_id: String,
+    category_id: String,
+    new_name: String,
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+) -> Result<(), String> {
+    let response = send_community_rpc(
+        state.inner(),
+        pool.inner(),
+        &community_id,
+        rekindle_protocol::messaging::CommunityRequest::RenameCategory {
+            category_id: category_id.clone(),
+            new_name: new_name.clone(),
+        },
+    )
+    .await?;
+
+    match response {
+        rekindle_protocol::messaging::CommunityResponse::Ok => {
+            let mut communities = state.communities.write();
+            if let Some(community) = communities.get_mut(&community_id) {
+                if let Some(cat) = community.categories.iter_mut().find(|c| c.id == category_id) {
+                    cat.name = new_name;
+                }
+            }
+            Ok(())
+        }
+        rekindle_protocol::messaging::CommunityResponse::Error { message, .. } => {
+            Err(format!("server rejected category rename: {message}"))
+        }
+        other => Err(format!(
+            "unexpected server response for RenameCategory: {other:?}"
+        )),
+    }
+}
+
+/// Move a channel to a different category (or remove from any category).
+#[tauri::command]
+pub async fn move_channel(
+    community_id: String,
+    channel_id: String,
+    category_id: Option<String>,
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+) -> Result<(), String> {
+    let response = send_community_rpc(
+        state.inner(),
+        pool.inner(),
+        &community_id,
+        rekindle_protocol::messaging::CommunityRequest::MoveChannel {
+            channel_id: channel_id.clone(),
+            category_id: category_id.clone(),
+        },
+    )
+    .await?;
+
+    match response {
+        rekindle_protocol::messaging::CommunityResponse::Ok => {
+            let mut communities = state.communities.write();
+            if let Some(community) = communities.get_mut(&community_id) {
+                if let Some(ch) = community.channels.iter_mut().find(|c| c.id == channel_id) {
+                    ch.category_id = category_id;
+                }
+            }
+            Ok(())
+        }
+        rekindle_protocol::messaging::CommunityResponse::Error { message, .. } => {
+            Err(format!("server rejected move channel: {message}"))
+        }
+        other => Err(format!(
+            "unexpected server response for MoveChannel: {other:?}"
+        )),
+    }
+}
+
+/// Reorder categories within a community.
+#[tauri::command]
+pub async fn reorder_categories(
+    community_id: String,
+    category_ids: Vec<String>,
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+) -> Result<(), String> {
+    let response = send_community_rpc(
+        state.inner(),
+        pool.inner(),
+        &community_id,
+        rekindle_protocol::messaging::CommunityRequest::ReorderCategories {
+            category_ids: category_ids.clone(),
+        },
+    )
+    .await?;
+
+    match response {
+        rekindle_protocol::messaging::CommunityResponse::Ok => {
+            let mut communities = state.communities.write();
+            if let Some(community) = communities.get_mut(&community_id) {
+                for (i, cat_id) in category_ids.iter().enumerate() {
+                    if let Some(cat) = community.categories.iter_mut().find(|c| c.id == *cat_id) {
+                        cat.sort_order = i32::try_from(i).unwrap_or(i32::MAX);
+                    }
+                }
+                community.categories.sort_by_key(|c| c.sort_order);
+            }
+            Ok(())
+        }
+        rekindle_protocol::messaging::CommunityResponse::Error { message, .. } => {
+            Err(format!("server rejected reorder categories: {message}"))
+        }
+        other => Err(format!(
+            "unexpected server response for ReorderCategories: {other:?}"
+        )),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Invite management
+// ---------------------------------------------------------------------------
+
+/// Create a community invite code.
+#[tauri::command]
+pub async fn create_community_invite(
+    community_id: String,
+    max_uses: Option<u32>,
+    expires_in_seconds: Option<u64>,
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+) -> Result<InviteCreatedDto, String> {
+    let response = send_community_rpc(
+        state.inner(),
+        pool.inner(),
+        &community_id,
+        rekindle_protocol::messaging::CommunityRequest::CreateInvite {
+            max_uses,
+            expires_in_seconds,
+        },
+    )
+    .await?;
+
+    match response {
+        rekindle_protocol::messaging::CommunityResponse::InviteCreated { code, signature } => {
+            Ok(InviteCreatedDto { code, signature })
+        }
+        rekindle_protocol::messaging::CommunityResponse::Error { message, .. } => {
+            Err(format!("failed to create invite: {message}"))
+        }
+        other => Err(format!("unexpected response for CreateInvite: {other:?}")),
+    }
+}
+
+/// Revoke a community invite code.
+#[tauri::command]
+pub async fn revoke_community_invite(
+    community_id: String,
+    code: String,
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+) -> Result<(), String> {
+    let response = send_community_rpc(
+        state.inner(),
+        pool.inner(),
+        &community_id,
+        rekindle_protocol::messaging::CommunityRequest::RevokeInvite { code },
+    )
+    .await?;
+
+    match response {
+        rekindle_protocol::messaging::CommunityResponse::Ok => Ok(()),
+        rekindle_protocol::messaging::CommunityResponse::Error { message, .. } => {
+            Err(format!("failed to revoke invite: {message}"))
+        }
+        other => Err(format!("unexpected response for RevokeInvite: {other:?}")),
+    }
+}
+
+/// List active community invites.
+#[tauri::command]
+pub async fn list_community_invites(
+    community_id: String,
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+) -> Result<Vec<InviteInfoDto>, String> {
+    let response = send_community_rpc(
+        state.inner(),
+        pool.inner(),
+        &community_id,
+        rekindle_protocol::messaging::CommunityRequest::ListInvites,
+    )
+    .await?;
+
+    match response {
+        rekindle_protocol::messaging::CommunityResponse::InviteList { invites } => {
+            Ok(invites
+                .into_iter()
+                .map(|i| InviteInfoDto {
+                    code: i.code,
+                    created_by: i.created_by,
+                    max_uses: i.max_uses,
+                    uses: i.uses,
+                    expires_at: i.expires_at,
+                    created_at: i.created_at,
+                })
+                .collect())
+        }
+        rekindle_protocol::messaging::CommunityResponse::Error { message, .. } => {
+            Err(format!("failed to list invites: {message}"))
+        }
+        other => Err(format!("unexpected response for ListInvites: {other:?}")),
+    }
+}
+
 /// Send a message in a community channel.
 ///
 /// Encrypts the message body with the community's MEK, then sends a
@@ -423,16 +787,17 @@ pub async fn create_channel(
 pub async fn send_channel_message(
     channel_id: String,
     body: String,
+    reply_to_id: Option<String>,
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
-) -> Result<(), String> {
+) -> Result<String, String> {
     let owner_key = state_helpers::current_owner_key(state.inner())?;
 
     let timestamp = db::timestamp_now();
 
     // --- Step 1: Find the community and get MEK + server route + pseudonym ---
-    let (community_id, mek_generation, server_route_blob) = {
+    let (community_id, mek_generation, server_route_blob, is_hosted) = {
         let communities = state.communities.read();
         let community = communities
             .values()
@@ -442,6 +807,7 @@ pub async fn send_channel_message(
             community.id.clone(),
             community.mek_generation,
             community.server_route_blob.clone(),
+            community.is_hosted,
         )
     };
 
@@ -480,8 +846,24 @@ pub async fn send_channel_message(
     .await?;
 
     // --- Step 4: Send to community server (best-effort — message already persisted) ---
-    if let Some(route_blob) = server_route_blob {
-        if let Err(e) = send_encrypted_to_server(
+    let delivery_result = if is_hosted {
+        // IPC fast path — same as all other RPCs for hosted communities
+        send_community_rpc(
+            state.inner(),
+            pool.inner(),
+            &community_id,
+            rekindle_protocol::messaging::CommunityRequest::SendMessage {
+                channel_id: channel_id.clone(),
+                ciphertext: ciphertext.clone(),
+                mek_generation,
+                reply_to_id,
+            },
+        )
+        .await
+        .map(|_| ())
+    } else if let Some(route_blob) = server_route_blob {
+        // Remote community — existing Veilid path
+        send_encrypted_to_server(
             &state,
             &channel_id,
             &community_id,
@@ -489,22 +871,15 @@ pub async fn send_channel_message(
             mek_generation,
             timestamp,
             route_blob,
+            reply_to_id,
         )
         .await
-        {
-            tracing::warn!(error = %e, "server delivery failed — queuing for retry");
-            queue_pending_channel_message(
-                &state,
-                &pool_for_queue,
-                &community_id,
-                &channel_id,
-                &ciphertext,
-                mek_generation,
-                timestamp,
-            );
-        }
     } else {
-        tracing::warn!("no server route — message stored locally, queuing for retry");
+        Err("no server route".into())
+    };
+
+    let delivery_status = if let Err(e) = delivery_result {
+        tracing::warn!(error = %e, "server delivery failed — queuing for retry");
         queue_pending_channel_message(
             &state,
             &pool_for_queue,
@@ -514,7 +889,10 @@ pub async fn send_channel_message(
             mek_generation,
             timestamp,
         );
-    }
+        "queued"
+    } else {
+        "delivered"
+    };
 
     // --- Step 5: Emit local echo to frontend ---
     let event = ChatEvent::MessageReceived {
@@ -522,11 +900,735 @@ pub async fn send_channel_message(
         body,
         timestamp: timestamp.cast_unsigned(),
         conversation_id: channel_id,
+        server_message_id: None, // Local echo — server ID arrives via broadcast
+        reply_to_id: None,       // Reply context not needed for local echo
     };
     let _ = app.emit("chat-event", &event);
 
-    tracing::info!("channel message sent");
-    Ok(())
+    tracing::info!(status = delivery_status, "channel message sent");
+    Ok(delivery_status.to_string())
+}
+
+/// Edit a previously sent channel message.
+///
+/// Re-encrypts the new body with the current MEK and sends an `EditMessage`
+/// RPC to the community server.
+#[tauri::command]
+pub async fn edit_channel_message(
+    channel_id: String,
+    message_id: String,
+    new_body: String,
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+) -> Result<(), String> {
+    let (community_id, mek_generation) = {
+        let communities = state.communities.read();
+        let community = communities
+            .values()
+            .find(|c| c.channels.iter().any(|ch| ch.id == channel_id))
+            .ok_or("channel not found in any community")?;
+        (community.id.clone(), community.mek_generation)
+    };
+
+    let new_ciphertext = {
+        let mek_cache = state.mek_cache.lock();
+        let mek = mek_cache.get(&community_id).ok_or("MEK not available")?;
+        mek.encrypt(new_body.as_bytes())
+            .map_err(|e| format!("MEK encryption failed: {e}"))?
+    };
+
+    let request = rekindle_protocol::messaging::CommunityRequest::EditMessage {
+        channel_id,
+        message_id,
+        new_ciphertext,
+        mek_generation,
+    };
+
+    let response = send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
+    match response {
+        Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => Ok(()),
+        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => {
+            Err(message)
+        }
+        Ok(_) => Err("unexpected response".into()),
+        Err(e) => Err(e),
+    }
+}
+
+/// Delete a channel message.
+///
+/// Sends a `DeleteMessage` RPC to the community server. The server checks
+/// that the sender owns the message or has `MANAGE_MESSAGES` permission.
+#[tauri::command]
+pub async fn delete_channel_message(
+    channel_id: String,
+    message_id: String,
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+) -> Result<(), String> {
+    let community_id = {
+        let communities = state.communities.read();
+        communities
+            .values()
+            .find(|c| c.channels.iter().any(|ch| ch.id == channel_id))
+            .map(|c| c.id.clone())
+            .ok_or("channel not found in any community")?
+    };
+
+    let request = rekindle_protocol::messaging::CommunityRequest::DeleteMessage {
+        channel_id,
+        message_id,
+    };
+
+    let response = send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
+    match response {
+        Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => Ok(()),
+        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => {
+            Err(message)
+        }
+        Ok(_) => Err("unexpected response".into()),
+        Err(e) => Err(e),
+    }
+}
+
+/// Add a reaction to a community channel message.
+#[tauri::command]
+pub async fn add_reaction(
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+    community_id: String,
+    channel_id: String,
+    message_id: String,
+    emoji: String,
+) -> Result<(), String> {
+    let request = rekindle_protocol::messaging::CommunityRequest::AddReaction {
+        channel_id,
+        message_id,
+        emoji,
+    };
+    let response = send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
+    match response {
+        Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => Ok(()),
+        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
+        Ok(_) => Err("unexpected response".into()),
+        Err(e) => Err(e),
+    }
+}
+
+/// Remove a reaction from a community channel message.
+#[tauri::command]
+pub async fn remove_reaction(
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+    community_id: String,
+    channel_id: String,
+    message_id: String,
+    emoji: String,
+) -> Result<(), String> {
+    let request = rekindle_protocol::messaging::CommunityRequest::RemoveReaction {
+        channel_id,
+        message_id,
+        emoji,
+    };
+    let response = send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
+    match response {
+        Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => Ok(()),
+        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
+        Ok(_) => Err("unexpected response".into()),
+        Err(e) => Err(e),
+    }
+}
+
+/// Pin a message in a community channel.
+#[tauri::command]
+pub async fn pin_message(
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+    community_id: String,
+    channel_id: String,
+    message_id: String,
+) -> Result<(), String> {
+    let request = rekindle_protocol::messaging::CommunityRequest::PinMessage {
+        channel_id,
+        message_id,
+    };
+    let response = send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
+    match response {
+        Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => Ok(()),
+        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
+        Ok(_) => Err("unexpected response".into()),
+        Err(e) => Err(e),
+    }
+}
+
+/// Unpin a message from a community channel.
+#[tauri::command]
+pub async fn unpin_message(
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+    community_id: String,
+    channel_id: String,
+    message_id: String,
+) -> Result<(), String> {
+    let request = rekindle_protocol::messaging::CommunityRequest::UnpinMessage {
+        channel_id,
+        message_id,
+    };
+    let response = send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
+    match response {
+        Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => Ok(()),
+        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
+        Ok(_) => Err("unexpected response".into()),
+        Err(e) => Err(e),
+    }
+}
+
+/// Get pinned messages for a community channel.
+#[tauri::command]
+pub async fn get_channel_pins(
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+    community_id: String,
+    channel_id: String,
+) -> Result<Vec<PinnedMessageInfoDto>, String> {
+    let request = rekindle_protocol::messaging::CommunityRequest::GetPins { channel_id };
+    let response = send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
+    match response {
+        Ok(rekindle_protocol::messaging::CommunityResponse::PinnedMessages { pins }) => Ok(pins
+            .into_iter()
+            .map(|p| PinnedMessageInfoDto {
+                message_id: p.message_id,
+                channel_id: p.channel_id,
+                pinned_by: p.pinned_by,
+                pinned_at: p.pinned_at,
+            })
+            .collect()),
+        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
+        Ok(_) => Err("unexpected response".into()),
+        Err(e) => Err(e),
+    }
+}
+
+/// An audit log entry for the frontend.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuditLogEntryInfoDto {
+    pub action: String,
+    pub actor_pseudonym: String,
+    pub target: Option<String>,
+    pub details: Option<String>,
+    pub timestamp: u64,
+}
+
+/// Get paginated audit log entries for a community.
+#[tauri::command]
+pub async fn get_audit_log(
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+    community_id: String,
+    before_timestamp: Option<u64>,
+    limit: u32,
+) -> Result<Vec<AuditLogEntryInfoDto>, String> {
+    let request = rekindle_protocol::messaging::CommunityRequest::GetAuditLog {
+        before_timestamp,
+        limit,
+    };
+    let response =
+        send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
+    match response {
+        Ok(rekindle_protocol::messaging::CommunityResponse::AuditLog { entries }) => Ok(entries
+            .into_iter()
+            .map(|e| AuditLogEntryInfoDto {
+                action: e.action,
+                actor_pseudonym: e.actor_pseudonym,
+                target: e.target,
+                details: e.details,
+                timestamp: e.timestamp,
+            })
+            .collect()),
+        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
+        Ok(_) => Err("unexpected response".into()),
+        Err(e) => Err(e),
+    }
+}
+
+/// Event info DTO re-exported from the channel module.
+pub use crate::channels::community_channel::EventInfoDto;
+/// Event RSVP DTO re-exported from the channel module.
+pub use crate::channels::community_channel::EventRsvpInfoDto;
+
+/// Create a community event.
+#[tauri::command]
+pub async fn create_event(
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+    community_id: String,
+    title: String,
+    description: String,
+    start_time: u64,
+    end_time: Option<u64>,
+    channel_id: Option<String>,
+    max_attendees: Option<u32>,
+) -> Result<String, String> {
+    let request = rekindle_protocol::messaging::CommunityRequest::CreateEvent {
+        title,
+        description,
+        start_time,
+        end_time,
+        channel_id,
+        max_attendees,
+    };
+    let response =
+        send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
+    match response {
+        Ok(rekindle_protocol::messaging::CommunityResponse::EventCreated { event_id }) => {
+            Ok(event_id)
+        }
+        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
+        Ok(_) => Err("unexpected response".into()),
+        Err(e) => Err(e),
+    }
+}
+
+/// Edit a community event.
+#[tauri::command]
+pub async fn edit_event(
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+    community_id: String,
+    event_id: String,
+    title: Option<String>,
+    description: Option<String>,
+    start_time: Option<u64>,
+    end_time: Option<u64>,
+    channel_id: Option<String>,
+    max_attendees: Option<u32>,
+) -> Result<(), String> {
+    let request = rekindle_protocol::messaging::CommunityRequest::EditEvent {
+        event_id,
+        title,
+        description,
+        start_time,
+        end_time,
+        channel_id,
+        max_attendees,
+    };
+    let response =
+        send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
+    match response {
+        Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => Ok(()),
+        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
+        Ok(_) => Err("unexpected response".into()),
+        Err(e) => Err(e),
+    }
+}
+
+/// Delete a community event.
+#[tauri::command]
+pub async fn delete_event(
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+    community_id: String,
+    event_id: String,
+) -> Result<(), String> {
+    let request = rekindle_protocol::messaging::CommunityRequest::DeleteEvent {
+        event_id,
+    };
+    let response =
+        send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
+    match response {
+        Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => Ok(()),
+        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
+        Ok(_) => Err("unexpected response".into()),
+        Err(e) => Err(e),
+    }
+}
+
+/// Cancel a community event (sets status to "canceled").
+#[tauri::command]
+pub async fn cancel_event(
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+    community_id: String,
+    event_id: String,
+) -> Result<(), String> {
+    let request = rekindle_protocol::messaging::CommunityRequest::CancelEvent {
+        event_id,
+    };
+    let response =
+        send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
+    match response {
+        Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => Ok(()),
+        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
+        Ok(_) => Err("unexpected response".into()),
+        Err(e) => Err(e),
+    }
+}
+
+/// RSVP to a community event.
+#[tauri::command]
+pub async fn rsvp_event(
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+    community_id: String,
+    event_id: String,
+    status: String,
+) -> Result<(), String> {
+    let request = rekindle_protocol::messaging::CommunityRequest::RsvpEvent {
+        event_id,
+        status,
+    };
+    let response =
+        send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
+    match response {
+        Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => Ok(()),
+        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
+        Ok(_) => Err("unexpected response".into()),
+        Err(e) => Err(e),
+    }
+}
+
+/// Get community events.
+#[tauri::command]
+pub async fn get_events(
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+    community_id: String,
+) -> Result<Vec<EventInfoDto>, String> {
+    let request = rekindle_protocol::messaging::CommunityRequest::GetEvents;
+    let response =
+        send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
+    match response {
+        Ok(rekindle_protocol::messaging::CommunityResponse::EventList { events }) => {
+            Ok(events
+                .into_iter()
+                .map(|e| EventInfoDto {
+                    id: e.id,
+                    title: e.title,
+                    description: e.description,
+                    creator_pseudonym: e.creator_pseudonym,
+                    start_time: e.start_time,
+                    end_time: e.end_time,
+                    channel_id: e.channel_id,
+                    max_attendees: e.max_attendees,
+                    created_at: e.created_at,
+                    status: e.status,
+                    rsvps: e
+                        .rsvps
+                        .into_iter()
+                        .map(|r| EventRsvpInfoDto {
+                            pseudonym_key: r.pseudonym_key,
+                            status: r.status,
+                        })
+                        .collect(),
+                })
+                .collect())
+        }
+        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
+        Ok(_) => Err("unexpected response".into()),
+        Err(e) => Err(e),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Thread commands
+// ---------------------------------------------------------------------------
+
+/// Thread info DTO re-exported from the channel module.
+pub use crate::channels::community_channel::ThreadInfoDto;
+
+/// Create a thread from a message in a channel.
+#[tauri::command]
+pub async fn create_thread(
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+    community_id: String,
+    channel_id: String,
+    name: String,
+    starter_message_id: String,
+) -> Result<String, String> {
+    let request = rekindle_protocol::messaging::CommunityRequest::CreateThread {
+        channel_id,
+        name,
+        starter_message_id,
+    };
+    let response =
+        send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
+    match response {
+        Ok(rekindle_protocol::messaging::CommunityResponse::ThreadCreated { thread_id }) => {
+            Ok(thread_id)
+        }
+        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
+        Ok(_) => Err("unexpected response".into()),
+        Err(e) => Err(e),
+    }
+}
+
+/// Get threads for a channel.
+#[tauri::command]
+pub async fn get_channel_threads(
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+    community_id: String,
+    channel_id: String,
+) -> Result<Vec<ThreadInfoDto>, String> {
+    let request = rekindle_protocol::messaging::CommunityRequest::GetChannelThreads {
+        channel_id,
+    };
+    let response =
+        send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
+    match response {
+        Ok(rekindle_protocol::messaging::CommunityResponse::ThreadList { threads }) => {
+            Ok(threads
+                .into_iter()
+                .map(|t| ThreadInfoDto {
+                    id: t.id,
+                    channel_id: t.channel_id,
+                    name: t.name,
+                    starter_message_id: t.starter_message_id,
+                    creator_pseudonym: t.creator_pseudonym,
+                    created_at: t.created_at,
+                    archived: t.archived,
+                    auto_archive_seconds: t.auto_archive_seconds,
+                    last_message_at: t.last_message_at,
+                    message_count: t.message_count,
+                })
+                .collect())
+        }
+        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
+        Ok(_) => Err("unexpected response".into()),
+        Err(e) => Err(e),
+    }
+}
+
+/// Send a message to a thread (encrypted with MEK).
+#[tauri::command]
+pub async fn send_thread_message(
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+    community_id: String,
+    thread_id: String,
+    body: String,
+) -> Result<(), String> {
+    // Encrypt with MEK (same pattern as send_channel_message)
+    let (ciphertext, mek_generation) = {
+        let mek_cache = state.mek_cache.lock();
+        let mek = mek_cache.get(&community_id).ok_or_else(|| {
+            "MEK not available — rejoin the community or wait for MEK delivery".to_string()
+        })?;
+        let ct = mek
+            .encrypt(body.as_bytes())
+            .map_err(|e| format!("MEK encryption failed: {e}"))?;
+        (ct, mek.generation())
+    };
+
+    let request = rekindle_protocol::messaging::CommunityRequest::SendThreadMessage {
+        thread_id,
+        ciphertext,
+        mek_generation,
+        reply_to_id: None,
+    };
+    let response =
+        send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
+    match response {
+        Ok(
+            rekindle_protocol::messaging::CommunityResponse::Ok
+            | rekindle_protocol::messaging::CommunityResponse::MessageSent { .. },
+        ) => Ok(()),
+        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
+        Ok(_) => Err("unexpected response".into()),
+        Err(e) => Err(e),
+    }
+}
+
+/// Get thread message history (decrypted with MEK).
+#[tauri::command]
+pub async fn get_thread_messages(
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+    community_id: String,
+    thread_id: String,
+    limit: u32,
+    before_timestamp: Option<u64>,
+) -> Result<Vec<Message>, String> {
+    let my_pseudonym_key = {
+        let communities = state.communities.read();
+        communities
+            .get(&community_id)
+            .and_then(|c| c.my_pseudonym_key.clone())
+            .unwrap_or_default()
+    };
+
+    let request = rekindle_protocol::messaging::CommunityRequest::GetThreadMessages {
+        thread_id,
+        limit,
+        before_timestamp,
+    };
+    let response =
+        send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
+
+    match response {
+        Ok(rekindle_protocol::messaging::CommunityResponse::ThreadMessages { messages }) => {
+            // Decrypt with cached MEK
+            let mek_cache = state.mek_cache.lock();
+            let Some(mek) = mek_cache.get(&community_id) else {
+                return Err("no MEK to decrypt thread messages".into());
+            };
+
+            let mut result = Vec::new();
+            for msg in &messages {
+                if msg.mek_generation != mek.generation() {
+                    continue;
+                }
+                match mek.decrypt(&msg.ciphertext) {
+                    Ok(plaintext) => {
+                        let body = String::from_utf8(plaintext).unwrap_or_default();
+                        let is_own = msg.sender_pseudonym == my_pseudonym_key;
+                        result.push(Message {
+                            id: 0,
+                            sender_id: msg.sender_pseudonym.clone(),
+                            body,
+                            timestamp: msg.timestamp.cast_signed(),
+                            is_own,
+                            server_message_id: Some(msg.message_id.clone()),
+                        });
+                    }
+                    Err(e) => {
+                        tracing::debug!(error = %e, "failed to decrypt thread message");
+                    }
+                }
+            }
+            Ok(result)
+        }
+        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
+        Ok(_) => Err("unexpected response".into()),
+        Err(e) => Err(e),
+    }
+}
+
+/// Archive a thread.
+#[tauri::command]
+pub async fn archive_thread(
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+    community_id: String,
+    thread_id: String,
+) -> Result<(), String> {
+    let request = rekindle_protocol::messaging::CommunityRequest::ArchiveThread {
+        thread_id,
+    };
+    let response =
+        send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
+    match response {
+        Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => Ok(()),
+        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
+        Ok(_) => Err("unexpected response".into()),
+        Err(e) => Err(e),
+    }
+}
+
+/// Unarchive a thread.
+#[tauri::command]
+pub async fn unarchive_thread(
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+    community_id: String,
+    thread_id: String,
+) -> Result<(), String> {
+    let request = rekindle_protocol::messaging::CommunityRequest::UnarchiveThread {
+        thread_id,
+    };
+    let response =
+        send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
+    match response {
+        Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => Ok(()),
+        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
+        Ok(_) => Err("unexpected response".into()),
+        Err(e) => Err(e),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Game server favorites
+// ---------------------------------------------------------------------------
+
+/// Game server info DTO re-exported from the channel module.
+pub use crate::channels::community_channel::GameServerInfoDto;
+
+/// Add a game server to a community's favorites.
+#[tauri::command]
+pub async fn add_game_server(
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+    community_id: String,
+    game_id: String,
+    label: String,
+    address: String,
+) -> Result<String, String> {
+    let request = rekindle_protocol::messaging::CommunityRequest::AddGameServer {
+        game_id,
+        label,
+        address,
+    };
+    let response =
+        send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
+    match response {
+        Ok(rekindle_protocol::messaging::CommunityResponse::GameServerList { servers }) => {
+            Ok(servers.first().map_or_else(String::new, |s| s.id.clone()))
+        }
+        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
+        Ok(_) => Err("unexpected response".into()),
+        Err(e) => Err(e),
+    }
+}
+
+/// Remove a game server from a community's favorites.
+#[tauri::command]
+pub async fn remove_game_server(
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+    community_id: String,
+    server_id: String,
+) -> Result<(), String> {
+    let request = rekindle_protocol::messaging::CommunityRequest::RemoveGameServer { server_id };
+    let response =
+        send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
+    match response {
+        Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => Ok(()),
+        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
+        Ok(_) => Err("unexpected response".into()),
+        Err(e) => Err(e),
+    }
+}
+
+/// Get all game servers for a community.
+#[tauri::command]
+pub async fn get_game_servers(
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+    community_id: String,
+) -> Result<Vec<GameServerInfoDto>, String> {
+    let request = rekindle_protocol::messaging::CommunityRequest::GetGameServers;
+    let response =
+        send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
+    match response {
+        Ok(rekindle_protocol::messaging::CommunityResponse::GameServerList { servers }) => {
+            Ok(servers
+                .into_iter()
+                .map(|s| GameServerInfoDto {
+                    id: s.id,
+                    game_id: s.game_id,
+                    label: s.label,
+                    address: s.address,
+                    added_by: s.added_by,
+                    created_at: s.created_at,
+                })
+                .collect())
+        }
+        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
+        Ok(_) => Err("unexpected response".into()),
+        Err(e) => Err(e),
+    }
 }
 
 /// Pending channel message queued for retry delivery to the community server.
@@ -606,6 +1708,7 @@ pub(crate) async fn send_encrypted_to_server(
     mek_generation: u64,
     timestamp: i64,
     route_blob: Vec<u8>,
+    reply_to_id: Option<String>,
 ) -> Result<(), String> {
     let Some(rc) = state_helpers::routing_context(state) else {
         return Ok(());
@@ -615,6 +1718,7 @@ pub(crate) async fn send_encrypted_to_server(
         channel_id: channel_id.to_string(),
         ciphertext,
         mek_generation,
+        reply_to_id,
     };
     let request_bytes =
         serde_json::to_vec(&request).map_err(|e| format!("failed to serialize request: {e}"))?;
@@ -697,7 +1801,7 @@ fn check_server_response(channel_id: &str, response_bytes: &[u8]) -> Result<(), 
 ///
 /// For **remote** communities, signs the request with the user's pseudonym key,
 /// wraps it in a `MessageEnvelope`, and sends it via Veilid `app_call`.
-async fn send_community_rpc(
+pub(crate) async fn send_community_rpc(
     state: &SharedState,
     pool: &DbPool,
     community_id: &str,
@@ -739,12 +1843,13 @@ async fn send_community_rpc_ipc(
         serde_json::to_string(request).map_err(|e| format!("failed to serialize request: {e}"))?;
 
     let socket_path = crate::ipc_client::default_socket_path();
-    let cid = community_id.to_string();
-    let response_json = tokio::task::spawn_blocking(move || {
-        crate::ipc_client::community_rpc_blocking(&socket_path, &cid, &pseudonym_key, &request_json)
-    })
-    .await
-    .map_err(|e| format!("IPC task panicked: {e}"))??;
+    let response_json = crate::ipc_client::community_rpc_async(
+        &socket_path,
+        community_id,
+        &pseudonym_key,
+        &request_json,
+    )
+    .await?;
 
     serde_json::from_str(&response_json).map_err(|e| format!("invalid IPC response: {e}"))
 }
@@ -1081,6 +2186,7 @@ pub async fn get_channel_messages(
                 body: db::get_str(row, "body"),
                 timestamp: db::get_i64(row, "timestamp"),
                 is_own,
+                server_message_id: None, // Local DB history — server IDs come via ChannelHistoryLoaded
             })
         })?;
 
@@ -1175,7 +2281,7 @@ async fn fetch_channel_history_from_server(
     }
 
     // Decrypt with cached MEK — scope the guard so it's dropped before any .await
-    let decrypted: Vec<(String, String, i64, i64)> = {
+    let decrypted: Vec<(String, String, String, i64, i64)> = {
         let mek_cache = state.mek_cache.lock();
         let Some(mek) = mek_cache.get(community_id) else {
             tracing::warn!(community = %community_id, "no MEK to decrypt server history");
@@ -1197,6 +2303,7 @@ async fn fetch_channel_history_from_server(
                     let body = String::from_utf8(plaintext).unwrap_or_default();
                     result.push((
                         msg.sender_pseudonym.clone(),
+                        msg.message_id.clone(),
                         body,
                         msg.timestamp.cast_signed(),
                         msg.mek_generation.cast_signed(),
@@ -1216,7 +2323,7 @@ async fn fetch_channel_history_from_server(
     let mpk = my_pseudonym_key.to_string();
     let decrypted_clone = decrypted.clone();
     db_fire(pool, "store decrypted channel history", move |conn| {
-        for (sender, body, ts, mg) in &decrypted_clone {
+        for (sender, _message_id, body, ts, mg) in &decrypted_clone {
             let _ = conn.execute(
                 "INSERT OR IGNORE INTO messages (owner_key, conversation_id, conversation_type, sender_key, body, timestamp, is_read, mek_generation) \
                  VALUES (?, ?, 'channel', ?, ?, ?, 0, ?)",
@@ -1229,7 +2336,7 @@ async fn fetch_channel_history_from_server(
     // Build Message structs for the frontend
     decrypted
         .into_iter()
-        .map(|(sender, body, ts, _mg)| {
+        .map(|(sender, message_id, body, ts, _mg)| {
             let is_own = sender == mpk;
             Message {
                 id: 0, // temporary — will get real IDs on next query from SQLite
@@ -1237,6 +2344,7 @@ async fn fetch_channel_history_from_server(
                 body,
                 timestamp: ts,
                 is_own,
+                server_message_id: Some(message_id),
             }
         })
         .collect()
@@ -1376,7 +2484,6 @@ pub async fn get_roles(
 
 /// Create a new role in a community.
 #[tauri::command]
-#[allow(clippy::too_many_arguments)] // Tauri IPC: each param is a distinct frontend field
 pub async fn create_role(
     community_id: String,
     name: String,
@@ -1441,7 +2548,6 @@ pub async fn create_role(
 
 /// Edit an existing role in a community.
 #[tauri::command]
-#[allow(clippy::too_many_arguments)] // Tauri IPC: each param is a distinct frontend field
 pub async fn edit_role(
     community_id: String,
     role_id: u32,
@@ -1844,7 +2950,6 @@ pub async fn remove_timeout(
 
 /// Set a channel permission overwrite.
 #[tauri::command]
-#[allow(clippy::too_many_arguments)] // Tauri IPC: each param is a distinct frontend field
 pub async fn set_channel_overwrite(
     community_id: String,
     channel_id: String,
@@ -1888,6 +2993,45 @@ pub async fn set_channel_overwrite(
         }
         Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => {
             Err(format!("server rejected set_channel_overwrite: {message}"))
+        }
+        Ok(_) => Err("unexpected response from server".into()),
+        Err(e) => Err(e),
+    }
+}
+
+/// Set slowmode delay for a channel (0 to disable).
+#[tauri::command]
+pub async fn set_slowmode(
+    community_id: String,
+    channel_id: String,
+    seconds: u32,
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+) -> Result<(), String> {
+    let response = send_community_rpc(
+        state.inner(),
+        pool.inner(),
+        &community_id,
+        rekindle_protocol::messaging::CommunityRequest::SetSlowmode {
+            channel_id: channel_id.clone(),
+            seconds,
+        },
+    )
+    .await;
+
+    match response {
+        Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => {
+            // Update local store
+            let mut communities = state.communities.write();
+            if let Some(community) = communities.get_mut(&community_id) {
+                if let Some(ch) = community.channels.iter_mut().find(|ch| ch.id == channel_id) {
+                    ch.slowmode_seconds = Some(seconds);
+                }
+            }
+            Ok(())
+        }
+        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => {
+            Err(format!("server rejected set_slowmode: {message}"))
         }
         Ok(_) => Err("unexpected response from server".into()),
         Err(e) => Err(e),
@@ -2240,6 +3384,62 @@ pub async fn rotate_mek(
     Ok(())
 }
 
+/// Send a typing indicator for a channel in a community.
+#[tauri::command]
+pub async fn send_channel_typing(
+    community_id: String,
+    channel_id: String,
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+) -> Result<(), String> {
+    let request = rekindle_protocol::messaging::CommunityRequest::ChannelTyping { channel_id };
+    let response = send_community_rpc(
+        state.inner(),
+        pool.inner(),
+        &community_id,
+        request,
+    )
+    .await?;
+    match response {
+        rekindle_protocol::messaging::CommunityResponse::Ok => Ok(()),
+        rekindle_protocol::messaging::CommunityResponse::Error { message, .. } => Err(message),
+        _ => Err("unexpected response".into()),
+    }
+}
+
+/// Update our presence status in a community.
+#[tauri::command]
+pub async fn update_community_presence(
+    community_id: String,
+    status: String,
+    game_name: Option<String>,
+    game_id: Option<u32>,
+    elapsed_seconds: Option<u32>,
+    server_address: Option<String>,
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+) -> Result<(), String> {
+    let request = rekindle_protocol::messaging::CommunityRequest::UpdatePresence {
+        status,
+        game_name,
+        game_id,
+        elapsed_seconds,
+        server_address,
+    };
+    let response = send_community_rpc(
+        state.inner(),
+        pool.inner(),
+        &community_id,
+        request,
+    )
+    .await?;
+    match response {
+        rekindle_protocol::messaging::CommunityResponse::Ok => Ok(()),
+        rekindle_protocol::messaging::CommunityResponse::Error { message, .. } => Err(message),
+        _ => Err("unexpected response".into()),
+    }
+}
+
 /// Get members of a community from the local cache.
 ///
 /// Community membership is tracked locally -- members are discovered
@@ -2370,28 +3570,16 @@ async fn ensure_community_hosted(app: &tauri::AppHandle, state: &SharedState, co
         if let Some((cid, dht_key, keypair, nm, pseudonym)) = community_data.clone() {
             let cdn = creator_display_name.clone();
             let socket_path = crate::ipc_client::default_socket_path();
-            let result = tokio::task::spawn_blocking(move || {
-                crate::ipc_client::host_community_blocking(
-                    &socket_path,
-                    &cid,
-                    &dht_key,
-                    &keypair,
-                    &nm,
-                    &pseudonym,
-                    &cdn,
-                    5,
-                )
-            })
-            .await;
-            match result {
-                Ok(Ok(())) => {
+            match crate::ipc_client::host_community_async(
+                &socket_path, &cid, &dht_key, &keypair, &nm, &pseudonym, &cdn, 5,
+            )
+            .await
+            {
+                Ok(()) => {
                     tracing::info!(community = %community_id, "community hosted via IPC (creator registered)");
                 }
-                Ok(Err(e)) => {
-                    tracing::error!(community = %community_id, error = %e, "HostCommunity IPC failed");
-                }
                 Err(e) => {
-                    tracing::error!(community = %community_id, error = %e, "HostCommunity IPC task panicked");
+                    tracing::error!(community = %community_id, error = %e, "HostCommunity IPC failed");
                 }
             }
         }
@@ -2404,28 +3592,16 @@ async fn ensure_community_hosted(app: &tauri::AppHandle, state: &SharedState, co
         if let Some((cid, dht_key, keypair, nm, pseudonym)) = community_data.clone() {
             let cdn = creator_display_name.clone();
             let socket_path = crate::ipc_client::default_socket_path();
-            let result = tokio::task::spawn_blocking(move || {
-                crate::ipc_client::host_community_blocking(
-                    &socket_path,
-                    &cid,
-                    &dht_key,
-                    &keypair,
-                    &nm,
-                    &pseudonym,
-                    &cdn,
-                    10,
-                )
-            })
-            .await;
-            match result {
-                Ok(Ok(())) => {
+            match crate::ipc_client::host_community_async(
+                &socket_path, &cid, &dht_key, &keypair, &nm, &pseudonym, &cdn, 10,
+            )
+            .await
+            {
+                Ok(()) => {
                     tracing::info!(community = %community_id, "community hosted via IPC after server spawn");
                 }
-                Ok(Err(e)) => {
-                    tracing::error!(community = %community_id, error = %e, "HostCommunity IPC failed after spawn");
-                }
                 Err(e) => {
-                    tracing::error!(community = %community_id, error = %e, "HostCommunity task panicked");
+                    tracing::error!(community = %community_id, error = %e, "HostCommunity IPC failed after spawn");
                 }
             }
         }
@@ -2563,4 +3739,267 @@ pub(crate) fn persist_server_route_blob(
         )?;
         Ok(())
     });
+}
+
+// ---------------------------------------------------------------------------
+// B.7: Older message pagination
+// ---------------------------------------------------------------------------
+
+/// Fetch older messages directly from the community server (no local DB).
+///
+/// Used for loading message history before the oldest loaded message.
+/// Returns decrypted messages older than `before_timestamp`.
+#[tauri::command]
+pub async fn get_older_channel_messages(
+    community_id: String,
+    channel_id: String,
+    before_timestamp: u64,
+    limit: u32,
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+) -> Result<Vec<Message>, String> {
+    let my_pseudonym_key = {
+        let communities = state.communities.read();
+        communities
+            .get(&community_id)
+            .and_then(|c| c.my_pseudonym_key.clone())
+            .unwrap_or_default()
+    };
+    let our_key = state_helpers::current_owner_key(state.inner()).unwrap_or_default();
+
+    let request = rekindle_protocol::messaging::CommunityRequest::GetMessages {
+        channel_id: channel_id.clone(),
+        before_timestamp: Some(before_timestamp),
+        limit,
+    };
+    let response =
+        send_community_rpc(state.inner(), pool.inner(), &community_id, request).await?;
+    match response {
+        rekindle_protocol::messaging::CommunityResponse::Messages { messages } => {
+            // Decrypt with cached MEK
+            let mek_cache = state.mek_cache.lock();
+            let Some(mek) = mek_cache.get(&community_id) else {
+                return Err("no MEK to decrypt server messages".into());
+            };
+
+            let mut result = Vec::new();
+            for msg in &messages {
+                if msg.mek_generation != mek.generation() {
+                    tracing::debug!(
+                        have = mek.generation(),
+                        need = msg.mek_generation,
+                        "skipping message with different MEK generation"
+                    );
+                    continue;
+                }
+                let body = match mek.decrypt(&msg.ciphertext) {
+                    Ok(plaintext) => String::from_utf8(plaintext).unwrap_or_default(),
+                    Err(e) => {
+                        tracing::debug!(error = %e, "failed to decrypt older message");
+                        continue;
+                    }
+                };
+                let is_own = msg.sender_pseudonym == my_pseudonym_key
+                    || msg.sender_pseudonym == our_key;
+                result.push(Message {
+                    id: 0, // Server-sourced, no local DB id
+                    sender_id: msg.sender_pseudonym.clone(),
+                    body,
+                    timestamp: msg.timestamp.cast_signed(),
+                    is_own,
+                    server_message_id: Some(msg.message_id.clone()),
+                });
+            }
+            Ok(result)
+        }
+        rekindle_protocol::messaging::CommunityResponse::Error { message, .. } => Err(message),
+        _ => Err("unexpected response".into()),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// C.3: Channel topics
+// ---------------------------------------------------------------------------
+
+/// Set a channel's topic/description.
+#[tauri::command]
+pub async fn set_channel_topic(
+    community_id: String,
+    channel_id: String,
+    topic: String,
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+) -> Result<(), String> {
+    let response = send_community_rpc(
+        state.inner(),
+        pool.inner(),
+        &community_id,
+        rekindle_protocol::messaging::CommunityRequest::SetChannelTopic {
+            channel_id: channel_id.clone(),
+            topic: topic.clone(),
+        },
+    )
+    .await?;
+
+    match response {
+        rekindle_protocol::messaging::CommunityResponse::Ok => {
+            let mut communities = state.communities.write();
+            if let Some(community) = communities.get_mut(&community_id) {
+                if let Some(ch) = community.channels.iter_mut().find(|c| c.id == channel_id) {
+                    ch.topic = topic;
+                }
+            }
+            Ok(())
+        }
+        rekindle_protocol::messaging::CommunityResponse::Error { message, .. } => {
+            Err(format!("server rejected set channel topic: {message}"))
+        }
+        other => Err(format!(
+            "unexpected server response for SetChannelTopic: {other:?}"
+        )),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// C.4: Channel reordering
+// ---------------------------------------------------------------------------
+
+/// Reorder channels within a community.
+#[tauri::command]
+pub async fn reorder_channels(
+    community_id: String,
+    channel_ids: Vec<String>,
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+) -> Result<(), String> {
+    let response = send_community_rpc(
+        state.inner(),
+        pool.inner(),
+        &community_id,
+        rekindle_protocol::messaging::CommunityRequest::ReorderChannels {
+            channel_ids: channel_ids.clone(),
+        },
+    )
+    .await?;
+
+    match response {
+        rekindle_protocol::messaging::CommunityResponse::Ok => {
+            // Reorder channels in memory to match the specified order
+            let mut communities = state.communities.write();
+            if let Some(community) = communities.get_mut(&community_id) {
+                community.channels.sort_by_key(|ch| {
+                    channel_ids.iter().position(|id| id == &ch.id).unwrap_or(usize::MAX)
+                });
+            }
+            Ok(())
+        }
+        rekindle_protocol::messaging::CommunityResponse::Error { message, .. } => {
+            Err(format!("server rejected reorder channels: {message}"))
+        }
+        other => Err(format!(
+            "unexpected server response for ReorderChannels: {other:?}"
+        )),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// B.8: Unread tracking
+// ---------------------------------------------------------------------------
+
+/// Mark a channel as read up to a specific message.
+///
+/// Sends `MarkChannelRead` to the server and zeroes the local `unread_count`.
+#[tauri::command]
+pub async fn mark_channel_read(
+    community_id: String,
+    channel_id: String,
+    last_message_id: String,
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+) -> Result<(), String> {
+    let response = send_community_rpc(
+        state.inner(),
+        pool.inner(),
+        &community_id,
+        rekindle_protocol::messaging::CommunityRequest::MarkChannelRead {
+            channel_id: channel_id.clone(),
+            last_message_id,
+        },
+    )
+    .await?;
+
+    match response {
+        rekindle_protocol::messaging::CommunityResponse::Ok => {
+            // Zero out the local unread count for this channel
+            let mut communities = state.communities.write();
+            if let Some(community) = communities.get_mut(&community_id) {
+                if let Some(ch) = community.channels.iter_mut().find(|c| c.id == channel_id) {
+                    ch.unread_count = 0;
+                }
+            }
+            Ok(())
+        }
+        rekindle_protocol::messaging::CommunityResponse::Error { message, .. } => {
+            Err(format!("server rejected mark read: {message}"))
+        }
+        other => Err(format!(
+            "unexpected server response for MarkChannelRead: {other:?}"
+        )),
+    }
+}
+
+/// Unread count entry returned to the frontend.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnreadCountEntry {
+    pub channel_id: String,
+    pub unread_count: u32,
+}
+
+/// Get unread counts for all channels in a community.
+#[tauri::command]
+pub async fn get_unread_counts(
+    community_id: String,
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+) -> Result<Vec<UnreadCountEntry>, String> {
+    let response = send_community_rpc(
+        state.inner(),
+        pool.inner(),
+        &community_id,
+        rekindle_protocol::messaging::CommunityRequest::GetUnreadCounts,
+    )
+    .await?;
+
+    match response {
+        rekindle_protocol::messaging::CommunityResponse::UnreadCounts { counts } => {
+            // Also update the in-memory channel unread counts
+            let mut communities = state.communities.write();
+            if let Some(community) = communities.get_mut(&community_id) {
+                for count in &counts {
+                    if let Some(ch) = community
+                        .channels
+                        .iter_mut()
+                        .find(|c| c.id == count.channel_id)
+                    {
+                        ch.unread_count = count.unread_count;
+                    }
+                }
+            }
+
+            Ok(counts
+                .into_iter()
+                .map(|c| UnreadCountEntry {
+                    channel_id: c.channel_id,
+                    unread_count: c.unread_count,
+                })
+                .collect())
+        }
+        rekindle_protocol::messaging::CommunityResponse::Error { message, .. } => {
+            Err(format!("server rejected get unread counts: {message}"))
+        }
+        other => Err(format!(
+            "unexpected server response for GetUnreadCounts: {other:?}"
+        )),
+    }
 }

@@ -45,13 +45,28 @@ warnings = "deny"
 unused-imports = "deny"
 dead-code = "deny"
 unused-variables = "deny"
+unsafe-op-in-unsafe-fn = "warn"          # Rust 2024: explicit unsafe blocks in unsafe fns
 
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
+
+# --- Pedantic: allow legitimately noisy lints ---
 module-name-repetitions = "allow"
 missing-errors-doc = "allow"
 missing-panics-doc = "allow"
 must-use-candidate = "allow"
 return-self-not-must-use = "allow"
 struct-excessive-bools = "allow"
+items-after-statements = "allow"         # use statements in fn bodies (common in tests)
+similar-names = "allow"                  # ct/pt, idx/id pairs — too many false positives
+doc-markdown = "allow"                   # noisy for technical codebases
+doc-lazy-continuation = "allow"          # multi-line doc comment formatting
+
+# --- Security: cherry-picked restriction lints ---
+dbg-macro = "deny"                       # no leftover dbg!() in production
+todo = "deny"                            # no todo!() in shipped code
+unimplemented = "deny"                   # no unimplemented!() in shipped code
+undocumented-unsafe-blocks = "deny"      # every unsafe block needs // SAFETY: comment
+print-stdout = "warn"                    # prefer tracing over println!
+print-stderr = "warn"                    # prefer tracing over eprintln!

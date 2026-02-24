@@ -10,7 +10,7 @@ interface CreateChannelModalProps {
 
 const CreateChannelModal: Component<CreateChannelModalProps> = (props) => {
   const [name, setName] = createSignal("");
-  const [channelType, setChannelType] = createSignal<"text" | "voice">("text");
+  const [channelType, setChannelType] = createSignal<"text" | "voice" | "announcement">("text");
 
   createEffect(() => {
     if (props.isOpen) {
@@ -23,10 +23,14 @@ const CreateChannelModal: Component<CreateChannelModalProps> = (props) => {
     e.preventDefault();
     const n = name().trim();
     if (!n) return;
-    await handleCreateChannel(props.communityId, n, channelType());
-    setName("");
-    setChannelType("text");
-    props.onClose();
+    try {
+      await handleCreateChannel(props.communityId, n, channelType());
+      setName("");
+      setChannelType("text");
+      props.onClose();
+    } catch {
+      // Modal stays open; toast already shown by handler
+    }
   }
 
   return (
@@ -42,10 +46,11 @@ const CreateChannelModal: Component<CreateChannelModalProps> = (props) => {
         <select
           class="form-select"
           value={channelType()}
-          onChange={(e) => setChannelType(e.currentTarget.value as "text" | "voice")}
+          onChange={(e) => setChannelType(e.currentTarget.value as "text" | "voice" | "announcement")}
         >
           <option value="text">Text Channel</option>
           <option value="voice">Voice Channel</option>
+          <option value="announcement">Announcement</option>
         </select>
         <button class="form-btn-primary" type="submit" disabled={!name().trim()}>
           Create

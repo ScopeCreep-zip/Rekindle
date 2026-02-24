@@ -9,10 +9,7 @@ use crate::server_state::ServerState;
 pub fn create_initial_mek(state: &Arc<ServerState>, community_id: &str) -> MediaEncryptionKey {
     let mek = MediaEncryptionKey::generate(1);
 
-    let db = state.db.lock().unwrap_or_else(|e| {
-        tracing::error!(error = %e, "server db mutex poisoned — recovering");
-        e.into_inner()
-    });
+    let db = crate::db_helpers::lock_db(&state.db);
     if let Err(e) = db.execute(
         "INSERT OR REPLACE INTO server_mek (community_id, generation, key_bytes, created_at) VALUES (?,?,?,?)",
         params![community_id, 1i64, mek.as_bytes().as_slice(), rekindle_utils::timestamp_secs_i64()],
@@ -35,10 +32,7 @@ pub fn rotate_mek(
 ) -> MediaEncryptionKey {
     let mek = MediaEncryptionKey::generate(new_generation);
 
-    let db = state.db.lock().unwrap_or_else(|e| {
-        tracing::error!(error = %e, "server db mutex poisoned — recovering");
-        e.into_inner()
-    });
+    let db = crate::db_helpers::lock_db(&state.db);
     if let Err(e) = db.execute(
         "INSERT INTO server_mek (community_id, generation, key_bytes, created_at) VALUES (?,?,?,?)",
         params![
@@ -61,10 +55,7 @@ pub fn rotate_mek(
 
 /// Load the latest MEK for a community from the server database.
 pub fn load_latest_mek(state: &Arc<ServerState>, community_id: &str) -> Option<MediaEncryptionKey> {
-    let db = state.db.lock().unwrap_or_else(|e| {
-        tracing::error!(error = %e, "server db mutex poisoned — recovering");
-        e.into_inner()
-    });
+    let db = crate::db_helpers::lock_db(&state.db);
     let result = db.query_row(
         "SELECT generation, key_bytes FROM server_mek WHERE community_id = ? ORDER BY generation DESC LIMIT 1",
         params![community_id],

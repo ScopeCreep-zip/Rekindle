@@ -21,10 +21,14 @@ const OverviewTab: Component<OverviewTabProps> = (props) => {
     setEditDescription(props.community.description ?? "");
   });
 
-  function handleCopyId(): void {
-    navigator.clipboard.writeText(props.community.id);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  async function handleCopyId(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(props.community.id);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      addToast("Failed to copy — clipboard access denied", "error");
+    }
   }
 
   async function handleSaveOverview(): Promise<void> {
@@ -82,7 +86,7 @@ const OverviewTab: Component<OverviewTabProps> = (props) => {
         </div>
       </FormField>
       <Show when={props.canManage}>
-        <div class="form-field">
+        <div class="settings-actions-sticky">
           <button class="form-btn-save" onClick={handleSaveOverview} disabled={savingOverview()}>
             <span class="nf-icon">{ICON_SAVE}</span> {savingOverview() ? "Saving..." : "Save Changes"}
           </button>

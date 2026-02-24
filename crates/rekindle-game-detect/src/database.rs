@@ -9,6 +9,13 @@ pub struct GameEntry {
     pub name: String,
     pub process_names: Vec<String>,
     pub icon: Option<String>,
+    /// Steam application ID (for `steam://connect/` launch URIs).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub steam_app_id: Option<u32>,
+    /// URI template for connecting to a server, e.g. `"steam://connect/{addr}"`.
+    /// `{addr}` is replaced with the `ip:port` at launch time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connect_template: Option<String>,
 }
 
 /// Maps process names to game information.
@@ -53,6 +60,11 @@ impl GameDatabase {
     /// Look up a game by process name (case-insensitive).
     pub fn lookup_by_process(&self, process_name: &str) -> Option<&GameEntry> {
         self.by_process.get(&process_name.to_lowercase())
+    }
+
+    /// Look up a game by its unique numeric ID.
+    pub fn lookup_by_id(&self, game_id: u32) -> Option<&GameEntry> {
+        self.by_process.values().find(|e| e.id == game_id)
     }
 
     /// Get the number of games in the database.

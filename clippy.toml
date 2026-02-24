@@ -1,0 +1,8 @@
+too-many-arguments-threshold = 12
+too-many-lines-threshold = 300
+type-complexity-threshold = 300
+cognitive-complexity-threshold = 30
+future-size-threshold = 32768
+large-error-threshold = 256
+msrv = "1.87"
+avoid-breaking-exported-api = false

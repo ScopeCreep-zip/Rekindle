@@ -2,7 +2,9 @@ import { Component, For, Show, createSignal, createMemo } from "solid-js";
 import { Member, Role } from "../../stores/community.store";
 import StatusDot from "../status/StatusDot";
 import RoleTag from "./RoleTag";
+import MemberProfilePopup from "./MemberProfilePopup";
 import ContextMenu from "../common/ContextMenu";
+import ConfirmDialog from "../common/ConfirmDialog";
 import type { ContextMenuItem } from "../common/ContextMenu";
 import {
   ICON_SHIELD,
@@ -49,6 +51,23 @@ const MemberList: Component<MemberListProps> = (props) => {
 
   const [searchQuery, setSearchQuery] = createSignal("");
 
+  const [profilePopup, setProfilePopup] = createSignal<{
+    member: Member;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  const [confirmAction, setConfirmAction] = createSignal<{
+    type: "kick" | "ban";
+    pseudonymKey: string;
+    displayName: string;
+  } | null>(null);
+
+  function handleMemberClick(e: MouseEvent, member: Member): void {
+    e.stopPropagation();
+    setProfilePopup({ member, x: e.clientX, y: e.clientY });
+  }
+
   function myPerms(): number {
     return calculateBasePermissions(props.myRoleIds, props.roles, props.isHosted);
   }
@@ -93,13 +112,23 @@ const MemberList: Component<MemberListProps> = (props) => {
     }
 
     if (hasPermission(perms, MODERATE_MEMBERS)) {
-      items.push({
-        label: "Timeout (10min)",
-        icon: ICON_TIMEOUT,
-        action: () => {
-          handleTimeoutMember(props.communityId, member.pseudonymKey, 600, null);
-        },
-      });
+      const timeouts: { label: string; seconds: number }[] = [
+        { label: "Timeout 5m", seconds: 300 },
+        { label: "Timeout 10m", seconds: 600 },
+        { label: "Timeout 30m", seconds: 1800 },
+        { label: "Timeout 1h", seconds: 3600 },
+        { label: "Timeout 24h", seconds: 86400 },
+        { label: "Timeout 1 week", seconds: 604800 },
+      ];
+      for (const t of timeouts) {
+        items.push({
+          label: t.label,
+          icon: ICON_TIMEOUT,
+          action: () => {
+            handleTimeoutMember(props.communityId, member.pseudonymKey, t.seconds, null);
+          },
+        });
+      }
     }
 
     if (hasPermission(perms, KICK_MEMBERS)) {
@@ -107,7 +136,7 @@ const MemberList: Component<MemberListProps> = (props) => {
         label: "Kick Member",
         icon: ICON_ACCOUNT_REMOVE,
         action: () => {
-          handleRemoveCommunityMember(props.communityId, member.pseudonymKey);
+          setConfirmAction({ type: "kick", pseudonymKey: member.pseudonymKey, displayName: member.displayName });
         },
         danger: true,
       });
@@ -118,7 +147,7 @@ const MemberList: Component<MemberListProps> = (props) => {
         label: "Ban Member",
         icon: ICON_BAN,
         action: () => {
-          handleBanMember(props.communityId, member.pseudonymKey);
+          setConfirmAction({ type: "ban", pseudonymKey: member.pseudonymKey, displayName: member.displayName });
         },
         danger: true,
       });
@@ -180,6 +209,17 @@ const MemberList: Component<MemberListProps> = (props) => {
     return groups;
   });
 
+  function handleConfirm(): void {
+    const action = confirmAction();
+    if (!action) return;
+    if (action.type === "kick") {
+      handleRemoveCommunityMember(props.communityId, action.pseudonymKey);
+    } else {
+      handleBanMember(props.communityId, action.pseudonymKey);
+    }
+    setConfirmAction(null);
+  }
+
   return (
     <div class="member-list">
       <div class="member-list-header">
@@ -204,11 +244,22 @@ const MemberList: Component<MemberListProps> = (props) => {
                 return (
                   <div
                     class="member-item"
+                    onClick={(e) => handleMemberClick(e, member)}
                     onContextMenu={(e) => handleMemberContextMenu(e, member)}
                   >
                     <StatusDot status={member.status || "online"} />
                     <div class="member-name-info">
                       <span class="member-name">{member.displayName}</span>
+                      <Show when={member.gameInfo}>
+                        {(info) => (
+                          <span class="member-game-info">
+                            {info().gameName}
+                            <Show when={info().serverAddress}>
+                              <span class="member-game-server"> on {info().serverAddress}</span>
+                            </Show>
+                          </span>
+                        )}
+                      </Show>
                       <div class="member-roles-row">
                         <For each={roles()}>
                           {(role) => <RoleTag name={role.name} color={role.color} />}
@@ -270,6 +321,27 @@ const MemberList: Component<MemberListProps> = (props) => {
           </div>
         )}
       </Show>
+      <Show when={profilePopup()}>
+        {(popup) => (
+          <MemberProfilePopup
+            member={popup().member}
+            roles={props.roles}
+            x={popup().x}
+            y={popup().y}
+            onClose={() => setProfilePopup(null)}
+            myPseudonymKey={props.myPseudonymKey}
+          />
+        )}
+      </Show>
+      <ConfirmDialog
+        isOpen={confirmAction() !== null}
+        title={confirmAction()?.type === "kick" ? "Kick Member" : "Ban Member"}
+        message={`Are you sure you want to ${confirmAction()?.type ?? "kick"} ${confirmAction()?.displayName ?? "this member"}?${confirmAction()?.type === "ban" ? " They will not be able to rejoin." : ""}`}
+        danger
+        confirmLabel={confirmAction()?.type === "kick" ? "Kick" : "Ban"}
+        onConfirm={handleConfirm}
+        onCancel={() => setConfirmAction(null)}
+      />
     </div>
   );
 };

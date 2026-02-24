@@ -16,6 +16,9 @@ pub struct Message {
     pub body: String,
     pub timestamp: i64,
     pub is_own: bool,
+    /// Server-assigned message ID (present for community messages fetched from server).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub server_message_id: Option<String>,
 }
 
 /// Send a message to a friend (1:1 DM).
@@ -103,6 +106,7 @@ pub async fn get_message_history(
                 body: db::get_str(row, "body"),
                 timestamp: db::get_i64(row, "timestamp"),
                 is_own,
+                server_message_id: None, // DM history — no server IDs
             })
         })?;
 

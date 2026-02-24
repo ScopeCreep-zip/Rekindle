@@ -6,6 +6,7 @@ export interface GameStatus {
   gameId: number;
   gameName: string;
   elapsedSeconds: number;
+  serverAddress: string | null;
 }
 
 export interface AuthState {

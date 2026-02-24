@@ -26,11 +26,10 @@ pub struct SessionInitInfo {
 ///
 /// Uses X3DH for session establishment and a simplified Double Ratchet
 /// for forward-secret message encryption.
-#[allow(clippy::struct_field_names)] // Store suffix clarifies the role of each field
 pub struct SignalSessionManager {
-    identity_store: Box<dyn IdentityKeyStore>,
-    prekey_store: Box<dyn PreKeyStore>,
-    session_store: Box<dyn SessionStore>,
+    identity: Box<dyn IdentityKeyStore>,
+    prekeys: Box<dyn PreKeyStore>,
+    sessions: Box<dyn SessionStore>,
 }
 
 /// An established session's symmetric ratchet state.
@@ -55,14 +54,14 @@ struct RatchetState {
 impl SignalSessionManager {
     /// Create a new session manager with the given storage backends.
     pub fn new(
-        identity_store: Box<dyn IdentityKeyStore>,
-        prekey_store: Box<dyn PreKeyStore>,
-        session_store: Box<dyn SessionStore>,
+        identity: Box<dyn IdentityKeyStore>,
+        prekeys: Box<dyn PreKeyStore>,
+        sessions: Box<dyn SessionStore>,
     ) -> Self {
         Self {
-            identity_store,
-            prekey_store,
-            session_store,
+            identity,
+            prekeys,
+            sessions,
         }
     }
 
@@ -82,7 +81,7 @@ impl SignalSessionManager {
         let ephemeral_bytes = ephemeral_secret.to_bytes();
 
         // 2. Our identity X25519 key
-        let (identity_private, _identity_public) = self.identity_store.get_identity_key_pair()?;
+        let (identity_private, _identity_public) = self.identity.get_identity_key_pair()?;
         let our_identity_x25519 = StaticSecret::from(
             <[u8; 32]>::try_from(&identity_private[..32])
                 .map_err(|_| CryptoError::InvalidKey("identity key wrong length".into()))?,
@@ -145,11 +144,11 @@ impl SignalSessionManager {
         };
 
         let session_data = serialize_ratchet(&ratchet);
-        self.session_store
+        self.sessions
             .store_session(peer_address, &session_data)?;
 
         // Trust their identity on first use (TOFU)
-        self.identity_store
+        self.identity
             .save_identity(peer_address, &bundle.identity_key)?;
 
         Ok(SessionInitInfo {
@@ -176,7 +175,7 @@ impl SignalSessionManager {
         one_time_prekey_id: Option<u32>,
     ) -> Result<(), CryptoError> {
         // Load our identity keypair
-        let (identity_private, _identity_public) = self.identity_store.get_identity_key_pair()?;
+        let (identity_private, _identity_public) = self.identity.get_identity_key_pair()?;
         let our_identity_x25519 = StaticSecret::from(
             <[u8; 32]>::try_from(&identity_private[..32])
                 .map_err(|_| CryptoError::InvalidKey("identity key wrong length".into()))?,
@@ -184,7 +183,7 @@ impl SignalSessionManager {
 
         // Load our signed prekey private key
         let spk_data = self
-            .prekey_store
+            .prekeys
             .load_signed_prekey(signed_prekey_id)?
             .ok_or_else(|| CryptoError::InvalidKey("signed prekey not found".into()))?;
         let signed_prekey_secret = StaticSecret::from(
@@ -221,7 +220,7 @@ impl SignalSessionManager {
         // Optional DH4 with one-time prekey
         if let Some(otpk_id) = one_time_prekey_id {
             let otpk_data = self
-                .prekey_store
+                .prekeys
                 .load_prekey(otpk_id)?
                 .ok_or_else(|| CryptoError::InvalidKey("one-time prekey not found".into()))?;
             let otpk_secret = StaticSecret::from(
@@ -232,7 +231,7 @@ impl SignalSessionManager {
             ikm.extend_from_slice(dh4.as_bytes());
 
             // Consume the one-time prekey
-            self.prekey_store.remove_prekey(otpk_id)?;
+            self.prekeys.remove_prekey(otpk_id)?;
         }
 
         let hk = Hkdf::<Sha256>::new(None, &ikm);
@@ -261,11 +260,11 @@ impl SignalSessionManager {
         };
 
         let session_data = serialize_ratchet(&ratchet);
-        self.session_store
+        self.sessions
             .store_session(peer_address, &session_data)?;
 
         // Trust their identity on first use (TOFU)
-        self.identity_store
+        self.identity
             .save_identity(peer_address, their_identity_key)?;
 
         Ok(())
@@ -274,7 +273,7 @@ impl SignalSessionManager {
     /// Encrypt a plaintext message for a peer.
     pub fn encrypt(&self, peer_address: &str, plaintext: &[u8]) -> Result<Vec<u8>, CryptoError> {
         let session_data = self
-            .session_store
+            .sessions
             .load_session(peer_address)?
             .ok_or_else(|| CryptoError::SessionError("no session for peer".into()))?;
 
@@ -313,7 +312,7 @@ impl SignalSessionManager {
 
         // Save updated ratchet state
         let new_session_data = serialize_ratchet(&ratchet);
-        self.session_store
+        self.sessions
             .store_session(peer_address, &new_session_data)?;
 
         Ok(output)
@@ -326,7 +325,7 @@ impl SignalSessionManager {
         }
 
         let session_data = self
-            .session_store
+            .sessions
             .load_session(peer_address)?
             .ok_or_else(|| CryptoError::SessionError("no session for peer".into()))?;
 
@@ -367,7 +366,7 @@ impl SignalSessionManager {
 
         // Save updated ratchet state
         let new_session_data = serialize_ratchet(&ratchet);
-        self.session_store
+        self.sessions
             .store_session(peer_address, &new_session_data)?;
 
         Ok(plaintext)
@@ -375,12 +374,12 @@ impl SignalSessionManager {
 
     /// Check if we have an established session with a peer.
     pub fn has_session(&self, peer_address: &str) -> Result<bool, CryptoError> {
-        self.session_store.has_session(peer_address)
+        self.sessions.has_session(peer_address)
     }
 
     /// Delete an existing session with a peer (e.g., on friend removal).
     pub fn delete_session(&self, peer_address: &str) -> Result<(), CryptoError> {
-        self.session_store.delete_session(peer_address)
+        self.sessions.delete_session(peer_address)
     }
 
     /// Generate a `PreKeyBundle` for publication to DHT.
@@ -392,13 +391,13 @@ impl SignalSessionManager {
         signed_prekey_id: u32,
         one_time_prekey_id: Option<u32>,
     ) -> Result<PreKeyBundle, CryptoError> {
-        let (identity_private, identity_public) = self.identity_store.get_identity_key_pair()?;
-        let registration_id = self.identity_store.get_local_registration_id()?;
+        let (identity_private, identity_public) = self.identity.get_identity_key_pair()?;
+        let registration_id = self.identity.get_local_registration_id()?;
 
         // Generate signed prekey (X25519)
         let signed_prekey_secret = StaticSecret::random_from_rng(rand::rngs::OsRng);
         let signed_prekey_public = X25519Public::from(&signed_prekey_secret);
-        self.prekey_store
+        self.prekeys
             .store_signed_prekey(signed_prekey_id, signed_prekey_secret.as_bytes())?;
 
         // Sign the prekey public key bytes with our Ed25519 identity key
@@ -413,7 +412,7 @@ impl SignalSessionManager {
         let one_time_prekey = if let Some(otpk_id) = one_time_prekey_id {
             let otpk_secret = StaticSecret::random_from_rng(rand::rngs::OsRng);
             let otpk_public = X25519Public::from(&otpk_secret);
-            self.prekey_store
+            self.prekeys
                 .store_prekey(otpk_id, otpk_secret.as_bytes())?;
             Some(otpk_public.as_bytes().to_vec())
         } else {

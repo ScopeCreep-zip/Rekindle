@@ -71,6 +71,9 @@ const ProfileWindow: Component = () => {
           <div class="profile-section">
             <div class="profile-section-label">Currently Playing</div>
             <div class="profile-game-name">{friend()!.gameInfo!.gameName}</div>
+            <Show when={friend()!.gameInfo!.serverAddress}>
+              <div class="profile-game-server">on {friend()!.gameInfo!.serverAddress}</div>
+            </Show>
             <Show when={friend()!.gameInfo!.startedAt}>
               <div class="profile-game-elapsed">
                 {formatElapsed(friend()!.gameInfo!.startedAt!)}

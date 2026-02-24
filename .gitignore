@@ -32,6 +32,9 @@ src-tauri/target/
 # Bundle output (installers, DMGs, AppImages)
 src-tauri/bundles/
 
+# Sidecar binaries (built by copy-sidecar.mjs, included via externalBin)
+src-tauri/binaries/
+
 # ------------------------------------------------------------
 # Testing
 # ------------------------------------------------------------

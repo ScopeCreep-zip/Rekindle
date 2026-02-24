@@ -47,9 +47,9 @@ export function subscribeBuddyListPresenceEvents(): Promise<UnlistenFn> {
       }
       case "gameChanged": {
         if (friendsState.friends[event.data.publicKey]) {
-          const { gameName, gameId, elapsedSeconds } = event.data;
+          const { gameName, gameId, elapsedSeconds, serverAddress } = event.data;
           if (gameName) {
-            setFriendsState("friends", event.data.publicKey, "gameInfo", transformGameInfo({ gameName, gameId, elapsedSeconds }));
+            setFriendsState("friends", event.data.publicKey, "gameInfo", transformGameInfo({ gameName, gameId, elapsedSeconds, serverAddress }));
           } else {
             setFriendsState("friends", event.data.publicKey, "gameInfo", null);
           }
@@ -141,9 +141,9 @@ export function subscribeProfilePresenceEvents(
       }
       case "gameChanged": {
         if (event.data.publicKey === publicKey && friendsState.friends[publicKey]) {
-          const { gameName, gameId, elapsedSeconds } = event.data;
+          const { gameName, gameId, elapsedSeconds, serverAddress } = event.data;
           if (gameName) {
-            setFriendsState("friends", publicKey, "gameInfo", transformGameInfo({ gameName, gameId, elapsedSeconds }));
+            setFriendsState("friends", publicKey, "gameInfo", transformGameInfo({ gameName, gameId, elapsedSeconds, serverAddress }));
           } else {
             setFriendsState("friends", publicKey, "gameInfo", null);
           }

@@ -85,7 +85,7 @@ CREATE TABLE IF NOT EXISTS channels (
     id TEXT NOT NULL,
     community_id TEXT NOT NULL,
     name TEXT NOT NULL,
-    channel_type TEXT NOT NULL CHECK(channel_type IN ('text', 'voice')),
+    channel_type TEXT NOT NULL CHECK(channel_type IN ('text', 'voice', 'announcement')),
     sort_order INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (owner_key, id),
     FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE

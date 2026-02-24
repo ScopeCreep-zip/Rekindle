@@ -90,6 +90,7 @@ const BuddyGroup: Component<BuddyGroupProps> = (props) => {
               statusMessage={friend.statusMessage}
               gameInfo={friend.gameInfo?.gameName ?? null}
               gameElapsed={friend.gameInfo?.startedAt ?? null}
+              serverAddress={friend.gameInfo?.serverAddress ?? null}
               lastSeenAt={friend.lastSeenAt}
               unreadCount={friend.unreadCount}
               voiceChannel={friend.voiceChannel}

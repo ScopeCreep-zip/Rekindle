@@ -10,6 +10,12 @@ pub enum ChatEvent {
         body: String,
         timestamp: u64,
         conversation_id: String,
+        /// Server-assigned message ID (present for community messages, absent for DMs).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        server_message_id: Option<String>,
+        /// ID of the message this is a reply to (community messages only).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        reply_to_id: Option<String>,
     },
     TypingIndicator {
         from: String,

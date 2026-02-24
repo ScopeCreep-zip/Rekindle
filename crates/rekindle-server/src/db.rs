@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use rusqlite::Connection;
 
 /// Server-side schema version. Bump when the schema changes.
-const SERVER_SCHEMA_VERSION: i64 = 4;
+const SERVER_SCHEMA_VERSION: i64 = 19;
 
 /// Open (or create) the server `SQLite` database and run migrations.
 pub fn open_server_db(path: &str) -> Result<Arc<Mutex<Connection>>, String> {
@@ -91,12 +91,23 @@ CREATE TABLE IF NOT EXISTS server_mek (
     PRIMARY KEY (community_id, generation)
 );
 
+CREATE TABLE IF NOT EXISTS server_categories (
+    community_id TEXT NOT NULL REFERENCES hosted_communities(id) ON DELETE CASCADE,
+    id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (community_id, id)
+);
+
 CREATE TABLE IF NOT EXISTS server_channels (
     community_id TEXT NOT NULL REFERENCES hosted_communities(id) ON DELETE CASCADE,
     id TEXT NOT NULL,
     name TEXT NOT NULL,
-    channel_type TEXT NOT NULL CHECK(channel_type IN ('text','voice')),
+    channel_type TEXT NOT NULL CHECK(channel_type IN ('text','voice','announcement')),
     sort_order INTEGER NOT NULL DEFAULT 0,
+    category_id TEXT,
+    topic TEXT NOT NULL DEFAULT '',
+    slowmode_seconds INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (community_id, id)
 );
 
@@ -104,14 +115,20 @@ CREATE TABLE IF NOT EXISTS server_messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     community_id TEXT NOT NULL,
     channel_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
     sender_pseudonym TEXT NOT NULL,
     ciphertext BLOB NOT NULL,
     mek_generation INTEGER NOT NULL,
-    timestamp INTEGER NOT NULL
+    timestamp INTEGER NOT NULL,
+    reply_to_id TEXT,
+    edited_at INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_server_messages
     ON server_messages(community_id, channel_id, timestamp);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_server_messages_msg_id
+    ON server_messages(community_id, message_id);
 
 CREATE TABLE IF NOT EXISTS banned_members (
     community_id TEXT NOT NULL REFERENCES hosted_communities(id) ON DELETE CASCADE,
@@ -166,5 +183,142 @@ CREATE TABLE IF NOT EXISTS server_member_timeouts (
     PRIMARY KEY (community_id, pseudonym_key_hex),
     FOREIGN KEY (community_id, pseudonym_key_hex)
         REFERENCES server_members(community_id, pseudonym_key_hex) ON DELETE CASCADE
+);
+
+-- Server identity (exactly one row, id=1)
+CREATE TABLE IF NOT EXISTS server_identity (
+    id INTEGER PRIMARY KEY CHECK(id = 1),
+    secret_key_hex TEXT NOT NULL,
+    public_key_hex TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
+
+-- Community invite codes
+CREATE TABLE IF NOT EXISTS server_invites (
+    code TEXT PRIMARY KEY,
+    community_id TEXT NOT NULL REFERENCES hosted_communities(id) ON DELETE CASCADE,
+    created_by TEXT NOT NULL,
+    max_uses INTEGER,
+    uses INTEGER NOT NULL DEFAULT 0,
+    expires_at INTEGER,
+    created_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_server_invites_community
+    ON server_invites(community_id);
+
+-- Reactions on messages
+CREATE TABLE IF NOT EXISTS server_reactions (
+    community_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    emoji TEXT NOT NULL,
+    reactor_pseudonym TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (community_id, message_id, emoji, reactor_pseudonym)
+);
+
+-- Pinned messages
+CREATE TABLE IF NOT EXISTS server_pins (
+    community_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    pinned_by TEXT NOT NULL,
+    pinned_at INTEGER NOT NULL,
+    PRIMARY KEY (community_id, channel_id, message_id)
+);
+
+-- Audit log
+CREATE TABLE IF NOT EXISTS server_audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    community_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    actor_pseudonym TEXT NOT NULL,
+    target TEXT,
+    details TEXT,
+    timestamp INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_log_community
+    ON server_audit_log(community_id, timestamp);
+
+-- Community events
+CREATE TABLE IF NOT EXISTS server_events (
+    community_id TEXT NOT NULL,
+    id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    creator_pseudonym TEXT NOT NULL,
+    start_time INTEGER NOT NULL,
+    end_time INTEGER,
+    channel_id TEXT,
+    max_attendees INTEGER,
+    created_at INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'scheduled',
+    reminder_sent INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (community_id, id)
+);
+
+CREATE TABLE IF NOT EXISTS server_event_rsvps (
+    community_id TEXT NOT NULL,
+    event_id TEXT NOT NULL,
+    pseudonym_key_hex TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('going', 'maybe', 'declined')),
+    PRIMARY KEY (community_id, event_id, pseudonym_key_hex)
+);
+
+-- Threads (branching conversations from messages)
+CREATE TABLE IF NOT EXISTS server_threads (
+    community_id TEXT NOT NULL,
+    id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    starter_message_id TEXT NOT NULL,
+    creator_pseudonym TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    archived INTEGER NOT NULL DEFAULT 0,
+    auto_archive_seconds INTEGER NOT NULL DEFAULT 86400,
+    last_message_at INTEGER NOT NULL,
+    PRIMARY KEY (community_id, id)
+);
+
+CREATE TABLE IF NOT EXISTS server_thread_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    community_id TEXT NOT NULL,
+    thread_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    sender_pseudonym TEXT NOT NULL,
+    ciphertext BLOB NOT NULL,
+    mek_generation INTEGER NOT NULL,
+    timestamp INTEGER NOT NULL,
+    reply_to_id TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_thread_messages
+    ON server_thread_messages(community_id, thread_id, timestamp);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_thread_messages_msg_id
+    ON server_thread_messages(community_id, message_id);
+
+-- Game server favorites
+CREATE TABLE IF NOT EXISTS server_game_servers (
+    community_id TEXT NOT NULL,
+    id TEXT NOT NULL,
+    game_id TEXT NOT NULL,
+    label TEXT NOT NULL,
+    address TEXT NOT NULL,
+    added_by TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (community_id, id)
+);
+
+-- Read position tracking per member per channel (for unread counts)
+CREATE TABLE IF NOT EXISTS server_read_positions (
+    community_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    pseudonym_key_hex TEXT NOT NULL,
+    last_read_message_id TEXT NOT NULL,
+    last_read_timestamp INTEGER NOT NULL,
+    PRIMARY KEY (community_id, channel_id, pseudonym_key_hex)
 );
 ";

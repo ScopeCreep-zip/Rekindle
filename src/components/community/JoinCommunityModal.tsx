@@ -7,13 +7,27 @@ interface JoinCommunityModalProps {
   onClose: () => void;
 }
 
+/** Parse a deep link URL: rekindle://community/{communityId}/{inviteCode} */
+function parseDeepLink(input: string): { communityId: string; inviteCode: string } | null {
+  const match = input.match(/^rekindle:\/\/community\/([^/]+)\/([^/]+)\/?$/);
+  if (match) return { communityId: match[1], inviteCode: match[2] };
+  return null;
+}
+
 const JoinCommunityModal: Component<JoinCommunityModalProps> = (props) => (
   <SimpleInputModal
     isOpen={props.isOpen}
     title="Join Community"
     onClose={props.onClose}
-    onSubmit={(id, name) => handleJoinCommunity(id, name || id.slice(0, 12) + "...")}
-    placeholder="Community ID..."
+    onSubmit={(input, name) => {
+      const deepLink = parseDeepLink(input.trim());
+      if (deepLink) {
+        return handleJoinCommunity(deepLink.communityId, name || "Joined community", deepLink.inviteCode);
+      }
+      // Raw community ID (DHT key)
+      return handleJoinCommunity(input, name || input.slice(0, 12) + "...");
+    }}
+    placeholder="Invite link or community ID..."
     submitLabel="Join"
     secondaryPlaceholder="Name (optional)"
   />

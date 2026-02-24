@@ -111,7 +111,7 @@ const BuddyList: Component = () => {
       ];
     }
 
-    return [
+    const items: ContextMenuItem[] = [
       {
         label: "Chat",
         action: () => commands.openChatWindow(key, name),
@@ -120,6 +120,19 @@ const BuddyList: Component = () => {
         label: "View Profile",
         action: () => commands.openProfileWindow(key, name),
       },
+    ];
+
+    // Add "Join Game" when the friend is on a joinable server
+    if (friend?.gameInfo?.serverAddress && friend.gameInfo.gameId) {
+      const addr = friend.gameInfo.serverAddress;
+      const gameId = friend.gameInfo.gameId;
+      items.push({
+        label: "Join Game",
+        action: () => commands.launchGameToServer(gameId, addr),
+      });
+    }
+
+    items.push(
       {
         label: "Move to Group",
         action: () => {
@@ -140,7 +153,9 @@ const BuddyList: Component = () => {
         action: () => handleBlockUser(key, name),
         danger: true,
       },
-    ];
+    );
+
+    return items;
   }
 
   async function handleMoveToExistingGroup(groupName: string): Promise<void> {

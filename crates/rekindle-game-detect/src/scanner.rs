@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 
 use crate::database::GameDatabase;
+use crate::rich_presence::{self, RichPresence};
 
 /// A detected running game.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -12,6 +13,7 @@ pub struct DetectedGame {
     pub game_name: String,
     pub process_name: String,
     pub started_at_epoch_ms: u64,
+    pub rich_presence: Option<RichPresence>,
 }
 
 /// Periodically scans running processes to detect known games.
@@ -36,20 +38,23 @@ impl GameDetector {
     pub fn scan_once(&mut self) -> Option<DetectedGame> {
         self.system
             .refresh_processes(sysinfo::ProcessesToUpdate::All, false);
-        let processes: Vec<String> = self
-            .system
-            .processes()
-            .values()
-            .map(|p| p.name().to_string_lossy().to_string())
-            .collect();
 
-        for proc_name in &processes {
-            if let Some(entry) = self.database.lookup_by_process(proc_name) {
+        for process in self.system.processes().values() {
+            let proc_name = process.name().to_string_lossy().to_string();
+            if let Some(entry) = self.database.lookup_by_process(&proc_name) {
+                // Extract rich presence from process command-line args
+                let cmd_args: Vec<String> =
+                    process.cmd().iter().map(|s| s.to_string_lossy().to_string()).collect();
+                let rp = rich_presence::parse_connect_args(&cmd_args).map(|(ip, port)| {
+                    RichPresence::with_server(entry.id, ip, port)
+                });
+
                 let game = DetectedGame {
                     game_id: entry.id,
                     game_name: entry.name.clone(),
-                    process_name: proc_name.clone(),
+                    process_name: proc_name,
                     started_at_epoch_ms: rekindle_utils::timestamp_ms(),
+                    rich_presence: rp,
                 };
                 self.current_game = Some(game.clone());
                 return Some(game);

@@ -8,6 +8,8 @@ export type ChatEvent =
         body: string;
         timestamp: number;
         conversationId: string;
+        serverMessageId?: string;
+        replyToId?: string;
       };
     }
   | { type: "typingIndicator"; data: { from: string; typing: boolean } }
@@ -37,6 +39,7 @@ export type ChatEvent =
           body: string;
           timestamp: number;
           isOwn: boolean;
+          serverMessageId?: string;
         }[];
       };
     };
@@ -59,6 +62,7 @@ export type PresenceEvent =
         gameName: string | null;
         gameId: number | null;
         elapsedSeconds: number | null;
+        serverAddress: string | null;
       };
     };
 
@@ -122,6 +126,231 @@ export type CommunityEvent =
   | {
       type: "channelOverwriteChanged";
       data: { communityId: string; channelId: string };
+    }
+  | {
+      type: "messageEdited";
+      data: {
+        communityId: string;
+        channelId: string;
+        messageId: string;
+        newBody: string;
+        editedAt: number;
+      };
+    }
+  | {
+      type: "messageDeleted";
+      data: {
+        communityId: string;
+        channelId: string;
+        messageId: string;
+      };
+    }
+  | {
+      type: "reactionAdded";
+      data: {
+        communityId: string;
+        channelId: string;
+        messageId: string;
+        emoji: string;
+        reactorPseudonym: string;
+      };
+    }
+  | {
+      type: "reactionRemoved";
+      data: {
+        communityId: string;
+        channelId: string;
+        messageId: string;
+        emoji: string;
+        reactorPseudonym: string;
+      };
+    }
+  | {
+      type: "messagePinned";
+      data: {
+        communityId: string;
+        channelId: string;
+        messageId: string;
+        pinnedBy: string;
+      };
+    }
+  | {
+      type: "messageUnpinned";
+      data: {
+        communityId: string;
+        channelId: string;
+        messageId: string;
+      };
+    }
+  | {
+      type: "channelTyping";
+      data: {
+        communityId: string;
+        channelId: string;
+        pseudonymKey: string;
+      };
+    }
+  | {
+      type: "memberPresenceChanged";
+      data: {
+        communityId: string;
+        pseudonymKey: string;
+        status: string;
+        gameName?: string;
+        gameId?: number;
+        elapsedSeconds?: number;
+        serverAddress?: string;
+      };
+    }
+  | {
+      type: "threadCreated";
+      data: {
+        communityId: string;
+        thread: {
+          id: string;
+          channelId: string;
+          name: string;
+          starterMessageId: string;
+          creatorPseudonym: string;
+          createdAt: number;
+          archived: boolean;
+          autoArchiveSeconds: number;
+          lastMessageAt: number;
+          messageCount: number;
+        };
+      };
+    }
+  | {
+      type: "threadMessageReceived";
+      data: {
+        communityId: string;
+        threadId: string;
+        messageId: string;
+        senderPseudonym: string;
+        body: string;
+        timestamp: number;
+        replyToId: string | null;
+      };
+    }
+  | {
+      type: "threadArchived";
+      data: {
+        communityId: string;
+        threadId: string;
+        archived: boolean;
+      };
+    }
+  | {
+      type: "eventCreated";
+      data: {
+        communityId: string;
+        event: {
+          id: string;
+          title: string;
+          description: string;
+          creatorPseudonym: string;
+          startTime: number;
+          endTime: number | null;
+          channelId: string | null;
+          maxAttendees: number | null;
+          createdAt: number;
+          status: string;
+          rsvps: { pseudonymKey: string; status: string }[];
+        };
+      };
+    }
+  | {
+      type: "eventUpdated";
+      data: {
+        communityId: string;
+        event: {
+          id: string;
+          title: string;
+          description: string;
+          creatorPseudonym: string;
+          startTime: number;
+          endTime: number | null;
+          channelId: string | null;
+          maxAttendees: number | null;
+          createdAt: number;
+          status: string;
+          rsvps: { pseudonymKey: string; status: string }[];
+        };
+      };
+    }
+  | {
+      type: "eventDeleted";
+      data: {
+        communityId: string;
+        eventId: string;
+      };
+    }
+  | {
+      type: "eventRsvpChanged";
+      data: {
+        communityId: string;
+        eventId: string;
+        pseudonymKey: string;
+        status: string;
+      };
+    }
+  | {
+      type: "gameServerAdded";
+      data: {
+        communityId: string;
+        server: {
+          id: string;
+          gameId: string;
+          label: string;
+          address: string;
+          addedBy: string;
+          createdAt: number;
+        };
+      };
+    }
+  | {
+      type: "gameServerRemoved";
+      data: {
+        communityId: string;
+        serverId: string;
+      };
+    }
+  | {
+      type: "eventReminder";
+      data: {
+        communityId: string;
+        eventId: string;
+        title: string;
+        minutesUntilStart: number;
+      };
+    }
+  | {
+      type: "channelsUpdated";
+      data: {
+        communityId: string;
+        channels: { id: string; name: string; channelType: string; categoryId?: string; topic?: string; slowmodeSeconds?: number }[];
+        categories: { id: string; name: string; sortOrder: number }[];
+      };
+    }
+  | {
+      type: "inviteCreated";
+      data: {
+        communityId: string;
+        code: string;
+        createdBy: string;
+        maxUses: number | null;
+        uses: number;
+        expiresAt: number | null;
+        createdAt: number;
+      };
+    }
+  | {
+      type: "inviteRevoked";
+      data: { communityId: string; code: string };
+    }
+  | {
+      type: "inviteUsed";
+      data: { communityId: string; code: string; newUseCount: number };
     };
 
 export type NotificationEvent =
@@ -202,5 +431,19 @@ export function subscribeProfileUpdates(
 ): Promise<UnlistenFn> {
   return safeListen<null>("profile-updated", () => {
     onUpdate();
+  });
+}
+
+export interface DeepLinkAction {
+  action: string;
+  communityId: string;
+  inviteCode: string;
+}
+
+export function subscribeDeepLinkEvents(
+  onEvent: (event: DeepLinkAction) => void,
+): Promise<UnlistenFn> {
+  return safeListen<DeepLinkAction>("deep-link-action", (event) => {
+    onEvent(event.payload);
   });
 }

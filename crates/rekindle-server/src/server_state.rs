@@ -6,7 +6,10 @@ use rusqlite::Connection;
 use veilid_core::{RoutingContext, VeilidAPI};
 
 use rekindle_crypto::group::media_key::MediaEncryptionKey;
+use rekindle_crypto::identity::Identity;
 use rekindle_protocol::dht::community::{PermissionOverwrite, RoleDefinition};
+
+use crate::automod::RateLimiter;
 
 /// Central state for the community server daemon.
 pub struct ServerState {
@@ -20,6 +23,14 @@ pub struct ServerState {
     pub hosted: RwLock<HashMap<String, HostedCommunity>>,
     /// Unix timestamp when the server started.
     pub started_at: u64,
+    /// Server's Ed25519 identity (application-level signing + public key).
+    pub identity: Identity,
+    /// Hex-encoded public key of the server identity.
+    pub public_key_hex: String,
+    /// Per-(channel, sender) last message timestamp for slowmode enforcement.
+    pub slowmode_last_message: RwLock<HashMap<(String, String), i64>>,
+    /// Rate limiter for spam detection (auto-moderation).
+    pub rate_limiter: RateLimiter,
 }
 
 /// State for a single hosted community.
@@ -42,12 +53,57 @@ pub struct HostedCommunity {
     pub mek: MediaEncryptionKey,
     /// In-memory roster of members.
     pub members: Vec<ServerMember>,
+    /// Channel categories for this community.
+    pub categories: Vec<ServerCategory>,
     /// Channels in this community.
     pub channels: Vec<ServerChannel>,
     /// Role definitions for this community.
     pub roles: Vec<RoleDefinition>,
     /// Hex-encoded pseudonym key of the community creator (inherent full permissions).
     pub creator_pseudonym_hex: String,
+}
+
+impl HostedCommunity {
+    /// Find a member by pseudonym key.
+    pub fn find_member(&self, pseudonym: &str) -> Option<&ServerMember> {
+        self.members
+            .iter()
+            .find(|m| m.pseudonym_key_hex == pseudonym)
+    }
+
+    /// Find a mutable member by pseudonym key.
+    pub fn find_member_mut(&mut self, pseudonym: &str) -> Option<&mut ServerMember> {
+        self.members
+            .iter_mut()
+            .find(|m| m.pseudonym_key_hex == pseudonym)
+    }
+
+    /// Check if a pseudonym is a member.
+    pub fn is_member(&self, pseudonym: &str) -> bool {
+        self.members
+            .iter()
+            .any(|m| m.pseudonym_key_hex == pseudonym)
+    }
+
+    /// Check if a pseudonym is the community creator.
+    pub fn is_creator(&self, pseudonym: &str) -> bool {
+        !self.creator_pseudonym_hex.is_empty() && self.creator_pseudonym_hex == pseudonym
+    }
+
+    /// Find a channel by ID.
+    pub fn find_channel(&self, channel_id: &str) -> Option<&ServerChannel> {
+        self.channels.iter().find(|c| c.id == channel_id)
+    }
+
+    /// Find a mutable channel by ID.
+    pub fn find_channel_mut(&mut self, channel_id: &str) -> Option<&mut ServerChannel> {
+        self.channels.iter_mut().find(|c| c.id == channel_id)
+    }
+
+    /// Find a category by ID.
+    pub fn find_category(&self, category_id: &str) -> Option<&ServerCategory> {
+        self.categories.iter().find(|c| c.id == category_id)
+    }
 }
 
 /// A member in the server's roster.
@@ -64,6 +120,18 @@ pub struct ServerMember {
     pub route_blob: Option<Vec<u8>>,
     /// If set, the member is timed out until this unix timestamp (seconds).
     pub timeout_until: Option<u64>,
+    /// In-memory presence status (not persisted — resets to "offline" on restart).
+    pub online_status: String,
+}
+
+/// A channel category (collapsible group header).
+pub struct ServerCategory {
+    /// Unique category ID.
+    pub id: String,
+    /// Category display name.
+    pub name: String,
+    /// Sort order for display.
+    pub sort_order: i32,
 }
 
 /// A channel in a hosted community.
@@ -72,10 +140,16 @@ pub struct ServerChannel {
     pub id: String,
     /// Channel display name.
     pub name: String,
-    /// "text" or "voice".
+    /// "text", "voice", or "announcement".
     pub channel_type: String,
     /// Sort order for display.
     pub sort_order: i32,
     /// Per-channel permission overwrites.
     pub permission_overwrites: Vec<PermissionOverwrite>,
+    /// Optional parent category ID.
+    pub category_id: Option<String>,
+    /// Channel topic / description.
+    pub topic: String,
+    /// Slowmode delay in seconds (0 = disabled).
+    pub slowmode_seconds: u32,
 }

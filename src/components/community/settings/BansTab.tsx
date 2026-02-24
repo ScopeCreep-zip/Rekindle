@@ -30,10 +30,10 @@ const BansTab: Component<BansTabProps> = (props) => {
       }>
         <For each={banList()}>
           {(banned) => (
-            <div class="ban-list-item">
-              <div class="ban-list-info">
-                <span class="ban-list-name">{banned.displayName || banned.pseudonymKey.slice(0, 16)}</span>
-                <span class="ban-list-date">
+            <div class="settings-list-item">
+              <div class="settings-list-info">
+                <span class="settings-list-name">{banned.displayName || banned.pseudonymKey.slice(0, 16)}</span>
+                <span class="settings-list-date">
                   Banned {new Date(banned.bannedAt * 1000).toLocaleDateString()}
                 </span>
               </div>

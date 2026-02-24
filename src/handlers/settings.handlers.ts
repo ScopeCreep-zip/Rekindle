@@ -83,6 +83,7 @@ export async function handleGetGameStatus(): Promise<{
   gameId: number;
   gameName: string;
   elapsedSeconds: number;
+  serverAddress: string | null;
 } | null> {
   try {
     return await commands.getGameStatus();

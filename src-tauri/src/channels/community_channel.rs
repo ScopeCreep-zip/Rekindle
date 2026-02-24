@@ -50,6 +50,203 @@ pub enum CommunityEvent {
         community_id: String,
         channel_id: String,
     },
+    /// A message was edited in a channel.
+    #[serde(rename_all = "camelCase")]
+    MessageEdited {
+        community_id: String,
+        channel_id: String,
+        message_id: String,
+        new_body: String,
+        edited_at: u64,
+    },
+    /// A message was deleted from a channel.
+    #[serde(rename_all = "camelCase")]
+    MessageDeleted {
+        community_id: String,
+        channel_id: String,
+        message_id: String,
+    },
+    /// A reaction was added to a message.
+    #[serde(rename_all = "camelCase")]
+    ReactionAdded {
+        community_id: String,
+        channel_id: String,
+        message_id: String,
+        emoji: String,
+        reactor_pseudonym: String,
+    },
+    /// A reaction was removed from a message.
+    #[serde(rename_all = "camelCase")]
+    ReactionRemoved {
+        community_id: String,
+        channel_id: String,
+        message_id: String,
+        emoji: String,
+        reactor_pseudonym: String,
+    },
+    /// A message was pinned.
+    #[serde(rename_all = "camelCase")]
+    MessagePinned {
+        community_id: String,
+        channel_id: String,
+        message_id: String,
+        pinned_by: String,
+    },
+    /// A message was unpinned.
+    #[serde(rename_all = "camelCase")]
+    MessageUnpinned {
+        community_id: String,
+        channel_id: String,
+        message_id: String,
+    },
+    /// A member started typing in a channel.
+    #[serde(rename_all = "camelCase")]
+    ChannelTyping {
+        community_id: String,
+        channel_id: String,
+        pseudonym_key: String,
+    },
+    /// A member's presence status changed.
+    #[serde(rename_all = "camelCase")]
+    MemberPresenceChanged {
+        community_id: String,
+        pseudonym_key: String,
+        status: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        game_name: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        game_id: Option<u32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        elapsed_seconds: Option<u32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        server_address: Option<String>,
+    },
+    /// A community event was created.
+    #[serde(rename_all = "camelCase")]
+    EventCreated {
+        community_id: String,
+        event: EventInfoDto,
+    },
+    /// A community event was updated.
+    #[serde(rename_all = "camelCase")]
+    EventUpdated {
+        community_id: String,
+        event: EventInfoDto,
+    },
+    /// A community event was deleted.
+    #[serde(rename_all = "camelCase")]
+    EventDeleted {
+        community_id: String,
+        event_id: String,
+    },
+    /// Someone RSVPed to a community event.
+    #[serde(rename_all = "camelCase")]
+    EventRsvpChanged {
+        community_id: String,
+        event_id: String,
+        pseudonym_key: String,
+        status: String,
+    },
+    /// A thread was created in a channel.
+    #[serde(rename_all = "camelCase")]
+    ThreadCreated {
+        community_id: String,
+        thread: ThreadInfoDto,
+    },
+    /// A new message in a thread.
+    #[serde(rename_all = "camelCase")]
+    ThreadMessageReceived {
+        community_id: String,
+        thread_id: String,
+        message_id: String,
+        sender_pseudonym: String,
+        body: String,
+        timestamp: u64,
+        reply_to_id: Option<String>,
+    },
+    /// A thread was archived or unarchived.
+    #[serde(rename_all = "camelCase")]
+    ThreadArchived {
+        community_id: String,
+        thread_id: String,
+        archived: bool,
+    },
+    /// A game server was added to the community's favorites.
+    #[serde(rename_all = "camelCase")]
+    GameServerAdded {
+        community_id: String,
+        server: GameServerInfoDto,
+    },
+    /// A game server was removed from the community's favorites.
+    #[serde(rename_all = "camelCase")]
+    GameServerRemoved {
+        community_id: String,
+        server_id: String,
+    },
+    /// An event is starting soon — reminder broadcast.
+    #[serde(rename_all = "camelCase")]
+    EventReminder {
+        community_id: String,
+        event_id: String,
+        title: String,
+        minutes_until_start: u32,
+    },
+    /// Channel or category structure was updated (create, delete, rename, move, reorder, topic, slowmode).
+    #[serde(rename_all = "camelCase")]
+    ChannelsUpdated {
+        community_id: String,
+        channels: Vec<ChannelInfoFrontendDto>,
+        categories: Vec<CategoryInfoFrontendDto>,
+    },
+    /// An invite code was created.
+    #[serde(rename_all = "camelCase")]
+    InviteCreated {
+        community_id: String,
+        code: String,
+        created_by: String,
+        max_uses: Option<u32>,
+        uses: u32,
+        expires_at: Option<u64>,
+        created_at: u64,
+    },
+    /// An invite code was revoked.
+    #[serde(rename_all = "camelCase")]
+    InviteRevoked {
+        community_id: String,
+        code: String,
+    },
+    /// An invite's use count was updated.
+    #[serde(rename_all = "camelCase")]
+    InviteUsed {
+        community_id: String,
+        code: String,
+        new_use_count: u32,
+    },
+}
+
+/// Event info DTO for frontend consumption.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EventInfoDto {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    pub creator_pseudonym: String,
+    pub start_time: u64,
+    pub end_time: Option<u64>,
+    pub channel_id: Option<String>,
+    pub max_attendees: Option<u32>,
+    pub created_at: u64,
+    pub status: String,
+    pub rsvps: Vec<EventRsvpInfoDto>,
+}
+
+/// RSVP entry DTO for frontend consumption.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EventRsvpInfoDto {
+    pub pseudonym_key: String,
+    pub status: String,
 }
 
 /// Role DTO for frontend consumption (mirrors protocol's `RoleDto`).
@@ -79,6 +276,34 @@ impl From<&rekindle_protocol::messaging::RoleDto> for RoleDto {
     }
 }
 
+/// Thread info DTO for frontend consumption.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadInfoDto {
+    pub id: String,
+    pub channel_id: String,
+    pub name: String,
+    pub starter_message_id: String,
+    pub creator_pseudonym: String,
+    pub created_at: u64,
+    pub archived: bool,
+    pub auto_archive_seconds: u32,
+    pub last_message_at: u64,
+    pub message_count: u32,
+}
+
+/// Game server info DTO for frontend consumption.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameServerInfoDto {
+    pub id: String,
+    pub game_id: String,
+    pub label: String,
+    pub address: String,
+    pub added_by: String,
+    pub created_at: u64,
+}
+
 impl From<&crate::state::RoleDefinition> for RoleDto {
     fn from(def: &crate::state::RoleDefinition) -> Self {
         Self {
@@ -89,6 +314,53 @@ impl From<&crate::state::RoleDefinition> for RoleDto {
             position: def.position,
             hoist: def.hoist,
             mentionable: def.mentionable,
+        }
+    }
+}
+
+/// Channel info DTO for frontend consumption (from ChannelsUpdated broadcast).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelInfoFrontendDto {
+    pub id: String,
+    pub name: String,
+    pub channel_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category_id: Option<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub topic: String,
+    #[serde(default)]
+    pub slowmode_seconds: u32,
+}
+
+/// Category info DTO for frontend consumption (from ChannelsUpdated broadcast).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CategoryInfoFrontendDto {
+    pub id: String,
+    pub name: String,
+    pub sort_order: i32,
+}
+
+impl From<&rekindle_protocol::messaging::ChannelInfoDto> for ChannelInfoFrontendDto {
+    fn from(dto: &rekindle_protocol::messaging::ChannelInfoDto) -> Self {
+        Self {
+            id: dto.id.clone(),
+            name: dto.name.clone(),
+            channel_type: dto.channel_type.clone(),
+            category_id: dto.category_id.clone(),
+            topic: dto.topic.clone(),
+            slowmode_seconds: dto.slowmode_seconds,
+        }
+    }
+}
+
+impl From<&rekindle_protocol::messaging::CategoryDto> for CategoryInfoFrontendDto {
+    fn from(dto: &rekindle_protocol::messaging::CategoryDto) -> Self {
+        Self {
+            id: dto.id.clone(),
+            name: dto.name.clone(),
+            sort_order: dto.sort_order,
         }
     }
 }

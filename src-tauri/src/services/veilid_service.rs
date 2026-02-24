@@ -146,20 +146,61 @@ async fn handle_community_broadcast(
         CommunityBroadcast::NewMessage {
             community_id,
             channel_id,
+            message_id,
             sender_pseudonym,
             ciphertext,
             mek_generation,
             timestamp,
+            reply_to_id,
         } => {
             let msg = BroadcastNewMessage {
                 community_id,
                 channel_id,
+                message_id,
                 sender_pseudonym,
                 ciphertext,
                 mek_generation,
                 timestamp,
+                reply_to_id,
             };
             handle_broadcast_new_message(app_handle, state, &msg).await;
+        }
+        CommunityBroadcast::MessageEdited {
+            community_id,
+            channel_id,
+            message_id,
+            new_ciphertext,
+            mek_generation,
+            edited_at,
+        } => {
+            handle_broadcast_message_edited(
+                app_handle,
+                state,
+                &community_id,
+                &channel_id,
+                &message_id,
+                &new_ciphertext,
+                mek_generation,
+                edited_at,
+            );
+        }
+        CommunityBroadcast::MessageDeleted {
+            community_id,
+            channel_id,
+            message_id,
+        } => {
+            tracing::info!(
+                community = %community_id,
+                channel = %channel_id,
+                message = %message_id,
+                "community message deleted"
+            );
+            let event = crate::channels::CommunityEvent::MessageDeleted {
+                community_id,
+                channel_id,
+                message_id,
+            };
+            let _ = app_handle.emit("community-event", &event);
         }
         CommunityBroadcast::MEKRotated {
             community_id,
@@ -241,7 +282,437 @@ async fn handle_community_broadcast(
             };
             let _ = app_handle.emit("community-event", &event);
         }
+        CommunityBroadcast::ReactionAdded {
+            community_id,
+            channel_id,
+            message_id,
+            emoji,
+            reactor_pseudonym,
+        } => {
+            let event = crate::channels::CommunityEvent::ReactionAdded {
+                community_id,
+                channel_id,
+                message_id,
+                emoji,
+                reactor_pseudonym,
+            };
+            let _ = app_handle.emit("community-event", &event);
+        }
+        CommunityBroadcast::ReactionRemoved {
+            community_id,
+            channel_id,
+            message_id,
+            emoji,
+            reactor_pseudonym,
+        } => {
+            let event = crate::channels::CommunityEvent::ReactionRemoved {
+                community_id,
+                channel_id,
+                message_id,
+                emoji,
+                reactor_pseudonym,
+            };
+            let _ = app_handle.emit("community-event", &event);
+        }
+        CommunityBroadcast::MessagePinned {
+            community_id,
+            channel_id,
+            message_id,
+            pinned_by,
+        } => {
+            let event = crate::channels::CommunityEvent::MessagePinned {
+                community_id,
+                channel_id,
+                message_id,
+                pinned_by,
+            };
+            let _ = app_handle.emit("community-event", &event);
+        }
+        CommunityBroadcast::MessageUnpinned {
+            community_id,
+            channel_id,
+            message_id,
+        } => {
+            let event = crate::channels::CommunityEvent::MessageUnpinned {
+                community_id,
+                channel_id,
+                message_id,
+            };
+            let _ = app_handle.emit("community-event", &event);
+        }
+        CommunityBroadcast::ChannelTyping {
+            community_id,
+            channel_id,
+            pseudonym_key,
+        } => {
+            let event = crate::channels::CommunityEvent::ChannelTyping {
+                community_id,
+                channel_id,
+                pseudonym_key,
+            };
+            let _ = app_handle.emit("community-event", &event);
+        }
+        CommunityBroadcast::MemberPresenceChanged {
+            community_id,
+            pseudonym_key,
+            status,
+            game_name,
+            game_id,
+            elapsed_seconds,
+            server_address,
+        } => {
+            let event = crate::channels::CommunityEvent::MemberPresenceChanged {
+                community_id,
+                pseudonym_key,
+                status,
+                game_name,
+                game_id,
+                elapsed_seconds,
+                server_address,
+            };
+            let _ = app_handle.emit("community-event", &event);
+        }
+        CommunityBroadcast::ChannelsUpdated {
+            community_id,
+            channels,
+            categories,
+        } => {
+            handle_broadcast_channels_updated(app_handle, state, &community_id, &channels, &categories);
+        }
+        CommunityBroadcast::InviteCreated {
+            community_id,
+            code,
+            created_by,
+            max_uses,
+            uses,
+            expires_at,
+            created_at,
+        } => {
+            tracing::info!(community = %community_id, invite = %code, "invite created broadcast");
+            let event = crate::channels::CommunityEvent::InviteCreated {
+                community_id,
+                code,
+                created_by,
+                max_uses,
+                uses,
+                expires_at,
+                created_at,
+            };
+            let _ = app_handle.emit("community-event", &event);
+        }
+        CommunityBroadcast::InviteRevoked {
+            community_id,
+            code,
+        } => {
+            tracing::info!(community = %community_id, invite = %code, "invite revoked broadcast");
+            let event = crate::channels::CommunityEvent::InviteRevoked {
+                community_id,
+                code,
+            };
+            let _ = app_handle.emit("community-event", &event);
+        }
+        CommunityBroadcast::InviteUsed {
+            community_id,
+            code,
+            new_use_count,
+        } => {
+            tracing::info!(community = %community_id, invite = %code, uses = new_use_count, "invite used broadcast");
+            let event = crate::channels::CommunityEvent::InviteUsed {
+                community_id,
+                code,
+                new_use_count,
+            };
+            let _ = app_handle.emit("community-event", &event);
+        }
+        // Event, thread, and game server broadcasts — dispatched to helpers
+        b @ (CommunityBroadcast::EventCreated { .. }
+        | CommunityBroadcast::EventUpdated { .. }
+        | CommunityBroadcast::EventDeleted { .. }
+        | CommunityBroadcast::EventRsvpChanged { .. }
+        | CommunityBroadcast::EventReminder { .. }
+        | CommunityBroadcast::ThreadCreated { .. }
+        | CommunityBroadcast::ThreadMessageReceived { .. }
+        | CommunityBroadcast::ThreadArchived { .. }
+        | CommunityBroadcast::GameServerAdded { .. }
+        | CommunityBroadcast::GameServerRemoved { .. }) => {
+            dispatch_event_and_thread_broadcasts(app_handle, state, b).await;
+        }
     }
+}
+
+/// Dispatch event and thread broadcast variants extracted from `handle_community_broadcast`
+/// to keep the main function under the 300-line clippy limit.
+async fn dispatch_event_and_thread_broadcasts(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    broadcast: rekindle_protocol::messaging::CommunityBroadcast,
+) {
+    use rekindle_protocol::messaging::CommunityBroadcast;
+
+    match broadcast {
+        CommunityBroadcast::EventCreated {
+            community_id,
+            event,
+        } => {
+            let event = crate::channels::CommunityEvent::EventCreated {
+                community_id,
+                event: protocol_event_to_dto(&event),
+            };
+            let _ = app_handle.emit("community-event", &event);
+        }
+        CommunityBroadcast::EventUpdated {
+            community_id,
+            event,
+        } => {
+            let event = crate::channels::CommunityEvent::EventUpdated {
+                community_id,
+                event: protocol_event_to_dto(&event),
+            };
+            let _ = app_handle.emit("community-event", &event);
+        }
+        CommunityBroadcast::EventDeleted {
+            community_id,
+            event_id,
+        } => {
+            let event = crate::channels::CommunityEvent::EventDeleted {
+                community_id,
+                event_id,
+            };
+            let _ = app_handle.emit("community-event", &event);
+        }
+        CommunityBroadcast::EventRsvpChanged {
+            community_id,
+            event_id,
+            pseudonym_key,
+            status,
+        } => {
+            let event = crate::channels::CommunityEvent::EventRsvpChanged {
+                community_id,
+                event_id,
+                pseudonym_key,
+                status,
+            };
+            let _ = app_handle.emit("community-event", &event);
+        }
+        CommunityBroadcast::ThreadCreated {
+            community_id,
+            thread,
+        } => {
+            tracing::info!(
+                community = %community_id,
+                thread = %thread.id,
+                "thread created"
+            );
+            let event = crate::channels::CommunityEvent::ThreadCreated {
+                community_id,
+                thread: protocol_thread_to_dto(&thread),
+            };
+            let _ = app_handle.emit("community-event", &event);
+        }
+        CommunityBroadcast::ThreadMessageReceived {
+            community_id,
+            thread_id,
+            message_id,
+            sender_pseudonym,
+            ciphertext,
+            mek_generation,
+            timestamp,
+            reply_to_id,
+        } => {
+            handle_broadcast_thread_message(
+                app_handle,
+                state,
+                &community_id,
+                &thread_id,
+                &message_id,
+                &sender_pseudonym,
+                &ciphertext,
+                mek_generation,
+                timestamp,
+                reply_to_id.as_deref(),
+            )
+            .await;
+        }
+        CommunityBroadcast::ThreadArchived {
+            community_id,
+            thread_id,
+            archived,
+        } => {
+            tracing::info!(
+                community = %community_id,
+                thread = %thread_id,
+                archived,
+                "thread archive status changed"
+            );
+            let event = crate::channels::CommunityEvent::ThreadArchived {
+                community_id,
+                thread_id,
+                archived,
+            };
+            let _ = app_handle.emit("community-event", &event);
+        }
+        CommunityBroadcast::GameServerAdded {
+            community_id,
+            server,
+        } => {
+            tracing::info!(
+                community = %community_id,
+                server_id = %server.id,
+                "game server added"
+            );
+            let event = crate::channels::CommunityEvent::GameServerAdded {
+                community_id,
+                server: protocol_game_server_to_dto(&server),
+            };
+            let _ = app_handle.emit("community-event", &event);
+        }
+        CommunityBroadcast::GameServerRemoved {
+            community_id,
+            server_id,
+        } => {
+            tracing::info!(
+                community = %community_id,
+                server_id = %server_id,
+                "game server removed"
+            );
+            let event = crate::channels::CommunityEvent::GameServerRemoved {
+                community_id,
+                server_id,
+            };
+            let _ = app_handle.emit("community-event", &event);
+        }
+        CommunityBroadcast::EventReminder {
+            community_id,
+            event_id,
+            title,
+            minutes_until_start,
+        } => {
+            let event = crate::channels::CommunityEvent::EventReminder {
+                community_id,
+                event_id,
+                title,
+                minutes_until_start,
+            };
+            let _ = app_handle.emit("community-event", &event);
+        }
+        _ => {} // Other variants handled in parent function
+    }
+}
+
+/// Convert a protocol `GameServerDto` to the channel's `GameServerInfoDto`.
+fn protocol_game_server_to_dto(
+    s: &rekindle_protocol::messaging::GameServerDto,
+) -> crate::channels::community_channel::GameServerInfoDto {
+    crate::channels::community_channel::GameServerInfoDto {
+        id: s.id.clone(),
+        game_id: s.game_id.clone(),
+        label: s.label.clone(),
+        address: s.address.clone(),
+        added_by: s.added_by.clone(),
+        created_at: s.created_at,
+    }
+}
+
+/// Convert a protocol `EventDto` to the channel's `EventInfoDto`.
+fn protocol_event_to_dto(
+    e: &rekindle_protocol::messaging::EventDto,
+) -> crate::channels::community_channel::EventInfoDto {
+    crate::channels::community_channel::EventInfoDto {
+        id: e.id.clone(),
+        title: e.title.clone(),
+        description: e.description.clone(),
+        creator_pseudonym: e.creator_pseudonym.clone(),
+        start_time: e.start_time,
+        end_time: e.end_time,
+        channel_id: e.channel_id.clone(),
+        max_attendees: e.max_attendees,
+        created_at: e.created_at,
+        status: e.status.clone(),
+        rsvps: e
+            .rsvps
+            .iter()
+            .map(|r| crate::channels::community_channel::EventRsvpInfoDto {
+                pseudonym_key: r.pseudonym_key.clone(),
+                status: r.status.clone(),
+            })
+            .collect(),
+    }
+}
+
+/// Convert a protocol `ThreadInfoDto` to the channel's `ThreadInfoDto`.
+fn protocol_thread_to_dto(
+    t: &rekindle_protocol::messaging::ThreadInfoDto,
+) -> crate::channels::community_channel::ThreadInfoDto {
+    crate::channels::community_channel::ThreadInfoDto {
+        id: t.id.clone(),
+        channel_id: t.channel_id.clone(),
+        name: t.name.clone(),
+        starter_message_id: t.starter_message_id.clone(),
+        creator_pseudonym: t.creator_pseudonym.clone(),
+        created_at: t.created_at,
+        archived: t.archived,
+        auto_archive_seconds: t.auto_archive_seconds,
+        last_message_at: t.last_message_at,
+        message_count: t.message_count,
+    }
+}
+
+/// Handle a `ThreadMessageReceived` broadcast: decrypt with MEK and emit.
+async fn handle_broadcast_thread_message(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    community_id: &str,
+    thread_id: &str,
+    message_id: &str,
+    sender_pseudonym: &str,
+    ciphertext: &[u8],
+    mek_generation: u64,
+    timestamp: u64,
+    reply_to_id: Option<&str>,
+) {
+    // Skip messages we sent ourselves
+    {
+        let communities = state.communities.read();
+        if let Some(community) = communities.get(community_id) {
+            if community.my_pseudonym_key.as_deref() == Some(sender_pseudonym) {
+                return;
+            }
+        }
+    }
+
+    let first_attempt = {
+        let mek_cache = state.mek_cache.lock();
+        decrypt_with_cached_mek(&mek_cache, community_id, ciphertext, mek_generation)
+    };
+
+    let body = match first_attempt {
+        MekDecryptResult::Decrypted(body) => body,
+        MekDecryptResult::Failed => return,
+        MekDecryptResult::NeedRefresh => {
+            fetch_mek_from_server(app_handle, state, community_id).await;
+
+            let mek_cache = state.mek_cache.lock();
+            if let MekDecryptResult::Decrypted(body) =
+                decrypt_with_cached_mek(&mek_cache, community_id, ciphertext, mek_generation)
+            {
+                body
+            } else {
+                tracing::warn!("MEK still mismatched after refresh — dropping thread message");
+                return;
+            }
+        }
+    };
+
+    let event = crate::channels::CommunityEvent::ThreadMessageReceived {
+        community_id: community_id.to_string(),
+        thread_id: thread_id.to_string(),
+        message_id: message_id.to_string(),
+        sender_pseudonym: sender_pseudonym.to_string(),
+        body,
+        timestamp,
+        reply_to_id: reply_to_id.map(str::to_string),
+    };
+    let _ = app_handle.emit("community-event", &event);
 }
 
 /// Decrypt result for community message MEK decryption attempts.
@@ -255,10 +726,12 @@ enum MekDecryptResult {
 struct BroadcastNewMessage {
     community_id: String,
     channel_id: String,
+    message_id: String,
     sender_pseudonym: String,
     ciphertext: Vec<u8>,
     mek_generation: u64,
     timestamp: u64,
+    reply_to_id: Option<String>,
 }
 
 /// Handle a `NewMessage` community broadcast: decrypt, store, and emit.
@@ -328,6 +801,8 @@ async fn handle_broadcast_new_message(
         body,
         timestamp: msg.timestamp,
         conversation_id: msg.channel_id.clone(),
+        server_message_id: Some(msg.message_id.clone()),
+        reply_to_id: msg.reply_to_id.clone(),
     };
     let _ = app_handle.emit("chat-event", &event);
 }
@@ -388,7 +863,106 @@ async fn handle_broadcast_mek_rotated(
     let _ = app_handle.emit("community-event", &event);
 }
 
+/// Handle a `MessageEdited` community broadcast: decrypt and notify frontend.
+fn handle_broadcast_message_edited(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    community_id: &str,
+    channel_id: &str,
+    message_id: &str,
+    new_ciphertext: &[u8],
+    mek_generation: u64,
+    edited_at: u64,
+) {
+    let body = {
+        let mek_cache = state.mek_cache.lock();
+        match decrypt_with_cached_mek(&mek_cache, community_id, new_ciphertext, mek_generation) {
+            MekDecryptResult::Decrypted(text) => text,
+            MekDecryptResult::NeedRefresh | MekDecryptResult::Failed => {
+                tracing::warn!("failed to decrypt edited message {message_id}");
+                return;
+            }
+        }
+    };
+
+    let event = crate::channels::CommunityEvent::MessageEdited {
+        community_id: community_id.to_string(),
+        channel_id: channel_id.to_string(),
+        message_id: message_id.to_string(),
+        new_body: body,
+        edited_at,
+    };
+    let _ = app_handle.emit("community-event", &event);
+}
+
 /// Handle a `MemberJoined` community broadcast: persist and notify.
+/// Handle a `ChannelsUpdated` broadcast: update local community state and notify frontend.
+fn handle_broadcast_channels_updated(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    community_id: &str,
+    channels: &[rekindle_protocol::messaging::ChannelInfoDto],
+    categories: &[rekindle_protocol::messaging::CategoryDto],
+) {
+    tracing::info!(
+        community = %community_id,
+        num_channels = channels.len(),
+        num_categories = categories.len(),
+        "channel/category structure updated via broadcast"
+    );
+
+    // Update local community state
+    {
+        let mut communities = state.communities.write();
+        if let Some(community) = communities.get_mut(community_id) {
+            community.channels = channels
+                .iter()
+                .map(|ch| {
+                    let ct = match ch.channel_type.as_str() {
+                        "voice" => crate::state::ChannelType::Voice,
+                        "announcement" => crate::state::ChannelType::Announcement,
+                        _ => crate::state::ChannelType::Text,
+                    };
+                    crate::state::ChannelInfo {
+                        id: ch.id.clone(),
+                        name: ch.name.clone(),
+                        channel_type: ct,
+                        unread_count: 0,
+                        category_id: ch.category_id.clone(),
+                        topic: ch.topic.clone(),
+                        slowmode_seconds: if ch.slowmode_seconds > 0 {
+                            Some(ch.slowmode_seconds)
+                        } else {
+                            None
+                        },
+                    }
+                })
+                .collect();
+            community.categories = categories
+                .iter()
+                .map(|cat| crate::state::CategoryInfo {
+                    id: cat.id.clone(),
+                    name: cat.name.clone(),
+                    sort_order: cat.sort_order,
+                })
+                .collect();
+        }
+    }
+
+    let event = crate::channels::CommunityEvent::ChannelsUpdated {
+        community_id: community_id.to_string(),
+        channels: channels
+            .iter()
+            .map(crate::channels::community_channel::ChannelInfoFrontendDto::from)
+            .collect(),
+        categories: categories
+            .iter()
+            .map(crate::channels::community_channel::CategoryInfoFrontendDto::from)
+            .collect(),
+    };
+    let _ = app_handle.emit("community-event", &event);
+}
+
 fn handle_broadcast_member_joined(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
@@ -793,7 +1367,7 @@ pub(super) async fn fetch_mek_from_server(
 
     match call_result {
         Ok(response_bytes) => {
-            if let Ok(rekindle_protocol::messaging::CommunityResponse::MEK {
+            if let Ok(rekindle_protocol::messaging::CommunityResponse::Mek {
                 mek_encrypted,
                 ..
             }) = serde_json::from_slice(&response_bytes)
@@ -1263,6 +1837,7 @@ pub async fn initialize_node(
     let config = rekindle_protocol::node::NodeConfig {
         storage_dir: storage_dir.to_string_lossy().into_owned(),
         app_namespace: "rekindle".into(),
+        qualifier: "rekindle".into(),
     };
 
     // Start the real Veilid node (api_startup + attach + routing_context)
@@ -1271,9 +1846,7 @@ pub async fn initialize_node(
         .map_err(|e| format!("failed to start veilid node: {e}"))?;
 
     // Take the VeilidUpdate receiver before storing the node's pieces
-    let update_rx = node
-        .take_update_receiver()
-        .ok_or_else(|| "update receiver already taken".to_string())?;
+    let update_rx = node.take_update_receiver();
 
     // Clone Arc-based handles before storing
     let api = node.api().clone();
@@ -1326,7 +1899,6 @@ pub async fn initialize_node(
 /// 5. Clears identity, friends, communities, signal manager
 ///
 /// Does NOT call `api.shutdown()` — the node continues running for re-login.
-#[allow(clippy::too_many_lines)]
 pub async fn logout_cleanup(app_handle: Option<&tauri::AppHandle>, state: &AppState) {
     // 0. Shut down voice if active
     crate::services::voice::shutdown::shutdown_voice(
@@ -1454,7 +2026,7 @@ pub async fn logout_cleanup(app_handle: Option<&tauri::AppHandle>, state: &AppSt
         // Try graceful shutdown via IPC first (same as graceful_shutdown)
         let socket_path = crate::ipc_client::default_socket_path();
         if socket_path.exists() {
-            if let Err(e) = crate::ipc_client::shutdown_server_blocking(&socket_path) {
+            if let Err(e) = crate::ipc_client::shutdown_server_async(&socket_path).await {
                 tracing::debug!(error = %e, "IPC shutdown failed on logout — will kill process");
             }
         }

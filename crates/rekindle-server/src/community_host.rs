@@ -10,21 +10,21 @@ use rusqlite::params;
 use tokio::sync::mpsc;
 
 use crate::mek;
-use crate::server_state::{HostedCommunity, ServerChannel, ServerMember, ServerState};
+use crate::server_state::{
+    HostedCommunity, ServerCategory, ServerChannel, ServerMember, ServerState,
+};
 
 /// Load members for a community from the server database.
 fn load_members_from_db(
     state: &Arc<ServerState>,
     community_id: &str,
 ) -> Result<Vec<ServerMember>, String> {
-    let db = state.db.lock().map_err(|e| e.to_string())?;
-    let mut stmt = db
-        .prepare(
+    let community_id = community_id.to_string();
+    crate::db_helpers::db_call(&state.db, |db| {
+        let mut stmt = db.prepare(
             "SELECT pseudonym_key_hex, display_name, joined_at, route_blob FROM server_members WHERE community_id = ?",
-        )
-        .map_err(|e| e.to_string())?;
-    let rows = stmt
-        .query_map(params![community_id], |row| {
+        )?;
+        let rows = stmt.query_map(params![community_id], |row| {
             Ok(ServerMember {
                 pseudonym_key_hex: row.get(0)?,
                 display_name: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
@@ -32,51 +32,46 @@ fn load_members_from_db(
                 joined_at: row.get(2)?,
                 route_blob: row.get(3)?,
                 timeout_until: None, // filled below
+                online_status: "offline".into(), // not persisted — reset on restart
             })
-        })
-        .map_err(|e| e.to_string())?;
-    let mut members: Vec<ServerMember> = rows.filter_map(Result::ok).collect();
+        })?;
+        let mut members: Vec<ServerMember> = rows.filter_map(Result::ok).collect();
 
-    // Load role_ids from junction table
-    {
-        let mut role_stmt = db
-            .prepare(
+        // Load role_ids from junction table
+        {
+            let mut role_stmt = db.prepare(
                 "SELECT pseudonym_key_hex, role_id FROM server_member_roles WHERE community_id = ?",
-            )
-            .map_err(|e| e.to_string())?;
-        let role_rows = role_stmt
-            .query_map(params![community_id], |row| {
+            )?;
+            let role_rows = role_stmt.query_map(params![community_id], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, u32>(1)?))
-            })
-            .map_err(|e| e.to_string())?;
-        for row in role_rows.flatten() {
-            if let Some(member) = members.iter_mut().find(|m| m.pseudonym_key_hex == row.0) {
-                member.role_ids.push(row.1);
-            }
-        }
-    }
-
-    // Load timeouts
-    {
-        let mut to_stmt = db
-            .prepare("SELECT pseudonym_key_hex, timeout_until FROM server_member_timeouts WHERE community_id = ?")
-            .map_err(|e| e.to_string())?;
-        let to_rows = to_stmt
-            .query_map(params![community_id], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, u64>(1)?))
-            })
-            .map_err(|e| e.to_string())?;
-        let now = rekindle_utils::timestamp_secs();
-        for row in to_rows.flatten() {
-            if row.1 > now {
+            })?;
+            for row in role_rows.flatten() {
                 if let Some(member) = members.iter_mut().find(|m| m.pseudonym_key_hex == row.0) {
-                    member.timeout_until = Some(row.1);
+                    member.role_ids.push(row.1);
                 }
             }
         }
-    }
 
-    Ok(members)
+        // Load timeouts
+        {
+            let mut to_stmt = db.prepare(
+                "SELECT pseudonym_key_hex, timeout_until FROM server_member_timeouts WHERE community_id = ?",
+            )?;
+            let to_rows = to_stmt.query_map(params![community_id], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, u64>(1)?))
+            })?;
+            let now = rekindle_utils::timestamp_secs();
+            for row in to_rows.flatten() {
+                if row.1 > now {
+                    if let Some(member) = members.iter_mut().find(|m| m.pseudonym_key_hex == row.0) {
+                        member.timeout_until = Some(row.1);
+                    }
+                }
+            }
+        }
+
+        Ok(members)
+    })
 }
 
 /// Load channels for a community from the server database.
@@ -84,35 +79,32 @@ fn load_channels_from_db(
     state: &Arc<ServerState>,
     community_id: &str,
 ) -> Result<Vec<ServerChannel>, String> {
-    let db = state.db.lock().map_err(|e| e.to_string())?;
-    let mut stmt = db
-        .prepare(
-            "SELECT id, name, channel_type, sort_order FROM server_channels WHERE community_id = ?",
-        )
-        .map_err(|e| e.to_string())?;
-    let rows = stmt
-        .query_map(params![community_id], |row| {
+    let community_id = community_id.to_string();
+    crate::db_helpers::db_call(&state.db, |db| {
+        let mut stmt = db.prepare(
+            "SELECT id, name, channel_type, sort_order, category_id, topic, slowmode_seconds FROM server_channels WHERE community_id = ?",
+        )?;
+        let rows = stmt.query_map(params![community_id], |row| {
             Ok(ServerChannel {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 channel_type: row.get(2)?,
                 sort_order: row.get(3)?,
                 permission_overwrites: Vec::new(), // filled below
+                category_id: row.get(4)?,
+                topic: row.get::<_, String>(5).unwrap_or_default(),
+                slowmode_seconds: row.get::<_, u32>(6).unwrap_or(0),
             })
-        })
-        .map_err(|e| e.to_string())?;
-    let mut channels: Vec<ServerChannel> = rows.filter_map(Result::ok).collect();
+        })?;
+        let mut channels: Vec<ServerChannel> = rows.filter_map(Result::ok).collect();
 
-    // Load permission overwrites
-    {
-        let mut ow_stmt = db
-            .prepare(
+        // Load permission overwrites
+        {
+            let mut ow_stmt = db.prepare(
                 "SELECT channel_id, target_type, target_id, allow_bits, deny_bits \
                  FROM server_channel_overwrites WHERE community_id = ?",
-            )
-            .map_err(|e| e.to_string())?;
-        let ow_rows = ow_stmt
-            .query_map(params![community_id], |row| {
+            )?;
+            let ow_rows = ow_stmt.query_map(params![community_id], |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
@@ -120,25 +112,46 @@ fn load_channels_from_db(
                     row.get::<_, u64>(3)?,
                     row.get::<_, u64>(4)?,
                 ))
-            })
-            .map_err(|e| e.to_string())?;
-        for row in ow_rows.flatten() {
-            if let Some(ch) = channels.iter_mut().find(|c| c.id == row.0) {
-                let target_type = match row.1.as_str() {
-                    "member" => OverwriteType::Member,
-                    _ => OverwriteType::Role,
-                };
-                ch.permission_overwrites.push(PermissionOverwrite {
-                    target_type,
-                    target_id: row.2,
-                    allow: row.3,
-                    deny: row.4,
-                });
+            })?;
+            for row in ow_rows.flatten() {
+                if let Some(ch) = channels.iter_mut().find(|c| c.id == row.0) {
+                    let target_type = match row.1.as_str() {
+                        "member" => OverwriteType::Member,
+                        _ => OverwriteType::Role,
+                    };
+                    ch.permission_overwrites.push(PermissionOverwrite {
+                        target_type,
+                        target_id: row.2,
+                        allow: row.3,
+                        deny: row.4,
+                    });
+                }
             }
         }
-    }
 
-    Ok(channels)
+        Ok(channels)
+    })
+}
+
+/// Load channel categories for a community from the server database.
+fn load_categories_from_db(
+    state: &Arc<ServerState>,
+    community_id: &str,
+) -> Result<Vec<ServerCategory>, String> {
+    let community_id = community_id.to_string();
+    crate::db_helpers::db_call(&state.db, |db| {
+        let mut stmt = db.prepare(
+            "SELECT id, name, sort_order FROM server_categories WHERE community_id = ? ORDER BY sort_order",
+        )?;
+        let rows = stmt.query_map(params![community_id], |row| {
+            Ok(ServerCategory {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                sort_order: row.get(2)?,
+            })
+        })?;
+        Ok(rows.filter_map(Result::ok).collect())
+    })
 }
 
 /// Load role definitions for a community from the server database.
@@ -146,15 +159,13 @@ fn load_roles_from_db(
     state: &Arc<ServerState>,
     community_id: &str,
 ) -> Result<Vec<RoleDefinition>, String> {
-    let db = state.db.lock().map_err(|e| e.to_string())?;
-    let mut stmt = db
-        .prepare(
+    let community_id = community_id.to_string();
+    crate::db_helpers::db_call(&state.db, |db| {
+        let mut stmt = db.prepare(
             "SELECT id, name, color, permissions, position, hoist, mentionable \
              FROM server_roles WHERE community_id = ? ORDER BY position DESC",
-        )
-        .map_err(|e| e.to_string())?;
-    let rows = stmt
-        .query_map(params![community_id], |row| {
+        )?;
+        let rows = stmt.query_map(params![community_id], |row| {
             Ok(RoleDefinition {
                 id: row.get(0)?,
                 name: row.get(1)?,
@@ -164,9 +175,9 @@ fn load_roles_from_db(
                 hoist: row.get::<_, i32>(5)? != 0,
                 mentionable: row.get::<_, i32>(6)? != 0,
             })
-        })
-        .map_err(|e| e.to_string())?;
-    Ok(rows.filter_map(Result::ok).collect())
+        })?;
+        Ok(rows.filter_map(Result::ok).collect())
+    })
 }
 
 /// Create the 5 default roles for a new community and persist to DB.
@@ -222,24 +233,26 @@ pub fn create_default_roles(
         },
     ];
 
-    let db = state.db.lock().map_err(|e| e.to_string())?;
-    for role in &default_roles {
-        db.execute(
-            "INSERT OR IGNORE INTO server_roles (community_id, id, name, color, permissions, position, hoist, mentionable) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            params![
-                community_id,
-                role.id,
-                role.name,
-                role.color,
-                role.permissions.cast_signed(),
-                role.position,
-                i32::from(role.hoist),
-                i32::from(role.mentionable),
-            ],
-        )
-        .map_err(|e| format!("failed to insert default role: {e}"))?;
-    }
+    let community_id = community_id.to_string();
+    crate::db_helpers::db_call(&state.db, |db| {
+        for role in &default_roles {
+            db.execute(
+                "INSERT OR IGNORE INTO server_roles (community_id, id, name, color, permissions, position, hoist, mentionable) \
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                params![
+                    community_id,
+                    role.id,
+                    role.name,
+                    role.color,
+                    role.permissions.cast_signed(),
+                    role.position,
+                    i32::from(role.hoist),
+                    i32::from(role.mentionable),
+                ],
+            )?;
+        }
+        Ok(())
+    })?;
 
     Ok(default_roles)
 }
@@ -352,7 +365,6 @@ async fn setup_dht_and_route(
 /// The `creator_pseudonym_key` is registered as the first member with owner
 /// permissions. This avoids a race condition where a separate Join RPC might
 /// arrive before the community is fully hosted.
-#[allow(clippy::too_many_lines)]
 pub async fn host_community(
     state: &Arc<ServerState>,
     community_id: &str,
@@ -374,19 +386,24 @@ pub async fn host_community(
     // server_channels) have FK constraints referencing hosted_communities(id),
     // so the parent row must exist before any child inserts.
     {
-        let db = state.db.lock().map_err(|e| e.to_string())?;
-        if let Err(e) = db.execute(
-            "INSERT OR IGNORE INTO hosted_communities (id, dht_record_key, owner_keypair_hex, name, created_at) VALUES (?,?,?,?,?)",
-            params![community_id, dht_record_key, owner_keypair_hex, name, rekindle_utils::timestamp_secs()],
-        ) {
-            tracing::error!(error = %e, community = %community_id, "failed to persist hosted community to DB");
-        }
+        let cid = community_id.to_string();
+        let drk = dht_record_key.to_string();
+        let okh = owner_keypair_hex.to_string();
+        let n = name.to_string();
+        crate::db_helpers::db_fire(&state.db, "persist hosted community", |db| {
+            db.execute(
+                "INSERT OR IGNORE INTO hosted_communities (id, dht_record_key, owner_keypair_hex, name, created_at) VALUES (?,?,?,?,?)",
+                params![cid, drk, okh, n, rekindle_utils::timestamp_secs()],
+            )?;
+            Ok(())
+        });
     }
 
     let mek_val = mek::load_latest_mek(state, community_id)
         .unwrap_or_else(|| mek::create_initial_mek(state, community_id));
 
     let channels = load_channels_from_db(state, community_id)?;
+    let categories = load_categories_from_db(state, community_id)?;
 
     // Load or create default roles
     let mut roles = load_roles_from_db(state, community_id)?;
@@ -401,22 +418,24 @@ pub async fn host_community(
 
     // Load description and creator_pseudonym from DB
     let (description, mut creator_pseudonym_hex) = {
-        let db = state.db.lock().map_err(|e| e.to_string())?;
-        let desc = db
-            .query_row(
-                "SELECT description FROM hosted_communities WHERE id = ?",
-                params![community_id],
-                |row| row.get::<_, String>(0),
-            )
-            .unwrap_or_default();
-        let creator = db
-            .query_row(
-                "SELECT creator_pseudonym FROM hosted_communities WHERE id = ?",
-                params![community_id],
-                |row| row.get::<_, String>(0),
-            )
-            .unwrap_or_default();
-        (desc, creator)
+        let cid = community_id.to_string();
+        crate::db_helpers::db_call_or_default(&state.db, |db| {
+            let desc = db
+                .query_row(
+                    "SELECT description FROM hosted_communities WHERE id = ?",
+                    params![cid],
+                    |row| row.get::<_, String>(0),
+                )
+                .unwrap_or_default();
+            let creator = db
+                .query_row(
+                    "SELECT creator_pseudonym FROM hosted_communities WHERE id = ?",
+                    params![cid],
+                    |row| row.get::<_, String>(0),
+                )
+                .unwrap_or_default();
+            Ok((desc, creator))
+        })
     };
 
     // If a creator pseudonym key was provided and the creator isn't already
@@ -435,21 +454,27 @@ pub async fn host_community(
 
         // Persist creator to DB
         {
-            let db = state.db.lock().map_err(|e| e.to_string())?;
-            let _ = db.execute(
-                "INSERT OR IGNORE INTO server_members (community_id, pseudonym_key_hex, display_name, joined_at) VALUES (?,?,?,?)",
-                params![community_id, creator_pseudonym_key, creator_display_name, now],
-            );
-            for role_id in &owner_role_ids {
-                let _ = db.execute(
-                    "INSERT OR IGNORE INTO server_member_roles (community_id, pseudonym_key_hex, role_id) VALUES (?,?,?)",
-                    params![community_id, creator_pseudonym_key, role_id],
-                );
-            }
-            let _ = db.execute(
-                "UPDATE hosted_communities SET creator_pseudonym = ? WHERE id = ?",
-                params![creator_pseudonym_key, community_id],
-            );
+            let cid = community_id.to_string();
+            let cpk = creator_pseudonym_key.to_string();
+            let cdn = creator_display_name.to_string();
+            let roles = owner_role_ids.clone();
+            crate::db_helpers::db_fire(&state.db, "persist creator member", |db| {
+                db.execute(
+                    "INSERT OR IGNORE INTO server_members (community_id, pseudonym_key_hex, display_name, joined_at) VALUES (?,?,?,?)",
+                    params![cid, cpk, cdn, now],
+                )?;
+                for role_id in &roles {
+                    db.execute(
+                        "INSERT OR IGNORE INTO server_member_roles (community_id, pseudonym_key_hex, role_id) VALUES (?,?,?)",
+                        params![cid, cpk, role_id],
+                    )?;
+                }
+                db.execute(
+                    "UPDATE hosted_communities SET creator_pseudonym = ? WHERE id = ?",
+                    params![cpk, cid],
+                )?;
+                Ok(())
+            });
         }
 
         creator_pseudonym_hex = creator_pseudonym_key.to_string();
@@ -460,6 +485,7 @@ pub async fn host_community(
             joined_at: now,
             route_blob: None,
             timeout_until: None,
+            online_status: "online".into(),
         });
 
         tracing::info!(
@@ -479,6 +505,7 @@ pub async fn host_community(
         route_blob,
         mek: mek_val,
         members,
+        categories,
         channels,
         roles,
         creator_pseudonym_hex,
@@ -521,14 +548,11 @@ pub fn unhost_community(state: &Arc<ServerState>, community_id: &str) {
         }
         // Remove from DB so it's not re-loaded on restart
         // CASCADE FKs clean up server_members, server_channels, server_mek
-        if let Ok(db) = state.db.lock() {
-            if let Err(e) = db.execute(
-                "DELETE FROM hosted_communities WHERE id = ?",
-                rusqlite::params![community_id],
-            ) {
-                tracing::warn!(error = %e, community = %community_id, "failed to delete hosted community from DB");
-            }
-        }
+        let cid = community_id.to_string();
+        crate::db_helpers::db_fire(&state.db, "delete hosted community", |db| {
+            db.execute("DELETE FROM hosted_communities WHERE id = ?", rusqlite::params![cid])?;
+            Ok(())
+        });
         tracing::info!(community = %community_id, "stopped hosting community");
     }
 }
@@ -626,19 +650,14 @@ async fn rewrite_all_communities(state: &Arc<ServerState>) {
         hosted
             .values()
             .map(|c| {
-                let name = state
-                    .db
-                    .lock()
-                    .ok()
-                    .and_then(|db| {
-                        db.query_row(
-                            "SELECT name FROM hosted_communities WHERE id = ?",
-                            params![c.community_id],
-                            |row| row.get::<_, String>(0),
-                        )
-                        .ok()
-                    })
-                    .unwrap_or_default();
+                let cid = c.community_id.clone();
+                let name: String = crate::db_helpers::db_call_or_default(&state.db, |db| {
+                    db.query_row(
+                        "SELECT name FROM hosted_communities WHERE id = ?",
+                        params![cid],
+                        |row| row.get::<_, String>(0),
+                    )
+                });
                 KeepaliveData {
                     community_id: c.community_id.clone(),
                     dht_key: c.dht_record_key.clone(),
@@ -827,11 +846,28 @@ pub async fn publish_channels(state: &Arc<ServerState>, community_id: &str) {
         };
         let wrapper = serde_json::json!({
             "channels": community.channels.iter().map(|ch| {
-                serde_json::json!({
+                let mut obj = serde_json::json!({
                     "id": ch.id,
                     "name": ch.name,
                     "channelType": ch.channel_type,
                     "sortOrder": ch.sort_order,
+                });
+                if let Some(ref cat_id) = ch.category_id {
+                    obj["categoryId"] = serde_json::json!(cat_id);
+                }
+                if !ch.topic.is_empty() {
+                    obj["topic"] = serde_json::json!(ch.topic);
+                }
+                if ch.slowmode_seconds > 0 {
+                    obj["slowmodeSeconds"] = serde_json::json!(ch.slowmode_seconds);
+                }
+                obj
+            }).collect::<Vec<_>>(),
+            "categories": community.categories.iter().map(|cat| {
+                serde_json::json!({
+                    "id": cat.id,
+                    "name": cat.name,
+                    "sortOrder": cat.sort_order,
                 })
             }).collect::<Vec<_>>(),
             "lastRefreshed": rekindle_utils::timestamp_secs(),
@@ -841,6 +877,14 @@ pub async fn publish_channels(state: &Arc<ServerState>, community_id: &str) {
             serde_json::to_vec(&wrapper).unwrap_or_default(),
         )
     };
+
+    if channels_json.len() > 28_000 {
+        tracing::warn!(
+            community = %community_id,
+            size = channels_json.len(),
+            "channel DHT payload approaching 32 KiB limit"
+        );
+    }
 
     let mgr = DHTManager::new(state.routing_context.clone());
     if let Err(e) = mgr

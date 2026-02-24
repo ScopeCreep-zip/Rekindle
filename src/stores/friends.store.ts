@@ -1,11 +1,8 @@
 import { createStore } from "solid-js/store";
 import type { UserStatus } from "./auth.store";
+import type { GameInfo } from "./types";
 
-export interface GameInfo {
-  gameName: string;
-  gameId: number | null;
-  startedAt: number | null;
-}
+export type { GameInfo } from "./types";
 
 export type FriendshipState = "pendingOut" | "accepted";
 

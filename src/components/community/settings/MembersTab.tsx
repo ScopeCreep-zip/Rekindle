@@ -31,6 +31,15 @@ interface MembersTabProps {
 
 const MembersTab: Component<MembersTabProps> = (props) => {
   const [rolePickerTarget, setRolePickerTarget] = createSignal<string | null>(null);
+  const [searchQuery, setSearchQuery] = createSignal("");
+
+  const filteredMembers = () => {
+    const q = searchQuery().toLowerCase().trim();
+    if (!q) return props.community.members;
+    return props.community.members.filter((m) =>
+      m.displayName.toLowerCase().includes(q),
+    );
+  };
 
   function toggleMemberRole(pseudonymKey: string, roleId: number, has: boolean): void {
     if (has) {
@@ -77,7 +86,14 @@ const MembersTab: Component<MembersTabProps> = (props) => {
       <div class="member-list-header">
         Members — {props.community.members.length}
       </div>
-      <For each={props.community.members}>
+      <input
+        class="form-input member-search-input"
+        type="text"
+        placeholder="Search members..."
+        value={searchQuery()}
+        onInput={(e) => setSearchQuery(e.currentTarget.value)}
+      />
+      <For each={filteredMembers()}>
         {(member) => (
           <div class="settings-member-row">
             <StatusDot status={member.status || "online"} />

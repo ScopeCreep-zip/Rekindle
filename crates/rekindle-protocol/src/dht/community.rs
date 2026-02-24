@@ -339,7 +339,10 @@ pub mod permissions {
     pub const MANAGE_NICKNAMES: u64 = 1 << 27;
     pub const MANAGE_ROLES: u64 = 1 << 28;
 
-    // ── Future ──
+    // ── Events ──
+    pub const MANAGE_EVENTS: u64 = 1 << 33;
+
+    // ── Threads ──
     pub const MANAGE_THREADS: u64 = 1 << 34;
     pub const CREATE_PUBLIC_THREADS: u64 = 1 << 35;
     pub const CREATE_PRIVATE_THREADS: u64 = 1 << 36;
@@ -389,6 +392,7 @@ pub mod permissions {
             | MUTE_MEMBERS
             | DEAFEN_MEMBERS
             | MODERATE_MEMBERS
+            | MANAGE_EVENTS
     }
 
     /// Default permissions for the Admin role (id=3).
@@ -434,6 +438,7 @@ pub mod permissions {
             | CHANGE_NICKNAME
             | MANAGE_NICKNAMES
             | MANAGE_ROLES
+            | MANAGE_EVENTS
             | MANAGE_THREADS
             | CREATE_PUBLIC_THREADS
             | CREATE_PRIVATE_THREADS

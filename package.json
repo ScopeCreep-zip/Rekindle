@@ -5,8 +5,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
+    "dev": "node scripts/copy-sidecar.mjs && vite",
+    "build": "node scripts/copy-sidecar.mjs --release && tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
     "test:mock": "playwright test --project=mock",
