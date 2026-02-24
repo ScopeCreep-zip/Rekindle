@@ -124,6 +124,7 @@ async fn main() {
         public_key_hex,
         slowmode_last_message: RwLock::new(std::collections::HashMap::new()),
         rate_limiter: automod::RateLimiter::new(10, 10),
+        broadcast_listeners: RwLock::new(std::collections::HashMap::new()),
     });
 
     tracing::info!(public_key = %state.public_key_hex, "server identity loaded");

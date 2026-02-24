@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use rekindle_protocol::messaging::envelope::CommunityBroadcast;
+use rusqlite::params;
 
 use crate::server_state::ServerState;
 
@@ -38,6 +39,22 @@ pub(super) fn broadcast_to_members(
     };
 
     for target in targets {
+        // Check for IPC broadcast listener first (hosted community owner on same machine)
+        let sent_via_ipc = {
+            let listeners = state.broadcast_listeners.read();
+            if let Some(tx) = listeners.get(&target.pseudonym_key) {
+                // Send a newline-delimited JSON line for the broadcast
+                let mut ipc_data = broadcast_bytes.clone();
+                ipc_data.push(b'\n');
+                tx.send(ipc_data).is_ok()
+            } else {
+                false
+            }
+        };
+        if sent_via_ipc {
+            continue; // Skip Veilid path for this target
+        }
+
         let api = state.api.clone();
         let rc = state.routing_context.clone();
         let data = broadcast_bytes.clone();
@@ -100,7 +117,22 @@ fn mark_member_offline(state: &Arc<ServerState>, community_id: &str, pseudonym_k
             return;
         }
         member.online_status = "offline".to_string();
+        // Clear stale route_blob so we stop wasting broadcast attempts on a dead route.
+        // The member will re-announce their route via a rejoin RPC when they reconnect.
+        member.route_blob = None;
     }
+
+    // Persist the cleared route to DB
+    let cid = community_id.to_string();
+    let pk = pseudonym_key.to_string();
+    crate::db_helpers::db_fire(&state.db, "clear dead member route", |db| {
+        db.execute(
+            "UPDATE server_members SET route_blob = NULL, online_status = 'offline' \
+             WHERE community_id = ? AND pseudonym_key_hex = ?",
+            params![cid, pk],
+        )?;
+        Ok(())
+    });
 
     // Broadcast the offline status to remaining members
     broadcast_to_members(

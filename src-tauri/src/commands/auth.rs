@@ -12,7 +12,7 @@ use crate::db_helpers::db_call;
 use crate::keystore::{KeystoreHandle, StrongholdKeystore};
 use crate::services;
 use crate::state::{
-    ChannelInfo, ChannelType, CommunityState, FriendState, IdentityState, SharedState,
+    AppState, ChannelInfo, ChannelType, CommunityState, FriendState, IdentityState, SharedState,
     SignalManagerHandle, UserStatus,
 };
 use crate::state_helpers;
@@ -1200,12 +1200,18 @@ pub fn maybe_spawn_server(app: &tauri::AppHandle, state: &SharedState) {
             );
             *state.server_process.lock() = Some(crate::state::KillOnDropChild::new(child));
 
-            // Send HostCommunity IPC commands in a background task
+            // Send HostCommunity IPC commands in a background task,
+            // then start the IPC broadcast listener for real-time updates
             let sp = socket_path.clone();
             let bg_state = Arc::clone(state);
-            let handle =
-                tauri::async_runtime::spawn(send_host_community_ipc(sp, hosted_communities));
-            bg_state.background_handles.lock().push(handle);
+            let bg_app = app.clone();
+            let handle = tauri::async_runtime::spawn(send_host_community_ipc(
+                sp,
+                hosted_communities,
+                bg_state,
+                bg_app,
+            ));
+            state.background_handles.lock().push(handle);
         }
         Err(e) => {
             tracing::error!(error = %e, "failed to spawn rekindle-server");
@@ -1213,7 +1219,8 @@ pub fn maybe_spawn_server(app: &tauri::AppHandle, state: &SharedState) {
     }
 }
 
-/// Send `HostCommunity` IPC commands to the server for each owned community.
+/// Send `HostCommunity` IPC commands to the server for each owned community,
+/// then start the IPC broadcast listener for real-time updates.
 ///
 /// The server needs a moment to start up, so `host_community_blocking` retries
 /// internally with backoff. The creator pseudonym key is passed so the server
@@ -1221,7 +1228,16 @@ pub fn maybe_spawn_server(app: &tauri::AppHandle, state: &SharedState) {
 async fn send_host_community_ipc(
     socket_path: std::path::PathBuf,
     communities: Vec<(String, String, String, String, String, String)>,
+    state: Arc<AppState>,
+    app_handle: tauri::AppHandle,
 ) {
+    // Collect pseudonym keys for broadcast subscription
+    let pseudonym_keys: Vec<String> = communities
+        .iter()
+        .map(|(_, _, _, _, pseudonym, _)| pseudonym.clone())
+        .filter(|k| !k.is_empty())
+        .collect();
+
     for (community_id, dht_key, keypair, name, pseudonym, display_name) in &communities {
         match crate::ipc_client::host_community_async(
             &socket_path,
@@ -1239,6 +1255,50 @@ async fn send_host_community_ipc(
             Err(e) => {
                 tracing::warn!(community = %community_id, error = %e, "failed to send HostCommunity IPC");
             }
+        }
+    }
+
+    // Start the IPC broadcast listener for real-time updates from the server
+    if !pseudonym_keys.is_empty() {
+        start_broadcast_listener_for(&socket_path, pseudonym_keys, state, app_handle).await;
+    }
+}
+
+/// Open a persistent IPC connection to receive real-time broadcasts
+/// for hosted communities and feed them into `handle_community_broadcast`.
+pub(crate) async fn start_broadcast_listener_for(
+    socket_path: &std::path::Path,
+    pseudonym_keys: Vec<String>,
+    state: Arc<AppState>,
+    app_handle: tauri::AppHandle,
+) {
+    match crate::ipc_client::subscribe_broadcasts(socket_path, pseudonym_keys.clone()).await {
+        Ok(mut rx) => {
+            tracing::info!(keys = ?pseudonym_keys, "IPC broadcast listener started");
+            tokio::spawn(async move {
+                while let Some(bytes) = rx.recv().await {
+                    match serde_json::from_slice::<
+                        rekindle_protocol::messaging::CommunityBroadcast,
+                    >(&bytes)
+                    {
+                        Ok(broadcast) => {
+                            crate::services::veilid_service::handle_community_broadcast(
+                                &app_handle,
+                                &state,
+                                broadcast,
+                            )
+                            .await;
+                        }
+                        Err(e) => {
+                            tracing::debug!(error = %e, "failed to parse IPC broadcast");
+                        }
+                    }
+                }
+                tracing::info!("IPC broadcast listener ended");
+            });
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to start IPC broadcast listener");
         }
     }
 }

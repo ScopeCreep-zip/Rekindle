@@ -43,6 +43,12 @@ pub enum IpcRequest {
         max_uses: Option<u32>,
         expires_in_seconds: Option<u64>,
     },
+    /// Subscribe to receive broadcasts for hosted communities.
+    /// The connection is held open and broadcasts are streamed as newline-delimited JSON.
+    SubscribeBroadcasts {
+        /// Pseudonym keys the client owns (one per hosted community).
+        pseudonym_keys: Vec<String>,
+    },
 }
 
 /// JSON-RPC response from the server daemon to the Tauri client.
@@ -179,10 +185,64 @@ async fn handle_connection(
             }
         };
 
+        // SubscribeBroadcasts holds the connection open — handle it specially
+        if let IpcRequest::SubscribeBroadcasts { pseudonym_keys } = request {
+            handle_subscribe_broadcasts(&state, pseudonym_keys, &mut writer).await;
+            return; // Connection is consumed by the broadcast stream
+        }
+
         let response = handle_ipc_request(&state, request, &shutdown_tx).await;
         if write_response(&mut writer, &response).await.is_err() {
             break;
         }
+    }
+}
+
+/// Handle a `SubscribeBroadcasts` request: register listeners and stream
+/// broadcasts until the connection closes.
+async fn handle_subscribe_broadcasts<W: tokio::io::AsyncWriteExt + Unpin>(
+    state: &Arc<ServerState>,
+    pseudonym_keys: Vec<String>,
+    writer: &mut W,
+) {
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+
+    // Register all pseudonym keys as broadcast listeners
+    {
+        let mut listeners = state.broadcast_listeners.write();
+        for key in &pseudonym_keys {
+            listeners.insert(key.clone(), tx.clone());
+        }
+    }
+
+    tracing::info!(keys = ?pseudonym_keys, "IPC broadcast subscription active");
+
+    // Write initial OK response so the client knows the subscription succeeded
+    if write_response(writer, &IpcResponse::Ok).await.is_err() {
+        cleanup_broadcast_listeners(state, &pseudonym_keys);
+        return;
+    }
+
+    // Stream broadcasts until connection closes or sender is dropped
+    while let Some(broadcast_bytes) = rx.recv().await {
+        // broadcast_bytes already includes trailing newline (added by broadcast.rs)
+        if writer.write_all(&broadcast_bytes).await.is_err() {
+            break;
+        }
+        if writer.flush().await.is_err() {
+            break;
+        }
+    }
+
+    cleanup_broadcast_listeners(state, &pseudonym_keys);
+    tracing::info!(keys = ?pseudonym_keys, "IPC broadcast subscription ended");
+}
+
+/// Remove broadcast listener entries for the given pseudonym keys.
+fn cleanup_broadcast_listeners(state: &Arc<ServerState>, pseudonym_keys: &[String]) {
+    let mut listeners = state.broadcast_listeners.write();
+    for key in pseudonym_keys {
+        listeners.remove(key);
     }
 }
 
@@ -301,6 +361,11 @@ async fn handle_ipc_request(
             max_uses,
             expires_in_seconds,
         } => create_invite(state, &community_id, max_uses, expires_in_seconds),
+        // SubscribeBroadcasts is handled upstream in handle_connection before
+        // reaching this function — this arm is unreachable but required for exhaustiveness.
+        IpcRequest::SubscribeBroadcasts { .. } => IpcResponse::Error {
+            message: "SubscribeBroadcasts must be handled at connection level".into(),
+        },
     }
 }
 

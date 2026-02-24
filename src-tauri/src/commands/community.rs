@@ -277,8 +277,9 @@ pub async fn join_community(
     keystore_handle: State<'_, KeystoreHandle>,
 ) -> Result<(), String> {
     let owner_key = state_helpers::current_owner_key(state.inner())?;
-    services::community_service::join_community(state.inner(), &community_id, invite_code.as_deref())
-        .await?;
+    let server_members =
+        services::community_service::join_community(state.inner(), &community_id, invite_code.as_deref())
+            .await?;
 
     let (name, dht_record_key) = {
         let communities = state.communities.read();
@@ -332,6 +333,7 @@ pub async fn join_community(
     let now = db::timestamp_now();
     let community_id_clone = community_id.clone();
     let ok = owner_key;
+    let ok_for_members = ok.clone();
     let pk = pseudonym_key.clone();
     let srb = server_route_blob.clone();
     let mg = mek_generation.cast_signed();
@@ -370,6 +372,25 @@ pub async fn join_community(
         Ok(())
     })
     .await?;
+
+    // Persist all members from the server's join response
+    if !server_members.is_empty() {
+        let members_for_db = server_members;
+        let cid_clone = community_id.clone();
+        db_call(pool.inner(), move |conn| {
+            for m in &members_for_db {
+                let role_ids_json =
+                    serde_json::to_string(&m.role_ids).unwrap_or_else(|_| "[0,1]".to_string());
+                conn.execute(
+                    "INSERT OR IGNORE INTO community_members (owner_key, community_id, pseudonym_key, display_name, role_ids, joined_at) \
+                     VALUES (?, ?, ?, ?, ?, ?)",
+                    rusqlite::params![ok_for_members, cid_clone, m.pseudonym_key, m.display_name, role_ids_json, now],
+                )?;
+            }
+            Ok(())
+        })
+        .await?;
+    }
 
     Ok(())
 }
@@ -3565,6 +3586,12 @@ async fn ensure_community_hosted(app: &tauri::AppHandle, state: &SharedState, co
         .map(|id| id.display_name.clone())
         .unwrap_or_default();
 
+    // Track the pseudonym key for broadcast subscription
+    let broadcast_pseudonym = community_data
+        .as_ref()
+        .map(|(_, _, _, _, p)| p.clone())
+        .filter(|p| !p.is_empty());
+
     if state.server_process.lock().is_some() {
         // Server already running — send IPC to host this new community
         if let Some((cid, dht_key, keypair, nm, pseudonym)) = community_data.clone() {
@@ -3605,6 +3632,22 @@ async fn ensure_community_hosted(app: &tauri::AppHandle, state: &SharedState, co
                 }
             }
         }
+    }
+
+    // Start IPC broadcast listener for this community's pseudonym key
+    if let Some(pseudonym_key) = broadcast_pseudonym {
+        let socket_path = crate::ipc_client::default_socket_path();
+        let bg_state = state.clone();
+        let bg_app = app.clone();
+        tokio::spawn(async move {
+            super::auth::start_broadcast_listener_for(
+                &socket_path,
+                vec![pseudonym_key],
+                bg_state,
+                bg_app,
+            )
+            .await;
+        });
     }
 
     // Fetch the server's route blob from DHT in the background.

@@ -222,6 +222,12 @@ pub enum CommunityEvent {
         code: String,
         new_use_count: u32,
     },
+    /// The member list for a community was refreshed (e.g., after DHT update).
+    /// Frontend should re-fetch members via `getCommunityMembers`.
+    #[serde(rename_all = "camelCase")]
+    MembersRefreshed {
+        community_id: String,
+    },
 }
 
 /// Event info DTO for frontend consumption.

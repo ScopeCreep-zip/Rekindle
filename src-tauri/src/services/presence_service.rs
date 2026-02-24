@@ -426,6 +426,12 @@ async fn handle_community_member_list_change(
         members = member_count,
         "community member list updated from DHT"
     );
+
+    // Notify frontend to re-fetch the member list
+    let event = crate::channels::CommunityEvent::MembersRefreshed {
+        community_id: community_id.to_string(),
+    };
+    let _ = app_handle.emit("community-event", &event);
 }
 
 /// Handle DHT subkey 3 change: community role definitions updated.
