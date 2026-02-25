@@ -175,12 +175,14 @@ pub async fn get_community_details(
 pub async fn create_community(
     app: tauri::AppHandle,
     name: String,
+    standalone: bool,
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
     keystore_handle: State<'_, KeystoreHandle>,
 ) -> Result<String, String> {
     let owner_key = state_helpers::current_owner_key(state.inner())?;
-    let community_id = services::community_service::create_community(state.inner(), &name).await?;
+    let community_id =
+        services::community_service::create_community(state.inner(), &name, standalone).await?;
 
     // Persist MEK to Stronghold for login restoration
     {
@@ -228,10 +230,11 @@ pub async fn create_community(
     db_call(pool.inner(), move |conn| {
         // Owner gets all default role IDs: @everyone(0), members(1), moderator(2), admin(3), owner(4)
         let owner_role_ids = serde_json::to_string(&[0u32, 1, 2, 3, 4]).unwrap_or_default();
+        let is_hosted_flag = i32::from(!standalone);
         conn.execute(
             "INSERT INTO communities (owner_key, id, name, my_role, my_role_ids, joined_at, dht_record_key, dht_owner_keypair, my_pseudonym_key, is_hosted, mek_generation) \
-             VALUES (?, ?, ?, 'owner', ?, ?, ?, ?, ?, 1, ?)",
-            rusqlite::params![ok, community_id_clone, name_clone, owner_role_ids, now, dht_record_key, dht_owner_keypair, pseudonym_key, mek_gen],
+             VALUES (?, ?, ?, 'owner', ?, ?, ?, ?, ?, ?, ?)",
+            rusqlite::params![ok, community_id_clone, name_clone, owner_role_ids, now, dht_record_key, dht_owner_keypair, pseudonym_key, is_hosted_flag, mek_gen],
         )?;
 
         // Insert the creator as the first member (using pseudonym)
@@ -262,7 +265,9 @@ pub async fn create_community(
     })
     .await?;
 
-    ensure_community_hosted(&app, state.inner(), &community_id).await;
+    if !standalone {
+        ensure_community_hosted(&app, state.inner(), &community_id).await;
+    }
 
     Ok(community_id)
 }
@@ -1731,6 +1736,10 @@ pub(crate) async fn send_encrypted_to_server(
     route_blob: Vec<u8>,
     reply_to_id: Option<String>,
 ) -> Result<(), String> {
+    if state_helpers::is_circuit_open(state, community_id) {
+        return Err("community server unreachable (circuit breaker open)".into());
+    }
+
     let Some(rc) = state_helpers::routing_context(state) else {
         return Ok(());
     };
@@ -1770,9 +1779,11 @@ pub(crate) async fn send_encrypted_to_server(
     let result = rekindle_protocol::messaging::sender::send_call(&rc, route_id, &envelope).await;
     match result {
         Ok(response_bytes) => {
+            state_helpers::reset_circuit_breaker(state, community_id);
             check_server_response(channel_id, &response_bytes)?;
         }
         Err(e) => {
+            state_helpers::trip_circuit_breaker(state, community_id);
             // Invalidate the stale route from DHTManager cache so the next
             // attempt (e.g. from the pending message retry queue) forces a
             // fresh import instead of reusing the dead RouteId.
@@ -1882,6 +1893,10 @@ async fn send_community_rpc_veilid(
     community_id: &str,
     request: rekindle_protocol::messaging::CommunityRequest,
 ) -> Result<rekindle_protocol::messaging::CommunityResponse, String> {
+    if state_helpers::is_circuit_open(state, community_id) {
+        return Err("community server unreachable (circuit breaker open — retrying in 30s)".into());
+    }
+
     let server_route_blob = resolve_server_route_blob(state, pool, community_id).await?;
 
     let rc = state_helpers::routing_context(state)
@@ -1909,8 +1924,12 @@ async fn send_community_rpc_veilid(
     let result = rekindle_protocol::messaging::sender::send_call(&rc, route_id, &envelope).await;
 
     match result {
-        Ok(response_bytes) => parse_community_response(&response_bytes),
+        Ok(response_bytes) => {
+            state_helpers::reset_circuit_breaker(state, community_id);
+            parse_community_response(&response_bytes)
+        }
         Err(e) => {
+            state_helpers::trip_circuit_breaker(state, community_id);
             retry_rpc_with_fresh_route(state, pool, community_id, &rc, &envelope, &e).await
         }
     }
@@ -2008,13 +2027,17 @@ async fn retry_rpc_with_fresh_route(
     let fresh_route_id = state_helpers::import_route_blob(state, &fresh_blob)
         .map_err(|e| format!("RPC retry failed: {e}"))?;
 
-    rekindle_protocol::messaging::sender::send_call(rc, fresh_route_id, envelope)
-        .await
-        .map_err(|e| {
+    match rekindle_protocol::messaging::sender::send_call(rc, fresh_route_id, envelope).await {
+        Ok(bytes) => {
+            state_helpers::reset_circuit_breaker(state, community_id);
+            parse_community_response(&bytes)
+        }
+        Err(e) => {
+            state_helpers::trip_circuit_breaker(state, community_id);
             tracing::error!(error = %e, community = %community_id, "community RPC retry also failed");
-            format!("RPC call failed after retry: {e}")
-        })
-        .and_then(|bytes| parse_community_response(&bytes))
+            Err(format!("RPC call failed after retry: {e}"))
+        }
+    }
 }
 
 /// Quick on-demand fetch of the server route blob from DHT (3 retries, 2s apart).

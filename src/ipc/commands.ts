@@ -166,8 +166,8 @@ export const commands = {
     invoke<{ pseudonymKey: string; displayName: string; roleIds: number[]; displayRole: string; status: string; timeoutUntil: number | null }[]>(
       "get_community_members", { communityId },
     ),
-  createCommunity: (name: string) =>
-    invoke<string>("create_community", { name }),
+  createCommunity: (name: string, standalone: boolean = false) =>
+    invoke<string>("create_community", { name, standalone }),
   joinCommunity: (communityId: string, inviteCode?: string) =>
     invoke<void>("join_community", { communityId, inviteCode: inviteCode ?? null }),
   createChannel: (communityId: string, name: string, channelType: string, categoryId?: string) =>
