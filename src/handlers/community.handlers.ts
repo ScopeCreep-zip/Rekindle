@@ -22,9 +22,9 @@ const typingTimers: Record<string, number> = {};
 
 export { typingUsersStore as typingUsers };
 
-export async function handleCreateCommunity(name: string): Promise<void> {
+export async function handleCreateCommunity(name: string, standalone: boolean = false): Promise<void> {
   try {
-    const id = await commands.createCommunity(name);
+    const id = await commands.createCommunity(name, standalone);
     // Fetch full community details from backend (includes pseudonym, MEK gen, channels, roles)
     const details = await commands.getCommunityDetails();
     const created = details.find((c) => c.id === id);
@@ -42,7 +42,7 @@ export async function handleCreateCommunity(name: string): Promise<void> {
         myRoleIds: [0, 1],
         myPseudonymKey: null,
         mekGeneration: 0,
-        isHosted: true,
+        isHosted: !standalone,
         events: [],
       });
     }

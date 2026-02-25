@@ -115,6 +115,10 @@ pub struct AppState {
     /// Deep link action received before the user was authenticated.
     /// Replayed after successful login so the user isn't silently dropped.
     pub pending_deep_link: Mutex<Option<crate::deep_links::DeepLinkAction>>,
+    /// Per-community circuit breaker for remote Veilid RPCs.
+    /// Prevents flooding dead routes with parallel 8s timeouts.
+    /// In-memory only, resets on app restart.
+    pub community_circuit_breakers: RwLock<HashMap<String, CircuitBreakerState>>,
 }
 
 impl Default for AppState {
@@ -148,8 +152,19 @@ impl Default for AppState {
             heartbeat_shutdown_tx: RwLock::new(None),
             pre_away_status: RwLock::new(None),
             pending_deep_link: Mutex::new(None),
+            community_circuit_breakers: RwLock::new(HashMap::new()),
         }
     }
+}
+
+/// Per-community circuit breaker for remote Veilid RPCs.
+///
+/// Prevents flooding dead routes with parallel 8s timeouts. Once a community
+/// trips (>= 3 consecutive failures), further RPCs are rejected instantly for
+/// a 30s cooldown period. Resets on success. In-memory only, resets on restart.
+pub struct CircuitBreakerState {
+    pub tripped_at: std::time::Instant,
+    pub failure_count: u32,
 }
 
 /// Shared reference to `AppState`, used by both Tauri commands and background services.

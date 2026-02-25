@@ -459,6 +459,15 @@ async fn retry_failed_routes(state: Arc<ServerState>) {
     use rekindle_protocol::dht::community::SUBKEY_SERVER_ROUTE;
     use rekindle_protocol::dht::DHTManager;
 
+    // Wait for Veilid's public internet overlay before attempting route allocation.
+    // Routes allocated before this are local-only and unreachable from remote nodes.
+    for _ in 0..60u32 {
+        match state.api.get_state().await {
+            Ok(vs) if vs.attachment.public_internet_ready => break,
+            _ => tokio::time::sleep(std::time::Duration::from_secs(1)).await,
+        }
+    }
+
     let delays_secs = [5u64, 10, 20, 40, 80];
 
     for delay in delays_secs {

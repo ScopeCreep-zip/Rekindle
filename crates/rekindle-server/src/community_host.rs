@@ -273,17 +273,18 @@ async fn setup_dht_and_route(
 ) -> Result<(Option<veilid_core::RouteId>, Option<Vec<u8>>, bool), String> {
     let keypair = parse_owner_keypair(owner_keypair_hex)?;
 
-    // Wait for Veilid to be attached before trying DHT operations.
-    // The server may have just started and the node may still be connecting.
-    let max_wait = 30;
+    // Wait for Veilid's public internet overlay to be ready before trying
+    // DHT operations. `is_attached()` returns true too early — routes allocated
+    // before `public_internet_ready` are local-only and unreachable from remote nodes.
+    let max_wait = 60;
     for attempt in 0..max_wait {
         match state.api.get_state().await {
-            Ok(vs) if vs.attachment.state.is_attached() => break,
+            Ok(vs) if vs.attachment.public_internet_ready => break,
             _ => {
                 if attempt == max_wait - 1 {
                     tracing::warn!(
                         community = %community_id,
-                        "Veilid not attached after {max_wait}s — proceeding anyway"
+                        "Veilid public internet not ready after {max_wait}s — proceeding anyway"
                     );
                 }
                 tokio::time::sleep(Duration::from_secs(1)).await;
@@ -567,13 +568,13 @@ pub async fn dht_keepalive_loop(state: Arc<ServerState>, mut shutdown_rx: mpsc::
     loop {
         tokio::select! {
             _ = interval.tick() => {
-                // Check Veilid attachment before attempting DHT writes
+                // Check Veilid public internet readiness before attempting DHT writes
                 match state.api.get_state().await {
-                    Ok(veilid_state) if veilid_state.attachment.state.is_attached() => {
+                    Ok(veilid_state) if veilid_state.attachment.public_internet_ready => {
                         rewrite_all_communities(&state).await;
                     }
                     Ok(_) => {
-                        tracing::warn!("skipping DHT keepalive: Veilid not attached");
+                        tracing::warn!("skipping DHT keepalive: Veilid public internet not ready");
                     }
                     Err(e) => {
                         tracing::warn!(error = %e, "skipping DHT keepalive: failed to query Veilid state");

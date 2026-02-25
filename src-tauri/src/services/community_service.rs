@@ -9,13 +9,21 @@ use crate::state::{AppState, CategoryInfo, ChannelInfo, ChannelType, CommunitySt
 use crate::state_helpers;
 
 /// Create a new community and publish it to DHT.
-pub async fn create_community(state: &Arc<AppState>, name: &str) -> Result<String, String> {
+///
+/// If `standalone` is true, the community is created with `is_hosted = false`,
+/// meaning no local child server process will be spawned. The creator connects
+/// via Veilid like any other member. Useful when the server runs on dedicated hardware.
+pub async fn create_community(
+    state: &Arc<AppState>,
+    name: &str,
+    standalone: bool,
+) -> Result<String, String> {
     // Clone routing context out of the parking_lot lock before any .await
     let routing_context = state_helpers::routing_context(state);
 
     // Try DHT-backed creation first
     if let Some(rc) = routing_context {
-        if let Some(id) = create_community_with_dht(state, &rc, name).await? {
+        if let Some(id) = create_community_with_dht(state, &rc, name, standalone).await? {
             return Ok(id);
         }
     } else {
@@ -24,7 +32,7 @@ pub async fn create_community(state: &Arc<AppState>, name: &str) -> Result<Strin
 
     // Fallback: create community without DHT record (e.g. node not connected yet)
     let community_id = format!("community_{}", hex::encode(rand_bytes(16)));
-    create_community_local(state, &community_id, name);
+    create_community_local(state, &community_id, name, standalone);
     Ok(community_id)
 }
 
@@ -33,6 +41,7 @@ async fn create_community_with_dht(
     state: &Arc<AppState>,
     routing_context: &veilid_core::RoutingContext,
     name: &str,
+    standalone: bool,
 ) -> Result<Option<String>, String> {
     let mgr = DHTManager::new(routing_context.clone());
     let (key, owner_keypair) = match mgr.create_record(7).await {
@@ -93,16 +102,16 @@ async fn create_community_with_dht(
         my_pseudonym_key,
         mek_generation,
         server_route_blob: None,
-        is_hosted: true,
+        is_hosted: !standalone,
     };
 
     state.communities.write().insert(key.clone(), community);
-    tracing::info!(name = %name, dht_key = %key, "community created with DHT record");
+    tracing::info!(name = %name, dht_key = %key, standalone, "community created with DHT record");
     Ok(Some(key))
 }
 
 /// Create a community in local state only (no DHT).
-fn create_community_local(state: &Arc<AppState>, community_id: &str, name: &str) {
+fn create_community_local(state: &Arc<AppState>, community_id: &str, name: &str, standalone: bool) {
     let default_channel = ChannelInfo {
         id: format!("channel_{}", hex::encode(rand_bytes(8))),
         name: "general".to_string(),
@@ -134,14 +143,14 @@ fn create_community_local(state: &Arc<AppState>, community_id: &str, name: &str)
         my_pseudonym_key,
         mek_generation,
         server_route_blob: None,
-        is_hosted: true,
+        is_hosted: !standalone,
     };
 
     state
         .communities
         .write()
         .insert(community_id.to_string(), community);
-    tracing::info!(community = %community_id, name = %name, "community created (local only)");
+    tracing::info!(community = %community_id, name = %name, standalone, "community created (local only)");
 }
 
 /// Derive the pseudonym public key hex for a community from the identity secret.
@@ -298,11 +307,27 @@ async fn read_community_from_dht(
     }
 
     let dht_key = community_id.to_string();
-    let server_route_blob = mgr
-        .get_value(&dht_key, SUBKEY_SERVER_ROUTE)
-        .await
-        .ok()
-        .flatten();
+
+    // Retry route blob fetch — the server may still be waiting for
+    // `public_internet_ready` before publishing its route to DHT.
+    let mut server_route_blob = None;
+    for attempt in 0..5u32 {
+        if attempt > 0 {
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        }
+        match mgr.get_value(&dht_key, SUBKEY_SERVER_ROUTE).await {
+            Ok(Some(blob)) => {
+                tracing::info!(community = %community_id, attempt, "fetched server route blob during join");
+                server_route_blob = Some(blob);
+                break;
+            }
+            Ok(None) => tracing::debug!(community = %community_id, attempt, "server route blob not yet available"),
+            Err(e) => tracing::debug!(error = %e, community = %community_id, attempt, "route blob read failed"),
+        }
+    }
+    if server_route_blob.is_none() {
+        tracing::warn!(community = %community_id, "server route blob not available after 5 attempts during join");
+    }
 
     (
         name,
@@ -677,6 +702,11 @@ fn default_roles() -> Vec<RoleDefinition> {
 /// existing members, which updates the member's `route_blob` so broadcasts
 /// can reach us again.
 pub async fn rejoin_community(state: &Arc<AppState>, community_id: &str) -> Result<(), String> {
+    if crate::state_helpers::is_circuit_open(state, community_id) {
+        tracing::debug!(community = %community_id, "skipping rejoin — circuit breaker open");
+        return Ok(());
+    }
+
     let (server_route_blob, my_pseudonym_key) = {
         let communities = state.communities.read();
         let c = communities
