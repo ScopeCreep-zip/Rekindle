@@ -202,15 +202,7 @@ pub async fn join_community(
         our_route_blob: &our_route_blob,
         invite_code: invite_code.map(String::from),
     };
-    let result = match send_join_rpc(state, rc, route_blob, &join_params).await {
-        Ok(Some(result)) => result,
-        Ok(None) => {
-            return Err(
-                "Could not reach community server — try again later".to_string(),
-            );
-        }
-        Err(e) => return Err(e), // Server explicitly rejected
-    };
+    let result = send_join_rpc(state, rc, route_blob, &join_params).await?;
 
     let mek_generation = result.mek_generation;
     let role = result.role;
@@ -362,14 +354,14 @@ pub(crate) struct JoinRpcParams<'a> {
 
 /// Send a `CommunityRequest::Join` RPC to the server.
 ///
-/// Returns `Ok(Some(result))` on success, `Ok(None)` on graceful failure,
-/// or `Err` if the server explicitly rejected the join.
+/// Returns `Ok(result)` on success, or `Err` on any failure (route import
+/// failure, timeout, server rejection, parse error).
 pub(crate) async fn send_join_rpc(
     state: &Arc<AppState>,
     routing_context: &veilid_core::RoutingContext,
     server_route_blob: &[u8],
     params: &JoinRpcParams<'_>,
-) -> Result<Option<JoinRpcResult>, String> {
+) -> Result<JoinRpcResult, String> {
     let signing_key = rekindle_crypto::group::pseudonym::derive_community_pseudonym(
         &params.identity_secret,
         &params.community_id,
@@ -396,8 +388,8 @@ pub(crate) async fn send_join_rpc(
     let route_id = match state_helpers::import_route_blob(state, server_route_blob) {
         Ok(rid) => rid,
         Err(e) => {
-            tracing::warn!(error = %e, "failed to import server route — joining locally");
-            return Ok(None);
+            tracing::warn!(error = %e, "failed to import server route for join");
+            return Err(format!("failed to import server route: {e}"));
         }
     };
 
@@ -407,8 +399,8 @@ pub(crate) async fn send_join_rpc(
     let response_bytes = match call_result {
         Ok(bytes) => bytes,
         Err(e) => {
-            tracing::warn!(error = %e, "failed to send join RPC to server — joining locally");
-            return Ok(None);
+            tracing::warn!(error = %e, "join RPC send failed");
+            return Err(format!("join RPC failed: {e}"));
         }
     };
 
@@ -419,7 +411,7 @@ fn parse_join_response(
     state: &Arc<AppState>,
     params: &JoinRpcParams<'_>,
     response_bytes: &[u8],
-) -> Result<Option<JoinRpcResult>, String> {
+) -> Result<JoinRpcResult, String> {
     match serde_json::from_slice::<rekindle_protocol::messaging::CommunityResponse>(response_bytes)
     {
         Ok(rekindle_protocol::messaging::CommunityResponse::Joined {
@@ -480,7 +472,7 @@ fn parse_join_response(
                     .insert(params.community_id.clone(), mek);
             }
 
-            Ok(Some(JoinRpcResult {
+            Ok(JoinRpcResult {
                 mek_generation,
                 role,
                 role_ids,
@@ -488,7 +480,7 @@ fn parse_join_response(
                 channels,
                 categories,
                 members: server_members,
-            }))
+            })
         }
         Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => {
             tracing::warn!(error = %message, "server rejected join request");
@@ -496,11 +488,11 @@ fn parse_join_response(
         }
         Ok(other) => {
             tracing::warn!(?other, "unexpected response from server");
-            Ok(None)
+            Err("unexpected response from server".to_string())
         }
         Err(e) => {
             tracing::warn!(error = %e, "failed to parse server join response");
-            Ok(None)
+            Err(format!("failed to parse server join response: {e}"))
         }
     }
 }
@@ -765,11 +757,13 @@ pub async fn rejoin_community(state: &Arc<AppState>, community_id: &str) -> Resu
     // Send join RPC — if member exists, server calls handle_rejoin which updates route_blob
     match send_join_rpc(state, &rc, &server_blob, &join_params).await {
         Ok(_) => {
+            state_helpers::reset_circuit_breaker(state, community_id);
             tracing::debug!(community = %community_id, "re-announced route to server");
             Ok(())
         }
         Err(e) => {
             tracing::warn!(community = %community_id, error = %e, "rejoin RPC failed — clearing stale route blob");
+            state_helpers::trip_circuit_breaker(state, community_id);
             {
                 let mut communities = state.communities.write();
                 if let Some(c) = communities.get_mut(community_id) {
