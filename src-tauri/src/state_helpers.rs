@@ -344,12 +344,13 @@ pub fn import_route_blob(
 
 /// Check if the circuit breaker is open (tripped) for a community.
 ///
-/// Returns `true` if the community has >= 3 consecutive failures AND
-/// the last failure was within the 30s cooldown window.
+/// Returns `true` if the community has >= 1 consecutive failure AND
+/// the last failure was within the 45s cooldown window. Trips after a
+/// single 8s timeout to prevent parallel RPCs from flooding a dead route.
 pub fn is_circuit_open(state: &Arc<AppState>, community_id: &str) -> bool {
     let breakers = state.community_circuit_breakers.read();
     match breakers.get(community_id) {
-        Some(cb) => cb.failure_count >= 3 && cb.tripped_at.elapsed().as_secs() < 30,
+        Some(cb) => cb.failure_count >= 1 && cb.tripped_at.elapsed().as_secs() < 45,
         None => false,
     }
 }

@@ -3662,15 +3662,12 @@ async fn ensure_community_hosted(app: &tauri::AppHandle, state: &SharedState, co
         let socket_path = crate::ipc_client::default_socket_path();
         let bg_state = state.clone();
         let bg_app = app.clone();
-        tokio::spawn(async move {
-            super::auth::start_broadcast_listener_for(
-                &socket_path,
-                vec![pseudonym_key],
-                bg_state,
-                bg_app,
-            )
-            .await;
-        });
+        super::auth::start_broadcast_listener_for(
+            &socket_path,
+            vec![pseudonym_key],
+            bg_state,
+            bg_app,
+        );
     }
 
     // Fetch the server's route blob from DHT in the background.
