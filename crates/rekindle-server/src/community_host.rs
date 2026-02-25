@@ -510,6 +510,7 @@ pub async fn host_community(
         channels,
         roles,
         creator_pseudonym_hex,
+        previous_route_ids: Vec::new(),
     };
 
     state
@@ -614,9 +615,18 @@ async fn keepalive_refresh_route(
             .get_mut(&entry.community_id)
             .and_then(|c| c.route_id.take())
     };
-    // Release outside the lock (best-effort — may already be expired)
+    // Push old route to grace period instead of releasing immediately.
+    // Clients with cached old route blobs (DHT propagation takes minutes)
+    // can still reach us for 5 minutes (covers 2 full keepalive cycles).
     if let Some(old_id) = old_route_id {
-        let _ = state.api.release_private_route(old_id);
+        let expiry = rekindle_utils::timestamp_secs() + 300; // 5 min grace
+        let mut hosted = state.hosted.write();
+        if let Some(c) = hosted.get_mut(&entry.community_id) {
+            c.previous_route_ids.push((old_id, expiry));
+            // Prune expired entries
+            let now = rekindle_utils::timestamp_secs();
+            c.previous_route_ids.retain(|(_, exp)| *exp > now);
+        }
     }
 
     match state.api.new_private_route().await {
@@ -741,10 +751,17 @@ pub async fn handle_server_route_change(
         // Don't call release_private_route — the route is already dead
         // (reported via RouteChange). Releasing a dead route produces
         // an "Invalid argument" error from the Veilid API.
+        // Push to grace period for in-flight `app_call`s that may still arrive
+        // with the old route_id (shorter grace — route is confirmed dead).
         {
             let mut hosted = state.hosted.write();
             if let Some(c) = hosted.get_mut(&community_id) {
-                c.route_id = None;
+                if let Some(old_id) = c.route_id.take() {
+                    let expiry = rekindle_utils::timestamp_secs() + 120; // 2 min for in-flight calls
+                    c.previous_route_ids.push((old_id, expiry));
+                }
+                let now = rekindle_utils::timestamp_secs();
+                c.previous_route_ids.retain(|(_, exp)| *exp > now);
             }
         }
 

@@ -64,6 +64,9 @@ pub struct HostedCommunity {
     pub roles: Vec<RoleDefinition>,
     /// Hex-encoded pseudonym key of the community creator (inherent full permissions).
     pub creator_pseudonym_hex: String,
+    /// Recently-rotated route IDs kept for a grace period so clients with
+    /// cached old route blobs can still reach us. Each entry is `(RouteId, expiry_timestamp_secs)`.
+    pub previous_route_ids: Vec<(veilid_core::RouteId, u64)>,
 }
 
 impl HostedCommunity {

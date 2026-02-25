@@ -129,14 +129,25 @@ pub(super) fn find_community_for_member(
 }
 
 /// Find which hosted community a route belongs to by its private route ID.
+///
+/// Checks both the current route and any recently-rotated routes still within
+/// their grace period (see `previous_route_ids`).
 pub(super) fn find_community_for_route(
     state: &Arc<ServerState>,
     route_id: &veilid_core::RouteId,
 ) -> Option<String> {
     let hosted = state.hosted.read();
+    let now = rekindle_utils::timestamp_secs();
     hosted
         .values()
-        .find(|c| c.route_id.as_ref() == Some(route_id))
+        .find(|c| {
+            // Check current route
+            c.route_id.as_ref() == Some(route_id)
+            // Check grace-period routes (not yet expired)
+            || c.previous_route_ids
+                .iter()
+                .any(|(rid, exp)| rid == route_id && *exp > now)
+        })
         .map(|c| c.community_id.clone())
 }
 

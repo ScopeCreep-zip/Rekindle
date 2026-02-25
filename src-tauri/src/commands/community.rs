@@ -2016,6 +2016,17 @@ async fn retry_rpc_with_fresh_route(
         .await
         .ok_or_else(|| format!("RPC failed (no fresh route on retry): {original_error}"))?;
 
+    // If DHT returned the same blob, the route is the same dead one — don't waste 8s
+    if stale_blob.as_deref() == Some(fresh_blob.as_slice()) {
+        tracing::warn!(
+            community = %community_id,
+            "DHT returned same stale route blob — skipping retry"
+        );
+        return Err(format!(
+            "RPC call failed (stale route in DHT): {original_error}"
+        ));
+    }
+
     {
         let mut communities = state.communities.write();
         if let Some(c) = communities.get_mut(community_id) {
