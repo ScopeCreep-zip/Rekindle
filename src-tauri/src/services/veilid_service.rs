@@ -1427,6 +1427,36 @@ async fn try_rewatch_friend(state: &Arc<AppState>, dht_key: &str) {
     }
 }
 
+/// Attempt to re-establish a DHT watch for a community record.
+///
+/// Called when a `VeilidValueChange` with empty subkeys arrives for a key
+/// that belongs to a community (not a friend). Re-watches subkeys 0-3, 5-6
+/// (metadata, channels, roster, roles, MEK, server route).
+async fn try_rewatch_community(state: &Arc<AppState>, dht_key: &str) {
+    let community_id = {
+        let communities = state.communities.read();
+        communities
+            .values()
+            .find(|c| c.dht_record_key.as_deref() == Some(dht_key))
+            .map(|c| c.id.clone())
+    };
+    let Some(community_id) = community_id else {
+        return;
+    };
+    let Some(rc) = state_helpers::routing_context(state) else {
+        return;
+    };
+    let mgr = rekindle_protocol::dht::DHTManager::new(rc);
+    if let Err(e) = mgr.watch_record(dht_key, &[0, 1, 2, 3, 5, 6]).await {
+        tracing::warn!(
+            community = %community_id, error = %e,
+            "failed to re-establish community DHT watch"
+        );
+    } else {
+        tracing::info!(community = %community_id, "re-established community DHT watch");
+    }
+}
+
 /// Handle a DHT `ValueChange` notification by forwarding to the presence service.
 ///
 /// When the inline value is `None` (Veilid doesn't always include it), we fetch
@@ -1447,6 +1477,7 @@ async fn handle_value_change(
     if change.subkeys.is_empty() {
         tracing::warn!(key = %key, count = change.count, "DHT watch died — attempting immediate re-watch");
         try_rewatch_friend(state, &key).await;
+        try_rewatch_community(state, &key).await;
         return;
     }
 
@@ -1455,6 +1486,7 @@ async fn handle_value_change(
     if change.count == 0 {
         tracing::info!(key = %key, "DHT watch expiring (count=0) — attempting immediate re-watch");
         try_rewatch_friend(state, &key).await;
+        try_rewatch_community(state, &key).await;
         // Fall through to process the change below
     }
 
@@ -1630,10 +1662,37 @@ async fn handle_route_change(
 
     // Invalidate cached peer routes that died (selective — only affected peers)
     if !change.dead_remote_routes.is_empty() {
-        let mut dht_mgr = state.dht_manager.write();
-        if let Some(mgr) = dht_mgr.as_mut() {
-            mgr.manager
-                .invalidate_dead_routes(&change.dead_remote_routes);
+        {
+            let mut dht_mgr = state.dht_manager.write();
+            if let Some(mgr) = dht_mgr.as_mut() {
+                mgr.manager
+                    .invalidate_dead_routes(&change.dead_remote_routes);
+            }
+        }
+
+        // Also clear community server route blobs that reference dead routes.
+        // This prevents reusing a stale blob that will just timeout again.
+        let dead_set: std::collections::HashSet<_> =
+            change.dead_remote_routes.iter().collect();
+        let api = {
+            let node = state.node.read();
+            node.as_ref().map(|n| n.api.clone())
+        };
+        if let Some(api) = api {
+            let mut communities = state.communities.write();
+            for community in communities.values_mut() {
+                if let Some(ref blob) = community.server_route_blob {
+                    if let Ok(route_id) = api.import_remote_private_route(blob.clone()) {
+                        if dead_set.contains(&route_id) {
+                            tracing::info!(
+                                community = %community.id,
+                                "clearing dead server route blob"
+                            );
+                            community.server_route_blob = None;
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -1804,13 +1863,16 @@ pub(crate) async fn route_refresh_loop(
                     tracing::debug!("proactive route refresh: re-allocating private route");
                     reallocate_private_route(&app_handle, &state).await;
 
-                    // After route reallocation, re-announce to community servers
-                    // so they update our stale route_blob
+                    // After route reallocation, re-announce to ALL community servers
+                    // (including hosted) so they update our stale route_blob.
+                    // The server needs each member's route_blob for Veilid broadcast
+                    // delivery — even the hosted owner should have a valid route_blob
+                    // as a fallback when the IPC path is unavailable.
                     let communities_to_rejoin: Vec<String> = {
                         let communities = state.communities.read();
                         communities
                             .iter()
-                            .filter(|(_, c)| !c.is_hosted && c.server_route_blob.is_some())
+                            .filter(|(_, c)| c.server_route_blob.is_some())
                             .map(|(id, _)| id.clone())
                             .collect()
                     };

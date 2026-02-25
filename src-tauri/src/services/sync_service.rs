@@ -722,21 +722,12 @@ async fn sync_communities(state: &Arc<AppState>, pool: &DbPool) -> Result<(), St
         sync_community_server_route(state, pool, &mgr, community_id, dht_key).await;
     }
 
-    // After DHT sync, re-announce our route to non-hosted community servers.
-    // This ensures the server has our current route blob after app restart
+    // After DHT sync, re-announce our route to ALL community servers (including
+    // hosted). The server needs each member's route_blob for Veilid broadcast
+    // delivery — even the hosted owner should have a valid route_blob as a
+    // fallback. This also ensures the server gets our fresh route after app restart
     // (Veilid allocates a fresh route on each start).
     for (community_id, _dht_key) in &communities_with_dht {
-        let is_hosted = {
-            let communities = state.communities.read();
-            communities
-                .get(community_id)
-                .is_some_and(|c| c.is_hosted)
-        };
-        // Hosted communities use IPC broadcast listener — no need to rejoin via Veilid
-        if is_hosted {
-            continue;
-        }
-
         if let Err(e) =
             crate::services::community_service::rejoin_community(state, community_id).await
         {

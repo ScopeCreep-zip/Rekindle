@@ -185,45 +185,46 @@ pub async fn join_community(
     let our_route_blob = state_helpers::our_route_blob(state);
 
     // --- Send CommunityRequest::Join RPC to server ---
-    let mut mek_generation = 0u64;
-    let mut role = "member".to_string();
-    let mut role_ids = vec![0u32, 1]; // default: @everyone + members
-    let mut roles = default_roles();
-    let mut categories: Vec<CategoryInfo> = Vec::new();
-    let mut members: Vec<rekindle_protocol::messaging::MemberInfoDto> = Vec::new();
-
     let identity_secret = { *state.identity_secret.lock() };
-    if let (Some(ref route_blob), Some(ref rc), Some(secret)) =
+    let (Some(ref route_blob), Some(ref rc), Some(secret)) =
         (&server_route_blob, &routing_context, identity_secret)
-    {
-        let join_params = JoinRpcParams {
-            identity_secret: secret,
-            community_id: community_id.to_string(),
-            my_pseudonym_key: my_pseudonym_key.clone(),
-            display_name: our_display_name,
-            our_route_blob: &our_route_blob,
-            invite_code: invite_code.map(String::from),
-        };
-        match send_join_rpc(state, rc, route_blob, &join_params).await {
-            Ok(Some(result)) => {
-                mek_generation = result.mek_generation;
-                role = result.role;
-                role_ids = result.role_ids;
-                if !result.roles.is_empty() {
-                    roles = result.roles;
-                }
-                if !result.channels.is_empty() {
-                    channels = result.channels;
-                }
-                categories = result.categories;
-                members = result.members;
-            }
-            Ok(None) => {}           // RPC failed gracefully, join locally
-            Err(e) => return Err(e), // Server explicitly rejected
+    else {
+        return Err(
+            "Community server route not found — the server may not be running".to_string(),
+        );
+    };
+
+    let join_params = JoinRpcParams {
+        identity_secret: secret,
+        community_id: community_id.to_string(),
+        my_pseudonym_key: my_pseudonym_key.clone(),
+        display_name: our_display_name,
+        our_route_blob: &our_route_blob,
+        invite_code: invite_code.map(String::from),
+    };
+    let result = match send_join_rpc(state, rc, route_blob, &join_params).await {
+        Ok(Some(result)) => result,
+        Ok(None) => {
+            return Err(
+                "Could not reach community server — try again later".to_string(),
+            );
         }
-    } else if server_route_blob.is_none() {
-        tracing::debug!(community = %community_id, "no server route blob — local join only");
+        Err(e) => return Err(e), // Server explicitly rejected
+    };
+
+    let mek_generation = result.mek_generation;
+    let role = result.role;
+    let role_ids = result.role_ids;
+    let roles = if result.roles.is_empty() {
+        default_roles()
+    } else {
+        result.roles
+    };
+    if !result.channels.is_empty() {
+        channels = result.channels;
     }
+    let categories = result.categories;
+    let members = result.members;
 
     let community = CommunityState {
         id: community_id.to_string(),
@@ -714,11 +715,36 @@ pub async fn rejoin_community(state: &Arc<AppState>, community_id: &str) -> Resu
             .ok_or("community not found")?;
         (c.server_route_blob.clone(), c.my_pseudonym_key.clone())
     };
-    let Some(server_blob) = server_route_blob else {
-        return Ok(());
-    };
     let Some(rc) = state_helpers::routing_context(state) else {
         return Ok(());
+    };
+    let server_blob = if let Some(blob) = server_route_blob {
+        blob
+    } else {
+        // Route blob cleared (dead route) — re-fetch from DHT
+        let dht_key = {
+            let communities = state.communities.read();
+            communities
+                .get(community_id)
+                .and_then(|c| c.dht_record_key.clone())
+        };
+        let Some(ref key) = dht_key else {
+            return Ok(());
+        };
+        let mgr = DHTManager::new(rc.clone());
+        match mgr.get_value(key, SUBKEY_SERVER_ROUTE).await {
+            Ok(Some(blob)) => {
+                tracing::info!(community = %community_id, "re-fetched server route from DHT for rejoin");
+                {
+                    let mut communities = state.communities.write();
+                    if let Some(c) = communities.get_mut(community_id) {
+                        c.server_route_blob = Some(blob.clone());
+                    }
+                }
+                blob
+            }
+            _ => return Ok(()), // DHT has no route — server truly unreachable
+        }
     };
     let Some(identity_secret) = *state.identity_secret.lock() else {
         return Ok(());
@@ -743,7 +769,13 @@ pub async fn rejoin_community(state: &Arc<AppState>, community_id: &str) -> Resu
             Ok(())
         }
         Err(e) => {
-            tracing::warn!(community = %community_id, error = %e, "rejoin RPC failed");
+            tracing::warn!(community = %community_id, error = %e, "rejoin RPC failed — clearing stale route blob");
+            {
+                let mut communities = state.communities.write();
+                if let Some(c) = communities.get_mut(community_id) {
+                    c.server_route_blob = None;
+                }
+            }
             Err(e)
         }
     }

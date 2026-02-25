@@ -1260,47 +1260,67 @@ async fn send_host_community_ipc(
 
     // Start the IPC broadcast listener for real-time updates from the server
     if !pseudonym_keys.is_empty() {
-        start_broadcast_listener_for(&socket_path, pseudonym_keys, state, app_handle).await;
+        start_broadcast_listener_for(&socket_path, pseudonym_keys, state, app_handle);
     }
 }
 
 /// Open a persistent IPC connection to receive real-time broadcasts
 /// for hosted communities and feed them into `handle_community_broadcast`.
-pub(crate) async fn start_broadcast_listener_for(
+///
+/// Wraps the connection in a reconnection loop with exponential backoff
+/// (1s, 2s, 4s, ..., 30s cap) so the hosted owner automatically recovers
+/// from server restarts without requiring an app restart.
+pub(crate) fn start_broadcast_listener_for(
     socket_path: &std::path::Path,
     pseudonym_keys: Vec<String>,
     state: Arc<AppState>,
     app_handle: tauri::AppHandle,
 ) {
-    match crate::ipc_client::subscribe_broadcasts(socket_path, pseudonym_keys.clone()).await {
-        Ok(mut rx) => {
-            tracing::info!(keys = ?pseudonym_keys, "IPC broadcast listener started");
-            tokio::spawn(async move {
-                while let Some(bytes) = rx.recv().await {
-                    match serde_json::from_slice::<
-                        rekindle_protocol::messaging::CommunityBroadcast,
-                    >(&bytes)
-                    {
-                        Ok(broadcast) => {
-                            crate::services::veilid_service::handle_community_broadcast(
-                                &app_handle,
-                                &state,
-                                broadcast,
-                            )
-                            .await;
-                        }
-                        Err(e) => {
-                            tracing::debug!(error = %e, "failed to parse IPC broadcast");
+    let socket_path = socket_path.to_path_buf();
+    let keys = pseudonym_keys;
+
+    tokio::spawn(async move {
+        let mut backoff_secs = 1u64;
+        loop {
+            match crate::ipc_client::subscribe_broadcasts(&socket_path, keys.clone()).await {
+                Ok(mut rx) => {
+                    tracing::info!(keys = ?keys, "IPC broadcast listener connected");
+                    backoff_secs = 1; // Reset on success
+
+                    while let Some(bytes) = rx.recv().await {
+                        match serde_json::from_slice::<
+                            rekindle_protocol::messaging::CommunityBroadcast,
+                        >(&bytes)
+                        {
+                            Ok(broadcast) => {
+                                crate::services::veilid_service::handle_community_broadcast(
+                                    &app_handle,
+                                    &state,
+                                    broadcast,
+                                )
+                                .await;
+                            }
+                            Err(e) => {
+                                tracing::debug!(error = %e, "failed to parse IPC broadcast");
+                            }
                         }
                     }
+                    tracing::warn!(
+                        backoff = backoff_secs,
+                        "IPC broadcast disconnected — reconnecting"
+                    );
                 }
-                tracing::info!("IPC broadcast listener ended");
-            });
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e, backoff = backoff_secs,
+                        "IPC broadcast connect failed — retrying"
+                    );
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(backoff_secs)).await;
+            backoff_secs = (backoff_secs * 2).min(30); // Cap at 30s
         }
-        Err(e) => {
-            tracing::warn!(error = %e, "failed to start IPC broadcast listener");
-        }
-    }
+    });
 }
 
 /// Kill any stale `rekindle-server` process from a previous app session.

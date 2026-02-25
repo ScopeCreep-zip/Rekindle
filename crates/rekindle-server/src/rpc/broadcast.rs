@@ -19,6 +19,12 @@ pub(super) fn broadcast_to_members(
 ) {
     let broadcast_bytes = serde_json::to_vec(broadcast).unwrap_or_default();
 
+    tracing::debug!(
+        community = %community_id,
+        exclude = %exclude_pseudonym,
+        "preparing broadcast"
+    );
+
     let targets: Vec<BroadcastTarget> = {
         let hosted = state.hosted.read();
         hosted
@@ -38,6 +44,12 @@ pub(super) fn broadcast_to_members(
             .unwrap_or_default()
     };
 
+    tracing::debug!(
+        community = %community_id,
+        num_targets = targets.len(),
+        "broadcasting to members"
+    );
+
     for target in targets {
         // Check for IPC broadcast listener first (hosted community owner on same machine)
         let sent_via_ipc = {
@@ -46,8 +58,17 @@ pub(super) fn broadcast_to_members(
                 // Send a newline-delimited JSON line for the broadcast
                 let mut ipc_data = broadcast_bytes.clone();
                 ipc_data.push(b'\n');
-                tx.send(ipc_data).is_ok()
+                let ok = tx.send(ipc_data).is_ok();
+                tracing::debug!(
+                    member = %target.pseudonym_key, ok,
+                    "broadcast via IPC"
+                );
+                ok
             } else {
+                tracing::debug!(
+                    member = %target.pseudonym_key,
+                    "no IPC listener — using Veilid"
+                );
                 false
             }
         };
