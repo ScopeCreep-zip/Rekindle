@@ -257,45 +257,14 @@ async fn handle_relayed_control(
     use rekindle_protocol::dht::community::envelope::ControlPayload;
 
     match payload {
-        // MemberJoinRequest — only received by the coordinator's own UI path.
-        // The relay already processed the join (added to registry, sent JoinAccepted,
-        // broadcast MemberJoined to others). Emit MemberJoined locally so the
-        // coordinator's frontend also sees the new member.
-        ControlPayload::MemberJoinRequest {
-            pseudonym_key,
-            display_name,
-            ..
-        } => {
-            let pool: tauri::State<'_, DbPool> = app_handle.state();
-            let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
-            let cid = community_id.to_string();
-            let pk = pseudonym_key.clone();
-            let dn = display_name.clone();
-            let role_ids = vec![0_u32, 1];
-            let rids = role_ids.clone();
-            crate::db_helpers::db_fire(pool.inner(), "persist MemberJoinRequest (coordinator)", move |conn| {
-                let role_ids_json =
-                    serde_json::to_string(&rids).unwrap_or_else(|_| "[0,1]".into());
-                let now = crate::db::timestamp_now();
-                conn.execute(
-                    "INSERT OR IGNORE INTO community_members \
-                     (owner_key, community_id, pseudonym_key, display_name, role_ids, joined_at) \
-                     VALUES (?, ?, ?, ?, ?, ?)",
-                    rusqlite::params![owner_key, cid, pk, dn, role_ids_json, now],
-                )?;
-                Ok(())
-            });
-
-            let _ = app_handle.emit(
-                "community-event",
-                CommunityEvent::MemberJoined {
-                    community_id: community_id.to_string(),
-                    pseudonym_key,
-                    display_name,
-                    role_ids,
-                },
-            );
-        }
+        // MemberJoinRequest — coordinator receives this via the loopback in
+        // handle_app_message. The relay processes it asynchronously (ban check,
+        // invite validation, registry write, JoinAccepted delivery) via
+        // handle_incoming_envelope → handle_control. After validation succeeds,
+        // the relay calls emit_local_member_joined() to persist and emit
+        // MemberJoined. We intentionally do NOT emit here to avoid showing
+        // members who are subsequently rejected by the relay.
+        ControlPayload::MemberJoinRequest { .. } => {}
         ControlPayload::MemberJoined {
             pseudonym_key,
             display_name,
