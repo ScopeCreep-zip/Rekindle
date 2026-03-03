@@ -93,7 +93,6 @@ export interface Community {
   myRoleIds: number[];
   myPseudonymKey: string | null;
   mekGeneration: number;
-  isHosted: boolean;
   events: CommunityEvent[];
   manifestKey?: string;
   memberRegistryKey?: string;

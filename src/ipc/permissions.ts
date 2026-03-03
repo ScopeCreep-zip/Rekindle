@@ -108,10 +108,7 @@ export function isAdministrator(perms: bigint): boolean {
 export function calculateBasePermissions(
   roleIds: number[],
   allRoles: Role[],
-  isHosted?: boolean,
 ): bigint {
-  // Community host (creator) always gets all permissions — like Discord's owner bypass
-  if (isHosted) return ALL_PERMISSIONS;
   let perms = 0n;
   for (const id of roleIds) {
     const role = allRoles.find((r) => r.id === id);

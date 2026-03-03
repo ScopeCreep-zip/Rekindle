@@ -57,7 +57,7 @@ export function transformCommunityDetail(c: {
   channels: { id: string; name: string; channelType: string; unreadCount: number; categoryId?: string; topic?: string; slowmodeSeconds?: number; nsfw?: boolean; messageRecordKey?: string; mekGeneration?: number }[];
   categories?: { id: string; name: string; sortOrder: number }[];
   roles?: { id: number; name: string; color: number; permissions: number; position: number; hoist: boolean; mentionable: boolean }[];
-  myRoleIds?: number[]; myPseudonymKey?: string | null; mekGeneration?: number; isHosted?: boolean;
+  myRoleIds?: number[]; myPseudonymKey?: string | null; mekGeneration?: number;
   manifestKey?: string; memberRegistryKey?: string; coordinatorPseudonym?: string; coordinatorEpoch?: number;
 }): Community {
   return {
@@ -66,7 +66,7 @@ export function transformCommunityDetail(c: {
     categories: c.categories ?? [],
     members: [], roles: c.roles ?? [],
     myRoleIds: c.myRoleIds ?? [0, 1], myPseudonymKey: c.myPseudonymKey ?? null,
-    mekGeneration: c.mekGeneration ?? 0, isHosted: c.isHosted ?? false,
+    mekGeneration: c.mekGeneration ?? 0,
     events: [],
     manifestKey: c.manifestKey, memberRegistryKey: c.memberRegistryKey,
     coordinatorPseudonym: c.coordinatorPseudonym, coordinatorEpoch: c.coordinatorEpoch,

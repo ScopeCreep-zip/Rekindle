@@ -26,7 +26,7 @@ const CommunityList: Component<CommunityListProps> = (props) => {
     const community = ctx.data;
     const items: ContextMenuItem[] = [];
 
-    if (community.isHosted && props.onSettings) {
+    if (props.onSettings) {
       items.push({
         label: "Settings",
         icon: ICON_SETTINGS,
@@ -68,7 +68,7 @@ const CommunityList: Component<CommunityListProps> = (props) => {
             <div class="community-icon">
               {community.name.charAt(0).toUpperCase()}
             </div>
-            <span class={community.isHosted ? "community-name community-name-hosted" : "community-name"}>
+            <span class="community-name">
               {community.name}
             </span>
             <Show when={unreads(community) > 0}>

@@ -154,7 +154,7 @@ impl RelayService {
 /// for a community where we're coordinator.
 pub async fn handle_incoming_envelope(
     state: &Arc<AppState>,
-    relay: &RelayService,
+    relay: &Arc<RelayService>,
     signed: SignedEnvelope,
 ) {
     // Refresh online members if cache is empty (lazy init)
@@ -341,7 +341,7 @@ pub async fn handle_incoming_envelope(
 /// Handle a control payload from a member.
 fn handle_control(
     state: &Arc<AppState>,
-    relay: &RelayService,
+    relay: &Arc<RelayService>,
     sender: &MemberSummary,
     roles: &[rekindle_protocol::dht::community::types::RoleEntryV2],
     payload: &ControlPayload,
@@ -360,7 +360,9 @@ fn handle_control(
 
     match payload {
         // Join request - check raid protection + onboarding
-        ControlPayload::MemberJoinRequest { .. } => {
+        ControlPayload::MemberJoinRequest {
+            ref route_blob, ..
+        } => {
             let should_reject = relay.raid.lock().should_reject_join();
             if should_reject {
                 tracing::info!(
@@ -381,9 +383,14 @@ fn handle_control(
                 );
             }
 
-            // Check if onboarding is required — spawn async task
+            // Check if onboarding is required
             let onboard_state = state.clone();
             let onboard_community = relay.community_id.clone();
+            let member_route = route_blob.clone();
+            let relay_clone = Arc::clone(relay);
+            let state_clone = state.clone();
+            let signed_bytes_clone = signed_bytes.to_vec();
+            let sender_clone = sender_pseudonym.to_string();
             tokio::spawn(async move {
                 match super::onboarding::check_onboarding(
                     &onboard_state,
@@ -391,28 +398,53 @@ fn handle_control(
                 )
                 .await
                 {
-                    Ok(Some(_questions_payload)) => {
+                    Ok(Some(questions_payload)) => {
                         tracing::debug!(
                             community = %onboard_community,
-                            "onboarding questions will be sent to new member"
+                            pseudonym = %sender_clone,
+                            "sending onboarding questions to new member"
                         );
-                        // Onboarding questions are sent via the JoinAccepted response
-                        // from the coordinator, which is handled elsewhere
+                        // Send questions back to the joining member
+                        if let Some(blob) = &member_route {
+                            send_to_member(
+                                &state_clone,
+                                &relay_clone,
+                                blob,
+                                questions_payload,
+                            );
+                        }
+                        // Still relay the join to other members so they see the new member
+                        relay_to_members(
+                            &state_clone,
+                            &relay_clone,
+                            &signed_bytes_clone,
+                            &sender_clone,
+                        );
                     }
                     Ok(None) => {
-                        // No onboarding required — member is admitted immediately
+                        // No onboarding required — relay join immediately
+                        relay_to_members(
+                            &state_clone,
+                            &relay_clone,
+                            &signed_bytes_clone,
+                            &sender_clone,
+                        );
                     }
                     Err(e) => {
                         tracing::warn!(
                             community = %onboard_community,
                             error = %e,
-                            "failed to check onboarding"
+                            "failed to check onboarding, admitting anyway"
+                        );
+                        relay_to_members(
+                            &state_clone,
+                            &relay_clone,
+                            &signed_bytes_clone,
+                            &sender_clone,
                         );
                     }
                 }
             });
-
-            relay_to_members(state, relay, signed_bytes, sender_pseudonym);
         }
 
         // Moderation - requires KICK_MEMBERS
@@ -565,12 +597,14 @@ fn handle_control(
             }
         }
 
-        // Onboarding answers
+        // Onboarding answers — process and assign roles
         ControlPayload::SubmitOnboardingAnswers { answers } => {
             let onboard_state = state.clone();
             let onboard_community = relay.community_id.clone();
             let onboard_answers = answers.clone();
             let onboard_pseudonym = sender_pseudonym.to_string();
+            let relay_clone = Arc::clone(relay);
+            let state_clone = state.clone();
             tokio::spawn(async move {
                 match super::onboarding::process_answers(
                     &onboard_state,
@@ -580,12 +614,45 @@ fn handle_control(
                 .await
                 {
                     Ok(role_ids) => {
-                        tracing::info!(
-                            community = %onboard_community,
-                            pseudonym = %onboard_pseudonym,
-                            roles = ?role_ids,
-                            "onboarding answers processed"
-                        );
+                        if !role_ids.is_empty() {
+                            // Assign the onboarding-derived roles to the member
+                            if let Err(e) = assign_onboarding_roles(
+                                &state_clone,
+                                &onboard_community,
+                                &onboard_pseudonym,
+                                &role_ids,
+                            )
+                            .await
+                            {
+                                tracing::warn!(
+                                    community = %onboard_community,
+                                    pseudonym = %onboard_pseudonym,
+                                    error = %e,
+                                    "failed to assign onboarding roles"
+                                );
+                            } else {
+                                tracing::info!(
+                                    community = %onboard_community,
+                                    pseudonym = %onboard_pseudonym,
+                                    roles = ?role_ids,
+                                    "onboarding roles assigned"
+                                );
+                                // Notify all members of the role change
+                                let notification = ControlPayload::MemberRolesChanged {
+                                    pseudonym_key: onboard_pseudonym.clone(),
+                                    role_ids: role_ids.clone(),
+                                };
+                                let envelope = CommunityEnvelope::Control(notification);
+                                if let Ok(bytes) = serde_json::to_vec(&envelope) {
+                                    relay_to_members(
+                                        &state_clone,
+                                        &relay_clone,
+                                        &bytes,
+                                        "", // don't exclude anyone
+                                    );
+                                }
+                            }
+                        }
                     }
                     Err(e) => {
                         tracing::warn!(
@@ -606,10 +673,54 @@ fn handle_control(
     }
 }
 
+/// Send a control payload to a specific member by their route blob.
+fn send_to_member(
+    state: &Arc<AppState>,
+    relay: &Arc<RelayService>,
+    target_route_blob: &[u8],
+    payload: ControlPayload,
+) {
+    let Some(rc) = state_helpers::routing_context(state) else {
+        tracing::debug!("no routing context for send_to_member");
+        return;
+    };
+
+    let envelope = CommunityEnvelope::Control(payload);
+    let envelope_bytes = match serde_json::to_vec(&envelope) {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to serialize control payload");
+            return;
+        }
+    };
+
+    let blob = target_route_blob.to_vec();
+    let community_id = relay.community_id.clone();
+    tokio::spawn(async move {
+        match rc.api().import_remote_private_route(blob) {
+            Ok(route_id) => {
+                if let Err(e) = rc
+                    .app_message(veilid_core::Target::RouteId(route_id), envelope_bytes)
+                    .await
+                {
+                    tracing::debug!(
+                        community = %community_id,
+                        error = %e,
+                        "send_to_member delivery failed"
+                    );
+                }
+            }
+            Err(e) => {
+                tracing::debug!(error = %e, "failed to import member route for send_to_member");
+            }
+        }
+    });
+}
+
 /// Fan out envelope bytes to all online members except the sender.
 fn relay_to_members(
     state: &Arc<AppState>,
-    relay: &RelayService,
+    relay: &Arc<RelayService>,
     envelope_bytes: &[u8],
     exclude_pseudonym: &str,
 ) {
@@ -711,7 +822,7 @@ fn get_channel_overwrites(
 /// Fire-and-forget audit log entry (spawns async task).
 fn log_audit(
     state: &Arc<AppState>,
-    relay: &RelayService,
+    relay: &Arc<RelayService>,
     action: AuditAction,
     target: AuditTarget,
     changes: Vec<AuditChange>,
@@ -723,6 +834,47 @@ fn log_audit(
     tokio::spawn(async move {
         audit::log_action(&state, &community_id, &logger, action, target, changes, reason).await;
     });
+}
+
+/// Assign additional roles to a member after onboarding answer processing.
+///
+/// Reads the current member index, adds the new role IDs to the member's existing roles,
+/// and writes the updated index back to the member registry.
+async fn assign_onboarding_roles(
+    state: &Arc<AppState>,
+    community_id: &str,
+    pseudonym_key: &str,
+    new_role_ids: &[u32],
+) -> Result<(), String> {
+    let rc = state_helpers::routing_context(state).ok_or("not attached")?;
+    let mgr = rekindle_protocol::dht::DHTManager::new(rc);
+
+    let registry_key = {
+        let communities = state.communities.read();
+        let c = communities.get(community_id).ok_or("community not found")?;
+        c.member_registry_key
+            .clone()
+            .ok_or("no member registry key")?
+    };
+
+    let mut members = member_registry::read_member_index(&mgr, &registry_key)
+        .await
+        .map_err(|e| format!("read member index: {e}"))?;
+
+    if let Some(member) = members.iter_mut().find(|m| m.pseudonym_key == pseudonym_key) {
+        for &rid in new_role_ids {
+            if !member.role_ids.contains(&rid) {
+                member.role_ids.push(rid);
+            }
+        }
+        member_registry::write_member_index(&mgr, &registry_key, &members)
+            .await
+            .map_err(|e| format!("write member index: {e}"))?;
+
+        Ok(())
+    } else {
+        Err(format!("member {pseudonym_key} not found in registry"))
+    }
 }
 
 /// Check if a pseudonym is the community owner.

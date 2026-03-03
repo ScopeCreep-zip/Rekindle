@@ -4132,11 +4132,6 @@
     border-left: none;
   }
 
-  /* ─── Community hosted name (Xfire clan blue) ─── */
-  .community-name-hosted {
-    color: var(--color-xfire-text-clan);
-  }
-
   /* ─── Community unread badge ─── */
   .community-unread-badge {
     margin-left: auto;
@@ -4149,11 +4144,6 @@
     min-width: 14px;
     text-align: center;
     flex-shrink: 0;
-  }
-
-  /* ─── Hosted community sidebar header accent ─── */
-  .community-sidebar-header-hosted {
-    border-bottom-color: var(--color-xfire-text-clan);
   }
 
   /* ─── Channel header badge (pin/thread count) ─── */
@@ -4473,59 +4463,6 @@
 
   .channel-category-label:first-child {
     margin-top: 0;
-  }
-
-  /* ─── Create community hosting mode ─── */
-  .create-community-hosting-options {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    margin-top: 10px;
-  }
-
-  .create-community-hosting-option {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    padding: 8px 10px;
-    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
-    border-radius: 0.25rem;
-    cursor: pointer;
-    background: var(--color-xfire-bg-input);
-    transition: border-color 0.15s;
-  }
-
-  .create-community-hosting-option:hover {
-    border-color: color-mix(in srgb, var(--color-xfire-accent) 50%, transparent);
-  }
-
-  .create-community-hosting-option:has(input:checked) {
-    border-color: var(--color-xfire-accent);
-    background: color-mix(in srgb, var(--color-xfire-accent) 8%, var(--color-xfire-bg-input));
-  }
-
-  .create-community-hosting-option input[type="radio"] {
-    margin-top: 2px;
-    accent-color: var(--color-xfire-accent);
-    flex-shrink: 0;
-  }
-
-  .create-community-hosting-label {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  .create-community-hosting-title {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--color-xfire-text);
-  }
-
-  .create-community-hosting-desc {
-    font-size: 11px;
-    color: var(--color-xfire-text-dim);
-    line-height: 1.3;
   }
 
 @keyframes network-pulse {
