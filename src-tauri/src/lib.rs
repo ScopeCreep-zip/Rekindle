@@ -80,6 +80,9 @@ pub fn run() {
             None,
         ))
         .setup(move |app| {
+            // Store app handle in AppState so background services can emit events
+            *state_for_setup.app_handle.write() = Some(app.handle().clone());
+
             tray::setup_tray(app)?;
 
             // macOS: register deep link handler for when the app is already running.

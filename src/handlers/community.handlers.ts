@@ -45,6 +45,13 @@ export async function handleCreateCommunity(name: string): Promise<void> {
         events: [],
       });
     }
+    // Fetch members so the creator appears in the member list
+    try {
+      const members = await commands.getCommunityMembers(id);
+      setCommunityState("communities", id, "members", members.map(transformMember));
+    } catch (e) {
+      console.error("Failed to load community members after creation:", e);
+    }
   } catch (e) {
     console.error("Failed to create community:", e);
     addToast("Failed to create community", "error");
