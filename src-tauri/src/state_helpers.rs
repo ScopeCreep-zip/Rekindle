@@ -403,13 +403,13 @@ pub fn push_community_channel(
 
 // ── Communities ──────────────────────────────────────────────────────
 
-/// Get a community's server route blob.
-pub fn community_server_route(state: &Arc<AppState>, id: &str) -> Option<Vec<u8>> {
+/// Get a community's coordinator route blob.
+pub fn community_coordinator_route(state: &Arc<AppState>, id: &str) -> Option<Vec<u8>> {
     state
         .communities
         .read()
         .get(id)
-        .and_then(|c| c.server_route_blob.clone())
+        .and_then(|c| c.coordinator_route_blob.clone())
 }
 
 /// Collect communities with DHT record keys (for sync).

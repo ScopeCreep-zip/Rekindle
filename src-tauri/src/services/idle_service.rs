@@ -376,7 +376,7 @@ fn emit_status_change(app_handle: &tauri::AppHandle, state: &Arc<AppState>, stat
         UserStatus::Online => "online",
         UserStatus::Away => "away",
         UserStatus::Busy => "busy",
-        UserStatus::Offline => "offline",
+        UserStatus::Offline | UserStatus::Invisible => "offline",
     };
     let _ = app_handle.emit(
         "presence-event",

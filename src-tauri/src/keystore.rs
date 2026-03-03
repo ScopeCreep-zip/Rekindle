@@ -236,6 +236,87 @@ pub fn delete_mek(keystore: &StrongholdKeystore, community_id: &str) {
     }
 }
 
+/// Persist a per-channel MEK to the open Stronghold keystore.
+///
+/// Uses the key format `mek_{community_id}_{channel_id}` under the communities vault.
+pub fn persist_channel_mek(
+    keystore: &StrongholdKeystore,
+    community_id: &str,
+    channel_id: &str,
+    mek: &rekindle_crypto::group::media_key::MediaEncryptionKey,
+) {
+    use rekindle_crypto::keychain::VAULT_COMMUNITIES;
+    use rekindle_crypto::Keychain as _;
+
+    let payload = mek.to_wire_bytes();
+    let key_name = format!("mek_{community_id}_{channel_id}");
+
+    if let Err(e) = keystore.store_key(VAULT_COMMUNITIES, &key_name, &payload) {
+        tracing::warn!(
+            error = %e, community = %community_id, channel = %channel_id,
+            "failed to persist channel MEK to Stronghold"
+        );
+    } else if let Err(e) = keystore.save() {
+        tracing::warn!(
+            error = %e, community = %community_id, channel = %channel_id,
+            "failed to save Stronghold snapshot after channel MEK persist"
+        );
+    } else {
+        tracing::debug!(
+            community = %community_id, channel = %channel_id,
+            "channel MEK persisted to Stronghold"
+        );
+    }
+}
+
+/// Load a per-channel MEK from the open Stronghold keystore.
+///
+/// Returns `Some(mek)` if successfully deserialized, `None` otherwise.
+pub fn load_channel_mek(
+    keystore: &StrongholdKeystore,
+    community_id: &str,
+    channel_id: &str,
+) -> Option<rekindle_crypto::group::media_key::MediaEncryptionKey> {
+    use rekindle_crypto::keychain::VAULT_COMMUNITIES;
+    use rekindle_crypto::Keychain as _;
+
+    let key_name = format!("mek_{community_id}_{channel_id}");
+    match keystore.load_key(VAULT_COMMUNITIES, &key_name) {
+        Ok(Some(bytes)) => {
+            rekindle_crypto::group::media_key::MediaEncryptionKey::from_wire_bytes(&bytes)
+        }
+        _ => None,
+    }
+}
+
+/// Delete a per-channel MEK from the open Stronghold keystore.
+pub fn delete_channel_mek(
+    keystore: &StrongholdKeystore,
+    community_id: &str,
+    channel_id: &str,
+) {
+    use rekindle_crypto::keychain::VAULT_COMMUNITIES;
+    use rekindle_crypto::Keychain as _;
+
+    let key_name = format!("mek_{community_id}_{channel_id}");
+    if let Err(e) = keystore.delete_key(VAULT_COMMUNITIES, &key_name) {
+        tracing::warn!(
+            error = %e, community = %community_id, channel = %channel_id,
+            "failed to delete channel MEK from Stronghold"
+        );
+    } else if let Err(e) = keystore.save() {
+        tracing::warn!(
+            error = %e, community = %community_id, channel = %channel_id,
+            "failed to save Stronghold snapshot after channel MEK delete"
+        );
+    } else {
+        tracing::debug!(
+            community = %community_id, channel = %channel_id,
+            "channel MEK deleted from Stronghold"
+        );
+    }
+}
+
 /// Derive a 32-byte encryption key from a passphrase using `Argon2id`.
 ///
 /// Production: `m=65536, t=3, p=4` (standard security).

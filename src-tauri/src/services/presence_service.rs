@@ -240,16 +240,6 @@ async fn handle_community_value_change(
                 .await;
             }
             5 => handle_community_mek_change(app_handle, state, &community_id).await,
-            6 => {
-                handle_community_route_change(
-                    app_handle,
-                    state,
-                    &community_id,
-                    mgr.as_ref(),
-                    dht_key,
-                )
-                .await;
-            }
             _ => {
                 tracing::trace!(community = %community_id, subkey, "unhandled community subkey");
             }
@@ -548,54 +538,7 @@ async fn handle_community_mek_change(
     super::veilid_service::fetch_mek_from_server(app_handle, state, community_id).await;
 }
 
-/// Handle DHT subkey 6 change: server route blob updated.
-///
-/// The community server's private route has changed (e.g., route died and was re-allocated).
-/// Read the new route blob from DHT, update in-memory state, and persist to `SQLite`.
-async fn handle_community_route_change(
-    app_handle: &tauri::AppHandle,
-    state: &Arc<AppState>,
-    community_id: &str,
-    mgr: Option<&rekindle_protocol::dht::DHTManager>,
-    dht_key: &str,
-) {
-    let Some(mgr) = mgr else {
-        tracing::warn!(community = %community_id, "cannot fetch updated server route — not attached");
-        return;
-    };
-
-    match mgr
-        .get_value(
-            dht_key,
-            rekindle_protocol::dht::community::SUBKEY_SERVER_ROUTE,
-        )
-        .await
-    {
-        Ok(Some(route_blob)) => {
-            {
-                let mut communities = state.communities.write();
-                if let Some(community) = communities.get_mut(community_id) {
-                    community.server_route_blob = Some(route_blob.clone());
-                }
-            }
-
-            // Persist to SQLite so the route survives logout/restart
-            crate::commands::community::persist_server_route_blob(
-                app_handle,
-                community_id,
-                &route_blob,
-            );
-
-            tracing::info!(community = %community_id, "updated server route blob from DHT");
-        }
-        Ok(None) => {
-            tracing::debug!(community = %community_id, "server route blob is empty in DHT");
-        }
-        Err(e) => {
-            tracing::warn!(error = %e, community = %community_id, "failed to read server route from DHT");
-        }
-    }
-}
+// Server route change handler removed — coordinator model doesn't use server route blobs
 
 /// Start watching a friend's DHT record for presence updates.
 pub async fn watch_friend(
@@ -691,7 +634,8 @@ pub async fn publish_status(state: &Arc<AppState>, status: UserStatus) -> Result
         UserStatus::Online => 0u8,
         UserStatus::Away => 1,
         UserStatus::Busy => 2,
-        UserStatus::Offline => 3,
+        // Invisible publishes as offline (3) so others see us as offline
+        UserStatus::Offline | UserStatus::Invisible => 3,
     };
 
     // Get our profile DHT key, owner keypair, and routing context (brief lock, clone out)

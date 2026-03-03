@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use rekindle_crypto::group::media_key::MediaEncryptionKey;
-use rekindle_protocol::dht::community::{SUBKEY_CHANNELS, SUBKEY_METADATA, SUBKEY_SERVER_ROUTE};
+use rekindle_protocol::dht::community::{SUBKEY_CHANNELS, SUBKEY_METADATA};
 use rekindle_protocol::dht::DHTManager;
 use rekindle_protocol::messaging::CategoryDto;
 
@@ -10,20 +10,18 @@ use crate::state_helpers;
 
 /// Create a new community and publish it to DHT.
 ///
-/// If `standalone` is true, the community is created with `is_hosted = false`,
-/// meaning no local child server process will be spawned. The creator connects
-/// via Veilid like any other member. Useful when the server runs on dedicated hardware.
+/// Creates a new community with DHT records and starts the coordinator service.
 pub async fn create_community(
     state: &Arc<AppState>,
     name: &str,
-    standalone: bool,
+    _standalone: bool,
 ) -> Result<String, String> {
     // Clone routing context out of the parking_lot lock before any .await
     let routing_context = state_helpers::routing_context(state);
 
     // Try DHT-backed creation first
     if let Some(rc) = routing_context {
-        if let Some(id) = create_community_with_dht(state, &rc, name, standalone).await? {
+        if let Some(id) = create_community_with_dht(state, &rc, name).await? {
             return Ok(id);
         }
     } else {
@@ -32,7 +30,7 @@ pub async fn create_community(
 
     // Fallback: create community without DHT record (e.g. node not connected yet)
     let community_id = format!("community_{}", hex::encode(rand_bytes(16)));
-    create_community_local(state, &community_id, name, standalone);
+    create_community_local(state, &community_id, name);
     Ok(community_id)
 }
 
@@ -41,7 +39,6 @@ async fn create_community_with_dht(
     state: &Arc<AppState>,
     routing_context: &veilid_core::RoutingContext,
     name: &str,
-    standalone: bool,
 ) -> Result<Option<String>, String> {
     let mgr = DHTManager::new(routing_context.clone());
     let (key, owner_keypair) = match mgr.create_record(7).await {
@@ -69,6 +66,9 @@ async fn create_community_with_dht(
         category_id: None,
         topic: String::new(),
         slowmode_seconds: None,
+        nsfw: false,
+        message_record_key: None,
+        mek_generation: 0,
     };
     let channels_json =
         crate::state::serialize_channel_list_for_dht(std::slice::from_ref(&default_channel), 0);
@@ -101,17 +101,26 @@ async fn create_community_with_dht(
         dht_owner_keypair,
         my_pseudonym_key,
         mek_generation,
-        server_route_blob: None,
-        is_hosted: !standalone,
+        manifest_key: None,
+        member_registry_key: None,
+        my_subkey_index: None,
+        coordinator_pseudonym: None,
+        coordinator_route_blob: None,
+        coordinator_epoch: 0,
     };
 
     state.communities.write().insert(key.clone(), community);
-    tracing::info!(name = %name, dht_key = %key, standalone, "community created with DHT record");
+
+    // Start coordinator service for this community (we are the first coordinator)
+    let handle = super::coordinator::start(state.clone(), key.clone());
+    state.coordinator_services.write().insert(key.clone(), handle);
+
+    tracing::info!(name = %name, dht_key = %key, "community created with DHT record");
     Ok(Some(key))
 }
 
 /// Create a community in local state only (no DHT).
-fn create_community_local(state: &Arc<AppState>, community_id: &str, name: &str, standalone: bool) {
+fn create_community_local(state: &Arc<AppState>, community_id: &str, name: &str) {
     let default_channel = ChannelInfo {
         id: format!("channel_{}", hex::encode(rand_bytes(8))),
         name: "general".to_string(),
@@ -120,6 +129,9 @@ fn create_community_local(state: &Arc<AppState>, community_id: &str, name: &str,
         category_id: None,
         topic: String::new(),
         slowmode_seconds: None,
+        nsfw: false,
+        message_record_key: None,
+        mek_generation: 0,
     };
 
     let mek = MediaEncryptionKey::generate(1);
@@ -142,15 +154,19 @@ fn create_community_local(state: &Arc<AppState>, community_id: &str, name: &str,
         dht_owner_keypair: None,
         my_pseudonym_key,
         mek_generation,
-        server_route_blob: None,
-        is_hosted: !standalone,
+        manifest_key: None,
+        member_registry_key: None,
+        my_subkey_index: None,
+        coordinator_pseudonym: None,
+        coordinator_route_blob: None,
+        coordinator_epoch: 0,
     };
 
     state
         .communities
         .write()
         .insert(community_id.to_string(), community);
-    tracing::info!(community = %community_id, name = %name, standalone, "community created (local only)");
+    tracing::info!(community = %community_id, name = %name, "community created (local only)");
 }
 
 /// Derive the pseudonym public key hex for a community from the identity secret.
@@ -165,9 +181,8 @@ fn derive_pseudonym_key(state: &Arc<AppState>, community_id: &str) -> Option<Str
 
 /// Join an existing community by ID or invite code.
 ///
-/// Reads community metadata from DHT, then sends a `CommunityRequest::Join`
-/// RPC to the community server via `app_call`. On success, the server returns
-/// the MEK, channel list, and assigned role.
+/// Reads community metadata from DHT, then sends a join envelope to the
+/// coordinator. On success, returns the member list.
 pub async fn join_community(
     state: &Arc<AppState>,
     community_id: &str,
@@ -175,22 +190,22 @@ pub async fn join_community(
 ) -> Result<Vec<rekindle_protocol::messaging::MemberInfoDto>, String> {
     let routing_context = state_helpers::routing_context(state);
 
-    let (name, description, mut channels, dht_record_key, server_route_blob) =
+    let (name, description, mut channels, dht_record_key, coordinator_route_blob) =
         read_community_from_dht(routing_context.as_ref(), community_id).await;
 
     let my_pseudonym_key = derive_pseudonym_key(state, community_id);
     let our_display_name = state_helpers::identity_display_name(state);
 
-    // Get our route blob so the server can broadcast to us
+    // Get our route blob so the coordinator can relay to us
     let our_route_blob = state_helpers::our_route_blob(state);
 
-    // --- Send CommunityRequest::Join RPC to server ---
+    // --- Send join RPC to coordinator ---
     let identity_secret = { *state.identity_secret.lock() };
     let (Some(ref route_blob), Some(ref rc), Some(secret)) =
-        (&server_route_blob, &routing_context, identity_secret)
+        (&coordinator_route_blob, &routing_context, identity_secret)
     else {
         return Err(
-            "Community server route not found — the server may not be running".to_string(),
+            "Community coordinator route not found — no coordinator may be online".to_string(),
         );
     };
 
@@ -231,8 +246,12 @@ pub async fn join_community(
         dht_owner_keypair: None,
         my_pseudonym_key,
         mek_generation,
-        server_route_blob,
-        is_hosted: false,
+        manifest_key: None,
+        member_registry_key: None,
+        my_subkey_index: None,
+        coordinator_pseudonym: None,
+        coordinator_route_blob,
+        coordinator_epoch: 0,
     };
 
     state
@@ -240,13 +259,20 @@ pub async fn join_community(
         .write()
         .insert(community_id.to_string(), community);
 
+    // Start coordinator service for this community
+    let handle = super::coordinator::start(state.clone(), community_id.to_string());
+    state
+        .coordinator_services
+        .write()
+        .insert(community_id.to_string(), handle);
+
     tracing::info!(community = %community_id, "joined community");
     Ok(members)
 }
 
-/// Read community metadata, channels, and server route from DHT.
+/// Read community metadata, channels, and coordinator route from DHT.
 ///
-/// Returns `(name, description, channels, dht_record_key, server_route_blob)`.
+/// Returns `(name, description, channels, dht_record_key, coordinator_route_blob)`.
 async fn read_community_from_dht(
     routing_context: Option<&veilid_core::RoutingContext>,
     community_id: &str,
@@ -294,32 +320,30 @@ async fn read_community_from_dht(
         Ok(None) | Err(_) => vec![],
     };
 
-    // Watch metadata(0), channels(1), roster(2), roles(3), MEK bundles(5), server route(6)
-    if let Err(e) = mgr.watch_record(community_id, &[0, 1, 2, 3, 5, 6]).await {
+    // Watch metadata(0), channels(1), roster(2), roles(3), coordinator(5)
+    if let Err(e) = mgr.watch_record(community_id, &[0, 1, 2, 3, 5]).await {
         tracing::warn!(error = %e, "failed to watch community DHT record");
     }
 
     let dht_key = community_id.to_string();
 
-    // Retry route blob fetch — the server may still be waiting for
-    // `public_internet_ready` before publishing its route to DHT.
-    let mut server_route_blob = None;
-    for attempt in 0..5u32 {
-        if attempt > 0 {
-            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-        }
-        match mgr.get_value(&dht_key, SUBKEY_SERVER_ROUTE).await {
-            Ok(Some(blob)) => {
-                tracing::info!(community = %community_id, attempt, "fetched server route blob during join");
-                server_route_blob = Some(blob);
-                break;
+    // Read coordinator info from manifest subkey 5 to get the route blob
+    use rekindle_protocol::dht::community::types::MANIFEST_COORDINATOR;
+    let mut coordinator_route_blob = None;
+    match mgr.get_value(&dht_key, MANIFEST_COORDINATOR).await {
+        Ok(Some(data)) => {
+            if let Ok(coord_info) = serde_json::from_slice::<
+                rekindle_protocol::dht::community::types::CoordinatorInfo,
+            >(&data)
+            {
+                if !coord_info.route_blob.is_empty() {
+                    coordinator_route_blob = Some(coord_info.route_blob);
+                    tracing::info!(community = %community_id, "fetched coordinator route from DHT during join");
+                }
             }
-            Ok(None) => tracing::debug!(community = %community_id, attempt, "server route blob not yet available"),
-            Err(e) => tracing::debug!(error = %e, community = %community_id, attempt, "route blob read failed"),
         }
-    }
-    if server_route_blob.is_none() {
-        tracing::warn!(community = %community_id, "server route blob not available after 5 attempts during join");
+        Ok(None) => tracing::debug!(community = %community_id, "coordinator info not yet available"),
+        Err(e) => tracing::debug!(error = %e, community = %community_id, "coordinator info read failed"),
     }
 
     (
@@ -327,7 +351,7 @@ async fn read_community_from_dht(
         description,
         channels,
         Some(dht_key),
-        server_route_blob,
+        coordinator_route_blob,
     )
 }
 
@@ -359,7 +383,7 @@ pub(crate) struct JoinRpcParams<'a> {
 pub(crate) async fn send_join_rpc(
     state: &Arc<AppState>,
     routing_context: &veilid_core::RoutingContext,
-    server_route_blob: &[u8],
+    coordinator_route_blob: &[u8],
     params: &JoinRpcParams<'_>,
 ) -> Result<JoinRpcResult, String> {
     let signing_key = rekindle_crypto::group::pseudonym::derive_community_pseudonym(
@@ -385,7 +409,7 @@ pub(crate) async fn send_join_rpc(
         request_bytes,
     );
 
-    let route_id = match state_helpers::import_route_blob(state, server_route_blob) {
+    let route_id = match state_helpers::import_route_blob(state, coordinator_route_blob) {
         Ok(rid) => rid,
         Err(e) => {
             tracing::warn!(error = %e, "failed to import server route for join");
@@ -450,6 +474,9 @@ fn parse_join_response(
                     } else {
                         None
                     },
+                    nsfw: false,
+                    message_record_key: None,
+                    mek_generation: 0,
                 })
                 .collect();
 
@@ -514,7 +541,7 @@ pub async fn create_channel(
     channel_type: &str,
 ) -> Result<String, String> {
     // Permission-based access check and collect current channels + DHT key
-    let (existing_channels, dht_record_key, is_hosted) = {
+    let (existing_channels, dht_record_key, is_owner) = {
         use rekindle_protocol::dht::community::permissions;
 
         let communities = state.communities.read();
@@ -539,7 +566,7 @@ pub async fn create_channel(
         (
             community.channels.clone(),
             community.dht_record_key.clone(),
-            community.is_hosted,
+            community.dht_owner_keypair.is_some(),
         )
     };
 
@@ -553,6 +580,9 @@ pub async fn create_channel(
         category_id: None,
         topic: String::new(),
         slowmode_seconds: None,
+        nsfw: false,
+        message_record_key: None,
+        mek_generation: 0,
     };
 
     // Add to community state
@@ -565,10 +595,8 @@ pub async fn create_channel(
     state_helpers::push_community_channel(state, community_id, channel);
 
     // Update community DHT record subkey 1 (channel list).
-    // Only write to DHT for non-hosted communities — hosted communities have
-    // their DHT records managed exclusively by the rekindle-server process
-    // (which holds the owner keypair). The client does NOT have write access.
-    if !is_hosted {
+    // Only the owner (who holds the keypair) can write to DHT directly.
+    if is_owner {
         if let Some(dht_key) = &dht_record_key {
             let routing_context = state_helpers::routing_context(state);
 
@@ -584,6 +612,9 @@ pub async fn create_channel(
                     category_id: None,
                     topic: String::new(),
                     slowmode_seconds: None,
+                    nsfw: false,
+                    message_record_key: None,
+                    mek_generation: 0,
                 });
 
                 let channels_wrapper =
@@ -689,31 +720,30 @@ fn default_roles() -> Vec<RoleDefinition> {
     ]
 }
 
-/// Re-announce our route to a community server after restart.
+/// Re-announce our route to the community coordinator after restart.
 ///
-/// Sends a `CommunityRequest::Join` RPC — the server calls `handle_rejoin` for
-/// existing members, which updates the member's `route_blob` so broadcasts
-/// can reach us again.
+/// Sends a join RPC — if member exists, the coordinator updates the member's
+/// `route_blob` so relayed messages can reach us again.
 pub async fn rejoin_community(state: &Arc<AppState>, community_id: &str) -> Result<(), String> {
     if crate::state_helpers::is_circuit_open(state, community_id) {
         tracing::debug!(community = %community_id, "skipping rejoin — circuit breaker open");
         return Ok(());
     }
 
-    let (server_route_blob, my_pseudonym_key) = {
+    let (coordinator_route_blob, my_pseudonym_key) = {
         let communities = state.communities.read();
         let c = communities
             .get(community_id)
             .ok_or("community not found")?;
-        (c.server_route_blob.clone(), c.my_pseudonym_key.clone())
+        (c.coordinator_route_blob.clone(), c.my_pseudonym_key.clone())
     };
     let Some(rc) = state_helpers::routing_context(state) else {
         return Ok(());
     };
-    let server_blob = if let Some(blob) = server_route_blob {
+    let coordinator_blob = if let Some(blob) = coordinator_route_blob {
         blob
     } else {
-        // Route blob cleared (dead route) — re-fetch from DHT
+        // Route blob cleared (dead route) — re-fetch coordinator info from DHT
         let dht_key = {
             let communities = state.communities.read();
             communities
@@ -724,18 +754,30 @@ pub async fn rejoin_community(state: &Arc<AppState>, community_id: &str) -> Resu
             return Ok(());
         };
         let mgr = DHTManager::new(rc.clone());
-        match mgr.get_value(key, SUBKEY_SERVER_ROUTE).await {
-            Ok(Some(blob)) => {
-                tracing::info!(community = %community_id, "re-fetched server route from DHT for rejoin");
+        use rekindle_protocol::dht::community::types::MANIFEST_COORDINATOR;
+        match mgr.get_value(key, MANIFEST_COORDINATOR).await {
+            Ok(Some(data)) => {
+                if let Ok(coord_info) = serde_json::from_slice::<
+                    rekindle_protocol::dht::community::types::CoordinatorInfo,
+                >(&data)
                 {
-                    let mut communities = state.communities.write();
-                    if let Some(c) = communities.get_mut(community_id) {
-                        c.server_route_blob = Some(blob.clone());
+                    if coord_info.route_blob.is_empty() {
+                        return Ok(()); // Empty route — coordinator unreachable
                     }
+                    let blob = coord_info.route_blob;
+                    tracing::info!(community = %community_id, "re-fetched coordinator route from DHT for rejoin");
+                    {
+                        let mut communities = state.communities.write();
+                        if let Some(c) = communities.get_mut(community_id) {
+                            c.coordinator_route_blob = Some(blob.clone());
+                        }
+                    }
+                    blob
+                } else {
+                    return Ok(()); // Parse failure
                 }
-                blob
             }
-            _ => return Ok(()), // DHT has no route — server truly unreachable
+            _ => return Ok(()), // DHT has no coordinator info — truly unreachable
         }
     };
     let Some(identity_secret) = *state.identity_secret.lock() else {
@@ -754,11 +796,11 @@ pub async fn rejoin_community(state: &Arc<AppState>, community_id: &str) -> Resu
         invite_code: None,
     };
 
-    // Send join RPC — if member exists, server calls handle_rejoin which updates route_blob
-    match send_join_rpc(state, &rc, &server_blob, &join_params).await {
+    // Send join RPC — if member exists, coordinator updates route_blob
+    match send_join_rpc(state, &rc, &coordinator_blob, &join_params).await {
         Ok(_) => {
             state_helpers::reset_circuit_breaker(state, community_id);
-            tracing::debug!(community = %community_id, "re-announced route to server");
+            tracing::debug!(community = %community_id, "re-announced route to coordinator");
             Ok(())
         }
         Err(e) => {
@@ -767,7 +809,7 @@ pub async fn rejoin_community(state: &Arc<AppState>, community_id: &str) -> Resu
             {
                 let mut communities = state.communities.write();
                 if let Some(c) = communities.get_mut(community_id) {
-                    c.server_route_blob = None;
+                    c.coordinator_route_blob = None;
                 }
             }
             Err(e)

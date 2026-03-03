@@ -2,8 +2,8 @@ import { Component, For } from "solid-js";
 import { PERMISSION_CATEGORIES, hasPermission } from "../../../ipc/permissions";
 
 interface PermissionCheckboxListProps {
-  permissions: number;
-  onToggle: (bit: number) => void;
+  permissions: bigint;
+  onToggle: (bit: bigint) => void;
 }
 
 const PermissionCheckboxList: Component<PermissionCheckboxListProps> = (props) => (

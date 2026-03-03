@@ -163,9 +163,9 @@ const CommunityWindow: Component = () => {
     return community?.myRoleIds ?? [];
   });
 
-  const myPerms = createMemo((): number => {
+  const myPerms = createMemo((): bigint => {
     const community = activeCommunity();
-    if (!community) return 0;
+    if (!community) return 0n;
     return calculateBasePermissions(myRoleIds(), community.roles, community.isHosted);
   });
 

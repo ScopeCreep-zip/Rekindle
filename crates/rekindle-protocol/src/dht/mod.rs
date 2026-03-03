@@ -12,7 +12,10 @@ pub mod short_array;
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
-use veilid_core::{DHTSchema, RoutingContext, ValueSubkeyRangeSet, VeilidAPI, CRYPTO_KIND_VLD0};
+use veilid_core::{
+    DHTSchema, DHTSchemaSMPLMember, RoutingContext, SetDHTValueOptions, ValueSubkeyRangeSet,
+    VeilidAPI, CRYPTO_KIND_VLD0,
+};
 
 use crate::error::ProtocolError;
 
@@ -219,6 +222,66 @@ impl DHTManager {
             .set_dht_value(record_key, subkey, value, None)
             .await
             .map_err(|e| ProtocolError::DhtError(format!("set_dht_value: {e}")))?;
+
+        Ok(())
+    }
+
+    /// Create a new DHT record with SMPL schema (multi-writer).
+    ///
+    /// The owner controls `owner_subkey_count` subkeys. Each member in `members`
+    /// can write to `m_cnt` subkeys assigned after the owner's subkeys.
+    ///
+    /// Returns `(record_key, owner_keypair)`. The `owner_keypair` is the randomly
+    /// generated keypair that owns this record — it **must** be persisted.
+    pub async fn create_smpl_record(
+        &self,
+        owner_subkey_count: u16,
+        members: Vec<DHTSchemaSMPLMember>,
+    ) -> Result<(String, Option<veilid_core::KeyPair>), ProtocolError> {
+        let schema = DHTSchema::smpl(owner_subkey_count, members)
+            .map_err(|e| ProtocolError::DhtError(format!("SMPL schema: {e}")))?;
+
+        let descriptor = self
+            .routing_context
+            .create_dht_record(CRYPTO_KIND_VLD0, schema, None)
+            .await
+            .map_err(|e| ProtocolError::DhtError(format!("create_dht_record (SMPL): {e}")))?;
+
+        let key_string = descriptor.key().to_string();
+        let owner_keypair = descriptor.owner_secret().map(|secret| {
+            veilid_core::KeyPair::new_from_parts(descriptor.owner().clone(), secret.value())
+        });
+
+        tracing::debug!(
+            key = %key_string,
+            has_keypair = owner_keypair.is_some(),
+            "created SMPL DHT record"
+        );
+        Ok((key_string, owner_keypair))
+    }
+
+    /// Set a subkey value using an explicit writer keypair (for SMPL multi-writer).
+    ///
+    /// Used when a member needs to write to their assigned subkey in a SMPL
+    /// record — the `writer` must match the `BareMemberId` in the schema.
+    pub async fn set_value_with_writer(
+        &self,
+        key: &str,
+        subkey: u32,
+        value: Vec<u8>,
+        writer: veilid_core::KeyPair,
+    ) -> Result<(), ProtocolError> {
+        let record_key = parse_record_key(key)?;
+
+        let options = SetDHTValueOptions {
+            writer: Some(writer),
+            ..Default::default()
+        };
+
+        self.routing_context
+            .set_dht_value(record_key, subkey, value, Some(options))
+            .await
+            .map_err(|e| ProtocolError::DhtError(format!("set_dht_value (writer): {e}")))?;
 
         Ok(())
     }

@@ -122,7 +122,6 @@ pub struct CommunityDetail {
     pub roles: Vec<CommunityRoleDto>,
     pub my_pseudonym_key: Option<String>,
     pub mek_generation: u64,
-    pub is_hosted: bool,
 }
 
 /// Get all joined communities with full channel details.
@@ -164,7 +163,6 @@ pub async fn get_community_details(
             roles: c.roles.iter().map(CommunityRoleDto::from).collect(),
             my_pseudonym_key: c.my_pseudonym_key.clone(),
             mek_generation: c.mek_generation,
-            is_hosted: c.is_hosted,
         })
         .collect();
     Ok(list)
@@ -173,7 +171,7 @@ pub async fn get_community_details(
 /// Create a new community and store it in `AppState` + `SQLite`.
 #[tauri::command]
 pub async fn create_community(
-    app: tauri::AppHandle,
+    _app: tauri::AppHandle,
     name: String,
     standalone: bool,
     state: State<'_, SharedState>,
@@ -230,11 +228,10 @@ pub async fn create_community(
     db_call(pool.inner(), move |conn| {
         // Owner gets all default role IDs: @everyone(0), members(1), moderator(2), admin(3), owner(4)
         let owner_role_ids = serde_json::to_string(&[0u32, 1, 2, 3, 4]).unwrap_or_default();
-        let is_hosted_flag = i32::from(!standalone);
         conn.execute(
-            "INSERT INTO communities (owner_key, id, name, my_role, my_role_ids, joined_at, dht_record_key, dht_owner_keypair, my_pseudonym_key, is_hosted, mek_generation) \
-             VALUES (?, ?, ?, 'owner', ?, ?, ?, ?, ?, ?, ?)",
-            rusqlite::params![ok, community_id_clone, name_clone, owner_role_ids, now, dht_record_key, dht_owner_keypair, pseudonym_key, is_hosted_flag, mek_gen],
+            "INSERT INTO communities (owner_key, id, name, my_role, my_role_ids, joined_at, dht_record_key, dht_owner_keypair, my_pseudonym_key, mek_generation) \
+             VALUES (?, ?, ?, 'owner', ?, ?, ?, ?, ?, ?)",
+            rusqlite::params![ok, community_id_clone, name_clone, owner_role_ids, now, dht_record_key, dht_owner_keypair, pseudonym_key, mek_gen],
         )?;
 
         // Insert the creator as the first member (using pseudonym)
@@ -265,8 +262,13 @@ pub async fn create_community(
     })
     .await?;
 
-    if !standalone {
-        ensure_community_hosted(&app, state.inner(), &community_id).await;
+    // Start coordinator service for this community (creator is first coordinator)
+    {
+        let handle = crate::services::coordinator::start(
+            state.inner().clone(),
+            community_id.clone(),
+        );
+        state.coordinator_services.write().insert(community_id.clone(), handle);
     }
 
     Ok(community_id)
@@ -297,15 +299,14 @@ pub async fn join_community(
     // Read joiner identity outside db_call (parking_lot guard is !Send)
     let joiner_name = state_helpers::identity_display_name(state.inner());
 
-    // Get pseudonym key, server_route_blob, mek_generation, and channels from the community state
-    let (my_pseudonym_key, server_route_blob, mek_generation, channels) = {
+    // Get pseudonym key, mek_generation, and channels from the community state
+    let (my_pseudonym_key, mek_generation, channels) = {
         let communities = state.communities.read();
         communities
             .get(&community_id)
             .map(|c| {
                 (
                     c.my_pseudonym_key.clone(),
-                    c.server_route_blob.clone(),
                     c.mek_generation,
                     c.channels.clone(),
                 )
@@ -340,14 +341,13 @@ pub async fn join_community(
     let ok = owner_key;
     let ok_for_members = ok.clone();
     let pk = pseudonym_key.clone();
-    let srb = server_route_blob.clone();
     let mg = mek_generation.cast_signed();
     let rij = role_ids_json.clone();
     db_call(pool.inner(), move |conn| {
         conn.execute(
-            "INSERT OR IGNORE INTO communities (owner_key, id, name, my_role, my_role_ids, joined_at, dht_record_key, my_pseudonym_key, server_route_blob, mek_generation) \
-             VALUES (?, ?, ?, 'member', ?, ?, ?, ?, ?, ?)",
-            rusqlite::params![ok, community_id_clone, name, rij, now, dht_record_key, pk, srb, mg],
+            "INSERT OR IGNORE INTO communities (owner_key, id, name, my_role, my_role_ids, joined_at, dht_record_key, my_pseudonym_key, mek_generation) \
+             VALUES (?, ?, ?, 'member', ?, ?, ?, ?, ?)",
+            rusqlite::params![ok, community_id_clone, name, rij, now, dht_record_key, pk, mg],
         )?;
 
         // Add ourselves to the community_members table (using pseudonym)
@@ -447,6 +447,9 @@ pub async fn create_channel(
                     category_id: None,
                     topic: String::new(),
                     slowmode_seconds: None,
+                    nsfw: false,
+                    message_record_key: None,
+                    mek_generation: 0,
                 };
                 state_helpers::push_community_channel(state.inner(), &community_id, channel.clone());
 
@@ -496,6 +499,9 @@ pub async fn create_channel(
         category_id: None,
         topic: String::new(),
         slowmode_seconds: None,
+        nsfw: false,
+        message_record_key: None,
+        mek_generation: 0,
     };
     let community_id_clone = community_id.clone();
     db_call(pool.inner(), move |conn| {
@@ -822,19 +828,14 @@ pub async fn send_channel_message(
 
     let timestamp = db::timestamp_now();
 
-    // --- Step 1: Find the community and get MEK + server route + pseudonym ---
-    let (community_id, mek_generation, server_route_blob, is_hosted) = {
+    // --- Step 1: Find the community and get MEK + pseudonym ---
+    let (community_id, mek_generation) = {
         let communities = state.communities.read();
         let community = communities
             .values()
             .find(|c| c.channels.iter().any(|ch| ch.id == channel_id))
             .ok_or("channel not found in any community")?;
-        (
-            community.id.clone(),
-            community.mek_generation,
-            community.server_route_blob.clone(),
-            community.is_hosted,
-        )
+        (community.id.clone(), community.mek_generation)
     };
 
     // Use pseudonym key as sender for channel messages (matches what the
@@ -871,38 +872,22 @@ pub async fn send_channel_message(
     })
     .await?;
 
-    // --- Step 4: Send to community server (best-effort — message already persisted) ---
-    let delivery_result = if is_hosted {
-        // IPC fast path — same as all other RPCs for hosted communities
-        send_community_rpc(
-            state.inner(),
-            pool.inner(),
-            &community_id,
-            rekindle_protocol::messaging::CommunityRequest::SendMessage {
-                channel_id: channel_id.clone(),
-                ciphertext: ciphertext.clone(),
-                mek_generation,
-                reply_to_id,
-            },
-        )
-        .await
-        .map(|_| ())
-    } else if let Some(route_blob) = server_route_blob {
-        // Remote community — existing Veilid path
-        send_encrypted_to_server(
-            &state,
-            &channel_id,
-            &community_id,
-            ciphertext.clone(),
+    // --- Step 4: Send to coordinator (best-effort — message already persisted) ---
+    let message_id = format!("msg_{}", hex::encode(rand_nonce().get(..8).unwrap_or(&[0; 8])));
+    let delivery_result = send_to_coordinator(
+        state.inner(),
+        &community_id,
+        rekindle_protocol::dht::community::envelope::CommunityEnvelope::ChatMessage {
+            channel_id: channel_id.clone(),
+            message_id,
+            author_pseudonym: sender_key.clone(),
+            ciphertext: ciphertext.clone(),
             mek_generation,
-            timestamp,
-            route_blob,
+            timestamp: timestamp.cast_unsigned(),
             reply_to_id,
-        )
-        .await
-    } else {
-        Err("no server route".into())
-    };
+        },
+    )
+    .await;
 
     let delivery_status = if let Err(e) = delivery_result {
         tracing::warn!(error = %e, "server delivery failed — queuing for retry");
@@ -947,6 +932,7 @@ pub async fn edit_channel_message(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
+    let _ = pool; // no longer needed for coordinator path
     let (community_id, mek_generation) = {
         let communities = state.communities.read();
         let community = communities
@@ -963,22 +949,19 @@ pub async fn edit_channel_message(
             .map_err(|e| format!("MEK encryption failed: {e}"))?
     };
 
-    let request = rekindle_protocol::messaging::CommunityRequest::EditMessage {
-        channel_id,
-        message_id,
-        new_ciphertext,
-        mek_generation,
-    };
-
-    let response = send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
-    match response {
-        Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => Ok(()),
-        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => {
-            Err(message)
-        }
-        Ok(_) => Err("unexpected response".into()),
-        Err(e) => Err(e),
-    }
+    send_to_coordinator(
+        state.inner(),
+        &community_id,
+        rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
+            rekindle_protocol::dht::community::envelope::ControlPayload::EditMessage {
+                channel_id,
+                message_id,
+                new_ciphertext,
+                mek_generation,
+            },
+        ),
+    )
+    .await
 }
 
 /// Delete a channel message.
@@ -992,6 +975,7 @@ pub async fn delete_channel_message(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
+    let _ = pool; // no longer needed for coordinator path
     let community_id = {
         let communities = state.communities.read();
         communities
@@ -1001,20 +985,17 @@ pub async fn delete_channel_message(
             .ok_or("channel not found in any community")?
     };
 
-    let request = rekindle_protocol::messaging::CommunityRequest::DeleteMessage {
-        channel_id,
-        message_id,
-    };
-
-    let response = send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
-    match response {
-        Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => Ok(()),
-        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => {
-            Err(message)
-        }
-        Ok(_) => Err("unexpected response".into()),
-        Err(e) => Err(e),
-    }
+    send_to_coordinator(
+        state.inner(),
+        &community_id,
+        rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
+            rekindle_protocol::dht::community::envelope::ControlPayload::DeleteMessage {
+                channel_id,
+                message_id,
+            },
+        ),
+    )
+    .await
 }
 
 /// Add a reaction to a community channel message.
@@ -1027,18 +1008,19 @@ pub async fn add_reaction(
     message_id: String,
     emoji: String,
 ) -> Result<(), String> {
-    let request = rekindle_protocol::messaging::CommunityRequest::AddReaction {
-        channel_id,
-        message_id,
-        emoji,
-    };
-    let response = send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
-    match response {
-        Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => Ok(()),
-        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
-        Ok(_) => Err("unexpected response".into()),
-        Err(e) => Err(e),
-    }
+    let _ = pool; // no longer needed for coordinator path
+    send_to_coordinator(
+        state.inner(),
+        &community_id,
+        rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
+            rekindle_protocol::dht::community::envelope::ControlPayload::AddReaction {
+                channel_id,
+                message_id,
+                emoji,
+            },
+        ),
+    )
+    .await
 }
 
 /// Remove a reaction from a community channel message.
@@ -1051,18 +1033,19 @@ pub async fn remove_reaction(
     message_id: String,
     emoji: String,
 ) -> Result<(), String> {
-    let request = rekindle_protocol::messaging::CommunityRequest::RemoveReaction {
-        channel_id,
-        message_id,
-        emoji,
-    };
-    let response = send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
-    match response {
-        Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => Ok(()),
-        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
-        Ok(_) => Err("unexpected response".into()),
-        Err(e) => Err(e),
-    }
+    let _ = pool; // no longer needed for coordinator path
+    send_to_coordinator(
+        state.inner(),
+        &community_id,
+        rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
+            rekindle_protocol::dht::community::envelope::ControlPayload::RemoveReaction {
+                channel_id,
+                message_id,
+                emoji,
+            },
+        ),
+    )
+    .await
 }
 
 /// Pin a message in a community channel.
@@ -1074,17 +1057,18 @@ pub async fn pin_message(
     channel_id: String,
     message_id: String,
 ) -> Result<(), String> {
-    let request = rekindle_protocol::messaging::CommunityRequest::PinMessage {
-        channel_id,
-        message_id,
-    };
-    let response = send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
-    match response {
-        Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => Ok(()),
-        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
-        Ok(_) => Err("unexpected response".into()),
-        Err(e) => Err(e),
-    }
+    let _ = pool;
+    send_to_coordinator(
+        state.inner(),
+        &community_id,
+        rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
+            rekindle_protocol::dht::community::envelope::ControlPayload::PinMessage {
+                channel_id,
+                message_id,
+            },
+        ),
+    )
+    .await
 }
 
 /// Unpin a message from a community channel.
@@ -1096,17 +1080,18 @@ pub async fn unpin_message(
     channel_id: String,
     message_id: String,
 ) -> Result<(), String> {
-    let request = rekindle_protocol::messaging::CommunityRequest::UnpinMessage {
-        channel_id,
-        message_id,
-    };
-    let response = send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
-    match response {
-        Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => Ok(()),
-        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
-        Ok(_) => Err("unexpected response".into()),
-        Err(e) => Err(e),
-    }
+    let _ = pool;
+    send_to_coordinator(
+        state.inner(),
+        &community_id,
+        rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
+            rekindle_protocol::dht::community::envelope::ControlPayload::UnpinMessage {
+                channel_id,
+                message_id,
+            },
+        ),
+    )
+    .await
 }
 
 /// Get pinned messages for a community channel.
@@ -1150,32 +1135,72 @@ pub struct AuditLogEntryInfoDto {
 #[tauri::command]
 pub async fn get_audit_log(
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
+    _pool: State<'_, DbPool>,
     community_id: String,
-    before_timestamp: Option<u64>,
+    _before_timestamp: Option<u64>,
     limit: u32,
 ) -> Result<Vec<AuditLogEntryInfoDto>, String> {
-    let request = rekindle_protocol::messaging::CommunityRequest::GetAuditLog {
-        before_timestamp,
-        limit,
-    };
-    let response =
-        send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
-    match response {
-        Ok(rekindle_protocol::messaging::CommunityResponse::AuditLog { entries }) => Ok(entries
-            .into_iter()
-            .map(|e| AuditLogEntryInfoDto {
-                action: e.action,
-                actor_pseudonym: e.actor_pseudonym,
-                target: e.target,
-                details: e.details,
-                timestamp: e.timestamp,
-            })
-            .collect()),
-        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
-        Ok(_) => Err("unexpected response".into()),
-        Err(e) => Err(e),
+    // Check VIEW_AUDIT_LOG permission
+    {
+        use rekindle_protocol::dht::community::permissions_v2::Permissions;
+        let communities = state.communities.read();
+        let community = communities.get(&community_id).ok_or("community not found")?;
+        let my_perms_bits = community
+            .my_role_ids
+            .iter()
+            .filter_map(|rid| community.roles.iter().find(|r| r.id == *rid))
+            .fold(0u64, |acc, r| acc | r.permissions);
+        let perms = Permissions::from_bits_truncate(my_perms_bits);
+        if !perms.contains(Permissions::VIEW_AUDIT_LOG)
+            && !perms.contains(Permissions::ADMINISTRATOR)
+        {
+            return Err("missing VIEW_AUDIT_LOG permission".into());
+        }
     }
+
+    // Get audit record key from coordinator service
+    let audit_key = {
+        let services = state.coordinator_services.read();
+        services.get(&community_id).and_then(|h| {
+            let logger = h.relay.audit_logger();
+            let guard = logger.lock();
+            guard.record_key().map(String::from)
+        })
+    };
+
+    let audit_key = if let Some(k) = audit_key {
+        k
+    } else {
+        // Try reading from manifest subkey 14
+        let rc = state_helpers::routing_context(&state).ok_or("not attached")?;
+        let mgr = rekindle_protocol::dht::DHTManager::new(rc);
+        let manifest_key = {
+            let communities = state.communities.read();
+            communities
+                .get(&community_id)
+                .and_then(|c| c.manifest_key.clone().or_else(|| Some(c.id.clone())))
+                .ok_or("community not found")?
+        };
+        rekindle_protocol::dht::community::manifest::read_audit_log_key(&mgr, &manifest_key)
+            .await
+            .map_err(|e| format!("read audit key: {e}"))?
+            .ok_or("no audit log configured")?
+    };
+
+    let capped_limit = limit.min(100) as usize;
+    let entries = services::coordinator::audit::read_entries(&state, &audit_key, capped_limit)
+        .await?;
+
+    Ok(entries
+        .into_iter()
+        .map(|e| AuditLogEntryInfoDto {
+            action: format!("{:?}", e.action),
+            actor_pseudonym: e.actor_pseudonym,
+            target: Some(format!("{:?}", e.target)),
+            details: e.reason,
+            timestamp: e.timestamp,
+        })
+        .collect())
 }
 
 /// Event info DTO re-exported from the channel module.
@@ -1720,415 +1745,244 @@ fn rand_nonce() -> Vec<u8> {
     nonce
 }
 
-/// Send an encrypted channel message to the community server via Veilid `app_call`.
-///
-/// Builds a signed envelope with the user's pseudonym key and sends it to the
-/// server's private route. Returns `Err` on transport or route import failures
-/// so the caller can queue for retry. The message is already stored locally
-/// before this is called.
-pub(crate) async fn send_encrypted_to_server(
-    state: &SharedState,
-    channel_id: &str,
-    community_id: &str,
-    ciphertext: Vec<u8>,
-    mek_generation: u64,
-    timestamp: i64,
-    route_blob: Vec<u8>,
-    reply_to_id: Option<String>,
-) -> Result<(), String> {
-    if state_helpers::is_circuit_open(state, community_id) {
-        return Err("community server unreachable (circuit breaker open)".into());
-    }
-
-    let Some(rc) = state_helpers::routing_context(state) else {
-        return Ok(());
-    };
-
-    let request = rekindle_protocol::messaging::CommunityRequest::SendMessage {
-        channel_id: channel_id.to_string(),
-        ciphertext,
-        mek_generation,
-        reply_to_id,
-    };
-    let request_bytes =
-        serde_json::to_vec(&request).map_err(|e| format!("failed to serialize request: {e}"))?;
-
-    let identity_secret = {
-        let secret = state.identity_secret.lock();
-        *secret
-    };
-    let Some(secret) = identity_secret else {
-        return Ok(());
-    };
-
-    let pseudonym_key =
-        rekindle_crypto::group::pseudonym::derive_community_pseudonym(&secret, community_id);
-    let envelope = rekindle_protocol::messaging::sender::build_envelope(
-        &pseudonym_key,
-        timestamp.cast_unsigned(),
-        rand_nonce(),
-        request_bytes,
-    );
-
-    // Use the DHTManager's route cache to avoid leaking RouteId objects.
-    // Each call to import_remote_private_route without caching creates a new
-    // RouteId that Veilid tracks internally — the cache reuses them.
-    let route_id = state_helpers::import_route_blob(state, &route_blob)
-        .map_err(|e| format!("failed to import server route: {e}"))?;
-
-    let result = rekindle_protocol::messaging::sender::send_call(&rc, route_id, &envelope).await;
-    match result {
-        Ok(response_bytes) => {
-            state_helpers::reset_circuit_breaker(state, community_id);
-            check_server_response(channel_id, &response_bytes)?;
-        }
-        Err(e) => {
-            state_helpers::trip_circuit_breaker(state, community_id);
-            // Invalidate the stale route from DHTManager cache so the next
-            // attempt (e.g. from the pending message retry queue) forces a
-            // fresh import instead of reusing the dead RouteId.
-            {
-                let mut dht_mgr = state.dht_manager.write();
-                if let Some(mgr) = dht_mgr.as_mut() {
-                    mgr.manager.invalidate_route_blob(&route_blob);
-                }
-            }
-            // Also clear the in-memory route blob so next send fetches from DHT.
-            {
-                let mut communities = state.communities.write();
-                if let Some(c) = communities.get_mut(community_id) {
-                    c.server_route_blob = None;
-                }
-            }
-            return Err(format!("failed to send channel message to server: {e}"));
-        }
-    }
-
-    Ok(())
-}
-
-/// Check the server's response to a channel message send attempt.
-fn check_server_response(channel_id: &str, response_bytes: &[u8]) -> Result<(), String> {
-    match serde_json::from_slice::<rekindle_protocol::messaging::CommunityResponse>(response_bytes)
-    {
-        Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => {
-            tracing::debug!(channel = %channel_id, "channel message sent to server");
-            Ok(())
-        }
-        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => {
-            Err(format!("server rejected channel message: {message}"))
-        }
-        _ => {
-            tracing::debug!(channel = %channel_id, "unexpected server response");
-            Ok(())
-        }
-    }
-}
-
 /// Send a community RPC request to the server.
 ///
-/// For **hosted** communities (where `is_hosted = true`), routes the request
-/// through the local Unix socket IPC — bypassing Veilid entirely. This avoids
-/// the unreliable same-machine P2P route discovery that causes timeouts.
+/// Send a CommunityEnvelope to the coordinator via `app_message` (fire-and-forget).
 ///
-/// For **remote** communities, signs the request with the user's pseudonym key,
-/// wraps it in a `MessageEnvelope`, and sends it via Veilid `app_call`.
-pub(crate) async fn send_community_rpc(
-    state: &SharedState,
-    pool: &DbPool,
-    community_id: &str,
-    request: rekindle_protocol::messaging::CommunityRequest,
-) -> Result<rekindle_protocol::messaging::CommunityResponse, String> {
-    let (exists, is_hosted) = {
-        let communities = state.communities.read();
-        match communities.get(community_id) {
-            Some(c) => (true, c.is_hosted),
-            None => (false, false),
-        }
-    };
-    if !exists {
-        return Err("community not found".into());
-    }
-
-    if is_hosted {
-        return send_community_rpc_ipc(state, community_id, &request).await;
-    }
-
-    send_community_rpc_veilid(state, pool, community_id, request).await
-}
-
-/// IPC fast path: send the RPC through the local Unix socket to the server process.
-async fn send_community_rpc_ipc(
+/// Replaces `send_community_rpc()` — no request/response cycle. The coordinator
+/// validates, relays, and persists; members receive the result via broadcast.
+pub(crate) async fn send_to_coordinator(
     state: &SharedState,
     community_id: &str,
-    request: &rekindle_protocol::messaging::CommunityRequest,
-) -> Result<rekindle_protocol::messaging::CommunityResponse, String> {
-    let pseudonym_key = {
+    envelope: rekindle_protocol::dht::community::envelope::CommunityEnvelope,
+) -> Result<(), String> {
+    use rekindle_protocol::dht::community::envelope;
+
+    // Get coordinator route and our pseudonym key
+    let (coordinator_route_blob, my_pseudonym_key) = {
         let communities = state.communities.read();
-        communities
+        let c = communities
             .get(community_id)
-            .and_then(|c| c.my_pseudonym_key.clone())
-            .ok_or_else(|| "no pseudonym key for this community".to_string())?
+            .ok_or("community not found")?;
+        (
+            c.coordinator_route_blob.clone(),
+            c.my_pseudonym_key
+                .clone()
+                .unwrap_or_default(),
+        )
     };
 
-    let request_json =
-        serde_json::to_string(request).map_err(|e| format!("failed to serialize request: {e}"))?;
+    let route_blob = coordinator_route_blob
+        .ok_or("no coordinator available — message will be queued")?;
 
-    let socket_path = crate::ipc_client::default_socket_path();
-    let response_json = crate::ipc_client::community_rpc_async(
-        &socket_path,
-        community_id,
-        &pseudonym_key,
-        &request_json,
-    )
-    .await?;
-
-    serde_json::from_str(&response_json).map_err(|e| format!("invalid IPC response: {e}"))
-}
-
-/// Veilid path: sign + envelope + `app_call` for remote communities.
-async fn send_community_rpc_veilid(
-    state: &SharedState,
-    pool: &DbPool,
-    community_id: &str,
-    request: rekindle_protocol::messaging::CommunityRequest,
-) -> Result<rekindle_protocol::messaging::CommunityResponse, String> {
-    if state_helpers::is_circuit_open(state, community_id) {
-        return Err("community server unreachable (circuit breaker open — retrying in 30s)".into());
-    }
-
-    let server_route_blob = resolve_server_route_blob(state, pool, community_id).await?;
-
-    let rc = state_helpers::routing_context(state)
-        .ok_or_else(|| "Veilid network not attached".to_string())?;
-
+    // Sign envelope with pseudonym signing key
     let signing_key = {
         let secret = state.identity_secret.lock();
-        let s = (*secret).ok_or_else(|| "identity not unlocked".to_string())?;
+        let s = (*secret).ok_or("identity not unlocked")?;
         rekindle_crypto::group::pseudonym::derive_community_pseudonym(&s, community_id)
     };
-
-    let request_bytes =
-        serde_json::to_vec(&request).map_err(|e| format!("failed to serialize request: {e}"))?;
-    let timestamp = crate::db::timestamp_now().cast_unsigned();
-    let envelope = rekindle_protocol::messaging::sender::build_envelope(
+    let envelope_bytes =
+        serde_json::to_vec(&envelope).map_err(|e| format!("serialize envelope: {e}"))?;
+    let signed = envelope::sign_envelope(
         &signing_key,
-        timestamp,
-        rand_nonce(),
-        request_bytes,
+        community_id,
+        &my_pseudonym_key,
+        &envelope_bytes,
     );
+    let signed_bytes =
+        serde_json::to_vec(&signed).map_err(|e| format!("serialize signed: {e}"))?;
 
-    let route_id = state_helpers::import_route_blob(state, &server_route_blob)
-        .map_err(|e| format!("RPC call failed: {e}"))?;
-
-    let result = rekindle_protocol::messaging::sender::send_call(&rc, route_id, &envelope).await;
-
-    match result {
-        Ok(response_bytes) => {
-            state_helpers::reset_circuit_breaker(state, community_id);
-            parse_community_response(&response_bytes)
-        }
-        Err(e) => {
-            state_helpers::trip_circuit_breaker(state, community_id);
-            retry_rpc_with_fresh_route(state, pool, community_id, &rc, &envelope, &e).await
-        }
-    }
-}
-
-/// Resolve the server route blob: try in-memory cache, then on-demand DHT fetch.
-async fn resolve_server_route_blob(
-    state: &SharedState,
-    pool: &DbPool,
-    community_id: &str,
-) -> Result<Vec<u8>, String> {
-    let cached = {
-        let communities = state.communities.read();
-        communities
-            .get(community_id)
-            .and_then(|c| c.server_route_blob.clone())
-    };
-
-    if let Some(blob) = cached {
-        return Ok(blob);
-    }
-
-    tracing::info!(community = %community_id, "server route blob missing — on-demand DHT fetch");
-    let blob = fetch_server_route_blob_quick(state, community_id)
+    // Send via app_message (fire-and-forget, not app_call)
+    let rc = state_helpers::routing_context(state).ok_or("Veilid network not attached")?;
+    let route_id =
+        state_helpers::import_route_blob(state, &route_blob).map_err(|e| format!("route: {e}"))?;
+    rc.app_message(veilid_core::Target::RouteId(route_id), signed_bytes)
         .await
-        .ok_or_else(|| {
-            "community server route not available (server may still be starting)".to_string()
-        })?;
-
-    {
-        let mut communities = state.communities.write();
-        if let Some(c) = communities.get_mut(community_id) {
-            c.server_route_blob = Some(blob.clone());
-        }
-    }
-    persist_route_blob_to_db(pool, state, community_id, &blob);
-
-    Ok(blob)
+        .map_err(|e| format!("app_message: {e}"))
 }
 
-/// Parse a community RPC response.
-fn parse_community_response(
-    response_bytes: &[u8],
-) -> Result<rekindle_protocol::messaging::CommunityResponse, String> {
-    serde_json::from_slice(response_bytes).map_err(|e| format!("invalid response from server: {e}"))
-}
-
-/// On RPC failure, clear the stale route, fetch a fresh one from DHT, and retry once.
-async fn retry_rpc_with_fresh_route(
+/// Legacy compatibility wrapper: converts `CommunityRequest` to `ControlPayload`
+/// and routes through the coordinator. Write operations return `CommunityResponse::Ok`;
+/// read operations that need server-side data will fail and should be migrated
+/// to read from DHT directly.
+pub(crate) async fn send_community_rpc(
     state: &SharedState,
-    pool: &DbPool,
+    _pool: &DbPool,
     community_id: &str,
-    rc: &veilid_core::RoutingContext,
-    envelope: &rekindle_protocol::messaging::envelope::MessageEnvelope,
-    original_error: &rekindle_protocol::error::ProtocolError,
+    request: rekindle_protocol::messaging::CommunityRequest,
 ) -> Result<rekindle_protocol::messaging::CommunityResponse, String> {
-    tracing::warn!(
-        error = %original_error,
-        community = %community_id,
-        "community RPC failed — retrying with fresh route from DHT"
-    );
+    use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
 
-    // Invalidate the stale route blob from DHTManager cache so the retry
-    // doesn't return the same dead RouteId (the fresh DHT fetch may return
-    // identical blob bytes if the server hasn't refreshed yet).
-    let stale_blob = {
-        let mut communities = state.communities.write();
-        let old = communities
-            .get(community_id)
-            .and_then(|c| c.server_route_blob.clone());
-        if let Some(c) = communities.get_mut(community_id) {
-            c.server_route_blob = None;
-        }
-        old
-    };
-    if let Some(ref blob) = stale_blob {
-        let mut dht_mgr = state.dht_manager.write();
-        if let Some(mgr) = dht_mgr.as_mut() {
-            mgr.manager.invalidate_route_blob(blob);
-        }
-    }
-
-    let fresh_blob = fetch_server_route_blob_quick(state, community_id)
-        .await
-        .ok_or_else(|| format!("RPC failed (no fresh route on retry): {original_error}"))?;
-
-    // If DHT returned the same blob, the route is the same dead one — don't waste 8s
-    if stale_blob.as_deref() == Some(fresh_blob.as_slice()) {
-        tracing::warn!(
-            community = %community_id,
-            "DHT returned same stale route blob — skipping retry"
-        );
-        return Err(format!(
-            "RPC call failed (stale route in DHT): {original_error}"
-        ));
-    }
-
-    {
-        let mut communities = state.communities.write();
-        if let Some(c) = communities.get_mut(community_id) {
-            c.server_route_blob = Some(fresh_blob.clone());
-        }
-    }
-    persist_route_blob_to_db(pool, state, community_id, &fresh_blob);
-
-    let fresh_route_id = state_helpers::import_route_blob(state, &fresh_blob)
-        .map_err(|e| format!("RPC retry failed: {e}"))?;
-
-    match rekindle_protocol::messaging::sender::send_call(rc, fresh_route_id, envelope).await {
-        Ok(bytes) => {
-            state_helpers::reset_circuit_breaker(state, community_id);
-            parse_community_response(&bytes)
-        }
-        Err(e) => {
-            state_helpers::trip_circuit_breaker(state, community_id);
-            tracing::error!(error = %e, community = %community_id, "community RPC retry also failed");
-            Err(format!("RPC call failed after retry: {e}"))
-        }
-    }
+    let control = request_to_control_payload(request)?;
+    send_to_coordinator(state, community_id, CommunityEnvelope::Control(control)).await?;
+    Ok(rekindle_protocol::messaging::CommunityResponse::Ok)
 }
 
-/// Quick on-demand fetch of the server route blob from DHT (3 retries, 2s apart).
-///
-/// Used by `send_community_rpc` to self-heal when the blob is missing from
-/// in-memory state. Faster than the full `fetch_server_route_blob` (10 retries,
-/// 3s apart) since the server is likely already running.
-async fn fetch_server_route_blob_quick(state: &SharedState, community_id: &str) -> Option<Vec<u8>> {
-    let dht_record_key = {
-        let communities = state.communities.read();
-        communities.get(community_id)?.dht_record_key.clone()?
-    };
+/// Convert a legacy CommunityRequest to the v2 ControlPayload.
+fn request_to_control_payload(
+    request: rekindle_protocol::messaging::CommunityRequest,
+) -> Result<rekindle_protocol::dht::community::envelope::ControlPayload, String> {
+    use rekindle_protocol::dht::community::envelope::ControlPayload;
+    use rekindle_protocol::messaging::CommunityRequest;
 
-    let routing_context = {
-        let node = state.node.read();
-        let nh = node.as_ref()?;
-        nh.routing_context.clone()
-    };
+    Ok(match request {
+        // Channel management
+        CommunityRequest::CreateChannel { name, channel_type, category_id } =>
+            ControlPayload::CreateChannel { name, channel_type, category_id },
+        CommunityRequest::DeleteChannel { channel_id } =>
+            ControlPayload::DeleteChannel { channel_id },
+        CommunityRequest::RenameChannel { channel_id, new_name } =>
+            ControlPayload::RenameChannel { channel_id, new_name },
+        CommunityRequest::SetChannelTopic { channel_id, topic } =>
+            ControlPayload::SetChannelTopic { channel_id, topic },
+        CommunityRequest::ReorderChannels { channel_ids } =>
+            ControlPayload::ReorderChannels { channel_ids },
+        CommunityRequest::SetSlowmode { channel_id, seconds } =>
+            ControlPayload::SetSlowmode { channel_id, seconds },
+        CommunityRequest::MoveChannel { channel_id, category_id } =>
+            ControlPayload::MoveChannel { channel_id, category_id },
 
-    for attempt in 0..3u32 {
-        if attempt > 0 {
-            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        // Category management
+        CommunityRequest::CreateCategory { name } =>
+            ControlPayload::CreateCategory { name },
+        CommunityRequest::DeleteCategory { category_id } =>
+            ControlPayload::DeleteCategory { category_id },
+        CommunityRequest::RenameCategory { category_id, new_name } =>
+            ControlPayload::RenameCategory { category_id, new_name },
+        CommunityRequest::ReorderCategories { category_ids } =>
+            ControlPayload::ReorderCategories { category_ids },
+
+        // Messages
+        CommunityRequest::SendMessage { channel_id, ciphertext, mek_generation, reply_to_id: _ } =>
+            ControlPayload::EditMessage { channel_id, message_id: String::new(), new_ciphertext: ciphertext, mek_generation },
+        CommunityRequest::EditMessage { channel_id, message_id, new_ciphertext, mek_generation } =>
+            ControlPayload::EditMessage { channel_id, message_id, new_ciphertext, mek_generation },
+        CommunityRequest::DeleteMessage { channel_id, message_id } =>
+            ControlPayload::DeleteMessage { channel_id, message_id },
+
+        // Moderation
+        CommunityRequest::Kick { target_pseudonym } =>
+            ControlPayload::Kick { target_pseudonym },
+        CommunityRequest::Ban { target_pseudonym } =>
+            ControlPayload::Ban { target_pseudonym },
+        CommunityRequest::Unban { target_pseudonym } =>
+            ControlPayload::Unban { target_pseudonym },
+        CommunityRequest::TimeoutMember { target_pseudonym, duration_seconds, reason } =>
+            ControlPayload::TimeoutMember { target_pseudonym, duration_seconds, reason },
+        CommunityRequest::RemoveTimeout { target_pseudonym } =>
+            ControlPayload::RemoveTimeout { target_pseudonym },
+
+        // Roles
+        CommunityRequest::CreateRole { name, color, permissions, hoist, mentionable } =>
+            ControlPayload::CreateRole { name, color, permissions, hoist, mentionable },
+        CommunityRequest::EditRole { role_id, name, color, permissions, position, hoist, mentionable } =>
+            ControlPayload::EditRole { role_id, name, color, permissions, position, hoist, mentionable },
+        CommunityRequest::DeleteRole { role_id } =>
+            ControlPayload::DeleteRole { role_id },
+        CommunityRequest::AssignRole { target_pseudonym, role_id } =>
+            ControlPayload::AssignRole { target_pseudonym, role_id },
+        CommunityRequest::UnassignRole { target_pseudonym, role_id } =>
+            ControlPayload::UnassignRole { target_pseudonym, role_id },
+
+        // Invites
+        CommunityRequest::CreateInvite { max_uses, expires_in_seconds } =>
+            ControlPayload::CreateInvite { max_uses, expires_in_seconds },
+        CommunityRequest::RevokeInvite { code } =>
+            ControlPayload::RevokeInvite { code },
+
+        // Events
+        CommunityRequest::CreateEvent { title, description, start_time, end_time, channel_id, max_attendees } =>
+            ControlPayload::CreateEvent { title, description, start_time, end_time, channel_id, max_attendees },
+        CommunityRequest::EditEvent { event_id, title, description, start_time, end_time, channel_id, max_attendees } =>
+            ControlPayload::EditEvent { event_id, title, description, start_time, end_time, channel_id, max_attendees },
+        CommunityRequest::DeleteEvent { event_id } =>
+            ControlPayload::DeleteEvent { event_id },
+        CommunityRequest::CancelEvent { event_id } =>
+            ControlPayload::CancelEvent { event_id },
+        CommunityRequest::RsvpEvent { event_id, status } =>
+            ControlPayload::RsvpEvent { event_id, status },
+
+        // Reactions
+        CommunityRequest::AddReaction { channel_id, message_id, emoji } =>
+            ControlPayload::AddReaction { channel_id, message_id, emoji },
+        CommunityRequest::RemoveReaction { channel_id, message_id, emoji } =>
+            ControlPayload::RemoveReaction { channel_id, message_id, emoji },
+
+        // Pins
+        CommunityRequest::PinMessage { channel_id, message_id } =>
+            ControlPayload::PinMessage { channel_id, message_id },
+        CommunityRequest::UnpinMessage { channel_id, message_id } =>
+            ControlPayload::UnpinMessage { channel_id, message_id },
+
+        // Threads
+        CommunityRequest::CreateThread { channel_id, name, starter_message_id } =>
+            ControlPayload::CreateThread { channel_id, name, starter_message_id },
+        CommunityRequest::SendThreadMessage { thread_id, ciphertext, mek_generation, reply_to_id } =>
+            ControlPayload::SendThreadMessage { thread_id, ciphertext, mek_generation, reply_to_id },
+        CommunityRequest::ArchiveThread { thread_id } =>
+            ControlPayload::ArchiveThread { thread_id },
+        CommunityRequest::UnarchiveThread { thread_id } =>
+            ControlPayload::UnarchiveThread { thread_id },
+
+        // Game servers
+        CommunityRequest::AddGameServer { game_id, label, address } =>
+            ControlPayload::AddGameServer { game_id, label, address },
+        CommunityRequest::RemoveGameServer { server_id } =>
+            ControlPayload::RemoveGameServer { server_id },
+
+        // Channel overwrites
+        CommunityRequest::SetChannelOverwrite { channel_id, target_type, target_id, allow, deny } =>
+            ControlPayload::SetChannelOverwrite { channel_id, target_type, target_id, allow, deny },
+        CommunityRequest::DeleteChannelOverwrite { channel_id, target_type, target_id } =>
+            ControlPayload::DeleteChannelOverwrite { channel_id, target_type, target_id },
+
+        // Community metadata
+        CommunityRequest::UpdateCommunity { name, description } =>
+            ControlPayload::UpdateCommunity { name, description },
+
+        // Presence — ChannelTyping handled directly by send_channel_typing, but map for legacy callers
+        CommunityRequest::ChannelTyping { channel_id: _ } =>
+            ControlPayload::UpdatePresence { status: "typing".into(), game_name: None, game_id: None, elapsed_seconds: None, server_address: None },
+        CommunityRequest::UpdatePresence { status, game_name, game_id, elapsed_seconds, server_address } =>
+            ControlPayload::UpdatePresence { status, game_name, game_id, elapsed_seconds, server_address },
+
+        // Leave
+        CommunityRequest::Leave =>
+            ControlPayload::MemberLeave { pseudonym_key: String::new() },
+
+        // MEK
+        CommunityRequest::RotateMEK =>
+            ControlPayload::RotateMEK,
+        CommunityRequest::RequestMEK =>
+            ControlPayload::RequestMEK,
+
+        // Read-only mark operations
+        CommunityRequest::MarkChannelRead { channel_id, last_message_id } =>
+            ControlPayload::MarkChannelRead { channel_id, last_message_id },
+
+        // Read operations — should query DHT directly
+        CommunityRequest::GetMessages { .. }
+        | CommunityRequest::GetRoles
+        | CommunityRequest::GetPins { .. }
+        | CommunityRequest::GetBanList
+        | CommunityRequest::ListInvites
+        | CommunityRequest::GetEvents
+        | CommunityRequest::GetChannelThreads { .. }
+        | CommunityRequest::GetThreadMessages { .. }
+        | CommunityRequest::GetGameServers
+        | CommunityRequest::GetUnreadCounts
+        | CommunityRequest::GetAuditLog { .. } => {
+            return Err("read operations should query DHT directly".into());
         }
 
-        let mgr = rekindle_protocol::dht::DHTManager::new(routing_context.clone());
-        if mgr.open_record(&dht_record_key).await.is_err() {
-            continue;
+        // Join is handled by community_service, not through this path
+        CommunityRequest::Join { .. } => {
+            return Err("join should go through community_service".into());
         }
-
-        let blob = mgr
-            .get_value(
-                &dht_record_key,
-                rekindle_protocol::dht::community::SUBKEY_SERVER_ROUTE,
-            )
-            .await
-            .ok()
-            .flatten();
-
-        let _ = mgr.close_record(&dht_record_key).await;
-
-        if blob.is_some() {
-            tracing::info!(
-                community = %community_id,
-                attempt,
-                "on-demand DHT fetch found server route blob"
-            );
-            return blob;
-        }
-    }
-
-    tracing::warn!(
-        community = %community_id,
-        "on-demand DHT fetch failed after 3 attempts"
-    );
-    None
+    })
 }
 
-/// Persist a server route blob to `SQLite` (without requiring `AppHandle`).
-fn persist_route_blob_to_db(
-    pool: &DbPool,
-    state: &SharedState,
-    community_id: &str,
-    route_blob: &[u8],
-) {
-    let owner_key = state
-        .identity
-        .read()
-        .as_ref()
-        .map(|id| id.public_key.clone())
-        .unwrap_or_default();
-    let cid = community_id.to_string();
-    let blob = route_blob.to_vec();
-    db_fire(pool, "persist server_route_blob", move |conn| {
-        conn.execute(
-            "UPDATE communities SET server_route_blob = ?1 WHERE owner_key = ?2 AND id = ?3",
-            rusqlite::params![blob, owner_key, cid],
-        )?;
-        Ok(())
-    });
-}
+// Legacy IPC and Veilid RPC functions removed — all traffic routes through coordinator
 
 /// Leave a community and clean up local state.
 ///
@@ -2167,9 +2021,6 @@ pub async fn leave_community(
             }
         }
     }
-
-    // Remove cached server route
-    state.community_routes.write().remove(&community_id);
 
     // Remove from local state
     state.communities.write().remove(&community_id);
@@ -3447,19 +3298,25 @@ pub async fn send_channel_typing(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let request = rekindle_protocol::messaging::CommunityRequest::ChannelTyping { channel_id };
-    let response = send_community_rpc(
+    let _ = pool; // no longer needed for coordinator path
+
+    let pseudonym_key = {
+        let communities = state.communities.read();
+        communities
+            .get(&community_id)
+            .and_then(|c| c.my_pseudonym_key.clone())
+            .ok_or("no pseudonym key")?
+    };
+
+    send_to_coordinator(
         state.inner(),
-        pool.inner(),
         &community_id,
-        request,
+        rekindle_protocol::dht::community::envelope::CommunityEnvelope::TypingIndicator {
+            channel_id,
+            pseudonym_key,
+        },
     )
-    .await?;
-    match response {
-        rekindle_protocol::messaging::CommunityResponse::Ok => Ok(()),
-        rekindle_protocol::messaging::CommunityResponse::Error { message, .. } => Err(message),
-        _ => Err("unexpected response".into()),
-    }
+    .await
 }
 
 /// Update our presence status in a community.
@@ -3474,25 +3331,36 @@ pub async fn update_community_presence(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let request = rekindle_protocol::messaging::CommunityRequest::UpdatePresence {
-        status,
-        game_name,
-        game_id,
-        elapsed_seconds,
-        server_address,
+    let _ = pool; // no longer needed for coordinator path
+
+    let pseudonym_key = {
+        let communities = state.communities.read();
+        communities
+            .get(&community_id)
+            .and_then(|c| c.my_pseudonym_key.clone())
+            .ok_or("no pseudonym key")?
     };
-    let response = send_community_rpc(
+
+    let game_info = game_name.map(|name| {
+        rekindle_protocol::dht::community::envelope::PresenceGameInfo {
+            game_name: name,
+            game_id,
+            elapsed_seconds,
+            server_address: server_address.clone(),
+        }
+    });
+
+    send_to_coordinator(
         state.inner(),
-        pool.inner(),
         &community_id,
-        request,
+        rekindle_protocol::dht::community::envelope::CommunityEnvelope::PresenceUpdate {
+            pseudonym_key,
+            status,
+            game_info,
+            route_blob: crate::state_helpers::our_route_blob(state.inner()),
+        },
     )
-    .await?;
-    match response {
-        rekindle_protocol::messaging::CommunityResponse::Ok => Ok(()),
-        rekindle_protocol::messaging::CommunityResponse::Error { message, .. } => Err(message),
-        _ => Err("unexpected response".into()),
-    }
+    .await
 }
 
 /// Get members of a community from the local cache.
@@ -3549,7 +3417,8 @@ pub async fn get_community_members(
                     crate::state::UserStatus::Online => "online",
                     crate::state::UserStatus::Away => "away",
                     crate::state::UserStatus::Busy => "busy",
-                    crate::state::UserStatus::Offline => "offline",
+                    crate::state::UserStatus::Offline
+                    | crate::state::UserStatus::Invisible => "offline",
                 }
             } else {
                 "online" // default for other members — server presence tracking TODO
@@ -3586,234 +3455,7 @@ pub async fn get_community_members(
     Ok(members)
 }
 
-/// Ensure the community server is running and knows about this community.
-///
-/// If the server is not running, spawns it. If it is already running, sends an
-/// IPC `HostCommunity` command for the new community. Then registers the creator
-/// as the first member via IPC Join, and fetches the server's route blob from DHT
-/// in the background for remote clients.
-async fn ensure_community_hosted(app: &tauri::AppHandle, state: &SharedState, community_id: &str) {
-    // Gather community data + creator pseudonym for the HostCommunity IPC.
-    // The creator is registered atomically during host_community on the server,
-    // eliminating the race condition where a separate Join RPC would need to
-    // arrive after the (slow) hosting process completes.
-    let community_data = {
-        let communities = state.communities.read();
-        communities.get(community_id).and_then(|c| {
-            let dht_key = c.dht_record_key.as_ref()?;
-            let keypair = c.dht_owner_keypair.as_ref()?;
-            let pseudonym = c.my_pseudonym_key.clone().unwrap_or_default();
-            Some((
-                c.id.clone(),
-                dht_key.clone(),
-                keypair.clone(),
-                c.name.clone(),
-                pseudonym,
-            ))
-        })
-    };
-
-    let creator_display_name = state
-        .identity
-        .read()
-        .as_ref()
-        .map(|id| id.display_name.clone())
-        .unwrap_or_default();
-
-    // Track the pseudonym key for broadcast subscription
-    let broadcast_pseudonym = community_data
-        .as_ref()
-        .map(|(_, _, _, _, p)| p.clone())
-        .filter(|p| !p.is_empty());
-
-    if state.server_process.lock().is_some() {
-        // Server already running — send IPC to host this new community
-        if let Some((cid, dht_key, keypair, nm, pseudonym)) = community_data.clone() {
-            let cdn = creator_display_name.clone();
-            let socket_path = crate::ipc_client::default_socket_path();
-            match crate::ipc_client::host_community_async(
-                &socket_path, &cid, &dht_key, &keypair, &nm, &pseudonym, &cdn, 5,
-            )
-            .await
-            {
-                Ok(()) => {
-                    tracing::info!(community = %community_id, "community hosted via IPC (creator registered)");
-                }
-                Err(e) => {
-                    tracing::error!(community = %community_id, error = %e, "HostCommunity IPC failed");
-                }
-            }
-        }
-    } else {
-        // First community — spawn the server (it will host all owned communities
-        // from DB on startup, but the new community needs an explicit HostCommunity).
-        super::auth::maybe_spawn_server(app, state);
-
-        // The server needs a moment to start up. Send HostCommunity with retries.
-        if let Some((cid, dht_key, keypair, nm, pseudonym)) = community_data.clone() {
-            let cdn = creator_display_name.clone();
-            let socket_path = crate::ipc_client::default_socket_path();
-            match crate::ipc_client::host_community_async(
-                &socket_path, &cid, &dht_key, &keypair, &nm, &pseudonym, &cdn, 10,
-            )
-            .await
-            {
-                Ok(()) => {
-                    tracing::info!(community = %community_id, "community hosted via IPC after server spawn");
-                }
-                Err(e) => {
-                    tracing::error!(community = %community_id, error = %e, "HostCommunity IPC failed after spawn");
-                }
-            }
-        }
-    }
-
-    // Start IPC broadcast listener for this community's pseudonym key
-    if let Some(pseudonym_key) = broadcast_pseudonym {
-        let socket_path = crate::ipc_client::default_socket_path();
-        let bg_state = state.clone();
-        let bg_app = app.clone();
-        super::auth::start_broadcast_listener_for(
-            &socket_path,
-            vec![pseudonym_key],
-            bg_state,
-            bg_app,
-        );
-    }
-
-    // Fetch the server's route blob from DHT in the background.
-    // Remote clients need this to send Veilid app_call to the server.
-    // This is NOT needed for the creator's IPC-based communication.
-    let bg_state = state.clone();
-    let bg_app = app.clone();
-    let bg_community_id = community_id.to_string();
-    tauri::async_runtime::spawn(async move {
-        fetch_and_persist_route_blob(&bg_app, &bg_state, &bg_community_id).await;
-    });
-}
-
-/// Fetch the server's route blob from DHT and persist it.
-///
-/// This is run in the background after community creation. Remote clients
-/// need the route blob to send Veilid `app_call` to the server, but the
-/// creator's IPC-based communication doesn't need it.
-async fn fetch_and_persist_route_blob(
-    app: &tauri::AppHandle,
-    state: &SharedState,
-    community_id: &str,
-) {
-    // Generous retry: server needs to start, attach to Veilid, open DHT, publish route
-    for attempt in 0..20u32 {
-        if attempt > 0 {
-            let delay = std::time::Duration::from_secs((3 * u64::from(attempt)).min(30));
-            tokio::time::sleep(delay).await;
-        }
-        if let Some(blob) = fetch_server_route_blob(state, community_id).await {
-            {
-                let mut communities = state.communities.write();
-                if let Some(c) = communities.get_mut(community_id) {
-                    c.server_route_blob = Some(blob.clone());
-                }
-            }
-            persist_server_route_blob(app, community_id, &blob);
-            tracing::info!(
-                community = %community_id, attempt,
-                "server route blob fetched and persisted"
-            );
-            return;
-        }
-    }
-    tracing::error!(
-        community = %community_id,
-        "failed to fetch server route blob after 20 attempts"
-    );
-}
-
-/// Fetch the community server's route blob from DHT subkey 6.
-///
-/// Retries a few times with delay since the server may still be publishing
-/// after startup. Returns `None` if the route blob is not yet available.
-async fn fetch_server_route_blob(state: &SharedState, community_id: &str) -> Option<Vec<u8>> {
-    let dht_record_key = {
-        let communities = state.communities.read();
-        communities.get(community_id)?.dht_record_key.clone()?
-    };
-
-    let routing_context = {
-        let node = state.node.read();
-        let nh = node.as_ref()?;
-        nh.routing_context.clone()
-    };
-
-    // The server needs time to start: up to 30s for Veilid attach + 5 DHT
-    // retries with exponential backoff. Use generous retry timing here.
-    for attempt in 0..10u32 {
-        if attempt > 0 {
-            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-        }
-
-        let mgr = rekindle_protocol::dht::DHTManager::new(routing_context.clone());
-        if mgr.open_record(&dht_record_key).await.is_err() {
-            continue;
-        }
-
-        let blob = mgr
-            .get_value(
-                &dht_record_key,
-                rekindle_protocol::dht::community::SUBKEY_SERVER_ROUTE,
-            )
-            .await
-            .ok()
-            .flatten();
-
-        let _ = mgr.close_record(&dht_record_key).await;
-
-        if blob.is_some() {
-            tracing::debug!(
-                community = %community_id,
-                attempt,
-                "fetched server route blob from DHT"
-            );
-            return blob;
-        }
-    }
-
-    tracing::warn!(
-        community = %community_id,
-        "server route blob not available after retries"
-    );
-    None
-}
-
-/// Persist a community's `server_route_blob` to `SQLite`.
-///
-/// Called when the route blob is first fetched from DHT (after creation) or
-/// when a DHT watch notifies us of a route change. Ensures the route survives
-/// logout/restart without needing to re-fetch from DHT.
-pub(crate) fn persist_server_route_blob(
-    app: &tauri::AppHandle,
-    community_id: &str,
-    route_blob: &[u8],
-) {
-    use tauri::Manager as _;
-    let pool: tauri::State<'_, db::DbPool> = app.state();
-    let state: tauri::State<'_, SharedState> = app.state();
-    let owner_key = state
-        .identity
-        .read()
-        .as_ref()
-        .map(|id| id.public_key.clone())
-        .unwrap_or_default();
-    let cid = community_id.to_string();
-    let blob = route_blob.to_vec();
-    db_fire(pool.inner(), "persist server_route_blob", move |conn| {
-        conn.execute(
-            "UPDATE communities SET server_route_blob = ?1 WHERE owner_key = ?2 AND id = ?3",
-            rusqlite::params![blob, owner_key, cid],
-        )?;
-        Ok(())
-    });
-}
+// Legacy server hosting functions removed — coordinator model replaces server process
 
 // ---------------------------------------------------------------------------
 // B.7: Older message pagination
@@ -4075,5 +3717,126 @@ pub async fn get_unread_counts(
         other => Err(format!(
             "unexpected server response for GetUnreadCounts: {other:?}"
         )),
+    }
+}
+
+// ── Onboarding & Welcome Screen ──
+
+/// Get the onboarding config for a community.
+#[tauri::command]
+pub async fn get_onboarding_config(
+    state: State<'_, SharedState>,
+    community_id: String,
+) -> Result<serde_json::Value, String> {
+    let rc = state_helpers::routing_context(&state).ok_or("not attached")?;
+    let mgr = rekindle_protocol::dht::DHTManager::new(rc);
+    let manifest_key = manifest_key_for(&state, &community_id)?;
+    let config = rekindle_protocol::dht::community::manifest::read_onboarding(&mgr, &manifest_key)
+        .await
+        .map_err(|e| format!("read onboarding: {e}"))?
+        .unwrap_or_default();
+    serde_json::to_value(&config).map_err(|e| format!("serialize: {e}"))
+}
+
+/// Set the onboarding config for a community (admin only).
+#[tauri::command]
+pub async fn set_onboarding_config(
+    state: State<'_, SharedState>,
+    community_id: String,
+    config: serde_json::Value,
+) -> Result<(), String> {
+    require_manage_community(&state, &community_id)?;
+    let rc = state_helpers::routing_context(&state).ok_or("not attached")?;
+    let mgr = rekindle_protocol::dht::DHTManager::new(rc);
+    let manifest_key = manifest_key_for(&state, &community_id)?;
+    let config: rekindle_protocol::dht::community::onboarding::OnboardingConfig =
+        serde_json::from_value(config).map_err(|e| format!("invalid config: {e}"))?;
+    rekindle_protocol::dht::community::manifest::write_onboarding(&mgr, &manifest_key, &config)
+        .await
+        .map_err(|e| format!("write onboarding: {e}"))
+}
+
+/// Get the welcome screen for a community.
+#[tauri::command]
+pub async fn get_welcome_screen(
+    state: State<'_, SharedState>,
+    community_id: String,
+) -> Result<serde_json::Value, String> {
+    let rc = state_helpers::routing_context(&state).ok_or("not attached")?;
+    let mgr = rekindle_protocol::dht::DHTManager::new(rc);
+    let manifest_key = manifest_key_for(&state, &community_id)?;
+    let screen = rekindle_protocol::dht::community::manifest::read_welcome(&mgr, &manifest_key)
+        .await
+        .map_err(|e| format!("read welcome: {e}"))?
+        .unwrap_or_default();
+    serde_json::to_value(&screen).map_err(|e| format!("serialize: {e}"))
+}
+
+/// Set the welcome screen for a community (admin only).
+#[tauri::command]
+pub async fn set_welcome_screen(
+    state: State<'_, SharedState>,
+    community_id: String,
+    screen: serde_json::Value,
+) -> Result<(), String> {
+    require_manage_community(&state, &community_id)?;
+    let rc = state_helpers::routing_context(&state).ok_or("not attached")?;
+    let mgr = rekindle_protocol::dht::DHTManager::new(rc);
+    let manifest_key = manifest_key_for(&state, &community_id)?;
+    let screen: rekindle_protocol::dht::community::onboarding::WelcomeScreen =
+        serde_json::from_value(screen).map_err(|e| format!("invalid screen: {e}"))?;
+    rekindle_protocol::dht::community::manifest::write_welcome(&mgr, &manifest_key, &screen)
+        .await
+        .map_err(|e| format!("write welcome: {e}"))
+}
+
+/// Submit onboarding answers for a community.
+#[tauri::command]
+pub async fn submit_onboarding_answers(
+    state: State<'_, SharedState>,
+    community_id: String,
+    answers: Vec<serde_json::Value>,
+) -> Result<(), String> {
+    let answers: Vec<rekindle_protocol::dht::community::envelope::OnboardingAnswer> = answers
+        .into_iter()
+        .map(|v| serde_json::from_value(v).map_err(|e| format!("invalid answer: {e}")))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let envelope = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
+        rekindle_protocol::dht::community::envelope::ControlPayload::SubmitOnboardingAnswers {
+            answers,
+        },
+    );
+    send_to_coordinator(state.inner(), &community_id, envelope).await
+}
+
+// ── Helpers ──
+
+/// Get the manifest key for a community.
+fn manifest_key_for(state: &SharedState, community_id: &str) -> Result<String, String> {
+    let communities = state.communities.read();
+    communities
+        .get(community_id)
+        .and_then(|c| c.manifest_key.clone().or_else(|| Some(c.id.clone())))
+        .ok_or_else(|| "community not found".to_string())
+}
+
+/// Check that the current user has MANAGE_COMMUNITY or ADMINISTRATOR permission.
+fn require_manage_community(state: &SharedState, community_id: &str) -> Result<(), String> {
+    use rekindle_protocol::dht::community::permissions_v2::Permissions;
+    let communities = state.communities.read();
+    let community = communities
+        .get(community_id)
+        .ok_or("community not found")?;
+    let my_perms_bits = community
+        .my_role_ids
+        .iter()
+        .filter_map(|rid| community.roles.iter().find(|r| r.id == *rid))
+        .fold(0u64, |acc, r| acc | r.permissions);
+    let perms = Permissions::from_bits_truncate(my_perms_bits);
+    if perms.contains(Permissions::MANAGE_COMMUNITY) || perms.contains(Permissions::ADMINISTRATOR) {
+        Ok(())
+    } else {
+        Err("missing MANAGE_COMMUNITY permission".into())
     }
 }

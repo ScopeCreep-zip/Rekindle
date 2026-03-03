@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// Events streamed from Rust to the frontend for community operations.
 #[derive(Debug, Clone, Serialize)]
@@ -256,7 +256,7 @@ pub struct EventRsvpInfoDto {
 }
 
 /// Role DTO for frontend consumption (mirrors protocol's `RoleDto`).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RoleDto {
     pub id: u32,
