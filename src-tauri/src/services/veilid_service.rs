@@ -241,13 +241,13 @@ async fn handle_relayed_envelope(
             );
         }
         CommunityEnvelope::Control(payload) => {
-            handle_relayed_control(app_handle, state, &community_id, payload);
+            handle_relayed_control(app_handle, state, &community_id, payload).await;
         }
     }
 }
 
 /// Handle a relayed control payload.
-fn handle_relayed_control(
+async fn handle_relayed_control(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     community_id: &str,
@@ -257,6 +257,45 @@ fn handle_relayed_control(
     use rekindle_protocol::dht::community::envelope::ControlPayload;
 
     match payload {
+        // MemberJoinRequest — only received by the coordinator's own UI path.
+        // The relay already processed the join (added to registry, sent JoinAccepted,
+        // broadcast MemberJoined to others). Emit MemberJoined locally so the
+        // coordinator's frontend also sees the new member.
+        ControlPayload::MemberJoinRequest {
+            pseudonym_key,
+            display_name,
+            ..
+        } => {
+            let pool: tauri::State<'_, DbPool> = app_handle.state();
+            let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
+            let cid = community_id.to_string();
+            let pk = pseudonym_key.clone();
+            let dn = display_name.clone();
+            let role_ids = vec![0_u32, 1];
+            let rids = role_ids.clone();
+            crate::db_helpers::db_fire(pool.inner(), "persist MemberJoinRequest (coordinator)", move |conn| {
+                let role_ids_json =
+                    serde_json::to_string(&rids).unwrap_or_else(|_| "[0,1]".into());
+                let now = crate::db::timestamp_now();
+                conn.execute(
+                    "INSERT OR IGNORE INTO community_members \
+                     (owner_key, community_id, pseudonym_key, display_name, role_ids, joined_at) \
+                     VALUES (?, ?, ?, ?, ?, ?)",
+                    rusqlite::params![owner_key, cid, pk, dn, role_ids_json, now],
+                )?;
+                Ok(())
+            });
+
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::MemberJoined {
+                    community_id: community_id.to_string(),
+                    pseudonym_key,
+                    display_name,
+                    role_ids,
+                },
+            );
+        }
         ControlPayload::MemberJoined {
             pseudonym_key,
             display_name,
@@ -464,7 +503,8 @@ fn handle_relayed_control(
                 &role_ids,
                 &roles,
                 &members,
-            );
+            )
+            .await;
         }
         // JoinRejected — coordinator denied our join request
         ControlPayload::JoinRejected { reason } => {
@@ -786,7 +826,7 @@ fn handle_relayed_control_extended(
 ///
 /// Updates local community state with fresh MEK, roles, channels, and members.
 /// Persists member list to SQLite so `get_community_members` returns all members.
-fn handle_join_accepted(
+async fn handle_join_accepted(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     community_id: &str,
@@ -876,13 +916,15 @@ fn handle_join_accepted(
         }
     }
 
-    // 5. Persist members to SQLite so get_community_members returns all members
+    // 5. Persist members to SQLite so get_community_members returns all members.
+    //    Use db_call (blocking) so the write completes BEFORE we emit the frontend
+    //    event — otherwise getCommunityMembers may return an empty list.
     if !parsed_members.is_empty() {
         let pool: tauri::State<'_, DbPool> = app_handle.state();
         let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
         let cid = community_id.to_string();
         let members_for_db = parsed_members.clone();
-        crate::db_helpers::db_fire(pool.inner(), "persist JoinAccepted members", move |conn| {
+        let result = crate::db_helpers::db_call(pool.inner(), move |conn| {
             for m in &members_for_db {
                 let role_ids_json =
                     serde_json::to_string(&m.role_ids).unwrap_or_else(|_| "[0,1]".into());
@@ -904,10 +946,30 @@ fn handle_join_accepted(
                 )?;
             }
             Ok(())
-        });
+        })
+        .await;
+        if let Err(e) = result {
+            tracing::warn!(community = %community_id, error = %e, "failed to persist JoinAccepted members to SQLite");
+        }
     }
 
-    // 6. Notify frontend
+    // 6. Persist MEK to Stronghold so it survives app restarts.
+    //    The persist_mek call in join_community_command runs BEFORE JoinAccepted
+    //    arrives (join is async fire-and-forget), so it finds nothing in mek_cache.
+    //    We must persist here, after the MEK is cached.
+    if !mek_wire_bytes.is_empty() {
+        let ks_handle: tauri::State<'_, crate::keystore::KeystoreHandle> = app_handle.state();
+        let ks = ks_handle.lock();
+        if let Some(ref keystore) = *ks {
+            let mek_cache = state.mek_cache.lock();
+            if let Some(mek) = mek_cache.get(community_id) {
+                crate::keystore::persist_mek(keystore, community_id, mek);
+                tracing::debug!(community = %community_id, "persisted MEK to Stronghold after JoinAccepted");
+            }
+        }
+    }
+
+    // 7. Notify frontend
     let _ = app_handle.emit(
         "community-event",
         CommunityEvent::JoinAccepted {
