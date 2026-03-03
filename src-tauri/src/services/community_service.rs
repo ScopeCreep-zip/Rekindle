@@ -277,7 +277,8 @@ pub async fn join_community(
 
     state.communities.write().insert(community_id.to_string(), community);
 
-    // 5. Send MemberJoinRequest envelope to coordinator (fire-and-forget)
+    // 5. Send MemberJoinRequest envelope to coordinator (fire-and-forget).
+    //    send_to_coordinator retries once with a fresh DHT route on connection errors.
     let join_envelope = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
         rekindle_protocol::dht::community::envelope::ControlPayload::MemberJoinRequest {
             pseudonym_key: my_pseudonym_key.unwrap_or_default(),
@@ -287,7 +288,6 @@ pub async fn join_community(
             prekey_bundle: None,
         },
     );
-    // Use the community commands module's send_to_coordinator
     crate::commands::community::send_to_coordinator(state, community_id, join_envelope).await?;
 
     // 6. Start coordinator service (election watcher)
