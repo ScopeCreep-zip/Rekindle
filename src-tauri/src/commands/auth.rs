@@ -148,7 +148,8 @@ pub async fn create_identity(
             account_owner_keypair: None,
             mailbox_dht_key: None,
         },
-    );
+    )
+    .await;
 
     Ok(result)
 }
@@ -305,7 +306,8 @@ pub async fn login(
     )
     .await?;
 
-    // Spawn background services (non-blocking — returns immediately)
+    // Spawn background services — awaits coordinator route restoration so communities
+    // are usable immediately after login returns.
     start_background_services(
         &app,
         state.inner(),
@@ -320,7 +322,8 @@ pub async fn login(
             account_owner_keypair: dht_cols.account_owner_keypair,
             mailbox_dht_key: dht_cols.mailbox_dht_key,
         },
-    );
+    )
+    .await;
 
     // Wait for Veilid network + sync friends so hydrateState() gets real statuses.
     // The node starts at app launch, so this is usually instant on re-login
@@ -946,7 +949,7 @@ pub struct DhtKeysConfig {
 /// Veilid node (started at app launch) for DHT publishing, sync, and messaging.
 /// Game detection and sync services are spawned as background tasks so login
 /// returns near-instantly to the frontend.
-fn start_background_services(
+async fn start_background_services(
     app: &tauri::AppHandle,
     state: &SharedState,
     pool: &DbPool,
@@ -974,14 +977,14 @@ fn start_background_services(
 
     // The Veilid node is already running (started at app startup).
     // Just spawn sync + DHT publish as background tasks.
-    spawn_login_services(app, state, pool.clone(), prekey_bundle_bytes, dht_keys);
+    spawn_login_services(app, state, pool.clone(), prekey_bundle_bytes, dht_keys).await;
 }
 
 /// Background task: start sync service and DHT publish using the existing node.
 ///
 /// The Veilid node and dispatch loop are already running (started at app startup).
 /// This function only spawns user-specific services: sync and DHT publish.
-fn spawn_login_services(
+async fn spawn_login_services(
     app: &tauri::AppHandle,
     state: &SharedState,
     pool: DbPool,
@@ -1079,12 +1082,8 @@ fn spawn_login_services(
     }
 
     // Populate coordinator route blobs from DHT for all communities.
-    // This must complete before the communities are usable (send_to_coordinator needs the route).
-    let restore_state = Arc::clone(state);
-    let restore_handle = tauri::async_runtime::spawn(async move {
-        restore_coordinator_routes(&restore_state).await;
-    });
-    state.background_handles.lock().push(restore_handle);
+    // Awaited (not spawned) so communities are usable when login returns to the frontend.
+    restore_coordinator_routes(state).await;
 }
 
 

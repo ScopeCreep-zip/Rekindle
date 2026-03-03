@@ -91,16 +91,19 @@ impl RelayService {
     }
 
     /// Update the online member list from the member registry.
+    /// Excludes the coordinator's own pseudonym to prevent relay loops.
     pub(crate) async fn refresh_online_members(&self, state: &Arc<AppState>) {
         let Some(rc) = state_helpers::routing_context(state) else {
             return;
         };
 
-        let registry_key = {
+        let (registry_key, my_pseudonym) = {
             let communities = state.communities.read();
-            communities
-                .get(&self.community_id)
-                .and_then(|c| c.member_registry_key.clone())
+            let c = communities.get(&self.community_id);
+            (
+                c.and_then(|c| c.member_registry_key.clone()),
+                c.and_then(|c| c.my_pseudonym_key.clone()),
+            )
         };
 
         let Some(registry_key) = registry_key else {
@@ -118,9 +121,12 @@ impl RelayService {
             }
         };
 
-        // Read each member's presence to get their route blob
+        // Read each member's presence to get their route blob (skip self)
         let mut online = HashMap::new();
         for member in &members {
+            if my_pseudonym.as_deref() == Some(&member.pseudonym_key) {
+                continue;
+            }
             match member_registry::read_member_presence(
                 &mgr,
                 &registry_key,
@@ -307,8 +313,33 @@ pub async fn handle_incoming_envelope(
         CommunityEnvelope::PresenceUpdate {
             ref pseudonym_key,
             ref status,
+            ref route_blob,
             ..
         } => {
+            // Update the online_members cache with the sender's route.
+            // Skip the coordinator's own pseudonym — the coordinator handles
+            // messages locally (via send_to_coordinator loopback), so adding it
+            // to online_members would cause infinite relay loops.
+            let is_self = {
+                let communities = state.communities.read();
+                communities
+                    .get(&relay.community_id)
+                    .and_then(|c| c.my_pseudonym_key.as_ref())
+                    .is_some_and(|pk| pk == pseudonym_key)
+            };
+            if !is_self {
+                if let Some(blob) = route_blob {
+                    if status == "offline" {
+                        relay.online_members.write().remove(pseudonym_key);
+                    } else {
+                        relay
+                            .online_members
+                            .write()
+                            .insert(pseudonym_key.clone(), blob.clone());
+                    }
+                }
+            }
+
             // Invisible members: rewrite status to "offline" for fan-out.
             // The invisible member still receives all messages (they're in online_members).
             if status == "invisible" {
@@ -447,6 +478,14 @@ async fn handle_control(
                     );
                 }
 
+                // Track the new member as online for message relay
+                if let Some(ref blob) = member_route {
+                    relay_clone
+                        .online_members
+                        .write()
+                        .insert(joiner_pseudonym.clone(), blob.clone());
+                }
+
                 // Send JoinAccepted to the joining member
                 if let Some(blob) = &member_route {
                     send_join_accepted(
@@ -516,9 +555,10 @@ async fn handle_control(
             });
         }
 
-        // Member leave — relay + system message
+        // Member leave — relay + system message + remove from online cache
         ControlPayload::MemberLeave { ref pseudonym_key } => {
             let who = pseudonym_key.clone();
+            relay.online_members.write().remove(pseudonym_key);
             relay_to_members(state, relay, signed_bytes, sender_pseudonym);
             broadcast_system_message(state, relay, &format!("{who} left the community"));
         }
@@ -527,6 +567,7 @@ async fn handle_control(
         ControlPayload::Kick { target_pseudonym, .. } => {
             if base_perms.has(Permissions::KICK_MEMBERS) {
                 let target = target_pseudonym.clone();
+                relay.online_members.write().remove(target_pseudonym);
                 relay_to_members(state, relay, signed_bytes, sender_pseudonym);
                 broadcast_system_message(state, relay, &format!("{target} was kicked"));
                 log_audit(state, relay, AuditAction::MemberKick, AuditTarget::Member(target), vec![], None);
@@ -535,6 +576,7 @@ async fn handle_control(
         ControlPayload::Ban { target_pseudonym, .. } => {
             if base_perms.has(Permissions::BAN_MEMBERS) {
                 let target = target_pseudonym.clone();
+                relay.online_members.write().remove(target_pseudonym);
                 relay_to_members(state, relay, signed_bytes, sender_pseudonym);
                 broadcast_system_message(state, relay, &format!("{target} was banned"));
                 log_audit(state, relay, AuditAction::MemberBan, AuditTarget::Member(target), vec![], None);

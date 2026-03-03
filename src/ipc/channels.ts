@@ -88,6 +88,10 @@ export type VoiceEvent =
 
 export type CommunityEvent =
   | {
+      type: "joinAccepted";
+      data: { communityId: string };
+    }
+  | {
       type: "memberJoined";
       data: {
         communityId: string;
