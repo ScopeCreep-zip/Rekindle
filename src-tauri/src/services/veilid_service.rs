@@ -1578,20 +1578,42 @@ pub(crate) async fn route_refresh_loop(
                     tracing::debug!("proactive route refresh: re-allocating private route");
                     reallocate_private_route(&app_handle, &state).await;
 
-                    // After route reallocation, re-announce to ALL community servers
-                    // (including hosted) so they update our stale route_blob.
-                    // After route refresh, re-announce presence to all communities
-                    // so the coordinator has our latest route.
-                    let communities_to_rejoin: Vec<String> = {
+                    // For communities where we ARE the coordinator, immediately write
+                    // the new route blob to the manifest so joiners don't get stale routes.
+                    // For other communities, re-announce presence to the coordinator.
+                    let all_community_ids: Vec<String> = {
                         let communities = state.communities.read();
                         communities.keys().cloned().collect()
                     };
-                    for community_id in &communities_to_rejoin {
-                        let _ = crate::services::community_service::rejoin_community(
-                            &state,
-                            community_id,
-                        )
-                        .await;
+                    for community_id in &all_community_ids {
+                        let is_coordinator = {
+                            let services = state.coordinator_services.read();
+                            services
+                                .get(community_id)
+                                .is_some_and(super::coordinator::CoordinatorServiceHandle::is_coordinator)
+                        };
+                        if is_coordinator {
+                            // Write heartbeat immediately with new route blob
+                            if let Err(e) = super::coordinator::heartbeat::write_heartbeat_now(
+                                &state,
+                                community_id,
+                            )
+                            .await
+                            {
+                                tracing::warn!(
+                                    community = %community_id,
+                                    error = %e,
+                                    "failed to write immediate heartbeat after route refresh"
+                                );
+                            }
+                        } else {
+                            // Re-announce presence to the coordinator
+                            let _ = crate::services::community_service::rejoin_community(
+                                &state,
+                                community_id,
+                            )
+                            .await;
+                        }
                     }
                 }
             }

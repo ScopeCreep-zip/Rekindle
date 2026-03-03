@@ -63,6 +63,11 @@ pub async fn run_coordinator_heartbeat(
     }
 }
 
+/// Write a heartbeat immediately (called after route refresh to prevent stale routes).
+pub async fn write_heartbeat_now(state: &Arc<AppState>, community_id: &str) -> Result<(), String> {
+    write_heartbeat(state, community_id).await
+}
+
 /// Write a heartbeat to the manifest coordinator subkey.
 async fn write_heartbeat(state: &Arc<AppState>, community_id: &str) -> Result<(), String> {
     // Clone routing context and community data BEFORE .await (parking_lot guard is !Send)

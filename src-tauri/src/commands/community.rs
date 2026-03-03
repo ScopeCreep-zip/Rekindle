@@ -1521,9 +1521,67 @@ pub(crate) async fn send_to_coordinator(
     let rc = state_helpers::routing_context(state).ok_or("Veilid network not attached")?;
     let route_id =
         state_helpers::import_route_blob(state, &route_blob).map_err(|e| format!("route: {e}"))?;
-    rc.app_message(veilid_core::Target::RouteId(route_id), signed_bytes)
-        .await
-        .map_err(|e| format!("app_message: {e}"))
+
+    let send_result = rc
+        .app_message(
+            veilid_core::Target::RouteId(route_id),
+            signed_bytes.clone(),
+        )
+        .await;
+
+    if send_result.is_ok() {
+        return Ok(());
+    }
+
+    // First attempt failed — likely stale route blob (error 104: connection reset).
+    // Re-read coordinator info from the DHT manifest and retry once.
+    let first_err = send_result.unwrap_err();
+    tracing::warn!(
+        community = %community_id,
+        error = %first_err,
+        "send_to_coordinator failed — re-fetching coordinator route from DHT"
+    );
+
+    let manifest_key = {
+        let communities = state.communities.read();
+        communities
+            .get(community_id)
+            .and_then(|c| c.manifest_key.clone().or_else(|| Some(c.id.clone())))
+    };
+    let Some(manifest_key) = manifest_key else {
+        return Err(format!("app_message: {first_err}"));
+    };
+
+    let mgr = rekindle_protocol::dht::DHTManager::new(rc.clone());
+    let fresh_coord = match rekindle_protocol::dht::community::manifest::read_coordinator(
+        &mgr,
+        &manifest_key,
+    )
+    .await
+    {
+        Ok(Some(info)) if !info.route_blob.is_empty() => info,
+        _ => return Err(format!("app_message: {first_err}")),
+    };
+
+    // Update coordinator route in state
+    {
+        let mut communities = state.communities.write();
+        if let Some(c) = communities.get_mut(community_id) {
+            c.coordinator_route_blob = Some(fresh_coord.route_blob.clone());
+            c.coordinator_pseudonym = Some(fresh_coord.pseudonym_key);
+            c.coordinator_epoch = fresh_coord.epoch;
+        }
+    }
+
+    // Retry with fresh route
+    let retry_route_id = state_helpers::import_route_blob(state, &fresh_coord.route_blob)
+        .map_err(|e| format!("retry route: {e}"))?;
+    rc.app_message(
+        veilid_core::Target::RouteId(retry_route_id),
+        signed_bytes,
+    )
+    .await
+    .map_err(|e| format!("app_message retry: {e}"))
 }
 
 // All traffic routes through the coordinator via send_to_coordinator —
