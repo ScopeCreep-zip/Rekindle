@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use rekindle_protocol::dht::community::{manifest, member_registry, permissions_v2};
-use rekindle_protocol::dht::community::SUBKEY_CHANNELS;
 use rekindle_protocol::dht::community::types::{
     ChannelEntryV2, ChannelKind, CommunityMetadataV2, CoordinatorInfo, MemberSummary, RoleEntryV2,
 };
@@ -292,116 +291,6 @@ pub async fn join_community(
 
     tracing::info!(community = %community_id, "join request sent to coordinator");
     Ok(())
-}
-
-/// Create a new channel within a community.
-///
-/// Only users with "owner" or "admin" role can create channels.
-pub async fn create_channel(
-    state: &Arc<AppState>,
-    community_id: &str,
-    channel_name: &str,
-    channel_type: &str,
-) -> Result<String, String> {
-    // Permission-based access check and collect current channels + DHT key
-    let (existing_channels, dht_record_key, is_owner) = {
-        use rekindle_protocol::dht::community::permissions;
-
-        let communities = state.communities.read();
-        let community = communities
-            .get(community_id)
-            .ok_or_else(|| format!("community {community_id} not found"))?;
-
-        // Compute base permissions by OR'ing all role permissions for our role IDs
-        let my_perms = community.my_role_ids.iter().fold(0u64, |acc, role_id| {
-            community
-                .roles
-                .iter()
-                .find(|r| r.id == *role_id)
-                .map_or(acc, |r| acc | r.permissions)
-        });
-        if !permissions::has_permission(my_perms, permissions::MANAGE_CHANNELS) {
-            return Err(
-                "insufficient permissions: you do not have MANAGE_CHANNELS permission".to_string(),
-            );
-        }
-
-        (
-            community.channels.clone(),
-            community.dht_record_key.clone(),
-            community.dht_owner_keypair.is_some(),
-        )
-    };
-
-    let channel_id = format!("channel_{}", hex::encode(rand_bytes(8)));
-
-    let channel = ChannelInfo {
-        id: channel_id.clone(),
-        name: channel_name.to_string(),
-        channel_type: channel_type.parse().unwrap_or(ChannelType::Text),
-        unread_count: 0,
-        category_id: None,
-        topic: String::new(),
-        slowmode_seconds: None,
-        nsfw: false,
-        message_record_key: None,
-        mek_generation: 0,
-    };
-
-    // Add to community state
-    {
-        let communities = state.communities.read();
-        if !communities.contains_key(community_id) {
-            return Err(format!("community {community_id} not found"));
-        }
-    }
-    state_helpers::push_community_channel(state, community_id, channel);
-
-    // Update community DHT record subkey 1 (channel list).
-    // Only the owner (who holds the keypair) can write to DHT directly.
-    if is_owner {
-        if let Some(dht_key) = &dht_record_key {
-            let routing_context = state_helpers::routing_context(state);
-
-            if let Some(rc) = routing_context {
-                let mgr = DHTManager::new(rc);
-
-                let mut all_channels = existing_channels;
-                all_channels.push(ChannelInfo {
-                    id: channel_id.clone(),
-                    name: channel_name.to_string(),
-                    channel_type: channel_type.parse().unwrap_or(ChannelType::Text),
-                    unread_count: 0,
-                    category_id: None,
-                    topic: String::new(),
-                    slowmode_seconds: None,
-                    nsfw: false,
-                    message_record_key: None,
-                    mek_generation: 0,
-                });
-
-                let channels_wrapper =
-                    crate::state::serialize_channel_list_for_dht(&all_channels, 0);
-                let channels_bytes = serde_json::to_vec(&channels_wrapper)
-                    .map_err(|e| format!("failed to serialize channels: {e}"))?;
-
-                if let Err(e) = mgr
-                    .set_value(dht_key, SUBKEY_CHANNELS, channels_bytes)
-                    .await
-                {
-                    tracing::warn!(error = %e, "failed to update channel list in DHT");
-                }
-            }
-        }
-    }
-
-    tracing::info!(
-        community = %community_id,
-        channel = %channel_id,
-        name = %channel_name,
-        "channel created"
-    );
-    Ok(channel_id)
 }
 
 /// Construct a default community display name from a (potentially long) ID.

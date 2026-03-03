@@ -52,12 +52,14 @@ impl AutoModEnforcer {
     /// Check an envelope against all enabled automod rules.
     ///
     /// Returns the first non-Allow decision encountered, or `Allow` if all pass.
+    /// `slowmode_seconds` comes from the channel's config and is checked separately.
     pub fn check_envelope(
         &mut self,
         sender: &MemberSummary,
         envelope: &CommunityEnvelope,
         roles: &[RoleEntryV2],
         channel_id: Option<&str>,
+        slowmode_seconds: Option<u32>,
         now_secs: u64,
     ) -> AutoModDecision {
         // Administrators and MANAGE_COMMUNITY holders are always exempt
@@ -98,11 +100,14 @@ impl AutoModEnforcer {
         // Check slowmode (separate from rules — per-channel rate limit)
         if let (
             Some(ch_id),
+            Some(sm_secs),
             CommunityEnvelope::ChatMessage { .. },
-        ) = (channel_id, envelope)
+        ) = (channel_id, slowmode_seconds, envelope)
         {
-            if let Some(decision) = self.check_slowmode(sender, ch_id, now_secs) {
-                return decision;
+            if sm_secs > 0 {
+                if let Some(decision) = self.check_slowmode(sender, ch_id, sm_secs, now_secs) {
+                    return decision;
+                }
             }
         }
 
@@ -183,15 +188,18 @@ impl AutoModEnforcer {
         &mut self,
         sender: &MemberSummary,
         channel_id: &str,
+        slowmode_seconds: u32,
         now_secs: u64,
     ) -> Option<AutoModDecision> {
-        // Slowmode is stored per-channel in channel config, but we don't have
-        // channel slowmode seconds accessible here yet. This is a placeholder
-        // for when slowmode data is available from the manifest.
         let key = (sender.pseudonym_key.clone(), channel_id.to_string());
         if let Some(&last_send) = self.slowmode_counters.get(&key) {
-            // If we had slowmode_seconds, we'd check: now_secs - last_send < slowmode_seconds
-            let _ = last_send;
+            let elapsed = now_secs.saturating_sub(last_send);
+            if elapsed < u64::from(slowmode_seconds) {
+                let remaining = u64::from(slowmode_seconds) - elapsed;
+                return Some(AutoModDecision::Block(format!(
+                    "slowmode: wait {remaining}s"
+                )));
+            }
         }
         self.slowmode_counters.insert(key, now_secs);
         None
@@ -320,7 +328,7 @@ mod tests {
         let roles = vec![member_role()];
         let envelope = chat_message(100);
 
-        let decision = enforcer.check_envelope(&member, &envelope, &roles, Some("ch_general"), 5000);
+        let decision = enforcer.check_envelope(&member, &envelope, &roles, Some("ch_general"), None, 5000);
         assert!(matches!(decision, AutoModDecision::Allow));
     }
 
@@ -333,11 +341,11 @@ mod tests {
 
         // Send 3 messages (within limit)
         for t in 0..3 {
-            let d = enforcer.check_envelope(&member, &envelope, &roles, Some("ch_general"), 5000 + t);
+            let d = enforcer.check_envelope(&member, &envelope, &roles, Some("ch_general"), None, 5000 + t);
             assert!(matches!(d, AutoModDecision::Allow));
         }
         // 4th message should be blocked
-        let d = enforcer.check_envelope(&member, &envelope, &roles, Some("ch_general"), 5003);
+        let d = enforcer.check_envelope(&member, &envelope, &roles, Some("ch_general"), None, 5003);
         assert!(matches!(d, AutoModDecision::Block(_)));
     }
 
@@ -350,7 +358,7 @@ mod tests {
 
         // Admin should be exempt even when exceeding rate
         for t in 0..5 {
-            let d = enforcer.check_envelope(&member, &envelope, &roles, Some("ch_general"), 5000 + t);
+            let d = enforcer.check_envelope(&member, &envelope, &roles, Some("ch_general"), None, 5000 + t);
             assert!(matches!(d, AutoModDecision::Allow));
         }
     }
@@ -375,12 +383,12 @@ mod tests {
 
         // Small message passes
         let small = chat_message(500);
-        let d = enforcer.check_envelope(&member, &small, &roles, Some("ch_general"), 5000);
+        let d = enforcer.check_envelope(&member, &small, &roles, Some("ch_general"), None, 5000);
         assert!(matches!(d, AutoModDecision::Allow));
 
         // Large message blocked
         let large = chat_message(2000);
-        let d = enforcer.check_envelope(&member, &large, &roles, Some("ch_general"), 5001);
+        let d = enforcer.check_envelope(&member, &large, &roles, Some("ch_general"), None, 5001);
         assert!(matches!(d, AutoModDecision::Block(_)));
     }
 
@@ -404,11 +412,11 @@ mod tests {
         let envelope = chat_message(500);
 
         // Blocked in normal channel
-        let d = enforcer.check_envelope(&member, &envelope, &roles, Some("ch_general"), 5000);
+        let d = enforcer.check_envelope(&member, &envelope, &roles, Some("ch_general"), None, 5000);
         assert!(matches!(d, AutoModDecision::Block(_)));
 
         // Allowed in exempt channel
-        let d = enforcer.check_envelope(&member, &envelope, &roles, Some("ch_uploads"), 5001);
+        let d = enforcer.check_envelope(&member, &envelope, &roles, Some("ch_uploads"), None, 5001);
         assert!(matches!(d, AutoModDecision::Allow));
     }
 
@@ -438,11 +446,11 @@ mod tests {
 
         // 2 messages OK
         for t in 0..2 {
-            let d = enforcer.check_envelope(&member, &envelope, &roles, Some("ch_general"), 5000 + t);
+            let d = enforcer.check_envelope(&member, &envelope, &roles, Some("ch_general"), None, 5000 + t);
             assert!(matches!(d, AutoModDecision::Allow));
         }
         // 3rd triggers timeout
-        let d = enforcer.check_envelope(&member, &envelope, &roles, Some("ch_general"), 5002);
+        let d = enforcer.check_envelope(&member, &envelope, &roles, Some("ch_general"), None, 5002);
         assert!(matches!(d, AutoModDecision::Timeout { duration_secs: 300, .. }));
     }
 
@@ -457,7 +465,7 @@ mod tests {
 
         // Even 5 rapid messages should pass since rule is disabled
         for t in 0..5 {
-            let d = enforcer.check_envelope(&member, &envelope, &roles, Some("ch_general"), 5000 + t);
+            let d = enforcer.check_envelope(&member, &envelope, &roles, Some("ch_general"), None, 5000 + t);
             assert!(matches!(d, AutoModDecision::Allow));
         }
     }
@@ -471,16 +479,53 @@ mod tests {
 
         // Send 3 messages at t=1000..1002
         for t in 0..3 {
-            let d = enforcer.check_envelope(&member, &envelope, &roles, Some("ch_general"), 1000 + t);
+            let d = enforcer.check_envelope(&member, &envelope, &roles, Some("ch_general"), None, 1000 + t);
             assert!(matches!(d, AutoModDecision::Allow));
         }
         // 4th at t=1003 is blocked (but still recorded in rate counter)
-        let d = enforcer.check_envelope(&member, &envelope, &roles, Some("ch_general"), 1003);
+        let d = enforcer.check_envelope(&member, &envelope, &roles, Some("ch_general"), None, 1003);
         assert!(matches!(d, AutoModDecision::Block(_)));
 
         // After full window expires (t=1009), all old entries pruned, counter fresh
         // window_start = 1009 - 5 = 1004, so entries [1000, 1001, 1002, 1003] all pruned
-        let d = enforcer.check_envelope(&member, &envelope, &roles, Some("ch_general"), 1009);
+        let d = enforcer.check_envelope(&member, &envelope, &roles, Some("ch_general"), None, 1009);
+        assert!(matches!(d, AutoModDecision::Allow));
+    }
+
+    #[test]
+    fn slowmode_blocks_rapid_messages() {
+        // No automod rules — only slowmode
+        let config = AutoModConfig::default();
+        let mut enforcer = AutoModEnforcer::new(config);
+        let member = make_member("alice", vec![1]);
+        let roles = vec![member_role()];
+        let envelope = chat_message(100);
+
+        // First message at t=1000 passes with 10s slowmode
+        let d = enforcer.check_envelope(&member, &envelope, &roles, Some("ch_general"), Some(10), 1000);
+        assert!(matches!(d, AutoModDecision::Allow));
+
+        // Second message 5s later is blocked (within 10s slowmode)
+        let d = enforcer.check_envelope(&member, &envelope, &roles, Some("ch_general"), Some(10), 1005);
+        assert!(matches!(d, AutoModDecision::Block(_)));
+
+        // Third message 11s after first passes
+        let d = enforcer.check_envelope(&member, &envelope, &roles, Some("ch_general"), Some(10), 1011);
+        assert!(matches!(d, AutoModDecision::Allow));
+    }
+
+    #[test]
+    fn slowmode_zero_not_enforced() {
+        let config = AutoModConfig::default();
+        let mut enforcer = AutoModEnforcer::new(config);
+        let member = make_member("alice", vec![1]);
+        let roles = vec![member_role()];
+        let envelope = chat_message(100);
+
+        // slowmode_seconds=0 means no slowmode
+        let d = enforcer.check_envelope(&member, &envelope, &roles, Some("ch_general"), Some(0), 1000);
+        assert!(matches!(d, AutoModDecision::Allow));
+        let d = enforcer.check_envelope(&member, &envelope, &roles, Some("ch_general"), Some(0), 1000);
         assert!(matches!(d, AutoModDecision::Allow));
     }
 }

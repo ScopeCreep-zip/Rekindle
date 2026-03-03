@@ -56,10 +56,4 @@ pub enum ChatEvent {
     FriendRequestDelivered {
         to: String,
     },
-    /// Emitted when background server fetch completes with channel history.
-    #[serde(rename_all = "camelCase")]
-    ChannelHistoryLoaded {
-        channel_id: String,
-        messages: Vec<crate::commands::chat::Message>,
-    },
 }

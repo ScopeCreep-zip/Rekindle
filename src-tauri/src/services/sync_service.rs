@@ -823,19 +823,27 @@ async fn retry_single_pending(
         serde_json::from_str::<crate::commands::community::PendingChannelMessage>(body)
     {
         // Send through coordinator model
-        let result = crate::commands::community::send_community_rpc(
+        let message_id = format!(
+            "retry_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        );
+        let result = crate::commands::community::send_to_coordinator(
             state,
-            pool,
             &channel_msg.community_id,
-            rekindle_protocol::messaging::CommunityRequest::SendMessage {
+            rekindle_protocol::dht::community::envelope::CommunityEnvelope::ChatMessage {
                 channel_id: channel_msg.channel_id.clone(),
+                message_id,
+                author_pseudonym: String::new(), // filled by signing layer in send_to_coordinator
                 ciphertext: channel_msg.ciphertext,
                 mek_generation: channel_msg.mek_generation,
+                timestamp: channel_msg.timestamp.cast_unsigned(),
                 reply_to_id: None,
             },
         )
-        .await
-        .map(|_| ());
+        .await;
 
         match result {
             Ok(()) => {

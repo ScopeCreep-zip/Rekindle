@@ -440,7 +440,7 @@ async fn handle_community_roles_change(
         return;
     };
 
-    let roles = match rekindle_protocol::dht::community::read_roles(mgr, dht_key).await {
+    let roles = match rekindle_protocol::dht::community::manifest::read_roles(mgr, dht_key).await {
         Ok(r) => r,
         Err(e) => {
             tracing::warn!(community = %community_id, error = %e, "failed to read roles from DHT");

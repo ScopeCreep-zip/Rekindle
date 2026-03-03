@@ -619,22 +619,3 @@ pub(crate) fn parse_dht_channel_list(data: &[u8]) -> Vec<ChannelInfo> {
         .collect()
 }
 
-/// Serialize a channel list into the DHT JSON wire format:
-/// `{ "channels": [...], "lastRefreshed": N }`.
-///
-/// Counterpart to [`parse_dht_channel_list`].
-pub(crate) fn serialize_channel_list_for_dht(
-    channels: &[ChannelInfo],
-    last_refreshed: i64,
-) -> serde_json::Value {
-    serde_json::json!({
-        "channels": channels.iter().map(|ch| {
-            serde_json::json!({
-                "id": ch.id,
-                "name": ch.name,
-                "channelType": ch.channel_type.as_ref(),
-            })
-        }).collect::<Vec<_>>(),
-        "lastRefreshed": last_refreshed,
-    })
-}

@@ -35,7 +35,8 @@ export interface Role {
   id: number;
   name: string;
   color: number;
-  permissions: number;
+  /** Serialized as a string from Rust to avoid JavaScript Number precision loss on u64. */
+  permissions: string;
   position: number;
   hoist: boolean;
   mentionable: boolean;

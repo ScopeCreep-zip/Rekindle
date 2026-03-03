@@ -10,6 +10,7 @@ pub mod keystore;
 pub mod channel_repo;
 pub mod friend_repo;
 pub mod message_repo;
+pub mod serde_helpers;
 mod services;
 pub mod state;
 pub mod state_helpers;

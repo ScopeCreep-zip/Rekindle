@@ -112,7 +112,7 @@ export type CommunityEvent =
       type: "rolesChanged";
       data: {
         communityId: string;
-        roles: { id: number; name: string; color: number; permissions: number; position: number; hoist: boolean; mentionable: boolean }[];
+        roles: { id: number; name: string; color: number; permissions: string; position: number; hoist: boolean; mentionable: boolean }[];
       };
     }
   | {

@@ -202,6 +202,18 @@ CREATE TABLE IF NOT EXISTS blocked_users (
     PRIMARY KEY (owner_key, public_key)
 );
 
+-- Per-channel/community notification preferences (overrides global settings).
+-- When channel_id is NULL, the preference applies to the whole community.
+-- level: 0 = AllMessages, 1 = MentionsOnly, 2 = None (muted)
+CREATE TABLE IF NOT EXISTS notification_preferences (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    community_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL DEFAULT '',
+    level INTEGER NOT NULL DEFAULT 0
+        CHECK(level IN (0, 1, 2)),
+    PRIMARY KEY (owner_key, community_id, channel_id)
+);
+
 CREATE TABLE IF NOT EXISTS outgoing_invites (
     owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
     invite_id TEXT NOT NULL,

@@ -18,6 +18,12 @@ pub fn derive_community_pseudonym(master_secret: &[u8; 32], community_id: &str) 
     SigningKey::from_bytes(&seed)
 }
 
+/// Sign arbitrary bytes with a pseudonym signing key, returning the 64-byte signature.
+pub fn sign_with_pseudonym(signing_key: &SigningKey, data: &[u8]) -> [u8; 64] {
+    use ed25519_dalek::Signer;
+    signing_key.sign(data).to_bytes()
+}
+
 /// Convert a pseudonym Ed25519 signing key to an X25519 static secret.
 ///
 /// Uses the SHA-512-expanded scalar (same convention as `Identity::to_x25519_secret()`)
