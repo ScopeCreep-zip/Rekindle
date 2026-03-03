@@ -143,9 +143,14 @@ pub async fn create_community(
 
     state.communities.write().insert(manifest_key.clone(), community);
 
-    // 9. Start coordinator service (we are the first coordinator)
+    // 9. Start coordinator service (we are the first coordinator).
+    // Set role to Coordinator immediately — don't wait for the 5s election timer.
     let handle = super::coordinator::start(state.clone(), manifest_key.clone());
-    state.coordinator_services.write().insert(manifest_key.clone(), handle);
+    *handle.role.write() = super::coordinator::CoordinatorRole::Coordinator;
+    state
+        .coordinator_services
+        .write()
+        .insert(manifest_key.clone(), handle);
 
     tracing::info!(name = %name, manifest_key = %manifest_key, "community created with DHT records");
     Ok(manifest_key)
