@@ -137,8 +137,19 @@ async fn handle_app_message(
 
         if let Some(relay) = relay {
             // We're coordinator: relay to all members using shared relay service
-            super::coordinator::relay::handle_incoming_envelope(state, &relay, signed)
+            let is_from_self = {
+                let communities = state.communities.read();
+                communities
+                    .get(&signed.community_id)
+                    .and_then(|c| c.my_pseudonym_key.as_ref())
+                    .is_some_and(|pk| pk == &signed.sender_pseudonym)
+            };
+            super::coordinator::relay::handle_incoming_envelope(state, &relay, signed.clone())
                 .await;
+            // Also process locally so the coordinator's own UI sees messages from others
+            if !is_from_self {
+                handle_relayed_envelope(app_handle, state, signed).await;
+            }
         } else {
             // We're a member: this is a relayed message FROM the coordinator
             handle_relayed_envelope(app_handle, state, signed).await;
@@ -251,6 +262,26 @@ fn handle_relayed_control(
             display_name,
             role_ids,
         } => {
+            // Persist to SQLite so get_community_members includes the new member
+            let pool: tauri::State<'_, DbPool> = app_handle.state();
+            let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
+            let cid = community_id.to_string();
+            let pk = pseudonym_key.clone();
+            let dn = display_name.clone();
+            let rids = role_ids.clone();
+            crate::db_helpers::db_fire(pool.inner(), "persist MemberJoined", move |conn| {
+                let role_ids_json =
+                    serde_json::to_string(&rids).unwrap_or_else(|_| "[0,1]".into());
+                let now = crate::db::timestamp_now();
+                conn.execute(
+                    "INSERT OR IGNORE INTO community_members \
+                     (owner_key, community_id, pseudonym_key, display_name, role_ids, joined_at) \
+                     VALUES (?, ?, ?, ?, ?, ?)",
+                    rusqlite::params![owner_key, cid, pk, dn, role_ids_json, now],
+                )?;
+                Ok(())
+            });
+
             let _ = app_handle.emit(
                 "community-event",
                 CommunityEvent::MemberJoined {
@@ -262,6 +293,19 @@ fn handle_relayed_control(
             );
         }
         ControlPayload::MemberRemoved { pseudonym_key } => {
+            // Remove from SQLite
+            let pool: tauri::State<'_, DbPool> = app_handle.state();
+            let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
+            let cid = community_id.to_string();
+            let pk = pseudonym_key.clone();
+            crate::db_helpers::db_fire(pool.inner(), "persist MemberRemoved", move |conn| {
+                conn.execute(
+                    "DELETE FROM community_members WHERE owner_key = ? AND community_id = ? AND pseudonym_key = ?",
+                    rusqlite::params![owner_key, cid, pk],
+                )?;
+                Ok(())
+            });
+
             let _ = app_handle.emit(
                 "community-event",
                 CommunityEvent::MemberRemoved {
@@ -741,6 +785,7 @@ fn handle_relayed_control_extended(
 /// Handle a JoinAccepted response from the coordinator.
 ///
 /// Updates local community state with fresh MEK, roles, channels, and members.
+/// Persists member list to SQLite so `get_community_members` returns all members.
 fn handle_join_accepted(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
@@ -750,11 +795,12 @@ fn handle_join_accepted(
     channels: &[serde_json::Value],
     _categories: &[serde_json::Value],
     role_ids: &[u32],
-    _roles: &[serde_json::Value],
-    _members: &[serde_json::Value],
+    roles: &[serde_json::Value],
+    members: &[serde_json::Value],
 ) {
     use crate::channels::CommunityEvent;
     use rekindle_crypto::group::media_key::MediaEncryptionKey;
+    use rekindle_protocol::dht::community::types::MemberSummary;
 
     // 1. Restore and cache the MEK
     if !mek_wire_bytes.is_empty() {
@@ -777,7 +823,31 @@ fn handle_join_accepted(
         }
     }
 
-    // 2. Update community state with correct mek_generation and role_ids
+    // 2. Parse members from coordinator
+    let parsed_members: Vec<MemberSummary> = members
+        .iter()
+        .filter_map(|v| serde_json::from_value(v.clone()).ok())
+        .collect();
+
+    // 3. Parse roles from coordinator
+    let parsed_roles: Vec<crate::state::RoleDefinition> = roles
+        .iter()
+        .filter_map(|v| {
+            let entry: rekindle_protocol::dht::community::types::RoleEntryV2 =
+                serde_json::from_value(v.clone()).ok()?;
+            Some(crate::state::RoleDefinition {
+                id: entry.id,
+                name: entry.name,
+                color: entry.color,
+                permissions: entry.permissions,
+                position: entry.position,
+                hoist: entry.hoist,
+                mentionable: entry.mentionable,
+            })
+        })
+        .collect();
+
+    // 4. Update community state with correct mek_generation, role_ids, roles, and channels
     {
         let mut communities = state.communities.write();
         if let Some(cs) = communities.get_mut(community_id) {
@@ -785,12 +855,17 @@ fn handle_join_accepted(
             if !role_ids.is_empty() {
                 cs.my_role_ids = role_ids.to_vec();
             }
+            if !parsed_roles.is_empty() {
+                cs.roles = parsed_roles;
+            }
 
             // Update channel list if provided
             if !channels.is_empty() {
                 let mut updated_channels = Vec::new();
                 for ch_val in channels {
-                    if let Ok(ch) = serde_json::from_value::<crate::state::ChannelInfo>(ch_val.clone()) {
+                    if let Ok(ch) =
+                        serde_json::from_value::<crate::state::ChannelInfo>(ch_val.clone())
+                    {
                         updated_channels.push(ch);
                     }
                 }
@@ -801,7 +876,38 @@ fn handle_join_accepted(
         }
     }
 
-    // 3. Notify frontend
+    // 5. Persist members to SQLite so get_community_members returns all members
+    if !parsed_members.is_empty() {
+        let pool: tauri::State<'_, DbPool> = app_handle.state();
+        let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
+        let cid = community_id.to_string();
+        let members_for_db = parsed_members.clone();
+        crate::db_helpers::db_fire(pool.inner(), "persist JoinAccepted members", move |conn| {
+            for m in &members_for_db {
+                let role_ids_json =
+                    serde_json::to_string(&m.role_ids).unwrap_or_else(|_| "[0,1]".into());
+                conn.execute(
+                    "INSERT OR REPLACE INTO community_members \
+                     (owner_key, community_id, pseudonym_key, display_name, role_ids, joined_at, subkey_index, onboarding_complete, timeout_until) \
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    rusqlite::params![
+                        owner_key,
+                        cid,
+                        m.pseudonym_key,
+                        m.display_name,
+                        role_ids_json,
+                        m.joined_at.cast_signed(),
+                        m.subkey_index,
+                        i32::from(m.onboarding_complete),
+                        m.timeout_until.map(u64::cast_signed),
+                    ],
+                )?;
+            }
+            Ok(())
+        });
+    }
+
+    // 6. Notify frontend
     let _ = app_handle.emit(
         "community-event",
         CommunityEvent::JoinAccepted {
@@ -813,6 +919,7 @@ fn handle_join_accepted(
         community = %community_id,
         mek_generation,
         role_ids = ?role_ids,
+        member_count = parsed_members.len(),
         "JoinAccepted processed — community state updated"
     );
 }

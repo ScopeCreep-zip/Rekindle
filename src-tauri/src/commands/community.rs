@@ -1483,7 +1483,7 @@ pub(crate) async fn send_to_coordinator(
     let route_blob = coordinator_route_blob
         .ok_or("no coordinator available — message will be queued")?;
 
-    // Sign envelope with pseudonym signing key
+    // Sign envelope with pseudonym signing key (same path for all members including coordinator)
     let signing_key = {
         let secret = state.identity_secret.lock();
         let s = (*secret).ok_or("identity not unlocked")?;
@@ -1497,10 +1497,27 @@ pub(crate) async fn send_to_coordinator(
         &my_pseudonym_key,
         &envelope_bytes,
     );
+
+    // If we ARE the coordinator, feed the signed envelope directly into the relay.
+    // Veilid's import_remote_private_route doesn't support loopback (importing your
+    // own route), so the coordinator must inject locally. The envelope still goes
+    // through the full relay pipeline: signature verification, permission checks,
+    // automod, and fan-out — identical to what remote members experience.
+    let relay = {
+        let services = state.coordinator_services.read();
+        services
+            .get(community_id)
+            .filter(|h| h.is_coordinator())
+            .map(|h| h.relay.clone())
+    };
+    if let Some(relay) = relay {
+        crate::services::coordinator::relay::handle_incoming_envelope(state, &relay, signed).await;
+        return Ok(());
+    }
+
+    // Remote coordinator: send via Veilid app_message
     let signed_bytes =
         serde_json::to_vec(&signed).map_err(|e| format!("serialize signed: {e}"))?;
-
-    // Send via app_message (fire-and-forget, not app_call)
     let rc = state_helpers::routing_context(state).ok_or("Veilid network not attached")?;
     let route_id =
         state_helpers::import_route_blob(state, &route_blob).map_err(|e| format!("route: {e}"))?;

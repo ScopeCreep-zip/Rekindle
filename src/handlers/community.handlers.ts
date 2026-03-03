@@ -1346,6 +1346,23 @@ export function subscribeCommunityEventDispatcher(): Promise<UnlistenFn> {
           }
         }).catch(() => {});
       }
+    } else if (event.type === "joinAccepted") {
+      // Coordinator accepted our join — refresh members and community details
+      const { communityId } = event.data;
+      commands.getCommunityMembers(communityId).then((members) => {
+        setCommunityState("communities", communityId, "members", members.map(transformMember));
+      }).catch((e) => {
+        console.error("Failed to load members after JoinAccepted:", e);
+      });
+      commands.getCommunityDetails().then((details) => {
+        const detail = details.find((c: { id: string }) => c.id === communityId);
+        if (detail) {
+          setCommunityState("communities", communityId, "myPseudonymKey", detail.myPseudonymKey ?? null);
+          setCommunityState("communities", communityId, "mekGeneration", detail.mekGeneration ?? 0);
+          setCommunityState("communities", communityId, "myRoleIds", detail.myRoleIds ?? [0, 1]);
+          setCommunityState("communities", communityId, "roles", detail.roles ?? []);
+        }
+      }).catch(() => {});
     } else if (event.type === "mekRotated") {
       const { communityId, newGeneration } = event.data;
       if (communityState.communities[communityId]) {
