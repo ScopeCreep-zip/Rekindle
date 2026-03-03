@@ -183,7 +183,42 @@ pub async fn handle_incoming_envelope(
         }
     };
 
-    // 3. Read member info + roles for permission checking
+    // 3. MemberJoinRequest is special: the sender is NOT yet a member, so we
+    //    must handle it before the member-existence check.
+    if let CommunityEnvelope::Control(ControlPayload::MemberJoinRequest { .. }) = &envelope {
+        let roles = match read_members_and_roles(state, &relay.community_id).await {
+            Ok((_, r)) => r,
+            Err(_) => Vec::new(),
+        };
+        // Build a synthetic "unknown" sender for the join handler
+        let join_sender = MemberSummary {
+            pseudonym_key: signed.sender_pseudonym.clone(),
+            display_name: String::new(),
+            role_ids: vec![0],
+            joined_at: 0,
+            subkey_index: 0,
+            onboarding_complete: false,
+            timeout_until: None,
+        };
+        let Ok(signed_bytes) = serde_json::to_vec(&signed) else {
+            return;
+        };
+        if let CommunityEnvelope::Control(ref payload) = envelope {
+            handle_control(
+                state,
+                relay,
+                &join_sender,
+                &roles,
+                payload,
+                &signed_bytes,
+                &signed.sender_pseudonym,
+            )
+            .await;
+        }
+        return;
+    }
+
+    // 4. Read member info + roles for permission checking
     let (members, roles) = match read_members_and_roles(state, &relay.community_id).await {
         Ok(mr) => mr,
         Err(e) => {
@@ -350,9 +385,8 @@ pub async fn handle_incoming_envelope(
                 {
                     *status = "offline".to_string();
                 }
-                let rewritten_bytes =
-                    serde_json::to_vec(&rewritten).unwrap_or_else(|_| signed_bytes.clone());
-                relay_to_members(state, relay, &rewritten_bytes, pseudonym_key);
+                // Re-sign the rewritten envelope as coordinator (original signature is invalid now)
+                sign_and_relay_to_members(state, relay, &rewritten, pseudonym_key);
             } else {
                 relay_to_members(state, relay, &signed_bytes, &signed.sender_pseudonym);
             }
@@ -427,7 +461,6 @@ async fn handle_control(
             let member_route = route_blob.clone();
             let relay_clone = Arc::clone(relay);
             let state_clone = state.clone();
-            let signed_bytes_clone = signed_bytes.to_vec();
             let sender_clone = sender_pseudonym.to_string();
             let display_name_clone = display_name.clone();
             let invite_code_clone = invite_code.clone();
@@ -496,7 +529,16 @@ async fn handle_control(
                     ).await;
                 }
 
-                // Check onboarding
+                // Broadcast MemberJoined to existing members (NOT the raw MemberJoinRequest).
+                let joined_payload = ControlPayload::MemberJoined {
+                    pseudonym_key: joiner_pseudonym.clone(),
+                    display_name: display_name_clone.clone(),
+                    role_ids: vec![0, 1],
+                };
+                let joined_envelope = CommunityEnvelope::Control(joined_payload);
+                sign_and_relay_to_members(&state_clone, &relay_clone, &joined_envelope, &joiner_pseudonym);
+
+                // Check onboarding and send questions to new member if needed
                 match super::onboarding::check_onboarding(
                     &onboard_state,
                     &onboard_community,
@@ -517,32 +559,13 @@ async fn handle_control(
                                 questions_payload,
                             );
                         }
-                        relay_to_members(
-                            &state_clone,
-                            &relay_clone,
-                            &signed_bytes_clone,
-                            &sender_clone,
-                        );
                     }
-                    Ok(None) => {
-                        relay_to_members(
-                            &state_clone,
-                            &relay_clone,
-                            &signed_bytes_clone,
-                            &sender_clone,
-                        );
-                    }
+                    Ok(None) => {}
                     Err(e) => {
                         tracing::warn!(
                             community = %onboard_community,
                             error = %e,
                             "failed to check onboarding, admitting anyway"
-                        );
-                        relay_to_members(
-                            &state_clone,
-                            &relay_clone,
-                            &signed_bytes_clone,
-                            &sender_clone,
                         );
                     }
                 }
@@ -723,9 +746,7 @@ async fn handle_control_extended(
                             created_at: entry.created_at,
                         };
                         let envelope = CommunityEnvelope::Control(broadcast);
-                        if let Ok(bytes) = serde_json::to_vec(&envelope) {
-                            relay_to_members(state, relay, &bytes, "");
-                        }
+                        sign_and_relay_to_members(state, relay, &envelope, "");
                         tracing::info!(
                             community = %relay.community_id,
                             code = %entry.code,
@@ -752,9 +773,7 @@ async fn handle_control_extended(
                         // Broadcast InviteRevoked to all members
                         let broadcast = ControlPayload::InviteRevoked { code: code.clone() };
                         let envelope = CommunityEnvelope::Control(broadcast);
-                        if let Ok(bytes) = serde_json::to_vec(&envelope) {
-                            relay_to_members(state, relay, &bytes, "");
-                        }
+                        sign_and_relay_to_members(state, relay, &envelope, "");
                         tracing::info!(
                             community = %relay.community_id,
                             code = %code,
@@ -843,9 +862,7 @@ async fn handle_control_extended(
                                     role_ids: role_ids.clone(),
                                 };
                                 let envelope = CommunityEnvelope::Control(notification);
-                                if let Ok(bytes) = serde_json::to_vec(&envelope) {
-                                    relay_to_members(&state_clone, &relay_clone, &bytes, "");
-                                }
+                                sign_and_relay_to_members(&state_clone, &relay_clone, &envelope, "");
                             }
                         }
                     }
@@ -880,11 +897,42 @@ fn send_to_member(
         return;
     };
 
+    // Sign envelope as coordinator so the receiver can parse it as SignedEnvelope.
+    let (my_pseudonym, signing_key) = {
+        let communities = state.communities.read();
+        let Some(c) = communities.get(&relay.community_id) else {
+            return;
+        };
+        let pseudonym = c.my_pseudonym_key.clone().unwrap_or_default();
+        let secret = state.identity_secret.lock();
+        let key = match *secret {
+            Some(ref s) => {
+                rekindle_crypto::group::pseudonym::derive_community_pseudonym(s, &relay.community_id)
+            }
+            None => return,
+        };
+        (pseudonym, key)
+    };
+
     let envelope = CommunityEnvelope::Control(payload);
     let envelope_bytes = match serde_json::to_vec(&envelope) {
         Ok(b) => b,
         Err(e) => {
             tracing::warn!(error = %e, "failed to serialize control payload");
+            return;
+        }
+    };
+
+    let signed = rekindle_protocol::dht::community::envelope::sign_envelope(
+        &signing_key,
+        &relay.community_id,
+        &my_pseudonym,
+        &envelope_bytes,
+    );
+    let signed_bytes = match serde_json::to_vec(&signed) {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to serialize signed envelope");
             return;
         }
     };
@@ -895,7 +943,7 @@ fn send_to_member(
         match rc.api().import_remote_private_route(blob) {
             Ok(route_id) => {
                 if let Err(e) = rc
-                    .app_message(veilid_core::Target::RouteId(route_id), envelope_bytes)
+                    .app_message(veilid_core::Target::RouteId(route_id), signed_bytes)
                     .await
                 {
                     tracing::debug!(
@@ -910,6 +958,53 @@ fn send_to_member(
             }
         }
     });
+}
+
+/// Sign a `CommunityEnvelope` as the coordinator, returning serialized `SignedEnvelope` bytes.
+/// Returns `None` if signing context is unavailable (identity not unlocked, community not found).
+fn coordinator_sign_envelope(
+    state: &Arc<AppState>,
+    community_id: &str,
+    envelope: &CommunityEnvelope,
+) -> Option<Vec<u8>> {
+    let (my_pseudonym, signing_key) = {
+        let communities = state.communities.read();
+        let c = communities.get(community_id)?;
+        let pseudonym = c.my_pseudonym_key.clone().unwrap_or_default();
+        let secret = state.identity_secret.lock();
+        let key = match *secret {
+            Some(ref s) => {
+                rekindle_crypto::group::pseudonym::derive_community_pseudonym(s, community_id)
+            }
+            None => return None,
+        };
+        (pseudonym, key)
+    };
+
+    let envelope_bytes = serde_json::to_vec(envelope).ok()?;
+    let signed = rekindle_protocol::dht::community::envelope::sign_envelope(
+        &signing_key,
+        community_id,
+        &my_pseudonym,
+        &envelope_bytes,
+    );
+    serde_json::to_vec(&signed).ok()
+}
+
+/// Sign a coordinator-constructed envelope and fan out to all online members.
+/// Use this when the coordinator creates a new envelope (MemberJoined, SystemMessage, etc.).
+/// For relaying an existing SignedEnvelope from a member, use `relay_to_members` directly.
+fn sign_and_relay_to_members(
+    state: &Arc<AppState>,
+    relay: &Arc<RelayService>,
+    envelope: &CommunityEnvelope,
+    exclude_pseudonym: &str,
+) {
+    let Some(signed_bytes) = coordinator_sign_envelope(state, &relay.community_id, envelope) else {
+        tracing::warn!("failed to sign coordinator envelope for relay");
+        return;
+    };
+    relay_to_members(state, relay, &signed_bytes, exclude_pseudonym);
 }
 
 /// Fan out envelope bytes to all online members except the sender.
@@ -1008,9 +1103,7 @@ fn broadcast_system_message(
         timestamp: rekindle_utils::timestamp_secs(),
     };
     let envelope = CommunityEnvelope::Control(payload);
-    if let Ok(bytes) = serde_json::to_vec(&envelope) {
-        relay_to_members(state, relay, &bytes, "");
-    }
+    sign_and_relay_to_members(state, relay, &envelope, "");
 }
 
 /// Execute raid defense actions triggered by the raid detector.
@@ -1031,9 +1124,7 @@ fn execute_raid_actions(
                 let alert_payload =
                     ControlPayload::RaidAlert { active: true };
                 let envelope = CommunityEnvelope::Control(alert_payload);
-                if let Ok(bytes) = serde_json::to_vec(&envelope) {
-                    relay_to_members(state, relay, &bytes, "");
-                }
+                sign_and_relay_to_members(state, relay, &envelope, "");
                 log_audit(
                     state,
                     relay,
@@ -1053,9 +1144,7 @@ fn execute_raid_actions(
                 let lockdown_payload =
                     ControlPayload::ChannelLockdown { locked: true };
                 let envelope = CommunityEnvelope::Control(lockdown_payload);
-                if let Ok(bytes) = serde_json::to_vec(&envelope) {
-                    relay_to_members(state, relay, &bytes, "");
-                }
+                sign_and_relay_to_members(state, relay, &envelope, "");
                 log_audit(
                     state,
                     relay,
@@ -1331,9 +1420,7 @@ async fn notify_invite_used(
             new_use_count: inv.use_count,
         };
         let envelope = CommunityEnvelope::Control(broadcast);
-        if let Ok(bytes) = serde_json::to_vec(&envelope) {
-            relay_to_members(state, relay, &bytes, "");
-        }
+        sign_and_relay_to_members(state, relay, &envelope, "");
     }
 }
 
