@@ -29,13 +29,13 @@ const RolesTab: Component<RolesTabProps> = (props) => {
   const [creatingRole, setCreatingRole] = createSignal(false);
   const [newRoleName, setNewRoleName] = createSignal("");
   const [newRoleColor, setNewRoleColor] = createSignal("#000000");
-  const [newRolePerms, setNewRolePerms] = createSignal(0);
+  const [newRolePerms, setNewRolePerms] = createSignal(0n);
   const [newRoleHoist, setNewRoleHoist] = createSignal(false);
   const [newRoleMentionable, setNewRoleMentionable] = createSignal(false);
   const [editingRoleId, setEditingRoleId] = createSignal<number | null>(null);
   const [editRoleName, setEditRoleName] = createSignal("");
   const [editRoleColor, setEditRoleColor] = createSignal("#000000");
-  const [editRolePerms, setEditRolePerms] = createSignal(0);
+  const [editRolePerms, setEditRolePerms] = createSignal(0n);
   const [editRoleHoist, setEditRoleHoist] = createSignal(false);
   const [editRoleMentionable, setEditRoleMentionable] = createSignal(false);
   const [savingRole, setSavingRole] = createSignal(false);
@@ -44,7 +44,7 @@ const RolesTab: Component<RolesTabProps> = (props) => {
     setEditingRoleId(role.id);
     setEditRoleName(role.name);
     setEditRoleColor(colorIntToHex(role.color));
-    setEditRolePerms(role.permissions);
+    setEditRolePerms(BigInt(role.permissions));
     setEditRoleHoist(role.hoist);
     setEditRoleMentionable(role.mentionable);
   }
@@ -58,13 +58,13 @@ const RolesTab: Component<RolesTabProps> = (props) => {
         props.community.id,
         name,
         hexToColorInt(newRoleColor()),
-        newRolePerms(),
+        Number(newRolePerms()),
         newRoleHoist(),
         newRoleMentionable(),
       );
       setNewRoleName("");
       setNewRoleColor("#000000");
-      setNewRolePerms(0);
+      setNewRolePerms(0n);
       setNewRoleHoist(false);
       setNewRoleMentionable(false);
       setShowNewRole(false);
@@ -83,7 +83,7 @@ const RolesTab: Component<RolesTabProps> = (props) => {
         id,
         editRoleName().trim() || null,
         hexToColorInt(editRoleColor()),
-        editRolePerms(),
+        Number(editRolePerms()),
         null,
         editRoleHoist(),
         editRoleMentionable(),

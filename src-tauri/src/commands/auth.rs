@@ -12,7 +12,7 @@ use crate::db_helpers::db_call;
 use crate::keystore::{KeystoreHandle, StrongholdKeystore};
 use crate::services;
 use crate::state::{
-    AppState, ChannelInfo, ChannelType, CommunityState, FriendState, IdentityState, SharedState,
+    ChannelInfo, ChannelType, CommunityState, FriendState, IdentityState, SharedState,
     SignalManagerHandle, UserStatus,
 };
 use crate::state_helpers;
@@ -681,7 +681,7 @@ async fn load_communities_from_db(
         let mut comm_stmt = conn
             .prepare(
                 "SELECT id, name, description, my_role, my_role_ids, dht_record_key, dht_owner_keypair, \
-                 my_pseudonym_key, mek_generation, server_route_blob, is_hosted \
+                 my_pseudonym_key, mek_generation \
                  FROM communities WHERE owner_key = ?1",
             )?;
         let communities = comm_stmt
@@ -696,8 +696,6 @@ async fn load_communities_from_db(
                     db::get_str_opt(row, "dht_owner_keypair"),
                     db::get_str_opt(row, "my_pseudonym_key"),
                     row.get::<_, i64>("mek_generation").unwrap_or(0).cast_unsigned(),
-                    row.get::<_, Option<Vec<u8>>>("server_route_blob").unwrap_or(None),
-                    row.get::<_, i64>("is_hosted").unwrap_or(0) != 0,
                 ))
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -751,8 +749,6 @@ async fn load_communities_from_db(
         dht_owner_keypair,
         my_pseudonym_key,
         mek_generation,
-        server_route_blob,
-        is_hosted,
     ) in &community_rows
     {
         let channels: Vec<ChannelInfo> = channel_rows
@@ -766,6 +762,9 @@ async fn load_communities_from_db(
                 category_id: None,
                 topic: String::new(),
                 slowmode_seconds: None,
+                nsfw: false,
+                message_record_key: None,
+                mek_generation: 0,
             })
             .collect();
 
@@ -803,8 +802,12 @@ async fn load_communities_from_db(
             dht_owner_keypair: dht_owner_keypair.clone(),
             my_pseudonym_key: my_pseudonym_key.clone(),
             mek_generation: *mek_generation,
-            server_route_blob: server_route_blob.clone(),
-            is_hosted: *is_hosted,
+            manifest_key: None,
+            member_registry_key: None,
+            my_subkey_index: None,
+            coordinator_pseudonym: None,
+            coordinator_route_blob: None,
+            coordinator_epoch: 0,
         };
         // Recalculate display role from role definitions (DB value may be stale)
         community.my_role = Some(crate::state::display_role_name(
@@ -833,12 +836,12 @@ fn restore_community_pseudonyms_and_meks(
     use rekindle_crypto::group::media_key::MediaEncryptionKey;
     use rekindle_crypto::group::pseudonym::derive_community_pseudonym;
 
-    // Collect community IDs and is_hosted flags
+    // Collect community IDs and whether we own them (have dht_owner_keypair)
     let community_info: Vec<(String, bool)> = {
         let communities = state.communities.read();
         communities
             .values()
-            .map(|c| (c.id.clone(), c.is_hosted))
+            .map(|c| (c.id.clone(), c.dht_owner_keypair.is_some()))
             .collect()
     };
 
@@ -846,7 +849,7 @@ fn restore_community_pseudonyms_and_meks(
     let mut mek_updates: Vec<(String, MediaEncryptionKey)> = Vec::new();
     let mut regenerated_community_ids: Vec<String> = Vec::new();
 
-    for (community_id, is_hosted) in &community_info {
+    for (community_id, is_owner) in &community_info {
         // Derive pseudonym
         let signing_key = derive_community_pseudonym(secret_key, community_id);
         let pseudonym_hex = hex::encode(signing_key.verifying_key().as_bytes());
@@ -857,12 +860,12 @@ fn restore_community_pseudonyms_and_meks(
         if let Some(ref ks) = *keystore {
             if let Some(mek) = crate::keystore::load_mek(ks, community_id) {
                 mek_updates.push((community_id.clone(), mek));
-            } else if *is_hosted {
+            } else if *is_owner {
                 // Owned community with no MEK in Stronghold — regenerate.
                 // This handles communities created before MEK persistence was added.
                 tracing::warn!(
                     community = %community_id,
-                    "MEK missing from Stronghold for hosted community — regenerating"
+                    "MEK missing from Stronghold for owned community — regenerating"
                 );
                 let mek = MediaEncryptionKey::generate(1);
                 crate::keystore::persist_mek(ks, community_id, &mek);
@@ -872,7 +875,7 @@ fn restore_community_pseudonyms_and_meks(
                 tracing::warn!(
                     community = %community_id,
                     "MEK missing from Stronghold for joined community — \
-                     will be delivered when connecting to community server"
+                     will be delivered when connecting to coordinator"
                 );
             }
         }
@@ -1052,312 +1055,21 @@ fn spawn_login_services(
     *state.heartbeat_shutdown_tx.write() = Some(heartbeat_tx);
     state.background_handles.lock().push(heartbeat_handle);
 
-    // Spawn community server process if user owns any communities
-    maybe_spawn_server(app, state);
-
-    // Start server health check loop (monitors and auto-restarts the server)
-    if state.server_process.lock().is_some() {
-        let (health_tx, health_rx) = tokio::sync::mpsc::channel(1);
-        let health_state = Arc::clone(state);
-        let health_app = app.clone();
-        let health_handle = tauri::async_runtime::spawn(async move {
-            services::server_health_service::server_health_loop(
-                health_state,
-                health_app,
-                health_rx,
-            )
-            .await;
-        });
-        *state.server_health_shutdown_tx.write() = Some(health_tx);
-        state.background_handles.lock().push(health_handle);
-    }
-}
-
-/// Check if the current user owns any communities and spawn the community
-/// server process if needed.
-///
-/// The server binary (`rekindle-server`) is a separate Veilid node that
-/// hosts community DHT records, processes member RPCs, and keeps records alive.
-/// It communicates with this process via a Unix socket IPC.
-pub fn maybe_spawn_server(app: &tauri::AppHandle, state: &SharedState) {
-    // Collect hosted communities' data for IPC commands (before any .await)
-    // Tuple: (community_id, dht_key, keypair, name, creator_pseudonym, creator_display_name)
-    let creator_display_name = state_helpers::identity_display_name(state);
-    let hosted_communities: Vec<(String, String, String, String, String, String)> = {
-        let communities = state.communities.read();
-        communities
-            .values()
-            .filter(|c| c.is_hosted)
-            .filter_map(|c| {
-                let dht_key = c.dht_record_key.as_ref()?;
-                let keypair = c.dht_owner_keypair.as_ref()?;
-                let pseudonym = c.my_pseudonym_key.clone().unwrap_or_default();
-                Some((
-                    c.id.clone(),
-                    dht_key.clone(),
-                    keypair.clone(),
-                    c.name.clone(),
-                    pseudonym,
-                    creator_display_name.clone(),
-                ))
-            })
-            .collect()
-    };
-
-    if hosted_communities.is_empty() {
-        tracing::debug!(
-            "user does not own any communities (or missing keypairs) — server not needed"
-        );
-        return;
-    }
-
-    let data_dir = match app.path().app_data_dir() {
-        Ok(d) => d,
-        Err(e) => {
-            tracing::warn!(error = %e, "failed to get app data dir for server");
-            return;
-        }
-    };
-
-    // Look for the rekindle-server binary next to the current executable.
-    // Production bundles use the sidecar name with target-triple suffix;
-    // dev builds fall back to the bare binary name in target/debug/.
-    let server_binary = match std::env::current_exe() {
-        Ok(exe) => {
-            let dir = exe.parent().unwrap_or(std::path::Path::new("."));
-            let ext = if cfg!(windows) { ".exe" } else { "" };
-            // Production: Tauri bundles sidecar with target-triple suffix
-            let sidecar = dir.join(format!(
-                "rekindle-server-{}{}",
-                env!("REKINDLE_TARGET"),
-                ext
-            ));
-            if sidecar.exists() {
-                sidecar
-            } else {
-                // Dev: bare name in target/debug/ alongside the Tauri binary
-                dir.join(format!("rekindle-server{ext}"))
-            }
-        }
-        Err(e) => {
-            tracing::warn!(error = %e, "failed to locate current exe for server binary");
-            return;
-        }
-    };
-
-    if !server_binary.exists() {
-        tracing::info!(
-            path = %server_binary.display(),
-            "rekindle-server binary not found — community server will not be started. \
-             This is expected during development; build with `cargo build -p rekindle-server`."
-        );
-        return;
-    }
-
-    let socket_path = std::env::temp_dir().join("rekindle-server.sock");
-
-    // Kill any stale server process from a previous app session.
-    // The old process may still hold the socket, blocking the new server.
-    kill_stale_server(state, &socket_path);
-
-    // Redirect server stdout/stderr to a log file so tracing output is visible.
-    let log_dir = app.path().app_log_dir().unwrap_or_else(|_| data_dir.clone());
-    let _ = std::fs::create_dir_all(&log_dir);
-    let (stdout_cfg, stderr_cfg) =
-        match std::fs::File::create(log_dir.join("rekindle-server.log")) {
-            Ok(f) => {
-                let stderr_f = f.try_clone().unwrap_or_else(|_| {
-                    std::fs::File::create(log_dir.join("rekindle-server-err.log"))
-                        .expect("failed to create server stderr log")
-                });
-                (
-                    std::process::Stdio::from(f),
-                    std::process::Stdio::from(stderr_f),
-                )
-            }
-            Err(e) => {
-                tracing::warn!(error = %e, "failed to create server log file, using inherited stdio");
-                (std::process::Stdio::inherit(), std::process::Stdio::inherit())
-            }
-        };
-
-    match std::process::Command::new(&server_binary)
-        .arg("--storage-dir")
-        .arg(data_dir.join("server"))
-        .arg("--socket")
-        .arg(&socket_path)
-        .arg("--db")
-        .arg(data_dir.join("server.db"))
-        .stdout(stdout_cfg)
-        .stderr(stderr_cfg)
-        .spawn()
+    // Start coordinator services for all joined communities
     {
-        Ok(child) => {
-            tracing::info!(
-                pid = child.id(),
-                socket = %socket_path.display(),
-                "rekindle-server spawned"
+        let community_ids: Vec<String> = state.communities.read().keys().cloned().collect();
+        for community_id in community_ids {
+            let handle = crate::services::coordinator::start(
+                Arc::clone(state),
+                community_id.clone(),
             );
-            *state.server_process.lock() = Some(crate::state::KillOnDropChild::new(child));
-
-            // Send HostCommunity IPC commands in a background task,
-            // then start the IPC broadcast listener for real-time updates
-            let sp = socket_path.clone();
-            let bg_state = Arc::clone(state);
-            let bg_app = app.clone();
-            let handle = tauri::async_runtime::spawn(send_host_community_ipc(
-                sp,
-                hosted_communities,
-                bg_state,
-                bg_app,
-            ));
-            state.background_handles.lock().push(handle);
-        }
-        Err(e) => {
-            tracing::error!(error = %e, "failed to spawn rekindle-server");
+            state.coordinator_services.write().insert(community_id, handle);
         }
     }
 }
 
-/// Send `HostCommunity` IPC commands to the server for each owned community,
-/// then start the IPC broadcast listener for real-time updates.
-///
-/// The server needs a moment to start up, so `host_community_blocking` retries
-/// internally with backoff. The creator pseudonym key is passed so the server
-/// can register the creator atomically during hosting.
-async fn send_host_community_ipc(
-    socket_path: std::path::PathBuf,
-    communities: Vec<(String, String, String, String, String, String)>,
-    state: Arc<AppState>,
-    app_handle: tauri::AppHandle,
-) {
-    // Collect pseudonym keys for broadcast subscription
-    let pseudonym_keys: Vec<String> = communities
-        .iter()
-        .map(|(_, _, _, _, pseudonym, _)| pseudonym.clone())
-        .filter(|k| !k.is_empty())
-        .collect();
 
-    for (community_id, dht_key, keypair, name, pseudonym, display_name) in &communities {
-        match crate::ipc_client::host_community_async(
-            &socket_path,
-            community_id,
-            dht_key,
-            keypair,
-            name,
-            pseudonym,
-            display_name,
-            10,
-        )
-        .await
-        {
-            Ok(()) => {}
-            Err(e) => {
-                tracing::warn!(community = %community_id, error = %e, "failed to send HostCommunity IPC");
-            }
-        }
-    }
 
-    // Start the IPC broadcast listener for real-time updates from the server
-    if !pseudonym_keys.is_empty() {
-        start_broadcast_listener_for(&socket_path, pseudonym_keys, state, app_handle);
-    }
-}
-
-/// Open a persistent IPC connection to receive real-time broadcasts
-/// for hosted communities and feed them into `handle_community_broadcast`.
-///
-/// Wraps the connection in a reconnection loop with exponential backoff
-/// (1s, 2s, 4s, ..., 30s cap) so the hosted owner automatically recovers
-/// from server restarts without requiring an app restart.
-pub(crate) fn start_broadcast_listener_for(
-    socket_path: &std::path::Path,
-    pseudonym_keys: Vec<String>,
-    state: Arc<AppState>,
-    app_handle: tauri::AppHandle,
-) {
-    let socket_path = socket_path.to_path_buf();
-    let keys = pseudonym_keys;
-
-    tokio::spawn(async move {
-        let mut backoff_secs = 1u64;
-        loop {
-            match crate::ipc_client::subscribe_broadcasts(&socket_path, keys.clone()).await {
-                Ok(mut rx) => {
-                    tracing::info!(keys = ?keys, "IPC broadcast listener connected");
-                    backoff_secs = 1; // Reset on success
-
-                    while let Some(bytes) = rx.recv().await {
-                        match serde_json::from_slice::<
-                            rekindle_protocol::messaging::CommunityBroadcast,
-                        >(&bytes)
-                        {
-                            Ok(broadcast) => {
-                                crate::services::veilid_service::handle_community_broadcast(
-                                    &app_handle,
-                                    &state,
-                                    broadcast,
-                                )
-                                .await;
-                            }
-                            Err(e) => {
-                                tracing::debug!(error = %e, "failed to parse IPC broadcast");
-                            }
-                        }
-                    }
-                    tracing::warn!(
-                        backoff = backoff_secs,
-                        "IPC broadcast disconnected — reconnecting"
-                    );
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        error = %e, backoff = backoff_secs,
-                        "IPC broadcast connect failed — retrying"
-                    );
-                }
-            }
-            tokio::time::sleep(std::time::Duration::from_secs(backoff_secs)).await;
-            backoff_secs = (backoff_secs * 2).min(30); // Cap at 30s
-        }
-    });
-}
-
-/// Kill any stale `rekindle-server` process from a previous app session.
-///
-/// When the app quits unexpectedly (crash, force-quit), the server child
-/// process may keep running. On next launch, `state.server_process` is `None`
-/// (fresh state) but the old process still holds the Unix socket. This
-/// function cleans up both the process and the socket file.
-fn kill_stale_server(state: &SharedState, socket_path: &std::path::Path) {
-    // First, try to kill the tracked child process (if any)
-    {
-        let mut proc = state.server_process.lock();
-        if let Some(ref mut child) = *proc {
-            let pid = child.id();
-            tracing::info!(pid, "killing tracked server process before respawn");
-            let _ = child.kill();
-            let _ = child.wait();
-            *proc = None;
-        }
-    }
-
-    // Try to send a graceful Shutdown command to any server listening on the socket
-    if socket_path.exists() {
-        match crate::ipc_client::shutdown_server_blocking(socket_path) {
-            Ok(()) => {
-                tracing::info!("sent Shutdown to stale server on socket");
-                // Give it a moment to exit
-                std::thread::sleep(std::time::Duration::from_millis(500));
-            }
-            Err(e) => {
-                tracing::debug!(error = %e, "no server responded on socket (already dead)");
-            }
-        }
-        // Remove the stale socket file so the new server can bind
-        let _ = std::fs::remove_file(socket_path);
-    }
-}
 
 /// Allocate a Veilid private route with retry.
 ///

@@ -6,7 +6,6 @@ pub mod db;
 pub mod db_helpers;
 mod deep_links;
 pub mod invite_helpers;
-pub mod ipc_client;
 pub mod keystore;
 pub mod channel_repo;
 pub mod friend_repo;
@@ -297,6 +296,11 @@ pub fn run() {
             commands::community::unpin_message,
             commands::community::get_channel_pins,
             commands::community::get_audit_log,
+            commands::community::get_onboarding_config,
+            commands::community::set_onboarding_config,
+            commands::community::get_welcome_screen,
+            commands::community::set_welcome_screen,
+            commands::community::submit_onboarding_answers,
             commands::community::send_channel_typing,
             commands::community::update_community_presence,
             commands::community::get_older_channel_messages,
@@ -447,37 +451,7 @@ async fn graceful_shutdown(state: &SharedState) {
     // 2. Shut down voice engine (signal loops, await, then stop devices)
     commands::voice::shutdown_voice(state, &commands::voice::VoiceShutdownOpts::FULL).await;
 
-    // 3. Shut down server health check loop
-    {
-        let tx = state.server_health_shutdown_tx.write().take();
-        if let Some(tx) = tx {
-            let _ = tx.send(()).await;
-        }
-    }
-
-    // 4. Shut down community server process (if running)
-    {
-        // Try graceful shutdown via IPC first
-        let socket_path = crate::ipc_client::default_socket_path();
-        if socket_path.exists() {
-            if let Err(e) = crate::ipc_client::shutdown_server_async(&socket_path).await {
-                tracing::debug!(error = %e, "IPC shutdown failed — will kill process");
-            }
-        }
-
-        let mut proc = state.server_process.lock();
-        if let Some(ref mut child) = *proc {
-            tracing::info!("stopping community server process");
-            // Give the server a moment to exit gracefully after IPC shutdown
-            if !matches!(child.try_wait(), Ok(Some(_))) {
-                let _ = child.kill();
-                let _ = child.wait();
-            }
-        }
-        *proc = None;
-    }
-
-    // 5. Await the dispatch loop handle (it should have exited after the shutdown signal)
+    // 3. Await the dispatch loop handle (it should have exited after the shutdown signal)
     {
         let dispatch_handle = state.dispatch_loop_handle.write().take();
         if let Some(h) = dispatch_handle {
@@ -504,7 +478,6 @@ async fn graceful_shutdown(state: &SharedState) {
 
     // Clear community state
     state.mek_cache.lock().clear();
-    state.community_routes.write().clear();
 
     // 8. Shut down the Veilid node (only on app exit)
     services::veilid_service::shutdown_app(state).await;

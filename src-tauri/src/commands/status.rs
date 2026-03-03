@@ -17,6 +17,7 @@ pub async fn set_status(status: String, state: State<'_, SharedState>) -> Result
         "away" => UserStatus::Away,
         "busy" => UserStatus::Busy,
         "offline" => UserStatus::Offline,
+        "invisible" => UserStatus::Invisible,
         _ => return Err(format!("invalid status: {status}")),
     };
 

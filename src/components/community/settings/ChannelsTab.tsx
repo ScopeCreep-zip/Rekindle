@@ -45,13 +45,13 @@ const ChannelsTab: Component<ChannelsTabProps> = (props) => {
   const [renameValue, setRenameValue] = createSignal("");
   const [showNewChannel, setShowNewChannel] = createSignal(false);
   const [newChannelName, setNewChannelName] = createSignal("");
-  const [newChannelType, setNewChannelType] = createSignal<"text" | "voice" | "announcement">("text");
+  const [newChannelType, setNewChannelType] = createSignal<"text" | "voice" | "announcement" | "forum" | "stage" | "directory" | "media" | "events" | "dm">("text");
   const [creatingChannel, setCreatingChannel] = createSignal(false);
   const [overwriteChannelId, setOverwriteChannelId] = createSignal<string | null>(null);
   const [overwriteTargetType, setOverwriteTargetType] = createSignal("role");
   const [overwriteTargetId, setOverwriteTargetId] = createSignal("");
-  const [overwriteAllow, setOverwriteAllow] = createSignal(0);
-  const [overwriteDeny, setOverwriteDeny] = createSignal(0);
+  const [overwriteAllow, setOverwriteAllow] = createSignal(0n);
+  const [overwriteDeny, setOverwriteDeny] = createSignal(0n);
   const [editSlowmodeId, setEditSlowmodeId] = createSignal<string | null>(null);
   const [slowmodeValue, setSlowmodeValue] = createSignal(0);
   const [editTopicId, setEditTopicId] = createSignal<string | null>(null);
@@ -191,11 +191,8 @@ const ChannelsTab: Component<ChannelsTabProps> = (props) => {
   }
 
   // Raw bit check for overwrite grid (no admin bypass — overwrites are explicit)
-  function hasPerm(perms: number, bit: number): boolean {
-    if (bit > 0x7FFF_FFFF) {
-      return Math.floor(perms / bit) % 2 === 1;
-    }
-    return (perms & bit) !== 0;
+  function hasPerm(perms: bigint, bit: bigint): boolean {
+    return (perms & bit) !== 0n;
   }
 
   function channelNameById(id: string): string {
@@ -212,8 +209,8 @@ const ChannelsTab: Component<ChannelsTabProps> = (props) => {
         channelId,
         overwriteTargetType(),
         targetId,
-        overwriteAllow(),
-        overwriteDeny(),
+        Number(overwriteAllow()),
+        Number(overwriteDeny()),
       );
       addToast(`Permission overwrite saved for #${channelNameById(channelId)}`, "success");
     } catch (e) {
@@ -233,8 +230,8 @@ const ChannelsTab: Component<ChannelsTabProps> = (props) => {
         overwriteTargetType(),
         targetId,
       );
-      setOverwriteAllow(0);
-      setOverwriteDeny(0);
+      setOverwriteAllow(0n);
+      setOverwriteDeny(0n);
       addToast(`Permission overwrite removed for #${channelNameById(channelId)}`, "success");
     } catch (e) {
       console.error("Failed to delete overwrite:", e);
@@ -444,8 +441,8 @@ const ChannelsTab: Component<ChannelsTabProps> = (props) => {
                     const next = overwriteChannelId() === channel.id ? null : channel.id;
                     setOverwriteChannelId(next);
                     setOverwriteTargetId("");
-                    setOverwriteAllow(0);
-                    setOverwriteDeny(0);
+                    setOverwriteAllow(0n);
+                    setOverwriteDeny(0n);
                   }}
                   title="Permissions"
                 >
@@ -656,6 +653,11 @@ const ChannelsTab: Component<ChannelsTabProps> = (props) => {
               <option value="text">Text</option>
               <option value="voice">Voice</option>
               <option value="announcement">Announcement</option>
+              <option value="forum">Forum</option>
+              <option value="stage">Stage</option>
+              <option value="directory">Directory</option>
+              <option value="media">Media</option>
+              <option value="events">Events</option>
             </select>
             <button
               class="form-btn-save"

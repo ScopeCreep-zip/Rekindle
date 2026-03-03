@@ -1,52 +1,73 @@
 import type { Role } from "../stores/community.store";
 
-// Permission bit constants — mirrors Rust's `rekindle_protocol::dht::community::permissions`.
-// Uses Discord-aligned bit positions. Values above bit 31 must use BigInt-safe math.
+// Permission bit constants — mirrors Rust's `rekindle_protocol::dht::community::permissions_v2`.
+// Uses Discord-aligned bit positions. BigInt is used throughout for correct 64-bit bitwise ops.
 
 // ── General ──
-export const CREATE_INSTANT_INVITE = 1 << 0;
-export const KICK_MEMBERS = 1 << 1;
-export const BAN_MEMBERS = 1 << 2;
-export const ADMINISTRATOR = 1 << 3;
-export const MANAGE_CHANNELS = 1 << 4;
-export const MANAGE_COMMUNITY = 1 << 5;
+export const CREATE_INSTANT_INVITE = 1n << 0n;
+export const KICK_MEMBERS = 1n << 1n;
+export const BAN_MEMBERS = 1n << 2n;
+export const ADMINISTRATOR = 1n << 3n;
+export const MANAGE_CHANNELS = 1n << 4n;
+export const MANAGE_COMMUNITY = 1n << 5n;
 
 // ── Text ──
-export const ADD_REACTIONS = 1 << 6;
-export const VIEW_AUDIT_LOG = 1 << 7;
-export const PRIORITY_SPEAKER = 1 << 8;
-export const STREAM = 1 << 9;
-export const VIEW_CHANNEL = 1 << 10;
-export const SEND_MESSAGES = 1 << 11;
-// bit 12 unused
-export const MANAGE_MESSAGES = 1 << 13;
-export const EMBED_LINKS = 1 << 14;
-export const ATTACH_FILES = 1 << 15;
-export const READ_MESSAGE_HISTORY = 1 << 16;
-export const MENTION_EVERYONE = 1 << 17;
-export const USE_EXTERNAL_EMOJIS = 1 << 18;
+export const ADD_REACTIONS = 1n << 6n;
+export const VIEW_AUDIT_LOG = 1n << 7n;
+export const PRIORITY_SPEAKER = 1n << 8n;
+export const STREAM = 1n << 9n;
+export const VIEW_CHANNEL = 1n << 10n;
+export const SEND_MESSAGES = 1n << 11n;
+// bit 12 reserved
+export const MANAGE_MESSAGES = 1n << 13n;
+export const EMBED_LINKS = 1n << 14n;
+export const ATTACH_FILES = 1n << 15n;
+export const READ_MESSAGE_HISTORY = 1n << 16n;
+export const MENTION_EVERYONE = 1n << 17n;
+export const USE_EXTERNAL_EMOJIS = 1n << 18n;
+// bit 19 reserved
 
 // ── Voice ──
-export const CONNECT = 1 << 20;
-export const SPEAK = 1 << 21;
-export const MUTE_MEMBERS = 1 << 22;
-export const DEAFEN_MEMBERS = 1 << 23;
-export const MOVE_MEMBERS = 1 << 24;
-export const USE_VAD = 1 << 25;
+export const CONNECT = 1n << 20n;
+export const SPEAK = 1n << 21n;
+export const MUTE_MEMBERS = 1n << 22n;
+export const DEAFEN_MEMBERS = 1n << 23n;
+export const MOVE_MEMBERS = 1n << 24n;
+export const USE_VAD = 1n << 25n;
 
 // ── Membership ──
-export const CHANGE_NICKNAME = 1 << 26;
-export const MANAGE_NICKNAMES = 1 << 27;
-export const MANAGE_ROLES = 1 << 28;
+export const CHANGE_NICKNAME = 1n << 26n;
+export const MANAGE_NICKNAMES = 1n << 27n;
+export const MANAGE_ROLES = 1n << 28n;
+// bits 29-32 reserved
+
+// ── Events ──
+export const MANAGE_EVENTS = 1n << 33n;
+
+// ── Threads ──
+export const MANAGE_THREADS = 1n << 34n;
+export const CREATE_PUBLIC_THREADS = 1n << 35n;
+export const CREATE_PRIVATE_THREADS = 1n << 36n;
+// bits 37-39 reserved
 
 // ── Moderation ──
-// MODERATE_MEMBERS is at bit 40 in Rust (u64). JavaScript bitwise operators
-// work on 32-bit ints so (1 << 40) === 0. We use a pre-computed value instead.
-// 2^40 = 1099511627776, which is safely representable as a JS number (< 2^53).
-export const MODERATE_MEMBERS = 2 ** 40;
+export const MODERATE_MEMBERS = 1n << 40n;
+// bits 41-42 reserved
 
-// All defined permission bits OR'd together — mirrors Rust's `all_permissions()`.
-// Must stay in sync with the Rust constant list.
+// ── Advanced ──
+export const USE_APPLICATION_COMMANDS = 1n << 43n;
+export const REQUEST_TO_SPEAK = 1n << 44n;
+export const MANAGE_GUILD_EXPRESSIONS = 1n << 45n;
+export const MANAGE_WEBHOOKS = 1n << 46n;
+// bits 47-48 reserved
+export const CREATE_GUILD_EXPRESSIONS = 1n << 49n;
+// bits 50-52 reserved
+export const SEND_VOICE_MESSAGES = 1n << 53n;
+// bits 54-55 reserved
+export const SEND_POLLS = 1n << 56n;
+export const VIEW_CREATOR_MONETIZATION_ANALYTICS = 1n << 57n;
+
+// All defined permission bits OR'd together — mirrors Rust's `Permissions::all()`.
 export const ALL_PERMISSIONS =
   CREATE_INSTANT_INVITE | KICK_MEMBERS | BAN_MEMBERS | ADMINISTRATOR
   | MANAGE_CHANNELS | MANAGE_COMMUNITY | ADD_REACTIONS | VIEW_AUDIT_LOG
@@ -55,34 +76,25 @@ export const ALL_PERMISSIONS =
   | MENTION_EVERYONE | USE_EXTERNAL_EMOJIS | CONNECT | SPEAK
   | MUTE_MEMBERS | DEAFEN_MEMBERS | MOVE_MEMBERS | USE_VAD
   | CHANGE_NICKNAME | MANAGE_NICKNAMES | MANAGE_ROLES
-  // High bits (> 31) added via arithmetic since JS bitwise ops truncate to 32 bits
-  + MODERATE_MEMBERS;
-
-// The ADMINISTRATOR bit for quick checks
-const ADMIN_BIT = ADMINISTRATOR;
+  | MANAGE_EVENTS | MANAGE_THREADS | CREATE_PUBLIC_THREADS | CREATE_PRIVATE_THREADS
+  | MODERATE_MEMBERS | USE_APPLICATION_COMMANDS | REQUEST_TO_SPEAK
+  | MANAGE_GUILD_EXPRESSIONS | MANAGE_WEBHOOKS | CREATE_GUILD_EXPRESSIONS
+  | SEND_VOICE_MESSAGES | SEND_POLLS | VIEW_CREATOR_MONETIZATION_ANALYTICS;
 
 /**
  * Check if a permission set includes a specific permission.
  * Administrators bypass all checks.
  */
-export function hasPermission(perms: number, required: number): boolean {
-  // Administrators have all permissions
-  if ((perms & ADMIN_BIT) !== 0) return true;
-  // For bits > 31 (like MODERATE_MEMBERS at bit 40), we can't use
-  // bitwise AND because JS bitwise ops truncate to 32 bits. Instead
-  // we test with floating-point math for those high bits.
-  if (required > 0x7FFF_FFFF) {
-    // High-bit permission — use modular arithmetic instead of bitwise
-    return Math.floor(perms / required) % 2 === 1;
-  }
+export function hasPermission(perms: bigint, required: bigint): boolean {
+  if ((perms & ADMINISTRATOR) !== 0n) return true;
   return (perms & required) === required;
 }
 
 /**
  * Check if permissions include the ADMINISTRATOR flag.
  */
-export function isAdministrator(perms: number): boolean {
-  return (perms & ADMIN_BIT) !== 0;
+export function isAdministrator(perms: bigint): boolean {
+  return (perms & ADMINISTRATOR) !== 0n;
 }
 
 /**
@@ -90,31 +102,21 @@ export function isAdministrator(perms: number): boolean {
  * ORs together all role permissions for the member's roles.
  * This is a simplified client-side version for UI gating.
  *
- * Note: Rust sends permissions as u64 but JavaScript numbers can safely
- * represent integers up to 2^53. Permission bits go up to 40, so this is fine.
- * However, JS bitwise operators truncate to 32 bits, so we use addition
- * to combine permissions above bit 31.
+ * Role.permissions is a `number` (as received from JSON IPC).
+ * Internally converts to BigInt for correct 64-bit bitwise operations.
  */
 export function calculateBasePermissions(
   roleIds: number[],
   allRoles: Role[],
   isHosted?: boolean,
-): number {
+): bigint {
   // Community host (creator) always gets all permissions — like Discord's owner bypass
   if (isHosted) return ALL_PERMISSIONS;
-  let perms = 0;
+  let perms = 0n;
   for (const id of roleIds) {
     const role = allRoles.find((r) => r.id === id);
     if (role) {
-      // Can't use |= for bits above 31, so we combine manually.
-      // For low bits (0-30), bitwise OR is fine. For high bits, we add
-      // them if not already present.
-      const lowBits = (perms | role.permissions) & 0x7FFF_FFFF;
-      const highPerms = role.permissions - (role.permissions & 0x7FFF_FFFF);
-      const highCurrent = perms - (perms & 0x7FFF_FFFF);
-      // Combine high bits: if either has the high bit set, keep it.
-      // Since our only high bit is MODERATE_MEMBERS (2^40), simple max works.
-      perms = lowBits + Math.max(highPerms, highCurrent);
+      perms |= BigInt(role.permissions);
     }
   }
   return perms;
@@ -150,13 +152,8 @@ export function highestPosition(
 
 /**
  * Toggle a permission bit in a permission set.
- * Handles high bits (> 31) using arithmetic instead of bitwise XOR.
  */
-export function togglePermBit(current: number, bit: number): number {
-  if (bit > 0x7FFF_FFFF) {
-    const hasBit = Math.floor(current / bit) % 2 === 1;
-    return hasBit ? current - bit : current + bit;
-  }
+export function togglePermBit(current: bigint, bit: bigint): bigint {
   return current ^ bit;
 }
 
@@ -202,6 +199,21 @@ export const PERMISSION_CATEGORIES = [
       { key: "MOVE_MEMBERS", label: "Move Members", value: MOVE_MEMBERS },
       { key: "USE_VAD", label: "Use Voice Detection", value: USE_VAD },
       { key: "PRIORITY_SPEAKER", label: "Priority Speaker", value: PRIORITY_SPEAKER },
+      { key: "REQUEST_TO_SPEAK", label: "Request to Speak", value: REQUEST_TO_SPEAK },
+    ],
+  },
+  {
+    name: "Threads",
+    permissions: [
+      { key: "MANAGE_THREADS", label: "Manage Threads", value: MANAGE_THREADS },
+      { key: "CREATE_PUBLIC_THREADS", label: "Create Public Threads", value: CREATE_PUBLIC_THREADS },
+      { key: "CREATE_PRIVATE_THREADS", label: "Create Private Threads", value: CREATE_PRIVATE_THREADS },
+    ],
+  },
+  {
+    name: "Events",
+    permissions: [
+      { key: "MANAGE_EVENTS", label: "Manage Events", value: MANAGE_EVENTS },
     ],
   },
   {
@@ -210,6 +222,18 @@ export const PERMISSION_CATEGORIES = [
       { key: "KICK_MEMBERS", label: "Kick Members", value: KICK_MEMBERS },
       { key: "BAN_MEMBERS", label: "Ban Members", value: BAN_MEMBERS },
       { key: "MODERATE_MEMBERS", label: "Moderate Members", value: MODERATE_MEMBERS },
+    ],
+  },
+  {
+    name: "Advanced",
+    permissions: [
+      { key: "USE_APPLICATION_COMMANDS", label: "Application Commands", value: USE_APPLICATION_COMMANDS },
+      { key: "MANAGE_GUILD_EXPRESSIONS", label: "Manage Expressions", value: MANAGE_GUILD_EXPRESSIONS },
+      { key: "CREATE_GUILD_EXPRESSIONS", label: "Create Expressions", value: CREATE_GUILD_EXPRESSIONS },
+      { key: "MANAGE_WEBHOOKS", label: "Manage Webhooks", value: MANAGE_WEBHOOKS },
+      { key: "SEND_VOICE_MESSAGES", label: "Voice Messages", value: SEND_VOICE_MESSAGES },
+      { key: "SEND_POLLS", label: "Send Polls", value: SEND_POLLS },
+      { key: "VIEW_CREATOR_MONETIZATION_ANALYTICS", label: "View Analytics", value: VIEW_CREATOR_MONETIZATION_ANALYTICS },
     ],
   },
 ] as const;

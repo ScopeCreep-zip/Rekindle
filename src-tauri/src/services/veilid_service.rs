@@ -120,7 +120,33 @@ async fn handle_app_message(
         return;
     }
 
-    // 2. Try to parse as a community broadcast
+    // 2. Try to parse as a community SignedEnvelope (v2 coordinator model)
+    if let Ok(signed) =
+        serde_json::from_slice::<rekindle_protocol::dht::community::envelope::SignedEnvelope>(
+            &message,
+        )
+    {
+        // Check if we're coordinator for this community and get shared relay
+        let relay = {
+            let services = state.coordinator_services.read();
+            services
+                .get(&signed.community_id)
+                .filter(|h| h.is_coordinator())
+                .map(|h| h.relay.clone())
+        };
+
+        if let Some(relay) = relay {
+            // We're coordinator: relay to all members using shared relay service
+            super::coordinator::relay::handle_incoming_envelope(state, &relay, signed)
+                .await;
+        } else {
+            // We're a member: this is a relayed message FROM the coordinator
+            handle_relayed_envelope(app_handle, state, signed).await;
+        }
+        return;
+    }
+
+    // 3. Legacy: try to parse as a community broadcast
     if let Ok(broadcast) =
         serde_json::from_slice::<rekindle_protocol::messaging::CommunityBroadcast>(&message)
     {
@@ -128,10 +154,267 @@ async fn handle_app_message(
         return;
     }
 
-    // 3. Fallback to standard message handling
+    // 4. Fallback to standard message handling
     let pool: tauri::State<'_, DbPool> = app_handle.state();
     super::message_service::handle_incoming_message(app_handle, state, pool.inner(), &message)
         .await;
+}
+
+/// Handle an envelope relayed to us by the coordinator (v2 model).
+///
+/// Deserializes the inner `CommunityEnvelope` and emits the appropriate
+/// `CommunityEvent` to the frontend, similar to `handle_community_broadcast`.
+async fn handle_relayed_envelope(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    signed: rekindle_protocol::dht::community::envelope::SignedEnvelope,
+) {
+    use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
+
+    let envelope: CommunityEnvelope = match serde_json::from_slice(&signed.envelope_bytes) {
+        Ok(e) => e,
+        Err(e) => {
+            tracing::warn!(error = %e, "invalid relayed envelope");
+            return;
+        }
+    };
+
+    let community_id = signed.community_id.clone();
+
+    match envelope {
+        CommunityEnvelope::ChatMessage {
+            channel_id,
+            message_id,
+            author_pseudonym,
+            ciphertext,
+            mek_generation,
+            timestamp,
+            reply_to_id,
+        } => {
+            // Route through the shared handler which handles decryption, storage, and emit
+            let msg = BroadcastNewMessage {
+                community_id,
+                channel_id,
+                message_id,
+                sender_pseudonym: author_pseudonym,
+                ciphertext,
+                mek_generation,
+                timestamp,
+                reply_to_id,
+            };
+            handle_broadcast_new_message(app_handle, state, &msg).await;
+        }
+        CommunityEnvelope::TypingIndicator {
+            channel_id,
+            pseudonym_key,
+        } => {
+            use crate::channels::CommunityEvent;
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::ChannelTyping {
+                    community_id,
+                    channel_id,
+                    pseudonym_key,
+                },
+            );
+        }
+        CommunityEnvelope::PresenceUpdate {
+            pseudonym_key,
+            status,
+            ..
+        } => {
+            use crate::channels::CommunityEvent;
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::MemberPresenceChanged {
+                    community_id,
+                    pseudonym_key,
+                    status,
+                    game_name: None,
+                    game_id: None,
+                    elapsed_seconds: None,
+                    server_address: None,
+                },
+            );
+        }
+        CommunityEnvelope::Control(payload) => {
+            handle_relayed_control(app_handle, state, &community_id, payload);
+        }
+    }
+}
+
+/// Handle a relayed control payload.
+fn handle_relayed_control(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    community_id: &str,
+    payload: rekindle_protocol::dht::community::envelope::ControlPayload,
+) {
+    use crate::channels::CommunityEvent;
+    use rekindle_protocol::dht::community::envelope::ControlPayload;
+
+    match payload {
+        ControlPayload::MemberJoined {
+            pseudonym_key,
+            display_name,
+            role_ids,
+        } => {
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::MemberJoined {
+                    community_id: community_id.to_string(),
+                    pseudonym_key,
+                    display_name,
+                    role_ids,
+                },
+            );
+        }
+        ControlPayload::MemberRemoved { pseudonym_key } => {
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::MemberRemoved {
+                    community_id: community_id.to_string(),
+                    pseudonym_key,
+                },
+            );
+        }
+        ControlPayload::MemberTimedOut {
+            pseudonym_key,
+            timeout_until,
+        } => {
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::MemberTimedOut {
+                    community_id: community_id.to_string(),
+                    pseudonym_key,
+                    timeout_until,
+                },
+            );
+        }
+        ControlPayload::MessageEdited {
+            channel_id,
+            message_id,
+            new_ciphertext,
+            mek_generation: _,
+            edited_at,
+        } => {
+            // Decrypt the edited message body with the channel/community MEK
+            let new_body = {
+                let decrypted = {
+                    let mek_cache = state.channel_mek_cache.lock();
+                    mek_cache
+                        .get(&(community_id.to_string(), channel_id.clone()))
+                        .map(|mek| mek.decrypt(&new_ciphertext))
+                };
+                match decrypted {
+                    Some(Ok(bytes)) => String::from_utf8_lossy(&bytes).into_owned(),
+                    Some(Err(_)) => "(decryption failed)".to_string(),
+                    None => {
+                        let mek_cache = state.mek_cache.lock();
+                        if let Some(mek) = mek_cache.get(community_id) {
+                            match mek.decrypt(&new_ciphertext) {
+                                Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+                                Err(_) => "(decryption failed)".to_string(),
+                            }
+                        } else {
+                            "(no MEK available)".to_string()
+                        }
+                    }
+                }
+            };
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::MessageEdited {
+                    community_id: community_id.to_string(),
+                    channel_id,
+                    message_id,
+                    new_body,
+                    edited_at,
+                },
+            );
+        }
+        ControlPayload::MessageDeleted {
+            channel_id,
+            message_id,
+        } => {
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::MessageDeleted {
+                    community_id: community_id.to_string(),
+                    channel_id,
+                    message_id,
+                },
+            );
+        }
+        ControlPayload::ReactionAdded {
+            channel_id,
+            message_id,
+            emoji,
+            reactor_pseudonym,
+        } => {
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::ReactionAdded {
+                    community_id: community_id.to_string(),
+                    channel_id,
+                    message_id,
+                    emoji,
+                    reactor_pseudonym,
+                },
+            );
+        }
+        ControlPayload::ReactionRemoved {
+            channel_id,
+            message_id,
+            emoji,
+            reactor_pseudonym,
+        } => {
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::ReactionRemoved {
+                    community_id: community_id.to_string(),
+                    channel_id,
+                    message_id,
+                    emoji,
+                    reactor_pseudonym,
+                },
+            );
+        }
+        ControlPayload::RolesChanged { roles } => {
+            // Convert Vec<serde_json::Value> → Vec<RoleDto>
+            let role_dtos: Vec<crate::channels::community_channel::RoleDto> = roles
+                .iter()
+                .filter_map(|v| serde_json::from_value(v.clone()).ok())
+                .collect();
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::RolesChanged {
+                    community_id: community_id.to_string(),
+                    roles: role_dtos,
+                },
+            );
+        }
+        ControlPayload::MemberRolesChanged {
+            pseudonym_key,
+            role_ids,
+        } => {
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::MemberRolesChanged {
+                    community_id: community_id.to_string(),
+                    pseudonym_key,
+                    role_ids,
+                },
+            );
+        }
+        // For other control payloads, we emit a generic update event
+        _ => {
+            tracing::debug!(
+                community = %community_id,
+                "received relayed control payload (not yet mapped to event)"
+            );
+        }
+    }
 }
 
 /// Handle a community broadcast from the community server.
@@ -935,6 +1218,9 @@ fn handle_broadcast_channels_updated(
                         } else {
                             None
                         },
+                        nsfw: false,
+                        message_record_key: None,
+                        mek_generation: 0,
                     }
                 })
                 .collect();
@@ -1328,7 +1614,7 @@ pub(super) async fn fetch_mek_from_server(
     state: &Arc<AppState>,
     community_id: &str,
 ) {
-    let server_route_blob = state_helpers::community_server_route(state, community_id);
+    let coordinator_route = state_helpers::community_coordinator_route(state, community_id);
     let rc = state_helpers::routing_context(state);
 
     let signing_key = {
@@ -1338,7 +1624,7 @@ pub(super) async fn fetch_mek_from_server(
         })
     };
 
-    let (Some(route_blob), Some(rc), Some(sk)) = (server_route_blob, rc, signing_key) else {
+    let (Some(route_blob), Some(rc), Some(sk)) = (coordinator_route, rc, signing_key) else {
         tracing::warn!(community = %community_id, "cannot fetch MEK — missing route/node/key");
         return;
     };
@@ -1511,6 +1797,32 @@ async fn handle_value_change(
         node.as_ref().map(|nh| nh.routing_context.clone())
     };
 
+    // Forward coordinator-relevant changes to the coordinator service.
+    // Check if this DHT key belongs to a community's manifest record.
+    {
+        let coordinator_services = state.coordinator_services.read();
+        let communities = state.communities.read();
+        for (cid, cs) in communities.iter() {
+            let manifest_matches = cs.manifest_key.as_deref() == Some(&key)
+                || cs.id == key;
+            if manifest_matches {
+                if let Some(handle) = coordinator_services.get(cid) {
+                    for &subkey in &subkeys {
+                        let value = if Some(subkey) == first_subkey {
+                            inline_value.clone()
+                        } else {
+                            None
+                        };
+                        let _ = handle.value_change_tx.try_send(
+                            super::coordinator::CoordinatorValueChange { subkey, value },
+                        );
+                    }
+                }
+                break;
+            }
+        }
+    }
+
     for &subkey in &subkeys {
         // Inline value is only valid for the first subkey in the range;
         // all other subkeys must be fetched from DHT individually.
@@ -1670,8 +1982,7 @@ async fn handle_route_change(
             }
         }
 
-        // Also clear community server route blobs that reference dead routes.
-        // This prevents reusing a stale blob that will just timeout again.
+        // Clear coordinator route blobs that reference dead routes.
         let dead_set: std::collections::HashSet<_> =
             change.dead_remote_routes.iter().collect();
         let api = {
@@ -1681,14 +1992,14 @@ async fn handle_route_change(
         if let Some(api) = api {
             let mut communities = state.communities.write();
             for community in communities.values_mut() {
-                if let Some(ref blob) = community.server_route_blob {
+                if let Some(ref blob) = community.coordinator_route_blob {
                     if let Ok(route_id) = api.import_remote_private_route(blob.clone()) {
                         if dead_set.contains(&route_id) {
                             tracing::info!(
                                 community = %community.id,
-                                "clearing dead server route blob"
+                                "clearing dead coordinator route blob"
                             );
-                            community.server_route_blob = None;
+                            community.coordinator_route_blob = None;
                         }
                     }
                 }
@@ -1865,16 +2176,11 @@ pub(crate) async fn route_refresh_loop(
 
                     // After route reallocation, re-announce to ALL community servers
                     // (including hosted) so they update our stale route_blob.
-                    // The server needs each member's route_blob for Veilid broadcast
-                    // delivery — even the hosted owner should have a valid route_blob
-                    // as a fallback when the IPC path is unavailable.
+                    // After route refresh, re-announce presence to all communities
+                    // so the coordinator has our latest route.
                     let communities_to_rejoin: Vec<String> = {
                         let communities = state.communities.read();
-                        communities
-                            .iter()
-                            .filter(|(_, c)| c.server_route_blob.is_some())
-                            .map(|(id, _)| id.clone())
-                            .collect()
+                        communities.keys().cloned().collect()
                     };
                     for community_id in &communities_to_rejoin {
                         let _ = crate::services::community_service::rejoin_community(
@@ -2091,37 +2397,13 @@ pub async fn logout_cleanup(app_handle: Option<&tauri::AppHandle>, state: &AppSt
 
     // 7. Clear community-specific state
     state.mek_cache.lock().clear();
-    state.community_routes.write().clear();
 
-    // 8. Shutdown server health check loop
+    // 8. Stop coordinator services
     {
-        let tx = state.server_health_shutdown_tx.write().take();
-        if let Some(tx) = tx {
-            let _ = tx.send(()).await;
+        let services = std::mem::take(&mut *state.coordinator_services.write());
+        for (_cid, handle) in services {
+            handle.stop().await;
         }
-    }
-
-    // 9. Shutdown community server process if running
-    {
-        // Try graceful shutdown via IPC first (same as graceful_shutdown)
-        let socket_path = crate::ipc_client::default_socket_path();
-        if socket_path.exists() {
-            if let Err(e) = crate::ipc_client::shutdown_server_async(&socket_path).await {
-                tracing::debug!(error = %e, "IPC shutdown failed on logout — will kill process");
-            }
-        }
-
-        let mut proc = state.server_process.lock();
-        if let Some(ref mut child) = *proc {
-            let pid = child.id();
-            // Give the server a moment to exit gracefully after IPC shutdown
-            if !matches!(child.try_wait(), Ok(Some(_))) {
-                tracing::info!(pid, "killing rekindle-server");
-                let _ = child.kill();
-                let _ = child.wait();
-            }
-        }
-        *proc = None;
     }
 
     // NOTE: Do NOT reset network_ready_tx here. The Veilid node is still alive

@@ -18,6 +18,8 @@ futures = { workspace = true }
 parking_lot = { workspace = true }
 capnp = { workspace = true }
 base64 = "0.22"
+bitflags = { version = "2", features = ["serde"] }
+blake2 = "0.10"
 hex = "0.4"
 rekindle-crypto = { path = "../rekindle-crypto" }
 rekindle-utils = { path = "../rekindle-utils" }

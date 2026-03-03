@@ -655,7 +655,7 @@ use crate::state::parse_dht_channel_list;
 ///
 /// Reads metadata (subkey 0), channel list (subkey 1), and server route
 /// (subkey 6) from each community's DHT record.
-async fn sync_communities(state: &Arc<AppState>, pool: &DbPool) -> Result<(), String> {
+async fn sync_communities(state: &Arc<AppState>, _pool: &DbPool) -> Result<(), String> {
     let Some(routing_context) = state_helpers::routing_context(state) else {
         return Ok(()); // Not connected yet
     };
@@ -718,8 +718,6 @@ async fn sync_communities(state: &Arc<AppState>, pool: &DbPool) -> Result<(), St
             }
         }
 
-        // Read server route subkey (6) from DHT — ensures route survives restarts
-        sync_community_server_route(state, pool, &mgr, community_id, dht_key).await;
     }
 
     // After DHT sync, re-announce our route to ALL community servers (including
@@ -742,62 +740,7 @@ async fn sync_communities(state: &Arc<AppState>, pool: &DbPool) -> Result<(), St
     Ok(())
 }
 
-/// Read server route (subkey 6) from DHT and persist to `SQLite` if changed.
-async fn sync_community_server_route(
-    state: &Arc<AppState>,
-    pool: &DbPool,
-    mgr: &rekindle_protocol::dht::DHTManager,
-    community_id: &str,
-    dht_key: &str,
-) {
-    let route_blob = match mgr
-        .get_value(
-            dht_key,
-            rekindle_protocol::dht::community::SUBKEY_SERVER_ROUTE,
-        )
-        .await
-    {
-        Ok(Some(blob)) => blob,
-        Ok(None) => return,
-        Err(e) => {
-            tracing::trace!(
-                community = %community_id,
-                error = %e,
-                "failed to read server route from DHT"
-            );
-            return;
-        }
-    };
-
-    let needs_update = {
-        let communities = state.communities.read();
-        communities
-            .get(community_id)
-            .is_some_and(|c| c.server_route_blob.as_deref() != Some(&route_blob))
-    };
-    if !needs_update {
-        return;
-    }
-
-    {
-        let mut communities = state.communities.write();
-        if let Some(community) = communities.get_mut(community_id) {
-            community.server_route_blob = Some(route_blob.clone());
-        }
-    }
-
-    // Persist to SQLite
-    let owner_key = state_helpers::owner_key_or_default(state);
-    let cid = community_id.to_string();
-    db_fire(pool, "sync persist server_route_blob", move |conn| {
-        conn.execute(
-            "UPDATE communities SET server_route_blob = ?1 WHERE owner_key = ?2 AND id = ?3",
-            rusqlite::params![route_blob, owner_key, cid],
-        )?;
-        Ok(())
-    });
-    tracing::debug!(community = %community_id, "synced server route from DHT to SQLite");
-}
+// Server route sync removed — coordinator model doesn't use server route blobs
 
 /// Retry sending queued pending messages.
 ///
@@ -879,48 +822,20 @@ async fn retry_single_pending(
     } else if let Ok(channel_msg) =
         serde_json::from_str::<crate::commands::community::PendingChannelMessage>(body)
     {
-        // Check if this is a hosted community — use IPC fast path if so
-        let is_hosted = {
-            let communities = state.communities.read();
-            communities
-                .get(&channel_msg.community_id)
-                .is_some_and(|c| c.is_hosted)
-        };
-
-        let result = if is_hosted {
-            crate::commands::community::send_community_rpc(
-                state,
-                pool,
-                &channel_msg.community_id,
-                rekindle_protocol::messaging::CommunityRequest::SendMessage {
-                    channel_id: channel_msg.channel_id.clone(),
-                    ciphertext: channel_msg.ciphertext,
-                    mek_generation: channel_msg.mek_generation,
-                    reply_to_id: None,
-                },
-            )
-            .await
-            .map(|_| ())
-        } else {
-            // Remote community — use Veilid path
-            let route_blob =
-                state_helpers::community_server_route(state, &channel_msg.community_id);
-            let Some(route_blob) = route_blob else {
-                increment_retry_count(pool, id).await?;
-                return Ok(());
-            };
-            crate::commands::community::send_encrypted_to_server(
-                state,
-                &channel_msg.channel_id,
-                &channel_msg.community_id,
-                channel_msg.ciphertext,
-                channel_msg.mek_generation,
-                channel_msg.timestamp,
-                route_blob,
-                None, // Retried messages don't carry reply_to_id
-            )
-            .await
-        };
+        // Send through coordinator model
+        let result = crate::commands::community::send_community_rpc(
+            state,
+            pool,
+            &channel_msg.community_id,
+            rekindle_protocol::messaging::CommunityRequest::SendMessage {
+                channel_id: channel_msg.channel_id.clone(),
+                ciphertext: channel_msg.ciphertext,
+                mek_generation: channel_msg.mek_generation,
+                reply_to_id: None,
+            },
+        )
+        .await
+        .map(|_| ());
 
         match result {
             Ok(()) => {

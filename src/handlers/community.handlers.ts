@@ -6,7 +6,7 @@ import { setCommunityState, communityState } from "../stores/community.store";
 import { authState } from "../stores/auth.store";
 import { addToast } from "../stores/toast.store";
 import type { Message } from "../stores/chat.store";
-import type { CommunityEvent as CommunityEventType } from "../stores/community.store";
+import type { Channel, CommunityEvent as CommunityEventType } from "../stores/community.store";
 import type { InviteDto } from "../stores/types";
 import { transformCommunityDetail, transformMember, transformMessages } from "../utils/transformers";
 import { truncateKey } from "../utils/formatting";
@@ -99,7 +99,7 @@ export async function handleJoinCommunity(
 export async function handleCreateChannel(
   communityId: string,
   name: string,
-  channelType: "text" | "voice" | "announcement",
+  channelType: string,
   categoryId?: string,
 ): Promise<void> {
   try {
@@ -111,7 +111,7 @@ export async function handleCreateChannel(
     );
     setCommunityState("communities", communityId, "channels", (chs) => [
       ...chs,
-      { id: channelId, name, type: channelType, unreadCount: 0, categoryId },
+      { id: channelId, name, type: channelType as Channel["type"], unreadCount: 0, categoryId },
     ]);
   } catch (e) {
     const msg = typeof e === "string" ? e : "Failed to create channel";
@@ -1686,4 +1686,39 @@ export function subscribeCommunityEventDispatcher(): Promise<UnlistenFn> {
       }
     }
   });
+}
+
+// ── Onboarding & Welcome Screen ──
+
+export async function handleLoadOnboardingConfig(communityId: string): Promise<void> {
+  try {
+    const config = await commands.getOnboardingConfig(communityId);
+    setCommunityState("communities", communityId, "onboardingConfig", config);
+  } catch (e) {
+    console.error("Failed to load onboarding config:", e);
+  }
+}
+
+export async function handleLoadWelcomeScreen(communityId: string): Promise<void> {
+  try {
+    const screen = await commands.getWelcomeScreen(communityId);
+    setCommunityState("communities", communityId, "welcomeScreen", screen);
+  } catch (e) {
+    console.error("Failed to load welcome screen:", e);
+  }
+}
+
+export async function handleSubmitOnboarding(
+  communityId: string,
+  answers: { questionId: string; selectedOptions: string[] }[],
+): Promise<boolean> {
+  try {
+    await commands.submitOnboardingAnswers(communityId, answers);
+    setCommunityState("communities", communityId, "onboardingComplete", true);
+    return true;
+  } catch (e) {
+    console.error("Failed to submit onboarding:", e);
+    addToast("Failed to complete onboarding", "error");
+    return false;
+  }
 }

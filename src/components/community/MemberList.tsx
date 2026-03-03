@@ -68,7 +68,7 @@ const MemberList: Component<MemberListProps> = (props) => {
     setProfilePopup({ member, x: e.clientX, y: e.clientY });
   }
 
-  function myPerms(): number {
+  function myPerms(): bigint {
     return calculateBasePermissions(props.myRoleIds, props.roles, props.isHosted);
   }
 

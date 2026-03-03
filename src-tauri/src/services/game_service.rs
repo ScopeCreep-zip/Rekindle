@@ -116,7 +116,7 @@ fn fan_out_community_presence(
             UserStatus::Online => "online",
             UserStatus::Away => "away",
             UserStatus::Busy => "busy",
-            UserStatus::Offline => "offline",
+            UserStatus::Offline | UserStatus::Invisible => "offline",
         }.to_string()
     };
 

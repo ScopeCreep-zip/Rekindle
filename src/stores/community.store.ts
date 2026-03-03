@@ -1,15 +1,18 @@
 import { createStore } from "solid-js/store";
 import type { Message } from "./chat.store";
-import type { GameInfo, InviteDto } from "./types";
+import type { GameInfo, InviteDto, OnboardingConfig, WelcomeScreen } from "./types";
 
 export interface Channel {
   id: string;
   name: string;
-  type: "text" | "voice" | "announcement";
+  type: "text" | "voice" | "announcement" | "forum" | "stage" | "directory" | "media" | "events" | "dm";
   unreadCount: number;
   categoryId?: string;
   topic?: string;
   slowmodeSeconds?: number;
+  nsfw?: boolean;
+  messageRecordKey?: string;
+  mekGeneration?: number;
 }
 
 export interface Category {
@@ -92,6 +95,13 @@ export interface Community {
   mekGeneration: number;
   isHosted: boolean;
   events: CommunityEvent[];
+  manifestKey?: string;
+  memberRegistryKey?: string;
+  coordinatorPseudonym?: string;
+  coordinatorEpoch?: number;
+  onboardingConfig?: OnboardingConfig;
+  welcomeScreen?: WelcomeScreen;
+  onboardingComplete?: boolean;
 }
 
 export interface CommunityState {

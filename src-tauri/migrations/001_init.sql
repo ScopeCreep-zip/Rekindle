@@ -75,8 +75,11 @@ CREATE TABLE IF NOT EXISTS communities (
     dht_owner_keypair TEXT,
     my_pseudonym_key TEXT,
     mek_generation INTEGER NOT NULL DEFAULT 0,
-    server_route_blob BLOB,
-    is_hosted INTEGER NOT NULL DEFAULT 0,
+    manifest_key TEXT,
+    member_registry_key TEXT,
+    coordinator_pseudonym TEXT,
+    coordinator_route_blob BLOB,
+    coordinator_epoch INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (owner_key, id)
 );
 
@@ -85,8 +88,14 @@ CREATE TABLE IF NOT EXISTS channels (
     id TEXT NOT NULL,
     community_id TEXT NOT NULL,
     name TEXT NOT NULL,
-    channel_type TEXT NOT NULL CHECK(channel_type IN ('text', 'voice', 'announcement')),
+    channel_type TEXT NOT NULL CHECK(channel_type IN ('text', 'voice', 'announcement', 'forum', 'stage', 'directory', 'media', 'events', 'dm')),
     sort_order INTEGER NOT NULL DEFAULT 0,
+    category_id TEXT,
+    topic TEXT NOT NULL DEFAULT '',
+    slowmode_seconds INTEGER NOT NULL DEFAULT 0,
+    nsfw INTEGER NOT NULL DEFAULT 0,
+    message_record_key TEXT,
+    mek_generation INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (owner_key, id),
     FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
 );
@@ -99,6 +108,8 @@ CREATE TABLE IF NOT EXISTS community_members (
     role_ids TEXT NOT NULL DEFAULT '[0,1]',
     timeout_until INTEGER,
     joined_at INTEGER NOT NULL,
+    subkey_index INTEGER,
+    onboarding_complete INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (owner_key, community_id, pseudonym_key)
 );
 

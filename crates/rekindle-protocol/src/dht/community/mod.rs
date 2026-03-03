@@ -1,3 +1,30 @@
+pub mod audit_log;
+pub mod automod;
+pub mod channel_record;
+pub mod election;
+pub mod envelope;
+pub mod manifest;
+pub mod member_registry;
+pub mod onboarding;
+pub mod permissions_v2;
+pub mod types;
+
+// Re-export v2 types for convenient access via `dht::community::*`
+pub use audit_log::{AuditAction, AuditChange, AuditLogEntry, AuditTarget};
+pub use automod::{AutoModAction, AutoModConfig, AutoModRule, AutoModTrigger, RaidAction, RaidProtection};
+pub use election::{compute_election_score, find_winner, is_eligible};
+pub use envelope::{
+    sign_envelope, verify_envelope, CommunityEnvelope, ControlPayload, OnboardingAnswer,
+    PresenceGameInfo, SignedEnvelope,
+};
+pub use onboarding::{OnboardingConfig, OnboardingMode, OnboardingQuestion, WelcomeScreen};
+pub use permissions_v2::{calculate_permissions_v2, has_permission_v2, Permissions};
+pub use types::{
+    BanEntry, CategoryEntry, ChannelEntryV2, ChannelKind, CommunityMetadataV2, CommunityPolicy,
+    CoordinatorInfo, EncryptedMEKCopy, InviteEntry, MEKVaultEntry, MemberPresence, MemberSummary,
+    ModerationLevel, RoleEntryV2,
+};
+
 use crate::capnp_codec;
 use crate::dht::DHTManager;
 use crate::error::ProtocolError;

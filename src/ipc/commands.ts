@@ -1,4 +1,5 @@
 import { invoke } from "./invoke";
+import type { OnboardingConfig, WelcomeScreen, OnboardingAnswer } from "../stores/types";
 
 export interface LoginResult {
   publicKey: string;
@@ -377,6 +378,18 @@ export const commands = {
   openProfileWindow: (publicKey: string, displayName: string) =>
     invoke<void>("open_profile_window", { publicKey, displayName }),
   getNetworkStatus: () => invoke<NetworkStatus>("get_network_status"),
+
+  // Onboarding & Welcome Screen
+  getOnboardingConfig: (communityId: string) =>
+    invoke<OnboardingConfig>("get_onboarding_config", { communityId }),
+  setOnboardingConfig: (communityId: string, config: OnboardingConfig) =>
+    invoke<void>("set_onboarding_config", { communityId, config }),
+  getWelcomeScreen: (communityId: string) =>
+    invoke<WelcomeScreen>("get_welcome_screen", { communityId }),
+  setWelcomeScreen: (communityId: string, screen: WelcomeScreen) =>
+    invoke<void>("set_welcome_screen", { communityId, screen }),
+  submitOnboardingAnswers: (communityId: string, answers: OnboardingAnswer[]) =>
+    invoke<void>("submit_onboarding_answers", { communityId, answers }),
 };
 
 export function avatarDataUrl(base64: string | null | undefined): string | undefined {

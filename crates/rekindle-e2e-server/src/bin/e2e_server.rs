@@ -297,7 +297,7 @@ async fn dispatch(server: &ServerState, cmd: &str, args: &Value) -> Result<Value
                             UserStatus::Online => "online",
                             UserStatus::Away => "away",
                             UserStatus::Busy => "busy",
-                            UserStatus::Offline => "offline",
+                            UserStatus::Offline | UserStatus::Invisible => "offline",
                         }),
                         "statusMessage": f.status_message,
                         "gameInfo": Value::Null,

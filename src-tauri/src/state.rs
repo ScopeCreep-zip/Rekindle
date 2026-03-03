@@ -8,46 +8,6 @@ use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
-/// Wrapper around `std::process::Child` that kills the child process on drop.
-///
-/// Prevents orphaned child processes when the parent exits unexpectedly (crash,
-/// force-quit). On normal shutdown, the process is killed and waited for so
-/// no zombie process remains.
-pub struct KillOnDropChild(std::process::Child);
-
-impl KillOnDropChild {
-    /// Wrap an existing `Child` process.
-    pub fn new(child: std::process::Child) -> Self {
-        Self(child)
-    }
-
-    /// Get the OS-assigned process ID.
-    pub fn id(&self) -> u32 {
-        self.0.id()
-    }
-
-    /// Check if the child has exited without blocking.
-    pub fn try_wait(&mut self) -> std::io::Result<Option<std::process::ExitStatus>> {
-        self.0.try_wait()
-    }
-
-    /// Send a kill signal to the child process.
-    pub fn kill(&mut self) -> std::io::Result<()> {
-        self.0.kill()
-    }
-
-    /// Block until the child process exits.
-    pub fn wait(&mut self) -> std::io::Result<std::process::ExitStatus> {
-        self.0.wait()
-    }
-}
-
-impl Drop for KillOnDropChild {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
 
 /// Central application state shared across all Tauri commands and services.
 pub struct AppState {
@@ -88,15 +48,14 @@ pub struct AppState {
     /// stale tasks from interfering with re-login.
     pub background_handles: Mutex<Vec<tauri::async_runtime::JoinHandle<()>>>,
     /// MEK cache: `community_id` -> current `MediaEncryptionKey` (decrypted from server).
+    /// Legacy community-level MEK — used during the transition to per-channel MEK.
     pub mek_cache: Mutex<HashMap<String, MediaEncryptionKey>>,
-    /// Community server child process handle (spawned on login if user owns communities).
-    /// Wrapped in `KillOnDropChild` so the child is killed if the parent crashes.
-    pub server_process: Mutex<Option<KillOnDropChild>>,
-    /// Shutdown sender for the server health check loop.
-    pub server_health_shutdown_tx: Arc<RwLock<Option<mpsc::Sender<()>>>>,
-    /// Community server route cache: `community_id` -> imported `RouteId`.
-    /// For communities we're a MEMBER of (not owner) — the remote server's route.
-    pub community_routes: RwLock<HashMap<String, veilid_core::RouteId>>,
+    /// Per-channel MEK cache: `(community_id, channel_id)` -> `MediaEncryptionKey`.
+    /// New per-channel MEK distribution: each channel has its own encryption key.
+    pub channel_mek_cache: Mutex<HashMap<(String, String), MediaEncryptionKey>>,
+    /// Per-community coordinator service handles.
+    /// Key: community_id, Value: handle for querying role + forwarding value changes.
+    pub coordinator_services: RwLock<HashMap<String, crate::services::coordinator::CoordinatorServiceHandle>>,
     /// Friends whose DHT `watch_dht_values` returned false (watch not established).
     /// Per Veilid GitLab #377, apps must poll as fallback when watching fails.
     /// The sync service uses `force_refresh=true` for these friends.
@@ -142,9 +101,8 @@ impl Default for AppState {
             identity_secret: Mutex::new(None),
             background_handles: Mutex::new(Vec::new()),
             mek_cache: Mutex::new(HashMap::new()),
-            server_process: Mutex::new(None),
-            server_health_shutdown_tx: Arc::new(RwLock::new(None)),
-            community_routes: RwLock::new(HashMap::new()),
+            channel_mek_cache: Mutex::new(HashMap::new()),
+            coordinator_services: RwLock::new(HashMap::new()),
             unwatched_friends: RwLock::new(HashSet::new()),
             dispatch_loop_handle: RwLock::new(None),
             route_refresh_shutdown_tx: RwLock::new(None),
@@ -376,6 +334,9 @@ pub enum UserStatus {
     Away,
     Busy,
     Offline,
+    /// Invisible: the user is online but appears offline to others.
+    /// They can still receive messages and see who's online.
+    Invisible,
 }
 
 /// Whether a friendship is pending (outbound request sent) or fully accepted.
@@ -457,10 +418,24 @@ pub struct CommunityState {
     pub my_pseudonym_key: Option<String>,
     /// Current MEK generation we have.
     pub mek_generation: u64,
-    /// Community server's private route blob (for sending `app_call`).
-    pub server_route_blob: Option<Vec<u8>>,
-    /// Whether we host this community's server process.
-    pub is_hosted: bool,
+    /// DHT manifest record key (DFLT, 16 subkeys).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub manifest_key: Option<String>,
+    /// DHT member registry record key (SMPL, multi-writer).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub member_registry_key: Option<String>,
+    /// Our subkey index in the member registry SMPL record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub my_subkey_index: Option<u32>,
+    /// Coordinator's pseudonym public key hex.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coordinator_pseudonym: Option<String>,
+    /// Coordinator's route blob for sending envelopes to the active coordinator.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coordinator_route_blob: Option<Vec<u8>>,
+    /// Coordinator epoch — incremented on coordinator restart.
+    #[serde(default)]
+    pub coordinator_epoch: u64,
 }
 
 /// A role definition cached from the server.
@@ -517,6 +492,15 @@ pub struct ChannelInfo {
     pub topic: String,
     #[serde(default)]
     pub slowmode_seconds: Option<u32>,
+    /// Whether this channel is marked NSFW.
+    #[serde(default)]
+    pub nsfw: bool,
+    /// DHT record key for this channel's per-channel message record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message_record_key: Option<String>,
+    /// Current MEK generation for this channel.
+    #[serde(default)]
+    pub mek_generation: u64,
 }
 
 /// Category info within a community.
@@ -627,6 +611,9 @@ pub(crate) fn parse_dht_channel_list(data: &[u8]) -> Vec<ChannelInfo> {
                 category_id,
                 topic,
                 slowmode_seconds,
+                nsfw: false,
+                message_record_key: None,
+                mek_generation: 0,
             })
         })
         .collect()

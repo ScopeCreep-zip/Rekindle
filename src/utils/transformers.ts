@@ -47,17 +47,18 @@ export function transformMessages(msgs: IpcMessage[]): Message[] {
 }
 
 /** Backend channel DTO → store Channel (handles the channelType→type rename+cast). */
-export function transformChannel(ch: { id: string; name: string; channelType: string; unreadCount: number; categoryId?: string; topic?: string; slowmodeSeconds?: number }): Channel {
-  return { id: ch.id, name: ch.name, type: ch.channelType as "text" | "voice" | "announcement", unreadCount: ch.unreadCount, categoryId: ch.categoryId, topic: ch.topic ?? "", slowmodeSeconds: ch.slowmodeSeconds };
+export function transformChannel(ch: { id: string; name: string; channelType: string; unreadCount: number; categoryId?: string; topic?: string; slowmodeSeconds?: number; nsfw?: boolean; messageRecordKey?: string; mekGeneration?: number }): Channel {
+  return { id: ch.id, name: ch.name, type: ch.channelType as Channel["type"], unreadCount: ch.unreadCount, categoryId: ch.categoryId, topic: ch.topic ?? "", slowmodeSeconds: ch.slowmodeSeconds, nsfw: ch.nsfw, messageRecordKey: ch.messageRecordKey, mekGeneration: ch.mekGeneration };
 }
 
 /** Backend community detail DTO → store Community. */
 export function transformCommunityDetail(c: {
   id: string; name: string; description: string | null;
-  channels: { id: string; name: string; channelType: string; unreadCount: number; categoryId?: string; topic?: string; slowmodeSeconds?: number }[];
+  channels: { id: string; name: string; channelType: string; unreadCount: number; categoryId?: string; topic?: string; slowmodeSeconds?: number; nsfw?: boolean; messageRecordKey?: string; mekGeneration?: number }[];
   categories?: { id: string; name: string; sortOrder: number }[];
   roles?: { id: number; name: string; color: number; permissions: number; position: number; hoist: boolean; mentionable: boolean }[];
   myRoleIds?: number[]; myPseudonymKey?: string | null; mekGeneration?: number; isHosted?: boolean;
+  manifestKey?: string; memberRegistryKey?: string; coordinatorPseudonym?: string; coordinatorEpoch?: number;
 }): Community {
   return {
     id: c.id, name: c.name, description: c.description ?? null,
@@ -67,6 +68,8 @@ export function transformCommunityDetail(c: {
     myRoleIds: c.myRoleIds ?? [0, 1], myPseudonymKey: c.myPseudonymKey ?? null,
     mekGeneration: c.mekGeneration ?? 0, isHosted: c.isHosted ?? false,
     events: [],
+    manifestKey: c.manifestKey, memberRegistryKey: c.memberRegistryKey,
+    coordinatorPseudonym: c.coordinatorPseudonym, coordinatorEpoch: c.coordinatorEpoch,
   };
 }
 
