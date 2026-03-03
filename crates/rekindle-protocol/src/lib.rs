@@ -29,11 +29,6 @@ pub mod identity_capnp {
 }
 
 #[allow(clippy::all, clippy::pedantic, unused)]
-pub mod community_capnp {
-    include!(concat!(env!("OUT_DIR"), "/community_capnp.rs"));
-}
-
-#[allow(clippy::all, clippy::pedantic, unused)]
 pub mod friend_capnp {
     include!(concat!(env!("OUT_DIR"), "/friend_capnp.rs"));
 }

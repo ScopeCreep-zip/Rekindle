@@ -4,7 +4,6 @@ const SCHEMAS: &[&str] = &[
     "message",
     "identity",
     "presence",
-    "community",
     "friend",
     "voice",
     "account",
@@ -93,7 +92,6 @@ fn main() {
                 .file("../../schemas/message.capnp")
                 .file("../../schemas/identity.capnp")
                 .file("../../schemas/presence.capnp")
-                .file("../../schemas/community.capnp")
                 .file("../../schemas/friend.capnp")
                 .file("../../schemas/voice.capnp")
                 .file("../../schemas/account.capnp")

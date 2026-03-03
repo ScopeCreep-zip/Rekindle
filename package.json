@@ -5,8 +5,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node scripts/copy-sidecar.mjs && vite",
-    "build": "node scripts/copy-sidecar.mjs --release && tsc && vite build",
+    "dev": "lsof -ti:1420 | xargs kill -9 2>/dev/null; vite",
+    "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
     "test:mock": "playwright test --project=mock",

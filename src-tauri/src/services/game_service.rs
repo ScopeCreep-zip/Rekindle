@@ -93,10 +93,10 @@ pub async fn start_game_detection(
     }
 }
 
-/// Send `UpdatePresence` RPC to every joined community so members see our game status.
+/// Send `UpdatePresence` to every joined community via coordinator so members see our game status.
 fn fan_out_community_presence(
     state: &SharedState,
-    pool: &DbPool,
+    _pool: &DbPool,
     game_info: Option<&GameInfoState>,
 ) {
     let community_ids: Vec<String> = {
@@ -121,20 +121,40 @@ fn fan_out_community_presence(
     };
 
     for community_id in community_ids {
-        let request = rekindle_protocol::messaging::CommunityRequest::UpdatePresence {
-            status: status.clone(),
-            game_name: game_info.as_ref().map(|g| g.game_name.clone()),
-            game_id: game_info.as_ref().map(|g| g.game_id),
-            elapsed_seconds: game_info.as_ref().map(|g| g.elapsed_seconds),
-            server_address: game_info.as_ref().and_then(|g| g.server_address.clone()),
+        let game_info_for_envelope = game_info.map(|g| {
+            rekindle_protocol::dht::community::envelope::PresenceGameInfo {
+                game_name: g.game_name.clone(),
+                game_id: Some(g.game_id),
+                elapsed_seconds: Some(g.elapsed_seconds),
+                server_address: g.server_address.clone(),
+            }
+        });
+
+        let pseudonym_key = {
+            let communities = state.communities.read();
+            communities
+                .get(&community_id)
+                .and_then(|c| c.my_pseudonym_key.clone())
+                .unwrap_or_default()
         };
 
-        // Fire-and-forget — don't block detection loop on RPC responses
+        // Fire-and-forget — don't block detection loop on network calls
         let s = Arc::clone(state);
-        let p = pool.clone();
         let cid = community_id.clone();
+        let status_clone = status.clone();
         tokio::spawn(async move {
-            if let Err(e) = crate::commands::community::send_community_rpc(&s, &p, &cid, request).await {
+            if let Err(e) = crate::commands::community::send_to_coordinator(
+                &s,
+                &cid,
+                rekindle_protocol::dht::community::envelope::CommunityEnvelope::PresenceUpdate {
+                    pseudonym_key,
+                    status: status_clone,
+                    game_info: game_info_for_envelope,
+                    route_blob: crate::state_helpers::our_route_blob(&s),
+                },
+            )
+            .await
+            {
                 tracing::debug!(community = %cid, error = %e, "failed to fan out game presence");
             }
         });

@@ -158,7 +158,7 @@ export const commands = {
       categories?: { id: string; name: string; sortOrder: number }[];
       myRole: string | null;
       myRoleIds: number[];
-      roles: { id: number; name: string; color: number; permissions: number; position: number; hoist: boolean; mentionable: boolean }[];
+      roles: { id: number; name: string; color: number; permissions: string; position: number; hoist: boolean; mentionable: boolean }[];
       myPseudonymKey: string | null;
       mekGeneration: number;
     }[]>("get_community_details"),
@@ -264,9 +264,9 @@ export const commands = {
     invoke<{ id: number; name: string; color: number; permissions: number; position: number; hoist: boolean; mentionable: boolean }[]>(
       "get_roles", { communityId },
     ),
-  createRole: (communityId: string, name: string, color: number, permissions: number, hoist: boolean, mentionable: boolean) =>
+  createRole: (communityId: string, name: string, color: number, permissions: string, hoist: boolean, mentionable: boolean) =>
     invoke<number>("create_role", { communityId, name, color, permissions, hoist, mentionable }),
-  editRole: (communityId: string, roleId: number, name: string | null, color: number | null, permissions: number | null, position: number | null, hoist: boolean | null, mentionable: boolean | null) =>
+  editRole: (communityId: string, roleId: number, name: string | null, color: number | null, permissions: string | null, position: number | null, hoist: boolean | null, mentionable: boolean | null) =>
     invoke<void>("edit_role", { communityId, roleId, name, color, permissions, position, hoist, mentionable }),
   deleteRole: (communityId: string, roleId: number) =>
     invoke<void>("delete_role", { communityId, roleId }),

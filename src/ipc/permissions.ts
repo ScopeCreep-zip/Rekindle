@@ -102,7 +102,7 @@ export function isAdministrator(perms: bigint): boolean {
  * ORs together all role permissions for the member's roles.
  * This is a simplified client-side version for UI gating.
  *
- * Role.permissions is a `number` (as received from JSON IPC).
+ * Role.permissions is a string (serialized from Rust u64 to avoid JS Number precision loss).
  * Internally converts to BigInt for correct 64-bit bitwise operations.
  */
 export function calculateBasePermissions(

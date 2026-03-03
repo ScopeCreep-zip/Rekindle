@@ -681,7 +681,7 @@ async fn load_communities_from_db(
         let mut comm_stmt = conn
             .prepare(
                 "SELECT id, name, description, my_role, my_role_ids, dht_record_key, dht_owner_keypair, \
-                 my_pseudonym_key, mek_generation \
+                 my_pseudonym_key, mek_generation, manifest_key, member_registry_key \
                  FROM communities WHERE owner_key = ?1",
             )?;
         let communities = comm_stmt
@@ -696,6 +696,8 @@ async fn load_communities_from_db(
                     db::get_str_opt(row, "dht_owner_keypair"),
                     db::get_str_opt(row, "my_pseudonym_key"),
                     row.get::<_, i64>("mek_generation").unwrap_or(0).cast_unsigned(),
+                    db::get_str_opt(row, "manifest_key"),
+                    db::get_str_opt(row, "member_registry_key"),
                 ))
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -749,6 +751,8 @@ async fn load_communities_from_db(
         dht_owner_keypair,
         my_pseudonym_key,
         mek_generation,
+        db_manifest_key,
+        db_member_registry_key,
     ) in &community_rows
     {
         let channels: Vec<ChannelInfo> = channel_rows
@@ -789,6 +793,13 @@ async fn load_communities_from_db(
             )
             .collect();
 
+        // In v2, the community ID IS the manifest key (created as such in community_service).
+        // Restore from DB column, or fall back to dht_record_key or community_id.
+        let manifest_key = db_manifest_key
+            .clone()
+            .or_else(|| dht_record_key.clone())
+            .or_else(|| Some(community_id.clone()));
+
         let mut community = CommunityState {
             id: community_id.clone(),
             name: name.clone(),
@@ -802,8 +813,8 @@ async fn load_communities_from_db(
             dht_owner_keypair: dht_owner_keypair.clone(),
             my_pseudonym_key: my_pseudonym_key.clone(),
             mek_generation: *mek_generation,
-            manifest_key: None,
-            member_registry_key: None,
+            manifest_key,
+            member_registry_key: db_member_registry_key.clone(),
             my_subkey_index: None,
             coordinator_pseudonym: None,
             coordinator_route_blob: None,
@@ -1066,10 +1077,69 @@ fn spawn_login_services(
             state.coordinator_services.write().insert(community_id, handle);
         }
     }
+
+    // Populate coordinator route blobs from DHT for all communities.
+    // This must complete before the communities are usable (send_to_coordinator needs the route).
+    let restore_state = Arc::clone(state);
+    let restore_handle = tauri::async_runtime::spawn(async move {
+        restore_coordinator_routes(&restore_state).await;
+    });
+    state.background_handles.lock().push(restore_handle);
 }
 
 
 
+
+/// Read coordinator info from DHT manifest for each community and populate
+/// `coordinator_route_blob` in the in-memory state. Without this, communities
+/// loaded from SQLite have no coordinator route and `send_to_coordinator()` fails.
+async fn restore_coordinator_routes(state: &SharedState) {
+    use rekindle_protocol::dht::community::manifest;
+    use rekindle_protocol::dht::DHTManager;
+
+    let Some(rc) = state_helpers::routing_context(state) else {
+        tracing::warn!("restore_coordinator_routes: no routing context, skipping");
+        return;
+    };
+    let mgr = DHTManager::new(rc);
+
+    // Collect communities that need coordinator route restoration
+    let communities: Vec<(String, String)> = {
+        let cs = state.communities.read();
+        cs.values()
+            .filter(|c| c.coordinator_route_blob.is_none())
+            .map(|c| {
+                let manifest = c.manifest_key.clone().unwrap_or_else(|| c.id.clone());
+                (c.id.clone(), manifest)
+            })
+            .collect()
+    };
+
+    for (community_id, manifest_key) in &communities {
+        match manifest::read_coordinator(&mgr, manifest_key).await {
+            Ok(Some(coord_info)) if !coord_info.route_blob.is_empty() => {
+                let mut cs = state.communities.write();
+                if let Some(c) = cs.get_mut(community_id) {
+                    c.coordinator_pseudonym = Some(coord_info.pseudonym_key.clone());
+                    c.coordinator_route_blob = Some(coord_info.route_blob);
+                    c.coordinator_epoch = coord_info.epoch;
+                }
+                tracing::info!(
+                    community = %community_id,
+                    coordinator = %coord_info.pseudonym_key,
+                    epoch = coord_info.epoch,
+                    "restored coordinator route from DHT"
+                );
+            }
+            Ok(_) => {
+                tracing::debug!(community = %community_id, "no coordinator found in DHT — election will resolve");
+            }
+            Err(e) => {
+                tracing::warn!(community = %community_id, error = %e, "failed to read coordinator from DHT");
+            }
+        }
+    }
+}
 
 /// Allocate a Veilid private route with retry.
 ///

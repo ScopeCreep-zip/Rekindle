@@ -114,7 +114,7 @@ pub async fn log_action(
 ) {
     let now_secs = rekindle_utils::timestamp_secs();
 
-    // Build the entry (signature is empty — would need coordinator signing key)
+    // Build the entry, signed with coordinator pseudonym key
     let (entry, audit_key, current_page) = {
         let mut log = logger.lock();
 
@@ -128,7 +128,7 @@ pub async fn log_action(
             return;
         }
 
-        let entry = AuditLogEntry {
+        let mut entry = AuditLogEntry {
             entry_id: log.next_entry_id,
             actor_pseudonym: get_my_pseudonym(state, community_id),
             action,
@@ -136,8 +136,11 @@ pub async fn log_action(
             changes,
             reason,
             timestamp: now_secs,
-            signature: Vec::new(), // TODO: Sign with coordinator pseudonym key
+            signature: Vec::new(),
         };
+
+        // Sign with coordinator pseudonym Ed25519 key
+        entry.signature = sign_audit_entry(state, community_id, &entry);
 
         log.next_entry_id += 1;
 
@@ -235,4 +238,32 @@ fn get_my_pseudonym(state: &Arc<AppState>, community_id: &str) -> String {
         .get(community_id)
         .and_then(|c| c.my_pseudonym_key.clone())
         .unwrap_or_default()
+}
+
+/// Sign an audit log entry with the coordinator's pseudonym Ed25519 key.
+///
+/// Serializes the entry (with empty signature field) and signs with the
+/// pseudonym signing key derived from `identity_secret + community_id`.
+fn sign_audit_entry(
+    state: &Arc<AppState>,
+    community_id: &str,
+    entry: &AuditLogEntry,
+) -> Vec<u8> {
+    // Get identity secret from state
+    let Some(secret) = *state.identity_secret.lock() else {
+        return Vec::new();
+    };
+
+    // Derive the pseudonym signing key for this community
+    let signing_key =
+        rekindle_crypto::group::pseudonym::derive_community_pseudonym(&secret, community_id);
+
+    // Serialize entry with empty signature for signing
+    let mut signable = entry.clone();
+    signable.signature = Vec::new();
+    let Ok(bytes) = serde_json::to_vec(&signable) else {
+        return Vec::new();
+    };
+
+    rekindle_crypto::group::pseudonym::sign_with_pseudonym(&signing_key, &bytes).to_vec()
 }

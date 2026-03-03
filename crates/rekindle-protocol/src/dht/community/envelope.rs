@@ -120,6 +120,10 @@ pub enum ControlPayload {
         #[serde(default)]
         members: Vec<serde_json::Value>,
     },
+    /// Response: join rejected by coordinator.
+    JoinRejected {
+        reason: String,
+    },
     /// Broadcast: a member joined.
     MemberJoined {
         pseudonym_key: String,
@@ -359,8 +363,10 @@ pub enum ControlPayload {
     },
 
     // ── Invite management ──
-    /// Create an invite.
+    /// Create an invite. The `code` is generated client-side and passed through.
     CreateInvite {
+        /// Client-generated invite code (hex string).
+        code: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         max_uses: Option<u32>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -642,11 +648,36 @@ pub enum ControlPayload {
         answers: Vec<OnboardingAnswer>,
     },
 
-    // ── AutoMod notifications ──
+    // ── Event reminders ──
+    /// Broadcast: event starting soon reminder.
+    EventReminder {
+        event_id: String,
+        title: String,
+        minutes_until_start: u32,
+    },
+
+    // ── Kicked notification ──
+    /// Notification: you were kicked from the community.
+    KickedNotification,
+
+    // ── AutoMod / Raid notifications ──
     /// Notification: message blocked by automod.
     AutoModBlocked {
         rule_name: String,
         reason: String,
+    },
+    /// Raid alert broadcast to all members (owners/admins should act).
+    RaidAlert {
+        active: bool,
+    },
+    /// Channel lockdown broadcast: non-admins should restrict sending.
+    ChannelLockdown {
+        locked: bool,
+    },
+    /// System message broadcast (join/leave/kick/ban events posted to chat feed).
+    SystemMessage {
+        body: String,
+        timestamp: u64,
     },
 
     // ── Generic responses ──

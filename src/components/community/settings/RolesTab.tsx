@@ -40,7 +40,7 @@ const RolesTab: Component<RolesTabProps> = (props) => {
   const [editRoleMentionable, setEditRoleMentionable] = createSignal(false);
   const [savingRole, setSavingRole] = createSignal(false);
 
-  function startEditRole(role: { id: number; name: string; color: number; permissions: number; hoist: boolean; mentionable: boolean }): void {
+  function startEditRole(role: { id: number; name: string; color: number; permissions: string; hoist: boolean; mentionable: boolean }): void {
     setEditingRoleId(role.id);
     setEditRoleName(role.name);
     setEditRoleColor(colorIntToHex(role.color));
@@ -58,7 +58,7 @@ const RolesTab: Component<RolesTabProps> = (props) => {
         props.community.id,
         name,
         hexToColorInt(newRoleColor()),
-        Number(newRolePerms()),
+        newRolePerms().toString(),
         newRoleHoist(),
         newRoleMentionable(),
       );
@@ -83,7 +83,7 @@ const RolesTab: Component<RolesTabProps> = (props) => {
         id,
         editRoleName().trim() || null,
         hexToColorInt(editRoleColor()),
-        Number(editRolePerms()),
+        editRolePerms().toString(),
         null,
         editRoleHoist(),
         editRoleMentionable(),

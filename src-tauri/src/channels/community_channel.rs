@@ -228,6 +228,36 @@ pub enum CommunityEvent {
     MembersRefreshed {
         community_id: String,
     },
+    /// System message (join/leave/kick/ban events posted inline in chat).
+    #[serde(rename_all = "camelCase")]
+    SystemMessage {
+        community_id: String,
+        body: String,
+        timestamp: u64,
+    },
+    /// Raid alert broadcast — owners/admins should take action.
+    #[serde(rename_all = "camelCase")]
+    RaidAlert {
+        community_id: String,
+        active: bool,
+    },
+    /// Channel lockdown broadcast — non-admins should restrict sending.
+    #[serde(rename_all = "camelCase")]
+    ChannelLockdown {
+        community_id: String,
+        locked: bool,
+    },
+    /// Join request was rejected by the coordinator.
+    #[serde(rename_all = "camelCase")]
+    JoinRejected {
+        community_id: String,
+        reason: String,
+    },
+    /// Join accepted by the coordinator — MEK and community data received.
+    #[serde(rename_all = "camelCase")]
+    JoinAccepted {
+        community_id: String,
+    },
 }
 
 /// Event info DTO for frontend consumption.
@@ -256,12 +286,20 @@ pub struct EventRsvpInfoDto {
 }
 
 /// Role DTO for frontend consumption (mirrors protocol's `RoleDto`).
+///
+/// `permissions` is serialized as a string to avoid JavaScript `Number` precision
+/// loss — `u64` values above `2^53 - 1` lose low bits when parsed as JSON numbers,
+/// which silently strips the ADMINISTRATOR flag (bit 3) from the Owner role.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RoleDto {
     pub id: u32,
     pub name: String,
     pub color: u32,
+    #[serde(
+        serialize_with = "crate::serde_helpers::serialize_u64_as_string",
+        deserialize_with = "crate::serde_helpers::deserialize_u64_from_string_or_number"
+    )]
     pub permissions: u64,
     pub position: i32,
     pub hoist: bool,

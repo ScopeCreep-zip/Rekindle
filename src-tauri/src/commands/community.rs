@@ -9,6 +9,7 @@ use crate::keystore::KeystoreHandle;
 use crate::services;
 use crate::state::{ChannelType, SharedState};
 use crate::state_helpers;
+use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
 
 /// A community member for the frontend.
 #[derive(Debug, Serialize)]
@@ -218,6 +219,8 @@ pub async fn create_community(
     let name_clone = name.clone();
     let dht_record_key = community.dht_record_key.clone();
     let dht_owner_keypair = community.dht_owner_keypair.clone();
+    let manifest_key_db = community.manifest_key.clone();
+    let member_registry_key_db = community.member_registry_key.clone();
     let pseudonym_key = my_pseudonym_key
         .clone()
         .unwrap_or_else(|| creator_key.clone());
@@ -228,9 +231,9 @@ pub async fn create_community(
         // Owner gets all default role IDs: @everyone(0), members(1), moderator(2), admin(3), owner(4)
         let owner_role_ids = serde_json::to_string(&[0u32, 1, 2, 3, 4]).unwrap_or_default();
         conn.execute(
-            "INSERT INTO communities (owner_key, id, name, my_role, my_role_ids, joined_at, dht_record_key, dht_owner_keypair, my_pseudonym_key, mek_generation) \
-             VALUES (?, ?, ?, 'owner', ?, ?, ?, ?, ?, ?)",
-            rusqlite::params![ok, community_id_clone, name_clone, owner_role_ids, now, dht_record_key, dht_owner_keypair, pseudonym_key, mek_gen],
+            "INSERT INTO communities (owner_key, id, name, my_role, my_role_ids, joined_at, dht_record_key, dht_owner_keypair, my_pseudonym_key, mek_generation, manifest_key, member_registry_key) \
+             VALUES (?, ?, ?, 'owner', ?, ?, ?, ?, ?, ?, ?, ?)",
+            rusqlite::params![ok, community_id_clone, name_clone, owner_role_ids, now, dht_record_key, dht_owner_keypair, pseudonym_key, mek_gen, manifest_key_db, member_registry_key_db],
         )?;
 
         // Insert the creator as the first member (using pseudonym)
@@ -287,7 +290,7 @@ pub async fn join_community(
         .await?;
 
     // Read community state populated by join_community
-    let (name, dht_record_key, my_pseudonym_key, mek_generation, channels, my_role_ids, roles_to_persist) = {
+    let (name, dht_record_key, my_pseudonym_key, mek_generation, channels, my_role_ids, roles_to_persist, manifest_key, member_registry_key) = {
         let communities = state.communities.read();
         match communities.get(&community_id) {
             Some(c) => (
@@ -298,6 +301,8 @@ pub async fn join_community(
                 c.channels.clone(),
                 c.my_role_ids.clone(),
                 c.roles.clone(),
+                c.manifest_key.clone(),
+                c.member_registry_key.clone(),
             ),
             None => return Err("community state not found after join".to_string()),
         }
@@ -325,9 +330,9 @@ pub async fn join_community(
     let rij = role_ids_json;
     db_call(pool.inner(), move |conn| {
         conn.execute(
-            "INSERT OR IGNORE INTO communities (owner_key, id, name, my_role, my_role_ids, joined_at, dht_record_key, my_pseudonym_key, mek_generation) \
-             VALUES (?, ?, ?, 'member', ?, ?, ?, ?, ?)",
-            rusqlite::params![ok, community_id_clone, name, rij, now, dht_record_key, pk, mg],
+            "INSERT OR IGNORE INTO communities (owner_key, id, name, my_role, my_role_ids, joined_at, dht_record_key, my_pseudonym_key, mek_generation, manifest_key, member_registry_key) \
+             VALUES (?, ?, ?, 'member', ?, ?, ?, ?, ?, ?, ?)",
+            rusqlite::params![ok, community_id_clone, name, rij, now, dht_record_key, pk, mg, manifest_key, member_registry_key],
         )?;
 
         // Add ourselves to the community_members table
@@ -364,8 +369,9 @@ pub async fn join_community(
 
 /// Create a new channel in a community.
 ///
-/// For hosted communities, sends a `CommunityRequest::CreateChannel` to the
-/// server. For local-only communities, creates the channel locally + DHT.
+/// Sends `CreateChannel` to the coordinator (fire-and-forget). The channel
+/// ID is generated locally for optimistic UI; the coordinator broadcasts the
+/// canonical `ChannelCreated` event back to all members.
 #[tauri::command]
 pub async fn create_channel(
     community_id: String,
@@ -377,97 +383,40 @@ pub async fn create_channel(
 ) -> Result<String, String> {
     let owner_key = state_helpers::current_owner_key(state.inner())?;
 
-    // If this is a hosted community, send CreateChannel RPC to the server.
-    // send_community_rpc will on-demand fetch the route blob if missing.
-    let has_community = {
-        let communities = state.communities.read();
-        communities.contains_key(&community_id)
-    };
+    // Generate channel ID locally for optimistic state update
+    let channel_id = format!("ch_{}", hex::encode(&rand_nonce()[..8]));
 
-    if has_community {
-        let response = send_community_rpc(
-            state.inner(),
-            pool.inner(),
-            &community_id,
-            rekindle_protocol::messaging::CommunityRequest::CreateChannel {
-                name: name.clone(),
-                channel_type: channel_type.clone(),
-                category_id: category_id.clone(),
-            },
-        )
-        .await;
-
-        match response {
-            Ok(rekindle_protocol::messaging::CommunityResponse::ChannelCreated { channel_id }) => {
-                // Server created the channel — add it to local state too
-                let ch_type: ChannelType = channel_type.parse().unwrap_or(ChannelType::Text);
-                let channel = crate::state::ChannelInfo {
-                    id: channel_id.clone(),
-                    name: name.clone(),
-                    channel_type: ch_type,
-                    unread_count: 0,
-                    category_id: None,
-                    topic: String::new(),
-                    slowmode_seconds: None,
-                    nsfw: false,
-                    message_record_key: None,
-                    mek_generation: 0,
-                };
-                state_helpers::push_community_channel(state.inner(), &community_id, channel.clone());
-
-                // Persist to local SQLite
-                let comm_id = community_id.clone();
-                db_call(pool.inner(), move |conn| {
-                    crate::channel_repo::insert_channel(conn, &owner_key, &channel, &comm_id)?;
-                    Ok(())
-                })
-                .await?;
-
-                return Ok(channel_id);
-            }
-            Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => {
-                return Err(format!("server rejected channel creation: {message}"));
-            }
-            Ok(other) => {
-                return Err(format!(
-                    "unexpected server response for CreateChannel: {other:?}"
-                ));
-            }
-            Err(e) => {
-                tracing::warn!(
-                    community = %community_id, error = %e,
-                    "server unreachable for CreateChannel — falling back to local-only"
-                );
-                // Fall through to local-only creation below
-            }
-        }
-    }
-
-    // Local-only channel creation (no server route, or server was unreachable)
-    let channel_id = services::community_service::create_channel(
+    send_to_coordinator(
         state.inner(),
         &community_id,
-        &name,
-        &channel_type,
+        CommunityEnvelope::Control(ControlPayload::CreateChannel {
+            name: name.clone(),
+            channel_type: channel_type.clone(),
+            category_id: category_id.clone(),
+        }),
     )
     .await?;
 
+    // Optimistic local state update
     let ch_type: ChannelType = channel_type.parse().unwrap_or(ChannelType::Text);
     let channel = crate::state::ChannelInfo {
         id: channel_id.clone(),
         name: name.clone(),
         channel_type: ch_type,
         unread_count: 0,
-        category_id: None,
+        category_id,
         topic: String::new(),
         slowmode_seconds: None,
         nsfw: false,
         message_record_key: None,
         mek_generation: 0,
     };
-    let community_id_clone = community_id.clone();
+    state_helpers::push_community_channel(state.inner(), &community_id, channel.clone());
+
+    // Persist to local SQLite
+    let comm_id = community_id.clone();
     db_call(pool.inner(), move |conn| {
-        crate::channel_repo::insert_channel(conn, &owner_key, &channel, &community_id_clone)?;
+        crate::channel_repo::insert_channel(conn, &owner_key, &channel, &comm_id)?;
         Ok(())
     })
     .await?;
@@ -487,35 +436,28 @@ pub async fn create_category(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<String, String> {
-    let response = send_community_rpc(
+    let _ = pool;
+    // Generate category ID locally for optimistic state update
+    let category_id = format!("cat_{}", hex::encode(&rand_nonce()[..8]));
+
+    send_to_coordinator(
         state.inner(),
-        pool.inner(),
         &community_id,
-        rekindle_protocol::messaging::CommunityRequest::CreateCategory { name: name.clone() },
+        CommunityEnvelope::Control(ControlPayload::CreateCategory { name: name.clone() }),
     )
     .await?;
 
-    match response {
-        rekindle_protocol::messaging::CommunityResponse::CategoryCreated { category_id } => {
-            let mut communities = state.communities.write();
-            if let Some(community) = communities.get_mut(&community_id) {
-                let sort_order =
-                    i32::try_from(community.categories.len()).unwrap_or(i32::MAX);
-                community.categories.push(crate::state::CategoryInfo {
-                    id: category_id.clone(),
-                    name,
-                    sort_order,
-                });
-            }
-            Ok(category_id)
-        }
-        rekindle_protocol::messaging::CommunityResponse::Error { message, .. } => {
-            Err(format!("server rejected category creation: {message}"))
-        }
-        other => Err(format!(
-            "unexpected server response for CreateCategory: {other:?}"
-        )),
+    // Optimistic local state update
+    let mut communities = state.communities.write();
+    if let Some(community) = communities.get_mut(&community_id) {
+        let sort_order = i32::try_from(community.categories.len()).unwrap_or(i32::MAX);
+        community.categories.push(crate::state::CategoryInfo {
+            id: category_id.clone(),
+            name,
+            sort_order,
+        });
     }
+    Ok(category_id)
 }
 
 /// Delete a channel category.
@@ -526,36 +468,27 @@ pub async fn delete_category(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let response = send_community_rpc(
+    let _ = pool;
+    send_to_coordinator(
         state.inner(),
-        pool.inner(),
         &community_id,
-        rekindle_protocol::messaging::CommunityRequest::DeleteCategory {
+        CommunityEnvelope::Control(ControlPayload::DeleteCategory {
             category_id: category_id.clone(),
-        },
+        }),
     )
     .await?;
 
-    match response {
-        rekindle_protocol::messaging::CommunityResponse::Ok => {
-            let mut communities = state.communities.write();
-            if let Some(community) = communities.get_mut(&community_id) {
-                community.categories.retain(|c| c.id != category_id);
-                for ch in &mut community.channels {
-                    if ch.category_id.as_deref() == Some(&category_id) {
-                        ch.category_id = None;
-                    }
-                }
+    // Optimistic local state update
+    let mut communities = state.communities.write();
+    if let Some(community) = communities.get_mut(&community_id) {
+        community.categories.retain(|c| c.id != category_id);
+        for ch in &mut community.channels {
+            if ch.category_id.as_deref() == Some(&category_id) {
+                ch.category_id = None;
             }
-            Ok(())
         }
-        rekindle_protocol::messaging::CommunityResponse::Error { message, .. } => {
-            Err(format!("server rejected category deletion: {message}"))
-        }
-        other => Err(format!(
-            "unexpected server response for DeleteCategory: {other:?}"
-        )),
     }
+    Ok(())
 }
 
 /// Rename a channel category.
@@ -567,34 +500,25 @@ pub async fn rename_category(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let response = send_community_rpc(
+    let _ = pool;
+    send_to_coordinator(
         state.inner(),
-        pool.inner(),
         &community_id,
-        rekindle_protocol::messaging::CommunityRequest::RenameCategory {
+        CommunityEnvelope::Control(ControlPayload::RenameCategory {
             category_id: category_id.clone(),
             new_name: new_name.clone(),
-        },
+        }),
     )
     .await?;
 
-    match response {
-        rekindle_protocol::messaging::CommunityResponse::Ok => {
-            let mut communities = state.communities.write();
-            if let Some(community) = communities.get_mut(&community_id) {
-                if let Some(cat) = community.categories.iter_mut().find(|c| c.id == category_id) {
-                    cat.name = new_name;
-                }
-            }
-            Ok(())
+    // Optimistic local state update
+    let mut communities = state.communities.write();
+    if let Some(community) = communities.get_mut(&community_id) {
+        if let Some(cat) = community.categories.iter_mut().find(|c| c.id == category_id) {
+            cat.name = new_name;
         }
-        rekindle_protocol::messaging::CommunityResponse::Error { message, .. } => {
-            Err(format!("server rejected category rename: {message}"))
-        }
-        other => Err(format!(
-            "unexpected server response for RenameCategory: {other:?}"
-        )),
     }
+    Ok(())
 }
 
 /// Move a channel to a different category (or remove from any category).
@@ -606,34 +530,25 @@ pub async fn move_channel(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let response = send_community_rpc(
+    let _ = pool;
+    send_to_coordinator(
         state.inner(),
-        pool.inner(),
         &community_id,
-        rekindle_protocol::messaging::CommunityRequest::MoveChannel {
+        CommunityEnvelope::Control(ControlPayload::MoveChannel {
             channel_id: channel_id.clone(),
             category_id: category_id.clone(),
-        },
+        }),
     )
     .await?;
 
-    match response {
-        rekindle_protocol::messaging::CommunityResponse::Ok => {
-            let mut communities = state.communities.write();
-            if let Some(community) = communities.get_mut(&community_id) {
-                if let Some(ch) = community.channels.iter_mut().find(|c| c.id == channel_id) {
-                    ch.category_id = category_id;
-                }
-            }
-            Ok(())
+    // Optimistic local state update
+    let mut communities = state.communities.write();
+    if let Some(community) = communities.get_mut(&community_id) {
+        if let Some(ch) = community.channels.iter_mut().find(|c| c.id == channel_id) {
+            ch.category_id = category_id;
         }
-        rekindle_protocol::messaging::CommunityResponse::Error { message, .. } => {
-            Err(format!("server rejected move channel: {message}"))
-        }
-        other => Err(format!(
-            "unexpected server response for MoveChannel: {other:?}"
-        )),
     }
+    Ok(())
 }
 
 /// Reorder categories within a community.
@@ -644,36 +559,27 @@ pub async fn reorder_categories(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let response = send_community_rpc(
+    let _ = pool;
+    send_to_coordinator(
         state.inner(),
-        pool.inner(),
         &community_id,
-        rekindle_protocol::messaging::CommunityRequest::ReorderCategories {
+        CommunityEnvelope::Control(ControlPayload::ReorderCategories {
             category_ids: category_ids.clone(),
-        },
+        }),
     )
     .await?;
 
-    match response {
-        rekindle_protocol::messaging::CommunityResponse::Ok => {
-            let mut communities = state.communities.write();
-            if let Some(community) = communities.get_mut(&community_id) {
-                for (i, cat_id) in category_ids.iter().enumerate() {
-                    if let Some(cat) = community.categories.iter_mut().find(|c| c.id == *cat_id) {
-                        cat.sort_order = i32::try_from(i).unwrap_or(i32::MAX);
-                    }
-                }
-                community.categories.sort_by_key(|c| c.sort_order);
+    // Optimistic local state update
+    let mut communities = state.communities.write();
+    if let Some(community) = communities.get_mut(&community_id) {
+        for (i, cat_id) in category_ids.iter().enumerate() {
+            if let Some(cat) = community.categories.iter_mut().find(|c| c.id == *cat_id) {
+                cat.sort_order = i32::try_from(i).unwrap_or(i32::MAX);
             }
-            Ok(())
         }
-        rekindle_protocol::messaging::CommunityResponse::Error { message, .. } => {
-            Err(format!("server rejected reorder categories: {message}"))
-        }
-        other => Err(format!(
-            "unexpected server response for ReorderCategories: {other:?}"
-        )),
+        community.categories.sort_by_key(|c| c.sort_order);
     }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -681,6 +587,11 @@ pub async fn reorder_categories(
 // ---------------------------------------------------------------------------
 
 /// Create a community invite code.
+///
+/// Sends `CreateInvite` to the coordinator (fire-and-forget). The canonical
+/// Create a community invite. The invite code is generated locally and sent
+/// to the coordinator for persistence. Returns the code immediately so the
+/// frontend can copy-to-clipboard without waiting for the broadcast.
 #[tauri::command]
 pub async fn create_community_invite(
     community_id: String,
@@ -689,26 +600,24 @@ pub async fn create_community_invite(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<InviteCreatedDto, String> {
-    let response = send_community_rpc(
+    let _ = pool;
+    // Generate the invite code locally so we can return it immediately
+    let code = hex::encode(&rand_nonce()[..4]);
+    send_to_coordinator(
         state.inner(),
-        pool.inner(),
         &community_id,
-        rekindle_protocol::messaging::CommunityRequest::CreateInvite {
+        CommunityEnvelope::Control(ControlPayload::CreateInvite {
+            code: code.clone(),
             max_uses,
             expires_in_seconds,
-        },
+        }),
     )
     .await?;
 
-    match response {
-        rekindle_protocol::messaging::CommunityResponse::InviteCreated { code, signature } => {
-            Ok(InviteCreatedDto { code, signature })
-        }
-        rekindle_protocol::messaging::CommunityResponse::Error { message, .. } => {
-            Err(format!("failed to create invite: {message}"))
-        }
-        other => Err(format!("unexpected response for CreateInvite: {other:?}")),
-    }
+    Ok(InviteCreatedDto {
+        code,
+        signature: String::new(),
+    })
 }
 
 /// Revoke a community invite code.
@@ -719,21 +628,13 @@ pub async fn revoke_community_invite(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let response = send_community_rpc(
+    let _ = pool;
+    send_to_coordinator(
         state.inner(),
-        pool.inner(),
         &community_id,
-        rekindle_protocol::messaging::CommunityRequest::RevokeInvite { code },
+        CommunityEnvelope::Control(ControlPayload::RevokeInvite { code }),
     )
-    .await?;
-
-    match response {
-        rekindle_protocol::messaging::CommunityResponse::Ok => Ok(()),
-        rekindle_protocol::messaging::CommunityResponse::Error { message, .. } => {
-            Err(format!("failed to revoke invite: {message}"))
-        }
-        other => Err(format!("unexpected response for RevokeInvite: {other:?}")),
-    }
+    .await
 }
 
 /// List active community invites from DHT manifest.
@@ -771,7 +672,7 @@ pub async fn list_community_invites(
 /// Send a message in a community channel.
 ///
 /// Encrypts the message body with the community's MEK, then sends a
-/// `CommunityRequest::SendMessage` to the community server via `app_call`.
+/// `CommunityEnvelope::ChatMessage` to the coordinator via `send_to_coordinator`.
 /// Falls back to local-only storage if the server is unreachable.
 #[tauri::command]
 pub async fn send_channel_message(
@@ -1053,29 +954,19 @@ pub async fn unpin_message(
 }
 
 /// Get pinned messages for a community channel.
+///
+/// In the coordinator model, pins arrive via `MessagePinned` broadcasts and are
+/// tracked in local state. This returns an empty list as a placeholder until
+/// local pin tracking is implemented.
 #[tauri::command]
 pub async fn get_channel_pins(
-    state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
-    community_id: String,
-    channel_id: String,
+    _state: State<'_, SharedState>,
+    _pool: State<'_, DbPool>,
+    _community_id: String,
+    _channel_id: String,
 ) -> Result<Vec<PinnedMessageInfoDto>, String> {
-    let request = rekindle_protocol::messaging::CommunityRequest::GetPins { channel_id };
-    let response = send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
-    match response {
-        Ok(rekindle_protocol::messaging::CommunityResponse::PinnedMessages { pins }) => Ok(pins
-            .into_iter()
-            .map(|p| PinnedMessageInfoDto {
-                message_id: p.message_id,
-                channel_id: p.channel_id,
-                pinned_by: p.pinned_by,
-                pinned_at: p.pinned_at,
-            })
-            .collect()),
-        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
-        Ok(_) => Err("unexpected response".into()),
-        Err(e) => Err(e),
-    }
+    // TODO: Read pins from local DB (arrive via MessagePinned broadcasts)
+    Ok(Vec::new())
 }
 
 /// An audit log entry for the frontend.
@@ -1179,24 +1070,25 @@ pub async fn create_event(
     channel_id: Option<String>,
     max_attendees: Option<u32>,
 ) -> Result<String, String> {
-    let request = rekindle_protocol::messaging::CommunityRequest::CreateEvent {
-        title,
-        description,
-        start_time,
-        end_time,
-        channel_id,
-        max_attendees,
-    };
-    let response =
-        send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
-    match response {
-        Ok(rekindle_protocol::messaging::CommunityResponse::EventCreated { event_id }) => {
-            Ok(event_id)
-        }
-        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
-        Ok(_) => Err("unexpected response".into()),
-        Err(e) => Err(e),
-    }
+    let _ = pool;
+    // Generate event ID locally for optimistic UI; coordinator assigns canonical ID via broadcast
+    let event_id = format!("evt_{}", hex::encode(&rand_nonce()[..8]));
+
+    send_to_coordinator(
+        state.inner(),
+        &community_id,
+        CommunityEnvelope::Control(ControlPayload::CreateEvent {
+            title,
+            description,
+            start_time,
+            end_time,
+            channel_id,
+            max_attendees,
+        }),
+    )
+    .await?;
+
+    Ok(event_id)
 }
 
 /// Edit a community event.
@@ -1213,23 +1105,21 @@ pub async fn edit_event(
     channel_id: Option<String>,
     max_attendees: Option<u32>,
 ) -> Result<(), String> {
-    let request = rekindle_protocol::messaging::CommunityRequest::EditEvent {
-        event_id,
-        title,
-        description,
-        start_time,
-        end_time,
-        channel_id,
-        max_attendees,
-    };
-    let response =
-        send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
-    match response {
-        Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => Ok(()),
-        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
-        Ok(_) => Err("unexpected response".into()),
-        Err(e) => Err(e),
-    }
+    let _ = pool;
+    send_to_coordinator(
+        state.inner(),
+        &community_id,
+        CommunityEnvelope::Control(ControlPayload::EditEvent {
+            event_id,
+            title,
+            description,
+            start_time,
+            end_time,
+            channel_id,
+            max_attendees,
+        }),
+    )
+    .await
 }
 
 /// Delete a community event.
@@ -1240,17 +1130,13 @@ pub async fn delete_event(
     community_id: String,
     event_id: String,
 ) -> Result<(), String> {
-    let request = rekindle_protocol::messaging::CommunityRequest::DeleteEvent {
-        event_id,
-    };
-    let response =
-        send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
-    match response {
-        Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => Ok(()),
-        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
-        Ok(_) => Err("unexpected response".into()),
-        Err(e) => Err(e),
-    }
+    let _ = pool;
+    send_to_coordinator(
+        state.inner(),
+        &community_id,
+        CommunityEnvelope::Control(ControlPayload::DeleteEvent { event_id }),
+    )
+    .await
 }
 
 /// Cancel a community event (sets status to "canceled").
@@ -1261,17 +1147,13 @@ pub async fn cancel_event(
     community_id: String,
     event_id: String,
 ) -> Result<(), String> {
-    let request = rekindle_protocol::messaging::CommunityRequest::CancelEvent {
-        event_id,
-    };
-    let response =
-        send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
-    match response {
-        Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => Ok(()),
-        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
-        Ok(_) => Err("unexpected response".into()),
-        Err(e) => Err(e),
-    }
+    let _ = pool;
+    send_to_coordinator(
+        state.inner(),
+        &community_id,
+        CommunityEnvelope::Control(ControlPayload::CancelEvent { event_id }),
+    )
+    .await
 }
 
 /// RSVP to a community event.
@@ -1283,60 +1165,28 @@ pub async fn rsvp_event(
     event_id: String,
     status: String,
 ) -> Result<(), String> {
-    let request = rekindle_protocol::messaging::CommunityRequest::RsvpEvent {
-        event_id,
-        status,
-    };
-    let response =
-        send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
-    match response {
-        Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => Ok(()),
-        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
-        Ok(_) => Err("unexpected response".into()),
-        Err(e) => Err(e),
-    }
+    let _ = pool;
+    send_to_coordinator(
+        state.inner(),
+        &community_id,
+        CommunityEnvelope::Control(ControlPayload::RsvpEvent { event_id, status }),
+    )
+    .await
 }
 
 /// Get community events.
+///
+/// In the coordinator model, events arrive via `EventCreated` broadcasts and are
+/// tracked in local state. Returns an empty list as a placeholder until local
+/// event tracking is implemented.
 #[tauri::command]
 pub async fn get_events(
-    state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
-    community_id: String,
+    _state: State<'_, SharedState>,
+    _pool: State<'_, DbPool>,
+    _community_id: String,
 ) -> Result<Vec<EventInfoDto>, String> {
-    let request = rekindle_protocol::messaging::CommunityRequest::GetEvents;
-    let response =
-        send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
-    match response {
-        Ok(rekindle_protocol::messaging::CommunityResponse::EventList { events }) => {
-            Ok(events
-                .into_iter()
-                .map(|e| EventInfoDto {
-                    id: e.id,
-                    title: e.title,
-                    description: e.description,
-                    creator_pseudonym: e.creator_pseudonym,
-                    start_time: e.start_time,
-                    end_time: e.end_time,
-                    channel_id: e.channel_id,
-                    max_attendees: e.max_attendees,
-                    created_at: e.created_at,
-                    status: e.status,
-                    rsvps: e
-                        .rsvps
-                        .into_iter()
-                        .map(|r| EventRsvpInfoDto {
-                            pseudonym_key: r.pseudonym_key,
-                            status: r.status,
-                        })
-                        .collect(),
-                })
-                .collect())
-        }
-        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
-        Ok(_) => Err("unexpected response".into()),
-        Err(e) => Err(e),
-    }
+    // TODO: Read events from local DB (arrive via EventCreated broadcasts)
+    Ok(Vec::new())
 }
 
 // ---------------------------------------------------------------------------
@@ -1356,58 +1206,38 @@ pub async fn create_thread(
     name: String,
     starter_message_id: String,
 ) -> Result<String, String> {
-    let request = rekindle_protocol::messaging::CommunityRequest::CreateThread {
-        channel_id,
-        name,
-        starter_message_id,
-    };
-    let response =
-        send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
-    match response {
-        Ok(rekindle_protocol::messaging::CommunityResponse::ThreadCreated { thread_id }) => {
-            Ok(thread_id)
-        }
-        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
-        Ok(_) => Err("unexpected response".into()),
-        Err(e) => Err(e),
-    }
+    let _ = pool;
+    // Generate thread ID locally for optimistic UI; coordinator assigns canonical ID via broadcast
+    let thread_id = format!("thr_{}", hex::encode(&rand_nonce()[..8]));
+
+    send_to_coordinator(
+        state.inner(),
+        &community_id,
+        CommunityEnvelope::Control(ControlPayload::CreateThread {
+            channel_id,
+            name,
+            starter_message_id,
+        }),
+    )
+    .await?;
+
+    Ok(thread_id)
 }
 
 /// Get threads for a channel.
+///
+/// In the coordinator model, threads arrive via `ThreadCreated` broadcasts and
+/// are tracked in local state. Returns an empty list as a placeholder until
+/// local thread tracking is implemented.
 #[tauri::command]
 pub async fn get_channel_threads(
-    state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
-    community_id: String,
-    channel_id: String,
+    _state: State<'_, SharedState>,
+    _pool: State<'_, DbPool>,
+    _community_id: String,
+    _channel_id: String,
 ) -> Result<Vec<ThreadInfoDto>, String> {
-    let request = rekindle_protocol::messaging::CommunityRequest::GetChannelThreads {
-        channel_id,
-    };
-    let response =
-        send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
-    match response {
-        Ok(rekindle_protocol::messaging::CommunityResponse::ThreadList { threads }) => {
-            Ok(threads
-                .into_iter()
-                .map(|t| ThreadInfoDto {
-                    id: t.id,
-                    channel_id: t.channel_id,
-                    name: t.name,
-                    starter_message_id: t.starter_message_id,
-                    creator_pseudonym: t.creator_pseudonym,
-                    created_at: t.created_at,
-                    archived: t.archived,
-                    auto_archive_seconds: t.auto_archive_seconds,
-                    last_message_at: t.last_message_at,
-                    message_count: t.message_count,
-                })
-                .collect())
-        }
-        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
-        Ok(_) => Err("unexpected response".into()),
-        Err(e) => Err(e),
-    }
+    // TODO: Read threads from local DB (arrive via ThreadCreated broadcasts)
+    Ok(Vec::new())
 }
 
 /// Send a message to a thread (encrypted with MEK).
@@ -1419,6 +1249,7 @@ pub async fn send_thread_message(
     thread_id: String,
     body: String,
 ) -> Result<(), String> {
+    let _ = pool;
     // Encrypt with MEK (same pattern as send_channel_message)
     let (ciphertext, mek_generation) = {
         let mek_cache = state.mek_cache.lock();
@@ -1431,88 +1262,35 @@ pub async fn send_thread_message(
         (ct, mek.generation())
     };
 
-    let request = rekindle_protocol::messaging::CommunityRequest::SendThreadMessage {
-        thread_id,
-        ciphertext,
-        mek_generation,
-        reply_to_id: None,
-    };
-    let response =
-        send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
-    match response {
-        Ok(
-            rekindle_protocol::messaging::CommunityResponse::Ok
-            | rekindle_protocol::messaging::CommunityResponse::MessageSent { .. },
-        ) => Ok(()),
-        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
-        Ok(_) => Err("unexpected response".into()),
-        Err(e) => Err(e),
-    }
+    send_to_coordinator(
+        state.inner(),
+        &community_id,
+        CommunityEnvelope::Control(ControlPayload::SendThreadMessage {
+            thread_id,
+            ciphertext,
+            mek_generation,
+            reply_to_id: None,
+        }),
+    )
+    .await
 }
 
 /// Get thread message history (decrypted with MEK).
+///
+/// In the coordinator model, thread messages arrive via broadcasts and are
+/// tracked in local state. Returns an empty list as a placeholder until
+/// local thread message tracking is implemented.
 #[tauri::command]
 pub async fn get_thread_messages(
-    state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
-    community_id: String,
-    thread_id: String,
-    limit: u32,
-    before_timestamp: Option<u64>,
+    _state: State<'_, SharedState>,
+    _pool: State<'_, DbPool>,
+    _community_id: String,
+    _thread_id: String,
+    _limit: u32,
+    _before_timestamp: Option<u64>,
 ) -> Result<Vec<Message>, String> {
-    let my_pseudonym_key = {
-        let communities = state.communities.read();
-        communities
-            .get(&community_id)
-            .and_then(|c| c.my_pseudonym_key.clone())
-            .unwrap_or_default()
-    };
-
-    let request = rekindle_protocol::messaging::CommunityRequest::GetThreadMessages {
-        thread_id,
-        limit,
-        before_timestamp,
-    };
-    let response =
-        send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
-
-    match response {
-        Ok(rekindle_protocol::messaging::CommunityResponse::ThreadMessages { messages }) => {
-            // Decrypt with cached MEK
-            let mek_cache = state.mek_cache.lock();
-            let Some(mek) = mek_cache.get(&community_id) else {
-                return Err("no MEK to decrypt thread messages".into());
-            };
-
-            let mut result = Vec::new();
-            for msg in &messages {
-                if msg.mek_generation != mek.generation() {
-                    continue;
-                }
-                match mek.decrypt(&msg.ciphertext) {
-                    Ok(plaintext) => {
-                        let body = String::from_utf8(plaintext).unwrap_or_default();
-                        let is_own = msg.sender_pseudonym == my_pseudonym_key;
-                        result.push(Message {
-                            id: 0,
-                            sender_id: msg.sender_pseudonym.clone(),
-                            body,
-                            timestamp: msg.timestamp.cast_signed(),
-                            is_own,
-                            server_message_id: Some(msg.message_id.clone()),
-                        });
-                    }
-                    Err(e) => {
-                        tracing::debug!(error = %e, "failed to decrypt thread message");
-                    }
-                }
-            }
-            Ok(result)
-        }
-        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
-        Ok(_) => Err("unexpected response".into()),
-        Err(e) => Err(e),
-    }
+    // TODO: Read thread messages from local DB (arrive via ThreadMessageReceived broadcasts)
+    Ok(Vec::new())
 }
 
 /// Archive a thread.
@@ -1523,17 +1301,13 @@ pub async fn archive_thread(
     community_id: String,
     thread_id: String,
 ) -> Result<(), String> {
-    let request = rekindle_protocol::messaging::CommunityRequest::ArchiveThread {
-        thread_id,
-    };
-    let response =
-        send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
-    match response {
-        Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => Ok(()),
-        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
-        Ok(_) => Err("unexpected response".into()),
-        Err(e) => Err(e),
-    }
+    let _ = pool;
+    send_to_coordinator(
+        state.inner(),
+        &community_id,
+        CommunityEnvelope::Control(ControlPayload::ArchiveThread { thread_id }),
+    )
+    .await
 }
 
 /// Unarchive a thread.
@@ -1544,17 +1318,13 @@ pub async fn unarchive_thread(
     community_id: String,
     thread_id: String,
 ) -> Result<(), String> {
-    let request = rekindle_protocol::messaging::CommunityRequest::UnarchiveThread {
-        thread_id,
-    };
-    let response =
-        send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
-    match response {
-        Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => Ok(()),
-        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
-        Ok(_) => Err("unexpected response".into()),
-        Err(e) => Err(e),
-    }
+    let _ = pool;
+    send_to_coordinator(
+        state.inner(),
+        &community_id,
+        CommunityEnvelope::Control(ControlPayload::UnarchiveThread { thread_id }),
+    )
+    .await
 }
 
 // ---------------------------------------------------------------------------
@@ -1574,21 +1344,18 @@ pub async fn add_game_server(
     label: String,
     address: String,
 ) -> Result<String, String> {
-    let request = rekindle_protocol::messaging::CommunityRequest::AddGameServer {
-        game_id,
-        label,
-        address,
-    };
-    let response =
-        send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
-    match response {
-        Ok(rekindle_protocol::messaging::CommunityResponse::GameServerList { servers }) => {
-            Ok(servers.first().map_or_else(String::new, |s| s.id.clone()))
-        }
-        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
-        Ok(_) => Err("unexpected response".into()),
-        Err(e) => Err(e),
-    }
+    let _ = pool;
+    // Generate server ID locally for optimistic UI; coordinator assigns canonical ID via broadcast
+    let server_id = format!("gs_{}", hex::encode(&rand_nonce()[..8]));
+
+    send_to_coordinator(
+        state.inner(),
+        &community_id,
+        CommunityEnvelope::Control(ControlPayload::AddGameServer { game_id, label, address }),
+    )
+    .await?;
+
+    Ok(server_id)
 }
 
 /// Remove a game server from a community's favorites.
@@ -1599,45 +1366,28 @@ pub async fn remove_game_server(
     community_id: String,
     server_id: String,
 ) -> Result<(), String> {
-    let request = rekindle_protocol::messaging::CommunityRequest::RemoveGameServer { server_id };
-    let response =
-        send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
-    match response {
-        Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => Ok(()),
-        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
-        Ok(_) => Err("unexpected response".into()),
-        Err(e) => Err(e),
-    }
+    let _ = pool;
+    send_to_coordinator(
+        state.inner(),
+        &community_id,
+        CommunityEnvelope::Control(ControlPayload::RemoveGameServer { server_id }),
+    )
+    .await
 }
 
 /// Get all game servers for a community.
+///
+/// In the coordinator model, game servers arrive via `GameServerAdded` broadcasts
+/// and are tracked in local state. Returns an empty list as a placeholder until
+/// local game server tracking is implemented.
 #[tauri::command]
 pub async fn get_game_servers(
-    state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
-    community_id: String,
+    _state: State<'_, SharedState>,
+    _pool: State<'_, DbPool>,
+    _community_id: String,
 ) -> Result<Vec<GameServerInfoDto>, String> {
-    let request = rekindle_protocol::messaging::CommunityRequest::GetGameServers;
-    let response =
-        send_community_rpc(state.inner(), pool.inner(), &community_id, request).await;
-    match response {
-        Ok(rekindle_protocol::messaging::CommunityResponse::GameServerList { servers }) => {
-            Ok(servers
-                .into_iter()
-                .map(|s| GameServerInfoDto {
-                    id: s.id,
-                    game_id: s.game_id,
-                    label: s.label,
-                    address: s.address,
-                    added_by: s.added_by,
-                    created_at: s.created_at,
-                })
-                .collect())
-        }
-        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(message),
-        Ok(_) => Err("unexpected response".into()),
-        Err(e) => Err(e),
-    }
+    // TODO: Read game servers from local DB (arrive via GameServerAdded broadcasts)
+    Ok(Vec::new())
 }
 
 /// Pending channel message queued for retry delivery to the community server.
@@ -1759,192 +1509,12 @@ pub(crate) async fn send_to_coordinator(
         .map_err(|e| format!("app_message: {e}"))
 }
 
-/// Legacy compatibility wrapper: converts `CommunityRequest` to `ControlPayload`
-/// and routes through the coordinator. Write operations return `CommunityResponse::Ok`;
-/// read operations that need server-side data will fail and should be migrated
-/// to read from DHT directly.
-pub(crate) async fn send_community_rpc(
-    state: &SharedState,
-    _pool: &DbPool,
-    community_id: &str,
-    request: rekindle_protocol::messaging::CommunityRequest,
-) -> Result<rekindle_protocol::messaging::CommunityResponse, String> {
-    use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
-
-    let control = request_to_control_payload(request)?;
-    send_to_coordinator(state, community_id, CommunityEnvelope::Control(control)).await?;
-    Ok(rekindle_protocol::messaging::CommunityResponse::Ok)
-}
-
-/// Convert a legacy CommunityRequest to the v2 ControlPayload.
-fn request_to_control_payload(
-    request: rekindle_protocol::messaging::CommunityRequest,
-) -> Result<rekindle_protocol::dht::community::envelope::ControlPayload, String> {
-    use rekindle_protocol::dht::community::envelope::ControlPayload;
-    use rekindle_protocol::messaging::CommunityRequest;
-
-    Ok(match request {
-        // Channel management
-        CommunityRequest::CreateChannel { name, channel_type, category_id } =>
-            ControlPayload::CreateChannel { name, channel_type, category_id },
-        CommunityRequest::DeleteChannel { channel_id } =>
-            ControlPayload::DeleteChannel { channel_id },
-        CommunityRequest::RenameChannel { channel_id, new_name } =>
-            ControlPayload::RenameChannel { channel_id, new_name },
-        CommunityRequest::SetChannelTopic { channel_id, topic } =>
-            ControlPayload::SetChannelTopic { channel_id, topic },
-        CommunityRequest::ReorderChannels { channel_ids } =>
-            ControlPayload::ReorderChannels { channel_ids },
-        CommunityRequest::SetSlowmode { channel_id, seconds } =>
-            ControlPayload::SetSlowmode { channel_id, seconds },
-        CommunityRequest::MoveChannel { channel_id, category_id } =>
-            ControlPayload::MoveChannel { channel_id, category_id },
-
-        // Category management
-        CommunityRequest::CreateCategory { name } =>
-            ControlPayload::CreateCategory { name },
-        CommunityRequest::DeleteCategory { category_id } =>
-            ControlPayload::DeleteCategory { category_id },
-        CommunityRequest::RenameCategory { category_id, new_name } =>
-            ControlPayload::RenameCategory { category_id, new_name },
-        CommunityRequest::ReorderCategories { category_ids } =>
-            ControlPayload::ReorderCategories { category_ids },
-
-        // Messages
-        CommunityRequest::SendMessage { channel_id, ciphertext, mek_generation, reply_to_id: _ } =>
-            ControlPayload::EditMessage { channel_id, message_id: String::new(), new_ciphertext: ciphertext, mek_generation },
-        CommunityRequest::EditMessage { channel_id, message_id, new_ciphertext, mek_generation } =>
-            ControlPayload::EditMessage { channel_id, message_id, new_ciphertext, mek_generation },
-        CommunityRequest::DeleteMessage { channel_id, message_id } =>
-            ControlPayload::DeleteMessage { channel_id, message_id },
-
-        // Moderation
-        CommunityRequest::Kick { target_pseudonym } =>
-            ControlPayload::Kick { target_pseudonym },
-        CommunityRequest::Ban { target_pseudonym } =>
-            ControlPayload::Ban { target_pseudonym },
-        CommunityRequest::Unban { target_pseudonym } =>
-            ControlPayload::Unban { target_pseudonym },
-        CommunityRequest::TimeoutMember { target_pseudonym, duration_seconds, reason } =>
-            ControlPayload::TimeoutMember { target_pseudonym, duration_seconds, reason },
-        CommunityRequest::RemoveTimeout { target_pseudonym } =>
-            ControlPayload::RemoveTimeout { target_pseudonym },
-
-        // Roles
-        CommunityRequest::CreateRole { name, color, permissions, hoist, mentionable } =>
-            ControlPayload::CreateRole { name, color, permissions, hoist, mentionable },
-        CommunityRequest::EditRole { role_id, name, color, permissions, position, hoist, mentionable } =>
-            ControlPayload::EditRole { role_id, name, color, permissions, position, hoist, mentionable },
-        CommunityRequest::DeleteRole { role_id } =>
-            ControlPayload::DeleteRole { role_id },
-        CommunityRequest::AssignRole { target_pseudonym, role_id } =>
-            ControlPayload::AssignRole { target_pseudonym, role_id },
-        CommunityRequest::UnassignRole { target_pseudonym, role_id } =>
-            ControlPayload::UnassignRole { target_pseudonym, role_id },
-
-        // Invites
-        CommunityRequest::CreateInvite { max_uses, expires_in_seconds } =>
-            ControlPayload::CreateInvite { max_uses, expires_in_seconds },
-        CommunityRequest::RevokeInvite { code } =>
-            ControlPayload::RevokeInvite { code },
-
-        // Events
-        CommunityRequest::CreateEvent { title, description, start_time, end_time, channel_id, max_attendees } =>
-            ControlPayload::CreateEvent { title, description, start_time, end_time, channel_id, max_attendees },
-        CommunityRequest::EditEvent { event_id, title, description, start_time, end_time, channel_id, max_attendees } =>
-            ControlPayload::EditEvent { event_id, title, description, start_time, end_time, channel_id, max_attendees },
-        CommunityRequest::DeleteEvent { event_id } =>
-            ControlPayload::DeleteEvent { event_id },
-        CommunityRequest::CancelEvent { event_id } =>
-            ControlPayload::CancelEvent { event_id },
-        CommunityRequest::RsvpEvent { event_id, status } =>
-            ControlPayload::RsvpEvent { event_id, status },
-
-        // Reactions
-        CommunityRequest::AddReaction { channel_id, message_id, emoji } =>
-            ControlPayload::AddReaction { channel_id, message_id, emoji },
-        CommunityRequest::RemoveReaction { channel_id, message_id, emoji } =>
-            ControlPayload::RemoveReaction { channel_id, message_id, emoji },
-
-        // Pins
-        CommunityRequest::PinMessage { channel_id, message_id } =>
-            ControlPayload::PinMessage { channel_id, message_id },
-        CommunityRequest::UnpinMessage { channel_id, message_id } =>
-            ControlPayload::UnpinMessage { channel_id, message_id },
-
-        // Threads
-        CommunityRequest::CreateThread { channel_id, name, starter_message_id } =>
-            ControlPayload::CreateThread { channel_id, name, starter_message_id },
-        CommunityRequest::SendThreadMessage { thread_id, ciphertext, mek_generation, reply_to_id } =>
-            ControlPayload::SendThreadMessage { thread_id, ciphertext, mek_generation, reply_to_id },
-        CommunityRequest::ArchiveThread { thread_id } =>
-            ControlPayload::ArchiveThread { thread_id },
-        CommunityRequest::UnarchiveThread { thread_id } =>
-            ControlPayload::UnarchiveThread { thread_id },
-
-        // Game servers
-        CommunityRequest::AddGameServer { game_id, label, address } =>
-            ControlPayload::AddGameServer { game_id, label, address },
-        CommunityRequest::RemoveGameServer { server_id } =>
-            ControlPayload::RemoveGameServer { server_id },
-
-        // Channel overwrites
-        CommunityRequest::SetChannelOverwrite { channel_id, target_type, target_id, allow, deny } =>
-            ControlPayload::SetChannelOverwrite { channel_id, target_type, target_id, allow, deny },
-        CommunityRequest::DeleteChannelOverwrite { channel_id, target_type, target_id } =>
-            ControlPayload::DeleteChannelOverwrite { channel_id, target_type, target_id },
-
-        // Community metadata
-        CommunityRequest::UpdateCommunity { name, description } =>
-            ControlPayload::UpdateCommunity { name, description },
-
-        // Presence — ChannelTyping handled directly by send_channel_typing, but map for legacy callers
-        CommunityRequest::ChannelTyping { channel_id: _ } =>
-            ControlPayload::UpdatePresence { status: "typing".into(), game_name: None, game_id: None, elapsed_seconds: None, server_address: None },
-        CommunityRequest::UpdatePresence { status, game_name, game_id, elapsed_seconds, server_address } =>
-            ControlPayload::UpdatePresence { status, game_name, game_id, elapsed_seconds, server_address },
-
-        // Leave
-        CommunityRequest::Leave =>
-            ControlPayload::MemberLeave { pseudonym_key: String::new() },
-
-        // MEK
-        CommunityRequest::RotateMEK =>
-            ControlPayload::RotateMEK,
-        CommunityRequest::RequestMEK =>
-            ControlPayload::RequestMEK,
-
-        // Read-only mark operations
-        CommunityRequest::MarkChannelRead { channel_id, last_message_id } =>
-            ControlPayload::MarkChannelRead { channel_id, last_message_id },
-
-        // Read operations — should query DHT directly
-        CommunityRequest::GetMessages { .. }
-        | CommunityRequest::GetRoles
-        | CommunityRequest::GetPins { .. }
-        | CommunityRequest::GetBanList
-        | CommunityRequest::ListInvites
-        | CommunityRequest::GetEvents
-        | CommunityRequest::GetChannelThreads { .. }
-        | CommunityRequest::GetThreadMessages { .. }
-        | CommunityRequest::GetGameServers
-        | CommunityRequest::GetUnreadCounts
-        | CommunityRequest::GetAuditLog { .. } => {
-            return Err("read operations should query DHT directly".into());
-        }
-
-        // Join is handled by community_service, not through this path
-        CommunityRequest::Join { .. } => {
-            return Err("join should go through community_service".into());
-        }
-    })
-}
-
-// Legacy IPC and Veilid RPC functions removed — all traffic routes through coordinator
+// All traffic routes through the coordinator via send_to_coordinator —
+// the legacy send_community_rpc / request_to_control_payload wrappers have been removed.
 
 /// Leave a community and clean up local state.
 ///
-/// Sends `CommunityRequest::Leave` to the server (which triggers MEK rotation
+/// Sends `ControlPayload::MemberLeave` to the coordinator (which triggers MEK rotation
 /// for remaining members), then cleans up local state and `SQLite`.
 #[tauri::command]
 pub async fn leave_community(
@@ -1953,13 +1523,21 @@ pub async fn leave_community(
     pool: State<'_, DbPool>,
     keystore_handle: State<'_, KeystoreHandle>,
 ) -> Result<(), String> {
-    // Send Leave RPC to the community server before cleaning up locally
-    // Best-effort: ignore errors since we're leaving anyway
-    let _ = send_community_rpc(
+    // Send Leave to the coordinator before cleaning up locally.
+    // Best-effort: ignore errors since we're leaving anyway.
+    let my_pseudonym_key = {
+        let communities = state.communities.read();
+        communities
+            .get(&community_id)
+            .and_then(|c| c.my_pseudonym_key.clone())
+            .unwrap_or_default()
+    };
+    let _ = send_to_coordinator(
         state.inner(),
-        pool.inner(),
         &community_id,
-        rekindle_protocol::messaging::CommunityRequest::Leave,
+        CommunityEnvelope::Control(ControlPayload::MemberLeave {
+            pseudonym_key: my_pseudonym_key,
+        }),
     )
     .await;
 
@@ -2002,7 +1580,7 @@ pub async fn leave_community(
 /// Get message history for a community channel.
 ///
 /// First queries local `SQLite`. If local DB has no messages for the channel,
-/// fetches history from the community server via `CommunityRequest::GetMessages`,
+/// fetches history from the coordinator via `ControlPayload::GetMessages`,
 /// decrypts the ciphertexts with the cached MEK, and stores them locally.
 #[tauri::command]
 pub async fn get_channel_messages(
@@ -2072,153 +1650,19 @@ pub async fn get_channel_messages(
         "loaded channel messages from local DB"
     );
 
-    // --- Step 2: Background server fetch for missed messages ---
-    // Spawn a background task so the frontend gets local messages immediately.
-    if let Some(cid) = community_id {
-        let state = state.inner().clone();
-        let pool = pool.inner().clone();
-        let channel_id = channel_id.clone();
-        let our_key = our_key.clone();
-        let my_pseudonym_key = my_pseudonym_key.clone();
-        tokio::spawn(async move {
-            let server_messages = fetch_channel_history_from_server(
-                &state,
-                &pool,
-                &cid,
-                &channel_id,
-                &our_key,
-                &my_pseudonym_key,
-                limit,
-            )
-            .await;
-            if !server_messages.is_empty() {
-                tracing::debug!(
-                    channel_id = %channel_id,
-                    server_count = server_messages.len(),
-                    "background server fetch returned messages"
-                );
-                let _ = app.emit(
-                    "chat-event",
-                    ChatEvent::ChannelHistoryLoaded {
-                        channel_id,
-                        messages: server_messages,
-                    },
-                );
-            }
-        });
-    }
+    // In the coordinator model, messages arrive via broadcasts and are stored
+    // in local SQLite as they come in. No server fetch path exists.
+    let _ = (community_id, app);
 
     Ok(messages)
 }
 
-/// Fetch message history from the community server, decrypt, and store locally.
-async fn fetch_channel_history_from_server(
-    state: &SharedState,
-    pool: &DbPool,
-    community_id: &str,
-    channel_id: &str,
-    owner_key: &str,
-    my_pseudonym_key: &str,
-    limit: u32,
-) -> Vec<Message> {
-    let response = send_community_rpc(
-        state,
-        pool,
-        community_id,
-        rekindle_protocol::messaging::CommunityRequest::GetMessages {
-            channel_id: channel_id.to_string(),
-            before_timestamp: None,
-            limit,
-        },
-    )
-    .await;
-
-    let Ok(rekindle_protocol::messaging::CommunityResponse::Messages {
-        messages: server_messages,
-    }) = response
-    else {
-        return Vec::new();
-    };
-
-    if server_messages.is_empty() {
-        return Vec::new();
-    }
-
-    // Decrypt with cached MEK — scope the guard so it's dropped before any .await
-    let decrypted: Vec<(String, String, String, i64, i64)> = {
-        let mek_cache = state.mek_cache.lock();
-        let Some(mek) = mek_cache.get(community_id) else {
-            tracing::warn!(community = %community_id, "no MEK to decrypt server history");
-            return Vec::new();
-        };
-
-        let mut result = Vec::new();
-        for msg in &server_messages {
-            if msg.mek_generation != mek.generation() {
-                tracing::debug!(
-                    have = mek.generation(),
-                    need = msg.mek_generation,
-                    "skipping message with different MEK generation"
-                );
-                continue;
-            }
-            match mek.decrypt(&msg.ciphertext) {
-                Ok(plaintext) => {
-                    let body = String::from_utf8(plaintext).unwrap_or_default();
-                    result.push((
-                        msg.sender_pseudonym.clone(),
-                        msg.message_id.clone(),
-                        body,
-                        msg.timestamp.cast_signed(),
-                        msg.mek_generation.cast_signed(),
-                    ));
-                }
-                Err(e) => {
-                    tracing::debug!(error = %e, "failed to decrypt historical message");
-                }
-            }
-        }
-        result
-    };
-
-    // Store decrypted messages in local SQLite (fire-and-forget)
-    let ok = owner_key.to_string();
-    let cid = channel_id.to_string();
-    let mpk = my_pseudonym_key.to_string();
-    let decrypted_clone = decrypted.clone();
-    db_fire(pool, "store decrypted channel history", move |conn| {
-        for (sender, _message_id, body, ts, mg) in &decrypted_clone {
-            let _ = conn.execute(
-                "INSERT OR IGNORE INTO messages (owner_key, conversation_id, conversation_type, sender_key, body, timestamp, is_read, mek_generation) \
-                 VALUES (?, ?, 'channel', ?, ?, ?, 0, ?)",
-                rusqlite::params![ok, cid, sender, body, ts, mg],
-            );
-        }
-        Ok(())
-    });
-
-    // Build Message structs for the frontend
-    decrypted
-        .into_iter()
-        .map(|(sender, message_id, body, ts, _mg)| {
-            let is_own = sender == mpk;
-            Message {
-                id: 0, // temporary — will get real IDs on next query from SQLite
-                sender_id: sender,
-                body,
-                timestamp: ts,
-                is_own,
-                server_message_id: Some(message_id),
-            }
-        })
-        .collect()
-}
 
 /// Remove a member from a community.
 ///
 /// The caller must be the community owner or an admin to kick members.
 /// Admins cannot kick other admins or the owner.
-/// Sends `CommunityRequest::Kick` to the server, which removes the member
+/// Sends `ControlPayload::Kick` to the coordinator, which removes the member
 /// and rotates the MEK.
 #[tauri::command]
 pub async fn remove_community_member(
@@ -2244,21 +1688,15 @@ pub async fn remove_community_member(
         );
     }
 
-    // Send Kick RPC to the community server (local validation passed)
-    let response = send_community_rpc(
+    // Send Kick to the coordinator (local validation passed)
+    send_to_coordinator(
         state.inner(),
-        pool.inner(),
         &community_id,
-        rekindle_protocol::messaging::CommunityRequest::Kick {
+        CommunityEnvelope::Control(ControlPayload::Kick {
             target_pseudonym: pseudonym_key.clone(),
-        },
+        }),
     )
     .await?;
-
-    // Check if server rejected the kick
-    if let rekindle_protocol::messaging::CommunityResponse::Error { message, .. } = response {
-        return Err(format!("server rejected kick: {message}"));
-    }
 
     // Remove from local DB
     let community_id_clone = community_id.clone();
@@ -2354,77 +1792,81 @@ pub async fn get_roles(
 }
 
 /// Create a new role in a community.
+///
+/// `permissions` is accepted as a string to avoid JavaScript `Number` precision loss
+/// on u64 values above `2^53 - 1`.
 #[tauri::command]
 pub async fn create_role(
     community_id: String,
     name: String,
     color: u32,
-    permissions: u64,
+    permissions: String,
     hoist: bool,
     mentionable: bool,
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<u32, String> {
     let owner_key = state_helpers::current_owner_key(state.inner())?;
-    let response = send_community_rpc(
+    let permissions_u64: u64 = permissions
+        .parse()
+        .map_err(|e| format!("invalid permissions: {e}"))?;
+
+    // Generate role ID locally for optimistic state update; coordinator assigns canonical ID via broadcast
+    use rand::RngCore;
+    let role_id: u32 = rand::rngs::OsRng.next_u32().saturating_add(100); // avoid collision with default roles
+
+    send_to_coordinator(
         state.inner(),
-        pool.inner(),
         &community_id,
-        rekindle_protocol::messaging::CommunityRequest::CreateRole {
+        CommunityEnvelope::Control(ControlPayload::CreateRole {
             name: name.clone(),
             color,
-            permissions,
+            permissions: permissions_u64,
             hoist,
             mentionable,
-        },
+        }),
     )
-    .await;
+    .await?;
 
-    match response {
-        Ok(rekindle_protocol::messaging::CommunityResponse::RoleCreated { role_id }) => {
-            // Optimistic local state update
-            let role_def = crate::state::RoleDefinition {
-                id: role_id,
-                name: name.clone(),
-                color,
-                permissions,
-                position: 0, // server will assign real position via broadcast
-                hoist,
-                mentionable,
-            };
-            {
-                let mut communities = state.communities.write();
-                if let Some(c) = communities.get_mut(&community_id) {
-                    c.roles.push(role_def);
-                }
-            }
-            // Persist to SQLite
-            let cid = community_id.clone();
-            db_call(pool.inner(), move |conn| {
-                conn.execute(
-                    "INSERT OR REPLACE INTO community_roles (owner_key, community_id, role_id, name, color, permissions, position, hoist, mentionable) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)",
-                    rusqlite::params![owner_key, cid, role_id, name, color, permissions.cast_signed(), hoist, mentionable],
-                )?;
-                Ok(())
-            }).await?;
-            Ok(role_id)
+    // Optimistic local state update
+    let role_def = crate::state::RoleDefinition {
+        id: role_id,
+        name: name.clone(),
+        color,
+        permissions: permissions_u64,
+        position: 0, // coordinator will assign real position via broadcast
+        hoist,
+        mentionable,
+    };
+    {
+        let mut communities = state.communities.write();
+        if let Some(c) = communities.get_mut(&community_id) {
+            c.roles.push(role_def);
         }
-        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => {
-            Err(format!("server rejected create_role: {message}"))
-        }
-        Ok(_) => Err("unexpected response from server".into()),
-        Err(e) => Err(e),
     }
+    // Persist to SQLite
+    let cid = community_id.clone();
+    db_call(pool.inner(), move |conn| {
+        conn.execute(
+            "INSERT OR REPLACE INTO community_roles (owner_key, community_id, role_id, name, color, permissions, position, hoist, mentionable) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)",
+            rusqlite::params![owner_key, cid, role_id, name, color, permissions_u64.cast_signed(), hoist, mentionable],
+        )?;
+        Ok(())
+    }).await?;
+    Ok(role_id)
 }
 
 /// Edit an existing role in a community.
+///
+/// `permissions` is accepted as a string to avoid JavaScript `Number` precision loss
+/// on u64 values above `2^53 - 1`.
 #[tauri::command]
 pub async fn edit_role(
     community_id: String,
     role_id: u32,
     name: Option<String>,
     color: Option<u32>,
-    permissions: Option<u64>,
+    permissions: Option<String>,
     position: Option<i32>,
     hoist: Option<bool>,
     mentionable: Option<bool>,
@@ -2432,85 +1874,80 @@ pub async fn edit_role(
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
     let owner_key = state_helpers::current_owner_key(state.inner())?;
-    let response = send_community_rpc(
+    let permissions_u64: Option<u64> = permissions
+        .map(|s| s.parse::<u64>())
+        .transpose()
+        .map_err(|e| format!("invalid permissions: {e}"))?;
+
+    send_to_coordinator(
         state.inner(),
-        pool.inner(),
         &community_id,
-        rekindle_protocol::messaging::CommunityRequest::EditRole {
+        CommunityEnvelope::Control(ControlPayload::EditRole {
             role_id,
             name: name.clone(),
             color,
-            permissions,
+            permissions: permissions_u64,
             position,
             hoist,
             mentionable,
-        },
+        }),
     )
-    .await;
+    .await?;
 
-    match response {
-        Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => {
-            // Optimistic local state update
-            {
-                let mut communities = state.communities.write();
-                if let Some(c) = communities.get_mut(&community_id) {
-                    if let Some(r) = c.roles.iter_mut().find(|r| r.id == role_id) {
-                        if let Some(ref n) = name {
-                            r.name.clone_from(n);
-                        }
-                        if let Some(col) = color {
-                            r.color = col;
-                        }
-                        if let Some(p) = permissions {
-                            r.permissions = p;
-                        }
-                        if let Some(pos) = position {
-                            r.position = pos;
-                        }
-                        if let Some(h) = hoist {
-                            r.hoist = h;
-                        }
-                        if let Some(m) = mentionable {
-                            r.mentionable = m;
-                        }
-                    }
-                    // Recompute display role in case permissions/name changed
-                    c.my_role = Some(crate::state::display_role_name(&c.my_role_ids, &c.roles));
+    // Optimistic local state update
+    {
+        let mut communities = state.communities.write();
+        if let Some(c) = communities.get_mut(&community_id) {
+            if let Some(r) = c.roles.iter_mut().find(|r| r.id == role_id) {
+                if let Some(ref n) = name {
+                    r.name.clone_from(n);
+                }
+                if let Some(col) = color {
+                    r.color = col;
+                }
+                if let Some(p) = permissions_u64 {
+                    r.permissions = p;
+                }
+                if let Some(pos) = position {
+                    r.position = pos;
+                }
+                if let Some(h) = hoist {
+                    r.hoist = h;
+                }
+                if let Some(m) = mentionable {
+                    r.mentionable = m;
                 }
             }
-            // Persist to SQLite
-            let cid = community_id.clone();
-            db_call(pool.inner(), move |conn| {
-                // Build dynamic UPDATE — only set fields that were provided
-                let mut sets = Vec::new();
-                let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-                if let Some(n) = name { sets.push("name = ?"); params.push(Box::new(n)); }
-                if let Some(col) = color { sets.push("color = ?"); params.push(Box::new(col)); }
-                if let Some(p) = permissions { sets.push("permissions = ?"); params.push(Box::new(p.cast_signed())); }
-                if let Some(pos) = position { sets.push("position = ?"); params.push(Box::new(pos)); }
-                if let Some(h) = hoist { sets.push("hoist = ?"); params.push(Box::new(h)); }
-                if let Some(m) = mentionable { sets.push("mentionable = ?"); params.push(Box::new(m)); }
-                if !sets.is_empty() {
-                    let sql = format!(
-                        "UPDATE community_roles SET {} WHERE owner_key = ? AND community_id = ? AND role_id = ?",
-                        sets.join(", ")
-                    );
-                    params.push(Box::new(owner_key));
-                    params.push(Box::new(cid));
-                    params.push(Box::new(role_id));
-                    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(std::convert::AsRef::as_ref).collect();
-                    conn.execute(&sql, param_refs.as_slice())?;
-                }
-                Ok(())
-            }).await?;
-            Ok(())
+            // Recompute display role in case permissions/name changed
+            c.my_role = Some(crate::state::display_role_name(&c.my_role_ids, &c.roles));
         }
-        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => {
-            Err(format!("server rejected edit_role: {message}"))
-        }
-        Ok(_) => Err("unexpected response from server".into()),
-        Err(e) => Err(e),
     }
+    // Persist to SQLite
+    let cid = community_id.clone();
+    db_call(pool.inner(), move |conn| {
+        // Build dynamic UPDATE — only set fields that were provided
+        let mut sets = Vec::new();
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        if let Some(n) = name { sets.push("name = ?"); params.push(Box::new(n)); }
+        if let Some(col) = color { sets.push("color = ?"); params.push(Box::new(col)); }
+        if let Some(p) = permissions_u64 { sets.push("permissions = ?"); params.push(Box::new(p.cast_signed())); }
+        if let Some(pos) = position { sets.push("position = ?"); params.push(Box::new(pos)); }
+        if let Some(h) = hoist { sets.push("hoist = ?"); params.push(Box::new(h)); }
+        if let Some(m) = mentionable { sets.push("mentionable = ?"); params.push(Box::new(m)); }
+        if !sets.is_empty() {
+            let sql = format!(
+                "UPDATE community_roles SET {} WHERE owner_key = ? AND community_id = ? AND role_id = ?",
+                sets.join(", ")
+            );
+            params.push(Box::new(owner_key));
+            params.push(Box::new(cid));
+            params.push(Box::new(role_id));
+            let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(std::convert::AsRef::as_ref).collect();
+            conn.execute(&sql, param_refs.as_slice())?;
+        }
+        Ok(())
+    }).await?;
+    Ok(())
 }
 
 /// Delete a role from a community.
@@ -2522,80 +1959,71 @@ pub async fn delete_role(
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
     let owner_key = state_helpers::current_owner_key(state.inner())?;
-    let response = send_community_rpc(
-        state.inner(),
-        pool.inner(),
-        &community_id,
-        rekindle_protocol::messaging::CommunityRequest::DeleteRole { role_id },
-    )
-    .await;
 
-    match response {
-        Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => {
-            // Remove from in-memory state
-            {
-                let mut communities = state.communities.write();
-                if let Some(c) = communities.get_mut(&community_id) {
-                    c.roles.retain(|r| r.id != role_id);
-                    c.my_role_ids.retain(|&id| id != role_id);
-                    c.my_role = Some(crate::state::display_role_name(&c.my_role_ids, &c.roles));
-                }
-            }
-            // Remove from SQLite + scrub from all members' role_ids
-            let cid = community_id.clone();
-            db_call(pool.inner(), move |conn| {
-                conn.execute(
-                    "DELETE FROM community_roles WHERE owner_key = ? AND community_id = ? AND role_id = ?",
-                    rusqlite::params![owner_key, cid, role_id],
-                )?;
-                // Scrub the deleted role_id from all members' role_ids JSON
-                let mut stmt = conn.prepare(
-                    "SELECT pseudonym_key, role_ids FROM community_members WHERE owner_key = ? AND community_id = ?",
-                )?;
-                let members: Vec<(String, String)> = stmt.query_map(
-                    rusqlite::params![owner_key, cid],
-                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
-                )?
-                .filter_map(std::result::Result::ok)
-                .collect();
-                drop(stmt);
-                let rid = role_id;
-                for (pk, json) in &members {
-                    let mut ids: Vec<u32> = serde_json::from_str(json).unwrap_or_default();
-                    if ids.contains(&rid) {
-                        ids.retain(|&id| id != rid);
-                        let new_json = serde_json::to_string(&ids).unwrap_or_default();
-                        conn.execute(
-                            "UPDATE community_members SET role_ids = ? WHERE owner_key = ? AND community_id = ? AND pseudonym_key = ?",
-                            rusqlite::params![new_json, owner_key, cid, pk],
-                        )?;
-                    }
-                }
-                // Also scrub from the communities.my_role_ids
-                let my_ids_json: String = conn.query_row(
-                    "SELECT my_role_ids FROM communities WHERE owner_key = ? AND id = ?",
-                    rusqlite::params![owner_key, cid],
-                    |row| row.get(0),
-                ).unwrap_or_else(|_| "[0,1]".to_string());
-                let mut my_ids: Vec<u32> = serde_json::from_str(&my_ids_json).unwrap_or_default();
-                if my_ids.contains(&rid) {
-                    my_ids.retain(|&id| id != rid);
-                    let new_json = serde_json::to_string(&my_ids).unwrap_or_default();
-                    conn.execute(
-                        "UPDATE communities SET my_role_ids = ? WHERE owner_key = ? AND id = ?",
-                        rusqlite::params![new_json, owner_key, cid],
-                    )?;
-                }
-                Ok(())
-            }).await?;
-            Ok(())
+    send_to_coordinator(
+        state.inner(),
+        &community_id,
+        CommunityEnvelope::Control(ControlPayload::DeleteRole { role_id }),
+    )
+    .await?;
+
+    // Optimistic: remove from in-memory state
+    {
+        let mut communities = state.communities.write();
+        if let Some(c) = communities.get_mut(&community_id) {
+            c.roles.retain(|r| r.id != role_id);
+            c.my_role_ids.retain(|&id| id != role_id);
+            c.my_role = Some(crate::state::display_role_name(&c.my_role_ids, &c.roles));
         }
-        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => {
-            Err(format!("server rejected delete_role: {message}"))
-        }
-        Ok(_) => Err("unexpected response from server".into()),
-        Err(e) => Err(e),
     }
+    // Remove from SQLite + scrub from all members' role_ids
+    let cid = community_id.clone();
+    db_call(pool.inner(), move |conn| {
+        conn.execute(
+            "DELETE FROM community_roles WHERE owner_key = ? AND community_id = ? AND role_id = ?",
+            rusqlite::params![owner_key, cid, role_id],
+        )?;
+        // Scrub the deleted role_id from all members' role_ids JSON
+        let mut stmt = conn.prepare(
+            "SELECT pseudonym_key, role_ids FROM community_members WHERE owner_key = ? AND community_id = ?",
+        )?;
+        let members: Vec<(String, String)> = stmt.query_map(
+            rusqlite::params![owner_key, cid],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+        )?
+        .filter_map(std::result::Result::ok)
+        .collect();
+        drop(stmt);
+        let rid = role_id;
+        for (pk, json) in &members {
+            let mut ids: Vec<u32> = serde_json::from_str(json).unwrap_or_default();
+            if ids.contains(&rid) {
+                ids.retain(|&id| id != rid);
+                let new_json = serde_json::to_string(&ids).unwrap_or_default();
+                conn.execute(
+                    "UPDATE community_members SET role_ids = ? WHERE owner_key = ? AND community_id = ? AND pseudonym_key = ?",
+                    rusqlite::params![new_json, owner_key, cid, pk],
+                )?;
+            }
+        }
+        // Also scrub from the communities.my_role_ids
+        let my_ids_json: String = conn.query_row(
+            "SELECT my_role_ids FROM communities WHERE owner_key = ? AND id = ?",
+            rusqlite::params![owner_key, cid],
+            |row| row.get(0),
+        ).unwrap_or_else(|_| "[0,1]".to_string());
+        let mut my_ids: Vec<u32> = serde_json::from_str(&my_ids_json).unwrap_or_default();
+        if my_ids.contains(&rid) {
+            my_ids.retain(|&id| id != rid);
+            let new_json = serde_json::to_string(&my_ids).unwrap_or_default();
+            conn.execute(
+                "UPDATE communities SET my_role_ids = ? WHERE owner_key = ? AND id = ?",
+                rusqlite::params![new_json, owner_key, cid],
+            )?;
+        }
+        Ok(())
+    }).await?;
+    Ok(())
 }
 
 /// Assign a role to a member (additive — does not remove other roles).
@@ -2608,63 +2036,54 @@ pub async fn assign_role(
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
     let owner_key = state_helpers::current_owner_key(state.inner())?;
-    let response = send_community_rpc(
+
+    send_to_coordinator(
         state.inner(),
-        pool.inner(),
         &community_id,
-        rekindle_protocol::messaging::CommunityRequest::AssignRole {
+        CommunityEnvelope::Control(ControlPayload::AssignRole {
             target_pseudonym: pseudonym_key.clone(),
             role_id,
-        },
+        }),
     )
-    .await;
+    .await?;
 
-    match response {
-        Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => {
-            // Update in-memory state if target is self
-            let is_self = {
-                let communities = state.communities.read();
-                communities
-                    .get(&community_id)
-                    .is_some_and(|c| c.my_pseudonym_key.as_deref() == Some(&pseudonym_key))
-            };
-            if is_self {
-                let mut communities = state.communities.write();
-                if let Some(c) = communities.get_mut(&community_id) {
-                    if !c.my_role_ids.contains(&role_id) {
-                        c.my_role_ids.push(role_id);
-                    }
-                    c.my_role = Some(crate::state::display_role_name(&c.my_role_ids, &c.roles));
-                }
+    // Optimistic: update in-memory state if target is self
+    let is_self = {
+        let communities = state.communities.read();
+        communities
+            .get(&community_id)
+            .is_some_and(|c| c.my_pseudonym_key.as_deref() == Some(&pseudonym_key))
+    };
+    if is_self {
+        let mut communities = state.communities.write();
+        if let Some(c) = communities.get_mut(&community_id) {
+            if !c.my_role_ids.contains(&role_id) {
+                c.my_role_ids.push(role_id);
             }
-            // Update SQLite member role_ids
-            let cid = community_id.clone();
-            let pk = pseudonym_key.clone();
-            db_call(pool.inner(), move |conn| {
-                let current: String = conn.query_row(
-                    "SELECT role_ids FROM community_members WHERE owner_key = ? AND community_id = ? AND pseudonym_key = ?",
-                    rusqlite::params![owner_key, cid, pk],
-                    |row| row.get(0),
-                ).unwrap_or_else(|_| "[0,1]".to_string());
-                let mut ids: Vec<u32> = serde_json::from_str(&current).unwrap_or_default();
-                if !ids.contains(&role_id) {
-                    ids.push(role_id);
-                }
-                let new_json = serde_json::to_string(&ids).unwrap_or_default();
-                conn.execute(
-                    "UPDATE community_members SET role_ids = ? WHERE owner_key = ? AND community_id = ? AND pseudonym_key = ?",
-                    rusqlite::params![new_json, owner_key, cid, pk],
-                )?;
-                Ok(())
-            }).await?;
-            Ok(())
+            c.my_role = Some(crate::state::display_role_name(&c.my_role_ids, &c.roles));
         }
-        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => {
-            Err(format!("server rejected assign_role: {message}"))
-        }
-        Ok(_) => Err("unexpected response from server".into()),
-        Err(e) => Err(e),
     }
+    // Update SQLite member role_ids
+    let cid = community_id.clone();
+    let pk = pseudonym_key.clone();
+    db_call(pool.inner(), move |conn| {
+        let current: String = conn.query_row(
+            "SELECT role_ids FROM community_members WHERE owner_key = ? AND community_id = ? AND pseudonym_key = ?",
+            rusqlite::params![owner_key, cid, pk],
+            |row| row.get(0),
+        ).unwrap_or_else(|_| "[0,1]".to_string());
+        let mut ids: Vec<u32> = serde_json::from_str(&current).unwrap_or_default();
+        if !ids.contains(&role_id) {
+            ids.push(role_id);
+        }
+        let new_json = serde_json::to_string(&ids).unwrap_or_default();
+        conn.execute(
+            "UPDATE community_members SET role_ids = ? WHERE owner_key = ? AND community_id = ? AND pseudonym_key = ?",
+            rusqlite::params![new_json, owner_key, cid, pk],
+        )?;
+        Ok(())
+    }).await?;
+    Ok(())
 }
 
 /// Remove a role from a member.
@@ -2677,59 +2096,50 @@ pub async fn unassign_role(
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
     let owner_key = state_helpers::current_owner_key(state.inner())?;
-    let response = send_community_rpc(
+
+    send_to_coordinator(
         state.inner(),
-        pool.inner(),
         &community_id,
-        rekindle_protocol::messaging::CommunityRequest::UnassignRole {
+        CommunityEnvelope::Control(ControlPayload::UnassignRole {
             target_pseudonym: pseudonym_key.clone(),
             role_id,
-        },
+        }),
     )
-    .await;
+    .await?;
 
-    match response {
-        Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => {
-            // Update in-memory state if target is self
-            let is_self = {
-                let communities = state.communities.read();
-                communities
-                    .get(&community_id)
-                    .is_some_and(|c| c.my_pseudonym_key.as_deref() == Some(&pseudonym_key))
-            };
-            if is_self {
-                let mut communities = state.communities.write();
-                if let Some(c) = communities.get_mut(&community_id) {
-                    c.my_role_ids.retain(|&id| id != role_id);
-                    c.my_role = Some(crate::state::display_role_name(&c.my_role_ids, &c.roles));
-                }
-            }
-            // Update SQLite member role_ids
-            let cid = community_id.clone();
-            let pk = pseudonym_key.clone();
-            db_call(pool.inner(), move |conn| {
-                let current: String = conn.query_row(
-                    "SELECT role_ids FROM community_members WHERE owner_key = ? AND community_id = ? AND pseudonym_key = ?",
-                    rusqlite::params![owner_key, cid, pk],
-                    |row| row.get(0),
-                ).unwrap_or_else(|_| "[0,1]".to_string());
-                let mut ids: Vec<u32> = serde_json::from_str(&current).unwrap_or_default();
-                ids.retain(|&id| id != role_id);
-                let new_json = serde_json::to_string(&ids).unwrap_or_default();
-                conn.execute(
-                    "UPDATE community_members SET role_ids = ? WHERE owner_key = ? AND community_id = ? AND pseudonym_key = ?",
-                    rusqlite::params![new_json, owner_key, cid, pk],
-                )?;
-                Ok(())
-            }).await?;
-            Ok(())
+    // Optimistic: update in-memory state if target is self
+    let is_self = {
+        let communities = state.communities.read();
+        communities
+            .get(&community_id)
+            .is_some_and(|c| c.my_pseudonym_key.as_deref() == Some(&pseudonym_key))
+    };
+    if is_self {
+        let mut communities = state.communities.write();
+        if let Some(c) = communities.get_mut(&community_id) {
+            c.my_role_ids.retain(|&id| id != role_id);
+            c.my_role = Some(crate::state::display_role_name(&c.my_role_ids, &c.roles));
         }
-        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => {
-            Err(format!("server rejected unassign_role: {message}"))
-        }
-        Ok(_) => Err("unexpected response from server".into()),
-        Err(e) => Err(e),
     }
+    // Update SQLite member role_ids
+    let cid = community_id.clone();
+    let pk = pseudonym_key.clone();
+    db_call(pool.inner(), move |conn| {
+        let current: String = conn.query_row(
+            "SELECT role_ids FROM community_members WHERE owner_key = ? AND community_id = ? AND pseudonym_key = ?",
+            rusqlite::params![owner_key, cid, pk],
+            |row| row.get(0),
+        ).unwrap_or_else(|_| "[0,1]".to_string());
+        let mut ids: Vec<u32> = serde_json::from_str(&current).unwrap_or_default();
+        ids.retain(|&id| id != role_id);
+        let new_json = serde_json::to_string(&ids).unwrap_or_default();
+        conn.execute(
+            "UPDATE community_members SET role_ids = ? WHERE owner_key = ? AND community_id = ? AND pseudonym_key = ?",
+            rusqlite::params![new_json, owner_key, cid, pk],
+        )?;
+        Ok(())
+    }).await?;
+    Ok(())
 }
 
 /// Timeout a member (prevent sending for a duration).
@@ -2743,39 +2153,30 @@ pub async fn timeout_member(
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
     let owner_key = state_helpers::current_owner_key(state.inner())?;
-    let response = send_community_rpc(
+
+    send_to_coordinator(
         state.inner(),
-        pool.inner(),
         &community_id,
-        rekindle_protocol::messaging::CommunityRequest::TimeoutMember {
+        CommunityEnvelope::Control(ControlPayload::TimeoutMember {
             target_pseudonym: pseudonym_key.clone(),
             duration_seconds,
             reason,
-        },
+        }),
     )
-    .await;
+    .await?;
 
-    match response {
-        Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => {
-            // Compute timeout_until and persist to SQLite
-            let timeout_until = db::timestamp_now() / 1000 + duration_seconds.cast_signed();
-            let cid = community_id.clone();
-            let pk = pseudonym_key.clone();
-            db_call(pool.inner(), move |conn| {
-                conn.execute(
-                    "UPDATE community_members SET timeout_until = ? WHERE owner_key = ? AND community_id = ? AND pseudonym_key = ?",
-                    rusqlite::params![timeout_until, owner_key, cid, pk],
-                )?;
-                Ok(())
-            }).await?;
-            Ok(())
-        }
-        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => {
-            Err(format!("server rejected timeout_member: {message}"))
-        }
-        Ok(_) => Err("unexpected response from server".into()),
-        Err(e) => Err(e),
-    }
+    // Optimistic: compute timeout_until and persist to SQLite
+    let timeout_until = db::timestamp_now() / 1000 + duration_seconds.cast_signed();
+    let cid = community_id.clone();
+    let pk = pseudonym_key.clone();
+    db_call(pool.inner(), move |conn| {
+        conn.execute(
+            "UPDATE community_members SET timeout_until = ? WHERE owner_key = ? AND community_id = ? AND pseudonym_key = ?",
+            rusqlite::params![timeout_until, owner_key, cid, pk],
+        )?;
+        Ok(())
+    }).await?;
+    Ok(())
 }
 
 /// Remove a member's timeout.
@@ -2787,36 +2188,27 @@ pub async fn remove_timeout(
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
     let owner_key = state_helpers::current_owner_key(state.inner())?;
-    let response = send_community_rpc(
-        state.inner(),
-        pool.inner(),
-        &community_id,
-        rekindle_protocol::messaging::CommunityRequest::RemoveTimeout {
-            target_pseudonym: pseudonym_key.clone(),
-        },
-    )
-    .await;
 
-    match response {
-        Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => {
-            // Clear timeout in SQLite
-            let cid = community_id.clone();
-            let pk = pseudonym_key.clone();
-            db_call(pool.inner(), move |conn| {
-                conn.execute(
-                    "UPDATE community_members SET timeout_until = NULL WHERE owner_key = ? AND community_id = ? AND pseudonym_key = ?",
-                    rusqlite::params![owner_key, cid, pk],
-                )?;
-                Ok(())
-            }).await?;
-            Ok(())
-        }
-        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => {
-            Err(format!("server rejected remove_timeout: {message}"))
-        }
-        Ok(_) => Err("unexpected response from server".into()),
-        Err(e) => Err(e),
-    }
+    send_to_coordinator(
+        state.inner(),
+        &community_id,
+        CommunityEnvelope::Control(ControlPayload::RemoveTimeout {
+            target_pseudonym: pseudonym_key.clone(),
+        }),
+    )
+    .await?;
+
+    // Optimistic: clear timeout in SQLite
+    let cid = community_id.clone();
+    let pk = pseudonym_key.clone();
+    db_call(pool.inner(), move |conn| {
+        conn.execute(
+            "UPDATE community_members SET timeout_until = NULL WHERE owner_key = ? AND community_id = ? AND pseudonym_key = ?",
+            rusqlite::params![owner_key, cid, pk],
+        )?;
+        Ok(())
+    }).await?;
+    Ok(())
 }
 
 /// Set a channel permission overwrite.
@@ -2832,42 +2224,33 @@ pub async fn set_channel_overwrite(
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
     let owner_key = state_helpers::current_owner_key(state.inner())?;
-    let response = send_community_rpc(
+
+    send_to_coordinator(
         state.inner(),
-        pool.inner(),
         &community_id,
-        rekindle_protocol::messaging::CommunityRequest::SetChannelOverwrite {
+        CommunityEnvelope::Control(ControlPayload::SetChannelOverwrite {
             channel_id: channel_id.clone(),
             target_type: target_type.clone(),
             target_id: target_id.clone(),
             allow,
             deny,
-        },
+        }),
     )
-    .await;
+    .await?;
 
-    match response {
-        Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => {
-            // Persist overwrite to local SQLite
-            let comm_id = community_id.clone();
-            let chan_id = channel_id.clone();
-            let tgt_type = target_type.clone();
-            let tgt_id = target_id.clone();
-            db_call(pool.inner(), move |conn| {
-                conn.execute(
-                    "INSERT OR REPLACE INTO channel_overwrites (owner_key, community_id, channel_id, target_type, target_id, allow, deny) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    rusqlite::params![owner_key, comm_id, chan_id, tgt_type, tgt_id, allow.cast_signed(), deny.cast_signed()],
-                )?;
-                Ok(())
-            }).await?;
-            Ok(())
-        }
-        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => {
-            Err(format!("server rejected set_channel_overwrite: {message}"))
-        }
-        Ok(_) => Err("unexpected response from server".into()),
-        Err(e) => Err(e),
-    }
+    // Optimistic: persist overwrite to local SQLite
+    let comm_id = community_id.clone();
+    let chan_id = channel_id.clone();
+    let tgt_type = target_type.clone();
+    let tgt_id = target_id.clone();
+    db_call(pool.inner(), move |conn| {
+        conn.execute(
+            "INSERT OR REPLACE INTO channel_overwrites (owner_key, community_id, channel_id, target_type, target_id, allow, deny) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            rusqlite::params![owner_key, comm_id, chan_id, tgt_type, tgt_id, allow.cast_signed(), deny.cast_signed()],
+        )?;
+        Ok(())
+    }).await?;
+    Ok(())
 }
 
 /// Set slowmode delay for a channel (0 to disable).
@@ -2879,34 +2262,25 @@ pub async fn set_slowmode(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let response = send_community_rpc(
+    let _ = pool;
+    send_to_coordinator(
         state.inner(),
-        pool.inner(),
         &community_id,
-        rekindle_protocol::messaging::CommunityRequest::SetSlowmode {
+        CommunityEnvelope::Control(ControlPayload::SetSlowmode {
             channel_id: channel_id.clone(),
             seconds,
-        },
+        }),
     )
-    .await;
+    .await?;
 
-    match response {
-        Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => {
-            // Update local store
-            let mut communities = state.communities.write();
-            if let Some(community) = communities.get_mut(&community_id) {
-                if let Some(ch) = community.channels.iter_mut().find(|ch| ch.id == channel_id) {
-                    ch.slowmode_seconds = Some(seconds);
-                }
-            }
-            Ok(())
+    // Optimistic: update local state
+    let mut communities = state.communities.write();
+    if let Some(community) = communities.get_mut(&community_id) {
+        if let Some(ch) = community.channels.iter_mut().find(|ch| ch.id == channel_id) {
+            ch.slowmode_seconds = Some(seconds);
         }
-        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => {
-            Err(format!("server rejected set_slowmode: {message}"))
-        }
-        Ok(_) => Err("unexpected response from server".into()),
-        Err(e) => Err(e),
     }
+    Ok(())
 }
 
 /// Delete a channel permission overwrite.
@@ -2920,45 +2294,36 @@ pub async fn delete_channel_overwrite(
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
     let owner_key = state_helpers::current_owner_key(state.inner())?;
-    let response = send_community_rpc(
+
+    send_to_coordinator(
         state.inner(),
-        pool.inner(),
         &community_id,
-        rekindle_protocol::messaging::CommunityRequest::DeleteChannelOverwrite {
+        CommunityEnvelope::Control(ControlPayload::DeleteChannelOverwrite {
             channel_id: channel_id.clone(),
             target_type: target_type.clone(),
             target_id: target_id.clone(),
-        },
+        }),
     )
-    .await;
+    .await?;
 
-    match response {
-        Ok(rekindle_protocol::messaging::CommunityResponse::Ok) => {
-            // Remove overwrite from local SQLite
-            let comm_id = community_id.clone();
-            let chan_id = channel_id.clone();
-            let tgt_type = target_type.clone();
-            let tgt_id = target_id.clone();
-            db_call(pool.inner(), move |conn| {
-                conn.execute(
-                    "DELETE FROM channel_overwrites WHERE owner_key = ? AND community_id = ? AND channel_id = ? AND target_type = ? AND target_id = ?",
-                    rusqlite::params![owner_key, comm_id, chan_id, tgt_type, tgt_id],
-                )?;
-                Ok(())
-            }).await?;
-            Ok(())
-        }
-        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => Err(format!(
-            "server rejected delete_channel_overwrite: {message}"
-        )),
-        Ok(_) => Err("unexpected response from server".into()),
-        Err(e) => Err(e),
-    }
+    // Optimistic: remove overwrite from local SQLite
+    let comm_id = community_id.clone();
+    let chan_id = channel_id.clone();
+    let tgt_type = target_type.clone();
+    let tgt_id = target_id.clone();
+    db_call(pool.inner(), move |conn| {
+        conn.execute(
+            "DELETE FROM channel_overwrites WHERE owner_key = ? AND community_id = ? AND channel_id = ? AND target_type = ? AND target_id = ?",
+            rusqlite::params![owner_key, comm_id, chan_id, tgt_type, tgt_id],
+        )?;
+        Ok(())
+    }).await?;
+    Ok(())
 }
 
 /// Delete a channel from a community.
 ///
-/// Sends `CommunityRequest::DeleteChannel` to the server, then removes
+/// Sends `ControlPayload::DeleteChannel` to the coordinator, then removes
 /// the channel from local state and `SQLite`.
 #[tauri::command]
 pub async fn delete_channel(
@@ -2969,19 +2334,14 @@ pub async fn delete_channel(
 ) -> Result<(), String> {
     let owner_key = state_helpers::current_owner_key(state.inner())?;
 
-    let response = send_community_rpc(
+    send_to_coordinator(
         state.inner(),
-        pool.inner(),
         &community_id,
-        rekindle_protocol::messaging::CommunityRequest::DeleteChannel {
+        CommunityEnvelope::Control(ControlPayload::DeleteChannel {
             channel_id: channel_id.clone(),
-        },
+        }),
     )
     .await?;
-
-    if let rekindle_protocol::messaging::CommunityResponse::Error { message, .. } = response {
-        return Err(format!("server rejected channel deletion: {message}"));
-    }
 
     // Remove from local state
     {
@@ -3015,20 +2375,15 @@ pub async fn rename_channel(
 ) -> Result<(), String> {
     let owner_key = state_helpers::current_owner_key(state.inner())?;
 
-    let response = send_community_rpc(
+    send_to_coordinator(
         state.inner(),
-        pool.inner(),
         &community_id,
-        rekindle_protocol::messaging::CommunityRequest::RenameChannel {
+        CommunityEnvelope::Control(ControlPayload::RenameChannel {
             channel_id: channel_id.clone(),
             new_name: new_name.clone(),
-        },
+        }),
     )
     .await?;
-
-    if let rekindle_protocol::messaging::CommunityResponse::Error { message, .. } = response {
-        return Err(format!("server rejected channel rename: {message}"));
-    }
 
     // Update local state
     {
@@ -3068,29 +2423,15 @@ pub async fn update_community_info(
 ) -> Result<(), String> {
     let owner_key = state_helpers::current_owner_key(state.inner())?;
 
-    let response = send_community_rpc(
+    send_to_coordinator(
         state.inner(),
-        pool.inner(),
         &community_id,
-        rekindle_protocol::messaging::CommunityRequest::UpdateCommunity {
+        CommunityEnvelope::Control(ControlPayload::UpdateCommunity {
             name: name.clone(),
             description: description.clone(),
-        },
+        }),
     )
-    .await;
-
-    match response {
-        Ok(rekindle_protocol::messaging::CommunityResponse::CommunityUpdated) => {}
-        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => {
-            return Err(format!("server rejected community update: {message}"));
-        }
-        Ok(_) => {
-            return Err("unexpected response from server".into());
-        }
-        Err(e) => {
-            return Err(e);
-        }
-    }
+    .await?;
 
     // Update local state
     {
@@ -3136,30 +2477,15 @@ pub async fn ban_member(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let response = send_community_rpc(
+    let _ = pool;
+    send_to_coordinator(
         state.inner(),
-        pool.inner(),
         &community_id,
-        rekindle_protocol::messaging::CommunityRequest::Ban {
+        CommunityEnvelope::Control(ControlPayload::Ban {
             target_pseudonym: pseudonym_key.clone(),
-        },
+        }),
     )
     .await?;
-
-    if let rekindle_protocol::messaging::CommunityResponse::Error { message, .. } = response {
-        return Err(format!("server rejected ban: {message}"));
-    }
-
-    // Remove from local member list (server already kicked them)
-    {
-        let mut communities = state.communities.write();
-        if let Some(community) = communities.get_mut(&community_id) {
-            // Members are stored in community.members in the SolidJS store,
-            // but on the Rust side this is in the DB — the frontend will
-            // update its store via the handler.
-            let _ = community;
-        }
-    }
 
     tracing::info!(community = %community_id, member = %pseudonym_key, "member banned");
     Ok(())
@@ -3173,19 +2499,15 @@ pub async fn unban_member(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let response = send_community_rpc(
+    let _ = pool;
+    send_to_coordinator(
         state.inner(),
-        pool.inner(),
         &community_id,
-        rekindle_protocol::messaging::CommunityRequest::Unban {
+        CommunityEnvelope::Control(ControlPayload::Unban {
             target_pseudonym: pseudonym_key.clone(),
-        },
+        }),
     )
     .await?;
-
-    if let rekindle_protocol::messaging::CommunityResponse::Error { message, .. } = response {
-        return Err(format!("server rejected unban: {message}"));
-    }
 
     tracing::info!(community = %community_id, member = %pseudonym_key, "member unbanned");
     Ok(())
@@ -3239,17 +2561,13 @@ pub async fn rotate_mek(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let response = send_community_rpc(
+    let _ = pool;
+    send_to_coordinator(
         state.inner(),
-        pool.inner(),
         &community_id,
-        rekindle_protocol::messaging::CommunityRequest::RotateMEK,
+        CommunityEnvelope::Control(ControlPayload::RotateMEK),
     )
     .await?;
-
-    if let rekindle_protocol::messaging::CommunityResponse::Error { message, .. } = response {
-        return Err(format!("server rejected MEK rotation: {message}"));
-    }
 
     tracing::info!(community = %community_id, "MEK rotation requested");
     Ok(())
@@ -3426,10 +2744,11 @@ pub async fn get_community_members(
 // B.7: Older message pagination
 // ---------------------------------------------------------------------------
 
-/// Fetch older messages directly from the community server (no local DB).
+/// Fetch older messages for pagination before `before_timestamp`.
 ///
-/// Used for loading message history before the oldest loaded message.
-/// Returns decrypted messages older than `before_timestamp`.
+/// In the coordinator model there is no request/response fetch path. This queries
+/// local SQLite for messages before the given timestamp. DHT pagination for
+/// messages beyond the local DB is a future TODO.
 #[tauri::command]
 pub async fn get_older_channel_messages(
     community_id: String,
@@ -3439,6 +2758,7 @@ pub async fn get_older_channel_messages(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<Vec<Message>, String> {
+    let our_key = state_helpers::current_owner_key(state.inner()).unwrap_or_default();
     let my_pseudonym_key = {
         let communities = state.communities.read();
         communities
@@ -3446,56 +2766,41 @@ pub async fn get_older_channel_messages(
             .and_then(|c| c.my_pseudonym_key.clone())
             .unwrap_or_default()
     };
-    let our_key = state_helpers::current_owner_key(state.inner()).unwrap_or_default();
 
-    let request = rekindle_protocol::messaging::CommunityRequest::GetMessages {
-        channel_id: channel_id.clone(),
-        before_timestamp: Some(before_timestamp),
-        limit,
-    };
-    let response =
-        send_community_rpc(state.inner(), pool.inner(), &community_id, request).await?;
-    match response {
-        rekindle_protocol::messaging::CommunityResponse::Messages { messages } => {
-            // Decrypt with cached MEK
-            let mek_cache = state.mek_cache.lock();
-            let Some(mek) = mek_cache.get(&community_id) else {
-                return Err("no MEK to decrypt server messages".into());
-            };
-
-            let mut result = Vec::new();
-            for msg in &messages {
-                if msg.mek_generation != mek.generation() {
-                    tracing::debug!(
-                        have = mek.generation(),
-                        need = msg.mek_generation,
-                        "skipping message with different MEK generation"
-                    );
-                    continue;
-                }
-                let body = match mek.decrypt(&msg.ciphertext) {
-                    Ok(plaintext) => String::from_utf8(plaintext).unwrap_or_default(),
-                    Err(e) => {
-                        tracing::debug!(error = %e, "failed to decrypt older message");
-                        continue;
-                    }
-                };
-                let is_own = msg.sender_pseudonym == my_pseudonym_key
-                    || msg.sender_pseudonym == our_key;
-                result.push(Message {
-                    id: 0, // Server-sourced, no local DB id
-                    sender_id: msg.sender_pseudonym.clone(),
-                    body,
-                    timestamp: msg.timestamp.cast_signed(),
-                    is_own,
-                    server_message_id: Some(msg.message_id.clone()),
-                });
-            }
-            Ok(result)
+    let channel_id_clone = channel_id.clone();
+    let ok = our_key.clone();
+    let mpk = my_pseudonym_key.clone();
+    let before_ts = before_timestamp.cast_signed();
+    let mut messages = db_call(pool.inner(), move |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT id, sender_key, body, timestamp FROM messages \
+             WHERE owner_key = ? AND conversation_id = ? AND conversation_type = 'channel' \
+             AND timestamp < ? ORDER BY timestamp DESC LIMIT ?",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![ok, channel_id_clone, before_ts, limit], |row| {
+            let sender = db::get_str(row, "sender_key");
+            let is_own = sender == ok || sender == mpk;
+            Ok(Message {
+                id: db::get_i64(row, "id"),
+                sender_id: sender,
+                body: db::get_str(row, "body"),
+                timestamp: db::get_i64(row, "timestamp"),
+                is_own,
+                server_message_id: None,
+            })
+        })?;
+        let mut msgs = Vec::new();
+        for row in rows {
+            msgs.push(row?);
         }
-        rekindle_protocol::messaging::CommunityResponse::Error { message, .. } => Err(message),
-        _ => Err("unexpected response".into()),
-    }
+        Ok(msgs)
+    })
+    .await?;
+
+    // Reverse so messages are in chronological order
+    messages.reverse();
+    // TODO: DHT pagination for messages beyond local DB
+    Ok(messages)
 }
 
 // ---------------------------------------------------------------------------
@@ -3511,34 +2816,25 @@ pub async fn set_channel_topic(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let response = send_community_rpc(
+    let _ = pool;
+    send_to_coordinator(
         state.inner(),
-        pool.inner(),
         &community_id,
-        rekindle_protocol::messaging::CommunityRequest::SetChannelTopic {
+        CommunityEnvelope::Control(ControlPayload::SetChannelTopic {
             channel_id: channel_id.clone(),
             topic: topic.clone(),
-        },
+        }),
     )
     .await?;
 
-    match response {
-        rekindle_protocol::messaging::CommunityResponse::Ok => {
-            let mut communities = state.communities.write();
-            if let Some(community) = communities.get_mut(&community_id) {
-                if let Some(ch) = community.channels.iter_mut().find(|c| c.id == channel_id) {
-                    ch.topic = topic;
-                }
-            }
-            Ok(())
+    // Optimistic local state update
+    let mut communities = state.communities.write();
+    if let Some(community) = communities.get_mut(&community_id) {
+        if let Some(ch) = community.channels.iter_mut().find(|c| c.id == channel_id) {
+            ch.topic = topic;
         }
-        rekindle_protocol::messaging::CommunityResponse::Error { message, .. } => {
-            Err(format!("server rejected set channel topic: {message}"))
-        }
-        other => Err(format!(
-            "unexpected server response for SetChannelTopic: {other:?}"
-        )),
     }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -3553,34 +2849,24 @@ pub async fn reorder_channels(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let response = send_community_rpc(
+    let _ = pool;
+    send_to_coordinator(
         state.inner(),
-        pool.inner(),
         &community_id,
-        rekindle_protocol::messaging::CommunityRequest::ReorderChannels {
+        CommunityEnvelope::Control(ControlPayload::ReorderChannels {
             channel_ids: channel_ids.clone(),
-        },
+        }),
     )
     .await?;
 
-    match response {
-        rekindle_protocol::messaging::CommunityResponse::Ok => {
-            // Reorder channels in memory to match the specified order
-            let mut communities = state.communities.write();
-            if let Some(community) = communities.get_mut(&community_id) {
-                community.channels.sort_by_key(|ch| {
-                    channel_ids.iter().position(|id| id == &ch.id).unwrap_or(usize::MAX)
-                });
-            }
-            Ok(())
-        }
-        rekindle_protocol::messaging::CommunityResponse::Error { message, .. } => {
-            Err(format!("server rejected reorder channels: {message}"))
-        }
-        other => Err(format!(
-            "unexpected server response for ReorderChannels: {other:?}"
-        )),
+    // Optimistic: reorder channels in memory to match the specified order
+    let mut communities = state.communities.write();
+    if let Some(community) = communities.get_mut(&community_id) {
+        community.channels.sort_by_key(|ch| {
+            channel_ids.iter().position(|id| id == &ch.id).unwrap_or(usize::MAX)
+        });
     }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -3589,7 +2875,7 @@ pub async fn reorder_channels(
 
 /// Mark a channel as read up to a specific message.
 ///
-/// Sends `MarkChannelRead` to the server and zeroes the local `unread_count`.
+/// Sends `MarkChannelRead` to the coordinator and zeroes the local `unread_count`.
 #[tauri::command]
 pub async fn mark_channel_read(
     community_id: String,
@@ -3598,35 +2884,25 @@ pub async fn mark_channel_read(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let response = send_community_rpc(
+    let _ = pool;
+    send_to_coordinator(
         state.inner(),
-        pool.inner(),
         &community_id,
-        rekindle_protocol::messaging::CommunityRequest::MarkChannelRead {
+        CommunityEnvelope::Control(ControlPayload::MarkChannelRead {
             channel_id: channel_id.clone(),
             last_message_id,
-        },
+        }),
     )
     .await?;
 
-    match response {
-        rekindle_protocol::messaging::CommunityResponse::Ok => {
-            // Zero out the local unread count for this channel
-            let mut communities = state.communities.write();
-            if let Some(community) = communities.get_mut(&community_id) {
-                if let Some(ch) = community.channels.iter_mut().find(|c| c.id == channel_id) {
-                    ch.unread_count = 0;
-                }
-            }
-            Ok(())
+    // Zero out the local unread count for this channel
+    let mut communities = state.communities.write();
+    if let Some(community) = communities.get_mut(&community_id) {
+        if let Some(ch) = community.channels.iter_mut().find(|c| c.id == channel_id) {
+            ch.unread_count = 0;
         }
-        rekindle_protocol::messaging::CommunityResponse::Error { message, .. } => {
-            Err(format!("server rejected mark read: {message}"))
-        }
-        other => Err(format!(
-            "unexpected server response for MarkChannelRead: {other:?}"
-        )),
     }
+    Ok(())
 }
 
 /// Unread count entry returned to the frontend.

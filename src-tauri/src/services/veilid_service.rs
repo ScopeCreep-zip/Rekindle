@@ -146,15 +146,7 @@ async fn handle_app_message(
         return;
     }
 
-    // 3. Legacy: try to parse as a community broadcast
-    if let Ok(broadcast) =
-        serde_json::from_slice::<rekindle_protocol::messaging::CommunityBroadcast>(&message)
-    {
-        handle_community_broadcast(app_handle, state, broadcast).await;
-        return;
-    }
-
-    // 4. Fallback to standard message handling
+    // 3. Fallback to standard message handling
     let pool: tauri::State<'_, DbPool> = app_handle.state();
     super::message_service::handle_incoming_message(app_handle, state, pool.inner(), &message)
         .await;
@@ -407,6 +399,44 @@ fn handle_relayed_control(
                 },
             );
         }
+        // JoinAccepted — coordinator sent us community data + MEK after our join
+        ControlPayload::JoinAccepted {
+            mek_encrypted,
+            mek_generation,
+            channels,
+            categories,
+            role_ids,
+            roles,
+            members,
+        } => {
+            handle_join_accepted(
+                app_handle,
+                state,
+                community_id,
+                &mek_encrypted,
+                mek_generation,
+                &channels,
+                &categories,
+                &role_ids,
+                &roles,
+                &members,
+            );
+        }
+        // JoinRejected — coordinator denied our join request
+        ControlPayload::JoinRejected { reason } => {
+            tracing::warn!(
+                community = %community_id,
+                reason = %reason,
+                "join request rejected by coordinator"
+            );
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::JoinRejected {
+                    community_id: community_id.to_string(),
+                    reason,
+                },
+            );
+        }
         // All other control payloads handled by helper function
         other => handle_relayed_control_extended(app_handle, community_id, other),
     }
@@ -607,15 +637,97 @@ fn handle_relayed_control_extended(
                 },
             );
         }
+        ControlPayload::MEKRotated { new_generation } => {
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::MekRotated {
+                    community_id: community_id.to_string(),
+                    new_generation,
+                },
+            );
+        }
+        ControlPayload::KickedNotification => {
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::Kicked {
+                    community_id: community_id.to_string(),
+                },
+            );
+        }
+        ControlPayload::ThreadMessageReceived {
+            thread_id,
+            message_id,
+            sender_pseudonym,
+            ciphertext: _,
+            mek_generation: _,
+            timestamp,
+            reply_to_id,
+        } => {
+            // TODO: decrypt ciphertext with MEK
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::ThreadMessageReceived {
+                    community_id: community_id.to_string(),
+                    thread_id,
+                    message_id,
+                    sender_pseudonym,
+                    body: String::new(),
+                    timestamp,
+                    reply_to_id,
+                },
+            );
+        }
+        ControlPayload::EventReminder {
+            event_id,
+            title,
+            minutes_until_start,
+        } => {
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::EventReminder {
+                    community_id: community_id.to_string(),
+                    event_id,
+                    title,
+                    minutes_until_start,
+                },
+            );
+        }
         // Coordinator lifecycle / ack payloads — no frontend event needed
         ControlPayload::CoordinatorHeartbeat { .. }
         | ControlPayload::ElectionClaim { .. }
         | ControlPayload::Ok
         | ControlPayload::Error { .. }
         | ControlPayload::MessageSent { .. }
-        | ControlPayload::JoinAccepted { .. }
         | ControlPayload::AutoModBlocked { .. }
         | ControlPayload::OnboardingQuestions { .. } => {}
+        ControlPayload::SystemMessage { body, timestamp } => {
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::SystemMessage {
+                    community_id: community_id.to_string(),
+                    body,
+                    timestamp,
+                },
+            );
+        }
+        ControlPayload::RaidAlert { active } => {
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::RaidAlert {
+                    community_id: community_id.to_string(),
+                    active,
+                },
+            );
+        }
+        ControlPayload::ChannelLockdown { locked } => {
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::ChannelLockdown {
+                    community_id: community_id.to_string(),
+                    locked,
+                },
+            );
+        }
         // Remaining control payloads — log for future mapping
         _ => {
             tracing::debug!(
@@ -626,585 +738,83 @@ fn handle_relayed_control_extended(
     }
 }
 
-/// Handle a community broadcast from the community server.
-pub(crate) async fn handle_community_broadcast(
-    app_handle: &tauri::AppHandle,
-    state: &Arc<AppState>,
-    broadcast: rekindle_protocol::messaging::CommunityBroadcast,
-) {
-    use rekindle_protocol::messaging::CommunityBroadcast;
-
-    match broadcast {
-        CommunityBroadcast::NewMessage {
-            community_id,
-            channel_id,
-            message_id,
-            sender_pseudonym,
-            ciphertext,
-            mek_generation,
-            timestamp,
-            reply_to_id,
-        } => {
-            let msg = BroadcastNewMessage {
-                community_id,
-                channel_id,
-                message_id,
-                sender_pseudonym,
-                ciphertext,
-                mek_generation,
-                timestamp,
-                reply_to_id,
-            };
-            handle_broadcast_new_message(app_handle, state, &msg).await;
-        }
-        CommunityBroadcast::MessageEdited {
-            community_id,
-            channel_id,
-            message_id,
-            new_ciphertext,
-            mek_generation,
-            edited_at,
-        } => {
-            handle_broadcast_message_edited(
-                app_handle,
-                state,
-                &community_id,
-                &channel_id,
-                &message_id,
-                &new_ciphertext,
-                mek_generation,
-                edited_at,
-            );
-        }
-        CommunityBroadcast::MessageDeleted {
-            community_id,
-            channel_id,
-            message_id,
-        } => {
-            tracing::info!(
-                community = %community_id,
-                channel = %channel_id,
-                message = %message_id,
-                "community message deleted"
-            );
-            let event = crate::channels::CommunityEvent::MessageDeleted {
-                community_id,
-                channel_id,
-                message_id,
-            };
-            let _ = app_handle.emit("community-event", &event);
-        }
-        CommunityBroadcast::MEKRotated {
-            community_id,
-            new_generation,
-        } => {
-            handle_broadcast_mek_rotated(app_handle, state, &community_id, new_generation).await;
-        }
-        CommunityBroadcast::MemberJoined {
-            community_id,
-            pseudonym_key,
-            display_name,
-            role_ids,
-        } => {
-            handle_broadcast_member_joined(
-                app_handle,
-                state,
-                &community_id,
-                &pseudonym_key,
-                &display_name,
-                &role_ids,
-            );
-        }
-        CommunityBroadcast::MemberRemoved {
-            community_id,
-            pseudonym_key,
-        } => {
-            handle_broadcast_member_removed(app_handle, state, &community_id, &pseudonym_key);
-        }
-        CommunityBroadcast::RolesChanged {
-            community_id,
-            roles,
-        } => {
-            handle_broadcast_roles_changed(app_handle, state, &community_id, &roles);
-        }
-        CommunityBroadcast::MemberRolesChanged {
-            community_id,
-            pseudonym_key,
-            role_ids,
-        } => {
-            handle_broadcast_member_roles_changed(
-                app_handle,
-                state,
-                &community_id,
-                &pseudonym_key,
-                &role_ids,
-            );
-        }
-        CommunityBroadcast::MemberTimedOut {
-            community_id,
-            pseudonym_key,
-            timeout_until,
-        } => {
-            handle_broadcast_member_timed_out(
-                app_handle,
-                state,
-                &community_id,
-                &pseudonym_key,
-                timeout_until,
-            );
-        }
-        CommunityBroadcast::ChannelOverwriteChanged {
-            community_id,
-            channel_id,
-        } => {
-            tracing::info!(
-                community = %community_id,
-                channel = %channel_id,
-                "channel overwrite changed — permission enforcement is server-side; \
-                 client will see updated permissions on next channel interaction"
-            );
-            // Channel permission overwrites are enforced server-side.
-            // The client sends SetChannelOverwrite / DeleteChannelOverwrite RPCs
-            // and the server evaluates effective permissions for every action.
-            // A GetChannelOverwrites RPC would be needed to cache them client-side
-            // for UI display. For now, we emit an event so the UI can show a refresh hint.
-            let event = crate::channels::CommunityEvent::ChannelOverwriteChanged {
-                community_id,
-                channel_id,
-            };
-            let _ = app_handle.emit("community-event", &event);
-        }
-        CommunityBroadcast::ReactionAdded {
-            community_id,
-            channel_id,
-            message_id,
-            emoji,
-            reactor_pseudonym,
-        } => {
-            let event = crate::channels::CommunityEvent::ReactionAdded {
-                community_id,
-                channel_id,
-                message_id,
-                emoji,
-                reactor_pseudonym,
-            };
-            let _ = app_handle.emit("community-event", &event);
-        }
-        CommunityBroadcast::ReactionRemoved {
-            community_id,
-            channel_id,
-            message_id,
-            emoji,
-            reactor_pseudonym,
-        } => {
-            let event = crate::channels::CommunityEvent::ReactionRemoved {
-                community_id,
-                channel_id,
-                message_id,
-                emoji,
-                reactor_pseudonym,
-            };
-            let _ = app_handle.emit("community-event", &event);
-        }
-        CommunityBroadcast::MessagePinned {
-            community_id,
-            channel_id,
-            message_id,
-            pinned_by,
-        } => {
-            let event = crate::channels::CommunityEvent::MessagePinned {
-                community_id,
-                channel_id,
-                message_id,
-                pinned_by,
-            };
-            let _ = app_handle.emit("community-event", &event);
-        }
-        CommunityBroadcast::MessageUnpinned {
-            community_id,
-            channel_id,
-            message_id,
-        } => {
-            let event = crate::channels::CommunityEvent::MessageUnpinned {
-                community_id,
-                channel_id,
-                message_id,
-            };
-            let _ = app_handle.emit("community-event", &event);
-        }
-        CommunityBroadcast::ChannelTyping {
-            community_id,
-            channel_id,
-            pseudonym_key,
-        } => {
-            let event = crate::channels::CommunityEvent::ChannelTyping {
-                community_id,
-                channel_id,
-                pseudonym_key,
-            };
-            let _ = app_handle.emit("community-event", &event);
-        }
-        CommunityBroadcast::MemberPresenceChanged {
-            community_id,
-            pseudonym_key,
-            status,
-            game_name,
-            game_id,
-            elapsed_seconds,
-            server_address,
-        } => {
-            let event = crate::channels::CommunityEvent::MemberPresenceChanged {
-                community_id,
-                pseudonym_key,
-                status,
-                game_name,
-                game_id,
-                elapsed_seconds,
-                server_address,
-            };
-            let _ = app_handle.emit("community-event", &event);
-        }
-        CommunityBroadcast::ChannelsUpdated {
-            community_id,
-            channels,
-            categories,
-        } => {
-            handle_broadcast_channels_updated(app_handle, state, &community_id, &channels, &categories);
-        }
-        CommunityBroadcast::InviteCreated {
-            community_id,
-            code,
-            created_by,
-            max_uses,
-            uses,
-            expires_at,
-            created_at,
-        } => {
-            tracing::info!(community = %community_id, invite = %code, "invite created broadcast");
-            let event = crate::channels::CommunityEvent::InviteCreated {
-                community_id,
-                code,
-                created_by,
-                max_uses,
-                uses,
-                expires_at,
-                created_at,
-            };
-            let _ = app_handle.emit("community-event", &event);
-        }
-        CommunityBroadcast::InviteRevoked {
-            community_id,
-            code,
-        } => {
-            tracing::info!(community = %community_id, invite = %code, "invite revoked broadcast");
-            let event = crate::channels::CommunityEvent::InviteRevoked {
-                community_id,
-                code,
-            };
-            let _ = app_handle.emit("community-event", &event);
-        }
-        CommunityBroadcast::InviteUsed {
-            community_id,
-            code,
-            new_use_count,
-        } => {
-            tracing::info!(community = %community_id, invite = %code, uses = new_use_count, "invite used broadcast");
-            let event = crate::channels::CommunityEvent::InviteUsed {
-                community_id,
-                code,
-                new_use_count,
-            };
-            let _ = app_handle.emit("community-event", &event);
-        }
-        // Event, thread, and game server broadcasts — dispatched to helpers
-        b @ (CommunityBroadcast::EventCreated { .. }
-        | CommunityBroadcast::EventUpdated { .. }
-        | CommunityBroadcast::EventDeleted { .. }
-        | CommunityBroadcast::EventRsvpChanged { .. }
-        | CommunityBroadcast::EventReminder { .. }
-        | CommunityBroadcast::ThreadCreated { .. }
-        | CommunityBroadcast::ThreadMessageReceived { .. }
-        | CommunityBroadcast::ThreadArchived { .. }
-        | CommunityBroadcast::GameServerAdded { .. }
-        | CommunityBroadcast::GameServerRemoved { .. }) => {
-            dispatch_event_and_thread_broadcasts(app_handle, state, b).await;
-        }
-    }
-}
-
-/// Dispatch event and thread broadcast variants extracted from `handle_community_broadcast`
-/// to keep the main function under the 300-line clippy limit.
-async fn dispatch_event_and_thread_broadcasts(
-    app_handle: &tauri::AppHandle,
-    state: &Arc<AppState>,
-    broadcast: rekindle_protocol::messaging::CommunityBroadcast,
-) {
-    use rekindle_protocol::messaging::CommunityBroadcast;
-
-    match broadcast {
-        CommunityBroadcast::EventCreated {
-            community_id,
-            event,
-        } => {
-            let event = crate::channels::CommunityEvent::EventCreated {
-                community_id,
-                event: protocol_event_to_dto(&event),
-            };
-            let _ = app_handle.emit("community-event", &event);
-        }
-        CommunityBroadcast::EventUpdated {
-            community_id,
-            event,
-        } => {
-            let event = crate::channels::CommunityEvent::EventUpdated {
-                community_id,
-                event: protocol_event_to_dto(&event),
-            };
-            let _ = app_handle.emit("community-event", &event);
-        }
-        CommunityBroadcast::EventDeleted {
-            community_id,
-            event_id,
-        } => {
-            let event = crate::channels::CommunityEvent::EventDeleted {
-                community_id,
-                event_id,
-            };
-            let _ = app_handle.emit("community-event", &event);
-        }
-        CommunityBroadcast::EventRsvpChanged {
-            community_id,
-            event_id,
-            pseudonym_key,
-            status,
-        } => {
-            let event = crate::channels::CommunityEvent::EventRsvpChanged {
-                community_id,
-                event_id,
-                pseudonym_key,
-                status,
-            };
-            let _ = app_handle.emit("community-event", &event);
-        }
-        CommunityBroadcast::ThreadCreated {
-            community_id,
-            thread,
-        } => {
-            tracing::info!(
-                community = %community_id,
-                thread = %thread.id,
-                "thread created"
-            );
-            let event = crate::channels::CommunityEvent::ThreadCreated {
-                community_id,
-                thread: protocol_thread_to_dto(&thread),
-            };
-            let _ = app_handle.emit("community-event", &event);
-        }
-        CommunityBroadcast::ThreadMessageReceived {
-            community_id,
-            thread_id,
-            message_id,
-            sender_pseudonym,
-            ciphertext,
-            mek_generation,
-            timestamp,
-            reply_to_id,
-        } => {
-            handle_broadcast_thread_message(
-                app_handle,
-                state,
-                &community_id,
-                &thread_id,
-                &message_id,
-                &sender_pseudonym,
-                &ciphertext,
-                mek_generation,
-                timestamp,
-                reply_to_id.as_deref(),
-            )
-            .await;
-        }
-        CommunityBroadcast::ThreadArchived {
-            community_id,
-            thread_id,
-            archived,
-        } => {
-            tracing::info!(
-                community = %community_id,
-                thread = %thread_id,
-                archived,
-                "thread archive status changed"
-            );
-            let event = crate::channels::CommunityEvent::ThreadArchived {
-                community_id,
-                thread_id,
-                archived,
-            };
-            let _ = app_handle.emit("community-event", &event);
-        }
-        CommunityBroadcast::GameServerAdded {
-            community_id,
-            server,
-        } => {
-            tracing::info!(
-                community = %community_id,
-                server_id = %server.id,
-                "game server added"
-            );
-            let event = crate::channels::CommunityEvent::GameServerAdded {
-                community_id,
-                server: protocol_game_server_to_dto(&server),
-            };
-            let _ = app_handle.emit("community-event", &event);
-        }
-        CommunityBroadcast::GameServerRemoved {
-            community_id,
-            server_id,
-        } => {
-            tracing::info!(
-                community = %community_id,
-                server_id = %server_id,
-                "game server removed"
-            );
-            let event = crate::channels::CommunityEvent::GameServerRemoved {
-                community_id,
-                server_id,
-            };
-            let _ = app_handle.emit("community-event", &event);
-        }
-        CommunityBroadcast::EventReminder {
-            community_id,
-            event_id,
-            title,
-            minutes_until_start,
-        } => {
-            let event = crate::channels::CommunityEvent::EventReminder {
-                community_id,
-                event_id,
-                title,
-                minutes_until_start,
-            };
-            let _ = app_handle.emit("community-event", &event);
-        }
-        _ => {} // Other variants handled in parent function
-    }
-}
-
-/// Convert a protocol `GameServerDto` to the channel's `GameServerInfoDto`.
-fn protocol_game_server_to_dto(
-    s: &rekindle_protocol::messaging::GameServerDto,
-) -> crate::channels::community_channel::GameServerInfoDto {
-    crate::channels::community_channel::GameServerInfoDto {
-        id: s.id.clone(),
-        game_id: s.game_id.clone(),
-        label: s.label.clone(),
-        address: s.address.clone(),
-        added_by: s.added_by.clone(),
-        created_at: s.created_at,
-    }
-}
-
-/// Convert a protocol `EventDto` to the channel's `EventInfoDto`.
-fn protocol_event_to_dto(
-    e: &rekindle_protocol::messaging::EventDto,
-) -> crate::channels::community_channel::EventInfoDto {
-    crate::channels::community_channel::EventInfoDto {
-        id: e.id.clone(),
-        title: e.title.clone(),
-        description: e.description.clone(),
-        creator_pseudonym: e.creator_pseudonym.clone(),
-        start_time: e.start_time,
-        end_time: e.end_time,
-        channel_id: e.channel_id.clone(),
-        max_attendees: e.max_attendees,
-        created_at: e.created_at,
-        status: e.status.clone(),
-        rsvps: e
-            .rsvps
-            .iter()
-            .map(|r| crate::channels::community_channel::EventRsvpInfoDto {
-                pseudonym_key: r.pseudonym_key.clone(),
-                status: r.status.clone(),
-            })
-            .collect(),
-    }
-}
-
-/// Convert a protocol `ThreadInfoDto` to the channel's `ThreadInfoDto`.
-fn protocol_thread_to_dto(
-    t: &rekindle_protocol::messaging::ThreadInfoDto,
-) -> crate::channels::community_channel::ThreadInfoDto {
-    crate::channels::community_channel::ThreadInfoDto {
-        id: t.id.clone(),
-        channel_id: t.channel_id.clone(),
-        name: t.name.clone(),
-        starter_message_id: t.starter_message_id.clone(),
-        creator_pseudonym: t.creator_pseudonym.clone(),
-        created_at: t.created_at,
-        archived: t.archived,
-        auto_archive_seconds: t.auto_archive_seconds,
-        last_message_at: t.last_message_at,
-        message_count: t.message_count,
-    }
-}
-
-/// Handle a `ThreadMessageReceived` broadcast: decrypt with MEK and emit.
-async fn handle_broadcast_thread_message(
+/// Handle a JoinAccepted response from the coordinator.
+///
+/// Updates local community state with fresh MEK, roles, channels, and members.
+fn handle_join_accepted(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     community_id: &str,
-    thread_id: &str,
-    message_id: &str,
-    sender_pseudonym: &str,
-    ciphertext: &[u8],
+    mek_wire_bytes: &[u8],
     mek_generation: u64,
-    timestamp: u64,
-    reply_to_id: Option<&str>,
+    channels: &[serde_json::Value],
+    _categories: &[serde_json::Value],
+    role_ids: &[u32],
+    _roles: &[serde_json::Value],
+    _members: &[serde_json::Value],
 ) {
-    // Skip messages we sent ourselves
+    use crate::channels::CommunityEvent;
+    use rekindle_crypto::group::media_key::MediaEncryptionKey;
+
+    // 1. Restore and cache the MEK
+    if !mek_wire_bytes.is_empty() {
+        if let Some(mek) = MediaEncryptionKey::from_wire_bytes(mek_wire_bytes) {
+            let gen = mek.generation();
+            state
+                .mek_cache
+                .lock()
+                .insert(community_id.to_string(), mek);
+            tracing::info!(
+                community = %community_id,
+                mek_generation = gen,
+                "cached MEK from JoinAccepted"
+            );
+        } else {
+            tracing::warn!(
+                community = %community_id,
+                "JoinAccepted contained invalid MEK wire bytes"
+            );
+        }
+    }
+
+    // 2. Update community state with correct mek_generation and role_ids
     {
-        let communities = state.communities.read();
-        if let Some(community) = communities.get(community_id) {
-            if community.my_pseudonym_key.as_deref() == Some(sender_pseudonym) {
-                return;
+        let mut communities = state.communities.write();
+        if let Some(cs) = communities.get_mut(community_id) {
+            cs.mek_generation = mek_generation;
+            if !role_ids.is_empty() {
+                cs.my_role_ids = role_ids.to_vec();
+            }
+
+            // Update channel list if provided
+            if !channels.is_empty() {
+                let mut updated_channels = Vec::new();
+                for ch_val in channels {
+                    if let Ok(ch) = serde_json::from_value::<crate::state::ChannelInfo>(ch_val.clone()) {
+                        updated_channels.push(ch);
+                    }
+                }
+                if !updated_channels.is_empty() {
+                    cs.channels = updated_channels;
+                }
             }
         }
     }
 
-    let first_attempt = {
-        let mek_cache = state.mek_cache.lock();
-        decrypt_with_cached_mek(&mek_cache, community_id, ciphertext, mek_generation)
-    };
+    // 3. Notify frontend
+    let _ = app_handle.emit(
+        "community-event",
+        CommunityEvent::JoinAccepted {
+            community_id: community_id.to_string(),
+        },
+    );
 
-    let body = match first_attempt {
-        MekDecryptResult::Decrypted(body) => body,
-        MekDecryptResult::Failed => return,
-        MekDecryptResult::NeedRefresh => {
-            fetch_mek_from_server(app_handle, state, community_id).await;
-
-            let mek_cache = state.mek_cache.lock();
-            if let MekDecryptResult::Decrypted(body) =
-                decrypt_with_cached_mek(&mek_cache, community_id, ciphertext, mek_generation)
-            {
-                body
-            } else {
-                tracing::warn!("MEK still mismatched after refresh — dropping thread message");
-                return;
-            }
-        }
-    };
-
-    let event = crate::channels::CommunityEvent::ThreadMessageReceived {
-        community_id: community_id.to_string(),
-        thread_id: thread_id.to_string(),
-        message_id: message_id.to_string(),
-        sender_pseudonym: sender_pseudonym.to_string(),
-        body,
-        timestamp,
-        reply_to_id: reply_to_id.map(str::to_string),
-    };
-    let _ = app_handle.emit("community-event", &event);
+    tracing::info!(
+        community = %community_id,
+        mek_generation,
+        role_ids = ?role_ids,
+        "JoinAccepted processed — community state updated"
+    );
 }
 
 /// Decrypt result for community message MEK decryption attempts.
@@ -1334,553 +944,31 @@ fn decrypt_with_cached_mek(
     }
 }
 
-/// Handle a `MEKRotated` community broadcast.
-async fn handle_broadcast_mek_rotated(
-    app_handle: &tauri::AppHandle,
-    state: &Arc<AppState>,
-    community_id: &str,
-    new_generation: u64,
-) {
-    tracing::info!(
-        community = %community_id,
-        generation = new_generation,
-        "MEK rotated — fetching new key from server"
-    );
-    fetch_mek_from_server(app_handle, state, community_id).await;
-
-    let event = crate::channels::CommunityEvent::MekRotated {
-        community_id: community_id.to_string(),
-        new_generation,
-    };
-    let _ = app_handle.emit("community-event", &event);
-}
-
-/// Handle a `MessageEdited` community broadcast: decrypt and notify frontend.
-fn handle_broadcast_message_edited(
-    app_handle: &tauri::AppHandle,
-    state: &Arc<AppState>,
-    community_id: &str,
-    channel_id: &str,
-    message_id: &str,
-    new_ciphertext: &[u8],
-    mek_generation: u64,
-    edited_at: u64,
-) {
-    let body = {
-        let mek_cache = state.mek_cache.lock();
-        match decrypt_with_cached_mek(&mek_cache, community_id, new_ciphertext, mek_generation) {
-            MekDecryptResult::Decrypted(text) => text,
-            MekDecryptResult::NeedRefresh | MekDecryptResult::Failed => {
-                tracing::warn!("failed to decrypt edited message {message_id}");
-                return;
-            }
-        }
-    };
-
-    let event = crate::channels::CommunityEvent::MessageEdited {
-        community_id: community_id.to_string(),
-        channel_id: channel_id.to_string(),
-        message_id: message_id.to_string(),
-        new_body: body,
-        edited_at,
-    };
-    let _ = app_handle.emit("community-event", &event);
-}
-
-/// Handle a `MemberJoined` community broadcast: persist and notify.
-/// Handle a `ChannelsUpdated` broadcast: update local community state and notify frontend.
-fn handle_broadcast_channels_updated(
-    app_handle: &tauri::AppHandle,
-    state: &Arc<AppState>,
-    community_id: &str,
-    channels: &[rekindle_protocol::messaging::ChannelInfoDto],
-    categories: &[rekindle_protocol::messaging::CategoryDto],
-) {
-    tracing::info!(
-        community = %community_id,
-        num_channels = channels.len(),
-        num_categories = categories.len(),
-        "channel/category structure updated via broadcast"
-    );
-
-    // Update local community state
-    {
-        let mut communities = state.communities.write();
-        if let Some(community) = communities.get_mut(community_id) {
-            community.channels = channels
-                .iter()
-                .map(|ch| {
-                    let ct = match ch.channel_type.as_str() {
-                        "voice" => crate::state::ChannelType::Voice,
-                        "announcement" => crate::state::ChannelType::Announcement,
-                        _ => crate::state::ChannelType::Text,
-                    };
-                    crate::state::ChannelInfo {
-                        id: ch.id.clone(),
-                        name: ch.name.clone(),
-                        channel_type: ct,
-                        unread_count: 0,
-                        category_id: ch.category_id.clone(),
-                        topic: ch.topic.clone(),
-                        slowmode_seconds: if ch.slowmode_seconds > 0 {
-                            Some(ch.slowmode_seconds)
-                        } else {
-                            None
-                        },
-                        nsfw: false,
-                        message_record_key: None,
-                        mek_generation: 0,
-                    }
-                })
-                .collect();
-            community.categories = categories
-                .iter()
-                .map(|cat| crate::state::CategoryInfo {
-                    id: cat.id.clone(),
-                    name: cat.name.clone(),
-                    sort_order: cat.sort_order,
-                })
-                .collect();
-        }
-    }
-
-    let event = crate::channels::CommunityEvent::ChannelsUpdated {
-        community_id: community_id.to_string(),
-        channels: channels
-            .iter()
-            .map(crate::channels::community_channel::ChannelInfoFrontendDto::from)
-            .collect(),
-        categories: categories
-            .iter()
-            .map(crate::channels::community_channel::CategoryInfoFrontendDto::from)
-            .collect(),
-    };
-    let _ = app_handle.emit("community-event", &event);
-}
-
-fn handle_broadcast_member_joined(
-    app_handle: &tauri::AppHandle,
-    state: &Arc<AppState>,
-    community_id: &str,
-    pseudonym_key: &str,
-    display_name: &str,
-    role_ids: &[u32],
-) {
-    tracing::info!(
-        community = %community_id,
-        member = %pseudonym_key,
-        "member joined community"
-    );
-    let owner_key = state_helpers::owner_key_or_default(state);
-    let pool: tauri::State<'_, DbPool> = app_handle.state();
-    let cid = community_id.to_string();
-    let pk = pseudonym_key.to_string();
-    let dn = display_name.to_string();
-    let role_ids_json = serde_json::to_string(role_ids).unwrap_or_else(|_| "[0,1]".to_string());
-    let now = crate::db::timestamp_now();
-    db_fire(pool.inner(), "insert community member", move |conn| {
-        conn.execute(
-            "INSERT OR IGNORE INTO community_members (owner_key, community_id, pseudonym_key, display_name, role_ids, joined_at) \
-             VALUES (?, ?, ?, ?, ?, ?)",
-            rusqlite::params![owner_key, cid, pk, dn, role_ids_json, now],
-        )?;
-        Ok(())
-    });
-
-    let event = crate::channels::CommunityEvent::MemberJoined {
-        community_id: community_id.to_string(),
-        pseudonym_key: pseudonym_key.to_string(),
-        display_name: display_name.to_string(),
-        role_ids: role_ids.to_vec(),
-    };
-    let _ = app_handle.emit("community-event", &event);
-}
-
-/// Handle a `MemberRemoved` community broadcast: delete and notify.
-///
-/// If the removed member is US (our pseudonym), clean up local state
-/// (remove community, clear MEK) and emit a Kicked event.
-fn handle_broadcast_member_removed(
-    app_handle: &tauri::AppHandle,
-    state: &Arc<AppState>,
-    community_id: &str,
-    pseudonym_key: &str,
-) {
-    // Check if this is a self-removal (we were kicked)
-    let is_self = {
-        let communities = state.communities.read();
-        communities
-            .get(community_id)
-            .and_then(|c| c.my_pseudonym_key.as_deref())
-            .is_some_and(|pk| pk == pseudonym_key)
-    };
-
-    if is_self {
-        tracing::warn!(community = %community_id, "we were kicked from community");
-
-        // Clear MEK from cache
-        state.mek_cache.lock().remove(community_id);
-
-        // Remove MEK from Stronghold
-        {
-            use rekindle_crypto::keychain::{mek_key_name, VAULT_COMMUNITIES};
-            use rekindle_crypto::Keychain as _;
-
-            let ks_handle: tauri::State<'_, crate::keystore::KeystoreHandle> = app_handle.state();
-            let ks = ks_handle.lock();
-            if let Some(ref keystore) = *ks {
-                let key_name = mek_key_name(community_id);
-                if let Err(e) = keystore.delete_key(VAULT_COMMUNITIES, &key_name) {
-                    tracing::warn!(error = %e, "failed to remove MEK from Stronghold after kick");
-                }
-            }
-        }
-
-        // Remove community from in-memory state
-        state.communities.write().remove(community_id);
-
-        // Remove from SQLite
-        let owner_key = state_helpers::owner_key_or_default(state);
-        let pool: tauri::State<'_, DbPool> = app_handle.state();
-        let cid = community_id.to_string();
-        db_fire(pool.inner(), "delete kicked community", move |conn| {
-            conn.execute(
-                "DELETE FROM communities WHERE owner_key = ? AND id = ?",
-                rusqlite::params![owner_key, cid],
-            )?;
-            Ok(())
-        });
-
-        // Emit kicked event to frontend
-        let event = crate::channels::CommunityEvent::Kicked {
-            community_id: community_id.to_string(),
-        };
-        let _ = app_handle.emit("community-event", &event);
-        return;
-    }
-
-    tracing::info!(
-        community = %community_id,
-        member = %pseudonym_key,
-        "member removed from community"
-    );
-    let owner_key = state_helpers::owner_key_or_default(state);
-    let pool: tauri::State<'_, DbPool> = app_handle.state();
-    let cid = community_id.to_string();
-    let pk = pseudonym_key.to_string();
-    db_fire(pool.inner(), "delete community member", move |conn| {
-        conn.execute(
-            "DELETE FROM community_members WHERE owner_key = ? AND community_id = ? AND pseudonym_key = ?",
-            rusqlite::params![owner_key, cid, pk],
-        )?;
-        Ok(())
-    });
-
-    let event = crate::channels::CommunityEvent::MemberRemoved {
-        community_id: community_id.to_string(),
-        pseudonym_key: pseudonym_key.to_string(),
-    };
-    let _ = app_handle.emit("community-event", &event);
-}
-
-/// Handle a `RolesChanged` community broadcast: update state, persist, notify.
-fn handle_broadcast_roles_changed(
-    app_handle: &tauri::AppHandle,
-    state: &Arc<AppState>,
-    community_id: &str,
-    roles: &[rekindle_protocol::messaging::RoleDto],
-) {
-    tracing::info!(
-        community = %community_id,
-        count = roles.len(),
-        "community roles changed"
-    );
-
-    let role_defs: Vec<crate::state::RoleDefinition> = roles
-        .iter()
-        .map(crate::state::RoleDefinition::from_dto)
-        .collect();
-
-    // Update in-memory state and recompute our display role
-    {
-        let mut communities = state.communities.write();
-        if let Some(c) = communities.get_mut(community_id) {
-            c.roles.clone_from(&role_defs);
-            c.my_role = Some(crate::state::display_role_name(&c.my_role_ids, &c.roles));
-        }
-    }
-
-    // Persist to community_roles table
-    let owner_key = state_helpers::owner_key_or_default(state);
-    let pool: tauri::State<'_, DbPool> = app_handle.state();
-    let cid = community_id.to_string();
-    let roles_clone = role_defs.clone();
-    db_fire(pool.inner(), "update community roles", move |conn| {
-        // Replace all roles for this community
-        conn.execute(
-            "DELETE FROM community_roles WHERE owner_key = ? AND community_id = ?",
-            rusqlite::params![owner_key, cid],
-        )?;
-        for r in &roles_clone {
-            conn.execute(
-                "INSERT INTO community_roles (owner_key, community_id, role_id, name, color, permissions, position, hoist, mentionable) \
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                rusqlite::params![
-                    owner_key,
-                    cid,
-                    r.id,
-                    r.name,
-                    r.color,
-                    r.permissions.cast_signed(),
-                    r.position,
-                    i32::from(r.hoist),
-                    i32::from(r.mentionable),
-                ],
-            )?;
-        }
-        Ok(())
-    });
-
-    // Emit event to frontend
-    let event = crate::channels::CommunityEvent::RolesChanged {
-        community_id: community_id.to_string(),
-        roles: role_defs
-            .iter()
-            .map(crate::channels::community_channel::RoleDto::from)
-            .collect(),
-    };
-    let _ = app_handle.emit("community-event", &event);
-}
-
-/// Handle a `MemberRolesChanged` community broadcast: update state, persist, notify.
-fn handle_broadcast_member_roles_changed(
-    app_handle: &tauri::AppHandle,
-    state: &Arc<AppState>,
-    community_id: &str,
-    pseudonym_key: &str,
-    role_ids: &[u32],
-) {
-    tracing::info!(
-        community = %community_id,
-        member = %pseudonym_key,
-        ?role_ids,
-        "member roles changed"
-    );
-
-    // Check if this is us — update our my_role_ids
-    {
-        let mut communities = state.communities.write();
-        if let Some(c) = communities.get_mut(community_id) {
-            let is_self = c
-                .my_pseudonym_key
-                .as_deref()
-                .is_some_and(|pk| pk == pseudonym_key);
-            if is_self {
-                c.my_role_ids = role_ids.to_vec();
-                c.my_role = Some(crate::state::display_role_name(&c.my_role_ids, &c.roles));
-            }
-        }
-    }
-
-    // Persist to community_members table
-    let owner_key = state_helpers::owner_key_or_default(state);
-
-    // Check if this is us before the DB writes (need owner_key available for both)
-    let is_self = {
-        let communities = state.communities.read();
-        communities
-            .get(community_id)
-            .and_then(|c| c.my_pseudonym_key.as_deref())
-            .is_some_and(|pk| pk == pseudonym_key)
-    };
-
-    let pool: tauri::State<'_, DbPool> = app_handle.state();
-    let cid = community_id.to_string();
-    let pk = pseudonym_key.to_string();
-    let ok = owner_key.clone();
-    let role_ids_json = serde_json::to_string(role_ids).unwrap_or_else(|_| "[0,1]".to_string());
-    db_fire(pool.inner(), "update member roles", move |conn| {
-        conn.execute(
-            "UPDATE community_members SET role_ids = ? WHERE owner_key = ? AND community_id = ? AND pseudonym_key = ?",
-            rusqlite::params![role_ids_json, ok, cid, pk],
-        )?;
-        Ok(())
-    });
-
-    // Also update our my_role_ids in the communities table if this is us
-    if is_self {
-        let cid2 = community_id.to_string();
-        let ok2 = owner_key;
-        let rids = serde_json::to_string(role_ids).unwrap_or_else(|_| "[0,1]".to_string());
-        db_fire(pool.inner(), "update our community role_ids", move |conn| {
-            conn.execute(
-                "UPDATE communities SET my_role_ids = ? WHERE owner_key = ? AND id = ?",
-                rusqlite::params![rids, ok2, cid2],
-            )?;
-            Ok(())
-        });
-    }
-
-    let event = crate::channels::CommunityEvent::MemberRolesChanged {
-        community_id: community_id.to_string(),
-        pseudonym_key: pseudonym_key.to_string(),
-        role_ids: role_ids.to_vec(),
-    };
-    let _ = app_handle.emit("community-event", &event);
-}
-
-/// Handle a `MemberTimedOut` community broadcast: update state, persist, notify.
-fn handle_broadcast_member_timed_out(
-    app_handle: &tauri::AppHandle,
-    state: &Arc<AppState>,
-    community_id: &str,
-    pseudonym_key: &str,
-    timeout_until: Option<u64>,
-) {
-    tracing::info!(
-        community = %community_id,
-        member = %pseudonym_key,
-        ?timeout_until,
-        "member timeout changed"
-    );
-
-    // Persist to community_members table
-    let owner_key = state_helpers::owner_key_or_default(state);
-    let pool: tauri::State<'_, DbPool> = app_handle.state();
-    let cid = community_id.to_string();
-    let pk = pseudonym_key.to_string();
-    let timeout_i64 = timeout_until.map(u64::cast_signed);
-    db_fire(pool.inner(), "update member timeout", move |conn| {
-        conn.execute(
-            "UPDATE community_members SET timeout_until = ? WHERE owner_key = ? AND community_id = ? AND pseudonym_key = ?",
-            rusqlite::params![timeout_i64, owner_key, cid, pk],
-        )?;
-        Ok(())
-    });
-
-    let event = crate::channels::CommunityEvent::MemberTimedOut {
-        community_id: community_id.to_string(),
-        pseudonym_key: pseudonym_key.to_string(),
-        timeout_until,
-    };
-    let _ = app_handle.emit("community-event", &event);
-}
-
-/// Persist MEK to in-memory state, Stronghold, and the database.
-fn persist_mek(
-    app_handle: &tauri::AppHandle,
-    state: &Arc<AppState>,
-    community_id: &str,
-    mek: &rekindle_crypto::group::media_key::MediaEncryptionKey,
-) {
-    let mek_generation = mek.generation();
-
-    // Update generation in community state
-    {
-        let mut communities = state.communities.write();
-        if let Some(c) = communities.get_mut(community_id) {
-            c.mek_generation = mek_generation;
-        }
-    }
-
-    // Persist to Stronghold — delegate to keystore helper
-    {
-        let ks_handle: tauri::State<'_, crate::keystore::KeystoreHandle> = app_handle.state();
-        let ks = ks_handle.lock();
-        if let Some(ref keystore) = *ks {
-            crate::keystore::persist_mek(keystore, community_id, mek);
-        }
-    }
-
-    // Persist mek_generation to SQLite
-    {
-        let pool: tauri::State<'_, DbPool> = app_handle.state();
-        let cid = community_id.to_string();
-        let owner_key = state_helpers::owner_key_or_default(state);
-        let gen_i64 = i64::try_from(mek_generation).unwrap_or(i64::MAX);
-        db_fire(pool.inner(), "persist mek_generation", move |conn| {
-            conn.execute(
-                "UPDATE communities SET mek_generation = ? WHERE owner_key = ? AND id = ?",
-                rusqlite::params![gen_i64, owner_key, cid],
-            )?;
-            Ok(())
-        });
-    }
-
-    tracing::info!(
-        community = %community_id,
-        generation = mek_generation,
-        "MEK persisted to state, Stronghold, and SQLite"
-    );
-}
 
 /// Fetch the current MEK from the community server via `RequestMEK` RPC.
 ///
 /// Updates `mek_cache` and community state on success. Also persists the
 /// updated MEK to Stronghold so it survives restarts.
 pub(super) async fn fetch_mek_from_server(
-    app_handle: &tauri::AppHandle,
+    _app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     community_id: &str,
 ) {
-    let coordinator_route = state_helpers::community_coordinator_route(state, community_id);
-    let rc = state_helpers::routing_context(state);
+    use rekindle_protocol::dht::community::envelope::{ControlPayload, CommunityEnvelope};
 
-    let signing_key = {
-        let secret = state.identity_secret.lock();
-        secret.map(|s| {
-            rekindle_crypto::group::pseudonym::derive_community_pseudonym(&s, community_id)
-        })
-    };
+    // Send a RequestMEK to the coordinator via the v2 envelope path.
+    // The coordinator will respond asynchronously by relaying a JoinAccepted
+    // (or a dedicated MEK delivery) back through the relay, which will be
+    // processed by handle_relayed_control in the dispatch loop.
+    let result = crate::commands::community::send_to_coordinator(
+        state,
+        community_id,
+        CommunityEnvelope::Control(ControlPayload::RequestMEK),
+    )
+    .await;
 
-    let (Some(route_blob), Some(rc), Some(sk)) = (coordinator_route, rc, signing_key) else {
-        tracing::warn!(community = %community_id, "cannot fetch MEK — missing route/node/key");
-        return;
-    };
-
-    let request = rekindle_protocol::messaging::CommunityRequest::RequestMEK;
-    let Ok(request_bytes) = serde_json::to_vec(&request) else {
-        return;
-    };
-
-    let timestamp = crate::db::timestamp_now().cast_unsigned();
-    let mut nonce = vec![0u8; 24];
-    rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut nonce);
-    let envelope =
-        rekindle_protocol::messaging::sender::build_envelope(&sk, timestamp, nonce, request_bytes);
-
-    let route_id = match state_helpers::import_route_blob(state, &route_blob) {
-        Ok(rid) => rid,
-        Err(e) => {
-            tracing::warn!(community = %community_id, error = %e, "failed to import server route for MEK fetch");
-            return;
-        }
-    };
-
-    let call_result =
-        rekindle_protocol::messaging::sender::send_call(&rc, route_id, &envelope).await;
-
-    match call_result {
-        Ok(response_bytes) => {
-            if let Ok(rekindle_protocol::messaging::CommunityResponse::Mek {
-                mek_encrypted,
-                ..
-            }) = serde_json::from_slice(&response_bytes)
-            {
-                if let Some(mek) =
-                    rekindle_crypto::group::media_key::MediaEncryptionKey::from_wire_bytes(
-                        &mek_encrypted,
-                    )
-                {
-                    // Persist first (borrows mek), then move into cache
-                    persist_mek(app_handle, state, community_id, &mek);
-                    state.mek_cache.lock().insert(community_id.to_string(), mek);
-                }
-            }
-        }
-        Err(e) => {
-            tracing::warn!(error = %e, community = %community_id, "failed to fetch MEK from server");
-        }
+    if let Err(e) = result {
+        tracing::warn!(error = %e, community = %community_id, "failed to send RequestMEK to coordinator");
     }
 }
 

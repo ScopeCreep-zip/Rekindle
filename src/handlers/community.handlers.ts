@@ -812,7 +812,7 @@ export async function handleCreateRole(
   communityId: string,
   name: string,
   color: number,
-  permissions: number,
+  permissions: string,
   hoist: boolean,
   mentionable: boolean,
 ): Promise<number | null> {
@@ -837,7 +837,7 @@ export async function handleEditRole(
   roleId: number,
   name: string | null,
   color: number | null,
-  permissions: number | null,
+  permissions: string | null,
   position: number | null,
   hoist: boolean | null,
   mentionable: boolean | null,

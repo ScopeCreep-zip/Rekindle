@@ -56,7 +56,7 @@ export function transformCommunityDetail(c: {
   id: string; name: string; description: string | null;
   channels: { id: string; name: string; channelType: string; unreadCount: number; categoryId?: string; topic?: string; slowmodeSeconds?: number; nsfw?: boolean; messageRecordKey?: string; mekGeneration?: number }[];
   categories?: { id: string; name: string; sortOrder: number }[];
-  roles?: { id: number; name: string; color: number; permissions: number; position: number; hoist: boolean; mentionable: boolean }[];
+  roles?: { id: number; name: string; color: number; permissions: string; position: number; hoist: boolean; mentionable: boolean }[];
   myRoleIds?: number[]; myPseudonymKey?: string | null; mekGeneration?: number;
   manifestKey?: string; memberRegistryKey?: string; coordinatorPseudonym?: string; coordinatorEpoch?: number;
 }): Community {
