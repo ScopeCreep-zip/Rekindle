@@ -946,7 +946,7 @@ fn send_to_member(
                     .app_message(veilid_core::Target::RouteId(route_id), signed_bytes)
                     .await
                 {
-                    tracing::debug!(
+                    tracing::warn!(
                         community = %community_id,
                         error = %e,
                         "send_to_member delivery failed"
@@ -954,7 +954,11 @@ fn send_to_member(
                 }
             }
             Err(e) => {
-                tracing::debug!(error = %e, "failed to import member route for send_to_member");
+                tracing::warn!(
+                    community = %community_id,
+                    error = %e,
+                    "failed to import member route for send_to_member"
+                );
             }
         }
     });
