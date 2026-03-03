@@ -118,6 +118,11 @@ pub fn identity_status(state: &Arc<AppState>) -> Option<UserStatus> {
 
 // ── Node / Network ───────────────────────────────────────────────────
 
+/// Tauri app handle (set during setup). Used by background services to emit events.
+pub fn app_handle(state: &Arc<AppState>) -> Option<tauri::AppHandle> {
+    state.app_handle.read().clone()
+}
+
 /// Routing context if node is attached. Returns `None` if not initialized
 /// or not attached to the network.
 pub fn routing_context(state: &Arc<AppState>) -> Option<veilid_core::RoutingContext> {

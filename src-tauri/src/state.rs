@@ -78,6 +78,9 @@ pub struct AppState {
     /// Prevents flooding dead routes with parallel 8s timeouts.
     /// In-memory only, resets on app restart.
     pub community_circuit_breakers: RwLock<HashMap<String, CircuitBreakerState>>,
+    /// Tauri app handle — set during `.setup()`, used by background services
+    /// (coordinator relay, heartbeat, etc.) to emit events and access managed state.
+    pub app_handle: RwLock<Option<tauri::AppHandle>>,
 }
 
 impl Default for AppState {
@@ -111,6 +114,7 @@ impl Default for AppState {
             pre_away_status: RwLock::new(None),
             pending_deep_link: Mutex::new(None),
             community_circuit_breakers: RwLock::new(HashMap::new()),
+            app_handle: RwLock::new(None),
         }
     }
 }
