@@ -93,8 +93,9 @@ export async function handleJoinCommunity(
       console.error("Failed to load community members after join:", e);
     }
 
-    // Notify the server of our online presence after joining
-    handleUpdateCommunityPresence(communityId, "online");
+    // Presence update is deferred until JoinAccepted arrives from the coordinator.
+    // Sending it immediately would race with the coordinator's join processing
+    // (tokio::spawn), causing "unknown member" rejections.
   } catch (e) {
     console.error("Failed to join community:", e);
     addToast("Failed to join community", "error");
@@ -1370,6 +1371,11 @@ export function subscribeCommunityEventDispatcher(): Promise<UnlistenFn> {
           setCommunityState("communities", communityId, "roles", detail.roles ?? []);
         }
       }).catch(() => {});
+      // Now that the coordinator has confirmed our membership, announce our presence.
+      // This must happen AFTER JoinAccepted (not in handleJoinCommunity) because
+      // the coordinator processes joins asynchronously — sending presence before
+      // the join completes causes "unknown member" rejections.
+      handleUpdateCommunityPresence(communityId, "online");
     } else if (event.type === "mekRotated") {
       const { communityId, newGeneration } = event.data;
       if (communityState.communities[communityId]) {

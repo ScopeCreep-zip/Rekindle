@@ -523,10 +523,15 @@ async fn handle_control(
                 if let Some(blob) = &member_route {
                     send_join_accepted(
                         &state_clone,
-                        &relay_clone,
                         &onboard_community,
                         blob,
                     ).await;
+                } else {
+                    tracing::error!(
+                        community = %onboard_community,
+                        pseudonym = %joiner_pseudonym,
+                        "MemberJoinRequest has no route_blob — cannot send JoinAccepted"
+                    );
                 }
 
                 // Broadcast MemberJoined to existing members (NOT the raw MemberJoinRequest).
@@ -537,6 +542,16 @@ async fn handle_control(
                 };
                 let joined_envelope = CommunityEnvelope::Control(joined_payload);
                 sign_and_relay_to_members(&state_clone, &relay_clone, &joined_envelope, &joiner_pseudonym);
+
+                // Emit MemberJoined locally so the coordinator's own frontend sees
+                // the new member. relay_to_members excludes the coordinator from
+                // online_members to prevent relay loops, so we must emit directly.
+                emit_local_member_joined(
+                    &state_clone,
+                    &onboard_community,
+                    &joiner_pseudonym,
+                    &display_name_clone,
+                );
 
                 // Check onboarding and send questions to new member if needed
                 match super::onboarding::check_onboarding(
@@ -1053,6 +1068,61 @@ fn relay_to_members(
     }
 }
 
+/// Emit `CommunityEvent::MemberJoined` locally on the coordinator's frontend.
+///
+/// The coordinator is excluded from `online_members` to prevent relay loops,
+/// so `relay_to_members`/`sign_and_relay_to_members` never reaches the
+/// coordinator's own UI. This function fills that gap by persisting the new
+/// member to SQLite and emitting the event directly via the Tauri app handle.
+fn emit_local_member_joined(
+    state: &Arc<AppState>,
+    community_id: &str,
+    pseudonym_key: &str,
+    display_name: &str,
+) {
+    use tauri::{Emitter, Manager};
+
+    let Some(app_handle) = state_helpers::app_handle(state) else {
+        tracing::debug!("no app handle for emit_local_member_joined");
+        return;
+    };
+
+    // Persist to SQLite so get_community_members includes the new member
+    let pool: tauri::State<'_, crate::db::DbPool> = app_handle.state();
+    let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
+    let cid = community_id.to_string();
+    let pk = pseudonym_key.to_string();
+    let dn = display_name.to_string();
+    let role_ids = vec![0_u32, 1];
+    let rids = role_ids.clone();
+    crate::db_helpers::db_fire(
+        pool.inner(),
+        "persist MemberJoined (coordinator local)",
+        move |conn| {
+            let role_ids_json =
+                serde_json::to_string(&rids).unwrap_or_else(|_| "[0,1]".into());
+            let now = crate::db::timestamp_now();
+            conn.execute(
+                "INSERT OR IGNORE INTO community_members \
+                 (owner_key, community_id, pseudonym_key, display_name, role_ids, joined_at) \
+                 VALUES (?, ?, ?, ?, ?, ?)",
+                rusqlite::params![owner_key, cid, pk, dn, role_ids_json, now],
+            )?;
+            Ok(())
+        },
+    );
+
+    let _ = app_handle.emit(
+        "community-event",
+        crate::channels::CommunityEvent::MemberJoined {
+            community_id: community_id.to_string(),
+            pseudonym_key: pseudonym_key.to_string(),
+            display_name: display_name.to_string(),
+            role_ids,
+        },
+    );
+}
+
 /// Read members and roles for permission checking.
 async fn read_members_and_roles(
     state: &Arc<AppState>,
@@ -1308,9 +1378,11 @@ async fn add_member_to_registry(
 }
 
 /// Send a JoinAccepted envelope to a newly joined member with community data.
+///
+/// Retries up to 3 times because JoinAccepted is critical — without it the
+/// joiner has no MEK and cannot participate.
 async fn send_join_accepted(
     state: &Arc<AppState>,
-    relay: &Arc<RelayService>,
     community_id: &str,
     target_route_blob: &[u8],
 ) {
@@ -1391,7 +1463,70 @@ async fn send_join_accepted(
             .collect(),
     };
 
-    send_to_member(state, relay, target_route_blob, payload);
+    // JoinAccepted is critical — the joiner cannot participate without MEK.
+    // Send directly with retry instead of fire-and-forget send_to_member.
+    let Some(signed_bytes) = coordinator_sign_envelope(
+        state,
+        community_id,
+        &CommunityEnvelope::Control(payload),
+    ) else {
+        tracing::warn!(community = %community_id, "failed to sign JoinAccepted envelope");
+        return;
+    };
+
+    let Some(rc) = state_helpers::routing_context(state) else {
+        tracing::warn!("no routing context for JoinAccepted delivery");
+        return;
+    };
+
+    let blob = target_route_blob.to_vec();
+    let cid = community_id.to_string();
+    for attempt in 0..3 {
+        match rc.api().import_remote_private_route(blob.clone()) {
+            Ok(route_id) => {
+                match rc
+                    .app_message(
+                        veilid_core::Target::RouteId(route_id),
+                        signed_bytes.clone(),
+                    )
+                    .await
+                {
+                    Ok(()) => {
+                        tracing::info!(
+                            community = %cid,
+                            attempt,
+                            "JoinAccepted delivered successfully"
+                        );
+                        return;
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            community = %cid,
+                            attempt,
+                            error = %e,
+                            "JoinAccepted delivery failed"
+                        );
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::warn!(
+                    community = %cid,
+                    attempt,
+                    error = %e,
+                    "failed to import joiner route for JoinAccepted"
+                );
+            }
+        }
+        // Brief delay before retry
+        if attempt < 2 {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
+    }
+    tracing::error!(
+        community = %cid,
+        "JoinAccepted delivery failed after 3 attempts — joiner will not receive MEK"
+    );
 }
 
 /// Notify all members that an invite was used (for frontend tracking).

@@ -223,6 +223,14 @@ pub async fn join_community(
     let our_display_name = state_helpers::identity_display_name(state);
     let our_route_blob = state_helpers::our_route_blob(state);
 
+    // Route blob is required so the coordinator can send JoinAccepted back to us.
+    // Without it, we would never receive MEK or member list.
+    if our_route_blob.is_none() {
+        return Err(
+            "private route not yet available — wait for network attachment".to_string(),
+        );
+    }
+
     // 3. Convert DHT entries to in-memory types
     let channels: Vec<ChannelInfo> = channel_entries
         .iter()
