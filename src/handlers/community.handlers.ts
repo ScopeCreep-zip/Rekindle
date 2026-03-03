@@ -22,9 +22,9 @@ const typingTimers: Record<string, number> = {};
 
 export { typingUsersStore as typingUsers };
 
-export async function handleCreateCommunity(name: string, standalone: boolean = false): Promise<void> {
+export async function handleCreateCommunity(name: string): Promise<void> {
   try {
-    const id = await commands.createCommunity(name, standalone);
+    const id = await commands.createCommunity(name);
     // Fetch full community details from backend (includes pseudonym, MEK gen, channels, roles)
     const details = await commands.getCommunityDetails();
     const created = details.find((c) => c.id === id);
@@ -42,7 +42,6 @@ export async function handleCreateCommunity(name: string, standalone: boolean = 
         myRoleIds: [0, 1],
         myPseudonymKey: null,
         mekGeneration: 0,
-        isHosted: !standalone,
         events: [],
       });
     }
@@ -76,7 +75,6 @@ export async function handleJoinCommunity(
         myRoleIds: [0, 1],
         myPseudonymKey: null,
         mekGeneration: 0,
-        isHosted: false,
         events: [],
       });
     }
@@ -274,7 +272,6 @@ export function handleSelectCommunity(communityId: string): void {
     if (detail) {
       setCommunityState("communities", communityId, "myPseudonymKey", detail.myPseudonymKey ?? null);
       setCommunityState("communities", communityId, "mekGeneration", detail.mekGeneration ?? 0);
-      setCommunityState("communities", communityId, "isHosted", detail.isHosted ?? false);
       setCommunityState("communities", communityId, "myRoleIds", detail.myRoleIds ?? [0, 1]);
       setCommunityState("communities", communityId, "roles", detail.roles ?? []);
       setCommunityState("communities", communityId, "description", detail.description ?? null);

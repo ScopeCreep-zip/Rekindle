@@ -8,7 +8,6 @@ interface CreateCommunityModalProps {
 
 const CreateCommunityModal: Component<CreateCommunityModalProps> = (props) => {
   const [name, setName] = createSignal("");
-  const [standalone, setStandalone] = createSignal(false);
   const [submitting, setSubmitting] = createSignal(false);
   const [error, setError] = createSignal("");
 
@@ -21,9 +20,8 @@ const CreateCommunityModal: Component<CreateCommunityModalProps> = (props) => {
     setError("");
     setSubmitting(true);
     try {
-      await handleCreateCommunity(trimmed, standalone());
+      await handleCreateCommunity(trimmed);
       setName("");
-      setStandalone(false);
       props.onClose();
     } catch (e) {
       setError(String(e));
@@ -56,37 +54,6 @@ const CreateCommunityModal: Component<CreateCommunityModalProps> = (props) => {
               onKeyDown={handleKeyDown}
               autofocus
             />
-
-            <div class="create-community-hosting-options">
-              <label class="create-community-hosting-option">
-                <input
-                  type="radio"
-                  name="hosting-mode"
-                  checked={!standalone()}
-                  onChange={() => setStandalone(false)}
-                />
-                <div class="create-community-hosting-label">
-                  <span class="create-community-hosting-title">Local</span>
-                  <span class="create-community-hosting-desc">
-                    Server runs on this machine as a child process. Uses IPC fast path.
-                  </span>
-                </div>
-              </label>
-              <label class="create-community-hosting-option">
-                <input
-                  type="radio"
-                  name="hosting-mode"
-                  checked={standalone()}
-                  onChange={() => setStandalone(true)}
-                />
-                <div class="create-community-hosting-label">
-                  <span class="create-community-hosting-title">Standalone Server</span>
-                  <span class="create-community-hosting-desc">
-                    Server runs on dedicated hardware. You connect via Veilid like any member.
-                  </span>
-                </div>
-              </label>
-            </div>
 
             <Show when={error()}>
               <div class="form-error">{error()}</div>

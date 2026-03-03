@@ -44,7 +44,7 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
   const [confirmAction, setConfirmAction] = createSignal<ConfirmOptions | null>(null);
 
   const myPerms = createMemo(() =>
-    calculateBasePermissions(props.myRoleIds, props.community.roles, props.community.isHosted),
+    calculateBasePermissions(props.myRoleIds, props.community.roles),
   );
 
   const canManageCommunity = createMemo(() => hasPermission(myPerms(), MANAGE_COMMUNITY));

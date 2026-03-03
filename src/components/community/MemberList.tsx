@@ -37,7 +37,6 @@ interface MemberListProps {
   myRoleIds: number[];
   roles: Role[];
   myPseudonymKey: string | null;
-  isHosted: boolean;
 }
 
 const MemberList: Component<MemberListProps> = (props) => {
@@ -69,7 +68,7 @@ const MemberList: Component<MemberListProps> = (props) => {
   }
 
   function myPerms(): bigint {
-    return calculateBasePermissions(props.myRoleIds, props.roles, props.isHosted);
+    return calculateBasePermissions(props.myRoleIds, props.roles);
   }
 
   function myPosition(): number {

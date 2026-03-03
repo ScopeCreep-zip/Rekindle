@@ -166,7 +166,7 @@ const CommunityWindow: Component = () => {
   const myPerms = createMemo((): bigint => {
     const community = activeCommunity();
     if (!community) return 0n;
-    return calculateBasePermissions(myRoleIds(), community.roles, community.isHosted);
+    return calculateBasePermissions(myRoleIds(), community.roles);
   });
 
   const canManageChannels = createMemo(() => hasPermission(myPerms(), MANAGE_CHANNELS));
@@ -430,7 +430,7 @@ const CommunityWindow: Component = () => {
             onLeave={() => setShowLeaveConfirm(true)}
           />
           <Show when={activeCommunity()}>
-            <div class={`community-sidebar-header ${activeCommunity()?.isHosted ? "community-sidebar-header-hosted" : ""}`}>
+            <div class="community-sidebar-header">
               Channels
               <span class="header-btn-group">
                 <button
@@ -723,7 +723,6 @@ const CommunityWindow: Component = () => {
                   myRoleIds={myRoleIds()}
                   roles={activeCommunity()!.roles}
                   myPseudonymKey={activeCommunity()?.myPseudonymKey ?? null}
-                  isHosted={activeCommunity()?.isHosted ?? false}
                 />
               </Match>
               <Match when={rightPanel() === "pins"}>

@@ -173,14 +173,13 @@ pub async fn get_community_details(
 pub async fn create_community(
     _app: tauri::AppHandle,
     name: String,
-    standalone: bool,
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
     keystore_handle: State<'_, KeystoreHandle>,
 ) -> Result<String, String> {
     let owner_key = state_helpers::current_owner_key(state.inner())?;
     let community_id =
-        services::community_service::create_community(state.inner(), &name, standalone).await?;
+        services::community_service::create_community(state.inner(), &name).await?;
 
     // Persist MEK to Stronghold for login restoration
     {
@@ -284,36 +283,27 @@ pub async fn join_community(
     keystore_handle: State<'_, KeystoreHandle>,
 ) -> Result<(), String> {
     let owner_key = state_helpers::current_owner_key(state.inner())?;
-    let server_members =
-        services::community_service::join_community(state.inner(), &community_id, invite_code.as_deref())
-            .await?;
+    services::community_service::join_community(state.inner(), &community_id, invite_code.as_deref())
+        .await?;
 
-    let (name, dht_record_key) = {
+    // Read community state populated by join_community
+    let (name, dht_record_key, my_pseudonym_key, mek_generation, channels, my_role_ids, roles_to_persist) = {
         let communities = state.communities.read();
-        communities
-            .get(&community_id)
-            .map(|c| (c.name.clone(), c.dht_record_key.clone()))
-            .unwrap_or_default()
-    };
-
-    // Read joiner identity outside db_call (parking_lot guard is !Send)
-    let joiner_name = state_helpers::identity_display_name(state.inner());
-
-    // Get pseudonym key, mek_generation, and channels from the community state
-    let (my_pseudonym_key, mek_generation, channels) = {
-        let communities = state.communities.read();
-        communities
-            .get(&community_id)
-            .map(|c| {
-                (
-                    c.my_pseudonym_key.clone(),
-                    c.mek_generation,
-                    c.channels.clone(),
-                )
-            })
-            .unwrap_or_default()
+        match communities.get(&community_id) {
+            Some(c) => (
+                c.name.clone(),
+                c.dht_record_key.clone(),
+                c.my_pseudonym_key.clone(),
+                c.mek_generation,
+                c.channels.clone(),
+                c.my_role_ids.clone(),
+                c.roles.clone(),
+            ),
+            None => return Err("community state not found after join".to_string()),
+        }
     };
     let pseudonym_key = my_pseudonym_key.unwrap_or_else(|| owner_key.clone());
+    let joiner_name = state_helpers::identity_display_name(state.inner());
 
     // Persist MEK to Stronghold for login restoration
     {
@@ -326,23 +316,13 @@ pub async fn join_community(
         }
     }
 
-    // Get role_ids and roles from community state (set by join RPC response)
-    let (my_role_ids, roles_to_persist) = {
-        let communities = state.communities.read();
-        match communities.get(&community_id) {
-            Some(c) => (c.my_role_ids.clone(), c.roles.clone()),
-            None => (vec![0, 1], Vec::new()),
-        }
-    };
     let role_ids_json = serde_json::to_string(&my_role_ids).unwrap_or_else(|_| "[0,1]".to_string());
-
     let now = db::timestamp_now();
     let community_id_clone = community_id.clone();
     let ok = owner_key;
-    let ok_for_members = ok.clone();
     let pk = pseudonym_key.clone();
     let mg = mek_generation.cast_signed();
-    let rij = role_ids_json.clone();
+    let rij = role_ids_json;
     db_call(pool.inner(), move |conn| {
         conn.execute(
             "INSERT OR IGNORE INTO communities (owner_key, id, name, my_role, my_role_ids, joined_at, dht_record_key, my_pseudonym_key, mek_generation) \
@@ -350,19 +330,19 @@ pub async fn join_community(
             rusqlite::params![ok, community_id_clone, name, rij, now, dht_record_key, pk, mg],
         )?;
 
-        // Add ourselves to the community_members table (using pseudonym)
+        // Add ourselves to the community_members table
         conn.execute(
             "INSERT OR IGNORE INTO community_members (owner_key, community_id, pseudonym_key, display_name, role_ids, joined_at) \
              VALUES (?, ?, ?, ?, ?, ?)",
             rusqlite::params![ok, community_id_clone, pk, joiner_name, rij, now],
         )?;
 
-        // Persist channels to SQLite so they survive re-login
+        // Persist channels to SQLite
         for channel in &channels {
             crate::channel_repo::upsert_channel(conn, &ok, channel, &community_id_clone)?;
         }
 
-        // Persist roles from server
+        // Persist roles
         for r in &roles_to_persist {
             conn.execute(
                 "INSERT OR IGNORE INTO community_roles (owner_key, community_id, role_id, name, color, permissions, position, hoist, mentionable) \
@@ -378,25 +358,7 @@ pub async fn join_community(
     })
     .await?;
 
-    // Persist all members from the server's join response
-    if !server_members.is_empty() {
-        let members_for_db = server_members;
-        let cid_clone = community_id.clone();
-        db_call(pool.inner(), move |conn| {
-            for m in &members_for_db {
-                let role_ids_json =
-                    serde_json::to_string(&m.role_ids).unwrap_or_else(|_| "[0,1]".to_string());
-                conn.execute(
-                    "INSERT OR IGNORE INTO community_members (owner_key, community_id, pseudonym_key, display_name, role_ids, joined_at) \
-                     VALUES (?, ?, ?, ?, ?, ?)",
-                    rusqlite::params![ok_for_members, cid_clone, m.pseudonym_key, m.display_name, role_ids_json, now],
-                )?;
-            }
-            Ok(())
-        })
-        .await?;
-    }
-
+    // Members arrive asynchronously via MemberJoined events from the coordinator
     Ok(())
 }
 
@@ -774,40 +736,36 @@ pub async fn revoke_community_invite(
     }
 }
 
-/// List active community invites.
+/// List active community invites from DHT manifest.
 #[tauri::command]
 pub async fn list_community_invites(
     community_id: String,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
+    _pool: State<'_, DbPool>,
 ) -> Result<Vec<InviteInfoDto>, String> {
-    let response = send_community_rpc(
-        state.inner(),
-        pool.inner(),
-        &community_id,
-        rekindle_protocol::messaging::CommunityRequest::ListInvites,
-    )
-    .await?;
+    let rc = state_helpers::routing_context(state.inner()).ok_or("not attached")?;
+    let manifest_key = manifest_key_for(state.inner(), &community_id)?;
+    let mgr = rekindle_protocol::dht::DHTManager::new(rc);
+    let invites =
+        rekindle_protocol::dht::community::manifest::read_invites(&mgr, &manifest_key)
+            .await
+            .map_err(|e| format!("read invites: {e}"))?;
 
-    match response {
-        rekindle_protocol::messaging::CommunityResponse::InviteList { invites } => {
-            Ok(invites
-                .into_iter()
-                .map(|i| InviteInfoDto {
-                    code: i.code,
-                    created_by: i.created_by,
-                    max_uses: i.max_uses,
-                    uses: i.uses,
-                    expires_at: i.expires_at,
-                    created_at: i.created_at,
-                })
-                .collect())
-        }
-        rekindle_protocol::messaging::CommunityResponse::Error { message, .. } => {
-            Err(format!("failed to list invites: {message}"))
-        }
-        other => Err(format!("unexpected response for ListInvites: {other:?}")),
-    }
+    Ok(invites
+        .into_iter()
+        .map(|i| InviteInfoDto {
+            code: i.code,
+            created_by: i.created_by,
+            max_uses: if i.max_uses == 0 {
+                None
+            } else {
+                Some(i.max_uses)
+            },
+            uses: i.use_count,
+            expires_at: i.expires_at,
+            created_at: i.created_at,
+        })
+        .collect())
 }
 
 /// Send a message in a community channel.
@@ -2322,7 +2280,7 @@ pub async fn remove_community_member(
     Ok(())
 }
 
-/// Get all role definitions for a community from the server.
+/// Get all role definitions for a community from DHT manifest.
 #[tauri::command]
 pub async fn get_roles(
     community_id: String,
@@ -2330,62 +2288,69 @@ pub async fn get_roles(
     pool: State<'_, DbPool>,
 ) -> Result<Vec<CommunityRoleDto>, String> {
     let owner_key = state_helpers::current_owner_key(state.inner())?;
-    let response = send_community_rpc(
-        state.inner(),
-        pool.inner(),
-        &community_id,
-        rekindle_protocol::messaging::CommunityRequest::GetRoles,
-    )
-    .await;
 
-    match response {
-        Ok(rekindle_protocol::messaging::CommunityResponse::RolesList { roles }) => {
-            // Cache the roles locally in memory
-            let role_defs: Vec<crate::state::RoleDefinition> = roles
-                .iter()
-                .map(crate::state::RoleDefinition::from_dto)
-                .collect();
-            {
-                let mut communities = state.communities.write();
-                if let Some(c) = communities.get_mut(&community_id) {
-                    c.roles.clone_from(&role_defs);
-                    c.my_role = Some(crate::state::display_role_name(&c.my_role_ids, &c.roles));
+    // Try reading from DHT manifest first
+    if let Some(rc) = state_helpers::routing_context(state.inner()) {
+        let manifest_key = manifest_key_for(state.inner(), &community_id)?;
+        let mgr = rekindle_protocol::dht::DHTManager::new(rc);
+        match rekindle_protocol::dht::community::manifest::read_roles(&mgr, &manifest_key).await {
+            Ok(entries) => {
+                // Cache in memory
+                let role_defs: Vec<crate::state::RoleDefinition> = entries
+                    .iter()
+                    .map(|r| crate::state::RoleDefinition {
+                        id: r.id,
+                        name: r.name.clone(),
+                        color: r.color,
+                        permissions: r.permissions,
+                        position: r.position,
+                        hoist: r.hoist,
+                        mentionable: r.mentionable,
+                    })
+                    .collect();
+                {
+                    let mut communities = state.communities.write();
+                    if let Some(c) = communities.get_mut(&community_id) {
+                        c.roles.clone_from(&role_defs);
+                        c.my_role =
+                            Some(crate::state::display_role_name(&c.my_role_ids, &c.roles));
+                    }
                 }
-            }
-            // Persist to SQLite (DELETE + INSERT)
-            let cid = community_id.clone();
-            let defs = role_defs;
-            db_call(pool.inner(), move |conn| {
-                conn.execute(
-                    "DELETE FROM community_roles WHERE owner_key = ? AND community_id = ?",
-                    rusqlite::params![owner_key, cid],
-                )?;
-                for r in &defs {
+                // Persist to SQLite
+                let cid = community_id.clone();
+                let defs = role_defs;
+                db_call(pool.inner(), move |conn| {
                     conn.execute(
-                        "INSERT INTO community_roles (owner_key, community_id, role_id, name, color, permissions, position, hoist, mentionable) \
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        rusqlite::params![
-                            owner_key, cid, r.id, r.name, r.color,
-                            r.permissions.cast_signed(), r.position, i32::from(r.hoist), i32::from(r.mentionable),
-                        ],
+                        "DELETE FROM community_roles WHERE owner_key = ? AND community_id = ?",
+                        rusqlite::params![owner_key, cid],
                     )?;
-                }
-                Ok(())
-            }).await?;
-            Ok(roles.iter().map(CommunityRoleDto::from).collect())
-        }
-        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => {
-            Err(format!("server rejected get_roles: {message}"))
-        }
-        Err(_) | Ok(_) => {
-            // Return cached roles if server is unreachable
-            let communities = state.communities.read();
-            Ok(communities
-                .get(&community_id)
-                .map(|c| c.roles.iter().map(CommunityRoleDto::from).collect())
-                .unwrap_or_default())
+                    for r in &defs {
+                        conn.execute(
+                            "INSERT INTO community_roles (owner_key, community_id, role_id, name, color, permissions, position, hoist, mentionable) \
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                            rusqlite::params![
+                                owner_key, cid, r.id, r.name, r.color,
+                                r.permissions.cast_signed(), r.position, i32::from(r.hoist), i32::from(r.mentionable),
+                            ],
+                        )?;
+                    }
+                    Ok(())
+                })
+                .await?;
+                return Ok(entries.iter().map(CommunityRoleDto::from).collect());
+            }
+            Err(e) => {
+                tracing::debug!(error = %e, "DHT read_roles failed, falling back to cache");
+            }
         }
     }
+
+    // Fallback: return cached roles from memory
+    let communities = state.communities.read();
+    Ok(communities
+        .get(&community_id)
+        .map(|c| c.roles.iter().map(CommunityRoleDto::from).collect())
+        .unwrap_or_default())
 }
 
 /// Create a new role in a community.
@@ -3233,38 +3198,38 @@ pub struct BannedMemberInfo {
     pub pseudonym_key: String,
     pub display_name: String,
     pub banned_at: u64,
+    pub reason: Option<String>,
+    pub banned_by: String,
 }
 
-/// Get the list of banned members for a community.
+/// Get the list of banned members for a community from DHT manifest.
 #[tauri::command]
 pub async fn get_ban_list(
     community_id: String,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
+    _pool: State<'_, DbPool>,
 ) -> Result<Vec<BannedMemberInfo>, String> {
-    let response = send_community_rpc(
-        state.inner(),
-        pool.inner(),
-        &community_id,
-        rekindle_protocol::messaging::CommunityRequest::GetBanList,
-    )
-    .await;
+    let rc = state_helpers::routing_context(state.inner()).ok_or("not attached")?;
+    let manifest_key = manifest_key_for(state.inner(), &community_id)?;
+    let mgr = rekindle_protocol::dht::DHTManager::new(rc);
+    let bans = rekindle_protocol::dht::community::manifest::read_bans(&mgr, &manifest_key)
+        .await
+        .map_err(|e| format!("read bans: {e}"))?;
 
-    match response {
-        Ok(rekindle_protocol::messaging::CommunityResponse::BanList { banned }) => Ok(banned
-            .into_iter()
-            .map(|b| BannedMemberInfo {
-                pseudonym_key: b.pseudonym_key,
-                display_name: b.display_name,
-                banned_at: b.banned_at,
-            })
-            .collect()),
-        Ok(rekindle_protocol::messaging::CommunityResponse::Error { message, .. }) => {
-            Err(format!("server rejected ban list request: {message}"))
-        }
-        Ok(_) => Err("unexpected response from server".into()),
-        Err(e) => Err(e),
-    }
+    Ok(bans
+        .into_iter()
+        .map(|b| BannedMemberInfo {
+            display_name: if b.pseudonym_key.len() > 12 {
+                format!("{}…", &b.pseudonym_key[..12])
+            } else {
+                b.pseudonym_key.clone()
+            },
+            pseudonym_key: b.pseudonym_key,
+            banned_at: b.banned_at,
+            reason: b.reason,
+            banned_by: b.banned_by,
+        })
+        .collect())
 }
 
 /// Force MEK rotation for a community.
@@ -3672,52 +3637,25 @@ pub struct UnreadCountEntry {
     pub unread_count: u32,
 }
 
-/// Get unread counts for all channels in a community.
+/// Get unread counts for all channels in a community from local state.
 #[tauri::command]
 pub async fn get_unread_counts(
     community_id: String,
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
+    _pool: State<'_, DbPool>,
 ) -> Result<Vec<UnreadCountEntry>, String> {
-    let response = send_community_rpc(
-        state.inner(),
-        pool.inner(),
-        &community_id,
-        rekindle_protocol::messaging::CommunityRequest::GetUnreadCounts,
-    )
-    .await?;
-
-    match response {
-        rekindle_protocol::messaging::CommunityResponse::UnreadCounts { counts } => {
-            // Also update the in-memory channel unread counts
-            let mut communities = state.communities.write();
-            if let Some(community) = communities.get_mut(&community_id) {
-                for count in &counts {
-                    if let Some(ch) = community
-                        .channels
-                        .iter_mut()
-                        .find(|c| c.id == count.channel_id)
-                    {
-                        ch.unread_count = count.unread_count;
-                    }
-                }
-            }
-
-            Ok(counts
-                .into_iter()
-                .map(|c| UnreadCountEntry {
-                    channel_id: c.channel_id,
-                    unread_count: c.unread_count,
-                })
-                .collect())
-        }
-        rekindle_protocol::messaging::CommunityResponse::Error { message, .. } => {
-            Err(format!("server rejected get unread counts: {message}"))
-        }
-        other => Err(format!(
-            "unexpected server response for GetUnreadCounts: {other:?}"
-        )),
-    }
+    let communities = state.communities.read();
+    let community = communities
+        .get(&community_id)
+        .ok_or("community not found")?;
+    Ok(community
+        .channels
+        .iter()
+        .map(|ch| UnreadCountEntry {
+            channel_id: ch.id.clone(),
+            unread_count: ch.unread_count,
+        })
+        .collect())
 }
 
 // ── Onboarding & Welcome Screen ──

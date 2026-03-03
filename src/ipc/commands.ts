@@ -161,14 +161,13 @@ export const commands = {
       roles: { id: number; name: string; color: number; permissions: number; position: number; hoist: boolean; mentionable: boolean }[];
       myPseudonymKey: string | null;
       mekGeneration: number;
-      isHosted: boolean;
     }[]>("get_community_details"),
   getCommunityMembers: (communityId: string) =>
     invoke<{ pseudonymKey: string; displayName: string; roleIds: number[]; displayRole: string; status: string; timeoutUntil: number | null }[]>(
       "get_community_members", { communityId },
     ),
-  createCommunity: (name: string, standalone: boolean = false) =>
-    invoke<string>("create_community", { name, standalone }),
+  createCommunity: (name: string) =>
+    invoke<string>("create_community", { name }),
   joinCommunity: (communityId: string, inviteCode?: string) =>
     invoke<void>("join_community", { communityId, inviteCode: inviteCode ?? null }),
   createChannel: (communityId: string, name: string, channelType: string, categoryId?: string) =>

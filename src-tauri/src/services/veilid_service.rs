@@ -407,7 +407,216 @@ fn handle_relayed_control(
                 },
             );
         }
-        // For other control payloads, we emit a generic update event
+        // All other control payloads handled by helper function
+        other => handle_relayed_control_extended(app_handle, community_id, other),
+    }
+}
+
+/// Extended control payload → frontend event mapping (split for clippy line limit).
+fn handle_relayed_control_extended(
+    app_handle: &tauri::AppHandle,
+    community_id: &str,
+    payload: rekindle_protocol::dht::community::envelope::ControlPayload,
+) {
+    use crate::channels::CommunityEvent;
+    use rekindle_protocol::dht::community::envelope::ControlPayload;
+
+    match payload {
+        ControlPayload::ChannelsUpdated { channels, categories } => {
+            let channel_dtos: Vec<crate::channels::community_channel::ChannelInfoFrontendDto> = channels
+                .iter()
+                .filter_map(|v| serde_json::from_value(v.clone()).ok())
+                .collect();
+            let category_dtos: Vec<crate::channels::community_channel::CategoryInfoFrontendDto> = categories
+                .iter()
+                .filter_map(|v| serde_json::from_value(v.clone()).ok())
+                .collect();
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::ChannelsUpdated {
+                    community_id: community_id.to_string(),
+                    channels: channel_dtos,
+                    categories: category_dtos,
+                },
+            );
+        }
+        ControlPayload::ChannelOverwriteChanged { channel_id } => {
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::ChannelOverwriteChanged {
+                    community_id: community_id.to_string(),
+                    channel_id,
+                },
+            );
+        }
+        ControlPayload::MessagePinned {
+            channel_id,
+            message_id,
+            pinned_by,
+        } => {
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::MessagePinned {
+                    community_id: community_id.to_string(),
+                    channel_id,
+                    message_id,
+                    pinned_by,
+                },
+            );
+        }
+        ControlPayload::MessageUnpinned {
+            channel_id,
+            message_id,
+        } => {
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::MessageUnpinned {
+                    community_id: community_id.to_string(),
+                    channel_id,
+                    message_id,
+                },
+            );
+        }
+        ControlPayload::InviteCreated {
+            code,
+            created_by,
+            max_uses,
+            uses,
+            expires_at,
+            created_at,
+        } => {
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::InviteCreated {
+                    community_id: community_id.to_string(),
+                    code,
+                    created_by,
+                    max_uses,
+                    uses,
+                    expires_at,
+                    created_at,
+                },
+            );
+        }
+        ControlPayload::InviteRevoked { code } => {
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::InviteRevoked {
+                    community_id: community_id.to_string(),
+                    code,
+                },
+            );
+        }
+        ControlPayload::InviteUsed {
+            code,
+            new_use_count,
+        } => {
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::InviteUsed {
+                    community_id: community_id.to_string(),
+                    code,
+                    new_use_count,
+                },
+            );
+        }
+        ControlPayload::EventCreated { event } => {
+            if let Ok(dto) = serde_json::from_value::<crate::channels::community_channel::EventInfoDto>(event) {
+                let _ = app_handle.emit(
+                    "community-event",
+                    CommunityEvent::EventCreated {
+                        community_id: community_id.to_string(),
+                        event: dto,
+                    },
+                );
+            }
+        }
+        ControlPayload::EventUpdated { event } => {
+            if let Ok(dto) = serde_json::from_value::<crate::channels::community_channel::EventInfoDto>(event) {
+                let _ = app_handle.emit(
+                    "community-event",
+                    CommunityEvent::EventUpdated {
+                        community_id: community_id.to_string(),
+                        event: dto,
+                    },
+                );
+            }
+        }
+        ControlPayload::EventDeleted { event_id } => {
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::EventDeleted {
+                    community_id: community_id.to_string(),
+                    event_id,
+                },
+            );
+        }
+        ControlPayload::EventRsvpChanged {
+            event_id,
+            pseudonym_key,
+            status,
+        } => {
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::EventRsvpChanged {
+                    community_id: community_id.to_string(),
+                    event_id,
+                    pseudonym_key,
+                    status,
+                },
+            );
+        }
+        ControlPayload::ThreadCreated { thread } => {
+            if let Ok(dto) = serde_json::from_value::<crate::channels::community_channel::ThreadInfoDto>(thread) {
+                let _ = app_handle.emit(
+                    "community-event",
+                    CommunityEvent::ThreadCreated {
+                        community_id: community_id.to_string(),
+                        thread: dto,
+                    },
+                );
+            }
+        }
+        ControlPayload::ThreadArchived { thread_id, archived } => {
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::ThreadArchived {
+                    community_id: community_id.to_string(),
+                    thread_id,
+                    archived,
+                },
+            );
+        }
+        ControlPayload::GameServerAdded { server } => {
+            if let Ok(dto) = serde_json::from_value::<crate::channels::community_channel::GameServerInfoDto>(server) {
+                let _ = app_handle.emit(
+                    "community-event",
+                    CommunityEvent::GameServerAdded {
+                        community_id: community_id.to_string(),
+                        server: dto,
+                    },
+                );
+            }
+        }
+        ControlPayload::GameServerRemoved { server_id } => {
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::GameServerRemoved {
+                    community_id: community_id.to_string(),
+                    server_id,
+                },
+            );
+        }
+        // Coordinator lifecycle / ack payloads — no frontend event needed
+        ControlPayload::CoordinatorHeartbeat { .. }
+        | ControlPayload::ElectionClaim { .. }
+        | ControlPayload::Ok
+        | ControlPayload::Error { .. }
+        | ControlPayload::MessageSent { .. }
+        | ControlPayload::JoinAccepted { .. }
+        | ControlPayload::AutoModBlocked { .. }
+        | ControlPayload::OnboardingQuestions { .. } => {}
+        // Remaining control payloads — log for future mapping
         _ => {
             tracing::debug!(
                 community = %community_id,

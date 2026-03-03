@@ -231,7 +231,7 @@ pub enum CommunityEvent {
 }
 
 /// Event info DTO for frontend consumption.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EventInfoDto {
     pub id: String,
@@ -248,7 +248,7 @@ pub struct EventInfoDto {
 }
 
 /// RSVP entry DTO for frontend consumption.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EventRsvpInfoDto {
     pub pseudonym_key: String,
@@ -283,7 +283,7 @@ impl From<&rekindle_protocol::messaging::RoleDto> for RoleDto {
 }
 
 /// Thread info DTO for frontend consumption.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ThreadInfoDto {
     pub id: String,
@@ -299,7 +299,7 @@ pub struct ThreadInfoDto {
 }
 
 /// Game server info DTO for frontend consumption.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GameServerInfoDto {
     pub id: String,
@@ -324,8 +324,22 @@ impl From<&crate::state::RoleDefinition> for RoleDto {
     }
 }
 
+impl From<&rekindle_protocol::dht::community::types::RoleEntryV2> for RoleDto {
+    fn from(r: &rekindle_protocol::dht::community::types::RoleEntryV2) -> Self {
+        Self {
+            id: r.id,
+            name: r.name.clone(),
+            color: r.color,
+            permissions: r.permissions,
+            position: r.position,
+            hoist: r.hoist,
+            mentionable: r.mentionable,
+        }
+    }
+}
+
 /// Channel info DTO for frontend consumption (from ChannelsUpdated broadcast).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChannelInfoFrontendDto {
     pub id: String,
@@ -340,7 +354,7 @@ pub struct ChannelInfoFrontendDto {
 }
 
 /// Category info DTO for frontend consumption (from ChannelsUpdated broadcast).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CategoryInfoFrontendDto {
     pub id: String,

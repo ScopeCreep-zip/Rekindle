@@ -49,9 +49,9 @@ const SecurityTab: Component<SecurityTabProps> = (props) => {
           <span class="nf-icon">{ICON_KEY}</span> {rotating() ? "Rotating..." : "Rotate Encryption Key"}
         </button>
       </FormField>
-      <FormField label="Server Status">
+      <FormField label="Network Model">
         <div class="settings-value">
-          {props.community.isHosted ? "Hosted by you" : "Remote server"}
+          Rotating Coordinator (P2P)
         </div>
       </FormField>
     </div>
