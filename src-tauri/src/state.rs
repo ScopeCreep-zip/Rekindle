@@ -171,13 +171,14 @@ impl Default for GossipOverlay {
 /// Compute the gossip degree (D) for the given number of online members.
 ///
 /// - ≤1: no gossip (alone)
-/// - 2-20: direct mesh (send to everyone)
+/// - 1: send to the single peer (direct delivery)
+/// - 2-20: direct mesh (send to all minus one)
 /// - 21-60: D=6
 /// - 61+: D=8
 pub fn gossip_degree(online_count: usize) -> usize {
     match online_count {
-        0..=1 => 0,
-        2..=20 => online_count - 1,
+        0 => 0,
+        1..=20 => online_count,
         21..=60 => 6,
         _ => 8,
     }

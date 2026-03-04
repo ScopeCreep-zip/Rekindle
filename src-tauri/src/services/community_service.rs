@@ -585,6 +585,15 @@ pub fn start_presence_poll(state: Arc<AppState>, community_id: String) {
     });
 }
 
+/// Public entry point for triggering an immediate presence poll tick.
+/// Called after SlotKeypairGrant to speed up peer discovery.
+pub async fn presence_poll_tick_public(
+    state: &Arc<AppState>,
+    community_id: &str,
+) -> Result<(), String> {
+    presence_poll_tick(state, community_id).await
+}
+
 /// Single presence poll tick.
 async fn presence_poll_tick(state: &Arc<AppState>, community_id: &str) -> Result<(), String> {
     let rc = state_helpers::routing_context(state).ok_or("not attached")?;

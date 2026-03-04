@@ -554,6 +554,7 @@ async fn handle_control(
                         &state_clone,
                         &onboard_community,
                         blob,
+                        &joiner_pseudonym,
                     ).await;
 
                     // Send SlotKeypairGrant so the joiner can write their own DHT presence
@@ -572,6 +573,21 @@ async fn handle_control(
                         pseudonym = %joiner_pseudonym,
                         "MemberJoinRequest has no route_blob — cannot send JoinAccepted"
                     );
+                }
+
+                // Add joiner to coordinator's gossip overlay so future
+                // broadcasts (including this MemberJoined) can reach them.
+                if let Some(ref blob) = member_route {
+                    let mut communities = state_clone.communities.write();
+                    if let Some(cs) = communities.get_mut(&sm_clone.community_id) {
+                        if cs.gossip.is_none() {
+                            cs.gossip = Some(crate::state::GossipOverlay::default());
+                        }
+                        if let Some(ref mut gossip) = cs.gossip {
+                            gossip.online_members.insert(joiner_pseudonym.clone(), blob.clone());
+                            gossip.peers.insert(joiner_pseudonym.clone(), blob.clone());
+                        }
+                    }
                 }
 
                 // Broadcast MemberJoined to existing members via gossip mesh.
@@ -983,7 +999,7 @@ async fn handle_control_extended(
                 let community_id = sm.community_id.clone();
                 let requester = sender_pseudonym.to_string();
                 tokio::spawn(async move {
-                    send_join_accepted(&state_clone, &community_id, &blob).await;
+                    send_join_accepted(&state_clone, &community_id, &blob, &requester).await;
                     tracing::debug!(
                         community = %community_id,
                         requester = %requester,
@@ -1649,6 +1665,7 @@ async fn send_join_accepted(
     state: &Arc<AppState>,
     community_id: &str,
     target_route_blob: &[u8],
+    joiner_pseudonym: &str,
 ) {
     let Some(rc) = state_helpers::routing_context(state) else {
         return;
@@ -1705,6 +1722,13 @@ async fn send_join_accepted(
             .map(rekindle_crypto::group::media_key::MediaEncryptionKey::to_wire_bytes)
     };
 
+    // Look up the joiner's actual role_ids from the registry (preserves
+    // promoted/demoted roles on rejoin instead of always resetting to [0,1]).
+    let joiner_role_ids = members
+        .iter()
+        .find(|m| m.pseudonym_key == joiner_pseudonym)
+        .map_or_else(|| vec![0, 1], |m| m.role_ids.clone());
+
     let payload = ControlPayload::JoinAccepted {
         mek_encrypted: mek_bytes.unwrap_or_default(),
         mek_generation,
@@ -1716,7 +1740,7 @@ async fn send_join_accepted(
             .iter()
             .filter_map(|c| serde_json::to_value(c).ok())
             .collect(),
-        role_ids: vec![0, 1], // Default roles for new member
+        role_ids: joiner_role_ids,
         roles: roles
             .iter()
             .filter_map(|r| serde_json::to_value(r).ok())
