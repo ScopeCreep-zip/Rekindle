@@ -684,7 +684,7 @@ async fn load_communities_from_db(
         let mut comm_stmt = conn
             .prepare(
                 "SELECT id, name, description, my_role, my_role_ids, dht_record_key, dht_owner_keypair, \
-                 my_pseudonym_key, mek_generation, manifest_key, member_registry_key \
+                 my_pseudonym_key, mek_generation, manifest_key, member_registry_key, my_subkey_index \
                  FROM communities WHERE owner_key = ?1",
             )?;
         let communities = comm_stmt
@@ -701,6 +701,7 @@ async fn load_communities_from_db(
                     row.get::<_, i64>("mek_generation").unwrap_or(0).cast_unsigned(),
                     db::get_str_opt(row, "manifest_key"),
                     db::get_str_opt(row, "member_registry_key"),
+                    row.get::<_, Option<i64>>("my_subkey_index").unwrap_or(None).map(|v| u32::try_from(v).unwrap_or(0)),
                 ))
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -756,6 +757,7 @@ async fn load_communities_from_db(
         mek_generation,
         db_manifest_key,
         db_member_registry_key,
+        db_subkey_index,
     ) in &community_rows
     {
         let channels: Vec<ChannelInfo> = channel_rows
@@ -818,7 +820,7 @@ async fn load_communities_from_db(
             mek_generation: *mek_generation,
             manifest_key,
             member_registry_key: db_member_registry_key.clone(),
-            my_subkey_index: None,
+            my_subkey_index: *db_subkey_index,
             coordinator_pseudonym: None,
             coordinator_route_blob: None,
             coordinator_epoch: 0,
@@ -1115,7 +1117,7 @@ async fn spawn_login_services(
 
     // Open community DHT records (manifest + registry) before starting services.
     // After app restart, Veilid closes all records; they must be re-opened for reads/writes.
-    open_community_dht_records(state).await;
+    open_community_dht_records(app, state).await;
 
     // Start coordinator services for all joined communities
     {
@@ -1157,7 +1159,8 @@ async fn spawn_login_services(
 /// After app restart, Veilid closes all DHT records. Services like elections,
 /// presence polling, and coordinator operations need these records open to
 /// read/write. This must run BEFORE starting coordinator or presence services.
-async fn open_community_dht_records(state: &SharedState) {
+async fn open_community_dht_records(app_handle: &tauri::AppHandle, state: &SharedState) {
+    use crate::db::DbPool;
     use rekindle_protocol::dht::DHTManager;
 
     let Some(rc) = state_helpers::routing_context(state) else {
@@ -1181,9 +1184,56 @@ async fn open_community_dht_records(state: &SharedState) {
         // Open manifest (writable if we have the owner keypair, read-only otherwise)
         if let Err(e) = mgr.open_record(manifest_key).await {
             tracing::warn!(community = %community_id, error = %e, "failed to open manifest record on login");
+            continue;
         }
+
+        // If registry key is missing, recover it from manifest subkey 12 (registry spine)
+        let effective_registry_key = if registry_key.is_some() {
+            registry_key.clone()
+        } else {
+            match rekindle_protocol::dht::community::member_registry::read_registry_spine(
+                &mgr, manifest_key,
+            )
+            .await
+            {
+                Ok(Some(spine)) if !spine.segments.is_empty() => {
+                    let key = spine.segments[0].record_key.clone();
+                    tracing::info!(
+                        community = %community_id,
+                        registry_key = %key,
+                        "recovered member_registry_key from manifest spine"
+                    );
+                    // Update in-memory state (scoped to drop guard before .await)
+                    {
+                        let mut cs = state.communities.write();
+                        if let Some(c) = cs.get_mut(community_id.as_str()) {
+                            c.member_registry_key = Some(key.clone());
+                        }
+                    }
+                    // Persist to SQLite so we don't have to recover again
+                    let pool: tauri::State<'_, DbPool> = app_handle.state();
+                    let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
+                    let cid = community_id.clone();
+                    let rk = key.clone();
+                    let _ = crate::db_helpers::db_call(pool.inner(), move |conn| {
+                        conn.execute(
+                            "UPDATE communities SET member_registry_key = ?1 WHERE owner_key = ?2 AND id = ?3",
+                            rusqlite::params![rk, owner_key, cid],
+                        )?;
+                        Ok(())
+                    })
+                    .await;
+                    Some(key)
+                }
+                _ => {
+                    tracing::debug!(community = %community_id, "no registry spine — member_registry_key unknown");
+                    None
+                }
+            }
+        };
+
         // Open member registry
-        if let Some(ref reg_key) = registry_key {
+        if let Some(ref reg_key) = effective_registry_key {
             if let Err(e) = mgr.open_record(reg_key).await {
                 tracing::warn!(community = %community_id, error = %e, "failed to open registry record on login");
             }

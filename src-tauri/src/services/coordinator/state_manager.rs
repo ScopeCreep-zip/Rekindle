@@ -318,18 +318,22 @@ async fn handle_control(
                 }
 
                 // Add member to registry
-                if let Err(e) = add_member_to_registry(
+                let joiner_subkey_index = match add_member_to_registry(
                     &state_clone,
                     &onboard_community,
                     &joiner_pseudonym,
                     &display_name_clone,
                 ).await {
-                    tracing::warn!(
-                        community = %onboard_community,
-                        error = %e,
-                        "failed to add member to registry"
-                    );
-                }
+                    Ok(idx) => Some(idx),
+                    Err(e) => {
+                        tracing::warn!(
+                            community = %onboard_community,
+                            error = %e,
+                            "failed to add member to registry"
+                        );
+                        None
+                    }
+                };
 
                 // Send JoinAccepted to the joining member
                 if let Some(blob) = &member_route {
@@ -338,6 +342,17 @@ async fn handle_control(
                         &onboard_community,
                         blob,
                     ).await;
+
+                    // Send SlotKeypairGrant so the joiner can write their own DHT presence
+                    if let Some(subkey_idx) = joiner_subkey_index {
+                        send_slot_keypair_grant(
+                            &state_clone,
+                            &onboard_community,
+                            blob,
+                            &joiner_pseudonym,
+                            subkey_idx,
+                        );
+                    }
                 } else {
                     tracing::error!(
                         community = %onboard_community,
@@ -716,6 +731,36 @@ async fn handle_control_extended(
             });
         }
 
+        // RequestMEK: respond with JoinAccepted containing the MEK
+        ControlPayload::RequestMEK => {
+            // Look up the requester's route blob from the gossip overlay
+            let route_blob = {
+                let communities = state.communities.read();
+                communities.get(&sm.community_id)
+                    .and_then(|c| c.gossip.as_ref())
+                    .and_then(|g| g.online_members.get(sender_pseudonym).cloned())
+            };
+            if let Some(blob) = route_blob {
+                let state_clone = state.clone();
+                let community_id = sm.community_id.clone();
+                let requester = sender_pseudonym.to_string();
+                tokio::spawn(async move {
+                    send_join_accepted(&state_clone, &community_id, &blob).await;
+                    tracing::debug!(
+                        community = %community_id,
+                        requester = %requester,
+                        "sent MEK via JoinAccepted in response to RequestMEK"
+                    );
+                });
+            } else {
+                tracing::warn!(
+                    community = %sm.community_id,
+                    requester = %sender_pseudonym,
+                    "RequestMEK: no route blob for requester — cannot deliver MEK"
+                );
+            }
+        }
+
         // Read-only operations & broadcast variants - broadcast via gossip
         _ => {
             let other_envelope = CommunityEnvelope::Control(payload.clone());
@@ -804,6 +849,88 @@ fn send_control_to_route(
             }
         }
     });
+}
+
+/// Send a SlotKeypairGrant to a newly joined member so they can write their DHT presence.
+///
+/// Derives the slot keypair from the community's slot seed, wraps it with ECDH
+/// for the target member, and sends it via a direct app_message.
+fn send_slot_keypair_grant(
+    state: &Arc<AppState>,
+    community_id: &str,
+    target_route_blob: &[u8],
+    joiner_pseudonym: &str,
+    slot_index: u32,
+) {
+    use rekindle_crypto::group::mek_distribution::wrap_mek;
+    use rekindle_crypto::group::pseudonym::derive_community_pseudonym;
+    use rekindle_protocol::dht::community::member_registry;
+
+    // Get slot seed from our state
+    let slot_seed_hex = {
+        let communities = state.communities.read();
+        let Some(c) = communities.get(community_id) else { return };
+        if let Some(s) = c.slot_seed.clone() {
+            s
+        } else {
+            tracing::warn!(community = %community_id, "no slot seed — cannot send SlotKeypairGrant");
+            return;
+        }
+    };
+    let Ok(seed_bytes) = hex::decode(&slot_seed_hex) else {
+        tracing::warn!(community = %community_id, "invalid slot seed hex");
+        return;
+    };
+    let Ok(seed_array): Result<[u8; 32], _> = seed_bytes.try_into() else {
+        tracing::warn!(community = %community_id, "slot seed wrong length");
+        return;
+    };
+
+    // Derive the Veilid keypair for this slot
+    let slot_kp = match member_registry::derive_slot_veilid_keypair(&seed_array, slot_index) {
+        Ok(kp) => kp,
+        Err(e) => {
+            tracing::warn!(error = %e, community = %community_id, "failed to derive slot keypair");
+            return;
+        }
+    };
+    let slot_kp_str = slot_kp.to_string();
+
+    // Encrypt (wrap) the slot keypair for the joiner using ECDH
+    let Some(secret) = state.identity_secret.lock().as_ref().copied() else { return };
+    let my_signing_key = derive_community_pseudonym(&secret, community_id);
+
+    let Ok(joiner_pub_bytes) = hex::decode(joiner_pseudonym) else {
+        tracing::warn!("invalid joiner pseudonym hex for SlotKeypairGrant");
+        return;
+    };
+    let Ok(joiner_pub): Result<[u8; 32], _> = joiner_pub_bytes.try_into() else {
+        tracing::warn!("joiner pseudonym wrong length for SlotKeypairGrant");
+        return;
+    };
+
+    let wrapped = match wrap_mek(&my_signing_key, &joiner_pub, slot_kp_str.as_bytes()) {
+        Ok(w) => w,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to wrap slot keypair for joiner");
+            return;
+        }
+    };
+
+    let payload = ControlPayload::SlotKeypairGrant {
+        slot_index,
+        segment_index: 0,
+        wrapped_slot_keypair: wrapped,
+    };
+
+    send_control_to_route(state, community_id, target_route_blob, payload);
+
+    tracing::debug!(
+        community = %community_id,
+        slot_index,
+        joiner = %joiner_pseudonym,
+        "sent SlotKeypairGrant to joiner"
+    );
 }
 
 /// Broadcast a coordinator-originated control envelope via the gossip mesh.
@@ -1121,12 +1248,13 @@ async fn assign_onboarding_roles(
 }
 
 /// Add a new member to the member registry index.
+/// Returns the subkey_index assigned to the new member.
 async fn add_member_to_registry(
     state: &Arc<AppState>,
     community_id: &str,
     pseudonym_key: &str,
     display_name: &str,
-) -> Result<(), String> {
+) -> Result<u32, String> {
     let rc = state_helpers::routing_context(state).ok_or("not attached")?;
     let mgr = rekindle_protocol::dht::DHTManager::new(rc);
 
@@ -1142,9 +1270,9 @@ async fn add_member_to_registry(
         .await
         .map_err(|e| format!("read member index: {e}"))?;
 
-    // Don't add duplicates
-    if members.iter().any(|m| m.pseudonym_key == pseudonym_key) {
-        return Ok(());
+    // Don't add duplicates — return existing subkey_index
+    if let Some(existing) = members.iter().find(|m| m.pseudonym_key == pseudonym_key) {
+        return Ok(existing.subkey_index);
     }
 
     let now = rekindle_utils::timestamp_secs();
@@ -1167,10 +1295,11 @@ async fn add_member_to_registry(
     tracing::debug!(
         community = %community_id,
         pseudonym = %pseudonym_key,
+        subkey_index = next_subkey,
         "added member to registry"
     );
 
-    Ok(())
+    Ok(next_subkey)
 }
 
 /// Send a JoinAccepted envelope to a newly joined member with community data.
@@ -1257,6 +1386,7 @@ async fn send_join_accepted(
             .iter()
             .filter_map(|m| serde_json::to_value(m).ok())
             .collect(),
+        member_registry_key: registry_key,
     };
 
     // JoinAccepted is critical — the joiner cannot participate without MEK.

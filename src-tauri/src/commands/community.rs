@@ -182,13 +182,29 @@ pub async fn create_community(
     let community_id =
         services::community_service::create_community(state.inner(), &name).await?;
 
-    // Persist MEK to Stronghold for login restoration
+    // Persist MEK, slot keypair, and slot seed to Stronghold for login restoration
     {
-        let mek_cache = state.mek_cache.lock();
-        if let Some(mek) = mek_cache.get(&community_id) {
-            let ks = keystore_handle.lock();
-            if let Some(ref keystore) = *ks {
+        let ks = keystore_handle.lock();
+        if let Some(ref keystore) = *ks {
+            // MEK
+            let mek_cache = state.mek_cache.lock();
+            if let Some(mek) = mek_cache.get(&community_id) {
                 crate::keystore::persist_mek(keystore, &community_id, mek);
+            }
+            drop(mek_cache);
+
+            // Slot keypair + seed (needed for writing DHT presence)
+            let communities = state.communities.read();
+            if let Some(c) = communities.get(&community_id) {
+                if let Some(ref kp) = c.slot_keypair {
+                    crate::keystore::persist_slot_keypair(keystore, &community_id, kp);
+                }
+                if let Some(ref seed) = c.slot_seed {
+                    crate::keystore::persist_slot_seed(keystore, &community_id, seed);
+                }
+                if let Some(ref mkp) = c.manifest_owner_keypair {
+                    crate::keystore::persist_manifest_keypair(keystore, &community_id, mkp);
+                }
             }
         }
     }
@@ -231,8 +247,8 @@ pub async fn create_community(
         // Owner gets all default role IDs: @everyone(0), members(1), moderator(2), admin(3), owner(4)
         let owner_role_ids = serde_json::to_string(&[0u32, 1, 2, 3, 4]).unwrap_or_default();
         conn.execute(
-            "INSERT INTO communities (owner_key, id, name, my_role, my_role_ids, joined_at, dht_record_key, dht_owner_keypair, my_pseudonym_key, mek_generation, manifest_key, member_registry_key) \
-             VALUES (?, ?, ?, 'owner', ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO communities (owner_key, id, name, my_role, my_role_ids, joined_at, dht_record_key, dht_owner_keypair, my_pseudonym_key, mek_generation, manifest_key, member_registry_key, my_subkey_index) \
+             VALUES (?, ?, ?, 'owner', ?, ?, ?, ?, ?, ?, ?, ?, 0)",
             rusqlite::params![ok, community_id_clone, name_clone, owner_role_ids, now, dht_record_key, dht_owner_keypair, pseudonym_key, mek_gen, manifest_key_db, member_registry_key_db],
         )?;
 
@@ -812,10 +828,12 @@ pub async fn edit_channel_message(
             .map_err(|e| format!("MEK encryption failed: {e}"))?
     };
 
-    send_to_coordinator(
+    // Edit messages propagate via gossip mesh (no coordinator needed).
+    // Receivers validate that the sender is the original author locally.
+    send_to_mesh(
         state.inner(),
         &community_id,
-        rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
+        &rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
             rekindle_protocol::dht::community::envelope::ControlPayload::EditMessage {
                 channel_id,
                 message_id,
@@ -824,13 +842,12 @@ pub async fn edit_channel_message(
             },
         ),
     )
-    .await
 }
 
 /// Delete a channel message.
 ///
-/// Sends a `DeleteMessage` RPC to the community server. The server checks
-/// that the sender owns the message or has `MANAGE_MESSAGES` permission.
+/// Sends via gossip mesh. Receivers check that the sender owns the message
+/// or has `MANAGE_MESSAGES` permission locally.
 #[tauri::command]
 pub async fn delete_channel_message(
     channel_id: String,
@@ -838,7 +855,7 @@ pub async fn delete_channel_message(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let _ = pool; // no longer needed for coordinator path
+    let _ = pool;
     let community_id = {
         let communities = state.communities.read();
         communities
@@ -848,20 +865,22 @@ pub async fn delete_channel_message(
             .ok_or("channel not found in any community")?
     };
 
-    send_to_coordinator(
+    send_to_mesh(
         state.inner(),
         &community_id,
-        rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
+        &rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
             rekindle_protocol::dht::community::envelope::ControlPayload::DeleteMessage {
                 channel_id,
                 message_id,
             },
         ),
     )
-    .await
 }
 
 /// Add a reaction to a community channel message.
+///
+/// Sent via gossip mesh — reactions are lightweight user actions that
+/// don't require coordinator validation.
 #[tauri::command]
 pub async fn add_reaction(
     state: State<'_, SharedState>,
@@ -871,11 +890,11 @@ pub async fn add_reaction(
     message_id: String,
     emoji: String,
 ) -> Result<(), String> {
-    let _ = pool; // no longer needed for coordinator path
-    send_to_coordinator(
+    let _ = pool;
+    send_to_mesh(
         state.inner(),
         &community_id,
-        rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
+        &rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
             rekindle_protocol::dht::community::envelope::ControlPayload::AddReaction {
                 channel_id,
                 message_id,
@@ -883,7 +902,6 @@ pub async fn add_reaction(
             },
         ),
     )
-    .await
 }
 
 /// Remove a reaction from a community channel message.
@@ -896,11 +914,11 @@ pub async fn remove_reaction(
     message_id: String,
     emoji: String,
 ) -> Result<(), String> {
-    let _ = pool; // no longer needed for coordinator path
-    send_to_coordinator(
+    let _ = pool;
+    send_to_mesh(
         state.inner(),
         &community_id,
-        rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
+        &rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
             rekindle_protocol::dht::community::envelope::ControlPayload::RemoveReaction {
                 channel_id,
                 message_id,
@@ -908,7 +926,6 @@ pub async fn remove_reaction(
             },
         ),
     )
-    .await
 }
 
 /// Pin a message in a community channel.
@@ -1266,17 +1283,17 @@ pub async fn send_thread_message(
         (ct, mek.generation())
     };
 
-    send_to_coordinator(
+    // Thread messages are chat messages — send via gossip mesh, not coordinator.
+    send_to_mesh(
         state.inner(),
         &community_id,
-        CommunityEnvelope::Control(ControlPayload::SendThreadMessage {
+        &CommunityEnvelope::Control(ControlPayload::SendThreadMessage {
             thread_id,
             ciphertext,
             mek_generation,
             reply_to_id: None,
         }),
     )
-    .await
 }
 
 /// Get thread message history (decrypted with MEK).

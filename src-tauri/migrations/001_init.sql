@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS communities (
     mek_generation INTEGER NOT NULL DEFAULT 0,
     manifest_key TEXT,
     member_registry_key TEXT,
+    my_subkey_index INTEGER,
     coordinator_pseudonym TEXT,
     coordinator_route_blob BLOB,
     coordinator_epoch INTEGER NOT NULL DEFAULT 0,

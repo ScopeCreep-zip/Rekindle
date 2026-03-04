@@ -613,6 +613,7 @@ async fn handle_relayed_control(
             role_ids,
             roles,
             members,
+            member_registry_key,
         } => {
             handle_join_accepted(
                 app_handle,
@@ -625,6 +626,7 @@ async fn handle_relayed_control(
                 &role_ids,
                 &roles,
                 &members,
+                member_registry_key.as_deref(),
             )
             .await;
         }
@@ -1143,11 +1145,12 @@ fn handle_slot_keypair_grant(
     };
     let slot_kp_str = String::from_utf8_lossy(&slot_kp_bytes).to_string();
 
-    // Persist to CommunityState
+    // Persist to CommunityState (keypair + subkey index)
     {
         let mut communities = state.communities.write();
         if let Some(c) = communities.get_mut(community_id) {
             c.slot_keypair = Some(slot_kp_str.clone());
+            c.my_subkey_index = Some(slot_index);
         }
     }
 
@@ -1156,6 +1159,21 @@ fn handle_slot_keypair_grant(
     let ks = ks_handle.lock();
     if let Some(ref keystore) = *ks {
         crate::keystore::persist_slot_keypair(keystore, community_id, &slot_kp_str);
+    }
+
+    // Persist subkey_index to SQLite
+    {
+        let pool: tauri::State<'_, crate::db::DbPool> = app_handle.state();
+        let cid = community_id.to_string();
+        let owner_key = crate::state_helpers::current_owner_key(state).unwrap_or_default();
+        let idx = i64::from(slot_index);
+        crate::db_helpers::db_fire(pool.inner(), "persist my_subkey_index", move |conn| {
+            conn.execute(
+                "UPDATE communities SET my_subkey_index = ?1 WHERE owner_key = ?2 AND id = ?3",
+                rusqlite::params![idx, owner_key, cid],
+            )?;
+            Ok(())
+        });
     }
 
     tracing::info!(
@@ -1280,8 +1298,8 @@ fn handle_sync_response(
 
 /// Handle a JoinAccepted response from the coordinator.
 ///
-/// Updates local community state with fresh MEK, roles, channels, and members.
-/// Persists member list to SQLite so `get_community_members` returns all members.
+/// Updates local community state with fresh MEK, roles, channels, members,
+/// and member_registry_key. Persists to SQLite so state survives restarts.
 async fn handle_join_accepted(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
@@ -1293,6 +1311,7 @@ async fn handle_join_accepted(
     role_ids: &[u32],
     roles: &[serde_json::Value],
     members: &[serde_json::Value],
+    member_registry_key: Option<&str>,
 ) {
     use crate::channels::CommunityEvent;
     use rekindle_crypto::group::media_key::MediaEncryptionKey;
@@ -1369,7 +1388,28 @@ async fn handle_join_accepted(
                     cs.channels = updated_channels;
                 }
             }
+
+            // Set member_registry_key from coordinator
+            if let Some(rk) = member_registry_key {
+                cs.member_registry_key = Some(rk.to_string());
+            }
         }
+    }
+
+    // 4b. Persist member_registry_key to SQLite so it survives restarts
+    if let Some(rk) = member_registry_key {
+        let pool: tauri::State<'_, DbPool> = app_handle.state();
+        let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
+        let cid = community_id.to_string();
+        let rk_str = rk.to_string();
+        let _ = crate::db_helpers::db_call(pool.inner(), move |conn| {
+            conn.execute(
+                "UPDATE communities SET member_registry_key = ?1 WHERE owner_key = ?2 AND id = ?3",
+                rusqlite::params![rk_str, owner_key, cid],
+            )?;
+            Ok(())
+        })
+        .await;
     }
 
     // 5. Persist members to SQLite so get_community_members returns all members.

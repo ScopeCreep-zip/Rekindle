@@ -42,10 +42,19 @@ pub async fn create_community(
     let my_pseudonym_key = derive_pseudonym_key(state, &manifest_key)
         .unwrap_or_default();
 
-    // 2. Create member registry (DFLT initially, grows to SMPL when members join)
-    let (registry_key, _registry_keypair) = member_registry::create_member_registry(&mgr)
+    // 2. Generate slot seed and create pre-allocated SMPL member registry (256 slots).
+    //    This allows any member to write their own presence to their assigned slot.
+    let slot_seed = rand_bytes(32);
+    let slot_seed_array: [u8; 32] = slot_seed.clone().try_into()
+        .map_err(|_| "failed to generate 32-byte slot seed")?;
+    let (registry_key, _registry_keypair) = member_registry::create_registry_segment(&mgr, &slot_seed_array)
         .await
-        .map_err(|e| format!("failed to create member registry: {e}"))?;
+        .map_err(|e| format!("failed to create pre-allocated member registry: {e}"))?;
+
+    // Derive creator's slot keypair (slot 0) for writing presence
+    let creator_slot_keypair = member_registry::derive_slot_veilid_keypair(&slot_seed_array, 0)
+        .map_err(|e| format!("failed to derive creator slot keypair: {e}"))?;
+    let creator_slot_keypair_str = creator_slot_keypair.to_string();
 
     // 3. Write initial roles to manifest
     let roles = default_roles_for_manifest();
@@ -99,6 +108,12 @@ pub async fn create_community(
         tracing::warn!(error = %e, "failed to write owner to member registry");
     }
 
+    // 6b. Write registry spine to manifest subkey 12 so joiners can discover the registry key
+    let spine = member_registry::single_segment_spine(&registry_key, Vec::new(), 1);
+    if let Err(e) = member_registry::write_registry_spine(&mgr, &manifest_key, &spine).await {
+        tracing::warn!(error = %e, "failed to write registry spine to manifest");
+    }
+
     // 7. Generate MEK
     let mek = MediaEncryptionKey::generate(1);
     let mek_generation = mek.generation();
@@ -118,7 +133,7 @@ pub async fn create_community(
         message_record_key: None,
         mek_generation: 0,
     };
-    let dht_owner_keypair = manifest_keypair.map(|kp| kp.to_string());
+    let dht_owner_keypair = manifest_keypair.as_ref().map(std::string::ToString::to_string);
 
     let community = CommunityState {
         id: manifest_key.clone(),
@@ -140,10 +155,10 @@ pub async fn create_community(
         coordinator_route_blob: Some(our_route_blob),
         coordinator_epoch: 1,
         gossip: Some(GossipOverlay::default()),
-        slot_keypair: None,
-        manifest_owner_keypair: None,
+        slot_keypair: Some(creator_slot_keypair_str.clone()),
+        manifest_owner_keypair: manifest_keypair.as_ref().map(std::string::ToString::to_string),
         channel_log_keys: std::collections::HashMap::new(),
-        slot_seed: None,
+        slot_seed: Some(hex::encode(&slot_seed)),
         presence_poll_shutdown_tx: None,
     };
 
@@ -271,6 +286,24 @@ pub async fn join_community(
         roles_to_definitions(&role_entries)
     };
 
+    // 3b. Read registry spine from manifest subkey 12 to discover the member_registry_key.
+    //     This is the primary discovery path — JoinAccepted also carries it as a backup.
+    let registry_key_from_spine = match member_registry::read_registry_spine(&mgr, community_id).await {
+        Ok(Some(spine)) if !spine.segments.is_empty() => {
+            let key = spine.segments[0].record_key.clone();
+            tracing::info!(community = %community_id, registry_key = %key, "discovered registry key from manifest spine");
+            Some(key)
+        }
+        Ok(_) => {
+            tracing::debug!(community = %community_id, "no registry spine in manifest — will get from JoinAccepted");
+            None
+        }
+        Err(e) => {
+            tracing::debug!(community = %community_id, error = %e, "failed to read registry spine");
+            None
+        }
+    };
+
     // 4. Build CommunityState with data from manifest
     let community = CommunityState {
         id: community_id.to_string(),
@@ -286,7 +319,7 @@ pub async fn join_community(
         my_pseudonym_key: my_pseudonym_key.clone(),
         mek_generation: 0, // Updated on JoinAccepted (MEK delivery)
         manifest_key: Some(community_id.to_string()),
-        member_registry_key: None, // Populated when coordinator responds
+        member_registry_key: registry_key_from_spine, // From spine, or JoinAccepted updates it
         my_subkey_index: None,
         coordinator_pseudonym: Some(coordinator.pseudonym_key.clone()),
         coordinator_route_blob: Some(coordinator.route_blob),
@@ -500,8 +533,18 @@ pub fn start_presence_poll(state: Arc<AppState>, community_id: String) {
         }
     }
     tokio::spawn(async move {
+        // Run an immediate first tick so gossip overlay is populated right away
+        // (don't wait 60s — members need to discover peers immediately)
+        if let Err(e) = presence_poll_tick(&state, &community_id).await {
+            tracing::debug!(
+                community = %community_id,
+                error = %e,
+                "initial presence poll tick failed"
+            );
+        }
+
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
-        interval.tick().await; // skip immediate first tick
+        interval.tick().await; // consume immediate tick (already ran above)
         loop {
             tokio::select! {
                 _ = interval.tick() => {
@@ -540,15 +583,60 @@ async fn presence_poll_tick(state: &Arc<AppState>, community_id: &str) -> Result
         return Ok(());
     }
 
-    let my_pseudonym = {
+    // Gather our state (clone out before .await)
+    let (my_pseudonym, my_subkey_index, slot_keypair_str, is_coordinator) = {
         let communities = state.communities.read();
-        communities
-            .get(community_id)
-            .and_then(|c| c.my_pseudonym_key.clone())
-            .unwrap_or_default()
+        let c = communities.get(community_id).ok_or("community not found")?;
+        (
+            c.my_pseudonym_key.clone().unwrap_or_default(),
+            c.my_subkey_index,
+            c.slot_keypair.clone(),
+            c.coordinator_pseudonym.as_ref() == c.my_pseudonym_key.as_ref()
+                && c.my_pseudonym_key.is_some(),
+        )
     };
 
-    // Read all member entries
+    // 1. WRITE our signed presence to the registry (so others can discover our route)
+    if let (Some(subkey_idx), Some(ref kp_str)) = (my_subkey_index, &slot_keypair_str) {
+        let our_route_blob = state_helpers::our_route_blob(state);
+        let presence = rekindle_protocol::dht::community::types::MemberPresence {
+            pseudonym_key: my_pseudonym.clone(),
+            status: "online".to_string(),
+            status_message: None,
+            game_info: None,
+            route_blob: our_route_blob,
+            last_heartbeat: rekindle_utils::timestamp_secs(),
+            is_coordinator,
+            coordinator_since: 0,
+            is_archiver: false,
+        };
+        // Parse the Veilid KeyPair from its string representation
+        if let Ok(writer_kp) = kp_str.parse::<veilid_core::KeyPair>() {
+            if let Err(e) = member_registry::write_member_presence(
+                &mgr, &registry_key, subkey_idx, &presence, writer_kp,
+            ).await {
+                tracing::debug!(
+                    community = %community_id,
+                    subkey = subkey_idx,
+                    error = %e,
+                    "failed to write our presence to DHT registry"
+                );
+            } else {
+                tracing::trace!(
+                    community = %community_id,
+                    subkey = subkey_idx,
+                    "wrote presence to DHT registry"
+                );
+            }
+        } else {
+            tracing::warn!(
+                community = %community_id,
+                "failed to parse slot keypair — cannot write presence"
+            );
+        }
+    }
+
+    // 2. Read all member entries
     let members = member_registry::read_member_index(&mgr, &registry_key)
         .await
         .map_err(|e| format!("read member index: {e}"))?;
