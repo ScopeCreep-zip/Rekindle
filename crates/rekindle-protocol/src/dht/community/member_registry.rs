@@ -18,8 +18,12 @@ use super::types::{
     REGISTRY_MEMBER_SUBKEY_COUNT, REGISTRY_OWNER_SUBKEY_COUNT,
 };
 
-/// Maximum member slots per registry segment (SMPL record limit).
-pub const SLOTS_PER_SEGMENT: u32 = 256;
+/// Maximum member slots per registry segment.
+///
+/// Veilid's `DHTSchemaSMPL` has `MAX_MEMBER_COUNT = 256` and `MAX_WRITER_COUNT = 256`.
+/// Since the owner counts as 1 writer, we can have at most 255 member writers
+/// (1 owner + 255 members = 256 total writers).
+pub const SLOTS_PER_SEGMENT: u32 = 255;
 
 /// Create a new member registry SMPL record.
 ///
