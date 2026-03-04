@@ -343,6 +343,55 @@ pub fn delete_slot_keypair(keystore: &StrongholdKeystore, community_id: &str) {
     }
 }
 
+/// Persist the registry owner keypair for a community to the open Stronghold keystore.
+pub fn persist_registry_keypair(
+    keystore: &StrongholdKeystore,
+    community_id: &str,
+    keypair_str: &str,
+) {
+    use rekindle_crypto::keychain::VAULT_COMMUNITIES;
+    use rekindle_crypto::Keychain as _;
+
+    let key_name = format!("registry_keypair_{community_id}");
+    if let Err(e) = keystore.store_key(VAULT_COMMUNITIES, &key_name, keypair_str.as_bytes()) {
+        tracing::warn!(error = %e, community = %community_id, "failed to persist registry keypair");
+    } else if let Err(e) = keystore.save() {
+        tracing::warn!(error = %e, community = %community_id, "failed to save snapshot after registry keypair persist");
+    }
+}
+
+/// Load the registry owner keypair for a community from the open Stronghold keystore.
+pub fn load_registry_keypair(
+    keystore: &StrongholdKeystore,
+    community_id: &str,
+) -> Option<String> {
+    use rekindle_crypto::keychain::VAULT_COMMUNITIES;
+    use rekindle_crypto::Keychain as _;
+
+    let key_name = format!("registry_keypair_{community_id}");
+    match keystore.load_key(VAULT_COMMUNITIES, &key_name) {
+        Ok(Some(bytes)) => String::from_utf8(bytes).ok(),
+        Ok(None) => None,
+        Err(e) => {
+            tracing::trace!(error = %e, community = %community_id, "no registry keypair in keystore");
+            None
+        }
+    }
+}
+
+/// Delete the registry owner keypair for a community from the open Stronghold keystore.
+pub fn delete_registry_keypair(keystore: &StrongholdKeystore, community_id: &str) {
+    use rekindle_crypto::keychain::VAULT_COMMUNITIES;
+    use rekindle_crypto::Keychain as _;
+
+    let key_name = format!("registry_keypair_{community_id}");
+    if let Err(e) = keystore.delete_key(VAULT_COMMUNITIES, &key_name) {
+        tracing::warn!(error = %e, community = %community_id, "failed to delete registry keypair");
+    } else if let Err(e) = keystore.save() {
+        tracing::warn!(error = %e, community = %community_id, "failed to save snapshot after registry keypair delete");
+    }
+}
+
 /// Persist the slot seed (hex-encoded 32 bytes) for a community to the open Stronghold keystore.
 pub fn persist_slot_seed(keystore: &StrongholdKeystore, community_id: &str, seed_hex: &str) {
     use rekindle_crypto::keychain::VAULT_COMMUNITIES;
@@ -383,6 +432,57 @@ pub fn delete_slot_seed(keystore: &StrongholdKeystore, community_id: &str) {
     } else if let Err(e) = keystore.save() {
         tracing::warn!(error = %e, community = %community_id, "failed to save snapshot after slot seed delete");
     }
+}
+
+/// Persist a channel DHTLog owner keypair to the open Stronghold keystore.
+///
+/// The log keypair lets all community members append to the channel's DHTLog
+/// for persistent message history.
+pub fn persist_channel_log_keypair(
+    keystore: &StrongholdKeystore,
+    community_id: &str,
+    channel_id: &str,
+    keypair_str: &str,
+) {
+    use rekindle_crypto::keychain::VAULT_COMMUNITIES;
+    use rekindle_crypto::Keychain as _;
+
+    let key_name = format!("channel_log_kp_{community_id}_{channel_id}");
+    if let Err(e) = keystore.store_key(VAULT_COMMUNITIES, &key_name, keypair_str.as_bytes()) {
+        tracing::warn!(error = %e, "failed to persist channel log keypair");
+    } else {
+        let _ = keystore.save();
+    }
+}
+
+/// Load a channel DHTLog owner keypair from the open Stronghold keystore.
+pub fn load_channel_log_keypair(
+    keystore: &StrongholdKeystore,
+    community_id: &str,
+    channel_id: &str,
+) -> Option<String> {
+    use rekindle_crypto::keychain::VAULT_COMMUNITIES;
+    use rekindle_crypto::Keychain as _;
+
+    let key_name = format!("channel_log_kp_{community_id}_{channel_id}");
+    match keystore.load_key(VAULT_COMMUNITIES, &key_name) {
+        Ok(Some(bytes)) => String::from_utf8(bytes).ok(),
+        _ => None,
+    }
+}
+
+/// Delete a channel DHTLog owner keypair from the open Stronghold keystore.
+pub fn delete_channel_log_keypair(
+    keystore: &StrongholdKeystore,
+    community_id: &str,
+    channel_id: &str,
+) {
+    use rekindle_crypto::keychain::VAULT_COMMUNITIES;
+    use rekindle_crypto::Keychain as _;
+
+    let key_name = format!("channel_log_kp_{community_id}_{channel_id}");
+    let _ = keystore.delete_key(VAULT_COMMUNITIES, &key_name);
+    let _ = keystore.save();
 }
 
 /// Persist a per-channel MEK to the open Stronghold keystore.

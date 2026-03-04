@@ -391,19 +391,45 @@ async fn handle_relayed_envelope(
         CommunityEnvelope::PresenceUpdate {
             pseudonym_key,
             status,
-            ..
+            game_info,
+            route_blob,
         } => {
             use crate::channels::CommunityEvent;
+
+            // Update route_blob in gossip overlay so we can reach this member
+            if let Some(ref blob) = route_blob {
+                let mut communities = state.communities.write();
+                if let Some(cs) = communities.get_mut(&community_id) {
+                    if let Some(ref mut gossip) = cs.gossip {
+                        gossip
+                            .online_members
+                            .insert(pseudonym_key.clone(), blob.clone());
+                    }
+                }
+            }
+
+            let (game_name, game_id, elapsed_seconds, server_address) =
+                if let Some(gi) = game_info {
+                    (
+                        Some(gi.game_name),
+                        gi.game_id,
+                        gi.elapsed_seconds,
+                        gi.server_address,
+                    )
+                } else {
+                    (None, None, None, None)
+                };
+
             let _ = app_handle.emit(
                 "community-event",
                 CommunityEvent::MemberPresenceChanged {
                     community_id,
                     pseudonym_key,
                     status,
-                    game_name: None,
-                    game_id: None,
-                    elapsed_seconds: None,
-                    server_address: None,
+                    game_name,
+                    game_id,
+                    elapsed_seconds,
+                    server_address,
                 },
             );
         }
@@ -445,6 +471,14 @@ async fn handle_relayed_control(
             display_name,
             role_ids,
         } => {
+            // Add to known_members cache
+            {
+                let mut communities = state.communities.write();
+                if let Some(cs) = communities.get_mut(community_id) {
+                    cs.known_members.insert(pseudonym_key.clone());
+                }
+            }
+
             // Persist to SQLite so get_community_members includes the new member
             let pool: tauri::State<'_, DbPool> = app_handle.state();
             let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
@@ -475,19 +509,32 @@ async fn handle_relayed_control(
                 },
             );
         }
-        ControlPayload::MemberRemoved { pseudonym_key } => {
-            // Remove from SQLite
+        ControlPayload::MemberRemoved { pseudonym_key }
+        | ControlPayload::MemberLeave { pseudonym_key } => {
+            // Remove from SQLite (covers both kick/ban removal and voluntary leave)
             let pool: tauri::State<'_, DbPool> = app_handle.state();
             let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
             let cid = community_id.to_string();
             let pk = pseudonym_key.clone();
-            crate::db_helpers::db_fire(pool.inner(), "persist MemberRemoved", move |conn| {
+            crate::db_helpers::db_fire(pool.inner(), "persist MemberRemoved/Leave", move |conn| {
                 conn.execute(
                     "DELETE FROM community_members WHERE owner_key = ? AND community_id = ? AND pseudonym_key = ?",
                     rusqlite::params![owner_key, cid, pk],
                 )?;
                 Ok(())
             });
+
+            // Remove from gossip overlay's online members + known_members cache
+            {
+                let mut communities = state.communities.write();
+                if let Some(cs) = communities.get_mut(community_id) {
+                    cs.known_members.remove(&pseudonym_key);
+                    if let Some(ref mut gossip) = cs.gossip {
+                        gossip.online_members.remove(&pseudonym_key);
+                        gossip.peers.remove(&pseudonym_key);
+                    }
+                }
+            }
 
             let _ = app_handle.emit(
                 "community-event",
@@ -1471,6 +1518,16 @@ async fn handle_join_accepted(
         }
     }
 
+    // 5b. Populate known_members cache from the received member list
+    if !parsed_members.is_empty() {
+        let mut communities = state.communities.write();
+        if let Some(cs) = communities.get_mut(community_id) {
+            for m in &parsed_members {
+                cs.known_members.insert(m.pseudonym_key.clone());
+            }
+        }
+    }
+
     // 6. Persist MEK to Stronghold so it survives app restarts.
     //    The persist_mek call in join_community_command runs BEFORE JoinAccepted
     //    arrives (join is async fire-and-forget), so it finds nothing in mek_cache.
@@ -1530,10 +1587,22 @@ async fn handle_broadcast_new_message(
     msg: &BroadcastNewMessage,
 ) {
     // Skip messages we sent ourselves (already echoed locally in send_channel_message)
+    // Also reject messages from non-members (spoofed sender pseudonym)
     {
         let communities = state.communities.read();
         if let Some(community) = communities.get(&msg.community_id) {
             if community.my_pseudonym_key.as_deref() == Some(&msg.sender_pseudonym) {
+                return;
+            }
+            // Membership check: reject messages from unknown pseudonyms
+            if !community.known_members.is_empty()
+                && !community.known_members.contains(&msg.sender_pseudonym)
+            {
+                tracing::warn!(
+                    community = %msg.community_id,
+                    sender = %msg.sender_pseudonym,
+                    "rejecting ChatMessage from non-member"
+                );
                 return;
             }
         }

@@ -10,6 +10,32 @@ use crate::services;
 use crate::state::{ChannelType, SharedState};
 use crate::state_helpers;
 use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
+use rekindle_protocol::dht::community::permissions_v2::Permissions;
+
+/// Check that the current user has the given permission for a community.
+/// Returns `Ok(())` if the permission is granted, or `Err(...)` with a descriptive message.
+/// ADMINISTRATOR always implies all permissions.
+fn require_permission(
+    state: &SharedState,
+    community_id: &str,
+    required: Permissions,
+) -> Result<(), String> {
+    let communities = state.communities.read();
+    let community = communities
+        .get(community_id)
+        .ok_or("community not found")?;
+    let my_perms_bits = community
+        .my_role_ids
+        .iter()
+        .filter_map(|rid| community.roles.iter().find(|r| r.id == *rid))
+        .fold(0u64, |acc, r| acc | r.permissions);
+    let perms = Permissions::from_bits_truncate(my_perms_bits);
+    if perms.contains(Permissions::ADMINISTRATOR) || perms.contains(required) {
+        Ok(())
+    } else {
+        Err(format!("missing permission: {required:?}"))
+    }
+}
 
 /// A community member for the frontend.
 #[derive(Debug, Serialize)]
@@ -205,6 +231,9 @@ pub async fn create_community(
                 if let Some(ref mkp) = c.manifest_owner_keypair {
                     crate::keystore::persist_manifest_keypair(keystore, &community_id, mkp);
                 }
+                if let Some(ref rkp) = c.registry_owner_keypair {
+                    crate::keystore::persist_registry_keypair(keystore, &community_id, rkp);
+                }
             }
         }
     }
@@ -392,19 +421,20 @@ pub async fn create_channel(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<String, String> {
+    require_permission(state.inner(), &community_id, Permissions::MANAGE_CHANNELS)?;
     let owner_key = state_helpers::current_owner_key(state.inner())?;
 
     // Generate channel ID locally for optimistic state update
     let channel_id = format!("ch_{}", hex::encode(&rand_nonce()[..8]));
 
-    send_to_coordinator(
+    execute_state_op(
         state.inner(),
         &community_id,
-        CommunityEnvelope::Control(ControlPayload::CreateChannel {
+        ControlPayload::CreateChannel {
             name: name.clone(),
             channel_type: channel_type.clone(),
             category_id: category_id.clone(),
-        }),
+        },
     )
     .await?;
 
@@ -447,14 +477,15 @@ pub async fn create_category(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<String, String> {
+    require_permission(state.inner(), &community_id, Permissions::MANAGE_CHANNELS)?;
     let _ = pool;
     // Generate category ID locally for optimistic state update
     let category_id = format!("cat_{}", hex::encode(&rand_nonce()[..8]));
 
-    send_to_coordinator(
+    execute_state_op(
         state.inner(),
         &community_id,
-        CommunityEnvelope::Control(ControlPayload::CreateCategory { name: name.clone() }),
+        ControlPayload::CreateCategory { name: name.clone() },
     )
     .await?;
 
@@ -479,13 +510,14 @@ pub async fn delete_category(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
+    require_permission(state.inner(), &community_id, Permissions::MANAGE_CHANNELS)?;
     let _ = pool;
-    send_to_coordinator(
+    execute_state_op(
         state.inner(),
         &community_id,
-        CommunityEnvelope::Control(ControlPayload::DeleteCategory {
+        ControlPayload::DeleteCategory {
             category_id: category_id.clone(),
-        }),
+        },
     )
     .await?;
 
@@ -511,14 +543,15 @@ pub async fn rename_category(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
+    require_permission(state.inner(), &community_id, Permissions::MANAGE_CHANNELS)?;
     let _ = pool;
-    send_to_coordinator(
+    execute_state_op(
         state.inner(),
         &community_id,
-        CommunityEnvelope::Control(ControlPayload::RenameCategory {
+        ControlPayload::RenameCategory {
             category_id: category_id.clone(),
             new_name: new_name.clone(),
-        }),
+        },
     )
     .await?;
 
@@ -541,14 +574,15 @@ pub async fn move_channel(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
+    require_permission(state.inner(), &community_id, Permissions::MANAGE_CHANNELS)?;
     let _ = pool;
-    send_to_coordinator(
+    execute_state_op(
         state.inner(),
         &community_id,
-        CommunityEnvelope::Control(ControlPayload::MoveChannel {
+        ControlPayload::MoveChannel {
             channel_id: channel_id.clone(),
             category_id: category_id.clone(),
-        }),
+        },
     )
     .await?;
 
@@ -570,13 +604,14 @@ pub async fn reorder_categories(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
+    require_permission(state.inner(), &community_id, Permissions::MANAGE_CHANNELS)?;
     let _ = pool;
-    send_to_coordinator(
+    execute_state_op(
         state.inner(),
         &community_id,
-        CommunityEnvelope::Control(ControlPayload::ReorderCategories {
+        ControlPayload::ReorderCategories {
             category_ids: category_ids.clone(),
-        }),
+        },
     )
     .await?;
 
@@ -611,6 +646,7 @@ pub async fn create_community_invite(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<InviteCreatedDto, String> {
+    require_permission(state.inner(), &community_id, Permissions::CREATE_INSTANT_INVITE)?;
     let _ = pool;
     // Generate the invite code locally so we can return it immediately
     let code = hex::encode(&rand_nonce()[..4]);
@@ -639,6 +675,7 @@ pub async fn revoke_community_invite(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
+    require_permission(state.inner(), &community_id, Permissions::MANAGE_COMMUNITY)?;
     let _ = pool;
     send_to_coordinator(
         state.inner(),
@@ -693,6 +730,7 @@ pub async fn send_channel_message(
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
+    keystore_handle: State<'_, KeystoreHandle>,
 ) -> Result<String, String> {
     let owner_key = state_helpers::current_owner_key(state.inner())?;
 
@@ -762,6 +800,54 @@ pub async fn send_channel_message(
         lamport_ts,
     };
     let delivery_result = send_to_mesh(state.inner(), &community_id, &chat_envelope);
+
+    // Layer 2: Append to channel DHTLog (sender-writes-only, non-blocking)
+    {
+        let log_key = {
+            let communities = state.communities.read();
+            communities.get(&community_id)
+                .and_then(|cs| cs.channel_log_keys.get(&channel_id).cloned())
+        };
+        if let Some(log_key) = log_key {
+            let ks_handle = keystore_handle.inner().clone();
+            let comm_id = community_id.clone();
+            let ch_id = channel_id.clone();
+            let sender_key_for_log = sender_key.clone();
+            let ciphertext_for_log = ciphertext.clone();
+            let msg_id = if let CommunityEnvelope::ChatMessage { ref message_id, .. } = chat_envelope {
+                Some(message_id.clone())
+            } else {
+                None
+            };
+            if let Some(rc) = state_helpers::routing_context(state.inner()) {
+                tokio::spawn(async move {
+                    let writer_kp_str = {
+                        let ks = ks_handle.lock();
+                        ks.as_ref().and_then(|k| crate::keystore::load_channel_log_keypair(k, &comm_id, &ch_id))
+                    };
+                    if let Some(kp_str) = writer_kp_str {
+                        if let Ok(kp) = kp_str.parse::<veilid_core::KeyPair>() {
+                            let channel_msg = rekindle_protocol::dht::community::channel_record::ChannelMessage {
+                                sequence: 0,
+                                sender_pseudonym: sender_key_for_log,
+                                ciphertext: ciphertext_for_log,
+                                mek_generation,
+                                timestamp: timestamp.cast_unsigned(),
+                                reply_to: None,
+                                lamport_ts,
+                                message_id: msg_id,
+                            };
+                            if let Err(e) = rekindle_protocol::dht::community::channel_record::append_channel_message(
+                                &rc, &log_key, kp, &channel_msg,
+                            ).await {
+                                tracing::debug!(error = %e, "DHTLog append failed (non-fatal)");
+                            }
+                        }
+                    }
+                });
+            }
+        }
+    }
 
     let delivery_status = if let Err(e) = delivery_result {
         tracing::warn!(error = %e, "server delivery failed — queuing for retry");
@@ -952,18 +1038,23 @@ pub async fn pin_message(
     channel_id: String,
     message_id: String,
 ) -> Result<(), String> {
+    require_permission(state.inner(), &community_id, Permissions::MANAGE_MESSAGES)?;
     let _ = pool;
-    send_to_coordinator(
+    let pinned_by = {
+        let communities = state.communities.read();
+        communities.get(&community_id)
+            .and_then(|c| c.my_pseudonym_key.clone())
+            .unwrap_or_default()
+    };
+    send_to_mesh(
         state.inner(),
         &community_id,
-        rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
-            rekindle_protocol::dht::community::envelope::ControlPayload::PinMessage {
-                channel_id,
-                message_id,
-            },
-        ),
+        &CommunityEnvelope::Control(ControlPayload::MessagePinned {
+            channel_id,
+            message_id,
+            pinned_by,
+        }),
     )
-    .await
 }
 
 /// Unpin a message from a community channel.
@@ -975,18 +1066,16 @@ pub async fn unpin_message(
     channel_id: String,
     message_id: String,
 ) -> Result<(), String> {
+    require_permission(state.inner(), &community_id, Permissions::MANAGE_MESSAGES)?;
     let _ = pool;
-    send_to_coordinator(
+    send_to_mesh(
         state.inner(),
         &community_id,
-        rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
-            rekindle_protocol::dht::community::envelope::ControlPayload::UnpinMessage {
-                channel_id,
-                message_id,
-            },
-        ),
+        &CommunityEnvelope::Control(ControlPayload::MessageUnpinned {
+            channel_id,
+            message_id,
+        }),
     )
-    .await
 }
 
 /// Get pinned messages for a community channel.
@@ -1025,23 +1114,7 @@ pub async fn get_audit_log(
     _before_timestamp: Option<u64>,
     limit: u32,
 ) -> Result<Vec<AuditLogEntryInfoDto>, String> {
-    // Check VIEW_AUDIT_LOG permission
-    {
-        use rekindle_protocol::dht::community::permissions_v2::Permissions;
-        let communities = state.communities.read();
-        let community = communities.get(&community_id).ok_or("community not found")?;
-        let my_perms_bits = community
-            .my_role_ids
-            .iter()
-            .filter_map(|rid| community.roles.iter().find(|r| r.id == *rid))
-            .fold(0u64, |acc, r| acc | r.permissions);
-        let perms = Permissions::from_bits_truncate(my_perms_bits);
-        if !perms.contains(Permissions::VIEW_AUDIT_LOG)
-            && !perms.contains(Permissions::ADMINISTRATOR)
-        {
-            return Err("missing VIEW_AUDIT_LOG permission".into());
-        }
-    }
+    require_permission(state.inner(), &community_id, Permissions::VIEW_AUDIT_LOG)?;
 
     // Get audit record key from coordinator service
     let audit_key = {
@@ -1110,10 +1183,10 @@ pub async fn create_event(
     // Generate event ID locally for optimistic UI; coordinator assigns canonical ID via broadcast
     let event_id = format!("evt_{}", hex::encode(&rand_nonce()[..8]));
 
-    send_to_coordinator(
+    send_to_mesh(
         state.inner(),
         &community_id,
-        CommunityEnvelope::Control(ControlPayload::CreateEvent {
+        &CommunityEnvelope::Control(ControlPayload::CreateEvent {
             title,
             description,
             start_time,
@@ -1121,8 +1194,7 @@ pub async fn create_event(
             channel_id,
             max_attendees,
         }),
-    )
-    .await?;
+    )?;
 
     Ok(event_id)
 }
@@ -1142,10 +1214,10 @@ pub async fn edit_event(
     max_attendees: Option<u32>,
 ) -> Result<(), String> {
     let _ = pool;
-    send_to_coordinator(
+    send_to_mesh(
         state.inner(),
         &community_id,
-        CommunityEnvelope::Control(ControlPayload::EditEvent {
+        &CommunityEnvelope::Control(ControlPayload::EditEvent {
             event_id,
             title,
             description,
@@ -1155,7 +1227,6 @@ pub async fn edit_event(
             max_attendees,
         }),
     )
-    .await
 }
 
 /// Delete a community event.
@@ -1167,12 +1238,11 @@ pub async fn delete_event(
     event_id: String,
 ) -> Result<(), String> {
     let _ = pool;
-    send_to_coordinator(
+    send_to_mesh(
         state.inner(),
         &community_id,
-        CommunityEnvelope::Control(ControlPayload::DeleteEvent { event_id }),
+        &CommunityEnvelope::Control(ControlPayload::DeleteEvent { event_id }),
     )
-    .await
 }
 
 /// Cancel a community event (sets status to "canceled").
@@ -1184,12 +1254,11 @@ pub async fn cancel_event(
     event_id: String,
 ) -> Result<(), String> {
     let _ = pool;
-    send_to_coordinator(
+    send_to_mesh(
         state.inner(),
         &community_id,
-        CommunityEnvelope::Control(ControlPayload::CancelEvent { event_id }),
+        &CommunityEnvelope::Control(ControlPayload::CancelEvent { event_id }),
     )
-    .await
 }
 
 /// RSVP to a community event.
@@ -1202,12 +1271,11 @@ pub async fn rsvp_event(
     status: String,
 ) -> Result<(), String> {
     let _ = pool;
-    send_to_coordinator(
+    send_to_mesh(
         state.inner(),
         &community_id,
-        CommunityEnvelope::Control(ControlPayload::RsvpEvent { event_id, status }),
+        &CommunityEnvelope::Control(ControlPayload::RsvpEvent { event_id, status }),
     )
-    .await
 }
 
 /// Get community events.
@@ -1246,16 +1314,15 @@ pub async fn create_thread(
     // Generate thread ID locally for optimistic UI; coordinator assigns canonical ID via broadcast
     let thread_id = format!("thr_{}", hex::encode(&rand_nonce()[..8]));
 
-    send_to_coordinator(
+    send_to_mesh(
         state.inner(),
         &community_id,
-        CommunityEnvelope::Control(ControlPayload::CreateThread {
+        &CommunityEnvelope::Control(ControlPayload::CreateThread {
             channel_id,
             name,
             starter_message_id,
         }),
-    )
-    .await?;
+    )?;
 
     Ok(thread_id)
 }
@@ -1349,12 +1416,11 @@ pub async fn archive_thread(
     thread_id: String,
 ) -> Result<(), String> {
     let _ = pool;
-    send_to_coordinator(
+    send_to_mesh(
         state.inner(),
         &community_id,
-        CommunityEnvelope::Control(ControlPayload::ArchiveThread { thread_id }),
+        &CommunityEnvelope::Control(ControlPayload::ArchiveThread { thread_id }),
     )
-    .await
 }
 
 /// Unarchive a thread.
@@ -1366,12 +1432,11 @@ pub async fn unarchive_thread(
     thread_id: String,
 ) -> Result<(), String> {
     let _ = pool;
-    send_to_coordinator(
+    send_to_mesh(
         state.inner(),
         &community_id,
-        CommunityEnvelope::Control(ControlPayload::UnarchiveThread { thread_id }),
+        &CommunityEnvelope::Control(ControlPayload::UnarchiveThread { thread_id }),
     )
-    .await
 }
 
 // ---------------------------------------------------------------------------
@@ -1395,12 +1460,11 @@ pub async fn add_game_server(
     // Generate server ID locally for optimistic UI; coordinator assigns canonical ID via broadcast
     let server_id = format!("gs_{}", hex::encode(&rand_nonce()[..8]));
 
-    send_to_coordinator(
+    send_to_mesh(
         state.inner(),
         &community_id,
-        CommunityEnvelope::Control(ControlPayload::AddGameServer { game_id, label, address }),
-    )
-    .await?;
+        &CommunityEnvelope::Control(ControlPayload::AddGameServer { game_id, label, address }),
+    )?;
 
     Ok(server_id)
 }
@@ -1414,12 +1478,11 @@ pub async fn remove_game_server(
     server_id: String,
 ) -> Result<(), String> {
     let _ = pool;
-    send_to_coordinator(
+    send_to_mesh(
         state.inner(),
         &community_id,
-        CommunityEnvelope::Control(ControlPayload::RemoveGameServer { server_id }),
+        &CommunityEnvelope::Control(ControlPayload::RemoveGameServer { server_id }),
     )
-    .await
 }
 
 /// Get all game servers for a community.
@@ -1493,11 +1556,385 @@ fn queue_pending_channel_message(
     });
 }
 
-fn rand_nonce() -> Vec<u8> {
+pub(crate) fn rand_nonce() -> Vec<u8> {
     use rand::RngCore;
     let mut nonce = vec![0u8; 24];
     rand::rngs::OsRng.fill_bytes(&mut nonce);
     nonce
+}
+
+/// Execute a Tier 2 state operation. If we hold the manifest keypair, write
+/// directly to DHT + gossip broadcast. Otherwise route through coordinator.
+pub(crate) async fn execute_state_op(
+    state: &SharedState,
+    community_id: &str,
+    payload: ControlPayload,
+) -> Result<(), String> {
+    let has_manifest_kp = {
+        let communities = state.communities.read();
+        communities
+            .get(community_id)
+            .and_then(|cs| cs.manifest_owner_keypair.as_ref())
+            .is_some()
+    };
+
+    if has_manifest_kp {
+        // Direct: persist to DHT + broadcast via gossip mesh
+        persist_control_to_dht(state, community_id, &payload).await?;
+        send_to_mesh(
+            state,
+            community_id,
+            &CommunityEnvelope::Control(payload),
+        )?;
+        Ok(())
+    } else {
+        // Indirect: route through coordinator
+        send_to_coordinator(
+            state,
+            community_id,
+            CommunityEnvelope::Control(payload),
+        )
+        .await
+    }
+}
+
+/// Persist a Tier 2 control payload directly to the DHT manifest.
+///
+/// Called by `execute_state_op` when the local node holds the manifest keypair.
+/// Mirrors the logic in `coordinator::state_manager::persist_control_to_manifest`.
+async fn persist_control_to_dht(
+    state: &SharedState,
+    community_id: &str,
+    payload: &ControlPayload,
+) -> Result<(), String> {
+    use rekindle_protocol::dht::DHTManager;
+
+    let (manifest_key, kp_str) = {
+        let c = state.communities.read();
+        let cs = c.get(community_id).ok_or("community not found")?;
+        (
+            cs.manifest_key.clone().ok_or("no manifest key")?,
+            cs.manifest_owner_keypair
+                .clone()
+                .ok_or("no manifest keypair")?,
+        )
+    };
+
+    let rc = state_helpers::routing_context(state).ok_or("Veilid network not attached")?;
+    let dht = DHTManager::new(rc);
+
+    let kp: veilid_core::KeyPair = kp_str.parse().map_err(|e| format!("parse keypair: {e}"))?;
+    dht.open_record_writable(&manifest_key, kp)
+        .await
+        .map_err(|e| format!("open manifest: {e}"))?;
+
+    apply_control_to_manifest(&dht, &manifest_key, payload).await
+}
+
+/// Apply a control payload mutation to the DHT manifest record.
+///
+/// Extracted from `persist_control_to_dht` for clippy line limits.
+async fn apply_control_to_manifest(
+    dht: &rekindle_protocol::dht::DHTManager,
+    manifest_key: &str,
+    payload: &ControlPayload,
+) -> Result<(), String> {
+    use rekindle_protocol::dht::community::manifest;
+    use rekindle_protocol::dht::community::types::{
+        BanEntry, CategoryEntry, ChannelEntryV2, ChannelKind, RoleEntryV2,
+    };
+
+    match payload {
+        // ── Channels ──
+        ControlPayload::CreateChannel {
+            name,
+            channel_type,
+            category_id,
+        } => {
+            let mut chs = manifest::read_channels(dht, manifest_key)
+                .await
+                .unwrap_or_default();
+            let sort_order = u16::try_from(chs.len()).unwrap_or(u16::MAX);
+            let kind = channel_type
+                .parse::<ChannelKind>()
+                .unwrap_or(ChannelKind::Text);
+            chs.push(ChannelEntryV2 {
+                id: format!("ch_{}", hex::encode(&rand_nonce()[..8])),
+                name: name.clone(),
+                kind,
+                sort_order,
+                category_id: category_id.clone(),
+                topic: String::new(),
+                slowmode_seconds: 0,
+                nsfw: false,
+                message_record_key: None,
+                mek_generation: 0,
+                permission_overwrites: vec![],
+                log_key: None,
+            });
+            manifest::write_channels(dht, manifest_key, &chs)
+                .await
+                .map_err(|e| format!("{e}"))
+        }
+        ControlPayload::DeleteChannel { channel_id } => {
+            let mut chs = manifest::read_channels(dht, manifest_key)
+                .await
+                .unwrap_or_default();
+            chs.retain(|c| c.id != *channel_id);
+            manifest::write_channels(dht, manifest_key, &chs)
+                .await
+                .map_err(|e| format!("{e}"))
+        }
+        ControlPayload::RenameChannel {
+            channel_id,
+            new_name,
+        } => {
+            let mut chs = manifest::read_channels(dht, manifest_key)
+                .await
+                .unwrap_or_default();
+            if let Some(ch) = chs.iter_mut().find(|c| c.id == *channel_id) {
+                ch.name.clone_from(new_name);
+            }
+            manifest::write_channels(dht, manifest_key, &chs)
+                .await
+                .map_err(|e| format!("{e}"))
+        }
+        ControlPayload::SetChannelTopic { channel_id, topic } => {
+            let mut chs = manifest::read_channels(dht, manifest_key)
+                .await
+                .unwrap_or_default();
+            if let Some(ch) = chs.iter_mut().find(|c| c.id == *channel_id) {
+                ch.topic.clone_from(topic);
+            }
+            manifest::write_channels(dht, manifest_key, &chs)
+                .await
+                .map_err(|e| format!("{e}"))
+        }
+        ControlPayload::ReorderChannels { channel_ids } => {
+            let mut chs = manifest::read_channels(dht, manifest_key)
+                .await
+                .unwrap_or_default();
+            for (i, id) in channel_ids.iter().enumerate() {
+                if let Some(ch) = chs.iter_mut().find(|c| c.id == *id) {
+                    ch.sort_order = u16::try_from(i).unwrap_or(u16::MAX);
+                }
+            }
+            manifest::write_channels(dht, manifest_key, &chs)
+                .await
+                .map_err(|e| format!("{e}"))
+        }
+        ControlPayload::SetSlowmode {
+            channel_id,
+            seconds,
+        } => {
+            let mut chs = manifest::read_channels(dht, manifest_key)
+                .await
+                .unwrap_or_default();
+            if let Some(ch) = chs.iter_mut().find(|c| c.id == *channel_id) {
+                ch.slowmode_seconds = *seconds;
+            }
+            manifest::write_channels(dht, manifest_key, &chs)
+                .await
+                .map_err(|e| format!("{e}"))
+        }
+        ControlPayload::MoveChannel {
+            channel_id,
+            category_id,
+        } => {
+            let mut chs = manifest::read_channels(dht, manifest_key)
+                .await
+                .unwrap_or_default();
+            if let Some(ch) = chs.iter_mut().find(|c| c.id == *channel_id) {
+                ch.category_id.clone_from(category_id);
+            }
+            manifest::write_channels(dht, manifest_key, &chs)
+                .await
+                .map_err(|e| format!("{e}"))
+        }
+
+        // ── Categories ──
+        ControlPayload::CreateCategory { name } => {
+            let mut cats = manifest::read_categories(dht, manifest_key)
+                .await
+                .unwrap_or_default();
+            let sort = i32::try_from(cats.len()).unwrap_or(i32::MAX);
+            cats.push(CategoryEntry {
+                id: format!("cat_{}", hex::encode(&rand_nonce()[..8])),
+                name: name.clone(),
+                sort_order: sort,
+            });
+            manifest::write_categories(dht, manifest_key, &cats)
+                .await
+                .map_err(|e| format!("{e}"))
+        }
+        ControlPayload::DeleteCategory { category_id } => {
+            let mut cats = manifest::read_categories(dht, manifest_key)
+                .await
+                .unwrap_or_default();
+            cats.retain(|c| c.id != *category_id);
+            manifest::write_categories(dht, manifest_key, &cats)
+                .await
+                .map_err(|e| format!("{e}"))
+        }
+        ControlPayload::RenameCategory {
+            category_id,
+            new_name,
+        } => {
+            let mut cats = manifest::read_categories(dht, manifest_key)
+                .await
+                .unwrap_or_default();
+            if let Some(cat) = cats.iter_mut().find(|c| c.id == *category_id) {
+                cat.name.clone_from(new_name);
+            }
+            manifest::write_categories(dht, manifest_key, &cats)
+                .await
+                .map_err(|e| format!("{e}"))
+        }
+        ControlPayload::ReorderCategories { category_ids } => {
+            let mut cats = manifest::read_categories(dht, manifest_key)
+                .await
+                .unwrap_or_default();
+            for (i, id) in category_ids.iter().enumerate() {
+                if let Some(cat) = cats.iter_mut().find(|c| c.id == *id) {
+                    cat.sort_order = i32::try_from(i).unwrap_or(i32::MAX);
+                }
+            }
+            manifest::write_categories(dht, manifest_key, &cats)
+                .await
+                .map_err(|e| format!("{e}"))
+        }
+
+        // ── Roles ──
+        ControlPayload::CreateRole {
+            name,
+            color,
+            permissions,
+            hoist,
+            mentionable,
+        } => {
+            let mut roles = manifest::read_roles(dht, manifest_key)
+                .await
+                .unwrap_or_default();
+            let next_id = roles.iter().map(|r| r.id).max().unwrap_or(4) + 1;
+            let position = i32::try_from(roles.len()).unwrap_or(i32::MAX);
+            roles.push(RoleEntryV2 {
+                id: next_id,
+                name: name.clone(),
+                color: *color,
+                permissions: *permissions,
+                position,
+                hoist: *hoist,
+                mentionable: *mentionable,
+            });
+            manifest::write_roles(dht, manifest_key, &roles)
+                .await
+                .map_err(|e| format!("{e}"))
+        }
+        ControlPayload::DeleteRole { role_id } => {
+            let mut roles = manifest::read_roles(dht, manifest_key)
+                .await
+                .unwrap_or_default();
+            roles.retain(|r| r.id != *role_id);
+            manifest::write_roles(dht, manifest_key, &roles)
+                .await
+                .map_err(|e| format!("{e}"))
+        }
+        ControlPayload::EditRole {
+            role_id,
+            name,
+            color,
+            permissions,
+            position,
+            hoist,
+            mentionable,
+        } => {
+            let mut roles = manifest::read_roles(dht, manifest_key)
+                .await
+                .unwrap_or_default();
+            if let Some(r) = roles.iter_mut().find(|r| r.id == *role_id) {
+                if let Some(ref n) = name {
+                    r.name.clone_from(n);
+                }
+                if let Some(c) = color {
+                    r.color = *c;
+                }
+                if let Some(p) = permissions {
+                    r.permissions = *p;
+                }
+                if let Some(pos) = position {
+                    r.position = *pos;
+                }
+                if let Some(h) = hoist {
+                    r.hoist = *h;
+                }
+                if let Some(m) = mentionable {
+                    r.mentionable = *m;
+                }
+            }
+            manifest::write_roles(dht, manifest_key, &roles)
+                .await
+                .map_err(|e| format!("{e}"))
+        }
+
+        // ── Bans ──
+        ControlPayload::Ban {
+            target_pseudonym, ..
+        } => {
+            let mut bans = manifest::read_bans(dht, manifest_key)
+                .await
+                .unwrap_or_default();
+            bans.push(BanEntry {
+                pseudonym_key: target_pseudonym.clone(),
+                reason: None,
+                banned_by: String::new(),
+                banned_at: rekindle_utils::timestamp_secs(),
+            });
+            manifest::write_bans(dht, manifest_key, &bans)
+                .await
+                .map_err(|e| format!("{e}"))
+        }
+        ControlPayload::Unban {
+            target_pseudonym, ..
+        } => {
+            let mut bans = manifest::read_bans(dht, manifest_key)
+                .await
+                .unwrap_or_default();
+            bans.retain(|b| b.pseudonym_key != *target_pseudonym);
+            manifest::write_bans(dht, manifest_key, &bans)
+                .await
+                .map_err(|e| format!("{e}"))
+        }
+
+        // ── Metadata ──
+        ControlPayload::UpdateCommunity { name, description } => {
+            let mut meta = manifest::read_metadata(dht, manifest_key)
+                .await
+                .ok()
+                .flatten()
+                .unwrap_or(
+                    rekindle_protocol::dht::community::types::CommunityMetadataV2 {
+                        name: String::new(),
+                        description: None,
+                        icon_hash: None,
+                        created_at: 0,
+                        owner_pseudonym: String::new(),
+                        last_refreshed: 0,
+                    },
+                );
+            if let Some(ref n) = name {
+                meta.name.clone_from(n);
+            }
+            if let Some(ref d) = description {
+                meta.description = Some(d.clone());
+            }
+            manifest::write_metadata(dht, manifest_key, &meta)
+                .await
+                .map_err(|e| format!("{e}"))
+        }
+
+        // Non-manifest payloads don't need DHT persistence
+        _ => Ok(()),
+    }
 }
 
 /// Send a community RPC request to the server.
@@ -1635,8 +2072,9 @@ pub(crate) async fn send_to_coordinator(
 
 /// Send a community envelope via the gossip mesh (peer-to-peer).
 ///
-/// Used for ChatMessage, TypingIndicator, PresenceUpdate — NOT for state ops
-/// (joins, moderation, config changes). Those still go through `send_to_coordinator`.
+/// Used for ChatMessage, TypingIndicator, PresenceUpdate, and all Tier 1
+/// operations (pins, events, threads, game servers, reactions).
+/// Tier 2 operations use `execute_state_op()` which may use this or coordinator.
 ///
 /// Signs the envelope with our pseudonym key, inserts into the dedup cache,
 /// increments the Lamport counter, and sends to D gossip peers.
@@ -1799,6 +2237,7 @@ pub async fn leave_community(
             crate::keystore::delete_manifest_keypair(keystore, &community_id);
             crate::keystore::delete_slot_keypair(keystore, &community_id);
             crate::keystore::delete_slot_seed(keystore, &community_id);
+            crate::keystore::delete_registry_keypair(keystore, &community_id);
         }
     }
 
@@ -1917,22 +2356,9 @@ pub async fn remove_community_member(
 ) -> Result<(), String> {
     let owner_key = state_helpers::current_owner_key(state.inner())?;
 
-    // Check caller's role — use display role for backward-compat permission check
-    let my_role = {
-        let communities = state.communities.read();
-        communities
-            .get(&community_id)
-            .and_then(|c| c.my_role.clone())
-            .unwrap_or_default()
-    };
+    require_permission(state.inner(), &community_id, Permissions::KICK_MEMBERS)?;
 
-    if my_role != "owner" && my_role != "admin" {
-        return Err(
-            "insufficient permissions: must be owner or admin to remove members".to_string(),
-        );
-    }
-
-    // Send Kick to the coordinator (local validation passed)
+    // Send Kick to the coordinator
     send_to_coordinator(
         state.inner(),
         &community_id,
@@ -2059,16 +2485,16 @@ pub async fn create_role(
     use rand::RngCore;
     let role_id: u32 = rand::rngs::OsRng.next_u32().saturating_add(100); // avoid collision with default roles
 
-    send_to_coordinator(
+    execute_state_op(
         state.inner(),
         &community_id,
-        CommunityEnvelope::Control(ControlPayload::CreateRole {
+        ControlPayload::CreateRole {
             name: name.clone(),
             color,
             permissions: permissions_u64,
             hoist,
             mentionable,
-        }),
+        },
     )
     .await?;
 
@@ -2123,10 +2549,10 @@ pub async fn edit_role(
         .transpose()
         .map_err(|e| format!("invalid permissions: {e}"))?;
 
-    send_to_coordinator(
+    execute_state_op(
         state.inner(),
         &community_id,
-        CommunityEnvelope::Control(ControlPayload::EditRole {
+        ControlPayload::EditRole {
             role_id,
             name: name.clone(),
             color,
@@ -2134,7 +2560,7 @@ pub async fn edit_role(
             position,
             hoist,
             mentionable,
-        }),
+        },
     )
     .await?;
 
@@ -2204,10 +2630,10 @@ pub async fn delete_role(
 ) -> Result<(), String> {
     let owner_key = state_helpers::current_owner_key(state.inner())?;
 
-    send_to_coordinator(
+    execute_state_op(
         state.inner(),
         &community_id,
-        CommunityEnvelope::Control(ControlPayload::DeleteRole { role_id }),
+        ControlPayload::DeleteRole { role_id },
     )
     .await?;
 
@@ -2279,15 +2705,16 @@ pub async fn assign_role(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
+    require_permission(state.inner(), &community_id, Permissions::MANAGE_ROLES)?;
     let owner_key = state_helpers::current_owner_key(state.inner())?;
 
-    send_to_coordinator(
+    execute_state_op(
         state.inner(),
         &community_id,
-        CommunityEnvelope::Control(ControlPayload::AssignRole {
+        ControlPayload::AssignRole {
             target_pseudonym: pseudonym_key.clone(),
             role_id,
-        }),
+        },
     )
     .await?;
 
@@ -2339,15 +2766,16 @@ pub async fn unassign_role(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
+    require_permission(state.inner(), &community_id, Permissions::MANAGE_ROLES)?;
     let owner_key = state_helpers::current_owner_key(state.inner())?;
 
-    send_to_coordinator(
+    execute_state_op(
         state.inner(),
         &community_id,
-        CommunityEnvelope::Control(ControlPayload::UnassignRole {
+        ControlPayload::UnassignRole {
             target_pseudonym: pseudonym_key.clone(),
             role_id,
-        }),
+        },
     )
     .await?;
 
@@ -2396,6 +2824,7 @@ pub async fn timeout_member(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
+    require_permission(state.inner(), &community_id, Permissions::MODERATE_MEMBERS)?;
     let owner_key = state_helpers::current_owner_key(state.inner())?;
 
     send_to_coordinator(
@@ -2431,6 +2860,7 @@ pub async fn remove_timeout(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
+    require_permission(state.inner(), &community_id, Permissions::MODERATE_MEMBERS)?;
     let owner_key = state_helpers::current_owner_key(state.inner())?;
 
     send_to_coordinator(
@@ -2469,16 +2899,16 @@ pub async fn set_channel_overwrite(
 ) -> Result<(), String> {
     let owner_key = state_helpers::current_owner_key(state.inner())?;
 
-    send_to_coordinator(
+    execute_state_op(
         state.inner(),
         &community_id,
-        CommunityEnvelope::Control(ControlPayload::SetChannelOverwrite {
+        ControlPayload::SetChannelOverwrite {
             channel_id: channel_id.clone(),
             target_type: target_type.clone(),
             target_id: target_id.clone(),
             allow,
             deny,
-        }),
+        },
     )
     .await?;
 
@@ -2507,13 +2937,13 @@ pub async fn set_slowmode(
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
     let _ = pool;
-    send_to_coordinator(
+    execute_state_op(
         state.inner(),
         &community_id,
-        CommunityEnvelope::Control(ControlPayload::SetSlowmode {
+        ControlPayload::SetSlowmode {
             channel_id: channel_id.clone(),
             seconds,
-        }),
+        },
     )
     .await?;
 
@@ -2539,14 +2969,14 @@ pub async fn delete_channel_overwrite(
 ) -> Result<(), String> {
     let owner_key = state_helpers::current_owner_key(state.inner())?;
 
-    send_to_coordinator(
+    execute_state_op(
         state.inner(),
         &community_id,
-        CommunityEnvelope::Control(ControlPayload::DeleteChannelOverwrite {
+        ControlPayload::DeleteChannelOverwrite {
             channel_id: channel_id.clone(),
             target_type: target_type.clone(),
             target_id: target_id.clone(),
-        }),
+        },
     )
     .await?;
 
@@ -2576,14 +3006,15 @@ pub async fn delete_channel(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
+    require_permission(state.inner(), &community_id, Permissions::MANAGE_CHANNELS)?;
     let owner_key = state_helpers::current_owner_key(state.inner())?;
 
-    send_to_coordinator(
+    execute_state_op(
         state.inner(),
         &community_id,
-        CommunityEnvelope::Control(ControlPayload::DeleteChannel {
+        ControlPayload::DeleteChannel {
             channel_id: channel_id.clone(),
-        }),
+        },
     )
     .await?;
 
@@ -2617,15 +3048,16 @@ pub async fn rename_channel(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
+    require_permission(state.inner(), &community_id, Permissions::MANAGE_CHANNELS)?;
     let owner_key = state_helpers::current_owner_key(state.inner())?;
 
-    send_to_coordinator(
+    execute_state_op(
         state.inner(),
         &community_id,
-        CommunityEnvelope::Control(ControlPayload::RenameChannel {
+        ControlPayload::RenameChannel {
             channel_id: channel_id.clone(),
             new_name: new_name.clone(),
-        }),
+        },
     )
     .await?;
 
@@ -2667,13 +3099,13 @@ pub async fn update_community_info(
 ) -> Result<(), String> {
     let owner_key = state_helpers::current_owner_key(state.inner())?;
 
-    send_to_coordinator(
+    execute_state_op(
         state.inner(),
         &community_id,
-        CommunityEnvelope::Control(ControlPayload::UpdateCommunity {
+        ControlPayload::UpdateCommunity {
             name: name.clone(),
             description: description.clone(),
-        }),
+        },
     )
     .await?;
 
@@ -2721,13 +3153,14 @@ pub async fn ban_member(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
+    require_permission(state.inner(), &community_id, Permissions::BAN_MEMBERS)?;
     let _ = pool;
-    send_to_coordinator(
+    execute_state_op(
         state.inner(),
         &community_id,
-        CommunityEnvelope::Control(ControlPayload::Ban {
+        ControlPayload::Ban {
             target_pseudonym: pseudonym_key.clone(),
-        }),
+        },
     )
     .await?;
 
@@ -2743,13 +3176,14 @@ pub async fn unban_member(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
+    require_permission(state.inner(), &community_id, Permissions::BAN_MEMBERS)?;
     let _ = pool;
-    send_to_coordinator(
+    execute_state_op(
         state.inner(),
         &community_id,
-        CommunityEnvelope::Control(ControlPayload::Unban {
+        ControlPayload::Unban {
             target_pseudonym: pseudonym_key.clone(),
-        }),
+        },
     )
     .await?;
 
@@ -3052,14 +3486,15 @@ pub async fn set_channel_topic(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
+    require_permission(state.inner(), &community_id, Permissions::MANAGE_CHANNELS)?;
     let _ = pool;
-    send_to_coordinator(
+    execute_state_op(
         state.inner(),
         &community_id,
-        CommunityEnvelope::Control(ControlPayload::SetChannelTopic {
+        ControlPayload::SetChannelTopic {
             channel_id: channel_id.clone(),
             topic: topic.clone(),
-        }),
+        },
     )
     .await?;
 
@@ -3085,13 +3520,14 @@ pub async fn reorder_channels(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
+    require_permission(state.inner(), &community_id, Permissions::MANAGE_CHANNELS)?;
     let _ = pool;
-    send_to_coordinator(
+    execute_state_op(
         state.inner(),
         &community_id,
-        CommunityEnvelope::Control(ControlPayload::ReorderChannels {
+        ControlPayload::ReorderChannels {
             channel_ids: channel_ids.clone(),
-        }),
+        },
     )
     .await?;
 
@@ -3195,7 +3631,7 @@ pub async fn set_onboarding_config(
     community_id: String,
     config: serde_json::Value,
 ) -> Result<(), String> {
-    require_manage_community(&state, &community_id)?;
+    require_permission(&state, &community_id, Permissions::MANAGE_COMMUNITY)?;
     let rc = state_helpers::routing_context(&state).ok_or("not attached")?;
     let mgr = rekindle_protocol::dht::DHTManager::new(rc);
     let manifest_key = manifest_key_for(&state, &community_id)?;
@@ -3229,7 +3665,7 @@ pub async fn set_welcome_screen(
     community_id: String,
     screen: serde_json::Value,
 ) -> Result<(), String> {
-    require_manage_community(&state, &community_id)?;
+    require_permission(&state, &community_id, Permissions::MANAGE_COMMUNITY)?;
     let rc = state_helpers::routing_context(&state).ok_or("not attached")?;
     let mgr = rekindle_protocol::dht::DHTManager::new(rc);
     let manifest_key = manifest_key_for(&state, &community_id)?;
@@ -3271,22 +3707,3 @@ fn manifest_key_for(state: &SharedState, community_id: &str) -> Result<String, S
         .ok_or_else(|| "community not found".to_string())
 }
 
-/// Check that the current user has MANAGE_COMMUNITY or ADMINISTRATOR permission.
-fn require_manage_community(state: &SharedState, community_id: &str) -> Result<(), String> {
-    use rekindle_protocol::dht::community::permissions_v2::Permissions;
-    let communities = state.communities.read();
-    let community = communities
-        .get(community_id)
-        .ok_or("community not found")?;
-    let my_perms_bits = community
-        .my_role_ids
-        .iter()
-        .filter_map(|rid| community.roles.iter().find(|r| r.id == *rid))
-        .fold(0u64, |acc, r| acc | r.permissions);
-    let perms = Permissions::from_bits_truncate(my_perms_bits);
-    if perms.contains(Permissions::MANAGE_COMMUNITY) || perms.contains(Permissions::ADMINISTRATOR) {
-        Ok(())
-    } else {
-        Err("missing MANAGE_COMMUNITY permission".into())
-    }
-}

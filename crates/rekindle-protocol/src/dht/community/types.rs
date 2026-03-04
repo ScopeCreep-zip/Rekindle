@@ -178,6 +178,9 @@ pub struct ChannelEntryV2 {
     pub mek_generation: u64,
     #[serde(default)]
     pub permission_overwrites: Vec<super::PermissionOverwrite>,
+    /// DHTLog spine key for persistent message history.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub log_key: Option<String>,
 }
 
 /// A category entry in the manifest category directory (subkey 2).

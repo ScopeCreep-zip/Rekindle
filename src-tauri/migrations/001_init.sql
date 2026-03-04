@@ -54,13 +54,16 @@ CREATE TABLE IF NOT EXISTS messages (
     reply_to_id INTEGER REFERENCES messages(id) ON DELETE SET NULL,
     attachment_json TEXT,
     mek_generation INTEGER,
-    lamport_ts INTEGER DEFAULT 0
+    lamport_ts INTEGER DEFAULT 0,
+    message_id TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(owner_key, conversation_id, timestamp);
 CREATE INDEX IF NOT EXISTS idx_messages_unread ON messages(owner_key, conversation_id, is_read) WHERE is_read = 0;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_dedup
   ON messages(owner_key, conversation_id, conversation_type, sender_key, timestamp);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_message_id
+  ON messages(owner_key, conversation_id, message_id) WHERE message_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS communities (
     owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
@@ -98,6 +101,7 @@ CREATE TABLE IF NOT EXISTS channels (
     nsfw INTEGER NOT NULL DEFAULT 0,
     message_record_key TEXT,
     mek_generation INTEGER NOT NULL DEFAULT 0,
+    log_key TEXT,
     PRIMARY KEY (owner_key, id),
     FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
 );

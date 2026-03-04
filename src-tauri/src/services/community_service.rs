@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use tauri::Manager as _;
+
 use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use rekindle_protocol::dht::community::{manifest, member_registry, permissions_v2};
 use rekindle_protocol::dht::community::types::{
@@ -47,9 +49,10 @@ pub async fn create_community(
     let slot_seed = rand_bytes(32);
     let slot_seed_array: [u8; 32] = slot_seed.clone().try_into()
         .map_err(|_| "failed to generate 32-byte slot seed")?;
-    let (registry_key, _registry_keypair) = member_registry::create_registry_segment(&mgr, &slot_seed_array)
+    let (registry_key, registry_keypair) = member_registry::create_registry_segment(&mgr, &slot_seed_array)
         .await
         .map_err(|e| format!("failed to create pre-allocated member registry: {e}"))?;
+    let registry_owner_kp_str = registry_keypair.as_ref().map(std::string::ToString::to_string);
 
     // Derive creator's slot keypair (slot 0) for writing presence
     let creator_slot_keypair = member_registry::derive_slot_veilid_keypair(&slot_seed_array, 0)
@@ -76,6 +79,7 @@ pub async fn create_community(
         message_record_key: None,
         mek_generation: 0,
         permission_overwrites: Vec::new(),
+        log_key: None,
     };
     if let Err(e) = manifest::write_channels(&mgr, &manifest_key, &[channel_entry]).await {
         tracing::warn!(error = %e, "failed to write initial channels to manifest");
@@ -99,7 +103,10 @@ pub async fn create_community(
         pseudonym_key: my_pseudonym_key.clone(),
         display_name: state_helpers::identity_display_name(state),
         role_ids: vec![0, 1, 2, 3, 4],
-        joined_at: now_secs,
+        // Use 0 so the creator is immediately eligible for coordinator election.
+        // The MIN_JOIN_AGE_SECS check prevents join-and-takeover, but the founding
+        // member can't "takeover" their own community.
+        joined_at: 0,
         subkey_index: 0,
         onboarding_complete: true,
         timeout_until: None,
@@ -151,14 +158,16 @@ pub async fn create_community(
         manifest_key: Some(manifest_key.clone()),
         member_registry_key: Some(registry_key),
         my_subkey_index: Some(0),
-        coordinator_pseudonym: Some(my_pseudonym_key),
+        coordinator_pseudonym: Some(my_pseudonym_key.clone()),
         coordinator_route_blob: Some(our_route_blob),
         coordinator_epoch: 1,
         gossip: Some(GossipOverlay::default()),
         slot_keypair: Some(creator_slot_keypair_str.clone()),
         manifest_owner_keypair: manifest_keypair.as_ref().map(std::string::ToString::to_string),
         channel_log_keys: std::collections::HashMap::new(),
+        registry_owner_keypair: registry_owner_kp_str,
         slot_seed: Some(hex::encode(&slot_seed)),
+        known_members: [my_pseudonym_key].into_iter().collect(),
         presence_poll_shutdown_tx: None,
         dht_keepalive_shutdown_tx: None,
     };
@@ -329,7 +338,9 @@ pub async fn join_community(
         slot_keypair: None,
         manifest_owner_keypair: None,
         channel_log_keys: std::collections::HashMap::new(),
+        registry_owner_keypair: None,
         slot_seed: None,
+        known_members: std::collections::HashSet::new(), // Populated from JoinAccepted members list
         presence_poll_shutdown_tx: None,
         dht_keepalive_shutdown_tx: None,
     };
@@ -473,7 +484,16 @@ pub async fn rejoin_community(state: &Arc<AppState>, community_id: &str) -> Resu
                     c.coordinator_epoch = coord_info.epoch;
                 }
             }
-            _ => return Ok(()), // Coordinator unreachable
+            _ => {
+                tracing::info!(
+                    community = %community_id,
+                    "no coordinator online — community operates via gossip mesh"
+                );
+                // Community still works: presence poll discovers peers, gossip mesh
+                // relays messages. Only coordinator-dependent ops (join processing,
+                // kick, MEK rotation) are unavailable.
+                return Ok(());
+            }
         }
     }
 
@@ -511,7 +531,8 @@ pub async fn rejoin_community(state: &Arc<AppState>, community_id: &str) -> Resu
                     c.coordinator_route_blob = None;
                 }
             }
-            Err(e)
+            // Don't propagate error — community still operates via gossip mesh
+            Ok(())
         }
     }
 }
@@ -684,16 +705,69 @@ async fn presence_poll_tick(state: &Arc<AppState>, community_id: &str) -> Result
     let selected = random_peer_sample(&online_members, d);
 
     // Update gossip overlay
-    {
+    let needs_sync = {
         let mut communities = state.communities.write();
         if let Some(cs) = communities.get_mut(community_id) {
             let counter = cs.gossip.as_ref().map_or(0, |g| g.lamport_counter);
+            let was_needs_sync = cs.gossip.as_ref().is_none_or(|g| g.needs_initial_sync);
             cs.gossip = Some(GossipOverlay {
                 peers: selected,
                 online_members,
                 lamport_counter: counter,
+                needs_initial_sync: was_needs_sync,
             });
+            was_needs_sync && n > 0 // Only trigger sync if peers are online
+        } else {
+            false
         }
+    };
+
+    // Trigger SyncRequest on first successful poll with online peers
+    if needs_sync {
+        // Collect all channel IDs for sync
+        let all_channel_ids: Vec<String> = {
+            let communities = state.communities.read();
+            communities.get(community_id)
+                .map(|cs| cs.channels.iter().map(|ch| ch.id.clone()).collect())
+                .unwrap_or_default()
+        };
+
+        // Clone AppHandle out of the lock guard before any .await
+        let app_handle_clone = state.app_handle.read().clone();
+        if let Some(ref app_handle) = app_handle_clone {
+            let pool: tauri::State<'_, crate::db::DbPool> = app_handle.state();
+            let owner_key = crate::state_helpers::current_owner_key(state).unwrap_or_default();
+
+            for ch_id in &all_channel_ids {
+                let ok = owner_key.clone();
+                let ch = ch_id.clone();
+                let last_ts: i64 = crate::db_helpers::db_call(pool.inner(), move |conn| {
+                    conn.query_row(
+                        "SELECT COALESCE(MAX(timestamp), 0) FROM messages \
+                         WHERE owner_key=? AND conversation_id=? AND conversation_type='channel'",
+                        rusqlite::params![ok, ch],
+                        |r| r.get(0),
+                    )
+                }).await.unwrap_or(0);
+
+                let sync_req = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
+                    rekindle_protocol::dht::community::envelope::ControlPayload::SyncRequest {
+                        channel_id: ch_id.clone(),
+                        since_timestamp: last_ts.cast_unsigned(),
+                    },
+                );
+                let _ = crate::commands::community::send_to_mesh(state, community_id, &sync_req);
+            }
+        }
+
+        // Mark sync as done
+        let mut communities = state.communities.write();
+        if let Some(cs) = communities.get_mut(community_id) {
+            if let Some(ref mut g) = cs.gossip {
+                g.needs_initial_sync = false;
+            }
+        }
+        tracing::info!(community = %community_id, "initial sync requests sent");
     }
 
     tracing::trace!(

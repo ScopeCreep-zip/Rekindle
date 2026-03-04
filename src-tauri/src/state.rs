@@ -141,7 +141,7 @@ pub struct CircuitBreakerState {
 /// received messages to them. Adaptive degree:
 /// - ≤20 members: D = N-1 (direct mesh)
 /// - 21-60: D = 6, 61+: D = 8
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct GossipOverlay {
     /// Current gossip peers: pseudonym_key → route_blob.
     /// These are the D peers we send/forward every message to.
@@ -152,6 +152,20 @@ pub struct GossipOverlay {
     /// Lamport counter for outgoing messages.
     /// Incremented for each message we originate (not forwards).
     pub lamport_counter: u64,
+    /// True until the first successful sync after coming online.
+    /// Used to trigger a `SyncRequest` to online peers for catch-up.
+    pub needs_initial_sync: bool,
+}
+
+impl Default for GossipOverlay {
+    fn default() -> Self {
+        Self {
+            peers: HashMap::new(),
+            online_members: HashMap::new(),
+            lamport_counter: 0,
+            needs_initial_sync: true,
+        }
+    }
 }
 
 /// Compute the gossip degree (D) for the given number of online members.
@@ -544,10 +558,21 @@ pub struct CommunityState {
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub channel_log_keys: HashMap<String, String>,
 
+    /// Registry segment owner keypair for writing member index/MEK vault.
+    /// Veilid `KeyPair::to_string()` format. Required to add/remove members.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub registry_owner_keypair: Option<String>,
+
     /// Slot seed for deriving member SMPL keypairs (admins only).
     /// 32 bytes, hex-encoded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slot_seed: Option<String>,
+
+    /// In-memory cache of known member pseudonym keys.
+    /// Populated from SQLite on login, updated on MemberJoined/MemberRemoved/MemberLeave.
+    /// Used for fast membership checks on incoming ChatMessages.
+    #[serde(skip)]
+    pub known_members: HashSet<String>,
 
     /// Shutdown sender for the presence poll loop.
     #[serde(skip)]

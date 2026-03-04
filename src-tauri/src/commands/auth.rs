@@ -680,7 +680,7 @@ async fn load_communities_from_db(
     use crate::state::RoleDefinition;
 
     let ok = owner_key.to_string();
-    let (community_rows, channel_rows, role_rows) = db_call(pool, move |conn| {
+    let (community_rows, channel_rows, role_rows, member_key_rows) = db_call(pool, move |conn| {
         let mut comm_stmt = conn
             .prepare(
                 "SELECT id, name, description, my_role, my_role_ids, dht_record_key, dht_owner_keypair, \
@@ -731,7 +731,7 @@ async fn load_communities_from_db(
             .collect::<Result<Vec<_>, _>>()?;
 
         let mut chan_stmt = conn
-            .prepare("SELECT id, community_id, name, channel_type, category_id, topic, slowmode_seconds, nsfw, message_record_key, mek_generation FROM channels WHERE owner_key = ?1 ORDER BY sort_order")?;
+            .prepare("SELECT id, community_id, name, channel_type, category_id, topic, slowmode_seconds, nsfw, message_record_key, mek_generation, log_key FROM channels WHERE owner_key = ?1 ORDER BY sort_order")?;
         let channels = chan_stmt
             .query_map(rusqlite::params![ok], |row| {
                 Ok((
@@ -745,11 +745,26 @@ async fn load_communities_from_db(
                     row.get::<_, i64>("nsfw").unwrap_or(0) != 0,
                     db::get_str_opt(row, "message_record_key"),
                     row.get::<_, i64>("mek_generation").unwrap_or(0).cast_unsigned(),
+                    db::get_str_opt(row, "log_key"),
                 ))
             })?
             .collect::<Result<Vec<_>, _>>()?;
 
-        Ok((communities, channels, role_rows))
+        // Load member pseudonym keys for the known_members cache
+        let mut member_stmt = conn
+            .prepare(
+                "SELECT community_id, pseudonym_key FROM community_members WHERE owner_key = ?1",
+            )?;
+        let member_keys = member_stmt
+            .query_map(rusqlite::params![ok], |row| {
+                Ok((
+                    db::get_str(row, "community_id"),
+                    db::get_str(row, "pseudonym_key"),
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok((communities, channels, role_rows, member_keys))
     })
     .await?;
 
@@ -771,20 +786,26 @@ async fn load_communities_from_db(
         db_coordinator_epoch,
     ) in &community_rows
     {
+        let mut channel_log_keys = std::collections::HashMap::new();
         let channels: Vec<ChannelInfo> = channel_rows
             .iter()
-            .filter(|(_, cid, _, _, _, _, _, _, _, _)| cid == community_id)
-            .map(|(id, _, ch_name, ch_type, cat_id, topic, slowmode, nsfw, msg_key, mek_gen)| ChannelInfo {
-                id: id.clone(),
-                name: ch_name.clone(),
-                channel_type: ch_type.clone(),
-                unread_count: 0,
-                category_id: cat_id.clone(),
-                topic: topic.clone(),
-                slowmode_seconds: *slowmode,
-                nsfw: *nsfw,
-                message_record_key: msg_key.clone(),
-                mek_generation: *mek_gen,
+            .filter(|(_, cid, _, _, _, _, _, _, _, _, _)| cid == community_id)
+            .map(|(id, _, ch_name, ch_type, cat_id, topic, slowmode, nsfw, msg_key, mek_gen, log_key)| {
+                if let Some(ref lk) = log_key {
+                    channel_log_keys.insert(id.clone(), lk.clone());
+                }
+                ChannelInfo {
+                    id: id.clone(),
+                    name: ch_name.clone(),
+                    channel_type: ch_type.clone(),
+                    unread_count: 0,
+                    category_id: cat_id.clone(),
+                    topic: topic.clone(),
+                    slowmode_seconds: *slowmode,
+                    nsfw: *nsfw,
+                    message_record_key: msg_key.clone(),
+                    mek_generation: *mek_gen,
+                }
             })
             .collect();
 
@@ -838,8 +859,14 @@ async fn load_communities_from_db(
             gossip: None,
             slot_keypair: None,
             manifest_owner_keypair: None,
-            channel_log_keys: std::collections::HashMap::new(),
+            channel_log_keys,
+            registry_owner_keypair: None,
             slot_seed: None,
+            known_members: member_key_rows
+                .iter()
+                .filter(|(cid, _)| cid == community_id)
+                .map(|(_, pk)| pk.clone())
+                .collect(),
             presence_poll_shutdown_tx: None,
             dht_keepalive_shutdown_tx: None,
         };
@@ -919,6 +946,7 @@ fn restore_community_pseudonyms_and_meks(
     let mut manifest_keypair_updates: Vec<(String, String)> = Vec::new();
     let mut slot_keypair_updates: Vec<(String, String)> = Vec::new();
     let mut slot_seed_updates: Vec<(String, String)> = Vec::new();
+    let mut registry_keypair_updates: Vec<(String, String)> = Vec::new();
     {
         let keystore = keystore_handle.lock();
         if let Some(ref ks) = *keystore {
@@ -931,6 +959,9 @@ fn restore_community_pseudonyms_and_meks(
                 }
                 if let Some(seed) = crate::keystore::load_slot_seed(ks, community_id) {
                     slot_seed_updates.push((community_id.clone(), seed));
+                }
+                if let Some(rkp) = crate::keystore::load_registry_keypair(ks, community_id) {
+                    registry_keypair_updates.push((community_id.clone(), rkp));
                 }
             }
         }
@@ -969,6 +1000,11 @@ fn restore_community_pseudonyms_and_meks(
         for (community_id, seed) in slot_seed_updates {
             if let Some(c) = communities.get_mut(&community_id) {
                 c.slot_seed = Some(seed);
+            }
+        }
+        for (community_id, rkp) in registry_keypair_updates {
+            if let Some(c) = communities.get_mut(&community_id) {
+                c.registry_owner_keypair = Some(rkp);
             }
         }
     }
