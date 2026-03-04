@@ -1113,6 +1113,10 @@ async fn spawn_login_services(
     *state.heartbeat_shutdown_tx.write() = Some(heartbeat_tx);
     state.background_handles.lock().push(heartbeat_handle);
 
+    // Open community DHT records (manifest + registry) before starting services.
+    // After app restart, Veilid closes all records; they must be re-opened for reads/writes.
+    open_community_dht_records(state).await;
+
     // Start coordinator services for all joined communities
     {
         let community_ids: Vec<String> = state.communities.read().keys().cloned().collect();
@@ -1148,6 +1152,47 @@ async fn spawn_login_services(
 
 
 
+/// Open all community DHT records (manifest + member registry) after login.
+///
+/// After app restart, Veilid closes all DHT records. Services like elections,
+/// presence polling, and coordinator operations need these records open to
+/// read/write. This must run BEFORE starting coordinator or presence services.
+async fn open_community_dht_records(state: &SharedState) {
+    use rekindle_protocol::dht::DHTManager;
+
+    let Some(rc) = state_helpers::routing_context(state) else {
+        tracing::warn!("open_community_dht_records: no routing context, skipping");
+        return;
+    };
+    let mgr = DHTManager::new(rc);
+
+    // Collect all record keys that need opening
+    let records: Vec<(String, String, Option<String>)> = {
+        let cs = state.communities.read();
+        cs.values()
+            .map(|c| {
+                let manifest = c.manifest_key.clone().unwrap_or_else(|| c.id.clone());
+                (c.id.clone(), manifest, c.member_registry_key.clone())
+            })
+            .collect()
+    };
+
+    for (community_id, manifest_key, registry_key) in &records {
+        // Open manifest (writable if we have the owner keypair, read-only otherwise)
+        if let Err(e) = mgr.open_record(manifest_key).await {
+            tracing::warn!(community = %community_id, error = %e, "failed to open manifest record on login");
+        }
+        // Open member registry
+        if let Some(ref reg_key) = registry_key {
+            if let Err(e) = mgr.open_record(reg_key).await {
+                tracing::warn!(community = %community_id, error = %e, "failed to open registry record on login");
+            }
+        }
+    }
+
+    tracing::info!(count = records.len(), "opened community DHT records after login");
+}
+
 /// Read coordinator info from DHT manifest for each community and populate
 /// `coordinator_route_blob` in the in-memory state. Without this, communities
 /// loaded from SQLite have no coordinator route and `send_to_coordinator()` fails.
@@ -1174,6 +1219,7 @@ async fn restore_coordinator_routes(state: &SharedState) {
     };
 
     for (community_id, manifest_key) in &communities {
+        // Records already opened by open_community_dht_records()
         match manifest::read_coordinator(&mgr, manifest_key).await {
             Ok(Some(coord_info)) if !coord_info.route_blob.is_empty() => {
                 let mut cs = state.communities.write();

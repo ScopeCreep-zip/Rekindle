@@ -241,6 +241,17 @@ pub async fn run_election(state: &Arc<AppState>, community_id: &str) -> Result<b
         )
     };
 
+    // Open DHT records before reading — they may be closed after app restart.
+    // open_record is idempotent: no-op if already open.
+    if let Err(e) = mgr.open_record(&manifest_key).await {
+        tracing::warn!(community = %community_id, error = %e, "election: failed to open manifest record");
+    }
+    if let Some(ref reg_key) = registry_key {
+        if let Err(e) = mgr.open_record(reg_key).await {
+            tracing::warn!(community = %community_id, error = %e, "election: failed to open registry record");
+        }
+    }
+
     // Read current coordinator to get epoch
     let current_coordinator = manifest::read_coordinator(&mgr, &manifest_key)
         .await
@@ -254,6 +265,7 @@ pub async fn run_election(state: &Arc<AppState>, community_id: &str) -> Result<b
             .await
             .map_err(|e| format!("read member index: {e}"))?
     } else {
+        tracing::warn!(community = %community_id, "election: no member_registry_key — member list empty");
         Vec::new()
     };
 
@@ -261,6 +273,16 @@ pub async fn run_election(state: &Arc<AppState>, community_id: &str) -> Result<b
     let roles = manifest::read_roles(&mgr, &manifest_key)
         .await
         .map_err(|e| format!("read roles: {e}"))?;
+
+    tracing::debug!(
+        community = %community_id,
+        member_count = members.len(),
+        role_count = roles.len(),
+        registry_key = ?registry_key,
+        "election: read {} members, {} roles",
+        members.len(),
+        roles.len(),
+    );
 
     let now_secs = rekindle_utils::timestamp_secs();
 
