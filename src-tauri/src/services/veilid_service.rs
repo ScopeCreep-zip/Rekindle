@@ -1250,6 +1250,21 @@ fn handle_slot_keypair_grant(
         slot_index, segment_index,
         "slot keypair grant accepted and persisted"
     );
+
+    // Trigger an immediate presence write so peers discover us quickly
+    // (next scheduled tick may be up to 60s away)
+    let state_for_poll = state.clone();
+    let cid_for_poll = community_id.to_string();
+    tokio::spawn(async move {
+        if let Err(e) = crate::services::community_service::presence_poll_tick_public(
+            &state_for_poll,
+            &cid_for_poll,
+        )
+        .await
+        {
+            tracing::debug!(error = %e, "immediate presence poll after SlotKeypairGrant failed");
+        }
+    });
 }
 
 /// Handle a sync request — respond with messages from local SQLite.
@@ -1440,7 +1455,7 @@ async fn handle_join_accepted(
                 cs.my_role_ids = role_ids.to_vec();
             }
             if !parsed_roles.is_empty() {
-                cs.roles = parsed_roles;
+                cs.roles.clone_from(&parsed_roles);
             }
 
             // Update channel list if provided
@@ -1465,17 +1480,49 @@ async fn handle_join_accepted(
         }
     }
 
-    // 4b. Persist member_registry_key to SQLite so it survives restarts
-    if let Some(rk) = member_registry_key {
+    // 4b. Persist member_registry_key, my_role_ids, and roles to SQLite so
+    //     state survives restarts. Without this, my_role_ids and roles loaded
+    //     on next login would be stale (from the original join/create time).
+    {
         let pool: tauri::State<'_, DbPool> = app_handle.state();
         let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
         let cid = community_id.to_string();
-        let rk_str = rk.to_string();
+        let rk_str = member_registry_key.map(str::to_string);
+        let role_ids_json = serde_json::to_string(role_ids).unwrap_or_else(|_| "[]".into());
+        let roles_for_db = parsed_roles.clone();
         let _ = crate::db_helpers::db_call(pool.inner(), move |conn| {
-            conn.execute(
-                "UPDATE communities SET member_registry_key = ?1 WHERE owner_key = ?2 AND id = ?3",
-                rusqlite::params![rk_str, owner_key, cid],
-            )?;
+            // Update my_role_ids and optionally member_registry_key
+            if let Some(ref rk) = rk_str {
+                conn.execute(
+                    "UPDATE communities SET member_registry_key = ?1, my_role_ids = ?2 \
+                     WHERE owner_key = ?3 AND id = ?4",
+                    rusqlite::params![rk, role_ids_json, owner_key, cid],
+                )?;
+            } else {
+                conn.execute(
+                    "UPDATE communities SET my_role_ids = ?1 \
+                     WHERE owner_key = ?2 AND id = ?3",
+                    rusqlite::params![role_ids_json, owner_key, cid],
+                )?;
+            }
+            // Persist role definitions so they survive restarts
+            if !roles_for_db.is_empty() {
+                conn.execute(
+                    "DELETE FROM community_roles WHERE owner_key = ?1 AND community_id = ?2",
+                    rusqlite::params![owner_key, cid],
+                )?;
+                for r in &roles_for_db {
+                    conn.execute(
+                        "INSERT INTO community_roles (owner_key, community_id, role_id, name, color, permissions, position, hoist, mentionable) \
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        rusqlite::params![
+                            owner_key, cid, r.id, r.name, r.color,
+                            i64::try_from(r.permissions).unwrap_or(0), r.position,
+                            i32::from(r.hoist), i32::from(r.mentionable),
+                        ],
+                    )?;
+                }
+            }
             Ok(())
         })
         .await;
