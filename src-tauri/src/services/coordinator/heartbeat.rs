@@ -72,7 +72,7 @@ pub async fn write_heartbeat_now(state: &Arc<AppState>, community_id: &str) -> R
 async fn write_heartbeat(state: &Arc<AppState>, community_id: &str) -> Result<(), String> {
     // Clone routing context and community data BEFORE .await (parking_lot guard is !Send)
     let rc = state_helpers::routing_context(state).ok_or("not attached")?;
-    let (manifest_key, my_pseudonym, epoch) = {
+    let (manifest_key, my_pseudonym, epoch, manifest_owner_kp) = {
         let communities = state.communities.read();
         let c = communities
             .get(community_id)
@@ -84,6 +84,7 @@ async fn write_heartbeat(state: &Arc<AppState>, community_id: &str) -> Result<()
                 .ok_or("no manifest key")?,
             c.my_pseudonym_key.clone().unwrap_or_default(),
             c.coordinator_epoch,
+            c.manifest_owner_keypair.clone(),
         )
     };
 
@@ -99,6 +100,17 @@ async fn write_heartbeat(state: &Arc<AppState>, community_id: &str) -> Result<()
     };
 
     let mgr = rekindle_protocol::dht::DHTManager::new(rc);
+
+    // Open manifest writable if we have the owner keypair — otherwise the
+    // set_value call will fail with "value is not writable".
+    if let Some(ref kp_str) = manifest_owner_kp {
+        if let Ok(kp) = kp_str.parse::<veilid_core::KeyPair>() {
+            if let Err(e) = mgr.open_record_writable(&manifest_key, kp).await {
+                tracing::debug!(community = %community_id, error = %e, "heartbeat: failed to open manifest writable");
+            }
+        }
+    }
+
     manifest::write_coordinator(&mgr, &manifest_key, &coordinator_info)
         .await
         .map_err(|e| format!("write coordinator: {e}"))?;

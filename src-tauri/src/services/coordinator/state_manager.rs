@@ -227,6 +227,219 @@ pub async fn handle_incoming_envelope(
     }
 }
 
+/// Persist a Tier 2 control payload to the DHT manifest before broadcasting.
+///
+/// Reads the relevant manifest subkey, applies the mutation implied by the
+/// payload, then writes back. Non-fatal: failures are logged as warnings.
+async fn persist_control_to_manifest(
+    state: &Arc<AppState>,
+    community_id: &str,
+    payload: &ControlPayload,
+) {
+    use rekindle_protocol::dht::community::types::{
+        BanEntry, CategoryEntry, ChannelEntryV2, ChannelKind, RoleEntryV2,
+    };
+    use rekindle_protocol::dht::DHTManager;
+
+    let (manifest_key, kp_str) = {
+        let c = state.communities.read();
+        let Some(cs) = c.get(community_id) else { return };
+        let Some(ref mk) = cs.manifest_key else { return };
+        (mk.clone(), cs.manifest_owner_keypair.clone())
+    };
+
+    let Some(rc) = state_helpers::routing_context(state) else { return };
+    let dht = DHTManager::new(rc);
+
+    // Open record with writer if we have the keypair
+    if let Some(ref kp) = kp_str {
+        if let Ok(kp) = kp.parse::<veilid_core::KeyPair>() {
+            if let Err(e) = dht.open_record_writable(&manifest_key, kp).await {
+                tracing::warn!(error = %e, "persist_control: open_record_writable failed");
+                return;
+            }
+        }
+    }
+
+    let result: Result<(), String> = match payload {
+        // ── Channels ──
+        ControlPayload::CreateChannel { name, channel_type, category_id } => {
+            let mut chs = manifest::read_channels(&dht, &manifest_key).await.unwrap_or_default();
+            let sort_order = u16::try_from(chs.len()).unwrap_or(u16::MAX);
+            let kind = channel_type.parse::<ChannelKind>().unwrap_or(ChannelKind::Text);
+            chs.push(ChannelEntryV2 {
+                id: format!("ch_{}", hex::encode(&crate::commands::community::rand_nonce()[..8])),
+                name: name.clone(),
+                kind,
+                sort_order,
+                category_id: category_id.clone(),
+                topic: String::new(),
+                slowmode_seconds: 0,
+                nsfw: false,
+                message_record_key: None,
+                mek_generation: 0,
+                permission_overwrites: vec![],
+                log_key: None,
+            });
+            manifest::write_channels(&dht, &manifest_key, &chs).await.map_err(|e| format!("{e}"))
+        }
+        ControlPayload::DeleteChannel { channel_id } => {
+            let mut chs = manifest::read_channels(&dht, &manifest_key).await.unwrap_or_default();
+            chs.retain(|c| c.id != *channel_id);
+            manifest::write_channels(&dht, &manifest_key, &chs).await.map_err(|e| format!("{e}"))
+        }
+        ControlPayload::RenameChannel { channel_id, new_name } => {
+            let mut chs = manifest::read_channels(&dht, &manifest_key).await.unwrap_or_default();
+            if let Some(ch) = chs.iter_mut().find(|c| c.id == *channel_id) {
+                ch.name.clone_from(new_name);
+            }
+            manifest::write_channels(&dht, &manifest_key, &chs).await.map_err(|e| format!("{e}"))
+        }
+        ControlPayload::SetChannelTopic { channel_id, topic } => {
+            let mut chs = manifest::read_channels(&dht, &manifest_key).await.unwrap_or_default();
+            if let Some(ch) = chs.iter_mut().find(|c| c.id == *channel_id) {
+                ch.topic.clone_from(topic);
+            }
+            manifest::write_channels(&dht, &manifest_key, &chs).await.map_err(|e| format!("{e}"))
+        }
+        ControlPayload::ReorderChannels { channel_ids } => {
+            let mut chs = manifest::read_channels(&dht, &manifest_key).await.unwrap_or_default();
+            for (i, id) in channel_ids.iter().enumerate() {
+                if let Some(ch) = chs.iter_mut().find(|c| c.id == *id) {
+                    ch.sort_order = u16::try_from(i).unwrap_or(u16::MAX);
+                }
+            }
+            manifest::write_channels(&dht, &manifest_key, &chs).await.map_err(|e| format!("{e}"))
+        }
+        ControlPayload::SetSlowmode { channel_id, seconds } => {
+            let mut chs = manifest::read_channels(&dht, &manifest_key).await.unwrap_or_default();
+            if let Some(ch) = chs.iter_mut().find(|c| c.id == *channel_id) {
+                ch.slowmode_seconds = *seconds;
+            }
+            manifest::write_channels(&dht, &manifest_key, &chs).await.map_err(|e| format!("{e}"))
+        }
+        ControlPayload::MoveChannel { channel_id, category_id } => {
+            let mut chs = manifest::read_channels(&dht, &manifest_key).await.unwrap_or_default();
+            if let Some(ch) = chs.iter_mut().find(|c| c.id == *channel_id) {
+                ch.category_id.clone_from(category_id);
+            }
+            manifest::write_channels(&dht, &manifest_key, &chs).await.map_err(|e| format!("{e}"))
+        }
+
+        // ── Categories ──
+        ControlPayload::CreateCategory { name } => {
+            let mut cats = manifest::read_categories(&dht, &manifest_key).await.unwrap_or_default();
+            let sort = i32::try_from(cats.len()).unwrap_or(i32::MAX);
+            cats.push(CategoryEntry {
+                id: format!("cat_{}", hex::encode(&crate::commands::community::rand_nonce()[..8])),
+                name: name.clone(),
+                sort_order: sort,
+            });
+            manifest::write_categories(&dht, &manifest_key, &cats).await.map_err(|e| format!("{e}"))
+        }
+        ControlPayload::DeleteCategory { category_id } => {
+            let mut cats = manifest::read_categories(&dht, &manifest_key).await.unwrap_or_default();
+            cats.retain(|c| c.id != *category_id);
+            manifest::write_categories(&dht, &manifest_key, &cats).await.map_err(|e| format!("{e}"))
+        }
+        ControlPayload::RenameCategory { category_id, new_name } => {
+            let mut cats = manifest::read_categories(&dht, &manifest_key).await.unwrap_or_default();
+            if let Some(cat) = cats.iter_mut().find(|c| c.id == *category_id) {
+                cat.name.clone_from(new_name);
+            }
+            manifest::write_categories(&dht, &manifest_key, &cats).await.map_err(|e| format!("{e}"))
+        }
+        ControlPayload::ReorderCategories { category_ids } => {
+            let mut cats = manifest::read_categories(&dht, &manifest_key).await.unwrap_or_default();
+            for (i, id) in category_ids.iter().enumerate() {
+                if let Some(cat) = cats.iter_mut().find(|c| c.id == *id) {
+                    cat.sort_order = i32::try_from(i).unwrap_or(i32::MAX);
+                }
+            }
+            manifest::write_categories(&dht, &manifest_key, &cats).await.map_err(|e| format!("{e}"))
+        }
+
+        // ── Roles ──
+        ControlPayload::CreateRole { name, color, permissions, hoist, mentionable } => {
+            let mut roles = manifest::read_roles(&dht, &manifest_key).await.unwrap_or_default();
+            let next_id = roles.iter().map(|r| r.id).max().unwrap_or(4) + 1;
+            let position = i32::try_from(roles.len()).unwrap_or(i32::MAX);
+            roles.push(RoleEntryV2 {
+                id: next_id,
+                name: name.clone(),
+                color: *color,
+                permissions: *permissions,
+                position,
+                hoist: *hoist,
+                mentionable: *mentionable,
+            });
+            manifest::write_roles(&dht, &manifest_key, &roles).await.map_err(|e| format!("{e}"))
+        }
+        ControlPayload::DeleteRole { role_id } => {
+            let mut roles = manifest::read_roles(&dht, &manifest_key).await.unwrap_or_default();
+            roles.retain(|r| r.id != *role_id);
+            manifest::write_roles(&dht, &manifest_key, &roles).await.map_err(|e| format!("{e}"))
+        }
+        ControlPayload::EditRole { role_id, name, color, permissions, position, hoist, mentionable } => {
+            let mut roles = manifest::read_roles(&dht, &manifest_key).await.unwrap_or_default();
+            if let Some(r) = roles.iter_mut().find(|r| r.id == *role_id) {
+                if let Some(ref n) = name { r.name.clone_from(n); }
+                if let Some(c) = color { r.color = *c; }
+                if let Some(p) = permissions { r.permissions = *p; }
+                if let Some(pos) = position { r.position = *pos; }
+                if let Some(h) = hoist { r.hoist = *h; }
+                if let Some(m) = mentionable { r.mentionable = *m; }
+            }
+            manifest::write_roles(&dht, &manifest_key, &roles).await.map_err(|e| format!("{e}"))
+        }
+
+        // ── Bans ──
+        ControlPayload::Ban { target_pseudonym, .. } => {
+            let mut bans = manifest::read_bans(&dht, &manifest_key).await.unwrap_or_default();
+            bans.push(BanEntry {
+                pseudonym_key: target_pseudonym.clone(),
+                reason: None,
+                banned_by: String::new(),
+                banned_at: rekindle_utils::timestamp_secs(),
+            });
+            manifest::write_bans(&dht, &manifest_key, &bans).await.map_err(|e| format!("{e}"))
+        }
+        ControlPayload::Unban { target_pseudonym, .. } => {
+            let mut bans = manifest::read_bans(&dht, &manifest_key).await.unwrap_or_default();
+            bans.retain(|b| b.pseudonym_key != *target_pseudonym);
+            manifest::write_bans(&dht, &manifest_key, &bans).await.map_err(|e| format!("{e}"))
+        }
+
+        // ── Metadata ──
+        ControlPayload::UpdateCommunity { name, description } => {
+            let mut meta = manifest::read_metadata(&dht, &manifest_key).await.ok().flatten().unwrap_or(
+                rekindle_protocol::dht::community::types::CommunityMetadataV2 {
+                    name: String::new(),
+                    description: None,
+                    icon_hash: None,
+                    created_at: 0,
+                    owner_pseudonym: String::new(),
+                    last_refreshed: 0,
+                }
+            );
+            if let Some(ref n) = name { meta.name.clone_from(n); }
+            if let Some(ref d) = description { meta.description = Some(d.clone()); }
+            manifest::write_metadata(&dht, &manifest_key, &meta).await.map_err(|e| format!("{e}"))
+        }
+
+        _ => Ok(()), // Non-manifest payloads don't need persistence
+    };
+
+    if let Err(e) = result {
+        tracing::warn!(
+            community = %community_id,
+            payload = ?std::mem::discriminant(payload),
+            error = %e,
+            "DHT manifest persist failed (non-fatal)"
+        );
+    }
+}
+
 /// Handle a control payload from a member.
 async fn handle_control(
     state: &Arc<AppState>,
@@ -439,6 +652,7 @@ async fn handle_control(
         }
         ControlPayload::Ban { target_pseudonym, .. } => {
             if base_perms.has(Permissions::BAN_MEMBERS) {
+                persist_control_to_manifest(state, &sm.community_id, payload).await;
                 let target = target_pseudonym.clone();
                 let ban_envelope = CommunityEnvelope::Control(payload.clone());
                 broadcast_via_gossip(state, &sm.community_id, &ban_envelope);
@@ -448,6 +662,7 @@ async fn handle_control(
         }
         ControlPayload::Unban { target_pseudonym, .. } => {
             if base_perms.has(Permissions::BAN_MEMBERS) {
+                persist_control_to_manifest(state, &sm.community_id, payload).await;
                 let target = target_pseudonym.clone();
                 let unban_envelope = CommunityEnvelope::Control(payload.clone());
                 broadcast_via_gossip(state, &sm.community_id, &unban_envelope);
@@ -476,6 +691,7 @@ async fn handle_control(
         // Channel management - requires MANAGE_CHANNELS
         ControlPayload::CreateChannel { name, .. } => {
             if base_perms.has(Permissions::MANAGE_CHANNELS) {
+                persist_control_to_manifest(state, &sm.community_id, payload).await;
                 let ch_name = name.clone();
                 let create_ch_envelope = CommunityEnvelope::Control(payload.clone());
                 broadcast_via_gossip(state, &sm.community_id, &create_ch_envelope);
@@ -486,6 +702,7 @@ async fn handle_control(
         }
         ControlPayload::DeleteChannel { channel_id, .. } => {
             if base_perms.has(Permissions::MANAGE_CHANNELS) {
+                persist_control_to_manifest(state, &sm.community_id, payload).await;
                 let ch_id = channel_id.clone();
                 let del_ch_envelope = CommunityEnvelope::Control(payload.clone());
                 broadcast_via_gossip(state, &sm.community_id, &del_ch_envelope);
@@ -502,6 +719,7 @@ async fn handle_control(
         | ControlPayload::RenameCategory { .. }
         | ControlPayload::ReorderCategories { .. } => {
             if base_perms.has(Permissions::MANAGE_CHANNELS) {
+                persist_control_to_manifest(state, &sm.community_id, payload).await;
                 let ch_mgmt_envelope = CommunityEnvelope::Control(payload.clone());
                 broadcast_via_gossip(state, &sm.community_id, &ch_mgmt_envelope);
             }
@@ -510,6 +728,7 @@ async fn handle_control(
         // Role management + channel overwrites - requires MANAGE_ROLES
         ControlPayload::CreateRole { name, .. } => {
             if base_perms.has(Permissions::MANAGE_ROLES) {
+                persist_control_to_manifest(state, &sm.community_id, payload).await;
                 let role_name = name.clone();
                 let create_role_envelope = CommunityEnvelope::Control(payload.clone());
                 broadcast_via_gossip(state, &sm.community_id, &create_role_envelope);
@@ -520,34 +739,14 @@ async fn handle_control(
         }
         ControlPayload::DeleteRole { role_id, .. } => {
             if base_perms.has(Permissions::MANAGE_ROLES) {
+                persist_control_to_manifest(state, &sm.community_id, payload).await;
                 let rid = *role_id;
                 let del_role_envelope = CommunityEnvelope::Control(payload.clone());
                 broadcast_via_gossip(state, &sm.community_id, &del_role_envelope);
                 log_audit(state, sm, AuditAction::RoleDelete, AuditTarget::Role(rid), vec![], None);
             }
         }
-        ControlPayload::AssignRole { target_pseudonym, role_id, .. }
-        | ControlPayload::UnassignRole { target_pseudonym, role_id, .. } => {
-            if base_perms.has(Permissions::MANAGE_ROLES) {
-                let target = target_pseudonym.clone();
-                let rid = *role_id;
-                let role_assign_envelope = CommunityEnvelope::Control(payload.clone());
-                broadcast_via_gossip(state, &sm.community_id, &role_assign_envelope);
-                log_audit(state, sm, AuditAction::MemberRoleUpdate, AuditTarget::Member(target), vec![
-                    AuditChange { field: "role_id".into(), old_value: None, new_value: Some(rid.to_string()) },
-                ], None);
-            }
-        }
-        ControlPayload::EditRole { .. }
-        | ControlPayload::SetChannelOverwrite { .. }
-        | ControlPayload::DeleteChannelOverwrite { .. } => {
-            if base_perms.has(Permissions::MANAGE_ROLES) {
-                let role_edit_envelope = CommunityEnvelope::Control(payload.clone());
-                broadcast_via_gossip(state, &sm.community_id, &role_edit_envelope);
-            }
-        }
-
-        // All other control payloads — permission checks + broadcast via gossip
+        // Role assignment, role editing, and channel overwrites — delegated for line limit
         other => handle_control_extended(state, sm, base_perms, other, sender_pseudonym).await,
     }
 }
@@ -561,11 +760,57 @@ async fn handle_control_extended(
     sender_pseudonym: &str,
 ) {
     match payload {
-        // Community metadata, game servers - requires MANAGE_COMMUNITY
-        ControlPayload::UpdateCommunity { .. }
-        | ControlPayload::ListInvites
-        | ControlPayload::AddGameServer { .. }
-        | ControlPayload::RemoveGameServer { .. } => {
+        // Role assignment/unassignment — includes AdminKeypairGrant on admin promotion
+        ControlPayload::AssignRole { target_pseudonym, role_id, .. }
+        | ControlPayload::UnassignRole { target_pseudonym, role_id, .. } => {
+            if base_perms.has(Permissions::MANAGE_ROLES) {
+                let target = target_pseudonym.clone();
+                let rid = *role_id;
+                let role_assign_envelope = CommunityEnvelope::Control(payload.clone());
+                broadcast_via_gossip(state, &sm.community_id, &role_assign_envelope);
+                log_audit(state, sm, AuditAction::MemberRoleUpdate, AuditTarget::Member(target.clone()), vec![
+                    AuditChange { field: "role_id".into(), old_value: None, new_value: Some(rid.to_string()) },
+                ], None);
+
+                // If this is an AssignRole and the role grants ADMINISTRATOR,
+                // send the manifest keypair + slot seed to the target member.
+                if matches!(payload, ControlPayload::AssignRole { .. }) {
+                    let target_gets_admin = {
+                        let communities = state.communities.read();
+                        communities.get(&sm.community_id).is_some_and(|cs| {
+                            cs.roles.iter().any(|r| {
+                                r.id == rid
+                                    && Permissions::from_bits_truncate(r.permissions)
+                                        .contains(Permissions::ADMINISTRATOR)
+                            })
+                        })
+                    };
+                    if target_gets_admin {
+                        send_admin_keypair_grant(state, &sm.community_id, &target);
+                    }
+                }
+            }
+        }
+        // Role editing, channel overwrites — requires MANAGE_ROLES
+        ControlPayload::EditRole { .. }
+        | ControlPayload::SetChannelOverwrite { .. }
+        | ControlPayload::DeleteChannelOverwrite { .. } => {
+            if base_perms.has(Permissions::MANAGE_ROLES) {
+                persist_control_to_manifest(state, &sm.community_id, payload).await;
+                let role_edit_envelope = CommunityEnvelope::Control(payload.clone());
+                broadcast_via_gossip(state, &sm.community_id, &role_edit_envelope);
+            }
+        }
+
+        // Community metadata - requires MANAGE_COMMUNITY
+        ControlPayload::UpdateCommunity { .. } => {
+            if base_perms.has(Permissions::MANAGE_COMMUNITY) {
+                persist_control_to_manifest(state, &sm.community_id, payload).await;
+                let mgmt_envelope = CommunityEnvelope::Control(payload.clone());
+                broadcast_via_gossip(state, &sm.community_id, &mgmt_envelope);
+            }
+        }
+        ControlPayload::ListInvites => {
             if base_perms.has(Permissions::MANAGE_COMMUNITY) {
                 let mgmt_envelope = CommunityEnvelope::Control(payload.clone());
                 broadcast_via_gossip(state, &sm.community_id, &mgmt_envelope);
@@ -643,33 +888,26 @@ async fn handle_control_extended(
             }
         }
 
-        // Events management - requires MANAGE_EVENTS
+        // Events, reactions, pins, game servers — handled by gossip mesh directly.
+        // Coordinator is passthrough only; no re-broadcast needed.
         ControlPayload::CreateEvent { .. }
         | ControlPayload::EditEvent { .. }
         | ControlPayload::DeleteEvent { .. }
-        | ControlPayload::CancelEvent { .. } => {
-            if base_perms.has(Permissions::MANAGE_EVENTS) {
-                let event_envelope = CommunityEnvelope::Control(payload.clone());
-                broadcast_via_gossip(state, &sm.community_id, &event_envelope);
-            }
-        }
-
-        // Reactions
-        ControlPayload::AddReaction { .. } | ControlPayload::RemoveReaction { .. } => {
-            if base_perms.has(Permissions::ADD_REACTIONS) {
-                let reaction_envelope = CommunityEnvelope::Control(payload.clone());
-                broadcast_via_gossip(state, &sm.community_id, &reaction_envelope);
-            }
-        }
-
-        // Message management (pin/unpin/delete) - requires MANAGE_MESSAGES
-        ControlPayload::PinMessage { .. }
+        | ControlPayload::CancelEvent { .. }
+        | ControlPayload::RsvpEvent { .. }
+        | ControlPayload::AddReaction { .. }
+        | ControlPayload::RemoveReaction { .. }
+        | ControlPayload::PinMessage { .. }
         | ControlPayload::UnpinMessage { .. }
-        | ControlPayload::DeleteMessage { .. } => {
-            if base_perms.has(Permissions::MANAGE_MESSAGES) {
-                let msg_mgmt_envelope = CommunityEnvelope::Control(payload.clone());
-                broadcast_via_gossip(state, &sm.community_id, &msg_mgmt_envelope);
-            }
+        | ControlPayload::DeleteMessage { .. }
+        | ControlPayload::MessagePinned { .. }
+        | ControlPayload::MessageUnpinned { .. }
+        | ControlPayload::CreateThread { .. }
+        | ControlPayload::ArchiveThread { .. }
+        | ControlPayload::UnarchiveThread { .. }
+        | ControlPayload::AddGameServer { .. }
+        | ControlPayload::RemoveGameServer { .. } => {
+            tracing::trace!("ignoring gossip-handled control payload at coordinator");
         }
 
         // Onboarding answers — process and assign roles
@@ -930,6 +1168,92 @@ fn send_slot_keypair_grant(
         slot_index,
         joiner = %joiner_pseudonym,
         "sent SlotKeypairGrant to joiner"
+    );
+}
+
+/// Send an `AdminKeypairGrant` to a promoted admin so they can write the DHT manifest directly.
+///
+/// Wraps the manifest owner keypair and slot seed for the target's pseudonym key,
+/// then sends via the target's route blob (if online).
+fn send_admin_keypair_grant(
+    state: &Arc<AppState>,
+    community_id: &str,
+    target_pseudonym: &str,
+) {
+    use rekindle_crypto::group::mek_distribution::wrap_mek;
+    use rekindle_crypto::group::pseudonym::derive_community_pseudonym;
+
+    // Get manifest keypair + slot seed from our state
+    let (manifest_kp, slot_seed) = {
+        let communities = state.communities.read();
+        let Some(c) = communities.get(community_id) else { return };
+        (
+            c.manifest_owner_keypair.clone(),
+            c.slot_seed.clone(),
+        )
+    };
+    let (Some(manifest_kp), Some(slot_seed)) = (manifest_kp, slot_seed) else {
+        tracing::warn!(community = %community_id, "no manifest keypair or slot seed — cannot send AdminKeypairGrant");
+        return;
+    };
+
+    // Get target's route blob from online members
+    let target_route_blob = {
+        let communities = state.communities.read();
+        communities
+            .get(community_id)
+            .and_then(|cs| cs.gossip.as_ref())
+            .and_then(|g| g.online_members.get(target_pseudonym))
+            .cloned()
+    };
+    let Some(blob) = target_route_blob else {
+        tracing::info!(
+            community = %community_id,
+            target = %target_pseudonym,
+            "target not online — AdminKeypairGrant will be sent when they reconnect"
+        );
+        return;
+    };
+
+    // Encrypt (wrap) manifest keypair + slot seed for the target
+    let Some(secret) = state.identity_secret.lock().as_ref().copied() else { return };
+    let my_signing_key = derive_community_pseudonym(&secret, community_id);
+
+    let Ok(target_pub_bytes) = hex::decode(target_pseudonym) else {
+        tracing::warn!("invalid target pseudonym hex for AdminKeypairGrant");
+        return;
+    };
+    let Ok(target_pub): Result<[u8; 32], _> = target_pub_bytes.try_into() else {
+        tracing::warn!("target pseudonym wrong length for AdminKeypairGrant");
+        return;
+    };
+
+    let wrapped_kp = match wrap_mek(&my_signing_key, &target_pub, manifest_kp.as_bytes()) {
+        Ok(w) => w,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to wrap manifest keypair for AdminKeypairGrant");
+            return;
+        }
+    };
+    let wrapped_seed = match wrap_mek(&my_signing_key, &target_pub, slot_seed.as_bytes()) {
+        Ok(w) => w,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to wrap slot seed for AdminKeypairGrant");
+            return;
+        }
+    };
+
+    let payload = ControlPayload::AdminKeypairGrant {
+        wrapped_manifest_keypair: wrapped_kp,
+        wrapped_slot_seed: wrapped_seed,
+    };
+
+    send_control_to_route(state, community_id, &blob, payload);
+
+    tracing::info!(
+        community = %community_id,
+        target = %target_pseudonym,
+        "sent AdminKeypairGrant to promoted admin"
     );
 }
 
@@ -1258,13 +1582,28 @@ async fn add_member_to_registry(
     let rc = state_helpers::routing_context(state).ok_or("not attached")?;
     let mgr = rekindle_protocol::dht::DHTManager::new(rc);
 
-    let registry_key = {
+    let (registry_key, registry_owner_kp) = {
         let communities = state.communities.read();
         let c = communities.get(community_id).ok_or("community not found")?;
-        c.member_registry_key
-            .clone()
-            .ok_or("no member registry key")?
+        (
+            c.member_registry_key
+                .clone()
+                .ok_or("no member registry key")?,
+            c.registry_owner_keypair.clone(),
+        )
     };
+
+    // Open registry writable so we can update the member index (owner subkey 0).
+    // Without the owner keypair, writes will fail with "value is not writable".
+    if let Some(ref kp_str) = registry_owner_kp {
+        if let Ok(kp) = kp_str.parse::<veilid_core::KeyPair>() {
+            if let Err(e) = mgr.open_record_writable(&registry_key, kp).await {
+                tracing::warn!(community = %community_id, error = %e, "failed to open registry writable for member add");
+            }
+        }
+    } else if let Err(e) = mgr.open_record(&registry_key).await {
+        tracing::warn!(community = %community_id, error = %e, "failed to open registry for member add");
+    }
 
     let mut members = member_registry::read_member_index(&mgr, &registry_key)
         .await

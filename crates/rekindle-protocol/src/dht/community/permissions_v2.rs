@@ -157,8 +157,12 @@ pub fn moderator_default() -> Permissions {
 }
 
 /// Default permissions for the Admin role (id=3).
+///
+/// Includes `ADMINISTRATOR` so that admins are eligible for coordinator
+/// election — required for the "community survives owner leaving" design.
 pub fn admin_default() -> Permissions {
     moderator_default()
+        | Permissions::ADMINISTRATOR
         | Permissions::MANAGE_CHANNELS
         | Permissions::MANAGE_ROLES
         | Permissions::BAN_MEMBERS

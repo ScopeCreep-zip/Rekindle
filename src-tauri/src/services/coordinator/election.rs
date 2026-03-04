@@ -79,7 +79,7 @@ pub async fn run(
                 tracing::info!(community = %community_id, "election triggered");
 
                 match run_election(&state, &community_id).await {
-                    Ok(we_won) => {
+                    Ok(Some(we_won)) => {
                         let old_role = *role.read();
 
                         if we_won {
@@ -162,6 +162,13 @@ pub async fn run(
                             }
                         }
                     }
+                    Ok(None) => {
+                        // No eligible candidate — preserve current role (don't demote)
+                        tracing::debug!(
+                            community = %community_id,
+                            "election: no winner — keeping current role"
+                        );
+                    }
                     Err(e) => {
                         tracing::warn!(community = %community_id, error = %e, "election failed");
                     }
@@ -217,14 +224,18 @@ fn handle_coordinator_change(
 
 /// Execute one election round.
 ///
-/// Returns `Ok(true)` if we won the election.
-pub async fn run_election(state: &Arc<AppState>, community_id: &str) -> Result<bool, String> {
+/// Returns:
+/// - `Ok(Some(true))` — we won the election
+/// - `Ok(Some(false))` — someone else won (we should demote to Member)
+/// - `Ok(None)` — no eligible candidate found (preserve current role)
+/// - `Err` — election failed
+pub async fn run_election(state: &Arc<AppState>, community_id: &str) -> Result<Option<bool>, String> {
     // Clone routing context BEFORE .await (parking_lot guard is !Send)
     let rc = state_helpers::routing_context(state).ok_or("not attached")?;
     let mgr = rekindle_protocol::dht::DHTManager::new(rc);
 
     // Read from CommunityState (clone out of lock)
-    let (manifest_key, registry_key, my_pseudonym) = {
+    let (manifest_key, registry_key, my_pseudonym, manifest_owner_kp) = {
         let communities = state.communities.read();
         let c = communities
             .get(community_id)
@@ -238,12 +249,21 @@ pub async fn run_election(state: &Arc<AppState>, community_id: &str) -> Result<b
             c.my_pseudonym_key
                 .clone()
                 .unwrap_or_default(),
+            c.manifest_owner_keypair.clone(),
         )
     };
 
     // Open DHT records before reading — they may be closed after app restart.
-    // open_record is idempotent: no-op if already open.
-    if let Err(e) = mgr.open_record(&manifest_key).await {
+    // The manifest is a DFLT record: if we have the owner keypair, open it
+    // writable so write_coordinator() succeeds. Without the keypair, open
+    // read-only (we can still participate in elections, just can't write).
+    if let Some(ref kp_str) = manifest_owner_kp {
+        if let Ok(kp) = kp_str.parse::<veilid_core::KeyPair>() {
+            if let Err(e) = mgr.open_record_writable(&manifest_key, kp).await {
+                tracing::warn!(community = %community_id, error = %e, "election: failed to open manifest writable");
+            }
+        }
+    } else if let Err(e) = mgr.open_record(&manifest_key).await {
         tracing::warn!(community = %community_id, error = %e, "election: failed to open manifest record");
     }
     if let Some(ref reg_key) = registry_key {
@@ -289,10 +309,29 @@ pub async fn run_election(state: &Arc<AppState>, community_id: &str) -> Result<b
     // Find the winner
     let winner = proto_election::find_winner(community_id, new_epoch, &members, &roles, now_secs);
 
-    let we_won = winner.as_deref() == Some(&my_pseudonym);
+    // If no eligible candidate found, preserve the current coordinator.
+    // This prevents demoting a working coordinator just because the join-age
+    // threshold hasn't been met yet or member data is stale.
+    let Some(ref winner_key) = winner else {
+        tracing::debug!(
+            community = %community_id,
+            "election: no eligible candidate — preserving current coordinator"
+        );
+        return Ok(None);
+    };
+
+    let we_won = winner_key == &my_pseudonym;
 
     if we_won {
-        // Write ourselves as coordinator
+        // Write ourselves as coordinator (requires manifest owner keypair)
+        if manifest_owner_kp.is_none() {
+            tracing::warn!(
+                community = %community_id,
+                "won election but lack manifest owner keypair — cannot write coordinator info"
+            );
+            return Ok(None);
+        }
+
         let route_blob = state_helpers::our_route_blob(state).unwrap_or_default();
         let coordinator_info = CoordinatorInfo {
             pseudonym_key: my_pseudonym.clone(),
@@ -326,5 +365,5 @@ pub async fn run_election(state: &Arc<AppState>, community_id: &str) -> Result<b
         );
     }
 
-    Ok(we_won)
+    Ok(Some(we_won))
 }
