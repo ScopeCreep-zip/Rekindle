@@ -191,7 +191,9 @@ async fn handle_gossip_envelope(
     }
 
     // 4. FORWARD to D gossip peers (if TTL > 0)
-    if signed.ttl > 0 {
+    // Skip forwarding for private control payloads (targeted at specific member, not broadcast).
+    let is_private = is_private_control_payload(&signed.envelope_bytes);
+    if signed.ttl > 0 && !is_private {
         gossip_forward(state, community_id, &signed);
     }
 
@@ -249,6 +251,26 @@ fn extract_dedup_key(
         let mut h = Blake2b::<U16>::new();
         h.update(&signed.envelope_bytes);
         hex::encode(h.finalize())
+    }
+}
+
+/// Check if a control payload is private (targeted at a specific member, not for broadcast).
+/// Private payloads should NOT be forwarded via gossip — they contain key material
+/// or data intended only for the direct recipient.
+fn is_private_control_payload(envelope_bytes: &[u8]) -> bool {
+    use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
+    if let Ok(CommunityEnvelope::Control(ref payload)) =
+        serde_json::from_slice::<CommunityEnvelope>(envelope_bytes)
+    {
+        matches!(
+            payload,
+            ControlPayload::JoinAccepted { .. }
+                | ControlPayload::SlotKeypairGrant { .. }
+                | ControlPayload::AdminKeypairGrant { .. }
+                | ControlPayload::SyncResponse { .. }
+        )
+    } else {
+        false
     }
 }
 
@@ -2379,8 +2401,10 @@ pub async fn logout_cleanup(app_handle: Option<&tauri::AppHandle>, state: &AppSt
     *state.signal_manager.lock() = None;
     *state.identity_secret.lock() = None;
 
-    // 7. Clear community-specific state
+    // 7. Clear community-specific state (including all crypto caches)
     state.mek_cache.lock().clear();
+    state.channel_mek_cache.lock().clear();
+    state.dedup_cache.lock().clear();
 
     // 8. Stop coordinator services
     {

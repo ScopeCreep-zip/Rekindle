@@ -160,6 +160,7 @@ pub async fn create_community(
         channel_log_keys: std::collections::HashMap::new(),
         slot_seed: Some(hex::encode(&slot_seed)),
         presence_poll_shutdown_tx: None,
+        dht_keepalive_shutdown_tx: None,
     };
 
     state.communities.write().insert(manifest_key.clone(), community);
@@ -330,6 +331,7 @@ pub async fn join_community(
         channel_log_keys: std::collections::HashMap::new(),
         slot_seed: None,
         presence_poll_shutdown_tx: None,
+        dht_keepalive_shutdown_tx: None,
     };
 
     state.communities.write().insert(community_id.to_string(), community);
@@ -734,25 +736,37 @@ fn random_peer_sample(
 /// Start a DHT keepalive task that re-accesses community DHT records every 5 minutes
 /// to prevent them from expiring in the Veilid DHT.
 pub fn start_dht_keepalive(state: Arc<AppState>, community_id: String) {
+    use tokio::sync::mpsc;
+
+    let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
+    {
+        let mut communities = state.communities.write();
+        if let Some(cs) = communities.get_mut(&community_id) {
+            cs.dht_keepalive_shutdown_tx = Some(shutdown_tx);
+        }
+    }
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(300));
         interval.tick().await; // skip immediate first tick
         loop {
-            interval.tick().await;
-            let Some(rc) = state_helpers::routing_context(&state) else {
-                continue;
-            };
-            let manifest_key = {
-                let communities = state.communities.read();
-                communities
-                    .get(&community_id)
-                    .and_then(|c| c.manifest_key.clone().or_else(|| Some(c.id.clone())))
-            };
-            let Some(key) = manifest_key else { continue };
-            let mgr = DHTManager::new(rc);
-            // Open record if needed (may be closed after restart), then re-read to refresh TTL
-            let _ = mgr.open_record(&key).await;
-            let _ = manifest::read_metadata(&mgr, &key).await;
+            tokio::select! {
+                _ = interval.tick() => {
+                    let Some(rc) = state_helpers::routing_context(&state) else {
+                        continue;
+                    };
+                    let manifest_key = {
+                        let communities = state.communities.read();
+                        communities
+                            .get(&community_id)
+                            .and_then(|c| c.manifest_key.clone().or_else(|| Some(c.id.clone())))
+                    };
+                    let Some(key) = manifest_key else { continue };
+                    let mgr = DHTManager::new(rc);
+                    let _ = mgr.open_record(&key).await;
+                    let _ = manifest::read_metadata(&mgr, &key).await;
+                }
+                _ = shutdown_rx.recv() => break,
+            }
         }
     });
 }
