@@ -34,9 +34,12 @@ pub async fn run(
 ) {
     tracing::info!(community = %community_id, "coordinator election loop started");
 
-    // Track active heartbeat/monitor tasks
+    // Track active heartbeat/monitor tasks + their shutdown senders.
+    // The shutdown sender MUST be kept alive; dropping it causes recv() to return None immediately.
     let mut coordinator_heartbeat_handle: Option<tokio::task::JoinHandle<()>> = None;
+    let mut coordinator_heartbeat_shutdown: Option<mpsc::Sender<()>> = None;
     let mut member_monitor_handle: Option<tokio::task::JoinHandle<()>> = None;
+    let mut member_monitor_shutdown: Option<mpsc::Sender<()>> = None;
 
     loop {
         tokio::select! {
@@ -105,6 +108,7 @@ pub async fn run(
                             if let Some(handle) = member_monitor_handle.take() {
                                 handle.abort();
                             }
+                            member_monitor_shutdown.take();
 
                             // Start coordinator heartbeat if not already running
                             let should_start = coordinator_heartbeat_handle
@@ -114,7 +118,8 @@ pub async fn run(
                                 let hb_state = state.clone();
                                 let hb_community = community_id.clone();
                                 let hb_state_mgr = state_mgr.clone();
-                                let (_hb_shutdown_tx, hb_shutdown_rx) = mpsc::channel(1);
+                                let (hb_shutdown_tx, hb_shutdown_rx) = mpsc::channel(1);
+                                coordinator_heartbeat_shutdown = Some(hb_shutdown_tx);
                                 coordinator_heartbeat_handle = Some(tokio::spawn(async move {
                                     super::heartbeat::run_coordinator_heartbeat(
                                         hb_state,
@@ -133,6 +138,7 @@ pub async fn run(
                                 if let Some(handle) = coordinator_heartbeat_handle.take() {
                                     handle.abort();
                                 }
+                                coordinator_heartbeat_shutdown.take();
                             }
 
                             // Start member monitor if not already running
@@ -143,7 +149,8 @@ pub async fn run(
                                 let mon_state = state.clone();
                                 let mon_community = community_id.clone();
                                 let mon_trigger = election_trigger_tx.clone();
-                                let (_mon_shutdown_tx, mon_shutdown_rx) = mpsc::channel(1);
+                                let (mon_shutdown_tx, mon_shutdown_rx) = mpsc::channel(1);
+                                member_monitor_shutdown = Some(mon_shutdown_tx);
                                 member_monitor_handle = Some(tokio::spawn(async move {
                                     super::heartbeat::run_member_monitor(
                                         mon_state,
@@ -163,7 +170,9 @@ pub async fn run(
             _ = shutdown_rx.recv() => {
                 tracing::info!(community = %community_id, "coordinator election loop shutting down");
 
-                // Clean up heartbeat/monitor tasks
+                // Clean up heartbeat/monitor tasks (drop senders to signal shutdown, then abort)
+                coordinator_heartbeat_shutdown.take();
+                member_monitor_shutdown.take();
                 if let Some(handle) = coordinator_heartbeat_handle.take() {
                     handle.abort();
                 }
