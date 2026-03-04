@@ -26,7 +26,7 @@ const HEARTBEAT_TIMEOUT_SECS: u64 = 60;
 pub async fn run_coordinator_heartbeat(
     state: Arc<AppState>,
     community_id: String,
-    relay: Arc<super::relay::RelayService>,
+    state_mgr: Arc<super::state_manager::StateManager>,
     mut shutdown_rx: mpsc::Receiver<()>,
 ) {
     tracing::info!(community = %community_id, "coordinator heartbeat started");
@@ -48,7 +48,7 @@ pub async fn run_coordinator_heartbeat(
 
                 // Check raid auto-resolve
                 let now = rekindle_utils::timestamp_secs();
-                if relay.check_raid_auto_resolve(now) {
+                if state_mgr.check_raid_auto_resolve(now) {
                     tracing::info!(
                         community = %community_id,
                         "raid protection auto-resolved"

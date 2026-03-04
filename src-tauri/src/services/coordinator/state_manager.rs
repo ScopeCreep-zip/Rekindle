@@ -1,14 +1,10 @@
-//! Coordinator-side message relay: receives envelopes and fans out to online members.
+//! Coordinator-side state manager: handles joins, moderation, and config changes.
 //!
 //! When acting as coordinator, receives `CommunityEnvelope`s from members
-//! via `app_message` and relays to all online members. Validates permissions,
-//! enforces timeouts, and can persist messages to DHT.
+//! via `app_message`. Only processes Control payloads; chat/typing/presence
+//! are handled by the gossip mesh and are ignored here.
 
-use std::collections::HashMap;
 use std::sync::Arc;
-
-use parking_lot::RwLock;
-use tokio::sync::Semaphore;
 
 use rekindle_protocol::dht::community::audit_log::{
     AuditAction, AuditChange, AuditTarget,
@@ -26,20 +22,12 @@ use crate::state::AppState;
 use crate::state_helpers;
 
 use super::audit::{self, AuditLogger};
-use super::automod::{AutoModDecision, AutoModEnforcer};
+use super::automod::AutoModEnforcer;
 use super::raid::RaidDetector;
-use super::timeout;
 
-/// Maximum concurrent fan-out sends to avoid overwhelming Veilid.
-const MAX_CONCURRENT_FANOUT: usize = 16;
-
-/// Coordinator-side relay: receives envelopes and fans out to online members.
-pub struct RelayService {
+/// Coordinator-side state manager: handles joins, moderation, and config changes.
+pub struct StateManager {
     pub community_id: String,
-    /// Cached online members: pseudonym_key -> route_blob.
-    pub online_members: RwLock<HashMap<String, Vec<u8>>>,
-    /// Bound concurrent fan-out sends.
-    fan_out_semaphore: Arc<Semaphore>,
     /// AutoMod enforcer for rule-based message filtering.
     automod: parking_lot::Mutex<AutoModEnforcer>,
     /// Raid detector for join flood protection.
@@ -48,13 +36,11 @@ pub struct RelayService {
     audit_logger: Arc<parking_lot::Mutex<AuditLogger>>,
 }
 
-impl RelayService {
-    /// Create a new relay service for a community.
+impl StateManager {
+    /// Create a new state manager for a community.
     pub fn new(community_id: String) -> Self {
         Self {
             community_id,
-            online_members: RwLock::new(HashMap::new()),
-            fan_out_semaphore: Arc::new(Semaphore::new(MAX_CONCURRENT_FANOUT)),
             automod: parking_lot::Mutex::new(AutoModEnforcer::new(
                 rekindle_protocol::dht::community::automod::AutoModConfig::default(),
             )),
@@ -89,85 +75,15 @@ impl RelayService {
     pub fn audit_logger(&self) -> Arc<parking_lot::Mutex<AuditLogger>> {
         self.audit_logger.clone()
     }
-
-    /// Update the online member list from the member registry.
-    /// Excludes the coordinator's own pseudonym to prevent relay loops.
-    pub(crate) async fn refresh_online_members(&self, state: &Arc<AppState>) {
-        let Some(rc) = state_helpers::routing_context(state) else {
-            return;
-        };
-
-        let (registry_key, my_pseudonym) = {
-            let communities = state.communities.read();
-            let c = communities.get(&self.community_id);
-            (
-                c.and_then(|c| c.member_registry_key.clone()),
-                c.and_then(|c| c.my_pseudonym_key.clone()),
-            )
-        };
-
-        let Some(registry_key) = registry_key else {
-            return;
-        };
-
-        let mgr = rekindle_protocol::dht::DHTManager::new(rc);
-
-        // Read member index to know how many members there are
-        let members = match member_registry::read_member_index(&mgr, &registry_key).await {
-            Ok(m) => m,
-            Err(e) => {
-                tracing::warn!(error = %e, "failed to read member index for relay");
-                return;
-            }
-        };
-
-        // Read each member's presence to get their route blob (skip self)
-        let mut online = HashMap::new();
-        for member in &members {
-            if my_pseudonym.as_deref() == Some(&member.pseudonym_key) {
-                continue;
-            }
-            match member_registry::read_member_presence(
-                &mgr,
-                &registry_key,
-                member.subkey_index,
-            )
-            .await
-            {
-                Ok(Some(presence)) => {
-                    if presence.status != "offline" {
-                        if let Some(route_blob) = presence.route_blob {
-                            online.insert(member.pseudonym_key.clone(), route_blob);
-                        }
-                    }
-                }
-                Ok(None) => {}
-                Err(e) => {
-                    tracing::trace!(
-                        member = %member.pseudonym_key,
-                        error = %e,
-                        "failed to read member presence"
-                    );
-                }
-            }
-        }
-
-        *self.online_members.write() = online;
-    }
 }
 
 /// Entry point: called from veilid_service when we receive a SignedEnvelope
 /// for a community where we're coordinator.
 pub async fn handle_incoming_envelope(
     state: &Arc<AppState>,
-    relay: &Arc<RelayService>,
+    sm: &Arc<StateManager>,
     signed: SignedEnvelope,
 ) {
-    // Refresh online members if cache is empty (lazy init)
-    if relay.online_members.read().is_empty() {
-        relay.refresh_online_members(state).await;
-    }
-
     // 1. Verify Ed25519 signature
     if let Err(e) = rekindle_protocol::dht::community::envelope::verify_envelope(&signed) {
         tracing::warn!(error = %e, "rejecting envelope with invalid signature");
@@ -186,7 +102,7 @@ pub async fn handle_incoming_envelope(
     // 3. MemberJoinRequest is special: the sender is NOT yet a member, so we
     //    must handle it before the member-existence check.
     if let CommunityEnvelope::Control(ControlPayload::MemberJoinRequest { .. }) = &envelope {
-        let roles = match read_members_and_roles(state, &relay.community_id).await {
+        let roles = match read_members_and_roles(state, &sm.community_id).await {
             Ok((_, r)) => r,
             Err(_) => Vec::new(),
         };
@@ -200,17 +116,13 @@ pub async fn handle_incoming_envelope(
             onboarding_complete: false,
             timeout_until: None,
         };
-        let Ok(signed_bytes) = serde_json::to_vec(&signed) else {
-            return;
-        };
         if let CommunityEnvelope::Control(ref payload) = envelope {
             handle_control(
                 state,
-                relay,
+                sm,
                 &join_sender,
                 &roles,
                 payload,
-                &signed_bytes,
                 &signed.sender_pseudonym,
             )
             .await;
@@ -219,7 +131,7 @@ pub async fn handle_incoming_envelope(
     }
 
     // 4. Read member info + roles for permission checking
-    let (members, roles) = match read_members_and_roles(state, &relay.community_id).await {
+    let (members, roles) = match read_members_and_roles(state, &sm.community_id).await {
         Ok(mr) => mr,
         Err(e) => {
             tracing::warn!(error = %e, "cannot read members/roles for permission check");
@@ -238,167 +150,76 @@ pub async fn handle_incoming_envelope(
         return;
     };
 
-    let now_secs = rekindle_utils::timestamp_secs();
-
-    // 4. Route by type
-    let signed_bytes = match serde_json::to_vec(&signed) {
-        Ok(b) => b,
-        Err(e) => {
-            tracing::warn!(error = %e, "failed to re-serialize signed envelope");
-            return;
-        }
-    };
-
+    // 5. Route by type
     match envelope {
+        // Chat messages: post-hoc automod evaluation (coordinator broadcasts "hide" if needed)
         CommunityEnvelope::ChatMessage { ref channel_id, .. } => {
-            // Check SEND_MESSAGES permission
-            let channel_overwrites = get_channel_overwrites(state, &relay.community_id, channel_id);
-            let is_owner = is_community_owner(state, &relay.community_id, &signed.sender_pseudonym);
-            let perms = calculate_permissions_v2(
-                &sender.role_ids,
+            // Check if sender is timed out
+            if super::timeout::is_timed_out(sender, &roles, rekindle_utils::timestamp_secs()) {
+                tracing::debug!(
+                    pseudonym = %signed.sender_pseudonym,
+                    "automod: ignoring message from timed-out member"
+                );
+                return;
+            }
+
+            // Run automod check
+            let decision = sm.automod.lock().check_envelope(
+                sender,
+                &envelope,
                 &roles,
-                &channel_overwrites,
-                &signed.sender_pseudonym,
-                is_owner,
-                sender.timeout_until,
+                Some(channel_id.as_str()),
+                None, // TODO: channel slowmode from config
+                rekindle_utils::timestamp_secs(),
             );
-
-            if !perms.has(Permissions::SEND_MESSAGES) {
-                tracing::debug!(
-                    pseudonym = %signed.sender_pseudonym,
-                    channel = %channel_id,
-                    "rejecting message: no SEND_MESSAGES permission"
-                );
-                return;
-            }
-
-            // Check timeout
-            if timeout::is_timed_out(sender, &roles, now_secs) {
-                tracing::debug!(
-                    pseudonym = %signed.sender_pseudonym,
-                    "rejecting message: member is timed out"
-                );
-                return;
-            }
-
-            // AutoMod check (including channel slowmode)
-            let slowmode_seconds = get_channel_slowmode(state, &relay.community_id, channel_id);
-            let automod_decision = {
-                relay.automod.lock().check_envelope(
-                    sender,
-                    &envelope,
-                    &roles,
-                    Some(channel_id),
-                    slowmode_seconds,
-                    now_secs,
-                )
-            };
-            match automod_decision {
-                AutoModDecision::Allow => {}
-                AutoModDecision::Block(reason) => {
+            match decision {
+                super::automod::AutoModDecision::Allow => {}
+                super::automod::AutoModDecision::Block(reason) => {
                     tracing::info!(
                         pseudonym = %signed.sender_pseudonym,
-                        channel = %channel_id,
                         reason = %reason,
-                        "automod blocked message"
+                        "automod blocked message (post-hoc)"
                     );
-                    log_audit(state, relay, AuditAction::AutoModActionExecuted,
-                        AuditTarget::Member(signed.sender_pseudonym.clone()),
-                        vec![AuditChange { field: "action".into(), old_value: None, new_value: Some("block".into()) }],
-                        Some(reason));
-                    return;
+                    // Broadcast a "delete message" control to all members
+                    if let CommunityEnvelope::ChatMessage { ref message_id, .. } = envelope {
+                        let hide_payload = ControlPayload::MessageDeleted {
+                            channel_id: channel_id.clone(),
+                            message_id: message_id.clone(),
+                        };
+                        let hide_envelope = CommunityEnvelope::Control(hide_payload);
+                        broadcast_via_gossip(state, &sm.community_id, &hide_envelope);
+                    }
                 }
-                AutoModDecision::Timeout { duration_secs, reason } => {
+                super::automod::AutoModDecision::Timeout { duration_secs, reason } => {
                     tracing::info!(
                         pseudonym = %signed.sender_pseudonym,
-                        duration_secs,
+                        duration = duration_secs,
                         reason = %reason,
                         "automod timed out member"
                     );
-                    log_audit(state, relay, AuditAction::AutoModActionExecuted,
-                        AuditTarget::Member(signed.sender_pseudonym.clone()),
-                        vec![
-                            AuditChange { field: "action".into(), old_value: None, new_value: Some("timeout".into()) },
-                            AuditChange { field: "duration_secs".into(), old_value: None, new_value: Some(duration_secs.to_string()) },
-                        ],
-                        Some(reason));
-                    return;
                 }
-                AutoModDecision::Alert { channel_id: alert_ch, reason } => {
+                super::automod::AutoModDecision::Alert { channel_id: ch, reason } => {
                     tracing::info!(
                         pseudonym = %signed.sender_pseudonym,
-                        alert_channel = %alert_ch,
+                        channel = %ch,
                         reason = %reason,
-                        "automod alert (message still relayed)"
+                        "automod alert on message"
                     );
-                    log_audit(state, relay, AuditAction::AutoModActionExecuted,
-                        AuditTarget::Member(signed.sender_pseudonym.clone()),
-                        vec![AuditChange { field: "action".into(), old_value: None, new_value: Some("alert".into()) }],
-                        Some(reason));
                 }
             }
-
-            // Fan out to all online members
-            relay_to_members(state, relay, &signed_bytes, &signed.sender_pseudonym);
         }
-        CommunityEnvelope::TypingIndicator { .. } => {
-            // Fan out only (no persistence, ephemeral)
-            relay_to_members(state, relay, &signed_bytes, &signed.sender_pseudonym);
-        }
-        CommunityEnvelope::PresenceUpdate {
-            ref pseudonym_key,
-            ref status,
-            ref route_blob,
-            ..
-        } => {
-            // Update the online_members cache with the sender's route.
-            // Skip the coordinator's own pseudonym — the coordinator handles
-            // messages locally (via send_to_coordinator loopback), so adding it
-            // to online_members would cause infinite relay loops.
-            let is_self = {
-                let communities = state.communities.read();
-                communities
-                    .get(&relay.community_id)
-                    .and_then(|c| c.my_pseudonym_key.as_ref())
-                    .is_some_and(|pk| pk == pseudonym_key)
-            };
-            if !is_self {
-                if let Some(blob) = route_blob {
-                    if status == "offline" {
-                        relay.online_members.write().remove(pseudonym_key);
-                    } else {
-                        relay
-                            .online_members
-                            .write()
-                            .insert(pseudonym_key.clone(), blob.clone());
-                    }
-                }
-            }
-
-            // Invisible members: rewrite status to "offline" for fan-out.
-            // The invisible member still receives all messages (they're in online_members).
-            if status == "invisible" {
-                let mut rewritten = envelope.clone();
-                if let CommunityEnvelope::PresenceUpdate {
-                    ref mut status, ..
-                } = rewritten
-                {
-                    *status = "offline".to_string();
-                }
-                // Re-sign the rewritten envelope as coordinator (original signature is invalid now)
-                sign_and_relay_to_members(state, relay, &rewritten, pseudonym_key);
-            } else {
-                relay_to_members(state, relay, &signed_bytes, &signed.sender_pseudonym);
-            }
+        // Typing/presence handled by gossip mesh, coordinator doesn't process these
+        CommunityEnvelope::TypingIndicator { .. }
+        | CommunityEnvelope::PresenceUpdate { .. } => {
+            tracing::trace!("coordinator ignoring typing/presence (handled by gossip)");
         }
         CommunityEnvelope::Control(ref payload) => {
             handle_control(
                 state,
-                relay,
+                sm,
                 sender,
                 &roles,
                 payload,
-                &signed_bytes,
                 &signed.sender_pseudonym,
             )
             .await;
@@ -409,14 +230,13 @@ pub async fn handle_incoming_envelope(
 /// Handle a control payload from a member.
 async fn handle_control(
     state: &Arc<AppState>,
-    relay: &Arc<RelayService>,
+    sm: &Arc<StateManager>,
     sender: &MemberSummary,
     roles: &[rekindle_protocol::dht::community::types::RoleEntryV2],
     payload: &ControlPayload,
-    signed_bytes: &[u8],
     sender_pseudonym: &str,
 ) {
-    let is_owner = is_community_owner(state, &relay.community_id, sender_pseudonym);
+    let is_owner = is_community_owner(state, &sm.community_id, sender_pseudonym);
     let base_perms = calculate_permissions_v2(
         &sender.role_ids,
         roles,
@@ -435,7 +255,7 @@ async fn handle_control(
             ref pseudonym_key,
             ..
         } => {
-            let should_reject = relay.raid.lock().should_reject_join();
+            let should_reject = sm.raid.lock().should_reject_join();
             if should_reject {
                 tracing::info!(
                     pseudonym = %sender_pseudonym,
@@ -446,20 +266,20 @@ async fn handle_control(
 
             // Record the join for rate tracking
             let now_secs = rekindle_utils::timestamp_secs();
-            let raid_actions = relay.raid.lock().record_join(now_secs);
+            let raid_actions = sm.raid.lock().record_join(now_secs);
             if let Some(actions) = raid_actions {
                 tracing::warn!(
-                    community = %relay.community_id,
+                    community = %sm.community_id,
                     actions = ?actions,
                     "raid detected — defensive actions activated"
                 );
-                execute_raid_actions(state, relay, &actions);
+                execute_raid_actions(state, sm, &actions);
             }
 
             let onboard_state = state.clone();
-            let onboard_community = relay.community_id.clone();
+            let onboard_community = sm.community_id.clone();
             let member_route = route_blob.clone();
-            let relay_clone = Arc::clone(relay);
+            let sm_clone = Arc::clone(sm);
             let state_clone = state.clone();
             let sender_clone = sender_pseudonym.to_string();
             let display_name_clone = display_name.clone();
@@ -480,9 +300,9 @@ async fn handle_control(
                     );
                     // Send rejection to joining member
                     if let Some(blob) = &member_route {
-                        send_to_member(
+                        send_control_to_route(
                             &state_clone,
-                            &relay_clone,
+                            &sm_clone.community_id,
                             blob,
                             ControlPayload::JoinRejected {
                                 reason: e,
@@ -494,7 +314,7 @@ async fn handle_control(
 
                 // Broadcast InviteUsed if an invite was consumed
                 if let Some(ref code) = invite_code_clone {
-                    notify_invite_used(&state_clone, &relay_clone, code).await;
+                    notify_invite_used(&state_clone, &sm_clone, code).await;
                 }
 
                 // Add member to registry
@@ -509,14 +329,6 @@ async fn handle_control(
                         error = %e,
                         "failed to add member to registry"
                     );
-                }
-
-                // Track the new member as online for message relay
-                if let Some(ref blob) = member_route {
-                    relay_clone
-                        .online_members
-                        .write()
-                        .insert(joiner_pseudonym.clone(), blob.clone());
                 }
 
                 // Send JoinAccepted to the joining member
@@ -534,18 +346,17 @@ async fn handle_control(
                     );
                 }
 
-                // Broadcast MemberJoined to existing members (NOT the raw MemberJoinRequest).
+                // Broadcast MemberJoined to existing members via gossip mesh.
                 let joined_payload = ControlPayload::MemberJoined {
                     pseudonym_key: joiner_pseudonym.clone(),
                     display_name: display_name_clone.clone(),
                     role_ids: vec![0, 1],
                 };
                 let joined_envelope = CommunityEnvelope::Control(joined_payload);
-                sign_and_relay_to_members(&state_clone, &relay_clone, &joined_envelope, &joiner_pseudonym);
+                broadcast_via_gossip(&state_clone, &sm_clone.community_id, &joined_envelope);
 
                 // Emit MemberJoined locally so the coordinator's own frontend sees
-                // the new member. relay_to_members excludes the coordinator from
-                // online_members to prevent relay loops, so we must emit directly.
+                // the new member.
                 emit_local_member_joined(
                     &state_clone,
                     &onboard_community,
@@ -567,9 +378,9 @@ async fn handle_control(
                             "sending onboarding questions to new member"
                         );
                         if let Some(blob) = &member_route {
-                            send_to_member(
+                            send_control_to_route(
                                 &state_clone,
-                                &relay_clone,
+                                &sm_clone.community_id,
                                 blob,
                                 questions_payload,
                             );
@@ -587,51 +398,53 @@ async fn handle_control(
 
                 broadcast_system_message(
                     &state_clone,
-                    &relay_clone,
+                    &sm_clone,
                     &format!("{display_name_clone} joined the community"),
                 );
             });
         }
 
-        // Member leave — relay + system message + remove from online cache
+        // Member leave — broadcast via gossip + system message
         ControlPayload::MemberLeave { ref pseudonym_key } => {
             let who = pseudonym_key.clone();
-            relay.online_members.write().remove(pseudonym_key);
-            relay_to_members(state, relay, signed_bytes, sender_pseudonym);
-            broadcast_system_message(state, relay, &format!("{who} left the community"));
+            let leave_envelope = CommunityEnvelope::Control(payload.clone());
+            broadcast_via_gossip(state, &sm.community_id, &leave_envelope);
+            broadcast_system_message(state, sm, &format!("{who} left the community"));
         }
 
         // Moderation - requires KICK_MEMBERS
         ControlPayload::Kick { target_pseudonym, .. } => {
             if base_perms.has(Permissions::KICK_MEMBERS) {
                 let target = target_pseudonym.clone();
-                relay.online_members.write().remove(target_pseudonym);
-                relay_to_members(state, relay, signed_bytes, sender_pseudonym);
-                broadcast_system_message(state, relay, &format!("{target} was kicked"));
-                log_audit(state, relay, AuditAction::MemberKick, AuditTarget::Member(target), vec![], None);
+                let kick_envelope = CommunityEnvelope::Control(payload.clone());
+                broadcast_via_gossip(state, &sm.community_id, &kick_envelope);
+                broadcast_system_message(state, sm, &format!("{target} was kicked"));
+                log_audit(state, sm, AuditAction::MemberKick, AuditTarget::Member(target), vec![], None);
             }
         }
         ControlPayload::Ban { target_pseudonym, .. } => {
             if base_perms.has(Permissions::BAN_MEMBERS) {
                 let target = target_pseudonym.clone();
-                relay.online_members.write().remove(target_pseudonym);
-                relay_to_members(state, relay, signed_bytes, sender_pseudonym);
-                broadcast_system_message(state, relay, &format!("{target} was banned"));
-                log_audit(state, relay, AuditAction::MemberBan, AuditTarget::Member(target), vec![], None);
+                let ban_envelope = CommunityEnvelope::Control(payload.clone());
+                broadcast_via_gossip(state, &sm.community_id, &ban_envelope);
+                broadcast_system_message(state, sm, &format!("{target} was banned"));
+                log_audit(state, sm, AuditAction::MemberBan, AuditTarget::Member(target), vec![], None);
             }
         }
         ControlPayload::Unban { target_pseudonym, .. } => {
             if base_perms.has(Permissions::BAN_MEMBERS) {
                 let target = target_pseudonym.clone();
-                relay_to_members(state, relay, signed_bytes, sender_pseudonym);
-                log_audit(state, relay, AuditAction::MemberUnban, AuditTarget::Member(target), vec![], None);
+                let unban_envelope = CommunityEnvelope::Control(payload.clone());
+                broadcast_via_gossip(state, &sm.community_id, &unban_envelope);
+                log_audit(state, sm, AuditAction::MemberUnban, AuditTarget::Member(target), vec![], None);
             }
         }
         ControlPayload::TimeoutMember { target_pseudonym, duration_seconds, .. } => {
             if base_perms.has(Permissions::MODERATE_MEMBERS) {
                 let target = target_pseudonym.clone();
-                relay_to_members(state, relay, signed_bytes, sender_pseudonym);
-                log_audit(state, relay, AuditAction::MemberTimeout, AuditTarget::Member(target), vec![
+                let timeout_envelope = CommunityEnvelope::Control(payload.clone());
+                broadcast_via_gossip(state, &sm.community_id, &timeout_envelope);
+                log_audit(state, sm, AuditAction::MemberTimeout, AuditTarget::Member(target), vec![
                     AuditChange { field: "duration_seconds".into(), old_value: None, new_value: Some(duration_seconds.to_string()) },
                 ], None);
             }
@@ -639,8 +452,9 @@ async fn handle_control(
         ControlPayload::RemoveTimeout { target_pseudonym, .. } => {
             if base_perms.has(Permissions::MODERATE_MEMBERS) {
                 let target = target_pseudonym.clone();
-                relay_to_members(state, relay, signed_bytes, sender_pseudonym);
-                log_audit(state, relay, AuditAction::MemberTimeoutRemove, AuditTarget::Member(target), vec![], None);
+                let rm_timeout_envelope = CommunityEnvelope::Control(payload.clone());
+                broadcast_via_gossip(state, &sm.community_id, &rm_timeout_envelope);
+                log_audit(state, sm, AuditAction::MemberTimeoutRemove, AuditTarget::Member(target), vec![], None);
             }
         }
 
@@ -648,8 +462,9 @@ async fn handle_control(
         ControlPayload::CreateChannel { name, .. } => {
             if base_perms.has(Permissions::MANAGE_CHANNELS) {
                 let ch_name = name.clone();
-                relay_to_members(state, relay, signed_bytes, sender_pseudonym);
-                log_audit(state, relay, AuditAction::ChannelCreate, AuditTarget::Community, vec![
+                let create_ch_envelope = CommunityEnvelope::Control(payload.clone());
+                broadcast_via_gossip(state, &sm.community_id, &create_ch_envelope);
+                log_audit(state, sm, AuditAction::ChannelCreate, AuditTarget::Community, vec![
                     AuditChange { field: "name".into(), old_value: None, new_value: Some(ch_name) },
                 ], None);
             }
@@ -657,8 +472,9 @@ async fn handle_control(
         ControlPayload::DeleteChannel { channel_id, .. } => {
             if base_perms.has(Permissions::MANAGE_CHANNELS) {
                 let ch_id = channel_id.clone();
-                relay_to_members(state, relay, signed_bytes, sender_pseudonym);
-                log_audit(state, relay, AuditAction::ChannelDelete, AuditTarget::Channel(ch_id), vec![], None);
+                let del_ch_envelope = CommunityEnvelope::Control(payload.clone());
+                broadcast_via_gossip(state, &sm.community_id, &del_ch_envelope);
+                log_audit(state, sm, AuditAction::ChannelDelete, AuditTarget::Channel(ch_id), vec![], None);
             }
         }
         ControlPayload::RenameChannel { .. }
@@ -671,7 +487,8 @@ async fn handle_control(
         | ControlPayload::RenameCategory { .. }
         | ControlPayload::ReorderCategories { .. } => {
             if base_perms.has(Permissions::MANAGE_CHANNELS) {
-                relay_to_members(state, relay, signed_bytes, sender_pseudonym);
+                let ch_mgmt_envelope = CommunityEnvelope::Control(payload.clone());
+                broadcast_via_gossip(state, &sm.community_id, &ch_mgmt_envelope);
             }
         }
 
@@ -679,8 +496,9 @@ async fn handle_control(
         ControlPayload::CreateRole { name, .. } => {
             if base_perms.has(Permissions::MANAGE_ROLES) {
                 let role_name = name.clone();
-                relay_to_members(state, relay, signed_bytes, sender_pseudonym);
-                log_audit(state, relay, AuditAction::RoleCreate, AuditTarget::Community, vec![
+                let create_role_envelope = CommunityEnvelope::Control(payload.clone());
+                broadcast_via_gossip(state, &sm.community_id, &create_role_envelope);
+                log_audit(state, sm, AuditAction::RoleCreate, AuditTarget::Community, vec![
                     AuditChange { field: "name".into(), old_value: None, new_value: Some(role_name) },
                 ], None);
             }
@@ -688,8 +506,9 @@ async fn handle_control(
         ControlPayload::DeleteRole { role_id, .. } => {
             if base_perms.has(Permissions::MANAGE_ROLES) {
                 let rid = *role_id;
-                relay_to_members(state, relay, signed_bytes, sender_pseudonym);
-                log_audit(state, relay, AuditAction::RoleDelete, AuditTarget::Role(rid), vec![], None);
+                let del_role_envelope = CommunityEnvelope::Control(payload.clone());
+                broadcast_via_gossip(state, &sm.community_id, &del_role_envelope);
+                log_audit(state, sm, AuditAction::RoleDelete, AuditTarget::Role(rid), vec![], None);
             }
         }
         ControlPayload::AssignRole { target_pseudonym, role_id, .. }
@@ -697,8 +516,9 @@ async fn handle_control(
             if base_perms.has(Permissions::MANAGE_ROLES) {
                 let target = target_pseudonym.clone();
                 let rid = *role_id;
-                relay_to_members(state, relay, signed_bytes, sender_pseudonym);
-                log_audit(state, relay, AuditAction::MemberRoleUpdate, AuditTarget::Member(target), vec![
+                let role_assign_envelope = CommunityEnvelope::Control(payload.clone());
+                broadcast_via_gossip(state, &sm.community_id, &role_assign_envelope);
+                log_audit(state, sm, AuditAction::MemberRoleUpdate, AuditTarget::Member(target), vec![
                     AuditChange { field: "role_id".into(), old_value: None, new_value: Some(rid.to_string()) },
                 ], None);
             }
@@ -707,22 +527,22 @@ async fn handle_control(
         | ControlPayload::SetChannelOverwrite { .. }
         | ControlPayload::DeleteChannelOverwrite { .. } => {
             if base_perms.has(Permissions::MANAGE_ROLES) {
-                relay_to_members(state, relay, signed_bytes, sender_pseudonym);
+                let role_edit_envelope = CommunityEnvelope::Control(payload.clone());
+                broadcast_via_gossip(state, &sm.community_id, &role_edit_envelope);
             }
         }
 
-        // All other control payloads — permission checks + relay
-        other => handle_control_extended(state, relay, base_perms, other, signed_bytes, sender_pseudonym).await,
+        // All other control payloads — permission checks + broadcast via gossip
+        other => handle_control_extended(state, sm, base_perms, other, sender_pseudonym).await,
     }
 }
 
 /// Extended control payload handling (split from `handle_control` for clippy line limit).
 async fn handle_control_extended(
     state: &Arc<AppState>,
-    relay: &Arc<RelayService>,
+    sm: &Arc<StateManager>,
     base_perms: Permissions,
     payload: &ControlPayload,
-    signed_bytes: &[u8],
     sender_pseudonym: &str,
 ) {
     match payload {
@@ -732,7 +552,8 @@ async fn handle_control_extended(
         | ControlPayload::AddGameServer { .. }
         | ControlPayload::RemoveGameServer { .. } => {
             if base_perms.has(Permissions::MANAGE_COMMUNITY) {
-                relay_to_members(state, relay, signed_bytes, sender_pseudonym);
+                let mgmt_envelope = CommunityEnvelope::Control(payload.clone());
+                broadcast_via_gossip(state, &sm.community_id, &mgmt_envelope);
             }
         }
 
@@ -744,14 +565,14 @@ async fn handle_control_extended(
                 let creator = sender_pseudonym.to_string();
                 match create_invite_entry(
                     state,
-                    &relay.community_id,
+                    &sm.community_id,
                     &creator,
                     code,
                     *max_uses,
                     *expires_in_seconds,
                 ).await {
                     Ok(entry) => {
-                        // Broadcast InviteCreated to all members
+                        // Broadcast InviteCreated to all members via gossip
                         let broadcast = ControlPayload::InviteCreated {
                             code: entry.code.clone(),
                             created_by: entry.created_by.clone(),
@@ -761,16 +582,16 @@ async fn handle_control_extended(
                             created_at: entry.created_at,
                         };
                         let envelope = CommunityEnvelope::Control(broadcast);
-                        sign_and_relay_to_members(state, relay, &envelope, "");
+                        broadcast_via_gossip(state, &sm.community_id, &envelope);
                         tracing::info!(
-                            community = %relay.community_id,
+                            community = %sm.community_id,
                             code = %entry.code,
                             "invite created and persisted to manifest"
                         );
                     }
                     Err(e) => {
                         tracing::warn!(
-                            community = %relay.community_id,
+                            community = %sm.community_id,
                             error = %e,
                             "failed to create invite"
                         );
@@ -783,21 +604,21 @@ async fn handle_control_extended(
         // Awaited (not spawned) so the revocation is persisted before clients can list invites.
         ControlPayload::RevokeInvite { code } => {
             if base_perms.has(Permissions::MANAGE_COMMUNITY) {
-                match revoke_invite_entry(state, &relay.community_id, code).await {
+                match revoke_invite_entry(state, &sm.community_id, code).await {
                     Ok(()) => {
-                        // Broadcast InviteRevoked to all members
+                        // Broadcast InviteRevoked to all members via gossip
                         let broadcast = ControlPayload::InviteRevoked { code: code.clone() };
                         let envelope = CommunityEnvelope::Control(broadcast);
-                        sign_and_relay_to_members(state, relay, &envelope, "");
+                        broadcast_via_gossip(state, &sm.community_id, &envelope);
                         tracing::info!(
-                            community = %relay.community_id,
+                            community = %sm.community_id,
                             code = %code,
                             "invite revoked"
                         );
                     }
                     Err(e) => {
                         tracing::warn!(
-                            community = %relay.community_id,
+                            community = %sm.community_id,
                             code = %code,
                             error = %e,
                             "failed to revoke invite"
@@ -813,14 +634,16 @@ async fn handle_control_extended(
         | ControlPayload::DeleteEvent { .. }
         | ControlPayload::CancelEvent { .. } => {
             if base_perms.has(Permissions::MANAGE_EVENTS) {
-                relay_to_members(state, relay, signed_bytes, sender_pseudonym);
+                let event_envelope = CommunityEnvelope::Control(payload.clone());
+                broadcast_via_gossip(state, &sm.community_id, &event_envelope);
             }
         }
 
         // Reactions
         ControlPayload::AddReaction { .. } | ControlPayload::RemoveReaction { .. } => {
             if base_perms.has(Permissions::ADD_REACTIONS) {
-                relay_to_members(state, relay, signed_bytes, sender_pseudonym);
+                let reaction_envelope = CommunityEnvelope::Control(payload.clone());
+                broadcast_via_gossip(state, &sm.community_id, &reaction_envelope);
             }
         }
 
@@ -829,17 +652,17 @@ async fn handle_control_extended(
         | ControlPayload::UnpinMessage { .. }
         | ControlPayload::DeleteMessage { .. } => {
             if base_perms.has(Permissions::MANAGE_MESSAGES) {
-                relay_to_members(state, relay, signed_bytes, sender_pseudonym);
+                let msg_mgmt_envelope = CommunityEnvelope::Control(payload.clone());
+                broadcast_via_gossip(state, &sm.community_id, &msg_mgmt_envelope);
             }
         }
 
         // Onboarding answers — process and assign roles
         ControlPayload::SubmitOnboardingAnswers { answers } => {
             let onboard_state = state.clone();
-            let onboard_community = relay.community_id.clone();
+            let onboard_community = sm.community_id.clone();
             let onboard_answers = answers.clone();
             let onboard_pseudonym = sender_pseudonym.to_string();
-            let relay_clone = Arc::clone(relay);
             let state_clone = state.clone();
             tokio::spawn(async move {
                 match super::onboarding::process_answers(
@@ -877,7 +700,7 @@ async fn handle_control_extended(
                                     role_ids: role_ids.clone(),
                                 };
                                 let envelope = CommunityEnvelope::Control(notification);
-                                sign_and_relay_to_members(&state_clone, &relay_clone, &envelope, "");
+                                broadcast_via_gossip(&state_clone, &onboard_community, &envelope);
                             }
                         }
                     }
@@ -893,36 +716,40 @@ async fn handle_control_extended(
             });
         }
 
-        // Read-only operations & broadcast variants - relay to all
+        // Read-only operations & broadcast variants - broadcast via gossip
         _ => {
-            relay_to_members(state, relay, signed_bytes, sender_pseudonym);
+            let other_envelope = CommunityEnvelope::Control(payload.clone());
+            broadcast_via_gossip(state, &sm.community_id, &other_envelope);
         }
     }
 }
 
-/// Send a control payload to a specific member by their route blob.
-fn send_to_member(
+/// Send a control payload directly to a specific route blob.
+///
+/// Used for point-to-point messages to joiners (JoinRejected, OnboardingQuestions)
+/// that cannot go through the gossip mesh because the recipient is not yet a member.
+fn send_control_to_route(
     state: &Arc<AppState>,
-    relay: &Arc<RelayService>,
+    community_id: &str,
     target_route_blob: &[u8],
     payload: ControlPayload,
 ) {
     let Some(rc) = state_helpers::routing_context(state) else {
-        tracing::debug!("no routing context for send_to_member");
+        tracing::debug!("no routing context for send_control_to_route");
         return;
     };
 
     // Sign envelope as coordinator so the receiver can parse it as SignedEnvelope.
     let (my_pseudonym, signing_key) = {
         let communities = state.communities.read();
-        let Some(c) = communities.get(&relay.community_id) else {
+        let Some(c) = communities.get(community_id) else {
             return;
         };
         let pseudonym = c.my_pseudonym_key.clone().unwrap_or_default();
         let secret = state.identity_secret.lock();
         let key = match *secret {
             Some(ref s) => {
-                rekindle_crypto::group::pseudonym::derive_community_pseudonym(s, &relay.community_id)
+                rekindle_crypto::group::pseudonym::derive_community_pseudonym(s, community_id)
             }
             None => return,
         };
@@ -940,7 +767,7 @@ fn send_to_member(
 
     let signed = rekindle_protocol::dht::community::envelope::sign_envelope(
         &signing_key,
-        &relay.community_id,
+        community_id,
         &my_pseudonym,
         &envelope_bytes,
     );
@@ -953,7 +780,7 @@ fn send_to_member(
     };
 
     let blob = target_route_blob.to_vec();
-    let community_id = relay.community_id.clone();
+    let cid = community_id.to_string();
     tokio::spawn(async move {
         match rc.api().import_remote_private_route(blob) {
             Ok(route_id) => {
@@ -962,107 +789,97 @@ fn send_to_member(
                     .await
                 {
                     tracing::warn!(
-                        community = %community_id,
+                        community = %cid,
                         error = %e,
-                        "send_to_member delivery failed"
+                        "send_control_to_route delivery failed"
                     );
                 }
             }
             Err(e) => {
                 tracing::warn!(
-                    community = %community_id,
+                    community = %cid,
                     error = %e,
-                    "failed to import member route for send_to_member"
+                    "failed to import route for send_control_to_route"
                 );
             }
         }
     });
 }
 
-/// Sign a `CommunityEnvelope` as the coordinator, returning serialized `SignedEnvelope` bytes.
-/// Returns `None` if signing context is unavailable (identity not unlocked, community not found).
-fn coordinator_sign_envelope(
+/// Broadcast a coordinator-originated control envelope via the gossip mesh.
+///
+/// Signs the envelope with the coordinator's pseudonym key, then sends
+/// to all gossip peers via `gossip_send_raw()`.
+pub(crate) fn broadcast_via_gossip(
     state: &Arc<AppState>,
     community_id: &str,
     envelope: &CommunityEnvelope,
-) -> Option<Vec<u8>> {
-    let (my_pseudonym, signing_key) = {
+) {
+    use rekindle_protocol::dht::community::envelope::sign_envelope;
+
+    let my_pseudonym = {
         let communities = state.communities.read();
-        let c = communities.get(community_id)?;
-        let pseudonym = c.my_pseudonym_key.clone().unwrap_or_default();
-        let secret = state.identity_secret.lock();
-        let key = match *secret {
-            Some(ref s) => {
-                rekindle_crypto::group::pseudonym::derive_community_pseudonym(s, community_id)
-            }
-            None => return None,
-        };
-        (pseudonym, key)
+        let Some(cs) = communities.get(community_id) else { return };
+        cs.my_pseudonym_key.clone().unwrap_or_default()
     };
 
-    let envelope_bytes = serde_json::to_vec(envelope).ok()?;
-    let signed = rekindle_protocol::dht::community::envelope::sign_envelope(
-        &signing_key,
-        community_id,
-        &my_pseudonym,
-        &envelope_bytes,
-    );
-    serde_json::to_vec(&signed).ok()
-}
-
-/// Sign a coordinator-constructed envelope and fan out to all online members.
-/// Use this when the coordinator creates a new envelope (MemberJoined, SystemMessage, etc.).
-/// For relaying an existing SignedEnvelope from a member, use `relay_to_members` directly.
-fn sign_and_relay_to_members(
-    state: &Arc<AppState>,
-    relay: &Arc<RelayService>,
-    envelope: &CommunityEnvelope,
-    exclude_pseudonym: &str,
-) {
-    let Some(signed_bytes) = coordinator_sign_envelope(state, &relay.community_id, envelope) else {
-        tracing::warn!("failed to sign coordinator envelope for relay");
-        return;
-    };
-    relay_to_members(state, relay, &signed_bytes, exclude_pseudonym);
-}
-
-/// Fan out envelope bytes to all online members except the sender.
-fn relay_to_members(
-    state: &Arc<AppState>,
-    relay: &Arc<RelayService>,
-    envelope_bytes: &[u8],
-    exclude_pseudonym: &str,
-) {
-    // Clone routing context (parking_lot !Send)
-    let Some(rc) = state_helpers::routing_context(state) else {
-        tracing::debug!("no routing context for fan-out");
-        return;
-    };
-
-    let members = relay.online_members.read().clone();
-
-    for (pseudonym, route_blob) in &members {
-        if pseudonym == exclude_pseudonym {
-            continue;
+    let Some(secret) = state.identity_secret.lock().as_ref().copied() else { return };
+    let signing_key = rekindle_crypto::group::pseudonym::derive_community_pseudonym(&secret, community_id);
+    let envelope_bytes = match serde_json::to_vec(&envelope) {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to serialize envelope for gossip broadcast");
+            return;
         }
+    };
+
+    let signed = sign_envelope(&signing_key, community_id, &my_pseudonym, &envelope_bytes);
+    let signed_bytes = match serde_json::to_vec(&signed) {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to serialize signed envelope for gossip broadcast");
+            return;
+        }
+    };
+
+    // Insert into our dedup cache so we don't re-process our own broadcast
+    {
+        let dedup_key = extract_broadcast_dedup_key(envelope);
+        state.dedup_cache.lock().check_and_insert(community_id, &my_pseudonym, &dedup_key);
+    }
+
+    gossip_send_raw(state, community_id, &signed_bytes);
+}
+
+/// Extract a dedup key from a coordinator broadcast envelope.
+fn extract_broadcast_dedup_key(envelope: &CommunityEnvelope) -> String {
+    use blake2::{Blake2b, Digest, digest::consts::U16};
+    let bytes = serde_json::to_vec(envelope).unwrap_or_default();
+    let mut h = Blake2b::<U16>::new();
+    h.update(&bytes);
+    hex::encode(h.finalize())
+}
+
+/// Low-level: send raw signed bytes to all gossip peers for a community.
+fn gossip_send_raw(state: &Arc<AppState>, community_id: &str, signed_bytes: &[u8]) {
+    let Some(rc) = crate::state_helpers::routing_context(state) else { return };
+
+    let peers: Vec<Vec<u8>> = {
+        let communities = state.communities.read();
+        let Some(cs) = communities.get(community_id) else { return };
+        let Some(ref gossip) = cs.gossip else { return };
+        gossip.peers.values().cloned().collect()
+    };
+
+    for route_blob in peers {
         let rc = rc.clone();
-        let data = envelope_bytes.to_vec();
-        let blob = route_blob.clone();
-        let semaphore = relay.fan_out_semaphore.clone();
+        let data = signed_bytes.to_vec();
         tokio::spawn(async move {
-            let _permit = semaphore.acquire().await;
-            match rc.api().import_remote_private_route(blob) {
+            match rc.api().import_remote_private_route(route_blob) {
                 Ok(route_id) => {
-                    if let Err(e) = rc
-                        .app_message(veilid_core::Target::RouteId(route_id), data)
-                        .await
-                    {
-                        tracing::debug!(error = %e, "fan-out delivery failed");
-                    }
+                    let _ = rc.app_message(veilid_core::Target::RouteId(route_id), data).await;
                 }
-                Err(e) => {
-                    tracing::debug!(error = %e, "failed to import member route for fan-out");
-                }
+                Err(e) => tracing::trace!(error = %e, "gossip broadcast: route import failed"),
             }
         });
     }
@@ -1070,10 +887,9 @@ fn relay_to_members(
 
 /// Emit `CommunityEvent::MemberJoined` locally on the coordinator's frontend.
 ///
-/// The coordinator is excluded from `online_members` to prevent relay loops,
-/// so `relay_to_members`/`sign_and_relay_to_members` never reaches the
-/// coordinator's own UI. This function fills that gap by persisting the new
-/// member to SQLite and emitting the event directly via the Tauri app handle.
+/// The coordinator processes messages locally, so broadcast_via_gossip may not
+/// reach the coordinator's own UI. This function fills that gap by persisting
+/// the new member to SQLite and emitting the event directly via the Tauri app handle.
 fn emit_local_member_joined(
     state: &Arc<AppState>,
     community_id: &str,
@@ -1166,10 +982,10 @@ async fn read_members_and_roles(
     Ok((members, roles))
 }
 
-/// Broadcast a system message to all online members (join/leave/kick/ban events).
+/// Broadcast a system message to all members via gossip (join/leave/kick/ban events).
 fn broadcast_system_message(
     state: &Arc<AppState>,
-    relay: &Arc<RelayService>,
+    sm: &Arc<StateManager>,
     body: &str,
 ) {
     let payload = ControlPayload::SystemMessage {
@@ -1177,13 +993,13 @@ fn broadcast_system_message(
         timestamp: rekindle_utils::timestamp_secs(),
     };
     let envelope = CommunityEnvelope::Control(payload);
-    sign_and_relay_to_members(state, relay, &envelope, "");
+    broadcast_via_gossip(state, &sm.community_id, &envelope);
 }
 
 /// Execute raid defense actions triggered by the raid detector.
 fn execute_raid_actions(
     state: &Arc<AppState>,
-    relay: &Arc<RelayService>,
+    sm: &Arc<StateManager>,
     actions: &[rekindle_protocol::dht::community::automod::RaidAction],
 ) {
     use rekindle_protocol::dht::community::automod::RaidAction;
@@ -1194,90 +1010,70 @@ fn execute_raid_actions(
                 // Handled by RaidDetector state flags — checked in should_reject_join()
             }
             RaidAction::AlertOwners => {
-                // Broadcast a raid alert to the community owner
+                // Broadcast a raid alert to the community via gossip
                 let alert_payload =
                     ControlPayload::RaidAlert { active: true };
                 let envelope = CommunityEnvelope::Control(alert_payload);
-                sign_and_relay_to_members(state, relay, &envelope, "");
-                log_audit(
-                    state,
-                    relay,
-                    AuditAction::AutoModActionExecuted,
-                    AuditTarget::Community,
-                    vec![AuditChange {
-                        field: "raid_action".into(),
-                        old_value: None,
-                        new_value: Some("alert_owners".into()),
-                    }],
-                    Some("raid detected".into()),
-                );
+                let state = state.clone();
+                let community_id = sm.community_id.clone();
+                let sm_clone = Arc::clone(sm);
+                tokio::spawn(async move {
+                    broadcast_via_gossip(&state, &community_id, &envelope);
+                    log_audit(
+                        &state,
+                        &sm_clone,
+                        AuditAction::AutoModActionExecuted,
+                        AuditTarget::Community,
+                        vec![AuditChange {
+                            field: "raid_action".into(),
+                            old_value: None,
+                            new_value: Some("alert_owners".into()),
+                        }],
+                        Some("raid detected".into()),
+                    );
+                });
             }
             RaidAction::LockdownChannels => {
-                // Broadcast a lockdown notification to all members.
+                // Broadcast a lockdown notification to all members via gossip.
                 // Members restrict SEND_MESSAGES client-side for non-admins.
                 let lockdown_payload =
                     ControlPayload::ChannelLockdown { locked: true };
                 let envelope = CommunityEnvelope::Control(lockdown_payload);
-                sign_and_relay_to_members(state, relay, &envelope, "");
-                log_audit(
-                    state,
-                    relay,
-                    AuditAction::AutoModActionExecuted,
-                    AuditTarget::Community,
-                    vec![AuditChange {
-                        field: "raid_action".into(),
-                        old_value: None,
-                        new_value: Some("lockdown_channels".into()),
-                    }],
-                    Some("raid detected".into()),
-                );
+                let state = state.clone();
+                let community_id = sm.community_id.clone();
+                let sm_clone = Arc::clone(sm);
+                tokio::spawn(async move {
+                    broadcast_via_gossip(&state, &community_id, &envelope);
+                    log_audit(
+                        &state,
+                        &sm_clone,
+                        AuditAction::AutoModActionExecuted,
+                        AuditTarget::Community,
+                        vec![AuditChange {
+                            field: "raid_action".into(),
+                            old_value: None,
+                            new_value: Some("lockdown_channels".into()),
+                        }],
+                        Some("raid detected".into()),
+                    );
+                });
             }
         }
     }
-}
-
-/// Get the channel's slowmode setting (seconds) from state.
-fn get_channel_slowmode(
-    state: &Arc<AppState>,
-    community_id: &str,
-    channel_id: &str,
-) -> Option<u32> {
-    let communities = state.communities.read();
-    communities
-        .get(community_id)
-        .and_then(|cs| cs.channels.iter().find(|c| c.id == channel_id))
-        .and_then(|ch| ch.slowmode_seconds)
-}
-
-/// Get channel permission overwrites from state.
-fn get_channel_overwrites(
-    state: &Arc<AppState>,
-    community_id: &str,
-    channel_id: &str,
-) -> Vec<rekindle_protocol::dht::community::PermissionOverwrite> {
-    let communities = state.communities.read();
-    if let Some(cs) = communities.get(community_id) {
-        if let Some(ch) = cs.channels.iter().find(|c| c.id == channel_id) {
-            // Channel overwrites are stored in the v2 manifest channels,
-            // not currently in the state ChannelInfo. Return empty for now.
-            let _ = ch;
-        }
-    }
-    Vec::new()
 }
 
 /// Fire-and-forget audit log entry (spawns async task).
 fn log_audit(
     state: &Arc<AppState>,
-    relay: &Arc<RelayService>,
+    sm: &Arc<StateManager>,
     action: AuditAction,
     target: AuditTarget,
     changes: Vec<AuditChange>,
     reason: Option<String>,
 ) {
     let state = state.clone();
-    let community_id = relay.community_id.clone();
-    let logger = relay.audit_logger.clone();
+    let community_id = sm.community_id.clone();
+    let logger = sm.audit_logger.clone();
     tokio::spawn(async move {
         audit::log_action(&state, &community_id, &logger, action, target, changes, reason).await;
     });
@@ -1464,14 +1260,43 @@ async fn send_join_accepted(
     };
 
     // JoinAccepted is critical — the joiner cannot participate without MEK.
-    // Send directly with retry instead of fire-and-forget send_to_member.
-    let Some(signed_bytes) = coordinator_sign_envelope(
-        state,
-        community_id,
-        &CommunityEnvelope::Control(payload),
-    ) else {
-        tracing::warn!(community = %community_id, "failed to sign JoinAccepted envelope");
-        return;
+    // Sign and send directly with retry.
+    let signed_bytes = {
+        let (my_pseudonym, signing_key) = {
+            let communities = state.communities.read();
+            let Some(c) = communities.get(community_id) else { return };
+            let pseudonym = c.my_pseudonym_key.clone().unwrap_or_default();
+            let secret = state.identity_secret.lock();
+            let key = match *secret {
+                Some(ref s) => {
+                    rekindle_crypto::group::pseudonym::derive_community_pseudonym(s, community_id)
+                }
+                None => return,
+            };
+            (pseudonym, key)
+        };
+
+        let envelope = CommunityEnvelope::Control(payload);
+        let envelope_bytes = match serde_json::to_vec(&envelope) {
+            Ok(b) => b,
+            Err(e) => {
+                tracing::warn!(error = %e, community = %community_id, "failed to serialize JoinAccepted");
+                return;
+            }
+        };
+        let signed = rekindle_protocol::dht::community::envelope::sign_envelope(
+            &signing_key,
+            community_id,
+            &my_pseudonym,
+            &envelope_bytes,
+        );
+        match serde_json::to_vec(&signed) {
+            Ok(b) => b,
+            Err(e) => {
+                tracing::warn!(error = %e, community = %community_id, "failed to serialize signed JoinAccepted");
+                return;
+            }
+        }
     };
 
     let Some(rc) = state_helpers::routing_context(state) else {
@@ -1532,7 +1357,7 @@ async fn send_join_accepted(
 /// Notify all members that an invite was used (for frontend tracking).
 async fn notify_invite_used(
     state: &Arc<AppState>,
-    relay: &Arc<RelayService>,
+    sm: &Arc<StateManager>,
     code: &str,
 ) {
     // Read the updated invite to get the new use count
@@ -1543,7 +1368,7 @@ async fn notify_invite_used(
 
     let manifest_key = {
         let communities = state.communities.read();
-        match communities.get(&relay.community_id) {
+        match communities.get(&sm.community_id) {
             Some(c) => c.manifest_key.clone().unwrap_or_else(|| c.id.clone()),
             None => return,
         }
@@ -1559,7 +1384,7 @@ async fn notify_invite_used(
             new_use_count: inv.use_count,
         };
         let envelope = CommunityEnvelope::Control(broadcast);
-        sign_and_relay_to_members(state, relay, &envelope, "");
+        broadcast_via_gossip(state, &sm.community_id, &envelope);
     }
 }
 
@@ -1724,4 +1549,3 @@ pub(crate) async fn validate_and_use_invite(
 
     Ok(())
 }
-

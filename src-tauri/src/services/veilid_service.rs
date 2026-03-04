@@ -120,40 +120,13 @@ async fn handle_app_message(
         return;
     }
 
-    // 2. Try to parse as a community SignedEnvelope (v2 coordinator model)
+    // 2. Try to parse as a community SignedEnvelope (gossip mesh)
     if let Ok(signed) =
         serde_json::from_slice::<rekindle_protocol::dht::community::envelope::SignedEnvelope>(
             &message,
         )
     {
-        // Check if we're coordinator for this community and get shared relay
-        let relay = {
-            let services = state.coordinator_services.read();
-            services
-                .get(&signed.community_id)
-                .filter(|h| h.is_coordinator())
-                .map(|h| h.relay.clone())
-        };
-
-        if let Some(relay) = relay {
-            // We're coordinator: relay to all members using shared relay service
-            let is_from_self = {
-                let communities = state.communities.read();
-                communities
-                    .get(&signed.community_id)
-                    .and_then(|c| c.my_pseudonym_key.as_ref())
-                    .is_some_and(|pk| pk == &signed.sender_pseudonym)
-            };
-            super::coordinator::relay::handle_incoming_envelope(state, &relay, signed.clone())
-                .await;
-            // Also process locally so the coordinator's own UI sees messages from others
-            if !is_from_self {
-                handle_relayed_envelope(app_handle, state, signed).await;
-            }
-        } else {
-            // We're a member: this is a relayed message FROM the coordinator
-            handle_relayed_envelope(app_handle, state, signed).await;
-        }
+        handle_gossip_envelope(app_handle, state, signed).await;
         return;
     }
 
@@ -163,10 +136,181 @@ async fn handle_app_message(
         .await;
 }
 
-/// Handle an envelope relayed to us by the coordinator (v2 model).
+/// Handle a community envelope received via the gossip mesh.
+///
+/// Core of the gossip pipeline:
+/// 1. Dedup check (drop if already seen)
+/// 2. Verify Ed25519 signature
+/// 3. If we're coordinator and it's a control payload, handle it
+/// 4. Forward to D gossip peers (TTL permitting)
+/// 5. Process locally (emit to frontend)
+async fn handle_gossip_envelope(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    signed: rekindle_protocol::dht::community::envelope::SignedEnvelope,
+) {
+    use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
+
+    let community_id = &signed.community_id;
+
+    // 1. DEDUP CHECK — drop if we've already seen this message
+    let dedup_key = extract_dedup_key(&signed);
+    {
+        let mut cache = state.dedup_cache.lock();
+        if cache.check_and_insert(community_id, &signed.sender_pseudonym, &dedup_key) {
+            tracing::trace!(dedup_key = %dedup_key, "gossip dedup: dropping duplicate");
+            return;
+        }
+    }
+
+    // 2. VERIFY SIGNATURE
+    if let Err(e) = rekindle_protocol::dht::community::envelope::verify_envelope(&signed) {
+        tracing::warn!(error = %e, "rejecting gossip envelope: bad signature");
+        return;
+    }
+
+    // 3. COORDINATOR DISPATCH — if Control payload and we're coordinator, handle it
+    let is_control = serde_json::from_slice::<CommunityEnvelope>(&signed.envelope_bytes)
+        .map(|e| matches!(e, CommunityEnvelope::Control(_)))
+        .unwrap_or(false);
+
+    if is_control {
+        let state_mgr = {
+            let services = state.coordinator_services.read();
+            services
+                .get(community_id)
+                .filter(|h| h.is_coordinator())
+                .map(|h| h.state_mgr.clone())
+        };
+        if let Some(ref sm) = state_mgr {
+            super::coordinator::state_manager::handle_incoming_envelope(
+                state, sm, signed.clone(),
+            )
+            .await;
+        }
+    }
+
+    // 4. FORWARD to D gossip peers (if TTL > 0)
+    if signed.ttl > 0 {
+        gossip_forward(state, community_id, &signed);
+    }
+
+    // 5. PROCESS LOCALLY (emit to frontend) — skip if we sent it
+    let is_from_self = {
+        let communities = state.communities.read();
+        communities
+            .get(community_id)
+            .and_then(|c| c.my_pseudonym_key.as_ref())
+            .is_some_and(|pk| pk == &signed.sender_pseudonym)
+    };
+    if !is_from_self {
+        handle_relayed_envelope(app_handle, state, signed).await;
+    }
+}
+
+/// Extract a dedup key from a signed envelope.
+///
+/// Different envelope types use different dedup strategies:
+/// - ChatMessage: use `message_id` (globally unique)
+/// - TypingIndicator: bucket by 5-second window (ephemeral, don't need exact dedup)
+/// - PresenceUpdate: bucket by 30-second window
+/// - Control: BLAKE2b hash of envelope bytes (unique per payload)
+fn extract_dedup_key(
+    signed: &rekindle_protocol::dht::community::envelope::SignedEnvelope,
+) -> String {
+    use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
+
+    if let Ok(env) = serde_json::from_slice::<CommunityEnvelope>(&signed.envelope_bytes) {
+        match env {
+            CommunityEnvelope::ChatMessage { ref message_id, .. } => message_id.clone(),
+            CommunityEnvelope::TypingIndicator {
+                ref channel_id,
+                ref pseudonym_key,
+            } => {
+                let bucket = rekindle_utils::timestamp_secs() / 5;
+                format!("typing:{channel_id}:{pseudonym_key}:{bucket}")
+            }
+            CommunityEnvelope::PresenceUpdate {
+                ref pseudonym_key, ..
+            } => {
+                let bucket = rekindle_utils::timestamp_secs() / 30;
+                format!("presence:{pseudonym_key}:{bucket}")
+            }
+            CommunityEnvelope::Control(_) => {
+                use blake2::{Blake2b, Digest, digest::consts::U16};
+                let mut h = Blake2b::<U16>::new();
+                h.update(&signed.envelope_bytes);
+                hex::encode(h.finalize())
+            }
+        }
+    } else {
+        // Fallback: hash envelope bytes
+        use blake2::{Blake2b, Digest, digest::consts::U16};
+        let mut h = Blake2b::<U16>::new();
+        h.update(&signed.envelope_bytes);
+        hex::encode(h.finalize())
+    }
+}
+
+/// Forward a received gossip envelope to our D gossip peers (excluding the sender).
+///
+/// Decrements TTL before forwarding. Each peer gets the signed bytes via `app_message`.
+fn gossip_forward(
+    state: &Arc<AppState>,
+    community_id: &str,
+    signed: &rekindle_protocol::dht::community::envelope::SignedEnvelope,
+) {
+    // Decrement TTL for forwarded copy
+    let mut forward = signed.clone();
+    forward.ttl = forward.ttl.saturating_sub(1);
+    let Ok(signed_bytes) = serde_json::to_vec(&forward) else {
+        return;
+    };
+
+    let Some(rc) = state_helpers::routing_context(state) else {
+        return;
+    };
+
+    let peers: Vec<Vec<u8>> = {
+        let communities = state.communities.read();
+        let Some(cs) = communities.get(community_id) else {
+            return;
+        };
+        let Some(ref gossip) = cs.gossip else { return };
+        gossip
+            .peers
+            .iter()
+            .filter(|(pk, _)| *pk != &signed.sender_pseudonym)
+            .map(|(_, blob)| blob.clone())
+            .collect()
+    };
+
+    if peers.is_empty() {
+        return;
+    }
+
+    for route_blob in peers {
+        let rc = rc.clone();
+        let data = signed_bytes.clone();
+        tokio::spawn(async move {
+            match rc.api().import_remote_private_route(route_blob) {
+                Ok(route_id) => {
+                    let _ = rc
+                        .app_message(veilid_core::Target::RouteId(route_id), data)
+                        .await;
+                }
+                Err(e) => {
+                    tracing::trace!(error = %e, "gossip forward: route import failed");
+                }
+            }
+        });
+    }
+}
+
+/// Handle an envelope received via the gossip mesh and process locally.
 ///
 /// Deserializes the inner `CommunityEnvelope` and emits the appropriate
-/// `CommunityEvent` to the frontend, similar to `handle_community_broadcast`.
+/// `CommunityEvent` to the frontend.
 async fn handle_relayed_envelope(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
@@ -193,6 +337,7 @@ async fn handle_relayed_envelope(
             mek_generation,
             timestamp,
             reply_to_id,
+            ..
         } => {
             // Route through the shared handler which handles decryption, storage, and emit
             let msg = BroadcastNewMessage {
@@ -241,7 +386,14 @@ async fn handle_relayed_envelope(
             );
         }
         CommunityEnvelope::Control(payload) => {
-            handle_relayed_control(app_handle, state, &community_id, payload).await;
+            handle_relayed_control(
+                app_handle,
+                state,
+                &community_id,
+                &signed.sender_pseudonym,
+                payload,
+            )
+            .await;
         }
     }
 }
@@ -251,6 +403,7 @@ async fn handle_relayed_control(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     community_id: &str,
+    sender_pseudonym: &str,
     payload: rekindle_protocol::dht::community::envelope::ControlPayload,
 ) {
     use crate::channels::CommunityEvent;
@@ -491,14 +644,24 @@ async fn handle_relayed_control(
             );
         }
         // All other control payloads handled by helper function
-        other => handle_relayed_control_extended(app_handle, community_id, other),
+        other => {
+            handle_relayed_control_extended(
+                app_handle,
+                state,
+                community_id,
+                sender_pseudonym,
+                other,
+            );
+        }
     }
 }
 
 /// Extended control payload → frontend event mapping (split for clippy line limit).
 fn handle_relayed_control_extended(
     app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
     community_id: &str,
+    sender_pseudonym: &str,
     payload: rekindle_protocol::dht::community::envelope::ControlPayload,
 ) {
     use crate::channels::CommunityEvent;
@@ -711,12 +874,19 @@ fn handle_relayed_control_extended(
             thread_id,
             message_id,
             sender_pseudonym,
-            ciphertext: _,
-            mek_generation: _,
+            ciphertext,
+            mek_generation,
             timestamp,
             reply_to_id,
         } => {
-            // TODO: decrypt ciphertext with MEK
+            let body = {
+                let mek_cache = state.mek_cache.lock();
+                match decrypt_with_cached_mek(&mek_cache, community_id, &ciphertext, mek_generation)
+                {
+                    MekDecryptResult::Decrypted(text) => text,
+                    _ => String::new(),
+                }
+            };
             let _ = app_handle.emit(
                 "community-event",
                 CommunityEvent::ThreadMessageReceived {
@@ -724,7 +894,7 @@ fn handle_relayed_control_extended(
                     thread_id,
                     message_id,
                     sender_pseudonym,
-                    body: String::new(),
+                    body,
                     timestamp,
                     reply_to_id,
                 },
@@ -781,7 +951,82 @@ fn handle_relayed_control_extended(
                 },
             );
         }
-        // Remaining control payloads — log for future mapping
+        // Phase 2 gossip mesh control payloads
+        other => {
+            handle_gossip_control_payloads(app_handle, state, community_id, sender_pseudonym, other);
+        }
+    }
+}
+
+/// Handle Phase 2 gossip mesh control payloads (admin delegation, sync, coordinator announce).
+fn handle_gossip_control_payloads(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    community_id: &str,
+    sender_pseudonym: &str,
+    payload: rekindle_protocol::dht::community::envelope::ControlPayload,
+) {
+    use rekindle_protocol::dht::community::envelope::ControlPayload;
+
+    match payload {
+        ControlPayload::AdminKeypairGrant {
+            wrapped_manifest_keypair,
+            wrapped_slot_seed,
+        } => {
+            handle_admin_keypair_grant(
+                app_handle,
+                state,
+                community_id,
+                sender_pseudonym,
+                &wrapped_manifest_keypair,
+                &wrapped_slot_seed,
+            );
+        }
+        ControlPayload::SlotKeypairGrant {
+            slot_index,
+            segment_index,
+            wrapped_slot_keypair,
+        } => {
+            handle_slot_keypair_grant(
+                app_handle,
+                state,
+                community_id,
+                sender_pseudonym,
+                slot_index,
+                segment_index,
+                &wrapped_slot_keypair,
+            );
+        }
+        ControlPayload::SyncRequest {
+            channel_id,
+            since_timestamp,
+        } => {
+            handle_sync_request(app_handle, state, community_id, &channel_id, since_timestamp);
+        }
+        ControlPayload::SyncResponse {
+            channel_id,
+            messages,
+        } => {
+            handle_sync_response(app_handle, state, community_id, &channel_id, &messages);
+        }
+        ControlPayload::CoordinatorAnnounce {
+            pseudonym_key,
+            route_blob,
+            epoch,
+        } => {
+            let mut communities = state.communities.write();
+            if let Some(c) = communities.get_mut(community_id) {
+                c.coordinator_pseudonym = Some(pseudonym_key.clone());
+                c.coordinator_route_blob = Some(route_blob);
+                c.coordinator_epoch = epoch;
+            }
+            tracing::info!(
+                community = %community_id,
+                coordinator = %pseudonym_key,
+                epoch,
+                "coordinator announced"
+            );
+        }
         _ => {
             tracing::debug!(
                 community = %community_id,
@@ -789,6 +1034,248 @@ fn handle_relayed_control_extended(
             );
         }
     }
+}
+
+/// Unwrap and persist admin keypair grant (manifest keypair + slot seed).
+fn handle_admin_keypair_grant(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    community_id: &str,
+    sender_pseudonym: &str,
+    wrapped_manifest_keypair: &[u8],
+    wrapped_slot_seed: &[u8],
+) {
+    use rekindle_crypto::group::mek_distribution::unwrap_mek;
+    use rekindle_crypto::group::pseudonym::derive_community_pseudonym;
+
+    // Derive our community pseudonym signing key for ECDH
+    let Some(secret) = state.identity_secret.lock().as_ref().copied() else {
+        tracing::warn!("no identity secret — cannot unwrap admin keypair grant");
+        return;
+    };
+    let my_signing_key = derive_community_pseudonym(&secret, community_id);
+
+    // Parse sender's pseudonym public key bytes
+    let Ok(sender_bytes) = hex::decode(sender_pseudonym) else {
+        tracing::warn!("invalid sender pseudonym hex in admin keypair grant");
+        return;
+    };
+    let Ok(sender_pub): Result<[u8; 32], _> = sender_bytes.try_into() else {
+        tracing::warn!("sender pseudonym wrong length in admin keypair grant");
+        return;
+    };
+
+    // Unwrap manifest keypair
+    let manifest_kp_bytes = match unwrap_mek(&my_signing_key, &sender_pub, wrapped_manifest_keypair)
+    {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to unwrap manifest keypair");
+            return;
+        }
+    };
+    let manifest_kp_str = String::from_utf8_lossy(&manifest_kp_bytes).to_string();
+
+    // Unwrap slot seed
+    let slot_seed_bytes = match unwrap_mek(&my_signing_key, &sender_pub, wrapped_slot_seed) {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to unwrap slot seed");
+            return;
+        }
+    };
+
+    // Persist to CommunityState
+    {
+        let mut communities = state.communities.write();
+        if let Some(c) = communities.get_mut(community_id) {
+            c.manifest_owner_keypair = Some(manifest_kp_str.clone());
+            c.slot_seed = Some(hex::encode(&slot_seed_bytes));
+        }
+    }
+
+    // Persist to Stronghold
+    let seed_hex = hex::encode(&slot_seed_bytes);
+    let ks_handle: tauri::State<'_, crate::keystore::KeystoreHandle> = app_handle.state();
+    let ks = ks_handle.lock();
+    if let Some(ref keystore) = *ks {
+        crate::keystore::persist_manifest_keypair(keystore, community_id, &manifest_kp_str);
+        crate::keystore::persist_slot_seed(keystore, community_id, &seed_hex);
+    }
+
+    tracing::info!(community = %community_id, "admin keypair grant accepted and persisted");
+}
+
+/// Unwrap and persist slot keypair grant.
+fn handle_slot_keypair_grant(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    community_id: &str,
+    sender_pseudonym: &str,
+    slot_index: u32,
+    segment_index: u32,
+    wrapped_slot_keypair: &[u8],
+) {
+    use rekindle_crypto::group::mek_distribution::unwrap_mek;
+    use rekindle_crypto::group::pseudonym::derive_community_pseudonym;
+
+    let Some(secret) = state.identity_secret.lock().as_ref().copied() else {
+        tracing::warn!("no identity secret — cannot unwrap slot keypair grant");
+        return;
+    };
+    let my_signing_key = derive_community_pseudonym(&secret, community_id);
+
+    let Ok(sender_bytes) = hex::decode(sender_pseudonym) else {
+        tracing::warn!("invalid sender pseudonym hex in slot keypair grant");
+        return;
+    };
+    let Ok(sender_pub): Result<[u8; 32], _> = sender_bytes.try_into() else {
+        tracing::warn!("sender pseudonym wrong length in slot keypair grant");
+        return;
+    };
+
+    let slot_kp_bytes = match unwrap_mek(&my_signing_key, &sender_pub, wrapped_slot_keypair) {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to unwrap slot keypair");
+            return;
+        }
+    };
+    let slot_kp_str = String::from_utf8_lossy(&slot_kp_bytes).to_string();
+
+    // Persist to CommunityState
+    {
+        let mut communities = state.communities.write();
+        if let Some(c) = communities.get_mut(community_id) {
+            c.slot_keypair = Some(slot_kp_str.clone());
+        }
+    }
+
+    // Persist to Stronghold
+    let ks_handle: tauri::State<'_, crate::keystore::KeystoreHandle> = app_handle.state();
+    let ks = ks_handle.lock();
+    if let Some(ref keystore) = *ks {
+        crate::keystore::persist_slot_keypair(keystore, community_id, &slot_kp_str);
+    }
+
+    tracing::info!(
+        community = %community_id,
+        slot_index, segment_index,
+        "slot keypair grant accepted and persisted"
+    );
+}
+
+/// Handle a sync request — respond with messages from local SQLite.
+fn handle_sync_request(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    community_id: &str,
+    channel_id: &str,
+    since_timestamp: u64,
+) {
+    let pool: tauri::State<'_, DbPool> = app_handle.state();
+    let owner_key = crate::state_helpers::current_owner_key(state).unwrap_or_default();
+    let cid = community_id.to_string();
+    let ch = channel_id.to_string();
+    let ch_for_envelope = channel_id.to_string();
+    let since_ts = since_timestamp.cast_signed();
+    let state = Arc::clone(state);
+    let pool = pool.inner().clone();
+
+    tokio::spawn(async move {
+        let messages: Vec<serde_json::Value> =
+            crate::db_helpers::db_call(&pool, move |conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT sender_key, body, timestamp, mek_generation, lamport_ts \
+                     FROM messages \
+                     WHERE owner_key = ? AND conversation_id = ? \
+                       AND conversation_type = 'channel' AND timestamp >= ? \
+                     ORDER BY timestamp ASC LIMIT 500",
+                )?;
+                let rows = stmt.query_map(rusqlite::params![owner_key, ch, since_ts], |row| {
+                    Ok(serde_json::json!({
+                        "sender_key": row.get::<_, String>(0)?,
+                        "body": row.get::<_, String>(1)?,
+                        "timestamp": row.get::<_, i64>(2)?,
+                        "mek_generation": row.get::<_, Option<i64>>(3)?,
+                        "lamport_ts": row.get::<_, Option<i64>>(4)?,
+                    }))
+                })?;
+                Ok(rows.filter_map(std::result::Result::ok).collect::<Vec<_>>())
+            })
+            .await
+            .unwrap_or_default();
+
+        if messages.is_empty() {
+            return;
+        }
+
+        tracing::debug!(
+            community = %cid,
+            count = messages.len(),
+            "responding to sync request"
+        );
+
+        let envelope = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
+            rekindle_protocol::dht::community::envelope::ControlPayload::SyncResponse {
+                channel_id: ch_for_envelope,
+                messages,
+            },
+        );
+        let _ = crate::commands::community::send_to_mesh(&state, &cid, &envelope);
+    });
+}
+
+/// Handle a sync response — merge messages into local SQLite and emit to frontend.
+fn handle_sync_response(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    community_id: &str,
+    channel_id: &str,
+    messages: &[serde_json::Value],
+) {
+    if messages.is_empty() {
+        return;
+    }
+
+    tracing::info!(
+        community = %community_id,
+        channel = %channel_id,
+        count = messages.len(),
+        "merging sync response messages"
+    );
+
+    let pool: tauri::State<'_, DbPool> = app_handle.state();
+    let owner_key = crate::state_helpers::current_owner_key(state).unwrap_or_default();
+
+    for msg in messages {
+        let sender = msg["sender_key"].as_str().unwrap_or_default().to_string();
+        let body = msg["body"].as_str().unwrap_or_default().to_string();
+        let ts = msg["timestamp"].as_i64().unwrap_or_default();
+        let mek_gen = msg["mek_generation"].as_i64();
+        let ok = owner_key.clone();
+        let ch = channel_id.to_string();
+        db_fire(pool.inner(), "store sync message", move |conn| {
+            // Use INSERT OR IGNORE to skip duplicates (dedup index handles this)
+            conn.execute(
+                "INSERT OR IGNORE INTO messages \
+                 (owner_key, conversation_id, conversation_type, sender_key, body, timestamp, is_read, mek_generation) \
+                 VALUES (?, ?, 'channel', ?, ?, ?, 0, ?)",
+                rusqlite::params![ok, ch, sender, body, ts, mek_gen],
+            )?;
+            Ok(())
+        });
+    }
+
+    // Emit a catch-up event so the frontend can refresh the channel
+    let _ = app_handle.emit(
+        "community-event",
+        crate::channels::CommunityEvent::SyncComplete {
+            community_id: community_id.to_string(),
+            channel_id: channel_id.to_string(),
+            message_count: messages.len(),
+        },
+    );
 }
 
 /// Handle a JoinAccepted response from the coordinator.

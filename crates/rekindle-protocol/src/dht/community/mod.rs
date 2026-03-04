@@ -22,7 +22,8 @@ pub use permissions_v2::{calculate_permissions_v2, has_permission_v2, Permission
 pub use types::{
     BanEntry, CategoryEntry, ChannelEntryV2, ChannelKind, CommunityMetadataV2, CommunityPolicy,
     CoordinatorInfo, EncryptedMEKCopy, InviteEntry, MEKVaultEntry, MemberPresence, MemberSummary,
-    ModerationLevel, RoleEntryV2,
+    ModerationLevel, RegistrySegmentInfo, RegistrySpine, RoleEntryV2, SignedPresence,
+    MANIFEST_REGISTRY_SPINE,
 };
 
 use serde::{Deserialize, Serialize};

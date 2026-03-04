@@ -841,6 +841,7 @@ async fn retry_single_pending(
                 mek_generation: channel_msg.mek_generation,
                 timestamp: channel_msg.timestamp.cast_unsigned(),
                 reply_to_id: None,
+                lamport_ts: 0,
             },
         )
         .await;

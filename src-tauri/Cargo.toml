@@ -47,6 +47,8 @@ argon2 = "0.5"
 iota_stronghold = "2.1"
 zeroize = "1"
 hex = "0.4"
+blake2 = "0.10"
+indexmap = "2"
 base64 = "0.22"
 rand = "0.8"
 uuid = { version = "1", features = ["v4"] }
