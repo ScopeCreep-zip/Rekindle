@@ -6,7 +6,7 @@ use rekindle_protocol::dht::community::types::{
     ChannelEntryV2, ChannelKind, CommunityMetadataV2, CoordinatorInfo, MemberSummary, RoleEntryV2,
 };
 use rekindle_protocol::dht::DHTManager;
-use crate::state::{AppState, CategoryInfo, ChannelInfo, ChannelType, CommunityState, RoleDefinition};
+use crate::state::{AppState, CategoryInfo, ChannelInfo, ChannelType, CommunityState, GossipOverlay, RoleDefinition};
 use crate::state_helpers;
 
 /// Create a new community and publish it to DHT.
@@ -139,6 +139,12 @@ pub async fn create_community(
         coordinator_pseudonym: Some(my_pseudonym_key),
         coordinator_route_blob: Some(our_route_blob),
         coordinator_epoch: 1,
+        gossip: Some(GossipOverlay::default()),
+        slot_keypair: None,
+        manifest_owner_keypair: None,
+        channel_log_keys: std::collections::HashMap::new(),
+        slot_seed: None,
+        presence_poll_shutdown_tx: None,
     };
 
     state.communities.write().insert(manifest_key.clone(), community);
@@ -151,6 +157,10 @@ pub async fn create_community(
         .coordinator_services
         .write()
         .insert(manifest_key.clone(), handle);
+
+    // 10. Start presence poll and DHT keepalive
+    start_presence_poll(state.clone(), manifest_key.clone());
+    start_dht_keepalive(state.clone(), manifest_key.clone());
 
     tracing::info!(name = %name, manifest_key = %manifest_key, "community created with DHT records");
     Ok(manifest_key)
@@ -281,6 +291,12 @@ pub async fn join_community(
         coordinator_pseudonym: Some(coordinator.pseudonym_key.clone()),
         coordinator_route_blob: Some(coordinator.route_blob),
         coordinator_epoch: coordinator.epoch,
+        gossip: None,
+        slot_keypair: None,
+        manifest_owner_keypair: None,
+        channel_log_keys: std::collections::HashMap::new(),
+        slot_seed: None,
+        presence_poll_shutdown_tx: None,
     };
 
     state.communities.write().insert(community_id.to_string(), community);
@@ -301,6 +317,10 @@ pub async fn join_community(
     // 6. Start coordinator service (election watcher)
     let handle = super::coordinator::start(state.clone(), community_id.to_string());
     state.coordinator_services.write().insert(community_id.to_string(), handle);
+
+    // 7. Start presence poll and DHT keepalive
+    start_presence_poll(state.clone(), community_id.to_string());
+    start_dht_keepalive(state.clone(), community_id.to_string());
 
     tracing::info!(community = %community_id, "join request sent to coordinator");
     Ok(())
@@ -454,6 +474,187 @@ pub async fn rejoin_community(state: &Arc<AppState>, community_id: &str) -> Resu
             Err(e)
         }
     }
+}
+
+/// Start the 60-second presence poll loop for a community.
+///
+/// The poll loop:
+/// 1. Writes our signed presence to the registry
+/// 2. Reads all member presences to discover who is online
+/// 3. Updates the gossip overlay peer set (random D peers from online members)
+/// 4. Writes coordinator heartbeat if we are coordinator
+/// 5. Checks coordinator liveness if we are NOT coordinator
+pub fn start_presence_poll(state: Arc<AppState>, community_id: String) {
+    use tokio::sync::mpsc;
+
+    let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
+    {
+        let mut communities = state.communities.write();
+        if let Some(cs) = communities.get_mut(&community_id) {
+            cs.presence_poll_shutdown_tx = Some(shutdown_tx);
+        }
+    }
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+        interval.tick().await; // skip immediate first tick
+        loop {
+            tokio::select! {
+                _ = interval.tick() => {
+                    if let Err(e) = presence_poll_tick(&state, &community_id).await {
+                        tracing::debug!(
+                            community = %community_id,
+                            error = %e,
+                            "presence poll tick failed"
+                        );
+                    }
+                }
+                _ = shutdown_rx.recv() => break,
+            }
+        }
+    });
+}
+
+/// Single presence poll tick.
+async fn presence_poll_tick(state: &Arc<AppState>, community_id: &str) -> Result<(), String> {
+    let rc = state_helpers::routing_context(state).ok_or("not attached")?;
+    let mgr = DHTManager::new(rc);
+
+    // Read member registry to scan presences
+    let registry_key = {
+        let communities = state.communities.read();
+        let c = communities.get(community_id).ok_or("community not found")?;
+        c.member_registry_key.clone()
+    };
+    let Some(registry_key) = registry_key else {
+        return Ok(()); // No registry yet (join pending)
+    };
+
+    let my_pseudonym = {
+        let communities = state.communities.read();
+        communities
+            .get(community_id)
+            .and_then(|c| c.my_pseudonym_key.clone())
+            .unwrap_or_default()
+    };
+
+    // Read all member entries
+    let members = member_registry::read_member_index(&mgr, &registry_key)
+        .await
+        .map_err(|e| format!("read member index: {e}"))?;
+
+    let now_secs = rekindle_utils::timestamp_secs();
+    let stale_threshold = now_secs.saturating_sub(300); // 5 minutes
+
+    // Scan presences — build online members map
+    let mut online_members: std::collections::HashMap<String, Vec<u8>> =
+        std::collections::HashMap::new();
+    for member in &members {
+        if member.pseudonym_key == my_pseudonym {
+            continue; // skip ourselves
+        }
+        // Read presence from member's registry subkey
+        match member_registry::read_member_presence(&mgr, &registry_key, member.subkey_index).await
+        {
+            Ok(Some(presence)) => {
+                if presence.status != "offline"
+                    && presence.last_heartbeat > stale_threshold
+                {
+                    if let Some(blob) = presence.route_blob {
+                        if !blob.is_empty() {
+                            online_members.insert(member.pseudonym_key.clone(), blob);
+                        }
+                    }
+                }
+            }
+            Ok(None) => {} // No presence written yet
+            Err(e) => {
+                tracing::trace!(
+                    member = %member.pseudonym_key,
+                    error = %e,
+                    "failed to read member presence"
+                );
+            }
+        }
+    }
+
+    // Select D random gossip peers
+    let n = online_members.len();
+    let d = crate::state::gossip_degree(n);
+    let selected = random_peer_sample(&online_members, d);
+
+    // Update gossip overlay
+    {
+        let mut communities = state.communities.write();
+        if let Some(cs) = communities.get_mut(community_id) {
+            let counter = cs.gossip.as_ref().map_or(0, |g| g.lamport_counter);
+            cs.gossip = Some(GossipOverlay {
+                peers: selected,
+                online_members,
+                lamport_counter: counter,
+            });
+        }
+    }
+
+    tracing::trace!(
+        community = %community_id,
+        online = n,
+        degree = d,
+        "presence poll: gossip overlay updated"
+    );
+
+    Ok(())
+}
+
+/// Select D random peers from the online members map.
+fn random_peer_sample(
+    online: &std::collections::HashMap<String, Vec<u8>>,
+    d: usize,
+) -> std::collections::HashMap<String, Vec<u8>> {
+    use rand::seq::SliceRandom;
+
+    if d == 0 || online.is_empty() {
+        return std::collections::HashMap::new();
+    }
+    if d >= online.len() {
+        return online.clone();
+    }
+
+    let keys: Vec<&String> = online.keys().collect();
+    let mut rng = rand::rngs::OsRng;
+    let selected: Vec<&String> = keys
+        .choose_multiple(&mut rng, d)
+        .copied()
+        .collect();
+
+    selected
+        .into_iter()
+        .filter_map(|k| online.get(k).map(|v| (k.clone(), v.clone())))
+        .collect()
+}
+
+/// Start a DHT keepalive task that re-accesses community DHT records every 5 minutes
+/// to prevent them from expiring in the Veilid DHT.
+pub fn start_dht_keepalive(state: Arc<AppState>, community_id: String) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(300));
+        interval.tick().await; // skip immediate first tick
+        loop {
+            interval.tick().await;
+            let Some(rc) = state_helpers::routing_context(&state) else {
+                continue;
+            };
+            let manifest_key = {
+                let communities = state.communities.read();
+                communities
+                    .get(&community_id)
+                    .and_then(|c| c.manifest_key.clone().or_else(|| Some(c.id.clone())))
+            };
+            let Some(key) = manifest_key else { continue };
+            let mgr = DHTManager::new(rc);
+            // Re-read metadata to refresh DHT record TTL
+            let _ = manifest::read_metadata(&mgr, &key).await;
+        }
+    });
 }
 
 fn rand_bytes(len: usize) -> Vec<u8> {

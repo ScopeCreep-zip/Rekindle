@@ -13,9 +13,13 @@ use crate::dht::DHTManager;
 use crate::error::ProtocolError;
 
 use super::types::{
-    MEKVaultEntry, MemberPresence, MemberSummary, REGISTRY_MEK_VAULT, REGISTRY_MEMBER_INDEX,
+    MEKVaultEntry, MemberPresence, MemberSummary, RegistrySegmentInfo, RegistrySpine,
+    MANIFEST_REGISTRY_SPINE, REGISTRY_MEK_VAULT, REGISTRY_MEMBER_INDEX,
     REGISTRY_MEMBER_SUBKEY_COUNT, REGISTRY_OWNER_SUBKEY_COUNT,
 };
+
+/// Maximum member slots per registry segment (SMPL record limit).
+pub const SLOTS_PER_SEGMENT: u32 = 256;
 
 /// Create a new member registry SMPL record.
 ///
@@ -184,4 +188,117 @@ pub async fn watch_member_presence(
         return Ok(true);
     }
     dht.watch_record(key, &subkeys).await
+}
+
+// ── Pre-allocated SMPL slots (slot seed derivation) ──
+
+/// Derive a deterministic Ed25519 keypair for a SMPL member slot.
+///
+/// Uses HKDF-SHA256(seed, "rekindle-slot-{index}") → 32 bytes → Ed25519 keypair.
+/// Any admin with the slot seed can derive keypairs for all 256 slots.
+pub fn derive_slot_keypair(seed: &[u8; 32], slot: u32) -> Result<ed25519_dalek::SigningKey, ProtocolError> {
+    use hkdf::Hkdf;
+    use sha2::Sha256;
+
+    let hk = Hkdf::<Sha256>::new(None, seed);
+    let info = format!("rekindle-slot-{slot}");
+    let mut okm = [0u8; 32];
+    hk.expand(info.as_bytes(), &mut okm)
+        .map_err(|_| ProtocolError::CryptoError("HKDF expand failed".into()))?;
+    Ok(ed25519_dalek::SigningKey::from_bytes(&okm))
+}
+
+/// Derive the Veilid `KeyPair` for a SMPL member slot.
+///
+/// Converts the Ed25519 keypair into a Veilid-compatible format for use
+/// as a SMPL record writer.
+pub fn derive_slot_veilid_keypair(
+    seed: &[u8; 32],
+    slot: u32,
+) -> Result<veilid_core::KeyPair, ProtocolError> {
+    let signing_key = derive_slot_keypair(seed, slot)?;
+    let secret_bytes = signing_key.to_bytes();
+    let public_bytes = signing_key.verifying_key().to_bytes();
+
+    let bare_pub = veilid_core::BarePublicKey::new(&public_bytes);
+    let bare_secret = veilid_core::BareSecretKey::new(&secret_bytes);
+    let veilid_pubkey = veilid_core::PublicKey::new(veilid_core::CRYPTO_KIND_VLD0, bare_pub);
+
+    Ok(veilid_core::KeyPair::new_from_parts(veilid_pubkey, bare_secret))
+}
+
+/// Create a pre-allocated registry segment with 256 SMPL slots.
+///
+/// Each slot's keypair is derived deterministically from the slot seed,
+/// so any admin with the seed can process joins by assigning slots.
+///
+/// Returns `(record_key, owner_keypair)`.
+pub async fn create_registry_segment(
+    dht: &DHTManager,
+    seed: &[u8; 32],
+) -> Result<(String, Option<veilid_core::KeyPair>), ProtocolError> {
+    let mut members = Vec::with_capacity(SLOTS_PER_SEGMENT as usize);
+    for i in 0..SLOTS_PER_SEGMENT {
+        let signing_key = derive_slot_keypair(seed, i)?;
+        let public_bytes = signing_key.verifying_key().to_bytes();
+        members.push(veilid_core::DHTSchemaSMPLMember {
+            m_key: veilid_core::BareMemberId::new(&public_bytes),
+            m_cnt: REGISTRY_MEMBER_SUBKEY_COUNT,
+        });
+    }
+
+    let (key, owner_keypair) = dht
+        .create_smpl_record(REGISTRY_OWNER_SUBKEY_COUNT, members)
+        .await?;
+
+    // Initialize empty member index and MEK vault
+    let empty_index: Vec<MemberSummary> = Vec::new();
+    write_member_index(dht, &key, &empty_index).await?;
+    let empty_vault: Vec<MEKVaultEntry> = Vec::new();
+    write_mek_vault(dht, &key, &empty_vault).await?;
+
+    tracing::info!(key = %key, slots = SLOTS_PER_SEGMENT, "pre-allocated registry segment created");
+    Ok((key, owner_keypair))
+}
+
+// ── Registry spine (manifest subkey 12) ──
+
+/// Read the registry spine from the manifest record.
+///
+/// Returns `None` if the spine hasn't been written yet (single-segment community).
+pub async fn read_registry_spine(
+    dht: &DHTManager,
+    manifest_key: &str,
+) -> Result<Option<RegistrySpine>, ProtocolError> {
+    match dht.get_value(manifest_key, MANIFEST_REGISTRY_SPINE).await? {
+        Some(data) if !data.is_empty() => {
+            let spine: RegistrySpine = serde_json::from_slice(&data)
+                .map_err(|e| ProtocolError::Deserialization(format!("registry spine: {e}")))?;
+            Ok(Some(spine))
+        }
+        _ => Ok(None),
+    }
+}
+
+/// Write the registry spine to the manifest record (coordinator only).
+pub async fn write_registry_spine(
+    dht: &DHTManager,
+    manifest_key: &str,
+    spine: &RegistrySpine,
+) -> Result<(), ProtocolError> {
+    let bytes = serde_json::to_vec(spine)
+        .map_err(|e| ProtocolError::Serialization(format!("registry spine: {e}")))?;
+    dht.set_value(manifest_key, MANIFEST_REGISTRY_SPINE, bytes).await
+}
+
+/// Build a `RegistrySpine` for a single-segment community.
+pub fn single_segment_spine(record_key: &str, slot_seed_encrypted: Vec<u8>, member_count: u32) -> RegistrySpine {
+    RegistrySpine {
+        total_members: member_count,
+        segments: vec![RegistrySegmentInfo {
+            record_key: record_key.to_string(),
+            slot_seed_encrypted,
+            member_range: (0, member_count.saturating_sub(1)),
+        }],
+    }
 }

@@ -822,6 +822,12 @@ async fn load_communities_from_db(
             coordinator_pseudonym: None,
             coordinator_route_blob: None,
             coordinator_epoch: 0,
+            gossip: None,
+            slot_keypair: None,
+            manifest_owner_keypair: None,
+            channel_log_keys: std::collections::HashMap::new(),
+            slot_seed: None,
+            presence_poll_shutdown_tx: None,
         };
         // Recalculate display role from role definitions (DB value may be stale)
         community.my_role = Some(crate::state::display_role_name(
@@ -895,7 +901,28 @@ fn restore_community_pseudonyms_and_meks(
         }
     }
 
-    // Update communities with derived pseudonyms
+    // Load manifest + slot keypairs + slot seeds from Stronghold
+    let mut manifest_keypair_updates: Vec<(String, String)> = Vec::new();
+    let mut slot_keypair_updates: Vec<(String, String)> = Vec::new();
+    let mut slot_seed_updates: Vec<(String, String)> = Vec::new();
+    {
+        let keystore = keystore_handle.lock();
+        if let Some(ref ks) = *keystore {
+            for (community_id, _) in &community_info {
+                if let Some(kp) = crate::keystore::load_manifest_keypair(ks, community_id) {
+                    manifest_keypair_updates.push((community_id.clone(), kp));
+                }
+                if let Some(kp) = crate::keystore::load_slot_keypair(ks, community_id) {
+                    slot_keypair_updates.push((community_id.clone(), kp));
+                }
+                if let Some(seed) = crate::keystore::load_slot_seed(ks, community_id) {
+                    slot_seed_updates.push((community_id.clone(), seed));
+                }
+            }
+        }
+    }
+
+    // Update communities with derived pseudonyms + keypairs
     {
         let mut communities = state.communities.write();
         for (community_id, pseudonym_hex) in pseudonym_updates {
@@ -911,6 +938,23 @@ fn restore_community_pseudonyms_and_meks(
         for community_id in &regenerated_community_ids {
             if let Some(c) = communities.get_mut(community_id) {
                 c.mek_generation = 1;
+            }
+        }
+
+        // Restore manifest + slot keypairs
+        for (community_id, kp) in manifest_keypair_updates {
+            if let Some(c) = communities.get_mut(&community_id) {
+                c.manifest_owner_keypair = Some(kp);
+            }
+        }
+        for (community_id, kp) in slot_keypair_updates {
+            if let Some(c) = communities.get_mut(&community_id) {
+                c.slot_keypair = Some(kp);
+            }
+        }
+        for (community_id, seed) in slot_seed_updates {
+            if let Some(c) = communities.get_mut(&community_id) {
+                c.slot_seed = Some(seed);
             }
         }
     }
@@ -1078,6 +1122,21 @@ async fn spawn_login_services(
                 community_id.clone(),
             );
             state.coordinator_services.write().insert(community_id, handle);
+        }
+    }
+
+    // Start presence polling and DHT keepalive for all joined communities
+    {
+        let community_ids: Vec<String> = state.communities.read().keys().cloned().collect();
+        for community_id in community_ids {
+            services::community_service::start_presence_poll(
+                Arc::clone(state),
+                community_id.clone(),
+            );
+            services::community_service::start_dht_keepalive(
+                Arc::clone(state),
+                community_id,
+            );
         }
     }
 

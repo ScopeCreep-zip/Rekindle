@@ -22,6 +22,9 @@ pub enum CommunityEnvelope {
         timestamp: u64,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reply_to_id: Option<String>,
+        /// Lamport logical timestamp for causal ordering.
+        #[serde(default)]
+        lamport_ts: u64,
     },
     /// A control operation (channel/role/invite/event management, moderation, etc.).
     Control(ControlPayload),
@@ -66,6 +69,14 @@ pub struct SignedEnvelope {
     pub envelope_bytes: Vec<u8>,
     /// Ed25519 signature over `envelope_bytes`.
     pub signature: Vec<u8>,
+    /// Hop TTL for gossip forwarding. Starts at 5, decremented on each forward.
+    /// When 0, process locally but don't forward.
+    #[serde(default = "default_ttl")]
+    pub ttl: u8,
+}
+
+fn default_ttl() -> u8 {
+    5
 }
 
 /// Control payload covering all non-chat operations.
@@ -680,6 +691,42 @@ pub enum ControlPayload {
         timestamp: u64,
     },
 
+    // ── Admin delegation ──
+    /// Grant manifest keypair + slot seed to a newly promoted admin.
+    AdminKeypairGrant {
+        /// Manifest owner keypair encrypted for the target member.
+        wrapped_manifest_keypair: Vec<u8>,
+        /// Slot seed encrypted for the target member.
+        wrapped_slot_seed: Vec<u8>,
+    },
+    /// Grant a specific slot keypair to a newly joined member.
+    SlotKeypairGrant {
+        slot_index: u32,
+        segment_index: u32,
+        /// Slot keypair encrypted for the target member.
+        wrapped_slot_keypair: Vec<u8>,
+    },
+
+    // ── Sync protocol ──
+    /// Request channel history from an archiver node.
+    SyncRequest {
+        channel_id: String,
+        since_timestamp: u64,
+    },
+    /// Response with channel messages from an archiver's local SQLite.
+    SyncResponse {
+        channel_id: String,
+        messages: Vec<serde_json::Value>,
+    },
+
+    // ── Coordinator announcement ──
+    /// New coordinator announcement (replaces election claim for gossip mesh).
+    CoordinatorAnnounce {
+        pseudonym_key: String,
+        route_blob: Vec<u8>,
+        epoch: u64,
+    },
+
     // ── Generic responses ──
     /// Generic success response.
     Ok,
@@ -713,6 +760,7 @@ pub fn sign_envelope(
         sender_pseudonym: sender_pseudonym.to_string(),
         envelope_bytes: envelope_bytes.to_vec(),
         signature: signature.to_bytes().to_vec(),
+        ttl: default_ttl(),
     }
 }
 
@@ -807,6 +855,7 @@ mod tests {
             mek_generation: 1,
             timestamp: 1234567890,
             reply_to_id: None,
+            lamport_ts: 42,
         };
         let json = serde_json::to_string(&envelope).unwrap();
         let back: CommunityEnvelope = serde_json::from_str(&json).unwrap();
@@ -840,6 +889,7 @@ mod tests {
             sender_pseudonym: "abc123".into(),
             envelope_bytes: vec![1, 2, 3],
             signature: vec![0u8; 64],
+            ttl: 5,
         };
         let json = serde_json::to_string(&signed).unwrap();
         let back: SignedEnvelope = serde_json::from_str(&json).unwrap();

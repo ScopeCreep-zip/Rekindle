@@ -16,7 +16,7 @@ use rekindle_protocol::dht::community::{
 use crate::state::AppState;
 use crate::state_helpers;
 
-use super::{CoordinatorRole, CoordinatorValueChange, relay::RelayService};
+use super::{CoordinatorRole, CoordinatorValueChange, state_manager::StateManager};
 
 /// Main election loop.
 ///
@@ -26,7 +26,7 @@ pub async fn run(
     state: Arc<AppState>,
     community_id: String,
     role: Arc<RwLock<CoordinatorRole>>,
-    relay: Arc<RelayService>,
+    state_mgr: Arc<StateManager>,
     mut value_change_rx: mpsc::Receiver<CoordinatorValueChange>,
     mut election_trigger_rx: mpsc::Receiver<()>,
     mut shutdown_rx: mpsc::Receiver<()>,
@@ -63,8 +63,8 @@ pub async fn run(
                             if let Ok(config) = serde_json::from_slice::<
                                 rekindle_protocol::dht::community::automod::AutoModConfig
                             >(&value) {
-                                relay.reload_automod(config.clone());
-                                relay.reload_raid_config(config.raid_protection);
+                                state_mgr.reload_automod(config.clone());
+                                state_mgr.reload_raid_config(config.raid_protection);
                                 tracing::info!(community = %community_id, "automod config reloaded");
                             }
                         }
@@ -84,10 +84,10 @@ pub async fn run(
                             tracing::info!(community = %community_id, "we are now coordinator");
 
                             // Create audit record if not yet initialized
-                            if relay.audit_logger().lock().record_key().is_none() {
+                            if state_mgr.audit_logger().lock().record_key().is_none() {
                                 let audit_state = state.clone();
                                 let audit_community = community_id.clone();
-                                let audit_logger = relay.audit_logger();
+                                let audit_logger = state_mgr.audit_logger();
                                 tokio::spawn(async move {
                                     if let Err(e) = super::audit::create_audit_record(
                                         &audit_state, &audit_community, &audit_logger,
@@ -113,13 +113,13 @@ pub async fn run(
                             if should_start {
                                 let hb_state = state.clone();
                                 let hb_community = community_id.clone();
-                                let hb_relay = relay.clone();
+                                let hb_state_mgr = state_mgr.clone();
                                 let (_hb_shutdown_tx, hb_shutdown_rx) = mpsc::channel(1);
                                 coordinator_heartbeat_handle = Some(tokio::spawn(async move {
                                     super::heartbeat::run_coordinator_heartbeat(
                                         hb_state,
                                         hb_community,
-                                        hb_relay,
+                                        hb_state_mgr,
                                         hb_shutdown_rx,
                                     ).await;
                                 }));

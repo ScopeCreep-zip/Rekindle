@@ -258,6 +258,14 @@ pub enum CommunityEvent {
     JoinAccepted {
         community_id: String,
     },
+    /// Sync response received — channel messages were merged from an archiver.
+    /// Frontend should refresh the channel's message list.
+    #[serde(rename_all = "camelCase")]
+    SyncComplete {
+        community_id: String,
+        channel_id: String,
+        message_count: usize,
+    },
 }
 
 /// Event info DTO for frontend consumption.

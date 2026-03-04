@@ -671,9 +671,9 @@ pub async fn list_community_invites(
 
 /// Send a message in a community channel.
 ///
-/// Encrypts the message body with the community's MEK, then sends a
-/// `CommunityEnvelope::ChatMessage` to the coordinator via `send_to_coordinator`.
-/// Falls back to local-only storage if the server is unreachable.
+/// Encrypts the message body with the community's MEK, then broadcasts a
+/// `CommunityEnvelope::ChatMessage` to the gossip mesh via `send_to_mesh`.
+/// Also persists the message to local SQLite.
 #[tauri::command]
 pub async fn send_channel_message(
     channel_id: String,
@@ -731,22 +731,26 @@ pub async fn send_channel_message(
     })
     .await?;
 
-    // --- Step 4: Send to coordinator (best-effort — message already persisted) ---
+    // --- Step 4: Send via gossip mesh (best-effort — message already persisted) ---
     let message_id = format!("msg_{}", hex::encode(rand_nonce().get(..8).unwrap_or(&[0; 8])));
-    let delivery_result = send_to_coordinator(
-        state.inner(),
-        &community_id,
-        rekindle_protocol::dht::community::envelope::CommunityEnvelope::ChatMessage {
-            channel_id: channel_id.clone(),
-            message_id,
-            author_pseudonym: sender_key.clone(),
-            ciphertext: ciphertext.clone(),
-            mek_generation,
-            timestamp: timestamp.cast_unsigned(),
-            reply_to_id,
-        },
-    )
-    .await;
+    let lamport_ts = {
+        let communities = state.communities.read();
+        communities
+            .get(&community_id)
+            .and_then(|c| c.gossip.as_ref())
+            .map_or(1, |g| g.lamport_counter + 1)
+    };
+    let chat_envelope = CommunityEnvelope::ChatMessage {
+        channel_id: channel_id.clone(),
+        message_id,
+        author_pseudonym: sender_key.clone(),
+        ciphertext: ciphertext.clone(),
+        mek_generation,
+        timestamp: timestamp.cast_unsigned(),
+        reply_to_id,
+        lamport_ts,
+    };
+    let delivery_result = send_to_mesh(state.inner(), &community_id, &chat_envelope);
 
     let delivery_status = if let Err(e) = delivery_result {
         tracing::warn!(error = %e, "server delivery failed — queuing for retry");
@@ -1011,7 +1015,7 @@ pub async fn get_audit_log(
     let audit_key = {
         let services = state.coordinator_services.read();
         services.get(&community_id).and_then(|h| {
-            let logger = h.relay.audit_logger();
+            let logger = h.state_mgr.audit_logger();
             let guard = logger.lock();
             guard.record_key().map(String::from)
         })
@@ -1501,17 +1505,19 @@ pub(crate) async fn send_to_coordinator(
     // If we ARE the coordinator, feed the signed envelope directly into the relay.
     // Veilid's import_remote_private_route doesn't support loopback (importing your
     // own route), so the coordinator must inject locally. The envelope still goes
-    // through the full relay pipeline: signature verification, permission checks,
-    // automod, and fan-out — identical to what remote members experience.
-    let relay = {
+    // through the state manager pipeline: signature verification, permission checks,
+    // automod, and gossip broadcast — identical to what remote members experience.
+    let state_mgr = {
         let services = state.coordinator_services.read();
         services
             .get(community_id)
             .filter(|h| h.is_coordinator())
-            .map(|h| h.relay.clone())
+            .map(|h| h.state_mgr.clone())
     };
-    if let Some(relay) = relay {
-        crate::services::coordinator::relay::handle_incoming_envelope(state, &relay, signed).await;
+    if let Some(ref sm) = state_mgr {
+        crate::services::coordinator::state_manager::handle_incoming_envelope(
+            state, sm, signed,
+        ).await;
         return Ok(());
     }
 
@@ -1584,8 +1590,131 @@ pub(crate) async fn send_to_coordinator(
     .map_err(|e| format!("app_message retry: {e}"))
 }
 
-// All traffic routes through the coordinator via send_to_coordinator —
-// the legacy send_community_rpc / request_to_control_payload wrappers have been removed.
+/// Send a community envelope via the gossip mesh (peer-to-peer).
+///
+/// Used for ChatMessage, TypingIndicator, PresenceUpdate — NOT for state ops
+/// (joins, moderation, config changes). Those still go through `send_to_coordinator`.
+///
+/// Signs the envelope with our pseudonym key, inserts into the dedup cache,
+/// increments the Lamport counter, and sends to D gossip peers.
+pub(crate) fn send_to_mesh(
+    state: &SharedState,
+    community_id: &str,
+    envelope: &CommunityEnvelope,
+) -> Result<(), String> {
+    use rekindle_protocol::dht::community::envelope;
+
+    // Get our pseudonym key
+    let my_pseudonym_key = {
+        let communities = state.communities.read();
+        let c = communities
+            .get(community_id)
+            .ok_or("community not found")?;
+        c.my_pseudonym_key.clone().unwrap_or_default()
+    };
+
+    // Sign envelope with pseudonym signing key
+    let signing_key = {
+        let secret = state.identity_secret.lock();
+        let s = (*secret).ok_or("identity not unlocked")?;
+        rekindle_crypto::group::pseudonym::derive_community_pseudonym(&s, community_id)
+    };
+    let envelope_bytes =
+        serde_json::to_vec(envelope).map_err(|e| format!("serialize envelope: {e}"))?;
+    let signed = envelope::sign_envelope(
+        &signing_key,
+        community_id,
+        &my_pseudonym_key,
+        &envelope_bytes,
+    );
+
+    // Insert into dedup cache so we don't process our own gossip forward
+    let dedup_key = extract_mesh_dedup_key(envelope);
+    state
+        .dedup_cache
+        .lock()
+        .check_and_insert(community_id, &my_pseudonym_key, &dedup_key);
+
+    // Increment lamport counter
+    {
+        let mut communities = state.communities.write();
+        if let Some(cs) = communities.get_mut(community_id) {
+            if let Some(ref mut gossip) = cs.gossip {
+                gossip.lamport_counter += 1;
+            }
+        }
+    }
+
+    // Send to D gossip peers
+    send_to_mesh_raw(state, community_id, &signed);
+
+    Ok(())
+}
+
+/// Low-level: send signed envelope bytes to D gossip peers.
+///
+/// Called by both `send_to_mesh()` (originator) and `broadcast_via_gossip()` (coordinator).
+pub(crate) fn send_to_mesh_raw(
+    state: &SharedState,
+    community_id: &str,
+    signed: &rekindle_protocol::dht::community::envelope::SignedEnvelope,
+) {
+    let Ok(signed_bytes) = serde_json::to_vec(signed) else {
+        return;
+    };
+
+    let Some(rc) = state_helpers::routing_context(state) else {
+        return;
+    };
+
+    let peers: Vec<Vec<u8>> = {
+        let communities = state.communities.read();
+        let Some(cs) = communities.get(community_id) else {
+            return;
+        };
+        let Some(ref gossip) = cs.gossip else { return };
+        gossip.peers.values().cloned().collect()
+    };
+
+    for route_blob in peers {
+        let rc = rc.clone();
+        let data = signed_bytes.clone();
+        tokio::spawn(async move {
+            if let Ok(route_id) = rc.api().import_remote_private_route(route_blob) {
+                let _ = rc
+                    .app_message(veilid_core::Target::RouteId(route_id), data)
+                    .await;
+            }
+        });
+    }
+}
+
+/// Extract a dedup key for a locally-originated envelope (before signing).
+fn extract_mesh_dedup_key(envelope: &CommunityEnvelope) -> String {
+    match envelope {
+        CommunityEnvelope::ChatMessage { ref message_id, .. } => message_id.clone(),
+        CommunityEnvelope::TypingIndicator {
+            ref channel_id,
+            ref pseudonym_key,
+        } => {
+            let bucket = rekindle_utils::timestamp_secs() / 5;
+            format!("typing:{channel_id}:{pseudonym_key}:{bucket}")
+        }
+        CommunityEnvelope::PresenceUpdate {
+            ref pseudonym_key, ..
+        } => {
+            let bucket = rekindle_utils::timestamp_secs() / 30;
+            format!("presence:{pseudonym_key}:{bucket}")
+        }
+        CommunityEnvelope::Control(_) => {
+            use blake2::{Blake2b, Digest, digest::consts::U16};
+            let bytes = serde_json::to_vec(envelope).unwrap_or_default();
+            let mut h = Blake2b::<U16>::new();
+            h.update(&bytes);
+            hex::encode(h.finalize())
+        }
+    }
+}
 
 /// Leave a community and clean up local state.
 ///
@@ -1619,17 +1748,14 @@ pub async fn leave_community(
     // Remove MEK from cache
     state.mek_cache.lock().remove(&community_id);
 
-    // Remove MEK from Stronghold
+    // Remove MEK + keypairs from Stronghold
     {
-        use rekindle_crypto::keychain::{mek_key_name, VAULT_COMMUNITIES};
-        use rekindle_crypto::Keychain as _;
-
         let ks = keystore_handle.lock();
         if let Some(ref keystore) = *ks {
-            let key_name = mek_key_name(&community_id);
-            if let Err(e) = keystore.delete_key(VAULT_COMMUNITIES, &key_name) {
-                tracing::warn!(error = %e, "failed to remove MEK from Stronghold");
-            }
+            crate::keystore::delete_mek(keystore, &community_id);
+            crate::keystore::delete_manifest_keypair(keystore, &community_id);
+            crate::keystore::delete_slot_keypair(keystore, &community_id);
+            crate::keystore::delete_slot_seed(keystore, &community_id);
         }
     }
 
@@ -2656,7 +2782,7 @@ pub async fn send_channel_typing(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let _ = pool; // no longer needed for coordinator path
+    let _ = pool; // no longer needed
 
     let pseudonym_key = {
         let communities = state.communities.read();
@@ -2666,15 +2792,11 @@ pub async fn send_channel_typing(
             .ok_or("no pseudonym key")?
     };
 
-    send_to_coordinator(
-        state.inner(),
-        &community_id,
-        rekindle_protocol::dht::community::envelope::CommunityEnvelope::TypingIndicator {
-            channel_id,
-            pseudonym_key,
-        },
-    )
-    .await
+    let envelope = CommunityEnvelope::TypingIndicator {
+        channel_id,
+        pseudonym_key,
+    };
+    send_to_mesh(state.inner(), &community_id, &envelope)
 }
 
 /// Update our presence status in a community.
@@ -2689,7 +2811,7 @@ pub async fn update_community_presence(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let _ = pool; // no longer needed for coordinator path
+    let _ = pool; // no longer needed
 
     let pseudonym_key = {
         let communities = state.communities.read();
@@ -2708,17 +2830,13 @@ pub async fn update_community_presence(
         }
     });
 
-    send_to_coordinator(
-        state.inner(),
-        &community_id,
-        rekindle_protocol::dht::community::envelope::CommunityEnvelope::PresenceUpdate {
-            pseudonym_key,
-            status,
-            game_info,
-            route_blob: crate::state_helpers::our_route_blob(state.inner()),
-        },
-    )
-    .await
+    let envelope = CommunityEnvelope::PresenceUpdate {
+        pseudonym_key,
+        status,
+        game_info,
+        route_blob: crate::state_helpers::our_route_blob(state.inner()),
+    };
+    send_to_mesh(state.inner(), &community_id, &envelope)
 }
 
 /// Get members of a community from the local cache.

@@ -53,7 +53,8 @@ CREATE TABLE IF NOT EXISTS messages (
     is_read INTEGER NOT NULL DEFAULT 0,
     reply_to_id INTEGER REFERENCES messages(id) ON DELETE SET NULL,
     attachment_json TEXT,
-    mek_generation INTEGER
+    mek_generation INTEGER,
+    lamport_ts INTEGER DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(owner_key, conversation_id, timestamp);

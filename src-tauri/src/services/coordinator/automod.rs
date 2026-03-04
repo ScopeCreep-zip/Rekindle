@@ -300,6 +300,7 @@ mod tests {
             mek_generation: 1,
             timestamp: 5000,
             reply_to_id: None,
+            lamport_ts: 0,
         }
     }
 

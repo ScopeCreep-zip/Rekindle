@@ -53,6 +53,12 @@ pub struct ChannelMessage {
     /// Optional reply-to sequence number.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reply_to: Option<u64>,
+    /// Lamport logical timestamp for causal ordering.
+    #[serde(default)]
+    pub lamport_ts: u64,
+    /// Unique message ID (for deduplication).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message_id: Option<String>,
 }
 
 /// Create a new channel record (DFLT for now, will be upgraded to SMPL when members join).
@@ -140,6 +146,83 @@ pub async fn watch_channel(
 ) -> Result<bool, ProtocolError> {
     let subkeys: Vec<u32> = (0..subkey_count).collect();
     dht.watch_record(key, &subkeys).await
+}
+
+// ── DHTLog-based channel history ──
+
+use crate::dht::log::DHTLog;
+
+/// Create a DHTLog for a new channel's persistent message history.
+///
+/// Returns `(log_spine_key, owner_keypair)`.
+pub async fn create_channel_log(
+    rc: &veilid_core::RoutingContext,
+) -> Result<(String, veilid_core::KeyPair), ProtocolError> {
+    let (log, keypair) = DHTLog::create(rc).await?;
+    let key = log.spine_key();
+    tracing::debug!(key = %key, "channel DHTLog created");
+    Ok((key, keypair))
+}
+
+/// Append a message to the channel's DHTLog for persistent history.
+pub async fn append_channel_message(
+    rc: &veilid_core::RoutingContext,
+    log_key: &str,
+    writer: veilid_core::KeyPair,
+    message: &ChannelMessage,
+) -> Result<u64, ProtocolError> {
+    let log = DHTLog::open_write(rc, log_key, writer).await?;
+    let bytes = serde_json::to_vec(message)
+        .map_err(|e| ProtocolError::Serialization(format!("channel message: {e}")))?;
+    log.append(&bytes).await
+}
+
+/// Read the last `count` messages from the channel's DHTLog.
+pub async fn read_channel_log_tail(
+    rc: &veilid_core::RoutingContext,
+    log_key: &str,
+    count: u32,
+) -> Result<Vec<ChannelMessage>, ProtocolError> {
+    let log = DHTLog::open_read(rc, log_key).await?;
+    let entries = log.tail(count).await?;
+    let mut messages = Vec::with_capacity(entries.len());
+    for entry in entries {
+        if let Ok(msg) = serde_json::from_slice::<ChannelMessage>(&entry) {
+            messages.push(msg);
+        }
+    }
+    Ok(messages)
+}
+
+/// Read messages from the DHTLog starting at a given position.
+pub async fn read_channel_log_since(
+    rc: &veilid_core::RoutingContext,
+    log_key: &str,
+    since_pos: u64,
+) -> Result<Vec<ChannelMessage>, ProtocolError> {
+    let log = DHTLog::open_read(rc, log_key).await?;
+    let total = log.len().await?;
+    if since_pos >= total {
+        return Ok(Vec::new());
+    }
+    let mut messages = Vec::new();
+    for pos in since_pos..total {
+        if let Some(data) = log.get(pos).await? {
+            if let Ok(msg) = serde_json::from_slice::<ChannelMessage>(&data) {
+                messages.push(msg);
+            }
+        }
+    }
+    Ok(messages)
+}
+
+/// Get the total number of messages in the channel DHTLog.
+pub async fn channel_log_len(
+    rc: &veilid_core::RoutingContext,
+    log_key: &str,
+) -> Result<u64, ProtocolError> {
+    let log = DHTLog::open_read(rc, log_key).await?;
+    log.len().await
 }
 
 /// Serde helper for base64-encoding Vec<u8> fields in JSON.

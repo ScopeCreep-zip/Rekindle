@@ -236,6 +236,155 @@ pub fn delete_mek(keystore: &StrongholdKeystore, community_id: &str) {
     }
 }
 
+/// Persist a community manifest owner keypair to Stronghold.
+///
+/// Used by admins/owners who can write to the manifest DHT record.
+pub fn persist_manifest_keypair(
+    keystore: &StrongholdKeystore,
+    community_id: &str,
+    keypair_str: &str,
+) {
+    use rekindle_crypto::keychain::VAULT_COMMUNITIES;
+    use rekindle_crypto::Keychain as _;
+
+    let key_name = format!("manifest_keypair_{community_id}");
+    if let Err(e) = keystore.store_key(VAULT_COMMUNITIES, &key_name, keypair_str.as_bytes()) {
+        tracing::warn!(error = %e, community = %community_id, "failed to persist manifest keypair");
+    } else if let Err(e) = keystore.save() {
+        tracing::warn!(error = %e, community = %community_id, "failed to save snapshot after manifest keypair");
+    } else {
+        tracing::debug!(community = %community_id, "manifest keypair persisted to Stronghold");
+    }
+}
+
+/// Load a community manifest owner keypair from Stronghold.
+pub fn load_manifest_keypair(
+    keystore: &StrongholdKeystore,
+    community_id: &str,
+) -> Option<String> {
+    use rekindle_crypto::keychain::VAULT_COMMUNITIES;
+    use rekindle_crypto::Keychain as _;
+
+    let key_name = format!("manifest_keypair_{community_id}");
+    match keystore.load_key(VAULT_COMMUNITIES, &key_name) {
+        Ok(Some(bytes)) => String::from_utf8(bytes).ok(),
+        Ok(None) => None,
+        Err(e) => {
+            tracing::trace!(error = %e, community = %community_id, "no manifest keypair in Stronghold");
+            None
+        }
+    }
+}
+
+/// Delete a community manifest owner keypair from Stronghold.
+pub fn delete_manifest_keypair(keystore: &StrongholdKeystore, community_id: &str) {
+    use rekindle_crypto::keychain::VAULT_COMMUNITIES;
+    use rekindle_crypto::Keychain as _;
+
+    let key_name = format!("manifest_keypair_{community_id}");
+    if let Err(e) = keystore.delete_key(VAULT_COMMUNITIES, &key_name) {
+        tracing::warn!(error = %e, community = %community_id, "failed to delete manifest keypair");
+    } else if let Err(e) = keystore.save() {
+        tracing::warn!(error = %e, community = %community_id, "failed to save snapshot after manifest keypair delete");
+    }
+}
+
+/// Persist a community SMPL slot keypair to Stronghold.
+///
+/// The slot keypair lets a member write their signed presence to their
+/// assigned slot in the member registry SMPL record.
+pub fn persist_slot_keypair(
+    keystore: &StrongholdKeystore,
+    community_id: &str,
+    keypair_str: &str,
+) {
+    use rekindle_crypto::keychain::VAULT_COMMUNITIES;
+    use rekindle_crypto::Keychain as _;
+
+    let key_name = format!("slot_keypair_{community_id}");
+    if let Err(e) = keystore.store_key(VAULT_COMMUNITIES, &key_name, keypair_str.as_bytes()) {
+        tracing::warn!(error = %e, community = %community_id, "failed to persist slot keypair");
+    } else if let Err(e) = keystore.save() {
+        tracing::warn!(error = %e, community = %community_id, "failed to save snapshot after slot keypair");
+    } else {
+        tracing::debug!(community = %community_id, "slot keypair persisted to Stronghold");
+    }
+}
+
+/// Load a community SMPL slot keypair from Stronghold.
+pub fn load_slot_keypair(
+    keystore: &StrongholdKeystore,
+    community_id: &str,
+) -> Option<String> {
+    use rekindle_crypto::keychain::VAULT_COMMUNITIES;
+    use rekindle_crypto::Keychain as _;
+
+    let key_name = format!("slot_keypair_{community_id}");
+    match keystore.load_key(VAULT_COMMUNITIES, &key_name) {
+        Ok(Some(bytes)) => String::from_utf8(bytes).ok(),
+        Ok(None) => None,
+        Err(e) => {
+            tracing::trace!(error = %e, community = %community_id, "no slot keypair in Stronghold");
+            None
+        }
+    }
+}
+
+/// Delete a community SMPL slot keypair from Stronghold.
+pub fn delete_slot_keypair(keystore: &StrongholdKeystore, community_id: &str) {
+    use rekindle_crypto::keychain::VAULT_COMMUNITIES;
+    use rekindle_crypto::Keychain as _;
+
+    let key_name = format!("slot_keypair_{community_id}");
+    if let Err(e) = keystore.delete_key(VAULT_COMMUNITIES, &key_name) {
+        tracing::warn!(error = %e, community = %community_id, "failed to delete slot keypair");
+    } else if let Err(e) = keystore.save() {
+        tracing::warn!(error = %e, community = %community_id, "failed to save snapshot after slot keypair delete");
+    }
+}
+
+/// Persist the slot seed (hex-encoded 32 bytes) for a community to the open Stronghold keystore.
+pub fn persist_slot_seed(keystore: &StrongholdKeystore, community_id: &str, seed_hex: &str) {
+    use rekindle_crypto::keychain::VAULT_COMMUNITIES;
+    use rekindle_crypto::Keychain as _;
+
+    let key_name = format!("slot_seed_{community_id}");
+    if let Err(e) = keystore.store_key(VAULT_COMMUNITIES, &key_name, seed_hex.as_bytes()) {
+        tracing::warn!(error = %e, community = %community_id, "failed to persist slot seed");
+    } else if let Err(e) = keystore.save() {
+        tracing::warn!(error = %e, community = %community_id, "failed to save snapshot after slot seed persist");
+    }
+}
+
+/// Load the slot seed for a community from the open Stronghold keystore.
+pub fn load_slot_seed(keystore: &StrongholdKeystore, community_id: &str) -> Option<String> {
+    use rekindle_crypto::keychain::VAULT_COMMUNITIES;
+    use rekindle_crypto::Keychain as _;
+
+    let key_name = format!("slot_seed_{community_id}");
+    match keystore.load_key(VAULT_COMMUNITIES, &key_name) {
+        Ok(Some(bytes)) => String::from_utf8(bytes).ok(),
+        Ok(None) => None,
+        Err(e) => {
+            tracing::trace!(error = %e, community = %community_id, "no slot seed in keystore");
+            None
+        }
+    }
+}
+
+/// Delete the slot seed for a community from the open Stronghold keystore.
+pub fn delete_slot_seed(keystore: &StrongholdKeystore, community_id: &str) {
+    use rekindle_crypto::keychain::VAULT_COMMUNITIES;
+    use rekindle_crypto::Keychain as _;
+
+    let key_name = format!("slot_seed_{community_id}");
+    if let Err(e) = keystore.delete_key(VAULT_COMMUNITIES, &key_name) {
+        tracing::warn!(error = %e, community = %community_id, "failed to delete slot seed");
+    } else if let Err(e) = keystore.save() {
+        tracing::warn!(error = %e, community = %community_id, "failed to save snapshot after slot seed delete");
+    }
+}
+
 /// Persist a per-channel MEK to the open Stronghold keystore.
 ///
 /// Uses the key format `mek_{community_id}_{channel_id}` under the communities vault.

@@ -11,7 +11,7 @@ pub mod election;
 pub mod heartbeat;
 pub mod onboarding;
 pub mod raid;
-pub mod relay;
+pub mod state_manager;
 pub mod timeout;
 
 use std::sync::Arc;
@@ -46,8 +46,8 @@ pub struct CoordinatorServiceHandle {
     shutdown_tx: mpsc::Sender<()>,
     /// Channel for forwarding VeilidUpdate::ValueChange events from the dispatch loop.
     pub value_change_tx: mpsc::Sender<CoordinatorValueChange>,
-    /// Shared relay service (contains automod + raid state).
-    pub relay: Arc<relay::RelayService>,
+    /// State manager for coordinator-side join/moderation/config handling (automod + raid + audit).
+    pub state_mgr: Arc<state_manager::StateManager>,
 }
 
 impl CoordinatorServiceHandle {
@@ -74,7 +74,7 @@ pub fn start(
     let (shutdown_tx, mut main_shutdown_rx) = mpsc::channel::<()>(1);
     let (value_change_tx, value_change_rx) = mpsc::channel(64);
     let (election_trigger_tx, election_trigger_rx) = mpsc::channel(4);
-    let relay_service = Arc::new(relay::RelayService::new(community_id.clone()));
+    let state_mgr = Arc::new(state_manager::StateManager::new(community_id.clone()));
 
     // Create an election shutdown channel linked to the main shutdown
     let (election_shutdown_tx, election_shutdown_rx) = mpsc::channel(1);
@@ -87,14 +87,14 @@ pub fn start(
     let election_state = state;
     let election_community = community_id.clone();
     let election_role = role.clone();
-    let election_relay = relay_service.clone();
+    let election_state_mgr = state_mgr.clone();
     let election_trigger_tx_clone = election_trigger_tx.clone();
     tokio::spawn(async move {
         election::run(
             election_state,
             election_community,
             election_role,
-            election_relay,
+            election_state_mgr,
             value_change_rx,
             election_trigger_rx,
             election_shutdown_rx,
@@ -115,6 +115,6 @@ pub fn start(
         role,
         shutdown_tx,
         value_change_tx,
-        relay: relay_service,
+        state_mgr,
     }
 }

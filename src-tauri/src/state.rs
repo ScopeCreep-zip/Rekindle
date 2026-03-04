@@ -81,6 +81,9 @@ pub struct AppState {
     /// Tauri app handle — set during `.setup()`, used by background services
     /// (coordinator relay, heartbeat, etc.) to emit events and access managed state.
     pub app_handle: RwLock<Option<tauri::AppHandle>>,
+    /// Global dedup cache for gossip mesh message deduplication.
+    /// Prevents processing/forwarding the same message twice.
+    pub dedup_cache: Mutex<DedupCache>,
 }
 
 impl Default for AppState {
@@ -115,6 +118,7 @@ impl Default for AppState {
             pending_deep_link: Mutex::new(None),
             community_circuit_breakers: RwLock::new(HashMap::new()),
             app_handle: RwLock::new(None),
+            dedup_cache: Mutex::new(DedupCache::new(1024)),
         }
     }
 }
@@ -127,6 +131,79 @@ impl Default for AppState {
 pub struct CircuitBreakerState {
     pub tripped_at: std::time::Instant,
     pub failure_count: u32,
+}
+
+// ── Gossip overlay types ──
+
+/// Gossip overlay state for a community.
+///
+/// Each member maintains a random peer set of D online members and forwards
+/// received messages to them. Adaptive degree:
+/// - ≤20 members: D = N-1 (direct mesh)
+/// - 21-60: D = 6, 61+: D = 8
+#[derive(Debug, Clone, Default)]
+pub struct GossipOverlay {
+    /// Current gossip peers: pseudonym_key → route_blob.
+    /// These are the D peers we send/forward every message to.
+    pub peers: HashMap<String, Vec<u8>>,
+    /// All online members: pseudonym_key → route_blob.
+    /// Superset of `peers`. Updated on each presence poll.
+    pub online_members: HashMap<String, Vec<u8>>,
+    /// Lamport counter for outgoing messages.
+    /// Incremented for each message we originate (not forwards).
+    pub lamport_counter: u64,
+}
+
+/// Compute the gossip degree (D) for the given number of online members.
+///
+/// - ≤1: no gossip (alone)
+/// - 2-20: direct mesh (send to everyone)
+/// - 21-60: D=6
+/// - 61+: D=8
+pub fn gossip_degree(online_count: usize) -> usize {
+    match online_count {
+        0..=1 => 0,
+        2..=20 => online_count - 1,
+        21..=60 => 6,
+        _ => 8,
+    }
+}
+
+/// LRU message deduplication cache.
+///
+/// Prevents infinite gossip forwarding loops and duplicate processing.
+/// Key = `(community_id, sender_pseudonym, dedup_key)`.
+/// FIFO eviction when capacity exceeded.
+pub struct DedupCache {
+    entries: indexmap::IndexMap<(String, String, String), ()>,
+    capacity: usize,
+}
+
+impl DedupCache {
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            entries: indexmap::IndexMap::with_capacity(capacity),
+            capacity,
+        }
+    }
+
+    /// Returns `true` if the message is a duplicate (already seen).
+    /// If new, inserts it and evicts the oldest entry if at capacity.
+    pub fn check_and_insert(&mut self, community_id: &str, sender: &str, dedup_key: &str) -> bool {
+        let key = (
+            community_id.to_string(),
+            sender.to_string(),
+            dedup_key.to_string(),
+        );
+        if self.entries.contains_key(&key) {
+            return true;
+        }
+        if self.entries.len() >= self.capacity {
+            self.entries.shift_remove_index(0);
+        }
+        self.entries.insert(key, ());
+        false
+    }
 }
 
 /// Shared reference to `AppState`, used by both Tauri commands and background services.
@@ -440,6 +517,36 @@ pub struct CommunityState {
     /// Coordinator epoch — incremented on coordinator restart.
     #[serde(default)]
     pub coordinator_epoch: u64,
+
+    // ── Gossip mesh fields (Phase 2) ──
+
+    /// Gossip overlay state (peer set, online members, lamport counter).
+    /// `None` until the presence poll loop initializes it.
+    #[serde(skip)]
+    pub gossip: Option<GossipOverlay>,
+
+    /// Our slot keypair string for writing presence to the SMPL registry.
+    /// Veilid `KeyPair::to_string()` format.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slot_keypair: Option<String>,
+
+    /// Manifest owner keypair (shared with admins for write access).
+    /// Veilid `KeyPair::to_string()` format.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub manifest_owner_keypair: Option<String>,
+
+    /// Channel DHTLog record keys: channel_id → log spine key.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub channel_log_keys: HashMap<String, String>,
+
+    /// Slot seed for deriving member SMPL keypairs (admins only).
+    /// 32 bytes, hex-encoded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slot_seed: Option<String>,
+
+    /// Shutdown sender for the presence poll loop.
+    #[serde(skip)]
+    pub presence_poll_shutdown_tx: Option<mpsc::Sender<()>>,
 }
 
 /// A role definition cached from the server.
