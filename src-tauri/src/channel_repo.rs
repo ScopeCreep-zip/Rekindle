@@ -5,7 +5,7 @@
 
 use crate::state::ChannelInfo;
 
-/// Insert a single channel.
+/// Insert a single channel with all metadata.
 pub fn insert_channel(
     conn: &rusqlite::Connection,
     owner_key: &str,
@@ -13,8 +13,21 @@ pub fn insert_channel(
     community_id: &str,
 ) -> Result<(), rusqlite::Error> {
     conn.execute(
-        "INSERT INTO channels (owner_key, id, community_id, name, channel_type) VALUES (?, ?, ?, ?, ?)",
-        rusqlite::params![owner_key, channel.id, community_id, channel.name, channel.channel_type],
+        "INSERT INTO channels (owner_key, id, community_id, name, channel_type, category_id, topic, slowmode_seconds, nsfw, message_record_key, mek_generation) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        rusqlite::params![
+            owner_key,
+            channel.id,
+            community_id,
+            channel.name,
+            channel.channel_type,
+            channel.category_id,
+            channel.topic,
+            channel.slowmode_seconds.map(i64::from),
+            i32::from(channel.nsfw),
+            channel.message_record_key,
+            channel.mek_generation.cast_signed(),
+        ],
     )?;
     Ok(())
 }
@@ -27,8 +40,21 @@ pub fn upsert_channel(
     community_id: &str,
 ) -> Result<(), rusqlite::Error> {
     conn.execute(
-        "INSERT OR IGNORE INTO channels (owner_key, id, community_id, name, channel_type) VALUES (?, ?, ?, ?, ?)",
-        rusqlite::params![owner_key, channel.id, community_id, channel.name, channel.channel_type],
+        "INSERT OR IGNORE INTO channels (owner_key, id, community_id, name, channel_type, category_id, topic, slowmode_seconds, nsfw, message_record_key, mek_generation) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        rusqlite::params![
+            owner_key,
+            channel.id,
+            community_id,
+            channel.name,
+            channel.channel_type,
+            channel.category_id,
+            channel.topic,
+            channel.slowmode_seconds.map(i64::from),
+            i32::from(channel.nsfw),
+            channel.message_record_key,
+            channel.mek_generation.cast_signed(),
+        ],
     )?;
     Ok(())
 }

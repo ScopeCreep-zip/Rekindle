@@ -187,6 +187,11 @@ impl DedupCache {
         }
     }
 
+    /// Remove all entries from the cache.
+    pub fn clear(&mut self) {
+        self.entries.clear();
+    }
+
     /// Returns `true` if the message is a duplicate (already seen).
     /// If new, inserts it and evicts the oldest entry if at capacity.
     pub fn check_and_insert(&mut self, community_id: &str, sender: &str, dedup_key: &str) -> bool {
@@ -547,6 +552,10 @@ pub struct CommunityState {
     /// Shutdown sender for the presence poll loop.
     #[serde(skip)]
     pub presence_poll_shutdown_tx: Option<mpsc::Sender<()>>,
+
+    /// Shutdown sender for the DHT keepalive loop.
+    #[serde(skip)]
+    pub dht_keepalive_shutdown_tx: Option<mpsc::Sender<()>>,
 }
 
 /// A role definition cached from the server.

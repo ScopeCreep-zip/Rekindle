@@ -242,14 +242,16 @@ pub async fn create_community(
         .unwrap_or_else(|| creator_key.clone());
     let roles_to_persist = community.roles.clone();
     let mek_gen = community.mek_generation.cast_signed();
+    let coordinator_pseudonym_db = community.coordinator_pseudonym.clone();
+    let coordinator_epoch_db = community.coordinator_epoch.cast_signed();
     let ok = owner_key;
     db_call(pool.inner(), move |conn| {
         // Owner gets all default role IDs: @everyone(0), members(1), moderator(2), admin(3), owner(4)
         let owner_role_ids = serde_json::to_string(&[0u32, 1, 2, 3, 4]).unwrap_or_default();
         conn.execute(
-            "INSERT INTO communities (owner_key, id, name, my_role, my_role_ids, joined_at, dht_record_key, dht_owner_keypair, my_pseudonym_key, mek_generation, manifest_key, member_registry_key, my_subkey_index) \
-             VALUES (?, ?, ?, 'owner', ?, ?, ?, ?, ?, ?, ?, ?, 0)",
-            rusqlite::params![ok, community_id_clone, name_clone, owner_role_ids, now, dht_record_key, dht_owner_keypair, pseudonym_key, mek_gen, manifest_key_db, member_registry_key_db],
+            "INSERT INTO communities (owner_key, id, name, my_role, my_role_ids, joined_at, dht_record_key, dht_owner_keypair, my_pseudonym_key, mek_generation, manifest_key, member_registry_key, my_subkey_index, coordinator_pseudonym, coordinator_epoch) \
+             VALUES (?, ?, ?, 'owner', ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)",
+            rusqlite::params![ok, community_id_clone, name_clone, owner_role_ids, now, dht_record_key, dht_owner_keypair, pseudonym_key, mek_gen, manifest_key_db, member_registry_key_db, coordinator_pseudonym_db, coordinator_epoch_db],
         )?;
 
         // Insert the creator as the first member (using pseudonym)
@@ -280,15 +282,6 @@ pub async fn create_community(
     })
     .await?;
 
-    // Start coordinator service for this community (creator is first coordinator)
-    {
-        let handle = crate::services::coordinator::start(
-            state.inner().clone(),
-            community_id.clone(),
-        );
-        state.coordinator_services.write().insert(community_id.clone(), handle);
-    }
-
     Ok(community_id)
 }
 
@@ -306,7 +299,7 @@ pub async fn join_community(
         .await?;
 
     // Read community state populated by join_community
-    let (name, dht_record_key, my_pseudonym_key, mek_generation, channels, my_role_ids, roles_to_persist, manifest_key, member_registry_key) = {
+    let (name, dht_record_key, my_pseudonym_key, mek_generation, channels, my_role_ids, roles_to_persist, manifest_key, member_registry_key, coordinator_pseudonym_db, coordinator_epoch_db) = {
         let communities = state.communities.read();
         match communities.get(&community_id) {
             Some(c) => (
@@ -319,6 +312,8 @@ pub async fn join_community(
                 c.roles.clone(),
                 c.manifest_key.clone(),
                 c.member_registry_key.clone(),
+                c.coordinator_pseudonym.clone(),
+                c.coordinator_epoch.cast_signed(),
             ),
             None => return Err("community state not found after join".to_string()),
         }
@@ -346,9 +341,9 @@ pub async fn join_community(
     let rij = role_ids_json;
     db_call(pool.inner(), move |conn| {
         conn.execute(
-            "INSERT OR IGNORE INTO communities (owner_key, id, name, my_role, my_role_ids, joined_at, dht_record_key, my_pseudonym_key, mek_generation, manifest_key, member_registry_key) \
-             VALUES (?, ?, ?, 'member', ?, ?, ?, ?, ?, ?, ?)",
-            rusqlite::params![ok, community_id_clone, name, rij, now, dht_record_key, pk, mg, manifest_key, member_registry_key],
+            "INSERT OR IGNORE INTO communities (owner_key, id, name, my_role, my_role_ids, joined_at, dht_record_key, my_pseudonym_key, mek_generation, manifest_key, member_registry_key, coordinator_pseudonym, coordinator_epoch) \
+             VALUES (?, ?, ?, 'member', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            rusqlite::params![ok, community_id_clone, name, rij, now, dht_record_key, pk, mg, manifest_key, member_registry_key, coordinator_pseudonym_db, coordinator_epoch_db],
         )?;
 
         // Add ourselves to the community_members table
@@ -830,15 +825,18 @@ pub async fn edit_channel_message(
 
     // Edit messages propagate via gossip mesh (no coordinator needed).
     // Receivers validate that the sender is the original author locally.
+    // We send the broadcast variant (MessageEdited) directly since there's no
+    // coordinator intermediary to convert EditMessage → MessageEdited.
     send_to_mesh(
         state.inner(),
         &community_id,
         &rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
-            rekindle_protocol::dht::community::envelope::ControlPayload::EditMessage {
+            rekindle_protocol::dht::community::envelope::ControlPayload::MessageEdited {
                 channel_id,
                 message_id,
                 new_ciphertext,
                 mek_generation,
+                edited_at: rekindle_utils::timestamp_secs(),
             },
         ),
     )
@@ -865,11 +863,12 @@ pub async fn delete_channel_message(
             .ok_or("channel not found in any community")?
     };
 
+    // Send the broadcast variant (MessageDeleted) directly via gossip.
     send_to_mesh(
         state.inner(),
         &community_id,
         &rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
-            rekindle_protocol::dht::community::envelope::ControlPayload::DeleteMessage {
+            rekindle_protocol::dht::community::envelope::ControlPayload::MessageDeleted {
                 channel_id,
                 message_id,
             },
@@ -891,14 +890,22 @@ pub async fn add_reaction(
     emoji: String,
 ) -> Result<(), String> {
     let _ = pool;
+    // Send broadcast variant directly (ReactionAdded) since no coordinator intermediary.
+    let reactor_pseudonym = {
+        let communities = state.communities.read();
+        communities.get(&community_id)
+            .and_then(|c| c.my_pseudonym_key.clone())
+            .unwrap_or_default()
+    };
     send_to_mesh(
         state.inner(),
         &community_id,
         &rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
-            rekindle_protocol::dht::community::envelope::ControlPayload::AddReaction {
+            rekindle_protocol::dht::community::envelope::ControlPayload::ReactionAdded {
                 channel_id,
                 message_id,
                 emoji,
+                reactor_pseudonym,
             },
         ),
     )
@@ -915,14 +922,22 @@ pub async fn remove_reaction(
     emoji: String,
 ) -> Result<(), String> {
     let _ = pool;
+    // Send broadcast variant directly (ReactionRemoved) since no coordinator intermediary.
+    let reactor_pseudonym = {
+        let communities = state.communities.read();
+        communities.get(&community_id)
+            .and_then(|c| c.my_pseudonym_key.clone())
+            .unwrap_or_default()
+    };
     send_to_mesh(
         state.inner(),
         &community_id,
         &rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
-            rekindle_protocol::dht::community::envelope::ControlPayload::RemoveReaction {
+            rekindle_protocol::dht::community::envelope::ControlPayload::ReactionRemoved {
                 channel_id,
                 message_id,
                 emoji,
+                reactor_pseudonym,
             },
         ),
     )
@@ -1284,13 +1299,24 @@ pub async fn send_thread_message(
     };
 
     // Thread messages are chat messages — send via gossip mesh, not coordinator.
+    // Send broadcast variant directly (ThreadMessageReceived) since no coordinator intermediary.
+    let sender_pseudonym = {
+        let communities = state.communities.read();
+        communities.get(&community_id)
+            .and_then(|c| c.my_pseudonym_key.clone())
+            .unwrap_or_default()
+    };
+    let message_id = format!("tmsg_{}", hex::encode(&rand_nonce()[..8]));
     send_to_mesh(
         state.inner(),
         &community_id,
-        &CommunityEnvelope::Control(ControlPayload::SendThreadMessage {
+        &CommunityEnvelope::Control(ControlPayload::ThreadMessageReceived {
             thread_id,
+            message_id,
+            sender_pseudonym,
             ciphertext,
             mek_generation,
+            timestamp: rekindle_utils::timestamp_secs(),
             reply_to_id: None,
         }),
     )

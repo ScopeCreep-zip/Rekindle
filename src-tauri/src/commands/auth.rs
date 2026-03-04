@@ -684,7 +684,8 @@ async fn load_communities_from_db(
         let mut comm_stmt = conn
             .prepare(
                 "SELECT id, name, description, my_role, my_role_ids, dht_record_key, dht_owner_keypair, \
-                 my_pseudonym_key, mek_generation, manifest_key, member_registry_key, my_subkey_index \
+                 my_pseudonym_key, mek_generation, manifest_key, member_registry_key, my_subkey_index, \
+                 coordinator_pseudonym, coordinator_epoch \
                  FROM communities WHERE owner_key = ?1",
             )?;
         let communities = comm_stmt
@@ -702,6 +703,8 @@ async fn load_communities_from_db(
                     db::get_str_opt(row, "manifest_key"),
                     db::get_str_opt(row, "member_registry_key"),
                     row.get::<_, Option<i64>>("my_subkey_index").unwrap_or(None).map(|v| u32::try_from(v).unwrap_or(0)),
+                    db::get_str_opt(row, "coordinator_pseudonym"),
+                    row.get::<_, i64>("coordinator_epoch").unwrap_or(0).cast_unsigned(),
                 ))
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -728,7 +731,7 @@ async fn load_communities_from_db(
             .collect::<Result<Vec<_>, _>>()?;
 
         let mut chan_stmt = conn
-            .prepare("SELECT id, community_id, name, channel_type FROM channels WHERE owner_key = ?1 ORDER BY sort_order")?;
+            .prepare("SELECT id, community_id, name, channel_type, category_id, topic, slowmode_seconds, nsfw, message_record_key, mek_generation FROM channels WHERE owner_key = ?1 ORDER BY sort_order")?;
         let channels = chan_stmt
             .query_map(rusqlite::params![ok], |row| {
                 Ok((
@@ -736,6 +739,12 @@ async fn load_communities_from_db(
                     db::get_str(row, "community_id"),
                     db::get_str(row, "name"),
                     row.get::<_, ChannelType>("channel_type")?,
+                    db::get_str_opt(row, "category_id"),
+                    db::get_str(row, "topic"),
+                    row.get::<_, Option<i64>>("slowmode_seconds").unwrap_or(None).map(|v| u32::try_from(v).unwrap_or(0)),
+                    row.get::<_, i64>("nsfw").unwrap_or(0) != 0,
+                    db::get_str_opt(row, "message_record_key"),
+                    row.get::<_, i64>("mek_generation").unwrap_or(0).cast_unsigned(),
                 ))
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -758,22 +767,24 @@ async fn load_communities_from_db(
         db_manifest_key,
         db_member_registry_key,
         db_subkey_index,
+        db_coordinator_pseudonym,
+        db_coordinator_epoch,
     ) in &community_rows
     {
         let channels: Vec<ChannelInfo> = channel_rows
             .iter()
-            .filter(|(_, cid, _, _)| cid == community_id)
-            .map(|(id, _, ch_name, ch_type)| ChannelInfo {
+            .filter(|(_, cid, _, _, _, _, _, _, _, _)| cid == community_id)
+            .map(|(id, _, ch_name, ch_type, cat_id, topic, slowmode, nsfw, msg_key, mek_gen)| ChannelInfo {
                 id: id.clone(),
                 name: ch_name.clone(),
                 channel_type: ch_type.clone(),
                 unread_count: 0,
-                category_id: None,
-                topic: String::new(),
-                slowmode_seconds: None,
-                nsfw: false,
-                message_record_key: None,
-                mek_generation: 0,
+                category_id: cat_id.clone(),
+                topic: topic.clone(),
+                slowmode_seconds: *slowmode,
+                nsfw: *nsfw,
+                message_record_key: msg_key.clone(),
+                mek_generation: *mek_gen,
             })
             .collect();
 
@@ -821,15 +832,16 @@ async fn load_communities_from_db(
             manifest_key,
             member_registry_key: db_member_registry_key.clone(),
             my_subkey_index: *db_subkey_index,
-            coordinator_pseudonym: None,
+            coordinator_pseudonym: db_coordinator_pseudonym.clone(),
             coordinator_route_blob: None,
-            coordinator_epoch: 0,
+            coordinator_epoch: *db_coordinator_epoch,
             gossip: None,
             slot_keypair: None,
             manifest_owner_keypair: None,
             channel_log_keys: std::collections::HashMap::new(),
             slot_seed: None,
             presence_poll_shutdown_tx: None,
+            dht_keepalive_shutdown_tx: None,
         };
         // Recalculate display role from role definitions (DB value may be stale)
         community.my_role = Some(crate::state::display_role_name(
