@@ -423,6 +423,11 @@ pub async fn rejoin_community(state: &Arc<AppState>, community_id: &str) -> Resu
         };
         let Some(ref key) = manifest_key else { return Ok(()) };
         let mgr = DHTManager::new(rc);
+        // Open manifest before reading — may be closed after app restart
+        if let Err(e) = mgr.open_record(key).await {
+            tracing::warn!(community = %community_id, error = %e, "rejoin: failed to open manifest");
+            return Ok(());
+        }
         match manifest::read_coordinator(&mgr, key).await {
             Ok(Some(coord_info)) if !coord_info.route_blob.is_empty() => {
                 tracing::info!(community = %community_id, "re-fetched coordinator route from DHT for rejoin");
@@ -528,6 +533,12 @@ async fn presence_poll_tick(state: &Arc<AppState>, community_id: &str) -> Result
     let Some(registry_key) = registry_key else {
         return Ok(()); // No registry yet (join pending)
     };
+
+    // Ensure registry record is open (may be closed after restart)
+    if let Err(e) = mgr.open_record(&registry_key).await {
+        tracing::debug!(community = %community_id, error = %e, "presence_poll: failed to open registry");
+        return Ok(());
+    }
 
     let my_pseudonym = {
         let communities = state.communities.read();
@@ -651,7 +662,8 @@ pub fn start_dht_keepalive(state: Arc<AppState>, community_id: String) {
             };
             let Some(key) = manifest_key else { continue };
             let mgr = DHTManager::new(rc);
-            // Re-read metadata to refresh DHT record TTL
+            // Open record if needed (may be closed after restart), then re-read to refresh TTL
+            let _ = mgr.open_record(&key).await;
             let _ = manifest::read_metadata(&mgr, &key).await;
         }
     });
