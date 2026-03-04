@@ -130,6 +130,9 @@ pub enum ControlPayload {
         roles: Vec<serde_json::Value>,
         #[serde(default)]
         members: Vec<serde_json::Value>,
+        /// The member registry DHT record key — needed for elections and presence.
+        #[serde(default)]
+        member_registry_key: Option<String>,
     },
     /// Response: join rejected by coordinator.
     JoinRejected {
