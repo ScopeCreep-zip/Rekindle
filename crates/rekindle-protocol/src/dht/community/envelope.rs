@@ -138,6 +138,12 @@ pub enum ControlPayload {
         /// using the same `wrap_mek()` envelope (X25519 DH + ChaCha20-Poly1305).
         #[serde(default)]
         channel_log_keypairs: Vec<(String, String, Vec<u8>)>,
+        /// Slot keypair bundled directly in JoinAccepted for atomic delivery.
+        /// Without this, presence writing is impossible and the member is invisible.
+        #[serde(default)]
+        slot_index: Option<u32>,
+        #[serde(default)]
+        wrapped_slot_keypair: Option<Vec<u8>>,
     },
     /// Response: join rejected by coordinator.
     JoinRejected {
@@ -232,6 +238,9 @@ pub enum ControlPayload {
     // ── MEK management ──
     /// Request current MEK.
     RequestMEK,
+    /// Request SlotKeypairGrant — sent when a member is missing their slot keypair
+    /// (e.g. it was never delivered or lost). Coordinator responds with SlotKeypairGrant.
+    RequestSlotKeypair,
     /// Rotate MEK.
     RotateMEK,
     /// Broadcast: MEK rotated.
