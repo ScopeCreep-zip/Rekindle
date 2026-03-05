@@ -302,6 +302,8 @@ pub struct GameDetectorHandle {
 /// Handle to the voice engine.
 pub struct VoiceEngineHandle {
     pub engine: rekindle_voice::VoiceEngine,
+    /// Shared voice transport — used by send loop, MCU loop, and VoiceJoin handler.
+    pub transport: std::sync::Arc<tokio::sync::Mutex<rekindle_voice::transport::VoiceTransport>>,
     /// Shutdown sender for the voice send loop task.
     pub send_loop_shutdown: Option<mpsc::Sender<()>>,
     /// Join handle for the voice send loop task.
@@ -316,6 +318,10 @@ pub struct VoiceEngineHandle {
     pub device_monitor_handle: Option<tokio::task::JoinHandle<()>>,
     /// Which channel/call we're currently in (prevents double-joining).
     pub channel_id: String,
+    /// Shutdown sender for the MCU mix loop task (group voice host only).
+    pub mcu_loop_shutdown: Option<mpsc::Sender<()>>,
+    /// Join handle for the MCU mix loop task.
+    pub mcu_loop_handle: Option<tokio::task::JoinHandle<()>>,
     /// Shared mute flag — send loop checks this to skip encoding.
     pub muted_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// Shared deafen flag — receive loop checks this to send silence.
@@ -664,6 +670,12 @@ pub enum ChannelType {
     Text,
     Voice,
     Announcement,
+    Forum,
+    Stage,
+    Directory,
+    Media,
+    Events,
+    Dm,
 }
 
 impl AsRef<str> for ChannelType {
@@ -672,6 +684,29 @@ impl AsRef<str> for ChannelType {
             Self::Text => "text",
             Self::Voice => "voice",
             Self::Announcement => "announcement",
+            Self::Forum => "forum",
+            Self::Stage => "stage",
+            Self::Directory => "directory",
+            Self::Media => "media",
+            Self::Events => "events",
+            Self::Dm => "dm",
+        }
+    }
+}
+
+impl From<rekindle_protocol::dht::community::types::ChannelKind> for ChannelType {
+    fn from(kind: rekindle_protocol::dht::community::types::ChannelKind) -> Self {
+        use rekindle_protocol::dht::community::types::ChannelKind;
+        match kind {
+            ChannelKind::Text => Self::Text,
+            ChannelKind::Voice => Self::Voice,
+            ChannelKind::Announcement => Self::Announcement,
+            ChannelKind::Forum => Self::Forum,
+            ChannelKind::Stage => Self::Stage,
+            ChannelKind::Directory => Self::Directory,
+            ChannelKind::Media => Self::Media,
+            ChannelKind::Events => Self::Events,
+            ChannelKind::Dm => Self::Dm,
         }
     }
 }
@@ -688,6 +723,12 @@ impl FromStr for ChannelType {
         Ok(match s {
             "voice" => Self::Voice,
             "announcement" => Self::Announcement,
+            "forum" => Self::Forum,
+            "stage" => Self::Stage,
+            "directory" => Self::Directory,
+            "media" => Self::Media,
+            "events" => Self::Events,
+            "dm" => Self::Dm,
             _ => Self::Text,
         })
     }

@@ -132,6 +132,15 @@ CREATE TABLE IF NOT EXISTS community_roles (
     PRIMARY KEY (owner_key, community_id, role_id)
 );
 
+CREATE TABLE IF NOT EXISTS community_categories (
+    owner_key TEXT NOT NULL,
+    community_id TEXT NOT NULL,
+    id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (owner_key, community_id, id)
+);
+
 -- Per-channel permission overwrites (role or member specific allow/deny).
 CREATE TABLE IF NOT EXISTS channel_overwrites (
     owner_key TEXT NOT NULL,
@@ -230,4 +239,87 @@ CREATE TABLE IF NOT EXISTS outgoing_invites (
         CHECK(status IN ('pending', 'responded', 'accepted', 'rejected', 'cancelled', 'expired')),
     accepted_by TEXT,
     PRIMARY KEY (owner_key, invite_id)
+);
+
+-- Community threads (forum-style sub-conversations within a channel).
+CREATE TABLE IF NOT EXISTS community_threads (
+    owner_key TEXT NOT NULL,
+    community_id TEXT NOT NULL,
+    id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    starter_message_id TEXT NOT NULL,
+    creator_pseudonym TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    archived INTEGER NOT NULL DEFAULT 0,
+    auto_archive_seconds INTEGER NOT NULL DEFAULT 0,
+    last_message_at INTEGER NOT NULL DEFAULT 0,
+    message_count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (owner_key, community_id, id)
+);
+
+-- Thread messages (messages within a thread).
+CREATE TABLE IF NOT EXISTS thread_messages (
+    owner_key TEXT NOT NULL,
+    community_id TEXT NOT NULL,
+    thread_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    sender_pseudonym TEXT NOT NULL,
+    body TEXT NOT NULL DEFAULT '',
+    timestamp INTEGER NOT NULL,
+    reply_to_id TEXT,
+    PRIMARY KEY (owner_key, community_id, thread_id, message_id)
+);
+CREATE INDEX IF NOT EXISTS idx_thread_messages_thread
+    ON thread_messages(owner_key, community_id, thread_id, timestamp);
+
+-- Community events (scheduled events with RSVPs).
+CREATE TABLE IF NOT EXISTS community_events (
+    owner_key TEXT NOT NULL,
+    community_id TEXT NOT NULL,
+    id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    creator_pseudonym TEXT NOT NULL,
+    start_time INTEGER NOT NULL,
+    end_time INTEGER,
+    channel_id TEXT,
+    max_attendees INTEGER,
+    created_at INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'scheduled',
+    PRIMARY KEY (owner_key, community_id, id)
+);
+
+-- Event RSVPs (one per member per event).
+CREATE TABLE IF NOT EXISTS event_rsvps (
+    owner_key TEXT NOT NULL,
+    community_id TEXT NOT NULL,
+    event_id TEXT NOT NULL,
+    pseudonym_key TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'none',
+    PRIMARY KEY (owner_key, community_id, event_id, pseudonym_key)
+);
+
+-- Channel pinned messages.
+CREATE TABLE IF NOT EXISTS channel_pins (
+    owner_key TEXT NOT NULL,
+    community_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    pinned_by TEXT NOT NULL,
+    pinned_at INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (owner_key, community_id, channel_id, message_id)
+);
+
+-- Game servers shared within a community.
+CREATE TABLE IF NOT EXISTS game_servers (
+    owner_key TEXT NOT NULL,
+    community_id TEXT NOT NULL,
+    id TEXT NOT NULL,
+    game_id TEXT NOT NULL,
+    label TEXT NOT NULL,
+    address TEXT NOT NULL,
+    added_by TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (owner_key, community_id, id)
 );

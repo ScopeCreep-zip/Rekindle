@@ -267,6 +267,7 @@ fn is_private_control_payload(envelope_bytes: &[u8]) -> bool {
             ControlPayload::JoinAccepted { .. }
                 | ControlPayload::SlotKeypairGrant { .. }
                 | ControlPayload::AdminKeypairGrant { .. }
+                | ControlPayload::ChannelLogKeypairGrant { .. }
                 | ControlPayload::SyncResponse { .. }
         )
     } else {
@@ -434,9 +435,11 @@ async fn handle_relayed_envelope(
             );
         }
         CommunityEnvelope::Control(payload) => {
+            let pool: tauri::State<'_, DbPool> = app_handle.state();
             handle_relayed_control(
                 app_handle,
                 state,
+                &pool,
                 &community_id,
                 &signed.sender_pseudonym,
                 payload,
@@ -450,6 +453,7 @@ async fn handle_relayed_envelope(
 async fn handle_relayed_control(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
+    pool: &DbPool,
     community_id: &str,
     sender_pseudonym: &str,
     payload: rekindle_protocol::dht::community::envelope::ControlPayload,
@@ -548,6 +552,18 @@ async fn handle_relayed_control(
             pseudonym_key,
             timeout_until,
         } => {
+            // Persist timeout to SQLite
+            let ok = state_helpers::current_owner_key(state).unwrap_or_default();
+            let cid = community_id.to_string();
+            let tp = pseudonym_key.clone();
+            db_fire(pool, "relayed_member_timed_out", move |conn| {
+                conn.execute(
+                    "UPDATE community_members SET timeout_until = ?1 \
+                     WHERE owner_key = ?2 AND community_id = ?3 AND pseudonym_key = ?4",
+                    rusqlite::params![timeout_until, ok, cid, tp],
+                )?;
+                Ok(())
+            });
             let _ = app_handle.emit(
                 "community-event",
                 CommunityEvent::MemberTimedOut {
@@ -647,55 +663,41 @@ async fn handle_relayed_control(
             );
         }
         ControlPayload::RolesChanged { roles } => {
-            // Convert Vec<serde_json::Value> → Vec<RoleDto>
-            let role_dtos: Vec<crate::channels::community_channel::RoleDto> = roles
-                .iter()
-                .filter_map(|v| serde_json::from_value(v.clone()).ok())
-                .collect();
-            let _ = app_handle.emit(
-                "community-event",
-                CommunityEvent::RolesChanged {
-                    community_id: community_id.to_string(),
-                    roles: role_dtos,
-                },
-            );
+            handle_roles_changed(app_handle, state, community_id, &roles);
         }
         ControlPayload::MemberRolesChanged {
             pseudonym_key,
             role_ids,
         } => {
-            let _ = app_handle.emit(
-                "community-event",
-                CommunityEvent::MemberRolesChanged {
-                    community_id: community_id.to_string(),
-                    pseudonym_key,
-                    role_ids,
-                },
-            );
+            handle_member_roles_changed(app_handle, state, community_id, &pseudonym_key, &role_ids);
         }
         // JoinAccepted — coordinator sent us community data + MEK after our join
         ControlPayload::JoinAccepted {
             mek_encrypted,
             mek_generation,
             channels,
-            categories,
+            categories: _,
             role_ids,
             roles,
             members,
             member_registry_key,
+            channel_log_keypairs,
         } => {
             handle_join_accepted(
                 app_handle,
                 state,
                 community_id,
-                &mek_encrypted,
-                mek_generation,
-                &channels,
-                &categories,
-                &role_ids,
-                &roles,
-                &members,
-                member_registry_key.as_deref(),
+                sender_pseudonym,
+                &JoinAcceptedData {
+                    mek_wire_bytes: &mek_encrypted,
+                    mek_generation,
+                    channels: &channels,
+                    role_ids: &role_ids,
+                    roles: &roles,
+                    members: &members,
+                    member_registry_key: member_registry_key.as_deref(),
+                    channel_log_keypairs: &channel_log_keypairs,
+                },
             )
             .await;
         }
@@ -719,6 +721,7 @@ async fn handle_relayed_control(
             handle_relayed_control_extended(
                 app_handle,
                 state,
+                pool,
                 community_id,
                 sender_pseudonym,
                 other,
@@ -731,6 +734,7 @@ async fn handle_relayed_control(
 fn handle_relayed_control_extended(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
+    pool: &DbPool,
     community_id: &str,
     sender_pseudonym: &str,
     payload: rekindle_protocol::dht::community::envelope::ControlPayload,
@@ -740,22 +744,7 @@ fn handle_relayed_control_extended(
 
     match payload {
         ControlPayload::ChannelsUpdated { channels, categories } => {
-            let channel_dtos: Vec<crate::channels::community_channel::ChannelInfoFrontendDto> = channels
-                .iter()
-                .filter_map(|v| serde_json::from_value(v.clone()).ok())
-                .collect();
-            let category_dtos: Vec<crate::channels::community_channel::CategoryInfoFrontendDto> = categories
-                .iter()
-                .filter_map(|v| serde_json::from_value(v.clone()).ok())
-                .collect();
-            let _ = app_handle.emit(
-                "community-event",
-                CommunityEvent::ChannelsUpdated {
-                    community_id: community_id.to_string(),
-                    channels: channel_dtos,
-                    categories: category_dtos,
-                },
-            );
+            handle_channels_updated(app_handle, state, community_id, &channels, &categories);
         }
         ControlPayload::ChannelOverwriteChanged { channel_id } => {
             let _ = app_handle.emit(
@@ -771,6 +760,20 @@ fn handle_relayed_control_extended(
             message_id,
             pinned_by,
         } => {
+            let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
+            let cid = community_id.to_string();
+            let ch = channel_id.clone();
+            let mid = message_id.clone();
+            let pb = pinned_by.clone();
+            let now = rekindle_utils::timestamp_secs();
+            crate::db_helpers::db_fire(pool, "persist pin", move |conn| {
+                conn.execute(
+                    "INSERT OR IGNORE INTO channel_pins (owner_key, community_id, channel_id, message_id, pinned_by, pinned_at) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    rusqlite::params![owner_key, cid, ch, mid, pb, now],
+                )?;
+                Ok(())
+            });
             let _ = app_handle.emit(
                 "community-event",
                 CommunityEvent::MessagePinned {
@@ -785,6 +788,18 @@ fn handle_relayed_control_extended(
             channel_id,
             message_id,
         } => {
+            let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
+            let cid = community_id.to_string();
+            let ch = channel_id.clone();
+            let mid = message_id.clone();
+            crate::db_helpers::db_fire(pool, "remove pin", move |conn| {
+                conn.execute(
+                    "DELETE FROM channel_pins WHERE owner_key = ?1 AND community_id = ?2 \
+                     AND channel_id = ?3 AND message_id = ?4",
+                    rusqlite::params![owner_key, cid, ch, mid],
+                )?;
+                Ok(())
+            });
             let _ = app_handle.emit(
                 "community-event",
                 CommunityEvent::MessageUnpinned {
@@ -837,8 +852,53 @@ fn handle_relayed_control_extended(
                 },
             );
         }
+        // Events, threads, game servers, and remaining payloads
+        other => {
+            handle_control_events_and_threads(app_handle, state, pool, community_id, sender_pseudonym, other);
+        }
+    }
+}
+
+/// Handle event, thread, and game server control payloads with SQLite persistence.
+fn handle_control_events_and_threads(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    pool: &DbPool,
+    community_id: &str,
+    sender_pseudonym: &str,
+    payload: rekindle_protocol::dht::community::envelope::ControlPayload,
+) {
+    use crate::channels::CommunityEvent;
+    use rekindle_protocol::dht::community::envelope::ControlPayload;
+
+    match payload {
         ControlPayload::EventCreated { event } => {
             if let Ok(dto) = serde_json::from_value::<crate::channels::community_channel::EventInfoDto>(event) {
+                let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
+                let cid = community_id.to_string();
+                let d = dto.clone();
+                crate::db_helpers::db_fire(pool, "persist event", move |conn| {
+                    conn.execute(
+                        "INSERT OR REPLACE INTO community_events \
+                         (owner_key, community_id, id, title, description, creator_pseudonym, \
+                          start_time, end_time, channel_id, max_attendees, created_at, status) \
+                         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
+                        rusqlite::params![
+                            owner_key, cid, d.id, d.title, d.description,
+                            d.creator_pseudonym, d.start_time, d.end_time,
+                            d.channel_id, d.max_attendees, d.created_at, d.status,
+                        ],
+                    )?;
+                    for rsvp in &d.rsvps {
+                        conn.execute(
+                            "INSERT OR REPLACE INTO event_rsvps \
+                             (owner_key, community_id, event_id, pseudonym_key, status) \
+                             VALUES (?1,?2,?3,?4,?5)",
+                            rusqlite::params![owner_key, cid, d.id, rsvp.pseudonym_key, rsvp.status],
+                        )?;
+                    }
+                    Ok(())
+                });
                 let _ = app_handle.emit(
                     "community-event",
                     CommunityEvent::EventCreated {
@@ -850,6 +910,23 @@ fn handle_relayed_control_extended(
         }
         ControlPayload::EventUpdated { event } => {
             if let Ok(dto) = serde_json::from_value::<crate::channels::community_channel::EventInfoDto>(event) {
+                let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
+                let cid = community_id.to_string();
+                let d = dto.clone();
+                crate::db_helpers::db_fire(pool, "update event", move |conn| {
+                    conn.execute(
+                        "INSERT OR REPLACE INTO community_events \
+                         (owner_key, community_id, id, title, description, creator_pseudonym, \
+                          start_time, end_time, channel_id, max_attendees, created_at, status) \
+                         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
+                        rusqlite::params![
+                            owner_key, cid, d.id, d.title, d.description,
+                            d.creator_pseudonym, d.start_time, d.end_time,
+                            d.channel_id, d.max_attendees, d.created_at, d.status,
+                        ],
+                    )?;
+                    Ok(())
+                });
                 let _ = app_handle.emit(
                     "community-event",
                     CommunityEvent::EventUpdated {
@@ -860,6 +937,20 @@ fn handle_relayed_control_extended(
             }
         }
         ControlPayload::EventDeleted { event_id } => {
+            let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
+            let cid = community_id.to_string();
+            let eid = event_id.clone();
+            crate::db_helpers::db_fire(pool, "delete event", move |conn| {
+                conn.execute(
+                    "DELETE FROM community_events WHERE owner_key = ?1 AND community_id = ?2 AND id = ?3",
+                    rusqlite::params![owner_key, cid, eid],
+                )?;
+                conn.execute(
+                    "DELETE FROM event_rsvps WHERE owner_key = ?1 AND community_id = ?2 AND event_id = ?3",
+                    rusqlite::params![owner_key, cid, eid],
+                )?;
+                Ok(())
+            });
             let _ = app_handle.emit(
                 "community-event",
                 CommunityEvent::EventDeleted {
@@ -873,6 +964,20 @@ fn handle_relayed_control_extended(
             pseudonym_key,
             status,
         } => {
+            let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
+            let cid = community_id.to_string();
+            let eid = event_id.clone();
+            let pk = pseudonym_key.clone();
+            let st = status.clone();
+            crate::db_helpers::db_fire(pool, "persist rsvp", move |conn| {
+                conn.execute(
+                    "INSERT OR REPLACE INTO event_rsvps \
+                     (owner_key, community_id, event_id, pseudonym_key, status) \
+                     VALUES (?1,?2,?3,?4,?5)",
+                    rusqlite::params![owner_key, cid, eid, pk, st],
+                )?;
+                Ok(())
+            });
             let _ = app_handle.emit(
                 "community-event",
                 CommunityEvent::EventRsvpChanged {
@@ -885,6 +990,25 @@ fn handle_relayed_control_extended(
         }
         ControlPayload::ThreadCreated { thread } => {
             if let Ok(dto) = serde_json::from_value::<crate::channels::community_channel::ThreadInfoDto>(thread) {
+                let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
+                let cid = community_id.to_string();
+                let d = dto.clone();
+                crate::db_helpers::db_fire(pool, "persist thread", move |conn| {
+                    conn.execute(
+                        "INSERT OR REPLACE INTO community_threads \
+                         (owner_key, community_id, id, channel_id, name, starter_message_id, \
+                          creator_pseudonym, created_at, archived, auto_archive_seconds, \
+                          last_message_at, message_count) \
+                         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
+                        rusqlite::params![
+                            owner_key, cid, d.id, d.channel_id, d.name,
+                            d.starter_message_id, d.creator_pseudonym, d.created_at,
+                            i32::from(d.archived), d.auto_archive_seconds,
+                            d.last_message_at, d.message_count,
+                        ],
+                    )?;
+                    Ok(())
+                });
                 let _ = app_handle.emit(
                     "community-event",
                     CommunityEvent::ThreadCreated {
@@ -895,6 +1019,18 @@ fn handle_relayed_control_extended(
             }
         }
         ControlPayload::ThreadArchived { thread_id, archived } => {
+            let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
+            let cid = community_id.to_string();
+            let tid = thread_id.clone();
+            let arch = archived;
+            crate::db_helpers::db_fire(pool, "update thread archived", move |conn| {
+                conn.execute(
+                    "UPDATE community_threads SET archived = ?1 \
+                     WHERE owner_key = ?2 AND community_id = ?3 AND id = ?4",
+                    rusqlite::params![i32::from(arch), owner_key, cid, tid],
+                )?;
+                Ok(())
+            });
             let _ = app_handle.emit(
                 "community-event",
                 CommunityEvent::ThreadArchived {
@@ -906,6 +1042,21 @@ fn handle_relayed_control_extended(
         }
         ControlPayload::GameServerAdded { server } => {
             if let Ok(dto) = serde_json::from_value::<crate::channels::community_channel::GameServerInfoDto>(server) {
+                let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
+                let cid = community_id.to_string();
+                let d = dto.clone();
+                crate::db_helpers::db_fire(pool, "persist game server", move |conn| {
+                    conn.execute(
+                        "INSERT OR REPLACE INTO game_servers \
+                         (owner_key, community_id, id, game_id, label, address, added_by, created_at) \
+                         VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+                        rusqlite::params![
+                            owner_key, cid, d.id, d.game_id, d.label,
+                            d.address, d.added_by, d.created_at,
+                        ],
+                    )?;
+                    Ok(())
+                });
                 let _ = app_handle.emit(
                     "community-event",
                     CommunityEvent::GameServerAdded {
@@ -916,6 +1067,16 @@ fn handle_relayed_control_extended(
             }
         }
         ControlPayload::GameServerRemoved { server_id } => {
+            let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
+            let cid = community_id.to_string();
+            let sid = server_id.clone();
+            crate::db_helpers::db_fire(pool, "remove game server", move |conn| {
+                conn.execute(
+                    "DELETE FROM game_servers WHERE owner_key = ?1 AND community_id = ?2 AND id = ?3",
+                    rusqlite::params![owner_key, cid, sid],
+                )?;
+                Ok(())
+            });
             let _ = app_handle.emit(
                 "community-event",
                 CommunityEvent::GameServerRemoved {
@@ -941,6 +1102,26 @@ fn handle_relayed_control_extended(
                 },
             );
         }
+        // Threads, thread messages, events, system, and remaining payloads
+        other => {
+            handle_control_threads_and_misc(app_handle, state, pool, community_id, sender_pseudonym, other);
+        }
+    }
+}
+
+/// Handle thread messages, event reminders, system messages, and remaining control payloads.
+fn handle_control_threads_and_misc(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    pool: &DbPool,
+    community_id: &str,
+    sender_pseudonym: &str,
+    payload: rekindle_protocol::dht::community::envelope::ControlPayload,
+) {
+    use crate::channels::CommunityEvent;
+    use rekindle_protocol::dht::community::envelope::ControlPayload;
+
+    match payload {
         ControlPayload::ThreadMessageReceived {
             thread_id,
             message_id,
@@ -958,6 +1139,29 @@ fn handle_relayed_control_extended(
                     _ => String::new(),
                 }
             };
+            let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
+            let cid = community_id.to_string();
+            let tid = thread_id.clone();
+            let mid = message_id.clone();
+            let sp = sender_pseudonym.clone();
+            let b = body.clone();
+            let ts = timestamp;
+            let rid = reply_to_id.clone();
+            crate::db_helpers::db_fire(pool, "persist thread message", move |conn| {
+                conn.execute(
+                    "INSERT OR IGNORE INTO thread_messages \
+                     (owner_key, community_id, thread_id, message_id, sender_pseudonym, body, timestamp, reply_to_id) \
+                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+                    rusqlite::params![owner_key, cid, tid, mid, sp, b, ts, rid],
+                )?;
+                // Bump thread message_count and last_message_at
+                conn.execute(
+                    "UPDATE community_threads SET message_count = message_count + 1, last_message_at = ?1 \
+                     WHERE owner_key = ?2 AND community_id = ?3 AND id = ?4",
+                    rusqlite::params![ts, owner_key, cid, tid],
+                )?;
+                Ok(())
+            });
             let _ = app_handle.emit(
                 "community-event",
                 CommunityEvent::ThreadMessageReceived {
@@ -1037,6 +1241,7 @@ fn handle_gossip_control_payloads(
     sender_pseudonym: &str,
     payload: rekindle_protocol::dht::community::envelope::ControlPayload,
 ) {
+    use crate::channels::CommunityEvent;
     use rekindle_protocol::dht::community::envelope::ControlPayload;
 
     match payload {
@@ -1066,6 +1271,19 @@ fn handle_gossip_control_payloads(
                 slot_index,
                 segment_index,
                 &wrapped_slot_keypair,
+            );
+        }
+        ControlPayload::ChannelLogKeypairGrant {
+            channel_id,
+            log_key,
+            wrapped_keypair,
+        } => {
+            // Unwrap and persist — reuse the same unwrap logic as JoinAccepted
+            unwrap_channel_log_keypairs(
+                state,
+                community_id,
+                sender_pseudonym,
+                &[(channel_id, log_key, wrapped_keypair)],
             );
         }
         ControlPayload::SyncRequest {
@@ -1098,13 +1316,759 @@ fn handle_gossip_control_payloads(
                 "coordinator announced"
             );
         }
+
+        // ── Voice signaling ──
+        ControlPayload::VoiceJoin { channel_id, route_blob } => {
+            // If we have an active voice session, add this peer's route to our transport
+            let shared_transport = {
+                let ve = state.voice_engine.lock();
+                ve.as_ref().map(|h| h.transport.clone())
+            };
+            if let Some(transport) = shared_transport {
+                let sender_key = sender_pseudonym.to_string();
+                let blob = route_blob.clone();
+                tokio::spawn(async move {
+                    let mut t = transport.lock().await;
+                    if let Err(e) = t.add_peer(&sender_key, &blob) {
+                        tracing::warn!(peer = %sender_key, error = %e, "failed to add voice peer");
+                    }
+                });
+            }
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::VoiceJoin {
+                    community_id: community_id.to_string(),
+                    channel_id,
+                    pseudonym_key: sender_pseudonym.to_string(),
+                    route_blob,
+                },
+            );
+        }
+        ControlPayload::VoiceLeave { channel_id } => {
+            // Remove leaving peer from our voice transport
+            let shared_transport = {
+                let ve = state.voice_engine.lock();
+                ve.as_ref().map(|h| h.transport.clone())
+            };
+            if let Some(transport) = shared_transport {
+                let sender_key = sender_pseudonym.to_string();
+                tokio::spawn(async move {
+                    let mut t = transport.lock().await;
+                    t.remove_peer(&sender_key);
+                });
+            }
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::VoiceLeave {
+                    community_id: community_id.to_string(),
+                    channel_id,
+                    pseudonym_key: sender_pseudonym.to_string(),
+                },
+            );
+        }
+        ControlPayload::VoiceModeSwitch { channel_id, mode, host_pseudonym } => {
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::VoiceModeSwitch {
+                    community_id: community_id.to_string(),
+                    channel_id,
+                    mode,
+                    host_pseudonym,
+                },
+            );
+        }
+
+        // ── Moderation payloads (paper-shredded: every member applies these) ──
+        // Envelope signature already verified by gossip layer. Source permission
+        // was checked at the originating command handler (require_permission).
+        other => {
+            let pool: tauri::State<'_, DbPool> = app_handle.state();
+            handle_gossip_moderation(app_handle, state, &pool, community_id, sender_pseudonym, other);
+        }
+    }
+}
+
+/// Handle moderation and structural control payloads received via gossip mesh.
+///
+/// In the paper-shredded model, any member with proper permissions can initiate
+/// moderation actions. Every member who receives these via gossip applies them
+/// locally (update in-memory state, persist to SQLite, emit frontend events).
+fn handle_gossip_moderation(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    pool: &DbPool,
+    community_id: &str,
+    _sender_pseudonym: &str,
+    payload: rekindle_protocol::dht::community::envelope::ControlPayload,
+) {
+    use crate::channels::CommunityEvent;
+    use crate::db_helpers::db_fire;
+    use rekindle_protocol::dht::community::envelope::ControlPayload;
+
+    let Ok(owner_key) = crate::state_helpers::current_owner_key(state) else {
+        return;
+    };
+
+    match payload {
+        // ── Kick: remove the target from local state ──
+        ControlPayload::Kick { target_pseudonym } => {
+            let my_pseudonym = {
+                let communities = state.communities.read();
+                communities
+                    .get(community_id)
+                    .and_then(|cs| cs.my_pseudonym_key.clone())
+            };
+
+            if my_pseudonym.as_deref() == Some(&target_pseudonym) {
+                // We were kicked
+                let _ = app_handle.emit(
+                    "community-event",
+                    CommunityEvent::Kicked {
+                        community_id: community_id.to_string(),
+                    },
+                );
+            } else {
+                // Someone else was kicked — remove from local state + SQLite
+                {
+                    let mut communities = state.communities.write();
+                    if let Some(cs) = communities.get_mut(community_id) {
+                        cs.known_members.remove(&target_pseudonym);
+                        if let Some(ref mut gossip) = cs.gossip {
+                            gossip.online_members.remove(&target_pseudonym);
+                            gossip.peers.remove(&target_pseudonym);
+                        }
+                    }
+                }
+                let ok = owner_key.clone();
+                let cid = community_id.to_string();
+                let tp = target_pseudonym.clone();
+                db_fire(pool, "kick_member_remove", move |conn| {
+                    conn.execute(
+                        "DELETE FROM community_members WHERE owner_key = ?1 AND community_id = ?2 AND pseudonym_key = ?3",
+                        rusqlite::params![ok, cid, tp],
+                    )?;
+                    Ok(())
+                });
+                let _ = app_handle.emit(
+                    "community-event",
+                    CommunityEvent::MemberRemoved {
+                        community_id: community_id.to_string(),
+                        pseudonym_key: target_pseudonym,
+                    },
+                );
+            }
+        }
+
+        // ── Ban: remove target from state + SQLite ──
+        ControlPayload::Ban { target_pseudonym, .. } => {
+            let my_pseudonym = {
+                let communities = state.communities.read();
+                communities
+                    .get(community_id)
+                    .and_then(|cs| cs.my_pseudonym_key.clone())
+            };
+
+            if my_pseudonym.as_deref() == Some(&target_pseudonym) {
+                let _ = app_handle.emit(
+                    "community-event",
+                    CommunityEvent::Kicked {
+                        community_id: community_id.to_string(),
+                    },
+                );
+            } else {
+                {
+                    let mut communities = state.communities.write();
+                    if let Some(cs) = communities.get_mut(community_id) {
+                        cs.known_members.remove(&target_pseudonym);
+                        if let Some(ref mut gossip) = cs.gossip {
+                            gossip.online_members.remove(&target_pseudonym);
+                            gossip.peers.remove(&target_pseudonym);
+                        }
+                    }
+                }
+                let ok = owner_key.clone();
+                let cid = community_id.to_string();
+                let tp = target_pseudonym.clone();
+                db_fire(pool, "ban_member_remove", move |conn| {
+                    conn.execute(
+                        "DELETE FROM community_members WHERE owner_key = ?1 AND community_id = ?2 AND pseudonym_key = ?3",
+                        rusqlite::params![ok, cid, tp],
+                    )?;
+                    Ok(())
+                });
+                let _ = app_handle.emit(
+                    "community-event",
+                    CommunityEvent::MemberRemoved {
+                        community_id: community_id.to_string(),
+                        pseudonym_key: target_pseudonym,
+                    },
+                );
+            }
+        }
+
+        // ── Unban: no local state change needed (ban list is in DHT manifest) ──
+        ControlPayload::Unban { .. } => {}
+
+        // ── Timeout: compute timeout_until, persist to SQLite, emit ──
+        ControlPayload::TimeoutMember {
+            target_pseudonym,
+            duration_seconds,
+            ..
+        } => {
+            let timeout_until = rekindle_utils::timestamp_secs() + duration_seconds;
+            let ok = owner_key.clone();
+            let cid = community_id.to_string();
+            let tp = target_pseudonym.clone();
+            db_fire(pool, "timeout_member", move |conn| {
+                conn.execute(
+                    "UPDATE community_members SET timeout_until = ?1 \
+                     WHERE owner_key = ?2 AND community_id = ?3 AND pseudonym_key = ?4",
+                    rusqlite::params![timeout_until, ok, cid, tp],
+                )?;
+                Ok(())
+            });
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::MemberTimedOut {
+                    community_id: community_id.to_string(),
+                    pseudonym_key: target_pseudonym,
+                    timeout_until: Some(timeout_until),
+                },
+            );
+        }
+
+        // ── Remove timeout: clear in SQLite, emit ──
+        ControlPayload::RemoveTimeout { target_pseudonym } => {
+            let ok = owner_key.clone();
+            let cid = community_id.to_string();
+            let tp = target_pseudonym.clone();
+            db_fire(pool, "remove_timeout", move |conn| {
+                conn.execute(
+                    "UPDATE community_members SET timeout_until = NULL \
+                     WHERE owner_key = ?1 AND community_id = ?2 AND pseudonym_key = ?3",
+                    rusqlite::params![ok, cid, tp],
+                )?;
+                Ok(())
+            });
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::MemberTimedOut {
+                    community_id: community_id.to_string(),
+                    pseudonym_key: target_pseudonym,
+                    timeout_until: None,
+                },
+            );
+        }
+
+        // ── Role assignment: update local state + SQLite + emit ──
+        ControlPayload::AssignRole {
+            target_pseudonym,
+            role_id,
+            ..
+        } => {
+            let my_pseudonym = {
+                let communities = state.communities.read();
+                communities
+                    .get(community_id)
+                    .and_then(|cs| cs.my_pseudonym_key.clone())
+            };
+            let is_self = my_pseudonym.as_deref() == Some(&target_pseudonym);
+            let self_roles_json = if is_self {
+                let mut communities = state.communities.write();
+                communities.get_mut(community_id).map(|cs| {
+                    if !cs.my_role_ids.contains(&role_id) {
+                        cs.my_role_ids.push(role_id);
+                    }
+                    serde_json::to_string(&cs.my_role_ids).unwrap_or_default()
+                })
+            } else {
+                None
+            };
+
+            let ok = owner_key.clone();
+            let cid = community_id.to_string();
+            let tp = target_pseudonym.clone();
+            db_fire(pool, "assign_role_persist", move |conn| {
+                let current: Option<String> = conn.query_row(
+                    "SELECT role_ids FROM community_members \
+                     WHERE owner_key = ?1 AND community_id = ?2 AND pseudonym_key = ?3",
+                    rusqlite::params![ok, cid, tp],
+                    |row| row.get(0),
+                ).ok();
+                if let Some(json) = current {
+                    let mut ids: Vec<u32> = serde_json::from_str(&json).unwrap_or_default();
+                    if !ids.contains(&role_id) { ids.push(role_id); }
+                    conn.execute(
+                        "UPDATE community_members SET role_ids = ?1 \
+                         WHERE owner_key = ?2 AND community_id = ?3 AND pseudonym_key = ?4",
+                        rusqlite::params![serde_json::to_string(&ids).unwrap_or_default(), ok, cid, tp],
+                    )?;
+                }
+                if let Some(ref srj) = self_roles_json {
+                    conn.execute(
+                        "UPDATE communities SET my_role_ids = ?1 WHERE owner_key = ?2 AND id = ?3",
+                        rusqlite::params![srj, ok, cid],
+                    )?;
+                }
+                Ok(())
+            });
+
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::MemberRolesChanged {
+                    community_id: community_id.to_string(),
+                    pseudonym_key: target_pseudonym,
+                    role_ids: vec![role_id],
+                },
+            );
+        }
+
+        ControlPayload::UnassignRole {
+            target_pseudonym,
+            role_id,
+            ..
+        } => {
+            let my_pseudonym = {
+                let communities = state.communities.read();
+                communities
+                    .get(community_id)
+                    .and_then(|cs| cs.my_pseudonym_key.clone())
+            };
+            let is_self = my_pseudonym.as_deref() == Some(&target_pseudonym);
+            let self_roles_json = if is_self {
+                let mut communities = state.communities.write();
+                communities.get_mut(community_id).map(|cs| {
+                    cs.my_role_ids.retain(|&r| r != role_id);
+                    serde_json::to_string(&cs.my_role_ids).unwrap_or_default()
+                })
+            } else {
+                None
+            };
+
+            let ok = owner_key.clone();
+            let cid = community_id.to_string();
+            let tp = target_pseudonym.clone();
+            db_fire(pool, "unassign_role_persist", move |conn| {
+                let current: Option<String> = conn.query_row(
+                    "SELECT role_ids FROM community_members \
+                     WHERE owner_key = ?1 AND community_id = ?2 AND pseudonym_key = ?3",
+                    rusqlite::params![ok, cid, tp],
+                    |row| row.get(0),
+                ).ok();
+                if let Some(json) = current {
+                    let mut ids: Vec<u32> = serde_json::from_str(&json).unwrap_or_default();
+                    ids.retain(|&r| r != role_id);
+                    conn.execute(
+                        "UPDATE community_members SET role_ids = ?1 \
+                         WHERE owner_key = ?2 AND community_id = ?3 AND pseudonym_key = ?4",
+                        rusqlite::params![serde_json::to_string(&ids).unwrap_or_default(), ok, cid, tp],
+                    )?;
+                }
+                if let Some(ref srj) = self_roles_json {
+                    conn.execute(
+                        "UPDATE communities SET my_role_ids = ?1 WHERE owner_key = ?2 AND id = ?3",
+                        rusqlite::params![srj, ok, cid],
+                    )?;
+                }
+                Ok(())
+            });
+
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::MemberRolesChanged {
+                    community_id: community_id.to_string(),
+                    pseudonym_key: target_pseudonym,
+                    role_ids: vec![],
+                },
+            );
+        }
+
+        // Structural payloads (roles, overwrites, community metadata) — delegated
+        // to avoid exceeding the function line limit.
+        other => {
+            handle_gossip_structural(app_handle, state, pool, community_id, &owner_key, other);
+        }
+    }
+}
+
+/// Handle structural gossip payloads: role edits, channel overwrites, community metadata.
+///
+/// Split from `handle_gossip_moderation` to keep functions within the 300-line limit.
+fn handle_gossip_structural(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    pool: &DbPool,
+    community_id: &str,
+    owner_key: &str,
+    payload: rekindle_protocol::dht::community::envelope::ControlPayload,
+) {
+    use crate::channels::CommunityEvent;
+    use crate::db_helpers::db_fire;
+    use rekindle_protocol::dht::community::envelope::ControlPayload;
+
+    match payload {
+        // ── Role editing: update local state + SQLite + emit ──
+        ControlPayload::EditRole {
+            role_id,
+            name,
+            color,
+            permissions,
+            position,
+            hoist,
+            mentionable,
+        } => {
+            let updated_roles = {
+                let mut communities = state.communities.write();
+                if let Some(cs) = communities.get_mut(community_id) {
+                    if let Some(r) = cs.roles.iter_mut().find(|r| r.id == role_id) {
+                        if let Some(ref n) = name { r.name.clone_from(n); }
+                        if let Some(c) = color { r.color = c; }
+                        if let Some(p) = permissions { r.permissions = p; }
+                        if let Some(pos) = position { r.position = pos; }
+                        if let Some(h) = hoist { r.hoist = h; }
+                        if let Some(m) = mentionable { r.mentionable = m; }
+                    }
+                    Some(cs.roles.clone())
+                } else {
+                    None
+                }
+            };
+            // Persist to SQLite community_roles
+            let ok = owner_key.to_string();
+            let cid = community_id.to_string();
+            db_fire(pool, "edit_role_persist", move |conn| {
+                let mut sets = Vec::new();
+                let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+                if let Some(ref n) = name { sets.push("name = ?"); params.push(Box::new(n.clone())); }
+                if let Some(c) = color { sets.push("color = ?"); params.push(Box::new(i64::from(c))); }
+                if let Some(p) = permissions { sets.push("permissions = ?"); params.push(Box::new(p.cast_signed())); }
+                if let Some(pos) = position { sets.push("position = ?"); params.push(Box::new(i64::from(pos))); }
+                if let Some(h) = hoist { sets.push("hoist = ?"); params.push(Box::new(i64::from(h))); }
+                if let Some(m) = mentionable { sets.push("mentionable = ?"); params.push(Box::new(i64::from(m))); }
+                if !sets.is_empty() {
+                    params.push(Box::new(ok));
+                    params.push(Box::new(cid));
+                    params.push(Box::new(i64::from(role_id)));
+                    let sql = format!(
+                        "UPDATE community_roles SET {} WHERE owner_key = ? AND community_id = ? AND role_id = ?",
+                        sets.join(", ")
+                    );
+                    let refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(std::convert::AsRef::as_ref).collect();
+                    conn.execute(&sql, refs.as_slice())?;
+                }
+                Ok(())
+            });
+            if let Some(roles) = updated_roles {
+                let role_dtos: Vec<crate::channels::community_channel::RoleDto> = roles
+                    .iter()
+                    .map(|r| crate::channels::community_channel::RoleDto {
+                        id: r.id,
+                        name: r.name.clone(),
+                        color: r.color,
+                        permissions: r.permissions,
+                        position: r.position,
+                        hoist: r.hoist,
+                        mentionable: r.mentionable,
+                    })
+                    .collect();
+                let _ = app_handle.emit(
+                    "community-event",
+                    CommunityEvent::RolesChanged {
+                        community_id: community_id.to_string(),
+                        roles: role_dtos,
+                    },
+                );
+            }
+        }
+
+        // ── Channel/role overwrites ──
+        ControlPayload::SetChannelOverwrite { channel_id, .. }
+        | ControlPayload::DeleteChannelOverwrite { channel_id, .. } => {
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::ChannelOverwriteChanged {
+                    community_id: community_id.to_string(),
+                    channel_id,
+                },
+            );
+        }
+
+        // ── Community metadata update: persist to SQLite ──
+        ControlPayload::UpdateCommunity { name, description } => {
+            {
+                let mut communities = state.communities.write();
+                if let Some(cs) = communities.get_mut(community_id) {
+                    if let Some(ref n) = name {
+                        cs.name.clone_from(n);
+                    }
+                    if let Some(ref d) = description {
+                        cs.description = Some(d.clone());
+                    }
+                }
+            }
+            let ok = owner_key.to_string();
+            let cid = community_id.to_string();
+            let n = name.clone();
+            let d = description.clone();
+            db_fire(pool, "update_community_persist", move |conn| {
+                if let Some(ref name_val) = n {
+                    conn.execute(
+                        "UPDATE communities SET name = ?1 WHERE owner_key = ?2 AND id = ?3",
+                        rusqlite::params![name_val, ok, cid],
+                    )?;
+                }
+                if let Some(ref desc_val) = d {
+                    conn.execute(
+                        "UPDATE communities SET description = ?1 WHERE owner_key = ?2 AND id = ?3",
+                        rusqlite::params![desc_val, ok, cid],
+                    )?;
+                }
+                Ok(())
+            });
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::CommunityUpdated {
+                    community_id: community_id.to_string(),
+                    name,
+                    description,
+                },
+            );
+        }
+
+        // Payloads not needing client-side handling
         _ => {
-            tracing::debug!(
+            tracing::trace!(
                 community = %community_id,
-                "received relayed control payload (not yet mapped to event)"
+                "received unhandled gossip control payload"
             );
         }
     }
+}
+
+/// Handle `RolesChanged`: update CommunityState.roles + persist to SQLite + emit.
+fn handle_roles_changed(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    community_id: &str,
+    roles: &[serde_json::Value],
+) {
+    use crate::channels::CommunityEvent;
+
+    let role_dtos: Vec<crate::channels::community_channel::RoleDto> = roles
+        .iter()
+        .filter_map(|v| serde_json::from_value(v.clone()).ok())
+        .collect();
+    // Update in-memory state
+    {
+        let mut communities = state.communities.write();
+        if let Some(cs) = communities.get_mut(community_id) {
+            cs.roles = role_dtos
+                .iter()
+                .map(|r| crate::state::RoleDefinition {
+                    id: r.id,
+                    name: r.name.clone(),
+                    color: r.color,
+                    permissions: r.permissions,
+                    position: r.position,
+                    hoist: r.hoist,
+                    mentionable: r.mentionable,
+                })
+                .collect();
+        }
+    }
+    // Persist to SQLite
+    let pool: tauri::State<'_, DbPool> = app_handle.state();
+    if let Ok(owner_key) = crate::state_helpers::current_owner_key(state) {
+        let cid = community_id.to_string();
+        let roles_for_db = role_dtos.clone();
+        crate::db_helpers::db_fire(&pool, "roles_changed_persist", move |conn| {
+            conn.execute(
+                "DELETE FROM community_roles WHERE owner_key = ?1 AND community_id = ?2",
+                rusqlite::params![owner_key, cid],
+            )?;
+            for r in &roles_for_db {
+                conn.execute(
+                    "INSERT INTO community_roles (owner_key, community_id, role_id, name, color, permissions, position, hoist, mentionable) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                    rusqlite::params![
+                        owner_key, cid, r.id, r.name, r.color,
+                        r.permissions.cast_signed(), r.position, r.hoist, r.mentionable
+                    ],
+                )?;
+            }
+            Ok(())
+        });
+    }
+    let _ = app_handle.emit(
+        "community-event",
+        CommunityEvent::RolesChanged {
+            community_id: community_id.to_string(),
+            roles: role_dtos,
+        },
+    );
+}
+
+/// Handle `MemberRolesChanged`: update my_role_ids if self + persist to SQLite + emit.
+fn handle_member_roles_changed(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    community_id: &str,
+    pseudonym_key: &str,
+    role_ids: &[u32],
+) {
+    use crate::channels::CommunityEvent;
+
+    let my_pseudonym = {
+        let communities = state.communities.read();
+        communities
+            .get(community_id)
+            .and_then(|cs| cs.my_pseudonym_key.clone())
+    };
+    if my_pseudonym.as_deref() == Some(pseudonym_key) && !role_ids.is_empty() {
+        let mut communities = state.communities.write();
+        if let Some(cs) = communities.get_mut(community_id) {
+            cs.my_role_ids = role_ids.to_vec();
+        }
+    }
+    // Persist to SQLite
+    let pool: tauri::State<'_, DbPool> = app_handle.state();
+    if let Ok(owner_key) = crate::state_helpers::current_owner_key(state) {
+        let cid = community_id.to_string();
+        let pk = pseudonym_key.to_string();
+        let rids = role_ids.to_vec();
+        let is_self = my_pseudonym.as_deref() == Some(pseudonym_key);
+        crate::db_helpers::db_fire(&pool, "member_roles_changed_persist", move |conn| {
+            let json = serde_json::to_string(&rids).unwrap_or_default();
+            conn.execute(
+                "UPDATE community_members SET role_ids = ?1 \
+                 WHERE owner_key = ?2 AND community_id = ?3 AND pseudonym_key = ?4",
+                rusqlite::params![json, owner_key, cid, pk],
+            )?;
+            if is_self {
+                conn.execute(
+                    "UPDATE communities SET my_role_ids = ?1 WHERE owner_key = ?2 AND id = ?3",
+                    rusqlite::params![json, owner_key, cid],
+                )?;
+            }
+            Ok(())
+        });
+    }
+    let _ = app_handle.emit(
+        "community-event",
+        CommunityEvent::MemberRolesChanged {
+            community_id: community_id.to_string(),
+            pseudonym_key: pseudonym_key.to_string(),
+            role_ids: role_ids.to_vec(),
+        },
+    );
+}
+
+/// Handle `ChannelsUpdated`: update CommunityState.channels/categories + persist + emit.
+fn handle_channels_updated(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    community_id: &str,
+    channels: &[serde_json::Value],
+    categories: &[serde_json::Value],
+) {
+    use crate::channels::CommunityEvent;
+
+    let channel_dtos: Vec<crate::channels::community_channel::ChannelInfoFrontendDto> = channels
+        .iter()
+        .filter_map(|v| serde_json::from_value(v.clone()).ok())
+        .collect();
+    let category_dtos: Vec<crate::channels::community_channel::CategoryInfoFrontendDto> =
+        categories
+            .iter()
+            .filter_map(|v| serde_json::from_value(v.clone()).ok())
+            .collect();
+    // Update CommunityState (preserve local-only fields like unread_count)
+    {
+        let mut communities = state.communities.write();
+        if let Some(cs) = communities.get_mut(community_id) {
+            let existing: std::collections::HashMap<String, &crate::state::ChannelInfo> =
+                cs.channels.iter().map(|c| (c.id.clone(), c)).collect();
+            cs.channels = channel_dtos
+                .iter()
+                .map(|dto| {
+                    let prev = existing.get(&dto.id);
+                    crate::state::ChannelInfo {
+                        id: dto.id.clone(),
+                        name: dto.name.clone(),
+                        channel_type: dto.channel_type
+                            .parse()
+                            .unwrap_or(crate::state::ChannelType::Text),
+                        unread_count: prev.map_or(0, |p| p.unread_count),
+                        category_id: dto.category_id.clone(),
+                        topic: dto.topic.clone(),
+                        slowmode_seconds: if dto.slowmode_seconds > 0 {
+                            Some(dto.slowmode_seconds)
+                        } else {
+                            None
+                        },
+                        nsfw: prev.is_some_and(|p| p.nsfw),
+                        message_record_key: prev.and_then(|p| p.message_record_key.clone()),
+                        mek_generation: prev.map_or(0, |p| p.mek_generation),
+                    }
+                })
+                .collect();
+            cs.categories = category_dtos
+                .iter()
+                .map(|dto| crate::state::CategoryInfo {
+                    id: dto.id.clone(),
+                    name: dto.name.clone(),
+                    sort_order: dto.sort_order,
+                })
+                .collect();
+        }
+    }
+    // Persist channels + categories to SQLite
+    let pool: tauri::State<'_, DbPool> = app_handle.state();
+    if let Ok(owner_key) = crate::state_helpers::current_owner_key(state) {
+        let cid = community_id.to_string();
+        let ch = channel_dtos.clone();
+        let cats = category_dtos.clone();
+        crate::db_helpers::db_fire(&pool, "channels_updated_persist", move |conn| {
+            for dto in &ch {
+                conn.execute(
+                    "INSERT INTO channels \
+                     (owner_key, id, community_id, name, channel_type, sort_order, category_id, topic, slowmode_seconds) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6, ?7, ?8) \
+                     ON CONFLICT(owner_key, id) DO UPDATE SET \
+                       name = excluded.name, \
+                       channel_type = excluded.channel_type, \
+                       category_id = excluded.category_id, \
+                       topic = excluded.topic, \
+                       slowmode_seconds = excluded.slowmode_seconds",
+                    rusqlite::params![
+                        owner_key, dto.id, cid, dto.name, dto.channel_type,
+                        dto.category_id, dto.topic, dto.slowmode_seconds
+                    ],
+                )?;
+            }
+            // Persist categories: delete all for this community, then re-insert
+            conn.execute(
+                "DELETE FROM community_categories WHERE owner_key = ?1 AND community_id = ?2",
+                rusqlite::params![owner_key, cid],
+            )?;
+            for dto in &cats {
+                conn.execute(
+                    "INSERT INTO community_categories (owner_key, community_id, id, name, sort_order) \
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                    rusqlite::params![owner_key, cid, dto.id, dto.name, dto.sort_order],
+                )?;
+            }
+            Ok(())
+        });
+    }
+    let _ = app_handle.emit(
+        "community-event",
+        CommunityEvent::ChannelsUpdated {
+            community_id: community_id.to_string(),
+            channels: channel_dtos,
+            categories: category_dtos,
+        },
+    );
 }
 
 /// Unwrap and persist admin keypair grant (manifest keypair + slot seed).
@@ -1267,6 +2231,63 @@ fn handle_slot_keypair_grant(
     });
 }
 
+/// Unwrap and persist channel log keypairs received in JoinAccepted.
+///
+/// For each `(channel_id, log_key, wrapped_keypair)`, decrypts the keypair
+/// using our pseudonym key, then stores in Stronghold and CommunityState.
+fn unwrap_channel_log_keypairs(
+    state: &Arc<AppState>,
+    community_id: &str,
+    sender_pseudonym: &str,
+    entries: &[(String, String, Vec<u8>)],
+) {
+    use rekindle_crypto::group::mek_distribution::unwrap_mek;
+    use rekindle_crypto::group::pseudonym::derive_community_pseudonym;
+
+    let Some(secret) = state.identity_secret.lock().as_ref().copied() else {
+        return;
+    };
+    let my_signing_key = derive_community_pseudonym(&secret, community_id);
+
+    let Ok(sender_bytes) = hex::decode(sender_pseudonym) else { return };
+    let Ok(sender_pub): Result<[u8; 32], _> = sender_bytes.try_into() else { return };
+
+    let app_handle = state.app_handle.read().clone();
+
+    for (channel_id, log_key, wrapped) in entries {
+        let kp_bytes = match unwrap_mek(&my_signing_key, &sender_pub, wrapped) {
+            Ok(b) => b,
+            Err(e) => {
+                tracing::warn!(channel = %channel_id, error = %e, "failed to unwrap channel log keypair");
+                continue;
+            }
+        };
+        let kp_str = String::from_utf8_lossy(&kp_bytes).to_string();
+
+        // Persist to Stronghold
+        if let Some(ref ah) = app_handle {
+            let ks_handle: tauri::State<'_, crate::keystore::KeystoreHandle> = ah.state();
+            let ks = ks_handle.lock();
+            if let Some(ref keystore) = *ks {
+                crate::keystore::persist_channel_log_keypair(keystore, community_id, channel_id, &kp_str);
+            }
+        }
+
+        // Update CommunityState
+        let mut communities = state.communities.write();
+        if let Some(cs) = communities.get_mut(community_id) {
+            cs.channel_log_keys.insert(channel_id.clone(), log_key.clone());
+        }
+
+        tracing::debug!(
+            community = %community_id,
+            channel = %channel_id,
+            log_key = %log_key,
+            "channel log keypair unwrapped and persisted"
+        );
+    }
+}
+
 /// Handle a sync request — respond with messages from local SQLite.
 fn handle_sync_request(
     app_handle: &tauri::AppHandle,
@@ -1380,6 +2401,18 @@ fn handle_sync_response(
     );
 }
 
+/// Bundled JoinAccepted data to avoid too-many-arguments clippy lint.
+struct JoinAcceptedData<'a> {
+    mek_wire_bytes: &'a [u8],
+    mek_generation: u64,
+    channels: &'a [serde_json::Value],
+    role_ids: &'a [u32],
+    roles: &'a [serde_json::Value],
+    members: &'a [serde_json::Value],
+    member_registry_key: Option<&'a str>,
+    channel_log_keypairs: &'a [(String, String, Vec<u8>)],
+}
+
 /// Handle a JoinAccepted response from the coordinator.
 ///
 /// Updates local community state with fresh MEK, roles, channels, members,
@@ -1388,22 +2421,33 @@ async fn handle_join_accepted(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     community_id: &str,
-    mek_wire_bytes: &[u8],
-    mek_generation: u64,
-    channels: &[serde_json::Value],
-    _categories: &[serde_json::Value],
-    role_ids: &[u32],
-    roles: &[serde_json::Value],
-    members: &[serde_json::Value],
-    member_registry_key: Option<&str>,
+    sender_pseudonym: &str,
+    data: &JoinAcceptedData<'_>,
 ) {
     use crate::channels::CommunityEvent;
     use rekindle_crypto::group::media_key::MediaEncryptionKey;
     use rekindle_protocol::dht::community::types::MemberSummary;
 
+    // Guard: ignore self-JoinAccepted (coordinator loopback). The coordinator
+    // already has correct state from SQLite/Stronghold — processing our own
+    // JoinAccepted would overwrite role_ids with potentially stale data.
+    let my_pseudonym = {
+        let communities = state.communities.read();
+        communities
+            .get(community_id)
+            .and_then(|cs| cs.my_pseudonym_key.clone())
+    };
+    if my_pseudonym.as_deref() == Some(sender_pseudonym) {
+        tracing::debug!(
+            community = %community_id,
+            "ignoring self-JoinAccepted — we are the coordinator"
+        );
+        return;
+    }
+
     // 1. Restore and cache the MEK
-    if !mek_wire_bytes.is_empty() {
-        if let Some(mek) = MediaEncryptionKey::from_wire_bytes(mek_wire_bytes) {
+    if !data.mek_wire_bytes.is_empty() {
+        if let Some(mek) = MediaEncryptionKey::from_wire_bytes(data.mek_wire_bytes) {
             let gen = mek.generation();
             state
                 .mek_cache
@@ -1423,13 +2467,13 @@ async fn handle_join_accepted(
     }
 
     // 2. Parse members from coordinator
-    let parsed_members: Vec<MemberSummary> = members
+    let parsed_members: Vec<MemberSummary> = data.members
         .iter()
         .filter_map(|v| serde_json::from_value(v.clone()).ok())
         .collect();
 
     // 3. Parse roles from coordinator
-    let parsed_roles: Vec<crate::state::RoleDefinition> = roles
+    let parsed_roles: Vec<crate::state::RoleDefinition> = data.roles
         .iter()
         .filter_map(|v| {
             let entry: rekindle_protocol::dht::community::types::RoleEntryV2 =
@@ -1450,21 +2494,35 @@ async fn handle_join_accepted(
     {
         let mut communities = state.communities.write();
         if let Some(cs) = communities.get_mut(community_id) {
-            cs.mek_generation = mek_generation;
-            if !role_ids.is_empty() {
-                cs.my_role_ids = role_ids.to_vec();
+            cs.mek_generation = data.mek_generation;
+            // Monotonic role_ids protection: never overwrite with a shorter list.
+            // A stale or corrupted JoinAccepted could carry [0,1] instead of
+            // the full [0,1,2,3,4] — accepting that would strip permissions.
+            if !data.role_ids.is_empty() && data.role_ids.len() >= cs.my_role_ids.len() {
+                cs.my_role_ids = data.role_ids.to_vec();
+            } else if !data.role_ids.is_empty() {
+                tracing::warn!(
+                    community = %community_id,
+                    incoming = data.role_ids.len(),
+                    current = cs.my_role_ids.len(),
+                    "rejecting role_ids update — incoming list shorter (monotonic guard)"
+                );
             }
             if !parsed_roles.is_empty() {
                 cs.roles.clone_from(&parsed_roles);
             }
 
-            // Update channel list if provided
-            if !channels.is_empty() {
+            // Update channel list if provided, and extract log_keys
+            if !data.channels.is_empty() {
                 let mut updated_channels = Vec::new();
-                for ch_val in channels {
+                for ch_val in data.channels {
                     if let Ok(ch) =
                         serde_json::from_value::<crate::state::ChannelInfo>(ch_val.clone())
                     {
+                        // Extract log_key from the raw JSON (ChannelEntryV2 has it, ChannelInfo doesn't)
+                        if let Some(log_key) = ch_val.get("log_key").and_then(|v| v.as_str()) {
+                            cs.channel_log_keys.insert(ch.id.clone(), log_key.to_string());
+                        }
                         updated_channels.push(ch);
                     }
                 }
@@ -1474,10 +2532,17 @@ async fn handle_join_accepted(
             }
 
             // Set member_registry_key from coordinator
-            if let Some(rk) = member_registry_key {
+            if let Some(rk) = data.member_registry_key {
                 cs.member_registry_key = Some(rk.to_string());
             }
         }
+    }
+
+    // 4a. Unwrap and persist channel log keypairs from coordinator
+    if !data.channel_log_keypairs.is_empty() {
+        unwrap_channel_log_keypairs(
+            state, community_id, sender_pseudonym, data.channel_log_keypairs,
+        );
     }
 
     // 4b. Persist member_registry_key, my_role_ids, and roles to SQLite so
@@ -1487,8 +2552,8 @@ async fn handle_join_accepted(
         let pool: tauri::State<'_, DbPool> = app_handle.state();
         let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
         let cid = community_id.to_string();
-        let rk_str = member_registry_key.map(str::to_string);
-        let role_ids_json = serde_json::to_string(role_ids).unwrap_or_else(|_| "[]".into());
+        let rk_str = data.member_registry_key.map(str::to_string);
+        let role_ids_json = serde_json::to_string(data.role_ids).unwrap_or_else(|_| "[]".into());
         let roles_for_db = parsed_roles.clone();
         let _ = crate::db_helpers::db_call(pool.inner(), move |conn| {
             // Update my_role_ids and optionally member_registry_key
@@ -1579,7 +2644,7 @@ async fn handle_join_accepted(
     //    The persist_mek call in join_community_command runs BEFORE JoinAccepted
     //    arrives (join is async fire-and-forget), so it finds nothing in mek_cache.
     //    We must persist here, after the MEK is cached.
-    if !mek_wire_bytes.is_empty() {
+    if !data.mek_wire_bytes.is_empty() {
         let ks_handle: tauri::State<'_, crate::keystore::KeystoreHandle> = app_handle.state();
         let ks = ks_handle.lock();
         if let Some(ref keystore) = *ks {
@@ -1601,8 +2666,8 @@ async fn handle_join_accepted(
 
     tracing::info!(
         community = %community_id,
-        mek_generation,
-        role_ids = ?role_ids,
+        mek_generation = data.mek_generation,
+        role_ids = ?data.role_ids,
         member_count = parsed_members.len(),
         "JoinAccepted processed — community state updated"
     );
@@ -1759,10 +2824,9 @@ pub(super) async fn fetch_mek_from_server(
 ) {
     use rekindle_protocol::dht::community::envelope::{ControlPayload, CommunityEnvelope};
 
-    // Send a RequestMEK to the coordinator via the v2 envelope path.
-    // The coordinator will respond asynchronously by relaying a JoinAccepted
-    // (or a dedicated MEK delivery) back through the relay, which will be
-    // processed by handle_relayed_control in the dispatch loop.
+    // RequestMEK is truly coordinator-only: the coordinator holds the MEK cache
+    // and wraps the MEK for each requesting member's pseudonym key. This cannot
+    // be distributed via gossip since the MEK is a shared secret.
     let result = crate::commands::community::send_to_coordinator(
         state,
         community_id,

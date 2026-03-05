@@ -266,6 +266,36 @@ pub enum CommunityEvent {
         channel_id: String,
         message_count: usize,
     },
+    /// Community metadata was updated (name, description).
+    #[serde(rename_all = "camelCase")]
+    CommunityUpdated {
+        community_id: String,
+        name: Option<String>,
+        description: Option<String>,
+    },
+    /// A member joined a voice channel.
+    #[serde(rename_all = "camelCase")]
+    VoiceJoin {
+        community_id: String,
+        channel_id: String,
+        pseudonym_key: String,
+        route_blob: Vec<u8>,
+    },
+    /// A member left a voice channel.
+    #[serde(rename_all = "camelCase")]
+    VoiceLeave {
+        community_id: String,
+        channel_id: String,
+        pseudonym_key: String,
+    },
+    /// Voice channel mode switched (mesh ↔ MCU).
+    #[serde(rename_all = "camelCase")]
+    VoiceModeSwitch {
+        community_id: String,
+        channel_id: String,
+        mode: String,
+        host_pseudonym: Option<String>,
+    },
 }
 
 /// Event info DTO for frontend consumption.

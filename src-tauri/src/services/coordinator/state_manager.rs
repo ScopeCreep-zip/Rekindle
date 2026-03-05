@@ -267,8 +267,42 @@ async fn persist_control_to_manifest(
             let mut chs = manifest::read_channels(&dht, &manifest_key).await.unwrap_or_default();
             let sort_order = u16::try_from(chs.len()).unwrap_or(u16::MAX);
             let kind = channel_type.parse::<ChannelKind>().unwrap_or(ChannelKind::Text);
+            let new_channel_id = format!("ch_{}", hex::encode(&crate::commands::community::rand_nonce()[..8]));
+
+            // Create a DHTLog for the new channel's persistent message history
+            let log_key = if let Some(rc) = state_helpers::routing_context(state) {
+                match rekindle_protocol::dht::community::channel_record::create_channel_log(&rc).await {
+                    Ok((key, kp)) => {
+                        // Persist channel log keypair to Stronghold
+                        use tauri::Manager as _;
+                        let app_handle = state.app_handle.read().clone();
+                        if let Some(ref ah) = app_handle {
+                            let ks_handle: tauri::State<'_, crate::keystore::KeystoreHandle> = ah.state();
+                            let ks = ks_handle.lock();
+                            if let Some(ref keystore) = *ks {
+                                crate::keystore::persist_channel_log_keypair(
+                                    keystore, community_id, &new_channel_id, &kp.to_string(),
+                                );
+                            }
+                        }
+                        // Update CommunityState channel_log_keys
+                        let mut communities = state.communities.write();
+                        if let Some(cs) = communities.get_mut(community_id) {
+                            cs.channel_log_keys.insert(new_channel_id.clone(), key.clone());
+                        }
+                        Some(key)
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "failed to create channel DHTLog");
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+
             chs.push(ChannelEntryV2 {
-                id: format!("ch_{}", hex::encode(&crate::commands::community::rand_nonce()[..8])),
+                id: new_channel_id,
                 name: name.clone(),
                 kind,
                 sort_order,
@@ -279,7 +313,7 @@ async fn persist_control_to_manifest(
                 message_record_key: None,
                 mek_generation: 0,
                 permission_overwrites: vec![],
-                log_key: None,
+                log_key,
             });
             manifest::write_channels(&dht, &manifest_key, &chs).await.map_err(|e| format!("{e}"))
         }
@@ -707,10 +741,33 @@ async fn handle_control(
         // Channel management - requires MANAGE_CHANNELS
         ControlPayload::CreateChannel { name, .. } => {
             if base_perms.has(Permissions::MANAGE_CHANNELS) {
+                // Snapshot existing channel_log_keys before creation
+                let keys_before: std::collections::HashSet<String> = {
+                    let communities = state.communities.read();
+                    communities.get(&sm.community_id)
+                        .map(|cs| cs.channel_log_keys.keys().cloned().collect())
+                        .unwrap_or_default()
+                };
+
                 persist_control_to_manifest(state, &sm.community_id, payload).await;
                 let ch_name = name.clone();
                 let create_ch_envelope = CommunityEnvelope::Control(payload.clone());
                 broadcast_via_gossip(state, &sm.community_id, &create_ch_envelope);
+
+                // Distribute the new channel's DHTLog keypair to all online members.
+                // Find the channel_log_keys entry added by persist_control_to_manifest.
+                let new_entry = {
+                    let communities = state.communities.read();
+                    communities.get(&sm.community_id).and_then(|cs| {
+                        cs.channel_log_keys.iter()
+                            .find(|(k, _)| !keys_before.contains(k.as_str()))
+                            .map(|(cid, lk)| (cid.clone(), lk.clone()))
+                    })
+                };
+                if let Some((ch_id, log_key)) = new_entry {
+                    distribute_channel_log_keypair(state, &sm.community_id, &ch_id, &log_key);
+                }
+
                 log_audit(state, sm, AuditAction::ChannelCreate, AuditTarget::Community, vec![
                     AuditChange { field: "name".into(), old_value: None, new_value: Some(ch_name) },
                 ], None);
@@ -787,6 +844,28 @@ async fn handle_control_extended(
                 log_audit(state, sm, AuditAction::MemberRoleUpdate, AuditTarget::Member(target.clone()), vec![
                     AuditChange { field: "role_id".into(), old_value: None, new_value: Some(rid.to_string()) },
                 ], None);
+
+                // Persist role change to DHT member registry
+                let is_assign = matches!(payload, ControlPayload::AssignRole { .. });
+                {
+                    let state_clone = state.clone();
+                    let community_id = sm.community_id.clone();
+                    let target_key = target.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = persist_role_assignment(
+                            &state_clone, &community_id, &target_key, rid, is_assign,
+                        ).await {
+                            tracing::warn!(
+                                community = %community_id,
+                                target = %target_key,
+                                role_id = rid,
+                                add = is_assign,
+                                error = %e,
+                                "DHT persist failed for role assignment"
+                            );
+                        }
+                    });
+                }
 
                 // If this is an AssignRole and the role grants ADMINISTRATOR,
                 // send the manifest keypair + slot seed to the target member.
@@ -922,7 +1001,10 @@ async fn handle_control_extended(
         | ControlPayload::ArchiveThread { .. }
         | ControlPayload::UnarchiveThread { .. }
         | ControlPayload::AddGameServer { .. }
-        | ControlPayload::RemoveGameServer { .. } => {
+        | ControlPayload::RemoveGameServer { .. }
+        | ControlPayload::VoiceJoin { .. }
+        | ControlPayload::VoiceLeave { .. }
+        | ControlPayload::VoiceModeSwitch { .. } => {
             tracing::trace!("ignoring gossip-handled control payload at coordinator");
         }
 
@@ -1587,6 +1669,68 @@ async fn assign_onboarding_roles(
     }
 }
 
+/// Persist a single role assignment or unassignment to the DHT member registry.
+///
+/// When `add` is true, adds `role_id` to the target member's `role_ids`.
+/// When `add` is false, removes `role_id` from the target member's `role_ids`.
+async fn persist_role_assignment(
+    state: &Arc<AppState>,
+    community_id: &str,
+    target_pseudonym: &str,
+    role_id: u32,
+    add: bool,
+) -> Result<(), String> {
+    let rc = state_helpers::routing_context(state).ok_or("not attached")?;
+    let mgr = rekindle_protocol::dht::DHTManager::new(rc);
+
+    let (registry_key, registry_owner_kp) = {
+        let communities = state.communities.read();
+        let c = communities.get(community_id).ok_or("community not found")?;
+        (
+            c.member_registry_key
+                .clone()
+                .ok_or("no member registry key")?,
+            c.registry_owner_keypair.clone(),
+        )
+    };
+
+    // Open registry writable so we can update the member index
+    if let Some(ref kp_str) = registry_owner_kp {
+        if let Ok(kp) = kp_str.parse::<veilid_core::KeyPair>() {
+            if let Err(e) = mgr.open_record_writable(&registry_key, kp).await {
+                tracing::warn!(community = %community_id, error = %e, "failed to open registry writable for role persist");
+            }
+        }
+    }
+
+    let mut members = member_registry::read_member_index(&mgr, &registry_key)
+        .await
+        .map_err(|e| format!("read member index: {e}"))?;
+
+    if let Some(member) = members.iter_mut().find(|m| m.pseudonym_key == target_pseudonym) {
+        if add {
+            if !member.role_ids.contains(&role_id) {
+                member.role_ids.push(role_id);
+            }
+        } else {
+            member.role_ids.retain(|&r| r != role_id);
+        }
+        member_registry::write_member_index(&mgr, &registry_key, &members)
+            .await
+            .map_err(|e| format!("write member index: {e}"))?;
+        tracing::debug!(
+            community = %community_id,
+            target = %target_pseudonym,
+            role_id,
+            add,
+            "persisted role assignment to DHT registry"
+        );
+        Ok(())
+    } else {
+        Err(format!("member {target_pseudonym} not found in registry"))
+    }
+}
+
 /// Add a new member to the member registry index.
 /// Returns the subkey_index assigned to the new member.
 async fn add_member_to_registry(
@@ -1729,6 +1873,11 @@ async fn send_join_accepted(
         .find(|m| m.pseudonym_key == joiner_pseudonym)
         .map_or_else(|| vec![0, 1], |m| m.role_ids.clone());
 
+    // Wrap channel log keypairs for the joiner
+    let channel_log_keypairs = wrap_channel_log_keypairs(
+        state, community_id, joiner_pseudonym, &channels,
+    );
+
     let payload = ControlPayload::JoinAccepted {
         mek_encrypted: mek_bytes.unwrap_or_default(),
         mek_generation,
@@ -1750,6 +1899,7 @@ async fn send_join_accepted(
             .filter_map(|m| serde_json::to_value(m).ok())
             .collect(),
         member_registry_key: registry_key,
+        channel_log_keypairs,
     };
 
     // JoinAccepted is critical — the joiner cannot participate without MEK.
@@ -2041,4 +2191,148 @@ pub(crate) async fn validate_and_use_invite(
     );
 
     Ok(())
+}
+
+/// Wrap each channel's DHTLog keypair for a joining member.
+///
+/// For every channel that has a `log_key`, loads the keypair from Stronghold,
+/// wraps it with the joiner's pseudonym public key, and returns a list of
+/// `(channel_id, log_key, wrapped_keypair_bytes)`.
+fn wrap_channel_log_keypairs(
+    state: &Arc<AppState>,
+    community_id: &str,
+    joiner_pseudonym: &str,
+    channels: &[rekindle_protocol::dht::community::types::ChannelEntryV2],
+) -> Vec<(String, String, Vec<u8>)> {
+    use rekindle_crypto::group::mek_distribution::wrap_mek;
+    use rekindle_crypto::group::pseudonym::derive_community_pseudonym;
+
+    let signing_key = {
+        let secret = state.identity_secret.lock();
+        match *secret {
+            Some(s) => derive_community_pseudonym(&s, community_id),
+            None => return Vec::new(),
+        }
+    };
+
+    let joiner_pub_bytes: [u8; 32] = match hex::decode(joiner_pseudonym)
+        .ok()
+        .and_then(|b| <[u8; 32]>::try_from(b).ok())
+    {
+        Some(b) => b,
+        None => return Vec::new(),
+    };
+
+    use tauri::Manager as _;
+    let app_handle = state.app_handle.read().clone();
+    let Some(ref ah) = app_handle else {
+        return Vec::new();
+    };
+    let ks_handle: tauri::State<'_, crate::keystore::KeystoreHandle> = ah.state();
+    let ks = ks_handle.lock();
+    let Some(ref keystore) = *ks else {
+        return Vec::new();
+    };
+
+    let mut result = Vec::new();
+    for ch in channels {
+        let Some(ref log_key) = ch.log_key else {
+            continue;
+        };
+        let Some(kp_str) = crate::keystore::load_channel_log_keypair(keystore, community_id, &ch.id)
+        else {
+            tracing::debug!(channel = %ch.id, "no log keypair in Stronghold — skipping");
+            continue;
+        };
+        let kp_bytes = kp_str.as_bytes();
+        match wrap_mek(&signing_key, &joiner_pub_bytes, kp_bytes) {
+            Ok(wrapped) => {
+                result.push((ch.id.clone(), log_key.clone(), wrapped));
+            }
+            Err(e) => {
+                tracing::warn!(channel = %ch.id, error = %e, "failed to wrap channel log keypair");
+            }
+        }
+    }
+    result
+}
+
+/// Distribute a newly created channel's DHTLog keypair to all online members.
+///
+/// Called after `CreateChannel` creates the DHTLog and persists the keypair.
+/// Each online member receives a `ChannelLogKeypairGrant` via their private route.
+fn distribute_channel_log_keypair(
+    state: &Arc<AppState>,
+    community_id: &str,
+    channel_id: &str,
+    log_key: &str,
+) {
+    use rekindle_crypto::group::mek_distribution::wrap_mek;
+    use rekindle_crypto::group::pseudonym::derive_community_pseudonym;
+
+    // Load the channel log keypair from Stronghold
+    use tauri::Manager as _;
+    let app_handle = state.app_handle.read().clone();
+    let Some(ref ah) = app_handle else { return };
+    let ks_handle: tauri::State<'_, crate::keystore::KeystoreHandle> = ah.state();
+    let ks = ks_handle.lock();
+    let Some(ref keystore) = *ks else { return };
+    let Some(kp_str) = crate::keystore::load_channel_log_keypair(keystore, community_id, channel_id) else {
+        tracing::warn!(channel = %channel_id, "no log keypair in Stronghold for distribution");
+        return;
+    };
+    let kp_bytes = kp_str.as_bytes();
+
+    // Get our signing key for wrapping
+    let Some(secret) = state.identity_secret.lock().as_ref().copied() else { return };
+    let my_signing_key = derive_community_pseudonym(&secret, community_id);
+
+    // Get our own pseudonym and all online members' routes
+    let (my_pseudonym, online_members) = {
+        let communities = state.communities.read();
+        let Some(cs) = communities.get(community_id) else { return };
+        let my_pk = cs.my_pseudonym_key.clone().unwrap_or_default();
+        let members: Vec<(String, Vec<u8>)> = cs
+            .gossip
+            .as_ref()
+            .map(|g| {
+                g.online_members
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        (my_pk, members)
+    };
+
+    let mut sent = 0u32;
+    for (pseudonym_key, route_blob) in &online_members {
+        // Don't send to ourselves
+        if *pseudonym_key == my_pseudonym {
+            continue;
+        }
+
+        let Ok(target_pub_bytes) = hex::decode(pseudonym_key) else { continue };
+        let Ok(target_pub): Result<[u8; 32], _> = target_pub_bytes.try_into() else { continue };
+
+        let Ok(wrapped) = wrap_mek(&my_signing_key, &target_pub, kp_bytes) else {
+            tracing::warn!(target = %pseudonym_key, "failed to wrap channel log keypair");
+            continue;
+        };
+
+        let payload = ControlPayload::ChannelLogKeypairGrant {
+            channel_id: channel_id.to_string(),
+            log_key: log_key.to_string(),
+            wrapped_keypair: wrapped,
+        };
+        send_control_to_route(state, community_id, route_blob, payload);
+        sent += 1;
+    }
+
+    tracing::info!(
+        community = %community_id,
+        channel = %channel_id,
+        recipients = sent,
+        "distributed channel log keypair to online members"
+    );
 }

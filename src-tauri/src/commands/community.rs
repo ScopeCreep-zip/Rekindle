@@ -650,14 +650,14 @@ pub async fn create_community_invite(
     let _ = pool;
     // Generate the invite code locally so we can return it immediately
     let code = hex::encode(&rand_nonce()[..4]);
-    send_to_coordinator(
+    execute_state_op(
         state.inner(),
         &community_id,
-        CommunityEnvelope::Control(ControlPayload::CreateInvite {
+        ControlPayload::CreateInvite {
             code: code.clone(),
             max_uses,
             expires_in_seconds,
-        }),
+        },
     )
     .await?;
 
@@ -677,10 +677,10 @@ pub async fn revoke_community_invite(
 ) -> Result<(), String> {
     require_permission(state.inner(), &community_id, Permissions::MANAGE_COMMUNITY)?;
     let _ = pool;
-    send_to_coordinator(
+    execute_state_op(
         state.inner(),
         &community_id,
-        CommunityEnvelope::Control(ControlPayload::RevokeInvite { code }),
+        ControlPayload::RevokeInvite { code },
     )
     .await
 }
@@ -1085,13 +1085,28 @@ pub async fn unpin_message(
 /// local pin tracking is implemented.
 #[tauri::command]
 pub async fn get_channel_pins(
-    _state: State<'_, SharedState>,
-    _pool: State<'_, DbPool>,
-    _community_id: String,
-    _channel_id: String,
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+    community_id: String,
+    channel_id: String,
 ) -> Result<Vec<PinnedMessageInfoDto>, String> {
-    // TODO: Read pins from local DB (arrive via MessagePinned broadcasts)
-    Ok(Vec::new())
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
+    db_call(pool.inner(), move |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT message_id, channel_id, pinned_by, pinned_at FROM channel_pins \
+             WHERE owner_key = ?1 AND community_id = ?2 AND channel_id = ?3",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![owner_key, community_id, channel_id], |row| {
+            Ok(PinnedMessageInfoDto {
+                message_id: row.get(0)?,
+                channel_id: row.get(1)?,
+                pinned_by: row.get(2)?,
+                pinned_at: row.get::<_, i64>(3).unwrap_or(0).cast_unsigned(),
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()
+    })
+    .await
 }
 
 /// An audit log entry for the frontend.
@@ -1285,12 +1300,63 @@ pub async fn rsvp_event(
 /// event tracking is implemented.
 #[tauri::command]
 pub async fn get_events(
-    _state: State<'_, SharedState>,
-    _pool: State<'_, DbPool>,
-    _community_id: String,
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+    community_id: String,
 ) -> Result<Vec<EventInfoDto>, String> {
-    // TODO: Read events from local DB (arrive via EventCreated broadcasts)
-    Ok(Vec::new())
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
+    db_call(pool.inner(), move |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT id, title, description, creator_pseudonym, start_time, end_time, \
+                    channel_id, max_attendees, created_at, status \
+             FROM community_events \
+             WHERE owner_key = ?1 AND community_id = ?2 \
+             ORDER BY start_time ASC",
+        )?;
+        let events: Vec<EventInfoDto> = stmt
+            .query_map(rusqlite::params![owner_key, community_id], |row| {
+                Ok(EventInfoDto {
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                    description: row.get(2)?,
+                    creator_pseudonym: row.get(3)?,
+                    start_time: row.get::<_, i64>(4).unwrap_or(0).cast_unsigned(),
+                    end_time: row.get::<_, Option<i64>>(5)?.map(i64::cast_unsigned),
+                    channel_id: row.get(6)?,
+                    max_attendees: row.get::<_, Option<i32>>(7)?.map(i32::cast_unsigned),
+                    created_at: row.get::<_, i64>(8).unwrap_or(0).cast_unsigned(),
+                    status: row.get(9)?,
+                    rsvps: Vec::new(), // filled below
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        // Fill RSVPs for each event
+        let mut rsvp_stmt = conn.prepare(
+            "SELECT pseudonym_key, status FROM event_rsvps \
+             WHERE owner_key = ?1 AND community_id = ?2 AND event_id = ?3",
+        )?;
+        let events_with_rsvps = events
+            .into_iter()
+            .map(|mut evt| {
+                if let Ok(rsvps) = rsvp_stmt.query_map(
+                    rusqlite::params![owner_key, community_id, evt.id],
+                    |row| {
+                        Ok(EventRsvpInfoDto {
+                            pseudonym_key: row.get(0)?,
+                            status: row.get(1)?,
+                        })
+                    },
+                ) {
+                    evt.rsvps = rsvps.filter_map(Result::ok).collect();
+                }
+                evt
+            })
+            .collect();
+
+        Ok(events_with_rsvps)
+    })
+    .await
 }
 
 // ---------------------------------------------------------------------------
@@ -1334,13 +1400,40 @@ pub async fn create_thread(
 /// local thread tracking is implemented.
 #[tauri::command]
 pub async fn get_channel_threads(
-    _state: State<'_, SharedState>,
-    _pool: State<'_, DbPool>,
-    _community_id: String,
-    _channel_id: String,
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+    community_id: String,
+    channel_id: String,
 ) -> Result<Vec<ThreadInfoDto>, String> {
-    // TODO: Read threads from local DB (arrive via ThreadCreated broadcasts)
-    Ok(Vec::new())
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
+    db_call(pool.inner(), move |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT id, channel_id, name, starter_message_id, creator_pseudonym, \
+                    created_at, archived, auto_archive_seconds, last_message_at, message_count \
+             FROM community_threads \
+             WHERE owner_key = ?1 AND community_id = ?2 AND channel_id = ?3 \
+             ORDER BY last_message_at DESC",
+        )?;
+        let rows = stmt.query_map(
+            rusqlite::params![owner_key, community_id, channel_id],
+            |row| {
+                Ok(ThreadInfoDto {
+                    id: row.get(0)?,
+                    channel_id: row.get(1)?,
+                    name: row.get(2)?,
+                    starter_message_id: row.get(3)?,
+                    creator_pseudonym: row.get(4)?,
+                    created_at: row.get::<_, i64>(5).unwrap_or(0).cast_unsigned(),
+                    archived: row.get::<_, i32>(6).unwrap_or(0) != 0,
+                    auto_archive_seconds: row.get::<_, i32>(7).unwrap_or(0).cast_unsigned(),
+                    last_message_at: row.get::<_, i64>(8).unwrap_or(0).cast_unsigned(),
+                    message_count: row.get::<_, i32>(9).unwrap_or(0).cast_unsigned(),
+                })
+            },
+        )?;
+        rows.collect::<Result<Vec<_>, _>>()
+    })
+    .await
 }
 
 /// Send a message to a thread (encrypted with MEK).
@@ -1396,15 +1489,48 @@ pub async fn send_thread_message(
 /// local thread message tracking is implemented.
 #[tauri::command]
 pub async fn get_thread_messages(
-    _state: State<'_, SharedState>,
-    _pool: State<'_, DbPool>,
-    _community_id: String,
-    _thread_id: String,
-    _limit: u32,
-    _before_timestamp: Option<u64>,
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+    community_id: String,
+    thread_id: String,
+    limit: u32,
+    before_timestamp: Option<u64>,
 ) -> Result<Vec<Message>, String> {
-    // TODO: Read thread messages from local DB (arrive via ThreadMessageReceived broadcasts)
-    Ok(Vec::new())
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
+    let my_pseudonym = {
+        let communities = state.communities.read();
+        communities
+            .get(&community_id)
+            .and_then(|cs| cs.my_pseudonym_key.clone())
+            .unwrap_or_default()
+    };
+    let lim = i64::from(limit.min(200));
+    db_call(pool.inner(), move |conn| {
+        let before_ts = before_timestamp.map_or(i64::MAX, u64::cast_signed);
+        let mut stmt = conn.prepare(
+            "SELECT message_id, sender_pseudonym, body, timestamp, reply_to_id \
+             FROM thread_messages \
+             WHERE owner_key = ?1 AND community_id = ?2 AND thread_id = ?3 AND timestamp < ?4 \
+             ORDER BY timestamp DESC LIMIT ?5",
+        )?;
+        let rows = stmt.query_map(
+            rusqlite::params![owner_key, community_id, thread_id, before_ts, lim],
+            |row| {
+                let sender: String = row.get(1)?;
+                let is_own = sender == my_pseudonym;
+                Ok(Message {
+                    id: 0, // thread messages don't use auto-increment id
+                    sender_id: sender,
+                    body: row.get(2)?,
+                    timestamp: row.get(3)?,
+                    is_own,
+                    server_message_id: row.get(0)?,
+                })
+            },
+        )?;
+        rows.collect::<Result<Vec<_>, _>>()
+    })
+    .await
 }
 
 /// Archive a thread.
@@ -1492,12 +1618,30 @@ pub async fn remove_game_server(
 /// local game server tracking is implemented.
 #[tauri::command]
 pub async fn get_game_servers(
-    _state: State<'_, SharedState>,
-    _pool: State<'_, DbPool>,
-    _community_id: String,
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+    community_id: String,
 ) -> Result<Vec<GameServerInfoDto>, String> {
-    // TODO: Read game servers from local DB (arrive via GameServerAdded broadcasts)
-    Ok(Vec::new())
+    let owner_key = state_helpers::current_owner_key(state.inner())?;
+    db_call(pool.inner(), move |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT id, game_id, label, address, added_by, created_at FROM game_servers \
+             WHERE owner_key = ?1 AND community_id = ?2 \
+             ORDER BY created_at DESC",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![owner_key, community_id], |row| {
+            Ok(GameServerInfoDto {
+                id: row.get(0)?,
+                game_id: row.get(1)?,
+                label: row.get(2)?,
+                address: row.get(3)?,
+                added_by: row.get(4)?,
+                created_at: row.get::<_, i64>(5).unwrap_or(0).cast_unsigned(),
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()
+    })
+    .await
 }
 
 /// Pending channel message queued for retry delivery to the community server.
@@ -1564,7 +1708,8 @@ pub(crate) fn rand_nonce() -> Vec<u8> {
 }
 
 /// Execute a Tier 2 state operation. If we hold the manifest keypair, write
-/// directly to DHT + gossip broadcast. Otherwise route through coordinator.
+/// directly to DHT + gossip broadcast. Otherwise broadcast via gossip mesh —
+/// any admin/coordinator with the keypair will pick it up and persist to DHT.
 pub(crate) async fn execute_state_op(
     state: &SharedState,
     community_id: &str,
@@ -1581,21 +1726,16 @@ pub(crate) async fn execute_state_op(
     if has_manifest_kp {
         // Direct: persist to DHT + broadcast via gossip mesh
         persist_control_to_dht(state, community_id, &payload).await?;
-        send_to_mesh(
-            state,
-            community_id,
-            &CommunityEnvelope::Control(payload),
-        )?;
-        Ok(())
-    } else {
-        // Indirect: route through coordinator
-        send_to_coordinator(
-            state,
-            community_id,
-            CommunityEnvelope::Control(payload),
-        )
-        .await
     }
+
+    // Always broadcast via gossip mesh so all peers receive the op.
+    // If we don't hold the keypair, the coordinator (which always holds
+    // the keypair) will persist it to DHT when it receives the broadcast.
+    send_to_mesh(
+        state,
+        community_id,
+        &CommunityEnvelope::Control(payload),
+    )
 }
 
 /// Persist a Tier 2 control payload directly to the DHT manifest.
@@ -1641,7 +1781,7 @@ async fn apply_control_to_manifest(
 ) -> Result<(), String> {
     use rekindle_protocol::dht::community::manifest;
     use rekindle_protocol::dht::community::types::{
-        BanEntry, CategoryEntry, ChannelEntryV2, ChannelKind, RoleEntryV2,
+        CategoryEntry, ChannelEntryV2, ChannelKind, RoleEntryV2,
     };
 
     match payload {
@@ -1876,6 +2016,23 @@ async fn apply_control_to_manifest(
                 .map_err(|e| format!("{e}"))
         }
 
+        // Bans, invites, metadata, and non-manifest payloads — split out for clippy line limit
+        other => apply_control_to_manifest_ext(dht, manifest_key, other).await,
+    }
+}
+
+/// Extended manifest control payload handling (bans, invites, metadata).
+///
+/// Split from `apply_control_to_manifest` for clippy line limits.
+async fn apply_control_to_manifest_ext(
+    dht: &rekindle_protocol::dht::DHTManager,
+    manifest_key: &str,
+    payload: &ControlPayload,
+) -> Result<(), String> {
+    use rekindle_protocol::dht::community::manifest;
+    use rekindle_protocol::dht::community::types::BanEntry;
+
+    match payload {
         // ── Bans ──
         ControlPayload::Ban {
             target_pseudonym, ..
@@ -1932,6 +2089,42 @@ async fn apply_control_to_manifest(
                 .map_err(|e| format!("{e}"))
         }
 
+        // ── Invites ──
+        ControlPayload::CreateInvite {
+            code,
+            max_uses,
+            expires_in_seconds,
+        } => {
+            use rekindle_protocol::dht::community::types::InviteEntry;
+            let now = rekindle_utils::timestamp_secs();
+            let expires_at = expires_in_seconds.map(|s| now + s);
+            let mut invites = manifest::read_invites(dht, manifest_key)
+                .await
+                .unwrap_or_default();
+            // Prune expired invites
+            invites.retain(|inv| inv.expires_at.is_none_or(|exp| exp > now));
+            invites.push(InviteEntry {
+                code: code.clone(),
+                created_by: String::new(), // filled by caller if needed
+                created_at: now,
+                expires_at,
+                max_uses: max_uses.unwrap_or(0),
+                use_count: 0,
+            });
+            manifest::write_invites(dht, manifest_key, &invites)
+                .await
+                .map_err(|e| format!("{e}"))
+        }
+        ControlPayload::RevokeInvite { code } => {
+            let mut invites = manifest::read_invites(dht, manifest_key)
+                .await
+                .unwrap_or_default();
+            invites.retain(|inv| inv.code != *code);
+            manifest::write_invites(dht, manifest_key, &invites)
+                .await
+                .map_err(|e| format!("{e}"))
+        }
+
         // Non-manifest payloads don't need DHT persistence
         _ => Ok(()),
     }
@@ -1965,7 +2158,7 @@ pub(crate) async fn send_to_coordinator(
     };
 
     let route_blob = coordinator_route_blob
-        .ok_or("no coordinator available — message will be queued")?;
+        .ok_or("no coordinator available — operation requires an online coordinator")?;
 
     // Sign envelope with pseudonym signing key (same path for all members including coordinator)
     let signing_key = {
@@ -2208,7 +2401,7 @@ pub async fn leave_community(
     pool: State<'_, DbPool>,
     keystore_handle: State<'_, KeystoreHandle>,
 ) -> Result<(), String> {
-    // Send Leave to the coordinator before cleaning up locally.
+    // Broadcast Leave via gossip mesh before cleaning up locally.
     // Best-effort: ignore errors since we're leaving anyway.
     let my_pseudonym_key = {
         let communities = state.communities.read();
@@ -2217,14 +2410,13 @@ pub async fn leave_community(
             .and_then(|c| c.my_pseudonym_key.clone())
             .unwrap_or_default()
     };
-    let _ = send_to_coordinator(
+    let _ = send_to_mesh(
         state.inner(),
         &community_id,
-        CommunityEnvelope::Control(ControlPayload::MemberLeave {
+        &CommunityEnvelope::Control(ControlPayload::MemberLeave {
             pseudonym_key: my_pseudonym_key,
         }),
-    )
-    .await;
+    );
 
     // Remove MEK from cache
     state.mek_cache.lock().remove(&community_id);
@@ -2358,15 +2550,15 @@ pub async fn remove_community_member(
 
     require_permission(state.inner(), &community_id, Permissions::KICK_MEMBERS)?;
 
-    // Send Kick to the coordinator
-    send_to_coordinator(
+    // Broadcast Kick via gossip mesh — ephemeral, no DHT persistence needed.
+    // Every member receiving the Kick validates sender has KICK_MEMBERS permission.
+    send_to_mesh(
         state.inner(),
         &community_id,
-        CommunityEnvelope::Control(ControlPayload::Kick {
+        &CommunityEnvelope::Control(ControlPayload::Kick {
             target_pseudonym: pseudonym_key.clone(),
         }),
-    )
-    .await?;
+    )?;
 
     // Remove from local DB
     let community_id_clone = community_id.clone();
@@ -2827,16 +3019,16 @@ pub async fn timeout_member(
     require_permission(state.inner(), &community_id, Permissions::MODERATE_MEMBERS)?;
     let owner_key = state_helpers::current_owner_key(state.inner())?;
 
-    send_to_coordinator(
+    // Broadcast timeout via gossip mesh — ephemeral (expires after duration).
+    send_to_mesh(
         state.inner(),
         &community_id,
-        CommunityEnvelope::Control(ControlPayload::TimeoutMember {
+        &CommunityEnvelope::Control(ControlPayload::TimeoutMember {
             target_pseudonym: pseudonym_key.clone(),
             duration_seconds,
             reason,
         }),
-    )
-    .await?;
+    )?;
 
     // Optimistic: compute timeout_until and persist to SQLite
     let timeout_until = db::timestamp_now() / 1000 + duration_seconds.cast_signed();
@@ -2863,14 +3055,14 @@ pub async fn remove_timeout(
     require_permission(state.inner(), &community_id, Permissions::MODERATE_MEMBERS)?;
     let owner_key = state_helpers::current_owner_key(state.inner())?;
 
-    send_to_coordinator(
+    // Broadcast timeout removal via gossip mesh.
+    send_to_mesh(
         state.inner(),
         &community_id,
-        CommunityEnvelope::Control(ControlPayload::RemoveTimeout {
+        &CommunityEnvelope::Control(ControlPayload::RemoveTimeout {
             target_pseudonym: pseudonym_key.clone(),
         }),
-    )
-    .await?;
+    )?;
 
     // Optimistic: clear timeout in SQLite
     let cid = community_id.clone();
@@ -3240,6 +3432,9 @@ pub async fn rotate_mek(
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
     let _ = pool;
+    // RotateMEK is truly coordinator-only: the coordinator generates a new MEK,
+    // wraps it per-member with each member's pseudonym public key, and distributes.
+    // This cannot be done via gossip because the MEK must be encrypted per-recipient.
     send_to_coordinator(
         state.inner(),
         &community_id,
@@ -3547,7 +3742,8 @@ pub async fn reorder_channels(
 
 /// Mark a channel as read up to a specific message.
 ///
-/// Sends `MarkChannelRead` to the coordinator and zeroes the local `unread_count`.
+/// Local-only operation — zeroes the in-memory `unread_count`. No need to broadcast
+/// read receipts to peers in a P2P community.
 #[tauri::command]
 pub async fn mark_channel_read(
     community_id: String,
@@ -3556,16 +3752,7 @@ pub async fn mark_channel_read(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let _ = pool;
-    send_to_coordinator(
-        state.inner(),
-        &community_id,
-        CommunityEnvelope::Control(ControlPayload::MarkChannelRead {
-            channel_id: channel_id.clone(),
-            last_message_id,
-        }),
-    )
-    .await?;
+    let _ = (pool, last_message_id);
 
     // Zero out the local unread count for this channel
     let mut communities = state.communities.write();
@@ -3688,6 +3875,8 @@ pub async fn submit_onboarding_answers(
         .map(|v| serde_json::from_value(v).map_err(|e| format!("invalid answer: {e}")))
         .collect::<Result<Vec<_>, _>>()?;
 
+    // Onboarding answers must go to the coordinator: only the join-processing node
+    // can evaluate answers against the configured onboarding gates and issue JoinAccepted.
     let envelope = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
         rekindle_protocol::dht::community::envelope::ControlPayload::SubmitOnboardingAnswers {
             answers,

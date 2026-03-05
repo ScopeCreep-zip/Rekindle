@@ -41,6 +41,16 @@ pub(crate) fn start_session(
     start_audio_devices(state)?;
 
     let transport = create_transport(state, &identity.public_key, channel_id);
+    let shared_transport = std::sync::Arc::new(tokio::sync::Mutex::new(transport));
+
+    // Store shared transport on VoiceEngineHandle for VoiceJoin/Leave + MCU access
+    {
+        let mut ve = state.voice_engine.lock();
+        if let Some(ref mut handle) = *ve {
+            handle.transport = Arc::clone(&shared_transport);
+        }
+    }
+
     let bundle = take_channels_and_config(state)?;
 
     spawn_loops(
@@ -48,7 +58,7 @@ pub(crate) fn start_session(
         app,
         &identity.public_key,
         bundle,
-        transport,
+        &shared_transport,
         &muted_flag,
         &deafened_flag,
     );
@@ -76,6 +86,16 @@ pub(crate) fn restart_loops(state: &SharedState, app: &tauri::AppHandle) -> Resu
     };
 
     let transport = create_transport(state, &identity.public_key, &channel_id);
+    let shared_transport = std::sync::Arc::new(tokio::sync::Mutex::new(transport));
+
+    // Update shared transport on VoiceEngineHandle
+    {
+        let mut ve = state.voice_engine.lock();
+        if let Some(ref mut handle) = *ve {
+            handle.transport = Arc::clone(&shared_transport);
+        }
+    }
+
     let bundle = take_channels_and_config(state)?;
     let (muted_flag, deafened_flag) = clone_flags(state)?;
 
@@ -84,12 +104,73 @@ pub(crate) fn restart_loops(state: &SharedState, app: &tauri::AppHandle) -> Resu
         app,
         &identity.public_key,
         bundle,
-        transport,
+        &shared_transport,
         &muted_flag,
         &deafened_flag,
     );
 
     Ok(())
+}
+
+/// Start the MCU mixing loop (called when this peer becomes voice host).
+///
+/// The MCU loop receives incoming voice packets, decodes per-sender, mixes
+/// per-recipient (excluding their own audio), re-encodes, and sends.
+pub(crate) fn start_mcu_loop(state: &SharedState) -> Result<(), String> {
+    let identity = state_helpers::current_identity(state)?;
+    let our_key_bytes = hex::decode(&identity.public_key).unwrap_or_default();
+
+    // Get the shared transport from VoiceEngineHandle (already initialized with peers)
+    let transport = {
+        let ve = state.voice_engine.lock();
+        ve.as_ref()
+            .ok_or("no active voice engine")?
+            .transport
+            .clone()
+    };
+
+    // MCU receives packets on a separate channel
+    let (mcu_packet_tx, mcu_packet_rx) = mpsc::channel(200);
+    // Store the MCU packet sender so the dispatch loop can forward packets to it
+    *state.voice_packet_tx.write() = Some(mcu_packet_tx);
+
+    let (mcu_shutdown_tx, mcu_shutdown_rx) = mpsc::channel::<()>(1);
+    let mcu_handle = tokio::spawn(super::mcu_loop::run(super::mcu_loop::McuParams {
+        transport,
+        packet_rx: mcu_packet_rx,
+        shutdown_rx: mcu_shutdown_rx,
+        our_key_bytes,
+    }));
+
+    {
+        let mut ve = state.voice_engine.lock();
+        if let Some(ref mut handle) = *ve {
+            handle.mcu_loop_shutdown = Some(mcu_shutdown_tx);
+            handle.mcu_loop_handle = Some(mcu_handle);
+        }
+    }
+
+    tracing::info!("MCU loop started — this peer is the voice host");
+    Ok(())
+}
+
+/// Stop the MCU mixing loop (called when another peer becomes voice host,
+/// or we leave the voice channel).
+pub(crate) async fn stop_mcu_loop(state: &SharedState) {
+    let (mcu_tx, mcu_h) = {
+        let mut ve = state.voice_engine.lock();
+        if let Some(ref mut handle) = *ve {
+            (handle.mcu_loop_shutdown.take(), handle.mcu_loop_handle.take())
+        } else {
+            (None, None)
+        }
+    };
+    if let Some(tx) = mcu_tx {
+        let _ = tx.send(()).await;
+    }
+    if let Some(h) = mcu_h {
+        let _ = h.await;
+    }
 }
 
 // ── Private Helpers ─────────────────────────────────────────────────────
@@ -135,12 +216,17 @@ fn init_engine(
 
     *state.voice_engine.lock() = Some(VoiceEngineHandle {
         engine,
+        transport: std::sync::Arc::new(tokio::sync::Mutex::new(
+            rekindle_voice::transport::VoiceTransport::new(channel_id.to_string()),
+        )),
         send_loop_shutdown: None,
         send_loop_handle: None,
         recv_loop_shutdown: None,
         recv_loop_handle: None,
         device_monitor_shutdown: None,
         device_monitor_handle: None,
+        mcu_loop_shutdown: None,
+        mcu_loop_handle: None,
         channel_id: channel_id.to_string(),
         muted_flag: Arc::clone(&muted_flag),
         deafened_flag: Arc::clone(&deafened_flag),
@@ -230,7 +316,7 @@ fn spawn_loops(
     app: &tauri::AppHandle,
     public_key: &str,
     bundle: LoopBundle,
-    transport: rekindle_voice::transport::VoiceTransport,
+    transport: &std::sync::Arc<tokio::sync::Mutex<rekindle_voice::transport::VoiceTransport>>,
     muted_flag: &Arc<AtomicBool>,
     deafened_flag: &Arc<AtomicBool>,
 ) {
@@ -245,7 +331,7 @@ fn spawn_loops(
     let (send_shutdown_tx, send_shutdown_rx) = mpsc::channel::<()>(1);
     let send_handle = tokio::spawn(send_loop::run(send_loop::VoiceSendParams {
         capture_rx: bundle.capture_rx,
-        transport,
+        transport: Arc::clone(transport),
         shutdown_rx: send_shutdown_rx,
         app: app.clone(),
         public_key: public_key.to_string(),

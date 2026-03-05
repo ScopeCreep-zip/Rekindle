@@ -133,6 +133,11 @@ pub enum ControlPayload {
         /// The member registry DHT record key — needed for elections and presence.
         #[serde(default)]
         member_registry_key: Option<String>,
+        /// Wrapped channel log keypairs: `[(channel_id, log_key, wrapped_keypair_bytes)]`.
+        /// Each keypair is encrypted for the joining member's pseudonym public key
+        /// using the same `wrap_mek()` envelope (X25519 DH + ChaCha20-Poly1305).
+        #[serde(default)]
+        channel_log_keypairs: Vec<(String, String, Vec<u8>)>,
     },
     /// Response: join rejected by coordinator.
     JoinRejected {
@@ -709,6 +714,13 @@ pub enum ControlPayload {
         /// Slot keypair encrypted for the target member.
         wrapped_slot_keypair: Vec<u8>,
     },
+    /// Grant a channel DHTLog keypair to an existing member after dynamic channel creation.
+    ChannelLogKeypairGrant {
+        channel_id: String,
+        log_key: String,
+        /// Channel log keypair encrypted for the target member.
+        wrapped_keypair: Vec<u8>,
+    },
 
     // ── Sync protocol ──
     /// Request channel history from an archiver node.
@@ -728,6 +740,27 @@ pub enum ControlPayload {
         pseudonym_key: String,
         route_blob: Vec<u8>,
         epoch: u64,
+    },
+
+    // ── Voice channel signaling ──
+    /// Broadcast: member joined a voice channel.
+    VoiceJoin {
+        channel_id: String,
+        /// Private route blob for receiving voice packets.
+        route_blob: Vec<u8>,
+    },
+    /// Broadcast: member left a voice channel.
+    VoiceLeave {
+        channel_id: String,
+    },
+    /// Broadcast: voice channel mode switch (mesh ↔ MCU).
+    VoiceModeSwitch {
+        channel_id: String,
+        /// "mesh" or "mcu".
+        mode: String,
+        /// Pseudonym key of the MCU host (only set when mode = "mcu").
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        host_pseudonym: Option<String>,
     },
 
     // ── Generic responses ──

@@ -162,6 +162,50 @@ pub async fn set_audio_devices(
     Ok(())
 }
 
+/// Switch voice mode between mesh and MCU.
+///
+/// When switching to MCU mode with ourselves as host, starts the MCU mixing
+/// loop. When switching away from MCU (or another host), stops any running
+/// MCU loop.
+#[tauri::command]
+pub async fn set_voice_mode(
+    mode: String,
+    host_pseudonym: Option<String>,
+    state: State<'_, SharedState>,
+) -> Result<(), String> {
+    // Stop any existing MCU loop
+    crate::services::voice::session::stop_mcu_loop(state.inner()).await;
+
+    // Set mode on the shared transport
+    // Clone Arc out of parking_lot guard before .await
+    let maybe_transport = {
+        let ve = state.voice_engine.lock();
+        ve.as_ref().map(|handle| handle.transport.clone())
+    };
+    if let Some(transport) = maybe_transport {
+        let mode_enum = if mode == "mcu" {
+            rekindle_voice::VoiceMode::Mcu {
+                host_pseudonym: host_pseudonym.clone().unwrap_or_default(),
+            }
+        } else {
+            rekindle_voice::VoiceMode::Mesh
+        };
+        transport.lock().await.set_mode(mode_enum);
+    }
+
+    if mode == "mcu" {
+        if let Some(ref host) = host_pseudonym {
+            let my_pseudonym = state_helpers::owner_key_or_default(state.inner());
+            if *host == my_pseudonym {
+                // We're the voice host — start MCU loop using shared transport
+                crate::services::voice::session::start_mcu_loop(state.inner())?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AudioDeviceInfo {

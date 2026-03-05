@@ -22,7 +22,10 @@ pub async fn start_sync_loop(
 ) {
     tracing::info!("sync service started");
 
-    let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
+    // Start at 10s to give coordinator election (5s delay + run time) a chance
+    // to complete before the first rejoin attempt. This avoids sending
+    // MemberJoinRequest to a dead coordinator route from a previous session.
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(10));
     let mut watched_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut first_tick = true;
     let mut tick_count: u32 = 0;
@@ -822,7 +825,7 @@ async fn retry_single_pending(
     } else if let Ok(channel_msg) =
         serde_json::from_str::<crate::commands::community::PendingChannelMessage>(body)
     {
-        // Send through coordinator model
+        // Broadcast via gossip mesh — no coordinator needed for channel messages
         let message_id = format!(
             "retry_{}",
             std::time::SystemTime::now()
@@ -830,21 +833,20 @@ async fn retry_single_pending(
                 .unwrap_or_default()
                 .as_nanos()
         );
-        let result = crate::commands::community::send_to_coordinator(
+        let result = crate::commands::community::send_to_mesh(
             state,
             &channel_msg.community_id,
-            rekindle_protocol::dht::community::envelope::CommunityEnvelope::ChatMessage {
+            &rekindle_protocol::dht::community::envelope::CommunityEnvelope::ChatMessage {
                 channel_id: channel_msg.channel_id.clone(),
                 message_id,
-                author_pseudonym: String::new(), // filled by signing layer in send_to_coordinator
+                author_pseudonym: String::new(), // filled by signing layer in send_to_mesh
                 ciphertext: channel_msg.ciphertext,
                 mek_generation: channel_msg.mek_generation,
                 timestamp: channel_msg.timestamp.cast_unsigned(),
                 reply_to_id: None,
                 lamport_ts: 0,
             },
-        )
-        .await;
+        );
 
         match result {
             Ok(()) => {

@@ -22,7 +22,7 @@ pub async fn create_community(
     let routing_context = state_helpers::routing_context(state)
         .ok_or("Veilid node not attached — cannot create community")?;
 
-    let mgr = DHTManager::new(routing_context);
+    let mgr = DHTManager::new(routing_context.clone());
     let my_pseudonym_key = derive_pseudonym_key(state, "temp_derive")
         .unwrap_or_default();
     let now_secs = rekindle_utils::timestamp_secs();
@@ -65,8 +65,30 @@ pub async fn create_community(
         tracing::warn!(error = %e, "failed to write initial roles to manifest");
     }
 
-    // 4. Write a default "general" channel to manifest
+    // 4. Create a DHTLog for the default "general" channel, then write to manifest
     let channel_id = format!("channel_{}", hex::encode(rand_bytes(8)));
+    let (channel_log_key, channel_log_keypair) = rekindle_protocol::dht::community::channel_record::create_channel_log(
+        &routing_context,
+    )
+    .await
+    .map_err(|e| format!("failed to create channel DHTLog: {e}"))?;
+    tracing::debug!(channel = %channel_id, log_key = %channel_log_key, "created channel DHTLog");
+
+    // Persist channel log keypair to Stronghold
+    {
+        use tauri::Manager as _;
+        let app_handle = state.app_handle.read().clone();
+        if let Some(ref ah) = app_handle {
+            let ks_handle: tauri::State<'_, crate::keystore::KeystoreHandle> = ah.state();
+            let ks = ks_handle.lock();
+            if let Some(ref keystore) = *ks {
+                crate::keystore::persist_channel_log_keypair(
+                    keystore, &manifest_key, &channel_id, &channel_log_keypair.to_string(),
+                );
+            }
+        }
+    }
+
     let channel_entry = ChannelEntryV2 {
         id: channel_id.clone(),
         name: "general".to_string(),
@@ -79,7 +101,7 @@ pub async fn create_community(
         message_record_key: None,
         mek_generation: 0,
         permission_overwrites: Vec::new(),
-        log_key: None,
+        log_key: Some(channel_log_key.clone()),
     };
     if let Err(e) = manifest::write_channels(&mgr, &manifest_key, &[channel_entry]).await {
         tracing::warn!(error = %e, "failed to write initial channels to manifest");
@@ -129,7 +151,7 @@ pub async fn create_community(
 
     // 8. Build CommunityState
     let default_channel = ChannelInfo {
-        id: channel_id,
+        id: channel_id.clone(),
         name: "general".to_string(),
         channel_type: ChannelType::Text,
         unread_count: 0,
@@ -164,7 +186,7 @@ pub async fn create_community(
         gossip: Some(GossipOverlay::default()),
         slot_keypair: Some(creator_slot_keypair_str.clone()),
         manifest_owner_keypair: manifest_keypair.as_ref().map(std::string::ToString::to_string),
-        channel_log_keys: std::collections::HashMap::new(),
+        channel_log_keys: [(channel_id, channel_log_key)].into_iter().collect(),
         registry_owner_keypair: registry_owner_kp_str,
         slot_seed: Some(hex::encode(&slot_seed)),
         known_members: [my_pseudonym_key].into_iter().collect(),
@@ -347,7 +369,8 @@ pub async fn join_community(
 
     state.communities.write().insert(community_id.to_string(), community);
 
-    // 5. Send MemberJoinRequest envelope to coordinator (fire-and-forget).
+    // 5. Send MemberJoinRequest to coordinator (truly coordinator-only: the coordinator
+    //    validates the invite, allocates a registry slot, wraps MEK, and sends JoinAccepted).
     //    send_to_coordinator retries once with a fresh DHT route on connection errors.
     let join_envelope = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
         rekindle_protocol::dht::community::envelope::ControlPayload::MemberJoinRequest {
@@ -444,13 +467,28 @@ fn roles_to_definitions(roles: &[RoleEntryV2]) -> Vec<RoleDefinition> {
         .collect()
 }
 
-/// Re-announce our route to the community coordinator after restart.
+/// Re-announce our route to the community after restart via gossip mesh.
 ///
-/// Sends a `MemberJoinRequest` envelope — if member already exists, the
-/// coordinator updates the member's `route_blob` so relayed messages reach us.
+/// Broadcasts a `PresenceUpdate` via gossip so all peers learn our fresh route.
+/// Also tries to re-fetch the coordinator route from DHT manifest (needed only
+/// for the few truly coordinator-dependent ops: join processing, MEK distribution).
 pub async fn rejoin_community(state: &Arc<AppState>, community_id: &str) -> Result<(), String> {
     if crate::state_helpers::is_circuit_open(state, community_id) {
         tracing::debug!(community = %community_id, "skipping rejoin — circuit breaker open");
+        return Ok(());
+    }
+
+    // The coordinator doesn't need to rejoin their own community — they already
+    // have full state. Sending MemberJoinRequest to ourselves triggers a
+    // self-JoinAccepted that can corrupt role_ids.
+    let is_coordinator = {
+        let services = state.coordinator_services.read();
+        services
+            .get(community_id)
+            .is_some_and(super::coordinator::CoordinatorServiceHandle::is_coordinator)
+    };
+    if is_coordinator {
+        tracing::debug!(community = %community_id, "skipping rejoin — we are the coordinator");
         return Ok(());
     }
 
@@ -489,52 +527,53 @@ pub async fn rejoin_community(state: &Arc<AppState>, community_id: &str) -> Resu
                     community = %community_id,
                     "no coordinator online — community operates via gossip mesh"
                 );
-                // Community still works: presence poll discovers peers, gossip mesh
-                // relays messages. Only coordinator-dependent ops (join processing,
-                // kick, MEK rotation) are unavailable.
+                // Community operates fully via gossip mesh. Only truly
+                // coordinator-dependent ops (join processing, MEK distribution)
+                // are unavailable without a coordinator route.
                 return Ok(());
             }
         }
     }
 
-    let my_pseudonym_key = {
+    // Broadcast route announcement via gossip mesh — all peers learn our new route.
+    // No coordinator needed; presence poll will also write our route to DHT registry.
+    let pseudonym_key = {
         let communities = state.communities.read();
-        communities.get(community_id).and_then(|c| c.my_pseudonym_key.clone())
+        communities
+            .get(community_id)
+            .and_then(|c| c.my_pseudonym_key.clone())
+            .unwrap_or_default()
     };
     let our_route_blob = state_helpers::our_route_blob(state);
-    let display_name = state_helpers::identity_display_name(state);
+    let status = state_helpers::identity_status(state)
+        .unwrap_or(crate::state::UserStatus::Online);
+    let status_str = match status {
+        crate::state::UserStatus::Online => "online",
+        crate::state::UserStatus::Away => "away",
+        crate::state::UserStatus::Busy => "busy",
+        crate::state::UserStatus::Offline | crate::state::UserStatus::Invisible => "offline",
+    };
 
-    // Send MemberJoinRequest envelope (fire-and-forget) — coordinator treats
-    // re-join as route update for existing members
-    let envelope = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
-        rekindle_protocol::dht::community::envelope::ControlPayload::MemberJoinRequest {
-            pseudonym_key: my_pseudonym_key.unwrap_or_default(),
-            display_name,
-            invite_code: None,
+    match crate::commands::community::send_to_mesh(
+        state,
+        community_id,
+        &rekindle_protocol::dht::community::envelope::CommunityEnvelope::PresenceUpdate {
+            pseudonym_key,
+            status: status_str.to_string(),
+            game_info: None,
             route_blob: our_route_blob,
-            prekey_bundle: None,
         },
-    );
-
-    match crate::commands::community::send_to_coordinator(state, community_id, envelope).await {
+    ) {
         Ok(()) => {
             state_helpers::reset_circuit_breaker(state, community_id);
-            tracing::debug!(community = %community_id, "re-announced route to coordinator");
-            Ok(())
+            tracing::debug!(community = %community_id, "re-announced route via gossip mesh");
         }
         Err(e) => {
-            tracing::warn!(community = %community_id, error = %e, "rejoin failed — clearing stale route blob");
+            tracing::warn!(community = %community_id, error = %e, "rejoin gossip broadcast failed");
             state_helpers::trip_circuit_breaker(state, community_id);
-            {
-                let mut communities = state.communities.write();
-                if let Some(c) = communities.get_mut(community_id) {
-                    c.coordinator_route_blob = None;
-                }
-            }
-            // Don't propagate error — community still operates via gossip mesh
-            Ok(())
         }
     }
+    Ok(())
 }
 
 /// Start the 60-second presence poll loop for a community.
@@ -666,6 +705,13 @@ async fn presence_poll_tick(state: &Arc<AppState>, community_id: &str) -> Result
                 "failed to parse slot keypair — cannot write presence"
             );
         }
+    } else {
+        tracing::warn!(
+            community = %community_id,
+            has_slot_keypair = slot_keypair_str.is_some(),
+            has_subkey_index = my_subkey_index.is_some(),
+            "cannot write presence — missing slot keypair or subkey index"
+        );
     }
 
     // 2. Read all member entries
@@ -743,9 +789,9 @@ async fn presence_poll_tick(state: &Arc<AppState>, community_id: &str) -> Result
 
         // Clone AppHandle out of the lock guard before any .await
         let app_handle_clone = state.app_handle.read().clone();
+        let owner_key = crate::state_helpers::current_owner_key(state).unwrap_or_default();
         if let Some(ref app_handle) = app_handle_clone {
             let pool: tauri::State<'_, crate::db::DbPool> = app_handle.state();
-            let owner_key = crate::state_helpers::current_owner_key(state).unwrap_or_default();
 
             for ch_id in &all_channel_ids {
                 let ok = owner_key.clone();
@@ -766,6 +812,73 @@ async fn presence_poll_tick(state: &Arc<AppState>, community_id: &str) -> Result
                     },
                 );
                 let _ = crate::commands::community::send_to_mesh(state, community_id, &sync_req);
+            }
+        }
+
+        // Also catch up from DHTLogs for channels that have persistent logs
+        let channel_log_entries: Vec<(String, String)> = {
+            let communities = state.communities.read();
+            communities.get(community_id)
+                .map(|cs| cs.channel_log_keys.iter()
+                    .map(|(ch_id, log_key)| (ch_id.clone(), log_key.clone()))
+                    .collect())
+                .unwrap_or_default()
+        };
+
+        if !channel_log_entries.is_empty() {
+            if let Some(rc) = state_helpers::routing_context(state) {
+                for (ch_id, log_key) in &channel_log_entries {
+                    match rekindle_protocol::dht::community::channel_record::read_channel_log_tail(
+                        &rc, log_key, 50,
+                    ).await {
+                        Ok(messages) if !messages.is_empty() => {
+                            tracing::debug!(
+                                community = %community_id,
+                                channel = %ch_id,
+                                count = messages.len(),
+                                "caught up from DHTLog tail"
+                            );
+                            // Merge messages into local SQLite (dedup by message_id)
+                            if let Some(ref app_handle) = app_handle_clone {
+                                let pool: tauri::State<'_, crate::db::DbPool> = app_handle.state();
+                                let channel = ch_id.clone();
+                                let ok = owner_key.clone();
+                                crate::db_helpers::db_fire(pool.inner(), "dhtlog_catchup", move |conn| {
+                                    for msg in &messages {
+                                        let mid = msg.message_id.as_deref().unwrap_or("");
+                                        // Skip if message already exists
+                                        let exists: bool = conn.query_row(
+                                            "SELECT EXISTS(SELECT 1 FROM messages WHERE owner_key=?1 AND message_id=?2)",
+                                            rusqlite::params![ok, mid],
+                                            |r| r.get(0),
+                                        ).unwrap_or(false);
+                                        if exists { continue; }
+                                        let _ = conn.execute(
+                                            "INSERT OR IGNORE INTO messages \
+                                             (owner_key, conversation_id, conversation_type, sender_key, body, timestamp, message_id) \
+                                             VALUES (?1, ?2, 'channel', ?3, ?4, ?5, ?6)",
+                                            rusqlite::params![
+                                                ok, channel, msg.sender_pseudonym,
+                                                String::from_utf8_lossy(&msg.ciphertext),
+                                                msg.timestamp, mid,
+                                            ],
+                                        );
+                                    }
+                                    Ok(())
+                                });
+                            }
+                        }
+                        Ok(_) => {} // No messages
+                        Err(e) => {
+                            tracing::debug!(
+                                community = %community_id,
+                                channel = %ch_id,
+                                error = %e,
+                                "DHTLog catch-up failed"
+                            );
+                        }
+                    }
+                }
             }
         }
 
