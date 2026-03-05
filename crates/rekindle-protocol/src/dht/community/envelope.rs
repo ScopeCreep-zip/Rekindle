@@ -138,10 +138,15 @@ pub enum ControlPayload {
         /// using the same `wrap_mek()` envelope (X25519 DH + ChaCha20-Poly1305).
         #[serde(default)]
         channel_log_keypairs: Vec<(String, String, Vec<u8>)>,
-        /// Slot keypair bundled directly in JoinAccepted for atomic delivery.
-        /// Without this, presence writing is impossible and the member is invisible.
+        /// Slot index for the joiner in the member registry SMPL record.
         #[serde(default)]
         slot_index: Option<u32>,
+        /// Wrapped slot seed (ECDH-encrypted) — allows the joiner to derive
+        /// their own slot keypair locally via `derive_slot_veilid_keypair(seed, slot_index)`.
+        /// This eliminates any coordinator dependency for presence writing.
+        #[serde(default)]
+        wrapped_slot_seed: Option<Vec<u8>>,
+        /// Legacy: wrapped slot keypair. Kept for backward compat with older coordinators.
         #[serde(default)]
         wrapped_slot_keypair: Option<Vec<u8>>,
     },
@@ -240,7 +245,13 @@ pub enum ControlPayload {
     RequestMEK,
     /// Request SlotKeypairGrant — sent when a member is missing their slot keypair
     /// (e.g. it was never delivered or lost). Coordinator responds with SlotKeypairGrant.
-    RequestSlotKeypair,
+    /// Includes the requester's route_blob so the coordinator can respond directly
+    /// (without the route, the coordinator can't deliver the grant because the
+    /// requester can't write DHT presence without the slot keypair — chicken-and-egg).
+    RequestSlotKeypair {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        route_blob: Option<Vec<u8>>,
+    },
     /// Rotate MEK.
     RotateMEK,
     /// Broadcast: MEK rotated.

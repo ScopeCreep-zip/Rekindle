@@ -633,6 +633,39 @@ pub async fn presence_poll_tick_public(
     presence_poll_tick(state, community_id).await
 }
 
+/// Try to derive the slot keypair locally from slot_seed + subkey_index.
+/// Returns the derived keypair string if successful.
+fn try_derive_slot_keypair(
+    state: &Arc<AppState>,
+    community_id: &str,
+    seed_hex: &str,
+    subkey_idx: u32,
+) -> Option<String> {
+    let seed_bytes = hex::decode(seed_hex).ok()?;
+    let seed_array: [u8; 32] = seed_bytes.as_slice().try_into().ok()?;
+    match member_registry::derive_slot_veilid_keypair(&seed_array, subkey_idx) {
+        Ok(kp) => {
+            let kp_str = kp.to_string();
+            {
+                let mut communities = state.communities.write();
+                if let Some(c) = communities.get_mut(community_id) {
+                    c.slot_keypair = Some(kp_str.clone());
+                }
+            }
+            tracing::info!(
+                community = %community_id,
+                subkey = subkey_idx,
+                "derived slot keypair locally from seed (self-healed)"
+            );
+            Some(kp_str)
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to derive slot keypair from seed");
+            None
+        }
+    }
+}
+
 /// Single presence poll tick.
 async fn presence_poll_tick(state: &Arc<AppState>, community_id: &str) -> Result<(), String> {
     let rc = state_helpers::routing_context(state).ok_or("not attached")?;
@@ -648,23 +681,57 @@ async fn presence_poll_tick(state: &Arc<AppState>, community_id: &str) -> Result
         return Ok(()); // No registry yet (join pending)
     };
 
-    // Ensure registry record is open (may be closed after restart)
-    if let Err(e) = mgr.open_record(&registry_key).await {
-        tracing::debug!(community = %community_id, error = %e, "presence_poll: failed to open registry");
-        return Ok(());
+    // Ensure registry record is open (may be closed after restart).
+    // Try to open writable if we have the registry owner keypair, otherwise read-only.
+    // Note: veilid's open_dht_record overwrites the writer on re-open, so opening
+    // read-only here would downgrade a previous writable open. Use the owner keypair
+    // if available to preserve write access for coordinator operations.
+    {
+        let registry_kp = {
+            let communities = state.communities.read();
+            communities.get(community_id).and_then(|c| c.registry_owner_keypair.clone())
+        };
+        let opened = if let Some(ref kp_str) = registry_kp {
+            if let Ok(kp) = kp_str.parse::<veilid_core::KeyPair>() {
+                mgr.open_record_writable(&registry_key, kp).await.is_ok()
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+        if !opened {
+            if let Err(e) = mgr.open_record(&registry_key).await {
+                tracing::debug!(community = %community_id, error = %e, "presence_poll: failed to open registry");
+                return Ok(());
+            }
+        }
     }
 
     // Gather our state (clone out before .await)
-    let (my_pseudonym, my_subkey_index, slot_keypair_str, is_coordinator) = {
+    let (my_pseudonym, my_subkey_index, slot_keypair_str, slot_seed_hex, is_coordinator) = {
         let communities = state.communities.read();
         let c = communities.get(community_id).ok_or("community not found")?;
         (
             c.my_pseudonym_key.clone().unwrap_or_default(),
             c.my_subkey_index,
             c.slot_keypair.clone(),
+            c.slot_seed.clone(),
             c.coordinator_pseudonym.as_ref() == c.my_pseudonym_key.as_ref()
                 && c.my_pseudonym_key.is_some(),
         )
+    };
+
+    // Self-heal: if we have slot_seed + my_subkey_index but no slot_keypair,
+    // derive it locally. No coordinator needed.
+    let slot_keypair_str = if slot_keypair_str.is_none() {
+        if let (Some(ref seed_hex), Some(subkey_idx)) = (&slot_seed_hex, my_subkey_index) {
+            try_derive_slot_keypair(state, community_id, seed_hex, subkey_idx)
+        } else {
+            None
+        }
+    } else {
+        slot_keypair_str
     };
 
     // 1. WRITE our signed presence to the registry (so others can discover our route)
@@ -706,29 +773,34 @@ async fn presence_poll_tick(state: &Arc<AppState>, community_id: &str) -> Result
             );
         }
     } else {
+        // If we still don't have slot_keypair at this point, we're missing either:
+        // - slot_seed (never received JoinAccepted with it, or older coordinator)
+        // - my_subkey_index (never assigned a slot in the registry)
+        // Try to read my_subkey_index from the DHT member registry as a last resort.
+        if my_subkey_index.is_none() && slot_seed_hex.is_some() {
+            let members_result = member_registry::read_member_index(&mgr, &registry_key).await;
+            if let Ok(members) = members_result {
+                if let Some(m) = members.iter().find(|m| m.pseudonym_key == my_pseudonym) {
+                    let idx = m.subkey_index;
+                    let mut communities = state.communities.write();
+                    if let Some(c) = communities.get_mut(community_id) {
+                        c.my_subkey_index = Some(idx);
+                    }
+                    tracing::info!(
+                        community = %community_id,
+                        subkey = idx,
+                        "recovered my_subkey_index from DHT registry — will derive slot keypair next tick"
+                    );
+                }
+            }
+        }
         tracing::warn!(
             community = %community_id,
             has_slot_keypair = slot_keypair_str.is_some(),
             has_subkey_index = my_subkey_index.is_some(),
-            "cannot write presence — missing slot keypair or subkey index, requesting from coordinator"
+            has_slot_seed = slot_seed_hex.is_some(),
+            "cannot write presence — missing slot keypair or subkey index"
         );
-
-        // Self-healing: request our slot keypair from the coordinator
-        let state_clone = state.clone();
-        let cid_clone = community_id.to_string();
-        tokio::spawn(async move {
-            use rekindle_protocol::dht::community::envelope::{ControlPayload, CommunityEnvelope};
-            let envelope = CommunityEnvelope::Control(ControlPayload::RequestSlotKeypair);
-            if let Err(e) = crate::commands::community::send_to_coordinator(
-                &state_clone, &cid_clone, envelope,
-            ).await {
-                tracing::debug!(
-                    community = %cid_clone,
-                    error = %e,
-                    "failed to request slot keypair from coordinator"
-                );
-            }
-        });
     }
 
     // 2. Read all member entries
