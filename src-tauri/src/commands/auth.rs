@@ -1434,12 +1434,15 @@ async fn hydrate_community_state_from_dht(state: &SharedState) {
     };
 
     for (community_id, manifest_key) in &community_manifests {
+        // Read metadata (name, description) from DHT — authoritative source
+        let dht_metadata = manifest::read_metadata(&mgr, manifest_key).await.unwrap_or(None);
+
         // Read channels, roles, categories from DHT (records already opened in Phase 1)
         let dht_channels = manifest::read_channels(&mgr, manifest_key).await.unwrap_or_default();
         let dht_roles = manifest::read_roles(&mgr, manifest_key).await.unwrap_or_default();
         let dht_categories = manifest::read_categories(&mgr, manifest_key).await.unwrap_or_default();
 
-        if dht_channels.is_empty() && dht_roles.is_empty() && dht_categories.is_empty() {
+        if dht_metadata.is_none() && dht_channels.is_empty() && dht_roles.is_empty() && dht_categories.is_empty() {
             tracing::debug!(community = %community_id, "DHT manifest empty — keeping SQLite state");
             continue;
         }
@@ -1448,6 +1451,19 @@ async fn hydrate_community_state_from_dht(state: &SharedState) {
         let Some(cs) = communities.get_mut(community_id.as_str()) else {
             continue;
         };
+
+        // Merge metadata — DHT is authoritative for name and description
+        if let Some(ref meta) = dht_metadata {
+            if !meta.name.is_empty() {
+                cs.name.clone_from(&meta.name);
+            }
+            cs.description.clone_from(&meta.description);
+            tracing::debug!(
+                community = %community_id,
+                name = %meta.name,
+                "hydrated metadata from DHT manifest"
+            );
+        }
 
         // Merge channels — DHT is authoritative for structure, preserve local unread_count
         if !dht_channels.is_empty() {
@@ -1461,6 +1477,10 @@ async fn hydrate_community_state_from_dht(state: &SharedState) {
                 .into_iter()
                 .map(|entry| {
                     let unread = old_unreads.get(&entry.id).copied().unwrap_or(0);
+                    // Extract channel log key into channel_log_keys map
+                    if let Some(ref lk) = entry.log_key {
+                        cs.channel_log_keys.insert(entry.id.clone(), lk.clone());
+                    }
                     crate::state::ChannelInfo {
                         id: entry.id,
                         name: entry.name,
@@ -1525,6 +1545,36 @@ async fn hydrate_community_state_from_dht(state: &SharedState) {
                 category_count = cs.categories.len(),
                 "hydrated categories from DHT manifest"
             );
+        }
+    }
+
+    // Persist hydrated names/descriptions to SQLite so they survive restarts
+    let name_updates: Vec<(String, String, Option<String>)> = {
+        let communities = state.communities.read();
+        community_manifests
+            .iter()
+            .filter_map(|(cid, _)| {
+                communities.get(cid.as_str()).map(|cs| {
+                    (cid.clone(), cs.name.clone(), cs.description.clone())
+                })
+            })
+            .collect()
+    };
+    if !name_updates.is_empty() {
+        let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
+        let app_handle = state.app_handle.read().clone();
+        if let Some(ref ah) = app_handle {
+            let pool: tauri::State<'_, DbPool> = ah.state();
+            for (cid, name, desc) in name_updates {
+                let ok = owner_key.clone();
+                crate::db_helpers::db_fire(pool.inner(), "persist hydrated name", move |conn| {
+                    conn.execute(
+                        "UPDATE communities SET name = ?1, description = ?2 WHERE owner_key = ?3 AND id = ?4",
+                        rusqlite::params![name, desc, ok, cid],
+                    )?;
+                    Ok(())
+                });
+            }
         }
     }
 
