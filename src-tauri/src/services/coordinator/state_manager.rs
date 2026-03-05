@@ -1088,20 +1088,24 @@ async fn handle_control_extended(
         }
 
         // RequestSlotKeypair: member is missing their slot keypair, re-send it
-        ControlPayload::RequestSlotKeypair => {
-            let route_blob = {
+        ControlPayload::RequestSlotKeypair { route_blob: ref request_route_blob } => {
+            // Prefer the route_blob bundled in the request (solves the chicken-and-egg:
+            // member can't write DHT presence without slot keypair, so coordinator
+            // can't discover their route from the gossip overlay).
+            // Fall back to the gossip overlay if the request didn't include one.
+            let route_blob = request_route_blob.clone().or_else(|| {
                 let communities = state.communities.read();
                 communities.get(&sm.community_id)
                     .and_then(|c| c.gossip.as_ref())
                     .and_then(|g| g.online_members.get(sender_pseudonym).cloned())
-            };
+            });
             // Look up the member's subkey_index from the registry
-            let subkey_index = {
+            let registry_key = {
                 let communities = state.communities.read();
                 communities.get(&sm.community_id)
                     .and_then(|c| c.member_registry_key.clone())
             };
-            if let (Some(blob), Some(ref rk)) = (route_blob, &subkey_index) {
+            if let (Some(blob), Some(ref rk)) = (route_blob, &registry_key) {
                 let state_clone = state.clone();
                 let community_id = sm.community_id.clone();
                 let requester = sender_pseudonym.to_string();
@@ -1230,8 +1234,39 @@ fn send_control_to_route(
     });
 }
 
+/// ECDH-wrap the slot_seed for a member so they can derive their own slot keypair locally.
+/// Returns `Some(wrapped_bytes)` or `None` on failure.
+fn wrap_slot_seed_for_member(
+    state: &Arc<AppState>,
+    community_id: &str,
+    target_pseudonym: &str,
+) -> Option<Vec<u8>> {
+    use rekindle_crypto::group::mek_distribution::wrap_mek;
+    use rekindle_crypto::group::pseudonym::derive_community_pseudonym;
+
+    let slot_seed_hex = {
+        let communities = state.communities.read();
+        let c = communities.get(community_id)?;
+        c.slot_seed.clone()?
+    };
+
+    let secret = state.identity_secret.lock().as_ref().copied()?;
+    let my_signing_key = derive_community_pseudonym(&secret, community_id);
+
+    let target_pub_bytes = hex::decode(target_pseudonym).ok()?;
+    let target_pub: [u8; 32] = target_pub_bytes.try_into().ok()?;
+
+    match wrap_mek(&my_signing_key, &target_pub, slot_seed_hex.as_bytes()) {
+        Ok(wrapped) => Some(wrapped),
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to wrap slot_seed for member");
+            None
+        }
+    }
+}
+
 /// Derive and ECDH-wrap a slot keypair for a member. Returns `(slot_index, wrapped_bytes)`.
-/// Used by both `send_join_accepted` (bundled) and `send_slot_keypair_grant` (standalone).
+/// Used by `send_slot_keypair_grant` (standalone fallback for legacy members).
 fn derive_and_wrap_slot_keypair(
     state: &Arc<AppState>,
     community_id: &str,
@@ -1921,14 +1956,24 @@ async fn send_join_accepted(
         state, community_id, joiner_pseudonym, &channels,
     );
 
-    // Derive and wrap the slot keypair for the joiner so they can write DHT presence.
-    // Bundling it in JoinAccepted makes delivery atomic — the 3-retry mechanism
-    // covers both MEK and slot keypair in a single message.
-    let (slot_index_for_payload, wrapped_slot_kp) = if let Some(subkey_idx) = joiner_subkey_index {
-        derive_and_wrap_slot_keypair(state, community_id, joiner_pseudonym, subkey_idx)
+    // Wrap the slot_seed for the joiner so they can derive their own slot keypair
+    // locally via derive_slot_veilid_keypair(seed, slot_index). This eliminates
+    // any coordinator dependency for presence writing — every member is self-sufficient.
+    let wrapped_slot_seed = wrap_slot_seed_for_member(state, community_id, joiner_pseudonym);
+    if wrapped_slot_seed.is_some() {
+        tracing::info!(
+            community = %community_id,
+            joiner = %joiner_pseudonym,
+            slot_index = ?joiner_subkey_index,
+            "bundling slot_seed in JoinAccepted"
+        );
     } else {
-        (None, None)
-    };
+        tracing::warn!(
+            community = %community_id,
+            joiner = %joiner_pseudonym,
+            "failed to bundle slot_seed in JoinAccepted"
+        );
+    }
 
     let payload = ControlPayload::JoinAccepted {
         mek_encrypted: mek_bytes.unwrap_or_default(),
@@ -1952,8 +1997,9 @@ async fn send_join_accepted(
             .collect(),
         member_registry_key: registry_key,
         channel_log_keypairs,
-        slot_index: slot_index_for_payload,
-        wrapped_slot_keypair: wrapped_slot_kp,
+        slot_index: joiner_subkey_index,
+        wrapped_slot_seed,
+        wrapped_slot_keypair: None,
     };
 
     // JoinAccepted is critical — the joiner cannot participate without MEK.

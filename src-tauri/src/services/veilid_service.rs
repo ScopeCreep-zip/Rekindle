@@ -683,6 +683,7 @@ async fn handle_relayed_control(
             member_registry_key,
             channel_log_keypairs,
             slot_index,
+            wrapped_slot_seed,
             wrapped_slot_keypair,
         } => {
             handle_join_accepted(
@@ -700,6 +701,7 @@ async fn handle_relayed_control(
                     member_registry_key: member_registry_key.as_deref(),
                     channel_log_keypairs: &channel_log_keypairs,
                     slot_index,
+                    wrapped_slot_seed: wrapped_slot_seed.as_deref(),
                     wrapped_slot_keypair: wrapped_slot_keypair.as_deref(),
                 },
             )
@@ -2235,6 +2237,122 @@ fn handle_slot_keypair_grant(
     });
 }
 
+/// Unwrap slot_seed, persist it, and derive the slot keypair locally.
+///
+/// This is the coordinator-free path: the member receives the seed and derives
+/// their own keypair via `derive_slot_veilid_keypair(seed, slot_index)`.
+fn handle_slot_seed_grant(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    community_id: &str,
+    sender_pseudonym: &str,
+    slot_index: u32,
+    wrapped_slot_seed: &[u8],
+) {
+    use rekindle_crypto::group::mek_distribution::unwrap_mek;
+    use rekindle_crypto::group::pseudonym::derive_community_pseudonym;
+    use rekindle_protocol::dht::community::member_registry;
+
+    let Some(secret) = state.identity_secret.lock().as_ref().copied() else {
+        tracing::warn!("no identity secret — cannot unwrap slot seed");
+        return;
+    };
+    let my_signing_key = derive_community_pseudonym(&secret, community_id);
+
+    let Ok(sender_bytes) = hex::decode(sender_pseudonym) else {
+        tracing::warn!("invalid sender pseudonym hex in slot seed grant");
+        return;
+    };
+    let Ok(sender_pub): Result<[u8; 32], _> = sender_bytes.try_into() else {
+        tracing::warn!("sender pseudonym wrong length in slot seed grant");
+        return;
+    };
+
+    // Unwrap the slot seed
+    let seed_bytes = match unwrap_mek(&my_signing_key, &sender_pub, wrapped_slot_seed) {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to unwrap slot seed");
+            return;
+        }
+    };
+    let seed_hex = String::from_utf8_lossy(&seed_bytes).to_string();
+
+    // Derive the slot keypair locally
+    let seed_raw = match hex::decode(&seed_hex) {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::warn!(error = %e, "slot seed is not valid hex");
+            return;
+        }
+    };
+    let Ok(seed_array): Result<[u8; 32], _> = seed_raw.try_into() else {
+        tracing::warn!("slot seed wrong length (expected 32 bytes)");
+        return;
+    };
+    let slot_kp = match member_registry::derive_slot_veilid_keypair(&seed_array, slot_index) {
+        Ok(kp) => kp,
+        Err(e) => {
+            tracing::warn!(error = %e, slot_index, "failed to derive slot keypair from seed");
+            return;
+        }
+    };
+    let slot_kp_str = slot_kp.to_string();
+
+    // Persist slot_seed + derived slot_keypair + subkey_index to CommunityState
+    {
+        let mut communities = state.communities.write();
+        if let Some(c) = communities.get_mut(community_id) {
+            c.slot_seed = Some(seed_hex.clone());
+            c.slot_keypair = Some(slot_kp_str.clone());
+            c.my_subkey_index = Some(slot_index);
+        }
+    }
+
+    // Persist to Stronghold
+    let ks_handle: tauri::State<'_, crate::keystore::KeystoreHandle> = app_handle.state();
+    let ks = ks_handle.lock();
+    if let Some(ref keystore) = *ks {
+        crate::keystore::persist_slot_seed(keystore, community_id, &seed_hex);
+        crate::keystore::persist_slot_keypair(keystore, community_id, &slot_kp_str);
+    }
+
+    // Persist subkey_index to SQLite
+    {
+        let pool: tauri::State<'_, crate::db::DbPool> = app_handle.state();
+        let cid = community_id.to_string();
+        let owner_key = crate::state_helpers::current_owner_key(state).unwrap_or_default();
+        let idx = i64::from(slot_index);
+        crate::db_helpers::db_fire(pool.inner(), "persist my_subkey_index from seed", move |conn| {
+            conn.execute(
+                "UPDATE communities SET my_subkey_index = ?1 WHERE owner_key = ?2 AND id = ?3",
+                rusqlite::params![idx, owner_key, cid],
+            )?;
+            Ok(())
+        });
+    }
+
+    tracing::info!(
+        community = %community_id,
+        slot_index,
+        "slot seed received — derived slot keypair locally (no coordinator needed)"
+    );
+
+    // Trigger immediate presence write
+    let state_for_poll = state.clone();
+    let cid_for_poll = community_id.to_string();
+    tokio::spawn(async move {
+        if let Err(e) = crate::services::community_service::presence_poll_tick_public(
+            &state_for_poll,
+            &cid_for_poll,
+        )
+        .await
+        {
+            tracing::debug!(error = %e, "immediate presence poll after slot seed grant failed");
+        }
+    });
+}
+
 /// Unwrap and persist channel log keypairs received in JoinAccepted.
 ///
 /// For each `(channel_id, log_key, wrapped_keypair)`, decrypts the keypair
@@ -2416,6 +2534,7 @@ struct JoinAcceptedData<'a> {
     member_registry_key: Option<&'a str>,
     channel_log_keypairs: &'a [(String, String, Vec<u8>)],
     slot_index: Option<u32>,
+    wrapped_slot_seed: Option<&'a [u8]>,
     wrapped_slot_keypair: Option<&'a [u8]>,
 }
 
@@ -2662,8 +2781,19 @@ async fn handle_join_accepted(
         }
     }
 
-    // 6b. Process bundled slot keypair (atomic delivery — same retry as JoinAccepted)
-    if let (Some(idx), Some(wrapped)) = (data.slot_index, data.wrapped_slot_keypair) {
+    // 6b. Process bundled slot_seed (preferred) or legacy slot_keypair.
+    // With slot_seed, the member derives their own keypair locally — no coordinator needed.
+    if let (Some(idx), Some(wrapped_seed)) = (data.slot_index, data.wrapped_slot_seed) {
+        handle_slot_seed_grant(
+            app_handle,
+            state,
+            community_id,
+            sender_pseudonym,
+            idx,
+            wrapped_seed,
+        );
+    } else if let (Some(idx), Some(wrapped)) = (data.slot_index, data.wrapped_slot_keypair) {
+        // Legacy fallback: older coordinator sent wrapped_slot_keypair directly
         handle_slot_keypair_grant(
             app_handle,
             state,
