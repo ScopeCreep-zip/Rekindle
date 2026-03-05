@@ -1245,13 +1245,11 @@ fn derive_and_wrap_slot_keypair(
     let slot_seed_hex = {
         let communities = state.communities.read();
         let Some(c) = communities.get(community_id) else { return (None, None) };
-        match c.slot_seed.clone() {
-            Some(s) => s,
-            None => {
-                tracing::warn!(community = %community_id, "no slot seed — cannot derive slot keypair");
-                return (None, None);
-            }
-        }
+        let Some(s) = c.slot_seed.clone() else {
+            tracing::warn!(community = %community_id, "no slot seed — cannot derive slot keypair");
+            return (None, None);
+        };
+        s
     };
     let Ok(seed_bytes) = hex::decode(&slot_seed_hex) else { return (None, None) };
     let Ok(seed_array): Result<[u8; 32], _> = seed_bytes.try_into() else { return (None, None) };
