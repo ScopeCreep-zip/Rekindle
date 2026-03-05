@@ -42,7 +42,7 @@ impl VoiceShutdownOpts {
 /// (`voice_engine`, `voice_packet_tx`). Callers with `&Arc<AppState>` auto-deref.
 pub(crate) async fn shutdown_voice(state: &AppState, opts: &VoiceShutdownOpts) {
     // Extract shutdown senders and join handles outside the lock
-    let (send_tx, send_h, recv_tx, recv_h, monitor_tx, monitor_h) = {
+    let (send_tx, send_h, recv_tx, recv_h, monitor_tx, monitor_h, mcu_tx, mcu_h) = {
         let mut ve = state.voice_engine.lock();
         if let Some(ref mut handle) = *ve {
             let loops = if opts.stop_loops {
@@ -51,9 +51,11 @@ pub(crate) async fn shutdown_voice(state: &AppState, opts: &VoiceShutdownOpts) {
                     handle.send_loop_handle.take(),
                     handle.recv_loop_shutdown.take(),
                     handle.recv_loop_handle.take(),
+                    handle.mcu_loop_shutdown.take(),
+                    handle.mcu_loop_handle.take(),
                 )
             } else {
-                (None, None, None, None)
+                (None, None, None, None, None, None)
             };
             let monitor = if opts.stop_monitor {
                 (
@@ -63,9 +65,9 @@ pub(crate) async fn shutdown_voice(state: &AppState, opts: &VoiceShutdownOpts) {
             } else {
                 (None, None)
             };
-            (loops.0, loops.1, loops.2, loops.3, monitor.0, monitor.1)
+            (loops.0, loops.1, loops.2, loops.3, monitor.0, monitor.1, loops.4, loops.5)
         } else {
-            (None, None, None, None, None, None)
+            (None, None, None, None, None, None, None, None)
         }
     };
 
@@ -79,6 +81,9 @@ pub(crate) async fn shutdown_voice(state: &AppState, opts: &VoiceShutdownOpts) {
     if let Some(tx) = monitor_tx {
         let _ = tx.send(()).await;
     }
+    if let Some(tx) = mcu_tx {
+        let _ = tx.send(()).await;
+    }
 
     // Await loop handles
     if let Some(h) = send_h {
@@ -88,6 +93,9 @@ pub(crate) async fn shutdown_voice(state: &AppState, opts: &VoiceShutdownOpts) {
         let _ = h.await;
     }
     if let Some(h) = monitor_h {
+        let _ = h.await;
+    }
+    if let Some(h) = mcu_h {
         let _ = h.await;
     }
 

@@ -10,6 +10,7 @@ pub mod playback;
 pub mod transport;
 
 pub use error::VoiceError;
+pub use transport::VoiceMode;
 
 use tokio::sync::mpsc;
 
@@ -39,6 +40,29 @@ pub struct VoiceConfig {
     pub input_volume: f32,
     /// Output volume multiplier (0.0–1.0).
     pub output_volume: f32,
+}
+
+/// Returns recommended voice settings based on group size (9E: Adaptive Codec).
+///
+/// Smaller groups get higher bitrate for clarity. Larger groups trade quality
+/// for lower bandwidth since the MCU host must redistribute all streams.
+pub fn voice_config_for_group_size(n: usize) -> VoiceConfig {
+    match n {
+        0..=3 => VoiceConfig {
+            // High quality for small groups
+            ..VoiceConfig::default()
+        },
+        4..=8 => VoiceConfig {
+            // Slightly lower bitrate — still 20ms frames
+            jitter_buffer_ms: 200,
+            ..VoiceConfig::default()
+        },
+        _ => VoiceConfig {
+            // 9+ participants: lower quality to reduce bandwidth
+            jitter_buffer_ms: 250,
+            ..VoiceConfig::default()
+        },
+    }
 }
 
 impl Default for VoiceConfig {

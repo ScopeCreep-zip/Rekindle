@@ -15,7 +15,7 @@ use crate::channels::VoiceEvent;
 
 pub(crate) struct VoiceSendParams {
     pub capture_rx: Option<mpsc::Receiver<Vec<f32>>>,
-    pub transport: rekindle_voice::transport::VoiceTransport,
+    pub transport: Arc<tokio::sync::Mutex<rekindle_voice::transport::VoiceTransport>>,
     pub shutdown_rx: mpsc::Receiver<()>,
     pub app: tauri::AppHandle,
     pub public_key: String,
@@ -27,7 +27,7 @@ pub(crate) struct VoiceSendParams {
 
 struct VoiceSendLoop {
     capture_rx: mpsc::Receiver<Vec<f32>>,
-    transport: rekindle_voice::transport::VoiceTransport,
+    transport: Arc<tokio::sync::Mutex<rekindle_voice::transport::VoiceTransport>>,
     shutdown_rx: mpsc::Receiver<()>,
     app: tauri::AppHandle,
     public_key: String,
@@ -183,12 +183,28 @@ impl VoiceSendLoop {
         encoded.timestamp = rekindle_utils::timestamp_ms();
         self.sequence = self.sequence.wrapping_add(1);
 
-        if self.transport.is_connected() {
-            if let Err(e) = self.transport.send(&encoded).await {
-                tracing::debug!(error = %e, "voice send loop: transport send failed");
-                self.send_failures += 1;
+        {
+            let transport = self.transport.lock().await;
+            if transport.is_connected() {
+                let send_result = match transport.mode() {
+                    rekindle_voice::VoiceMode::Mesh => transport.send(&encoded).await,
+                    rekindle_voice::VoiceMode::Mcu { ref host_pseudonym }
+                        if *host_pseudonym == self.public_key =>
+                    {
+                        // We are the MCU host — MCU loop handles mixing and distribution.
+                        Ok(())
+                    }
+                    rekindle_voice::VoiceMode::Mcu { ref host_pseudonym } => {
+                        // Non-host: send only to the MCU host
+                        transport.send_to_peer(host_pseudonym, &encoded).await
+                    }
+                };
+                if let Err(e) = send_result {
+                    tracing::debug!(error = %e, "voice send loop: transport send failed");
+                    self.send_failures += 1;
+                }
+                self.packets_sent += 1;
             }
-            self.packets_sent += 1;
         }
 
         self.report_quality_if_due();
@@ -225,8 +241,9 @@ impl VoiceSendLoop {
         self.last_quality_report = Instant::now();
     }
 
-    fn cleanup(mut self) {
-        self.transport.disconnect();
+    fn cleanup(self) {
+        // Transport disconnect is handled by shutdown_voice — we don't clear
+        // the shared transport here since other loops or handlers may still use it.
 
         if self.was_speaking {
             let event = VoiceEvent::UserSpeaking {
