@@ -582,25 +582,15 @@ async fn handle_control(
                     }
                 };
 
-                // Send JoinAccepted to the joining member
+                // Send JoinAccepted to the joining member (includes slot keypair atomically)
                 if let Some(blob) = &member_route {
                     send_join_accepted(
                         &state_clone,
                         &onboard_community,
                         blob,
                         &joiner_pseudonym,
+                        joiner_subkey_index,
                     ).await;
-
-                    // Send SlotKeypairGrant so the joiner can write their own DHT presence
-                    if let Some(subkey_idx) = joiner_subkey_index {
-                        send_slot_keypair_grant(
-                            &state_clone,
-                            &onboard_community,
-                            blob,
-                            &joiner_pseudonym,
-                            subkey_idx,
-                        );
-                    }
                 } else {
                     tracing::error!(
                         community = %onboard_community,
@@ -1081,7 +1071,7 @@ async fn handle_control_extended(
                 let community_id = sm.community_id.clone();
                 let requester = sender_pseudonym.to_string();
                 tokio::spawn(async move {
-                    send_join_accepted(&state_clone, &community_id, &blob, &requester).await;
+                    send_join_accepted(&state_clone, &community_id, &blob, &requester, None).await;
                     tracing::debug!(
                         community = %community_id,
                         requester = %requester,
@@ -1093,6 +1083,59 @@ async fn handle_control_extended(
                     community = %sm.community_id,
                     requester = %sender_pseudonym,
                     "RequestMEK: no route blob for requester — cannot deliver MEK"
+                );
+            }
+        }
+
+        // RequestSlotKeypair: member is missing their slot keypair, re-send it
+        ControlPayload::RequestSlotKeypair => {
+            let route_blob = {
+                let communities = state.communities.read();
+                communities.get(&sm.community_id)
+                    .and_then(|c| c.gossip.as_ref())
+                    .and_then(|g| g.online_members.get(sender_pseudonym).cloned())
+            };
+            // Look up the member's subkey_index from the registry
+            let subkey_index = {
+                let communities = state.communities.read();
+                communities.get(&sm.community_id)
+                    .and_then(|c| c.member_registry_key.clone())
+            };
+            if let (Some(blob), Some(ref rk)) = (route_blob, &subkey_index) {
+                let state_clone = state.clone();
+                let community_id = sm.community_id.clone();
+                let requester = sender_pseudonym.to_string();
+                let rk_clone = rk.clone();
+                tokio::spawn(async move {
+                    // Read member index to find the requester's subkey_index
+                    let rc = state_helpers::routing_context(&state_clone);
+                    if let Some(rc) = rc {
+                        let mgr = rekindle_protocol::dht::DHTManager::new(rc);
+                        let members = member_registry::read_member_index(&mgr, &rk_clone).await.unwrap_or_default();
+                        if let Some(m) = members.iter().find(|m| m.pseudonym_key == requester) {
+                            send_slot_keypair_grant(
+                                &state_clone, &community_id, &blob, &requester, m.subkey_index,
+                            );
+                            tracing::info!(
+                                community = %community_id,
+                                requester = %requester,
+                                slot_index = m.subkey_index,
+                                "re-sent SlotKeypairGrant in response to RequestSlotKeypair"
+                            );
+                        } else {
+                            tracing::warn!(
+                                community = %community_id,
+                                requester = %requester,
+                                "RequestSlotKeypair: member not found in registry"
+                            );
+                        }
+                    }
+                });
+            } else {
+                tracing::warn!(
+                    community = %sm.community_id,
+                    requester = %sender_pseudonym,
+                    "RequestSlotKeypair: no route blob or registry key"
                 );
             }
         }
@@ -1187,10 +1230,59 @@ fn send_control_to_route(
     });
 }
 
+/// Derive and ECDH-wrap a slot keypair for a member. Returns `(slot_index, wrapped_bytes)`.
+/// Used by both `send_join_accepted` (bundled) and `send_slot_keypair_grant` (standalone).
+fn derive_and_wrap_slot_keypair(
+    state: &Arc<AppState>,
+    community_id: &str,
+    joiner_pseudonym: &str,
+    slot_index: u32,
+) -> (Option<u32>, Option<Vec<u8>>) {
+    use rekindle_crypto::group::mek_distribution::wrap_mek;
+    use rekindle_crypto::group::pseudonym::derive_community_pseudonym;
+    use rekindle_protocol::dht::community::member_registry;
+
+    let slot_seed_hex = {
+        let communities = state.communities.read();
+        let Some(c) = communities.get(community_id) else { return (None, None) };
+        match c.slot_seed.clone() {
+            Some(s) => s,
+            None => {
+                tracing::warn!(community = %community_id, "no slot seed — cannot derive slot keypair");
+                return (None, None);
+            }
+        }
+    };
+    let Ok(seed_bytes) = hex::decode(&slot_seed_hex) else { return (None, None) };
+    let Ok(seed_array): Result<[u8; 32], _> = seed_bytes.try_into() else { return (None, None) };
+
+    let slot_kp = match member_registry::derive_slot_veilid_keypair(&seed_array, slot_index) {
+        Ok(kp) => kp,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to derive slot keypair");
+            return (None, None);
+        }
+    };
+    let slot_kp_str = slot_kp.to_string();
+
+    let Some(secret) = state.identity_secret.lock().as_ref().copied() else { return (None, None) };
+    let my_signing_key = derive_community_pseudonym(&secret, community_id);
+
+    let Ok(joiner_pub_bytes) = hex::decode(joiner_pseudonym) else { return (None, None) };
+    let Ok(joiner_pub): Result<[u8; 32], _> = joiner_pub_bytes.try_into() else { return (None, None) };
+
+    match wrap_mek(&my_signing_key, &joiner_pub, slot_kp_str.as_bytes()) {
+        Ok(wrapped) => (Some(slot_index), Some(wrapped)),
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to wrap slot keypair");
+            (None, None)
+        }
+    }
+}
+
 /// Send a SlotKeypairGrant to a newly joined member so they can write their DHT presence.
 ///
-/// Derives the slot keypair from the community's slot seed, wraps it with ECDH
-/// for the target member, and sends it via a direct app_message.
+/// Uses `derive_and_wrap_slot_keypair` to derive + ECDH-wrap, then sends via direct route.
 fn send_slot_keypair_grant(
     state: &Arc<AppState>,
     community_id: &str,
@@ -1198,63 +1290,15 @@ fn send_slot_keypair_grant(
     joiner_pseudonym: &str,
     slot_index: u32,
 ) {
-    use rekindle_crypto::group::mek_distribution::wrap_mek;
-    use rekindle_crypto::group::pseudonym::derive_community_pseudonym;
-    use rekindle_protocol::dht::community::member_registry;
+    let (idx, wrapped) = derive_and_wrap_slot_keypair(state, community_id, joiner_pseudonym, slot_index);
 
-    // Get slot seed from our state
-    let slot_seed_hex = {
-        let communities = state.communities.read();
-        let Some(c) = communities.get(community_id) else { return };
-        if let Some(s) = c.slot_seed.clone() {
-            s
-        } else {
-            tracing::warn!(community = %community_id, "no slot seed — cannot send SlotKeypairGrant");
-            return;
-        }
-    };
-    let Ok(seed_bytes) = hex::decode(&slot_seed_hex) else {
-        tracing::warn!(community = %community_id, "invalid slot seed hex");
+    let (Some(idx), Some(wrapped)) = (idx, wrapped) else {
+        tracing::warn!(community = %community_id, "failed to derive/wrap slot keypair for standalone grant");
         return;
-    };
-    let Ok(seed_array): Result<[u8; 32], _> = seed_bytes.try_into() else {
-        tracing::warn!(community = %community_id, "slot seed wrong length");
-        return;
-    };
-
-    // Derive the Veilid keypair for this slot
-    let slot_kp = match member_registry::derive_slot_veilid_keypair(&seed_array, slot_index) {
-        Ok(kp) => kp,
-        Err(e) => {
-            tracing::warn!(error = %e, community = %community_id, "failed to derive slot keypair");
-            return;
-        }
-    };
-    let slot_kp_str = slot_kp.to_string();
-
-    // Encrypt (wrap) the slot keypair for the joiner using ECDH
-    let Some(secret) = state.identity_secret.lock().as_ref().copied() else { return };
-    let my_signing_key = derive_community_pseudonym(&secret, community_id);
-
-    let Ok(joiner_pub_bytes) = hex::decode(joiner_pseudonym) else {
-        tracing::warn!("invalid joiner pseudonym hex for SlotKeypairGrant");
-        return;
-    };
-    let Ok(joiner_pub): Result<[u8; 32], _> = joiner_pub_bytes.try_into() else {
-        tracing::warn!("joiner pseudonym wrong length for SlotKeypairGrant");
-        return;
-    };
-
-    let wrapped = match wrap_mek(&my_signing_key, &joiner_pub, slot_kp_str.as_bytes()) {
-        Ok(w) => w,
-        Err(e) => {
-            tracing::warn!(error = %e, "failed to wrap slot keypair for joiner");
-            return;
-        }
     };
 
     let payload = ControlPayload::SlotKeypairGrant {
-        slot_index,
+        slot_index: idx,
         segment_index: 0,
         wrapped_slot_keypair: wrapped,
     };
@@ -1810,6 +1854,7 @@ async fn send_join_accepted(
     community_id: &str,
     target_route_blob: &[u8],
     joiner_pseudonym: &str,
+    joiner_subkey_index: Option<u32>,
 ) {
     let Some(rc) = state_helpers::routing_context(state) else {
         return;
@@ -1878,6 +1923,15 @@ async fn send_join_accepted(
         state, community_id, joiner_pseudonym, &channels,
     );
 
+    // Derive and wrap the slot keypair for the joiner so they can write DHT presence.
+    // Bundling it in JoinAccepted makes delivery atomic — the 3-retry mechanism
+    // covers both MEK and slot keypair in a single message.
+    let (slot_index_for_payload, wrapped_slot_kp) = if let Some(subkey_idx) = joiner_subkey_index {
+        derive_and_wrap_slot_keypair(state, community_id, joiner_pseudonym, subkey_idx)
+    } else {
+        (None, None)
+    };
+
     let payload = ControlPayload::JoinAccepted {
         mek_encrypted: mek_bytes.unwrap_or_default(),
         mek_generation,
@@ -1900,6 +1954,8 @@ async fn send_join_accepted(
             .collect(),
         member_registry_key: registry_key,
         channel_log_keypairs,
+        slot_index: slot_index_for_payload,
+        wrapped_slot_keypair: wrapped_slot_kp,
     };
 
     // JoinAccepted is critical — the joiner cannot participate without MEK.

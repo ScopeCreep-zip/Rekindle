@@ -710,8 +710,25 @@ async fn presence_poll_tick(state: &Arc<AppState>, community_id: &str) -> Result
             community = %community_id,
             has_slot_keypair = slot_keypair_str.is_some(),
             has_subkey_index = my_subkey_index.is_some(),
-            "cannot write presence — missing slot keypair or subkey index"
+            "cannot write presence — missing slot keypair or subkey index, requesting from coordinator"
         );
+
+        // Self-healing: request our slot keypair from the coordinator
+        let state_clone = state.clone();
+        let cid_clone = community_id.to_string();
+        tokio::spawn(async move {
+            use rekindle_protocol::dht::community::envelope::{ControlPayload, CommunityEnvelope};
+            let envelope = CommunityEnvelope::Control(ControlPayload::RequestSlotKeypair);
+            if let Err(e) = crate::commands::community::send_to_coordinator(
+                &state_clone, &cid_clone, envelope,
+            ).await {
+                tracing::debug!(
+                    community = %cid_clone,
+                    error = %e,
+                    "failed to request slot keypair from coordinator"
+                );
+            }
+        });
     }
 
     // 2. Read all member entries

@@ -682,6 +682,8 @@ async fn handle_relayed_control(
             members,
             member_registry_key,
             channel_log_keypairs,
+            slot_index,
+            wrapped_slot_keypair,
         } => {
             handle_join_accepted(
                 app_handle,
@@ -697,6 +699,8 @@ async fn handle_relayed_control(
                     members: &members,
                     member_registry_key: member_registry_key.as_deref(),
                     channel_log_keypairs: &channel_log_keypairs,
+                    slot_index,
+                    wrapped_slot_keypair: wrapped_slot_keypair.as_deref(),
                 },
             )
             .await;
@@ -2411,6 +2415,8 @@ struct JoinAcceptedData<'a> {
     members: &'a [serde_json::Value],
     member_registry_key: Option<&'a str>,
     channel_log_keypairs: &'a [(String, String, Vec<u8>)],
+    slot_index: Option<u32>,
+    wrapped_slot_keypair: Option<&'a [u8]>,
 }
 
 /// Handle a JoinAccepted response from the coordinator.
@@ -2656,6 +2662,19 @@ async fn handle_join_accepted(
         }
     }
 
+    // 6b. Process bundled slot keypair (atomic delivery — same retry as JoinAccepted)
+    if let (Some(idx), Some(wrapped)) = (data.slot_index, data.wrapped_slot_keypair) {
+        handle_slot_keypair_grant(
+            app_handle,
+            state,
+            community_id,
+            sender_pseudonym,
+            idx,
+            0, // segment_index
+            wrapped,
+        );
+    }
+
     // 7. Notify frontend
     let _ = app_handle.emit(
         "community-event",
@@ -2669,6 +2688,7 @@ async fn handle_join_accepted(
         mek_generation = data.mek_generation,
         role_ids = ?data.role_ids,
         member_count = parsed_members.len(),
+        has_slot_keypair = data.slot_index.is_some(),
         "JoinAccepted processed — community state updated"
     );
 }
