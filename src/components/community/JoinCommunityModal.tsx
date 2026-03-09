@@ -7,9 +7,9 @@ interface JoinCommunityModalProps {
   onClose: () => void;
 }
 
-/** Parse a deep link URL: rekindle://community/{communityId}/{inviteCode} */
+/** Parse a deep link URL: rekindle://invite/{communityId}/{inviteCode} or rekindle://community/{communityId}/{inviteCode} */
 function parseDeepLink(input: string): { communityId: string; inviteCode: string } | null {
-  const match = input.match(/^rekindle:\/\/community\/([^/]+)\/([^/]+)\/?$/);
+  const match = input.match(/^rekindle:\/\/(?:invite|community)\/([^/]+)\/([^/]+)\/?$/);
   if (match) return { communityId: match[1], inviteCode: match[2] };
   return null;
 }
