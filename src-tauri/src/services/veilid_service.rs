@@ -169,6 +169,15 @@ async fn handle_gossip_envelope(
         return;
     }
 
+    // Signature is valid — auto-add sender to known_members so we accept
+    // their messages immediately (don't wait for next presence_poll_tick).
+    {
+        let mut communities = state.communities.write();
+        if let Some(cs) = communities.get_mut(community_id) {
+            cs.known_members.insert(signed.sender_pseudonym.clone());
+        }
+    }
+
     // 3. COORDINATOR DISPATCH — if Control payload and we're coordinator, handle it
     let is_control = serde_json::from_slice::<CommunityEnvelope>(&signed.envelope_bytes)
         .map(|e| matches!(e, CommunityEnvelope::Control(_)))
@@ -397,14 +406,22 @@ async fn handle_relayed_envelope(
         } => {
             use crate::channels::CommunityEvent;
 
-            // Update route_blob in gossip overlay so we can reach this member
+            // Update route_blob in gossip overlay so we can reach this member.
+            // Also add to known_members and peers so messages are accepted and
+            // we can send to them immediately (not waiting for next presence poll).
             if let Some(ref blob) = route_blob {
-                let mut communities = state.communities.write();
-                if let Some(cs) = communities.get_mut(&community_id) {
-                    if let Some(ref mut gossip) = cs.gossip {
-                        gossip
-                            .online_members
-                            .insert(pseudonym_key.clone(), blob.clone());
+                if !blob.is_empty() {
+                    let mut communities = state.communities.write();
+                    if let Some(cs) = communities.get_mut(&community_id) {
+                        cs.known_members.insert(pseudonym_key.clone());
+                        if let Some(ref mut gossip) = cs.gossip {
+                            gossip
+                                .online_members
+                                .insert(pseudonym_key.clone(), blob.clone());
+                            gossip
+                                .peers
+                                .insert(pseudonym_key.clone(), blob.clone());
+                        }
                     }
                 }
             }
@@ -3213,22 +3230,10 @@ async fn handle_broadcast_new_message(
     msg: &BroadcastNewMessage,
 ) {
     // Skip messages we sent ourselves (already echoed locally in send_channel_message)
-    // Also reject messages from non-members (spoofed sender pseudonym)
     {
         let communities = state.communities.read();
         if let Some(community) = communities.get(&msg.community_id) {
             if community.my_pseudonym_key.as_deref() == Some(&msg.sender_pseudonym) {
-                return;
-            }
-            // Membership check: reject messages from unknown pseudonyms
-            if !community.known_members.is_empty()
-                && !community.known_members.contains(&msg.sender_pseudonym)
-            {
-                tracing::warn!(
-                    community = %msg.community_id,
-                    sender = %msg.sender_pseudonym,
-                    "rejecting ChatMessage from non-member"
-                );
                 return;
             }
         }

@@ -1093,6 +1093,27 @@ async fn presence_poll_tick(state: &Arc<AppState>, community_id: &str) -> Result
         }
     };
 
+    // Broadcast our presence to gossip peers so they learn our route immediately
+    // (don't make them wait for their own presence_poll_tick to discover us via DHT).
+    if needs_sync && d > 0 {
+        let (my_pk, our_route) = {
+            let communities = state.communities.read();
+            let cs = communities.get(community_id);
+            (
+                cs.and_then(|c| c.my_pseudonym_key.clone()).unwrap_or_default(),
+                state_helpers::our_route_blob(state),
+            )
+        };
+        let presence_envelope =
+            rekindle_protocol::dht::community::envelope::CommunityEnvelope::PresenceUpdate {
+                pseudonym_key: my_pk,
+                status: "online".to_string(),
+                game_info: None,
+                route_blob: our_route,
+            };
+        let _ = crate::commands::community::send_to_mesh(state, community_id, &presence_envelope);
+    }
+
     // Trigger SyncRequest on first successful poll with online peers
     if needs_sync {
         // Collect all channel IDs for sync
