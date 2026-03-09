@@ -23,6 +23,7 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
   const [expiresIn, setExpiresIn] = createSignal("");
   const [copiedHash, setCopiedHash] = createSignal<string | null>(null);
   const [revokingHash, setRevokingHash] = createSignal<string | null>(null);
+  const [createdLink, setCreatedLink] = createSignal<string | null>(null);
 
   // Force expiry display refresh every 60s
   const [, setTick] = createSignal(0);
@@ -36,20 +37,40 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
     }
   });
 
+  function manifestKey(): string {
+    const community = communityState.communities[props.communityId];
+    return community?.manifestKey ?? props.communityId;
+  }
+
+  function buildInviteLink(code: string): string {
+    return `rekindle://invite/${manifestKey()}/${code}`;
+  }
+
+  async function copyToClipboard(text: string, hash?: string): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(text);
+      if (hash) {
+        setCopiedHash(hash);
+        setTimeout(() => setCopiedHash(null), 2000);
+      }
+      addToast("Invite link copied!", "success");
+    } catch {
+      addToast("Failed to copy — select and copy manually", "error");
+    }
+  }
+
   async function submitInvite(): Promise<void> {
     const parsedMaxUses = maxUses() !== "" ? parseInt(maxUses(), 10) : undefined;
     const parsedExpiresIn = expiresIn() !== "" ? parseInt(expiresIn(), 10) : undefined;
     const result = await handleCreateCommunityInvite(props.communityId, parsedMaxUses, parsedExpiresIn);
     if (result) {
-      // Build invite link: rekindle://invite/{manifestKey}/{code}
-      const link = `rekindle://invite/${result.manifestKey}/${result.code}`;
-      try { await navigator.clipboard.writeText(link); } catch {}
-      addToast("Invite link copied to clipboard", "success");
+      const link = buildInviteLink(result.code);
+      setCreatedLink(link);
+      await copyToClipboard(link);
       setCreatingInvite(false);
       setMaxUses("");
       setExpiresIn("");
     }
-    // Error toast handled by handler
   }
 
   async function revokeInvite(codeHash: string): Promise<void> {
@@ -57,7 +78,6 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
     try {
       const ok = await handleRevokeCommunityInvite(props.communityId, codeHash);
       if (ok) addToast("Invite revoked", "success");
-      // Error toast handled by handler; store update handled by handler
     } finally {
       setRevokingHash(null);
     }
@@ -111,6 +131,31 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
         </Show>
       </Show>
 
+      {/* Show newly created invite link prominently */}
+      <Show when={createdLink()}>
+        <div class="invite-link-display">
+          <input
+            class="form-input"
+            type="text"
+            readOnly
+            value={createdLink()!}
+            onClick={(e) => e.currentTarget.select()}
+          />
+          <button
+            class="form-btn-primary"
+            onClick={() => copyToClipboard(createdLink()!)}
+          >
+            Copy Link
+          </button>
+          <button
+            class="form-btn-secondary"
+            onClick={() => setCreatedLink(null)}
+          >
+            Dismiss
+          </button>
+        </div>
+      </Show>
+
       <Show when={invites().length > 0} fallback={
         <div class="settings-hint">No invites yet.</div>
       }>
@@ -135,15 +180,25 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
                   </Show>
                 </span>
               </div>
-              <Show when={props.canManage}>
-                <button
-                  class="form-btn-secondary"
-                  onClick={() => revokeInvite(invite.codeHash)}
-                  disabled={revokingHash() === invite.codeHash}
-                >
-                  {revokingHash() === invite.codeHash ? "Revoking..." : "Revoke"}
-                </button>
-              </Show>
+              <div class="settings-list-actions">
+                <Show when={invite.code}>
+                  <button
+                    class="form-btn-secondary"
+                    onClick={() => copyToClipboard(buildInviteLink(invite.code!), invite.codeHash)}
+                  >
+                    {copiedHash() === invite.codeHash ? "Copied!" : "Copy Link"}
+                  </button>
+                </Show>
+                <Show when={props.canManage}>
+                  <button
+                    class="form-btn-secondary"
+                    onClick={() => revokeInvite(invite.codeHash)}
+                    disabled={revokingHash() === invite.codeHash}
+                  >
+                    {revokingHash() === invite.codeHash ? "Revoking..." : "Revoke"}
+                  </button>
+                </Show>
+              </div>
             </div>
           )}
         </For>

@@ -255,7 +255,7 @@ export const commands = {
   revokeCommunityInvite: (communityId: string, codeHash: string) =>
     invoke<void>("revoke_community_invite", { communityId, codeHash }),
   listCommunityInvites: (communityId: string) =>
-    invoke<{ codeHash: string; createdBy: string; maxUses: number | null; uses: number; expiresAt: number | null; createdAt: number }[]>(
+    invoke<{ codeHash: string; createdBy: string; maxUses: number | null; uses: number; expiresAt: number | null; createdAt: number; code?: string }[]>(
       "list_community_invites", { communityId }
     ),
 

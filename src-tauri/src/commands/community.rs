@@ -125,6 +125,9 @@ pub struct InviteInfoDto {
     pub uses: u32,
     pub expires_at: Option<u64>,
     pub created_at: u64,
+    /// Raw invite code (only available for invites this node created, from local SQLite).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
 }
 
 /// Pinned message info for the frontend.
@@ -151,6 +154,10 @@ pub struct CommunityDetail {
     pub roles: Vec<CommunityRoleDto>,
     pub my_pseudonym_key: Option<String>,
     pub mek_generation: u64,
+    pub manifest_key: Option<String>,
+    pub member_registry_key: Option<String>,
+    pub coordinator_pseudonym: Option<String>,
+    pub coordinator_epoch: u64,
 }
 
 /// Get all joined communities with full channel details.
@@ -192,6 +199,10 @@ pub async fn get_community_details(
             roles: c.roles.iter().map(CommunityRoleDto::from).collect(),
             my_pseudonym_key: c.my_pseudonym_key.clone(),
             mek_generation: c.mek_generation,
+            manifest_key: c.manifest_key.clone(),
+            member_registry_key: c.member_registry_key.clone(),
+            coordinator_pseudonym: c.coordinator_pseudonym.clone(),
+            coordinator_epoch: c.coordinator_epoch,
         })
         .collect();
     Ok(list)
@@ -815,11 +826,14 @@ pub async fn revoke_community_invite(
 }
 
 /// List active community invites from DHT manifest.
+///
+/// Merges raw invite codes from local SQLite (only available for invites
+/// created by this node) so the frontend can build copyable invite links.
 #[tauri::command]
 pub async fn list_community_invites(
     community_id: String,
     state: State<'_, SharedState>,
-    _pool: State<'_, DbPool>,
+    pool: State<'_, DbPool>,
 ) -> Result<Vec<InviteInfoDto>, String> {
     let rc = state_helpers::routing_context(state.inner()).ok_or("not attached")?;
     let manifest_key = manifest_key_for(state.inner(), &community_id)?;
@@ -829,19 +843,41 @@ pub async fn list_community_invites(
             .await
             .map_err(|e| format!("read invites: {e}"))?;
 
+    // Fetch locally-stored raw codes from SQLite (only for invites this node created)
+    let cid = community_id.clone();
+    let local_codes: std::collections::HashMap<String, String> =
+        crate::db_helpers::db_call_or_default(pool.inner(), move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT code_hash, code FROM community_invites WHERE community_id = ?",
+            )?;
+            let rows = stmt.query_map([&cid], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?;
+            let mut map = std::collections::HashMap::new();
+            for (hash, code) in rows.flatten() {
+                map.insert(hash, code);
+            }
+            Ok(map)
+        })
+        .await;
+
     Ok(invites
         .into_iter()
-        .map(|i| InviteInfoDto {
-            code_hash: i.code_hash,
-            created_by: i.created_by,
-            max_uses: if i.max_uses == 0 {
-                None
-            } else {
-                Some(i.max_uses)
-            },
-            uses: i.use_count,
-            expires_at: i.expires_at,
-            created_at: i.created_at,
+        .map(|i| {
+            let code = local_codes.get(&i.code_hash).cloned();
+            InviteInfoDto {
+                code_hash: i.code_hash,
+                created_by: i.created_by,
+                max_uses: if i.max_uses == 0 {
+                    None
+                } else {
+                    Some(i.max_uses)
+                },
+                uses: i.use_count,
+                expires_at: i.expires_at,
+                created_at: i.created_at,
+                code,
+            }
         })
         .collect())
 }
