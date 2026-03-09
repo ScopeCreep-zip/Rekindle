@@ -63,6 +63,12 @@ pub struct DHTManager {
     pub imported_routes: HashMap<Vec<u8>, (veilid_core::RouteId, Instant)>,
     /// Reverse map from `RouteId` → pubkey hex for selective invalidation.
     pub route_id_to_pubkey: HashMap<veilid_core::RouteId, String>,
+    /// Default writer keypair for `set_value` operations.
+    ///
+    /// When set, `set_value` will explicitly pass this keypair in
+    /// `SetDHTValueOptions` instead of relying on the record's default writer
+    /// (which can be lost if another code path re-opens the record read-only).
+    default_writer: Option<veilid_core::KeyPair>,
 }
 
 impl DHTManager {
@@ -76,7 +82,17 @@ impl DHTManager {
             open_records: HashSet::new(),
             imported_routes: HashMap::new(),
             route_id_to_pubkey: HashMap::new(),
+            default_writer: None,
         }
+    }
+
+    /// Set a default writer keypair that will be used for all `set_value` calls.
+    ///
+    /// This ensures writes succeed even if the record's default writer is lost
+    /// due to a concurrent read-only re-open by another code path.
+    pub fn with_writer(mut self, writer: veilid_core::KeyPair) -> Self {
+        self.default_writer = Some(writer);
+        self
     }
 
     /// Create a new DHT record with DFLT schema (single owner).
@@ -210,6 +226,10 @@ impl DHTManager {
     }
 
     /// Set a subkey value on a DHT record we own.
+    ///
+    /// If a [`default_writer`](Self::with_writer) is set, it will be passed
+    /// explicitly via `SetDHTValueOptions` to avoid relying on the record's
+    /// default writer (which can be clobbered by concurrent read-only opens).
     pub async fn set_value(
         &self,
         key: &str,
@@ -218,8 +238,13 @@ impl DHTManager {
     ) -> Result<(), ProtocolError> {
         let record_key = parse_record_key(key)?;
 
+        let options = self.default_writer.as_ref().map(|writer| SetDHTValueOptions {
+            writer: Some(writer.clone()),
+            ..Default::default()
+        });
+
         self.routing_context
-            .set_dht_value(record_key, subkey, value, None)
+            .set_dht_value(record_key, subkey, value, options)
             .await
             .map_err(|e| ProtocolError::DhtError(format!("set_dht_value: {e}")))?;
 
