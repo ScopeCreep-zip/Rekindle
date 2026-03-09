@@ -159,6 +159,11 @@ impl VoiceTransport {
         self.peers.len()
     }
 
+    /// Returns the pseudonym keys of all connected peers.
+    pub fn peer_keys(&self) -> Vec<String> {
+        self.peers.keys().cloned().collect()
+    }
+
     /// Broadcast an encoded audio frame to ALL connected peers (mesh mode).
     ///
     /// Returns a list of (pseudonym_key, error) for any failed sends.

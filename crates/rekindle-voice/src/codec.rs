@@ -165,6 +165,18 @@ impl OpusCodec {
         self.frame_size
     }
 
+    /// Update the encoder bitrate for adaptive quality based on group size.
+    ///
+    /// Recommended values:
+    /// - 2-3 participants: 32000 bps (default)
+    /// - 4-8 participants: 24000 bps
+    /// - 9+  participants: 16000 bps
+    pub fn set_bitrate(&mut self, bps: i32) -> Result<(), VoiceError> {
+        self.encoder
+            .set_bitrate(opus::Bitrate::Bits(bps))
+            .map_err(|e| VoiceError::Codec(format!("set bitrate failed: {e}")))
+    }
+
     /// Update the expected packet loss percentage for the encoder.
     ///
     /// Affects how much FEC data Opus includes. Higher values = more redundancy

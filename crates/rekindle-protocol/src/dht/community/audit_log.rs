@@ -25,7 +25,7 @@ pub struct AuditLogEntry {
     pub reason: Option<String>,
     /// Unix timestamp in seconds.
     pub timestamp: u64,
-    /// Ed25519 signature of the entry by the coordinator.
+    /// Ed25519 signature of the entry by the acting admin.
     pub signature: Vec<u8>,
 }
 

@@ -323,3 +323,16 @@ CREATE TABLE IF NOT EXISTS game_servers (
     created_at INTEGER NOT NULL,
     PRIMARY KEY (owner_key, community_id, id)
 );
+
+-- Locally cached invite codes (raw code never stored in DHT, only code_hash).
+-- Populated when the current user creates an invite.
+CREATE TABLE IF NOT EXISTS community_invites (
+    owner_key TEXT NOT NULL,
+    community_id TEXT NOT NULL,
+    code TEXT NOT NULL,
+    code_hash TEXT NOT NULL,
+    max_uses INTEGER NOT NULL DEFAULT 0,
+    expires_at INTEGER,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (owner_key, community_id, code_hash)
+);

@@ -21,8 +21,8 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
   const [creatingInvite, setCreatingInvite] = createSignal(false);
   const [maxUses, setMaxUses] = createSignal("");
   const [expiresIn, setExpiresIn] = createSignal("");
-  const [copiedCode, setCopiedCode] = createSignal<string | null>(null);
-  const [revokingCode, setRevokingCode] = createSignal<string | null>(null);
+  const [copiedHash, setCopiedHash] = createSignal<string | null>(null);
+  const [revokingHash, setRevokingHash] = createSignal<string | null>(null);
 
   // Force expiry display refresh every 60s
   const [, setTick] = createSignal(0);
@@ -41,7 +41,8 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
     const parsedExpiresIn = expiresIn() !== "" ? parseInt(expiresIn(), 10) : undefined;
     const result = await handleCreateCommunityInvite(props.communityId, parsedMaxUses, parsedExpiresIn);
     if (result) {
-      const link = `rekindle://community/${props.communityId}/${result.code}`;
+      // Build invite link: rekindle://invite/{manifestKey}/{code}
+      const link = `rekindle://invite/${result.manifestKey}/${result.code}`;
       try { await navigator.clipboard.writeText(link); } catch {}
       addToast("Invite link copied to clipboard", "success");
       setCreatingInvite(false);
@@ -51,31 +52,20 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
     // Error toast handled by handler
   }
 
-  async function revokeInvite(code: string): Promise<void> {
-    setRevokingCode(code);
+  async function revokeInvite(codeHash: string): Promise<void> {
+    setRevokingHash(codeHash);
     try {
-      const ok = await handleRevokeCommunityInvite(props.communityId, code);
+      const ok = await handleRevokeCommunityInvite(props.communityId, codeHash);
       if (ok) addToast("Invite revoked", "success");
       // Error toast handled by handler; store update handled by handler
     } finally {
-      setRevokingCode(null);
+      setRevokingHash(null);
     }
   }
 
-  async function copyInviteLink(code: string): Promise<void> {
-    const link = `rekindle://community/${props.communityId}/${code}`;
-    try {
-      await navigator.clipboard.writeText(link);
-      setCopiedCode(code);
-      setTimeout(() => setCopiedCode(null), 2000);
-    } catch {
-      addToast("Failed to copy to clipboard", "error");
-    }
-  }
-
-  function truncateCode(code: string): string {
-    if (code.length > 12) return code.slice(0, 12) + "...";
-    return code;
+  function truncateHash(hash: string): string {
+    if (hash.length > 12) return hash.slice(0, 12) + "...";
+    return hash;
   }
 
   return (
@@ -128,7 +118,7 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
           {(invite) => (
             <div class="settings-list-item">
               <div class="settings-list-info">
-                <span class="settings-list-name">{truncateCode(invite.code)}</span>
+                <span class="settings-list-name">{truncateHash(invite.codeHash)}</span>
                 <span class="settings-list-role">
                   by {(() => {
                     const community = communityState.communities[props.communityId];
@@ -145,16 +135,13 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
                   </Show>
                 </span>
               </div>
-              <button class="form-btn-secondary" onClick={() => copyInviteLink(invite.code)}>
-                {copiedCode() === invite.code ? "Copied!" : "Copy Link"}
-              </button>
               <Show when={props.canManage}>
                 <button
                   class="form-btn-secondary"
-                  onClick={() => revokeInvite(invite.code)}
-                  disabled={revokingCode() === invite.code}
+                  onClick={() => revokeInvite(invite.codeHash)}
+                  disabled={revokingHash() === invite.codeHash}
                 >
-                  {revokingCode() === invite.code ? "Revoking..." : "Revoke"}
+                  {revokingHash() === invite.codeHash ? "Revoking..." : "Revoke"}
                 </button>
               </Show>
             </div>

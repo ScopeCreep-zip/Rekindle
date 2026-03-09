@@ -500,6 +500,7 @@ async fn handle_control(
             ref route_blob,
             ref invite_code,
             ref pseudonym_key,
+            ref claimed_subkey_index,
             ..
         } => {
             let should_reject = sm.raid.lock().should_reject_join();
@@ -532,6 +533,7 @@ async fn handle_control(
             let display_name_clone = display_name.clone();
             let invite_code_clone = invite_code.clone();
             let joiner_pseudonym = pseudonym_key.clone();
+            let joiner_claimed_slot = *claimed_subkey_index;
             tokio::spawn(async move {
                 // Validate invite code (if provided)
                 if let Err(e) = validate_and_use_invite(
@@ -564,12 +566,13 @@ async fn handle_control(
                     notify_invite_used(&state_clone, &sm_clone, code).await;
                 }
 
-                // Add member to registry
+                // Add member to registry (use joiner's claimed slot if self-registered)
                 let joiner_subkey_index = match add_member_to_registry(
                     &state_clone,
                     &onboard_community,
                     &joiner_pseudonym,
                     &display_name_clone,
+                    joiner_claimed_slot,
                 ).await {
                     Ok(idx) => Some(idx),
                     Err(e) => {
@@ -905,21 +908,22 @@ async fn handle_control_extended(
         // Create invite - requires CREATE_INSTANT_INVITE
         // Awaited (not spawned) so the invite is persisted to the DHT manifest
         // before any client can list invites and get a stale empty result.
-        ControlPayload::CreateInvite { code, max_uses, expires_in_seconds } => {
+        ControlPayload::CreateInvite { code_hash, max_uses, expires_in_seconds, encrypted_secrets } => {
             if base_perms.has(Permissions::CREATE_INSTANT_INVITE) {
                 let creator = sender_pseudonym.to_string();
                 match create_invite_entry(
                     state,
                     &sm.community_id,
                     &creator,
-                    code,
+                    code_hash,
                     *max_uses,
                     *expires_in_seconds,
+                    encrypted_secrets.clone(),
                 ).await {
                     Ok(entry) => {
                         // Broadcast InviteCreated to all members via gossip
                         let broadcast = ControlPayload::InviteCreated {
-                            code: entry.code.clone(),
+                            code_hash: entry.code_hash.clone(),
                             created_by: entry.created_by.clone(),
                             max_uses: if entry.max_uses > 0 { Some(entry.max_uses) } else { None },
                             uses: entry.use_count,
@@ -930,7 +934,7 @@ async fn handle_control_extended(
                         broadcast_via_gossip(state, &sm.community_id, &envelope);
                         tracing::info!(
                             community = %sm.community_id,
-                            code = %entry.code,
+                            code_hash = %entry.code_hash,
                             "invite created and persisted to manifest"
                         );
                     }
@@ -947,24 +951,24 @@ async fn handle_control_extended(
 
         // Revoke invite - requires MANAGE_COMMUNITY
         // Awaited (not spawned) so the revocation is persisted before clients can list invites.
-        ControlPayload::RevokeInvite { code } => {
+        ControlPayload::RevokeInvite { code_hash } => {
             if base_perms.has(Permissions::MANAGE_COMMUNITY) {
-                match revoke_invite_entry(state, &sm.community_id, code).await {
+                match revoke_invite_entry(state, &sm.community_id, code_hash).await {
                     Ok(()) => {
                         // Broadcast InviteRevoked to all members via gossip
-                        let broadcast = ControlPayload::InviteRevoked { code: code.clone() };
+                        let broadcast = ControlPayload::InviteRevoked { code_hash: code_hash.clone() };
                         let envelope = CommunityEnvelope::Control(broadcast);
                         broadcast_via_gossip(state, &sm.community_id, &envelope);
                         tracing::info!(
                             community = %sm.community_id,
-                            code = %code,
+                            code_hash = %code_hash,
                             "invite revoked"
                         );
                     }
                     Err(e) => {
                         tracing::warn!(
                             community = %sm.community_id,
-                            code = %code,
+                            code_hash = %code_hash,
                             error = %e,
                             "failed to revoke invite"
                         );
@@ -1000,60 +1004,12 @@ async fn handle_control_extended(
 
         // Onboarding answers — process and assign roles
         ControlPayload::SubmitOnboardingAnswers { answers } => {
-            let onboard_state = state.clone();
-            let onboard_community = sm.community_id.clone();
-            let onboard_answers = answers.clone();
-            let onboard_pseudonym = sender_pseudonym.to_string();
-            let state_clone = state.clone();
+            let s = state.clone();
+            let cid = sm.community_id.clone();
+            let a = answers.clone();
+            let p = sender_pseudonym.to_string();
             tokio::spawn(async move {
-                match super::onboarding::process_answers(
-                    &onboard_state,
-                    &onboard_community,
-                    &onboard_answers,
-                )
-                .await
-                {
-                    Ok(role_ids) => {
-                        if !role_ids.is_empty() {
-                            if let Err(e) = assign_onboarding_roles(
-                                &state_clone,
-                                &onboard_community,
-                                &onboard_pseudonym,
-                                &role_ids,
-                            )
-                            .await
-                            {
-                                tracing::warn!(
-                                    community = %onboard_community,
-                                    pseudonym = %onboard_pseudonym,
-                                    error = %e,
-                                    "failed to assign onboarding roles"
-                                );
-                            } else {
-                                tracing::info!(
-                                    community = %onboard_community,
-                                    pseudonym = %onboard_pseudonym,
-                                    roles = ?role_ids,
-                                    "onboarding roles assigned"
-                                );
-                                let notification = ControlPayload::MemberRolesChanged {
-                                    pseudonym_key: onboard_pseudonym.clone(),
-                                    role_ids: role_ids.clone(),
-                                };
-                                let envelope = CommunityEnvelope::Control(notification);
-                                broadcast_via_gossip(&state_clone, &onboard_community, &envelope);
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            community = %onboard_community,
-                            pseudonym = %onboard_pseudonym,
-                            error = %e,
-                            "failed to process onboarding answers"
-                        );
-                    }
-                }
+                handle_onboarding_at_coordinator(&s, &cid, &p, &a).await;
             });
         }
 
@@ -1516,7 +1472,7 @@ fn gossip_send_raw(state: &Arc<AppState>, community_id: &str, signed_bytes: &[u8
 /// The coordinator processes messages locally, so broadcast_via_gossip may not
 /// reach the coordinator's own UI. This function fills that gap by persisting
 /// the new member to SQLite and emitting the event directly via the Tauri app handle.
-fn emit_local_member_joined(
+pub(crate) fn emit_local_member_joined(
     state: &Arc<AppState>,
     community_id: &str,
     pseudonym_key: &str,
@@ -1808,13 +1764,109 @@ async fn persist_role_assignment(
     }
 }
 
+/// Set `onboarding_complete = true` for a member in the DHT registry.
+pub(crate) async fn set_onboarding_complete_pub(
+    state: &Arc<AppState>,
+    community_id: &str,
+    target_pseudonym: &str,
+) -> Result<(), String> {
+    let rc = state_helpers::routing_context(state).ok_or("not attached")?;
+    let mgr = rekindle_protocol::dht::DHTManager::new(rc);
+
+    let (registry_key, registry_owner_kp) = {
+        let communities = state.communities.read();
+        let c = communities.get(community_id).ok_or("community not found")?;
+        (
+            c.member_registry_key
+                .clone()
+                .ok_or("no member registry key")?,
+            c.registry_owner_keypair.clone(),
+        )
+    };
+
+    if let Some(ref kp_str) = registry_owner_kp {
+        if let Ok(kp) = kp_str.parse::<veilid_core::KeyPair>() {
+            if let Err(e) = mgr.open_record_writable(&registry_key, kp).await {
+                tracing::warn!(error = %e, "failed to open registry writable for onboarding_complete");
+            }
+        }
+    }
+
+    let mut members = member_registry::read_member_index(&mgr, &registry_key)
+        .await
+        .map_err(|e| format!("read member index: {e}"))?;
+
+    if let Some(member) = members.iter_mut().find(|m| m.pseudonym_key == target_pseudonym) {
+        member.onboarding_complete = true;
+        member_registry::write_member_index(&mgr, &registry_key, &members)
+            .await
+            .map_err(|e| format!("write member index: {e}"))?;
+        tracing::debug!(
+            community = %community_id,
+            target = %target_pseudonym,
+            "set onboarding_complete in DHT registry"
+        );
+        Ok(())
+    } else {
+        Err(format!("member {target_pseudonym} not found in registry"))
+    }
+}
+
+/// Public wrapper for `persist_role_assignment` — callable from outside the module.
+pub(crate) async fn persist_role_assignment_pub(
+    state: &Arc<AppState>,
+    community_id: &str,
+    target_pseudonym: &str,
+    role_id: u32,
+    add: bool,
+) -> Result<(), String> {
+    persist_role_assignment(state, community_id, target_pseudonym, role_id, add).await
+}
+
+/// Process onboarding answers at the coordinator: evaluate, assign roles,
+/// set onboarding_complete, and broadcast OnboardingComplete.
+async fn handle_onboarding_at_coordinator(
+    state: &Arc<AppState>,
+    community_id: &str,
+    pseudonym: &str,
+    answers: &[rekindle_protocol::dht::community::envelope::OnboardingAnswer],
+) {
+    match super::onboarding::process_answers(state, community_id, answers).await {
+        Ok(role_ids) => {
+            if role_ids.is_empty() {
+                return;
+            }
+            if let Err(e) =
+                assign_onboarding_roles(state, community_id, pseudonym, &role_ids).await
+            {
+                tracing::warn!(community = %community_id, pseudonym = %pseudonym, error = %e, "failed to assign onboarding roles");
+                return;
+            }
+            tracing::info!(community = %community_id, pseudonym = %pseudonym, roles = ?role_ids, "onboarding roles assigned");
+            if let Err(e) = set_onboarding_complete_pub(state, community_id, pseudonym).await {
+                tracing::warn!(community = %community_id, error = %e, "failed to set onboarding_complete in registry");
+            }
+            let notification = ControlPayload::OnboardingComplete {
+                pseudonym_key: pseudonym.to_string(),
+                role_ids,
+            };
+            let envelope = CommunityEnvelope::Control(notification);
+            broadcast_via_gossip(state, community_id, &envelope);
+        }
+        Err(e) => {
+            tracing::warn!(community = %community_id, pseudonym = %pseudonym, error = %e, "failed to process onboarding answers");
+        }
+    }
+}
+
 /// Add a new member to the member registry index.
 /// Returns the subkey_index assigned to the new member.
-async fn add_member_to_registry(
+pub(crate) async fn add_member_to_registry(
     state: &Arc<AppState>,
     community_id: &str,
     pseudonym_key: &str,
     display_name: &str,
+    claimed_subkey_index: Option<u32>,
 ) -> Result<u32, String> {
     let rc = state_helpers::routing_context(state).ok_or("not attached")?;
     let mgr = rekindle_protocol::dht::DHTManager::new(rc);
@@ -1852,7 +1904,9 @@ async fn add_member_to_registry(
     }
 
     let now = rekindle_utils::timestamp_secs();
-    let next_subkey = members.iter().map(|m| m.subkey_index).max().unwrap_or(0) + 1;
+    // Use the joiner's claimed slot if provided (self-service join), otherwise assign next free
+    let assigned_subkey = claimed_subkey_index
+        .unwrap_or_else(|| members.iter().map(|m| m.subkey_index).max().unwrap_or(0) + 1);
 
     members.push(MemberSummary {
         pseudonym_key: pseudonym_key.to_string(),
@@ -1860,7 +1914,7 @@ async fn add_member_to_registry(
         role_ids: vec![0, 1], // @everyone + member
         timeout_until: None,
         joined_at: now,
-        subkey_index: next_subkey,
+        subkey_index: assigned_subkey,
         onboarding_complete: false,
     });
 
@@ -1871,11 +1925,11 @@ async fn add_member_to_registry(
     tracing::debug!(
         community = %community_id,
         pseudonym = %pseudonym_key,
-        subkey_index = next_subkey,
+        subkey_index = assigned_subkey,
         "added member to registry"
     );
 
-    Ok(next_subkey)
+    Ok(assigned_subkey)
 }
 
 /// Send a JoinAccepted envelope to a newly joined member with community data.
@@ -2103,6 +2157,8 @@ async fn notify_invite_used(
     sm: &Arc<StateManager>,
     code: &str,
 ) {
+    let code_hash = rekindle_crypto::group::invite_crypto::hash_invite_code(code);
+
     // Read the updated invite to get the new use count
     let Some(rc) = state_helpers::routing_context(state) else {
         return;
@@ -2121,9 +2177,9 @@ async fn notify_invite_used(
         .await
         .unwrap_or_default();
 
-    if let Some(inv) = invites.iter().find(|i| i.code == code) {
+    if let Some(inv) = invites.iter().find(|i| i.code_hash == code_hash) {
         let broadcast = ControlPayload::InviteUsed {
-            code: code.to_string(),
+            code_hash,
             new_use_count: inv.use_count,
         };
         let envelope = CommunityEnvelope::Control(broadcast);
@@ -2150,9 +2206,10 @@ async fn create_invite_entry(
     state: &Arc<AppState>,
     community_id: &str,
     created_by: &str,
-    code: &str,
+    code_hash: &str,
     max_uses: Option<u32>,
     expires_in_seconds: Option<u64>,
+    encrypted_secrets: Option<String>,
 ) -> Result<rekindle_protocol::dht::community::types::InviteEntry, String> {
     use rekindle_protocol::dht::community::types::InviteEntry;
 
@@ -2169,12 +2226,13 @@ async fn create_invite_entry(
     let expires_at = expires_in_seconds.map(|s| now + s);
 
     let entry = InviteEntry {
-        code: code.to_string(),
+        code_hash: code_hash.to_string(),
         created_by: created_by.to_string(),
         created_at: now,
         expires_at,
         max_uses: max_uses.unwrap_or(0),
         use_count: 0,
+        encrypted_secrets,
     };
 
     // Read existing invites, append new one, write back
@@ -2196,11 +2254,11 @@ async fn create_invite_entry(
     Ok(entry)
 }
 
-/// Revoke an invite by code: remove from manifest.
+/// Revoke an invite by code hash: remove from manifest.
 async fn revoke_invite_entry(
     state: &Arc<AppState>,
     community_id: &str,
-    code: &str,
+    code_hash: &str,
 ) -> Result<(), String> {
     let rc = state_helpers::routing_context(state).ok_or("not attached")?;
     let mgr = rekindle_protocol::dht::DHTManager::new(rc);
@@ -2216,10 +2274,10 @@ async fn revoke_invite_entry(
         .map_err(|e| format!("read invites: {e}"))?;
 
     let original_len = invites.len();
-    invites.retain(|inv| inv.code != code);
+    invites.retain(|inv| inv.code_hash != code_hash);
 
     if invites.len() == original_len {
-        return Err(format!("invite code {code} not found"));
+        return Err(format!("invite {code_hash} not found"));
     }
 
     manifest::write_invites(&mgr, &manifest_key, &invites)
@@ -2229,7 +2287,7 @@ async fn revoke_invite_entry(
     Ok(())
 }
 
-/// Validate an invite code: check it exists, is not expired, has not exhausted uses.
+/// Validate an invite code: hash it, find the matching entry, check expiry/uses.
 /// On success, increments use_count and writes back to manifest.
 /// Returns Ok(()) on valid invite, or Ok(()) if no code given (open community).
 pub(crate) async fn validate_and_use_invite(
@@ -2238,10 +2296,10 @@ pub(crate) async fn validate_and_use_invite(
     invite_code: Option<&str>,
 ) -> Result<(), String> {
     let Some(code) = invite_code else {
-        // No code required — check if community has any active invites
-        // For now, allow open joins (no invite required)
         return Ok(());
     };
+
+    let code_hash = rekindle_crypto::group::invite_crypto::hash_invite_code(code);
 
     let rc = state_helpers::routing_context(state).ok_or("not attached")?;
     let mgr = rekindle_protocol::dht::DHTManager::new(rc);
@@ -2259,8 +2317,8 @@ pub(crate) async fn validate_and_use_invite(
     let now = rekindle_utils::timestamp_secs();
     let invite = invites
         .iter_mut()
-        .find(|inv| inv.code == code)
-        .ok_or_else(|| format!("invalid invite code: {code}"))?;
+        .find(|inv| inv.code_hash == code_hash)
+        .ok_or("invalid invite code")?;
 
     // Check expiry
     if let Some(expires_at) = invite.expires_at {
@@ -2277,7 +2335,7 @@ pub(crate) async fn validate_and_use_invite(
     // Increment use count
     invite.use_count += 1;
     let new_count = invite.use_count;
-    let invite_code_owned = invite.code.clone();
+    let hash_owned = invite.code_hash.clone();
 
     manifest::write_invites(&mgr, &manifest_key, &invites)
         .await
@@ -2285,7 +2343,7 @@ pub(crate) async fn validate_and_use_invite(
 
     tracing::debug!(
         community = %community_id,
-        code = %invite_code_owned,
+        code_hash = %hash_owned,
         use_count = new_count,
         "invite used"
     );

@@ -458,7 +458,7 @@ const CommunityWindow: Component = () => {
               communityId={selectedCommunityId()}
               canManage={canManageChannels()}
               onSelect={handleSelectChannel}
-              onVoiceJoin={handleJoinVoice}
+              onVoiceJoin={(channelId) => handleJoinVoice(channelId, selectedCommunityId())}
               onRename={(channelId, currentName) => setRenameTarget({ channelId, currentName })}
               onDelete={(channelId) => handleDeleteChannel(selectedCommunityId(), channelId)}
               onRenameCategory={(categoryId, currentName) => setRenameCategoryTarget({ categoryId, currentName })}

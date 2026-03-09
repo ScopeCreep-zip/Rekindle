@@ -53,9 +53,9 @@ export async function initVoiceEventListener(): Promise<UnlistenFn> {
   });
 }
 
-export async function handleJoinVoice(channelId: string): Promise<void> {
+export async function handleJoinVoice(channelId: string, communityId?: string): Promise<void> {
   try {
-    await commands.joinVoiceChannel(channelId);
+    await commands.joinVoiceChannel(channelId, communityId);
 
     // Subscribe to voice events
     voiceEventUnlisten = await initVoiceEventListener();

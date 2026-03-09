@@ -102,7 +102,7 @@ pub async fn read_member_index(
     }
 }
 
-/// Write the member index to the registry (coordinator only).
+/// Write the member index to the registry (requires registry_owner_keypair).
 pub async fn write_member_index(
     dht: &DHTManager,
     key: &str,
@@ -127,7 +127,7 @@ pub async fn read_mek_vault(
     }
 }
 
-/// Write the MEK vault to the registry (coordinator only).
+/// Write the MEK vault to the registry (requires registry_owner_keypair).
 pub async fn write_mek_vault(
     dht: &DHTManager,
     key: &str,
@@ -284,7 +284,7 @@ pub async fn read_registry_spine(
     }
 }
 
-/// Write the registry spine to the manifest record (coordinator only).
+/// Write the registry spine to the manifest record (requires manifest_owner_keypair).
 pub async fn write_registry_spine(
     dht: &DHTManager,
     manifest_key: &str,

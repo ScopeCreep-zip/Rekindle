@@ -39,7 +39,7 @@ pub struct ChannelHeader {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChannelMessage {
-    /// Message sequence number assigned by the coordinator.
+    /// Message sequence number assigned by the sender.
     pub sequence: u64,
     /// Sender's pseudonym public key (hex).
     pub sender_pseudonym: String,
@@ -102,7 +102,7 @@ pub async fn read_header(
     }
 }
 
-/// Write the channel record header (coordinator only).
+/// Write the channel record header (requires manifest_owner_keypair).
 pub async fn write_header(
     dht: &DHTManager,
     key: &str,

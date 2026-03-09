@@ -22,9 +22,9 @@ pub async fn start_sync_loop(
 ) {
     tracing::info!("sync service started");
 
-    // Start at 10s to give coordinator election (5s delay + run time) a chance
-    // to complete before the first rejoin attempt. This avoids sending
-    // MemberJoinRequest to a dead coordinator route from a previous session.
+    // Start at 10s to give gossip overlay setup a chance to complete before
+    // the first rejoin attempt. This ensures peers are discovered via presence
+    // scanning before we try to broadcast MemberJoinRequest.
     let mut interval = tokio::time::interval(std::time::Duration::from_secs(10));
     let mut watched_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut first_tick = true;

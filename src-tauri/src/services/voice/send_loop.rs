@@ -236,6 +236,18 @@ impl VoiceSendLoop {
         let loss_i32 = i32::try_from(loss_pct_u32.min(100)).unwrap_or(100);
         let _ = self.codec.set_packet_loss_perc(loss_i32);
 
+        // Adaptive bitrate based on group size
+        // Cannot hold the tokio Mutex synchronously, so use try_lock
+        if let Ok(transport) = self.transport.try_lock() {
+            let peer_count = transport.peer_count();
+            let target_bps = match peer_count {
+                0..=2 => 32000,
+                3..=7 => 24000,
+                _ => 16000,
+            };
+            let _ = self.codec.set_bitrate(target_bps);
+        }
+
         self.packets_sent = 0;
         self.send_failures = 0;
         self.last_quality_report = Instant::now();

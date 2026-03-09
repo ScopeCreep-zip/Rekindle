@@ -285,7 +285,7 @@ fn handle_direct_message(
         body: body.to_string(),
         timestamp: timestamp.cast_unsigned(),
         conversation_id: sender_hex.to_string(),
-        server_message_id: None, // DMs have no server-assigned ID
+        server_message_id: None, // DMs have no message ID
         reply_to_id: None,
     };
     let _ = app_handle.emit("chat-event", &event);
@@ -314,7 +314,7 @@ fn handle_channel_message(
         body: body.to_string(),
         timestamp: timestamp.cast_unsigned(),
         conversation_id: channel_id.to_string(),
-        server_message_id: None, // P2P channel messages have no server ID
+        server_message_id: None, // P2P channel messages — ID assigned by sender
         reply_to_id: None,
     };
     let _ = app_handle.emit("chat-event", &event);
