@@ -93,9 +93,9 @@ export async function handleJoinCommunity(
       console.error("Failed to load community members after join:", e);
     }
 
-    // Presence update is deferred until JoinAccepted arrives from an admin peer.
-    // Sending it immediately would race with the admin's join processing
-    // (tokio::spawn), causing "unknown member" rejections.
+    // Auto-select the newly joined community so it appears immediately
+    handleSelectCommunity(communityId);
+    addToast("Joined community!", "success");
   } catch (e) {
     console.error("Failed to join community:", e);
     addToast("Failed to join community", "error");
