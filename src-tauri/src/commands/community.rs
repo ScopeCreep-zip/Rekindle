@@ -2372,30 +2372,66 @@ pub(crate) fn send_to_mesh_raw(
     signed: &rekindle_protocol::dht::community::envelope::SignedEnvelope,
 ) {
     let Ok(signed_bytes) = serde_json::to_vec(signed) else {
+        tracing::warn!(community = %community_id, "send_to_mesh_raw: failed to serialize envelope");
         return;
     };
 
     let Some(rc) = state_helpers::routing_context(state) else {
+        tracing::warn!(community = %community_id, "send_to_mesh_raw: no routing context");
         return;
     };
 
-    let peers: Vec<Vec<u8>> = {
+    let peers: Vec<(String, Vec<u8>)> = {
         let communities = state.communities.read();
         let Some(cs) = communities.get(community_id) else {
+            tracing::warn!(community = %community_id, "send_to_mesh_raw: community not found");
             return;
         };
-        let Some(ref gossip) = cs.gossip else { return };
-        gossip.peers.values().cloned().collect()
+        let Some(ref gossip) = cs.gossip else {
+            tracing::warn!(community = %community_id, "send_to_mesh_raw: gossip overlay is None");
+            return;
+        };
+        if gossip.peers.is_empty() {
+            tracing::debug!(community = %community_id, "send_to_mesh_raw: no gossip peers — message will not be delivered");
+            return;
+        }
+        gossip.peers.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
     };
 
-    for route_blob in peers {
+    tracing::debug!(
+        community = %community_id,
+        peer_count = peers.len(),
+        "send_to_mesh_raw: sending to {} peers",
+        peers.len(),
+    );
+
+    for (peer_key, route_blob) in peers {
         let rc = rc.clone();
         let data = signed_bytes.clone();
+        let cid = community_id.to_string();
         tokio::spawn(async move {
-            if let Ok(route_id) = rc.api().import_remote_private_route(route_blob) {
-                let _ = rc
-                    .app_message(veilid_core::Target::RouteId(route_id), data)
-                    .await;
+            match rc.api().import_remote_private_route(route_blob) {
+                Ok(route_id) => {
+                    if let Err(e) = rc
+                        .app_message(veilid_core::Target::RouteId(route_id), data)
+                        .await
+                    {
+                        tracing::debug!(
+                            community = %cid,
+                            peer = %peer_key,
+                            error = %e,
+                            "send_to_mesh_raw: app_message failed"
+                        );
+                    }
+                }
+                Err(e) => {
+                    tracing::debug!(
+                        community = %cid,
+                        peer = %peer_key,
+                        error = %e,
+                        "send_to_mesh_raw: route import failed"
+                    );
+                }
             }
         });
     }

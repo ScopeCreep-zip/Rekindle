@@ -3229,6 +3229,13 @@ async fn handle_broadcast_new_message(
     state: &Arc<AppState>,
     msg: &BroadcastNewMessage,
 ) {
+    tracing::debug!(
+        community = %msg.community_id,
+        channel = %msg.channel_id,
+        sender = %msg.sender_pseudonym,
+        "handle_broadcast_new_message: received channel message"
+    );
+
     // Skip messages we sent ourselves (already echoed locally in send_channel_message)
     {
         let communities = state.communities.read();
