@@ -296,19 +296,11 @@ pub async fn create_community(
             rusqlite::params![ok, community_id_clone, name_clone, owner_role_ids, now, dht_record_key, dht_owner_keypair, pseudonym_key, mek_gen, manifest_key_db, member_registry_key_db, coordinator_pseudonym_db, coordinator_epoch_db],
         )?;
 
-        // Insert the creator as the first member (using pseudonym)
-        conn.execute(
-            "INSERT INTO community_members (owner_key, community_id, pseudonym_key, display_name, role_ids, joined_at) \
-             VALUES (?, ?, ?, ?, ?, ?)",
-            rusqlite::params![ok, community_id_clone, pseudonym_key, creator_name, owner_role_ids, now],
-        )?;
-
-        // Insert default channels
-        for channel in &community.channels {
-            crate::channel_repo::insert_channel(conn, &ok, channel, &community_id_clone)?;
-        }
-
-        // Persist default roles
+        // Persist roles and channels BEFORE community_members to avoid
+        // a race with presence_poll_tick's sync_members_to_state_and_db:
+        // that function fires an INSERT into community_members via db_fire
+        // which can win the race and cause a plain INSERT here to fail,
+        // preventing roles/channels from ever being persisted.
         for r in &roles_to_persist {
             conn.execute(
                 "INSERT INTO community_roles (owner_key, community_id, role_id, name, color, permissions, position, hoist, mentionable) \
@@ -319,6 +311,18 @@ pub async fn create_community(
                 ],
             )?;
         }
+
+        for channel in &community.channels {
+            crate::channel_repo::insert_channel(conn, &ok, channel, &community_id_clone)?;
+        }
+
+        // Insert creator as first member — OR IGNORE handles the race where
+        // sync_members_to_state_and_db already inserted this row.
+        conn.execute(
+            "INSERT OR IGNORE INTO community_members (owner_key, community_id, pseudonym_key, display_name, role_ids, joined_at) \
+             VALUES (?, ?, ?, ?, ?, ?)",
+            rusqlite::params![ok, community_id_clone, pseudonym_key, creator_name, owner_role_ids, now],
+        )?;
 
         Ok(())
     })

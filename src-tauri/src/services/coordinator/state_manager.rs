@@ -1485,6 +1485,14 @@ pub(crate) fn emit_local_member_joined(
         return;
     };
 
+    // Add to known_members so we accept their messages
+    {
+        let mut communities = state.communities.write();
+        if let Some(cs) = communities.get_mut(community_id) {
+            cs.known_members.insert(pseudonym_key.to_string());
+        }
+    }
+
     // Persist to SQLite so get_community_members includes the new member
     let pool: tauri::State<'_, crate::db::DbPool> = app_handle.state();
     let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
