@@ -232,7 +232,7 @@ fn handle_coordinator_change(
 pub async fn run_election(state: &Arc<AppState>, community_id: &str) -> Result<Option<bool>, String> {
     // Clone routing context BEFORE .await (parking_lot guard is !Send)
     let rc = state_helpers::routing_context(state).ok_or("not attached")?;
-    let mgr = rekindle_protocol::dht::DHTManager::new(rc);
+    let mut mgr = rekindle_protocol::dht::DHTManager::new(rc);
 
     // Read from CommunityState (clone out of lock)
     let (manifest_key, registry_key, my_pseudonym, manifest_owner_kp) = {
@@ -259,6 +259,7 @@ pub async fn run_election(state: &Arc<AppState>, community_id: &str) -> Result<O
     // read-only (we can still participate in elections, just can't write).
     if let Some(ref kp_str) = manifest_owner_kp {
         if let Ok(kp) = kp_str.parse::<veilid_core::KeyPair>() {
+            mgr = mgr.with_writer(kp.clone());
             if let Err(e) = mgr.open_record_writable(&manifest_key, kp).await {
                 tracing::warn!(community = %community_id, error = %e, "election: failed to open manifest writable");
             }

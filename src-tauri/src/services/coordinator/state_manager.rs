@@ -249,11 +249,12 @@ async fn persist_control_to_manifest(
     };
 
     let Some(rc) = state_helpers::routing_context(state) else { return };
-    let dht = DHTManager::new(rc);
+    let mut dht = DHTManager::new(rc);
 
     // Open record with writer if we have the keypair
     if let Some(ref kp) = kp_str {
         if let Ok(kp) = kp.parse::<veilid_core::KeyPair>() {
+            dht = dht.with_writer(kp.clone());
             if let Err(e) = dht.open_record_writable(&manifest_key, kp).await {
                 tracing::warn!(error = %e, "persist_control: open_record_writable failed");
                 return;

@@ -1930,9 +1930,9 @@ async fn persist_control_to_dht(
     };
 
     let rc = state_helpers::routing_context(state).ok_or("Veilid network not attached")?;
-    let dht = DHTManager::new(rc);
-
     let kp: veilid_core::KeyPair = kp_str.parse().map_err(|e| format!("parse keypair: {e}"))?;
+    let dht = DHTManager::new(rc).with_writer(kp.clone());
+
     dht.open_record_writable(&manifest_key, kp)
         .await
         .map_err(|e| format!("open manifest: {e}"))?;
