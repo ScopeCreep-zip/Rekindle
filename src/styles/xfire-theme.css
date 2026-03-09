@@ -2748,6 +2748,32 @@
     min-width: 100px;
   }
 
+  /* Created invite link display */
+  .invite-link-display {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 8px 0;
+    padding: 8px;
+    background: color-mix(in srgb, var(--xf-accent) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--xf-accent) 30%, transparent);
+    border-radius: 4px;
+  }
+
+  .invite-link-display .form-input {
+    flex: 1;
+    font-family: monospace;
+    font-size: 11px;
+    cursor: text;
+  }
+
+  /* Invite list item actions (copy + revoke) */
+  .settings-list-actions {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
   /* ─── Audit log ─── */
   .audit-log-list {
     display: flex;

@@ -20,6 +20,8 @@ export interface InviteDto {
   uses: number;
   expiresAt: number | null;
   createdAt: number;
+  /** Raw invite code — only available for invites this node created. */
+  code?: string;
 }
 
 // ── Onboarding ──
