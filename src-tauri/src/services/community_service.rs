@@ -539,6 +539,7 @@ pub async fn join_community(
         };
         let pk = my_pseudonym_key.unwrap_or_default();
         let idx = my_subkey_index;
+        let our_route = state_helpers::our_route_blob(&state);
         tokio::spawn(async move {
             // Wait for presence poll to build gossip overlay
             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
@@ -547,7 +548,7 @@ pub async fn join_community(
                     pseudonym_key: pk,
                     display_name,
                     invite_code: None,
-                    route_blob: None,
+                    route_blob: our_route,
                     prekey_bundle: None,
                     claimed_subkey_index: Some(idx),
                 },
