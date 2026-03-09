@@ -955,6 +955,12 @@ async fn presence_poll_tick(state: &Arc<AppState>, community_id: &str) -> Result
     // 1. WRITE our signed presence to the registry (so others can discover our route)
     if let (Some(subkey_idx), Some(ref kp_str)) = (my_subkey_index, &slot_keypair_str) {
         let our_route_blob = state_helpers::our_route_blob(state);
+        if our_route_blob.is_none() {
+            tracing::warn!(
+                community = %community_id,
+                "presence_poll_tick: our_route_blob is None — peers cannot reach us"
+            );
+        }
         let presence = rekindle_protocol::dht::community::types::MemberPresence {
             pseudonym_key: my_pseudonym.clone(),
             status: "online".to_string(),
@@ -1070,6 +1076,24 @@ async fn presence_poll_tick(state: &Arc<AppState>, community_id: &str) -> Result
         &members, &my_pseudonym, stale_threshold, &mut online_members,
     ).await;
 
+    // Merge existing online_members with newly scanned ones.
+    // Peers discovered via PresenceUpdate (gossip) should survive the DHT scan cycle —
+    // they are already verified (signed envelope) and have valid route blobs.
+    // Only the DHT scan can REMOVE stale peers (offline status or stale heartbeat).
+    {
+        let communities = state.communities.read();
+        if let Some(cs) = communities.get(community_id) {
+            if let Some(ref gossip) = cs.gossip {
+                for (pk, blob) in &gossip.online_members {
+                    // Keep existing peer if not already in scan results and not self
+                    if !online_members.contains_key(pk) && pk != &my_pseudonym {
+                        online_members.insert(pk.clone(), blob.clone());
+                    }
+                }
+            }
+        }
+    }
+
     // Select D random gossip peers
     let n = online_members.len();
     let d = crate::state::gossip_degree(n);
@@ -1093,9 +1117,30 @@ async fn presence_poll_tick(state: &Arc<AppState>, community_id: &str) -> Result
         }
     };
 
+    tracing::debug!(
+        community = %community_id,
+        online_members = n,
+        gossip_degree = d,
+        needs_sync,
+        "presence_poll_tick: gossip overlay updated"
+    );
+
+    // Broadcast presence + trigger sync on first successful poll
+    if needs_sync {
+        run_initial_sync(state, community_id, d).await;
+    }
+
+    Ok(())
+}
+
+/// Broadcast presence and trigger initial sync (SyncRequest + DHTLog catch-up).
+///
+/// Called once on the first successful presence poll tick that discovers online peers.
+/// Broadcasts our route via PresenceUpdate, sends SyncRequests per channel, and
+/// reads DHTLog tails for catch-up. Clears `needs_initial_sync` when done.
+async fn run_initial_sync(state: &Arc<AppState>, community_id: &str, d: usize) {
     // Broadcast our presence to gossip peers so they learn our route immediately
-    // (don't make them wait for their own presence_poll_tick to discover us via DHT).
-    if needs_sync && d > 0 {
+    if d > 0 {
         let (my_pk, our_route) = {
             let communities = state.communities.read();
             let cs = communities.get(community_id);
@@ -1114,129 +1159,114 @@ async fn presence_poll_tick(state: &Arc<AppState>, community_id: &str) -> Result
         let _ = crate::commands::community::send_to_mesh(state, community_id, &presence_envelope);
     }
 
-    // Trigger SyncRequest on first successful poll with online peers
-    if needs_sync {
-        // Collect all channel IDs for sync
-        let all_channel_ids: Vec<String> = {
-            let communities = state.communities.read();
-            communities.get(community_id)
-                .map(|cs| cs.channels.iter().map(|ch| ch.id.clone()).collect())
-                .unwrap_or_default()
-        };
+    // Collect all channel IDs for sync
+    let all_channel_ids: Vec<String> = {
+        let communities = state.communities.read();
+        communities.get(community_id)
+            .map(|cs| cs.channels.iter().map(|ch| ch.id.clone()).collect())
+            .unwrap_or_default()
+    };
 
-        // Clone AppHandle out of the lock guard before any .await
-        let app_handle_clone = state.app_handle.read().clone();
-        let owner_key = crate::state_helpers::current_owner_key(state).unwrap_or_default();
-        if let Some(ref app_handle) = app_handle_clone {
-            let pool: tauri::State<'_, crate::db::DbPool> = app_handle.state();
+    let app_handle_clone = state.app_handle.read().clone();
+    let owner_key = crate::state_helpers::current_owner_key(state).unwrap_or_default();
+    if let Some(ref app_handle) = app_handle_clone {
+        let pool: tauri::State<'_, crate::db::DbPool> = app_handle.state();
 
-            for ch_id in &all_channel_ids {
-                let ok = owner_key.clone();
-                let ch = ch_id.clone();
-                let last_ts: i64 = crate::db_helpers::db_call(pool.inner(), move |conn| {
-                    conn.query_row(
-                        "SELECT COALESCE(MAX(timestamp), 0) FROM messages \
-                         WHERE owner_key=? AND conversation_id=? AND conversation_type='channel'",
-                        rusqlite::params![ok, ch],
-                        |r| r.get(0),
-                    )
-                }).await.unwrap_or(0);
+        for ch_id in &all_channel_ids {
+            let ok = owner_key.clone();
+            let ch = ch_id.clone();
+            let last_ts: i64 = crate::db_helpers::db_call(pool.inner(), move |conn| {
+                conn.query_row(
+                    "SELECT COALESCE(MAX(timestamp), 0) FROM messages \
+                     WHERE owner_key=? AND conversation_id=? AND conversation_type='channel'",
+                    rusqlite::params![ok, ch],
+                    |r| r.get(0),
+                )
+            }).await.unwrap_or(0);
 
-                let sync_req = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
-                    rekindle_protocol::dht::community::envelope::ControlPayload::SyncRequest {
-                        channel_id: ch_id.clone(),
-                        since_timestamp: last_ts.cast_unsigned(),
-                    },
-                );
-                let _ = crate::commands::community::send_to_mesh(state, community_id, &sync_req);
-            }
+            let sync_req = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
+                rekindle_protocol::dht::community::envelope::ControlPayload::SyncRequest {
+                    channel_id: ch_id.clone(),
+                    since_timestamp: last_ts.cast_unsigned(),
+                },
+            );
+            let _ = crate::commands::community::send_to_mesh(state, community_id, &sync_req);
         }
+    }
 
-        // Also catch up from DHTLogs for channels that have persistent logs
-        let channel_log_entries: Vec<(String, String)> = {
-            let communities = state.communities.read();
-            communities.get(community_id)
-                .map(|cs| cs.channel_log_keys.iter()
-                    .map(|(ch_id, log_key)| (ch_id.clone(), log_key.clone()))
-                    .collect())
-                .unwrap_or_default()
-        };
+    // DHTLog catch-up for channels with persistent logs
+    let channel_log_entries: Vec<(String, String)> = {
+        let communities = state.communities.read();
+        communities.get(community_id)
+            .map(|cs| cs.channel_log_keys.iter()
+                .map(|(ch_id, log_key)| (ch_id.clone(), log_key.clone()))
+                .collect())
+            .unwrap_or_default()
+    };
 
-        if !channel_log_entries.is_empty() {
-            if let Some(rc) = state_helpers::routing_context(state) {
-                for (ch_id, log_key) in &channel_log_entries {
-                    match rekindle_protocol::dht::community::channel_record::read_channel_log_tail(
-                        &rc, log_key, 50,
-                    ).await {
-                        Ok(messages) if !messages.is_empty() => {
-                            tracing::debug!(
-                                community = %community_id,
-                                channel = %ch_id,
-                                count = messages.len(),
-                                "caught up from DHTLog tail"
-                            );
-                            // Merge messages into local SQLite (dedup by message_id)
-                            if let Some(ref app_handle) = app_handle_clone {
-                                let pool: tauri::State<'_, crate::db::DbPool> = app_handle.state();
-                                let channel = ch_id.clone();
-                                let ok = owner_key.clone();
-                                crate::db_helpers::db_fire(pool.inner(), "dhtlog_catchup", move |conn| {
-                                    for msg in &messages {
-                                        let mid = msg.message_id.as_deref().unwrap_or("");
-                                        // Skip if message already exists
-                                        let exists: bool = conn.query_row(
-                                            "SELECT EXISTS(SELECT 1 FROM messages WHERE owner_key=?1 AND message_id=?2)",
-                                            rusqlite::params![ok, mid],
-                                            |r| r.get(0),
-                                        ).unwrap_or(false);
-                                        if exists { continue; }
-                                        let _ = conn.execute(
-                                            "INSERT OR IGNORE INTO messages \
-                                             (owner_key, conversation_id, conversation_type, sender_key, body, timestamp, message_id) \
-                                             VALUES (?1, ?2, 'channel', ?3, ?4, ?5, ?6)",
-                                            rusqlite::params![
-                                                ok, channel, msg.sender_pseudonym,
-                                                String::from_utf8_lossy(&msg.ciphertext),
-                                                msg.timestamp, mid,
-                                            ],
-                                        );
-                                    }
-                                    Ok(())
-                                });
-                            }
+    if !channel_log_entries.is_empty() {
+        if let Some(rc) = state_helpers::routing_context(state) {
+            for (ch_id, log_key) in &channel_log_entries {
+                match rekindle_protocol::dht::community::channel_record::read_channel_log_tail(
+                    &rc, log_key, 50,
+                ).await {
+                    Ok(messages) if !messages.is_empty() => {
+                        tracing::debug!(
+                            community = %community_id,
+                            channel = %ch_id,
+                            count = messages.len(),
+                            "caught up from DHTLog tail"
+                        );
+                        if let Some(ref app_handle) = app_handle_clone {
+                            let pool: tauri::State<'_, crate::db::DbPool> = app_handle.state();
+                            let channel = ch_id.clone();
+                            let ok = owner_key.clone();
+                            crate::db_helpers::db_fire(pool.inner(), "dhtlog_catchup", move |conn| {
+                                for msg in &messages {
+                                    let mid = msg.message_id.as_deref().unwrap_or("");
+                                    let exists: bool = conn.query_row(
+                                        "SELECT EXISTS(SELECT 1 FROM messages WHERE owner_key=?1 AND message_id=?2)",
+                                        rusqlite::params![ok, mid],
+                                        |r| r.get(0),
+                                    ).unwrap_or(false);
+                                    if exists { continue; }
+                                    let _ = conn.execute(
+                                        "INSERT OR IGNORE INTO messages \
+                                         (owner_key, conversation_id, conversation_type, sender_key, body, timestamp, message_id) \
+                                         VALUES (?1, ?2, 'channel', ?3, ?4, ?5, ?6)",
+                                        rusqlite::params![
+                                            ok, channel, msg.sender_pseudonym,
+                                            String::from_utf8_lossy(&msg.ciphertext),
+                                            msg.timestamp, mid,
+                                        ],
+                                    );
+                                }
+                                Ok(())
+                            });
                         }
-                        Ok(_) => {} // No messages
-                        Err(e) => {
-                            tracing::debug!(
-                                community = %community_id,
-                                channel = %ch_id,
-                                error = %e,
-                                "DHTLog catch-up failed"
-                            );
-                        }
+                    }
+                    Ok(_) => {}
+                    Err(e) => {
+                        tracing::debug!(
+                            community = %community_id,
+                            channel = %ch_id,
+                            error = %e,
+                            "DHTLog catch-up failed"
+                        );
                     }
                 }
             }
         }
-
-        // Mark sync as done
-        let mut communities = state.communities.write();
-        if let Some(cs) = communities.get_mut(community_id) {
-            if let Some(ref mut g) = cs.gossip {
-                g.needs_initial_sync = false;
-            }
-        }
-        tracing::info!(community = %community_id, "initial sync requests sent");
     }
 
-    tracing::trace!(
-        community = %community_id,
-        online = n,
-        degree = d,
-        "presence poll: gossip overlay updated"
-    );
-
-    Ok(())
+    // Mark sync as done
+    let mut communities = state.communities.write();
+    if let Some(cs) = communities.get_mut(community_id) {
+        if let Some(ref mut g) = cs.gossip {
+            g.needs_initial_sync = false;
+        }
+    }
+    tracing::info!(community = %community_id, "initial sync complete");
 }
 
 /// Scan SMPL slots beyond the member index to discover self-registered joiners.
@@ -1259,8 +1289,12 @@ async fn discover_unindexed_members(
         members.iter().map(|m| m.subkey_index).collect();
     let indexed_keys: std::collections::HashSet<&str> =
         members.iter().map(|m| m.pseudonym_key.as_str()).collect();
-    // Scan ALL 255 SMPL slots to discover unindexed presences (gaps or new joiners).
-    let scan_limit = member_registry::SLOTS_PER_SEGMENT;
+    // Scan a window of slots beyond the highest indexed slot to find new joiners.
+    // Full 255-slot scan is too expensive (each = DHT network read).
+    // New joiners get assigned slots sequentially, so scanning 10 beyond the max
+    // covers most cases. Falls back to 10 if no members indexed yet.
+    let max_indexed = members.iter().map(|m| m.subkey_index).max().unwrap_or(0);
+    let scan_limit = (max_indexed + 10).min(member_registry::SLOTS_PER_SEGMENT);
     let has_registry_kp = {
         let communities = state.communities.read();
         communities
