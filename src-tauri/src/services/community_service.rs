@@ -465,6 +465,11 @@ pub async fn join_community(
     // 7. Cache MEK
     state.mek_cache.lock().insert(community_id.to_string(), mek);
 
+    // 7b. Read member index for known_members seeding (so we accept messages from existing members)
+    let existing_members = member_registry::read_member_index(&mgr, &final_registry_key)
+        .await
+        .unwrap_or_default();
+
     // 8. Build CommunityState with everything from DHT + decrypted secrets
     let community = CommunityState {
         id: community_id.to_string(),
@@ -491,12 +496,15 @@ pub async fn join_community(
         channel_log_keys: std::collections::HashMap::new(),
         registry_owner_keypair: None,
         slot_seed: Some(slot_seed_hex),
-        known_members: std::collections::HashSet::new(), // Populated by presence_poll_tick
+        known_members: existing_members.iter().map(|m| m.pseudonym_key.clone()).collect(), // Seed from DHT registry
         presence_poll_shutdown_tx: None,
         dht_keepalive_shutdown_tx: None,
     };
 
     state.communities.write().insert(community_id.to_string(), community);
+
+    // Persist discovered members to SQLite so get_community_members works immediately
+    sync_members_to_state_and_db(state, community_id, &existing_members);
 
     // ── CONNECT: start services ──
 
@@ -828,6 +836,53 @@ pub(crate) fn try_derive_slot_keypair(
     }
 }
 
+/// Sync discovered members into `known_members` (in-memory) and `community_members` (SQLite).
+/// Called from both `join_community` and `presence_poll_tick` to ensure members are recognized.
+fn sync_members_to_state_and_db(
+    state: &Arc<AppState>,
+    community_id: &str,
+    members: &[rekindle_protocol::dht::community::types::MemberSummary],
+) {
+    // Add to known_members so we accept their messages
+    {
+        let mut communities = state.communities.write();
+        if let Some(cs) = communities.get_mut(community_id) {
+            for member in members {
+                cs.known_members.insert(member.pseudonym_key.clone());
+            }
+        }
+    }
+
+    // Persist to SQLite so get_community_members returns them
+    let app_handle_clone = state.app_handle.read().clone();
+    if let Some(ref ah) = app_handle_clone {
+        let pool: tauri::State<'_, crate::db::DbPool> = ah.state();
+        let owner_key = crate::state_helpers::current_owner_key(state).unwrap_or_default();
+        for member in members {
+            let ok = owner_key.clone();
+            let cid = community_id.to_string();
+            let pk = member.pseudonym_key.clone();
+            let dn = member.display_name.clone();
+            let rids = serde_json::to_string(&member.role_ids)
+                .unwrap_or_else(|_| "[0,1]".to_string());
+            crate::db_helpers::db_fire(
+                pool.inner(),
+                "persist discovered member",
+                move |conn| {
+                    conn.execute(
+                        "INSERT INTO community_members (owner_key, community_id, pseudonym_key, display_name, role_ids, joined_at) \
+                         VALUES (?1, ?2, ?3, ?4, ?5, 0) \
+                         ON CONFLICT(owner_key, community_id, pseudonym_key) \
+                         DO UPDATE SET display_name=excluded.display_name, role_ids=excluded.role_ids",
+                        rusqlite::params![ok, cid, pk, dn, rids],
+                    )?;
+                    Ok(())
+                },
+            );
+        }
+    }
+}
+
 /// Single presence poll tick.
 async fn presence_poll_tick(state: &Arc<AppState>, community_id: &str) -> Result<(), String> {
     let rc = state_helpers::routing_context(state).ok_or("not attached")?;
@@ -969,6 +1024,9 @@ async fn presence_poll_tick(state: &Arc<AppState>, community_id: &str) -> Result
     let members = member_registry::read_member_index(&mgr, &registry_key)
         .await
         .map_err(|e| format!("read member index: {e}"))?;
+
+    // Sync all indexed members to known_members + SQLite
+    sync_members_to_state_and_db(state, community_id, &members);
 
     let now_secs = rekindle_utils::timestamp_secs();
     let stale_threshold = now_secs.saturating_sub(300); // 5 minutes
