@@ -225,6 +225,27 @@ impl DHTManager {
         Ok(value.map(|v| v.data().to_vec()))
     }
 
+    /// Read a subkey value, bypassing the local DHT cache.
+    ///
+    /// Uses `force_refresh = true` to always fetch from the network.
+    /// Use this for data that changes frequently (e.g. member presence)
+    /// where stale cached values cause incorrect behavior.
+    pub async fn get_value_fresh(
+        &self,
+        key: &str,
+        subkey: u32,
+    ) -> Result<Option<Vec<u8>>, ProtocolError> {
+        let record_key = parse_record_key(key)?;
+
+        let value = self
+            .routing_context
+            .get_dht_value(record_key, subkey, true)
+            .await
+            .map_err(|e| ProtocolError::DhtError(format!("get_dht_value(fresh): {e}")))?;
+
+        Ok(value.map(|v| v.data().to_vec()))
+    }
+
     /// Set a subkey value on a DHT record we own.
     ///
     /// If a [`default_writer`](Self::with_writer) is set, it will be passed

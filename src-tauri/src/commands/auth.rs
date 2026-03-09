@@ -1817,6 +1817,43 @@ async fn spawn_dht_publish(
         );
     }
 
+    // Route is now available — trigger immediate presence re-writes for all
+    // communities so peers can discover our route_blob in the SMPL registry.
+    // Also reset `needs_initial_sync` so the PresenceUpdate gets re-broadcast
+    // with the real route_blob (the Phase 5 first tick likely broadcast with None).
+    if route_blob.is_some() {
+        let community_ids: Vec<String> = state.communities.read().keys().cloned().collect();
+
+        // Reset needs_initial_sync so PresenceUpdate re-broadcasts with real route
+        {
+            let mut communities = state.communities.write();
+            for cid in &community_ids {
+                if let Some(cs) = communities.get_mut(cid) {
+                    if let Some(ref mut g) = cs.gossip {
+                        g.needs_initial_sync = true;
+                    }
+                }
+            }
+        }
+
+        // Trigger immediate presence poll for each community
+        for cid in community_ids {
+            let poll_state = state.clone();
+            tokio::spawn(async move {
+                if let Err(e) = services::community_service::presence_poll_tick_public(
+                    &poll_state, &cid,
+                ).await {
+                    tracing::debug!(
+                        community = %cid,
+                        error = %e,
+                        "route-ready presence poll failed"
+                    );
+                }
+            });
+        }
+        tracing::info!("route allocated — triggered immediate presence re-write for all communities");
+    }
+
     // Create or open mailbox DHT record
     if let Err(e) = services::dht_publish_service::publish_mailbox(
         &state,

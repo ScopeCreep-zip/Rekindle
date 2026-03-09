@@ -74,3 +74,22 @@ export interface OnboardingAnswer {
   questionId: string;
   selectedOptions: string[];
 }
+
+export interface GossipDiagnostics {
+  communityId: string;
+  hasGossip: boolean;
+  gossipPeerCount: number;
+  onlineMemberCount: number;
+  knownMemberCount: number;
+  needsInitialSync: boolean;
+  lamportCounter: number;
+  hasRouteBlob: boolean;
+  myPseudonymKey: string | null;
+  mySubkeyIndex: number | null;
+  hasSlotKeypair: boolean;
+  hasSlotSeed: boolean;
+  hasMek: boolean;
+  coordinatorPseudonym: string | null;
+  gossipPeerKeys: string[];
+  onlineMemberKeys: string[];
+}
