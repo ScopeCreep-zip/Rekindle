@@ -1,6 +1,6 @@
 //! Manifest record operations for a community's DFLT 16-subkey manifest.
 //!
-//! The manifest is a single-owner DFLT record owned by the coordinator.
+//! The manifest is a single-owner DFLT record owned by the community creator.
 //! It stores community metadata, channel directory, categories, roles,
 //! bans, coordinator info, policies, and invites across 16 subkeys.
 

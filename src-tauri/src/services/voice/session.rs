@@ -29,6 +29,7 @@ struct LoopBundle {
 /// Called by `commands::voice::join_voice_channel` (the thin IPC wrapper).
 pub(crate) fn start_session(
     channel_id: &str,
+    community_id: Option<&str>,
     app: &tauri::AppHandle,
     state: &SharedState,
 ) -> Result<(), String> {
@@ -37,10 +38,10 @@ pub(crate) fn start_session(
     let identity = state_helpers::current_identity(state)?;
     let prefs = load_audio_prefs(app);
 
-    let (muted_flag, deafened_flag) = init_engine(state, &prefs, channel_id)?;
+    let (muted_flag, deafened_flag) = init_engine(state, &prefs, channel_id, community_id)?;
     start_audio_devices(state)?;
 
-    let transport = create_transport(state, &identity.public_key, channel_id);
+    let transport = create_transport(state, &identity.public_key, channel_id, community_id);
     let shared_transport = std::sync::Arc::new(tokio::sync::Mutex::new(transport));
 
     // Store shared transport on VoiceEngineHandle for VoiceJoin/Leave + MCU access
@@ -72,29 +73,23 @@ pub(crate) fn start_session(
 ///
 /// Assumes loops are already shut down and capture/playback are stopped.
 /// Used by device hot-swap (`device_monitor::handle_device_swap`).
+///
+/// Reuses the existing shared transport (preserves all connected peers
+/// from VoiceJoin gossip). Only creates a new transport if none exists.
 pub(crate) fn restart_loops(state: &SharedState, app: &tauri::AppHandle) -> Result<(), String> {
     let identity = state_helpers::current_identity(state)?;
 
     restart_audio_devices(state)?;
 
-    let channel_id = {
+    // Reuse existing shared transport — preserves all connected peers added
+    // via VoiceJoin gossip. Creating a new transport would lose them.
+    let shared_transport = {
         let ve = state.voice_engine.lock();
         ve.as_ref()
             .ok_or("no active voice engine")?
-            .channel_id
+            .transport
             .clone()
     };
-
-    let transport = create_transport(state, &identity.public_key, &channel_id);
-    let shared_transport = std::sync::Arc::new(tokio::sync::Mutex::new(transport));
-
-    // Update shared transport on VoiceEngineHandle
-    {
-        let mut ve = state.voice_engine.lock();
-        if let Some(ref mut handle) = *ve {
-            handle.transport = Arc::clone(&shared_transport);
-        }
-    }
 
     let bundle = take_channels_and_config(state)?;
     let (muted_flag, deafened_flag) = clone_flags(state)?;
@@ -198,6 +193,7 @@ fn init_engine(
     state: &SharedState,
     prefs: &crate::commands::settings::Preferences,
     channel_id: &str,
+    community_id: Option<&str>,
 ) -> Result<(Arc<AtomicBool>, Arc<AtomicBool>), String> {
     let muted_flag = Arc::new(AtomicBool::new(false));
     let deafened_flag = Arc::new(AtomicBool::new(false));
@@ -228,6 +224,7 @@ fn init_engine(
         mcu_loop_shutdown: None,
         mcu_loop_handle: None,
         channel_id: channel_id.to_string(),
+        community_id: community_id.map(String::from),
         muted_flag: Arc::clone(&muted_flag),
         deafened_flag: Arc::clone(&deafened_flag),
     });
@@ -270,16 +267,28 @@ fn create_transport(
     state: &SharedState,
     public_key: &str,
     channel_id: &str,
+    community_id: Option<&str>,
 ) -> rekindle_voice::transport::VoiceTransport {
     let mut transport = rekindle_voice::transport::VoiceTransport::new(channel_id.to_string());
 
-    let route_blob = state_helpers::cached_route_blob(state, channel_id);
     let api = state_helpers::veilid_api(state);
+    let sender_key = hex::decode(public_key).unwrap_or_default();
 
-    if let (Some(blob), Some(api)) = (route_blob, api) {
-        let sender_key = hex::decode(public_key).unwrap_or_default();
-        if let Err(e) = transport.connect(api, &blob, sender_key) {
-            tracing::warn!(error = %e, channel = %channel_id, "voice transport connect failed — audio only local");
+    if let Some(api) = api {
+        if community_id.is_some() {
+            // Community voice: peers arrive dynamically via VoiceJoin gossip.
+            // Just initialize the transport — don't try to connect to a single peer.
+            transport.init(api, sender_key);
+        } else {
+            // 1:1 DM voice: single remote peer looked up by channel_id.
+            let route_blob = state_helpers::cached_route_blob(state, channel_id);
+            if let Some(blob) = route_blob {
+                if let Err(e) = transport.connect(api, &blob, sender_key) {
+                    tracing::warn!(error = %e, channel = %channel_id, "voice transport connect failed — audio only local");
+                }
+            } else {
+                transport.init(api, sender_key);
+            }
         }
     }
 

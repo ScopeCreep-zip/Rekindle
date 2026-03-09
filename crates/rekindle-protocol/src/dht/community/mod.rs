@@ -21,9 +21,9 @@ pub use onboarding::{OnboardingConfig, OnboardingMode, OnboardingQuestion, Welco
 pub use permissions_v2::{calculate_permissions_v2, has_permission_v2, Permissions};
 pub use types::{
     BanEntry, CategoryEntry, ChannelEntryV2, ChannelKind, CommunityMetadataV2, CommunityPolicy,
-    CoordinatorInfo, EncryptedMEKCopy, InviteEntry, MEKVaultEntry, MemberPresence, MemberSummary,
-    ModerationLevel, RegistrySegmentInfo, RegistrySpine, RoleEntryV2, SignedPresence,
-    MANIFEST_REGISTRY_SPINE,
+    CoordinatorInfo, EncryptedMEKCopy, InviteEntry, InviteSecrets, MEKVaultEntry, MemberPresence,
+    MemberSummary, ModerationLevel, RegistrySegmentInfo, RegistrySpine, RoleEntryV2,
+    SignedPresence, MANIFEST_REGISTRY_SPINE,
 };
 
 use serde::{Deserialize, Serialize};

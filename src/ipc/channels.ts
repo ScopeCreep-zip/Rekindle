@@ -340,7 +340,7 @@ export type CommunityEvent =
       type: "inviteCreated";
       data: {
         communityId: string;
-        code: string;
+        codeHash: string;
         createdBy: string;
         maxUses: number | null;
         uses: number;
@@ -350,15 +350,103 @@ export type CommunityEvent =
     }
   | {
       type: "inviteRevoked";
-      data: { communityId: string; code: string };
+      data: { communityId: string; codeHash: string };
     }
   | {
       type: "inviteUsed";
-      data: { communityId: string; code: string; newUseCount: number };
+      data: { communityId: string; codeHash: string; newUseCount: number };
     }
   | {
       type: "membersRefreshed";
       data: { communityId: string };
+    }
+  | {
+      type: "systemMessage";
+      data: {
+        communityId: string;
+        body: string;
+        timestamp: number;
+      };
+    }
+  | {
+      type: "raidAlert";
+      data: {
+        communityId: string;
+        active: boolean;
+      };
+    }
+  | {
+      type: "channelLockdown";
+      data: {
+        communityId: string;
+        locked: boolean;
+      };
+    }
+  | {
+      type: "onboardingComplete";
+      data: {
+        communityId: string;
+        pseudonymKey: string;
+        roleIds: number[];
+      };
+    }
+  | {
+      type: "joinRejected";
+      data: {
+        communityId: string;
+        reason: string;
+      };
+    }
+  | {
+      type: "syncComplete";
+      data: {
+        communityId: string;
+        channelId: string;
+        messageCount: number;
+      };
+    }
+  | {
+      type: "communityUpdated";
+      data: {
+        communityId: string;
+        name: string | null;
+        description: string | null;
+      };
+    }
+  | {
+      type: "memberDiscovered";
+      data: {
+        communityId: string;
+        pseudonymKey: string;
+        displayName: string;
+        subkeyIndex: number;
+      };
+    }
+  | {
+      type: "voiceJoin";
+      data: {
+        communityId: string;
+        channelId: string;
+        pseudonymKey: string;
+        routeBlob: number[];
+      };
+    }
+  | {
+      type: "voiceLeave";
+      data: {
+        communityId: string;
+        channelId: string;
+        pseudonymKey: string;
+      };
+    }
+  | {
+      type: "voiceModeSwitch";
+      data: {
+        communityId: string;
+        channelId: string;
+        mode: string;
+        hostPseudonym: string | null;
+      };
     };
 
 export type NotificationEvent =

@@ -93,8 +93,8 @@ export async function handleJoinCommunity(
       console.error("Failed to load community members after join:", e);
     }
 
-    // Presence update is deferred until JoinAccepted arrives from the coordinator.
-    // Sending it immediately would race with the coordinator's join processing
+    // Presence update is deferred until JoinAccepted arrives from an admin peer.
+    // Sending it immediately would race with the admin's join processing
     // (tokio::spawn), causing "unknown member" rejections.
   } catch (e) {
     console.error("Failed to join community:", e);
@@ -340,7 +340,7 @@ export async function handleMarkChannelRead(
   }
 }
 
-/// Fetch unread counts from the server and update the store.
+/// Fetch unread counts from the backend and update the store.
 export async function handleLoadUnreadCounts(communityId: string): Promise<void> {
   try {
     const counts = await commands.getUnreadCounts(communityId);
@@ -519,13 +519,13 @@ export async function handleCreateCommunityInvite(
   communityId: string,
   maxUses?: number,
   expiresInSeconds?: number,
-): Promise<{ code: string; signature: string } | null> {
+): Promise<{ code: string; manifestKey: string } | null> {
   try {
     const result = await commands.createCommunityInvite(communityId, maxUses, expiresInSeconds);
-    // Optimistic store update
+    // Optimistic store update — the raw code is only available to the creator
     const now = Math.floor(Date.now() / 1000);
     const newInvite: InviteDto = {
-      code: result.code,
+      codeHash: "pending", // Will be replaced by InviteCreated event
       createdBy: authState.publicKey ?? "",
       maxUses: maxUses ?? null,
       uses: 0,
@@ -543,13 +543,13 @@ export async function handleCreateCommunityInvite(
 
 export async function handleRevokeCommunityInvite(
   communityId: string,
-  code: string,
+  codeHash: string,
 ): Promise<boolean> {
   try {
-    await commands.revokeCommunityInvite(communityId, code);
+    await commands.revokeCommunityInvite(communityId, codeHash);
     // Optimistic store removal
     setCommunityState("communityInvites", communityId, (prev) =>
-      (prev ?? []).filter((inv) => inv.code !== code),
+      (prev ?? []).filter((inv) => inv.codeHash !== codeHash),
     );
     return true;
   } catch (err) {
@@ -1355,7 +1355,7 @@ export function subscribeCommunityEventDispatcher(): Promise<UnlistenFn> {
         }).catch(() => {});
       }
     } else if (event.type === "joinAccepted") {
-      // Coordinator accepted our join — refresh members and community details
+      // Admin peer accepted our join — refresh members and community details
       const { communityId } = event.data;
       commands.getCommunityMembers(communityId).then((members) => {
         setCommunityState("communities", communityId, "members", members.map(transformMember));
@@ -1371,9 +1371,9 @@ export function subscribeCommunityEventDispatcher(): Promise<UnlistenFn> {
           setCommunityState("communities", communityId, "roles", detail.roles ?? []);
         }
       }).catch(() => {});
-      // Now that the coordinator has confirmed our membership, announce our presence.
+      // Now that an admin peer has confirmed our membership, announce our presence.
       // This must happen AFTER JoinAccepted (not in handleJoinCommunity) because
-      // the coordinator processes joins asynchronously — sending presence before
+      // admin peers process joins asynchronously — sending presence before
       // the join completes causes "unknown member" rejections.
       handleUpdateCommunityPresence(communityId, "online");
     } else if (event.type === "mekRotated") {
@@ -1677,7 +1677,7 @@ export function subscribeCommunityEventDispatcher(): Promise<UnlistenFn> {
     } else if (event.type === "inviteCreated") {
       const { communityId } = event.data;
       const invite: InviteDto = {
-        code: event.data.code,
+        codeHash: event.data.codeHash,
         createdBy: event.data.createdBy,
         maxUses: event.data.maxUses,
         uses: event.data.uses,
@@ -1687,19 +1687,21 @@ export function subscribeCommunityEventDispatcher(): Promise<UnlistenFn> {
       // Deduplicate: optimistic insert from handleCreateCommunityInvite may already exist
       setCommunityState("communityInvites", communityId, (prev) => {
         const existing = prev ?? [];
-        if (existing.some((inv) => inv.code === invite.code)) return existing;
-        return [invite, ...existing];
+        if (existing.some((inv) => inv.codeHash === invite.codeHash)) return existing;
+        // Replace the "pending" optimistic entry if present
+        const filtered = existing.filter((inv) => inv.codeHash !== "pending");
+        return [invite, ...filtered];
       });
     } else if (event.type === "inviteRevoked") {
-      const { communityId, code } = event.data;
+      const { communityId, codeHash } = event.data;
       setCommunityState("communityInvites", communityId, (prev) =>
-        (prev ?? []).filter((inv) => inv.code !== code),
+        (prev ?? []).filter((inv) => inv.codeHash !== codeHash),
       );
     } else if (event.type === "inviteUsed") {
-      const { communityId, code, newUseCount } = event.data;
+      const { communityId, codeHash, newUseCount } = event.data;
       setCommunityState("communityInvites", communityId, (prev) =>
         (prev ?? []).map((inv) =>
-          inv.code === code ? { ...inv, uses: newUseCount } : inv,
+          inv.codeHash === codeHash ? { ...inv, uses: newUseCount } : inv,
         ),
       );
     } else if (event.type === "membersRefreshed") {
@@ -1710,6 +1712,95 @@ export function subscribeCommunityEventDispatcher(): Promise<UnlistenFn> {
         }).catch((e) => {
           console.error(`Failed to refresh members for ${communityId}:`, e);
         });
+      }
+    } else if (event.type === "memberDiscovered") {
+      const { communityId, pseudonymKey, displayName } = event.data;
+      const community = communityState.communities[communityId];
+      if (community) {
+        const exists = community.members.some((m) => m.pseudonymKey === pseudonymKey);
+        if (!exists) {
+          setCommunityState("communities", communityId, "members", (prev) => [
+            ...prev,
+            transformMember({ pseudonymKey, displayName, roleIds: [0, 1], displayRole: "", status: "online", timeoutUntil: null }),
+          ]);
+        }
+      }
+    } else if (event.type === "voiceJoin") {
+      const { channelId, pseudonymKey } = event.data;
+      setCommunityState("voiceChannels", channelId, (prev) => {
+        const state = prev ?? { participants: [], mode: "mesh" as const, hostPseudonym: null };
+        if (state.participants.includes(pseudonymKey)) return state;
+        return { ...state, participants: [...state.participants, pseudonymKey] };
+      });
+    } else if (event.type === "voiceLeave") {
+      const { channelId, pseudonymKey } = event.data;
+      setCommunityState("voiceChannels", channelId, (prev) => {
+        if (!prev) return prev;
+        return { ...prev, participants: prev.participants.filter((p) => p !== pseudonymKey) };
+      });
+    } else if (event.type === "voiceModeSwitch") {
+      const { channelId, mode, hostPseudonym } = event.data;
+      // Update voice channel state
+      setCommunityState("voiceChannels", channelId, (prev) => {
+        const state = prev ?? { participants: [], mode: "mesh" as const, hostPseudonym: null };
+        return { ...state, mode: mode as "mesh" | "mcu", hostPseudonym };
+      });
+      // Trigger the Rust set_voice_mode command so our local transport/MCU loop updates
+      commands.setVoiceMode(mode, hostPseudonym ?? undefined).catch((e) => {
+        console.error("Failed to set voice mode:", e);
+      });
+    } else if (event.type === "systemMessage") {
+      const { communityId, body, timestamp } = event.data;
+      const activeChannel = communityState.activeChannel;
+      if (activeChannel && communityState.activeCommunity === communityId) {
+        const sysMsg: Message = {
+          id: Date.now(),
+          senderId: "__system__",
+          body,
+          timestamp,
+          isOwn: false,
+        };
+        setCommunityState("channelMessages", activeChannel, (prev) => [...(prev ?? []), sysMsg]);
+      }
+    } else if (event.type === "raidAlert") {
+      const { communityId, active } = event.data;
+      const name = communityState.communities[communityId]?.name ?? communityId;
+      if (active) {
+        addToast(`Raid alert active in ${name}`, "error");
+      } else {
+        addToast(`Raid alert cleared in ${name}`, "info");
+      }
+    } else if (event.type === "channelLockdown") {
+      const { communityId, locked } = event.data;
+      const name = communityState.communities[communityId]?.name ?? communityId;
+      addToast(locked ? `Channels locked in ${name}` : `Channel lockdown lifted in ${name}`, "info");
+    } else if (event.type === "onboardingComplete") {
+      const { communityId, pseudonymKey, roleIds } = event.data;
+      const members = communityState.communities[communityId]?.members ?? [];
+      const idx = members.findIndex((m) => m.pseudonymKey === pseudonymKey);
+      if (idx >= 0) {
+        setCommunityState("communities", communityId, "members", idx, "roleIds", roleIds);
+      }
+    } else if (event.type === "joinRejected") {
+      const { reason } = event.data;
+      addToast(`Join rejected: ${reason}`, "error");
+    } else if (event.type === "syncComplete") {
+      // Sync complete — refresh channel messages from backend
+      const { communityId, channelId } = event.data;
+      if (communityState.activeCommunity === communityId && communityState.activeChannel === channelId) {
+        commands.getChannelMessages(channelId, 100).then((msgs) => {
+          setCommunityState("channelMessages", channelId, transformMessages(msgs));
+        }).catch((e) => {
+          console.error("Failed to refresh messages after sync:", e);
+        });
+      }
+    } else if (event.type === "communityUpdated") {
+      const { communityId, name, description } = event.data;
+      if (name !== null) {
+        setCommunityState("communities", communityId, "name", name);
+      }
+      if (description !== null) {
+        setCommunityState("communities", communityId, "description", description);
       }
     }
   });

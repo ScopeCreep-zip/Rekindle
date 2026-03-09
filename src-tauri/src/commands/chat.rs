@@ -16,7 +16,7 @@ pub struct Message {
     pub body: String,
     pub timestamp: i64,
     pub is_own: bool,
-    /// Server-assigned message ID (present for community messages fetched from server).
+    /// Message ID (present for community channel messages).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub server_message_id: Option<String>,
 }

@@ -251,11 +251,11 @@ export const commands = {
 
   // Community invites
   createCommunityInvite: (communityId: string, maxUses?: number, expiresInSeconds?: number) =>
-    invoke<{ code: string; signature: string }>("create_community_invite", { communityId, maxUses: maxUses ?? null, expiresInSeconds: expiresInSeconds ?? null }),
-  revokeCommunityInvite: (communityId: string, code: string) =>
-    invoke<void>("revoke_community_invite", { communityId, code }),
+    invoke<{ code: string; manifestKey: string }>("create_community_invite", { communityId, maxUses: maxUses ?? null, expiresInSeconds: expiresInSeconds ?? null }),
+  revokeCommunityInvite: (communityId: string, codeHash: string) =>
+    invoke<void>("revoke_community_invite", { communityId, codeHash }),
   listCommunityInvites: (communityId: string) =>
-    invoke<{ code: string; createdBy: string; maxUses: number | null; uses: number; expiresAt: number | null; createdAt: number }[]>(
+    invoke<{ codeHash: string; createdBy: string; maxUses: number | null; uses: number; expiresAt: number | null; createdAt: number }[]>(
       "list_community_invites", { communityId }
     ),
 
@@ -332,8 +332,8 @@ export const commands = {
     invoke<{ channelId: string; unreadCount: number }[]>("get_unread_counts", { communityId }),
 
   // Voice
-  joinVoiceChannel: (channelId: string) =>
-    invoke<void>("join_voice_channel", { channelId }),
+  joinVoiceChannel: (channelId: string, communityId?: string) =>
+    invoke<void>("join_voice_channel", { channelId, communityId: communityId ?? null }),
   leaveVoice: () => invoke<void>("leave_voice"),
   setMute: (muted: boolean) => invoke<void>("set_mute", { muted }),
   setDeafen: (deafened: boolean) => invoke<void>("set_deafen", { deafened }),
@@ -343,6 +343,8 @@ export const commands = {
       inputDevice: inputDevice ?? null,
       outputDevice: outputDevice ?? null,
     }),
+  setVoiceMode: (mode: string, hostPseudonym?: string) =>
+    invoke<void>("set_voice_mode", { mode, hostPseudonym: hostPseudonym ?? null }),
 
   // Status
   setStatus: (status: string) => invoke<void>("set_status", { status }),

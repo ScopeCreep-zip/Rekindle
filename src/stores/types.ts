@@ -14,7 +14,7 @@ export interface AuditLogEntryDto {
 }
 
 export interface InviteDto {
-  code: string;
+  codeHash: string;
   createdBy: string;
   maxUses: number | null;
   uses: number;

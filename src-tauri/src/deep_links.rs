@@ -16,12 +16,15 @@ pub struct DeepLinkAction {
 /// `AppState::pending_deep_link` and replayed after login.
 ///
 /// Supported formats:
-///   `rekindle://community/{community_id}/{invite_code}`
+///   `rekindle://invite/{manifest_key}/{invite_code}`
 pub fn handle_deep_link_url(app: &AppHandle, url: &str) {
     let url = url.trim();
-    if let Some(rest) = url.strip_prefix("rekindle://community/") {
+    // Parse: rekindle://invite/{manifest_key}/{invite_code}
+    let rest = url.strip_prefix("rekindle://invite/")
+        .or_else(|| url.strip_prefix("rekindle://community/"));
+    if let Some(rest) = rest {
         let rest = rest.trim_end_matches('/');
-        // Expect: {community_id}/{invite_code}
+        // Expect: {manifest_key}/{invite_code}
         if let Some((community_id, invite_code)) = rest.split_once('/') {
             if !community_id.is_empty() && !invite_code.is_empty() {
                 let action = DeepLinkAction {

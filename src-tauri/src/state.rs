@@ -47,7 +47,7 @@ pub struct AppState {
     /// that don't have their own shutdown channels. Aborted on logout to prevent
     /// stale tasks from interfering with re-login.
     pub background_handles: Mutex<Vec<tauri::async_runtime::JoinHandle<()>>>,
-    /// MEK cache: `community_id` -> current `MediaEncryptionKey` (decrypted from server).
+    /// MEK cache: `community_id` -> current `MediaEncryptionKey` (from JoinAccepted or DHT vault).
     /// Legacy community-level MEK — used during the transition to per-channel MEK.
     pub mek_cache: Mutex<HashMap<String, MediaEncryptionKey>>,
     /// Per-channel MEK cache: `(community_id, channel_id)` -> `MediaEncryptionKey`.
@@ -318,6 +318,8 @@ pub struct VoiceEngineHandle {
     pub device_monitor_handle: Option<tokio::task::JoinHandle<()>>,
     /// Which channel/call we're currently in (prevents double-joining).
     pub channel_id: String,
+    /// Community ID if this is a community voice channel (None for DM voice).
+    pub community_id: Option<String>,
     /// Shutdown sender for the MCU mix loop task (group voice host only).
     pub mcu_loop_shutdown: Option<mpsc::Sender<()>>,
     /// Join handle for the MCU mix loop task.
@@ -512,14 +514,14 @@ pub struct CommunityState {
     pub categories: Vec<CategoryInfo>,
     /// Our role IDs in this community (multi-role, bitmask-based).
     pub my_role_ids: Vec<u32>,
-    /// Cached role definitions from the server.
+    /// Cached role definitions from the DHT manifest.
     pub roles: Vec<RoleDefinition>,
     /// Display string for our highest role (for backward-compat display).
     pub my_role: Option<String>,
     /// The DHT record key for this community's shared state.
     pub dht_record_key: Option<String>,
     /// Owner keypair for the community DHT record (Veilid `KeyPair::to_string()` format).
-    /// Required for the server to open the record with write access.
+    /// Required to open the record with write access.
     pub dht_owner_keypair: Option<String>,
     /// Our pseudonym pubkey hex for this community.
     pub my_pseudonym_key: Option<String>,
@@ -591,7 +593,7 @@ pub struct CommunityState {
     pub dht_keepalive_shutdown_tx: Option<mpsc::Sender<()>>,
 }
 
-/// A role definition cached from the server.
+/// A role definition cached from the DHT manifest.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RoleDefinition {

@@ -104,6 +104,12 @@ export interface Community {
   onboardingComplete?: boolean;
 }
 
+export interface VoiceChannelState {
+  participants: string[];
+  mode: "mesh" | "mcu";
+  hostPseudonym: string | null;
+}
+
 export interface CommunityState {
   communities: Record<string, Community>;
   activeCommunity: string | null;
@@ -115,6 +121,7 @@ export interface CommunityState {
   gameServers: Record<string, GameServer[]>;
   notificationOverrides: Record<string, "all" | "mentions" | "none">;
   communityInvites: Record<string, InviteDto[]>;
+  voiceChannels: Record<string, VoiceChannelState>;
 }
 
 const [communityState, setCommunityState] = createStore<CommunityState>({
@@ -128,6 +135,7 @@ const [communityState, setCommunityState] = createStore<CommunityState>({
   gameServers: {},
   notificationOverrides: {},
   communityInvites: {},
+  voiceChannels: {},
 });
 
 export { communityState, setCommunityState };

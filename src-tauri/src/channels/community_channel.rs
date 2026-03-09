@@ -198,28 +198,28 @@ pub enum CommunityEvent {
         channels: Vec<ChannelInfoFrontendDto>,
         categories: Vec<CategoryInfoFrontendDto>,
     },
-    /// An invite code was created.
+    /// An invite was created (code_hash only — raw code never broadcast).
     #[serde(rename_all = "camelCase")]
     InviteCreated {
         community_id: String,
-        code: String,
+        code_hash: String,
         created_by: String,
         max_uses: Option<u32>,
         uses: u32,
         expires_at: Option<u64>,
         created_at: u64,
     },
-    /// An invite code was revoked.
+    /// An invite was revoked.
     #[serde(rename_all = "camelCase")]
     InviteRevoked {
         community_id: String,
-        code: String,
+        code_hash: String,
     },
     /// An invite's use count was updated.
     #[serde(rename_all = "camelCase")]
     InviteUsed {
         community_id: String,
-        code: String,
+        code_hash: String,
         new_use_count: u32,
     },
     /// The member list for a community was refreshed (e.g., after DHT update).
@@ -247,13 +247,29 @@ pub enum CommunityEvent {
         community_id: String,
         locked: bool,
     },
-    /// Join request was rejected by the coordinator.
+    /// A self-registered member was discovered via SMPL presence scan
+    /// but is not yet in the member index. Frontend should show them as pending.
+    #[serde(rename_all = "camelCase")]
+    MemberDiscovered {
+        community_id: String,
+        pseudonym_key: String,
+        display_name: String,
+        subkey_index: u32,
+    },
+    /// A member completed onboarding — their roles were assigned.
+    #[serde(rename_all = "camelCase")]
+    OnboardingComplete {
+        community_id: String,
+        pseudonym_key: String,
+        role_ids: Vec<u32>,
+    },
+    /// Join request was rejected by a peer or admin.
     #[serde(rename_all = "camelCase")]
     JoinRejected {
         community_id: String,
         reason: String,
     },
-    /// Join accepted by the coordinator — MEK and community data received.
+    /// Join accepted by a peer — MEK and community data received.
     #[serde(rename_all = "camelCase")]
     JoinAccepted {
         community_id: String,

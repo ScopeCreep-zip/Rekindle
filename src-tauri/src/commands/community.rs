@@ -109,15 +109,17 @@ pub struct CategoryInfoDto {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InviteCreatedDto {
+    /// Raw invite code (16 bytes, hex-encoded = 32 chars).
     pub code: String,
-    pub signature: String,
+    /// The manifest DHT key for building the invite link.
+    pub manifest_key: String,
 }
 
 /// Invite info for the frontend.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InviteInfoDto {
-    pub code: String,
+    pub code_hash: String,
     pub created_by: String,
     pub max_uses: Option<u32>,
     pub uses: u32,
@@ -314,7 +316,11 @@ pub async fn create_community(
     Ok(community_id)
 }
 
-/// Join an existing community by ID, optionally with an invite code.
+/// Join an existing community via self-service SMPL presence registration.
+///
+/// Reads manifest from DHT, decrypts invite secrets, derives slot keypair,
+/// and starts the gossip mesh. No coordinator needed — zero online members
+/// required. The joiner's proof of membership is their valid SMPL presence.
 #[tauri::command]
 pub async fn join_community(
     community_id: String,
@@ -327,8 +333,10 @@ pub async fn join_community(
     services::community_service::join_community(state.inner(), &community_id, invite_code.as_deref())
         .await?;
 
-    // Read community state populated by join_community
-    let (name, dht_record_key, my_pseudonym_key, mek_generation, channels, my_role_ids, roles_to_persist, manifest_key, member_registry_key, coordinator_pseudonym_db, coordinator_epoch_db) = {
+    // Read community state populated by join_community (now includes MEK + slot info)
+    let (name, dht_record_key, my_pseudonym_key, mek_generation, channels, my_role_ids,
+         roles_to_persist, manifest_key, member_registry_key, coordinator_pseudonym_db,
+         coordinator_epoch_db, slot_seed, my_subkey_index) = {
         let communities = state.communities.read();
         match communities.get(&community_id) {
             Some(c) => (
@@ -343,6 +351,8 @@ pub async fn join_community(
                 c.member_registry_key.clone(),
                 c.coordinator_pseudonym.clone(),
                 c.coordinator_epoch.cast_signed(),
+                c.slot_seed.clone(),
+                c.my_subkey_index,
             ),
             None => return Err("community state not found after join".to_string()),
         }
@@ -361,6 +371,14 @@ pub async fn join_community(
         }
     }
 
+    // Persist slot_seed to Stronghold for login restoration
+    if let Some(ref seed) = slot_seed {
+        let ks = keystore_handle.lock();
+        if let Some(ref keystore) = *ks {
+            crate::keystore::persist_slot_seed(keystore, &community_id, seed);
+        }
+    }
+
     let role_ids_json = serde_json::to_string(&my_role_ids).unwrap_or_else(|_| "[0,1]".to_string());
     let now = db::timestamp_now();
     let community_id_clone = community_id.clone();
@@ -368,11 +386,12 @@ pub async fn join_community(
     let pk = pseudonym_key.clone();
     let mg = mek_generation.cast_signed();
     let rij = role_ids_json;
+    let subkey_idx = my_subkey_index.map(i64::from);
     db_call(pool.inner(), move |conn| {
         conn.execute(
-            "INSERT OR IGNORE INTO communities (owner_key, id, name, my_role, my_role_ids, joined_at, dht_record_key, my_pseudonym_key, mek_generation, manifest_key, member_registry_key, coordinator_pseudonym, coordinator_epoch) \
-             VALUES (?, ?, ?, 'member', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            rusqlite::params![ok, community_id_clone, name, rij, now, dht_record_key, pk, mg, manifest_key, member_registry_key, coordinator_pseudonym_db, coordinator_epoch_db],
+            "INSERT OR IGNORE INTO communities (owner_key, id, name, my_role, my_role_ids, joined_at, dht_record_key, my_pseudonym_key, mek_generation, manifest_key, member_registry_key, coordinator_pseudonym, coordinator_epoch, my_subkey_index) \
+             VALUES (?, ?, ?, 'member', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            rusqlite::params![ok, community_id_clone, name, rij, now, dht_record_key, pk, mg, manifest_key, member_registry_key, coordinator_pseudonym_db, coordinator_epoch_db, subkey_idx],
         )?;
 
         // Add ourselves to the community_members table
@@ -403,14 +422,13 @@ pub async fn join_community(
     })
     .await?;
 
-    // Members arrive asynchronously via MemberJoined events from the coordinator
     Ok(())
 }
 
 /// Create a new channel in a community.
 ///
-/// Sends `CreateChannel` to the coordinator (fire-and-forget). The channel
-/// ID is generated locally for optimistic UI; the coordinator broadcasts the
+/// Persists `CreateChannel` to DHT and broadcasts via gossip. The channel
+/// ID is generated locally for optimistic UI; admin peers broadcast the
 /// canonical `ChannelCreated` event back to all members.
 #[tauri::command]
 pub async fn create_channel(
@@ -632,12 +650,13 @@ pub async fn reorder_categories(
 // Invite management
 // ---------------------------------------------------------------------------
 
-/// Create a community invite code.
+/// Create a community invite with embedded encrypted secrets.
 ///
-/// Sends `CreateInvite` to the coordinator (fire-and-forget). The canonical
-/// Create a community invite. The invite code is generated locally and sent
-/// to the coordinator for persistence. Returns the code immediately so the
-/// frontend can copy-to-clipboard without waiting for the broadcast.
+/// Generates a 16-byte invite code, encrypts community secrets (slot_seed, MEK,
+/// subkey_index, registry_key) using HKDF(code) → AES-256-GCM, and persists
+/// the hashed code + encrypted blob to the DHT manifest. The raw code is
+/// returned to the caller for building the invite link — it is never stored
+/// in the DHT or broadcast over gossip.
 #[tauri::command]
 pub async fn create_community_invite(
     community_id: String,
@@ -647,31 +666,141 @@ pub async fn create_community_invite(
     pool: State<'_, DbPool>,
 ) -> Result<InviteCreatedDto, String> {
     require_permission(state.inner(), &community_id, Permissions::CREATE_INSTANT_INVITE)?;
-    let _ = pool;
-    // Generate the invite code locally so we can return it immediately
-    let code = hex::encode(&rand_nonce()[..4]);
+
+    // Generate 16-byte invite code (128 bits of entropy, 32 hex chars)
+    let code = hex::encode(&rand_nonce()[..16]);
+    let code_hash = rekindle_crypto::group::invite_crypto::hash_invite_code(&code);
+
+    // Gather secrets from community state
+    let (manifest_key, slot_seed, registry_key) = {
+        let communities = state.communities.read();
+        let cs = communities
+            .get(&community_id)
+            .ok_or("community not found")?;
+        let mk = cs
+            .manifest_key
+            .clone()
+            .ok_or("no manifest key for community")?;
+        let ss = cs.slot_seed.clone().ok_or("no slot_seed available")?;
+        let rk = cs
+            .member_registry_key
+            .clone()
+            .ok_or("no registry key for community")?;
+        (mk, ss, rk)
+    };
+
+    // Get MEK wire bytes from cache
+    let mek_wire_b64 = {
+        let cache = state.mek_cache.lock();
+        let mek = cache.get(&community_id).ok_or("no MEK available")?;
+        use base64::Engine;
+        base64::engine::general_purpose::STANDARD.encode(mek.to_wire_bytes())
+    };
+
+    // Find next free subkey index(es) by reading the member registry
+    let rc = state_helpers::routing_context(state.inner()).ok_or("not attached")?;
+    let mgr = rekindle_protocol::dht::DHTManager::new(rc);
+    let members =
+        rekindle_protocol::dht::community::member_registry::read_member_index(&mgr, &registry_key)
+            .await
+            .map_err(|e| format!("read member index: {e}"))?;
+
+    let occupied: std::collections::HashSet<u32> =
+        members.iter().map(|m| m.subkey_index).collect();
+
+    let effective_max_uses = max_uses.unwrap_or(1);
+    let slots_needed = effective_max_uses;
+
+    // Find contiguous or individual free slots up to slots_needed
+    let mut free_slots: Vec<u32> = Vec::new();
+    for idx in 0..rekindle_protocol::dht::community::member_registry::SLOTS_PER_SEGMENT {
+        if !occupied.contains(&idx) {
+            free_slots.push(idx);
+            if free_slots.len() >= slots_needed as usize {
+                break;
+            }
+        }
+    }
+
+    if free_slots.is_empty() {
+        return Err("no free member slots available".into());
+    }
+
+    // Build InviteSecrets
+    let secrets = rekindle_protocol::dht::community::InviteSecrets {
+        slot_seed,
+        mek_wire_bytes: mek_wire_b64,
+        registry_key,
+        assigned_subkey_index: if slots_needed == 1 {
+            Some(free_slots[0])
+        } else {
+            None
+        },
+        slot_range: if slots_needed > 1 {
+            Some((
+                *free_slots.first().unwrap(),
+                *free_slots.last().unwrap(),
+            ))
+        } else {
+            None
+        },
+    };
+
+    // Serialize and encrypt secrets
+    let secrets_json = serde_json::to_vec(&secrets)
+        .map_err(|e| format!("serialize invite secrets: {e}"))?;
+    let encrypted =
+        rekindle_crypto::group::invite_crypto::encrypt_invite_secrets(&code, &secrets_json)
+            .map_err(|e| format!("encrypt invite secrets: {e}"))?;
+    let encrypted_b64 = {
+        use base64::Engine;
+        base64::engine::general_purpose::STANDARD.encode(&encrypted)
+    };
+
+    // Persist via execute_state_op (DHT write + gossip broadcast)
     execute_state_op(
         state.inner(),
         &community_id,
         ControlPayload::CreateInvite {
-            code: code.clone(),
+            code_hash: code_hash.clone(),
             max_uses,
             expires_in_seconds,
+            encrypted_secrets: Some(encrypted_b64),
         },
     )
     .await?;
 
+    // Persist the invite locally so admins can list codes from SQLite
+    let owner_key = state_helpers::current_owner_key(state.inner()).unwrap_or_default();
+    let cid = community_id.clone();
+    let raw_code = code.clone();
+    let ch = code_hash.clone();
+    let now = i64::try_from(rekindle_utils::timestamp_secs()).unwrap_or(0);
+    let mu = max_uses.map_or(0, i64::from);
+    let exp = expires_in_seconds.map(|s| now + i64::try_from(s).unwrap_or(0));
+    crate::db_helpers::db_fire(
+        pool.inner(),
+        "persist invite locally",
+        move |conn| {
+            conn.execute(
+                "INSERT OR REPLACE INTO community_invites (owner_key, community_id, code, code_hash, max_uses, expires_at, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                rusqlite::params![owner_key, cid, raw_code, ch, mu, exp, now],
+            )?;
+            Ok(())
+        },
+    );
+
     Ok(InviteCreatedDto {
         code,
-        signature: String::new(),
+        manifest_key,
     })
 }
 
-/// Revoke a community invite code.
+/// Revoke a community invite by code hash.
 #[tauri::command]
 pub async fn revoke_community_invite(
     community_id: String,
-    code: String,
+    code_hash: String,
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
@@ -680,7 +809,7 @@ pub async fn revoke_community_invite(
     execute_state_op(
         state.inner(),
         &community_id,
-        ControlPayload::RevokeInvite { code },
+        ControlPayload::RevokeInvite { code_hash },
     )
     .await
 }
@@ -703,7 +832,7 @@ pub async fn list_community_invites(
     Ok(invites
         .into_iter()
         .map(|i| InviteInfoDto {
-            code: i.code,
+            code_hash: i.code_hash,
             created_by: i.created_by,
             max_uses: if i.max_uses == 0 {
                 None
@@ -871,7 +1000,7 @@ pub async fn send_channel_message(
         body,
         timestamp: timestamp.cast_unsigned(),
         conversation_id: channel_id,
-        server_message_id: None, // Local echo — server ID arrives via broadcast
+        server_message_id: None, // Local echo — message ID arrives via broadcast
         reply_to_id: None,       // Reply context not needed for local echo
     };
     let _ = app.emit("chat-event", &event);
@@ -1583,7 +1712,7 @@ pub async fn add_game_server(
     address: String,
 ) -> Result<String, String> {
     let _ = pool;
-    // Generate server ID locally for optimistic UI; coordinator assigns canonical ID via broadcast
+    // Generate game server ID locally — the locally-generated ID is canonical
     let server_id = format!("gs_{}", hex::encode(&rand_nonce()[..8]));
 
     send_to_mesh(
@@ -1729,8 +1858,8 @@ pub(crate) async fn execute_state_op(
     }
 
     // Always broadcast via gossip mesh so all peers receive the op.
-    // If we don't hold the keypair, the coordinator (which always holds
-    // the keypair) will persist it to DHT when it receives the broadcast.
+    // If we don't hold the keypair, any admin peer that does will
+    // persist it to DHT when they receive the broadcast.
     send_to_mesh(
         state,
         community_id,
@@ -2091,9 +2220,10 @@ async fn apply_control_to_manifest_ext(
 
         // ── Invites ──
         ControlPayload::CreateInvite {
-            code,
+            code_hash,
             max_uses,
             expires_in_seconds,
+            encrypted_secrets,
         } => {
             use rekindle_protocol::dht::community::types::InviteEntry;
             let now = rekindle_utils::timestamp_secs();
@@ -2104,22 +2234,23 @@ async fn apply_control_to_manifest_ext(
             // Prune expired invites
             invites.retain(|inv| inv.expires_at.is_none_or(|exp| exp > now));
             invites.push(InviteEntry {
-                code: code.clone(),
+                code_hash: code_hash.clone(),
                 created_by: String::new(), // filled by caller if needed
                 created_at: now,
                 expires_at,
                 max_uses: max_uses.unwrap_or(0),
                 use_count: 0,
+                encrypted_secrets: encrypted_secrets.clone(),
             });
             manifest::write_invites(dht, manifest_key, &invites)
                 .await
                 .map_err(|e| format!("{e}"))
         }
-        ControlPayload::RevokeInvite { code } => {
+        ControlPayload::RevokeInvite { code_hash } => {
             let mut invites = manifest::read_invites(dht, manifest_key)
                 .await
                 .unwrap_or_default();
-            invites.retain(|inv| inv.code != *code);
+            invites.retain(|inv| inv.code_hash != *code_hash);
             manifest::write_invites(dht, manifest_key, &invites)
                 .await
                 .map_err(|e| format!("{e}"))
@@ -2130,144 +2261,11 @@ async fn apply_control_to_manifest_ext(
     }
 }
 
-/// Send a community RPC request to the server.
-///
-/// Send a CommunityEnvelope to the coordinator via `app_message` (fire-and-forget).
-///
-/// Replaces `send_community_rpc()` — no request/response cycle. The coordinator
-/// validates, relays, and persists; members receive the result via broadcast.
-pub(crate) async fn send_to_coordinator(
-    state: &SharedState,
-    community_id: &str,
-    envelope: rekindle_protocol::dht::community::envelope::CommunityEnvelope,
-) -> Result<(), String> {
-    use rekindle_protocol::dht::community::envelope;
-
-    // Get coordinator route and our pseudonym key
-    let (coordinator_route_blob, my_pseudonym_key) = {
-        let communities = state.communities.read();
-        let c = communities
-            .get(community_id)
-            .ok_or("community not found")?;
-        (
-            c.coordinator_route_blob.clone(),
-            c.my_pseudonym_key
-                .clone()
-                .unwrap_or_default(),
-        )
-    };
-
-    let route_blob = coordinator_route_blob
-        .ok_or("no coordinator available — operation requires an online coordinator")?;
-
-    // Sign envelope with pseudonym signing key (same path for all members including coordinator)
-    let signing_key = {
-        let secret = state.identity_secret.lock();
-        let s = (*secret).ok_or("identity not unlocked")?;
-        rekindle_crypto::group::pseudonym::derive_community_pseudonym(&s, community_id)
-    };
-    let envelope_bytes =
-        serde_json::to_vec(&envelope).map_err(|e| format!("serialize envelope: {e}"))?;
-    let signed = envelope::sign_envelope(
-        &signing_key,
-        community_id,
-        &my_pseudonym_key,
-        &envelope_bytes,
-    );
-
-    // If we ARE the coordinator, feed the signed envelope directly into the relay.
-    // Veilid's import_remote_private_route doesn't support loopback (importing your
-    // own route), so the coordinator must inject locally. The envelope still goes
-    // through the state manager pipeline: signature verification, permission checks,
-    // automod, and gossip broadcast — identical to what remote members experience.
-    let state_mgr = {
-        let services = state.coordinator_services.read();
-        services
-            .get(community_id)
-            .filter(|h| h.is_coordinator())
-            .map(|h| h.state_mgr.clone())
-    };
-    if let Some(ref sm) = state_mgr {
-        crate::services::coordinator::state_manager::handle_incoming_envelope(
-            state, sm, signed,
-        ).await;
-        return Ok(());
-    }
-
-    // Remote coordinator: send via Veilid app_message
-    let signed_bytes =
-        serde_json::to_vec(&signed).map_err(|e| format!("serialize signed: {e}"))?;
-    let rc = state_helpers::routing_context(state).ok_or("Veilid network not attached")?;
-    let route_id =
-        state_helpers::import_route_blob(state, &route_blob).map_err(|e| format!("route: {e}"))?;
-
-    let send_result = rc
-        .app_message(
-            veilid_core::Target::RouteId(route_id),
-            signed_bytes.clone(),
-        )
-        .await;
-
-    if send_result.is_ok() {
-        return Ok(());
-    }
-
-    // First attempt failed — likely stale route blob (error 104: connection reset).
-    // Re-read coordinator info from the DHT manifest and retry once.
-    let first_err = send_result.unwrap_err();
-    tracing::warn!(
-        community = %community_id,
-        error = %first_err,
-        "send_to_coordinator failed — re-fetching coordinator route from DHT"
-    );
-
-    let manifest_key = {
-        let communities = state.communities.read();
-        communities
-            .get(community_id)
-            .and_then(|c| c.manifest_key.clone().or_else(|| Some(c.id.clone())))
-    };
-    let Some(manifest_key) = manifest_key else {
-        return Err(format!("app_message: {first_err}"));
-    };
-
-    let mgr = rekindle_protocol::dht::DHTManager::new(rc.clone());
-    let fresh_coord = match rekindle_protocol::dht::community::manifest::read_coordinator(
-        &mgr,
-        &manifest_key,
-    )
-    .await
-    {
-        Ok(Some(info)) if !info.route_blob.is_empty() => info,
-        _ => return Err(format!("app_message: {first_err}")),
-    };
-
-    // Update coordinator route in state
-    {
-        let mut communities = state.communities.write();
-        if let Some(c) = communities.get_mut(community_id) {
-            c.coordinator_route_blob = Some(fresh_coord.route_blob.clone());
-            c.coordinator_pseudonym = Some(fresh_coord.pseudonym_key);
-            c.coordinator_epoch = fresh_coord.epoch;
-        }
-    }
-
-    // Retry with fresh route
-    let retry_route_id = state_helpers::import_route_blob(state, &fresh_coord.route_blob)
-        .map_err(|e| format!("retry route: {e}"))?;
-    rc.app_message(
-        veilid_core::Target::RouteId(retry_route_id),
-        signed_bytes,
-    )
-    .await
-    .map_err(|e| format!("app_message retry: {e}"))
-}
-
 /// Send a community envelope via the gossip mesh (peer-to-peer).
 ///
 /// Used for ChatMessage, TypingIndicator, PresenceUpdate, and all Tier 1
 /// operations (pins, events, threads, game servers, reactions).
-/// Tier 2 operations use `execute_state_op()` which may use this or coordinator.
+/// Tier 2 operations use `execute_state_op()` which combines this with DHT writes.
 ///
 /// Signs the envelope with our pseudonym key, inserts into the dedup cache,
 /// increments the Lamport counter, and sends to D gossip peers.
@@ -2392,8 +2390,8 @@ fn extract_mesh_dedup_key(envelope: &CommunityEnvelope) -> String {
 
 /// Leave a community and clean up local state.
 ///
-/// Sends `ControlPayload::MemberLeave` to the coordinator (which triggers MEK rotation
-/// for remaining members), then cleans up local state and `SQLite`.
+/// Broadcasts `ControlPayload::MemberLeave` via gossip (which triggers MEK rotation
+/// by any admin), then cleans up local state and `SQLite`.
 #[tauri::command]
 pub async fn leave_community(
     community_id: String,
@@ -2454,9 +2452,8 @@ pub async fn leave_community(
 
 /// Get message history for a community channel.
 ///
-/// First queries local `SQLite`. If local DB has no messages for the channel,
-/// fetches history from the coordinator via `ControlPayload::GetMessages`,
-/// decrypts the ciphertexts with the cached MEK, and stores them locally.
+/// Queries local `SQLite` for cached messages. Messages arrive via gossip
+/// broadcasts and are stored locally as they come in.
 #[tauri::command]
 pub async fn get_channel_messages(
     channel_id: String,
@@ -2503,7 +2500,7 @@ pub async fn get_channel_messages(
                 body: db::get_str(row, "body"),
                 timestamp: db::get_i64(row, "timestamp"),
                 is_own,
-                server_message_id: None, // Local DB history — server IDs come via ChannelHistoryLoaded
+                server_message_id: None, // Local DB history — message IDs come via broadcast
             })
         })?;
 
@@ -2537,8 +2534,8 @@ pub async fn get_channel_messages(
 ///
 /// The caller must be the community owner or an admin to kick members.
 /// Admins cannot kick other admins or the owner.
-/// Sends `ControlPayload::Kick` to the coordinator, which removes the member
-/// and rotates the MEK.
+/// Broadcasts `ControlPayload::Kick` via gossip mesh, which removes the member
+/// and triggers MEK rotation by any admin.
 #[tauri::command]
 pub async fn remove_community_member(
     community_id: String,
@@ -3189,8 +3186,8 @@ pub async fn delete_channel_overwrite(
 
 /// Delete a channel from a community.
 ///
-/// Sends `ControlPayload::DeleteChannel` to the coordinator, then removes
-/// the channel from local state and `SQLite`.
+/// Persists `ControlPayload::DeleteChannel` to DHT via `execute_state_op`,
+/// then removes the channel from local state and `SQLite`.
 #[tauri::command]
 pub async fn delete_channel(
     community_id: String,
@@ -3425,24 +3422,158 @@ pub async fn get_ban_list(
 }
 
 /// Force MEK rotation for a community.
+///
+/// Any admin with `registry_owner_keypair` can rotate the MEK locally:
+/// 1. Generate new MEK with next generation
+/// 2. Read member index → wrap MEK per-member via ECDH
+/// 3. Write MEK vault to registry DHT subkey 1
+/// 4. Update local cache + Stronghold
+/// 5. Broadcast `MEKRotated` via gossip so peers fetch from DHT
 #[tauri::command]
 pub async fn rotate_mek(
     community_id: String,
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
+    keystore: State<'_, crate::keystore::KeystoreHandle>,
 ) -> Result<(), String> {
     let _ = pool;
-    // RotateMEK is truly coordinator-only: the coordinator generates a new MEK,
-    // wraps it per-member with each member's pseudonym public key, and distributes.
-    // This cannot be done via gossip because the MEK must be encrypted per-recipient.
-    send_to_coordinator(
-        state.inner(),
-        &community_id,
-        CommunityEnvelope::Control(ControlPayload::RotateMEK),
-    )
-    .await?;
+    require_permission(state.inner(), &community_id, Permissions::ADMINISTRATOR)?;
 
-    tracing::info!(community = %community_id, "MEK rotation requested");
+    rotate_mek_local(state.inner(), &community_id, &keystore).await?;
+
+    tracing::info!(community = %community_id, "MEK rotated locally");
+    Ok(())
+}
+
+/// Perform local MEK rotation: generate, wrap per-member, write vault, broadcast.
+pub(crate) async fn rotate_mek_local(
+    state: &SharedState,
+    community_id: &str,
+    keystore: &crate::keystore::KeystoreHandle,
+) -> Result<(), String> {
+    use rekindle_crypto::group::media_key::MediaEncryptionKey;
+    use rekindle_crypto::group::mek_distribution::wrap_mek;
+    use rekindle_protocol::dht::community::member_registry;
+    use rekindle_protocol::dht::community::types::{EncryptedMEKCopy, MEKVaultEntry};
+
+    // 1. Determine next generation
+    let current_gen = {
+        let communities = state.communities.read();
+        communities
+            .get(community_id)
+            .map_or(0, |c| c.mek_generation)
+    };
+    let new_gen = current_gen + 1;
+
+    // 2. Generate new MEK
+    let mek = MediaEncryptionKey::generate(new_gen);
+
+    // 3. Get our signing key + pseudonym + registry info
+    let (my_signing_key, my_pseudonym, registry_key, registry_owner_kp) = {
+        let communities = state.communities.read();
+        let c = communities
+            .get(community_id)
+            .ok_or("community not found")?;
+        let registry_key = c
+            .member_registry_key
+            .clone()
+            .ok_or("no member registry key")?;
+        let registry_kp = c
+            .registry_owner_keypair
+            .clone()
+            .ok_or("no registry_owner_keypair — only admins can rotate MEK")?;
+        let my_pseudonym = c
+            .my_pseudonym_key
+            .clone()
+            .ok_or("no pseudonym key")?;
+        let secret = state.identity_secret.lock();
+        let signing_key = match *secret {
+            Some(ref s) => {
+                rekindle_crypto::group::pseudonym::derive_community_pseudonym(s, community_id)
+            }
+            None => return Err("no identity secret".into()),
+        };
+        (signing_key, my_pseudonym, registry_key, registry_kp)
+    };
+
+    // 4. Open registry writable
+    let rc = state_helpers::routing_context(state).ok_or("not attached")?;
+    let mgr = rekindle_protocol::dht::DHTManager::new(rc);
+    if let Ok(kp) = registry_owner_kp.parse::<veilid_core::KeyPair>() {
+        if let Err(e) = mgr.open_record_writable(&registry_key, kp).await {
+            tracing::warn!(error = %e, "failed to open registry writable for MEK rotation");
+        }
+    }
+
+    // 5. Read member index
+    let members = member_registry::read_member_index(&mgr, &registry_key)
+        .await
+        .map_err(|e| format!("read member index: {e}"))?;
+
+    // 6. Wrap MEK per-member
+    let mek_wire = mek.to_wire_bytes();
+    let mut copies = Vec::with_capacity(members.len());
+    for member in &members {
+        let Some(pub_bytes): Option<[u8; 32]> = hex::decode(&member.pseudonym_key)
+            .ok()
+            .and_then(|b| b.try_into().ok())
+        else {
+            tracing::warn!(
+                member = %member.pseudonym_key,
+                "skipping MEK wrap — invalid pseudonym key"
+            );
+            continue;
+        };
+        match wrap_mek(&my_signing_key, &pub_bytes, &mek_wire) {
+            Ok(encrypted) => {
+                copies.push(EncryptedMEKCopy {
+                    target_pseudonym: member.pseudonym_key.clone(),
+                    encrypted_mek: encrypted,
+                });
+            }
+            Err(e) => {
+                tracing::warn!(
+                    member = %member.pseudonym_key,
+                    error = %e,
+                    "failed to wrap MEK for member"
+                );
+            }
+        }
+    }
+
+    // 7. Write MEK vault to registry subkey 1
+    let vault_entry = MEKVaultEntry {
+        channel_id: String::new(), // community-wide MEK
+        generation: new_gen,
+        rotator_pseudonym: my_pseudonym.clone(),
+        copies,
+    };
+    member_registry::write_mek_vault(&mgr, &registry_key, &[vault_entry])
+        .await
+        .map_err(|e| format!("write MEK vault: {e}"))?;
+
+    // 8. Update local state
+    {
+        let mut communities = state.communities.write();
+        if let Some(c) = communities.get_mut(community_id) {
+            c.mek_generation = new_gen;
+        }
+    }
+    state.mek_cache.lock().insert(community_id.to_string(), mek);
+
+    // 9. Persist to Stronghold
+    if let Some(ref ks) = *keystore.lock() {
+        if let Some(mek) = state.mek_cache.lock().get(community_id) {
+            crate::keystore::persist_mek(ks, community_id, mek);
+        }
+    }
+
+    // 10. Broadcast MEKRotated via gossip
+    let envelope = CommunityEnvelope::Control(ControlPayload::MEKRotated {
+        new_generation: new_gen,
+    });
+    let _ = send_to_mesh(state, community_id, &envelope);
+
     Ok(())
 }
 
@@ -3864,6 +3995,8 @@ pub async fn set_welcome_screen(
 }
 
 /// Submit onboarding answers for a community.
+///
+/// Broadcasts via gossip mesh — any admin with MANAGE_MEMBERS processes it.
 #[tauri::command]
 pub async fn submit_onboarding_answers(
     state: State<'_, SharedState>,
@@ -3875,14 +4008,10 @@ pub async fn submit_onboarding_answers(
         .map(|v| serde_json::from_value(v).map_err(|e| format!("invalid answer: {e}")))
         .collect::<Result<Vec<_>, _>>()?;
 
-    // Onboarding answers must go to the coordinator: only the join-processing node
-    // can evaluate answers against the configured onboarding gates and issue JoinAccepted.
-    let envelope = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
-        rekindle_protocol::dht::community::envelope::ControlPayload::SubmitOnboardingAnswers {
-            answers,
-        },
-    );
-    send_to_coordinator(state.inner(), &community_id, envelope).await
+    let envelope = CommunityEnvelope::Control(ControlPayload::SubmitOnboardingAnswers {
+        answers,
+    });
+    send_to_mesh(state.inner(), &community_id, &envelope)
 }
 
 // ── Helpers ──

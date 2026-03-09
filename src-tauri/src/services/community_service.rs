@@ -223,20 +223,28 @@ fn derive_pseudonym_key(state: &Arc<AppState>, community_id: &str) -> Option<Str
     })
 }
 
-/// Join an existing community by manifest key (or invite code).
+/// Join a community via self-service SMPL presence registration.
 ///
-/// Reads community metadata, channels, roles, and coordinator info from the
-/// manifest DHT record. Sends a `MemberJoinRequest` envelope to the coordinator
-/// via `app_message` (fire-and-forget). The coordinator responds asynchronously
-/// with a `JoinAccepted` envelope containing MEK, channels, roles, and members.
+/// Zero coordinator dependency. The invite code decrypts embedded secrets
+/// (slot_seed, MEK, subkey_index, registry_key) from the DHT manifest.
+/// The joiner derives their slot keypair, writes presence to the SMPL
+/// registry (proof of membership), and starts the gossip mesh.
+///
+/// Flow: Read manifest → decrypt invite → derive slot keypair → write
+/// presence → start services. No MemberJoinRequest, no JoinAccepted.
 pub async fn join_community(
     state: &Arc<AppState>,
     community_id: &str,
     invite_code: Option<&str>,
 ) -> Result<(), String> {
+    let invite_code =
+        invite_code.ok_or("invite code required — community join requires a valid invite link")?;
+
     let rc = state_helpers::routing_context(state)
         .ok_or("Veilid node not attached — cannot join community")?;
-    let mgr = DHTManager::new(rc);
+    let mgr = DHTManager::new(rc.clone());
+
+    // ── BOOTSTRAP: DHT reads (no coordinator, no online members needed) ──
 
     // 1. Open and read manifest from DHT
     mgr.open_record(community_id)
@@ -261,34 +269,147 @@ pub async fn join_community(
     let role_entries = manifest::read_roles(&mgr, community_id)
         .await
         .unwrap_or_default();
+
+    // Coordinator info is optional for self-service join — community works without it
     let coordinator = manifest::read_coordinator(&mgr, community_id)
         .await
-        .map_err(|e| format!("failed to read coordinator info: {e}"))?
-        .ok_or("no coordinator info — community may be offline")?;
-
-    if coordinator.route_blob.is_empty() {
-        return Err("coordinator route blob is empty — coordinator may be offline".to_string());
-    }
+        .ok()
+        .flatten();
 
     // Watch manifest for changes
     if let Err(e) = manifest::watch_manifest(&mgr, community_id).await {
         tracing::warn!(error = %e, "failed to watch manifest");
     }
 
-    // 2. Derive our pseudonym key and display name
-    let my_pseudonym_key = derive_pseudonym_key(state, community_id);
-    let our_display_name = state_helpers::identity_display_name(state);
-    let our_route_blob = state_helpers::our_route_blob(state);
+    // 2. Read invites from manifest → find ours by code hash → decrypt secrets
+    let code_hash = rekindle_crypto::group::invite_crypto::hash_invite_code(invite_code);
+    let invites = manifest::read_invites(&mgr, community_id)
+        .await
+        .map_err(|e| format!("failed to read invites: {e}"))?;
 
-    // Route blob is required so the coordinator can send JoinAccepted back to us.
-    // Without it, we would never receive MEK or member list.
-    if our_route_blob.is_none() {
-        return Err(
-            "private route not yet available — wait for network attachment".to_string(),
-        );
+    let invite_entry = invites
+        .iter()
+        .find(|inv| inv.code_hash == code_hash)
+        .ok_or("invalid invite code")?;
+
+    // Validate expiry
+    let now = rekindle_utils::timestamp_secs();
+    if let Some(expires_at) = invite_entry.expires_at {
+        if now > expires_at {
+            return Err("invite has expired".into());
+        }
     }
 
-    // 3. Convert DHT entries to in-memory types
+    // Validate max uses (approximate — slot occupation is the real limit)
+    if invite_entry.max_uses > 0 && invite_entry.use_count >= invite_entry.max_uses {
+        return Err("invite has reached maximum uses".into());
+    }
+
+    let encrypted_b64 = invite_entry
+        .encrypted_secrets
+        .as_ref()
+        .ok_or("invite does not contain embedded secrets")?;
+
+    let encrypted = {
+        use base64::Engine;
+        base64::engine::general_purpose::STANDARD
+            .decode(encrypted_b64)
+            .map_err(|e| format!("invalid invite secrets encoding: {e}"))?
+    };
+    let secrets_json =
+        rekindle_crypto::group::invite_crypto::decrypt_invite_secrets(invite_code, &encrypted)
+            .map_err(|e| format!("failed to decrypt invite secrets: {e}"))?;
+    let secrets: rekindle_protocol::dht::community::InviteSecrets =
+        serde_json::from_slice(&secrets_json)
+            .map_err(|e| format!("invalid invite secrets format: {e}"))?;
+
+    // 3. Extract secrets
+    let registry_key = secrets.registry_key.clone();
+    let slot_seed_hex = secrets.slot_seed.clone();
+
+    let mek = {
+        use base64::Engine;
+        let mek_wire = base64::engine::general_purpose::STANDARD
+            .decode(&secrets.mek_wire_bytes)
+            .map_err(|e| format!("invalid MEK encoding: {e}"))?;
+        MediaEncryptionKey::from_wire_bytes(&mek_wire)
+            .ok_or("invalid MEK wire bytes")?
+    };
+    let mek_generation = mek.generation();
+
+    // Determine subkey index (single-use or first free in range)
+    let my_subkey_index = if let Some(idx) = secrets.assigned_subkey_index {
+        idx
+    } else if let Some((start, end)) = secrets.slot_range {
+        // Multi-use: scan for first empty slot in range, write presence,
+        // then re-read to verify we won the slot (collision retry).
+        mgr.open_record(&registry_key)
+            .await
+            .map_err(|e| format!("failed to open registry: {e}"))?;
+
+        let members = member_registry::read_member_index(&mgr, &registry_key)
+            .await
+            .unwrap_or_default();
+        let occupied: std::collections::HashSet<u32> =
+            members.iter().map(|m| m.subkey_index).collect();
+
+        let my_pk = derive_pseudonym_key(state, community_id);
+        let slot_seed_bytes_tmp = hex::decode(&slot_seed_hex)
+            .map_err(|e| format!("invalid slot seed hex: {e}"))?;
+        let slot_seed_arr: [u8; 32] = slot_seed_bytes_tmp
+            .as_slice()
+            .try_into()
+            .map_err(|_| "slot seed must be 32 bytes")?;
+
+        let mut claimed_slot = None;
+        for candidate in (start..=end).filter(|idx| !occupied.contains(idx)) {
+            // Derive keypair for this candidate slot
+            let kp = member_registry::derive_slot_veilid_keypair(&slot_seed_arr, candidate)
+                .map_err(|e| format!("derive slot keypair: {e}"))?;
+
+            // Write presence to claim the slot
+            let presence = rekindle_protocol::dht::community::types::MemberPresence {
+                pseudonym_key: my_pk.clone().unwrap_or_default(),
+                status: "online".to_string(),
+                status_message: None,
+                game_info: None,
+                route_blob: None, // Updated by presence_poll_tick
+                last_heartbeat: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs(),
+                is_coordinator: false,
+                coordinator_since: 0,
+                is_archiver: false,
+            };
+            if member_registry::write_member_presence(&mgr, &registry_key, candidate, &presence, kp)
+                .await
+                .is_err()
+            {
+                continue; // Slot write failed, try next
+            }
+
+            // Re-read to verify we own the slot (collision detection)
+            match member_registry::read_member_presence(&mgr, &registry_key, candidate).await {
+                Ok(Some(readback)) if readback.pseudonym_key == presence.pseudonym_key => {
+                    claimed_slot = Some(candidate);
+                    break;
+                }
+                _ => {
+                    tracing::debug!(slot = candidate, "multi-use invite slot collision, trying next");
+                }
+            }
+        }
+
+        claimed_slot.ok_or("all slots in invite range are occupied or contested")?
+    } else {
+        return Err("invite secrets contain no subkey_index or slot_range".into());
+    };
+
+    // 4. Derive our pseudonym key
+    let my_pseudonym_key = derive_pseudonym_key(state, community_id);
+
+    // 5. Convert DHT entries to in-memory types
     let channels: Vec<ChannelInfo> = channel_entries
         .iter()
         .map(|ch| ChannelInfo {
@@ -318,80 +439,121 @@ pub async fn join_community(
         roles_to_definitions(&role_entries)
     };
 
-    // 3b. Read registry spine from manifest subkey 12 to discover the member_registry_key.
-    //     This is the primary discovery path — JoinAccepted also carries it as a backup.
+    // Read registry spine for the member_registry_key (belt and suspenders — also in secrets)
     let registry_key_from_spine = match member_registry::read_registry_spine(&mgr, community_id).await {
         Ok(Some(spine)) if !spine.segments.is_empty() => {
-            let key = spine.segments[0].record_key.clone();
-            tracing::info!(community = %community_id, registry_key = %key, "discovered registry key from manifest spine");
-            Some(key)
+            Some(spine.segments[0].record_key.clone())
         }
-        Ok(_) => {
-            tracing::debug!(community = %community_id, "no registry spine in manifest — will get from JoinAccepted");
-            None
-        }
-        Err(e) => {
-            tracing::debug!(community = %community_id, error = %e, "failed to read registry spine");
-            None
-        }
+        _ => None,
     };
+    let final_registry_key = registry_key_from_spine.unwrap_or(registry_key.clone());
 
-    // 4. Build CommunityState with data from manifest
+    // ── REGISTER: derive slot keypair ──
+
+    // 6. Derive slot keypair from seed + index
+    let slot_seed_bytes = hex::decode(&slot_seed_hex)
+        .map_err(|e| format!("invalid slot seed hex: {e}"))?;
+    let slot_seed_array: [u8; 32] = slot_seed_bytes
+        .as_slice()
+        .try_into()
+        .map_err(|_| "slot seed must be 32 bytes")?;
+
+    let slot_keypair = member_registry::derive_slot_veilid_keypair(&slot_seed_array, my_subkey_index)
+        .map_err(|e| format!("failed to derive slot keypair: {e}"))?;
+    let slot_keypair_str = slot_keypair.to_string();
+
+    // 7. Cache MEK
+    state.mek_cache.lock().insert(community_id.to_string(), mek);
+
+    // 8. Build CommunityState with everything from DHT + decrypted secrets
     let community = CommunityState {
         id: community_id.to_string(),
         name,
         description,
         channels,
         categories,
-        my_role_ids: vec![0, 1], // Default: @everyone + member (updated on JoinAccepted)
+        my_role_ids: vec![0, 1], // Default roles, updated when admin adds to member index
         roles,
         my_role: Some("member".to_string()),
         dht_record_key: Some(community_id.to_string()),
         dht_owner_keypair: None,
         my_pseudonym_key: my_pseudonym_key.clone(),
-        mek_generation: 0, // Updated on JoinAccepted (MEK delivery)
+        mek_generation,
         manifest_key: Some(community_id.to_string()),
-        member_registry_key: registry_key_from_spine, // From spine, or JoinAccepted updates it
-        my_subkey_index: None,
-        coordinator_pseudonym: Some(coordinator.pseudonym_key.clone()),
-        coordinator_route_blob: Some(coordinator.route_blob),
-        coordinator_epoch: coordinator.epoch,
+        member_registry_key: Some(final_registry_key),
+        my_subkey_index: Some(my_subkey_index),
+        coordinator_pseudonym: coordinator.as_ref().map(|c| c.pseudonym_key.clone()),
+        coordinator_route_blob: coordinator.as_ref().map(|c| c.route_blob.clone()),
+        coordinator_epoch: coordinator.as_ref().map_or(0, |c| c.epoch),
         gossip: None,
-        slot_keypair: None,
+        slot_keypair: Some(slot_keypair_str),
         manifest_owner_keypair: None,
         channel_log_keys: std::collections::HashMap::new(),
         registry_owner_keypair: None,
-        slot_seed: None,
-        known_members: std::collections::HashSet::new(), // Populated from JoinAccepted members list
+        slot_seed: Some(slot_seed_hex),
+        known_members: std::collections::HashSet::new(), // Populated by presence_poll_tick
         presence_poll_shutdown_tx: None,
         dht_keepalive_shutdown_tx: None,
     };
 
     state.communities.write().insert(community_id.to_string(), community);
 
-    // 5. Send MemberJoinRequest to coordinator (truly coordinator-only: the coordinator
-    //    validates the invite, allocates a registry slot, wraps MEK, and sends JoinAccepted).
-    //    send_to_coordinator retries once with a fresh DHT route on connection errors.
-    let join_envelope = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
-        rekindle_protocol::dht::community::envelope::ControlPayload::MemberJoinRequest {
-            pseudonym_key: my_pseudonym_key.unwrap_or_default(),
-            display_name: our_display_name,
-            invite_code: invite_code.map(String::from),
-            route_blob: our_route_blob,
-            prekey_bundle: None,
-        },
-    );
-    crate::commands::community::send_to_coordinator(state, community_id, join_envelope).await?;
+    // ── CONNECT: start services ──
 
-    // 6. Start coordinator service (election watcher)
+    // 9. Start coordinator service (election watcher — useful but not required)
     let handle = super::coordinator::start(state.clone(), community_id.to_string());
     state.coordinator_services.write().insert(community_id.to_string(), handle);
 
-    // 7. Start presence poll and DHT keepalive
+    // 10. Start presence poll (IMMEDIATE first tick writes our presence + discovers peers)
+    //     and DHT keepalive. Presence write is our proof of membership — Veilid validates
+    //     the slot keypair against the SMPL schema.
     start_presence_poll(state.clone(), community_id.to_string());
     start_dht_keepalive(state.clone(), community_id.to_string());
 
-    tracing::info!(community = %community_id, "join request sent to coordinator");
+    tracing::info!(
+        community = %community_id,
+        subkey_index = my_subkey_index,
+        "self-service join complete — presence poll will write to SMPL registry"
+    );
+
+    // 11. Broadcast MemberJoinRequest via gossip so any online admin can add us
+    //     to the member index. Delayed slightly to allow presence_poll_tick to
+    //     discover peers first (gossip overlay needs at least one peer).
+    {
+        let state = state.clone();
+        let cid = community_id.to_string();
+        let display_name = {
+            let identity = state.identity.read();
+            identity.as_ref().map_or_else(
+                || "Unknown".to_string(),
+                |id| id.display_name.clone(),
+            )
+        };
+        let pk = my_pseudonym_key.unwrap_or_default();
+        let idx = my_subkey_index;
+        tokio::spawn(async move {
+            // Wait for presence poll to build gossip overlay
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            let envelope = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
+                rekindle_protocol::dht::community::envelope::ControlPayload::MemberJoinRequest {
+                    pseudonym_key: pk,
+                    display_name,
+                    invite_code: None,
+                    route_blob: None,
+                    prekey_bundle: None,
+                    claimed_subkey_index: Some(idx),
+                },
+            );
+            if let Err(e) = crate::commands::community::send_to_mesh(&state, &cid, &envelope) {
+                tracing::debug!(
+                    community = %cid,
+                    error = %e,
+                    "failed to broadcast MemberJoinRequest — admin will discover via presence scan"
+                );
+            }
+        });
+    }
+
     Ok(())
 }
 
@@ -635,7 +797,7 @@ pub async fn presence_poll_tick_public(
 
 /// Try to derive the slot keypair locally from slot_seed + subkey_index.
 /// Returns the derived keypair string if successful.
-fn try_derive_slot_keypair(
+pub(crate) fn try_derive_slot_keypair(
     state: &Arc<AppState>,
     community_id: &str,
     seed_hex: &str,
@@ -843,6 +1005,12 @@ async fn presence_poll_tick(state: &Arc<AppState>, community_id: &str) -> Result
         }
     }
 
+    // 3. Discover unindexed members (self-registered joiners not yet in member index)
+    discover_unindexed_members(
+        state, community_id, &mgr, &registry_key,
+        &members, &my_pseudonym, stale_threshold, &mut online_members,
+    ).await;
+
     // Select D random gossip peers
     let n = online_members.len();
     let d = crate::state::gossip_degree(n);
@@ -989,6 +1157,155 @@ async fn presence_poll_tick(state: &Arc<AppState>, community_id: &str) -> Result
     );
 
     Ok(())
+}
+
+/// Scan SMPL slots beyond the member index to discover self-registered joiners.
+///
+/// Self-service joiners write SMPL presence to their claimed slot but may not
+/// be in the member index yet. This scans a window of extra slots and adds any
+/// discovered members to the gossip overlay (and to the index if we're an admin).
+async fn discover_unindexed_members(
+    state: &Arc<AppState>,
+    community_id: &str,
+    mgr: &DHTManager,
+    registry_key: &str,
+    members: &[MemberSummary],
+    my_pseudonym: &str,
+    stale_threshold: u64,
+    online_members: &mut std::collections::HashMap<String, Vec<u8>>,
+) {
+    // Build set of indexed slot indices so we only scan unindexed slots
+    let indexed_slots: std::collections::HashSet<u32> =
+        members.iter().map(|m| m.subkey_index).collect();
+    let indexed_keys: std::collections::HashSet<&str> =
+        members.iter().map(|m| m.pseudonym_key.as_str()).collect();
+    // Scan ALL 255 SMPL slots to discover unindexed presences (gaps or new joiners).
+    let scan_limit = member_registry::SLOTS_PER_SEGMENT;
+    let has_registry_kp = {
+        let communities = state.communities.read();
+        communities
+            .get(community_id)
+            .is_some_and(|cs| cs.registry_owner_keypair.is_some())
+    };
+    let app_handle = state.app_handle.read().clone();
+
+    for slot in 1..=scan_limit {
+        // Skip slots that are already in the member index
+        if indexed_slots.contains(&slot) {
+            continue;
+        }
+
+        match member_registry::read_member_presence(mgr, registry_key, slot).await {
+            Ok(Some(presence)) if !presence.pseudonym_key.is_empty() => {
+                if indexed_keys.contains(presence.pseudonym_key.as_str())
+                    || presence.pseudonym_key == my_pseudonym
+                {
+                    continue;
+                }
+
+                tracing::info!(
+                    community = %community_id,
+                    pseudonym = %presence.pseudonym_key,
+                    slot = slot,
+                    "discovered unindexed member via SMPL presence scan"
+                );
+
+                // Add to gossip overlay if online
+                if presence.status != "offline" && presence.last_heartbeat > stale_threshold {
+                    if let Some(blob) = presence.route_blob {
+                        if !blob.is_empty() {
+                            online_members.insert(presence.pseudonym_key.clone(), blob);
+                        }
+                    }
+                }
+
+                // Add to known_members
+                {
+                    let mut communities = state.communities.write();
+                    if let Some(cs) = communities.get_mut(community_id) {
+                        cs.known_members.insert(presence.pseudonym_key.clone());
+                    }
+                }
+
+                // Emit MemberDiscovered to frontend for ALL members
+                if let Some(ref app) = app_handle {
+                    use tauri::Emitter as _;
+                    let _ = app.emit(
+                        "community-event",
+                        crate::channels::CommunityEvent::MemberDiscovered {
+                            community_id: community_id.to_string(),
+                            pseudonym_key: presence.pseudonym_key.clone(),
+                            display_name: presence.pseudonym_key.clone(),
+                            subkey_index: slot,
+                        },
+                    );
+                }
+
+                // If admin, formally add to member index
+                if has_registry_kp {
+                    let display_name = presence.pseudonym_key.clone();
+                    let state = state.clone();
+                    let cid = community_id.to_string();
+                    let pk = presence.pseudonym_key.clone();
+                    tokio::spawn(async move {
+                        handle_discovered_member(&state, &cid, &pk, &display_name, slot).await;
+                    });
+                }
+            }
+            _ => {
+                // Empty slot or read error — continue scanning.
+                // Slots may be non-contiguous (multi-use invites with slot ranges).
+            }
+        }
+    }
+}
+
+/// Add a newly discovered (unindexed) member to the member registry and broadcast.
+///
+/// Called by `presence_poll_tick` when an admin discovers a SMPL presence on a slot
+/// that isn't in the member index. Adds them to the index + broadcasts `MemberJoined`.
+async fn handle_discovered_member(
+    state: &Arc<AppState>,
+    community_id: &str,
+    pseudonym_key: &str,
+    display_name: &str,
+    claimed_slot: u32,
+) {
+    use rekindle_protocol::dht::community::envelope::{ControlPayload, CommunityEnvelope};
+
+    match crate::services::coordinator::state_manager::add_member_to_registry(
+        state, community_id, pseudonym_key, display_name, Some(claimed_slot),
+    )
+    .await
+    {
+        Ok(idx) => {
+            tracing::info!(
+                community = %community_id,
+                pseudonym = %pseudonym_key,
+                subkey_index = idx,
+                "lazy discovery: added unindexed member to registry"
+            );
+            let joined = CommunityEnvelope::Control(ControlPayload::MemberJoined {
+                pseudonym_key: pseudonym_key.to_string(),
+                display_name: display_name.to_string(),
+                role_ids: vec![0, 1],
+            });
+            crate::services::coordinator::state_manager::broadcast_via_gossip(
+                state, community_id, &joined,
+            );
+            crate::services::coordinator::state_manager::emit_local_member_joined(
+                state, community_id, pseudonym_key, display_name,
+            );
+        }
+        Err(e) => {
+            tracing::debug!(
+                community = %community_id,
+                pseudonym = %pseudonym_key,
+                error = %e,
+                "lazy discovery: failed to add member to registry (may already be indexed)"
+            );
+        }
+    }
 }
 
 /// Select D random peers from the online members map.

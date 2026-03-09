@@ -1359,7 +1359,7 @@ async fn open_community_dht_records(app_handle: &tauri::AppHandle, state: &Share
 
 /// Read coordinator info from DHT manifest for each community and populate
 /// `coordinator_route_blob` in the in-memory state. Without this, communities
-/// loaded from SQLite have no coordinator route and `send_to_coordinator()` fails.
+/// loaded from SQLite have no coordinator route for `execute_state_op()` fallback.
 async fn restore_coordinator_routes(state: &SharedState) {
     use rekindle_protocol::dht::community::manifest;
     use rekindle_protocol::dht::DHTManager;
@@ -1545,6 +1545,135 @@ async fn hydrate_community_state_from_dht(state: &SharedState) {
                 category_count = cs.categories.len(),
                 "hydrated categories from DHT manifest"
             );
+        }
+    }
+
+    // Read member registry for each community to recover my_subkey_index + my_role_ids.
+    // DHT registry is authoritative — if SQLite is stale or missing data, recover from DHT.
+    {
+        use rekindle_protocol::dht::community::member_registry;
+
+        // Collect registry info needed for async reads (can't hold lock across await)
+        let registry_info: Vec<(String, String, Option<String>)> = {
+            let communities = state.communities.read();
+            community_manifests
+                .iter()
+                .filter_map(|(cid, _)| {
+                    let cs = communities.get(cid.as_str())?;
+                    let rk = cs.member_registry_key.clone()?;
+                    Some((cid.clone(), rk, cs.my_pseudonym_key.clone()))
+                })
+                .collect()
+        };
+
+        for (community_id, registry_key, my_pk) in &registry_info {
+            let Some(pk) = my_pk else { continue };
+
+            match member_registry::read_member_index(&mgr, registry_key).await {
+                Ok(members) => {
+                    if let Some(me) = members.iter().find(|m| m.pseudonym_key == *pk) {
+                        let mut recovered_subkey = false;
+                        let recovered_index = me.subkey_index;
+                        let mut communities = state.communities.write();
+                        if let Some(cs) = communities.get_mut(community_id.as_str()) {
+                            // Recover my_subkey_index if missing
+                            if cs.my_subkey_index.is_none() {
+                                cs.my_subkey_index = Some(me.subkey_index);
+                                recovered_subkey = true;
+                                tracing::info!(
+                                    community = %community_id,
+                                    subkey_index = me.subkey_index,
+                                    "recovered my_subkey_index from DHT registry"
+                                );
+                            }
+                            // Update role_ids from DHT (authoritative) if richer
+                            if !me.role_ids.is_empty() && me.role_ids.len() >= cs.my_role_ids.len() {
+                                cs.my_role_ids.clone_from(&me.role_ids);
+                            }
+                        }
+                        drop(communities);
+
+                        // Persist recovered my_subkey_index to SQLite so it survives restarts
+                        if recovered_subkey {
+                            let app_handle = state.app_handle.read().clone();
+                            if let Some(ref ah) = app_handle {
+                                let pool: tauri::State<'_, crate::db::DbPool> = ah.state();
+                                let ok = state_helpers::current_owner_key(state).unwrap_or_default();
+                                let cid = community_id.clone();
+                                let idx = recovered_index;
+                                crate::db_helpers::db_fire(pool.inner(), "persist hydrated subkey_index", move |conn| {
+                                    conn.execute(
+                                        "UPDATE communities SET my_subkey_index = ?1 WHERE owner_key = ?2 AND id = ?3",
+                                        rusqlite::params![idx, ok, cid],
+                                    )?;
+                                    Ok(())
+                                });
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::debug!(
+                        community = %community_id,
+                        error = %e,
+                        "failed to read member registry during hydration"
+                    );
+                }
+            }
+        }
+
+        // Derive slot_keypair immediately if seed + index available (no 60s wait)
+        for (community_id, _, _) in &registry_info {
+            let should_derive = {
+                let communities = state.communities.read();
+                communities.get(community_id.as_str()).and_then(|cs| {
+                    if cs.slot_keypair.is_none() {
+                        cs.slot_seed.as_ref().and_then(|seed| {
+                            cs.my_subkey_index.map(|idx| (seed.clone(), idx))
+                        })
+                    } else {
+                        None
+                    }
+                })
+            };
+            if let Some((seed, idx)) = should_derive {
+                services::community_service::try_derive_slot_keypair(
+                    state, community_id, &seed, idx,
+                );
+            }
+        }
+
+        // Belt-and-suspenders: recover registry_owner_keypair from Stronghold
+        // if login didn't load it (e.g. race condition, Stronghold unlock timing).
+        let missing_registry_kp: Vec<String> = {
+            let communities = state.communities.read();
+            registry_info
+                .iter()
+                .filter(|(cid, _, _)| {
+                    communities
+                        .get(cid.as_str())
+                        .is_some_and(|cs| cs.registry_owner_keypair.is_none())
+                })
+                .map(|(cid, _, _)| cid.clone())
+                .collect()
+        };
+        if !missing_registry_kp.is_empty() {
+            let app_handle = state.app_handle.read().clone();
+            if let Some(ref ah) = app_handle {
+                let ks_handle: tauri::State<'_, crate::keystore::KeystoreHandle> = ah.state();
+                let ks_guard = ks_handle.lock();
+                if let Some(ref ks) = *ks_guard {
+                    let mut communities = state.communities.write();
+                    for cid in &missing_registry_kp {
+                        if let Some(rkp) = crate::keystore::load_registry_keypair(ks, cid) {
+                            tracing::info!(community = %cid, "recovered registry_owner_keypair from Stronghold during hydrate");
+                            if let Some(cs) = communities.get_mut(cid.as_str()) {
+                                cs.registry_owner_keypair = Some(rkp);
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 

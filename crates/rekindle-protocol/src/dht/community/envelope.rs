@@ -1,4 +1,4 @@
-//! Wire envelope format for all community coordinator traffic.
+//! Wire envelope format for all community P2P traffic.
 //!
 //! Replaces the request/response model (`CommunityRequest`/`CommunityResponse`/`CommunityBroadcast`)
 //! with unidirectional envelopes sent via `app_message` (fire-and-forget).
@@ -6,7 +6,7 @@
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
 
-/// Wire envelope wrapping all community coordinator traffic.
+/// Wire envelope wrapping all community P2P traffic.
 /// Sent via `app_message` (fire-and-forget) -- NOT `app_call` (request/response).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
@@ -16,7 +16,7 @@ pub enum CommunityEnvelope {
         channel_id: String,
         message_id: String,
         author_pseudonym: String,
-        /// MEK-encrypted content (coordinator cannot read).
+        /// MEK-encrypted content (end-to-end encrypted).
         ciphertext: Vec<u8>,
         mek_generation: u64,
         timestamp: u64,
@@ -83,7 +83,7 @@ fn default_ttl() -> u8 {
 ///
 /// Each variant maps 1:1 to an existing `CommunityRequest` variant.
 /// Includes both request-type variants (from members) and response-type
-/// variants (from coordinator to members).
+/// variants (from admin peers to members).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
 pub enum ControlPayload {
@@ -114,12 +114,17 @@ pub enum ControlPayload {
         /// Signal Protocol prekey bundle for MEK delivery.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         prekey_bundle: Option<Vec<u8>>,
+        /// SMPL subkey index the joiner has already claimed via self-service join.
+        /// When present, the admin processing this request should use this index
+        /// instead of assigning a new one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        claimed_subkey_index: Option<u32>,
     },
     /// Member voluntarily leaving.
     MemberLeave {
         pseudonym_key: String,
     },
-    /// Response: join accepted by coordinator.
+    /// Response: join accepted by admin peer.
     JoinAccepted {
         mek_encrypted: Vec<u8>,
         mek_generation: u64,
@@ -150,7 +155,7 @@ pub enum ControlPayload {
         #[serde(default)]
         wrapped_slot_keypair: Option<Vec<u8>>,
     },
-    /// Response: join rejected by coordinator.
+    /// Response: join rejected by admin peer.
     JoinRejected {
         reason: String,
     },
@@ -244,9 +249,9 @@ pub enum ControlPayload {
     /// Request current MEK.
     RequestMEK,
     /// Request SlotKeypairGrant — sent when a member is missing their slot keypair
-    /// (e.g. it was never delivered or lost). Coordinator responds with SlotKeypairGrant.
-    /// Includes the requester's route_blob so the coordinator can respond directly
-    /// (without the route, the coordinator can't deliver the grant because the
+    /// (e.g. it was never delivered or lost). Any admin peer responds with SlotKeypairGrant.
+    /// Includes the requester's route_blob so the admin can respond directly
+    /// (without the route, the admin can't deliver the grant because the
     /// requester can't write DHT presence without the slot keypair — chicken-and-egg).
     RequestSlotKeypair {
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -257,6 +262,11 @@ pub enum ControlPayload {
     /// Broadcast: MEK rotated.
     MEKRotated {
         new_generation: u64,
+    },
+    /// Broadcast: member completed onboarding.
+    OnboardingComplete {
+        pseudonym_key: String,
+        role_ids: Vec<u32>,
     },
 
     // ── Channel management ──
@@ -402,24 +412,27 @@ pub enum ControlPayload {
     },
 
     // ── Invite management ──
-    /// Create an invite. The `code` is generated client-side and passed through.
+    /// Create an invite with embedded encrypted secrets for self-service joining.
     CreateInvite {
-        /// Client-generated invite code (hex string).
-        code: String,
+        /// SHA-256 hash of the invite code (hex). Raw code never sent over gossip.
+        code_hash: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         max_uses: Option<u32>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         expires_in_seconds: Option<u64>,
+        /// Encrypted `InviteSecrets` blob (base64). Stored alongside invite metadata.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        encrypted_secrets: Option<String>,
     },
-    /// Revoke an invite.
+    /// Revoke an invite by its code hash.
     RevokeInvite {
-        code: String,
+        code_hash: String,
     },
     /// List invites.
     ListInvites,
     /// Broadcast: invite created.
     InviteCreated {
-        code: String,
+        code_hash: String,
         created_by: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         max_uses: Option<u32>,
@@ -430,11 +443,11 @@ pub enum ControlPayload {
     },
     /// Broadcast: invite revoked.
     InviteRevoked {
-        code: String,
+        code_hash: String,
     },
     /// Broadcast: invite used.
     InviteUsed {
-        code: String,
+        code_hash: String,
         new_use_count: u32,
     },
 

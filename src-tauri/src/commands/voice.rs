@@ -9,13 +9,36 @@ use crate::state_helpers;
 pub(crate) use crate::services::voice::shutdown::{shutdown_voice, VoiceShutdownOpts};
 
 /// Join a voice channel — initialize the voice engine and emit join event.
+///
+/// For community voice channels, pass `community_id` so the transport uses
+/// gossip-based peer discovery (VoiceJoin/VoiceLeave) instead of single-peer lookup.
 #[tauri::command]
 pub async fn join_voice_channel(
     channel_id: String,
+    community_id: Option<String>,
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
-    crate::services::voice::session::start_session(&channel_id, &app, state.inner())
+    crate::services::voice::session::start_session(
+        &channel_id,
+        community_id.as_deref(),
+        &app,
+        state.inner(),
+    )?;
+
+    // Broadcast VoiceJoin via gossip so other community members add us as a peer
+    if let Some(ref cid) = community_id {
+        let route_blob = crate::state_helpers::our_route_blob(&state).unwrap_or_default();
+        let envelope = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
+            rekindle_protocol::dht::community::envelope::ControlPayload::VoiceJoin {
+                channel_id: channel_id.clone(),
+                route_blob,
+            },
+        );
+        let _ = crate::commands::community::send_to_mesh(state.inner(), cid, &envelope);
+    }
+
+    Ok(())
 }
 
 /// Leave the current voice channel.
@@ -25,6 +48,23 @@ pub async fn leave_voice(
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
     let public_key = state_helpers::owner_key_or_default(state.inner());
+
+    // Broadcast VoiceLeave via gossip before shutdown so other members
+    // remove us from their transport immediately (not waiting for 5s stale timeout).
+    let (channel_id, community_id) = {
+        let ve = state.voice_engine.lock();
+        ve.as_ref()
+            .map(|h| (h.channel_id.clone(), h.community_id.clone()))
+            .unwrap_or_default()
+    };
+    if let Some(ref cid) = community_id {
+        let envelope = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
+            rekindle_protocol::dht::community::envelope::ControlPayload::VoiceLeave {
+                channel_id,
+            },
+        );
+        let _ = crate::commands::community::send_to_mesh(state.inner(), cid, &envelope);
+    }
 
     shutdown_voice(&state, &VoiceShutdownOpts::FULL).await;
 

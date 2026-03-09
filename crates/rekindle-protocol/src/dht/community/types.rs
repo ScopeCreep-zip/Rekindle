@@ -355,10 +355,13 @@ pub enum ModerationLevel {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MEKVaultEntry {
-    /// Channel ID this vault entry is for.
+    /// Channel ID this vault entry is for (empty string = community-wide MEK).
     pub channel_id: String,
     /// MEK generation number.
     pub generation: u64,
+    /// Pseudonym public key (hex) of the admin who wrapped these copies.
+    /// Recipients need this to derive the shared ECDH secret for unwrapping.
+    pub rotator_pseudonym: String,
     /// Per-member encrypted MEK copies.
     pub copies: Vec<EncryptedMEKCopy>,
 }
@@ -375,10 +378,15 @@ pub struct EncryptedMEKCopy {
 }
 
 /// Invite entry stored in manifest subkey 7.
+///
+/// The `code_hash` is SHA-256(raw_code) so the raw invite code is never
+/// exposed in the publicly-readable DHT manifest. The `encrypted_secrets`
+/// blob can only be decrypted by someone who has the raw code.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InviteEntry {
-    pub code: String,
+    /// SHA-256 hash of the invite code (hex). Raw code never stored in DHT.
+    pub code_hash: String,
     pub created_by: String,
     pub created_at: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -387,6 +395,33 @@ pub struct InviteEntry {
     pub max_uses: u32,
     #[serde(default)]
     pub use_count: u32,
+    /// Encrypted `InviteSecrets` blob (base64). Decrypted with
+    /// `HKDF(raw_invite_code) → AES-256-GCM`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encrypted_secrets: Option<String>,
+}
+
+/// Secrets embedded in a community invite for self-service joining.
+///
+/// Encrypted with HKDF(invite_code) → AES-256-GCM and stored alongside
+/// the invite metadata in manifest subkey 7. Contains everything a new
+/// member needs to join without any online coordinator or peer.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InviteSecrets {
+    /// Slot seed for deriving SMPL presence keypairs (hex-encoded, 32 bytes).
+    pub slot_seed: String,
+    /// MEK wire bytes: `[8-byte generation LE || 32-byte key]` (base64-encoded).
+    pub mek_wire_bytes: String,
+    /// DHT record key for the member registry (SMPL record).
+    pub registry_key: String,
+    /// Pre-assigned subkey index (single-use invites).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assigned_subkey_index: Option<u32>,
+    /// Slot range `[start, end]` inclusive (multi-use invites).
+    /// Joiner claims the first empty slot in this range.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slot_range: Option<(u32, u32)>,
 }
 
 /// Serde helper for base64-encoding Vec<u8> fields in JSON.
@@ -453,6 +488,7 @@ mod tests {
         let entry = MEKVaultEntry {
             channel_id: "ch_01".into(),
             generation: 1,
+            rotator_pseudonym: "rotator_key_hex".into(),
             copies: vec![EncryptedMEKCopy {
                 target_pseudonym: "abcdef".into(),
                 encrypted_mek: vec![1, 2, 3, 4, 5],
