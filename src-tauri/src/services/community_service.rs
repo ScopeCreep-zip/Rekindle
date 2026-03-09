@@ -1045,8 +1045,8 @@ async fn presence_poll_tick(state: &Arc<AppState>, community_id: &str) -> Result
         if member.pseudonym_key == my_pseudonym {
             continue; // skip ourselves
         }
-        // Read presence from member's registry subkey
-        match member_registry::read_member_presence(&mgr, &registry_key, member.subkey_index).await
+        // Read presence from member's registry subkey (force_refresh to bypass stale cache)
+        match member_registry::read_member_presence_fresh(&mgr, &registry_key, member.subkey_index).await
         {
             Ok(Some(presence)) => {
                 if presence.status != "offline"
@@ -1139,7 +1139,8 @@ async fn presence_poll_tick(state: &Arc<AppState>, community_id: &str) -> Result
 /// Broadcasts our route via PresenceUpdate, sends SyncRequests per channel, and
 /// reads DHTLog tails for catch-up. Clears `needs_initial_sync` when done.
 async fn run_initial_sync(state: &Arc<AppState>, community_id: &str, d: usize) {
-    // Broadcast our presence to gossip peers so they learn our route immediately
+    // Broadcast our presence to gossip peers so they learn our route immediately.
+    // Skip if route_blob is None — pointless broadcast, peers can't reach us anyway.
     if d > 0 {
         let (my_pk, our_route) = {
             let communities = state.communities.read();
@@ -1149,14 +1150,23 @@ async fn run_initial_sync(state: &Arc<AppState>, community_id: &str, d: usize) {
                 state_helpers::our_route_blob(state),
             )
         };
-        let presence_envelope =
-            rekindle_protocol::dht::community::envelope::CommunityEnvelope::PresenceUpdate {
-                pseudonym_key: my_pk,
-                status: "online".to_string(),
-                game_info: None,
-                route_blob: our_route,
-            };
-        let _ = crate::commands::community::send_to_mesh(state, community_id, &presence_envelope);
+        if our_route.is_some() {
+            let presence_envelope =
+                rekindle_protocol::dht::community::envelope::CommunityEnvelope::PresenceUpdate {
+                    pseudonym_key: my_pk,
+                    status: "online".to_string(),
+                    game_info: None,
+                    route_blob: our_route,
+                };
+            let _ = crate::commands::community::send_to_mesh(state, community_id, &presence_envelope);
+        } else {
+            tracing::debug!(
+                community = %community_id,
+                "skipping PresenceUpdate broadcast — route_blob not yet available"
+            );
+            // Don't clear needs_initial_sync — will retry when route becomes available
+            return;
+        }
     }
 
     // Collect all channel IDs for sync
@@ -1309,7 +1319,7 @@ async fn discover_unindexed_members(
             continue;
         }
 
-        match member_registry::read_member_presence(mgr, registry_key, slot).await {
+        match member_registry::read_member_presence_fresh(mgr, registry_key, slot).await {
             Ok(Some(presence)) if !presence.pseudonym_key.is_empty() => {
                 if indexed_keys.contains(presence.pseudonym_key.as_str())
                     || presence.pseudonym_key == my_pseudonym

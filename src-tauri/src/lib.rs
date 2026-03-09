@@ -305,6 +305,7 @@ pub fn run() {
             commands::community::get_welcome_screen,
             commands::community::set_welcome_screen,
             commands::community::submit_onboarding_answers,
+            commands::community::debug_gossip_state,
             commands::community::send_channel_typing,
             commands::community::update_community_presence,
             commands::community::get_older_channel_messages,

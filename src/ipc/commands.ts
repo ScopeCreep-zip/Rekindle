@@ -1,5 +1,5 @@
 import { invoke } from "./invoke";
-import type { OnboardingConfig, WelcomeScreen, OnboardingAnswer } from "../stores/types";
+import type { OnboardingConfig, WelcomeScreen, OnboardingAnswer, GossipDiagnostics } from "../stores/types";
 
 export interface LoginResult {
   publicKey: string;
@@ -391,6 +391,8 @@ export const commands = {
     invoke<void>("set_welcome_screen", { communityId, screen }),
   submitOnboardingAnswers: (communityId: string, answers: OnboardingAnswer[]) =>
     invoke<void>("submit_onboarding_answers", { communityId, answers }),
+  debugGossipState: (communityId: string) =>
+    invoke<GossipDiagnostics>("debug_gossip_state", { communityId }),
 };
 
 export function avatarDataUrl(base64: string | null | undefined): string | undefined {

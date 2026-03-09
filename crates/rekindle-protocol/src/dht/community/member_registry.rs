@@ -162,6 +162,27 @@ pub async fn read_member_presence(
     }
 }
 
+/// Read a member's presence, bypassing the local DHT cache.
+///
+/// Uses `force_refresh = true` so we always get the latest value from
+/// the network. Essential for presence polling where stale cached values
+/// (e.g. empty `route_blob`) prevent gossip mesh formation.
+pub async fn read_member_presence_fresh(
+    dht: &DHTManager,
+    key: &str,
+    member_index: u32,
+) -> Result<Option<MemberPresence>, ProtocolError> {
+    let subkey = member_subkey(member_index);
+    match dht.get_value_fresh(key, subkey).await? {
+        Some(data) => {
+            let presence: MemberPresence = serde_json::from_slice(&data)
+                .map_err(|e| ProtocolError::Deserialization(format!("member presence: {e}")))?;
+            Ok(Some(presence))
+        }
+        None => Ok(None),
+    }
+}
+
 /// Write a member's presence to their SMPL subkey.
 ///
 /// The caller must provide `SetDHTValueOptions` with the member's keypair
