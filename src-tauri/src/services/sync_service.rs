@@ -730,7 +730,7 @@ async fn sync_communities(state: &Arc<AppState>, _pool: &DbPool) -> Result<(), S
     // (Veilid allocates a fresh route on each start).
     for (community_id, _dht_key) in &communities_with_dht {
         if let Err(e) =
-            crate::services::community_service::rejoin_community(state, community_id).await
+            crate::services::community::rejoin_community(state, community_id).await
         {
             tracing::trace!(community = %community_id, error = %e, "community rejoin failed");
         }

@@ -219,7 +219,7 @@ pub async fn create_community(
 ) -> Result<String, String> {
     let owner_key = state_helpers::current_owner_key(state.inner())?;
     let community_id =
-        services::community_service::create_community(state.inner(), &name).await?;
+        services::community::create_community(state.inner(), &name).await?;
 
     // Persist MEK, slot keypair, and slot seed to Stronghold for login restoration
     {
@@ -345,7 +345,7 @@ pub async fn join_community(
     keystore_handle: State<'_, KeystoreHandle>,
 ) -> Result<(), String> {
     let owner_key = state_helpers::current_owner_key(state.inner())?;
-    services::community_service::join_community(state.inner(), &community_id, invite_code.as_deref())
+    services::community::join_community(state.inner(), &community_id, invite_code.as_deref())
         .await?;
 
     // Read community state populated by join_community (now includes MEK + slot info)

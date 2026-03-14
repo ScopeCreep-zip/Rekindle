@@ -2378,7 +2378,7 @@ fn handle_slot_keypair_grant(
     let state_for_poll = state.clone();
     let cid_for_poll = community_id.to_string();
     tokio::spawn(async move {
-        if let Err(e) = crate::services::community_service::presence_poll_tick_public(
+        if let Err(e) = crate::services::community::presence_poll_tick_public(
             &state_for_poll,
             &cid_for_poll,
         )
@@ -2494,7 +2494,7 @@ fn handle_slot_seed_grant(
     let state_for_poll = state.clone();
     let cid_for_poll = community_id.to_string();
     tokio::spawn(async move {
-        if let Err(e) = crate::services::community_service::presence_poll_tick_public(
+        if let Err(e) = crate::services::community::presence_poll_tick_public(
             &state_for_poll,
             &cid_for_poll,
         )
@@ -3835,7 +3835,7 @@ pub(crate) async fn route_refresh_loop(
 
                     // Trigger presence poll for all communities to publish new route
                     for community_id in &all_community_ids {
-                        let _ = crate::services::community_service::rejoin_community(
+                        let _ = crate::services::community::rejoin_community(
                             &state,
                             community_id,
                         )
