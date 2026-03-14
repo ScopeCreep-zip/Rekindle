@@ -1,7 +1,6 @@
 pub mod audit_log;
 pub mod automod;
 pub mod channel_record;
-pub mod election;
 pub mod envelope;
 pub mod manifest;
 pub mod member_registry;
@@ -12,7 +11,6 @@ pub mod types;
 // Re-export types for convenient access via `dht::community::*`
 pub use audit_log::{AuditAction, AuditChange, AuditLogEntry, AuditTarget};
 pub use automod::{AutoModAction, AutoModConfig, AutoModRule, AutoModTrigger, RaidAction, RaidProtection};
-pub use election::{compute_election_score, find_winner, is_eligible};
 pub use envelope::{
     sign_envelope, verify_envelope, CommunityEnvelope, ControlPayload, OnboardingAnswer,
     PresenceGameInfo, SignedEnvelope,

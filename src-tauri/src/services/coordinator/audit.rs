@@ -11,7 +11,6 @@ use parking_lot::Mutex;
 use rekindle_protocol::dht::community::audit_log::{
     AuditAction, AuditChange, AuditLogEntry, AuditTarget,
 };
-use rekindle_protocol::dht::community::manifest;
 use rekindle_protocol::dht::DHTManager;
 
 use crate::state::AppState;
@@ -58,45 +57,6 @@ impl AuditLogger {
     pub fn record_key(&self) -> Option<&str> {
         self.audit_record_key.as_deref()
     }
-}
-
-/// Create the audit DHT record and store its key in the manifest.
-pub async fn create_audit_record(
-    state: &Arc<AppState>,
-    community_id: &str,
-    logger: &Mutex<AuditLogger>,
-) -> Result<String, String> {
-    let rc = state_helpers::routing_context(state).ok_or("not attached")?;
-    let mgr = DHTManager::new(rc);
-
-    // Create a DFLT record with 256 subkeys for the ring buffer
-    let (key, _keypair) = mgr
-        .create_record(u32::from(AUDIT_SUBKEY_COUNT))
-        .await
-        .map_err(|e| format!("create audit record: {e}"))?;
-
-    // Store the key in manifest subkey 14
-    let manifest_key = {
-        let communities = state.communities.read();
-        communities
-            .get(community_id)
-            .and_then(|c| c.manifest_key.clone().or_else(|| Some(c.id.clone())))
-            .ok_or("no manifest key")?
-    };
-
-    manifest::write_audit_log_key(&mgr, &manifest_key, &key)
-        .await
-        .map_err(|e| format!("write audit log key: {e}"))?;
-
-    logger.lock().set_record_key(key.clone());
-
-    tracing::info!(
-        community = %community_id,
-        audit_key = %key,
-        "audit log DHT record created"
-    );
-
-    Ok(key)
 }
 
 /// Log an audit action.

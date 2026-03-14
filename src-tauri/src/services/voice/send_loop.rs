@@ -23,6 +23,10 @@ pub(crate) struct VoiceSendParams {
     pub echo_cancellation: bool,
     pub muted_flag: Arc<AtomicBool>,
     pub speaker_ref_rx: broadcast::Receiver<Vec<f32>>,
+    /// Community ID for MEK encryption of voice packets. None for 1:1 calls.
+    pub community_id: Option<String>,
+    /// Shared app state for MEK cache access.
+    pub state: crate::state::SharedState,
 }
 
 struct VoiceSendLoop {
@@ -42,6 +46,8 @@ struct VoiceSendLoop {
     packets_sent: u64,
     send_failures: u64,
     last_quality_report: Instant,
+    community_id: Option<String>,
+    state: crate::state::SharedState,
 }
 
 /// Entry point: validate params, build loop state, run until shutdown.
@@ -97,6 +103,8 @@ impl VoiceSendLoop {
             packets_sent: 0,
             send_failures: 0,
             last_quality_report: Instant::now(),
+            community_id: params.community_id,
+            state: params.state,
         })
     }
 
@@ -182,6 +190,20 @@ impl VoiceSendLoop {
         encoded.sequence = self.sequence;
         encoded.timestamp = rekindle_utils::timestamp_ms();
         self.sequence = self.sequence.wrapping_add(1);
+
+        // Encrypt voice frame with community MEK (if in a community channel)
+        if let Some(ref cid) = self.community_id {
+            let mek_cache = self.state.mek_cache.lock();
+            if let Some(mek) = mek_cache.get(cid) {
+                match mek.encrypt(&encoded.data) {
+                    Ok(ciphertext) => encoded.data = ciphertext,
+                    Err(e) => {
+                        tracing::warn!(error = %e, "voice MEK encrypt failed");
+                        return;
+                    }
+                }
+            }
+        }
 
         {
             let transport = self.transport.lock().await;

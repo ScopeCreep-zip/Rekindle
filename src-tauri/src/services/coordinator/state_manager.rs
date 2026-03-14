@@ -34,6 +34,8 @@ pub struct StateManager {
     raid: parking_lot::Mutex<RaidDetector>,
     /// Audit logger for moderation actions (Arc for sharing with spawned tasks).
     audit_logger: Arc<parking_lot::Mutex<AuditLogger>>,
+    /// Serializes invite validation to prevent TOCTOU race on use_count.
+    invite_lock: tokio::sync::Mutex<()>,
 }
 
 impl StateManager {
@@ -48,6 +50,7 @@ impl StateManager {
                 rekindle_protocol::dht::community::automod::RaidProtection::default(),
             )),
             audit_logger: Arc::new(parking_lot::Mutex::new(AuditLogger::new())),
+            invite_lock: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -270,36 +273,44 @@ async fn persist_control_to_manifest(
             let kind = channel_type.parse::<ChannelKind>().unwrap_or(ChannelKind::Text);
             let new_channel_id = format!("ch_{}", hex::encode(&crate::commands::community::rand_nonce()[..8]));
 
-            // Create a DHTLog for the new channel's persistent message history
-            let log_key = if let Some(rc) = state_helpers::routing_context(state) {
-                match rekindle_protocol::dht::community::channel_record::create_channel_log(&rc).await {
-                    Ok((key, kp)) => {
-                        // Persist channel log keypair to Stronghold
-                        use tauri::Manager as _;
-                        let app_handle = state.app_handle.read().clone();
-                        if let Some(ref ah) = app_handle {
-                            let ks_handle: tauri::State<'_, crate::keystore::KeystoreHandle> = ah.state();
-                            let ks = ks_handle.lock();
-                            if let Some(ref keystore) = *ks {
-                                crate::keystore::persist_channel_log_keypair(
-                                    keystore, community_id, &new_channel_id, &kp.to_string(),
-                                );
+            // Create SMPL channel record for persistent message history.
+            // Uses slot seed so members can derive their writer keypair independently.
+            let log_key = {
+                let slot_seed_hex = {
+                    let communities = state.communities.read();
+                    communities.get(community_id).and_then(|cs| cs.slot_seed.clone())
+                };
+                if let (Some(seed_hex), Some(rc)) = (slot_seed_hex, state_helpers::routing_context(state)) {
+                    let seed_result: Result<[u8; 32], String> = hex::decode(&seed_hex)
+                        .map_err(|e| format!("bad seed hex: {e}"))
+                        .and_then(|b| b.try_into().map_err(|_| "seed not 32 bytes".into()));
+                    match seed_result {
+                        Ok(seed_arr) => {
+                            let mgr = rekindle_protocol::dht::DHTManager::new(rc);
+                            match rekindle_protocol::dht::community::channel_record::create_smpl_channel_record(
+                                &mgr, &seed_arr,
+                            ).await {
+                                Ok((key, _owner_kp)) => {
+                                    let mut communities = state.communities.write();
+                                    if let Some(cs) = communities.get_mut(community_id) {
+                                        cs.channel_log_keys.insert(new_channel_id.clone(), key.clone());
+                                    }
+                                    Some(key)
+                                }
+                                Err(e) => {
+                                    tracing::warn!(error = %e, "failed to create SMPL channel record");
+                                    None
+                                }
                             }
                         }
-                        // Update CommunityState channel_log_keys
-                        let mut communities = state.communities.write();
-                        if let Some(cs) = communities.get_mut(community_id) {
-                            cs.channel_log_keys.insert(new_channel_id.clone(), key.clone());
+                        Err(e) => {
+                            tracing::warn!(error = %e, "cannot create channel record — invalid slot seed");
+                            None
                         }
-                        Some(key)
                     }
-                    Err(e) => {
-                        tracing::warn!(error = %e, "failed to create channel DHTLog");
-                        None
-                    }
+                } else {
+                    None
                 }
-            } else {
-                None
             };
 
             chs.push(ChannelEntryV2 {
@@ -484,7 +495,7 @@ async fn handle_control(
     payload: &ControlPayload,
     sender_pseudonym: &str,
 ) {
-    let is_owner = is_community_owner(state, &sm.community_id, sender_pseudonym);
+    let is_owner = is_owner_by_roles(state, &sm.community_id, sender_pseudonym, &sender.role_ids);
     let base_perms = calculate_permissions_v2(
         &sender.role_ids,
         roles,
@@ -539,6 +550,7 @@ async fn handle_control(
                 // Validate invite code (if provided)
                 if let Err(e) = validate_and_use_invite(
                     &state_clone,
+                    &sm_clone,
                     &onboard_community,
                     invite_code_clone.as_deref(),
                 ).await {
@@ -612,8 +624,12 @@ async fn handle_control(
                             cs.gossip = Some(crate::state::GossipOverlay::default());
                         }
                         if let Some(ref mut gossip) = cs.gossip {
-                            gossip.online_members.insert(joiner_pseudonym.clone(), blob.clone());
-                            gossip.peers.insert(joiner_pseudonym.clone(), blob.clone());
+                            let member = crate::state::OnlineMember {
+                                route_blob: blob.clone(),
+                                last_seen: rekindle_utils::timestamp_secs(),
+                            };
+                            gossip.online_members.insert(joiner_pseudonym.clone(), member.clone());
+                            gossip.peers.insert(joiner_pseudonym.clone(), member);
                         }
                     }
                 }
@@ -758,9 +774,9 @@ async fn handle_control(
                             .map(|(cid, lk)| (cid.clone(), lk.clone()))
                     })
                 };
-                if let Some((ch_id, log_key)) = new_entry {
-                    distribute_channel_log_keypair(state, &sm.community_id, &ch_id, &log_key);
-                }
+                // SMPL channel records use slot seed — no keypair distribution needed.
+                // Members derive their writer keypair from the shared slot seed.
+                let _ = new_entry; // channel entry already written to manifest
 
                 log_audit(state, sm, AuditAction::ChannelCreate, AuditTarget::Community, vec![
                     AuditChange { field: "name".into(), old_value: None, new_value: Some(ch_name) },
@@ -1021,7 +1037,7 @@ async fn handle_control_extended(
                 let communities = state.communities.read();
                 communities.get(&sm.community_id)
                     .and_then(|c| c.gossip.as_ref())
-                    .and_then(|g| g.online_members.get(sender_pseudonym).cloned())
+                    .and_then(|g| g.online_members.get(sender_pseudonym).map(|m| m.route_blob.clone()))
             };
             if let Some(blob) = route_blob {
                 let state_clone = state.clone();
@@ -1054,7 +1070,7 @@ async fn handle_control_extended(
                 let communities = state.communities.read();
                 communities.get(&sm.community_id)
                     .and_then(|c| c.gossip.as_ref())
-                    .and_then(|g| g.online_members.get(sender_pseudonym).cloned())
+                    .and_then(|g| g.online_members.get(sender_pseudonym).map(|m| m.route_blob.clone()))
             });
             // Look up the member's subkey_index from the registry
             let registry_key = {
@@ -1335,8 +1351,7 @@ fn send_admin_keypair_grant(
         communities
             .get(community_id)
             .and_then(|cs| cs.gossip.as_ref())
-            .and_then(|g| g.online_members.get(target_pseudonym))
-            .cloned()
+            .and_then(|g| g.online_members.get(target_pseudonym).map(|m| m.route_blob.clone()))
     };
     let Some(blob) = target_route_blob else {
         tracing::info!(
@@ -1451,7 +1466,7 @@ fn gossip_send_raw(state: &Arc<AppState>, community_id: &str, signed_bytes: &[u8
         let communities = state.communities.read();
         let Some(cs) = communities.get(community_id) else { return };
         let Some(ref gossip) = cs.gossip else { return };
-        gossip.peers.values().cloned().collect()
+        gossip.peers.values().map(|m| m.route_blob.clone()).collect()
     };
 
     for route_blob in peers {
@@ -1912,6 +1927,21 @@ pub(crate) async fn add_member_to_registry(
         return Ok(existing.subkey_index);
     }
 
+    // Check ban list — banned members cannot be added to registry
+    let manifest_key = {
+        let communities = state.communities.read();
+        communities.get(community_id).and_then(|cs| cs.manifest_key.clone())
+    };
+    if let Some(ref mk) = manifest_key {
+        let bans = manifest::read_bans(&mgr, mk)
+            .await
+            .map_err(|e| format!("failed to read ban list: {e}"))?;
+        if bans.iter().any(|b| b.pseudonym_key == pseudonym_key) {
+            tracing::warn!(community = %community_id, pseudonym = %pseudonym_key, "rejected banned member from joining");
+            return Err("member is banned".into());
+        }
+    }
+
     let now = rekindle_utils::timestamp_secs();
     // Use the joiner's claimed slot if provided (self-service join), otherwise assign next free
     let assigned_subkey = claimed_subkey_index
@@ -2014,10 +2044,9 @@ async fn send_join_accepted(
         .find(|m| m.pseudonym_key == joiner_pseudonym)
         .map_or_else(|| vec![0, 1], |m| m.role_ids.clone());
 
-    // Wrap channel log keypairs for the joiner
-    let channel_log_keypairs = wrap_channel_log_keypairs(
-        state, community_id, joiner_pseudonym, &channels,
-    );
+    // SMPL channel records use slot seed — no keypair distribution needed.
+    // Members derive their writer keypair from the shared slot seed.
+    let channel_log_keypairs: Vec<(String, String, Vec<u8>)> = Vec::new();
 
     // Wrap the slot_seed for the joiner so they can derive their own slot keypair
     // locally via derive_slot_veilid_keypair(seed, slot_index). This eliminates
@@ -2197,17 +2226,43 @@ async fn notify_invite_used(
 }
 
 /// Check if a pseudonym is the community owner.
+/// Works for both local and remote members by checking:
+/// (a) if the local user holds the manifest keypair and pseudonym matches, OR
+/// (b) if the provided member role_ids contain the owner role (id=4).
 fn is_community_owner(state: &Arc<AppState>, community_id: &str, pseudonym: &str) -> bool {
     let communities = state.communities.read();
     if let Some(cs) = communities.get(community_id) {
-        // The owner is the one with the owner role (id=4) in their role_ids
-        if let Some(my_key) = &cs.my_pseudonym_key {
-            if my_key == pseudonym {
-                return cs.my_role_ids.contains(&4);
-            }
+        // Check 1: we hold the manifest keypair and the pseudonym is us
+        if cs.manifest_owner_keypair.is_some()
+            && cs.my_pseudonym_key.as_deref() == Some(pseudonym)
+        {
+            return true;
+        }
+        // Check 2: local user has owner role (id=4) — covers case where
+        // manifest_owner_keypair hasn't been restored from Stronghold yet
+        if cs.my_pseudonym_key.as_deref() == Some(pseudonym)
+            && cs.my_role_ids.contains(&4)
+        {
+            return true;
         }
     }
     false
+}
+
+/// Check if a member is the community owner using their role_ids directly.
+/// Use this when you have the sender's MemberSummary available (e.g., in handle_control).
+pub(crate) fn is_owner_by_roles(
+    state: &Arc<AppState>,
+    community_id: &str,
+    pseudonym: &str,
+    member_role_ids: &[u32],
+) -> bool {
+    // Check role_ids for owner role (id=4)
+    if member_role_ids.contains(&4) {
+        return true;
+    }
+    // Also check manifest keypair for local user
+    is_community_owner(state, community_id, pseudonym)
 }
 
 /// Create an invite entry, persist to manifest, return the entry.
@@ -2301,12 +2356,17 @@ async fn revoke_invite_entry(
 /// Returns Ok(()) on valid invite, or Ok(()) if no code given (open community).
 pub(crate) async fn validate_and_use_invite(
     state: &Arc<AppState>,
+    sm: &StateManager,
     community_id: &str,
     invite_code: Option<&str>,
 ) -> Result<(), String> {
     let Some(code) = invite_code else {
         return Ok(());
     };
+
+    // Serialize invite validation to prevent TOCTOU race on use_count.
+    // Guard held from read through write-back — released at end of function.
+    let invite_guard = sm.invite_lock.lock().await;
 
     let code_hash = rekindle_crypto::group::invite_crypto::hash_invite_code(code);
 
@@ -2357,149 +2417,10 @@ pub(crate) async fn validate_and_use_invite(
         "invite used"
     );
 
+    drop(invite_guard); // release invite lock after write-back completes
     Ok(())
 }
 
-/// Wrap each channel's DHTLog keypair for a joining member.
-///
-/// For every channel that has a `log_key`, loads the keypair from Stronghold,
-/// wraps it with the joiner's pseudonym public key, and returns a list of
-/// `(channel_id, log_key, wrapped_keypair_bytes)`.
-fn wrap_channel_log_keypairs(
-    state: &Arc<AppState>,
-    community_id: &str,
-    joiner_pseudonym: &str,
-    channels: &[rekindle_protocol::dht::community::types::ChannelEntryV2],
-) -> Vec<(String, String, Vec<u8>)> {
-    use rekindle_crypto::group::mek_distribution::wrap_mek;
-    use rekindle_crypto::group::pseudonym::derive_community_pseudonym;
-
-    let signing_key = {
-        let secret = state.identity_secret.lock();
-        match *secret {
-            Some(s) => derive_community_pseudonym(&s, community_id),
-            None => return Vec::new(),
-        }
-    };
-
-    let joiner_pub_bytes: [u8; 32] = match hex::decode(joiner_pseudonym)
-        .ok()
-        .and_then(|b| <[u8; 32]>::try_from(b).ok())
-    {
-        Some(b) => b,
-        None => return Vec::new(),
-    };
-
-    use tauri::Manager as _;
-    let app_handle = state.app_handle.read().clone();
-    let Some(ref ah) = app_handle else {
-        return Vec::new();
-    };
-    let ks_handle: tauri::State<'_, crate::keystore::KeystoreHandle> = ah.state();
-    let ks = ks_handle.lock();
-    let Some(ref keystore) = *ks else {
-        return Vec::new();
-    };
-
-    let mut result = Vec::new();
-    for ch in channels {
-        let Some(ref log_key) = ch.log_key else {
-            continue;
-        };
-        let Some(kp_str) = crate::keystore::load_channel_log_keypair(keystore, community_id, &ch.id)
-        else {
-            tracing::debug!(channel = %ch.id, "no log keypair in Stronghold — skipping");
-            continue;
-        };
-        let kp_bytes = kp_str.as_bytes();
-        match wrap_mek(&signing_key, &joiner_pub_bytes, kp_bytes) {
-            Ok(wrapped) => {
-                result.push((ch.id.clone(), log_key.clone(), wrapped));
-            }
-            Err(e) => {
-                tracing::warn!(channel = %ch.id, error = %e, "failed to wrap channel log keypair");
-            }
-        }
-    }
-    result
-}
-
-/// Distribute a newly created channel's DHTLog keypair to all online members.
-///
-/// Called after `CreateChannel` creates the DHTLog and persists the keypair.
-/// Each online member receives a `ChannelLogKeypairGrant` via their private route.
-fn distribute_channel_log_keypair(
-    state: &Arc<AppState>,
-    community_id: &str,
-    channel_id: &str,
-    log_key: &str,
-) {
-    use rekindle_crypto::group::mek_distribution::wrap_mek;
-    use rekindle_crypto::group::pseudonym::derive_community_pseudonym;
-
-    // Load the channel log keypair from Stronghold
-    use tauri::Manager as _;
-    let app_handle = state.app_handle.read().clone();
-    let Some(ref ah) = app_handle else { return };
-    let ks_handle: tauri::State<'_, crate::keystore::KeystoreHandle> = ah.state();
-    let ks = ks_handle.lock();
-    let Some(ref keystore) = *ks else { return };
-    let Some(kp_str) = crate::keystore::load_channel_log_keypair(keystore, community_id, channel_id) else {
-        tracing::warn!(channel = %channel_id, "no log keypair in Stronghold for distribution");
-        return;
-    };
-    let kp_bytes = kp_str.as_bytes();
-
-    // Get our signing key for wrapping
-    let Some(secret) = state.identity_secret.lock().as_ref().copied() else { return };
-    let my_signing_key = derive_community_pseudonym(&secret, community_id);
-
-    // Get our own pseudonym and all online members' routes
-    let (my_pseudonym, online_members) = {
-        let communities = state.communities.read();
-        let Some(cs) = communities.get(community_id) else { return };
-        let my_pk = cs.my_pseudonym_key.clone().unwrap_or_default();
-        let members: Vec<(String, Vec<u8>)> = cs
-            .gossip
-            .as_ref()
-            .map(|g| {
-                g.online_members
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect()
-            })
-            .unwrap_or_default();
-        (my_pk, members)
-    };
-
-    let mut sent = 0u32;
-    for (pseudonym_key, route_blob) in &online_members {
-        // Don't send to ourselves
-        if *pseudonym_key == my_pseudonym {
-            continue;
-        }
-
-        let Ok(target_pub_bytes) = hex::decode(pseudonym_key) else { continue };
-        let Ok(target_pub): Result<[u8; 32], _> = target_pub_bytes.try_into() else { continue };
-
-        let Ok(wrapped) = wrap_mek(&my_signing_key, &target_pub, kp_bytes) else {
-            tracing::warn!(target = %pseudonym_key, "failed to wrap channel log keypair");
-            continue;
-        };
-
-        let payload = ControlPayload::ChannelLogKeypairGrant {
-            channel_id: channel_id.to_string(),
-            log_key: log_key.to_string(),
-            wrapped_keypair: wrapped,
-        };
-        send_control_to_route(state, community_id, route_blob, payload);
-        sent += 1;
-    }
-
-    tracing::info!(
-        community = %community_id,
-        channel = %channel_id,
-        recipients = sent,
-        "distributed channel log keypair to online members"
-    );
-}
+// wrap_channel_log_keypairs and distribute_channel_log_keypair removed —
+// SMPL channel records use the shared slot seed. Members derive their own
+// writer keypair via derive_slot_veilid_keypair(seed, slot_index).

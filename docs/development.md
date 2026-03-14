@@ -115,7 +115,7 @@ cargo test -p rekindle-protocol
 cargo test -p rekindle-crypto
 cargo test -p rekindle-game-detect
 cargo test -p rekindle-voice
-cargo test -p rekindle-server
+# cargo test -p rekindle-server  # removed — gossip mesh model
 ```
 
 Rust backend commands extract `_core` functions (e.g., `create_identity_core`,

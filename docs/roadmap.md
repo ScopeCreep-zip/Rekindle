@@ -88,15 +88,17 @@ roles, and permissions.
 - [x] Community invites via deep link (`rekindle://invite/{blob}`)
 
 **Verification:** Create community, invite friend, exchange channel
-messages via server relay. Roles and bans work. MEK encryption not yet active.
+messages via gossip mesh. Roles and bans work. MEK encryption not yet active.
 
-**Current status note:** The community system now uses a client-server
-architecture within the P2P network. The community owner spawns a
-`rekindle-server` child process that handles RPC (join, messaging, moderation)
-and broadcasts events to all members. Channel messages route through the server
-process. MEK encrypt/decrypt primitives exist in `rekindle-crypto` but the
-end-to-end pipeline (Stronghold storage → Signal-session distribution →
-per-message encryption) is not yet wired.
+**Current status note (2026-03-13):** The community system has been migrated from
+the `rekindle-server` child process model to a **gossip mesh + static owner-as-coordinator**
+architecture. Real-time messages use D-peer epidemic broadcast via `app_message` (Tier 1).
+State changes (channels, roles, bans) are written to DHT by the creator/admins (Tier 2).
+The SMPL member registry enables self-sovereign presence writing. See
+`.claude/docs/rekindle-communities-architecture.md` (v1.0) and
+`.claude/plans/communities-migration-master-plan.md` for the full architecture and migration plan.
+MEK encrypt/decrypt primitives exist in `rekindle-crypto` but the end-to-end pipeline
+(Stronghold storage → app_call distribution → per-message encryption) is not yet wired.
 
 ## Phase 5: Voice
 

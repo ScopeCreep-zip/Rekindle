@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use tauri::{Emitter, State};
+use tauri::{Emitter, Manager, State};
 
 use crate::channels::ChatEvent;
 use crate::commands::chat::Message;
@@ -15,7 +15,7 @@ use rekindle_protocol::dht::community::permissions_v2::Permissions;
 /// Check that the current user has the given permission for a community.
 /// Returns `Ok(())` if the permission is granted, or `Err(...)` with a descriptive message.
 /// ADMINISTRATOR always implies all permissions.
-fn require_permission(
+pub(crate) fn require_permission(
     state: &SharedState,
     community_id: &str,
     required: Permissions,
@@ -899,7 +899,6 @@ pub async fn send_channel_message(
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
-    keystore_handle: State<'_, KeystoreHandle>,
 ) -> Result<String, String> {
     let owner_key = state_helpers::current_owner_key(state.inner())?;
 
@@ -914,6 +913,8 @@ pub async fn send_channel_message(
             .ok_or("channel not found in any community")?;
         (community.id.clone(), community.mek_generation)
     };
+
+    require_permission(&state, &community_id, Permissions::SEND_MESSAGES)?;
 
     // Use pseudonym key as sender for channel messages (matches what the
     // server broadcasts to other members, keeping sender IDs consistent)
@@ -958,6 +959,17 @@ pub async fn send_channel_message(
             .and_then(|c| c.gossip.as_ref())
             .map_or(1, |g| g.lamport_counter + 1)
     };
+    // Increment per-channel sequence number for gap detection
+    let sequence = {
+        let mut communities = state.communities.write();
+        if let Some(cs) = communities.get_mut(&community_id) {
+            let s = cs.channel_sequences.entry(channel_id.clone()).or_insert(0);
+            *s += 1;
+            *s
+        } else {
+            1
+        }
+    };
     let chat_envelope = CommunityEnvelope::ChatMessage {
         channel_id: channel_id.clone(),
         message_id,
@@ -967,20 +979,41 @@ pub async fn send_channel_message(
         timestamp: timestamp.cast_unsigned(),
         reply_to_id,
         lamport_ts,
+        sequence,
     };
     let delivery_result = send_to_mesh(state.inner(), &community_id, &chat_envelope);
 
-    // Layer 2: Append to channel DHTLog (sender-writes-only, non-blocking)
+    // Persist channel sequence to SQLite (non-blocking)
     {
-        let log_key = {
+        let ok_seq = state_helpers::current_owner_key(state.inner()).unwrap_or_default();
+        let cid_seq = community_id.clone();
+        let chid_seq = channel_id.clone();
+        let seq_val = sequence;
+        db_fire(pool.inner(), "persist channel sequence", move |conn| {
+            conn.execute(
+                "UPDATE channels SET my_sequence = ?1 WHERE owner_key = ?2 AND community_id = ?3 AND id = ?4",
+                rusqlite::params![seq_val.cast_signed(), ok_seq, cid_seq, chid_seq],
+            )?;
+            Ok(())
+        });
+    }
+
+    // Layer 2: Write to SMPL channel record (member writes own subkey, non-blocking)
+    {
+        let (channel_key, my_subkey_index, slot_keypair_str) = {
             let communities = state.communities.read();
-            communities.get(&community_id)
-                .and_then(|cs| cs.channel_log_keys.get(&channel_id).cloned())
+            match communities.get(&community_id) {
+                Some(cs) => (
+                    cs.channel_log_keys.get(&channel_id).cloned(),
+                    cs.my_subkey_index,
+                    cs.slot_keypair.clone(),
+                ),
+                None => (None, None, None),
+            }
         };
-        if let Some(log_key) = log_key {
-            let ks_handle = keystore_handle.inner().clone();
-            let comm_id = community_id.clone();
-            let ch_id = channel_id.clone();
+        if let (Some(channel_key), Some(subkey_idx), Some(kp_str)) =
+            (channel_key, my_subkey_index, slot_keypair_str)
+        {
             let sender_key_for_log = sender_key.clone();
             let ciphertext_for_log = ciphertext.clone();
             let msg_id = if let CommunityEnvelope::ChatMessage { ref message_id, .. } = chat_envelope {
@@ -990,27 +1023,22 @@ pub async fn send_channel_message(
             };
             if let Some(rc) = state_helpers::routing_context(state.inner()) {
                 tokio::spawn(async move {
-                    let writer_kp_str = {
-                        let ks = ks_handle.lock();
-                        ks.as_ref().and_then(|k| crate::keystore::load_channel_log_keypair(k, &comm_id, &ch_id))
-                    };
-                    if let Some(kp_str) = writer_kp_str {
-                        if let Ok(kp) = kp_str.parse::<veilid_core::KeyPair>() {
-                            let channel_msg = rekindle_protocol::dht::community::channel_record::ChannelMessage {
-                                sequence: 0,
-                                sender_pseudonym: sender_key_for_log,
-                                ciphertext: ciphertext_for_log,
-                                mek_generation,
-                                timestamp: timestamp.cast_unsigned(),
-                                reply_to: None,
-                                lamport_ts,
-                                message_id: msg_id,
-                            };
-                            if let Err(e) = rekindle_protocol::dht::community::channel_record::append_channel_message(
-                                &rc, &log_key, kp, &channel_msg,
-                            ).await {
-                                tracing::debug!(error = %e, "DHTLog append failed (non-fatal)");
-                            }
+                    if let Ok(kp) = kp_str.parse::<veilid_core::KeyPair>() {
+                        let channel_msg = rekindle_protocol::dht::community::channel_record::ChannelMessage {
+                            sequence,
+                            sender_pseudonym: sender_key_for_log,
+                            ciphertext: ciphertext_for_log,
+                            mek_generation,
+                            timestamp: timestamp.cast_unsigned(),
+                            reply_to: None,
+                            lamport_ts,
+                            message_id: msg_id,
+                        };
+                        let mgr = rekindle_protocol::dht::DHTManager::new(rc);
+                        if let Err(e) = rekindle_protocol::dht::community::channel_record::write_member_message(
+                            &mgr, &channel_key, subkey_idx, kp, &channel_msg,
+                        ).await {
+                            tracing::debug!(error = %e, "SMPL channel write failed (non-fatal)");
                         }
                     }
                 });
@@ -1259,6 +1287,7 @@ pub async fn get_channel_pins(
     community_id: String,
     channel_id: String,
 ) -> Result<Vec<PinnedMessageInfoDto>, String> {
+    require_permission(&state, &community_id, Permissions::VIEW_CHANNEL)?;
     let owner_key = state_helpers::current_owner_key(state.inner())?;
     db_call(pool.inner(), move |conn| {
         let mut stmt = conn.prepare(
@@ -1574,6 +1603,7 @@ pub async fn get_channel_threads(
     community_id: String,
     channel_id: String,
 ) -> Result<Vec<ThreadInfoDto>, String> {
+    require_permission(&state, &community_id, Permissions::VIEW_CHANNEL)?;
     let owner_key = state_helpers::current_owner_key(state.inner())?;
     db_call(pool.inner(), move |conn| {
         let mut stmt = conn.prepare(
@@ -1893,18 +1923,112 @@ pub(crate) async fn execute_state_op(
     };
 
     if has_manifest_kp {
-        // Direct: persist to DHT + broadcast via gossip mesh
+        // Admin path: persist to DHT directly + broadcast via gossip mesh
         persist_control_to_dht(state, community_id, &payload).await?;
-    }
+        send_to_mesh(
+            state,
+            community_id,
+            &CommunityEnvelope::Control(payload),
+        )
+    } else {
+        // Non-admin path: send to coordinator via app_call for confirmed delivery,
+        // then gossip broadcast for fast propagation to all members.
+        let envelope = CommunityEnvelope::Control(payload.clone());
+        let signed_bytes = sign_control_for_coordinator(state, community_id, &envelope)?;
 
-    // Always broadcast via gossip mesh so all peers receive the op.
-    // If we don't hold the keypair, any admin peer that does will
-    // persist it to DHT when they receive the broadcast.
-    send_to_mesh(
-        state,
+        match send_to_coordinator_confirmed(state, community_id, &signed_bytes).await {
+            Ok(_ack) => {
+                // Coordinator received it — also gossip broadcast so all peers learn immediately
+                send_to_mesh(
+                    state,
+                    community_id,
+                    &CommunityEnvelope::Control(payload),
+                )
+            }
+            Err(e) => Err(format!("coordinator unreachable for state op: {e}")),
+        }
+    }
+}
+
+/// Sign and serialize a community envelope for sending to the coordinator.
+fn sign_control_for_coordinator(
+    state: &SharedState,
+    community_id: &str,
+    envelope: &CommunityEnvelope,
+) -> Result<Vec<u8>, String> {
+    let envelope_bytes =
+        serde_json::to_vec(envelope).map_err(|e| format!("serialize envelope: {e}"))?;
+
+    let (pseudonym_key, signing_key) = {
+        let communities = state.communities.read();
+        let cs = communities
+            .get(community_id)
+            .ok_or("community not found")?;
+        let pk = cs
+            .my_pseudonym_key
+            .clone()
+            .ok_or("no pseudonym key")?;
+        drop(communities);
+
+        let secret = state.identity_secret.lock();
+        let secret = secret.ok_or("no identity secret")?;
+        let sk = rekindle_crypto::group::pseudonym::derive_community_pseudonym(
+            &secret,
+            community_id,
+        );
+        (pk, sk)
+    };
+
+    let signed = rekindle_protocol::dht::community::envelope::sign_envelope(
+        &signing_key,
         community_id,
-        &CommunityEnvelope::Control(payload),
-    )
+        &pseudonym_key,
+        &envelope_bytes,
+    );
+    serde_json::to_vec(&signed).map_err(|e| format!("serialize signed: {e}"))
+}
+
+/// Send a signed payload to the coordinator via app_call with retry.
+/// Returns the response bytes on success, or error after 3 attempts.
+async fn send_to_coordinator_confirmed(
+    state: &SharedState,
+    community_id: &str,
+    payload: &[u8],
+) -> Result<Vec<u8>, String> {
+    let route_blob = {
+        let communities = state.communities.read();
+        communities
+            .get(community_id)
+            .and_then(|cs| cs.coordinator_route_blob.clone())
+            .ok_or("no coordinator route — coordinator may be offline")?
+    };
+    let rc = state_helpers::routing_context(state).ok_or("not attached")?;
+
+    for attempt in 0..3u32 {
+        let route_id = match rc.api().import_remote_private_route(route_blob.clone()) {
+            Ok(id) => id,
+            Err(e) => {
+                if attempt < 2 {
+                    tracing::warn!(attempt, error = %e, "app_call route import failed, retrying");
+                    tokio::time::sleep(std::time::Duration::from_secs(1u64 << attempt)).await;
+                    continue;
+                }
+                return Err(format!("route import failed after 3 attempts: {e}"));
+            }
+        };
+        match rc
+            .app_call(veilid_core::Target::RouteId(route_id), payload.to_vec())
+            .await
+        {
+            Ok(response) => return Ok(response),
+            Err(e) if attempt < 2 => {
+                tracing::warn!(attempt, error = %e, "app_call to coordinator failed, retrying");
+                tokio::time::sleep(std::time::Duration::from_secs(1u64 << attempt)).await;
+            }
+            Err(e) => return Err(format!("app_call failed after 3 attempts: {e}")),
+        }
+    }
+    Err("app_call failed: max retries exceeded".into())
 }
 
 /// Persist a Tier 2 control payload directly to the DHT manifest.
@@ -2392,13 +2516,13 @@ pub(crate) fn send_to_mesh_raw(
             return;
         };
         if gossip.peers.is_empty() {
-            tracing::debug!(community = %community_id, "send_to_mesh_raw: no gossip peers — message will not be delivered");
+            tracing::warn!(community = %community_id, "send_to_mesh_raw: no gossip peers — message will not be delivered");
             return;
         }
-        gossip.peers.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+        gossip.peers.iter().map(|(k, m)| (k.clone(), m.route_blob.clone())).collect()
     };
 
-    tracing::debug!(
+    tracing::info!(
         community = %community_id,
         peer_count = peers.len(),
         "send_to_mesh_raw: sending to {} peers",
@@ -2409,31 +2533,95 @@ pub(crate) fn send_to_mesh_raw(
         let rc = rc.clone();
         let data = signed_bytes.clone();
         let cid = community_id.to_string();
+        let state_clone = state.clone();
         tokio::spawn(async move {
-            match rc.api().import_remote_private_route(route_blob) {
-                Ok(route_id) => {
-                    if let Err(e) = rc
-                        .app_message(veilid_core::Target::RouteId(route_id), data)
-                        .await
-                    {
-                        tracing::debug!(
-                            community = %cid,
-                            peer = %peer_key,
-                            error = %e,
-                            "send_to_mesh_raw: app_message failed"
-                        );
+            // Try primary route blob first
+            let send_result = match rc.api().import_remote_private_route(route_blob) {
+                Ok(route_id) => rc.app_message(veilid_core::Target::RouteId(route_id), data.clone()).await,
+                Err(e) => Err(veilid_core::VeilidAPIError::generic(e)),
+            };
+            if send_result.is_ok() {
+                return; // Success on first attempt
+            }
+
+            // Primary failed — attempt DHT re-resolution
+            tracing::info!(community = %cid, peer = %peer_key, "route stale, attempting DHT re-resolve");
+            let fresh_blob = resolve_peer_route_from_db(&state_clone, &cid, &peer_key).await;
+            if let Some(blob) = fresh_blob {
+                match rc.api().import_remote_private_route(blob.clone()) {
+                    Ok(route_id) => {
+                        if let Err(e) = rc.app_message(veilid_core::Target::RouteId(route_id), data).await {
+                            tracing::warn!(community = %cid, peer = %peer_key, error = %e, "re-resolved route: app_message still failed");
+                        } else {
+                            // Update cached route_blob in gossip overlay
+                            update_peer_route(&state_clone, &cid, &peer_key, blob);
+                        }
                     }
+                    Err(e) => tracing::warn!(community = %cid, peer = %peer_key, error = %e, "re-resolved route also invalid"),
                 }
-                Err(e) => {
-                    tracing::debug!(
-                        community = %cid,
-                        peer = %peer_key,
-                        error = %e,
-                        "send_to_mesh_raw: route import failed"
-                    );
-                }
+            } else {
+                tracing::warn!(community = %cid, peer = %peer_key, "no fresh route found in DHT");
             }
         });
+    }
+}
+
+/// Re-resolve a peer's route blob from the SMPL member registry via DHT.
+/// Looks up the peer's subkey_index from SQLite, then reads their presence
+/// from DHT with force_refresh to get the latest route_blob.
+async fn resolve_peer_route_from_db(
+    state: &SharedState,
+    community_id: &str,
+    peer_pseudonym: &str,
+) -> Option<Vec<u8>> {
+    use rekindle_protocol::dht::community::member_registry;
+
+    // Look up registry_key from state (clone out before any await)
+    let registry_key = {
+        let communities = state.communities.read();
+        let cs = communities.get(community_id)?;
+        cs.member_registry_key.clone()?
+    };
+
+    // Look up peer's subkey_index from SQLite
+    let app_handle = state.app_handle.read().clone();
+    let ah = app_handle.as_ref()?;
+    let pool = ah.try_state::<crate::db::DbPool>()?;
+    let cid = community_id.to_string();
+    let pk = peer_pseudonym.to_string();
+    let subkey_index = crate::db_helpers::db_call(&pool, move |conn| {
+        conn.query_row(
+            "SELECT subkey_index FROM community_members WHERE community_id = ?1 AND pseudonym_key = ?2",
+            rusqlite::params![cid, pk],
+            |row| row.get::<_, u32>(0),
+        ).ok().ok_or_else(|| rusqlite::Error::QueryReturnedNoRows)
+    }).await.ok()?;
+
+    let rc = state_helpers::routing_context(state)?;
+    let mgr = rekindle_protocol::dht::DHTManager::new(rc);
+    match member_registry::read_member_presence_fresh(&mgr, &registry_key, subkey_index).await {
+        Ok(Some(presence)) if presence.status != "offline" => {
+            presence.route_blob.filter(|b| !b.is_empty())
+        }
+        _ => None,
+    }
+}
+
+/// Update a peer's cached route_blob in the gossip overlay after successful re-resolution.
+fn update_peer_route(state: &SharedState, community_id: &str, peer: &str, blob: Vec<u8>) {
+    let mut communities = state.communities.write();
+    if let Some(cs) = communities.get_mut(community_id) {
+        if let Some(ref mut gossip) = cs.gossip {
+            let now = rekindle_utils::timestamp_secs();
+            let member = crate::state::OnlineMember {
+                route_blob: blob,
+                last_seen: now,
+            };
+            gossip.online_members.insert(peer.to_string(), member.clone());
+            if gossip.peers.contains_key(peer) {
+                gossip.peers.insert(peer.to_string(), member);
+            }
+        }
     }
 }
 
@@ -2554,6 +2742,10 @@ pub async fn get_channel_messages(
             None => (None, String::new()),
         }
     };
+
+    if let Some(ref cid) = community_id {
+        require_permission(&state, cid, Permissions::READ_MESSAGE_HISTORY)?;
+    }
 
     // --- Step 1: Query local SQLite (returns immediately) ---
     let channel_id_clone = channel_id.clone();

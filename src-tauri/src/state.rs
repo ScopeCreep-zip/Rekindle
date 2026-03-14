@@ -141,14 +141,24 @@ pub struct CircuitBreakerState {
 /// received messages to them. Adaptive degree:
 /// - ≤20 members: D = N-1 (direct mesh)
 /// - 21-60: D = 6, 61+: D = 8
+/// An online community member with their route blob and last-seen timestamp.
+#[derive(Debug, Clone)]
+pub struct OnlineMember {
+    /// Veilid private route blob for reaching this member.
+    pub route_blob: Vec<u8>,
+    /// Timestamp (seconds since epoch) of last valid gossip message or presence update.
+    /// Used for TTL-based eviction of stale members.
+    pub last_seen: u64,
+}
+
 #[derive(Debug, Clone)]
 pub struct GossipOverlay {
-    /// Current gossip peers: pseudonym_key → route_blob.
+    /// Current gossip peers: pseudonym_key → member info.
     /// These are the D peers we send/forward every message to.
-    pub peers: HashMap<String, Vec<u8>>,
-    /// All online members: pseudonym_key → route_blob.
+    pub peers: HashMap<String, OnlineMember>,
+    /// All online members: pseudonym_key → member info.
     /// Superset of `peers`. Updated on each presence poll.
-    pub online_members: HashMap<String, Vec<u8>>,
+    pub online_members: HashMap<String, OnlineMember>,
     /// Lamport counter for outgoing messages.
     /// Incremented for each message we originate (not forwards).
     pub lamport_counter: u64,
@@ -583,6 +593,22 @@ pub struct CommunityState {
     /// Used for fast membership checks on incoming ChatMessages.
     #[serde(skip)]
     pub known_members: HashSet<String>,
+
+    /// Cached member role_ids: pseudonym_key → role_ids.
+    /// Populated during presence_poll_tick from the member index.
+    /// Used for permission checks on incoming gossip moderation payloads.
+    #[serde(skip)]
+    pub member_roles: HashMap<String, Vec<u32>>,
+
+    /// Per-channel message sequence counter (channel_id → next sequence).
+    /// Incremented for each message we send in a channel. Persisted to SQLite.
+    #[serde(skip)]
+    pub channel_sequences: HashMap<String, u64>,
+
+    /// Pending sync requests: channel_id → (request_timestamp, attempt_count).
+    /// Cleared when SyncResponse arrives. Retried in presence_poll_tick if stale.
+    #[serde(skip)]
+    pub pending_syncs: HashMap<String, (u64, u32)>,
 
     /// Shutdown sender for the presence poll loop.
     #[serde(skip)]

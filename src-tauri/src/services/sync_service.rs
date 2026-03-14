@@ -845,6 +845,7 @@ async fn retry_single_pending(
                 timestamp: channel_msg.timestamp.cast_unsigned(),
                 reply_to_id: None,
                 lamport_ts: 0,
+                sequence: 0, // retry messages don't increment sequence (already counted on first send)
             },
         );
 
