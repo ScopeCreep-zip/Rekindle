@@ -128,6 +128,9 @@ pub async fn write_member_message(
 ) -> Result<(), ProtocolError> {
     let subkey = u32::from(CHANNEL_OWNER_SUBKEY_COUNT) + member_index;
 
+    // Ensure the channel record is open (Veilid requires records to be opened before read/write)
+    dht.open_record(channel_key).await?;
+
     // Read existing messages from our subkey
     let mut messages = match dht.get_value(channel_key, subkey).await? {
         Some(data) => serde_json::from_slice::<Vec<ChannelMessage>>(&data).unwrap_or_default(),
@@ -160,6 +163,10 @@ pub async fn read_all_channel_messages(
     member_count: u32,
 ) -> Result<Vec<ChannelMessage>, ProtocolError> {
     use futures::stream::{FuturesUnordered, StreamExt};
+
+    // Open the channel record once before parallel reads
+    let opener = DHTManager::new(rc.clone());
+    opener.open_record(channel_key).await?;
 
     let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(10));
     let mut futs = FuturesUnordered::new();
