@@ -315,7 +315,9 @@ pub async fn join_community(
         },
         slot_keypair: Some(slot_keypair_str),
         manifest_owner_keypair: None,
-        channel_log_keys: std::collections::HashMap::new(),
+        channel_log_keys: channel_entries.iter()
+            .filter_map(|ch| ch.log_key.as_ref().map(|lk| (ch.id.clone(), lk.clone())))
+            .collect(),
         channel_sequences: std::collections::HashMap::new(),
         pending_syncs: std::collections::HashMap::new(),
         registry_owner_keypair: None,
