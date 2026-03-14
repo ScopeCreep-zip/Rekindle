@@ -179,6 +179,9 @@ pub enum ControlPayload {
         pseudonym_key: String,
         display_name: String,
         role_ids: Vec<u32>,
+        /// Route blob so receivers can immediately add the joiner to their gossip overlay.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        route_blob: Option<Vec<u8>>,
     },
     /// Broadcast: a member was removed (left, kicked, or banned).
     MemberRemoved {
@@ -287,6 +290,8 @@ pub enum ControlPayload {
     // ── Channel management ──
     /// Create a channel.
     CreateChannel {
+        /// Sender-generated channel ID — coordinator must use this to avoid ID mismatch.
+        channel_id: String,
         name: String,
         channel_type: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]

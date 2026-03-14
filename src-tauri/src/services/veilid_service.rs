@@ -485,6 +485,7 @@ fn handle_peer_assisted_join(
     pseudonym_key: &str,
     display_name: &str,
     claimed_subkey_index: Option<u32>,
+    route_blob: Option<Vec<u8>>,
 ) {
     use rekindle_protocol::dht::community::envelope::{ControlPayload, CommunityEnvelope};
 
@@ -520,6 +521,7 @@ fn handle_peer_assisted_join(
                     pseudonym_key: pk.clone(),
                     display_name: dn.clone(),
                     role_ids: vec![0, 1],
+                    route_blob: route_blob.clone(),
                 });
                 crate::services::coordinator::state_manager::broadcast_via_gossip(
                     &state, &cid, &joined,
@@ -638,6 +640,7 @@ async fn handle_relayed_control(
             pseudonym_key,
             display_name,
             claimed_subkey_index,
+            route_blob,
             ..
         } => {
             handle_peer_assisted_join(
@@ -646,18 +649,40 @@ async fn handle_relayed_control(
                 &pseudonym_key,
                 &display_name,
                 claimed_subkey_index,
+                route_blob,
             );
         }
         ControlPayload::MemberJoined {
             pseudonym_key,
             display_name,
             role_ids,
+            route_blob,
         } => {
             // Add to known_members cache
             {
                 let mut communities = state.communities.write();
                 if let Some(cs) = communities.get_mut(community_id) {
                     cs.known_members.insert(pseudonym_key.clone());
+                }
+            }
+
+            // Add joiner to gossip overlay if route_blob is available
+            if let Some(ref blob) = route_blob {
+                if !blob.is_empty() {
+                    let mut communities = state.communities.write();
+                    if let Some(cs) = communities.get_mut(community_id) {
+                        if cs.gossip.is_none() {
+                            cs.gossip = Some(crate::state::GossipOverlay::default());
+                        }
+                        if let Some(ref mut gossip) = cs.gossip {
+                            let member = crate::state::OnlineMember {
+                                route_blob: blob.clone(),
+                                last_seen: rekindle_utils::timestamp_secs(),
+                            };
+                            gossip.online_members.insert(pseudonym_key.clone(), member.clone());
+                            gossip.peers.insert(pseudonym_key.clone(), member);
+                        }
+                    }
                 }
             }
 

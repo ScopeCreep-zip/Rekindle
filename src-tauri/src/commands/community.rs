@@ -467,6 +467,7 @@ pub async fn create_channel(
             name: name.clone(),
             channel_type: channel_type.clone(),
             category_id: category_id.clone(),
+            channel_id: channel_id.clone(),
         },
     )
     .await?;
@@ -2083,6 +2084,7 @@ async fn apply_control_to_manifest(
             name,
             channel_type,
             category_id,
+            channel_id,
         } => {
             let mut chs = manifest::read_channels(dht, manifest_key)
                 .await
@@ -2092,7 +2094,7 @@ async fn apply_control_to_manifest(
                 .parse::<ChannelKind>()
                 .unwrap_or(ChannelKind::Text);
             chs.push(ChannelEntryV2 {
-                id: format!("ch_{}", hex::encode(&rand_nonce()[..8])),
+                id: channel_id.clone(),
                 name: name.clone(),
                 kind,
                 sort_order,

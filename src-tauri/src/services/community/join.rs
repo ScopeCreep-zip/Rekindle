@@ -551,7 +551,7 @@ fn spawn_join_announcements(
                 pseudonym_key: pseudonym_key.clone(),
                 display_name: display_name.clone(),
                 invite_code: None,
-                route_blob: our_route,
+                route_blob: our_route.clone(),
                 prekey_bundle: None,
                 claimed_subkey_index: Some(subkey_index),
             },
@@ -570,6 +570,7 @@ fn spawn_join_announcements(
                 pseudonym_key,
                 display_name,
                 role_ids: vec![0, 1],
+                route_blob: our_route.clone(),
             },
         );
         let _ = crate::commands::community::send_to_mesh(&state, &community_id, &joined_envelope);
