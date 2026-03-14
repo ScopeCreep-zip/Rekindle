@@ -158,6 +158,16 @@ const CommunityWindow: Component = () => {
     return communityState.threadMessages[thread.id] ?? [];
   });
 
+  const memberNames = createMemo((): Record<string, string> => {
+    const community = activeCommunity();
+    if (!community) return {};
+    const map: Record<string, string> = {};
+    for (const m of community.members) {
+      map[m.pseudonymKey] = m.displayName;
+    }
+    return map;
+  });
+
   const myRoleIds = createMemo((): number[] => {
     const community = activeCommunity();
     return community?.myRoleIds ?? [];
@@ -638,7 +648,8 @@ const CommunityWindow: Component = () => {
               <MessageList
                 messages={channelMessages()}
                 ownName={authState.displayName ?? "You"}
-                peerName="Channel"
+                peerName="Member"
+                memberNames={memberNames()}
                 myPseudonymKey={activeCommunity()?.myPseudonymKey}
                 threads={communityState.channelThreads[selectedChannelId()] ?? []}
                 onLoadOlder={handleLoadOlder}

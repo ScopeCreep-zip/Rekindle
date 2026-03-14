@@ -333,6 +333,27 @@ pub async fn join_community(
     // Persist discovered members to SQLite so get_community_members works immediately
     super::presence::sync_members_to_state_and_db(state, community_id, &existing_members);
 
+    // Open channel SMPL records so write_member_message doesn't hit "record not open".
+    // Veilid requires records to be opened before any get/set operations.
+    // The manifest and registry are already open from earlier in this function.
+    {
+        let channel_keys: Vec<String> = channel_entries
+            .iter()
+            .filter_map(|ch| ch.log_key.clone())
+            .collect();
+        if !channel_keys.is_empty() {
+            if let Some(rc) = state_helpers::routing_context(state) {
+                let open_mgr = DHTManager::new(rc);
+                for key in &channel_keys {
+                    if let Err(e) = open_mgr.open_record(key).await {
+                        tracing::debug!(key, error = %e, "failed to open channel SMPL record on join");
+                    }
+                }
+                tracing::info!(count = channel_keys.len(), "opened channel SMPL records for writing");
+            }
+        }
+    }
+
     // ── CONNECT: start services ──
 
     // 9. Create coordinator handle (static owner model — joiner is Member, not Coordinator)
