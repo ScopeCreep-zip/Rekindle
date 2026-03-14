@@ -551,44 +551,13 @@ pub async fn join_community(
         "self-service join complete — presence poll will write to SMPL registry"
     );
 
-    // 11. Broadcast MemberJoinRequest via gossip so any online admin can add us
-    //     to the member index. Delayed slightly to allow presence_poll_tick to
-    //     discover peers first (gossip overlay needs at least one peer).
-    {
-        let state = state.clone();
-        let cid = community_id.to_string();
-        let display_name = {
-            let identity = state.identity.read();
-            identity.as_ref().map_or_else(
-                || "Unknown".to_string(),
-                |id| id.display_name.clone(),
-            )
-        };
-        let pk = my_pseudonym_key.unwrap_or_default();
-        let idx = my_subkey_index;
-        let our_route = state_helpers::our_route_blob(&state);
-        tokio::spawn(async move {
-            // Wait for presence poll to build gossip overlay
-            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-            let envelope = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
-                rekindle_protocol::dht::community::envelope::ControlPayload::MemberJoinRequest {
-                    pseudonym_key: pk,
-                    display_name,
-                    invite_code: None,
-                    route_blob: our_route,
-                    prekey_bundle: None,
-                    claimed_subkey_index: Some(idx),
-                },
-            );
-            if let Err(e) = crate::commands::community::send_to_mesh(&state, &cid, &envelope) {
-                tracing::debug!(
-                    community = %cid,
-                    error = %e,
-                    "failed to broadcast MemberJoinRequest — admin will discover via presence scan"
-                );
-            }
-        });
-    }
+    // 11. Broadcast MemberJoinRequest + MemberJoined via gossip (delayed for route allocation)
+    spawn_join_announcements(
+        state.clone(),
+        community_id.to_string(),
+        my_pseudonym_key.unwrap_or_default(),
+        my_subkey_index,
+    );
 
     Ok(())
 }
@@ -782,6 +751,67 @@ pub async fn rejoin_community(state: &Arc<AppState>, community_id: &str) -> Resu
 /// 3. Updates the gossip overlay peer set (random D peers from online members)
 /// 4. Writes coordinator heartbeat if we are coordinator
 /// 5. Checks coordinator liveness if we are NOT coordinator
+/// Broadcast MemberJoinRequest and MemberJoined after a delay.
+///
+/// Delayed to allow presence_poll_tick to build the gossip overlay and Veilid
+/// to allocate a private route. The route_blob is read AFTER the delay so it
+/// reflects the current route, not a potentially-None value from before.
+fn spawn_join_announcements(
+    state: Arc<AppState>,
+    community_id: String,
+    pseudonym_key: String,
+    subkey_index: u32,
+) {
+    let display_name = {
+        let identity = state.identity.read();
+        identity.as_ref().map_or_else(
+            || "Unknown".to_string(),
+            |id| id.display_name.clone(),
+        )
+    };
+    tokio::spawn(async move {
+        // Wait for presence poll to build gossip overlay and route allocation
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+
+        // Read route_blob AFTER sleep so Veilid has time to allocate a route.
+        let mut our_route = state_helpers::our_route_blob(&state);
+        if our_route.is_none() {
+            tracing::info!(community = %community_id, "route_blob not yet available, waiting 3s more");
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            our_route = state_helpers::our_route_blob(&state);
+        }
+
+        // Broadcast MemberJoinRequest so admin can add us to member index
+        let join_envelope = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
+            rekindle_protocol::dht::community::envelope::ControlPayload::MemberJoinRequest {
+                pseudonym_key: pseudonym_key.clone(),
+                display_name: display_name.clone(),
+                invite_code: None,
+                route_blob: our_route,
+                prekey_bundle: None,
+                claimed_subkey_index: Some(subkey_index),
+            },
+        );
+        if let Err(e) = crate::commands::community::send_to_mesh(&state, &community_id, &join_envelope) {
+            tracing::debug!(
+                community = %community_id,
+                error = %e,
+                "failed to broadcast MemberJoinRequest — admin will discover via presence scan"
+            );
+        }
+
+        // Broadcast MemberJoined so existing members see us immediately (not after 60s poll)
+        let joined_envelope = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
+            rekindle_protocol::dht::community::envelope::ControlPayload::MemberJoined {
+                pseudonym_key,
+                display_name,
+                role_ids: vec![0, 1],
+            },
+        );
+        let _ = crate::commands::community::send_to_mesh(&state, &community_id, &joined_envelope);
+    });
+}
+
 pub fn start_presence_poll(state: Arc<AppState>, community_id: String) {
     use tokio::sync::mpsc;
 
@@ -871,13 +901,23 @@ fn sync_members_to_state_and_db(
     community_id: &str,
     members: &[rekindle_protocol::dht::community::types::MemberSummary],
 ) {
-    // Add to known_members + member_roles so we accept their messages and can check permissions
+    // Add to known_members + member_roles so we accept their messages and can check permissions.
+    // Also update our own my_role_ids if we find ourselves in the member list.
     {
         let mut communities = state.communities.write();
         if let Some(cs) = communities.get_mut(community_id) {
+            let my_pseudonym = cs.my_pseudonym_key.clone();
             for member in members {
                 cs.known_members.insert(member.pseudonym_key.clone());
                 cs.member_roles.insert(member.pseudonym_key.clone(), member.role_ids.clone());
+
+                // Update our own role_ids if we find ourselves in the registry
+                if my_pseudonym.as_deref() == Some(&member.pseudonym_key)
+                    && !member.role_ids.is_empty()
+                    && member.role_ids.len() >= cs.my_role_ids.len()
+                {
+                    cs.my_role_ids.clone_from(&member.role_ids);
+                }
             }
         }
     }

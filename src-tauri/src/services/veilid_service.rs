@@ -3077,7 +3077,16 @@ async fn handle_broadcast_new_message(
 
     let body = match first_attempt {
         MekDecryptResult::Decrypted(body) => body,
-        MekDecryptResult::Failed => return,
+        MekDecryptResult::Failed => {
+            tracing::warn!(
+                community = %msg.community_id,
+                channel = %msg.channel_id,
+                sender = %msg.sender_pseudonym,
+                mek_gen = msg.mek_generation,
+                "MEK decrypt failed — message dropped (no cached MEK or decrypt error)"
+            );
+            return;
+        }
         MekDecryptResult::NeedRefresh => {
             fetch_mek_from_dht(app_handle, state, &msg.community_id).await;
 
@@ -3091,7 +3100,13 @@ async fn handle_broadcast_new_message(
             ) {
                 body
             } else {
-                tracing::warn!("MEK still mismatched after refresh — dropping message");
+                tracing::warn!(
+                    community = %msg.community_id,
+                    channel = %msg.channel_id,
+                    sender = %msg.sender_pseudonym,
+                    mek_gen = msg.mek_generation,
+                    "MEK still mismatched after DHT refresh — message dropped"
+                );
                 return;
             }
         }
@@ -3582,6 +3597,7 @@ async fn handle_route_change(
             let node = state.node.read();
             node.as_ref().map(|n| n.api.clone())
         };
+        let mut cleared_coordinator_routes: Vec<String> = Vec::new();
         if let Some(api) = api {
             let mut communities = state.communities.write();
             for community in communities.values_mut() {
@@ -3593,10 +3609,37 @@ async fn handle_route_change(
                                 "clearing dead coordinator route blob"
                             );
                             community.coordinator_route_blob = None;
+                            cleared_coordinator_routes.push(community.id.clone());
                         }
                     }
                 }
             }
+        }
+
+        // Re-fetch coordinator route from DHT for communities whose routes died
+        for cid in cleared_coordinator_routes {
+            let state = state.clone();
+            tokio::spawn(async move {
+                let manifest_key = {
+                    let communities = state.communities.read();
+                    communities.get(&cid).and_then(|cs| cs.manifest_key.clone())
+                };
+                if let (Some(mk), Some(rc)) = (manifest_key, crate::state_helpers::routing_context(&state)) {
+                    let mgr = rekindle_protocol::dht::DHTManager::new(rc);
+                    match rekindle_protocol::dht::community::manifest::read_coordinator(&mgr, &mk).await {
+                        Ok(Some(coord_info)) => {
+                            let mut communities = state.communities.write();
+                            if let Some(cs) = communities.get_mut(&cid) {
+                                cs.coordinator_route_blob = Some(coord_info.route_blob);
+                                cs.coordinator_pseudonym = Some(coord_info.pseudonym_key);
+                                tracing::info!(community = %cid, "recovered coordinator route from DHT manifest");
+                            }
+                        }
+                        Ok(None) => tracing::debug!(community = %cid, "no coordinator info in manifest"),
+                        Err(e) => tracing::debug!(community = %cid, error = %e, "failed to re-fetch coordinator from DHT"),
+                    }
+                }
+            });
         }
     }
 }
