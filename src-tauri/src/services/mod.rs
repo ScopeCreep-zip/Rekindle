@@ -1,4 +1,4 @@
-pub mod community_service;
+pub mod community;
 pub mod coordinator;
 pub mod dht_publish_service;
 pub mod game_service;

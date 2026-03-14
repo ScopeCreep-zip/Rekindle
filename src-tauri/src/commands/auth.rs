@@ -1178,11 +1178,11 @@ async fn spawn_login_services(
     {
         let community_ids: Vec<String> = state.communities.read().keys().cloned().collect();
         for community_id in community_ids {
-            services::community_service::start_presence_poll(
+            services::community::start_presence_poll(
                 Arc::clone(state),
                 community_id.clone(),
             );
-            services::community_service::start_dht_keepalive(
+            services::community::start_dht_keepalive(
                 Arc::clone(state),
                 community_id,
             );
@@ -1669,7 +1669,7 @@ async fn hydrate_community_state_from_dht(state: &SharedState) {
                 })
             };
             if let Some((seed, idx)) = should_derive {
-                services::community_service::try_derive_slot_keypair(
+                services::community::try_derive_slot_keypair(
                     state, community_id, &seed, idx,
                 );
             }
@@ -1872,7 +1872,7 @@ async fn spawn_dht_publish(
         for cid in community_ids {
             let poll_state = state.clone();
             tokio::spawn(async move {
-                if let Err(e) = services::community_service::presence_poll_tick_public(
+                if let Err(e) = services::community::presence_poll_tick_public(
                     &poll_state, &cid,
                 ).await {
                     tracing::debug!(
