@@ -7,6 +7,8 @@ interface MessageListProps {
   messages: Message[];
   ownName: string;
   peerName: string;
+  /** Map of pseudonym key → display name for community channels. Overrides peerName when present. */
+  memberNames?: Record<string, string>;
   myPseudonymKey?: string | null;
   threads?: Thread[];
   onRetry?: (messageId: number) => void;
@@ -94,7 +96,7 @@ const MessageList: Component<MessageListProps> = (props) => {
           return (
             <MessageBubble
               message={msg}
-              senderName={msg.isOwn ? props.ownName : props.peerName}
+              senderName={msg.isOwn ? props.ownName : (props.memberNames?.[msg.senderId] ?? props.peerName)}
               myPseudonymKey={props.myPseudonymKey}
               replyToMessage={msg.replyToId ? messageMap().get(msg.replyToId) ?? null : null}
               threadInfo={thread() ? { name: thread()!.name, messageCount: thread()!.messageCount, threadId: thread()!.id } : undefined}
