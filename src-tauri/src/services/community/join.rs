@@ -358,14 +358,6 @@ pub async fn join_community(
         my_subkey_index,
     );
 
-    // Re-trigger presence poll after route should be available (10s)
-    let state_for_route = state.clone();
-    let cid_for_route = community_id.to_string();
-    tokio::spawn(async move {
-        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-        let _ = super::presence::presence_poll_tick_public(&state_for_route, &cid_for_route).await;
-    });
-
     Ok(())
 }
 
@@ -511,6 +503,46 @@ fn spawn_join_announcements(
             tracing::info!(community = %community_id, "route_blob not yet available, waiting 3s more");
             tokio::time::sleep(std::time::Duration::from_secs(3)).await;
             our_route = state_helpers::our_route_blob(&state);
+        }
+
+        // Write presence WITH route_blob to DHT BEFORE announcing.
+        // The initial slot claim wrote route_blob: None — now we overwrite with the real route
+        // so other members' presence scans find us with a valid route immediately.
+        if our_route.is_some() {
+            let (registry_key, slot_keypair_str) = {
+                let communities = state.communities.read();
+                let cs = communities.get(&community_id);
+                (
+                    cs.and_then(|c| c.member_registry_key.clone()),
+                    cs.and_then(|c| c.slot_keypair.clone()),
+                )
+            };
+            if let (Some(rk), Some(kp_str)) = (registry_key, slot_keypair_str) {
+                if let (Some(rc), Ok(kp)) = (
+                    state_helpers::routing_context(&state),
+                    kp_str.parse::<veilid_core::KeyPair>(),
+                ) {
+                    let mgr = rekindle_protocol::dht::DHTManager::new(rc);
+                    let presence = rekindle_protocol::dht::community::types::MemberPresence {
+                        pseudonym_key: pseudonym_key.clone(),
+                        status: "online".to_string(),
+                        status_message: None,
+                        game_info: None,
+                        route_blob: our_route.clone(),
+                        last_heartbeat: rekindle_utils::timestamp_secs(),
+                        is_coordinator: false,
+                        coordinator_since: 0,
+                        is_archiver: false,
+                    };
+                    if let Err(e) = rekindle_protocol::dht::community::member_registry::write_member_presence(
+                        &mgr, &rk, subkey_index, &presence, kp,
+                    ).await {
+                        tracing::warn!(error = %e, "failed to write presence with route_blob before announcements");
+                    } else {
+                        tracing::info!(community = %community_id, "wrote presence with route_blob to DHT");
+                    }
+                }
+            }
         }
 
         // Broadcast MemberJoinRequest so admin can add us to member index
