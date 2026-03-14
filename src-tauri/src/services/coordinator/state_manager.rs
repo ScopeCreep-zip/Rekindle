@@ -267,11 +267,11 @@ async fn persist_control_to_manifest(
 
     let result: Result<(), String> = match payload {
         // ── Channels ──
-        ControlPayload::CreateChannel { name, channel_type, category_id } => {
+        ControlPayload::CreateChannel { name, channel_type, category_id, channel_id } => {
             let mut chs = manifest::read_channels(&dht, &manifest_key).await.unwrap_or_default();
             let sort_order = u16::try_from(chs.len()).unwrap_or(u16::MAX);
             let kind = channel_type.parse::<ChannelKind>().unwrap_or(ChannelKind::Text);
-            let new_channel_id = format!("ch_{}", hex::encode(&crate::commands::community::rand_nonce()[..8]));
+            let new_channel_id = channel_id.clone();
 
             // Create SMPL channel record for persistent message history.
             // Uses slot seed so members can derive their writer keypair independently.
@@ -639,6 +639,7 @@ async fn handle_control(
                     pseudonym_key: joiner_pseudonym.clone(),
                     display_name: display_name_clone.clone(),
                     role_ids: vec![0, 1],
+                    route_blob: member_route.clone(),
                 };
                 let joined_envelope = CommunityEnvelope::Control(joined_payload);
                 broadcast_via_gossip(&state_clone, &sm_clone.community_id, &joined_envelope);

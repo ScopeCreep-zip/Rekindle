@@ -775,6 +775,7 @@ async fn handle_discovered_member(
                 pseudonym_key: pseudonym_key.to_string(),
                 display_name: display_name.to_string(),
                 role_ids: vec![0, 1],
+                route_blob: None,
             });
             crate::services::coordinator::state_manager::broadcast_via_gossip(
                 state, community_id, &joined,
