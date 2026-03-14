@@ -21,7 +21,7 @@ provides peer-to-peer transport and distributed storage.
 │                   Pure Rust Crates                      │
 │  rekindle-protocol   rekindle-crypto                    │
 │  rekindle-game-detect   rekindle-voice                  │
-│  rekindle-server (community hosting daemon)             │
+│  (rekindle-server removed — gossip mesh model)          │
 │  (crates/)                                              │
 ├─────────────────────────────────────────────────────────┤
 │                    Veilid Network                       │
@@ -113,7 +113,7 @@ crates/
 ├── rekindle-crypto/src/              Ed25519, Signal Protocol, group encryption
 ├── rekindle-game-detect/src/         Process scanning, game database
 ├── rekindle-voice/src/               Opus codec, audio I/O, VAD, transport
-└── rekindle-server/src/              Community hosting daemon (child process)
+└── (rekindle-server/ removed — gossip mesh model)
 
 schemas/                              Cap'n Proto schema definitions
 ├── message.capnp

@@ -19,12 +19,22 @@ pub async fn join_voice_channel(
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
+    // Check CONNECT permission for community voice channels
+    if let Some(ref cid) = community_id {
+        crate::commands::community::require_permission(
+            state.inner(),
+            cid,
+            rekindle_protocol::dht::community::permissions_v2::Permissions::CONNECT,
+        )?;
+    }
+
     crate::services::voice::session::start_session(
         &channel_id,
         community_id.as_deref(),
         &app,
         state.inner(),
-    )?;
+    )
+    .await?;
 
     // Broadcast VoiceJoin via gossip so other community members add us as a peer
     if let Some(ref cid) = community_id {
@@ -190,7 +200,7 @@ pub async fn set_audio_devices(
         }
 
         // Restart with new devices
-        crate::services::voice::session::restart_loops(&state, &app)?;
+        crate::services::voice::session::restart_loops(&state, &app).await?;
     } else {
         tracing::info!(
             ?input_device,
@@ -259,4 +269,56 @@ pub struct AudioDeviceInfo {
 pub struct AudioDevices {
     pub input_devices: Vec<AudioDeviceInfo>,
     pub output_devices: Vec<AudioDeviceInfo>,
+}
+
+/// Server-mute a member in a community voice channel (moderator action).
+#[tauri::command]
+pub async fn server_mute_member(
+    community_id: String,
+    channel_id: String,
+    target_pseudonym: String,
+    muted: bool,
+    state: State<'_, SharedState>,
+) -> Result<(), String> {
+    crate::commands::community::require_permission(
+        state.inner(),
+        &community_id,
+        rekindle_protocol::dht::community::permissions_v2::Permissions::MUTE_MEMBERS,
+    )?;
+
+    let envelope = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
+        rekindle_protocol::dht::community::envelope::ControlPayload::VoiceMute {
+            channel_id,
+            target_pseudonym,
+            muted,
+        },
+    );
+    crate::commands::community::send_to_mesh(state.inner(), &community_id, &envelope)?;
+    Ok(())
+}
+
+/// Server-deafen a member in a community voice channel (moderator action).
+#[tauri::command]
+pub async fn server_deafen_member(
+    community_id: String,
+    channel_id: String,
+    target_pseudonym: String,
+    deafened: bool,
+    state: State<'_, SharedState>,
+) -> Result<(), String> {
+    crate::commands::community::require_permission(
+        state.inner(),
+        &community_id,
+        rekindle_protocol::dht::community::permissions_v2::Permissions::DEAFEN_MEMBERS,
+    )?;
+
+    let envelope = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
+        rekindle_protocol::dht::community::envelope::ControlPayload::VoiceDeafen {
+            channel_id,
+            target_pseudonym,
+            deafened,
+        },
+    );
+    crate::commands::community::send_to_mesh(state.inner(), &community_id, &envelope)?;
+    Ok(())
 }

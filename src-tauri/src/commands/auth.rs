@@ -748,7 +748,7 @@ async fn load_communities_from_db(
             .collect::<Result<Vec<_>, _>>()?;
 
         let mut chan_stmt = conn
-            .prepare("SELECT id, community_id, name, channel_type, category_id, topic, slowmode_seconds, nsfw, message_record_key, mek_generation, log_key FROM channels WHERE owner_key = ?1 ORDER BY sort_order")?;
+            .prepare("SELECT id, community_id, name, channel_type, category_id, topic, slowmode_seconds, nsfw, message_record_key, mek_generation, log_key, my_sequence FROM channels WHERE owner_key = ?1 ORDER BY sort_order")?;
         let channels = chan_stmt
             .query_map(rusqlite::params![ok], |row| {
                 Ok((
@@ -763,6 +763,7 @@ async fn load_communities_from_db(
                     db::get_str_opt(row, "message_record_key"),
                     row.get::<_, i64>("mek_generation").unwrap_or(0).cast_unsigned(),
                     db::get_str_opt(row, "log_key"),
+                    row.get::<_, i64>("my_sequence").unwrap_or(0).cast_unsigned(),
                 ))
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -804,12 +805,16 @@ async fn load_communities_from_db(
     ) in &community_rows
     {
         let mut channel_log_keys = std::collections::HashMap::new();
+        let mut channel_sequences = std::collections::HashMap::new();
         let channels: Vec<ChannelInfo> = channel_rows
             .iter()
-            .filter(|(_, cid, _, _, _, _, _, _, _, _, _)| cid == community_id)
-            .map(|(id, _, ch_name, ch_type, cat_id, topic, slowmode, nsfw, msg_key, mek_gen, log_key)| {
+            .filter(|(_, cid, _, _, _, _, _, _, _, _, _, _)| cid == community_id)
+            .map(|(id, _, ch_name, ch_type, cat_id, topic, slowmode, nsfw, msg_key, mek_gen, log_key, my_seq)| {
                 if let Some(ref lk) = log_key {
                     channel_log_keys.insert(id.clone(), lk.clone());
+                }
+                if *my_seq > 0 {
+                    channel_sequences.insert(id.clone(), *my_seq);
                 }
                 ChannelInfo {
                     id: id.clone(),
@@ -885,8 +890,11 @@ async fn load_communities_from_db(
             slot_keypair: None,
             manifest_owner_keypair: None,
             channel_log_keys,
+            channel_sequences,
+            pending_syncs: std::collections::HashMap::new(),
             registry_owner_keypair: None,
             slot_seed: None,
+            member_roles: std::collections::HashMap::new(),
             known_members: member_key_rows
                 .iter()
                 .filter(|(cid, _)| cid == community_id)
@@ -1144,14 +1152,24 @@ async fn spawn_login_services(
     // Must run before coordinator start so election can read previous coordinator info.
     restore_coordinator_routes(state).await;
 
-    // ── Phase 4: Start coordinator services (election in 5s) ──
+    // ── Phase 4: Create coordinator handles (static owner model — no election) ──
     {
-        let community_ids: Vec<String> = state.communities.read().keys().cloned().collect();
-        for community_id in community_ids {
-            let handle = crate::services::coordinator::start(
-                Arc::clone(state),
+        let community_ids: Vec<(String, bool)> = {
+            let communities = state.communities.read();
+            communities.iter().map(|(id, cs)| {
+                (id.clone(), cs.manifest_owner_keypair.is_some())
+            }).collect()
+        };
+        for (community_id, is_owner) in community_ids {
+            let handle = crate::services::coordinator::create_handle(
+                state,
                 community_id.clone(),
             );
+            if is_owner {
+                *handle.role.write() = crate::services::coordinator::CoordinatorRole::Coordinator;
+            } else {
+                *handle.role.write() = crate::services::coordinator::CoordinatorRole::Member;
+            }
             state.coordinator_services.write().insert(community_id, handle);
         }
     }
@@ -1593,19 +1611,33 @@ async fn hydrate_community_state_from_dht(state: &SharedState) {
                         }
                         drop(communities);
 
-                        // Persist recovered my_subkey_index to SQLite so it survives restarts
-                        if recovered_subkey {
+                        // Persist recovered my_subkey_index + role_ids to SQLite so they survive restarts
+                        let role_ids_to_persist = {
+                            let communities = state.communities.read();
+                            communities.get(community_id.as_str()).map(|cs| cs.my_role_ids.clone())
+                        };
+                        if recovered_subkey || role_ids_to_persist.is_some() {
                             let app_handle = state.app_handle.read().clone();
                             if let Some(ref ah) = app_handle {
                                 let pool: tauri::State<'_, crate::db::DbPool> = ah.state();
                                 let ok = state_helpers::current_owner_key(state).unwrap_or_default();
                                 let cid = community_id.clone();
                                 let idx = recovered_index;
-                                crate::db_helpers::db_fire(pool.inner(), "persist hydrated subkey_index", move |conn| {
-                                    conn.execute(
-                                        "UPDATE communities SET my_subkey_index = ?1 WHERE owner_key = ?2 AND id = ?3",
-                                        rusqlite::params![idx, ok, cid],
-                                    )?;
+                                let roles_json = role_ids_to_persist
+                                    .and_then(|r| serde_json::to_string(&r).ok());
+                                crate::db_helpers::db_fire(pool.inner(), "persist hydrated subkey_index + role_ids", move |conn| {
+                                    if recovered_subkey {
+                                        conn.execute(
+                                            "UPDATE communities SET my_subkey_index = ?1 WHERE owner_key = ?2 AND id = ?3",
+                                            rusqlite::params![idx, &ok, &cid],
+                                        )?;
+                                    }
+                                    if let Some(rj) = roles_json {
+                                        conn.execute(
+                                            "UPDATE communities SET my_role_ids = ?1 WHERE owner_key = ?2 AND id = ?3",
+                                            rusqlite::params![rj, &ok, &cid],
+                                        )?;
+                                    }
                                     Ok(())
                                 });
                             }

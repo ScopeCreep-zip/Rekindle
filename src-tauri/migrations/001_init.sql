@@ -102,6 +102,7 @@ CREATE TABLE IF NOT EXISTS channels (
     message_record_key TEXT,
     mek_generation INTEGER NOT NULL DEFAULT 0,
     log_key TEXT,
+    my_sequence INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (owner_key, id),
     FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
 );

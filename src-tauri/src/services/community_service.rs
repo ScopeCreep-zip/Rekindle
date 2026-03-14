@@ -65,29 +65,15 @@ pub async fn create_community(
         tracing::warn!(error = %e, "failed to write initial roles to manifest");
     }
 
-    // 4. Create a DHTLog for the default "general" channel, then write to manifest
+    // 4. Create SMPL channel record for the default "general" channel
     let channel_id = format!("channel_{}", hex::encode(rand_bytes(8)));
-    let (channel_log_key, channel_log_keypair) = rekindle_protocol::dht::community::channel_record::create_channel_log(
-        &routing_context,
-    )
-    .await
-    .map_err(|e| format!("failed to create channel DHTLog: {e}"))?;
-    tracing::debug!(channel = %channel_id, log_key = %channel_log_key, "created channel DHTLog");
-
-    // Persist channel log keypair to Stronghold
-    {
-        use tauri::Manager as _;
-        let app_handle = state.app_handle.read().clone();
-        if let Some(ref ah) = app_handle {
-            let ks_handle: tauri::State<'_, crate::keystore::KeystoreHandle> = ah.state();
-            let ks = ks_handle.lock();
-            if let Some(ref keystore) = *ks {
-                crate::keystore::persist_channel_log_keypair(
-                    keystore, &manifest_key, &channel_id, &channel_log_keypair.to_string(),
-                );
-            }
-        }
-    }
+    let (channel_record_key, _channel_record_owner_kp) =
+        rekindle_protocol::dht::community::channel_record::create_smpl_channel_record(
+            &mgr, &slot_seed_array,
+        )
+        .await
+        .map_err(|e| format!("failed to create SMPL channel record: {e}"))?;
+    tracing::debug!(channel = %channel_id, record_key = %channel_record_key, "created SMPL channel record");
 
     let channel_entry = ChannelEntryV2 {
         id: channel_id.clone(),
@@ -101,7 +87,7 @@ pub async fn create_community(
         message_record_key: None,
         mek_generation: 0,
         permission_overwrites: Vec::new(),
-        log_key: Some(channel_log_key.clone()),
+        log_key: Some(channel_record_key.clone()),
     };
     if let Err(e) = manifest::write_channels(&mgr, &manifest_key, &[channel_entry]).await {
         tracing::warn!(error = %e, "failed to write initial channels to manifest");
@@ -186,9 +172,12 @@ pub async fn create_community(
         gossip: Some(GossipOverlay::default()),
         slot_keypair: Some(creator_slot_keypair_str.clone()),
         manifest_owner_keypair: manifest_keypair.as_ref().map(std::string::ToString::to_string),
-        channel_log_keys: [(channel_id, channel_log_key)].into_iter().collect(),
+        channel_log_keys: [(channel_id, channel_record_key)].into_iter().collect(),
+        channel_sequences: std::collections::HashMap::new(),
+        pending_syncs: std::collections::HashMap::new(),
         registry_owner_keypair: registry_owner_kp_str,
         slot_seed: Some(hex::encode(&slot_seed)),
+        member_roles: std::collections::HashMap::new(),
         known_members: [my_pseudonym_key].into_iter().collect(),
         presence_poll_shutdown_tx: None,
         dht_keepalive_shutdown_tx: None,
@@ -196,9 +185,8 @@ pub async fn create_community(
 
     state.communities.write().insert(manifest_key.clone(), community);
 
-    // 9. Start coordinator service (we are the first coordinator).
-    // Set role to Coordinator immediately — don't wait for the 5s election timer.
-    let handle = super::coordinator::start(state.clone(), manifest_key.clone());
+    // 9. Create coordinator handle (static owner model — creator is permanent coordinator).
+    let handle = super::coordinator::create_handle(state, manifest_key.clone());
     *handle.role.write() = super::coordinator::CoordinatorRole::Coordinator;
     state
         .coordinator_services
@@ -303,6 +291,17 @@ pub async fn join_community(
     // Validate max uses (approximate — slot occupation is the real limit)
     if invite_entry.max_uses > 0 && invite_entry.use_count >= invite_entry.max_uses {
         return Err("invite has reached maximum uses".into());
+    }
+
+    // Check ban list — banned members cannot rejoin
+    let my_pk = derive_pseudonym_key(state, community_id);
+    if let Some(ref pk) = my_pk {
+        let bans = manifest::read_bans(&mgr, community_id)
+            .await
+            .map_err(|e| format!("failed to read ban list: {e}"))?;
+        if bans.iter().any(|b| b.pseudonym_key == *pk) {
+            return Err("You are banned from this community".into());
+        }
     }
 
     let encrypted_b64 = invite_entry
@@ -447,6 +446,9 @@ pub async fn join_community(
         _ => None,
     };
     let final_registry_key = registry_key_from_spine.unwrap_or(registry_key.clone());
+    if final_registry_key.is_empty() {
+        return Err("Failed to obtain member registry key from invite or manifest spine".into());
+    }
 
     // ── REGISTER: derive slot keypair ──
 
@@ -490,13 +492,37 @@ pub async fn join_community(
         coordinator_pseudonym: coordinator.as_ref().map(|c| c.pseudonym_key.clone()),
         coordinator_route_blob: coordinator.as_ref().map(|c| c.route_blob.clone()),
         coordinator_epoch: coordinator.as_ref().map_or(0, |c| c.epoch),
-        gossip: None,
+        gossip: {
+            // Seed provisional gossip overlay so messages arriving before
+            // first presence_poll_tick aren't dropped due to None overlay.
+            let mut initial_peers = std::collections::HashMap::new();
+            let mut initial_online = std::collections::HashMap::new();
+            if let Some(ref coord) = coordinator {
+                if !coord.route_blob.is_empty() {
+                    let member = crate::state::OnlineMember {
+                        route_blob: coord.route_blob.clone(),
+                        last_seen: rekindle_utils::timestamp_secs(),
+                    };
+                    initial_peers.insert(coord.pseudonym_key.clone(), member.clone());
+                    initial_online.insert(coord.pseudonym_key.clone(), member);
+                }
+            }
+            Some(crate::state::GossipOverlay {
+                peers: initial_peers,
+                online_members: initial_online,
+                lamport_counter: 0,
+                needs_initial_sync: true,
+            })
+        },
         slot_keypair: Some(slot_keypair_str),
         manifest_owner_keypair: None,
         channel_log_keys: std::collections::HashMap::new(),
+        channel_sequences: std::collections::HashMap::new(),
+        pending_syncs: std::collections::HashMap::new(),
         registry_owner_keypair: None,
         slot_seed: Some(slot_seed_hex),
-        known_members: existing_members.iter().map(|m| m.pseudonym_key.clone()).collect(), // Seed from DHT registry
+        member_roles: existing_members.iter().map(|m| (m.pseudonym_key.clone(), m.role_ids.clone())).collect(),
+        known_members: existing_members.iter().map(|m| m.pseudonym_key.clone()).collect(),
         presence_poll_shutdown_tx: None,
         dht_keepalive_shutdown_tx: None,
     };
@@ -508,8 +534,9 @@ pub async fn join_community(
 
     // ── CONNECT: start services ──
 
-    // 9. Start coordinator service (election watcher — useful but not required)
-    let handle = super::coordinator::start(state.clone(), community_id.to_string());
+    // 9. Create coordinator handle (static owner model — joiner is Member, not Coordinator)
+    let handle = super::coordinator::create_handle(state, community_id.to_string());
+    *handle.role.write() = super::coordinator::CoordinatorRole::Member;
     state.coordinator_services.write().insert(community_id.to_string(), handle);
 
     // 10. Start presence poll (IMMEDIATE first tick writes our presence + discovers peers)
@@ -769,7 +796,7 @@ pub fn start_presence_poll(state: Arc<AppState>, community_id: String) {
         // Run an immediate first tick so gossip overlay is populated right away
         // (don't wait 60s — members need to discover peers immediately)
         if let Err(e) = presence_poll_tick(&state, &community_id).await {
-            tracing::debug!(
+            tracing::warn!(
                 community = %community_id,
                 error = %e,
                 "initial presence poll tick failed"
@@ -844,12 +871,13 @@ fn sync_members_to_state_and_db(
     community_id: &str,
     members: &[rekindle_protocol::dht::community::types::MemberSummary],
 ) {
-    // Add to known_members so we accept their messages
+    // Add to known_members + member_roles so we accept their messages and can check permissions
     {
         let mut communities = state.communities.write();
         if let Some(cs) = communities.get_mut(community_id) {
             for member in members {
                 cs.known_members.insert(member.pseudonym_key.clone());
+                cs.member_roles.insert(member.pseudonym_key.clone(), member.role_ids.clone());
             }
         }
     }
@@ -896,7 +924,8 @@ async fn presence_poll_tick(state: &Arc<AppState>, community_id: &str) -> Result
         c.member_registry_key.clone()
     };
     let Some(registry_key) = registry_key else {
-        return Ok(()); // No registry yet (join pending)
+        tracing::warn!(community_id, "presence_poll_tick: member_registry_key is None — skipping (join may be pending)");
+        return Ok(());
     };
 
     // Ensure registry record is open (may be closed after restart).
@@ -1038,34 +1067,56 @@ async fn presence_poll_tick(state: &Arc<AppState>, community_id: &str) -> Result
     let now_secs = rekindle_utils::timestamp_secs();
     let stale_threshold = now_secs.saturating_sub(300); // 5 minutes
 
-    // Scan presences — build online members map
-    let mut online_members: std::collections::HashMap<String, Vec<u8>> =
+    // Scan presences in parallel — build online members map.
+    // Each task gets its own DHTManager (cheap wrapper around Arc-based RoutingContext).
+    // Bounded to 10 concurrent DHT reads to avoid overwhelming the network.
+    let mut online_members: std::collections::HashMap<String, crate::state::OnlineMember> =
         std::collections::HashMap::new();
-    for member in &members {
-        if member.pseudonym_key == my_pseudonym {
-            continue; // skip ourselves
+    {
+        use futures::stream::{FuturesUnordered, StreamExt};
+
+        let rc = state_helpers::routing_context(state).ok_or("not attached for presence scan")?;
+        let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(10));
+        let mut futs = FuturesUnordered::new();
+
+        for member in &members {
+            if member.pseudonym_key == my_pseudonym {
+                continue;
+            }
+            let sem = sem.clone();
+            let rc = rc.clone();
+            let rk = registry_key.clone();
+            let pk = member.pseudonym_key.clone();
+            let idx = member.subkey_index;
+            futs.push(async move {
+                let permit = sem.acquire().await.unwrap();
+                let task_mgr = DHTManager::new(rc);
+                let result = member_registry::read_member_presence_fresh(&task_mgr, &rk, idx).await;
+                drop(permit); // release semaphore slot after DHT read completes
+                (pk, result)
+            });
         }
-        // Read presence from member's registry subkey (force_refresh to bypass stale cache)
-        match member_registry::read_member_presence_fresh(&mgr, &registry_key, member.subkey_index).await
-        {
-            Ok(Some(presence)) => {
-                if presence.status != "offline"
-                    && presence.last_heartbeat > stale_threshold
-                {
-                    if let Some(blob) = presence.route_blob {
-                        if !blob.is_empty() {
-                            online_members.insert(member.pseudonym_key.clone(), blob);
+
+        while let Some((pk, result)) = futs.next().await {
+            match result {
+                Ok(Some(presence)) => {
+                    if presence.status != "offline"
+                        && presence.last_heartbeat > stale_threshold
+                    {
+                        if let Some(blob) = presence.route_blob {
+                            if !blob.is_empty() {
+                                online_members.insert(pk, crate::state::OnlineMember {
+                                    route_blob: blob,
+                                    last_seen: now_secs,
+                                });
+                            }
                         }
                     }
                 }
-            }
-            Ok(None) => {} // No presence written yet
-            Err(e) => {
-                tracing::trace!(
-                    member = %member.pseudonym_key,
-                    error = %e,
-                    "failed to read member presence"
-                );
+                Ok(None) => {}
+                Err(e) => {
+                    tracing::trace!(member = %pk, error = %e, "failed to read member presence");
+                }
             }
         }
     }
@@ -1084,10 +1135,15 @@ async fn presence_poll_tick(state: &Arc<AppState>, community_id: &str) -> Result
         let communities = state.communities.read();
         if let Some(cs) = communities.get(community_id) {
             if let Some(ref gossip) = cs.gossip {
-                for (pk, blob) in &gossip.online_members {
-                    // Keep existing peer if not already in scan results and not self
-                    if !online_members.contains_key(pk) && pk != &my_pseudonym {
-                        online_members.insert(pk.clone(), blob.clone());
+                let eviction_threshold = now_secs.saturating_sub(180); // 3 poll intervals
+                for (pk, member) in &gossip.online_members {
+                    // Keep existing peer if: not already in scan results, not self,
+                    // and not stale (seen within 180s)
+                    if !online_members.contains_key(pk)
+                        && pk != &my_pseudonym
+                        && member.last_seen > eviction_threshold
+                    {
+                        online_members.insert(pk.clone(), member.clone());
                     }
                 }
             }
@@ -1117,13 +1173,52 @@ async fn presence_poll_tick(state: &Arc<AppState>, community_id: &str) -> Result
         }
     };
 
-    tracing::debug!(
+    tracing::info!(
         community = %community_id,
         online_members = n,
         gossip_degree = d,
         needs_sync,
         "presence_poll_tick: gossip overlay updated"
     );
+
+    // Retry stale sync requests (older than 60s, max 3 attempts)
+    if n > 0 {
+        let stale_syncs: Vec<(String, u32)> = {
+            let communities = state.communities.read();
+            communities.get(community_id).map_or(vec![], |cs| {
+                cs.pending_syncs.iter()
+                    .filter(|(_, (ts, count))| now_secs.saturating_sub(*ts) > 60 && *count < 3)
+                    .map(|(ch, (_, count))| (ch.clone(), *count))
+                    .collect()
+            })
+        };
+        for (channel_id, attempt) in &stale_syncs {
+            tracing::info!(
+                community = %community_id,
+                channel = %channel_id,
+                attempt = attempt + 1,
+                "retrying stale SyncRequest"
+            );
+            let sync_envelope = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
+                rekindle_protocol::dht::community::envelope::ControlPayload::SyncRequest {
+                    channel_id: channel_id.clone(),
+                    since_timestamp: 0, // Request everything — recipient filters
+                },
+            );
+            let _ = crate::commands::community::send_to_mesh(state, community_id, &sync_envelope);
+            let mut communities = state.communities.write();
+            if let Some(cs) = communities.get_mut(community_id) {
+                cs.pending_syncs.insert(channel_id.clone(), (now_secs, attempt + 1));
+            }
+        }
+        // Evict syncs that exceeded max attempts
+        {
+            let mut communities = state.communities.write();
+            if let Some(cs) = communities.get_mut(community_id) {
+                cs.pending_syncs.retain(|_, (_, count)| *count < 3);
+            }
+        }
+    }
 
     // Broadcast presence + trigger sync on first successful poll
     if needs_sync {
@@ -1160,7 +1255,7 @@ async fn run_initial_sync(state: &Arc<AppState>, community_id: &str, d: usize) {
                 };
             let _ = crate::commands::community::send_to_mesh(state, community_id, &presence_envelope);
         } else {
-            tracing::debug!(
+            tracing::warn!(
                 community = %community_id,
                 "skipping PresenceUpdate broadcast — route_blob not yet available"
             );
@@ -1201,39 +1296,51 @@ async fn run_initial_sync(state: &Arc<AppState>, community_id: &str, d: usize) {
                 },
             );
             let _ = crate::commands::community::send_to_mesh(state, community_id, &sync_req);
+            // Record pending sync for retry tracking
+            let now = rekindle_utils::timestamp_secs();
+            let mut communities = state.communities.write();
+            if let Some(cs) = communities.get_mut(community_id) {
+                cs.pending_syncs.insert(ch_id.clone(), (now, 1));
+            }
         }
     }
 
-    // DHTLog catch-up for channels with persistent logs
-    let channel_log_entries: Vec<(String, String)> = {
+    // SMPL channel record catch-up — read all member subkeys for each channel
+    let channel_entries: Vec<(String, String)> = {
         let communities = state.communities.read();
         communities.get(community_id)
             .map(|cs| cs.channel_log_keys.iter()
-                .map(|(ch_id, log_key)| (ch_id.clone(), log_key.clone()))
+                .map(|(ch_id, record_key)| (ch_id.clone(), record_key.clone()))
                 .collect())
             .unwrap_or_default()
     };
+    let member_count = {
+        let communities = state.communities.read();
+        communities.get(community_id)
+            .map_or(0, |cs| u32::try_from(cs.known_members.len()).unwrap_or(255))
+    };
 
-    if !channel_log_entries.is_empty() {
+    if !channel_entries.is_empty() && member_count > 0 {
         if let Some(rc) = state_helpers::routing_context(state) {
-            for (ch_id, log_key) in &channel_log_entries {
-                match rekindle_protocol::dht::community::channel_record::read_channel_log_tail(
-                    &rc, log_key, 50,
+            for (ch_id, record_key) in &channel_entries {
+                match rekindle_protocol::dht::community::channel_record::read_all_channel_messages(
+                    &rc, record_key, member_count,
                 ).await {
                     Ok(messages) if !messages.is_empty() => {
                         tracing::debug!(
                             community = %community_id,
                             channel = %ch_id,
                             count = messages.len(),
-                            "caught up from DHTLog tail"
+                            "caught up from SMPL channel record"
                         );
                         if let Some(ref app_handle) = app_handle_clone {
                             let pool: tauri::State<'_, crate::db::DbPool> = app_handle.state();
                             let channel = ch_id.clone();
                             let ok = owner_key.clone();
-                            crate::db_helpers::db_fire(pool.inner(), "dhtlog_catchup", move |conn| {
+                            crate::db_helpers::db_fire(pool.inner(), "smpl_channel_catchup", move |conn| {
                                 for msg in &messages {
                                     let mid = msg.message_id.as_deref().unwrap_or("");
+                                    if mid.is_empty() { continue; }
                                     let exists: bool = conn.query_row(
                                         "SELECT EXISTS(SELECT 1 FROM messages WHERE owner_key=?1 AND message_id=?2)",
                                         rusqlite::params![ok, mid],
@@ -1242,12 +1349,12 @@ async fn run_initial_sync(state: &Arc<AppState>, community_id: &str, d: usize) {
                                     if exists { continue; }
                                     let _ = conn.execute(
                                         "INSERT OR IGNORE INTO messages \
-                                         (owner_key, conversation_id, conversation_type, sender_key, body, timestamp, message_id) \
-                                         VALUES (?1, ?2, 'channel', ?3, ?4, ?5, ?6)",
+                                         (owner_key, conversation_id, conversation_type, sender_key, body, timestamp, message_id, lamport_ts) \
+                                         VALUES (?1, ?2, 'channel', ?3, ?4, ?5, ?6, ?7)",
                                         rusqlite::params![
                                             ok, channel, msg.sender_pseudonym,
                                             String::from_utf8_lossy(&msg.ciphertext),
-                                            msg.timestamp, mid,
+                                            msg.timestamp, mid, msg.lamport_ts,
                                         ],
                                     );
                                 }
@@ -1261,7 +1368,7 @@ async fn run_initial_sync(state: &Arc<AppState>, community_id: &str, d: usize) {
                             community = %community_id,
                             channel = %ch_id,
                             error = %e,
-                            "DHTLog catch-up failed"
+                            "SMPL channel catch-up failed"
                         );
                     }
                 }
@@ -1292,7 +1399,7 @@ async fn discover_unindexed_members(
     members: &[MemberSummary],
     my_pseudonym: &str,
     stale_threshold: u64,
-    online_members: &mut std::collections::HashMap<String, Vec<u8>>,
+    online_members: &mut std::collections::HashMap<String, crate::state::OnlineMember>,
 ) {
     // Build set of indexed slot indices so we only scan unindexed slots
     let indexed_slots: std::collections::HashSet<u32> =
@@ -1338,7 +1445,11 @@ async fn discover_unindexed_members(
                 if presence.status != "offline" && presence.last_heartbeat > stale_threshold {
                     if let Some(blob) = presence.route_blob {
                         if !blob.is_empty() {
-                            online_members.insert(presence.pseudonym_key.clone(), blob);
+                            let now = rekindle_utils::timestamp_secs();
+                            online_members.insert(presence.pseudonym_key.clone(), crate::state::OnlineMember {
+                                route_blob: blob,
+                                last_seen: now,
+                            });
                         }
                     }
                 }
@@ -1434,9 +1545,9 @@ async fn handle_discovered_member(
 
 /// Select D random peers from the online members map.
 fn random_peer_sample(
-    online: &std::collections::HashMap<String, Vec<u8>>,
+    online: &std::collections::HashMap<String, crate::state::OnlineMember>,
     d: usize,
-) -> std::collections::HashMap<String, Vec<u8>> {
+) -> std::collections::HashMap<String, crate::state::OnlineMember> {
     use rand::seq::SliceRandom;
 
     if d == 0 || online.is_empty() {

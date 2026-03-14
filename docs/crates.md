@@ -13,7 +13,7 @@ crates/
 ├── rekindle-crypto/        Ed25519 identity, Signal Protocol, group encryption
 ├── rekindle-game-detect/   Cross-platform game detection
 ├── rekindle-voice/         Opus codec, audio I/O, VAD, transport
-└── rekindle-server/        Community hosting daemon (child process)
+└── (rekindle-server removed — communities use gossip mesh model)
 ```
 
 Workspace-level dependencies are defined in the root `Cargo.toml`:
@@ -251,35 +251,15 @@ Veilid, bypassing privacy routing to minimize latency. The `VoiceTransport`
 
 ---
 
-## rekindle-server
+## rekindle-server (REMOVED)
 
-Community hosting daemon. Runs as a child process spawned by the Tauri app when
-a user owns communities. Handles community RPC (join, messaging, moderation),
-MEK management, and member state.
+The `rekindle-server` child process model has been replaced by the **gossip mesh +
+static owner-as-coordinator** architecture. Communities no longer use a dedicated
+server process. Instead:
 
-### Module Structure
+- **Real-time messaging** uses gossip mesh broadcast via `app_message` (Tier 1)
+- **State changes** are written to DHT by the community creator/admins (Tier 2)
+- **Community logic** lives in `src-tauri/src/services/community_service.rs` and
+  `src-tauri/src/commands/community.rs`
 
-```
-src/
-├── main.rs                 Binary entry point
-├── community_host.rs       Community hosting logic
-├── db.rs                   SQLite database for server state
-├── ipc.rs                  IPC communication with parent Tauri process
-├── mek.rs                  MEK generation, rotation, distribution
-├── rpc.rs                  RPC protocol handler (CommunityRequest → CommunityResponse)
-└── server_state.rs         Server state management
-```
-
-### Key Behavior
-
-The server process is:
-- Spawned as a child process when a user creates or owns communities
-- Health-checked every 30s by `server_health_service` in the Tauri app
-- Automatically restarted if it becomes unresponsive (2 failures, 120s cooldown)
-- Handles `CommunityRequest` RPC via Veilid `app_call`
-- Broadcasts `CommunityBroadcast` events to community members via `app_message`
-
-### External Dependencies
-
-`veilid-core`, `rusqlite`, `tokio`, `serde`, `serde_json`, `tracing`,
-`rekindle-protocol`, `rekindle-crypto`
+See `.claude/docs/rekindle-communities-architecture.md` (v1.0) for the full architecture.

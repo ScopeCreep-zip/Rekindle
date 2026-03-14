@@ -36,6 +36,6 @@ crates/
   rekindle-crypto/             Ed25519 identity, Signal Protocol, group encryption
   rekindle-game-detect/        Cross-platform game detection
   rekindle-voice/              Opus codec, audio capture/playback, VAD
-  rekindle-server/             Community hosting daemon (child process)
+  (rekindle-server removed — gossip mesh model, see communities architecture doc)
 schemas/                       Cap'n Proto schema definitions
 ```

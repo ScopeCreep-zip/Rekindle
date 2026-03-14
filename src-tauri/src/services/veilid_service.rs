@@ -99,7 +99,7 @@ async fn handle_app_message(
     msg: veilid_core::VeilidAppMessage,
 ) {
     let message = msg.message().to_vec();
-    tracing::debug!(msg_len = message.len(), "app_message received");
+    tracing::info!(msg_len = message.len(), "app_message received");
 
     // 1. Check for voice packet (tagged with b'V' prefix)
     if !message.is_empty() && message[0] == b'V' {
@@ -175,6 +175,16 @@ async fn handle_gossip_envelope(
         let mut communities = state.communities.write();
         if let Some(cs) = communities.get_mut(community_id) {
             cs.known_members.insert(signed.sender_pseudonym.clone());
+
+            // Update last_seen for TTL-based eviction
+            if let Some(ref mut gossip) = cs.gossip {
+                if let Some(member) = gossip.online_members.get_mut(&signed.sender_pseudonym) {
+                    member.last_seen = rekindle_utils::timestamp_secs();
+                }
+                if let Some(member) = gossip.peers.get_mut(&signed.sender_pseudonym) {
+                    member.last_seen = rekindle_utils::timestamp_secs();
+                }
+            }
         }
     }
 
@@ -276,7 +286,6 @@ fn is_private_control_payload(envelope_bytes: &[u8]) -> bool {
             ControlPayload::JoinAccepted { .. }
                 | ControlPayload::SlotKeypairGrant { .. }
                 | ControlPayload::AdminKeypairGrant { .. }
-                | ControlPayload::ChannelLogKeypairGrant { .. }
                 | ControlPayload::SyncResponse { .. }
         )
     } else {
@@ -313,7 +322,7 @@ fn gossip_forward(
             .peers
             .iter()
             .filter(|(pk, _)| *pk != &signed.sender_pseudonym)
-            .map(|(_, blob)| blob.clone())
+            .map(|(_, m)| m.route_blob.clone())
             .collect()
     };
 
@@ -415,12 +424,12 @@ async fn handle_relayed_envelope(
                     if let Some(cs) = communities.get_mut(&community_id) {
                         cs.known_members.insert(pseudonym_key.clone());
                         if let Some(ref mut gossip) = cs.gossip {
-                            gossip
-                                .online_members
-                                .insert(pseudonym_key.clone(), blob.clone());
-                            gossip
-                                .peers
-                                .insert(pseudonym_key.clone(), blob.clone());
+                            let member = crate::state::OnlineMember {
+                                route_blob: blob.clone(),
+                                last_seen: rekindle_utils::timestamp_secs(),
+                            };
+                            gossip.online_members.insert(pseudonym_key.clone(), member.clone());
+                            gossip.peers.insert(pseudonym_key.clone(), member);
                         }
                     }
                 }
@@ -850,7 +859,7 @@ async fn handle_relayed_control(
             roles,
             members,
             member_registry_key,
-            channel_log_keypairs,
+            channel_log_keypairs: _,
             slot_index,
             wrapped_slot_seed,
             wrapped_slot_keypair,
@@ -868,7 +877,6 @@ async fn handle_relayed_control(
                     roles: &roles,
                     members: &members,
                     member_registry_key: member_registry_key.as_deref(),
-                    channel_log_keypairs: &channel_log_keypairs,
                     slot_index,
                     wrapped_slot_seed: wrapped_slot_seed.as_deref(),
                     wrapped_slot_keypair: wrapped_slot_keypair.as_deref(),
@@ -1441,7 +1449,6 @@ fn handle_gossip_control_payloads(
     sender_pseudonym: &str,
     payload: rekindle_protocol::dht::community::envelope::ControlPayload,
 ) {
-    use crate::channels::CommunityEvent;
     use rekindle_protocol::dht::community::envelope::ControlPayload;
 
     match payload {
@@ -1473,19 +1480,6 @@ fn handle_gossip_control_payloads(
                 &wrapped_slot_keypair,
             );
         }
-        ControlPayload::ChannelLogKeypairGrant {
-            channel_id,
-            log_key,
-            wrapped_keypair,
-        } => {
-            // Unwrap and persist — reuse the same unwrap logic as JoinAccepted
-            unwrap_channel_log_keypairs(
-                state,
-                community_id,
-                sender_pseudonym,
-                &[(channel_id, log_key, wrapped_keypair)],
-            );
-        }
         ControlPayload::SyncRequest {
             channel_id,
             since_timestamp,
@@ -1496,6 +1490,13 @@ fn handle_gossip_control_payloads(
             channel_id,
             messages,
         } => {
+            // Clear pending sync — response received
+            {
+                let mut communities = state.communities.write();
+                if let Some(cs) = communities.get_mut(community_id) {
+                    cs.pending_syncs.remove(&channel_id);
+                }
+            }
             handle_sync_response(app_handle, state, community_id, &channel_id, &messages);
         }
         ControlPayload::CoordinatorAnnounce {
@@ -1517,207 +1518,18 @@ fn handle_gossip_control_payloads(
             );
         }
 
-        // ── Voice signaling ──
-        ControlPayload::VoiceJoin { channel_id, route_blob } => {
-            // If we have an active voice session, add this peer's route to our transport
-            let (shared_transport, my_pseudonym) = {
-                let ve = state.voice_engine.lock();
-                let transport = ve.as_ref().map(|h| h.transport.clone());
-                drop(ve);
-                let pk = {
-                    let communities = state.communities.read();
-                    communities.get(community_id)
-                        .and_then(|c| c.my_pseudonym_key.clone())
-                        .unwrap_or_default()
-                };
-                (transport, pk)
-            };
-            if let Some(ref transport) = shared_transport {
-                let sender_key = sender_pseudonym.to_string();
-                let blob = route_blob.clone();
-                let transport = transport.clone();
-                let my_pk = my_pseudonym.clone();
-                let cid = community_id.to_string();
-                let ch_id = channel_id.clone();
-                let state = state.clone();
-                tokio::spawn(async move {
-                    let (peer_count, current_mode) = {
-                        let mut t = transport.lock().await;
-                        if let Err(e) = t.add_peer(&sender_key, &blob) {
-                            tracing::warn!(peer = %sender_key, error = %e, "failed to add voice peer");
-                        }
-                        (t.peer_count(), t.mode().clone())
-                    };
-
-                    // Auto-elect MCU host at 6+ participants (5 peers + self)
-                    if peer_count >= 5 && matches!(current_mode, rekindle_voice::VoiceMode::Mesh) {
-                        let mut candidates = {
-                            let t = transport.lock().await;
-                            t.peer_keys()
-                        };
-                        candidates.push(my_pk.clone());
-                        candidates.sort();
-                        let elected_host = candidates[0].clone();
-
-                        tracing::info!(
-                            peer_count = peer_count + 1,
-                            host = %elected_host,
-                            "auto-electing MCU host (6+ participants)"
-                        );
-
-                        // Broadcast VoiceModeSwitch
-                        let mode_envelope = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
-                            rekindle_protocol::dht::community::envelope::ControlPayload::VoiceModeSwitch {
-                                channel_id: ch_id,
-                                mode: "mcu".to_string(),
-                                host_pseudonym: Some(elected_host.clone()),
-                            },
-                        );
-                        let _ = crate::commands::community::send_to_mesh(&state, &cid, &mode_envelope);
-
-                        // Set mode on transport
-                        {
-                            let mut t = transport.lock().await;
-                            t.set_mode(rekindle_voice::VoiceMode::Mcu {
-                                host_pseudonym: elected_host.clone(),
-                            });
-                        }
-
-                        // If we are the elected host, start MCU loop
-                        if elected_host == my_pk {
-                            let _ = crate::services::voice::session::start_mcu_loop(&state);
-                        }
-                    }
-                });
-            }
-            let _ = app_handle.emit(
-                "community-event",
-                CommunityEvent::VoiceJoin {
-                    community_id: community_id.to_string(),
-                    channel_id,
-                    pseudonym_key: sender_pseudonym.to_string(),
-                    route_blob,
-                },
+        // ── Voice signaling (handled in voice::signaling module) ──
+        ControlPayload::VoiceJoin { .. }
+        | ControlPayload::VoiceLeave { .. }
+        | ControlPayload::VoiceModeSwitch { .. }
+        | ControlPayload::VoiceMute { .. }
+        | ControlPayload::VoiceDeafen { .. }
+        | ControlPayload::VoiceRoster { .. } => {
+            super::voice::signaling::handle_voice_signaling(
+                app_handle, state, community_id, sender_pseudonym, payload,
             );
         }
-        ControlPayload::VoiceLeave { channel_id } => {
-            // Remove leaving peer from our voice transport
-            let (shared_transport, my_pseudonym) = {
-                let ve = state.voice_engine.lock();
-                let transport = ve.as_ref().map(|h| h.transport.clone());
-                drop(ve);
-                let pk = {
-                    let communities = state.communities.read();
-                    communities.get(community_id)
-                        .and_then(|c| c.my_pseudonym_key.clone())
-                        .unwrap_or_default()
-                };
-                (transport, pk)
-            };
-            if let Some(ref transport) = shared_transport {
-                let sender_key = sender_pseudonym.to_string();
-                let transport = transport.clone();
-                let my_pk = my_pseudonym.clone();
-                let cid = community_id.to_string();
-                let ch_id = channel_id.clone();
-                let state = state.clone();
-                tokio::spawn(async move {
-                    let (peer_count, current_mode) = {
-                        let mut t = transport.lock().await;
-                        t.remove_peer(&sender_key);
-                        (t.peer_count(), t.mode().clone())
-                    };
 
-                    // Handle MCU host failover
-                    if let rekindle_voice::VoiceMode::Mcu { ref host_pseudonym } = current_mode {
-                        if *host_pseudonym == sender_key {
-                            // MCU host left — fall back to mesh
-                            tracing::info!("MCU host left — falling back to mesh");
-                            {
-                                let mut t = transport.lock().await;
-                                t.set_mode(rekindle_voice::VoiceMode::Mesh);
-                            }
-                            crate::services::voice::session::stop_mcu_loop(&state).await;
-
-                            let mesh_envelope = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
-                                rekindle_protocol::dht::community::envelope::ControlPayload::VoiceModeSwitch {
-                                    channel_id: ch_id.clone(),
-                                    mode: "mesh".to_string(),
-                                    host_pseudonym: None,
-                                },
-                            );
-                            let _ = crate::commands::community::send_to_mesh(&state, &cid, &mesh_envelope);
-
-                            // Re-elect if still 6+ participants
-                            if peer_count >= 5 {
-                                let mut candidates = {
-                                    let t = transport.lock().await;
-                                    t.peer_keys()
-                                };
-                                candidates.push(my_pk.clone());
-                                candidates.sort();
-                                let elected_host = candidates[0].clone();
-
-                                let mode_envelope = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
-                                    rekindle_protocol::dht::community::envelope::ControlPayload::VoiceModeSwitch {
-                                        channel_id: ch_id,
-                                        mode: "mcu".to_string(),
-                                        host_pseudonym: Some(elected_host.clone()),
-                                    },
-                                );
-                                let _ = crate::commands::community::send_to_mesh(&state, &cid, &mode_envelope);
-
-                                {
-                                    let mut t = transport.lock().await;
-                                    t.set_mode(rekindle_voice::VoiceMode::Mcu {
-                                        host_pseudonym: elected_host.clone(),
-                                    });
-                                }
-                                if elected_host == my_pk {
-                                    let _ = crate::services::voice::session::start_mcu_loop(&state);
-                                }
-                            }
-                        } else if peer_count < 5 {
-                            // Below threshold — switch back to mesh
-                            tracing::info!(peer_count, "below MCU threshold — switching to mesh");
-                            {
-                                let mut t = transport.lock().await;
-                                t.set_mode(rekindle_voice::VoiceMode::Mesh);
-                            }
-                            crate::services::voice::session::stop_mcu_loop(&state).await;
-
-                            let mesh_envelope = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
-                                rekindle_protocol::dht::community::envelope::ControlPayload::VoiceModeSwitch {
-                                    channel_id: ch_id,
-                                    mode: "mesh".to_string(),
-                                    host_pseudonym: None,
-                                },
-                            );
-                            let _ = crate::commands::community::send_to_mesh(&state, &cid, &mesh_envelope);
-                        }
-                    }
-                });
-            }
-            let _ = app_handle.emit(
-                "community-event",
-                CommunityEvent::VoiceLeave {
-                    community_id: community_id.to_string(),
-                    channel_id,
-                    pseudonym_key: sender_pseudonym.to_string(),
-                },
-            );
-        }
-        ControlPayload::VoiceModeSwitch { channel_id, mode, host_pseudonym } => {
-            let _ = app_handle.emit(
-                "community-event",
-                CommunityEvent::VoiceModeSwitch {
-                    community_id: community_id.to_string(),
-                    channel_id,
-                    mode,
-                    host_pseudonym,
-                },
-            );
-        }
 
         // ── Moderation payloads (paper-shredded: every member applies these) ──
         // Envelope signature already verified by gossip layer. Source permission
@@ -1739,7 +1551,7 @@ fn handle_gossip_moderation(
     state: &Arc<AppState>,
     pool: &DbPool,
     community_id: &str,
-    _sender_pseudonym: &str,
+    sender_pseudonym: &str,
     payload: rekindle_protocol::dht::community::envelope::ControlPayload,
 ) {
     use crate::channels::CommunityEvent;
@@ -1749,6 +1561,11 @@ fn handle_gossip_moderation(
     let Ok(owner_key) = crate::state_helpers::current_owner_key(state) else {
         return;
     };
+
+    // Verify the sender has the required permission for this moderation action.
+    if !check_gossip_moderation_permission(state, community_id, sender_pseudonym, &payload) {
+        return;
+    }
 
     match payload {
         // ── Kick: remove the target from local state ──
@@ -2688,64 +2505,72 @@ fn handle_slot_seed_grant(
     });
 }
 
-/// Unwrap and persist channel log keypairs received in JoinAccepted.
+/// Handle a sync request — respond with messages from local SQLite.
+/// Check if a gossip moderation sender has the required permission.
 ///
-/// For each `(channel_id, log_key, wrapped_keypair)`, decrypts the keypair
-/// using our pseudonym key, then stores in Stronghold and CommunityState.
-fn unwrap_channel_log_keypairs(
+/// Uses the `member_roles` cache in CommunityState (populated by presence_poll_tick).
+/// Returns `true` if the sender has the permission, `false` if denied.
+fn check_gossip_moderation_permission(
     state: &Arc<AppState>,
     community_id: &str,
     sender_pseudonym: &str,
-    entries: &[(String, String, Vec<u8>)],
-) {
-    use rekindle_crypto::group::mek_distribution::unwrap_mek;
-    use rekindle_crypto::group::pseudonym::derive_community_pseudonym;
+    payload: &rekindle_protocol::dht::community::envelope::ControlPayload,
+) -> bool {
+    use rekindle_protocol::dht::community::envelope::ControlPayload;
+    use rekindle_protocol::dht::community::permissions_v2::Permissions;
 
-    let Some(secret) = state.identity_secret.lock().as_ref().copied() else {
-        return;
+    let required = match payload {
+        ControlPayload::Kick { .. } => Permissions::KICK_MEMBERS,
+        ControlPayload::Ban { .. } | ControlPayload::Unban { .. } => Permissions::BAN_MEMBERS,
+        ControlPayload::TimeoutMember { .. } | ControlPayload::RemoveTimeout { .. } => Permissions::MODERATE_MEMBERS,
+        ControlPayload::AssignRole { .. } | ControlPayload::UnassignRole { .. } => Permissions::MANAGE_ROLES,
+        ControlPayload::EditRole { .. } => Permissions::ADMINISTRATOR,
+        _ => return true, // Non-moderation payloads pass through
     };
-    let my_signing_key = derive_community_pseudonym(&secret, community_id);
 
-    let Ok(sender_bytes) = hex::decode(sender_pseudonym) else { return };
-    let Ok(sender_pub): Result<[u8; 32], _> = sender_bytes.try_into() else { return };
+    let communities = state.communities.read();
+    let Some(cs) = communities.get(community_id) else { return false };
 
-    let app_handle = state.app_handle.read().clone();
-
-    for (channel_id, log_key, wrapped) in entries {
-        let kp_bytes = match unwrap_mek(&my_signing_key, &sender_pub, wrapped) {
-            Ok(b) => b,
-            Err(e) => {
-                tracing::warn!(channel = %channel_id, error = %e, "failed to unwrap channel log keypair");
-                continue;
-            }
-        };
-        let kp_str = String::from_utf8_lossy(&kp_bytes).to_string();
-
-        // Persist to Stronghold
-        if let Some(ref ah) = app_handle {
-            let ks_handle: tauri::State<'_, crate::keystore::KeystoreHandle> = ah.state();
-            let ks = ks_handle.lock();
-            if let Some(ref keystore) = *ks {
-                crate::keystore::persist_channel_log_keypair(keystore, community_id, channel_id, &kp_str);
+    let sender_role_ids = cs.member_roles.get(sender_pseudonym).cloned();
+    match sender_role_ids {
+        Some(ref role_ids) => {
+            let roles_v2: Vec<rekindle_protocol::dht::community::types::RoleEntryV2> =
+                cs.roles.iter().map(|r| rekindle_protocol::dht::community::types::RoleEntryV2 {
+                    id: r.id,
+                    name: r.name.clone(),
+                    color: r.color,
+                    permissions: r.permissions,
+                    position: r.position,
+                    hoist: r.hoist,
+                    mentionable: r.mentionable,
+                }).collect();
+            drop(communities); // release lock before calling is_owner_by_roles (which also reads)
+            let is_owner = crate::services::coordinator::state_manager::is_owner_by_roles(
+                state, community_id, sender_pseudonym, role_ids,
+            );
+            let perms = rekindle_protocol::dht::community::permissions_v2::calculate_permissions_v2(
+                role_ids, &roles_v2, &[], sender_pseudonym, is_owner, None,
+            );
+            if perms.has(required) {
+                true
+            } else {
+                tracing::warn!(
+                    community = %community_id,
+                    sender = %sender_pseudonym,
+                    required = ?required,
+                    "gossip moderation: sender lacks required permission — ignoring"
+                );
+                false
             }
         }
-
-        // Update CommunityState
-        let mut communities = state.communities.write();
-        if let Some(cs) = communities.get_mut(community_id) {
-            cs.channel_log_keys.insert(channel_id.clone(), log_key.clone());
+        None => {
+            // Sender not in member_roles cache — accept if they're a known member.
+            // Their roles will be cached on next presence poll.
+            cs.known_members.contains(sender_pseudonym)
         }
-
-        tracing::debug!(
-            community = %community_id,
-            channel = %channel_id,
-            log_key = %log_key,
-            "channel log keypair unwrapped and persisted"
-        );
     }
 }
 
-/// Handle a sync request — respond with messages from local SQLite.
 fn handle_sync_request(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
@@ -2867,7 +2692,6 @@ struct JoinAcceptedData<'a> {
     roles: &'a [serde_json::Value],
     members: &'a [serde_json::Value],
     member_registry_key: Option<&'a str>,
-    channel_log_keypairs: &'a [(String, String, Vec<u8>)],
     slot_index: Option<u32>,
     wrapped_slot_seed: Option<&'a [u8]>,
     wrapped_slot_keypair: Option<&'a [u8]>,
@@ -3044,12 +2868,7 @@ async fn handle_join_accepted(
         }
     }
 
-    // 4a. Unwrap and persist channel log keypairs from coordinator
-    if !data.channel_log_keypairs.is_empty() {
-        unwrap_channel_log_keypairs(
-            state, community_id, sender_pseudonym, data.channel_log_keypairs,
-        );
-    }
+    // Channel log keypairs no longer distributed — SMPL records use slot seed.
 
     // 4b. Persist member_registry_key, my_role_ids, and roles to SQLite so
     //     state survives restarts. Without this, my_role_ids and roles loaded
@@ -3229,7 +3048,7 @@ async fn handle_broadcast_new_message(
     state: &Arc<AppState>,
     msg: &BroadcastNewMessage,
 ) {
-    tracing::debug!(
+    tracing::info!(
         community = %msg.community_id,
         channel = %msg.channel_id,
         sender = %msg.sender_pseudonym,
@@ -3955,35 +3774,29 @@ pub(crate) async fn route_refresh_loop(
                         let communities = state.communities.read();
                         communities.keys().cloned().collect()
                     };
-                    for community_id in &all_community_ids {
-                        let is_coordinator = {
-                            let services = state.coordinator_services.read();
-                            services
-                                .get(community_id)
-                                .is_some_and(super::coordinator::CoordinatorServiceHandle::is_coordinator)
-                        };
-                        if is_coordinator {
-                            // Write heartbeat immediately with new route blob
-                            if let Err(e) = super::coordinator::heartbeat::write_heartbeat_now(
-                                &state,
-                                community_id,
-                            )
-                            .await
-                            {
-                                tracing::warn!(
-                                    community = %community_id,
-                                    error = %e,
-                                    "failed to write immediate heartbeat after route refresh"
-                                );
+                    // Static owner model — no heartbeat writes needed on route refresh.
+                    // The presence poll below handles publishing our new route_blob
+                    // to the SMPL registry, which is how peers discover our route.
+
+                    // Reset needs_initial_sync so the next presence poll re-syncs
+                    {
+                        let mut communities = state.communities.write();
+                        for community_id in &all_community_ids {
+                            if let Some(cs) = communities.get_mut(community_id) {
+                                if let Some(ref mut gossip) = cs.gossip {
+                                    gossip.needs_initial_sync = true;
+                                }
                             }
-                        } else {
-                            // Re-announce presence via DHT registry
-                            let _ = crate::services::community_service::rejoin_community(
-                                &state,
-                                community_id,
-                            )
-                            .await;
                         }
+                    }
+
+                    // Trigger presence poll for all communities to publish new route
+                    for community_id in &all_community_ids {
+                        let _ = crate::services::community_service::rejoin_community(
+                            &state,
+                            community_id,
+                        )
+                        .await;
                     }
                 }
             }
@@ -4199,9 +4012,7 @@ pub async fn logout_cleanup(app_handle: Option<&tauri::AppHandle>, state: &AppSt
     // 8. Stop coordinator services
     {
         let services = std::mem::take(&mut *state.coordinator_services.write());
-        for (_cid, handle) in services {
-            handle.stop().await;
-        }
+        drop(services);
     }
 
     // NOTE: Do NOT reset network_ready_tx here. The Veilid node is still alive

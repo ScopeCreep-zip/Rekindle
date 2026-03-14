@@ -175,7 +175,7 @@ pub(crate) async fn handle_device_swap(
     }
 
     // Restart with default devices — this spawns new send/recv loops AND a new monitor
-    super::session::restart_loops(state, app)?;
+    super::session::restart_loops(state, app).await?;
 
     // Emit DeviceChanged event
     let event = VoiceEvent::DeviceChanged {

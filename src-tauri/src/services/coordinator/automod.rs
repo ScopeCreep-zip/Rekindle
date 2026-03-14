@@ -301,6 +301,7 @@ mod tests {
             timestamp: 5000,
             reply_to_id: None,
             lamport_ts: 0,
+            sequence: 1,
         }
     }
 

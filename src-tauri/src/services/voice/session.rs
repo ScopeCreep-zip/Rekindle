@@ -27,7 +27,7 @@ struct LoopBundle {
 // ── Public API ──────────────────────────────────────────────────────────
 
 /// Called by `commands::voice::join_voice_channel` (the thin IPC wrapper).
-pub(crate) fn start_session(
+pub(crate) async fn start_session(
     channel_id: &str,
     community_id: Option<&str>,
     app: &tauri::AppHandle,
@@ -54,6 +54,13 @@ pub(crate) fn start_session(
 
     let bundle = take_channels_and_config(state)?;
 
+    // Load member display names for voice participant identification
+    let voice_community_id = {
+        let ve = state.voice_engine.lock();
+        ve.as_ref().and_then(|h| h.community_id.clone())
+    };
+    let member_names = load_community_member_names(state, voice_community_id.as_deref()).await;
+
     spawn_loops(
         state,
         app,
@@ -62,6 +69,7 @@ pub(crate) fn start_session(
         &shared_transport,
         &muted_flag,
         &deafened_flag,
+        member_names,
     );
 
     emit_join_events(app, &identity.public_key, &identity.display_name);
@@ -76,7 +84,7 @@ pub(crate) fn start_session(
 ///
 /// Reuses the existing shared transport (preserves all connected peers
 /// from VoiceJoin gossip). Only creates a new transport if none exists.
-pub(crate) fn restart_loops(state: &SharedState, app: &tauri::AppHandle) -> Result<(), String> {
+pub(crate) async fn restart_loops(state: &SharedState, app: &tauri::AppHandle) -> Result<(), String> {
     let identity = state_helpers::current_identity(state)?;
 
     restart_audio_devices(state)?;
@@ -94,6 +102,12 @@ pub(crate) fn restart_loops(state: &SharedState, app: &tauri::AppHandle) -> Resu
     let bundle = take_channels_and_config(state)?;
     let (muted_flag, deafened_flag) = clone_flags(state)?;
 
+    let voice_community_id = {
+        let ve = state.voice_engine.lock();
+        ve.as_ref().and_then(|h| h.community_id.clone())
+    };
+    let member_names = load_community_member_names(state, voice_community_id.as_deref()).await;
+
     spawn_loops(
         state,
         app,
@@ -102,6 +116,7 @@ pub(crate) fn restart_loops(state: &SharedState, app: &tauri::AppHandle) -> Resu
         &shared_transport,
         &muted_flag,
         &deafened_flag,
+        member_names,
     );
 
     Ok(())
@@ -328,6 +343,7 @@ fn spawn_loops(
     transport: &std::sync::Arc<tokio::sync::Mutex<rekindle_voice::transport::VoiceTransport>>,
     muted_flag: &Arc<AtomicBool>,
     deafened_flag: &Arc<AtomicBool>,
+    member_names: std::collections::HashMap<String, String>,
 ) {
     // Set up voice packet receive channel
     let (voice_packet_tx, voice_packet_rx) = mpsc::channel(200);
@@ -335,6 +351,12 @@ fn spawn_loops(
 
     // Speaker reference broadcast channel for AEC
     let (speaker_ref_tx, speaker_ref_rx) = broadcast::channel::<Vec<f32>>(50);
+
+    // Get community_id for MEK encryption (if in a community voice channel)
+    let voice_community_id = {
+        let ve = state.voice_engine.lock();
+        ve.as_ref().and_then(|h| h.community_id.clone())
+    };
 
     // Spawn voice send loop
     let (send_shutdown_tx, send_shutdown_rx) = mpsc::channel::<()>(1);
@@ -348,6 +370,8 @@ fn spawn_loops(
         echo_cancellation: bundle.echo_cancellation,
         muted_flag: Arc::clone(muted_flag),
         speaker_ref_rx,
+        community_id: voice_community_id.clone(),
+        state: state.clone(),
     }));
 
     // Spawn voice receive loop
@@ -360,6 +384,9 @@ fn spawn_loops(
         our_public_key: public_key.to_string(),
         deafened_flag: Arc::clone(deafened_flag),
         speaker_ref_tx,
+        community_id: voice_community_id,
+        state: state.clone(),
+        member_names,
     }));
 
     // Take device error receiver and spawn device monitor loop.
@@ -415,4 +442,37 @@ fn emit_join_events(app: &tauri::AppHandle, public_key: &str, display_name: &str
         speaking: false,
     };
     let _ = app.emit("voice-event", &speaking_event);
+}
+
+/// Load community member display names from SQLite for voice participant identification.
+///
+/// Returns pseudonym_key_hex → display_name mapping. Called once at voice session start.
+async fn load_community_member_names(
+    state: &crate::state::SharedState,
+    community_id: Option<&str>,
+) -> std::collections::HashMap<String, String> {
+    use tauri::Manager as _;
+
+    let Some(cid) = community_id else {
+        return std::collections::HashMap::new();
+    };
+    let app_handle = state.app_handle.read().clone();
+    let Some(ref ah) = app_handle else {
+        return std::collections::HashMap::new();
+    };
+    let Some(pool) = ah.try_state::<crate::db::DbPool>() else {
+        return std::collections::HashMap::new();
+    };
+    let cid_owned = cid.to_string();
+    crate::db_helpers::db_call(&pool, move |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT pseudonym_key, display_name FROM community_members WHERE community_id = ?1",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![cid_owned], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        Ok(rows.filter_map(Result::ok).collect())
+    })
+    .await
+    .unwrap_or_default()
 }

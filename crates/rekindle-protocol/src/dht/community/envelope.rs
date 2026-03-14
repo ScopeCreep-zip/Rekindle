@@ -25,6 +25,9 @@ pub enum CommunityEnvelope {
         /// Lamport logical timestamp for causal ordering.
         #[serde(default)]
         lamport_ts: u64,
+        /// Per-sender, per-channel sequence number for gap detection.
+        #[serde(default)]
+        sequence: u64,
     },
     /// A control operation (channel/role/invite/event management, moderation, etc.).
     Control(ControlPayload),
@@ -55,6 +58,18 @@ pub struct PresenceGameInfo {
     pub elapsed_seconds: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub server_address: Option<String>,
+}
+
+/// A participant entry in a voice roster broadcast.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VoiceRosterEntry {
+    pub pseudonym_key: String,
+    pub route_blob: Vec<u8>,
+    #[serde(default)]
+    pub muted: bool,
+    #[serde(default)]
+    pub deafened: bool,
 }
 
 /// Signed wrapper: sender_pseudonym + serialized envelope + Ed25519 signature.
@@ -747,14 +762,6 @@ pub enum ControlPayload {
         /// Slot keypair encrypted for the target member.
         wrapped_slot_keypair: Vec<u8>,
     },
-    /// Grant a channel DHTLog keypair to an existing member after dynamic channel creation.
-    ChannelLogKeypairGrant {
-        channel_id: String,
-        log_key: String,
-        /// Channel log keypair encrypted for the target member.
-        wrapped_keypair: Vec<u8>,
-    },
-
     // ── Sync protocol ──
     /// Request channel history from an archiver node.
     SyncRequest {
@@ -794,6 +801,24 @@ pub enum ControlPayload {
         /// Pseudonym key of the MCU host (only set when mode = "mcu").
         #[serde(default, skip_serializing_if = "Option::is_none")]
         host_pseudonym: Option<String>,
+    },
+
+    /// Moderator action: server-mute a member in a voice channel.
+    VoiceMute {
+        channel_id: String,
+        target_pseudonym: String,
+        muted: bool,
+    },
+    /// Moderator action: server-deafen a member in a voice channel.
+    VoiceDeafen {
+        channel_id: String,
+        target_pseudonym: String,
+        deafened: bool,
+    },
+    /// Voice roster broadcast: current participants for late joiners.
+    VoiceRoster {
+        channel_id: String,
+        participants: Vec<VoiceRosterEntry>,
     },
 
     // ── Generic responses ──
@@ -925,6 +950,7 @@ mod tests {
             timestamp: 1234567890,
             reply_to_id: None,
             lamport_ts: 42,
+            sequence: 7,
         };
         let json = serde_json::to_string(&envelope).unwrap();
         let back: CommunityEnvelope = serde_json::from_str(&json).unwrap();

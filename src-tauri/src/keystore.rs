@@ -434,56 +434,9 @@ pub fn delete_slot_seed(keystore: &StrongholdKeystore, community_id: &str) {
     }
 }
 
-/// Persist a channel DHTLog owner keypair to the open Stronghold keystore.
-///
-/// The log keypair lets all community members append to the channel's DHTLog
-/// for persistent message history.
-pub fn persist_channel_log_keypair(
-    keystore: &StrongholdKeystore,
-    community_id: &str,
-    channel_id: &str,
-    keypair_str: &str,
-) {
-    use rekindle_crypto::keychain::VAULT_COMMUNITIES;
-    use rekindle_crypto::Keychain as _;
-
-    let key_name = format!("channel_log_kp_{community_id}_{channel_id}");
-    if let Err(e) = keystore.store_key(VAULT_COMMUNITIES, &key_name, keypair_str.as_bytes()) {
-        tracing::warn!(error = %e, "failed to persist channel log keypair");
-    } else {
-        let _ = keystore.save();
-    }
-}
-
-/// Load a channel DHTLog owner keypair from the open Stronghold keystore.
-pub fn load_channel_log_keypair(
-    keystore: &StrongholdKeystore,
-    community_id: &str,
-    channel_id: &str,
-) -> Option<String> {
-    use rekindle_crypto::keychain::VAULT_COMMUNITIES;
-    use rekindle_crypto::Keychain as _;
-
-    let key_name = format!("channel_log_kp_{community_id}_{channel_id}");
-    match keystore.load_key(VAULT_COMMUNITIES, &key_name) {
-        Ok(Some(bytes)) => String::from_utf8(bytes).ok(),
-        _ => None,
-    }
-}
-
-/// Delete a channel DHTLog owner keypair from the open Stronghold keystore.
-pub fn delete_channel_log_keypair(
-    keystore: &StrongholdKeystore,
-    community_id: &str,
-    channel_id: &str,
-) {
-    use rekindle_crypto::keychain::VAULT_COMMUNITIES;
-    use rekindle_crypto::Keychain as _;
-
-    let key_name = format!("channel_log_kp_{community_id}_{channel_id}");
-    let _ = keystore.delete_key(VAULT_COMMUNITIES, &key_name);
-    let _ = keystore.save();
-}
+// persist_channel_log_keypair, load_channel_log_keypair, delete_channel_log_keypair
+// removed — SMPL channel records use the shared slot seed. Members derive their
+// writer keypair via derive_slot_veilid_keypair(seed, slot_index).
 
 /// Persist a per-channel MEK to the open Stronghold keystore.
 ///

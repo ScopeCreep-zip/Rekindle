@@ -109,24 +109,25 @@ InviteBlob {
 - `verify_invite_blob()` → verify Ed25519 signature
 - `encode_invite_url()` / `decode_invite_url()` → base64url for `rekindle://invite/{blob}`
 
-### Community Server Architecture
+### Community Architecture (Gossip Mesh + Static Owner)
 
-Communities use a client-server model within the P2P network. The community
-owner runs a `rekindle-server` child process that acts as a message relay and
-state manager.
+Communities use a **gossip mesh** model where every member is a full peer. The community
+creator permanently owns the DHT manifest. There is no central relay server.
 
-**CommunityRequest** (24 RPC variants): Join, SendMessage, GetMessages, RequestMEK,
-Leave, Kick, CreateChannel, DeleteChannel, RotateMEK, RenameChannel, UpdateCommunity,
-Ban, Unban, GetBanList, CreateRole, EditRole, DeleteRole, AssignRole, UnassignRole,
-SetChannelOverwrite, DeleteChannelOverwrite, TimeoutMember, RemoveTimeout, GetRoles
+**Two-tier operation model:**
+- **Tier 1 (gossip mesh):** Chat messages, typing, reactions, presence, voice — broadcast
+  via `app_message()` to D gossip peers with TTL-based forwarding. No coordinator needed.
+- **Tier 2 (coordinator-assisted):** Channel/role/ban CRUD, MEK rotation — require the
+  creator (or delegated admin) to write DFLT manifest subkeys, then gossip-broadcast changes.
 
-**CommunityResponse**: Ok, Joined, Messages, MEK, ChannelCreated, CommunityUpdated,
-BanList, RoleCreated, RolesList, Error
+**Gossip envelope types:** SignedEnvelope wrapping CommunityEnvelope (ChatMessage,
+VoicePacket, ControlMessage, PresenceUpdate). All envelopes signed with Ed25519 pseudonym
+keys and include Lamport timestamps for causal ordering.
 
-**CommunityBroadcast** (push to all members): NewMessage, MEKRotated, MemberJoined,
-MemberRemoved, RolesChanged, MemberRolesChanged, MemberTimedOut, ChannelOverwriteChanged
+**DHT records:** DFLT manifest (16 subkeys, creator-owned), SMPL member registry
+(255 slots, multi-writer), SMPL channel records (member-authored message persistence).
 
-RPC uses Veilid `app_call()` with an 8-second timeout. Broadcasts use `app_message()`.
+See `.claude/docs/rekindle-communities-architecture.md` (v1.0) for the full architecture.
 
 ## Cap'n Proto Schema Catalog
 

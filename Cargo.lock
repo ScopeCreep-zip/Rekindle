@@ -5992,6 +5992,7 @@ dependencies = [
  "argon2",
  "base64 0.22.1",
  "blake2",
+ "futures",
  "hex",
  "image",
  "indexmap 2.13.0",

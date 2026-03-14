@@ -22,6 +22,12 @@ pub(crate) struct VoiceReceiveParams {
     pub our_public_key: String,
     pub deafened_flag: Arc<AtomicBool>,
     pub speaker_ref_tx: broadcast::Sender<Vec<f32>>,
+    /// Community ID for MEK decryption of voice packets. None for 1:1 calls.
+    pub community_id: Option<String>,
+    /// Shared app state for MEK cache access.
+    pub state: crate::state::SharedState,
+    /// Pre-loaded member display names: pseudonym_key_hex → display_name.
+    pub member_names: HashMap<String, String>,
 }
 
 struct ParticipantDecoder {
@@ -47,6 +53,11 @@ struct VoiceReceiveLoop {
     jitter_buffer_ms: u32,
     packets_received: u64,
     last_quality_check: Instant,
+    community_id: Option<String>,
+    state: crate::state::SharedState,
+    /// Pre-loaded display names: pseudonym_key_hex → display_name.
+    /// Populated from SQLite on loop start so we don't need async DB queries.
+    member_names: HashMap<String, String>,
 }
 
 /// Entry point: validate params, build loop state, run until shutdown.
@@ -85,7 +96,19 @@ impl VoiceReceiveLoop {
             jitter_buffer_ms,
             packets_received: 0,
             last_quality_check: Instant::now(),
+            community_id: params.community_id,
+            state: params.state,
+            member_names: params.member_names,
         })
+    }
+
+    /// Look up a member's display name from the pre-loaded member name cache.
+    /// Falls back to the hex-encoded pseudonym key if not found.
+    fn resolve_display_name(&self, pseudonym_hex: &str) -> String {
+        self.member_names
+            .get(pseudonym_hex)
+            .cloned()
+            .unwrap_or_else(|| pseudonym_hex.to_string())
     }
 
     async fn run_loop(mut self) {
@@ -113,10 +136,24 @@ impl VoiceReceiveLoop {
         tracing::info!("voice receive loop exited");
     }
 
-    fn ingest_packet(&mut self, packet: rekindle_voice::transport::VoicePacket) {
+    fn ingest_packet(&mut self, mut packet: rekindle_voice::transport::VoicePacket) {
         // Skip our own packets
         if packet.sender_key == self.our_key_bytes {
             return;
+        }
+
+        // Decrypt voice frame with community MEK
+        if let Some(ref cid) = self.community_id {
+            let mek_cache = self.state.mek_cache.lock();
+            if let Some(mek) = mek_cache.get(cid) {
+                match mek.decrypt(&packet.audio_data) {
+                    Ok(plaintext) => packet.audio_data = plaintext,
+                    Err(e) => {
+                        tracing::trace!(error = %e, "voice MEK decrypt failed — skipping packet");
+                        return;
+                    }
+                }
+            }
         }
 
         self.packets_received += 1;
@@ -133,9 +170,12 @@ impl VoiceReceiveLoop {
                     let sender_hex = hex::encode(&sender_key);
                     tracing::info!(peer = %sender_hex, "new voice participant");
 
+                    // Resolve display name from community member data
+                    let display_name = self.resolve_display_name(&sender_hex);
+
                     let event = VoiceEvent::UserJoined {
                         public_key: sender_hex.clone(),
-                        display_name: sender_hex,
+                        display_name,
                     };
                     let _ = self.app.emit("voice-event", &event);
 

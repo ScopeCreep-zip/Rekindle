@@ -1,14 +1,14 @@
-//! Coordinator service for the rotating coordinator model.
+//! Coordinator service for the static owner-as-coordinator model.
 //!
-//! Any eligible online member can be elected coordinator via deterministic
-//! hash scoring. The coordinator relays real-time messages, enforces
-//! permissions/rate-limits, writes to DHT, and heartbeats every 30s.
-//! On failure, members detect the 60s timeout and re-elect.
+//! The community creator permanently owns the manifest keypair and acts as
+//! coordinator for Tier 2 operations (state changes, moderation, MEK rotation).
+//! Tier 1 operations (chat, typing, reactions, presence) use the gossip mesh
+//! and do not require a coordinator.
+//!
+//! No election or heartbeat — the creator is always the coordinator.
 
 pub mod audit;
 pub mod automod;
-pub mod election;
-pub mod heartbeat;
 pub mod onboarding;
 pub mod raid;
 pub mod state_manager;
@@ -26,14 +26,14 @@ use crate::state::AppState;
 pub enum CoordinatorRole {
     /// Not participating in coordinator duties.
     Idle,
-    /// We are the active coordinator for this community.
+    /// We are the active coordinator for this community (we hold the manifest keypair).
     Coordinator,
-    /// We are a regular member (someone else is coordinator).
+    /// We are a regular member (the creator/admin is the coordinator).
     Member,
 }
 
-/// A DHT value change forwarded from the Veilid dispatch loop
-/// to the coordinator service for a specific community.
+/// A DHT value change forwarded from the Veilid dispatch loop.
+/// Currently only used to detect manifest changes (automod config, etc.).
 pub struct CoordinatorValueChange {
     pub subkey: u32,
     pub value: Option<Vec<u8>>,
@@ -43,8 +43,8 @@ pub struct CoordinatorValueChange {
 pub struct CoordinatorServiceHandle {
     pub community_id: String,
     pub role: Arc<RwLock<CoordinatorRole>>,
-    shutdown_tx: mpsc::Sender<()>,
-    /// Channel for forwarding VeilidUpdate::ValueChange events from the dispatch loop.
+    /// Channel for forwarding VeilidUpdate::ValueChange events.
+    /// The receiver is consumed by the value change monitoring task.
     pub value_change_tx: mpsc::Sender<CoordinatorValueChange>,
     /// State manager for coordinator-side join/moderation/config handling (automod + raid + audit).
     pub state_mgr: Arc<state_manager::StateManager>,
@@ -55,65 +55,56 @@ impl CoordinatorServiceHandle {
     pub fn is_coordinator(&self) -> bool {
         matches!(*self.role.read(), CoordinatorRole::Coordinator)
     }
-
-    /// Signal the coordinator service to shut down.
-    pub async fn stop(&self) {
-        let _ = self.shutdown_tx.send(()).await;
-    }
 }
 
-/// Start the coordinator service for a community.
+/// Create the coordinator service handle for a community.
 ///
-/// Spawns election and heartbeat tasks. Returns a handle that can be stored
-/// in AppState for querying the role and forwarding value changes.
-pub fn start(
-    state: Arc<AppState>,
+/// This creates the StateManager (automod, raid, audit) and a value change
+/// channel for manifest DHT updates. No election or heartbeat tasks are spawned —
+/// the creator is the permanent coordinator (static owner model).
+pub fn create_handle(
+    state: &Arc<AppState>,
     community_id: String,
 ) -> CoordinatorServiceHandle {
     let role = Arc::new(RwLock::new(CoordinatorRole::Idle));
-    let (shutdown_tx, mut main_shutdown_rx) = mpsc::channel::<()>(1);
-    let (value_change_tx, value_change_rx) = mpsc::channel(64);
-    let (election_trigger_tx, election_trigger_rx) = mpsc::channel(4);
+    let (value_change_tx, mut value_change_rx) = mpsc::channel::<CoordinatorValueChange>(64);
     let state_mgr = Arc::new(state_manager::StateManager::new(community_id.clone()));
 
-    // Create an election shutdown channel linked to the main shutdown
-    let (election_shutdown_tx, election_shutdown_rx) = mpsc::channel(1);
+    // Spawn a lightweight task that monitors manifest value changes
+    // for automod/raid config reloads (replaces the election loop's
+    // value change handling without the election logic).
+    let monitor_state = Arc::clone(state);
+    let monitor_community = community_id.clone();
+    let monitor_state_mgr = state_mgr.clone();
     tokio::spawn(async move {
-        let _ = main_shutdown_rx.recv().await;
-        let _ = election_shutdown_tx.send(()).await;
-    });
+        use rekindle_protocol::dht::community::manifest;
 
-    // Spawn election task
-    let election_state = state;
-    let election_community = community_id.clone();
-    let election_role = role.clone();
-    let election_state_mgr = state_mgr.clone();
-    let election_trigger_tx_clone = election_trigger_tx.clone();
-    tokio::spawn(async move {
-        election::run(
-            election_state,
-            election_community,
-            election_role,
-            election_state_mgr,
-            value_change_rx,
-            election_trigger_rx,
-            election_shutdown_rx,
-            election_trigger_tx_clone,
-        )
-        .await;
-    });
-
-    // Run initial election after a brief delay to let Veilid stabilize
-    let initial_trigger = election_trigger_tx.clone();
-    tokio::spawn(async move {
-        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-        let _ = initial_trigger.send(()).await;
+        while let Some(change) = value_change_rx.recv().await {
+            // Manifest subkey 9 = AutoModConfig — reload on change
+            if change.subkey == 9 {
+                let rc = crate::state_helpers::routing_context(&monitor_state);
+                if let Some(rc) = rc {
+                    let mgr = rekindle_protocol::dht::DHTManager::new(rc);
+                    let manifest_key = {
+                        let communities = monitor_state.communities.read();
+                        communities
+                            .get(&monitor_community)
+                            .and_then(|cs| cs.manifest_key.clone())
+                    };
+                    if let Some(ref mk) = manifest_key {
+                        if let Ok(Some(config)) = manifest::read_automod(&mgr, mk).await {
+                            monitor_state_mgr.reload_raid_config(config.raid_protection.clone());
+                            monitor_state_mgr.reload_automod(config);
+                        }
+                    }
+                }
+            }
+        }
     });
 
     CoordinatorServiceHandle {
         community_id,
         role,
-        shutdown_tx,
         value_change_tx,
         state_mgr,
     }

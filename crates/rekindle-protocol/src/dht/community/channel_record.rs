@@ -19,22 +19,6 @@ pub const CHANNEL_OWNER_SUBKEY_COUNT: u16 = 8;
 /// Each member gets 1 subkey for message submission.
 pub const CHANNEL_MEMBER_SUBKEY_COUNT: u16 = 1;
 
-/// Channel record header stored in subkey 0.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ChannelHeader {
-    /// Channel ID this record belongs to.
-    pub channel_id: String,
-    /// Community ID this channel is part of.
-    pub community_id: String,
-    /// Latest message sequence number (monotonically increasing).
-    pub latest_sequence: u64,
-    /// Current MEK generation for this channel.
-    pub mek_generation: u64,
-    /// Timestamp of the last message.
-    pub last_message_at: u64,
-}
-
 /// A message entry written to a channel record subkey.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -59,58 +43,6 @@ pub struct ChannelMessage {
     /// Unique message ID (for deduplication).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message_id: Option<String>,
-}
-
-/// Create a new channel record (DFLT for now, will be upgraded to SMPL when members join).
-///
-/// Returns `(record_key, owner_keypair)`.
-pub async fn create_channel_record(
-    dht: &DHTManager,
-    channel_id: &str,
-    community_id: &str,
-) -> Result<(String, Option<veilid_core::KeyPair>), ProtocolError> {
-    let (key, owner_keypair) = dht
-        .create_record(u32::from(CHANNEL_OWNER_SUBKEY_COUNT))
-        .await?;
-
-    // Write initial channel header
-    let header = ChannelHeader {
-        channel_id: channel_id.to_string(),
-        community_id: community_id.to_string(),
-        latest_sequence: 0,
-        mek_generation: 0,
-        last_message_at: 0,
-    };
-    write_header(dht, &key, &header).await?;
-
-    tracing::debug!(key = %key, channel = %channel_id, "channel record created");
-    Ok((key, owner_keypair))
-}
-
-/// Read the channel record header.
-pub async fn read_header(
-    dht: &DHTManager,
-    key: &str,
-) -> Result<Option<ChannelHeader>, ProtocolError> {
-    match dht.get_value(key, CHANNEL_HEADER_SUBKEY).await? {
-        Some(data) => {
-            let header: ChannelHeader = serde_json::from_slice(&data)
-                .map_err(|e| ProtocolError::Deserialization(format!("channel header: {e}")))?;
-            Ok(Some(header))
-        }
-        None => Ok(None),
-    }
-}
-
-/// Write the channel record header (requires manifest_owner_keypair).
-pub async fn write_header(
-    dht: &DHTManager,
-    key: &str,
-    header: &ChannelHeader,
-) -> Result<(), ProtocolError> {
-    let bytes = serde_json::to_vec(header)
-        .map_err(|e| ProtocolError::Serialization(format!("channel header: {e}")))?;
-    dht.set_value(key, CHANNEL_HEADER_SUBKEY, bytes).await
 }
 
 /// Read messages from a specific subkey in the channel record.
@@ -148,81 +80,121 @@ pub async fn watch_channel(
     dht.watch_record(key, &subkeys).await
 }
 
-// ── DHTLog-based channel history ──
+// ── SMPL multi-writer channel persistence ──
 
-use crate::dht::log::DHTLog;
+/// Maximum serialized size for a member's message page (~30KB, leaving DHT overhead room).
+const MAX_PAGE_SIZE: usize = 30_000;
 
-/// Create a DHTLog for a new channel's persistent message history.
+/// Create a new SMPL channel record with pre-allocated member slots.
 ///
-/// Returns `(log_spine_key, owner_keypair)`.
-pub async fn create_channel_log(
-    rc: &veilid_core::RoutingContext,
-) -> Result<(String, veilid_core::KeyPair), ProtocolError> {
-    let (log, keypair) = DHTLog::create(rc).await?;
-    let key = log.spine_key();
-    tracing::debug!(key = %key, "channel DHTLog created");
-    Ok((key, keypair))
+/// Uses the same slot seed as the member registry so members derive their
+/// writer keypair independently via `derive_slot_veilid_keypair(seed, slot_index)`.
+/// Returns `(record_key, owner_keypair)`.
+pub async fn create_smpl_channel_record(
+    dht: &DHTManager,
+    slot_seed: &[u8; 32],
+) -> Result<(String, Option<veilid_core::KeyPair>), ProtocolError> {
+    use crate::dht::community::member_registry;
+
+    let mut members = Vec::with_capacity(member_registry::SLOTS_PER_SEGMENT as usize);
+    for i in 0..member_registry::SLOTS_PER_SEGMENT {
+        let signing_key = member_registry::derive_slot_keypair(slot_seed, i)?;
+        let public_bytes = signing_key.verifying_key().to_bytes();
+        members.push(veilid_core::DHTSchemaSMPLMember {
+            m_key: veilid_core::BareMemberId::new(&public_bytes),
+            m_cnt: CHANNEL_MEMBER_SUBKEY_COUNT,
+        });
+    }
+
+    let (key, owner_keypair) = dht
+        .create_smpl_record(CHANNEL_OWNER_SUBKEY_COUNT, members)
+        .await?;
+
+    tracing::debug!(key = %key, "SMPL channel record created");
+    Ok((key, owner_keypair))
 }
 
-/// Append a message to the channel's DHTLog for persistent history.
-pub async fn append_channel_message(
-    rc: &veilid_core::RoutingContext,
-    log_key: &str,
+/// Write a message to a member's subkey in the channel SMPL record.
+///
+/// Reads existing messages from the subkey, appends the new one, and writes back.
+/// If the page exceeds MAX_PAGE_SIZE, oldest messages are dropped from DHT
+/// (they're still in SQLite locally).
+pub async fn write_member_message(
+    dht: &DHTManager,
+    channel_key: &str,
+    member_index: u32,
     writer: veilid_core::KeyPair,
     message: &ChannelMessage,
-) -> Result<u64, ProtocolError> {
-    let log = DHTLog::open_write(rc, log_key, writer).await?;
-    let bytes = serde_json::to_vec(message)
-        .map_err(|e| ProtocolError::Serialization(format!("channel message: {e}")))?;
-    log.append(&bytes).await
+) -> Result<(), ProtocolError> {
+    let subkey = u32::from(CHANNEL_OWNER_SUBKEY_COUNT) + member_index;
+
+    // Read existing messages from our subkey
+    let mut messages = match dht.get_value(channel_key, subkey).await? {
+        Some(data) => serde_json::from_slice::<Vec<ChannelMessage>>(&data).unwrap_or_default(),
+        None => Vec::new(),
+    };
+
+    // Append new message
+    messages.push(message.clone());
+
+    // Trim oldest if over size limit
+    let mut bytes = serde_json::to_vec(&messages)
+        .map_err(|e| ProtocolError::Serialization(format!("channel messages: {e}")))?;
+    while bytes.len() > MAX_PAGE_SIZE && messages.len() > 1 {
+        messages.remove(0);
+        bytes = serde_json::to_vec(&messages)
+            .map_err(|e| ProtocolError::Serialization(format!("channel messages: {e}")))?;
+    }
+
+    // Write with member's keypair
+    dht.set_value_with_writer(channel_key, subkey, bytes, writer).await
 }
 
-/// Read the last `count` messages from the channel's DHTLog.
-pub async fn read_channel_log_tail(
+/// Read all messages from all member subkeys in the channel SMPL record.
+///
+/// Returns messages sorted by (lamport_ts, sender_pseudonym) for deterministic
+/// ordering. Uses parallel reads bounded by a semaphore.
+pub async fn read_all_channel_messages(
     rc: &veilid_core::RoutingContext,
-    log_key: &str,
-    count: u32,
+    channel_key: &str,
+    member_count: u32,
 ) -> Result<Vec<ChannelMessage>, ProtocolError> {
-    let log = DHTLog::open_read(rc, log_key).await?;
-    let entries = log.tail(count).await?;
-    let mut messages = Vec::with_capacity(entries.len());
-    for entry in entries {
-        if let Ok(msg) = serde_json::from_slice::<ChannelMessage>(&entry) {
-            messages.push(msg);
-        }
-    }
-    Ok(messages)
-}
+    use futures::stream::{FuturesUnordered, StreamExt};
 
-/// Read messages from the DHTLog starting at a given position.
-pub async fn read_channel_log_since(
-    rc: &veilid_core::RoutingContext,
-    log_key: &str,
-    since_pos: u64,
-) -> Result<Vec<ChannelMessage>, ProtocolError> {
-    let log = DHTLog::open_read(rc, log_key).await?;
-    let total = log.len().await?;
-    if since_pos >= total {
-        return Ok(Vec::new());
+    let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(10));
+    let mut futs = FuturesUnordered::new();
+
+    for i in 0..member_count {
+        let sem = sem.clone();
+        let rc = rc.clone();
+        let key = channel_key.to_string();
+        let subkey = u32::from(CHANNEL_OWNER_SUBKEY_COUNT) + i;
+        futs.push(async move {
+            let permit = sem.acquire().await.unwrap();
+            let mgr = DHTManager::new(rc);
+            let result = mgr.get_value(&key, subkey).await;
+            drop(permit);
+            result
+        });
     }
-    let mut messages = Vec::new();
-    for pos in since_pos..total {
-        if let Some(data) = log.get(pos).await? {
-            if let Ok(msg) = serde_json::from_slice::<ChannelMessage>(&data) {
-                messages.push(msg);
+
+    let mut all_messages = Vec::new();
+    while let Some(result) = futs.next().await {
+        if let Ok(Some(data)) = result {
+            if let Ok(msgs) = serde_json::from_slice::<Vec<ChannelMessage>>(&data) {
+                all_messages.extend(msgs);
             }
         }
     }
-    Ok(messages)
-}
 
-/// Get the total number of messages in the channel DHTLog.
-pub async fn channel_log_len(
-    rc: &veilid_core::RoutingContext,
-    log_key: &str,
-) -> Result<u64, ProtocolError> {
-    let log = DHTLog::open_read(rc, log_key).await?;
-    log.len().await
+    // Sort by (lamport_ts, sender_pseudonym) for deterministic ordering
+    all_messages.sort_by(|a, b| {
+        a.lamport_ts
+            .cmp(&b.lamport_ts)
+            .then_with(|| a.sender_pseudonym.cmp(&b.sender_pseudonym))
+    });
+
+    Ok(all_messages)
 }
 
 /// Serde helper for base64-encoding Vec<u8> fields in JSON.

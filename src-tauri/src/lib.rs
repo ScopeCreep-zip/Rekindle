@@ -340,6 +340,8 @@ pub fn run() {
             commands::voice::list_audio_devices,
             commands::voice::set_audio_devices,
             commands::voice::set_voice_mode,
+            commands::voice::server_mute_member,
+            commands::voice::server_deafen_member,
             // status
             commands::status::set_status,
             commands::status::set_nickname,
