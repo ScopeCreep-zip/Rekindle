@@ -31,7 +31,6 @@ pub fn start_presence_poll(state: Arc<AppState>, community_id: String) {
     }
     tokio::spawn(async move {
         // Run an immediate first tick so gossip overlay is populated right away
-        // (don't wait 60s — members need to discover peers immediately)
         if let Err(e) = presence_poll_tick(&state, &community_id).await {
             tracing::warn!(
                 community = %community_id,
@@ -40,8 +39,31 @@ pub fn start_presence_poll(state: Arc<AppState>, community_id: String) {
             );
         }
 
+        // Rapid discovery phase: poll every 5s for the first 30s after join.
+        // This reduces the peer discovery blind window from 60s to ~10s.
+        // After the rapid phase, drop to normal 60s interval.
+        let rapid_ticks = 6; // 6 × 5s = 30s rapid phase
+        let mut rapid_interval = tokio::time::interval(std::time::Duration::from_secs(5));
+        rapid_interval.tick().await; // consume immediate tick
+        for tick_num in 0..rapid_ticks {
+            tokio::select! {
+                _ = rapid_interval.tick() => {
+                    if let Err(e) = presence_poll_tick(&state, &community_id).await {
+                        tracing::trace!(
+                            community = %community_id,
+                            tick = tick_num + 1,
+                            error = %e,
+                            "rapid presence poll tick failed"
+                        );
+                    }
+                }
+                _ = shutdown_rx.recv() => return,
+            }
+        }
+
+        // Normal phase: poll every 60s
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
-        interval.tick().await; // consume immediate tick (already ran above)
+        interval.tick().await; // consume immediate tick
         loop {
             tokio::select! {
                 _ = interval.tick() => {
@@ -314,22 +336,37 @@ async fn presence_poll_tick(state: &Arc<AppState>, community_id: &str) -> Result
         while let Some((pk, result)) = futs.next().await {
             match result {
                 Ok(Some(presence)) => {
-                    if presence.status != "offline"
-                        && presence.last_heartbeat > stale_threshold
-                    {
-                        if let Some(blob) = presence.route_blob {
-                            if !blob.is_empty() {
-                                online_members.insert(pk, crate::state::OnlineMember {
-                                    route_blob: blob,
-                                    last_seen: now_secs,
-                                });
-                            }
-                        }
+                    if presence.status == "offline" {
+                        tracing::trace!(member = %pk, "presence scan: member is offline");
+                    } else if presence.last_heartbeat <= stale_threshold {
+                        tracing::debug!(
+                            member = %pk,
+                            heartbeat = presence.last_heartbeat,
+                            threshold = stale_threshold,
+                            "presence scan: member heartbeat is stale"
+                        );
+                    } else if presence.route_blob.is_none() {
+                        tracing::info!(
+                            member = %pk,
+                            "presence scan: member has no route_blob — cannot reach them"
+                        );
+                    } else if presence.route_blob.as_ref().is_some_and(Vec::is_empty) {
+                        tracing::info!(
+                            member = %pk,
+                            "presence scan: member has empty route_blob — cannot reach them"
+                        );
+                    } else if let Some(blob) = presence.route_blob {
+                        online_members.insert(pk, crate::state::OnlineMember {
+                            route_blob: blob,
+                            last_seen: now_secs,
+                        });
                     }
                 }
-                Ok(None) => {}
+                Ok(None) => {
+                    tracing::trace!(member = %pk, "presence scan: no presence written yet");
+                }
                 Err(e) => {
-                    tracing::trace!(member = %pk, error = %e, "failed to read member presence");
+                    tracing::debug!(member = %pk, error = %e, "presence scan: failed to read");
                 }
             }
         }
