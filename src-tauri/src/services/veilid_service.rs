@@ -378,6 +378,7 @@ async fn handle_relayed_envelope(
             mek_generation,
             timestamp,
             reply_to_id,
+            sequence,
             ..
         } => {
             // Route through the shared handler which handles decryption, storage, and emit
@@ -390,6 +391,7 @@ async fn handle_relayed_envelope(
                 mek_generation,
                 timestamp,
                 reply_to_id,
+                sequence,
             };
             handle_broadcast_new_message(app_handle, state, &msg).await;
         }
@@ -3046,6 +3048,79 @@ async fn handle_join_accepted(
         has_slot_keypair = data.slot_index.is_some(),
         "JoinAccepted processed — community state updated"
     );
+
+    // Bootstrap gossip peers from JoinAccepted member list
+    spawn_peer_bootstrap(state.clone(), community_id.to_string(), parsed_members);
+}
+
+/// Bootstrap gossip.peers by fetching MemberPresence (route_blobs) from DHT.
+///
+/// MemberSummary (from member index) doesn't have route_blob — must read each member's
+/// SMPL presence subkey. This gives the joiner instant connectivity without waiting
+/// for the 60-second presence poll to discover peers.
+fn spawn_peer_bootstrap(
+    state: Arc<AppState>,
+    community_id: String,
+    members: Vec<rekindle_protocol::dht::community::types::MemberSummary>,
+) {
+    tokio::spawn(async move {
+        let (registry_key, my_pseudo) = {
+            let communities = state.communities.read();
+            let cs = communities.get(&community_id);
+            (
+                cs.and_then(|c| c.member_registry_key.clone()),
+                cs.and_then(|c| c.my_pseudonym_key.clone()),
+            )
+        };
+        let Some(rk) = registry_key else { return };
+        let Some(rc) = crate::state_helpers::routing_context(&state) else { return };
+        let mgr = rekindle_protocol::dht::DHTManager::new(rc);
+
+        if let Err(e) = mgr.open_record(&rk).await {
+            tracing::debug!(error = %e, "failed to open registry for peer bootstrap");
+            return;
+        }
+
+        let mut found_peers = 0u32;
+        for member in &members {
+            if my_pseudo.as_deref() == Some(&member.pseudonym_key) {
+                continue;
+            }
+            if let Ok(Some(presence)) =
+                rekindle_protocol::dht::community::member_registry::read_member_presence(
+                    &mgr, &rk, member.subkey_index,
+                )
+                .await
+            {
+                if let Some(blob) = presence.route_blob {
+                    if !blob.is_empty() && presence.status != "offline" {
+                        let mut communities = state.communities.write();
+                        if let Some(cs) = communities.get_mut(&community_id) {
+                            if let Some(ref mut gossip) = cs.gossip {
+                                let om = crate::state::OnlineMember {
+                                    route_blob: blob,
+                                    last_seen: rekindle_utils::timestamp_secs(),
+                                };
+                                gossip.online_members.insert(
+                                    member.pseudonym_key.clone(),
+                                    om.clone(),
+                                );
+                                gossip.peers.insert(member.pseudonym_key.clone(), om);
+                                found_peers += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if found_peers > 0 {
+            tracing::info!(
+                community = %community_id,
+                peers = found_peers,
+                "bootstrapped gossip peers from JoinAccepted member list"
+            );
+        }
+    });
 }
 
 /// Decrypt result for community message MEK decryption attempts.
@@ -3065,6 +3140,7 @@ struct BroadcastNewMessage {
     mek_generation: u64,
     timestamp: u64,
     reply_to_id: Option<String>,
+    sequence: u64,
 }
 
 /// Handle a `NewMessage` community broadcast: decrypt, store, and emit.
@@ -3149,6 +3225,30 @@ async fn handle_broadcast_new_message(
     db_fire(pool.inner(), "store community message", move |conn| {
         crate::message_repo::insert_channel_message(conn, &owner_key, &cid, &spn, &body_text, ts, false, Some(mg))
     });
+
+    // Sequence gap detection (Briar-inspired) — detect missing messages from this sender
+    if msg.sequence > 0 {
+        let key = (msg.sender_pseudonym.clone(), msg.channel_id.clone());
+        let mut communities = state.communities.write();
+        if let Some(cs) = communities.get_mut(&msg.community_id) {
+            let last_seen = cs.peer_sequences.get(&key).copied().unwrap_or(0);
+            if msg.sequence > last_seen + 1 && last_seen > 0 {
+                tracing::warn!(
+                    sender = %msg.sender_pseudonym,
+                    channel = %msg.channel_id,
+                    expected = last_seen + 1,
+                    received = msg.sequence,
+                    gap = msg.sequence - last_seen - 1,
+                    "sequence gap detected — {} messages may be missing",
+                    msg.sequence - last_seen - 1
+                );
+                // Queue a SyncRequest for the gap
+                cs.pending_syncs.entry(msg.channel_id.clone())
+                    .or_insert((rekindle_utils::timestamp_secs(), 0));
+            }
+            cs.peer_sequences.insert(key, msg.sequence);
+        }
+    }
 
     // Emit to frontend
     let event = crate::channels::ChatEvent::MessageReceived {

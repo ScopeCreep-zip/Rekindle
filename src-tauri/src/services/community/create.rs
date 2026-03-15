@@ -174,6 +174,7 @@ pub async fn create_community(
         channel_log_keys: [(channel_id, channel_record_key)].into_iter().collect(),
         channel_sequences: std::collections::HashMap::new(),
         pending_syncs: std::collections::HashMap::new(),
+        peer_sequences: std::collections::HashMap::new(),
         registry_owner_keypair: registry_owner_kp_str,
         slot_seed: Some(hex::encode(&slot_seed)),
         member_roles: std::collections::HashMap::new(),

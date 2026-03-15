@@ -337,3 +337,14 @@ CREATE TABLE IF NOT EXISTS community_invites (
     created_at INTEGER NOT NULL,
     PRIMARY KEY (owner_key, community_id, code_hash)
 );
+
+-- Per-message per-peer delivery tracking (Xfire imindex + SimpleX delivery states)
+CREATE TABLE IF NOT EXISTS message_delivery (
+    message_id TEXT NOT NULL,
+    community_id TEXT NOT NULL,
+    recipient_pseudonym TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'sending' CHECK(status IN ('sending', 'delivered', 'failed')),
+    attempts INTEGER NOT NULL DEFAULT 0,
+    last_attempt_at INTEGER,
+    PRIMARY KEY (message_id, recipient_pseudonym)
+);

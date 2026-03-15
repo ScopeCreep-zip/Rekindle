@@ -2531,40 +2531,106 @@ pub(crate) fn send_to_mesh_raw(
         peers.len(),
     );
 
+    // Extract message_id from the envelope for delivery tracking
+    let message_id: Option<String> = serde_json::from_slice::<rekindle_protocol::dht::community::envelope::CommunityEnvelope>(
+        &signed.envelope_bytes,
+    )
+    .ok()
+    .and_then(|env| {
+        if let rekindle_protocol::dht::community::envelope::CommunityEnvelope::ChatMessage { message_id, .. } = env {
+            Some(message_id)
+        } else {
+            None
+        }
+    });
+
     for (peer_key, route_blob) in peers {
         let rc = rc.clone();
         let data = signed_bytes.clone();
         let cid = community_id.to_string();
         let state_clone = state.clone();
+        let msg_id = message_id.clone();
+        let pk = peer_key.clone();
         tokio::spawn(async move {
-            // Try primary route blob first
+            // Try primary route blob — use app_call for confirmed delivery (Xfire ACK pattern).
             let send_result = match rc.api().import_remote_private_route(route_blob) {
-                Ok(route_id) => rc.app_message(veilid_core::Target::RouteId(route_id), data.clone()).await,
+                Ok(route_id) => {
+                    match rc.app_call(veilid_core::Target::RouteId(route_id), data.clone()).await {
+                        Ok(_ack) => Ok(()),
+                        Err(e) => Err(e),
+                    }
+                }
                 Err(e) => Err(veilid_core::VeilidAPIError::generic(e)),
             };
+
             if send_result.is_ok() {
-                return; // Success on first attempt
+                // Delivery confirmed — record in SQLite
+                if let Some(ref mid) = msg_id {
+                    record_delivery(&state_clone, mid, &cid, &pk, "delivered");
+                }
+                return;
             }
 
             // Primary failed — attempt DHT re-resolution
-            tracing::info!(community = %cid, peer = %peer_key, "route stale, attempting DHT re-resolve");
-            let fresh_blob = resolve_peer_route_from_db(&state_clone, &cid, &peer_key).await;
+            tracing::info!(community = %cid, peer = %pk, "route stale, attempting DHT re-resolve");
+            let fresh_blob = resolve_peer_route_from_db(&state_clone, &cid, &pk).await;
             if let Some(blob) = fresh_blob {
                 match rc.api().import_remote_private_route(blob.clone()) {
                     Ok(route_id) => {
-                        if let Err(e) = rc.app_message(veilid_core::Target::RouteId(route_id), data).await {
-                            tracing::warn!(community = %cid, peer = %peer_key, error = %e, "re-resolved route: app_message still failed");
-                        } else {
-                            // Update cached route_blob in gossip overlay
-                            update_peer_route(&state_clone, &cid, &peer_key, blob);
+                        match rc.app_call(veilid_core::Target::RouteId(route_id), data).await {
+                            Ok(_ack) => {
+                                update_peer_route(&state_clone, &cid, &pk, blob);
+                                if let Some(ref mid) = msg_id {
+                                    record_delivery(&state_clone, mid, &cid, &pk, "delivered");
+                                }
+                            }
+                            Err(e) => {
+                                tracing::warn!(community = %cid, peer = %pk, error = %e, "re-resolved route: app_call still failed");
+                                if let Some(ref mid) = msg_id {
+                                    record_delivery(&state_clone, mid, &cid, &pk, "failed");
+                                }
+                            }
                         }
                     }
-                    Err(e) => tracing::warn!(community = %cid, peer = %peer_key, error = %e, "re-resolved route also invalid"),
+                    Err(e) => {
+                        tracing::warn!(community = %cid, peer = %pk, error = %e, "re-resolved route also invalid");
+                        if let Some(ref mid) = msg_id {
+                            record_delivery(&state_clone, mid, &cid, &pk, "failed");
+                        }
+                    }
                 }
             } else {
-                tracing::warn!(community = %cid, peer = %peer_key, "no fresh route found in DHT");
+                tracing::warn!(community = %cid, peer = %pk, "no fresh route found in DHT");
+                if let Some(ref mid) = msg_id {
+                    record_delivery(&state_clone, mid, &cid, &pk, "failed");
+                }
             }
         });
+    }
+}
+
+/// Record a message delivery status to SQLite (non-blocking).
+fn record_delivery(state: &SharedState, message_id: &str, community_id: &str, recipient: &str, status: &str) {
+    use tauri::Manager as _;
+    let app_handle = state.app_handle.read().clone();
+    if let Some(ref ah) = app_handle {
+        if let Some(pool) = ah.try_state::<crate::db::DbPool>() {
+            let mid = message_id.to_string();
+            let cid = community_id.to_string();
+            let rp = recipient.to_string();
+            let st = status.to_string();
+            let now = rekindle_utils::timestamp_secs();
+            crate::db_helpers::db_fire(&pool, "record_delivery", move |conn| {
+                conn.execute(
+                    "INSERT INTO message_delivery (message_id, community_id, recipient_pseudonym, status, attempts, last_attempt_at) \
+                     VALUES (?1, ?2, ?3, ?4, 1, ?5) \
+                     ON CONFLICT(message_id, recipient_pseudonym) \
+                     DO UPDATE SET status=excluded.status, attempts=attempts+1, last_attempt_at=excluded.last_attempt_at",
+                    rusqlite::params![mid, cid, rp, st, now.cast_signed()],
+                )?;
+                Ok(())
+            });
+        }
     }
 }
 

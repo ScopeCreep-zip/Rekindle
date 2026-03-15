@@ -320,6 +320,7 @@ pub async fn join_community(
             .collect(),
         channel_sequences: std::collections::HashMap::new(),
         pending_syncs: std::collections::HashMap::new(),
+        peer_sequences: std::collections::HashMap::new(),
         registry_owner_keypair: None,
         slot_seed: Some(slot_seed_hex),
         member_roles: existing_members.iter().map(|m| (m.pseudonym_key.clone(), m.role_ids.clone())).collect(),

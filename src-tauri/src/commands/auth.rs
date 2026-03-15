@@ -892,6 +892,7 @@ async fn load_communities_from_db(
             channel_log_keys,
             channel_sequences,
             pending_syncs: std::collections::HashMap::new(),
+            peer_sequences: std::collections::HashMap::new(),
             registry_owner_keypair: None,
             slot_seed: None,
             member_roles: std::collections::HashMap::new(),
