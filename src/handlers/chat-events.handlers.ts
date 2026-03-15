@@ -153,6 +153,41 @@ export function subscribeCommunityChannelChatEvents(
         serverMessageId: event.data.serverMessageId,
         replyToId: event.data.replyToId,
       };
+
+      // If the backend resolved a display name, ensure it's in the community member list
+      // so the memberNames memo picks it up (fixes names showing as public keys).
+      if (event.data.senderDisplayName) {
+        for (const [communityId, community] of Object.entries(communityState.communities)) {
+          const hasChannel = community.channels.some((ch) => ch.id === channelId);
+          if (hasChannel) {
+            const existingIdx = community.members.findIndex(
+              (m) => m.pseudonymKey === event.data.from,
+            );
+            if (existingIdx < 0) {
+              // Member not yet in list — add a minimal entry
+              setCommunityState("communities", communityId, "members", (prev) => [
+                ...prev,
+                {
+                  pseudonymKey: event.data.from,
+                  displayName: event.data.senderDisplayName!,
+                  roleIds: [],
+                  displayRole: "member",
+                  status: "online" as const,
+                  timeoutUntil: null,
+                  gameInfo: null,
+                },
+              ]);
+            } else if (community.members[existingIdx].displayName !== event.data.senderDisplayName) {
+              // Update display name if changed
+              setCommunityState(
+                "communities", communityId, "members", existingIdx,
+                "displayName", event.data.senderDisplayName!,
+              );
+            }
+            break;
+          }
+        }
+      }
       const existing = communityState.channelMessages[channelId];
       if (existing) {
         setCommunityState("channelMessages", channelId, (msgs) => [

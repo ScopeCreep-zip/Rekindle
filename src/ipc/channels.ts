@@ -10,6 +10,7 @@ export type ChatEvent =
         conversationId: string;
         serverMessageId?: string;
         replyToId?: string;
+        senderDisplayName?: string;
       };
     }
   | { type: "typingIndicator"; data: { from: string; typing: boolean } }

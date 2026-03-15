@@ -3081,11 +3081,14 @@ fn spawn_peer_bootstrap(
             return;
         }
 
+        // Stagger DHT reads to avoid overwhelming Veilid connections during bootstrap
         let mut found_peers = 0u32;
         for member in &members {
             if my_pseudo.as_deref() == Some(&member.pseudonym_key) {
                 continue;
             }
+            // Small delay between reads to avoid connection burst
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
             if let Ok(Some(presence)) =
                 rekindle_protocol::dht::community::member_registry::read_member_presence(
                     &mgr, &rk, member.subkey_index,
@@ -3250,6 +3253,22 @@ async fn handle_broadcast_new_message(
         }
     }
 
+    // Resolve sender's display name from SQLite (community_members table).
+    // This prevents the frontend from showing raw pseudonym public keys.
+    let sender_display_name = {
+        let pool: tauri::State<'_, DbPool> = app_handle.state();
+        let owner = state_helpers::owner_key_or_default(state);
+        let cid = msg.community_id.clone();
+        let spn = msg.sender_pseudonym.clone();
+        crate::db_helpers::db_call(pool.inner(), move |conn| {
+            Ok(conn.query_row(
+                "SELECT display_name FROM community_members WHERE owner_key = ? AND community_id = ? AND pseudonym_key = ?",
+                rusqlite::params![owner, cid, spn],
+                |row| row.get::<_, String>(0),
+            ).ok())
+        }).await.unwrap_or_default()
+    };
+
     // Emit to frontend
     let event = crate::channels::ChatEvent::MessageReceived {
         from: msg.sender_pseudonym.clone(),
@@ -3258,6 +3277,7 @@ async fn handle_broadcast_new_message(
         conversation_id: msg.channel_id.clone(),
         server_message_id: Some(msg.message_id.clone()),
         reply_to_id: msg.reply_to_id.clone(),
+        sender_display_name,
     };
     let _ = app_handle.emit("chat-event", &event);
 }

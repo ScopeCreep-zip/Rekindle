@@ -327,6 +327,7 @@ pub async fn join_community(
         known_members: existing_members.iter().map(|m| m.pseudonym_key.clone()).collect(),
         presence_poll_shutdown_tx: None,
         dht_keepalive_shutdown_tx: None,
+        open_community_records: crate::state::CommunityRecords::default(),
     };
 
     state.communities.write().insert(community_id.to_string(), community);
@@ -334,26 +335,8 @@ pub async fn join_community(
     // Persist discovered members to SQLite so get_community_members works immediately
     super::presence::sync_members_to_state_and_db(state, community_id, &existing_members);
 
-    // Open channel SMPL records so write_member_message doesn't hit "record not open".
-    // Veilid requires records to be opened before any get/set operations.
-    // The manifest and registry are already open from earlier in this function.
-    {
-        let channel_keys: Vec<String> = channel_entries
-            .iter()
-            .filter_map(|ch| ch.log_key.clone())
-            .collect();
-        if !channel_keys.is_empty() {
-            if let Some(rc) = state_helpers::routing_context(state) {
-                let open_mgr = DHTManager::new(rc);
-                for key in &channel_keys {
-                    if let Err(e) = open_mgr.open_record(key).await {
-                        tracing::debug!(key, error = %e, "failed to open channel SMPL record on join");
-                    }
-                }
-                tracing::info!(count = channel_keys.len(), "opened channel SMPL records for writing");
-            }
-        }
-    }
+    // Open channel SMPL records and track all community DHT records.
+    open_and_track_community_records(state, community_id, &channel_entries).await;
 
     // ── CONNECT: start services ──
 
@@ -362,10 +345,16 @@ pub async fn join_community(
     *handle.role.write() = crate::services::coordinator::CoordinatorRole::Member;
     state.coordinator_services.write().insert(community_id.to_string(), handle);
 
-    // 10. Start presence poll (IMMEDIATE first tick writes our presence + discovers peers)
-    //     and DHT keepalive. Presence write is our proof of membership — Veilid validates
-    //     the slot keypair against the SMPL schema.
-    super::presence::start_presence_poll(state.clone(), community_id.to_string());
+    // 10. Start presence poll (delayed 10s to let route allocation and bootstrap settle)
+    //     and DHT keepalive. The rapid phase (5s ticks for 30s) starts after the delay.
+    {
+        let poll_state = state.clone();
+        let poll_cid = community_id.to_string();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+            super::presence::start_presence_poll(poll_state, poll_cid);
+        });
+    }
     super::keepalive::start_dht_keepalive(state.clone(), community_id.to_string());
 
     tracing::info!(
@@ -631,5 +620,61 @@ pub(crate) fn try_derive_slot_keypair(
             tracing::warn!(error = %e, "failed to derive slot keypair from seed");
             None
         }
+    }
+}
+
+/// Open channel SMPL records and track all community DHT records globally.
+///
+/// VeilidChat pattern: records are opened once during join and kept open until
+/// leave/logout. Tracking them in both `DHTManagerHandle.open_records` (for bulk
+/// close on shutdown) and `CommunityRecords` (for per-community lifecycle).
+async fn open_and_track_community_records(
+    state: &Arc<AppState>,
+    community_id: &str,
+    channel_entries: &[rekindle_protocol::dht::community::types::ChannelEntryV2],
+) {
+    let registry_key_tracking = {
+        let communities = state.communities.read();
+        communities.get(community_id).and_then(|c| c.member_registry_key.clone())
+    };
+
+    let channel_keys: Vec<String> = channel_entries
+        .iter()
+        .filter_map(|ch| ch.log_key.clone())
+        .collect();
+
+    // Open channel SMPL records so write_member_message doesn't hit "record not open"
+    if !channel_keys.is_empty() {
+        if let Some(rc) = state_helpers::routing_context(state) {
+            let open_mgr = DHTManager::new(rc);
+            for key in &channel_keys {
+                if let Err(e) = open_mgr.open_record(key).await {
+                    tracing::debug!(key, error = %e, "failed to open channel SMPL record on join");
+                }
+                // Small delay between opens to avoid connection burst
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+            tracing::info!(count = channel_keys.len(), "opened channel SMPL records for writing");
+        }
+    }
+
+    // Track ALL opened community records globally (VeilidChat pattern: open once, keep open).
+    // Manifest + registry were opened earlier in join_community; channels just above.
+    let mut all_keys: Vec<String> = channel_keys.clone();
+    all_keys.push(community_id.to_string()); // manifest
+    if let Some(ref rk) = registry_key_tracking {
+        all_keys.push(rk.clone());
+    }
+    state_helpers::track_open_records(state, &all_keys);
+
+    // Store in CommunityRecords for per-community lifecycle management
+    let mut communities = state.communities.write();
+    if let Some(cs) = communities.get_mut(community_id) {
+        cs.open_community_records.manifest_key = Some(community_id.to_string());
+        cs.open_community_records.registry_key.clone_from(&registry_key_tracking);
+        let writer = cs.slot_keypair.clone();
+        cs.open_community_records.registry_writer = writer;
+        cs.open_community_records.channel_keys = channel_keys;
+        cs.open_community_records.records_open = true;
     }
 }

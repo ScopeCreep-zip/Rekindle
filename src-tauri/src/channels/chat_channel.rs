@@ -16,6 +16,10 @@ pub enum ChatEvent {
         /// ID of the message this is a reply to (community messages only).
         #[serde(skip_serializing_if = "Option::is_none")]
         reply_to_id: Option<String>,
+        /// Resolved display name of the sender (community messages only).
+        /// Avoids the frontend needing to resolve pseudonym keys to names.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        sender_display_name: Option<String>,
     },
     TypingIndicator {
         from: String,

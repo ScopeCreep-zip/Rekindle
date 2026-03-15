@@ -903,6 +903,7 @@ async fn load_communities_from_db(
                 .collect(),
             presence_poll_shutdown_tx: None,
             dht_keepalive_shutdown_tx: None,
+            open_community_records: crate::state::CommunityRecords::default(),
         };
         // Recalculate display role from role definitions (DB value may be stale)
         community.my_role = Some(crate::state::display_role_name(

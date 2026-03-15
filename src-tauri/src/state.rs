@@ -622,6 +622,31 @@ pub struct CommunityState {
     /// Shutdown sender for the DHT keepalive loop.
     #[serde(skip)]
     pub dht_keepalive_shutdown_tx: Option<mpsc::Sender<()>>,
+
+    /// Tracks all DHT records opened for this community (VeilidChat-inspired lifecycle).
+    /// Records are opened once during join and kept open until leave/logout.
+    /// Prevents "record not open" errors and ensures proper cleanup.
+    #[serde(skip)]
+    pub open_community_records: CommunityRecords,
+}
+
+/// Tracks DHT records opened for a single community.
+///
+/// Follows VeilidChat's "open once, keep open" pattern: records are opened during
+/// join_community and closed only on leave or logout. Presence poll and keepalive
+/// use the already-open records via `get_dht_value` without re-opening.
+#[derive(Debug, Default, Clone)]
+pub struct CommunityRecords {
+    /// The DFLT manifest record key (opened read-only or writable for owner).
+    pub manifest_key: Option<String>,
+    /// The SMPL member registry record key.
+    pub registry_key: Option<String>,
+    /// Writer keypair used when opening the registry (preserved to avoid clobber on re-open).
+    pub registry_writer: Option<String>,
+    /// All opened channel SMPL record keys.
+    pub channel_keys: Vec<String>,
+    /// Whether records have been opened for this session (false after restart until rejoin).
+    pub records_open: bool,
 }
 
 /// A role definition cached from the DHT manifest.

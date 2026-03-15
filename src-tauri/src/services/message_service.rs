@@ -287,6 +287,7 @@ fn handle_direct_message(
         conversation_id: sender_hex.to_string(),
         server_message_id: None, // DMs have no message ID
         reply_to_id: None,
+        sender_display_name: None, // DMs use friend list for name resolution
     };
     let _ = app_handle.emit("chat-event", &event);
 }
@@ -316,6 +317,7 @@ fn handle_channel_message(
         conversation_id: channel_id.to_string(),
         server_message_id: None, // P2P channel messages — ID assigned by sender
         reply_to_id: None,
+        sender_display_name: None, // 1:1 channels use friend list for name resolution
     };
     let _ = app_handle.emit("chat-event", &event);
 }
