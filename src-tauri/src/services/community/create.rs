@@ -163,7 +163,7 @@ pub async fn create_community(
         my_pseudonym_key: Some(my_pseudonym_key.clone()),
         mek_generation,
         manifest_key: Some(manifest_key.clone()),
-        member_registry_key: Some(registry_key),
+        member_registry_key: Some(registry_key.clone()),
         my_subkey_index: Some(0),
         coordinator_pseudonym: Some(my_pseudonym_key.clone()),
         coordinator_route_blob: Some(our_route_blob),
@@ -171,19 +171,34 @@ pub async fn create_community(
         gossip: Some(GossipOverlay::default()),
         slot_keypair: Some(creator_slot_keypair_str.clone()),
         manifest_owner_keypair: manifest_keypair.as_ref().map(std::string::ToString::to_string),
-        channel_log_keys: [(channel_id, channel_record_key)].into_iter().collect(),
+        channel_log_keys: [(channel_id, channel_record_key.clone())].into_iter().collect(),
         channel_sequences: std::collections::HashMap::new(),
         pending_syncs: std::collections::HashMap::new(),
         peer_sequences: std::collections::HashMap::new(),
-        registry_owner_keypair: registry_owner_kp_str,
+        registry_owner_keypair: registry_owner_kp_str.clone(),
         slot_seed: Some(hex::encode(&slot_seed)),
         member_roles: std::collections::HashMap::new(),
         known_members: [my_pseudonym_key].into_iter().collect(),
         presence_poll_shutdown_tx: None,
         dht_keepalive_shutdown_tx: None,
+        open_community_records: crate::state::CommunityRecords::default(),
     };
 
     state.communities.write().insert(manifest_key.clone(), community);
+
+    // Track all opened DHT records (manifest, registry, channel SMPL)
+    let all_keys = vec![manifest_key.clone(), registry_key.clone(), channel_record_key.clone()];
+    state_helpers::track_open_records(state, &all_keys);
+    {
+        let mut communities = state.communities.write();
+        if let Some(cs) = communities.get_mut(&manifest_key) {
+            cs.open_community_records.manifest_key = Some(manifest_key.clone());
+            cs.open_community_records.registry_key = Some(registry_key.clone());
+            cs.open_community_records.registry_writer.clone_from(&registry_owner_kp_str);
+            cs.open_community_records.channel_keys = vec![channel_record_key.clone()];
+            cs.open_community_records.records_open = true;
+        }
+    }
 
     // 9. Create coordinator handle (static owner model — creator is permanent coordinator).
     let handle = crate::services::coordinator::create_handle(state, manifest_key.clone());

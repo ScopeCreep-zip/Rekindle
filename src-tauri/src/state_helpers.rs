@@ -70,6 +70,43 @@ pub fn track_open_records(state: &Arc<AppState>, keys: &[String]) {
     }
 }
 
+/// Remove multiple DHT record keys from the global tracking set.
+pub fn untrack_records(state: &Arc<AppState>, keys: &[String]) {
+    let mut dht_mgr = state.dht_manager.write();
+    if let Some(ref mut mgr) = *dht_mgr {
+        for k in keys {
+            mgr.untrack_record(k);
+        }
+    }
+}
+
+/// Collect all DHT record keys for a community from its `CommunityRecords`.
+///
+/// Returns the keys and marks the community's records as closed in state.
+pub fn collect_and_clear_community_records(
+    state: &Arc<AppState>,
+    community_id: &str,
+) -> Vec<String> {
+    let mut communities = state.communities.write();
+    let Some(cs) = communities.get_mut(community_id) else {
+        return Vec::new();
+    };
+    let records = &mut cs.open_community_records;
+    let mut keys = Vec::new();
+    if let Some(ref k) = records.manifest_key {
+        keys.push(k.clone());
+    }
+    if let Some(ref k) = records.registry_key {
+        keys.push(k.clone());
+    }
+    keys.append(&mut records.channel_keys);
+    records.manifest_key = None;
+    records.registry_key = None;
+    records.registry_writer = None;
+    records.records_open = false;
+    keys
+}
+
 // ── Identity ──────────────────────────────────────────────────────────
 
 /// Current identity's public key, or error `"not logged in"`.

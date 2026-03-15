@@ -164,30 +164,54 @@ async fn presence_poll_tick(state: &Arc<AppState>, community_id: &str) -> Result
         return Ok(());
     };
 
-    // Ensure registry record is open (may be closed after restart).
-    // Try to open writable if we have the registry owner keypair, otherwise read-only.
-    // Note: veilid's open_dht_record overwrites the writer on re-open, so opening
-    // read-only here would downgrade a previous writable open. Use the owner keypair
-    // if available to preserve write access for coordinator operations.
+    // Ensure registry record is open.
+    // If records were already opened during join (CommunityRecords.records_open), skip re-opening
+    // to avoid clobbering the writer. Veilid's open_dht_record overwrites the writer unconditionally,
+    // so re-opening read-only would destroy write access established during join.
+    // Only re-open after restart when records_open is false.
     {
-        let registry_kp = {
+        let records_open = {
             let communities = state.communities.read();
-            communities.get(community_id).and_then(|c| c.registry_owner_keypair.clone())
+            communities.get(community_id).is_some_and(|c| c.open_community_records.records_open)
         };
-        let opened = if let Some(ref kp_str) = registry_kp {
-            if let Ok(kp) = kp_str.parse::<veilid_core::KeyPair>() {
-                mgr.open_record_writable(&registry_key, kp).await.is_ok()
+        if !records_open {
+            // After app restart: records need to be re-opened.
+            // Use the registry writer keypair if available to preserve write access.
+            let (registry_kp, slot_kp) = {
+                let communities = state.communities.read();
+                let c = communities.get(community_id);
+                (
+                    c.and_then(|c| c.registry_owner_keypair.clone()),
+                    c.and_then(|c| c.slot_keypair.clone()),
+                )
+            };
+            let writer_kp = registry_kp.or(slot_kp);
+            let opened = if let Some(ref kp_str) = writer_kp {
+                if let Ok(kp) = kp_str.parse::<veilid_core::KeyPair>() {
+                    mgr.open_record_writable(&registry_key, kp).await.is_ok()
+                } else {
+                    false
+                }
             } else {
                 false
+            };
+            if !opened {
+                if let Err(e) = mgr.open_record(&registry_key).await {
+                    tracing::debug!(community = %community_id, error = %e, "presence_poll: failed to open registry");
+                    return Ok(());
+                }
             }
-        } else {
-            false
-        };
-        if !opened {
-            if let Err(e) = mgr.open_record(&registry_key).await {
-                tracing::debug!(community = %community_id, error = %e, "presence_poll: failed to open registry");
-                return Ok(());
+            // Track the reopened record and mark as open
+            state_helpers::track_open_records(state, std::slice::from_ref(&registry_key));
+            {
+                let mut communities = state.communities.write();
+                if let Some(cs) = communities.get_mut(community_id) {
+                    cs.open_community_records.registry_key = Some(registry_key.clone());
+                    cs.open_community_records.registry_writer = writer_kp;
+                    cs.open_community_records.records_open = true;
+                }
             }
+            tracing::debug!(community = %community_id, "presence_poll: re-opened registry after restart");
         }
     }
 

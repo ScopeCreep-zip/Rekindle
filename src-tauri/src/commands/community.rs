@@ -1071,6 +1071,7 @@ pub async fn send_channel_message(
         conversation_id: channel_id,
         server_message_id: None, // Local echo — message ID arrives via broadcast
         reply_to_id: None,       // Reply context not needed for local echo
+        sender_display_name: None, // Local echo — frontend knows our own name
     };
     let _ = app.emit("chat-event", &event);
 
@@ -2552,19 +2553,17 @@ pub(crate) fn send_to_mesh_raw(
         let msg_id = message_id.clone();
         let pk = peer_key.clone();
         tokio::spawn(async move {
-            // Try primary route blob — use app_call for confirmed delivery (Xfire ACK pattern).
+            // Send via app_message (fire-and-forget). Reliability comes from:
+            // 1. Sequence gap detection on receive (Phase D)
+            // 2. SMPL DHT channel records as durable fallback
+            // 3. SyncRequest/SyncResponse for catch-up
+            // Using app_call for every gossip message overwhelms Veilid connections.
             let send_result = match rc.api().import_remote_private_route(route_blob) {
-                Ok(route_id) => {
-                    match rc.app_call(veilid_core::Target::RouteId(route_id), data.clone()).await {
-                        Ok(_ack) => Ok(()),
-                        Err(e) => Err(e),
-                    }
-                }
+                Ok(route_id) => rc.app_message(veilid_core::Target::RouteId(route_id), data.clone()).await,
                 Err(e) => Err(veilid_core::VeilidAPIError::generic(e)),
             };
 
             if send_result.is_ok() {
-                // Delivery confirmed — record in SQLite
                 if let Some(ref mid) = msg_id {
                     record_delivery(&state_clone, mid, &cid, &pk, "delivered");
                 }
@@ -2577,18 +2576,15 @@ pub(crate) fn send_to_mesh_raw(
             if let Some(blob) = fresh_blob {
                 match rc.api().import_remote_private_route(blob.clone()) {
                     Ok(route_id) => {
-                        match rc.app_call(veilid_core::Target::RouteId(route_id), data).await {
-                            Ok(_ack) => {
-                                update_peer_route(&state_clone, &cid, &pk, blob);
-                                if let Some(ref mid) = msg_id {
-                                    record_delivery(&state_clone, mid, &cid, &pk, "delivered");
-                                }
+                        if let Err(e) = rc.app_message(veilid_core::Target::RouteId(route_id), data).await {
+                            tracing::warn!(community = %cid, peer = %pk, error = %e, "re-resolved route still failed");
+                            if let Some(ref mid) = msg_id {
+                                record_delivery(&state_clone, mid, &cid, &pk, "failed");
                             }
-                            Err(e) => {
-                                tracing::warn!(community = %cid, peer = %pk, error = %e, "re-resolved route: app_call still failed");
-                                if let Some(ref mid) = msg_id {
-                                    record_delivery(&state_clone, mid, &cid, &pk, "failed");
-                                }
+                        } else {
+                            update_peer_route(&state_clone, &cid, &pk, blob);
+                            if let Some(ref mid) = msg_id {
+                                record_delivery(&state_clone, mid, &cid, &pk, "delivered");
                             }
                         }
                     }
@@ -2747,6 +2743,22 @@ pub async fn leave_community(
             pseudonym_key: my_pseudonym_key,
         }),
     );
+
+    // Close all community DHT records (VeilidChat pattern: close on leave)
+    {
+        let record_keys = state_helpers::collect_and_clear_community_records(state.inner(), &community_id);
+        if !record_keys.is_empty() {
+            if let Some(rc) = state_helpers::routing_context(state.inner()) {
+                for key_str in &record_keys {
+                    if let Ok(record_key) = key_str.parse::<veilid_core::RecordKey>() {
+                        let _ = rc.close_dht_record(record_key).await;
+                    }
+                }
+                tracing::debug!(count = record_keys.len(), community = %community_id, "closed community DHT records");
+            }
+            state_helpers::untrack_records(state.inner(), &record_keys);
+        }
+    }
 
     // Remove MEK from cache
     state.mek_cache.lock().remove(&community_id);
