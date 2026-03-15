@@ -610,6 +610,11 @@ pub struct CommunityState {
     #[serde(skip)]
     pub pending_syncs: HashMap<String, (u64, u32)>,
 
+    /// Per-sender per-channel sequence tracking for gap detection (Briar-inspired).
+    /// Key: (sender_pseudonym, channel_id), Value: last received sequence number.
+    #[serde(skip)]
+    pub peer_sequences: HashMap<(String, String), u64>,
+
     /// Shutdown sender for the presence poll loop.
     #[serde(skip)]
     pub presence_poll_shutdown_tx: Option<mpsc::Sender<()>>,
