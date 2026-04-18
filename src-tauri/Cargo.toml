@@ -15,6 +15,13 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+# v2.0 crates (flat governance)
+rekindle-types = { path = "../crates/rekindle-types" }
+rekindle-secrets = { path = "../crates/rekindle-secrets" }
+rekindle-governance = { path = "../crates/rekindle-governance" }
+rekindle-codec = { path = "../crates/rekindle-codec" }
+rekindle-records = { path = "../crates/rekindle-records" }
+# v1.0 crates (still used during migration)
 rekindle-protocol = { path = "../crates/rekindle-protocol" }
 rekindle-crypto = { path = "../crates/rekindle-crypto" }
 rekindle-game-detect = { path = "../crates/rekindle-game-detect" }

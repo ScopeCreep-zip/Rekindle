@@ -53,9 +53,6 @@ pub struct AppState {
     /// Per-channel MEK cache: `(community_id, channel_id)` -> `MediaEncryptionKey`.
     /// New per-channel MEK distribution: each channel has its own encryption key.
     pub channel_mek_cache: Mutex<HashMap<(String, String), MediaEncryptionKey>>,
-    /// Per-community coordinator service handles.
-    /// Key: community_id, Value: handle for querying role + forwarding value changes.
-    pub coordinator_services: RwLock<HashMap<String, crate::services::coordinator::CoordinatorServiceHandle>>,
     /// Friends whose DHT `watch_dht_values` returned false (watch not established).
     /// Per Veilid GitLab #377, apps must poll as fallback when watching fails.
     /// The sync service uses `force_refresh=true` for these friends.
@@ -108,7 +105,6 @@ impl Default for AppState {
             background_handles: Mutex::new(Vec::new()),
             mek_cache: Mutex::new(HashMap::new()),
             channel_mek_cache: Mutex::new(HashMap::new()),
-            coordinator_services: RwLock::new(HashMap::new()),
             unwatched_friends: RwLock::new(HashSet::new()),
             dispatch_loop_handle: RwLock::new(None),
             route_refresh_shutdown_tx: RwLock::new(None),
@@ -547,14 +543,37 @@ pub struct CommunityState {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub my_subkey_index: Option<u32>,
     /// Coordinator's pseudonym public key hex.
+    /// v1.0 compat — will be removed when coordinator is fully deleted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coordinator_pseudonym: Option<String>,
     /// Coordinator's route blob for sending envelopes to the active coordinator.
+    /// v1.0 compat — will be removed when coordinator is fully deleted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coordinator_route_blob: Option<Vec<u8>>,
     /// Coordinator epoch — incremented on coordinator restart.
+    /// v1.0 compat — will be removed when coordinator is fully deleted.
     #[serde(default)]
     pub coordinator_epoch: u64,
+
+    // ── v2.0 flat governance fields ──
+
+    /// DHT key of the SMPL governance record (o_cnt:0).
+    /// In v2.0 this IS the community identifier, replacing manifest_key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub governance_key: Option<String>,
+
+    /// Cached CRDT-merged governance state. Updated on:
+    /// - GovernanceNotify gossip messages (fast path)
+    /// - ValueChange DHT watch notifications (consistency path)
+    /// - inspect_dht_record polling (fallback path)
+    /// Computed by `rekindle_governance::merge::merge()`.
+    #[serde(skip)]
+    pub governance_state: Option<rekindle_governance::state::GovernanceState>,
+
+    /// Per-community Lamport counter for deterministic message ordering.
+    /// Incremented on every send, merged with max(local, received)+1 on receive.
+    #[serde(skip)]
+    pub lamport_counter: u64,
 
     // ── Gossip mesh fields (Phase 2) ──
 

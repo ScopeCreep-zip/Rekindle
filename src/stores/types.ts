@@ -89,7 +89,7 @@ export interface GossipDiagnostics {
   hasSlotKeypair: boolean;
   hasSlotSeed: boolean;
   hasMek: boolean;
-  coordinatorPseudonym: string | null;
+  governanceKey: string | null;
   gossipPeerKeys: string[];
   onlineMemberKeys: string[];
 }

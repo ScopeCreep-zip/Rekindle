@@ -1,0 +1,14 @@
+[package]
+name = "rekindle-records"
+version = "0.1.0"
+edition = "2021"
+description = "DHT record lifecycle, universal SMPL schema, and write retry for Rekindle v2.0"
+license = "MIT"
+
+[dependencies]
+rekindle-types = { path = "../rekindle-types" }
+veilid-core = "0.5.2"
+tokio = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

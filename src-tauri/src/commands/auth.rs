@@ -4,7 +4,7 @@ use rekindle_crypto::keychain::{KEY_ED25519_PRIVATE, VAULT_IDENTITY};
 use rekindle_crypto::Keychain as _;
 use rusqlite::OptionalExtension as _;
 use serde::{Deserialize, Serialize};
-use tauri::{Manager as _, State};
+use tauri::{Emitter as _, Manager as _, State};
 use tokio::sync::mpsc;
 
 use crate::db::{self, DbPool};
@@ -148,8 +148,7 @@ pub async fn create_identity(
             account_owner_keypair: None,
             mailbox_dht_key: None,
         },
-    )
-    .await;
+    );
 
     Ok(result)
 }
@@ -322,8 +321,7 @@ pub async fn login(
             account_owner_keypair: dht_cols.account_owner_keypair,
             mailbox_dht_key: dht_cols.mailbox_dht_key,
         },
-    )
-    .await;
+    );
 
     // Wait for Veilid network + sync friends so hydrateState() gets real statuses.
     // The node starts at app launch, so this is usually instant on re-login
@@ -685,7 +683,7 @@ async fn load_communities_from_db(
             .prepare(
                 "SELECT id, name, description, my_role, my_role_ids, dht_record_key, dht_owner_keypair, \
                  my_pseudonym_key, mek_generation, manifest_key, member_registry_key, my_subkey_index, \
-                 coordinator_pseudonym, coordinator_epoch \
+                 coordinator_pseudonym, coordinator_epoch, governance_key \
                  FROM communities WHERE owner_key = ?1",
             )?;
         let communities = comm_stmt
@@ -705,6 +703,7 @@ async fn load_communities_from_db(
                     row.get::<_, Option<i64>>("my_subkey_index").unwrap_or(None).map(|v| u32::try_from(v).unwrap_or(0)),
                     db::get_str_opt(row, "coordinator_pseudonym"),
                     row.get::<_, i64>("coordinator_epoch").unwrap_or(0).cast_unsigned(),
+                    db::get_str_opt(row, "governance_key"),
                 ))
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -802,6 +801,7 @@ async fn load_communities_from_db(
         db_subkey_index,
         db_coordinator_pseudonym,
         db_coordinator_epoch,
+        db_governance_key,
     ) in &community_rows
     {
         let mut channel_log_keys = std::collections::HashMap::new();
@@ -904,12 +904,19 @@ async fn load_communities_from_db(
             presence_poll_shutdown_tx: None,
             dht_keepalive_shutdown_tx: None,
             open_community_records: crate::state::CommunityRecords::default(),
+            governance_key: db_governance_key.clone(),
+            governance_state: None, // rebuilt from DHT during hydration
+            lamport_counter: 0,
         };
-        // Recalculate display role from role definitions (DB value may be stale)
-        community.my_role = Some(crate::state::display_role_name(
-            &community.my_role_ids,
-            &community.roles,
-        ));
+        // Recalculate display role from role definitions (DB value may be stale),
+        // but preserve "owner" — it's authoritative from SQLite and not derivable
+        // from role definitions alone.
+        if community.my_role.as_deref() != Some("owner") {
+            community.my_role = Some(crate::state::display_role_name(
+                &community.my_role_ids,
+                &community.roles,
+            ));
+        }
         communities.insert(community_id.clone(), community);
     }
     Ok(())
@@ -1078,7 +1085,7 @@ pub struct DhtKeysConfig {
 /// Veilid node (started at app launch) for DHT publishing, sync, and messaging.
 /// Game detection and sync services are spawned as background tasks so login
 /// returns near-instantly to the frontend.
-async fn start_background_services(
+fn start_background_services(
     app: &tauri::AppHandle,
     state: &SharedState,
     pool: &DbPool,
@@ -1106,14 +1113,14 @@ async fn start_background_services(
 
     // The Veilid node is already running (started at app startup).
     // Just spawn sync + DHT publish as background tasks.
-    spawn_login_services(app, state, pool.clone(), prekey_bundle_bytes, dht_keys).await;
+    spawn_login_services(app, state, pool.clone(), prekey_bundle_bytes, dht_keys);
 }
 
 /// Background task: start sync service and DHT publish using the existing node.
 ///
 /// The Veilid node and dispatch loop are already running (started at app startup).
 /// This function only spawns user-specific services: sync and DHT publish.
-async fn spawn_login_services(
+fn spawn_login_services(
     app: &tauri::AppHandle,
     state: &SharedState,
     pool: DbPool,
@@ -1140,43 +1147,45 @@ async fn spawn_login_services(
         }
     }
 
-    // ── Phase 1: Open DHT records (BLOCKING — must complete before any service) ──
-    // After app restart, Veilid closes all records; they must be re-opened for reads/writes.
-    // Opens writable if we have the keypair, otherwise read-only.
-    open_community_dht_records(app, state).await;
-
-    // ── Phase 2: Hydrate community state from DHT manifest (BLOCKING) ──
-    // DHT manifest is authoritative for structural data (channels, roles, categories).
-    // Merge DHT data into CommunityState, overriding stale SQLite data.
-    hydrate_community_state_from_dht(state).await;
-
-    // ── Phase 3: Restore coordinator routes from DHT (BLOCKING) ──
-    // Must run before coordinator start so election can read previous coordinator info.
-    restore_coordinator_routes(state).await;
-
-    // ── Phase 4: Create coordinator handles (static owner model — no election) ──
+    // ── Phase 1-3: Open DHT records + hydrate + rebuild governance ──
+    // These involve slow DHT network reads that can take 30-60+ seconds.
+    // Run them in the background so login returns immediately with SQLite data.
+    // The frontend can show channels/roles/members from SQLite right away;
+    // background tasks will update state when DHT reads complete.
     {
-        let community_ids: Vec<(String, bool)> = {
-            let communities = state.communities.read();
-            communities.iter().map(|(id, cs)| {
-                (id.clone(), cs.manifest_owner_keypair.is_some())
-            }).collect()
-        };
-        for (community_id, is_owner) in community_ids {
-            let handle = crate::services::coordinator::create_handle(
-                state,
-                community_id.clone(),
-            );
-            if is_owner {
-                *handle.role.write() = crate::services::coordinator::CoordinatorRole::Coordinator;
-            } else {
-                *handle.role.write() = crate::services::coordinator::CoordinatorRole::Member;
+        let bg_app = app.clone();
+        let bg_state = Arc::clone(state);
+        tokio::spawn(async move {
+            open_community_dht_records(&bg_app, &bg_state).await;
+            hydrate_community_state_from_dht(&bg_state).await;
+            rebuild_governance_from_dht(&bg_state).await;
+            tracing::info!("background DHT hydration complete — governance state rebuilt");
+
+            // Emit GovernanceUpdated for each community so the frontend refreshes
+            let community_ids: Vec<String> =
+                bg_state.communities.read().keys().cloned().collect();
+            for cid in &community_ids {
+                let _ = bg_app.emit(
+                    "community-event",
+                    crate::channels::CommunityEvent::GovernanceUpdated {
+                        community_id: cid.clone(),
+                    },
+                );
             }
-            state.coordinator_services.write().insert(community_id, handle);
-        }
+            // Also emit MembersRefreshed so the frontend re-fetches members
+            // even if the presence poll hasn't completed its first tick yet.
+            for cid in &community_ids {
+                let _ = bg_app.emit(
+                    "community-event",
+                    crate::channels::CommunityEvent::MembersRefreshed {
+                        community_id: cid.clone(),
+                    },
+                );
+            }
+        });
     }
 
-    // ── Phase 5: Start presence poll + DHT keepalive ──
+    // ── Phase 4: Start presence poll + DHT keepalive ──
     {
         let community_ids: Vec<String> = state.communities.read().keys().cloned().collect();
         for community_id in community_ids {
@@ -1263,28 +1272,78 @@ async fn open_community_dht_records(app_handle: &tauri::AppHandle, state: &Share
         tracing::warn!("open_community_dht_records: no routing context, skipping");
         return;
     };
-    let mgr = DHTManager::new(rc);
+    let mgr = DHTManager::new(rc.clone());
 
     // Collect all record keys and keypairs that need opening
-    let records: Vec<(String, String, Option<String>, Option<String>, Option<String>)> = {
+    struct CommunityRecordInfo {
+        id: String,
+        manifest_key: String,
+        registry_key: Option<String>,
+        manifest_kp: Option<String>,
+        registry_kp: Option<String>,
+        governance_key: Option<String>,
+    }
+    let records: Vec<CommunityRecordInfo> = {
         let cs = state.communities.read();
         cs.values()
-            .map(|c| {
-                let manifest = c.manifest_key.clone().unwrap_or_else(|| c.id.clone());
-                (
-                    c.id.clone(),
-                    manifest,
-                    c.member_registry_key.clone(),
-                    c.manifest_owner_keypair.clone(),
-                    c.registry_owner_keypair.clone(),
-                )
+            .map(|c| CommunityRecordInfo {
+                id: c.id.clone(),
+                manifest_key: c.manifest_key.clone().unwrap_or_else(|| c.id.clone()),
+                registry_key: c.member_registry_key.clone(),
+                manifest_kp: c.manifest_owner_keypair.clone(),
+                registry_kp: c.registry_owner_keypair.clone(),
+                governance_key: c.governance_key.clone(),
             })
             .collect()
     };
 
-    for (community_id, manifest_key, registry_key, manifest_kp, registry_kp) in &records {
-        // Open manifest writable if we have the owner keypair (needed for
-        // coordinator election, execute_state_op, persist_control_to_manifest).
+    for rec in &records {
+        let community_id = &rec.id;
+        let manifest_key = &rec.manifest_key;
+        let registry_key = &rec.registry_key;
+        let manifest_kp = &rec.manifest_kp;
+        let registry_kp = &rec.registry_kp;
+        let governance_key = &rec.governance_key;
+        // v2.0 communities (governance_key present, no separate manifest):
+        // open governance + registry records directly, skip manifest subkey reads
+        let is_v2 = governance_key.is_some();
+        if is_v2 {
+            let gov_key_str = governance_key.as_ref().unwrap();
+            if let Ok(gov_typed) = gov_key_str.parse::<veilid_core::RecordKey>() {
+                if let Err(e) = rc.open_dht_record(gov_typed, None).await {
+                    tracing::debug!(community = %community_id, error = %e, "failed to open v2.0 governance record");
+                }
+            }
+            if let Some(ref rk) = registry_key {
+                if let Ok(reg_typed) = rk.parse::<veilid_core::RecordKey>() {
+                    // Open with slot keypair if available for write access
+                    let slot_kp = {
+                        let cs = state.communities.read();
+                        cs.get(community_id.as_str()).and_then(|c| c.slot_keypair.clone())
+                    };
+                    if let Some(ref kp_str) = slot_kp {
+                        if let Ok(kp) = kp_str.parse::<veilid_core::KeyPair>() {
+                            let _ = rc.open_dht_record(reg_typed.clone(), Some(kp)).await;
+                        }
+                    } else {
+                        let _ = rc.open_dht_record(reg_typed, None).await;
+                    }
+                }
+            }
+            // Mark records as open
+            {
+                let mut cs = state.communities.write();
+                if let Some(c) = cs.get_mut(community_id.as_str()) {
+                    c.open_community_records.manifest_key = Some(gov_key_str.clone());
+                    c.open_community_records.registry_key.clone_from(registry_key);
+                    c.open_community_records.records_open = true;
+                }
+            }
+            tracing::debug!(community = %community_id, "opened v2.0 governance + registry records");
+            continue;
+        }
+
+        // v1.0 path: Open manifest writable if we have the owner keypair
         let manifest_opened = if let Some(ref kp_str) = manifest_kp {
             if let Ok(kp) = kp_str.parse::<veilid_core::KeyPair>() {
                 match mgr.open_record_writable(manifest_key, kp).await {
@@ -1372,61 +1431,41 @@ async fn open_community_dht_records(app_handle: &tauri::AppHandle, state: &Share
                 tracing::warn!(community = %community_id, "failed to open registry record on login");
             }
         }
-    }
 
-    tracing::info!(count = records.len(), "opened community DHT records after login");
-}
-
-/// Read coordinator info from DHT manifest for each community and populate
-/// `coordinator_route_blob` in the in-memory state. Without this, communities
-/// loaded from SQLite have no coordinator route for `execute_state_op()` fallback.
-async fn restore_coordinator_routes(state: &SharedState) {
-    use rekindle_protocol::dht::community::manifest;
-    use rekindle_protocol::dht::DHTManager;
-
-    let Some(rc) = state_helpers::routing_context(state) else {
-        tracing::warn!("restore_coordinator_routes: no routing context, skipping");
-        return;
-    };
-    let mgr = DHTManager::new(rc);
-
-    // Collect communities that need coordinator route restoration
-    let communities: Vec<(String, String)> = {
-        let cs = state.communities.read();
-        cs.values()
-            .filter(|c| c.coordinator_route_blob.is_none())
-            .map(|c| {
-                let manifest = c.manifest_key.clone().unwrap_or_else(|| c.id.clone());
-                (c.id.clone(), manifest)
-            })
-            .collect()
-    };
-
-    for (community_id, manifest_key) in &communities {
-        // Records already opened by open_community_dht_records()
-        match manifest::read_coordinator(&mgr, manifest_key).await {
-            Ok(Some(coord_info)) if !coord_info.route_blob.is_empty() => {
-                let mut cs = state.communities.write();
-                if let Some(c) = cs.get_mut(community_id) {
-                    c.coordinator_pseudonym = Some(coord_info.pseudonym_key.clone());
-                    c.coordinator_route_blob = Some(coord_info.route_blob);
-                    c.coordinator_epoch = coord_info.epoch;
-                }
-                tracing::info!(
-                    community = %community_id,
-                    coordinator = %coord_info.pseudonym_key,
-                    epoch = coord_info.epoch,
-                    "restored coordinator route from DHT"
-                );
+        // Open channel SMPL records — without this, send_channel_message hits "record not open"
+        let channel_log_keys: Vec<String> = {
+            let cs = state.communities.read();
+            cs.get(community_id.as_str())
+                .map(|c| c.channel_log_keys.values().cloned().collect())
+                .unwrap_or_default()
+        };
+        for key in &channel_log_keys {
+            if let Err(e) = mgr.open_record(key).await {
+                tracing::debug!(community = %community_id, key, error = %e, "failed to open channel SMPL record on login");
             }
-            Ok(_) => {
-                tracing::debug!(community = %community_id, "no coordinator found in DHT — election will resolve");
-            }
-            Err(e) => {
-                tracing::warn!(community = %community_id, error = %e, "failed to read coordinator from DHT");
+        }
+
+        // Track all opened records globally and in CommunityRecords
+        let mut all_keys = vec![manifest_key.clone()];
+        if let Some(ref rk) = effective_registry_key {
+            all_keys.push(rk.clone());
+        }
+        all_keys.extend(channel_log_keys.iter().cloned());
+        state_helpers::track_open_records(state, &all_keys);
+
+        {
+            let mut cs = state.communities.write();
+            if let Some(c) = cs.get_mut(community_id.as_str()) {
+                c.open_community_records.manifest_key = Some(manifest_key.clone());
+                c.open_community_records.registry_key.clone_from(&effective_registry_key);
+                c.open_community_records.registry_writer = registry_kp.clone().or_else(|| c.slot_keypair.clone());
+                c.open_community_records.channel_keys = channel_log_keys;
+                c.open_community_records.records_open = true;
             }
         }
     }
+
+    tracing::info!(count = records.len(), "opened community DHT records after login");
 }
 
 /// Hydrate community state from DHT manifest.
@@ -1745,6 +1784,131 @@ async fn hydrate_community_state_from_dht(state: &SharedState) {
         count = community_manifests.len(),
         "hydrated community state from DHT manifests"
     );
+}
+
+/// Rebuild governance state from SMPL governance records for all v2.0 communities.
+///
+/// For each community with a `governance_key`, opens the governance SMPL record,
+/// reads all 255 subkeys, runs CRDT merge, and caches the result.
+/// Communities without `governance_key` are skipped (v1.0 communities).
+async fn rebuild_governance_from_dht(state: &SharedState) {
+    let Some(rc) = state_helpers::routing_context(state) else {
+        tracing::warn!("rebuild_governance_from_dht: no routing context, skipping");
+        return;
+    };
+
+    // Collect communities that have governance keys
+    let communities: Vec<(String, String)> = {
+        let cs = state.communities.read();
+        cs.values()
+            .filter_map(|c| {
+                c.governance_key.as_ref().map(|gk| (c.id.clone(), gk.clone()))
+            })
+            .collect()
+    };
+
+    for (community_id, gov_key_str) in &communities {
+        let Ok(gov_key) = gov_key_str.parse::<veilid_core::RecordKey>() else {
+            tracing::warn!(community = %community_id, "invalid governance key — skipping hydration");
+            continue;
+        };
+
+        // Open governance record (may already be open from a previous session)
+        if let Err(e) = rc.open_dht_record(gov_key.clone(), None).await {
+            tracing::debug!(community = %community_id, error = %e, "failed to open governance record for hydration");
+            continue;
+        }
+
+        // Use inspect to find which subkeys have been written (seq > 0),
+        // then only read those. This avoids 255 sequential DHT reads on startup.
+        let occupied_subkeys: Vec<u32> = match rc.inspect_dht_record(
+            gov_key.clone(),
+            Some(veilid_core::ValueSubkeyRangeSet::full()),
+            veilid_core::DHTReportScope::UpdateGet,
+        ).await {
+            Ok(report) => {
+                // Use network_seqs — reflects what exists on the DHT network,
+                // not just our local cache (which may be empty after restart)
+                report.network_seqs().iter().enumerate()
+                    .filter(|(_, &seq)| seq != veilid_core::ValueSeqNum::default())
+                    .map(|(i, _)| u32::try_from(i).unwrap_or(0))
+                    .collect()
+            }
+            Err(e) => {
+                tracing::warn!(community = %community_id, error = %e, "governance inspect failed — falling back to full scan");
+                (0..255u32).collect()
+            }
+        };
+
+        // Read occupied subkeys concurrently (bounded to 10 at a time)
+        let mut all_entries: Vec<(rekindle_types::id::PseudonymKey, Vec<rekindle_types::governance::GovernanceEntry>)> = Vec::new();
+        {
+            use futures::stream::{FuturesUnordered, StreamExt};
+            let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(10));
+            let mut futs = FuturesUnordered::new();
+            for subkey in occupied_subkeys {
+                let sem = sem.clone();
+                let rc = rc.clone();
+                let gk = gov_key.clone();
+                futs.push(async move {
+                    let _permit = sem.acquire().await.unwrap();
+                    let result = rc.get_dht_value(gk, subkey, false).await;
+                    (subkey, result)
+                });
+            }
+            while let Some((_subkey, result)) = futs.next().await {
+                if let Ok(Some(val)) = result {
+                    if !val.data().is_empty() {
+                        if let Ok(payload) = serde_json::from_slice::<rekindle_types::governance::GovernanceSubkeyPayload>(val.data()) {
+                            all_entries.push((payload.author_pseudonym, payload.entries));
+                        }
+                    }
+                }
+            }
+        }
+
+        if all_entries.is_empty() {
+            tracing::debug!(community = %community_id, "governance record empty — no entries to merge");
+            continue;
+        }
+
+        // CRDT merge
+        let gov_state = rekindle_governance::merge::merge(&all_entries);
+
+        // Restore lamport_counter from highest lamport in governance entries
+        // so new entries don't collide with existing ones
+        let max_lamport = all_entries
+            .iter()
+            .flat_map(|(_, entries)| entries.iter().map(rekindle_types::governance::GovernanceEntry::lamport))
+            .max()
+            .unwrap_or(0);
+
+        {
+            let mut communities = state.communities.write();
+            if let Some(cs) = communities.get_mut(community_id.as_str()) {
+                cs.lamport_counter = cs.lamport_counter.max(max_lamport);
+            }
+        }
+
+        state_helpers::set_governance_state(state, community_id, gov_state);
+
+        tracing::info!(community = %community_id, max_lamport, "rebuilt governance state from DHT");
+    }
+}
+
+/// Public wrapper for `rebuild_governance_from_dht` — called from the network
+/// reconnection handler when the routing context wasn't available at login time.
+pub async fn rebuild_governance_from_dht_public(state: &SharedState) {
+    rebuild_governance_from_dht(state).await;
+}
+
+/// Public wrapper for `open_community_dht_records` — called from the network
+/// reconnection handler when the routing context wasn't available at login time.
+pub async fn open_community_dht_records_public(
+    app_handle: &tauri::AppHandle,
+    state: &SharedState,
+) {
+    open_community_dht_records(app_handle, state).await;
 }
 
 /// Allocate a Veilid private route with retry.
