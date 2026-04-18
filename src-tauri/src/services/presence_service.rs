@@ -239,7 +239,7 @@ async fn handle_community_value_change(
                 )
                 .await;
             }
-            5 => handle_community_mek_change(app_handle, state, &community_id).await,
+            5 => handle_community_mek_change(app_handle, state, &community_id),
             _ => {
                 tracing::trace!(community = %community_id, subkey, "unhandled community subkey");
             }
@@ -529,13 +529,13 @@ async fn handle_community_roles_change(
 ///
 /// When an admin publishes new MEK bundles (e.g., after rotation), re-fetch
 /// by reading the MEK vault from the DHT registry.
-async fn handle_community_mek_change(
+fn handle_community_mek_change(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     community_id: &str,
 ) {
     tracing::info!(community = %community_id, "MEK bundles updated in DHT — fetching new MEK from vault");
-    super::veilid_service::fetch_mek_from_dht(app_handle, state, community_id).await;
+    super::veilid_service::fetch_mek_from_dht(app_handle, state, community_id);
 }
 
 // Server route change handler removed — coordinator model doesn't use server route blobs

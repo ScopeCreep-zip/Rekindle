@@ -1,0 +1,15 @@
+[package]
+name = "rekindle-codec"
+version = "0.1.0"
+edition = "2021"
+description = "Signed envelope construction, verification, dedup, and serialization for Rekindle v2.0"
+license = "MIT"
+
+[dependencies]
+rekindle-types = { path = "../rekindle-types" }
+rekindle-secrets = { path = "../rekindle-secrets" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+blake2 = "0.10"
+hex = "0.4"
+indexmap = "2"

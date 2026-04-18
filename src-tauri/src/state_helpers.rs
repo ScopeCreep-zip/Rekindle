@@ -445,15 +445,6 @@ pub fn push_community_channel(
 
 // ── Communities ──────────────────────────────────────────────────────
 
-/// Get a community's coordinator route blob.
-pub fn community_coordinator_route(state: &Arc<AppState>, id: &str) -> Option<Vec<u8>> {
-    state
-        .communities
-        .read()
-        .get(id)
-        .and_then(|c| c.coordinator_route_blob.clone())
-}
-
 /// Collect communities with DHT record keys (for sync).
 pub fn communities_with_dht_keys(state: &Arc<AppState>) -> Vec<(String, String)> {
     state
@@ -462,4 +453,224 @@ pub fn communities_with_dht_keys(state: &Arc<AppState>) -> Vec<(String, String)>
         .values()
         .filter_map(|c| c.dht_record_key.as_ref().map(|k| (c.id.clone(), k.clone())))
         .collect()
+}
+
+// ── v2.0 Governance State Helpers ──────────────────────────────────
+
+/// Get a clone of the cached CRDT governance state for a community.
+///
+/// Returns `None` if the community doesn't exist or governance state isn't loaded yet.
+pub fn governance_state(
+    state: &Arc<AppState>,
+    community_id: &str,
+) -> Option<rekindle_governance::state::GovernanceState> {
+    state
+        .communities
+        .read()
+        .get(community_id)
+        .and_then(|cs| cs.governance_state.clone())
+}
+
+/// Update the cached governance state for a community.
+///
+/// Also syncs `my_role_ids` from the CRDT role assignments so permission
+/// checks and SQLite always reflect the latest governance (Bug #6 fix).
+///
+/// Called after:
+/// - GovernanceNotify gossip messages (fast path)
+/// - ValueChange DHT watch notifications (consistency path)
+/// - Full CRDT merge on join or reconnect
+pub fn set_governance_state(
+    state: &Arc<AppState>,
+    community_id: &str,
+    gov_state: rekindle_governance::state::GovernanceState,
+) {
+    use crate::state::{CategoryInfo, ChannelInfo, ChannelType, RoleDefinition};
+
+    let mut communities = state.communities.write();
+    if let Some(cs) = communities.get_mut(community_id) {
+        // ── Sync my_role_ids from CRDT state ──
+        let mut is_creator = false;
+        if let Some(ref pk_hex) = cs.my_pseudonym_key {
+            if let Ok(pk_bytes) = hex::decode(pk_hex) {
+                if let Ok(arr) = <[u8; 32]>::try_from(pk_bytes.as_slice()) {
+                    let pseudo = rekindle_types::id::PseudonymKey(arr);
+                    if let Some(role_ids) = gov_state.role_assignments.get(&pseudo) {
+                        cs.my_role_ids = role_ids
+                            .iter()
+                            .map(|rid| u32::from(rid.0[0]))
+                            .collect();
+                    }
+                    is_creator = gov_state.creator.as_ref() == Some(&pseudo);
+                }
+            }
+        }
+
+        // ── Sync channels from governance ChannelCreated entries ──
+        // Build a map of existing unread counts to preserve them
+        let existing_unreads: std::collections::HashMap<String, u32> = cs
+            .channels
+            .iter()
+            .map(|ch| (ch.id.clone(), ch.unread_count))
+            .collect();
+        let existing_record_keys: std::collections::HashMap<String, Option<String>> = cs
+            .channels
+            .iter()
+            .map(|ch| (ch.id.clone(), ch.message_record_key.clone()))
+            .collect();
+
+        let mut channels: Vec<ChannelInfo> = gov_state
+            .channels
+            .iter()
+            .map(|(ch_id, ch)| {
+                let id_hex = hex::encode(ch_id.0);
+                ChannelInfo {
+                    unread_count: existing_unreads.get(&id_hex).copied().unwrap_or(0),
+                    message_record_key: existing_record_keys
+                        .get(&id_hex)
+                        .cloned()
+                        .flatten()
+                        .or_else(|| {
+                            if ch.record_key.is_empty() {
+                                None
+                            } else {
+                                Some(ch.record_key.clone())
+                            }
+                        }),
+                    id: id_hex,
+                    name: ch.name.clone(),
+                    channel_type: match ch.channel_type.as_str() {
+                        "voice" => ChannelType::Voice,
+                        "announcement" => ChannelType::Announcement,
+                        "forum" => ChannelType::Forum,
+                        "stage" => ChannelType::Stage,
+                        "directory" => ChannelType::Directory,
+                        "media" => ChannelType::Media,
+                        "events" => ChannelType::Events,
+                        "dm" => ChannelType::Dm,
+                        _ => ChannelType::Text,
+                    },
+                    category_id: ch.category_id.map(|c| hex::encode(c.0)),
+                    topic: ch.topic.clone().unwrap_or_default(),
+                    slowmode_seconds: ch.slowmode_seconds,
+                    nsfw: ch.nsfw.unwrap_or(false),
+                    mek_generation: 0,
+                }
+            })
+            .collect();
+        channels.sort_by_key(|ch| ch.name.clone());
+        cs.channels = channels;
+
+        // ── Sync roles from governance RoleDefinition entries ──
+        cs.roles = gov_state
+            .roles
+            .iter()
+            .map(|(rid, r)| RoleDefinition {
+                id: u32::from(rid.0[0]),
+                name: r.name.clone(),
+                color: r.color,
+                permissions: r.permissions,
+                position: r.position.cast_signed(),
+                hoist: r.hoist,
+                mentionable: r.mentionable,
+            })
+            .collect();
+
+        // ── Sync categories from governance ──
+        cs.categories = gov_state
+            .categories
+            .iter()
+            .map(|(cat_id, cat)| CategoryInfo {
+                id: hex::encode(cat_id.0),
+                name: cat.name.clone(),
+                sort_order: cat.position.cast_signed(),
+            })
+            .collect();
+
+        // ── Sync metadata (name, description) ──
+        if let Some(ref meta) = gov_state.metadata {
+            cs.name.clone_from(&meta.name);
+            cs.description.clone_from(&meta.description);
+        }
+
+        // ── Detect creator → set my_role = "owner" ──
+        if is_creator {
+            cs.my_role = Some("owner".to_string());
+        } else {
+            cs.my_role =
+                Some(crate::state::display_role_name(&cs.my_role_ids, &cs.roles));
+        }
+
+        // ── Sync MEK generation ──
+        cs.mek_generation = gov_state.mek_generation;
+
+        cs.governance_state = Some(gov_state);
+    }
+}
+
+/// Get the governance record DHT key for a community.
+pub fn governance_key(state: &Arc<AppState>, community_id: &str) -> Option<String> {
+    state
+        .communities
+        .read()
+        .get(community_id)
+        .and_then(|cs| cs.governance_key.clone())
+}
+
+/// Get the community's current Lamport counter value.
+pub fn lamport_counter(state: &Arc<AppState>, community_id: &str) -> u64 {
+    state
+        .communities
+        .read()
+        .get(community_id)
+        .map_or(0, |cs| cs.lamport_counter)
+}
+
+/// Increment the Lamport counter for a community and return the new value.
+/// Used on every message send.
+pub fn increment_lamport(state: &Arc<AppState>, community_id: &str) -> u64 {
+    let mut communities = state.communities.write();
+    if let Some(cs) = communities.get_mut(community_id) {
+        cs.lamport_counter += 1;
+        cs.lamport_counter
+    } else {
+        0
+    }
+}
+
+/// Merge a received Lamport timestamp into the community's counter.
+/// `counter = max(counter, received) + 1` — standard Lamport merge rule.
+/// Used on every gossip message receive.
+pub fn merge_lamport(state: &Arc<AppState>, community_id: &str, received: u64) {
+    let mut communities = state.communities.write();
+    if let Some(cs) = communities.get_mut(community_id) {
+        cs.lamport_counter = cs.lamport_counter.max(received) + 1;
+    }
+}
+
+/// Compute effective permissions for the local user in a community channel.
+/// Uses the cached CRDT governance state. Returns 0 if governance not loaded.
+pub fn my_permissions(
+    state: &Arc<AppState>,
+    community_id: &str,
+    channel_id: Option<&rekindle_types::id::ChannelId>,
+) -> u64 {
+    let communities = state.communities.read();
+    let Some(cs) = communities.get(community_id) else {
+        return 0;
+    };
+    let Some(gov) = &cs.governance_state else {
+        return 0;
+    };
+    let Some(pseudo_hex) = &cs.my_pseudonym_key else {
+        return 0;
+    };
+    // Decode hex pseudonym to PseudonymKey
+    let pseudo_bytes: [u8; 32] = match hex::decode(pseudo_hex) {
+        Ok(b) if b.len() == 32 => b.try_into().unwrap_or([0u8; 32]),
+        _ => return 0,
+    };
+    let pseudo = rekindle_types::id::PseudonymKey(pseudo_bytes);
+    let now = rekindle_utils::timestamp_secs();
+    rekindle_governance::permissions::compute_permissions(&pseudo, channel_id, gov, now)
 }

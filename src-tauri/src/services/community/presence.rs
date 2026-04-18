@@ -2,8 +2,6 @@ use std::sync::Arc;
 
 use tauri::Manager as _;
 
-use rekindle_protocol::dht::community::types::MemberSummary;
-use rekindle_protocol::dht::community::member_registry;
 use rekindle_protocol::dht::DHTManager;
 
 use crate::state::{AppState, GossipOverlay};
@@ -90,68 +88,11 @@ pub async fn presence_poll_tick_public(
     presence_poll_tick(state, community_id).await
 }
 
-/// Sync discovered members into `known_members` (in-memory) and `community_members` (SQLite).
-/// Called from both `join_community` and `presence_poll_tick` to ensure members are recognized.
-pub(crate) fn sync_members_to_state_and_db(
-    state: &Arc<AppState>,
-    community_id: &str,
-    members: &[MemberSummary],
-) {
-    // Add to known_members + member_roles so we accept their messages and can check permissions.
-    // Also update our own my_role_ids if we find ourselves in the member list.
-    {
-        let mut communities = state.communities.write();
-        if let Some(cs) = communities.get_mut(community_id) {
-            let my_pseudonym = cs.my_pseudonym_key.clone();
-            for member in members {
-                cs.known_members.insert(member.pseudonym_key.clone());
-                cs.member_roles.insert(member.pseudonym_key.clone(), member.role_ids.clone());
-
-                // Update our own role_ids if we find ourselves in the registry
-                if my_pseudonym.as_deref() == Some(&member.pseudonym_key)
-                    && !member.role_ids.is_empty()
-                    && member.role_ids.len() >= cs.my_role_ids.len()
-                {
-                    cs.my_role_ids.clone_from(&member.role_ids);
-                }
-            }
-        }
-    }
-
-    // Persist to SQLite so get_community_members returns them
-    let app_handle_clone = state.app_handle.read().clone();
-    if let Some(ref ah) = app_handle_clone {
-        let pool: tauri::State<'_, crate::db::DbPool> = ah.state();
-        let owner_key = crate::state_helpers::current_owner_key(state).unwrap_or_default();
-        for member in members {
-            let ok = owner_key.clone();
-            let cid = community_id.to_string();
-            let pk = member.pseudonym_key.clone();
-            let dn = member.display_name.clone();
-            let rids = serde_json::to_string(&member.role_ids)
-                .unwrap_or_else(|_| "[0,1]".to_string());
-            crate::db_helpers::db_fire(
-                pool.inner(),
-                "persist discovered member",
-                move |conn| {
-                    conn.execute(
-                        "INSERT INTO community_members (owner_key, community_id, pseudonym_key, display_name, role_ids, joined_at) \
-                         VALUES (?1, ?2, ?3, ?4, ?5, 0) \
-                         ON CONFLICT(owner_key, community_id, pseudonym_key) \
-                         DO UPDATE SET display_name=excluded.display_name, role_ids=excluded.role_ids",
-                        rusqlite::params![ok, cid, pk, dn, rids],
-                    )?;
-                    Ok(())
-                },
-            );
-        }
-    }
-}
 
 /// Single presence poll tick.
 async fn presence_poll_tick(state: &Arc<AppState>, community_id: &str) -> Result<(), String> {
     let rc = state_helpers::routing_context(state).ok_or("not attached")?;
-    let mgr = DHTManager::new(rc);
+    let mgr = DHTManager::new(rc.clone());
 
     // Read member registry to scan presences
     let registry_key = {
@@ -216,7 +157,7 @@ async fn presence_poll_tick(state: &Arc<AppState>, community_id: &str) -> Result
     }
 
     // Gather our state (clone out before .await)
-    let (my_pseudonym, my_subkey_index, slot_keypair_str, slot_seed_hex, is_coordinator) = {
+    let (my_pseudonym, my_subkey_index, slot_keypair_str, slot_seed_hex) = {
         let communities = state.communities.read();
         let c = communities.get(community_id).ok_or("community not found")?;
         (
@@ -224,8 +165,6 @@ async fn presence_poll_tick(state: &Arc<AppState>, community_id: &str) -> Result
             c.my_subkey_index,
             c.slot_keypair.clone(),
             c.slot_seed.clone(),
-            c.coordinator_pseudonym.as_ref() == c.my_pseudonym_key.as_ref()
-                && c.my_pseudonym_key.is_some(),
         )
     };
 
@@ -250,63 +189,40 @@ async fn presence_poll_tick(state: &Arc<AppState>, community_id: &str) -> Result
                 "presence_poll_tick: our_route_blob is None — peers cannot reach us"
             );
         }
-        let presence = rekindle_protocol::dht::community::types::MemberPresence {
-            pseudonym_key: my_pseudonym.clone(),
-            status: "online".to_string(),
-            status_message: None,
-            game_info: None,
-            route_blob: our_route_blob,
+
+        // Write MemberPresence directly to our SMPL subkey.
+        // With o_cnt:0, subkey index = slot index, no offset.
+        let presence = rekindle_types::presence::MemberPresence {
+            pseudonym_key: rekindle_types::id::PseudonymKey(
+                hex::decode(&my_pseudonym)
+                    .ok()
+                    .and_then(|b| <[u8; 32]>::try_from(b.as_slice()).ok())
+                    .unwrap_or([0u8; 32]),
+            ),
+            display_name: Some(state_helpers::identity_display_name(state)),
+            status: "online".into(),
+            route_blob: our_route_blob.unwrap_or_default(),
             last_heartbeat: rekindle_utils::timestamp_secs(),
-            is_coordinator,
-            coordinator_since: 0,
-            is_archiver: false,
+            ..Default::default()
         };
-        // Parse the Veilid KeyPair from its string representation
         if let Ok(writer_kp) = kp_str.parse::<veilid_core::KeyPair>() {
-            if let Err(e) = member_registry::write_member_presence(
-                &mgr, &registry_key, subkey_idx, &presence, writer_kp,
-            ).await {
-                tracing::debug!(
-                    community = %community_id,
-                    subkey = subkey_idx,
-                    error = %e,
-                    "failed to write our presence to DHT registry"
-                );
-            } else {
-                tracing::trace!(
-                    community = %community_id,
-                    subkey = subkey_idx,
-                    "wrote presence to DHT registry"
-                );
-            }
-        } else {
-            tracing::warn!(
-                community = %community_id,
-                "failed to parse slot keypair — cannot write presence"
-            );
-        }
-    } else {
-        // If we still don't have slot_keypair at this point, we're missing either:
-        // - slot_seed (never received JoinAccepted with it, or older coordinator)
-        // - my_subkey_index (never assigned a slot in the registry)
-        // Try to read my_subkey_index from the DHT member registry as a last resort.
-        if my_subkey_index.is_none() && slot_seed_hex.is_some() {
-            let members_result = member_registry::read_member_index(&mgr, &registry_key).await;
-            if let Ok(members) = members_result {
-                if let Some(m) = members.iter().find(|m| m.pseudonym_key == my_pseudonym) {
-                    let idx = m.subkey_index;
-                    let mut communities = state.communities.write();
-                    if let Some(c) = communities.get_mut(community_id) {
-                        c.my_subkey_index = Some(idx);
-                    }
-                    tracing::info!(
+            let presence_bytes = serde_json::to_vec(&presence).unwrap_or_default();
+            if let Ok(reg_key) = registry_key.parse::<veilid_core::RecordKey>() {
+                let write_opts = veilid_core::SetDHTValueOptions {
+                    writer: Some(writer_kp),
+                    ..Default::default()
+                };
+                if let Err(e) = rc.set_dht_value(reg_key, subkey_idx, presence_bytes, Some(write_opts)).await {
+                    tracing::debug!(
                         community = %community_id,
-                        subkey = idx,
-                        "recovered my_subkey_index from DHT registry — will derive slot keypair next tick"
+                        subkey = subkey_idx,
+                        error = %e,
+                        "failed to write presence to registry"
                     );
                 }
             }
         }
+    } else {
         tracing::warn!(
             community = %community_id,
             has_slot_keypair = slot_keypair_str.is_some(),
@@ -316,91 +232,77 @@ async fn presence_poll_tick(state: &Arc<AppState>, community_id: &str) -> Result
         );
     }
 
-    // 2. Read all member entries
-    let members = member_registry::read_member_index(&mgr, &registry_key)
-        .await
-        .map_err(|e| format!("read member index: {e}"))?;
-
-    // Sync all indexed members to known_members + SQLite
-    sync_members_to_state_and_db(state, community_id, &members);
-
     let now_secs = rekindle_utils::timestamp_secs();
     let stale_threshold = now_secs.saturating_sub(300); // 5 minutes
 
-    // Scan presences in parallel — build online members map.
-    // Each task gets its own DHTManager (cheap wrapper around Arc-based RoutingContext).
-    // Bounded to 10 concurrent DHT reads to avoid overwhelming the network.
+    // 2. Scan all 255 registry subkeys — build online members map.
+    // With o_cnt:0, each subkey holds a member's MemberPresence directly.
+    // No member index needed — the occupied subkeys ARE the member list.
+    // Bounded to 10 concurrent reads to avoid overwhelming the DHT.
     let mut online_members: std::collections::HashMap<String, crate::state::OnlineMember> =
         std::collections::HashMap::new();
+    let mut known_member_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
     {
         use futures::stream::{FuturesUnordered, StreamExt};
 
-        let rc = state_helpers::routing_context(state).ok_or("not attached for presence scan")?;
+        let scan_rc = state_helpers::routing_context(state).ok_or("not attached for presence scan")?;
         let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(10));
-        let mut futs = FuturesUnordered::new();
+        let my_subkey = my_subkey_index.unwrap_or(u32::MAX);
 
-        for member in &members {
-            if member.pseudonym_key == my_pseudonym {
-                continue;
+        let reg_key = registry_key
+            .parse::<veilid_core::RecordKey>()
+            .map_err(|e| format!("invalid registry key for scan: {e}"))?;
+
+        let mut futs = FuturesUnordered::new();
+        for subkey in 0..255u32 {
+            if subkey == my_subkey {
+                continue; // skip our own subkey
             }
             let sem = sem.clone();
-            let rc = rc.clone();
-            let rk = registry_key.clone();
-            let pk = member.pseudonym_key.clone();
-            let idx = member.subkey_index;
+            let rc = scan_rc.clone();
+            let rk = reg_key.clone();
             futs.push(async move {
                 let permit = sem.acquire().await.unwrap();
-                let task_mgr = DHTManager::new(rc);
-                let result = member_registry::read_member_presence_fresh(&task_mgr, &rk, idx).await;
-                drop(permit); // release semaphore slot after DHT read completes
-                (pk, result)
+                let result = rc.get_dht_value(rk, subkey, false).await;
+                drop(permit);
+                (subkey, result)
             });
         }
 
-        while let Some((pk, result)) = futs.next().await {
+        while let Some((_subkey, result)) = futs.next().await {
             match result {
-                Ok(Some(presence)) => {
-                    if presence.status == "offline" {
-                        tracing::trace!(member = %pk, "presence scan: member is offline");
-                    } else if presence.last_heartbeat <= stale_threshold {
-                        tracing::debug!(
-                            member = %pk,
-                            heartbeat = presence.last_heartbeat,
-                            threshold = stale_threshold,
-                            "presence scan: member heartbeat is stale"
-                        );
-                    } else if presence.route_blob.is_none() {
-                        tracing::info!(
-                            member = %pk,
-                            "presence scan: member has no route_blob — cannot reach them"
-                        );
-                    } else if presence.route_blob.as_ref().is_some_and(Vec::is_empty) {
-                        tracing::info!(
-                            member = %pk,
-                            "presence scan: member has empty route_blob — cannot reach them"
-                        );
-                    } else if let Some(blob) = presence.route_blob {
-                        online_members.insert(pk, crate::state::OnlineMember {
-                            route_blob: blob,
-                            last_seen: now_secs,
-                        });
+                Ok(Some(val)) if !val.data().is_empty() => {
+                    // Try to deserialize as v2.0 MemberPresence
+                    if let Ok(presence) = serde_json::from_slice::<rekindle_types::presence::MemberPresence>(val.data()) {
+                        let pk = hex::encode(presence.pseudonym_key.0);
+                        known_member_keys.insert(pk.clone());
+
+                        if presence.status == "offline" {
+                            // offline — don't add to online members
+                        } else if presence.last_heartbeat <= stale_threshold {
+                            tracing::trace!(member = %pk, "presence scan: stale heartbeat");
+                        } else if presence.route_blob.is_empty() {
+                            tracing::trace!(member = %pk, "presence scan: empty route_blob");
+                        } else {
+                            online_members.insert(pk, crate::state::OnlineMember {
+                                route_blob: presence.route_blob,
+                                last_seen: now_secs,
+                            });
+                        }
                     }
                 }
-                Ok(None) => {
-                    tracing::trace!(member = %pk, "presence scan: no presence written yet");
-                }
-                Err(e) => {
-                    tracing::debug!(member = %pk, error = %e, "presence scan: failed to read");
-                }
+                _ => {} // empty subkey or read error — skip
             }
         }
     }
 
-    // 3. Discover unindexed members (self-registered joiners not yet in member index)
-    discover_unindexed_members(
-        state, community_id, &mgr, &registry_key,
-        &members, &my_pseudonym, stale_threshold, &mut online_members,
-    ).await;
+    // Update known_members in state
+    {
+        let mut communities = state.communities.write();
+        if let Some(cs) = communities.get_mut(community_id) {
+            cs.known_members.extend(known_member_keys);
+        }
+    }
 
     // Merge existing online_members with newly scanned ones.
     // Peers discovered via PresenceUpdate (gossip) should survive the DHT scan cycle —
@@ -666,159 +568,6 @@ async fn run_initial_sync(state: &Arc<AppState>, community_id: &str, d: usize) {
 /// Self-service joiners write SMPL presence to their claimed slot but may not
 /// be in the member index yet. This scans a window of extra slots and adds any
 /// discovered members to the gossip overlay (and to the index if we're an admin).
-async fn discover_unindexed_members(
-    state: &Arc<AppState>,
-    community_id: &str,
-    mgr: &DHTManager,
-    registry_key: &str,
-    members: &[MemberSummary],
-    my_pseudonym: &str,
-    stale_threshold: u64,
-    online_members: &mut std::collections::HashMap<String, crate::state::OnlineMember>,
-) {
-    // Build set of indexed slot indices so we only scan unindexed slots
-    let indexed_slots: std::collections::HashSet<u32> =
-        members.iter().map(|m| m.subkey_index).collect();
-    let indexed_keys: std::collections::HashSet<&str> =
-        members.iter().map(|m| m.pseudonym_key.as_str()).collect();
-    // Scan a window of slots beyond the highest indexed slot to find new joiners.
-    // Full 255-slot scan is too expensive (each = DHT network read).
-    // New joiners get assigned slots sequentially, so scanning 10 beyond the max
-    // covers most cases. Falls back to 10 if no members indexed yet.
-    let max_indexed = members.iter().map(|m| m.subkey_index).max().unwrap_or(0);
-    let scan_limit = (max_indexed + 10).min(member_registry::SLOTS_PER_SEGMENT);
-    let has_registry_kp = {
-        let communities = state.communities.read();
-        communities
-            .get(community_id)
-            .is_some_and(|cs| cs.registry_owner_keypair.is_some())
-    };
-    let app_handle = state.app_handle.read().clone();
-
-    for slot in 1..=scan_limit {
-        // Skip slots that are already in the member index
-        if indexed_slots.contains(&slot) {
-            continue;
-        }
-
-        match member_registry::read_member_presence_fresh(mgr, registry_key, slot).await {
-            Ok(Some(presence)) if !presence.pseudonym_key.is_empty() => {
-                if indexed_keys.contains(presence.pseudonym_key.as_str())
-                    || presence.pseudonym_key == my_pseudonym
-                {
-                    continue;
-                }
-
-                tracing::info!(
-                    community = %community_id,
-                    pseudonym = %presence.pseudonym_key,
-                    slot = slot,
-                    "discovered unindexed member via SMPL presence scan"
-                );
-
-                // Add to gossip overlay if online
-                if presence.status != "offline" && presence.last_heartbeat > stale_threshold {
-                    if let Some(blob) = presence.route_blob {
-                        if !blob.is_empty() {
-                            let now = rekindle_utils::timestamp_secs();
-                            online_members.insert(presence.pseudonym_key.clone(), crate::state::OnlineMember {
-                                route_blob: blob,
-                                last_seen: now,
-                            });
-                        }
-                    }
-                }
-
-                // Add to known_members
-                {
-                    let mut communities = state.communities.write();
-                    if let Some(cs) = communities.get_mut(community_id) {
-                        cs.known_members.insert(presence.pseudonym_key.clone());
-                    }
-                }
-
-                // Emit MemberDiscovered to frontend for ALL members
-                if let Some(ref app) = app_handle {
-                    use tauri::Emitter as _;
-                    let _ = app.emit(
-                        "community-event",
-                        crate::channels::CommunityEvent::MemberDiscovered {
-                            community_id: community_id.to_string(),
-                            pseudonym_key: presence.pseudonym_key.clone(),
-                            display_name: presence.pseudonym_key.clone(),
-                            subkey_index: slot,
-                        },
-                    );
-                }
-
-                // If admin, formally add to member index
-                if has_registry_kp {
-                    let display_name = presence.pseudonym_key.clone();
-                    let state = state.clone();
-                    let cid = community_id.to_string();
-                    let pk = presence.pseudonym_key.clone();
-                    tokio::spawn(async move {
-                        handle_discovered_member(&state, &cid, &pk, &display_name, slot).await;
-                    });
-                }
-            }
-            _ => {
-                // Empty slot or read error — continue scanning.
-                // Slots may be non-contiguous (multi-use invites with slot ranges).
-            }
-        }
-    }
-}
-
-/// Add a newly discovered (unindexed) member to the member registry and broadcast.
-///
-/// Called by `presence_poll_tick` when an admin discovers a SMPL presence on a slot
-/// that isn't in the member index. Adds them to the index + broadcasts `MemberJoined`.
-async fn handle_discovered_member(
-    state: &Arc<AppState>,
-    community_id: &str,
-    pseudonym_key: &str,
-    display_name: &str,
-    claimed_slot: u32,
-) {
-    use rekindle_protocol::dht::community::envelope::{ControlPayload, CommunityEnvelope};
-
-    match crate::services::coordinator::state_manager::add_member_to_registry(
-        state, community_id, pseudonym_key, display_name, Some(claimed_slot),
-    )
-    .await
-    {
-        Ok(idx) => {
-            tracing::info!(
-                community = %community_id,
-                pseudonym = %pseudonym_key,
-                subkey_index = idx,
-                "lazy discovery: added unindexed member to registry"
-            );
-            let joined = CommunityEnvelope::Control(ControlPayload::MemberJoined {
-                pseudonym_key: pseudonym_key.to_string(),
-                display_name: display_name.to_string(),
-                role_ids: vec![0, 1],
-                route_blob: None,
-            });
-            crate::services::coordinator::state_manager::broadcast_via_gossip(
-                state, community_id, &joined,
-            );
-            crate::services::coordinator::state_manager::emit_local_member_joined(
-                state, community_id, pseudonym_key, display_name,
-            );
-        }
-        Err(e) => {
-            tracing::debug!(
-                community = %community_id,
-                pseudonym = %pseudonym_key,
-                error = %e,
-                "lazy discovery: failed to add member to registry (may already be indexed)"
-            );
-        }
-    }
-}
-
 /// Select D random peers from the online members map.
 fn random_peer_sample(
     online: &std::collections::HashMap<String, crate::state::OnlineMember>,

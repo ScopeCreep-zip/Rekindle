@@ -97,8 +97,7 @@ export interface Community {
   events: CommunityEvent[];
   manifestKey?: string;
   memberRegistryKey?: string;
-  coordinatorPseudonym?: string;
-  coordinatorEpoch?: number;
+  governanceKey?: string;
   onboardingConfig?: OnboardingConfig;
   welcomeScreen?: WelcomeScreen;
   onboardingComplete?: boolean;

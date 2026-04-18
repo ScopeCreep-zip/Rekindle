@@ -8,7 +8,7 @@ import { addToast } from "../stores/toast.store";
 import type { Message } from "../stores/chat.store";
 import type { Channel, CommunityEvent as CommunityEventType } from "../stores/community.store";
 import type { InviteDto } from "../stores/types";
-import { transformCommunityDetail, transformMember, transformMessages } from "../utils/transformers";
+import { transformChannel, transformCommunityDetail, transformMember, transformMessages } from "../utils/transformers";
 import { truncateKey } from "../utils/formatting";
 
 // Typing indicator state
@@ -1354,28 +1354,31 @@ export function subscribeCommunityEventDispatcher(): Promise<UnlistenFn> {
           }
         }).catch(() => {});
       }
-    } else if (event.type === "joinAccepted") {
-      // Admin peer accepted our join — refresh members and community details
+    } else if (event.type === "governanceUpdated") {
+      // CRDT governance state changed — refresh community details + members
       const { communityId } = event.data;
-      commands.getCommunityMembers(communityId).then((members) => {
-        setCommunityState("communities", communityId, "members", members.map(transformMember));
-      }).catch((e) => {
-        console.error("Failed to load members after JoinAccepted:", e);
-      });
       commands.getCommunityDetails().then((details) => {
         const detail = details.find((c: { id: string }) => c.id === communityId);
         if (detail) {
-          setCommunityState("communities", communityId, "myPseudonymKey", detail.myPseudonymKey ?? null);
-          setCommunityState("communities", communityId, "mekGeneration", detail.mekGeneration ?? 0);
-          setCommunityState("communities", communityId, "myRoleIds", detail.myRoleIds ?? [0, 1]);
+          setCommunityState("communities", communityId, "name", detail.name);
+          setCommunityState("communities", communityId, "description", detail.description ?? null);
           setCommunityState("communities", communityId, "roles", detail.roles ?? []);
+          setCommunityState("communities", communityId, "channels",
+            detail.channels.map(transformChannel));
+          setCommunityState("communities", communityId, "categories", detail.categories ?? []);
+          setCommunityState("communities", communityId, "myRoleIds", detail.myRoleIds ?? [0]);
+          setCommunityState("communities", communityId, "mekGeneration", detail.mekGeneration ?? 0);
         }
       }).catch(() => {});
-      // Now that an admin peer has confirmed our membership, announce our presence.
-      // This must happen AFTER JoinAccepted (not in handleJoinCommunity) because
-      // admin peers process joins asynchronously — sending presence before
-      // the join completes causes "unknown member" rejections.
-      handleUpdateCommunityPresence(communityId, "online");
+      // Also refresh members so the member list shows up
+      commands.getCommunityMembers(communityId).then((members) => {
+        setCommunityState("communities", communityId, "members", members.map(transformMember));
+      }).catch(() => {});
+    } else if (event.type === "membersRefreshed") {
+      const { communityId } = event.data;
+      commands.getCommunityMembers(communityId).then((members) => {
+        setCommunityState("communities", communityId, "members", members.map(transformMember));
+      }).catch(() => {});
     } else if (event.type === "mekRotated") {
       const { communityId, newGeneration } = event.data;
       if (communityState.communities[communityId]) {

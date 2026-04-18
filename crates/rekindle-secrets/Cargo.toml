@@ -1,0 +1,17 @@
+[package]
+name = "rekindle-secrets"
+version = "0.1.0"
+edition = "2021"
+description = "Cryptographic security boundary for Rekindle — all secret key material lives here"
+license = "MIT"
+
+[dependencies]
+rekindle-types = { path = "../rekindle-types" }
+ed25519-dalek = { version = "2", features = ["rand_core", "zeroize"] }
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+aes-gcm = "0.10"
+hkdf = "0.12"
+sha2 = "0.10"
+zeroize = { version = "1", features = ["derive"] }
+rand = { workspace = true }
+hex = "0.4"

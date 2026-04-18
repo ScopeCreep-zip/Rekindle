@@ -247,15 +247,6 @@ pub enum CommunityEvent {
         community_id: String,
         locked: bool,
     },
-    /// A self-registered member was discovered via SMPL presence scan
-    /// but is not yet in the member index. Frontend should show them as pending.
-    #[serde(rename_all = "camelCase")]
-    MemberDiscovered {
-        community_id: String,
-        pseudonym_key: String,
-        display_name: String,
-        subkey_index: u32,
-    },
     /// A member completed onboarding — their roles were assigned.
     #[serde(rename_all = "camelCase")]
     OnboardingComplete {
@@ -288,6 +279,12 @@ pub enum CommunityEvent {
         community_id: String,
         name: Option<String>,
         description: Option<String>,
+    },
+    /// CRDT governance state was rebuilt from DHT. Frontend should re-fetch
+    /// community details (channels, roles, members, permissions).
+    #[serde(rename_all = "camelCase")]
+    GovernanceUpdated {
+        community_id: String,
     },
     /// A member joined a voice channel.
     #[serde(rename_all = "camelCase")]

@@ -85,6 +85,8 @@ CREATE TABLE IF NOT EXISTS communities (
     coordinator_pseudonym TEXT,
     coordinator_route_blob BLOB,
     coordinator_epoch INTEGER NOT NULL DEFAULT 0,
+    governance_key TEXT,
+    lamport_clock INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (owner_key, id)
 );
 

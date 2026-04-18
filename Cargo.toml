@@ -2,6 +2,11 @@
 resolver = "2"
 members = [
     "src-tauri",
+    "crates/rekindle-types",
+    "crates/rekindle-secrets",
+    "crates/rekindle-governance",
+    "crates/rekindle-codec",
+    "crates/rekindle-records",
     "crates/rekindle-protocol",
     "crates/rekindle-crypto",
     "crates/rekindle-game-detect",

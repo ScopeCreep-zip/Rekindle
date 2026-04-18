@@ -58,7 +58,7 @@ export function transformCommunityDetail(c: {
   categories?: { id: string; name: string; sortOrder: number }[];
   roles?: { id: number; name: string; color: number; permissions: string; position: number; hoist: boolean; mentionable: boolean }[];
   myRoleIds?: number[]; myPseudonymKey?: string | null; mekGeneration?: number;
-  manifestKey?: string; memberRegistryKey?: string; coordinatorPseudonym?: string; coordinatorEpoch?: number;
+  manifestKey?: string; memberRegistryKey?: string; governanceKey?: string;
 }): Community {
   return {
     id: c.id, name: c.name, description: c.description ?? null,
@@ -69,7 +69,7 @@ export function transformCommunityDetail(c: {
     mekGeneration: c.mekGeneration ?? 0,
     events: [],
     manifestKey: c.manifestKey, memberRegistryKey: c.memberRegistryKey,
-    coordinatorPseudonym: c.coordinatorPseudonym, coordinatorEpoch: c.coordinatorEpoch,
+    governanceKey: c.governanceKey,
   };
 }
 

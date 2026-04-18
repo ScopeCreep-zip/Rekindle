@@ -193,21 +193,10 @@ async fn handle_gossip_envelope(
         .map(|e| matches!(e, CommunityEnvelope::Control(_)))
         .unwrap_or(false);
 
-    if is_control {
-        let state_mgr = {
-            let services = state.coordinator_services.read();
-            services
-                .get(community_id)
-                .filter(|h| h.is_coordinator())
-                .map(|h| h.state_mgr.clone())
-        };
-        if let Some(ref sm) = state_mgr {
-            super::coordinator::state_manager::handle_incoming_envelope(
-                state, sm, signed.clone(),
-            )
-            .await;
-        }
-    }
+    // v2.0: no coordinator dispatch for control payloads.
+    // Governance entries are validated via CRDT reader-validates model.
+    // Control payloads are processed in handle_relayed_control() below.
+    let _ = is_control;
 
     // 4. FORWARD to D gossip peers (if TTL > 0)
     // Skip forwarding for private control payloads (targeted at specific member, not broadcast).
@@ -481,145 +470,60 @@ async fn handle_relayed_envelope(
 ///
 /// Any member with `registry_owner_keypair` can add a self-registered joiner
 /// to the member index, then broadcast `MemberJoined` via gossip.
+/// Peer-assisted join — v2.0: self-sovereign, no registry writes needed from admin.
+/// The joiner writes their own SMPL slot directly. This function is retained as a
+/// notification handler that adds the joiner to our local known_members set.
 fn handle_peer_assisted_join(
     state: &Arc<AppState>,
     community_id: &str,
     pseudonym_key: &str,
     display_name: &str,
     claimed_subkey_index: Option<u32>,
-    route_blob: Option<Vec<u8>>,
+    route_blob: Option<&[u8]>,
 ) {
-    use rekindle_protocol::dht::community::envelope::{ControlPayload, CommunityEnvelope};
-
-    let has_registry_kp = {
-        let communities = state.communities.read();
-        communities
-            .get(community_id)
-            .is_some_and(|cs| cs.registry_owner_keypair.is_some())
-    };
-
-    if !has_registry_kp {
-        return;
-    }
-
-    let state = state.clone();
-    let cid = community_id.to_string();
-    let pk = pseudonym_key.to_string();
-    let dn = display_name.to_string();
-    tokio::spawn(async move {
-        match crate::services::coordinator::state_manager::add_member_to_registry(
-            &state, &cid, &pk, &dn, claimed_subkey_index,
-        )
-        .await
-        {
-            Ok(idx) => {
-                tracing::info!(
-                    community = %cid,
-                    pseudonym = %pk,
-                    subkey_index = idx,
-                    "peer-assisted join: added member to registry"
-                );
-                let joined = CommunityEnvelope::Control(ControlPayload::MemberJoined {
-                    pseudonym_key: pk.clone(),
-                    display_name: dn.clone(),
-                    role_ids: vec![0, 1],
-                    route_blob: route_blob.clone(),
-                });
-                crate::services::coordinator::state_manager::broadcast_via_gossip(
-                    &state, &cid, &joined,
-                );
-                crate::services::coordinator::state_manager::emit_local_member_joined(
-                    &state, &cid, &pk, &dn,
-                );
-            }
-            Err(e) => {
-                tracing::warn!(
-                    community = %cid,
-                    pseudonym = %pk,
-                    error = %e,
-                    "peer-assisted join: failed to add member to registry"
-                );
+    // In v2.0, the joiner already wrote their SMPL slot. We just need to
+    // add them to our local known_members and gossip overlay.
+    {
+        let mut communities = state.communities.write();
+        if let Some(cs) = communities.get_mut(community_id) {
+            cs.known_members.insert(pseudonym_key.to_string());
+            if let (Some(ref mut gossip), Some(blob)) = (&mut cs.gossip, route_blob) {
+                if !blob.is_empty() {
+                    let member = crate::state::OnlineMember {
+                        route_blob: blob.to_vec(),
+                        last_seen: rekindle_utils::timestamp_secs(),
+                    };
+                    gossip.online_members.insert(pseudonym_key.to_string(), member);
+                }
             }
         }
-    });
+    }
+    tracing::info!(
+        community = %community_id,
+        pseudonym = %pseudonym_key,
+        "peer join noted — added to known_members"
+    );
+
+    let _ = (display_name, claimed_subkey_index);
 }
 
-/// Handle onboarding answers from a member — any admin with `registry_owner_keypair`
-/// can evaluate answers and assign roles.
+/// Handle onboarding answers from a member.
+///
+/// In v2.0, onboarding role assignment is self-sovereign — the joiner writes
+/// their own RoleAssignment governance entries for self-assignable roles.
+/// This handler logs receipt of answers for future implementation.
 fn handle_onboarding_answers(
-    state: &Arc<AppState>,
+    _state: &Arc<AppState>,
     community_id: &str,
     sender_pseudonym: &str,
     answers: &[rekindle_protocol::dht::community::envelope::OnboardingAnswer],
 ) {
-    use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
-
-    // Only process if we have registry_owner_keypair (admin capability)
-    let has_admin_kp = {
-        let communities = state.communities.read();
-        communities
-            .get(community_id)
-            .is_some_and(|cs| cs.registry_owner_keypair.is_some())
-    };
-    if !has_admin_kp {
-        return;
-    }
-
-    let state = state.clone();
-    let cid = community_id.to_string();
-    let sender = sender_pseudonym.to_string();
-    let answers = answers.to_vec();
-    tokio::spawn(async move {
-        match crate::services::coordinator::onboarding::process_answers(&state, &cid, &answers)
-            .await
-        {
-            Ok(role_ids) if !role_ids.is_empty() => {
-                // Assign roles via DHT registry
-                for &rid in &role_ids {
-                    if let Err(e) =
-                        crate::services::coordinator::state_manager::persist_role_assignment_pub(
-                            &state, &cid, &sender, rid, true,
-                        )
-                        .await
-                    {
-                        tracing::warn!(
-                            community = %cid, pseudonym = %sender, role_id = rid,
-                            error = %e, "failed to assign onboarding role"
-                        );
-                    }
-                }
-                // Mark onboarding_complete in member registry
-                if let Err(e) = crate::services::coordinator::state_manager::set_onboarding_complete_pub(
-                    &state, &cid, &sender,
-                ).await {
-                    tracing::warn!(
-                        community = %cid, pseudonym = %sender, error = %e,
-                        "failed to set onboarding_complete in registry"
-                    );
-                }
-                // Broadcast OnboardingComplete via gossip
-                let notification = ControlPayload::OnboardingComplete {
-                    pseudonym_key: sender.clone(),
-                    role_ids: role_ids.clone(),
-                };
-                let envelope = CommunityEnvelope::Control(notification);
-                crate::services::coordinator::state_manager::broadcast_via_gossip(
-                    &state, &cid, &envelope,
-                );
-                tracing::info!(
-                    community = %cid, pseudonym = %sender, roles = ?role_ids,
-                    "onboarding complete — roles assigned via gossip"
-                );
-            }
-            Ok(_) => {} // no roles to assign
-            Err(e) => {
-                tracing::warn!(
-                    community = %cid, pseudonym = %sender, error = %e,
-                    "failed to process onboarding answers"
-                );
-            }
-        }
-    });
+    tracing::debug!(
+        community = %community_id,
+        pseudonym = %sender_pseudonym,
+        answer_count = answers.len(),
+        "received onboarding answers — self-sovereign role assignment pending"
+    );
 }
 
 /// Handle a relayed control payload.
@@ -651,7 +555,7 @@ async fn handle_relayed_control(
                 &pseudonym_key,
                 &display_name,
                 claimed_subkey_index,
-                route_blob,
+                route_blob.as_deref(),
             );
         }
         ControlPayload::MemberJoined {
@@ -1300,9 +1204,7 @@ fn handle_control_events_and_threads(
             let app = app_handle.clone();
             let state_clone = state.clone();
             let cid = community_id.to_string();
-            tokio::spawn(async move {
-                fetch_mek_from_dht(&app, &state_clone, &cid).await;
-            });
+            fetch_mek_from_dht(&app, &state_clone, &cid);
             let _ = app_handle.emit(
                 "community-event",
                 CommunityEvent::MekRotated {
@@ -1526,23 +1428,8 @@ fn handle_gossip_control_payloads(
             }
             handle_sync_response(app_handle, state, community_id, &channel_id, &messages);
         }
-        ControlPayload::CoordinatorAnnounce {
-            pseudonym_key,
-            route_blob,
-            epoch,
-        } => {
-            let mut communities = state.communities.write();
-            if let Some(c) = communities.get_mut(community_id) {
-                c.coordinator_pseudonym = Some(pseudonym_key.clone());
-                c.coordinator_route_blob = Some(route_blob);
-                c.coordinator_epoch = epoch;
-            }
-            tracing::info!(
-                community = %community_id,
-                coordinator = %pseudonym_key,
-                epoch,
-                "coordinator announced"
-            );
+        ControlPayload::CoordinatorAnnounce { .. } => {
+            // v2.0: no coordinator. Ignore legacy announcements.
         }
 
         // ── Voice signaling (handled in voice::signaling module) ──
@@ -2430,7 +2317,6 @@ fn handle_slot_seed_grant(
 ) {
     use rekindle_crypto::group::mek_distribution::unwrap_mek;
     use rekindle_crypto::group::pseudonym::derive_community_pseudonym;
-    use rekindle_protocol::dht::community::member_registry;
 
     let Some(secret) = state.identity_secret.lock().as_ref().copied() else {
         tracing::warn!("no identity secret — cannot unwrap slot seed");
@@ -2469,8 +2355,8 @@ fn handle_slot_seed_grant(
         tracing::warn!("slot seed wrong length (expected 32 bytes)");
         return;
     };
-    let slot_kp = match member_registry::derive_slot_veilid_keypair(&seed_array, slot_index) {
-        Ok(kp) => kp,
+    let slot_kp = match rekindle_secrets::derive::derive_slot_keypair(&seed_array, slot_index) {
+        Ok(sk) => crate::services::community::create::slot_signing_to_veilid(&sk),
         Err(e) => {
             tracing::warn!(error = %e, slot_index, "failed to derive slot keypair from seed");
             return;
@@ -2571,10 +2457,14 @@ fn check_gossip_moderation_permission(
                     hoist: r.hoist,
                     mentionable: r.mentionable,
                 }).collect();
-            drop(communities); // release lock before calling is_owner_by_roles (which also reads)
-            let is_owner = crate::services::coordinator::state_manager::is_owner_by_roles(
-                state, community_id, sender_pseudonym, role_ids,
-            );
+            drop(communities);
+            // Check if sender is the community creator (owner) via governance CRDT state
+            let is_owner = crate::state_helpers::governance_state(state, community_id)
+                .and_then(|gov| {
+                    let pseudo_bytes: [u8; 32] = hex::decode(sender_pseudonym).ok()?.try_into().ok()?;
+                    Some(gov.creator.as_ref() == Some(&rekindle_types::id::PseudonymKey(pseudo_bytes)))
+                })
+                .unwrap_or(false);
             let perms = rekindle_protocol::dht::community::permissions_v2::calculate_permissions_v2(
                 role_ids, &roles_v2, &[], sender_pseudonym, is_owner, None,
             );
@@ -3074,9 +2964,10 @@ fn spawn_peer_bootstrap(
         };
         let Some(rk) = registry_key else { return };
         let Some(rc) = crate::state_helpers::routing_context(&state) else { return };
-        let mgr = rekindle_protocol::dht::DHTManager::new(rc);
 
-        if let Err(e) = mgr.open_record(&rk).await {
+        // Open registry record (v2.0: flat SMPL, no owner offset)
+        let Ok(reg_typed_key) = rk.parse::<veilid_core::RecordKey>() else { return };
+        if let Err(e) = rc.open_dht_record(reg_typed_key.clone(), None).await {
             tracing::debug!(error = %e, "failed to open registry for peer bootstrap");
             return;
         }
@@ -3089,19 +2980,16 @@ fn spawn_peer_bootstrap(
             }
             // Small delay between reads to avoid connection burst
             tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-            if let Ok(Some(presence)) =
-                rekindle_protocol::dht::community::member_registry::read_member_presence(
-                    &mgr, &rk, member.subkey_index,
-                )
-                .await
-            {
-                if let Some(blob) = presence.route_blob {
-                    if !blob.is_empty() && presence.status != "offline" {
+            // v2.0: read directly from subkey index (no offset — flat SMPL)
+            if let Ok(Some(val)) = rc.get_dht_value(reg_typed_key.clone(), member.subkey_index, false).await {
+                if val.data().is_empty() { continue; }
+                if let Ok(presence) = serde_json::from_slice::<rekindle_types::presence::MemberPresence>(val.data()) {
+                    if !presence.route_blob.is_empty() && presence.status != "offline" {
                         let mut communities = state.communities.write();
                         if let Some(cs) = communities.get_mut(&community_id) {
                             if let Some(ref mut gossip) = cs.gossip {
                                 let om = crate::state::OnlineMember {
-                                    route_blob: blob,
+                                    route_blob: presence.route_blob,
                                     last_seen: rekindle_utils::timestamp_secs(),
                                 };
                                 gossip.online_members.insert(
@@ -3192,7 +3080,7 @@ async fn handle_broadcast_new_message(
             return;
         }
         MekDecryptResult::NeedRefresh => {
-            fetch_mek_from_dht(app_handle, state, &msg.community_id).await;
+            fetch_mek_from_dht(app_handle, state, &msg.community_id);
 
             // Retry with refreshed MEK
             let mek_cache = state.mek_cache.lock();
@@ -3318,114 +3206,22 @@ fn decrypt_with_cached_mek(
 }
 
 
-/// Fetch the current MEK from the DHT MEK vault (registry subkey 1).
+/// Fetch the current MEK from DHT.
 ///
-/// Reads the per-member encrypted MEK vault, finds our own entry, unwraps it
-/// using ECDH, and updates `mek_cache` + Stronghold.
-pub(super) async fn fetch_mek_from_dht(
-    app_handle: &tauri::AppHandle,
-    state: &Arc<AppState>,
+/// v2.0: MEK is distributed via invite secrets (InviteSecrets.mek_wire_bytes)
+/// and peer-to-peer rotation. The v1.0 registry vault pattern (registry subkey 1)
+/// no longer exists — all registry subkeys are flat SMPL member presence slots.
+///
+/// This function is a no-op stub until v2.0 peer MEK rotation is implemented.
+pub(super) fn fetch_mek_from_dht(
+    _app_handle: &tauri::AppHandle,
+    _state: &Arc<AppState>,
     community_id: &str,
 ) {
-    use rekindle_crypto::group::mek_distribution::unwrap_mek;
-    use rekindle_protocol::dht::community::member_registry;
-
-    let (registry_key, my_pseudonym, my_signing_key) = {
-        let communities = state.communities.read();
-        let Some(c) = communities.get(community_id) else {
-            tracing::warn!(community = %community_id, "fetch_mek_from_dht: community not found");
-            return;
-        };
-        let Some(registry_key) = c.member_registry_key.clone() else {
-            tracing::warn!(community = %community_id, "fetch_mek_from_dht: no registry key");
-            return;
-        };
-        let my_pseudonym = c.my_pseudonym_key.clone().unwrap_or_default();
-        let secret = state.identity_secret.lock();
-        let Some(ref s) = *secret else {
-            tracing::warn!(community = %community_id, "fetch_mek_from_dht: no identity secret");
-            return;
-        };
-        let signing_key =
-            rekindle_crypto::group::pseudonym::derive_community_pseudonym(s, community_id);
-        (registry_key, my_pseudonym, signing_key)
-    };
-
-    let Some(rc) = crate::state_helpers::routing_context(state) else {
-        tracing::warn!(community = %community_id, "fetch_mek_from_dht: not attached");
-        return;
-    };
-    let mgr = rekindle_protocol::dht::DHTManager::new(rc);
-
-    // Read MEK vault from registry subkey 1
-    let vault = match member_registry::read_mek_vault(&mgr, &registry_key).await {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::warn!(error = %e, community = %community_id, "failed to read MEK vault from DHT");
-            return;
-        }
-    };
-
-    // Find community-wide MEK entry (channel_id is empty)
-    let Some(entry) = vault.iter().find(|e| e.channel_id.is_empty()) else {
-        tracing::debug!(community = %community_id, "no community-wide MEK entry in vault");
-        return;
-    };
-
-    // Find our own encrypted copy
-    let Some(copy) = entry.copies.iter().find(|c| c.target_pseudonym == my_pseudonym) else {
-        tracing::warn!(community = %community_id, "no MEK copy for us in vault");
-        return;
-    };
-
-    // Get rotator's public key for ECDH unwrapping
-    let Some(rotator_pub): Option<[u8; 32]> = hex::decode(&entry.rotator_pseudonym)
-        .ok()
-        .and_then(|b| b.try_into().ok())
-    else {
-        tracing::warn!(community = %community_id, "invalid rotator pseudonym key");
-        return;
-    };
-
-    // Unwrap MEK
-    let mek_wire = match unwrap_mek(&my_signing_key, &rotator_pub, &copy.encrypted_mek) {
-        Ok(bytes) => bytes,
-        Err(e) => {
-            tracing::warn!(error = %e, community = %community_id, "failed to unwrap MEK from vault");
-            return;
-        }
-    };
-
-    let Some(mek) = rekindle_crypto::group::media_key::MediaEncryptionKey::from_wire_bytes(&mek_wire)
-    else {
-        tracing::warn!(community = %community_id, "invalid MEK wire bytes from vault");
-        return;
-    };
-
-    let new_gen = mek.generation();
-    tracing::info!(community = %community_id, generation = new_gen, "MEK fetched from DHT vault");
-
-    // Update local state
-    {
-        let mut communities = state.communities.write();
-        if let Some(c) = communities.get_mut(community_id) {
-            c.mek_generation = new_gen;
-        }
-    }
-    state
-        .mek_cache
-        .lock()
-        .insert(community_id.to_string(), mek);
-
-    // Persist to Stronghold
-    let keystore_handle: tauri::State<'_, crate::keystore::KeystoreHandle> = app_handle.state();
-    let ks_guard = keystore_handle.lock();
-    if let Some(ref ks) = *ks_guard {
-        if let Some(mek) = state.mek_cache.lock().get(community_id) {
-            crate::keystore::persist_mek(ks, community_id, mek);
-        }
-    }
-    drop(ks_guard);
+    tracing::debug!(
+        community = %community_id,
+        "fetch_mek_from_dht: v2.0 uses invite-time MEK distribution — vault read skipped"
+    );
 }
 
 /// Handle an incoming `AppCall` — process the message, then reply with ACK.
@@ -3550,31 +3346,8 @@ async fn handle_value_change(
         node.as_ref().map(|nh| nh.routing_context.clone())
     };
 
-    // Forward coordinator-relevant changes to the coordinator service.
-    // Check if this DHT key belongs to a community's manifest record.
-    {
-        let coordinator_services = state.coordinator_services.read();
-        let communities = state.communities.read();
-        for (cid, cs) in communities.iter() {
-            let manifest_matches = cs.manifest_key.as_deref() == Some(&key)
-                || cs.id == key;
-            if manifest_matches {
-                if let Some(handle) = coordinator_services.get(cid) {
-                    for &subkey in &subkeys {
-                        let value = if Some(subkey) == first_subkey {
-                            inline_value.clone()
-                        } else {
-                            None
-                        };
-                        let _ = handle.value_change_tx.try_send(
-                            super::coordinator::CoordinatorValueChange { subkey, value },
-                        );
-                    }
-                }
-                break;
-            }
-        }
-    }
+    // v2.0: DHT value changes are handled by the sync protocol (watches + inspect).
+    // No coordinator forwarding needed.
 
     for &subkey in &subkeys {
         // Inline value is only valid for the first subkey in the range;
@@ -3678,11 +3451,16 @@ fn handle_attachment(
     // intermediate attachment states where DHT isn't available.
     // The resync runs via tokio::spawn so the dispatch loop is never blocked.
     if reconnected && public_internet_ready && state.identity.read().is_some() {
-        tracing::info!("network reconnected — invalidating watches and triggering friend resync");
+        tracing::info!("network reconnected — invalidating watches, rebuilding governance, triggering friend resync");
         invalidate_all_watches(state);
         let state = state.clone();
         let app_handle = app_handle.clone();
         tokio::spawn(async move {
+            // Open community DHT records that failed during login (no routing context yet)
+            crate::commands::auth::open_community_dht_records_public(&app_handle, &state).await;
+            // Rebuild governance state from DHT — restores roles/permissions after restart
+            crate::commands::auth::rebuild_governance_from_dht_public(&state).await;
+            // Resync friends
             let _ = super::sync_service::sync_friends_now(&state, &app_handle).await;
         });
     }
@@ -3735,57 +3513,6 @@ async fn handle_route_change(
             }
         }
 
-        // Clear coordinator route blobs that reference dead routes.
-        let dead_set: std::collections::HashSet<_> =
-            change.dead_remote_routes.iter().collect();
-        let api = {
-            let node = state.node.read();
-            node.as_ref().map(|n| n.api.clone())
-        };
-        let mut cleared_coordinator_routes: Vec<String> = Vec::new();
-        if let Some(api) = api {
-            let mut communities = state.communities.write();
-            for community in communities.values_mut() {
-                if let Some(ref blob) = community.coordinator_route_blob {
-                    if let Ok(route_id) = api.import_remote_private_route(blob.clone()) {
-                        if dead_set.contains(&route_id) {
-                            tracing::info!(
-                                community = %community.id,
-                                "clearing dead coordinator route blob"
-                            );
-                            community.coordinator_route_blob = None;
-                            cleared_coordinator_routes.push(community.id.clone());
-                        }
-                    }
-                }
-            }
-        }
-
-        // Re-fetch coordinator route from DHT for communities whose routes died
-        for cid in cleared_coordinator_routes {
-            let state = state.clone();
-            tokio::spawn(async move {
-                let manifest_key = {
-                    let communities = state.communities.read();
-                    communities.get(&cid).and_then(|cs| cs.manifest_key.clone())
-                };
-                if let (Some(mk), Some(rc)) = (manifest_key, crate::state_helpers::routing_context(&state)) {
-                    let mgr = rekindle_protocol::dht::DHTManager::new(rc);
-                    match rekindle_protocol::dht::community::manifest::read_coordinator(&mgr, &mk).await {
-                        Ok(Some(coord_info)) => {
-                            let mut communities = state.communities.write();
-                            if let Some(cs) = communities.get_mut(&cid) {
-                                cs.coordinator_route_blob = Some(coord_info.route_blob);
-                                cs.coordinator_pseudonym = Some(coord_info.pseudonym_key);
-                                tracing::info!(community = %cid, "recovered coordinator route from DHT manifest");
-                            }
-                        }
-                        Ok(None) => tracing::debug!(community = %cid, "no coordinator info in manifest"),
-                        Err(e) => tracing::debug!(community = %cid, error = %e, "failed to re-fetch coordinator from DHT"),
-                    }
-                }
-            });
-        }
     }
 }
 
@@ -4197,11 +3924,6 @@ pub async fn logout_cleanup(app_handle: Option<&tauri::AppHandle>, state: &AppSt
     state.channel_mek_cache.lock().clear();
     state.dedup_cache.lock().clear();
 
-    // 8. Stop coordinator services
-    {
-        let services = std::mem::take(&mut *state.coordinator_services.write());
-        drop(services);
-    }
 
     // NOTE: Do NOT reset network_ready_tx here. The Veilid node is still alive
     // and attached — the network IS ready. Resetting to false would cause the
