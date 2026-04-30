@@ -1,3 +1,4 @@
+#[cfg(any(target_os = "macos", windows))]
 use std::path::Path;
 
 /// Find the capnp binary, checking standard installation locations on Windows
