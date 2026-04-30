@@ -84,7 +84,10 @@ pub(crate) async fn start_session(
 ///
 /// Reuses the existing shared transport (preserves all connected peers
 /// from VoiceJoin gossip). Only creates a new transport if none exists.
-pub(crate) async fn restart_loops(state: &SharedState, app: &tauri::AppHandle) -> Result<(), String> {
+pub(crate) async fn restart_loops(
+    state: &SharedState,
+    app: &tauri::AppHandle,
+) -> Result<(), String> {
     let identity = state_helpers::current_identity(state)?;
 
     restart_audio_devices(state)?;
@@ -170,7 +173,10 @@ pub(crate) async fn stop_mcu_loop(state: &SharedState) {
     let (mcu_tx, mcu_h) = {
         let mut ve = state.voice_engine.lock();
         if let Some(ref mut handle) = *ve {
-            (handle.mcu_loop_shutdown.take(), handle.mcu_loop_handle.take())
+            (
+                handle.mcu_loop_shutdown.take(),
+                handle.mcu_loop_handle.take(),
+            )
         } else {
             (None, None)
         }

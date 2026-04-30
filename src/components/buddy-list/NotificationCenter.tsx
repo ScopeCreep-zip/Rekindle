@@ -32,7 +32,7 @@ const NotificationCenter: Component = () => {
   return (
     <div class="notification-bell-wrapper" ref={panelRef}>
       <button class="notification-bell" onClick={toggle} title="Notifications">
-        <span class="nf-icon" style={{ "font-size": "14px" }}>{ICON_BELL}</span>
+        <span class="nf-icon nf-icon-md">{ICON_BELL}</span>
         <Show when={notificationState.unreadCount > 0}>
           <span class="notification-badge">
             {notificationState.unreadCount > 99
@@ -89,7 +89,7 @@ const NotificationCenter: Component = () => {
                         onClick={() => markNotificationRead(notification.id)}
                         title="Mark as read"
                       >
-                        <span class="nf-icon" style={{ "font-size": "12px" }}>{ICON_CHECK}</span>
+                        <span class="nf-icon nf-icon-sm">{ICON_CHECK}</span>
                       </button>
                     </Show>
                   </div>

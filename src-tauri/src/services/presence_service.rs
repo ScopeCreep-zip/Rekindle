@@ -2,9 +2,8 @@ use std::sync::Arc;
 
 use tauri::{Emitter, Manager};
 
-use crate::channels::{NotificationEvent, PresenceEvent};
+use crate::channels::PresenceEvent;
 use crate::db::{self, DbPool};
-use crate::db_helpers::db_fire;
 use crate::state::{AppState, GameInfoState, UserStatus};
 use crate::state_helpers;
 
@@ -15,7 +14,7 @@ use crate::state_helpers;
 ///   2 = status enum
 ///   4 = game info
 ///   6 = route blob
-pub async fn handle_value_change(
+pub fn handle_value_change(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     dht_key: &str,
@@ -28,7 +27,7 @@ pub async fn handle_value_change(
     let Some(friend_key) = friend_key else {
         tracing::debug!(dht_key, "value change for unknown DHT key");
         // Still process - might be a community record
-        handle_community_value_change(app_handle, state, dht_key, subkeys, value).await;
+        handle_community_value_change(state, dht_key, subkeys, value);
         return;
     };
 
@@ -169,19 +168,17 @@ fn handle_route_change(state: &Arc<AppState>, friend_key: &str, value: &[u8]) {
 ///
 /// When a watched community DHT record changes, we re-read the affected subkeys
 /// from DHT to get the latest values and update local state accordingly.
-async fn handle_community_value_change(
-    app_handle: &tauri::AppHandle,
+fn handle_community_value_change(
     state: &Arc<AppState>,
     dht_key: &str,
     subkeys: &[u32],
     value: &[u8],
 ) {
-    // Find which community this DHT key belongs to
     let community_id = {
         let communities = state.communities.read();
         communities
             .values()
-            .find(|c| c.dht_record_key.as_deref() == Some(dht_key))
+            .find(|c| c.governance_key.as_deref() == Some(dht_key))
             .map(|c| c.id.clone())
     };
 
@@ -189,356 +186,14 @@ async fn handle_community_value_change(
         tracing::trace!(dht_key, "value change for unknown community DHT key");
         return;
     };
-
-    // Clone routing context out before any .await (parking_lot guards are !Send)
-    let routing_context = state_helpers::routing_context(state);
-
-    // Use a DHTManager to re-read subkeys that may have stale inline values
-    let mgr = routing_context.map(rekindle_protocol::dht::DHTManager::new);
-
-    for &subkey in subkeys {
-        match subkey {
-            0 => {
-                handle_community_metadata_change(
-                    app_handle,
-                    state,
-                    &community_id,
-                    mgr.as_ref(),
-                    dht_key,
-                    value,
-                )
-                .await;
-            }
-            1 => {
-                handle_community_channel_list_change(
-                    app_handle,
-                    state,
-                    &community_id,
-                    mgr.as_ref(),
-                    dht_key,
-                )
-                .await;
-            }
-            2 => {
-                handle_community_member_list_change(
-                    app_handle,
-                    state,
-                    &community_id,
-                    mgr.as_ref(),
-                    dht_key,
-                )
-                .await;
-            }
-            3 => {
-                handle_community_roles_change(
-                    app_handle,
-                    state,
-                    &community_id,
-                    mgr.as_ref(),
-                    dht_key,
-                )
-                .await;
-            }
-            5 => handle_community_mek_change(app_handle, state, &community_id),
-            _ => {
-                tracing::trace!(community = %community_id, subkey, "unhandled community subkey");
-            }
-        }
-    }
-
-    // Notify frontend about community update via typed notification channel
-    let notification = NotificationEvent::SystemAlert {
-        title: "Community Update".to_string(),
-        body: format!("Community {community_id} has been updated"),
-    };
-    let _ = app_handle.emit("notification-event", &notification);
-}
-
-/// Process a community metadata change (subkey 0: name, description, icon).
-///
-/// Uses the inline `value` first; falls back to a DHT read if needed.
-async fn handle_community_metadata_change(
-    app_handle: &tauri::AppHandle,
-    state: &Arc<AppState>,
-    community_id: &str,
-    mgr: Option<&rekindle_protocol::dht::DHTManager>,
-    dht_key: &str,
-    value: &[u8],
-) {
-    let metadata_bytes = if !value.is_empty() {
-        Some(value.to_vec())
-    } else if let Some(mgr) = mgr {
-        mgr.get_value(dht_key, 0).await.ok().flatten()
-    } else {
-        None
-    };
-
-    if let Some(data) = metadata_bytes {
-        if let Ok(metadata) = serde_json::from_slice::<serde_json::Value>(&data) {
-            let (new_name, new_desc) = {
-                let mut communities = state.communities.write();
-                if let Some(community) = communities.get_mut(community_id) {
-                    if let Some(name) = metadata.get("name").and_then(|v| v.as_str()) {
-                        community.name = name.to_string();
-                    }
-                    if let Some(desc) = metadata.get("description").and_then(|v| v.as_str()) {
-                        community.description = Some(desc.to_string());
-                    }
-                    (Some(community.name.clone()), community.description.clone())
-                } else {
-                    (None, None)
-                }
-            };
-            // Persist to SQLite
-            if let Some(name) = new_name {
-                let owner_key = state_helpers::owner_key_or_default(state);
-                let pool: tauri::State<'_, DbPool> = app_handle.state();
-                let cid = community_id.to_string();
-                let desc = new_desc;
-                db_fire(pool.inner(), "update community metadata", move |conn| {
-                    conn.execute(
-                        "UPDATE communities SET name = ?, description = ? WHERE owner_key = ? AND id = ?",
-                        rusqlite::params![name, desc, owner_key, cid],
-                    )?;
-                    Ok(())
-                });
-            }
-        }
-    }
-    tracing::debug!(community = %community_id, "community metadata updated");
-}
-
-/// Process a community channel list change (subkey 1).
-///
-/// Re-reads the channel list from DHT and updates local state.
-async fn handle_community_channel_list_change(
-    app_handle: &tauri::AppHandle,
-    state: &Arc<AppState>,
-    community_id: &str,
-    mgr: Option<&rekindle_protocol::dht::DHTManager>,
-    dht_key: &str,
-) {
-    let channel_data = if let Some(mgr) = mgr {
-        mgr.get_value(dht_key, 1).await.ok().flatten()
-    } else {
-        None
-    };
-
-    if let Some(data) = channel_data {
-        let channels = crate::state::parse_dht_channel_list(&data);
-        if !channels.is_empty() {
-            state_helpers::set_community_channels(state, community_id, channels.clone());
-
-            // Persist to SQLite: DELETE + INSERT
-            let owner_key = state_helpers::owner_key_or_default(state);
-            let pool: tauri::State<'_, DbPool> = app_handle.state();
-            let cid = community_id.to_string();
-            db_fire(pool.inner(), "update community channel list", move |conn| {
-                crate::channel_repo::replace_channels(conn, &owner_key, &cid, &channels)?;
-                Ok(())
-            });
-        }
-    }
-    tracing::debug!(community = %community_id, "community channel list updated");
-}
-
-/// Process a community member list change (subkey 2).
-///
-/// Re-reads the member list from DHT and persists it to the local database.
-async fn handle_community_member_list_change(
-    app_handle: &tauri::AppHandle,
-    state: &Arc<AppState>,
-    community_id: &str,
-    mgr: Option<&rekindle_protocol::dht::DHTManager>,
-    dht_key: &str,
-) {
-    let member_data = if let Some(mgr) = mgr {
-        mgr.get_value(dht_key, 2).await.ok().flatten()
-    } else {
-        None
-    };
-
-    let Some(data) = member_data else {
-        tracing::debug!(community = %community_id, "community member list updated (no data)");
-        return;
-    };
-
-    // Parse member list JSON: wrapped { members: [...], lastRefreshed } or bare [...]
-    let member_list: Vec<serde_json::Value> =
-        match serde_json::from_slice::<serde_json::Value>(&data) {
-            Ok(v) => {
-                if let Some(obj) = v.as_object() {
-                    obj.get("members")
-                        .and_then(|m| m.as_array().cloned())
-                        .unwrap_or_default()
-                } else {
-                    v.as_array().cloned().unwrap_or_default()
-                }
-            }
-            Err(_) => return,
-        };
-    if member_list.is_empty() && data.len() > 2 {
-        // Data was non-trivial but couldn't parse — skip silently
-        return;
-    }
-
-    let member_count = member_list.len();
-    let pool: tauri::State<'_, DbPool> = app_handle.state();
-    let cid = community_id.to_string();
-    let owner_key = state_helpers::owner_key_or_default(state);
-    db_fire(pool.inner(), "persist community member list", move |conn| {
-        for member in &member_list {
-            let Some(pk) = member.get("pseudonymKey").and_then(|v| v.as_str()) else {
-                continue;
-            };
-            let dn = member
-                .get("displayName")
-                .and_then(|v| v.as_str())
-                .unwrap_or(pk);
-            let role_ids = member
-                .get("roleIds")
-                .map_or_else(|| "[0,1]".to_string(), std::string::ToString::to_string);
-            let joined_at = member
-                .get("joinedAt")
-                .and_then(serde_json::Value::as_i64)
-                .unwrap_or_else(crate::db::timestamp_now);
-            conn.execute(
-                "INSERT OR REPLACE INTO community_members \
-                 (owner_key, community_id, pseudonym_key, display_name, role_ids, joined_at) \
-                 VALUES (?, ?, ?, ?, ?, ?)",
-                rusqlite::params![owner_key, cid, pk, dn, role_ids, joined_at],
-            )?;
-        }
-        Ok(())
-    });
-    tracing::debug!(
+    tracing::trace!(
         community = %community_id,
-        members = member_count,
-        "community member list updated from DHT"
-    );
-
-    // Notify frontend to re-fetch the member list
-    let event = crate::channels::CommunityEvent::MembersRefreshed {
-        community_id: community_id.to_string(),
-    };
-    let _ = app_handle.emit("community-event", &event);
-}
-
-/// Handle DHT subkey 3 change: community role definitions updated.
-///
-/// Reads the updated role list from DHT, updates in-memory `CommunityState.roles`,
-/// persists to the `community_roles` table, and emits a `RolesChanged` event.
-async fn handle_community_roles_change(
-    app_handle: &tauri::AppHandle,
-    state: &Arc<AppState>,
-    community_id: &str,
-    mgr: Option<&rekindle_protocol::dht::DHTManager>,
-    dht_key: &str,
-) {
-    let Some(mgr) = mgr else {
-        tracing::warn!(community = %community_id, "cannot fetch role updates — not attached");
-        return;
-    };
-
-    let roles = match rekindle_protocol::dht::community::manifest::read_roles(mgr, dht_key).await {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::warn!(community = %community_id, error = %e, "failed to read roles from DHT");
-            return;
-        }
-    };
-
-    // Update in-memory state
-    let role_defs: Vec<crate::state::RoleDefinition> = roles
-        .iter()
-        .map(|r| crate::state::RoleDefinition {
-            id: r.id,
-            name: r.name.clone(),
-            color: r.color,
-            permissions: r.permissions,
-            position: r.position,
-            hoist: r.hoist,
-            mentionable: r.mentionable,
-        })
-        .collect();
-    {
-        let mut communities = state.communities.write();
-        if let Some(c) = communities.get_mut(community_id) {
-            c.roles.clone_from(&role_defs);
-            c.my_role = Some(crate::state::display_role_name(&c.my_role_ids, &c.roles));
-        }
-    }
-
-    // Persist to SQLite
-    let owner_key = state_helpers::owner_key_or_default(state);
-    let pool: tauri::State<'_, DbPool> = app_handle.state();
-    let cid = community_id.to_string();
-    let role_defs_for_db = role_defs.clone();
-    db_fire(pool.inner(), "persist community roles", move |conn| {
-        conn.execute(
-            "DELETE FROM community_roles WHERE owner_key = ? AND community_id = ?",
-            rusqlite::params![owner_key, cid],
-        )?;
-        for r in &role_defs_for_db {
-            conn.execute(
-                "INSERT INTO community_roles \
-                 (owner_key, community_id, role_id, name, color, permissions, position, hoist, mentionable) \
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                rusqlite::params![
-                    owner_key,
-                    cid,
-                    r.id,
-                    r.name,
-                    r.color,
-                    r.permissions.cast_signed(),
-                    r.position,
-                    r.hoist,
-                    r.mentionable,
-                ],
-            )?;
-        }
-        Ok(())
-    });
-
-    // Emit frontend event
-    let event = crate::channels::CommunityEvent::RolesChanged {
-        community_id: community_id.to_string(),
-        roles: role_defs
-            .iter()
-            .map(|r| crate::channels::community_channel::RoleDto {
-                id: r.id,
-                name: r.name.clone(),
-                color: r.color,
-                permissions: r.permissions,
-                position: r.position,
-                hoist: r.hoist,
-                mentionable: r.mentionable,
-            })
-            .collect(),
-    };
-    let _ = app_handle.emit("community-event", &event);
-
-    tracing::info!(
-        community = %community_id,
-        role_count = role_defs.len(),
-        "community roles updated from DHT"
+        dht_key,
+        subkeys = subkeys.len(),
+        value_len = value.len(),
+        "ignoring manifest-shaped community value-change handler in forward-only governance model"
     );
 }
-
-/// Handle DHT subkey 5 change: MEK bundles updated.
-///
-/// When an admin publishes new MEK bundles (e.g., after rotation), re-fetch
-/// by reading the MEK vault from the DHT registry.
-fn handle_community_mek_change(
-    app_handle: &tauri::AppHandle,
-    state: &Arc<AppState>,
-    community_id: &str,
-) {
-    tracing::info!(community = %community_id, "MEK bundles updated in DHT — fetching new MEK from vault");
-    super::veilid_service::fetch_mek_from_dht(app_handle, state, community_id);
-}
-
-// Server route change handler removed — coordinator model doesn't use server route blobs
 
 /// Start watching a friend's DHT record for presence updates.
 pub async fn watch_friend(

@@ -45,7 +45,7 @@ pub async fn join_voice_channel(
                 route_blob,
             },
         );
-        let _ = crate::commands::community::send_to_mesh(state.inner(), cid, &envelope);
+        let _ = crate::services::community::send_to_mesh(state.inner(), cid, &envelope);
     }
 
     Ok(())
@@ -69,11 +69,9 @@ pub async fn leave_voice(
     };
     if let Some(ref cid) = community_id {
         let envelope = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
-            rekindle_protocol::dht::community::envelope::ControlPayload::VoiceLeave {
-                channel_id,
-            },
+            rekindle_protocol::dht::community::envelope::ControlPayload::VoiceLeave { channel_id },
         );
-        let _ = crate::commands::community::send_to_mesh(state.inner(), cid, &envelope);
+        let _ = crate::services::community::send_to_mesh(state.inner(), cid, &envelope);
     }
 
     shutdown_voice(&state, &VoiceShutdownOpts::FULL).await;
@@ -293,7 +291,7 @@ pub async fn server_mute_member(
             muted,
         },
     );
-    crate::commands::community::send_to_mesh(state.inner(), &community_id, &envelope)?;
+    crate::services::community::send_to_mesh(state.inner(), &community_id, &envelope)?;
     Ok(())
 }
 
@@ -319,6 +317,6 @@ pub async fn server_deafen_member(
             deafened,
         },
     );
-    crate::commands::community::send_to_mesh(state.inner(), &community_id, &envelope)?;
+    crate::services::community::send_to_mesh(state.inner(), &community_id, &envelope)?;
     Ok(())
 }

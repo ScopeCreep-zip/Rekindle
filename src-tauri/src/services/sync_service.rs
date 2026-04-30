@@ -1,4 +1,8 @@
 use std::sync::Arc;
+use std::{
+    collections::hash_map::DefaultHasher,
+    hash::{Hash, Hasher},
+};
 
 use rekindle_protocol::messaging::envelope::MessageEnvelope;
 use tokio::sync::mpsc;
@@ -91,7 +95,7 @@ async fn sync_friends(
     first_tick: bool,
     force_all: bool,
 ) -> Result<(), String> {
-    let Some(routing_context) = state_helpers::routing_context(state) else {
+    let Some(routing_context) = state_helpers::safe_routing_context(state) else {
         return Ok(()); // Not connected yet
     };
 
@@ -523,7 +527,7 @@ async fn sync_friend_route_blob(
 /// opens the conversation record read-only, reads the header, and caches the
 /// route blob and profile snapshot.
 async fn sync_conversations(state: &Arc<AppState>) -> Result<(), String> {
-    let Some(routing_context) = state_helpers::routing_context(state) else {
+    let Some(routing_context) = state_helpers::safe_routing_context(state) else {
         return Ok(()); // Not connected yet
     };
 
@@ -650,100 +654,301 @@ async fn sync_single_conversation(
     let _ = record.close().await;
 }
 
-/// Parse a DHT channel list from JSON (supports both wrapped and bare array format).
-/// Re-export the shared channel list parser from state.
-use crate::state::parse_dht_channel_list;
-
-/// Sync communities: read community DHT records and update local state.
-///
-/// Reads metadata (subkey 0), channel list (subkey 1), and server route
-/// (subkey 6) from each community's DHT record.
-async fn sync_communities(state: &Arc<AppState>, _pool: &DbPool) -> Result<(), String> {
-    let Some(routing_context) = state_helpers::routing_context(state) else {
+/// Sync communities by re-announcing our mesh presence.
+async fn sync_communities(state: &Arc<AppState>, pool: &DbPool) -> Result<(), String> {
+    if state_helpers::safe_routing_context(state).is_none() {
         return Ok(()); // Not connected yet
-    };
-
-    // Collect communities that have DHT record keys
-    let communities_with_dht = state_helpers::communities_with_dht_keys(state);
-
-    let mgr = rekindle_protocol::dht::DHTManager::new(routing_context);
-
-    for (community_id, dht_key) in &communities_with_dht {
-        // Ensure the record is open before reading (re-opening is a no-op if already open).
-        if let Err(e) = mgr.open_record(dht_key).await {
-            tracing::trace!(
-                community = %community_id, error = %e,
-                "failed to open community DHT record for sync — skipping"
-            );
-            continue;
-        }
-
-        // Read metadata subkey (0) from DHT
-        match mgr.get_value(dht_key, 0).await {
-            Ok(Some(data)) => {
-                if let Ok(metadata) = serde_json::from_slice::<serde_json::Value>(&data) {
-                    let mut communities = state.communities.write();
-                    if let Some(community) = communities.get_mut(community_id) {
-                        if let Some(name) = metadata.get("name").and_then(|v| v.as_str()) {
-                            community.name = name.to_string();
-                        }
-                        if let Some(desc) = metadata.get("description").and_then(|v| v.as_str()) {
-                            community.description = Some(desc.to_string());
-                        }
-                    }
-                }
-            }
-            Ok(None) => {}
-            Err(e) => {
-                tracing::trace!(
-                    community = %community_id,
-                    error = %e,
-                    "failed to read community metadata from DHT"
-                );
-            }
-        }
-
-        // Read channel list subkey (1) from DHT
-        match mgr.get_value(dht_key, 1).await {
-            Ok(Some(data)) => {
-                let channels = parse_dht_channel_list(&data);
-                if !channels.is_empty() {
-                    state_helpers::set_community_channels(state, community_id, channels);
-                }
-            }
-            Ok(None) => {}
-            Err(e) => {
-                tracing::trace!(
-                    community = %community_id,
-                    error = %e,
-                    "failed to read community channels from DHT"
-                );
-            }
-        }
-
     }
 
-    // After DHT sync, re-announce our route to ALL community servers (including
-    // hosted). The server needs each member's route_blob for Veilid broadcast
-    // delivery — even the hosted owner should have a valid route_blob as a
-    // fallback. This also ensures the server gets our fresh route after app restart
-    // (Veilid allocates a fresh route on each start).
-    for (community_id, _dht_key) in &communities_with_dht {
-        if let Err(e) =
-            crate::services::community::rejoin_community(state, community_id).await
-        {
+    let communities_with_governance = state_helpers::communities_with_governance_keys(state);
+    for (community_id, governance_key) in &communities_with_governance {
+        sync_community_governance(state, community_id, governance_key).await;
+        sync_community_channels(state, pool, community_id).await;
+        if let Err(e) = crate::services::community::rejoin_community(state, community_id).await {
             tracing::trace!(community = %community_id, error = %e, "community rejoin failed");
         }
     }
 
     tracing::debug!(
-        communities = communities_with_dht.len(),
+        communities = communities_with_governance.len(),
         "community sync complete"
     );
     Ok(())
 }
 
-// Server route sync removed — coordinator model doesn't use server route blobs
+pub(crate) async fn handle_community_record_change(
+    state: &Arc<AppState>,
+    pool: &DbPool,
+    dht_key: &str,
+) -> bool {
+    enum ChangedRecord {
+        Governance {
+            community_id: String,
+            governance_key: String,
+        },
+        Registry {
+            community_id: String,
+        },
+        Channel {
+            community_id: String,
+            channel_id: String,
+        },
+    }
+
+    let changed = {
+        let communities = state.communities.read();
+        communities.values().find_map(|community| {
+            if community.governance_key.as_deref() == Some(dht_key) {
+                return community.governance_key.as_ref().map(|governance_key| {
+                    ChangedRecord::Governance {
+                        community_id: community.id.clone(),
+                        governance_key: governance_key.clone(),
+                    }
+                });
+            }
+            if community.member_registry_key.as_deref() == Some(dht_key) {
+                return Some(ChangedRecord::Registry {
+                    community_id: community.id.clone(),
+                });
+            }
+            community
+                .channel_log_keys
+                .iter()
+                .find_map(|(channel_id, record_key)| {
+                    (record_key == dht_key).then(|| ChangedRecord::Channel {
+                        community_id: community.id.clone(),
+                        channel_id: channel_id.clone(),
+                    })
+                })
+        })
+    };
+
+    match changed {
+        Some(ChangedRecord::Governance {
+            community_id,
+            governance_key,
+        }) => {
+            sync_community_governance(state, &community_id, &governance_key).await;
+            true
+        }
+        Some(ChangedRecord::Registry { community_id }) => {
+            let _ =
+                crate::services::community::presence_poll_tick_public(state, &community_id).await;
+            true
+        }
+        Some(ChangedRecord::Channel {
+            community_id,
+            channel_id,
+        }) => {
+            request_channel_sync(state, pool, &community_id, &channel_id).await;
+            true
+        }
+        None => false,
+    }
+}
+
+fn report_fingerprint(seqs: &[veilid_core::ValueSeqNum]) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    seqs.len().hash(&mut hasher);
+    for seq in seqs {
+        format!("{seq:?}").hash(&mut hasher);
+    }
+    hasher.finish()
+}
+
+async fn sync_community_governance(
+    state: &Arc<AppState>,
+    community_id: &str,
+    governance_key: &str,
+) {
+    let Some(rc) = state_helpers::safe_routing_context(state) else {
+        return;
+    };
+    let Ok(record_key) = governance_key.parse::<veilid_core::RecordKey>() else {
+        return;
+    };
+    let report = match rc
+        .inspect_dht_record(
+            record_key,
+            Some(veilid_core::ValueSubkeyRangeSet::full()),
+            veilid_core::DHTReportScope::UpdateGet,
+        )
+        .await
+    {
+        Ok(report) => report,
+        Err(e) => {
+            tracing::trace!(community = %community_id, error = %e, "governance inspect failed");
+            return;
+        }
+    };
+    let fingerprint = report_fingerprint(report.network_seqs());
+    let needs_rebuild = {
+        let mut communities = state.communities.write();
+        let Some(cs) = communities.get_mut(community_id) else {
+            return;
+        };
+        let previous = cs
+            .open_community_records
+            .governance_report_fingerprint
+            .replace(fingerprint);
+        previous.is_some_and(|prev| prev != fingerprint) || cs.governance_state.is_none()
+    };
+    if needs_rebuild {
+        tracing::info!(community = %community_id, "governance inspect changed — rebuilding merged state");
+        crate::commands::auth::rebuild_governance_from_dht_public(state).await;
+        open_new_channel_records(state, community_id).await;
+    }
+}
+
+async fn open_new_channel_records(state: &Arc<AppState>, community_id: &str) {
+    let Some(rc) = state_helpers::safe_routing_context(state) else {
+        return;
+    };
+    let (channel_pairs, opened_keys) = {
+        let communities = state.communities.read();
+        let Some(cs) = communities.get(community_id) else {
+            return;
+        };
+        (
+            cs.channel_log_keys
+                .iter()
+                .map(|(channel_id, record_key)| (channel_id.clone(), record_key.clone()))
+                .collect::<Vec<_>>(),
+            cs.open_community_records
+                .channel_keys
+                .iter()
+                .cloned()
+                .collect::<std::collections::HashSet<_>>(),
+        )
+    };
+
+    let mut newly_opened = Vec::new();
+    for (_channel_id, record_key) in channel_pairs {
+        if opened_keys.contains(&record_key) {
+            continue;
+        }
+        let Ok(parsed_key) = record_key.parse::<veilid_core::RecordKey>() else {
+            continue;
+        };
+        match rc.open_dht_record(parsed_key, None).await {
+            Ok(_) => {
+                newly_opened.push(record_key.clone());
+                state_helpers::track_open_records(state, std::slice::from_ref(&record_key));
+            }
+            Err(e) => {
+                tracing::trace!(
+                    community = %community_id,
+                    channel_record = %record_key,
+                    error = %e,
+                    "failed to open newly discovered channel record"
+                );
+            }
+        }
+    }
+
+    if !newly_opened.is_empty() {
+        let mut communities = state.communities.write();
+        if let Some(cs) = communities.get_mut(community_id) {
+            for record_key in newly_opened {
+                if !cs.open_community_records.channel_keys.contains(&record_key) {
+                    cs.open_community_records.channel_keys.push(record_key);
+                }
+            }
+        }
+    }
+}
+
+async fn sync_community_channels(state: &Arc<AppState>, pool: &DbPool, community_id: &str) {
+    let Some(rc) = state_helpers::safe_routing_context(state) else {
+        return;
+    };
+    let channel_pairs = {
+        let communities = state.communities.read();
+        let Some(cs) = communities.get(community_id) else {
+            return;
+        };
+        cs.channel_log_keys
+            .iter()
+            .map(|(channel_id, record_key)| (channel_id.clone(), record_key.clone()))
+            .collect::<Vec<_>>()
+    };
+
+    for (channel_id, record_key) in channel_pairs {
+        let Ok(parsed_key) = record_key.parse::<veilid_core::RecordKey>() else {
+            continue;
+        };
+        let report = match rc
+            .inspect_dht_record(
+                parsed_key,
+                Some(veilid_core::ValueSubkeyRangeSet::full()),
+                veilid_core::DHTReportScope::UpdateGet,
+            )
+            .await
+        {
+            Ok(report) => report,
+            Err(e) => {
+                tracing::trace!(
+                    community = %community_id,
+                    channel = %channel_id,
+                    error = %e,
+                    "channel record inspect failed"
+                );
+                continue;
+            }
+        };
+        let fingerprint = report_fingerprint(report.network_seqs());
+        let should_request_sync = {
+            let mut communities = state.communities.write();
+            let Some(cs) = communities.get_mut(community_id) else {
+                return;
+            };
+            let previous = cs
+                .open_community_records
+                .channel_report_fingerprints
+                .insert(channel_id.clone(), fingerprint);
+            previous.is_some_and(|prev| prev != fingerprint)
+        };
+        if should_request_sync {
+            request_channel_sync(state, pool, community_id, &channel_id).await;
+        }
+    }
+}
+
+async fn request_channel_sync(
+    state: &Arc<AppState>,
+    pool: &DbPool,
+    community_id: &str,
+    channel_id: &str,
+) {
+    let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
+    let ch = channel_id.to_string();
+    let last_ts: i64 = db_call(pool, move |conn| {
+        conn.query_row(
+            "SELECT COALESCE(MAX(timestamp), 0) FROM messages \
+             WHERE owner_key=? AND conversation_id=? AND conversation_type='channel'",
+            rusqlite::params![owner_key, ch],
+            |r| r.get(0),
+        )
+    })
+    .await
+    .unwrap_or(0);
+
+    let sync_req = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
+        rekindle_protocol::dht::community::envelope::ControlPayload::SyncRequest {
+            channel_id: channel_id.to_string(),
+            since_timestamp: last_ts.cast_unsigned(),
+        },
+    );
+    let _ = crate::services::community::send_to_mesh(state, community_id, &sync_req);
+
+    let now = rekindle_utils::timestamp_secs();
+    let mut communities = state.communities.write();
+    if let Some(cs) = communities.get_mut(community_id) {
+        cs.pending_syncs.insert(channel_id.to_string(), (now, 1));
+    }
+}
+
+// Route blob publishing is handled by the presence poll loop.
 
 /// Retry sending queued pending messages.
 ///
@@ -823,31 +1028,9 @@ async fn retry_single_pending(
     if let Ok(envelope) = serde_json::from_str::<MessageEnvelope>(body) {
         retry_pending_dm(state, pool, id, recipient_key, &envelope).await?;
     } else if let Ok(channel_msg) =
-        serde_json::from_str::<crate::commands::community::PendingChannelMessage>(body)
+        serde_json::from_str::<crate::services::community::PendingChannelMessage>(body)
     {
-        // Broadcast via gossip mesh — no coordinator needed for channel messages
-        let message_id = format!(
-            "retry_{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos()
-        );
-        let result = crate::commands::community::send_to_mesh(
-            state,
-            &channel_msg.community_id,
-            &rekindle_protocol::dht::community::envelope::CommunityEnvelope::ChatMessage {
-                channel_id: channel_msg.channel_id.clone(),
-                message_id,
-                author_pseudonym: String::new(), // filled by signing layer in send_to_mesh
-                ciphertext: channel_msg.ciphertext,
-                mek_generation: channel_msg.mek_generation,
-                timestamp: channel_msg.timestamp.cast_unsigned(),
-                reply_to_id: None,
-                lamport_ts: 0,
-                sequence: 0, // retry messages don't increment sequence (already counted on first send)
-            },
-        );
+        let result = retry_pending_channel_message(state, &channel_msg).await;
 
         match result {
             Ok(()) => {
@@ -867,6 +1050,72 @@ async fn retry_single_pending(
     Ok(())
 }
 
+async fn retry_pending_channel_message(
+    state: &Arc<AppState>,
+    channel_msg: &crate::services::community::PendingChannelMessage,
+) -> Result<(), String> {
+    let (channel_key, slot_keypair_str, slot_index) = {
+        let communities = state.communities.read();
+        let community = communities
+            .get(&channel_msg.community_id)
+            .ok_or("community not found for pending channel retry")?;
+        (
+            community
+                .channel_log_keys
+                .get(&channel_msg.channel_id)
+                .cloned()
+                .ok_or("channel record key missing for pending retry")?,
+            community
+                .slot_keypair
+                .clone()
+                .ok_or("slot keypair missing for pending retry")?,
+            community
+                .my_subkey_index
+                .ok_or("subkey index missing for pending retry")?,
+        )
+    };
+    let rc = state_helpers::safe_routing_context(state).ok_or("not attached")?;
+    let writer = slot_keypair_str
+        .parse::<veilid_core::KeyPair>()
+        .map_err(|e| format!("invalid slot keypair for pending retry: {e}"))?;
+    let mgr = rekindle_protocol::dht::DHTManager::new(rc);
+    let channel_record_message =
+        rekindle_protocol::dht::community::channel_record::ChannelMessage {
+            sequence: channel_msg.sequence,
+            sender_pseudonym: channel_msg.author_pseudonym.clone(),
+            ciphertext: channel_msg.ciphertext.clone(),
+            mek_generation: channel_msg.mek_generation,
+            timestamp: channel_msg.timestamp.cast_unsigned(),
+            reply_to: None,
+            lamport_ts: channel_msg.lamport_ts,
+            message_id: Some(channel_msg.message_id.clone()),
+        };
+    rekindle_protocol::dht::community::channel_record::write_member_message(
+        &mgr,
+        &channel_key,
+        slot_index,
+        writer,
+        &channel_record_message,
+    )
+    .await
+    .map_err(|e| format!("pending SMPL channel retry failed: {e}"))?;
+
+    crate::services::community::send_to_mesh(
+        state,
+        &channel_msg.community_id,
+        &rekindle_protocol::dht::community::envelope::CommunityEnvelope::MessageNotification {
+            channel_id: channel_msg.channel_id.clone(),
+            message_id: channel_msg.message_id.clone(),
+            author_pseudonym: channel_msg.author_pseudonym.clone(),
+            subkey_index: channel_msg.subkey_index,
+            lamport_ts: channel_msg.lamport_ts,
+            sequence: channel_msg.sequence,
+            content_hash: channel_msg.content_hash.clone(),
+            timestamp: channel_msg.timestamp.cast_unsigned(),
+        },
+    )
+}
+
 /// Retry delivering a single pending DM envelope via cached route or mailbox fallback.
 async fn retry_pending_dm(
     state: &Arc<AppState>,
@@ -877,7 +1126,7 @@ async fn retry_pending_dm(
 ) -> Result<(), String> {
     // Look up route and import RouteId via cache.
     let route_id_and_rc = state_helpers::try_import_peer_route(state, recipient_key);
-    if route_id_and_rc.is_none() && state_helpers::api_and_routing_context(state).is_none() {
+    if route_id_and_rc.is_none() && state_helpers::safe_api_and_routing_context(state).is_none() {
         increment_retry_count(pool, id).await?;
         return Ok(());
     }
@@ -933,7 +1182,7 @@ async fn try_mailbox_route_fallback(
     // Look up the friend's mailbox key
     let mailbox_key = state_helpers::friend_mailbox_key(state, recipient_key)?;
 
-    let rc = state_helpers::routing_context(state)?;
+    let rc = state_helpers::safe_routing_context(state)?;
 
     // Read fresh route blob from mailbox
     let route_blob =

@@ -36,13 +36,10 @@ pub fn hash_invite_code(invite_code: &str) -> String {
 /// Encrypt invite secrets with HKDF(invite_code) → AES-256-GCM.
 ///
 /// Output: `[12-byte nonce || ciphertext + 16-byte tag]`.
-pub fn encrypt_invite_secrets(
-    invite_code: &str,
-    plaintext: &[u8],
-) -> Result<Vec<u8>, CryptoError> {
+pub fn encrypt_invite_secrets(invite_code: &str, plaintext: &[u8]) -> Result<Vec<u8>, CryptoError> {
     let key = derive_invite_key(invite_code.as_bytes());
-    let cipher = Aes256Gcm::new_from_slice(&key)
-        .map_err(|e| CryptoError::Encryption(e.to_string()))?;
+    let cipher =
+        Aes256Gcm::new_from_slice(&key).map_err(|e| CryptoError::Encryption(e.to_string()))?;
 
     let mut nonce_bytes = [0u8; 12];
     rand::rngs::OsRng.fill_bytes(&mut nonce_bytes);
@@ -61,10 +58,7 @@ pub fn encrypt_invite_secrets(
 /// Decrypt invite secrets with HKDF(invite_code) → AES-256-GCM.
 ///
 /// Input: `[12-byte nonce || ciphertext + 16-byte tag]`.
-pub fn decrypt_invite_secrets(
-    invite_code: &str,
-    encrypted: &[u8],
-) -> Result<Vec<u8>, CryptoError> {
+pub fn decrypt_invite_secrets(invite_code: &str, encrypted: &[u8]) -> Result<Vec<u8>, CryptoError> {
     if encrypted.len() < 12 {
         return Err(CryptoError::Decryption(
             "encrypted invite data too short".into(),
@@ -72,8 +66,8 @@ pub fn decrypt_invite_secrets(
     }
 
     let key = derive_invite_key(invite_code.as_bytes());
-    let cipher = Aes256Gcm::new_from_slice(&key)
-        .map_err(|e| CryptoError::Decryption(e.to_string()))?;
+    let cipher =
+        Aes256Gcm::new_from_slice(&key).map_err(|e| CryptoError::Decryption(e.to_string()))?;
 
     let nonce = Nonce::from_slice(&encrypted[..12]);
     cipher

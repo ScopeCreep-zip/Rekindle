@@ -30,12 +30,7 @@ impl DedupCache {
     ///
     /// Returns `true` if **duplicate** (already in cache).
     /// Returns `false` if **new** (inserted into cache).
-    pub fn check_and_insert(
-        &mut self,
-        community_id: &str,
-        sender: &str,
-        dedup_key: &str,
-    ) -> bool {
+    pub fn check_and_insert(&mut self, community_id: &str, sender: &str, dedup_key: &str) -> bool {
         let key = (
             community_id.to_string(),
             sender.to_string(),

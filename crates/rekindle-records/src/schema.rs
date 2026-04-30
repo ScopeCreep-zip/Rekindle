@@ -12,7 +12,7 @@
 //! Verified: `DHTSchema::smpl(0, members)` is valid in veilid-core 0.5.2
 //! when members provide at least 1 subkey (total subkeys must be >= 1).
 
-use veilid_core::{DHTSchema, DHTSchemaSMPLMember, BareMemberId, VeilidAPIResult};
+use veilid_core::{BareMemberId, DHTSchema, DHTSchemaSMPLMember, VeilidAPIResult};
 
 /// Maximum members per SMPL record segment.
 /// Veilid allows up to 1024 total subkeys. With m_cnt=1 per member,
@@ -30,9 +30,7 @@ pub const MAX_MEMBERS_PER_SEGMENT: usize = 255;
 ///
 /// # Errors
 /// Returns error if members list is empty (need at least 1 subkey) or exceeds 1024.
-pub fn community_smpl_schema(
-    member_public_keys: &[[u8; 32]],
-) -> VeilidAPIResult<DHTSchema> {
+pub fn community_smpl_schema(member_public_keys: &[[u8; 32]]) -> VeilidAPIResult<DHTSchema> {
     let members: Vec<DHTSchemaSMPLMember> = member_public_keys
         .iter()
         .map(|pubkey| DHTSchemaSMPLMember {
@@ -74,12 +72,14 @@ mod tests {
 
     #[test]
     fn community_schema_255_members() {
-        let keys: Vec<[u8; 32]> = (0..255u16).map(|i| {
-            let mut k = [0u8; 32];
-            k[0] = (i & 0xFF) as u8;
-            k[1] = (i >> 8) as u8;
-            k
-        }).collect();
+        let keys: Vec<[u8; 32]> = (0..255u16)
+            .map(|i| {
+                let mut k = [0u8; 32];
+                k[0] = (i & 0xFF) as u8;
+                k[1] = (i >> 8) as u8;
+                k
+            })
+            .collect();
         let schema = community_smpl_schema(&keys).unwrap();
         match schema {
             DHTSchema::SMPL(smpl) => {

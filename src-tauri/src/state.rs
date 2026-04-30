@@ -5,9 +5,11 @@ use std::sync::Arc;
 
 use parking_lot::{Mutex, RwLock};
 use rekindle_crypto::group::media_key::MediaEncryptionKey;
+pub use rekindle_gossip::dedup::DedupCache;
+pub use rekindle_gossip::mesh::fanout_degree as gossip_degree;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
-
 
 /// Central application state shared across all Tauri commands and services.
 pub struct AppState {
@@ -76,11 +78,17 @@ pub struct AppState {
     /// In-memory only, resets on app restart.
     pub community_circuit_breakers: RwLock<HashMap<String, CircuitBreakerState>>,
     /// Tauri app handle — set during `.setup()`, used by background services
-    /// (coordinator relay, heartbeat, etc.) to emit events and access managed state.
+    /// (community gossip, heartbeat, etc.) to emit events and access managed state.
     pub app_handle: RwLock<Option<tauri::AppHandle>>,
     /// Global dedup cache for gossip mesh message deduplication.
     /// Prevents processing/forwarding the same message twice.
     pub dedup_cache: Mutex<DedupCache>,
+    /// Sender for queued SMPL channel-message writes.
+    pub channel_write_retry_tx: Arc<RwLock<Option<rekindle_records::retry::WriteQueueHandle>>>,
+    /// Per-community compiled AutoMod cache.
+    pub automod_cache: Arc<RwLock<HashMap<String, AutoModCompiledCache>>>,
+    /// Wake-up signal for the event reminder scheduler.
+    pub event_reminder_wake_tx: Arc<RwLock<Option<tokio::sync::watch::Sender<u64>>>>,
 }
 
 impl Default for AppState {
@@ -115,8 +123,26 @@ impl Default for AppState {
             community_circuit_breakers: RwLock::new(HashMap::new()),
             app_handle: RwLock::new(None),
             dedup_cache: Mutex::new(DedupCache::new(1024)),
+            channel_write_retry_tx: Arc::new(RwLock::new(None)),
+            automod_cache: Arc::new(RwLock::new(HashMap::new())),
+            event_reminder_wake_tx: Arc::new(RwLock::new(None)),
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct AutoModCompiledCache {
+    pub fingerprint: Vec<([u8; 16], u64)>,
+    pub rules: Vec<CompiledAutoModRule>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CompiledAutoModRule {
+    pub rule_id: [u8; 16],
+    pub name: String,
+    pub keywords_lower: Vec<String>,
+    pub regexes: Vec<Regex>,
+    pub action: String,
 }
 
 /// Per-community circuit breaker for remote Veilid RPCs.
@@ -142,6 +168,8 @@ pub struct CircuitBreakerState {
 pub struct OnlineMember {
     /// Veilid private route blob for reaching this member.
     pub route_blob: Vec<u8>,
+    /// Last advertised member status from the registry or gossip mesh.
+    pub status: String,
     /// Timestamp (seconds since epoch) of last valid gossip message or presence update.
     /// Used for TTL-based eviction of stale members.
     pub last_seen: u64,
@@ -171,64 +199,6 @@ impl Default for GossipOverlay {
             lamport_counter: 0,
             needs_initial_sync: true,
         }
-    }
-}
-
-/// Compute the gossip degree (D) for the given number of online members.
-///
-/// - ≤1: no gossip (alone)
-/// - 1: send to the single peer (direct delivery)
-/// - 2-20: direct mesh (send to all minus one)
-/// - 21-60: D=6
-/// - 61+: D=8
-pub fn gossip_degree(online_count: usize) -> usize {
-    match online_count {
-        0 => 0,
-        1..=20 => online_count,
-        21..=60 => 6,
-        _ => 8,
-    }
-}
-
-/// LRU message deduplication cache.
-///
-/// Prevents infinite gossip forwarding loops and duplicate processing.
-/// Key = `(community_id, sender_pseudonym, dedup_key)`.
-/// FIFO eviction when capacity exceeded.
-pub struct DedupCache {
-    entries: indexmap::IndexMap<(String, String, String), ()>,
-    capacity: usize,
-}
-
-impl DedupCache {
-    pub fn new(capacity: usize) -> Self {
-        Self {
-            entries: indexmap::IndexMap::with_capacity(capacity),
-            capacity,
-        }
-    }
-
-    /// Remove all entries from the cache.
-    pub fn clear(&mut self) {
-        self.entries.clear();
-    }
-
-    /// Returns `true` if the message is a duplicate (already seen).
-    /// If new, inserts it and evicts the oldest entry if at capacity.
-    pub fn check_and_insert(&mut self, community_id: &str, sender: &str, dedup_key: &str) -> bool {
-        let key = (
-            community_id.to_string(),
-            sender.to_string(),
-            dedup_key.to_string(),
-        );
-        if self.entries.contains_key(&key) {
-            return true;
-        }
-        if self.entries.len() >= self.capacity {
-            self.entries.shift_remove_index(0);
-        }
-        self.entries.insert(key, ());
-        false
     }
 }
 
@@ -428,6 +398,10 @@ impl DHTManagerHandle {
 pub struct RoutingManagerHandle {
     /// The real routing manager from the protocol crate.
     pub manager: rekindle_protocol::routing::RoutingManager,
+    /// Timestamped peer route blobs for staleness-aware eviction.
+    pub peer_route_cache: rekindle_route::cache::RouteCache,
+    /// Shared private-route refresh lifecycle for dead-route recovery and cadence checks.
+    pub route_lifecycle: rekindle_route::lifecycle::RouteLifecycle,
 }
 
 /// The logged-in user's identity state.
@@ -520,12 +494,10 @@ pub struct CommunityState {
     pub categories: Vec<CategoryInfo>,
     /// Our role IDs in this community (multi-role, bitmask-based).
     pub my_role_ids: Vec<u32>,
-    /// Cached role definitions from the DHT manifest.
+    /// Cached role definitions from merged governance state.
     pub roles: Vec<RoleDefinition>,
-    /// Display string for our highest role (for backward-compat display).
+    /// Display string for our highest role.
     pub my_role: Option<String>,
-    /// The DHT record key for this community's shared state.
-    pub dht_record_key: Option<String>,
     /// Owner keypair for the community DHT record (Veilid `KeyPair::to_string()` format).
     /// Required to open the record with write access.
     pub dht_owner_keypair: Option<String>,
@@ -533,39 +505,19 @@ pub struct CommunityState {
     pub my_pseudonym_key: Option<String>,
     /// Current MEK generation we have.
     pub mek_generation: u64,
-    /// DHT manifest record key (DFLT, 16 subkeys).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub manifest_key: Option<String>,
     /// DHT member registry record key (SMPL, multi-writer).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub member_registry_key: Option<String>,
     /// Our subkey index in the member registry SMPL record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub my_subkey_index: Option<u32>,
-    /// Coordinator's pseudonym public key hex.
-    /// v1.0 compat — will be removed when coordinator is fully deleted.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub coordinator_pseudonym: Option<String>,
-    /// Coordinator's route blob for sending envelopes to the active coordinator.
-    /// v1.0 compat — will be removed when coordinator is fully deleted.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub coordinator_route_blob: Option<Vec<u8>>,
-    /// Coordinator epoch — incremented on coordinator restart.
-    /// v1.0 compat — will be removed when coordinator is fully deleted.
-    #[serde(default)]
-    pub coordinator_epoch: u64,
-
     // ── v2.0 flat governance fields ──
-
     /// DHT key of the SMPL governance record (o_cnt:0).
-    /// In v2.0 this IS the community identifier, replacing manifest_key.
+    /// This is the canonical community identifier.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub governance_key: Option<String>,
 
-    /// Cached CRDT-merged governance state. Updated on:
-    /// - GovernanceNotify gossip messages (fast path)
-    /// - ValueChange DHT watch notifications (consistency path)
-    /// - inspect_dht_record polling (fallback path)
+    /// Cached CRDT-merged governance state.
     /// Computed by `rekindle_governance::merge::merge()`.
     #[serde(skip)]
     pub governance_state: Option<rekindle_governance::state::GovernanceState>,
@@ -576,7 +528,6 @@ pub struct CommunityState {
     pub lamport_counter: u64,
 
     // ── Gossip mesh fields (Phase 2) ──
-
     /// Gossip overlay state (peer set, online members, lamport counter).
     /// `None` until the presence poll loop initializes it.
     #[serde(skip)]
@@ -586,11 +537,6 @@ pub struct CommunityState {
     /// Veilid `KeyPair::to_string()` format.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slot_keypair: Option<String>,
-
-    /// Manifest owner keypair (shared with admins for write access).
-    /// Veilid `KeyPair::to_string()` format.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub manifest_owner_keypair: Option<String>,
 
     /// Channel DHTLog record keys: channel_id → log spine key.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
@@ -609,7 +555,7 @@ pub struct CommunityState {
 
     /// In-memory cache of known member pseudonym keys.
     /// Populated from SQLite on login, updated on MemberJoined/MemberRemoved/MemberLeave.
-    /// Used for fast membership checks on incoming ChatMessages.
+    /// Used for fast membership checks on incoming community gossip envelopes.
     #[serde(skip)]
     pub known_members: HashSet<String>,
 
@@ -629,6 +575,16 @@ pub struct CommunityState {
     #[serde(skip)]
     pub pending_syncs: HashMap<String, (u64, u32)>,
 
+    /// Record keys with an active Veilid watch in this session.
+    /// Watches are an optimization; inspect polling still runs for all records.
+    #[serde(skip)]
+    pub watched_records: HashSet<String>,
+
+    /// Last known network sequence numbers per record key, used by the 60-second
+    /// inspect loop to detect changed subkeys without fetching the entire record.
+    #[serde(skip)]
+    pub record_sequences: HashMap<String, Vec<veilid_core::ValueSeqNum>>,
+
     /// Per-sender per-channel sequence tracking for gap detection (Briar-inspired).
     /// Key: (sender_pseudonym, channel_id), Value: last received sequence number.
     #[serde(skip)]
@@ -647,6 +603,18 @@ pub struct CommunityState {
     /// Prevents "record not open" errors and ensures proper cleanup.
     #[serde(skip)]
     pub open_community_records: CommunityRecords,
+
+    /// Our locally persisted RSVPs for scheduled events.
+    #[serde(skip)]
+    pub my_event_rsvps: HashMap<String, String>,
+
+    /// Reader-aggregated RSVPs discovered from member presence records.
+    #[serde(skip)]
+    pub event_rsvps_by_event: HashMap<String, Vec<EventRsvpEntry>>,
+
+    /// Whether our local member record has completed onboarding for this community.
+    #[serde(skip)]
+    pub onboarding_complete: bool,
 }
 
 /// Tracks DHT records opened for a single community.
@@ -656,8 +624,8 @@ pub struct CommunityState {
 /// use the already-open records via `get_dht_value` without re-opening.
 #[derive(Debug, Default, Clone)]
 pub struct CommunityRecords {
-    /// The DFLT manifest record key (opened read-only or writable for owner).
-    pub manifest_key: Option<String>,
+    /// The primary community governance record key.
+    pub governance_key: Option<String>,
     /// The SMPL member registry record key.
     pub registry_key: Option<String>,
     /// Writer keypair used when opening the registry (preserved to avoid clobber on re-open).
@@ -666,9 +634,21 @@ pub struct CommunityRecords {
     pub channel_keys: Vec<String>,
     /// Whether records have been opened for this session (false after restart until rejoin).
     pub records_open: bool,
+    /// Fingerprint of the last inspected governance record state.
+    pub governance_report_fingerprint: Option<u64>,
+    /// Fingerprints of the last inspected channel record state by channel id.
+    pub channel_report_fingerprints: HashMap<String, u64>,
 }
 
-/// A role definition cached from the DHT manifest.
+/// Aggregated RSVP entry for a single member and event.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EventRsvpEntry {
+    pub pseudonym_key: String,
+    pub status: String,
+}
+
+/// A role definition cached from merged governance state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RoleDefinition {
@@ -679,6 +659,7 @@ pub struct RoleDefinition {
     pub position: i32,
     pub hoist: bool,
     pub mentionable: bool,
+    pub self_assignable: bool,
 }
 
 impl RoleDefinition {
@@ -692,6 +673,7 @@ impl RoleDefinition {
             position: dto.position,
             hoist: dto.hoist,
             mentionable: dto.mentionable,
+            self_assignable: dto.self_assignable,
         }
     }
 }
@@ -731,6 +713,13 @@ pub struct ChannelInfo {
     /// Current MEK generation for this channel.
     #[serde(default)]
     pub mek_generation: u64,
+    /// Local notification preference for this channel.
+    #[serde(default = "default_notification_level")]
+    pub notification_level: String,
+}
+
+fn default_notification_level() -> String {
+    "all".to_string()
 }
 
 /// Category info within a community.
@@ -826,61 +815,3 @@ impl rusqlite::types::FromSql for ChannelType {
         Ok(s.parse().unwrap_or(Self::Text))
     }
 }
-
-/// Parse a DHT channel list blob into `Vec<ChannelInfo>`.
-///
-/// Supports both the wrapped format `{ "channels": [...] }` and a bare JSON array `[...]`.
-pub(crate) fn parse_dht_channel_list(data: &[u8]) -> Vec<ChannelInfo> {
-    let channel_list: Vec<serde_json::Value> =
-        match serde_json::from_slice::<serde_json::Value>(data) {
-            Ok(v) => {
-                if let Some(obj) = v.as_object() {
-                    obj.get("channels")
-                        .and_then(|c| c.as_array().cloned())
-                        .unwrap_or_default()
-                } else {
-                    v.as_array().cloned().unwrap_or_default()
-                }
-            }
-            Err(_) => return vec![],
-        };
-    channel_list
-        .iter()
-        .filter_map(|ch| {
-            let id = ch.get("id")?.as_str()?.to_string();
-            let name = ch.get("name")?.as_str()?.to_string();
-            let ch_type: ChannelType = ch
-                .get("channelType")
-                .and_then(|v| v.as_str())
-                .unwrap_or("text")
-                .parse()
-                .unwrap_or(ChannelType::Text);
-            let category_id = ch
-                .get("categoryId")
-                .and_then(|v| v.as_str())
-                .map(String::from);
-            let topic = ch
-                .get("topic")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default()
-                .to_string();
-            let slowmode_seconds = ch
-                .get("slowmodeSeconds")
-                .and_then(serde_json::Value::as_u64)
-                .and_then(|v| u32::try_from(v).ok());
-            Some(ChannelInfo {
-                id,
-                name,
-                channel_type: ch_type,
-                unread_count: 0,
-                category_id,
-                topic,
-                slowmode_seconds,
-                nsfw: false,
-                message_record_key: None,
-                mek_generation: 0,
-            })
-        })
-        .collect()
-}
-

@@ -7,7 +7,7 @@
 //! - An Ed25519 signature over those bytes
 //! - A TTL hop counter (default 5, decremented on each forward)
 
-use rekindle_secrets::derive::{sign_with_pseudonym, derive_community_pseudonym};
+use rekindle_secrets::derive::{derive_community_pseudonym, sign_with_pseudonym};
 use rekindle_secrets::sign::verify_signature;
 use rekindle_types::error::CryptoError;
 use serde::{Deserialize, Serialize};
@@ -110,7 +110,7 @@ pub fn forward_envelope(signed: &SignedEnvelope) -> Option<SignedEnvelope> {
 mod tests {
     use super::*;
     use rekindle_types::governance::GovernanceEntry;
-    use rekindle_types::id::ChannelId;
+    use rekindle_types::id::{ChannelId, PseudonymKey};
 
     #[test]
     fn sign_verify_roundtrip() {
@@ -133,6 +133,8 @@ mod tests {
         let secret = [42u8; 32];
         let payload = GovernanceEntry::MEKGenerationBump {
             generation: 1,
+            trigger_departed: PseudonymKey([0; 32]),
+            cascade_skipped: vec![],
             lamport: 1,
         };
 
@@ -147,6 +149,8 @@ mod tests {
         let secret = [42u8; 32];
         let payload = GovernanceEntry::MEKGenerationBump {
             generation: 1,
+            trigger_departed: PseudonymKey([0; 32]),
+            cascade_skipped: vec![],
             lamport: 1,
         };
 
@@ -180,6 +184,8 @@ mod tests {
         let secret = [42u8; 32];
         let payload = GovernanceEntry::MEKGenerationBump {
             generation: 1,
+            trigger_departed: PseudonymKey([0; 32]),
+            cascade_skipped: vec![],
             lamport: 1,
         };
         let signed = build_signed_envelope(&secret, "c", &payload).unwrap();
@@ -198,6 +204,8 @@ mod tests {
             "c",
             &GovernanceEntry::MEKGenerationBump {
                 generation: 1,
+                trigger_departed: PseudonymKey([0; 32]),
+                cascade_skipped: vec![],
                 lamport: 1,
             },
         )

@@ -24,8 +24,7 @@ fn text_to_string(t: capnp::text::Reader<'_>) -> Result<String, ProtocolError> {
 /// Serialize a Cap'n Proto builder into packed bytes.
 fn pack(builder: &capnp::message::Builder<capnp::message::HeapAllocator>) -> Vec<u8> {
     let mut output = Vec::new();
-    capnp::serialize_packed::write_message(&mut output, builder)
-        .expect("write to Vec never fails");
+    capnp::serialize_packed::write_message(&mut output, builder).expect("write to Vec never fails");
     output
 }
 
@@ -61,10 +60,7 @@ fn text_or_default(
 }
 
 /// Read an optional bytes field, returning an empty vec when absent.
-fn bytes_or_empty(
-    has: bool,
-    get: Result<&[u8], capnp::Error>,
-) -> Result<Vec<u8>, ProtocolError> {
+fn bytes_or_empty(has: bool, get: Result<&[u8], capnp::Error>) -> Result<Vec<u8>, ProtocolError> {
     if !has {
         return Ok(Vec::new());
     }
@@ -308,7 +304,9 @@ pub mod presence {
 // identity.capnp — UserProfile, PreKeyBundle
 // ---------------------------------------------------------------------------
 pub mod identity {
-    use super::{bytes_or_empty, capnp_err, pack, read_profile, unpack, write_profile, ProtocolError};
+    use super::{
+        bytes_or_empty, capnp_err, pack, read_profile, unpack, write_profile, ProtocolError,
+    };
     use crate::identity_capnp;
 
     /// Domain struct for a user profile (used across account and conversation records).
@@ -650,10 +648,7 @@ pub mod account {
                 root.get_invitation_list_key().map_err(|e| capnp_err(&e))?,
             )?,
             display_name: text_to_string(root.get_display_name().map_err(|e| capnp_err(&e))?)?,
-            status_message: text_or_default(
-                root.has_status_message(),
-                root.get_status_message(),
-            )?,
+            status_message: text_or_default(root.has_status_message(), root.get_status_message())?,
             avatar_hash: bytes_or_empty(root.has_avatar_hash(), root.get_avatar_hash())?,
             created_at: root.get_created_at(),
             updated_at: root.get_updated_at(),
@@ -753,7 +748,10 @@ pub mod account {
 // conversation.capnp — ConversationHeader
 // ---------------------------------------------------------------------------
 pub mod conversation {
-    use super::{bytes_or_empty, capnp_err, pack, read_profile, text_to_string, unpack, write_profile, ProtocolError};
+    use super::{
+        bytes_or_empty, capnp_err, pack, read_profile, text_to_string, unpack, write_profile,
+        ProtocolError,
+    };
     use crate::conversation_capnp;
 
     /// Domain struct for the conversation header stored in a conversation DHT record.
@@ -914,10 +912,7 @@ mod tests {
             Some("de_dust2 @ 192.168.1.1:27015".to_string())
         );
         assert_eq!(g.elapsed_seconds, 3600);
-        assert_eq!(
-            g.server_address,
-            Some("192.168.1.1:27015".to_string())
-        );
+        assert_eq!(g.server_address, Some("192.168.1.1:27015".to_string()));
 
         // Without game
         let encoded2 = presence::encode_update(3, None);
@@ -1071,10 +1066,7 @@ mod tests {
             Some("2fort @ 10.0.0.1:27015".to_string())
         );
         assert_eq!(decoded.elapsed_seconds, 7200);
-        assert_eq!(
-            decoded.server_address,
-            Some("10.0.0.1:27015".to_string())
-        );
+        assert_eq!(decoded.server_address, Some("10.0.0.1:27015".to_string()));
     }
 
     #[test]

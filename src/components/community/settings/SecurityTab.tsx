@@ -51,7 +51,7 @@ const SecurityTab: Component<SecurityTabProps> = (props) => {
       </FormField>
       <FormField label="Network Model">
         <div class="settings-value">
-          Rotating Coordinator (P2P)
+          Flat SMPL Governance (P2P)
         </div>
       </FormField>
     </div>

@@ -4,8 +4,11 @@ import StatusDot from "../status/StatusDot";
 import RoleTag from "./RoleTag";
 import { truncateKey } from "../../utils/formatting";
 import { commands } from "../../ipc/commands";
+import { handleSelfAssignRole, handleSelfUnassignRole } from "../../handlers/community.handlers";
+import { addToast } from "../../stores/toast.store";
 
 interface MemberProfilePopupProps {
+  communityId: string;
   member: Member;
   roles: Role[];
   x: number;
@@ -18,6 +21,7 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
   let popupRef: HTMLDivElement | undefined;
   const [clampedLeft, setClampedLeft] = createSignal(props.x);
   const [clampedTop, setClampedTop] = createSignal(props.y);
+  const [updatingRoleId, setUpdatingRoleId] = createSignal<number | null>(null);
 
   function handleClickOutside(e: MouseEvent): void {
     if (popupRef && !popupRef.contains(e.target as Node)) {
@@ -55,6 +59,10 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
   }
 
   const isSelf = () => props.myPseudonymKey === props.member.pseudonymKey;
+  const selfAssignableRoles = () =>
+    props.roles
+      .filter((role) => role.selfAssignable && role.id !== 0 && role.name !== "@everyone")
+      .sort((a, b) => b.position - a.position);
 
   function handleMessage(): void {
     commands.openChatWindow(props.member.pseudonymKey, props.member.displayName);
@@ -68,6 +76,22 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
 
   function handleCopyKey(): void {
     navigator.clipboard.writeText(props.member.pseudonymKey);
+  }
+
+  async function handleToggleSelfRole(role: Role): Promise<void> {
+    const hasRole = props.member.roleIds.includes(role.id);
+    setUpdatingRoleId(role.id);
+    try {
+      if (hasRole) {
+        await handleSelfUnassignRole(props.communityId, role.id);
+        addToast(`Removed ${role.name}`, "success");
+      } else {
+        await handleSelfAssignRole(props.communityId, role.id);
+        addToast(`Assigned ${role.name}`, "success");
+      }
+    } finally {
+      setUpdatingRoleId(null);
+    }
   }
 
   return (
@@ -102,6 +126,28 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
         <div class="profile-popup-roles">
           <For each={memberRoles()}>
             {(role) => <RoleTag name={role.name} color={role.color} />}
+          </For>
+        </div>
+      </Show>
+      <Show when={isSelf() && selfAssignableRoles().length > 0}>
+        <div class="profile-popup-self-roles">
+          <div class="profile-popup-self-roles-title">Self-assignable roles</div>
+          <For each={selfAssignableRoles()}>
+            {(role) => {
+              const hasRole = () => props.member.roleIds.includes(role.id);
+              return (
+                <button
+                  class={`profile-popup-self-role-btn ${hasRole() ? "profile-popup-self-role-btn-active" : ""}`}
+                  onClick={() => void handleToggleSelfRole(role)}
+                  disabled={updatingRoleId() === role.id}
+                >
+                  <span>{hasRole() ? "Remove" : "Get"} {role.name}</span>
+                  <Show when={updatingRoleId() === role.id}>
+                    <span>...</span>
+                  </Show>
+                </button>
+              );
+            }}
           </For>
         </div>
       </Show>

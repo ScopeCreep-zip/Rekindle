@@ -208,6 +208,9 @@ pub struct RoleEntryV2 {
     /// Whether this role can be @mentioned by anyone.
     #[serde(default)]
     pub mentionable: bool,
+    /// Whether members can assign this role to themselves.
+    #[serde(default)]
+    pub self_assignable: bool,
 }
 
 /// A member summary in the member index (registry owner subkey 0).

@@ -22,6 +22,7 @@ import BansTab from "./settings/BansTab";
 import SecurityTab from "./settings/SecurityTab";
 import InvitesTab from "./settings/InvitesTab";
 import AuditLogTab from "./settings/AuditLogTab";
+import AutoModTab from "./settings/AutoModTab";
 
 export interface ConfirmOptions {
   title: string;
@@ -37,7 +38,7 @@ interface CommunitySettingsModalProps {
   onClose: () => void;
 }
 
-type TabId = "overview" | "channels" | "members" | "invites" | "roles" | "bans" | "audit-log" | "security";
+type TabId = "overview" | "channels" | "members" | "invites" | "roles" | "bans" | "audit-log" | "security" | "automod";
 
 const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) => {
   const [activeTab, setActiveTab] = createSignal<TabId>("overview");
@@ -77,6 +78,7 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
     if (canCreateInvite() || canManageCommunity()) base.push({ id: "invites", label: "Invites" });
     if (canManageRoles()) base.push({ id: "roles", label: "Roles" });
     if (canBan()) base.push({ id: "bans", label: "Bans" });
+    if (canManageCommunity()) base.push({ id: "automod", label: "AutoMod" });
     // Merge audit log into security for admins; show standalone if only audit log perm
     if (canViewAuditLog() && !canManageCommunity()) base.push({ id: "audit-log", label: "Audit Log" });
     if (canManageCommunity()) base.push({ id: "security", label: "Security" });
@@ -141,6 +143,9 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
         </Show>
         <Show when={activeTab() === "bans"}>
           <BansTab communityId={props.community.id} canBan={canBan()} />
+        </Show>
+        <Show when={activeTab() === "automod"}>
+          <AutoModTab community={props.community} />
         </Show>
         <Show when={activeTab() === "audit-log"}>
           <AuditLogTab communityId={props.community.id} />

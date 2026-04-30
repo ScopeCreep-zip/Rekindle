@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use rekindle_route::contexts::RouteContextSpec;
 use serde::{Deserialize, Serialize};
 use veilid_core::{RoutingContext, SafetySelection, Sequencing, Target, VeilidAPI};
 
@@ -58,6 +59,21 @@ pub struct VoiceTransport {
 }
 
 impl VoiceTransport {
+    fn build_voice_routing_context(api: &VeilidAPI) -> Result<RoutingContext, VoiceError> {
+        let spec = RouteContextSpec::rc_voice();
+        api.routing_context()
+            .map_err(|e| VoiceError::Transport(format!("routing context: {e}")))?
+            .with_safety(match spec.kind {
+                rekindle_route::contexts::RouteContextKind::Voice => {
+                    SafetySelection::Unsafe(Sequencing::NoPreference)
+                }
+                rekindle_route::contexts::RouteContextKind::Safe => {
+                    SafetySelection::Unsafe(Sequencing::PreferOrdered)
+                }
+            })
+            .map_err(|e| VoiceError::Transport(format!("with_safety: {e}")))
+    }
+
     /// Create a new transport for a voice channel.
     pub fn new(channel_id: String) -> Self {
         Self {
@@ -95,21 +111,13 @@ impl VoiceTransport {
     }
 
     /// Add a peer to the voice mesh.
-    pub fn add_peer(
-        &mut self,
-        pseudonym_key: &str,
-        route_blob: &[u8],
-    ) -> Result<(), VoiceError> {
+    pub fn add_peer(&mut self, pseudonym_key: &str, route_blob: &[u8]) -> Result<(), VoiceError> {
         let api = self
             .api
             .as_ref()
             .ok_or_else(|| VoiceError::Transport("transport not initialized".into()))?;
 
-        let routing_context = api
-            .routing_context()
-            .map_err(|e| VoiceError::Transport(format!("routing context: {e}")))?
-            .with_safety(SafetySelection::Unsafe(Sequencing::NoPreference))
-            .map_err(|e| VoiceError::Transport(format!("with_safety: {e}")))?;
+        let routing_context = Self::build_voice_routing_context(api)?;
 
         let route_id = api
             .import_remote_private_route(route_blob.to_vec())
@@ -180,7 +188,10 @@ impl VoiceTransport {
                 .app_message(Target::RouteId(peer.route_id.clone()), data.clone())
                 .await
             {
-                errors.push((key.clone(), VoiceError::Transport(format!("app_message: {e}"))));
+                errors.push((
+                    key.clone(),
+                    VoiceError::Transport(format!("app_message: {e}")),
+                ));
             }
         }
         errors
@@ -192,9 +203,10 @@ impl VoiceTransport {
         pseudonym_key: &str,
         frame: &EncodedFrame,
     ) -> Result<(), VoiceError> {
-        let peer = self.peers.get(pseudonym_key).ok_or_else(|| {
-            VoiceError::Transport(format!("peer not found: {pseudonym_key}"))
-        })?;
+        let peer = self
+            .peers
+            .get(pseudonym_key)
+            .ok_or_else(|| VoiceError::Transport(format!("peer not found: {pseudonym_key}")))?;
 
         let data = self.build_packet_data(frame)?;
 
@@ -217,7 +229,10 @@ impl VoiceTransport {
         let errors = self.broadcast(frame).await;
         if errors.len() == self.peers.len() {
             // All sends failed — report the first error
-            return Err(errors.into_iter().next().map_or(VoiceError::NotConnected, |(_, e)| e));
+            return Err(errors
+                .into_iter()
+                .next()
+                .map_or(VoiceError::NotConnected, |(_, e)| e));
         }
         Ok(())
     }

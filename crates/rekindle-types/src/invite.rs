@@ -17,6 +17,8 @@ pub struct InviteSecrets {
     pub governance_key: String,
     /// DHT key of the SMPL member registry record.
     pub registry_key: String,
+    /// Private route blob to the inviting member for bootstrap bundle app_call.
+    pub inviter_route_blob: Vec<u8>,
     /// 32-byte slot seed for deriving SMPL member slot keypairs (hex-encoded).
     pub slot_seed: String,
     /// Current MEK wire bytes (generation LE + key, base64-encoded).
@@ -48,6 +50,7 @@ mod tests {
         let secrets = InviteSecrets {
             governance_key: "VLD0:gov123".into(),
             registry_key: "VLD0:reg456".into(),
+            inviter_route_blob: vec![1, 2, 3, 4],
             slot_seed: "ab".repeat(32),
             mek_wire_bytes: "base64mekdata".into(),
             channel_keys: vec![ChannelKeyInfo {
@@ -60,6 +63,7 @@ mod tests {
         let json = serde_json::to_string(&secrets).unwrap();
         let back: InviteSecrets = serde_json::from_str(&json).unwrap();
         assert_eq!(back.governance_key, "VLD0:gov123");
+        assert_eq!(back.inviter_route_blob, vec![1, 2, 3, 4]);
         assert_eq!(back.channel_keys.len(), 1);
     }
 }

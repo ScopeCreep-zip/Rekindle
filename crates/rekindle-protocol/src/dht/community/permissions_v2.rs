@@ -324,6 +324,7 @@ mod tests {
                 position: 0,
                 hoist: false,
                 mentionable: false,
+                self_assignable: false,
             },
             RoleEntryV2 {
                 id: 1,
@@ -333,6 +334,7 @@ mod tests {
                 position: 1,
                 hoist: false,
                 mentionable: false,
+                self_assignable: false,
             },
         ];
 
@@ -353,6 +355,7 @@ mod tests {
             position: 3,
             hoist: false,
             mentionable: false,
+            self_assignable: false,
         }];
 
         let perms = calculate_permissions_v2(&[3], &roles, &[], "admin_user", false, None);
@@ -375,6 +378,7 @@ mod tests {
             position: 0,
             hoist: false,
             mentionable: false,
+            self_assignable: false,
         }];
 
         let overwrites = vec![PermissionOverwrite {
@@ -399,6 +403,7 @@ mod tests {
             position: 0,
             hoist: false,
             mentionable: false,
+            self_assignable: false,
         }];
 
         let overwrites = vec![
@@ -431,6 +436,7 @@ mod tests {
             position: 0,
             hoist: false,
             mentionable: false,
+            self_assignable: false,
         }];
 
         let perms = calculate_permissions_v2(&[0], &roles, &[], "user", false, None);
@@ -450,6 +456,7 @@ mod tests {
             position: 0,
             hoist: false,
             mentionable: false,
+            self_assignable: false,
         }];
 
         // Set timeout far in the future
@@ -465,7 +472,10 @@ mod tests {
         // Test backward-compatible wrapper
         let perms = (Permissions::VIEW_CHANNEL | Permissions::SEND_MESSAGES).bits();
         assert!(has_permission_v2(perms, Permissions::SEND_MESSAGES.bits()));
-        assert!(!has_permission_v2(perms, Permissions::MANAGE_CHANNELS.bits()));
+        assert!(!has_permission_v2(
+            perms,
+            Permissions::MANAGE_CHANNELS.bits()
+        ));
         // ADMINISTRATOR bypass
         assert!(has_permission_v2(
             Permissions::ADMINISTRATOR.bits(),

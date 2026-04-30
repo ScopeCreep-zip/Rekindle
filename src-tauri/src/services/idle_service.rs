@@ -245,8 +245,11 @@ fn macos_idle_seconds() -> Option<u64> {
     let secs = unsafe { CGEventSourceSecondsSinceLastEventType(0, u32::MAX) };
     // Negative means error; NaN/Inf are also invalid
     if secs.is_finite() && secs >= 0.0 {
-        #[expect(clippy::cast_possible_truncation, clippy::cast_sign_loss,
-                 reason = "f64→u64: no From impl in std; value is validated finite and non-negative")]
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "f64→u64: no From impl in std; value is validated finite and non-negative"
+        )]
         Some(secs as u64)
     } else {
         None

@@ -32,21 +32,24 @@ const RolesTab: Component<RolesTabProps> = (props) => {
   const [newRolePerms, setNewRolePerms] = createSignal(0n);
   const [newRoleHoist, setNewRoleHoist] = createSignal(false);
   const [newRoleMentionable, setNewRoleMentionable] = createSignal(false);
+  const [newRoleSelfAssignable, setNewRoleSelfAssignable] = createSignal(false);
   const [editingRoleId, setEditingRoleId] = createSignal<number | null>(null);
   const [editRoleName, setEditRoleName] = createSignal("");
   const [editRoleColor, setEditRoleColor] = createSignal("#000000");
   const [editRolePerms, setEditRolePerms] = createSignal(0n);
   const [editRoleHoist, setEditRoleHoist] = createSignal(false);
   const [editRoleMentionable, setEditRoleMentionable] = createSignal(false);
+  const [editRoleSelfAssignable, setEditRoleSelfAssignable] = createSignal(false);
   const [savingRole, setSavingRole] = createSignal(false);
 
-  function startEditRole(role: { id: number; name: string; color: number; permissions: string; hoist: boolean; mentionable: boolean }): void {
+  function startEditRole(role: { id: number; name: string; color: number; permissions: string; hoist: boolean; mentionable: boolean; selfAssignable?: boolean }): void {
     setEditingRoleId(role.id);
     setEditRoleName(role.name);
     setEditRoleColor(colorIntToHex(role.color));
     setEditRolePerms(BigInt(role.permissions));
     setEditRoleHoist(role.hoist);
     setEditRoleMentionable(role.mentionable);
+    setEditRoleSelfAssignable(role.selfAssignable ?? false);
   }
 
   async function handleCreateNewRole(): Promise<void> {
@@ -61,12 +64,14 @@ const RolesTab: Component<RolesTabProps> = (props) => {
         newRolePerms().toString(),
         newRoleHoist(),
         newRoleMentionable(),
+        newRoleSelfAssignable(),
       );
       setNewRoleName("");
       setNewRoleColor("#000000");
       setNewRolePerms(0n);
       setNewRoleHoist(false);
       setNewRoleMentionable(false);
+      setNewRoleSelfAssignable(false);
       setShowNewRole(false);
     } finally {
       setCreatingRole(false);
@@ -87,6 +92,7 @@ const RolesTab: Component<RolesTabProps> = (props) => {
         null,
         editRoleHoist(),
         editRoleMentionable(),
+        editRoleSelfAssignable(),
       );
       addToast("Role updated", "success");
       setEditingRoleId(null);
@@ -124,7 +130,7 @@ const RolesTab: Component<RolesTabProps> = (props) => {
             >
               <span
                 class="settings-role-color"
-                style={{ background: role.color ? colorIntToHex(role.color) : "var(--color-xfire-text-dim)" }}
+                style={{ "--settings-role-color": role.color ? colorIntToHex(role.color) : "var(--color-xfire-text-dim)" }}
               />
               <RoleTag name={role.name} color={role.color} />
               <span class="settings-role-position">pos: {role.position}</span>
@@ -144,7 +150,7 @@ const RolesTab: Component<RolesTabProps> = (props) => {
               </div>
             </div>
           }>
-            <div class="settings-section" style={{ "padding-left": "8px", "border-left": "2px solid var(--color-xfire-accent)" }}>
+            <div class="settings-section settings-section-accented">
               <FormField label="Name">
                 <input
                   class="form-input"
@@ -184,6 +190,16 @@ const RolesTab: Component<RolesTabProps> = (props) => {
                     Mentionable
                   </label>
                 </div>
+                <div class="form-field-row">
+                  <label class="settings-option">
+                    <input
+                      type="checkbox"
+                      checked={editRoleSelfAssignable()}
+                      onChange={(e) => setEditRoleSelfAssignable(e.currentTarget.checked)}
+                    />
+                    Self-assignable
+                  </label>
+                </div>
               </FormField>
               <FormField label="Permissions">
                 <PermissionCheckboxList
@@ -211,7 +227,7 @@ const RolesTab: Component<RolesTabProps> = (props) => {
           <span class="nf-icon">{ICON_PLUS_BOX}</span> Create Role
         </button>
       }>
-        <div class="settings-section" style={{ "padding-left": "8px", "border-left": "2px solid var(--color-xfire-online)" }}>
+        <div class="settings-section settings-section-success">
           <FormField label="Name">
             <input
               class="form-input"
@@ -250,6 +266,16 @@ const RolesTab: Component<RolesTabProps> = (props) => {
                   onChange={(e) => setNewRoleMentionable(e.currentTarget.checked)}
                 />
                 Mentionable
+              </label>
+            </div>
+            <div class="form-field-row">
+              <label class="settings-option">
+                <input
+                  type="checkbox"
+                  checked={newRoleSelfAssignable()}
+                  onChange={(e) => setNewRoleSelfAssignable(e.currentTarget.checked)}
+                />
+                Self-assignable
               </label>
             </div>
           </FormField>

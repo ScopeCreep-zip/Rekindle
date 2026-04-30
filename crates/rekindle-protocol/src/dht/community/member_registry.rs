@@ -206,9 +206,7 @@ pub async fn watch_member_presence(
     key: &str,
     member_count: u32,
 ) -> Result<bool, ProtocolError> {
-    let subkeys: Vec<u32> = (0..member_count)
-        .map(member_subkey)
-        .collect();
+    let subkeys: Vec<u32> = (0..member_count).map(member_subkey).collect();
     if subkeys.is_empty() {
         return Ok(true);
     }
@@ -221,7 +219,10 @@ pub async fn watch_member_presence(
 ///
 /// Uses HKDF-SHA256(seed, "rekindle-slot-{index}") → 32 bytes → Ed25519 keypair.
 /// Any admin with the slot seed can derive keypairs for all 256 slots.
-pub fn derive_slot_keypair(seed: &[u8; 32], slot: u32) -> Result<ed25519_dalek::SigningKey, ProtocolError> {
+pub fn derive_slot_keypair(
+    seed: &[u8; 32],
+    slot: u32,
+) -> Result<ed25519_dalek::SigningKey, ProtocolError> {
     use hkdf::Hkdf;
     use sha2::Sha256;
 
@@ -249,7 +250,10 @@ pub fn derive_slot_veilid_keypair(
     let bare_secret = veilid_core::BareSecretKey::new(&secret_bytes);
     let veilid_pubkey = veilid_core::PublicKey::new(veilid_core::CRYPTO_KIND_VLD0, bare_pub);
 
-    Ok(veilid_core::KeyPair::new_from_parts(veilid_pubkey, bare_secret))
+    Ok(veilid_core::KeyPair::new_from_parts(
+        veilid_pubkey,
+        bare_secret,
+    ))
 }
 
 /// Create a pre-allocated registry segment with 256 SMPL slots.
@@ -313,11 +317,16 @@ pub async fn write_registry_spine(
 ) -> Result<(), ProtocolError> {
     let bytes = serde_json::to_vec(spine)
         .map_err(|e| ProtocolError::Serialization(format!("registry spine: {e}")))?;
-    dht.set_value(manifest_key, MANIFEST_REGISTRY_SPINE, bytes).await
+    dht.set_value(manifest_key, MANIFEST_REGISTRY_SPINE, bytes)
+        .await
 }
 
 /// Build a `RegistrySpine` for a single-segment community.
-pub fn single_segment_spine(record_key: &str, slot_seed_encrypted: Vec<u8>, member_count: u32) -> RegistrySpine {
+pub fn single_segment_spine(
+    record_key: &str,
+    slot_seed_encrypted: Vec<u8>,
+    member_count: u32,
+) -> RegistrySpine {
     RegistrySpine {
         total_members: member_count,
         segments: vec![RegistrySegmentInfo {

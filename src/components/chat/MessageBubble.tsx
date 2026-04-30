@@ -2,11 +2,14 @@ import { Component, Show, createSignal } from "solid-js";
 import type { Message } from "../../stores/chat.store";
 import ReactionBar from "./ReactionBar";
 import EmojiPicker from "./EmojiPicker";
+import MessageRichBody from "./MessageRichBody";
+import PollCard from "./PollCard";
 import ThreadStarter from "./ThreadStarter";
 import { formatTimestamp } from "../../utils/formatting";
-import { ICON_DOTS, ICON_CHECK, ICON_CLOSE_CIRCLE, ICON_REFRESH, ICON_REPLY, ICON_EMOTICON, ICON_PIN, ICON_THREAD, ICON_PENCIL, ICON_DELETE, ICON_TIMEOUT } from "../../icons";
+import { ICON_DOTS, ICON_CHECK, ICON_CLOSE_CIRCLE, ICON_REFRESH, ICON_REPLY, ICON_EMOTICON, ICON_PIN, ICON_THREAD, ICON_PENCIL, ICON_DELETE, ICON_TIMEOUT, ICON_PLUS_BOX } from "../../icons";
 
 interface MessageBubbleProps {
+  communityId?: string;
   message: Message;
   senderName: string;
   myPseudonymKey?: string | null;
@@ -21,10 +24,14 @@ interface MessageBubbleProps {
   onOpenThread?: () => void;
   onEdit?: (messageId: string, currentBody: string) => void;
   onDelete?: (messageId: string) => void;
+  onCreatePoll?: (messageId: string) => void;
+  onVotePoll?: (pollId: string, selectedAnswers: number[]) => void;
+  onClosePoll?: (pollId: string) => void;
 }
 
 const MessageBubble: Component<MessageBubbleProps> = (props) => {
   const [showEmojiPicker, setShowEmojiPicker] = createSignal(false);
+  const [revealedBlurred, setRevealedBlurred] = createSignal(false);
 
   const senderClass = () =>
     props.message.isOwn
@@ -117,6 +124,11 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
             <span class="nf-icon">{ICON_THREAD}</span>
           </button>
         </Show>
+        <Show when={props.onCreatePoll && props.message.serverMessageId && !props.message.poll}>
+          <button class="message-action-btn" title="Create Poll" onClick={() => props.onCreatePoll?.(props.message.serverMessageId!)}>
+            <span class="nf-icon">{ICON_PLUS_BOX}</span>
+          </button>
+        </Show>
         <Show when={props.message.isOwn && props.onEdit && props.message.serverMessageId}>
           <button class="message-action-btn" title="Edit" onClick={() => props.onEdit?.(props.message.serverMessageId!, props.message.body)}>
             <span class="nf-icon">{ICON_PENCIL}</span>
@@ -132,12 +144,44 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
       {/* Emoji picker popup */}
       <Show when={showEmojiPicker()}>
         <EmojiPicker
+          communityId={props.communityId}
           onSelect={(emoji) => props.onReaction?.(emoji)}
+          mode="reaction"
           onClose={() => setShowEmojiPicker(false)}
         />
       </Show>
 
-      <div class="chat-message-body">{props.message.body}</div>
+      <Show
+        when={props.message.decryptionFailed}
+        fallback={
+          <Show
+            when={props.message.automodBlurred && !revealedBlurred()}
+            fallback={<MessageRichBody communityId={props.communityId} body={props.message.body} />}
+          >
+            <div class="message-automod-blur">
+              <div class="message-automod-blur-text">Hidden by AutoMod on this client</div>
+              <button class="message-automod-reveal-btn" onClick={() => setRevealedBlurred(true)}>
+                Reveal
+              </button>
+            </div>
+          </Show>
+        }
+      >
+        <div class="message-decrypt-failed">
+          <span class="message-decrypt-failed-icon nf-icon">&#xf023;</span>
+          Unable to decrypt — waiting for encryption keys
+        </div>
+      </Show>
+
+      <Show when={props.message.poll}>
+        {(poll) => (
+          <PollCard
+            poll={poll()}
+            onVote={props.onVotePoll ? (selectedAnswers) => props.onVotePoll!(poll().pollId, selectedAnswers) : undefined}
+            onClose={props.onClosePoll ? () => props.onClosePoll!(poll().pollId) : undefined}
+          />
+        )}
+      </Show>
 
       {/* Thread starter badge */}
       <Show when={props.threadInfo}>
@@ -152,6 +196,7 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
 
       {/* Reactions */}
       <ReactionBar
+        communityId={props.communityId}
         reactions={props.message.reactions ?? []}
         myPseudonymKey={props.myPseudonymKey ?? null}
         onToggle={handleReactionToggle}

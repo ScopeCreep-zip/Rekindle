@@ -10,7 +10,9 @@ use rekindle_types::permissions;
 use rekindle_types::presence::MemberPresence;
 use veilid_core::{SetDHTValueOptions, CRYPTO_KIND_VLD0};
 
-use crate::state::{AppState, ChannelInfo, ChannelType, CommunityState, GossipOverlay, RoleDefinition};
+use crate::state::{
+    AppState, ChannelInfo, ChannelType, CommunityState, GossipOverlay, RoleDefinition,
+};
 use crate::state_helpers;
 
 /// Create a new community with flat SMPL governance (o_cnt:0).
@@ -18,11 +20,8 @@ use crate::state_helpers;
 /// Creates three SMPL DHT records (governance, registry, #general channel),
 /// writes genesis governance entries, and starts background services.
 /// Returns the governance record key as the community identifier.
-pub async fn create_community(
-    state: &Arc<AppState>,
-    name: &str,
-) -> Result<String, String> {
-    let rc = state_helpers::routing_context(state)
+pub async fn create_community(state: &Arc<AppState>, name: &str) -> Result<String, String> {
+    let rc = state_helpers::safe_routing_context(state)
         .ok_or("Veilid node not attached — cannot create community")?;
 
     // 1. Generate slot seed — shared secret for all member slot keypairs
@@ -106,6 +105,7 @@ pub async fn create_community(
             color: 0,
             hoist: false,
             mentionable: false,
+            self_assignable: false,
             lamport: 2,
         },
         GovernanceEntry::ChannelCreated {
@@ -122,7 +122,7 @@ pub async fn create_community(
         author_pseudonym: my_pseudo.clone(),
         entries: genesis_entries.clone(),
     })
-        .map_err(|e| format!("genesis serialization failed: {e}"))?;
+    .map_err(|e| format!("genesis serialization failed: {e}"))?;
     let write_opts = SetDHTValueOptions {
         writer: Some(creator_slot_veilid.clone()),
         ..Default::default()
@@ -135,20 +135,33 @@ pub async fn create_community(
     let presence = MemberPresence {
         pseudonym_key: my_pseudo.clone(),
         display_name: Some(state_helpers::identity_display_name(state)),
-        status: "online".into(),
+        status: match state_helpers::identity_status(state)
+            .unwrap_or(crate::state::UserStatus::Online)
+        {
+            crate::state::UserStatus::Online => "online",
+            crate::state::UserStatus::Away => "away",
+            crate::state::UserStatus::Busy => "busy",
+            crate::state::UserStatus::Offline | crate::state::UserStatus::Invisible => "offline",
+        }
+        .into(),
         route_blob: state_helpers::our_route_blob(state).unwrap_or_default(),
         last_heartbeat: rekindle_utils::timestamp_secs(),
         ..Default::default()
     };
-    let presence_bytes = serde_json::to_vec(&presence)
-        .map_err(|e| format!("presence serialization failed: {e}"))?;
+    let presence_bytes =
+        serde_json::to_vec(&presence).map_err(|e| format!("presence serialization failed: {e}"))?;
     let reg_write_opts = SetDHTValueOptions {
         writer: Some(creator_slot_veilid.clone()),
         ..Default::default()
     };
-    rc.set_dht_value(reg_typed_key, creator_slot, presence_bytes, Some(reg_write_opts))
-        .await
-        .map_err(|e| format!("registry presence write failed: {e}"))?;
+    rc.set_dht_value(
+        reg_typed_key,
+        creator_slot,
+        presence_bytes,
+        Some(reg_write_opts),
+    )
+    .await
+    .map_err(|e| format!("registry presence write failed: {e}"))?;
 
     // 9. Generate initial MEK
     let mek = MediaEncryptionKey::generate(1);
@@ -181,6 +194,7 @@ pub async fn create_community(
             nsfw: false,
             message_record_key: Some(ch_key.clone()),
             mek_generation: 0,
+            notification_level: "all".to_string(),
         }],
         categories: Vec::new(),
         my_role_ids: vec![0],
@@ -192,35 +206,39 @@ pub async fn create_community(
             position: 0,
             hoist: false,
             mentionable: false,
+            self_assignable: false,
         }],
         my_role: Some("owner".to_string()),
-        dht_record_key: Some(gov_key.clone()),
-        dht_owner_keypair: gov_owner_keypair.as_ref().map(std::string::ToString::to_string),
+        dht_owner_keypair: gov_owner_keypair
+            .as_ref()
+            .map(std::string::ToString::to_string),
         my_pseudonym_key: Some(my_pseudo_hex.clone()),
         mek_generation,
-        manifest_key: None,
         member_registry_key: Some(reg_key.clone()),
         my_subkey_index: Some(creator_slot),
-        coordinator_pseudonym: None,
-        coordinator_route_blob: None,
-        coordinator_epoch: 0,
         governance_key: Some(gov_key.clone()),
         governance_state: Some(gov_state),
         lamport_counter: 3,
         gossip: Some(GossipOverlay::default()),
         slot_keypair: Some(creator_slot_veilid.to_string()),
-        manifest_owner_keypair: None,
         channel_log_keys: [(channel_id_hex, ch_key.clone())].into_iter().collect(),
         channel_sequences: std::collections::HashMap::new(),
         pending_syncs: std::collections::HashMap::new(),
+        watched_records: std::collections::HashSet::new(),
+        record_sequences: std::collections::HashMap::new(),
         peer_sequences: std::collections::HashMap::new(),
-        registry_owner_keypair: reg_owner_keypair.as_ref().map(std::string::ToString::to_string),
+        registry_owner_keypair: reg_owner_keypair
+            .as_ref()
+            .map(std::string::ToString::to_string),
         slot_seed: Some(hex::encode(slot_seed.0)),
         member_roles: std::collections::HashMap::new(),
         known_members: [my_pseudo_hex].into_iter().collect(),
         presence_poll_shutdown_tx: None,
         dht_keepalive_shutdown_tx: None,
         open_community_records: crate::state::CommunityRecords::default(),
+        my_event_rsvps: std::collections::HashMap::new(),
+        event_rsvps_by_event: std::collections::HashMap::new(),
+        onboarding_complete: true,
     };
 
     state.communities.write().insert(gov_key.clone(), community);
@@ -229,16 +247,18 @@ pub async fn create_community(
     {
         let mut communities = state.communities.write();
         if let Some(cs) = communities.get_mut(&gov_key) {
-            cs.open_community_records.manifest_key = Some(gov_key.clone());
+            cs.open_community_records.governance_key = Some(gov_key.clone());
             cs.open_community_records.registry_key = Some(reg_key.clone());
-            cs.open_community_records.registry_writer =
-                reg_owner_keypair.as_ref().map(std::string::ToString::to_string);
+            cs.open_community_records.registry_writer = reg_owner_keypair
+                .as_ref()
+                .map(std::string::ToString::to_string);
             cs.open_community_records.channel_keys = vec![ch_key.clone()];
             cs.open_community_records.records_open = true;
         }
     }
 
-    // 12. Start background services (no coordinator handle)
+    // 12. Start background services for watch/presence/keepalive
+    let _ = super::watch::watch_community_records(state, &gov_key).await;
     super::presence::start_presence_poll(state.clone(), gov_key.clone());
     super::keepalive::start_dht_keepalive(state.clone(), gov_key.clone());
 
@@ -247,7 +267,9 @@ pub async fn create_community(
 }
 
 /// Convert an Ed25519 SigningKey to a Veilid KeyPair for DHT writes.
-pub(crate) fn slot_signing_to_veilid(sk: &rekindle_secrets::ed25519_dalek::SigningKey) -> veilid_core::KeyPair {
+pub(crate) fn slot_signing_to_veilid(
+    sk: &rekindle_secrets::ed25519_dalek::SigningKey,
+) -> veilid_core::KeyPair {
     let pub_bytes = sk.verifying_key().to_bytes();
     let secret_bytes = sk.to_bytes();
     let bare_pub = veilid_core::BarePublicKey::new(&pub_bytes);
@@ -263,4 +285,3 @@ fn random_channel_id() -> ChannelId {
     rand::rngs::OsRng.fill_bytes(&mut bytes);
     ChannelId(bytes)
 }
-

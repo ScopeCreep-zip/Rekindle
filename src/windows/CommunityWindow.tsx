@@ -15,12 +15,15 @@ import RenameChannelModal from "../components/community/RenameChannelModal";
 import RenameCategoryModal from "../components/community/RenameCategoryModal";
 import CreateCategoryModal from "../components/community/CreateCategoryModal";
 import CreateEventModal from "../components/community/CreateEventModal";
+import CreatePollModal from "../components/community/CreatePollModal";
 import EventsPanel from "../components/community/EventsPanel";
 import GameServerList from "../components/community/GameServerList";
+import OnboardingWizard from "../components/community/OnboardingWizard";
 import ThreadPanel from "../components/community/ThreadPanel";
 import ThreadListPanel from "../components/community/ThreadListPanel";
 import PinnedMessagesPanel from "../components/community/PinnedMessagesPanel";
 import CategoryHeader from "../components/community/CategoryHeader";
+import WelcomeScreen from "../components/community/WelcomeScreen";
 import ConfirmDialog from "../components/common/ConfirmDialog";
 import ToastContainer from "../components/common/Toast";
 import { communityState, setCommunityState } from "../stores/community.store";
@@ -55,6 +58,8 @@ import {
   handleLoadThreadMessages,
   handleArchiveThread,
   handleUnarchiveThread,
+  handleVotePoll,
+  handleClosePoll,
   handleLoadChannelThreads,
   handleSetChannelTopic,
   handleSetNotificationOverride,
@@ -63,6 +68,8 @@ import {
   handleAddGameServer,
   handleRemoveGameServer,
   handleLoadEvents,
+  handleLoadOnboardingConfig,
+  handleLoadWelcomeScreen,
 } from "../handlers/community.handlers";
 import { handleJoinVoice } from "../handlers/voice.handlers";
 import {
@@ -123,6 +130,8 @@ const CommunityWindow: Component = () => {
   const [isLoadingOlder, setIsLoadingOlder] = createSignal(false);
   const [hasMoreOlder, setHasMoreOlder] = createSignal(true);
   const [editingEvent, setEditingEvent] = createSignal<CommunityEvent | null>(null);
+  const [createPollTarget, setCreatePollTarget] = createSignal<string | null>(null);
+  const [showWelcomeForCommunity, setShowWelcomeForCommunity] = createSignal<string | null>(null);
 
   // Phase 3: Unified right panel state
   const [rightPanel, setRightPanel] = createSignal<RightPanel>("members");
@@ -212,6 +221,20 @@ const CommunityWindow: Component = () => {
       .slice(0, 2);
   });
 
+  const shouldShowOnboarding = createMemo(() => {
+    const community = activeCommunity();
+    return Boolean(community?.onboardingConfig?.enabled && community.onboardingComplete === false);
+  });
+
+  const shouldShowWelcome = createMemo(() => {
+    const community = activeCommunity();
+    return Boolean(
+      community
+      && showWelcomeForCommunity() === community.id
+      && community.welcomeScreen,
+    );
+  });
+
   // Sidebar servers (max 3)
   const sidebarServerList = createMemo(() => gameServers().slice(0, 3));
 
@@ -251,6 +274,14 @@ const CommunityWindow: Component = () => {
     }
   });
 
+  createEffect(() => {
+    const community = activeCommunity();
+    if (!community) return;
+    if (community.onboardingComplete && community.welcomeScreen) {
+      setShowWelcomeForCommunity(community.id);
+    }
+  });
+
   // Typing indicator debounce
   let typingTimeout: number | undefined;
   function handleTyping(): void {
@@ -276,9 +307,12 @@ const CommunityWindow: Component = () => {
     setActiveThread(null);
     setShowEvents(false);
     setShowServers(false);
+    setShowWelcomeForCommunity(null);
     setRightPanel("members");
     handleLoadGameServers(id);
     handleLoadEvents(id);
+    void handleLoadOnboardingConfig(id);
+    void handleLoadWelcomeScreen(id);
   }
 
   function handleSelectChannel(id: string) {
@@ -287,6 +321,7 @@ const CommunityWindow: Component = () => {
     setReplyTo(null);
     setEditState(null);
     setActiveThread(null);
+    setShowWelcomeForCommunity(null);
     setRightPanel("members");
     setHasMoreOlder(true);
   }
@@ -567,149 +602,168 @@ const CommunityWindow: Component = () => {
           </Show>
           <Show when={!showServers()}>
           <Show when={showEvents() && activeCommunity()} fallback={
-            <Show when={activeChannel()} fallback={
-              <div class="empty-placeholder">
-                <div class="empty-placeholder-title">Select a channel</div>
-                <div class="empty-placeholder-subtitle">Choose a community and channel to start chatting</div>
-              </div>
-            }>
-              <div class="community-channel-header">
-                <span class="nf-icon community-channel-header-icon">{channelHeaderIcon()}</span>
-                {activeChannel()!.name}
-                <Show when={activeChannel()?.topic || canManageChannels()}>
-                  <Show when={editingTopic()} fallback={
-                    <span
-                      class={`channel-topic ${canManageChannels() ? "channel-topic-editable" : ""}`}
-                      onClick={() => {
-                        if (canManageChannels()) {
-                          setTopicDraft(activeChannel()?.topic ?? "");
-                          setEditingTopic(true);
-                        }
-                      }}
-                    >
-                      {activeChannel()?.topic || (canManageChannels() ? "Set topic..." : "")}
-                    </span>
-                  }>
-                    <input
-                      class="form-input channel-topic-header-input"
-                      type="text"
-                      value={topicDraft()}
-                      onInput={(e) => setTopicDraft(e.currentTarget.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
+            <Show when={shouldShowWelcome() && activeCommunity()?.welcomeScreen} fallback={
+              <Show when={activeChannel()} fallback={
+                <div class="empty-placeholder">
+                  <div class="empty-placeholder-title">Select a channel</div>
+                  <div class="empty-placeholder-subtitle">Choose a community and channel to start chatting</div>
+                </div>
+              }>
+                <div class="community-channel-header">
+                  <span class="nf-icon community-channel-header-icon">{channelHeaderIcon()}</span>
+                  {activeChannel()!.name}
+                  <Show when={activeChannel()?.topic || canManageChannels()}>
+                    <Show when={editingTopic()} fallback={
+                      <span
+                        class={`channel-topic ${canManageChannels() ? "channel-topic-editable" : ""}`}
+                        onClick={() => {
+                          if (canManageChannels()) {
+                            setTopicDraft(activeChannel()?.topic ?? "");
+                            setEditingTopic(true);
+                          }
+                        }}
+                      >
+                        {activeChannel()?.topic || (canManageChannels() ? "Set topic..." : "")}
+                      </span>
+                    }>
+                      <input
+                        class="form-input channel-topic-header-input"
+                        type="text"
+                        value={topicDraft()}
+                        onInput={(e) => setTopicDraft(e.currentTarget.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            handleSetChannelTopic(selectedCommunityId(), selectedChannelId(), topicDraft());
+                            setEditingTopic(false);
+                          }
+                          if (e.key === "Escape") {
+                            setEditingTopic(false);
+                          }
+                        }}
+                        onBlur={() => {
                           handleSetChannelTopic(selectedCommunityId(), selectedChannelId(), topicDraft());
                           setEditingTopic(false);
-                        }
-                        if (e.key === "Escape") {
-                          setEditingTopic(false);
-                        }
-                      }}
-                      onBlur={() => {
-                        handleSetChannelTopic(selectedCommunityId(), selectedChannelId(), topicDraft());
-                        setEditingTopic(false);
-                      }}
-                      placeholder="Channel topic..."
-                    />
+                        }}
+                        placeholder="Channel topic..."
+                      />
+                    </Show>
                   </Show>
-                </Show>
-                <Show when={activeCommunity()?.description && !activeChannel()?.topic && !editingTopic()}>
-                  <span class="community-description-hint">{activeCommunity()!.description}</span>
-                </Show>
-                <span class="header-btn-group">
-                  <button
-                    class={`action-bar-btn header-add-btn ${rightPanel() === "pins" ? "header-btn-active" : ""}`}
-                    onClick={handleTogglePins}
-                    title="Pinned Messages"
-                  >
-                    <span class="nf-icon">{ICON_PIN}</span>
-                    <Show when={pins().length > 0}>
-                      <span class="channel-header-badge">{pins().length}</span>
-                    </Show>
-                  </button>
-                  <button
-                    class={`action-bar-btn header-add-btn ${rightPanel() === "threadList" || rightPanel() === "thread" ? "header-btn-active" : ""}`}
-                    onClick={handleToggleThreadList}
-                    title="Threads"
-                  >
-                    <span class="nf-icon">{ICON_THREAD}</span>
-                    <Show when={(communityState.channelThreads[selectedChannelId()] ?? []).length > 0}>
-                      <span class="channel-header-badge">{(communityState.channelThreads[selectedChannelId()] ?? []).length}</span>
-                    </Show>
-                  </button>
-                  <button
-                    class={`action-bar-btn header-add-btn ${rightPanel() === "members" ? "header-btn-active" : ""}`}
-                    onClick={() => setRightPanel(rightPanel() === "members" ? "members" : "members")}
-                    title="Members"
-                  >
-                    <span class="nf-icon">{ICON_COMMUNITIES}</span>
-                  </button>
-                </span>
-              </div>
-              <MessageList
-                messages={channelMessages()}
-                ownName={authState.displayName ?? "You"}
-                peerName="Member"
-                memberNames={memberNames()}
-                myPseudonymKey={activeCommunity()?.myPseudonymKey}
-                threads={communityState.channelThreads[selectedChannelId()] ?? []}
-                onLoadOlder={handleLoadOlder}
-                isLoadingOlder={isLoadingOlder()}
-                onRetry={(messageId) => handleRetryChannelMessage(selectedChannelId(), messageId)}
-                onReply={handleReply}
-                onReaction={(messageId, emoji) => handleAddReaction(selectedCommunityId(), selectedChannelId(), messageId, emoji)}
-                onRemoveReaction={(messageId, emoji) => handleRemoveReaction(selectedCommunityId(), selectedChannelId(), messageId, emoji)}
-                onPin={(messageId) => {
-                  const msg = channelMessages().find((m) => m.serverMessageId === messageId);
-                  if (msg?.pinned) {
-                    handleUnpinMessage(selectedCommunityId(), selectedChannelId(), messageId);
-                  } else {
-                    handlePinMessage(selectedCommunityId(), selectedChannelId(), messageId);
-                  }
-                }}
-                onCreateThread={(messageId) => {
-                  const name = `Thread ${messageId.slice(0, 8)}`;
-                  import("../handlers/community.handlers").then(({ handleCreateThread }) => {
-                    handleCreateThread(selectedCommunityId(), selectedChannelId(), name, messageId).then((threadId) => {
-                      if (threadId) {
-                        const threads = communityState.channelThreads[selectedChannelId()] ?? [];
-                        const thread = threads.find((t) => t.id === threadId);
-                        if (thread) handleOpenThread(thread);
-                      }
-                    });
-                  });
-                }}
-                onOpenThread={handleOpenThread}
-                onEdit={(messageId, currentBody) => {
-                  setEditState({ messageId, body: currentBody });
-                }}
-                onDelete={(messageId) => {
-                  setDeleteTarget(messageId);
-                }}
-              />
-              {/* Typing indicator */}
-              <Show when={channelTypingUsers().length > 0}>
-                <div class="typing-indicator">
-                  <span class="typing-dots">
-                    <span class="typing-label">
-                      {channelTypingUsers().map((u) => u.displayName).join(", ")} {channelTypingUsers().length === 1 ? "is" : "are"} typing...
-                    </span>
+                  <Show when={activeCommunity()?.description && !activeChannel()?.topic && !editingTopic()}>
+                    <span class="community-description-hint">{activeCommunity()!.description}</span>
+                  </Show>
+                  <span class="header-btn-group">
+                    <button
+                      class={`action-bar-btn header-add-btn ${rightPanel() === "pins" ? "header-btn-active" : ""}`}
+                      onClick={handleTogglePins}
+                      title="Pinned Messages"
+                    >
+                      <span class="nf-icon">{ICON_PIN}</span>
+                      <Show when={pins().length > 0}>
+                        <span class="channel-header-badge">{pins().length}</span>
+                      </Show>
+                    </button>
+                    <button
+                      class={`action-bar-btn header-add-btn ${rightPanel() === "threadList" || rightPanel() === "thread" ? "header-btn-active" : ""}`}
+                      onClick={handleToggleThreadList}
+                      title="Threads"
+                    >
+                      <span class="nf-icon">{ICON_THREAD}</span>
+                      <Show when={(communityState.channelThreads[selectedChannelId()] ?? []).length > 0}>
+                        <span class="channel-header-badge">{(communityState.channelThreads[selectedChannelId()] ?? []).length}</span>
+                      </Show>
+                    </button>
+                    <button
+                      class={`action-bar-btn header-add-btn ${rightPanel() === "members" ? "header-btn-active" : ""}`}
+                      onClick={() => setRightPanel(rightPanel() === "members" ? "members" : "members")}
+                      title="Members"
+                    >
+                      <span class="nf-icon">{ICON_COMMUNITIES}</span>
+                    </button>
                   </span>
                 </div>
+                <MessageList
+                  communityId={selectedCommunityId()}
+                  messages={channelMessages()}
+                  ownName={authState.displayName ?? "You"}
+                  peerName="Member"
+                  memberNames={memberNames()}
+                  myPseudonymKey={activeCommunity()?.myPseudonymKey}
+                  threads={communityState.channelThreads[selectedChannelId()] ?? []}
+                  onLoadOlder={handleLoadOlder}
+                  isLoadingOlder={isLoadingOlder()}
+                  onRetry={(messageId) => handleRetryChannelMessage(selectedChannelId(), messageId)}
+                  onReply={handleReply}
+                  onReaction={(messageId, emoji) => handleAddReaction(selectedCommunityId(), selectedChannelId(), messageId, emoji)}
+                  onRemoveReaction={(messageId, emoji) => handleRemoveReaction(selectedCommunityId(), selectedChannelId(), messageId, emoji)}
+                  onPin={(messageId) => {
+                    const msg = channelMessages().find((m) => m.serverMessageId === messageId);
+                    if (msg?.pinned) {
+                      handleUnpinMessage(selectedCommunityId(), selectedChannelId(), messageId);
+                    } else {
+                      handlePinMessage(selectedCommunityId(), selectedChannelId(), messageId);
+                    }
+                  }}
+                  onCreateThread={(messageId) => {
+                    const name = `Thread ${messageId.slice(0, 8)}`;
+                    import("../handlers/community.handlers").then(({ handleCreateThread }) => {
+                      handleCreateThread(selectedCommunityId(), selectedChannelId(), name, messageId).then((threadId) => {
+                        if (threadId) {
+                          const threads = communityState.channelThreads[selectedChannelId()] ?? [];
+                          const thread = threads.find((t) => t.id === threadId);
+                          if (thread) handleOpenThread(thread);
+                        }
+                      });
+                    });
+                  }}
+                  onCreatePoll={(messageId) => setCreatePollTarget(messageId)}
+                  onOpenThread={handleOpenThread}
+                  onEdit={(messageId, currentBody) => {
+                    setEditState({ messageId, body: currentBody });
+                  }}
+                  onDelete={(messageId) => {
+                    setDeleteTarget(messageId);
+                  }}
+                  onVotePoll={(pollId, selectedAnswers) =>
+                    handleVotePoll(selectedCommunityId(), selectedChannelId(), pollId, selectedAnswers)
+                  }
+                  onClosePoll={(pollId) =>
+                    handleClosePoll(selectedCommunityId(), selectedChannelId(), pollId)
+                  }
+                />
+                <Show when={channelTypingUsers().length > 0}>
+                  <div class="typing-indicator">
+                    <span class="typing-dots">
+                      <span class="typing-label">
+                        {channelTypingUsers().map((u) => u.displayName).join(", ")} {channelTypingUsers().length === 1 ? "is" : "are"} typing...
+                      </span>
+                    </span>
+                  </div>
+                </Show>
+                <MessageInput
+                  communityId={selectedCommunityId()}
+                  peerId={selectedChannelId()}
+                  replyTo={replyTo()}
+                  editMode={editState()}
+                  onSend={handleChannelSend}
+                  onTyping={handleTyping}
+                  onDismissReply={() => setReplyTo(null)}
+                  onEditSave={(messageId, newBody) => {
+                    handleEditChannelMessage(selectedChannelId(), messageId, newBody);
+                    setEditState(null);
+                  }}
+                  onEditCancel={() => setEditState(null)}
+                  disabled={!canPostInChannel()}
+                  disabledMessage={isAnnouncementChannel() ? "Only admins can post in announcement channels" : "You don't have permission to send messages"}
+                />
               </Show>
-              <MessageInput
-                peerId={selectedChannelId()}
-                replyTo={replyTo()}
-                editMode={editState()}
-                onSend={handleChannelSend}
-                onTyping={handleTyping}
-                onDismissReply={() => setReplyTo(null)}
-                onEditSave={(messageId, newBody) => {
-                  handleEditChannelMessage(selectedChannelId(), messageId, newBody);
-                  setEditState(null);
+            }>
+              <WelcomeScreen
+                screen={activeCommunity()!.welcomeScreen!}
+                communityName={activeCommunity()!.name}
+                onChannelClick={(channelId) => {
+                  handleSelectChannel(channelId);
+                  setShowWelcomeForCommunity(null);
                 }}
-                onEditCancel={() => setEditState(null)}
-                disabled={!canPostInChannel()}
-                disabledMessage={isAnnouncementChannel() ? "Only admins can post in announcement channels" : "You don't have permission to send messages"}
               />
             </Show>
           }>
@@ -779,8 +833,15 @@ const CommunityWindow: Component = () => {
                       handlePinMessage(selectedCommunityId(), selectedChannelId(), messageId);
                     }
                   }}
+                  onCreatePoll={(messageId) => setCreatePollTarget(messageId)}
                   onEdit={(messageId, currentBody) => setEditState({ messageId, body: currentBody })}
                   onDelete={(messageId) => setDeleteTarget(messageId)}
+                  onVotePoll={(pollId, selectedAnswers) =>
+                    handleVotePoll(selectedCommunityId(), selectedChannelId(), pollId, selectedAnswers)
+                  }
+                  onClosePoll={(pollId) =>
+                    handleClosePoll(selectedCommunityId(), selectedChannelId(), pollId)
+                  }
                   myPseudonymKey={activeCommunity()?.myPseudonymKey}
                 />
               </Match>
@@ -825,6 +886,13 @@ const CommunityWindow: Component = () => {
           initialStartTime={editingEvent()?.startTime}
           initialEndTime={editingEvent()?.endTime ?? undefined}
           initialMaxAttendees={editingEvent()?.maxAttendees ?? undefined}
+        />
+        <CreatePollModal
+          isOpen={createPollTarget() !== null}
+          communityId={selectedCommunityId()}
+          channelId={selectedChannelId()}
+          messageId={createPollTarget() ?? ""}
+          onClose={() => setCreatePollTarget(null)}
         />
       </Show>
       <Show when={renameTarget()}>
@@ -876,6 +944,18 @@ const CommunityWindow: Component = () => {
         }}
         onCancel={() => setDeleteTarget(null)}
       />
+      <Show when={shouldShowOnboarding() && activeCommunity()?.onboardingConfig}>
+        <OnboardingWizard
+          communityId={selectedCommunityId()}
+          config={activeCommunity()!.onboardingConfig!}
+          onComplete={() => {
+            setCommunityState("communities", selectedCommunityId(), "onboardingComplete", true);
+            if (activeCommunity()?.welcomeScreen) {
+              setShowWelcomeForCommunity(selectedCommunityId());
+            }
+          }}
+        />
+      </Show>
       <ToastContainer />
     </div>
   );

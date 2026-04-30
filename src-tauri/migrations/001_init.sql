@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS messages (
     conversation_type TEXT NOT NULL CHECK(conversation_type IN ('dm', 'channel')),
     sender_key TEXT NOT NULL,
     body TEXT NOT NULL,
+    automod_blurred INTEGER NOT NULL DEFAULT 0,
     timestamp INTEGER NOT NULL,
     is_read INTEGER NOT NULL DEFAULT 0,
     reply_to_id INTEGER REFERENCES messages(id) ON DELETE SET NULL,
@@ -132,6 +133,7 @@ CREATE TABLE IF NOT EXISTS community_roles (
     position INTEGER NOT NULL DEFAULT 0,
     hoist INTEGER NOT NULL DEFAULT 0,
     mentionable INTEGER NOT NULL DEFAULT 0,
+    self_assignable INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (owner_key, community_id, role_id)
 );
 
@@ -232,6 +234,18 @@ CREATE TABLE IF NOT EXISTS notification_preferences (
     PRIMARY KEY (owner_key, community_id, channel_id)
 );
 
+CREATE TABLE IF NOT EXISTS app_settings (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    quiet_hours_enabled INTEGER NOT NULL DEFAULT 0,
+    quiet_hours_start_minute INTEGER NOT NULL DEFAULT 1320
+        CHECK(quiet_hours_start_minute >= 0 AND quiet_hours_start_minute < 1440),
+    quiet_hours_end_minute INTEGER NOT NULL DEFAULT 420
+        CHECK(quiet_hours_end_minute >= 0 AND quiet_hours_end_minute < 1440),
+    quiet_hours_utc_offset_minutes INTEGER NOT NULL DEFAULT 0
+        CHECK(quiet_hours_utc_offset_minutes >= -840 AND quiet_hours_utc_offset_minutes <= 840),
+    PRIMARY KEY (owner_key)
+);
+
 CREATE TABLE IF NOT EXISTS outgoing_invites (
     owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
     invite_id TEXT NOT NULL,
@@ -301,6 +315,15 @@ CREATE TABLE IF NOT EXISTS event_rsvps (
     pseudonym_key TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'none',
     PRIMARY KEY (owner_key, community_id, event_id, pseudonym_key)
+);
+
+-- Local member-owned event RSVPs mirrored into presence writes.
+CREATE TABLE IF NOT EXISTS community_event_rsvps (
+    owner_key TEXT NOT NULL,
+    community_id TEXT NOT NULL,
+    event_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'declined',
+    PRIMARY KEY (owner_key, community_id, event_id)
 );
 
 -- Channel pinned messages.

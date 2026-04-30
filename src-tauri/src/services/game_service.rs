@@ -117,18 +117,20 @@ fn fan_out_community_presence(
             UserStatus::Away => "away",
             UserStatus::Busy => "busy",
             UserStatus::Offline | UserStatus::Invisible => "offline",
-        }.to_string()
+        }
+        .to_string()
     };
 
     for community_id in community_ids {
-        let game_info_for_envelope = game_info.map(|g| {
-            rekindle_protocol::dht::community::envelope::PresenceGameInfo {
-                game_name: g.game_name.clone(),
-                game_id: Some(g.game_id),
-                elapsed_seconds: Some(g.elapsed_seconds),
-                server_address: g.server_address.clone(),
-            }
-        });
+        let game_info_for_envelope =
+            game_info.map(
+                |g| rekindle_protocol::dht::community::envelope::PresenceGameInfo {
+                    game_name: g.game_name.clone(),
+                    game_id: Some(g.game_id),
+                    elapsed_seconds: Some(g.elapsed_seconds),
+                    server_address: g.server_address.clone(),
+                },
+            );
 
         let pseudonym_key = {
             let communities = state.communities.read();
@@ -138,8 +140,8 @@ fn fan_out_community_presence(
                 .unwrap_or_default()
         };
 
-        // Fire-and-forget via gossip mesh — ephemeral presence, no coordinator needed
-        if let Err(e) = crate::commands::community::send_to_mesh(
+        // Fire-and-forget via gossip mesh — ephemeral presence, no durable relay needed
+        if let Err(e) = crate::services::community::send_to_mesh(
             state,
             &community_id,
             &rekindle_protocol::dht::community::envelope::CommunityEnvelope::PresenceUpdate {

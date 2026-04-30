@@ -6,6 +6,8 @@ export type ChatEvent =
       data: {
         from: string;
         body: string;
+        decryptionFailed?: boolean;
+        automodBlurred?: boolean;
         timestamp: number;
         conversationId: string;
         serverMessageId?: string;
@@ -41,6 +43,19 @@ export type ChatEvent =
           timestamp: number;
           isOwn: boolean;
           serverMessageId?: string;
+          decryptionFailed?: boolean;
+          automodBlurred?: boolean;
+          reactions?: { emoji: string; count: number; reactors: string[] }[];
+          pinned?: boolean;
+          poll?: {
+            pollId: string;
+            question: string;
+            answers: { index: number; text: string; voteCount: number; voters: string[] }[];
+            multiSelect: boolean;
+            expiresAt?: number;
+            closed: boolean;
+            selectedAnswers: number[];
+          };
         }[];
       };
     };
@@ -107,7 +122,7 @@ export type CommunityEvent =
     }
   | {
       type: "mekRotated";
-      data: { communityId: string; newGeneration: number };
+      data: { communityId: string; channelId?: string; newGeneration: number };
     }
   | {
       type: "kicked";
@@ -117,7 +132,7 @@ export type CommunityEvent =
       type: "rolesChanged";
       data: {
         communityId: string;
-        roles: { id: number; name: string; color: number; permissions: string; position: number; hoist: boolean; mentionable: boolean }[];
+        roles: { id: number; name: string; color: number; permissions: string; position: number; hoist: boolean; mentionable: boolean; selfAssignable?: boolean }[];
       };
     }
   | {
@@ -131,6 +146,10 @@ export type CommunityEvent =
   | {
       type: "channelOverwriteChanged";
       data: { communityId: string; channelId: string };
+    }
+  | {
+      type: "governanceUpdated";
+      data: { communityId: string };
     }
   | {
       type: "messageEdited";
@@ -188,6 +207,22 @@ export type CommunityEvent =
       };
     }
   | {
+      type: "channelMessageDelivered";
+      data: {
+        communityId: string;
+        channelId: string;
+        messageId: string;
+      };
+    }
+  | {
+      type: "channelMessageDeliveryFailed";
+      data: {
+        communityId: string;
+        channelId: string;
+        messageId: string;
+      };
+    }
+  | {
       type: "channelTyping";
       data: {
         communityId: string;
@@ -205,6 +240,15 @@ export type CommunityEvent =
         gameId?: number;
         elapsedSeconds?: number;
         serverAddress?: string;
+      };
+    }
+  | {
+      type: "autoModAlert";
+      data: {
+        communityId: string;
+        channelId: string;
+        messageId: string;
+        ruleName: string;
       };
     }
   | {

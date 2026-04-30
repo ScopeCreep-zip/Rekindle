@@ -7,8 +7,40 @@
 //! write locks with the same acquire-then-drop discipline.
 
 use std::sync::Arc;
+use std::time::Instant;
 
+use crate::db::DbPool;
+use crate::db_helpers::db_call;
 use crate::state::{AppState, FriendState, FriendshipState, IdentityState, UserStatus};
+
+fn safe_routing_context_from(
+    routing_context: veilid_core::RoutingContext,
+) -> Option<veilid_core::RoutingContext> {
+    let spec = rekindle_route::contexts::RouteContextSpec::rc_safe();
+    routing_context
+        .with_safety(veilid_core::SafetySelection::Safe(
+            veilid_core::SafetySpec {
+                preferred_route: None,
+                hop_count: spec.hop_count,
+                stability: veilid_core::Stability::Reliable,
+                sequencing: if spec.ordered {
+                    veilid_core::Sequencing::PreferOrdered
+                } else {
+                    veilid_core::Sequencing::NoPreference
+                },
+            },
+        ))
+        .ok()
+}
+
+fn hex_to_id_16(hex_str: &str) -> [u8; 16] {
+    let bytes = hex::decode(hex_str).unwrap_or_else(|_| vec![0u8; 16]);
+    let mut arr = [0u8; 16];
+    for (i, b) in bytes.iter().take(16).enumerate() {
+        arr[i] = *b;
+    }
+    arr
+}
 
 // ── DHT Record Storage ─────────────────────────────────────────────
 
@@ -80,7 +112,7 @@ pub fn untrack_records(state: &Arc<AppState>, keys: &[String]) {
     }
 }
 
-/// Collect all DHT record keys for a community from its `CommunityRecords`.
+/// Collect all opened DHT record keys for a community from its `CommunityRecords`.
 ///
 /// Returns the keys and marks the community's records as closed in state.
 pub fn collect_and_clear_community_records(
@@ -93,14 +125,14 @@ pub fn collect_and_clear_community_records(
     };
     let records = &mut cs.open_community_records;
     let mut keys = Vec::new();
-    if let Some(ref k) = records.manifest_key {
+    if let Some(ref k) = records.governance_key {
         keys.push(k.clone());
     }
     if let Some(ref k) = records.registry_key {
         keys.push(k.clone());
     }
     keys.append(&mut records.channel_keys);
-    records.manifest_key = None;
+    records.governance_key = None;
     records.registry_key = None;
     records.registry_writer = None;
     records.records_open = false;
@@ -169,6 +201,11 @@ pub fn routing_context(state: &Arc<AppState>) -> Option<veilid_core::RoutingCont
         .map(|nh| nh.routing_context.clone())
 }
 
+/// Routing context configured for safe community/chat transport.
+pub fn safe_routing_context(state: &Arc<AppState>) -> Option<veilid_core::RoutingContext> {
+    routing_context(state).and_then(safe_routing_context_from)
+}
+
 /// Veilid API handle. Returns `None` if the node is not initialized.
 pub fn veilid_api(state: &Arc<AppState>) -> Option<veilid_core::VeilidAPI> {
     state.node.read().as_ref().map(|nh| nh.api.clone())
@@ -184,6 +221,14 @@ pub fn api_and_routing_context(
     Some((nh.api.clone(), nh.routing_context.clone()))
 }
 
+/// API plus routing context configured for safe community/chat transport.
+pub fn safe_api_and_routing_context(
+    state: &Arc<AppState>,
+) -> Option<(veilid_core::VeilidAPI, veilid_core::RoutingContext)> {
+    let (api, rc) = api_and_routing_context(state)?;
+    Some((api, safe_routing_context_from(rc)?))
+}
+
 /// Routing context, or error `"node not initialized"` / `"not attached"`.
 pub fn require_routing_context(
     state: &Arc<AppState>,
@@ -194,6 +239,13 @@ pub fn require_routing_context(
         return Err("not attached to network".to_string());
     }
     Ok(nh.routing_context.clone())
+}
+
+/// Routing context configured for safe community/chat transport, or a descriptive error.
+pub fn require_safe_routing_context(
+    state: &Arc<AppState>,
+) -> Result<veilid_core::RoutingContext, String> {
+    safe_routing_context(state).ok_or_else(|| "not attached to network".to_string())
 }
 
 /// Profile DHT info tuple: `(profile_dht_key, route_blob, mailbox_dht_key)`.
@@ -325,17 +377,35 @@ pub fn cache_peer_route(state: &Arc<AppState>, peer_key: &str, route_blob: Vec<u
     let api = veilid_api(state);
     let mut dht_mgr = state.dht_manager.write();
     if let (Some(api), Some(mgr)) = (api, dht_mgr.as_mut()) {
-        mgr.manager.cache_route(&api, peer_key, route_blob);
+        mgr.manager.cache_route(&api, peer_key, route_blob.clone());
+        let mut routing_mgr = state.routing_manager.write();
+        if let Some(handle) = routing_mgr.as_mut() {
+            handle
+                .peer_route_cache
+                .insert_at(peer_key.to_string(), route_blob, Instant::now());
+        }
     }
 }
 
 /// Look up cached route blob for a peer.
 pub fn cached_route_blob(state: &Arc<AppState>, peer_key: &str) -> Option<Vec<u8>> {
-    state
-        .dht_manager
-        .read()
-        .as_ref()
-        .and_then(|mgr| mgr.manager.get_cached_route(peer_key).cloned())
+    {
+        let mut routing_mgr = state.routing_manager.write();
+        if let Some(handle) = routing_mgr.as_mut() {
+            if let Some(cached) = handle.peer_route_cache.get(peer_key) {
+                if !cached.is_stale_at(
+                    Instant::now(),
+                    rekindle_route::lifecycle::ROUTE_REFRESH_INTERVAL,
+                ) {
+                    return Some(cached.route_blob.clone());
+                }
+            }
+            handle.peer_route_cache.remove(peer_key);
+        }
+    }
+
+    invalidate_cached_peer_route(state, peer_key);
+    None
 }
 
 /// Look up a peer's cached route, import its `RouteId`, and return it with the
@@ -344,7 +414,7 @@ pub fn try_import_peer_route(
     state: &Arc<AppState>,
     peer_key: &str,
 ) -> Option<(veilid_core::RouteId, veilid_core::RoutingContext)> {
-    let (api, rc) = api_and_routing_context(state)?;
+    let (api, rc) = safe_api_and_routing_context(state)?;
     let mut dht_mgr = state.dht_manager.write();
     let mgr = dht_mgr.as_mut()?;
     let blob = mgr.manager.get_cached_route(peer_key)?.clone();
@@ -356,9 +426,53 @@ pub fn try_import_peer_route(
                 "route import failed — invalidating cached route"
             );
             mgr.manager.invalidate_route_for_peer(peer_key);
+            let mut routing_mgr = state.routing_manager.write();
+            if let Some(handle) = routing_mgr.as_mut() {
+                handle.peer_route_cache.remove(peer_key);
+            }
             None
         }
     }
+}
+
+/// Invalidate all cached route state for a peer across both route caches.
+pub fn invalidate_cached_peer_route(state: &Arc<AppState>, peer_key: &str) {
+    {
+        let mut dht_mgr = state.dht_manager.write();
+        if let Some(mgr) = dht_mgr.as_mut() {
+            mgr.manager.invalidate_route_for_peer(peer_key);
+        }
+    }
+    {
+        let mut routing_mgr = state.routing_manager.write();
+        if let Some(handle) = routing_mgr.as_mut() {
+            handle.peer_route_cache.remove(peer_key);
+        }
+    }
+}
+
+/// Evict stale peer routes from both the timestamped route cache and the imported-route cache.
+pub fn evict_stale_peer_routes(state: &Arc<AppState>) -> usize {
+    let stale_peers = {
+        let mut routing_mgr = state.routing_manager.write();
+        routing_mgr
+            .as_mut()
+            .map(|handle| handle.peer_route_cache.evict_stale_at(Instant::now()))
+            .unwrap_or_default()
+    };
+
+    if stale_peers.is_empty() {
+        return 0;
+    }
+
+    let mut dht_mgr = state.dht_manager.write();
+    if let Some(mgr) = dht_mgr.as_mut() {
+        for peer_key in &stale_peers {
+            mgr.manager.invalidate_route_for_peer(peer_key);
+        }
+    }
+
+    stale_peers.len()
 }
 
 /// Import a route blob via `DHTManager` cache (preferred) or raw `VeilidAPI` fallback.
@@ -402,19 +516,23 @@ pub fn is_circuit_open(state: &Arc<AppState>, community_id: &str) -> bool {
 /// Increments the failure count and updates the timestamp.
 pub fn trip_circuit_breaker(state: &Arc<AppState>, community_id: &str) {
     let mut breakers = state.community_circuit_breakers.write();
-    let entry = breakers
-        .entry(community_id.to_string())
-        .or_insert(crate::state::CircuitBreakerState {
-            tripped_at: std::time::Instant::now(),
-            failure_count: 0,
-        });
+    let entry =
+        breakers
+            .entry(community_id.to_string())
+            .or_insert(crate::state::CircuitBreakerState {
+                tripped_at: std::time::Instant::now(),
+                failure_count: 0,
+            });
     entry.failure_count += 1;
     entry.tripped_at = std::time::Instant::now();
 }
 
 /// Reset the circuit breaker for a community on successful RPC.
 pub fn reset_circuit_breaker(state: &Arc<AppState>, community_id: &str) {
-    state.community_circuit_breakers.write().remove(community_id);
+    state
+        .community_circuit_breakers
+        .write()
+        .remove(community_id);
 }
 
 // ── Communities (write helpers) ───────────────────────────────────────
@@ -445,13 +563,13 @@ pub fn push_community_channel(
 
 // ── Communities ──────────────────────────────────────────────────────
 
-/// Collect communities with DHT record keys (for sync).
-pub fn communities_with_dht_keys(state: &Arc<AppState>) -> Vec<(String, String)> {
+/// Collect communities with governance record keys.
+pub fn communities_with_governance_keys(state: &Arc<AppState>) -> Vec<(String, String)> {
     state
         .communities
         .read()
         .values()
-        .filter_map(|c| c.dht_record_key.as_ref().map(|k| (c.id.clone(), k.clone())))
+        .filter_map(|c| c.governance_key.as_ref().map(|k| (c.id.clone(), k.clone())))
         .collect()
 }
 
@@ -496,10 +614,8 @@ pub fn set_governance_state(
                 if let Ok(arr) = <[u8; 32]>::try_from(pk_bytes.as_slice()) {
                     let pseudo = rekindle_types::id::PseudonymKey(arr);
                     if let Some(role_ids) = gov_state.role_assignments.get(&pseudo) {
-                        cs.my_role_ids = role_ids
-                            .iter()
-                            .map(|rid| u32::from(rid.0[0]))
-                            .collect();
+                        cs.my_role_ids = role_ids.iter().map(role_id_to_legacy_u32).collect();
+                        cs.my_role_ids.sort_unstable();
                     }
                     is_creator = gov_state.creator.as_ref() == Some(&pseudo);
                 }
@@ -518,12 +634,21 @@ pub fn set_governance_state(
             .iter()
             .map(|ch| (ch.id.clone(), ch.message_record_key.clone()))
             .collect();
+        let existing_notification_levels: std::collections::HashMap<String, String> = cs
+            .channels
+            .iter()
+            .map(|ch| (ch.id.clone(), ch.notification_level.clone()))
+            .collect();
 
+        let mut channel_log_keys = std::collections::HashMap::new();
         let mut channels: Vec<ChannelInfo> = gov_state
             .channels
             .iter()
             .map(|(ch_id, ch)| {
                 let id_hex = hex::encode(ch_id.0);
+                if !ch.record_key.is_empty() {
+                    channel_log_keys.insert(id_hex.clone(), ch.record_key.clone());
+                }
                 ChannelInfo {
                     unread_count: existing_unreads.get(&id_hex).copied().unwrap_or(0),
                     message_record_key: existing_record_keys
@@ -537,7 +662,7 @@ pub fn set_governance_state(
                                 Some(ch.record_key.clone())
                             }
                         }),
-                    id: id_hex,
+                    id: id_hex.clone(),
                     name: ch.name.clone(),
                     channel_type: match ch.channel_type.as_str() {
                         "voice" => ChannelType::Voice,
@@ -555,26 +680,44 @@ pub fn set_governance_state(
                     slowmode_seconds: ch.slowmode_seconds,
                     nsfw: ch.nsfw.unwrap_or(false),
                     mek_generation: 0,
+                    notification_level: existing_notification_levels
+                        .get(&id_hex)
+                        .cloned()
+                        .unwrap_or_else(|| "all".to_string()),
                 }
             })
             .collect();
-        channels.sort_by_key(|ch| ch.name.clone());
+        channels.sort_by(|a, b| {
+            let a_pos = gov_state
+                .channels
+                .get(&rekindle_types::id::ChannelId(hex_to_id_16(&a.id)))
+                .map_or(u32::MAX, |ch| ch.position);
+            let b_pos = gov_state
+                .channels
+                .get(&rekindle_types::id::ChannelId(hex_to_id_16(&b.id)))
+                .map_or(u32::MAX, |ch| ch.position);
+            a_pos.cmp(&b_pos).then_with(|| a.name.cmp(&b.name))
+        });
         cs.channels = channels;
+        cs.channel_log_keys.clone_from(&channel_log_keys);
+        cs.open_community_records.channel_keys = channel_log_keys.into_values().collect();
 
         // ── Sync roles from governance RoleDefinition entries ──
         cs.roles = gov_state
             .roles
             .iter()
             .map(|(rid, r)| RoleDefinition {
-                id: u32::from(rid.0[0]),
+                id: role_id_to_legacy_u32(rid),
                 name: r.name.clone(),
                 color: r.color,
                 permissions: r.permissions,
                 position: r.position.cast_signed(),
                 hoist: r.hoist,
                 mentionable: r.mentionable,
+                self_assignable: r.self_assignable,
             })
             .collect();
+        cs.roles.sort_by_key(|role| role.position);
 
         // ── Sync categories from governance ──
         cs.categories = gov_state
@@ -586,6 +729,7 @@ pub fn set_governance_state(
                 sort_order: cat.position.cast_signed(),
             })
             .collect();
+        cs.categories.sort_by_key(|category| category.sort_order);
 
         // ── Sync metadata (name, description) ──
         if let Some(ref meta) = gov_state.metadata {
@@ -597,8 +741,7 @@ pub fn set_governance_state(
         if is_creator {
             cs.my_role = Some("owner".to_string());
         } else {
-            cs.my_role =
-                Some(crate::state::display_role_name(&cs.my_role_ids, &cs.roles));
+            cs.my_role = Some(crate::state::display_role_name(&cs.my_role_ids, &cs.roles));
         }
 
         // ── Sync MEK generation ──
@@ -606,6 +749,306 @@ pub fn set_governance_state(
 
         cs.governance_state = Some(gov_state);
     }
+}
+
+/// Persist the current merged governance snapshot into SQLite for restart hydration.
+pub async fn persist_governance_snapshot_to_sqlite(
+    state: &Arc<AppState>,
+    pool: &DbPool,
+    community_id: &str,
+    lamport_clock: u64,
+) -> Result<(), String> {
+    #[derive(Clone)]
+    struct ChannelRow {
+        id: String,
+        name: String,
+        channel_type: String,
+        sort_order: i64,
+        category_id: Option<String>,
+        topic: String,
+        slowmode_seconds: i64,
+        nsfw: i32,
+        message_record_key: Option<String>,
+        mek_generation: i64,
+        log_key: Option<String>,
+        my_sequence: i64,
+    }
+
+    #[derive(Clone)]
+    struct RoleRow {
+        role_id: i64,
+        name: String,
+        color: i64,
+        permissions: i64,
+        position: i64,
+        hoist: i32,
+        mentionable: i32,
+        self_assignable: i32,
+    }
+
+    #[derive(Clone)]
+    struct CategoryRow {
+        id: String,
+        name: String,
+        sort_order: i64,
+    }
+
+    #[derive(Clone)]
+    struct OverwriteRow {
+        channel_id: String,
+        target_type: String,
+        target_id: String,
+        allow: i64,
+        deny: i64,
+    }
+
+    let owner_key = current_owner_key(state)?;
+    let (
+        community_id_owned,
+        community_name,
+        community_description,
+        icon_hash,
+        banner_hash,
+        my_role,
+        my_role_ids_json,
+        mek_generation,
+        channels,
+        roles,
+        categories,
+        overwrites,
+    ) = {
+        let communities = state.communities.read();
+        let community = communities.get(community_id).ok_or("community not found")?;
+        let gov_state = community
+            .governance_state
+            .clone()
+            .ok_or("governance state not loaded")?;
+        let metadata = gov_state.metadata.clone();
+
+        let mut channels: Vec<ChannelRow> = gov_state
+            .channels
+            .iter()
+            .map(|(channel_id, channel)| {
+                let channel_id_hex = hex::encode(channel_id.0);
+                ChannelRow {
+                    id: channel_id_hex.clone(),
+                    name: channel.name.clone(),
+                    channel_type: channel.channel_type.clone(),
+                    sort_order: i64::from(channel.position),
+                    category_id: channel
+                        .category_id
+                        .map(|category_id| hex::encode(category_id.0)),
+                    topic: channel.topic.clone().unwrap_or_default(),
+                    slowmode_seconds: i64::from(channel.slowmode_seconds.unwrap_or(0)),
+                    nsfw: i32::from(channel.nsfw.unwrap_or(false)),
+                    message_record_key: (!channel.record_key.is_empty())
+                        .then(|| channel.record_key.clone()),
+                    mek_generation: community.mek_generation.try_into().unwrap_or(i64::MAX),
+                    log_key: (!channel.record_key.is_empty()).then(|| channel.record_key.clone()),
+                    my_sequence: community
+                        .channel_sequences
+                        .get(&channel_id_hex)
+                        .copied()
+                        .unwrap_or(0)
+                        .try_into()
+                        .unwrap_or(i64::MAX),
+                }
+            })
+            .collect();
+        channels.sort_by(|a, b| {
+            a.sort_order
+                .cmp(&b.sort_order)
+                .then_with(|| a.name.cmp(&b.name))
+        });
+
+        let mut roles: Vec<RoleRow> = gov_state
+            .roles
+            .iter()
+            .map(|(role_id, role)| RoleRow {
+                role_id: i64::from(role_id_to_legacy_u32(role_id)),
+                name: role.name.clone(),
+                color: i64::from(role.color),
+                permissions: role.permissions.cast_signed(),
+                position: i64::from(role.position),
+                hoist: i32::from(role.hoist),
+                mentionable: i32::from(role.mentionable),
+                self_assignable: i32::from(role.self_assignable),
+            })
+            .collect();
+        roles.sort_by(|a, b| {
+            a.position
+                .cmp(&b.position)
+                .then_with(|| a.name.cmp(&b.name))
+        });
+
+        let mut categories: Vec<CategoryRow> = gov_state
+            .categories
+            .iter()
+            .map(|(category_id, category)| CategoryRow {
+                id: hex::encode(category_id.0),
+                name: category.name.clone(),
+                sort_order: i64::from(category.position),
+            })
+            .collect();
+        categories.sort_by(|a, b| {
+            a.sort_order
+                .cmp(&b.sort_order)
+                .then_with(|| a.name.cmp(&b.name))
+        });
+
+        let mut overwrites: Vec<OverwriteRow> = gov_state
+            .overwrites
+            .iter()
+            .map(|((channel_id, target_id), overwrite)| OverwriteRow {
+                channel_id: hex::encode(channel_id.0),
+                target_type: overwrite.target_type.clone(),
+                target_id: target_id.clone(),
+                allow: overwrite.allow.cast_signed(),
+                deny: overwrite.deny.cast_signed(),
+            })
+            .collect();
+        overwrites.sort_by(|a, b| {
+            a.channel_id
+                .cmp(&b.channel_id)
+                .then_with(|| a.target_type.cmp(&b.target_type))
+                .then_with(|| a.target_id.cmp(&b.target_id))
+        });
+
+        let mut my_role_ids = community.my_role_ids.clone();
+        my_role_ids.sort_unstable();
+
+        (
+            community_id.to_string(),
+            community.name.clone(),
+            community.description.clone(),
+            metadata.as_ref().and_then(|meta| meta.icon_hash.clone()),
+            metadata.as_ref().and_then(|meta| meta.banner_hash.clone()),
+            community
+                .my_role
+                .clone()
+                .unwrap_or_else(|| "member".to_string()),
+            serde_json::to_string(&my_role_ids).unwrap_or_else(|_| "[0]".to_string()),
+            community.mek_generation.try_into().unwrap_or(i64::MAX),
+            channels,
+            roles,
+            categories,
+            overwrites,
+        )
+    };
+
+    db_call(pool, move |conn| {
+        conn.execute(
+            "UPDATE communities SET name = ?1, description = ?2, icon_hash = ?3, banner_hash = ?4, \
+             my_role = ?5, my_role_ids = ?6, mek_generation = ?7, lamport_clock = ?8 \
+             WHERE owner_key = ?9 AND id = ?10",
+            rusqlite::params![
+                community_name,
+                community_description,
+                icon_hash,
+                banner_hash,
+                my_role,
+                my_role_ids_json,
+                mek_generation,
+                lamport_clock.cast_signed(),
+                owner_key,
+                community_id_owned,
+            ],
+        )?;
+
+        conn.execute(
+            "DELETE FROM channels WHERE owner_key = ?1 AND community_id = ?2",
+            rusqlite::params![owner_key, community_id_owned],
+        )?;
+        for channel in &channels {
+            conn.execute(
+                "INSERT INTO channels \
+                 (owner_key, id, community_id, name, channel_type, sort_order, category_id, topic, slowmode_seconds, nsfw, message_record_key, mek_generation, log_key, my_sequence) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                rusqlite::params![
+                    owner_key,
+                    channel.id,
+                    community_id_owned,
+                    channel.name,
+                    channel.channel_type,
+                    channel.sort_order,
+                    channel.category_id,
+                    channel.topic,
+                    channel.slowmode_seconds,
+                    channel.nsfw,
+                    channel.message_record_key,
+                    channel.mek_generation,
+                    channel.log_key,
+                    channel.my_sequence,
+                ],
+            )?;
+        }
+
+        conn.execute(
+            "DELETE FROM community_roles WHERE owner_key = ?1 AND community_id = ?2",
+            rusqlite::params![owner_key, community_id_owned],
+        )?;
+        for role in &roles {
+            conn.execute(
+                "INSERT INTO community_roles \
+                 (owner_key, community_id, role_id, name, color, permissions, position, hoist, mentionable, self_assignable) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                rusqlite::params![
+                    owner_key,
+                    community_id_owned,
+                    role.role_id,
+                    role.name,
+                    role.color,
+                    role.permissions,
+                    role.position,
+                    role.hoist,
+                    role.mentionable,
+                    role.self_assignable,
+                ],
+            )?;
+        }
+
+        conn.execute(
+            "DELETE FROM community_categories WHERE owner_key = ?1 AND community_id = ?2",
+            rusqlite::params![owner_key, community_id_owned],
+        )?;
+        for category in &categories {
+            conn.execute(
+                "INSERT INTO community_categories (owner_key, community_id, id, name, sort_order) \
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                rusqlite::params![
+                    owner_key,
+                    community_id_owned,
+                    category.id,
+                    category.name,
+                    category.sort_order,
+                ],
+            )?;
+        }
+
+        conn.execute(
+            "DELETE FROM channel_overwrites WHERE owner_key = ?1 AND community_id = ?2",
+            rusqlite::params![owner_key, community_id_owned],
+        )?;
+        for overwrite in &overwrites {
+            conn.execute(
+                "INSERT INTO channel_overwrites \
+                 (owner_key, community_id, channel_id, target_type, target_id, allow, deny) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                rusqlite::params![
+                    owner_key,
+                    community_id_owned,
+                    overwrite.channel_id,
+                    overwrite.target_type,
+                    overwrite.target_id,
+                    overwrite.allow,
+                    overwrite.deny,
+                ],
+            )?;
+        }
+
+        Ok(())
+    })
+    .await
 }
 
 /// Get the governance record DHT key for a community.
@@ -631,7 +1074,8 @@ pub fn lamport_counter(state: &Arc<AppState>, community_id: &str) -> u64 {
 pub fn increment_lamport(state: &Arc<AppState>, community_id: &str) -> u64 {
     let mut communities = state.communities.write();
     if let Some(cs) = communities.get_mut(community_id) {
-        cs.lamport_counter += 1;
+        let mut clock = rekindle_gossip::lamport::LamportClock::new(cs.lamport_counter);
+        cs.lamport_counter = clock.increment();
         cs.lamport_counter
     } else {
         0
@@ -644,12 +1088,13 @@ pub fn increment_lamport(state: &Arc<AppState>, community_id: &str) -> u64 {
 pub fn merge_lamport(state: &Arc<AppState>, community_id: &str, received: u64) {
     let mut communities = state.communities.write();
     if let Some(cs) = communities.get_mut(community_id) {
-        cs.lamport_counter = cs.lamport_counter.max(received) + 1;
+        let mut clock = rekindle_gossip::lamport::LamportClock::new(cs.lamport_counter);
+        cs.lamport_counter = clock.merge(received);
     }
 }
 
 /// Compute effective permissions for the local user in a community channel.
-/// Uses the cached CRDT governance state. Returns 0 if governance not loaded.
+/// Uses the cached CRDT governance state and returns 0 until governance loads.
 pub fn my_permissions(
     state: &Arc<AppState>,
     community_id: &str,
@@ -673,4 +1118,8 @@ pub fn my_permissions(
     let pseudo = rekindle_types::id::PseudonymKey(pseudo_bytes);
     let now = rekindle_utils::timestamp_secs();
     rekindle_governance::permissions::compute_permissions(&pseudo, channel_id, gov, now)
+}
+
+fn role_id_to_legacy_u32(role_id: &rekindle_types::id::RoleId) -> u32 {
+    u32::from_le_bytes([role_id.0[0], role_id.0[1], role_id.0[2], role_id.0[3]])
 }

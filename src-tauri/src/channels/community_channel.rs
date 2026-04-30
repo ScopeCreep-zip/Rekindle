@@ -19,17 +19,13 @@ pub enum CommunityEvent {
     #[serde(rename_all = "camelCase")]
     MekRotated {
         community_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        channel_id: Option<String>,
         new_generation: u64,
     },
     /// We were kicked from a community (our pseudonym was removed by an admin).
     #[serde(rename_all = "camelCase")]
     Kicked { community_id: String },
-    /// Role definitions changed (created, edited, deleted, reordered).
-    #[serde(rename_all = "camelCase")]
-    RolesChanged {
-        community_id: String,
-        roles: Vec<RoleDto>,
-    },
     /// A member's assigned roles were changed.
     #[serde(rename_all = "camelCase")]
     MemberRolesChanged {
@@ -95,6 +91,20 @@ pub enum CommunityEvent {
     /// A message was unpinned.
     #[serde(rename_all = "camelCase")]
     MessageUnpinned {
+        community_id: String,
+        channel_id: String,
+        message_id: String,
+    },
+    /// A queued channel message was eventually delivered after retry.
+    #[serde(rename_all = "camelCase")]
+    ChannelMessageDelivered {
+        community_id: String,
+        channel_id: String,
+        message_id: String,
+    },
+    /// A queued channel message permanently failed after all retry attempts.
+    #[serde(rename_all = "camelCase")]
+    ChannelMessageDeliveryFailed {
         community_id: String,
         channel_id: String,
         message_id: String,
@@ -191,43 +201,18 @@ pub enum CommunityEvent {
         title: String,
         minutes_until_start: u32,
     },
-    /// Channel or category structure was updated (create, delete, rename, move, reorder, topic, slowmode).
+    /// Local AutoMod alert for moderators on this client.
     #[serde(rename_all = "camelCase")]
-    ChannelsUpdated {
+    AutoModAlert {
         community_id: String,
-        channels: Vec<ChannelInfoFrontendDto>,
-        categories: Vec<CategoryInfoFrontendDto>,
-    },
-    /// An invite was created (code_hash only — raw code never broadcast).
-    #[serde(rename_all = "camelCase")]
-    InviteCreated {
-        community_id: String,
-        code_hash: String,
-        created_by: String,
-        max_uses: Option<u32>,
-        uses: u32,
-        expires_at: Option<u64>,
-        created_at: u64,
-    },
-    /// An invite was revoked.
-    #[serde(rename_all = "camelCase")]
-    InviteRevoked {
-        community_id: String,
-        code_hash: String,
-    },
-    /// An invite's use count was updated.
-    #[serde(rename_all = "camelCase")]
-    InviteUsed {
-        community_id: String,
-        code_hash: String,
-        new_use_count: u32,
+        channel_id: String,
+        message_id: String,
+        rule_name: String,
     },
     /// The member list for a community was refreshed (e.g., after DHT update).
     /// Frontend should re-fetch members via `getCommunityMembers`.
     #[serde(rename_all = "camelCase")]
-    MembersRefreshed {
-        community_id: String,
-    },
+    MembersRefreshed { community_id: String },
     /// System message (join/leave/kick/ban events posted inline in chat).
     #[serde(rename_all = "camelCase")]
     SystemMessage {
@@ -237,16 +222,10 @@ pub enum CommunityEvent {
     },
     /// Raid alert broadcast — owners/admins should take action.
     #[serde(rename_all = "camelCase")]
-    RaidAlert {
-        community_id: String,
-        active: bool,
-    },
+    RaidAlert { community_id: String, active: bool },
     /// Channel lockdown broadcast — non-admins should restrict sending.
     #[serde(rename_all = "camelCase")]
-    ChannelLockdown {
-        community_id: String,
-        locked: bool,
-    },
+    ChannelLockdown { community_id: String, locked: bool },
     /// A member completed onboarding — their roles were assigned.
     #[serde(rename_all = "camelCase")]
     OnboardingComplete {
@@ -262,9 +241,7 @@ pub enum CommunityEvent {
     },
     /// Join accepted by a peer — MEK and community data received.
     #[serde(rename_all = "camelCase")]
-    JoinAccepted {
-        community_id: String,
-    },
+    JoinAccepted { community_id: String },
     /// Sync response received — channel messages were merged from an archiver.
     /// Frontend should refresh the channel's message list.
     #[serde(rename_all = "camelCase")]
@@ -273,19 +250,10 @@ pub enum CommunityEvent {
         channel_id: String,
         message_count: usize,
     },
-    /// Community metadata was updated (name, description).
-    #[serde(rename_all = "camelCase")]
-    CommunityUpdated {
-        community_id: String,
-        name: Option<String>,
-        description: Option<String>,
-    },
     /// CRDT governance state was rebuilt from DHT. Frontend should re-fetch
     /// community details (channels, roles, members, permissions).
     #[serde(rename_all = "camelCase")]
-    GovernanceUpdated {
-        community_id: String,
-    },
+    GovernanceUpdated { community_id: String },
     /// A member joined a voice channel.
     #[serde(rename_all = "camelCase")]
     VoiceJoin {
@@ -355,6 +323,8 @@ pub struct RoleDto {
     pub position: i32,
     pub hoist: bool,
     pub mentionable: bool,
+    #[serde(default)]
+    pub self_assignable: bool,
 }
 
 impl From<&rekindle_protocol::messaging::RoleDto> for RoleDto {
@@ -367,6 +337,7 @@ impl From<&rekindle_protocol::messaging::RoleDto> for RoleDto {
             position: dto.position,
             hoist: dto.hoist,
             mentionable: dto.mentionable,
+            self_assignable: dto.self_assignable,
         }
     }
 }
@@ -409,6 +380,7 @@ impl From<&crate::state::RoleDefinition> for RoleDto {
             position: def.position,
             hoist: def.hoist,
             mentionable: def.mentionable,
+            self_assignable: def.self_assignable,
         }
     }
 }
@@ -423,53 +395,7 @@ impl From<&rekindle_protocol::dht::community::types::RoleEntryV2> for RoleDto {
             position: r.position,
             hoist: r.hoist,
             mentionable: r.mentionable,
-        }
-    }
-}
-
-/// Channel info DTO for frontend consumption (from ChannelsUpdated broadcast).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ChannelInfoFrontendDto {
-    pub id: String,
-    pub name: String,
-    pub channel_type: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub category_id: Option<String>,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub topic: String,
-    #[serde(default)]
-    pub slowmode_seconds: u32,
-}
-
-/// Category info DTO for frontend consumption (from ChannelsUpdated broadcast).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CategoryInfoFrontendDto {
-    pub id: String,
-    pub name: String,
-    pub sort_order: i32,
-}
-
-impl From<&rekindle_protocol::messaging::ChannelInfoDto> for ChannelInfoFrontendDto {
-    fn from(dto: &rekindle_protocol::messaging::ChannelInfoDto) -> Self {
-        Self {
-            id: dto.id.clone(),
-            name: dto.name.clone(),
-            channel_type: dto.channel_type.clone(),
-            category_id: dto.category_id.clone(),
-            topic: dto.topic.clone(),
-            slowmode_seconds: dto.slowmode_seconds,
-        }
-    }
-}
-
-impl From<&rekindle_protocol::messaging::CategoryDto> for CategoryInfoFrontendDto {
-    fn from(dto: &rekindle_protocol::messaging::CategoryDto) -> Self {
-        Self {
-            id: dto.id.clone(),
-            name: dto.name.clone(),
-            sort_order: dto.sort_order,
+            self_assignable: r.self_assignable,
         }
     }
 }

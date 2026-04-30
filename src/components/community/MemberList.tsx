@@ -323,6 +323,7 @@ const MemberList: Component<MemberListProps> = (props) => {
       <Show when={profilePopup()}>
         {(popup) => (
           <MemberProfilePopup
+            communityId={props.communityId}
             member={popup().member}
             roles={props.roles}
             x={popup().x}

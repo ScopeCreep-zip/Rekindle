@@ -286,9 +286,8 @@ pub async fn read_onboarding(
 ) -> Result<Option<OnboardingConfig>, ProtocolError> {
     match dht.get_value(key, MANIFEST_ONBOARDING).await? {
         Some(data) => {
-            let config: OnboardingConfig = serde_json::from_slice(&data).map_err(|e| {
-                ProtocolError::Deserialization(format!("manifest onboarding: {e}"))
-            })?;
+            let config: OnboardingConfig = serde_json::from_slice(&data)
+                .map_err(|e| ProtocolError::Deserialization(format!("manifest onboarding: {e}")))?;
             Ok(Some(config))
         }
         None => Ok(None),

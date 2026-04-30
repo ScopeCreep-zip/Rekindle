@@ -237,13 +237,12 @@ impl VoiceSendLoop {
             return;
         }
 
-        let loss_pct_u32 = if self.packets_sent > 0 {
-            // Multiply first to avoid truncation to 0; values are tiny (reset every 5s)
-            u32::try_from(self.send_failures.saturating_mul(100) / self.packets_sent)
-                .unwrap_or(100)
-        } else {
-            0
-        };
+        let loss_pct_u32 = self
+            .send_failures
+            .saturating_mul(100)
+            .checked_div(self.packets_sent)
+            .and_then(|loss| u32::try_from(loss).ok())
+            .unwrap_or(0);
         let quality = match loss_pct_u32 {
             0..5 => "good",
             5..15 => "fair",

@@ -1,14 +1,14 @@
 #![recursion_limit = "512"]
 
+pub mod channel_repo;
 mod channels;
 pub mod commands;
 pub mod db;
 pub mod db_helpers;
 mod deep_links;
+pub mod friend_repo;
 pub mod invite_helpers;
 pub mod keystore;
-pub mod channel_repo;
-pub mod friend_repo;
 pub mod message_repo;
 pub mod serde_helpers;
 mod services;
@@ -25,6 +25,167 @@ use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_global_shortcut::{Code, Modifiers, ShortcutState};
 
 use state::{AppState, SharedState};
+
+fn app_invoke_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
+    tauri::generate_handler![
+        // auth
+        commands::auth::create_identity,
+        commands::auth::login,
+        commands::auth::get_identity,
+        commands::auth::logout,
+        commands::auth::list_identities,
+        commands::auth::delete_identity,
+        // chat
+        commands::chat::prepare_chat_session,
+        commands::chat::send_message,
+        commands::chat::send_typing,
+        commands::chat::get_message_history,
+        commands::chat::mark_read,
+        // friends
+        commands::friends::add_friend,
+        commands::friends::remove_friend,
+        commands::friends::accept_request,
+        commands::friends::get_friends,
+        commands::friends::reject_request,
+        commands::friends::get_pending_requests,
+        commands::friends::create_friend_group,
+        commands::friends::rename_friend_group,
+        commands::friends::move_friend_to_group,
+        commands::friends::generate_invite,
+        commands::friends::add_friend_from_invite,
+        commands::friends::block_user,
+        commands::friends::unblock_user,
+        commands::friends::get_blocked_users,
+        commands::friends::cancel_request,
+        commands::friends::cancel_invite,
+        commands::friends::get_outgoing_invites,
+        commands::friends::emit_friends_presence,
+        // community
+        commands::community::create_community,
+        commands::community::join_community,
+        commands::community::create_channel,
+        commands::community::create_category,
+        commands::community::delete_category,
+        commands::community::rename_category,
+        commands::community::move_channel,
+        commands::community::reorder_categories,
+        commands::community::create_community_invite,
+        commands::community::revoke_community_invite,
+        commands::community::list_community_invites,
+        commands::community::send_channel_message,
+        commands::community::edit_channel_message,
+        commands::community::delete_channel_message,
+        commands::community::get_channel_messages,
+        commands::community::get_communities,
+        commands::community::get_community_details,
+        commands::community::get_community_members,
+        commands::community::remove_community_member,
+        commands::community::get_roles,
+        commands::community::create_role,
+        commands::community::edit_role,
+        commands::community::delete_role,
+        commands::community::assign_role,
+        commands::community::unassign_role,
+        commands::community::self_assign_role,
+        commands::community::self_unassign_role,
+        commands::community::timeout_member,
+        commands::community::remove_timeout,
+        commands::community::set_channel_overwrite,
+        commands::community::delete_channel_overwrite,
+        commands::community::set_slowmode,
+        commands::community::leave_community,
+        commands::community::delete_channel,
+        commands::community::rename_channel,
+        commands::community::update_community_info,
+        commands::community::ban_member,
+        commands::community::unban_member,
+        commands::community::get_ban_list,
+        commands::community::rotate_mek,
+        commands::community::set_channel_notification_level,
+        commands::community::set_quiet_hours,
+        commands::community::get_quiet_hours,
+        commands::community::add_reaction,
+        commands::community::remove_reaction,
+        commands::community::pin_message,
+        commands::community::unpin_message,
+        commands::community::get_channel_pins,
+        commands::community::get_audit_log,
+        commands::community::list_automod_rules,
+        commands::community::set_automod_rule,
+        commands::community::delete_automod_rule,
+        commands::community::get_onboarding_config,
+        commands::community::set_onboarding_config,
+        commands::community::get_welcome_screen,
+        commands::community::set_welcome_screen,
+        commands::community::submit_onboarding_answers,
+        commands::community::debug_gossip_state,
+        commands::community::send_channel_typing,
+        commands::community::update_community_presence,
+        commands::community::get_older_channel_messages,
+        commands::community::set_channel_topic,
+        commands::community::reorder_channels,
+        commands::community::create_poll,
+        commands::community::vote_poll,
+        commands::community::close_poll,
+        commands::community::upload_emoji,
+        commands::community::delete_emoji,
+        commands::community::list_expressions,
+        // community threads
+        commands::community::create_thread,
+        commands::community::get_channel_threads,
+        commands::community::send_thread_message,
+        commands::community::get_thread_messages,
+        commands::community::archive_thread,
+        commands::community::unarchive_thread,
+        // community events
+        commands::community::create_event,
+        commands::community::edit_event,
+        commands::community::delete_event,
+        commands::community::cancel_event,
+        commands::community::rsvp_event,
+        commands::community::set_event_rsvp,
+        commands::community::list_event_attendees,
+        commands::community::get_events,
+        // community game servers
+        commands::community::add_game_server,
+        commands::community::remove_game_server,
+        commands::community::get_game_servers,
+        // community unread tracking
+        commands::community::mark_channel_read,
+        commands::community::get_unread_counts,
+        // voice
+        commands::voice::join_voice_channel,
+        commands::voice::leave_voice,
+        commands::voice::set_mute,
+        commands::voice::set_deafen,
+        commands::voice::list_audio_devices,
+        commands::voice::set_audio_devices,
+        commands::voice::set_voice_mode,
+        commands::voice::server_mute_member,
+        commands::voice::server_deafen_member,
+        // status
+        commands::status::set_status,
+        commands::status::set_nickname,
+        commands::status::set_avatar,
+        commands::status::get_avatar,
+        commands::status::set_status_message,
+        // game
+        commands::game::get_game_status,
+        commands::game::get_game_name,
+        commands::game::launch_game_to_server,
+        // settings
+        commands::settings::get_preferences,
+        commands::settings::set_preferences,
+        commands::settings::check_for_updates,
+        // windows
+        commands::window::show_buddy_list,
+        commands::window::open_chat_window,
+        commands::window::open_settings_window,
+        commands::window::open_community_window,
+        commands::window::open_profile_window,
+        commands::window::get_network_status,
+    ]
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -82,6 +243,7 @@ pub fn run() {
         .setup(move |app| {
             // Store app handle in AppState so background services can emit events
             *state_for_setup.app_handle.write() = Some(app.handle().clone());
+            services::community::start_write_retry_worker(Arc::clone(&state_for_setup));
 
             tray::setup_tray(app)?;
 
@@ -162,11 +324,7 @@ pub fn run() {
             let state_for_veilid = Arc::clone(&state_for_setup);
             let app_handle_clone = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                match services::veilid_service::initialize_node(
-                    &app_handle_clone,
-                    &state_for_veilid,
-                )
-                .await
+                match services::veilid::initialize_node(&app_handle_clone, &state_for_veilid).await
                 {
                     Ok(update_rx) => {
                         // Create shutdown channel for the dispatch loop
@@ -175,13 +333,12 @@ pub fn run() {
 
                         // Start dispatch loop (runs until app exit)
                         let dispatch_state = Arc::clone(&state_for_veilid);
-                        let dispatch_handle =
-                            tokio::spawn(services::veilid_service::start_dispatch_loop(
-                                app_handle_clone,
-                                dispatch_state,
-                                update_rx,
-                                shutdown_rx,
-                            ));
+                        let dispatch_handle = tokio::spawn(services::veilid::start_dispatch_loop(
+                            app_handle_clone,
+                            dispatch_state,
+                            update_rx,
+                            shutdown_rx,
+                        ));
                         *state_for_veilid.dispatch_loop_handle.write() = Some(dispatch_handle);
                     }
                     Err(e) => {
@@ -222,157 +379,14 @@ pub fn run() {
                 // Other windows (chat, settings, etc.) close normally
             }
         })
-        .invoke_handler(tauri::generate_handler![
-            // auth
-            commands::auth::create_identity,
-            commands::auth::login,
-            commands::auth::get_identity,
-            commands::auth::logout,
-            commands::auth::list_identities,
-            commands::auth::delete_identity,
-            // chat
-            commands::chat::prepare_chat_session,
-            commands::chat::send_message,
-            commands::chat::send_typing,
-            commands::chat::get_message_history,
-            commands::chat::mark_read,
-            // friends
-            commands::friends::add_friend,
-            commands::friends::remove_friend,
-            commands::friends::accept_request,
-            commands::friends::get_friends,
-            commands::friends::reject_request,
-            commands::friends::get_pending_requests,
-            commands::friends::create_friend_group,
-            commands::friends::rename_friend_group,
-            commands::friends::move_friend_to_group,
-            commands::friends::generate_invite,
-            commands::friends::add_friend_from_invite,
-            commands::friends::block_user,
-            commands::friends::unblock_user,
-            commands::friends::get_blocked_users,
-            commands::friends::cancel_request,
-            commands::friends::cancel_invite,
-            commands::friends::get_outgoing_invites,
-            commands::friends::emit_friends_presence,
-            // community
-            commands::community::create_community,
-            commands::community::join_community,
-            commands::community::create_channel,
-            commands::community::create_category,
-            commands::community::delete_category,
-            commands::community::rename_category,
-            commands::community::move_channel,
-            commands::community::reorder_categories,
-            commands::community::create_community_invite,
-            commands::community::revoke_community_invite,
-            commands::community::list_community_invites,
-            commands::community::send_channel_message,
-            commands::community::edit_channel_message,
-            commands::community::delete_channel_message,
-            commands::community::get_channel_messages,
-            commands::community::get_communities,
-            commands::community::get_community_details,
-            commands::community::get_community_members,
-            commands::community::remove_community_member,
-            commands::community::get_roles,
-            commands::community::create_role,
-            commands::community::edit_role,
-            commands::community::delete_role,
-            commands::community::assign_role,
-            commands::community::unassign_role,
-            commands::community::timeout_member,
-            commands::community::remove_timeout,
-            commands::community::set_channel_overwrite,
-            commands::community::delete_channel_overwrite,
-            commands::community::set_slowmode,
-            commands::community::leave_community,
-            commands::community::delete_channel,
-            commands::community::rename_channel,
-            commands::community::update_community_info,
-            commands::community::ban_member,
-            commands::community::unban_member,
-            commands::community::get_ban_list,
-            commands::community::rotate_mek,
-            commands::community::add_reaction,
-            commands::community::remove_reaction,
-            commands::community::pin_message,
-            commands::community::unpin_message,
-            commands::community::get_channel_pins,
-            commands::community::get_audit_log,
-            commands::community::get_onboarding_config,
-            commands::community::set_onboarding_config,
-            commands::community::get_welcome_screen,
-            commands::community::set_welcome_screen,
-            commands::community::submit_onboarding_answers,
-            commands::community::debug_gossip_state,
-            commands::community::send_channel_typing,
-            commands::community::update_community_presence,
-            commands::community::get_older_channel_messages,
-            commands::community::set_channel_topic,
-            commands::community::reorder_channels,
-            // community threads
-            commands::community::create_thread,
-            commands::community::get_channel_threads,
-            commands::community::send_thread_message,
-            commands::community::get_thread_messages,
-            commands::community::archive_thread,
-            commands::community::unarchive_thread,
-            // community events
-            commands::community::create_event,
-            commands::community::edit_event,
-            commands::community::delete_event,
-            commands::community::cancel_event,
-            commands::community::rsvp_event,
-            commands::community::get_events,
-            // community game servers
-            commands::community::add_game_server,
-            commands::community::remove_game_server,
-            commands::community::get_game_servers,
-            // community unread tracking
-            commands::community::mark_channel_read,
-            commands::community::get_unread_counts,
-            // voice
-            commands::voice::join_voice_channel,
-            commands::voice::leave_voice,
-            commands::voice::set_mute,
-            commands::voice::set_deafen,
-            commands::voice::list_audio_devices,
-            commands::voice::set_audio_devices,
-            commands::voice::set_voice_mode,
-            commands::voice::server_mute_member,
-            commands::voice::server_deafen_member,
-            // status
-            commands::status::set_status,
-            commands::status::set_nickname,
-            commands::status::set_avatar,
-            commands::status::get_avatar,
-            commands::status::set_status_message,
-            // game
-            commands::game::get_game_status,
-            commands::game::get_game_name,
-            commands::game::launch_game_to_server,
-            // settings
-            commands::settings::get_preferences,
-            commands::settings::set_preferences,
-            commands::settings::check_for_updates,
-            // windows
-            commands::window::show_buddy_list,
-            commands::window::open_chat_window,
-            commands::window::open_settings_window,
-            commands::window::open_community_window,
-            commands::window::open_profile_window,
-            commands::window::get_network_status,
-        ])
+        .invoke_handler(app_invoke_handler())
         .build(tauri::generate_context!())
         .expect("error while building Rekindle")
         .run(|app_handle, event| match &event {
-            tauri::RunEvent::ExitRequested { code, api, .. } => {
+            tauri::RunEvent::ExitRequested { code, api, .. } if code.is_none() => {
                 // code: None  = all windows closed (keep alive for tray icon)
                 // code: Some  = programmatic exit via app.exit() (let it proceed)
-                if code.is_none() {
-                    api.prevent_exit();
-                }
+                api.prevent_exit();
             }
             tauri::RunEvent::Exit => {
                 // app.exit(0) was called (from tray quit or system shutdown).
@@ -482,13 +496,13 @@ async fn graceful_shutdown(state: &SharedState) {
     // 7. Now clean up user-specific DHT state (close records, release route,
     //    abort remaining background handles).
     //    Pass None for app_handle — the app is exiting, no UI to update.
-    services::veilid_service::logout_cleanup(None, state).await;
+    services::veilid::logout_cleanup(None, state).await;
 
     // Clear community state
     state.mek_cache.lock().clear();
 
     // 8. Shut down the Veilid node (only on app exit)
-    services::veilid_service::shutdown_app(state).await;
+    services::veilid::shutdown_app(state).await;
 
     tracing::info!("graceful shutdown complete");
 }

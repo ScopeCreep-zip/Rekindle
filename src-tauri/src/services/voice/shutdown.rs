@@ -1,7 +1,7 @@
 //! Voice shutdown with configurable scope.
 //!
 //! Moved from `commands/voice.rs` to allow both commands and services
-//! (e.g. `veilid_service::logout_cleanup`) to call `shutdown_voice` directly.
+//! (e.g. Veilid lifecycle cleanup) to call `shutdown_voice` directly.
 
 use crate::state::AppState;
 
@@ -65,7 +65,9 @@ pub(crate) async fn shutdown_voice(state: &AppState, opts: &VoiceShutdownOpts) {
             } else {
                 (None, None)
             };
-            (loops.0, loops.1, loops.2, loops.3, monitor.0, monitor.1, loops.4, loops.5)
+            (
+                loops.0, loops.1, loops.2, loops.3, monitor.0, monitor.1, loops.4, loops.5,
+            )
         } else {
             (None, None, None, None, None, None, None, None)
         }
