@@ -29,6 +29,7 @@ use crate::gossip::DedupCache;
 use crate::handler::{InboundHandler, VerifiedSender};
 use crate::payload::gossip::SignedGossipEnvelope;
 use crate::payload::voice::VoicePayload;
+use crate::shared::{AttachmentState, SharedState, TransportNotification};
 
 /// Run the inbound dispatch loop until a shutdown signal is received.
 pub(crate) async fn run_dispatch_loop<H: InboundHandler>(
@@ -37,6 +38,7 @@ pub(crate) async fn run_dispatch_loop<H: InboundHandler>(
     mut update_rx: mpsc::Receiver<VeilidUpdate>,
     mut shutdown_rx: mpsc::Receiver<()>,
     api: veilid_core::VeilidAPI,
+    shared: Arc<SharedState>,
 ) {
     let mut dedup = DedupCache::new(config.dedup_cache_capacity);
     info!("transport dispatch loop started");
@@ -44,7 +46,7 @@ pub(crate) async fn run_dispatch_loop<H: InboundHandler>(
     loop {
         tokio::select! {
             Some(update) = update_rx.recv() => {
-                dispatch_update(&handler, &config, &mut dedup, &api, update).await;
+                dispatch_update(&handler, &config, &mut dedup, &api, &shared, update).await;
             }
             _ = shutdown_rx.recv() => {
                 info!("transport dispatch loop shutting down");
@@ -59,27 +61,37 @@ async fn dispatch_update<H: InboundHandler>(
     config: &TransportConfig,
     dedup: &mut DedupCache,
     api: &veilid_core::VeilidAPI,
+    shared: &SharedState,
     update: VeilidUpdate,
 ) {
     match update {
         VeilidUpdate::AppMessage(msg) => {
-            dispatch_app_message(handler, config, dedup, msg.message(), api).await;
+            dispatch_app_message(handler, config, dedup, msg.message(), api, shared).await;
         }
         VeilidUpdate::AppCall(call) => {
             dispatch_app_call(handler, config, api, &call).await;
         }
         VeilidUpdate::ValueChange(change) => {
-            dispatch_value_change(handler, &change).await;
+            dispatch_value_change(handler, shared, &change).await;
         }
         VeilidUpdate::Attachment(attachment) => {
+            let state_str = attachment.state.to_string();
+            let attached = attachment.state.is_attached();
+            let pir = attachment.public_internet_ready;
+
+            // Update shared state (atomic + broadcast to subscribers)
+            let att_state = AttachmentState::from_veilid_string(&state_str);
+            shared.set_attachment(att_state, attached, pir);
+
+            // Also deliver to the InboundHandler
             handler.on_event(TransportEvent::AttachmentChanged {
-                state: attachment.state.to_string(),
-                is_attached: attachment.state.is_attached(),
-                public_internet_ready: attachment.public_internet_ready,
+                state: state_str,
+                is_attached: attached,
+                public_internet_ready: pir,
             }).await;
         }
         VeilidUpdate::RouteChange(change) => {
-            dispatch_route_change(handler, &change).await;
+            dispatch_route_change(handler, shared, &change).await;
         }
         VeilidUpdate::Shutdown => {
             info!("veilid shutdown event received");
@@ -96,6 +108,7 @@ async fn dispatch_app_message<H: InboundHandler>(
     dedup: &mut DedupCache,
     raw: &[u8],
     api: &veilid_core::VeilidAPI,
+    shared: &SharedState,
 ) {
     let (type_id, payload) = match frame::decode(raw) {
         Ok(result) => result,
@@ -107,13 +120,13 @@ async fn dispatch_app_message<H: InboundHandler>(
 
     match type_id {
         TypeId::GossipBroadcast => {
-            dispatch_gossip(handler, config, dedup, payload, raw, api).await;
+            dispatch_gossip(handler, config, dedup, payload, raw, api, shared).await;
         }
         TypeId::VoicePacket => {
             dispatch_voice(handler, payload).await;
         }
         tid if !tid.is_rpc() => {
-            dispatch_dm(handler, tid, payload).await;
+            dispatch_dm(handler, tid, payload, shared).await;
         }
         other => {
             warn!(type_id = other as u8, "unexpected RPC type in app_message, dropping");
@@ -186,6 +199,7 @@ async fn dispatch_gossip<H: InboundHandler>(
     payload: &[u8],
     _raw_frame: &[u8],
     _api: &veilid_core::VeilidAPI,
+    shared: &SharedState,
 ) {
     let envelope: SignedGossipEnvelope = match postcard::from_bytes(payload) {
         Ok(e) => e,
@@ -195,14 +209,17 @@ async fn dispatch_gossip<H: InboundHandler>(
         }
     };
 
-    let dedup_key = envelope.dedup_key();
-    if dedup.check_and_insert(&envelope.community_id, &envelope.sender_pseudonym, &dedup_key) {
-        trace!(dedup_key = %dedup_key, "gossip dedup: duplicate");
+    // CRITICAL: Verify signature BEFORE dedup insertion.
+    // If we dedup first, an attacker can race a forged envelope with a
+    // valid dedup_key to suppress the legitimate message.
+    if let Err(e) = crate::crypto::envelope::verify_gossip_envelope(&envelope) {
+        warn!(error = %e, sender = %envelope.sender_pseudonym, "dropping gossip: bad signature");
         return;
     }
 
-    if let Err(e) = crate::crypto::envelope::verify_gossip_envelope(&envelope) {
-        warn!(error = %e, sender = %envelope.sender_pseudonym, "dropping gossip: bad signature");
+    let dedup_key = envelope.dedup_key();
+    if dedup.check_and_insert(&envelope.community_id, &envelope.sender_pseudonym, &dedup_key) {
+        trace!(dedup_key = %dedup_key, "gossip dedup: duplicate");
         return;
     }
 
@@ -230,15 +247,32 @@ async fn dispatch_gossip<H: InboundHandler>(
         }
     };
 
+    // Extract channel_id and message_id for the notification before moving gossip_payload
+    let (notif_channel_id, notif_message_id) = match &gossip_payload {
+        crate::payload::gossip::GossipPayload::MessageNotification { channel_id, message_id, .. } => {
+            (Some(channel_id.clone()), Some(message_id.clone()))
+        }
+        _ => (None, None),
+    };
+
     handler.on_gossip(
         &envelope.community_id,
         &envelope.sender_pseudonym,
         gossip_payload,
         envelope.lamport_ts,
     ).await;
+
+    // Notify subscribers
+    shared.notify(&TransportNotification::GossipReceived {
+        community_id: envelope.community_id,
+        sender_pseudonym: envelope.sender_pseudonym,
+        channel_id: notif_channel_id,
+        message_id: notif_message_id,
+        lamport_ts: envelope.lamport_ts,
+    });
 }
 
-async fn dispatch_dm<H: InboundHandler>(handler: &Arc<H>, type_id: TypeId, payload: &[u8]) {
+async fn dispatch_dm<H: InboundHandler>(handler: &Arc<H>, type_id: TypeId, payload: &[u8], shared: &SharedState) {
     let signed: SignedPayload = match postcard::from_bytes(payload) {
         Ok(s) => s,
         Err(e) => {
@@ -264,6 +298,14 @@ async fn dispatch_dm<H: InboundHandler>(handler: &Arc<H>, type_id: TypeId, paylo
         public_key: signed.sender_key_hex,
         display_name: String::new(),
     };
+
+    // Notify subscribers before handler (for consistent ordering)
+    shared.notify(&TransportNotification::DmReceived {
+        sender_key: sender.public_key.clone(),
+        sender_name: sender.display_name.clone(),
+        timestamp: signed.timestamp,
+    });
+
     handler.on_dm(&sender, dm_payload, signed.timestamp).await;
 }
 
@@ -275,12 +317,62 @@ async fn dispatch_voice<H: InboundHandler>(handler: &Arc<H>, payload: &[u8]) {
             return;
         }
     };
+
+    // Voice packets MUST be authenticated. In Signed mode (default), verify
+    // the Ed25519 signature. In TrustedHmacOnly mode, the signature field is
+    // empty — the HMAC (verified by the application layer with the session key)
+    // provides authentication. But we still reject packets with a non-empty
+    // signature that fails verification (no accepting garbage signatures).
+    if !voice.signature.is_empty() {
+        let sig_data = voice.signature_data();
+        let sig_result = verify_voice_signature(&voice.sender_key_hex, &sig_data, &voice.signature);
+        if let Err(e) = sig_result {
+            warn!(error = %e, sender = %voice.sender_key_hex, "dropping voice: bad signature");
+            return;
+        }
+    }
+    // If signature is empty, the packet is in TrustedHmacOnly mode.
+    // The HMAC is verified by the application layer which holds the session key.
+    // The transport layer cannot verify the HMAC because it doesn't have the MEK.
+
     let sender_key = voice.sender_key_hex.clone();
     handler.on_voice(&sender_key, voice).await;
 }
 
+/// Verify an Ed25519 signature on voice packet data.
+fn verify_voice_signature(sender_hex: &str, data: &[u8], signature: &[u8]) -> crate::error::Result<()> {
+    let key_bytes = hex::decode(sender_hex).map_err(|e| {
+        crate::error::TransportError::SignatureVerificationFailed {
+            sender: format!("invalid hex: {e}"),
+        }
+    })?;
+    let key_arr: [u8; 32] = key_bytes.try_into().map_err(|_| {
+        crate::error::TransportError::SignatureVerificationFailed {
+            sender: "voice key must be 32 bytes".into(),
+        }
+    })?;
+    let verifying_key = ed25519_dalek::VerifyingKey::from_bytes(&key_arr).map_err(|e| {
+        crate::error::TransportError::SignatureVerificationFailed {
+            sender: format!("invalid Ed25519 key: {e}"),
+        }
+    })?;
+    let sig_arr: [u8; 64] = signature.try_into().map_err(|_| {
+        crate::error::TransportError::SignatureVerificationFailed {
+            sender: "voice signature must be 64 bytes".into(),
+        }
+    })?;
+    let sig = ed25519_dalek::Signature::from_bytes(&sig_arr);
+    use ed25519_dalek::Verifier;
+    verifying_key.verify(data, &sig).map_err(|_| {
+        crate::error::TransportError::SignatureVerificationFailed {
+            sender: sender_hex.to_string(),
+        }
+    })
+}
+
 async fn dispatch_value_change<H: InboundHandler>(
     handler: &Arc<H>,
+    shared: &SharedState,
     change: &veilid_core::VeilidValueChange,
 ) {
     let key = change.key.to_string();
@@ -289,26 +381,32 @@ async fn dispatch_value_change<H: InboundHandler>(
 
     if change.count == 0 || subkeys.is_empty() {
         debug!(key = %key, count = change.count, "DHT watch died");
+        shared.notify(&TransportNotification::WatchDied { record_key: key.clone() });
         handler.on_event(TransportEvent::WatchDied { record_key: key }).await;
         return;
     }
 
+    shared.notify(&TransportNotification::ValueChanged {
+        record_key: key.clone(),
+        changed_subkeys: subkeys.clone(),
+    });
     handler.on_value_change(&key, subkeys, first_value).await;
 }
 
 async fn dispatch_route_change<H: InboundHandler>(
     handler: &Arc<H>,
+    shared: &SharedState,
     change: &veilid_core::VeilidRouteChange,
 ) {
     if !change.dead_routes.is_empty() {
-        handler.on_event(TransportEvent::LocalRoutesDied {
-            count: change.dead_routes.len(),
-        }).await;
+        let count = change.dead_routes.len();
+        shared.notify(&TransportNotification::LocalRoutesDied { count });
+        handler.on_event(TransportEvent::LocalRoutesDied { count }).await;
     }
     if !change.dead_remote_routes.is_empty() {
-        handler.on_event(TransportEvent::RemoteRoutesDied {
-            peer_keys: change.dead_remote_routes.iter().map(ToString::to_string).collect(),
-        }).await;
+        let peer_keys: Vec<String> = change.dead_remote_routes.iter().map(ToString::to_string).collect();
+        shared.notify(&TransportNotification::RemoteRoutesDied { peer_keys: peer_keys.clone() });
+        handler.on_event(TransportEvent::RemoteRoutesDied { peer_keys }).await;
     }
 }
 

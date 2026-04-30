@@ -14,7 +14,7 @@ use veilid_core::{KeyPair, RoutingContext, ValueSubkeyRangeSet, CRYPTO_KIND_VLD0
 use super::record;
 use crate::dht::account::ShortArray;
 use crate::error::{TransportError, Result};
-use crate::payload::dht_types::*;
+use crate::payload::dht_types::ChannelMessage;
 
 /// Operations on per-channel SMPL message records.
 pub struct ChannelLogOps<'a> {
@@ -201,7 +201,9 @@ impl DhtLog {
         let mut current_seg: Option<ShortArray> = None;
 
         for pos in start..spine.total_count {
+            #[allow(clippy::cast_possible_truncation)] // segment index bounded by spine.segments.len()
             let seg_idx = (pos / cap) as usize;
+            #[allow(clippy::cast_possible_truncation)] // offset < segment_capacity (u32)
             let offset = (pos % cap) as u32;
 
             if current_seg.is_none() || seg_idx != current_seg_idx {

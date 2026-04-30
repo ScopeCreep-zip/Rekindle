@@ -5,8 +5,10 @@
 //! and delegates Stronghold persistence to `rekindle-secrets`.
 
 use std::collections::HashMap;
+use std::time::Instant;
 
 use aes_gcm::{aead::{Aead, KeyInit}, Aes256Gcm, Nonce};
+use serde::Serialize;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use hkdf::Hkdf;
 use rand::RngCore;
@@ -164,12 +166,18 @@ fn aes_gcm_decrypt(key: &[u8; 32], data: &[u8]) -> Result<Vec<u8>> {
 
 // ── Unified MEK cache ────────────────────────────────────────────────
 
+/// A cached MEK entry with metadata for introspection.
+struct CachedMek {
+    mek: Mek,
+    cached_at: Instant,
+}
+
 /// Unified MEK cache. Single source of truth, replaces the old dual cache.
 ///
 /// Key: `(community_id, channel_id)`. For community-wide MEK, use empty
 /// string as channel_id.
 pub struct MekCache {
-    entries: HashMap<(String, String), Vec<Mek>>,
+    entries: HashMap<(String, String), Vec<CachedMek>>,
 }
 
 impl MekCache {
@@ -177,13 +185,17 @@ impl MekCache {
         Self { entries: HashMap::new() }
     }
 
-    /// Store a MEK at a specific generation.
+    /// Store a MEK at a specific generation. Deduplicates by generation.
     pub fn insert(&mut self, community_id: &str, channel_id: &str, mek: Mek) {
         let key = (community_id.to_string(), channel_id.to_string());
         let generations = self.entries.entry(key).or_default();
-        if !generations.iter().any(|m| m.generation == mek.generation) {
-            generations.push(mek);
-            generations.sort_by_key(|m| m.generation);
+        let gen = mek.generation;
+        if !generations.iter().any(|cm| cm.mek.generation == gen) {
+            generations.push(CachedMek {
+                mek,
+                cached_at: Instant::now(),
+            });
+            generations.sort_by_key(|cm| cm.mek.generation);
         }
     }
 
@@ -192,6 +204,7 @@ impl MekCache {
         self.entries
             .get(&(community_id.to_string(), channel_id.to_string()))
             .and_then(|gens| gens.last())
+            .map(|cm| &cm.mek)
     }
 
     /// Get a specific generation MEK for a channel.
@@ -203,7 +216,8 @@ impl MekCache {
     ) -> Option<&Mek> {
         self.entries
             .get(&(community_id.to_string(), channel_id.to_string()))
-            .and_then(|gens| gens.iter().find(|m| m.generation == generation))
+            .and_then(|gens| gens.iter().find(|cm| cm.mek.generation == generation))
+            .map(|cm| &cm.mek)
     }
 
     /// Remove all MEKs for a community.
@@ -215,8 +229,50 @@ impl MekCache {
     pub fn clear(&mut self) {
         self.entries.clear();
     }
+
+    /// Point-in-time snapshot of cached MEKs for a community.
+    ///
+    /// Returns display-ready data suitable for `rekindle key mek list`
+    /// and the TUI dashboard. Sorted by channel then generation.
+    pub fn snapshot(&self, community_id: &str) -> Vec<MekCacheEntrySnapshot> {
+        let mut result: Vec<MekCacheEntrySnapshot> = self
+            .entries
+            .iter()
+            .filter(|((cid, _), _)| cid == community_id)
+            .flat_map(|((_, channel_id), entries)| {
+                entries.iter().map(move |cm| MekCacheEntrySnapshot {
+                    channel_id: channel_id.clone(),
+                    generation: cm.mek.generation,
+                    age_secs: cm.cached_at.elapsed().as_secs(),
+                })
+            })
+            .collect();
+        result.sort_by(|a, b| a.channel_id.cmp(&b.channel_id).then(a.generation.cmp(&b.generation)));
+        result
+    }
+
+    /// Total number of cached MEK entries across all communities.
+    pub fn total_entries(&self) -> usize {
+        self.entries.values().map(Vec::len).sum()
+    }
+
+    /// Number of unique (community, channel) pairs with cached MEKs.
+    pub fn channel_count(&self) -> usize {
+        self.entries.len()
+    }
 }
 
 impl Default for MekCache {
     fn default() -> Self { Self::new() }
+}
+
+/// Display-ready snapshot of a single cached MEK entry.
+#[derive(Debug, Clone, Serialize)]
+pub struct MekCacheEntrySnapshot {
+    /// Channel ID (empty string for community-wide MEK).
+    pub channel_id: String,
+    /// MEK generation number.
+    pub generation: u64,
+    /// Seconds since this MEK was cached locally.
+    pub age_secs: u64,
 }

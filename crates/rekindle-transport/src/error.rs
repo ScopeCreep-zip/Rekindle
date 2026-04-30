@@ -151,6 +151,36 @@ pub enum TransportError {
     #[error("serialization failed: {reason}")]
     SerializationFailed { reason: String },
 
+    // ── Operations (high-level orchestrators) ─────────────────────────
+
+    /// Identity creation ceremony failed at a named step.
+    #[error("identity creation failed at '{step}': {reason}")]
+    IdentityCreationFailed { step: String, reason: String },
+
+    /// Community creation failed.
+    #[error("community creation failed: {reason}")]
+    CommunityCreationFailed { reason: String },
+
+    /// Community join request was explicitly rejected by the community.
+    #[error("join rejected by '{community}': {reason}")]
+    JoinRejected { community: String, reason: String },
+
+    /// Join timed out waiting for acceptance from community peers.
+    #[error("join timed out after {timeout_secs}s — no response from community peers")]
+    JoinTimeout { timeout_secs: u64 },
+
+    /// MEK not available for the requested channel and generation.
+    #[error("MEK generation {generation} not cached for {community}/{channel}")]
+    MekNotCached { community: String, channel: String, generation: u64 },
+
+    /// Friend request could not be delivered.
+    #[error("friend request to {target} failed: {reason}")]
+    FriendRequestFailed { target: String, reason: String },
+
+    /// Voice session could not be established.
+    #[error("voice join failed for {channel}: {reason}")]
+    VoiceJoinFailed { channel: String, reason: String },
+
     // ── Internal ─────────────────────────────────────────────────────
 
     /// An internal invariant was violated. Should never happen in production.

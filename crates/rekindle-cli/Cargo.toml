@@ -1,0 +1,66 @@
+[package]
+name = "rekindle-cli"
+version = "0.1.0"
+edition = "2021"
+description = "CLI and TUI for the Rekindle decentralized communication platform"
+license = "MIT"
+
+[lints]
+workspace = true
+
+[features]
+default = ["tui"]
+tui = [
+    "dep:ratatui",
+    "dep:crossterm",
+    "dep:tui-textarea",
+    "dep:color-eyre",
+    "dep:tokio-util",
+    "dep:futures-util",
+    "dep:opaline",
+]
+
+[[bin]]
+name = "rekindle"
+path = "src/main.rs"
+
+[dependencies]
+# CLI core
+clap = { version = "4", features = ["derive", "env", "std", "help", "usage", "error-context"] }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tracing-appender = "0.2"
+toml = "0.8"
+dirs = "6"
+zeroize = { version = "1", features = ["derive"] }
+owo-colors = "4"
+comfy-table = "7"
+dialoguer = "0.11"
+chrono = { version = "0.4", features = ["serde", "clock"], default-features = false }
+uuid = { version = "1", features = ["v4", "fast-rng"] }
+blake3 = "1"
+nucleo = "0.5"
+unicode-width = "0.2"
+
+# Workspace crates
+rekindle-transport = { path = "../rekindle-transport" }
+rekindle-types = { path = "../rekindle-types" }
+
+# TUI (feature-gated)
+ratatui = { version = "0.30", optional = true, default-features = false, features = ["crossterm"] }
+crossterm = { version = "0.29", optional = true, features = ["event-stream"] }
+tui-textarea = { version = "0.7", optional = true, default-features = false, features = ["crossterm", "search"] }
+color-eyre = { version = "0.6", optional = true }
+tokio-util = { version = "0.7", optional = true }
+futures-util = { version = "0.3", optional = true, default-features = false, features = ["std"] }
+opaline = { version = "0.2", optional = true, features = ["ratatui", "builtin-themes", "gradients"] }
+
+[dev-dependencies]
+insta = "1"
+assert_cmd = "2"
+predicates = "3"
+tokio-test = "0.4"

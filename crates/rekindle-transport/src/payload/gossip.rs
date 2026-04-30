@@ -42,7 +42,7 @@ impl SignedGossipEnvelope {
                     let bucket = rekindle_utils::timestamp_secs() / 30;
                     return format!("presence:{}:{bucket}", self.sender_pseudonym);
                 }
-                _ => {}
+                GossipPayload::Control(_) => {}
             }
         }
         // Fallback: BLAKE3 hash of payload bytes

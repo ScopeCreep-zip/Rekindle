@@ -5,6 +5,8 @@
 //! Frame, envelope, voice crypto, and gossip tests are inline in their
 //! respective modules.
 
+pub mod mock_node;
+
 use crate::payload::dm::{DmPayload, serialize_dm, deserialize_dm, dm_type_id};
 use crate::payload::gossip::{GossipPayload, ControlPayload, SignedGossipEnvelope};
 use crate::payload::voice::VoicePayload;
@@ -91,6 +93,7 @@ fn voice_payload_roundtrip() {
         timestamp: 1234567890,
         encrypted_audio: vec![0xAB; 100],
         hmac: [0x42; 16],
+        signature: vec![0xCC; 64],
     };
     let bytes = postcard::to_stdvec(&payload).unwrap();
     let back: VoicePayload = postcard::from_bytes(&bytes).unwrap();

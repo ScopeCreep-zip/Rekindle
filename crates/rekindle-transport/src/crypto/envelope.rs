@@ -52,10 +52,24 @@ pub fn sign_payload(
     }
 }
 
-/// Verify the Ed25519 signature on a [`SignedPayload`].
+/// Default replay protection window: 5 minutes (300 seconds).
 ///
-/// Returns `Ok(())` if valid. Returns `Err(SignatureVerificationFailed)` otherwise.
+/// Messages with timestamps older than this are rejected even if the
+/// signature is valid. This prevents indefinite replay of captured messages.
+/// Set to 0 to disable freshness checking (not recommended).
+pub const DEFAULT_FRESHNESS_WINDOW_MS: u64 = 300_000;
+
+/// Verify the Ed25519 signature and timestamp freshness on a [`SignedPayload`].
+///
+/// Returns `Ok(())` if the signature is valid AND the timestamp is within
+/// the freshness window. Rejects stale messages to prevent replay attacks.
 pub fn verify_signed_payload(signed: &SignedPayload) -> Result<()> {
+    verify_signed_payload_with_window(signed, DEFAULT_FRESHNESS_WINDOW_MS)
+}
+
+/// Verify with a custom freshness window. Pass 0 to skip freshness check.
+pub fn verify_signed_payload_with_window(signed: &SignedPayload, freshness_window_ms: u64) -> Result<()> {
+    // Signature verification first
     let verifying_key = parse_verifying_key(&signed.sender_key_hex)?;
 
     let mut signed_data = Vec::with_capacity(8 + signed.payload.len());
@@ -68,7 +82,33 @@ pub fn verify_signed_payload(signed: &SignedPayload) -> Result<()> {
         TransportError::SignatureVerificationFailed {
             sender: signed.sender_key_hex.clone(),
         }
-    })
+    })?;
+
+    // Freshness check — reject replayed messages
+    if freshness_window_ms > 0 {
+        let now = rekindle_utils::timestamp_ms();
+        let age_ms = now.saturating_sub(signed.timestamp);
+        // Also reject messages from the future (clock skew > 60s)
+        let future_ms = signed.timestamp.saturating_sub(now);
+        if age_ms > freshness_window_ms {
+            return Err(TransportError::SignatureVerificationFailed {
+                sender: format!(
+                    "{}: stale timestamp ({}ms old, window {}ms)",
+                    signed.sender_key_hex, age_ms, freshness_window_ms
+                ),
+            });
+        }
+        if future_ms > 60_000 {
+            return Err(TransportError::SignatureVerificationFailed {
+                sender: format!(
+                    "{}: timestamp {}ms in the future (max 60s clock skew allowed)",
+                    signed.sender_key_hex, future_ms
+                ),
+            });
+        }
+    }
+
+    Ok(())
 }
 
 /// Sign a gossip envelope with the sender's pseudonym key.

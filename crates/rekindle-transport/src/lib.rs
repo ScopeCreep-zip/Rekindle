@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 #![recursion_limit = "512"]
 //! Unified network transport layer for Rekindle.
 //!
@@ -22,6 +23,9 @@
 pub mod config;
 pub mod error;
 pub mod frame;
+pub mod shared;
+pub mod session;
+pub mod query;
 
 pub mod node;
 pub mod dispatch;
@@ -36,6 +40,7 @@ pub mod dht;
 pub mod crypto;
 pub mod payload;
 pub mod community;
+pub mod operations;
 
 #[cfg(test)]
 mod tests;
@@ -64,6 +69,32 @@ pub use config::{TransportConfig, SafetyConfig, SafetyProfile};
 
 // Error
 pub use error::TransportError;
+
+// Shared state and introspection
+pub use shared::{SharedState, AttachmentState, TransportNotification, NodeStatusSnapshot};
+pub use peer::{CircuitSummary, PeerSnapshot};
+pub use crypto::mek::MekCacheEntrySnapshot;
+
+// Crypto — pseudonym, Signal, prekeys
+pub use crypto::pseudonym::derive_community_pseudonym;
+pub use crypto::prekeys::PreKeyBundle;
+pub use crypto::signal_session::{SignalSessionManager, SessionInitInfo};
+pub use crypto::signal_store::{
+    IdentityKeyStore, PreKeyStore, SessionStore,
+    MemoryIdentityStore, MemoryPreKeyStore, MemorySessionStore,
+};
+
+// Session state
+pub use session::{Session, SessionIdentity, CommunityMembership};
+
+// Query engine
+pub use query::{
+    QueryEngine,
+    CommunityOverview, CommunityDetail,
+    ChannelOverviewDisplay, DecryptedMessageDisplay,
+    FriendDisplay, DmThreadDisplay, DmMessageDisplay,
+    RoleDisplay, NodeHealthDisplay,
+};
 
 // Frame
 pub use frame::TypeId;

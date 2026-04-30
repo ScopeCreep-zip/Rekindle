@@ -7,6 +7,8 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
+use serde::Serialize;
+
 /// Opaque handle for a remote peer's route. Wraps a Veilid `RouteId`
 /// without exposing it as a Veilid type through the public API.
 #[derive(Debug, Clone)]
@@ -110,8 +112,28 @@ impl PeerRegistry {
         }
     }
 
+    /// Maximum number of circuit breaker entries to prevent memory exhaustion
+    /// from an attacker sending from many pseudonyms.
+    const MAX_CIRCUIT_ENTRIES: usize = 4096;
+
     /// Record a failure against a peer's circuit breaker.
+    ///
+    /// If the circuits map exceeds `MAX_CIRCUIT_ENTRIES`, the oldest entry
+    /// (by `last_failure` timestamp) is evicted before inserting. This bounds
+    /// memory growth from attackers using many pseudonyms.
     pub fn record_failure(&mut self, peer_key: &str) {
+        // Evict oldest if at capacity and this is a new key
+        if self.circuits.len() >= Self::MAX_CIRCUIT_ENTRIES && !self.circuits.contains_key(peer_key) {
+            if let Some(oldest_key) = self
+                .circuits
+                .iter()
+                .min_by_key(|(_, state)| state.last_failure)
+                .map(|(k, _)| k.clone())
+            {
+                self.circuits.remove(&oldest_key);
+            }
+        }
+
         let entry = self
             .circuits
             .entry(peer_key.to_string())
@@ -127,6 +149,109 @@ impl PeerRegistry {
     pub fn reset_circuit(&mut self, peer_key: &str) {
         self.circuits.remove(peer_key);
     }
+
+    // ── Introspection (for CLI/TUI display) ─────────────────────────
+
+    /// Number of known peers with valid (non-stale) cached routes.
+    pub fn route_count(&self) -> usize {
+        self.routes
+            .iter()
+            .filter(|(_, cached)| cached.imported_at.elapsed().as_secs() <= self.route_ttl_secs)
+            .count()
+    }
+
+    /// Total number of cached routes, including stale ones.
+    pub fn total_cached(&self) -> usize {
+        self.routes.len()
+    }
+
+    /// Number of peers with tripped circuit breakers.
+    pub fn circuit_open_count(&self) -> usize {
+        self.circuits
+            .keys()
+            .filter(|key| self.is_circuit_open(key))
+            .count()
+    }
+
+    /// Summary of peer health states for dashboard display.
+    pub fn circuit_summary(&self) -> CircuitSummary {
+        let total = self.routes.len();
+        let healthy = self.route_count();
+        let circuit_open = self.circuit_open_count();
+        let degraded = total.saturating_sub(healthy).saturating_sub(circuit_open);
+        CircuitSummary {
+            total,
+            healthy,
+            degraded,
+            circuit_open,
+        }
+    }
+
+    /// Point-in-time snapshot of all known peers for display.
+    ///
+    /// Returns display-ready data — no locks needed by the caller.
+    /// Sorted by key for stable display ordering.
+    pub fn snapshot(&self) -> Vec<PeerSnapshot> {
+        let mut peers: Vec<PeerSnapshot> = self
+            .routes
+            .iter()
+            .map(|(key, cached)| {
+                let age_secs = cached.imported_at.elapsed().as_secs();
+                let is_stale = age_secs > self.route_ttl_secs;
+                let circuit = self.circuits.get(key);
+                let circuit_open = self.is_circuit_open(key);
+                let failure_count = circuit.map_or(0, |c| c.failure_count);
+
+                let key_short = if key.len() > 12 {
+                    format!("{}…{}", &key[..8], &key[key.len() - 4..])
+                } else {
+                    key.clone()
+                };
+
+                PeerSnapshot {
+                    key: key.clone(),
+                    key_short,
+                    has_route: !is_stale,
+                    route_age_secs: age_secs,
+                    circuit_open,
+                    failure_count,
+                }
+            })
+            .collect();
+
+        peers.sort_by(|a, b| a.key.cmp(&b.key));
+        peers
+    }
+}
+
+/// Summary of peer health states.
+#[derive(Debug, Clone, Serialize)]
+pub struct CircuitSummary {
+    /// Total known peers (including stale routes).
+    pub total: usize,
+    /// Peers with valid routes and closed circuit breakers.
+    pub healthy: usize,
+    /// Peers with stale routes but closed circuit breakers.
+    pub degraded: usize,
+    /// Peers with tripped circuit breakers.
+    pub circuit_open: usize,
+}
+
+/// Point-in-time snapshot of a single peer for display.
+#[derive(Debug, Clone, Serialize)]
+pub struct PeerSnapshot {
+    /// Full peer public key (hex).
+    pub key: String,
+    /// Abbreviated key for compact display.
+    pub key_short: String,
+    /// Whether the cached route is still within TTL.
+    pub has_route: bool,
+    /// Seconds since the route was cached.
+    pub route_age_secs: u64,
+    /// Whether the circuit breaker is currently tripped.
+    pub circuit_open: bool,
+    /// Consecutive failure count (may be > 0 even with closed breaker if cooldown elapsed).
+    pub failure_count: u32,
 }
 
 /// Public re-export for external use in circuit breaker checks.

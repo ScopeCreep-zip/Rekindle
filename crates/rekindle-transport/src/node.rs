@@ -21,6 +21,7 @@ use crate::handler::InboundHandler;
 use crate::peer::PeerRegistry;
 use crate::route::RouteManager;
 use crate::send::{Sender, Caller};
+use crate::shared::{SharedState, NodeStatusSnapshot, TransportNotification};
 
 /// The top-level transport node. Owns the Veilid API handle and all
 /// subsystems. There is exactly one of these per application lifetime.
@@ -33,6 +34,7 @@ pub struct TransportNode {
     route_refresh_shutdown_tx: Option<mpsc::Sender<()>>,
     route_manager: Arc<parking_lot::RwLock<RouteManager>>,
     peer_registry: Arc<parking_lot::RwLock<PeerRegistry>>,
+    shared_state: Arc<SharedState>,
 }
 
 impl TransportNode {
@@ -85,13 +87,15 @@ impl TransportNode {
             config.circuit_breaker_threshold,
             config.circuit_breaker_cooldown_secs,
         )));
+        let shared_state = SharedState::new();
 
         let (shutdown_tx, shutdown_rx) = mpsc::channel(1);
         let dispatch_handle = {
             let h = Arc::clone(&handler);
             let c = Arc::clone(&config);
             let a = api.clone();
-            tokio::spawn(dispatch::run_dispatch_loop(h, c, update_rx, shutdown_rx, a))
+            let ss = Arc::clone(&shared_state);
+            tokio::spawn(dispatch::run_dispatch_loop(h, c, update_rx, shutdown_rx, a, ss))
         };
 
         let (rr_tx, rr_rx) = mpsc::channel(1);
@@ -113,6 +117,7 @@ impl TransportNode {
             route_refresh_shutdown_tx: Some(rr_tx),
             route_manager,
             peer_registry,
+            shared_state,
         })
     }
 
@@ -171,6 +176,59 @@ impl TransportNode {
 
     pub fn config(&self) -> &TransportConfig {
         &self.config
+    }
+
+    // ── Introspection (for CLI/TUI) ─────────────────────────────────
+
+    /// Observable shared state (attachment, uptime, subscribers).
+    pub fn shared(&self) -> &Arc<SharedState> {
+        &self.shared_state
+    }
+
+    /// Whether the node is attached and public internet ready.
+    pub fn is_ready(&self) -> bool {
+        self.shared_state.is_attached() && self.shared_state.public_internet_ready()
+    }
+
+    /// Node uptime since `start()`.
+    pub fn uptime(&self) -> std::time::Duration {
+        self.shared_state.uptime()
+    }
+
+    /// Subscribe to transport notifications. Returns a receiver that gets
+    /// a clone of every event the dispatch loop broadcasts. Multiple
+    /// subscribers are supported.
+    pub fn subscribe(&self) -> tokio::sync::mpsc::UnboundedReceiver<TransportNotification> {
+        self.shared_state.subscribe()
+    }
+
+    /// Point-in-time snapshot of node status for display.
+    pub fn status_snapshot(&self) -> NodeStatusSnapshot {
+        let route_mgr = self.route_manager.read();
+        let peer_reg = self.peer_registry.read();
+        NodeStatusSnapshot {
+            attachment: self.shared_state.attachment_state().to_string(),
+            is_attached: self.shared_state.is_attached(),
+            public_internet_ready: self.shared_state.public_internet_ready(),
+            uptime_secs: self.shared_state.uptime().as_secs(),
+            peer_count: peer_reg.route_count(),
+            route_allocated: route_mgr.has_route(),
+            route_age_secs: route_mgr.route_age().map(|d| d.as_secs()),
+        }
+    }
+
+    /// Create a [`QueryEngine`](crate::query::QueryEngine) for high-level
+    /// read operations. Requires a shared `MekCache` for message decryption.
+    pub fn query(
+        &self,
+        mek_cache: Arc<parking_lot::RwLock<crate::crypto::mek::MekCache>>,
+    ) -> Result<crate::query::QueryEngine> {
+        let dht = self.dht()?;
+        Ok(crate::query::QueryEngine::new(
+            dht,
+            mek_cache,
+            Arc::clone(&self.peer_registry),
+        ))
     }
 
     pub async fn allocate_route(&self) -> Result<(String, Vec<u8>)> {
