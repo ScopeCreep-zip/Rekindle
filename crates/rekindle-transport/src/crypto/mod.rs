@@ -7,3 +7,7 @@ pub mod envelope;
 pub mod dm_envelope;
 pub mod voice_crypto;
 pub mod mek;
+pub mod pseudonym;
+pub mod prekeys;
+pub mod signal_store;
+pub mod signal_session;

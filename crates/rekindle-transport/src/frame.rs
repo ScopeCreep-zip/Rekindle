@@ -90,7 +90,8 @@ impl TypeId {
     }
 
     /// Whether this type requires Ed25519 signature verification on receive.
-    pub fn requires_signature(self) -> bool {
+    #[allow(clippy::unused_self, clippy::trivially_copy_pass_by_ref)]
+    pub fn requires_signature(&self) -> bool {
         // Every type requires signature verification. No exceptions.
         // Friend requests are TOFU-signed (self-asserted key), but still verified.
         true
@@ -140,6 +141,7 @@ pub fn encode(type_id: TypeId, payload: &[u8]) -> Result<Vec<u8>> {
         });
     }
 
+    #[allow(clippy::cast_possible_truncation)] // guarded by MAX_PAYLOAD_SIZE check above
     let len = payload.len() as u16;
     let mut frame = Vec::with_capacity(HEADER_SIZE + payload.len());
     frame.push(PROTOCOL_VERSION);

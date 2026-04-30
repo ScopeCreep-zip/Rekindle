@@ -9,7 +9,11 @@ use veilid_core::{DHTSchemaSMPLMember, KeyPair, RoutingContext};
 
 use super::record;
 use crate::error::{TransportError, Result};
-use crate::payload::dht_types::*;
+use crate::payload::dht_types::{
+    MekVaultEntry, MemberPresence, MemberSummary, REGISTRY_MEK_VAULT,
+    REGISTRY_MEMBER_INDEX, REGISTRY_MEMBER_SUBKEY_COUNT, REGISTRY_OWNER_SUBKEY_COUNT,
+    SLOTS_PER_SEGMENT,
+};
 
 /// Calculate the DHT subkey index for a member given their slot index.
 pub fn member_subkey(slot_index: u32) -> u32 {

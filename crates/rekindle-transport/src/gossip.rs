@@ -89,7 +89,7 @@ impl LamportClock {
     }
 
     /// Current clock value.
-    pub fn value(&self) -> u64 {
+    pub fn value(self) -> u64 {
         self.value
     }
 }
@@ -140,7 +140,7 @@ impl RateLimiter {
         let window = self
             .windows
             .entry(sender.to_string())
-            .or_insert_with(VecDeque::new);
+            .or_default();
 
         // Evict entries outside the window
         let cutoff = now_secs.saturating_sub(self.window_secs);
@@ -238,7 +238,15 @@ impl GossipMesh {
     }
 
     /// Add or update an online member.
-    pub fn upsert_member(&mut self, pseudonym: String, member: OnlineMember) {
+    ///
+    /// The `last_seen` timestamp is clamped to the current time to prevent
+    /// malicious peers from claiming future timestamps to dominate peer
+    /// selection in `refresh_peer_set`.
+    pub fn upsert_member(&mut self, pseudonym: String, mut member: OnlineMember) {
+        let now = rekindle_utils::timestamp_secs();
+        if member.last_seen > now {
+            member.last_seen = now;
+        }
         self.online_members.insert(pseudonym, member);
     }
 

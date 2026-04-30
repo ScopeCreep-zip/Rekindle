@@ -94,15 +94,29 @@ pub fn compute_packet_hmac(session_key: &VoiceSessionKey, packet_data: &[u8]) ->
     hmac
 }
 
-/// Verify a BLAKE3 HMAC on a voice packet.
+/// Verify a BLAKE3 HMAC on a voice packet using constant-time comparison.
+///
+/// Uses XOR + OR accumulation to prevent timing side-channels. The comparison
+/// always examines all 16 bytes regardless of where a mismatch occurs.
 pub fn verify_packet_hmac(
     session_key: &VoiceSessionKey,
     packet_data: &[u8],
     expected_hmac: &[u8; 16],
 ) -> bool {
     let computed = compute_packet_hmac(session_key, packet_data);
-    // Constant-time comparison
-    computed.iter().zip(expected_hmac.iter()).all(|(a, b)| a == b)
+    constant_time_eq(&computed, expected_hmac)
+}
+
+/// Constant-time comparison of two 16-byte arrays.
+///
+/// Examines all bytes regardless of mismatch position. Prevents timing
+/// oracle attacks that could recover the HMAC byte-by-byte.
+fn constant_time_eq(a: &[u8; 16], b: &[u8; 16]) -> bool {
+    let mut acc: u8 = 0;
+    for i in 0..16 {
+        acc |= a[i] ^ b[i];
+    }
+    acc == 0
 }
 
 #[cfg(test)]

@@ -7,7 +7,11 @@ use veilid_core::{KeyPair, RoutingContext};
 
 use super::record;
 use crate::error::Result;
-use crate::payload::dht_types::*;
+use crate::payload::dht_types::{
+    PROFILE_SUBKEY_COUNT, PROFILE_SUBKEY_DISPLAY_NAME, PROFILE_SUBKEY_GAME_INFO,
+    PROFILE_SUBKEY_PREKEY_BUNDLE, PROFILE_SUBKEY_ROUTE_BLOB, PROFILE_SUBKEY_STATUS,
+    PROFILE_SUBKEY_STATUS_MESSAGE, STATUS_ONLINE,
+};
 
 /// Operations on a user's profile DHT record.
 pub struct ProfileOps<'a> {
@@ -22,6 +26,7 @@ impl<'a> ProfileOps<'a> {
     /// Create a new profile record and initialize subkeys.
     ///
     /// Returns `(key, keypair)`. The keypair MUST be persisted.
+    #[allow(clippy::cast_possible_truncation)] // PROFILE_SUBKEY_COUNT is 8, safe
     pub async fn create(
         &self,
         display_name: &str,
@@ -103,6 +108,21 @@ impl<'a> ProfileOps<'a> {
             key,
             &[PROFILE_SUBKEY_STATUS, PROFILE_SUBKEY_GAME_INFO, PROFILE_SUBKEY_ROUTE_BLOB],
         ).await
+    }
+
+    /// Read the prekey bundle and return the count of available prekeys.
+    ///
+    /// Prekey bundle format: 4-byte LE count prefix followed by the prekeys.
+    /// Returns 0 if the subkey is empty or the format is invalid.
+    pub async fn prekey_count(&self, key: &str) -> Result<u32> {
+        match self.get_subkey(key, PROFILE_SUBKEY_PREKEY_BUNDLE).await? {
+            Some(data) if data.len() >= 4 => {
+                Ok(u32::from_le_bytes(
+                    data[..4].try_into().unwrap_or([0; 4]),
+                ))
+            }
+            _ => Ok(0),
+        }
     }
 
     /// Close the profile record.

@@ -9,7 +9,11 @@ use veilid_core::{KeyPair, RoutingContext};
 
 use super::record;
 use crate::error::{TransportError, Result};
-use crate::payload::dht_types::*;
+use crate::payload::dht_types::{
+    BanEntry, CategoryEntry, ChannelEntry, CommunityMetadata, InviteEntry,
+    MANIFEST_AUDIT_LOG_KEY, MANIFEST_BANS, MANIFEST_CATEGORIES, MANIFEST_CHANNELS,
+    MANIFEST_INVITES, MANIFEST_METADATA, MANIFEST_ROLES, MANIFEST_SUBKEY_COUNT, RoleEntry,
+};
 
 // ── Generic typed subkey read/write ──────────────────────────────────
 
@@ -38,7 +42,7 @@ async fn read_json_subkey_vec<T: serde::de::DeserializeOwned>(
 ) -> Result<Vec<T>> {
     read_json_subkey::<Vec<T>>(rc, key, subkey, label)
         .await
-        .map(|opt| opt.unwrap_or_default())
+        .map(Option::unwrap_or_default)
 }
 
 async fn write_json_subkey<T: serde::Serialize>(
@@ -65,6 +69,7 @@ impl<'a> GovernanceOps<'a> {
 
     /// Create a new manifest record and initialize subkeys.
     pub async fn create(&self, metadata: &CommunityMetadata) -> Result<(String, Option<KeyPair>)> {
+        #[allow(clippy::cast_possible_truncation)] // constant is 16, safe
         let (key, keypair) = record::create_dflt(self.rc, MANIFEST_SUBKEY_COUNT as u16, None).await?;
 
         write_json_subkey(self.rc, &key, MANIFEST_METADATA, metadata, "metadata").await?;

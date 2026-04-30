@@ -106,7 +106,10 @@ impl Sender {
         report
     }
 
-    /// Send an encrypted voice packet to a single peer.
+    /// Send an encrypted, signed voice packet to a single peer.
+    ///
+    /// The payload must already be a serialized `VoicePayload` with signature
+    /// and HMAC populated by the caller. The transport layer frames and sends.
     pub async fn send_voice(&self, target: &PeerTarget, payload: &[u8]) -> Result<()> {
         let frame_bytes = frame::encode(TypeId::VoicePacket, payload)?;
         let rc = build_routing_context(&self.api, &self.config.safety.voice)?;

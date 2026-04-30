@@ -40,6 +40,9 @@ parking_lot = { workspace = true }
 indexmap = "2"
 bitflags = { version = "2", features = ["serde"] }
 
+# Identity generation
+uuid = { version = "1", features = ["v4", "fast-rng"] }
+
 # Logging
 tracing = { workspace = true }
 thiserror = { workspace = true }

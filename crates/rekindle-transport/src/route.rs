@@ -3,6 +3,8 @@
 //! Handles allocation, refresh, release, and dead-route recovery for
 //! the local node's inbound private route.
 
+use std::time::Instant;
+
 use veilid_core::RouteId;
 
 /// Manages the local node's private route for receiving messages.
@@ -15,6 +17,8 @@ pub struct RouteManager {
     route_id: Option<RouteId>,
     /// Currently allocated route blob (shared with peers).
     route_blob: Option<Vec<u8>>,
+    /// When the current route was allocated.
+    allocated_at: Option<Instant>,
 }
 
 impl RouteManager {
@@ -22,6 +26,7 @@ impl RouteManager {
         Self {
             route_id: None,
             route_blob: None,
+            allocated_at: None,
         }
     }
 
@@ -29,6 +34,7 @@ impl RouteManager {
     pub fn set_route(&mut self, route_id: RouteId, blob: Vec<u8>) {
         self.route_id = Some(route_id);
         self.route_blob = Some(blob);
+        self.allocated_at = Some(Instant::now());
     }
 
     /// Get the current route blob for publishing to DHT.
@@ -49,12 +55,18 @@ impl RouteManager {
     pub fn forget_route(&mut self) {
         self.route_id = None;
         self.route_blob = None;
+        self.allocated_at = None;
         tracing::info!("private route forgotten (already dead)");
     }
 
     /// Whether we have an active route.
     pub fn has_route(&self) -> bool {
         self.route_id.is_some()
+    }
+
+    /// Age of the current route allocation, if one exists.
+    pub fn route_age(&self) -> Option<std::time::Duration> {
+        self.allocated_at.map(|t| t.elapsed())
     }
 }
 

@@ -58,9 +58,11 @@ impl DhtStore {
         channel_log::ChannelLogOps::new(&self.rc)
     }
 
-    /// Access the underlying routing context (for advanced operations).
-    #[allow(dead_code)]
-    pub(crate) fn routing_context(&self) -> &RoutingContext {
+    /// Access the underlying routing context.
+    ///
+    /// Used by [`QueryEngine`](crate::query::QueryEngine) for `DhtLog` operations
+    /// that need direct routing context access.
+    pub fn routing_context(&self) -> &RoutingContext {
         &self.rc
     }
 }
