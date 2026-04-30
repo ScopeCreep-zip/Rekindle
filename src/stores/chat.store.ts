@@ -8,10 +8,29 @@ export interface ReactionGroup {
   reactors: string[];
 }
 
+export interface PollAnswer {
+  index: number;
+  text: string;
+  voteCount: number;
+  voters: string[];
+}
+
+export interface MessagePoll {
+  pollId: string;
+  question: string;
+  answers: PollAnswer[];
+  multiSelect: boolean;
+  expiresAt?: number;
+  closed: boolean;
+  selectedAnswers: number[];
+}
+
 export interface Message {
   id: number;
   senderId: string;
   body: string;
+  decryptionFailed?: boolean;
+  automodBlurred?: boolean;
   timestamp: number;
   isOwn: boolean;
   replyTo?: number;
@@ -21,6 +40,7 @@ export interface Message {
   editedAt?: number;
   reactions?: ReactionGroup[];
   pinned?: boolean;
+  poll?: MessagePoll;
 }
 
 export interface Conversation {

@@ -51,9 +51,9 @@ pub fn find_device(
         direction = direction.label(),
         "requested device not found — falling back to default"
     );
-    direction
-        .default_device(host)
-        .ok_or_else(|| VoiceError::AudioDevice(format!("no {} device available", direction.label())))
+    direction.default_device(host).ok_or_else(|| {
+        VoiceError::AudioDevice(format!("no {} device available", direction.label()))
+    })
 }
 
 /// Resolve an audio device by optional name for the given direction.

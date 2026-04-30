@@ -43,10 +43,7 @@ pub fn pseudonym_to_x25519(key: &SigningKey) -> StaticSecret {
 /// Every community member knows the slot_seed (from InviteSecrets), so any
 /// member can derive any slot's keypair — this is by design for the
 /// universal SMPL schema (Q-pid equation).
-pub fn derive_slot_keypair(
-    seed: &[u8; 32],
-    slot: u32,
-) -> Result<SigningKey, CryptoError> {
+pub fn derive_slot_keypair(seed: &[u8; 32], slot: u32) -> Result<SigningKey, CryptoError> {
     let hk = Hkdf::<Sha256>::new(None, seed);
     let info = format!("rekindle-slot-{slot}");
     let mut okm = [0u8; 32];

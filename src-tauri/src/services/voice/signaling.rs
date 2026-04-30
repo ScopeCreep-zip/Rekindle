@@ -1,7 +1,7 @@
 //! Voice signaling handlers for community gossip payloads.
 //!
-//! Extracted from `veilid_service.rs` to keep that file under the line limit
-//! and group all voice-related gossip handling in one place.
+//! Grouped separately from the Veilid dispatch modules so voice gossip handling
+//! stays local to the voice service.
 
 use std::sync::Arc;
 
@@ -20,13 +20,33 @@ pub(crate) fn handle_voice_signaling(
     payload: ControlPayload,
 ) {
     match payload {
-        ControlPayload::VoiceJoin { channel_id, route_blob } => {
-            handle_voice_join(app_handle, state, community_id, sender_pseudonym, channel_id, route_blob);
+        ControlPayload::VoiceJoin {
+            channel_id,
+            route_blob,
+        } => {
+            handle_voice_join(
+                app_handle,
+                state,
+                community_id,
+                sender_pseudonym,
+                channel_id,
+                route_blob,
+            );
         }
         ControlPayload::VoiceLeave { channel_id } => {
-            handle_voice_leave(app_handle, state, community_id, sender_pseudonym, channel_id);
+            handle_voice_leave(
+                app_handle,
+                state,
+                community_id,
+                sender_pseudonym,
+                channel_id,
+            );
         }
-        ControlPayload::VoiceModeSwitch { channel_id, mode, host_pseudonym } => {
+        ControlPayload::VoiceModeSwitch {
+            channel_id,
+            mode,
+            host_pseudonym,
+        } => {
             let _ = app_handle.emit(
                 "community-event",
                 CommunityEvent::VoiceModeSwitch {
@@ -37,13 +57,24 @@ pub(crate) fn handle_voice_signaling(
                 },
             );
         }
-        ControlPayload::VoiceMute { channel_id: _, target_pseudonym, muted } => {
+        ControlPayload::VoiceMute {
+            channel_id: _,
+            target_pseudonym,
+            muted,
+        } => {
             handle_voice_mute(app_handle, state, community_id, &target_pseudonym, muted);
         }
-        ControlPayload::VoiceDeafen { channel_id: _, target_pseudonym, deafened } => {
+        ControlPayload::VoiceDeafen {
+            channel_id: _,
+            target_pseudonym,
+            deafened,
+        } => {
             handle_voice_deafen(state, community_id, &target_pseudonym, deafened);
         }
-        ControlPayload::VoiceRoster { channel_id: _, participants } => {
+        ControlPayload::VoiceRoster {
+            channel_id: _,
+            participants,
+        } => {
             handle_voice_roster(state, participants);
         }
         _ => {}
@@ -58,13 +89,35 @@ fn handle_voice_join(
     channel_id: String,
     route_blob: Vec<u8>,
 ) {
+    {
+        let state = state.clone();
+        let app_handle = app_handle.clone();
+        let community_id = community_id.to_string();
+        let channel_id_clone = channel_id.clone();
+        let sender = sender_pseudonym.to_string();
+        tauri::async_runtime::spawn(async move {
+            if let Err(error) = crate::services::community::rotate_voice_mek_for_membership(
+                &app_handle,
+                &state,
+                &community_id,
+                &channel_id_clone,
+                &sender,
+                true,
+            )
+            .await
+            {
+                tracing::debug!(community = %community_id, channel = %channel_id_clone, error = %error, "voice join MEK rotation skipped");
+            }
+        });
+    }
     let (shared_transport, my_pseudonym) = {
         let ve = state.voice_engine.lock();
         let transport = ve.as_ref().map(|h| h.transport.clone());
         drop(ve);
         let pk = {
             let communities = state.communities.read();
-            communities.get(community_id)
+            communities
+                .get(community_id)
                 .and_then(|c| c.my_pseudonym_key.clone())
                 .unwrap_or_default()
         };
@@ -103,14 +156,15 @@ fn handle_voice_join(
                     "auto-electing MCU host (6+ participants)"
                 );
 
-                let mode_envelope = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
-                    ControlPayload::VoiceModeSwitch {
-                        channel_id: ch_id.clone(),
-                        mode: "mcu".to_string(),
-                        host_pseudonym: Some(elected_host.clone()),
-                    },
-                );
-                let _ = crate::commands::community::send_to_mesh(&state, &cid, &mode_envelope);
+                let mode_envelope =
+                    rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
+                        ControlPayload::VoiceModeSwitch {
+                            channel_id: ch_id.clone(),
+                            mode: "mcu".to_string(),
+                            host_pseudonym: Some(elected_host.clone()),
+                        },
+                    );
+                let _ = crate::services::community::send_to_mesh(&state, &cid, &mode_envelope);
 
                 {
                     let mut t = transport.lock().await;
@@ -129,25 +183,31 @@ fn handle_voice_join(
                 let t = transport.lock().await;
                 let communities = state.communities.read();
                 let cs = communities.get(&cid);
-                t.peer_keys().iter().filter_map(|pk| {
-                    let gossip = cs?.gossip.as_ref()?;
-                    let member = gossip.online_members.get(pk)?;
-                    Some(rekindle_protocol::dht::community::envelope::VoiceRosterEntry {
-                        pseudonym_key: pk.clone(),
-                        route_blob: member.route_blob.clone(),
-                        muted: false,
-                        deafened: false,
+                t.peer_keys()
+                    .iter()
+                    .filter_map(|pk| {
+                        let gossip = cs?.gossip.as_ref()?;
+                        let member = gossip.online_members.get(pk)?;
+                        Some(
+                            rekindle_protocol::dht::community::envelope::VoiceRosterEntry {
+                                pseudonym_key: pk.clone(),
+                                route_blob: member.route_blob.clone(),
+                                muted: false,
+                                deafened: false,
+                            },
+                        )
                     })
-                }).collect()
+                    .collect()
             };
             if !participants.is_empty() {
-                let roster_envelope = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
-                    ControlPayload::VoiceRoster {
-                        channel_id: ch_id,
-                        participants,
-                    },
-                );
-                let _ = crate::commands::community::send_to_mesh(&state, &cid, &roster_envelope);
+                let roster_envelope =
+                    rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
+                        ControlPayload::VoiceRoster {
+                            channel_id: ch_id,
+                            participants,
+                        },
+                    );
+                let _ = crate::services::community::send_to_mesh(&state, &cid, &roster_envelope);
             }
         });
     }
@@ -169,13 +229,35 @@ fn handle_voice_leave(
     sender_pseudonym: &str,
     channel_id: String,
 ) {
+    {
+        let state = state.clone();
+        let app_handle = app_handle.clone();
+        let community_id = community_id.to_string();
+        let channel_id_clone = channel_id.clone();
+        let sender = sender_pseudonym.to_string();
+        tauri::async_runtime::spawn(async move {
+            if let Err(error) = crate::services::community::rotate_voice_mek_for_membership(
+                &app_handle,
+                &state,
+                &community_id,
+                &channel_id_clone,
+                &sender,
+                false,
+            )
+            .await
+            {
+                tracing::debug!(community = %community_id, channel = %channel_id_clone, error = %error, "voice leave MEK rotation skipped");
+            }
+        });
+    }
     let (shared_transport, my_pseudonym) = {
         let ve = state.voice_engine.lock();
         let transport = ve.as_ref().map(|h| h.transport.clone());
         drop(ve);
         let pk = {
             let communities = state.communities.read();
-            communities.get(community_id)
+            communities
+                .get(community_id)
                 .and_then(|c| c.my_pseudonym_key.clone())
                 .unwrap_or_default()
         };
@@ -205,14 +287,15 @@ fn handle_voice_leave(
                     }
                     crate::services::voice::session::stop_mcu_loop(&state).await;
 
-                    let mesh_envelope = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
-                        ControlPayload::VoiceModeSwitch {
-                            channel_id: ch_id.clone(),
-                            mode: "mesh".to_string(),
-                            host_pseudonym: None,
-                        },
-                    );
-                    let _ = crate::commands::community::send_to_mesh(&state, &cid, &mesh_envelope);
+                    let mesh_envelope =
+                        rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
+                            ControlPayload::VoiceModeSwitch {
+                                channel_id: ch_id.clone(),
+                                mode: "mesh".to_string(),
+                                host_pseudonym: None,
+                            },
+                        );
+                    let _ = crate::services::community::send_to_mesh(&state, &cid, &mesh_envelope);
 
                     // Re-elect if still 6+ participants
                     if peer_count >= 5 {
@@ -224,14 +307,16 @@ fn handle_voice_leave(
                         candidates.sort();
                         let elected_host = candidates[0].clone();
 
-                        let mode_envelope = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
-                            ControlPayload::VoiceModeSwitch {
-                                channel_id: ch_id,
-                                mode: "mcu".to_string(),
-                                host_pseudonym: Some(elected_host.clone()),
-                            },
-                        );
-                        let _ = crate::commands::community::send_to_mesh(&state, &cid, &mode_envelope);
+                        let mode_envelope =
+                            rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
+                                ControlPayload::VoiceModeSwitch {
+                                    channel_id: ch_id,
+                                    mode: "mcu".to_string(),
+                                    host_pseudonym: Some(elected_host.clone()),
+                                },
+                            );
+                        let _ =
+                            crate::services::community::send_to_mesh(&state, &cid, &mode_envelope);
 
                         {
                             let mut t = transport.lock().await;
@@ -252,14 +337,15 @@ fn handle_voice_leave(
                     }
                     crate::services::voice::session::stop_mcu_loop(&state).await;
 
-                    let mesh_envelope = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
-                        ControlPayload::VoiceModeSwitch {
-                            channel_id: ch_id,
-                            mode: "mesh".to_string(),
-                            host_pseudonym: None,
-                        },
-                    );
-                    let _ = crate::commands::community::send_to_mesh(&state, &cid, &mesh_envelope);
+                    let mesh_envelope =
+                        rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
+                            ControlPayload::VoiceModeSwitch {
+                                channel_id: ch_id,
+                                mode: "mesh".to_string(),
+                                host_pseudonym: None,
+                            },
+                        );
+                    let _ = crate::services::community::send_to_mesh(&state, &cid, &mesh_envelope);
                 }
             }
         });
@@ -283,13 +369,17 @@ fn handle_voice_mute(
 ) {
     let my_pseudonym = {
         let communities = state.communities.read();
-        communities.get(community_id).and_then(|cs| cs.my_pseudonym_key.clone())
+        communities
+            .get(community_id)
+            .and_then(|cs| cs.my_pseudonym_key.clone())
     };
     if my_pseudonym.as_deref() == Some(target_pseudonym) {
         let mut ve = state.voice_engine.lock();
         if let Some(ref mut handle) = *ve {
             handle.engine.set_muted(muted);
-            handle.muted_flag.store(muted, std::sync::atomic::Ordering::Relaxed);
+            handle
+                .muted_flag
+                .store(muted, std::sync::atomic::Ordering::Relaxed);
         }
     }
     let _ = app_handle.emit(
@@ -309,13 +399,17 @@ fn handle_voice_deafen(
 ) {
     let my_pseudonym = {
         let communities = state.communities.read();
-        communities.get(community_id).and_then(|cs| cs.my_pseudonym_key.clone())
+        communities
+            .get(community_id)
+            .and_then(|cs| cs.my_pseudonym_key.clone())
     };
     if my_pseudonym.as_deref() == Some(target_pseudonym) {
         let mut ve = state.voice_engine.lock();
         if let Some(ref mut handle) = *ve {
             handle.engine.set_deafened(deafened);
-            handle.deafened_flag.store(deafened, std::sync::atomic::Ordering::Relaxed);
+            handle
+                .deafened_flag
+                .store(deafened, std::sync::atomic::Ordering::Relaxed);
         }
     }
 }

@@ -5,5 +5,5 @@ pub mod idle_service;
 pub mod message_service;
 pub mod presence_service;
 pub mod sync_service;
-pub mod veilid_service;
+pub mod veilid;
 pub mod voice;

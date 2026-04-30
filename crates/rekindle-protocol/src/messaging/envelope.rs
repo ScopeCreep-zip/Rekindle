@@ -233,7 +233,6 @@ pub fn decode_invite_url(url: &str) -> Result<InviteBlob, String> {
 // have been removed. All community protocol now goes through the v2
 // coordinator/ControlPayload model (see dht::community::envelope).
 
-
 /// A role definition as returned by the server over RPC.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -245,6 +244,8 @@ pub struct RoleDto {
     pub position: i32,
     pub hoist: bool,
     pub mentionable: bool,
+    #[serde(default)]
+    pub self_assignable: bool,
 }
 
 /// A community member as returned by the server in the join/rejoin response.
@@ -417,4 +418,3 @@ pub struct ThreadInfoDto {
     pub last_message_at: u64,
     pub message_count: u32,
 }
-

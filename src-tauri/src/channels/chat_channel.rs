@@ -8,6 +8,10 @@ pub enum ChatEvent {
     MessageReceived {
         from: String,
         body: String,
+        #[serde(default)]
+        decryption_failed: bool,
+        #[serde(default)]
+        automod_blurred: bool,
         timestamp: u64,
         conversation_id: String,
         /// Message ID (present for community channel messages, absent for DMs).

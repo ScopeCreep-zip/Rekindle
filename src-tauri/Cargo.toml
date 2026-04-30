@@ -20,7 +20,10 @@ rekindle-types = { path = "../crates/rekindle-types" }
 rekindle-secrets = { path = "../crates/rekindle-secrets" }
 rekindle-governance = { path = "../crates/rekindle-governance" }
 rekindle-codec = { path = "../crates/rekindle-codec" }
+rekindle-gossip = { path = "../crates/rekindle-gossip" }
 rekindle-records = { path = "../crates/rekindle-records" }
+rekindle-route = { path = "../crates/rekindle-route" }
+rekindle-sync = { path = "../crates/rekindle-sync" }
 # v1.0 crates (still used during migration)
 rekindle-protocol = { path = "../crates/rekindle-protocol" }
 rekindle-crypto = { path = "../crates/rekindle-crypto" }
@@ -55,10 +58,12 @@ argon2 = "0.5"
 iota_stronghold = "2.1"
 zeroize = "1"
 hex = "0.4"
+blake3 = "1"
 blake2 = "0.10"
 indexmap = "2"
 base64 = "0.22"
 rand = "0.8"
+regex = "1"
 uuid = { version = "1", features = ["v4"] }
 veilid-core = { version = "0.5.2", default-features = true }
 image = { version = "0.25", default-features = false, features = ["webp", "png", "jpeg", "gif"] }
@@ -68,3 +73,4 @@ wayland-protocols = { version = "0.32", features = ["client", "staging"] }
 
 [dev-dependencies]
 tempfile = "3"
+proptest = "1"

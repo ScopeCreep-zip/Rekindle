@@ -11,7 +11,7 @@ use crate::error::CryptoError;
 ///
 /// Each community channel has its own MEK. It's distributed to members
 /// via their individual Signal sessions and rotated on membership changes.
-#[derive(ZeroizeOnDrop)]
+#[derive(Clone, ZeroizeOnDrop)]
 pub struct MediaEncryptionKey {
     key: [u8; 32],
     /// Monotonically increasing generation number for key rotation tracking.

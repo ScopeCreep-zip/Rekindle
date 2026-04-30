@@ -236,68 +236,11 @@ pub fn delete_mek(keystore: &StrongholdKeystore, community_id: &str) {
     }
 }
 
-/// Persist a community manifest owner keypair to Stronghold.
-///
-/// Used by admins/owners who can write to the manifest DHT record.
-pub fn persist_manifest_keypair(
-    keystore: &StrongholdKeystore,
-    community_id: &str,
-    keypair_str: &str,
-) {
-    use rekindle_crypto::keychain::VAULT_COMMUNITIES;
-    use rekindle_crypto::Keychain as _;
-
-    let key_name = format!("manifest_keypair_{community_id}");
-    if let Err(e) = keystore.store_key(VAULT_COMMUNITIES, &key_name, keypair_str.as_bytes()) {
-        tracing::warn!(error = %e, community = %community_id, "failed to persist manifest keypair");
-    } else if let Err(e) = keystore.save() {
-        tracing::warn!(error = %e, community = %community_id, "failed to save snapshot after manifest keypair");
-    } else {
-        tracing::debug!(community = %community_id, "manifest keypair persisted to Stronghold");
-    }
-}
-
-/// Load a community manifest owner keypair from Stronghold.
-pub fn load_manifest_keypair(
-    keystore: &StrongholdKeystore,
-    community_id: &str,
-) -> Option<String> {
-    use rekindle_crypto::keychain::VAULT_COMMUNITIES;
-    use rekindle_crypto::Keychain as _;
-
-    let key_name = format!("manifest_keypair_{community_id}");
-    match keystore.load_key(VAULT_COMMUNITIES, &key_name) {
-        Ok(Some(bytes)) => String::from_utf8(bytes).ok(),
-        Ok(None) => None,
-        Err(e) => {
-            tracing::trace!(error = %e, community = %community_id, "no manifest keypair in Stronghold");
-            None
-        }
-    }
-}
-
-/// Delete a community manifest owner keypair from Stronghold.
-pub fn delete_manifest_keypair(keystore: &StrongholdKeystore, community_id: &str) {
-    use rekindle_crypto::keychain::VAULT_COMMUNITIES;
-    use rekindle_crypto::Keychain as _;
-
-    let key_name = format!("manifest_keypair_{community_id}");
-    if let Err(e) = keystore.delete_key(VAULT_COMMUNITIES, &key_name) {
-        tracing::warn!(error = %e, community = %community_id, "failed to delete manifest keypair");
-    } else if let Err(e) = keystore.save() {
-        tracing::warn!(error = %e, community = %community_id, "failed to save snapshot after manifest keypair delete");
-    }
-}
-
 /// Persist a community SMPL slot keypair to Stronghold.
 ///
 /// The slot keypair lets a member write their signed presence to their
 /// assigned slot in the member registry SMPL record.
-pub fn persist_slot_keypair(
-    keystore: &StrongholdKeystore,
-    community_id: &str,
-    keypair_str: &str,
-) {
+pub fn persist_slot_keypair(keystore: &StrongholdKeystore, community_id: &str, keypair_str: &str) {
     use rekindle_crypto::keychain::VAULT_COMMUNITIES;
     use rekindle_crypto::Keychain as _;
 
@@ -312,10 +255,7 @@ pub fn persist_slot_keypair(
 }
 
 /// Load a community SMPL slot keypair from Stronghold.
-pub fn load_slot_keypair(
-    keystore: &StrongholdKeystore,
-    community_id: &str,
-) -> Option<String> {
+pub fn load_slot_keypair(keystore: &StrongholdKeystore, community_id: &str) -> Option<String> {
     use rekindle_crypto::keychain::VAULT_COMMUNITIES;
     use rekindle_crypto::Keychain as _;
 
@@ -361,10 +301,7 @@ pub fn persist_registry_keypair(
 }
 
 /// Load the registry owner keypair for a community from the open Stronghold keystore.
-pub fn load_registry_keypair(
-    keystore: &StrongholdKeystore,
-    community_id: &str,
-) -> Option<String> {
+pub fn load_registry_keypair(keystore: &StrongholdKeystore, community_id: &str) -> Option<String> {
     use rekindle_crypto::keychain::VAULT_COMMUNITIES;
     use rekindle_crypto::Keychain as _;
 
@@ -492,11 +429,7 @@ pub fn load_channel_mek(
 }
 
 /// Delete a per-channel MEK from the open Stronghold keystore.
-pub fn delete_channel_mek(
-    keystore: &StrongholdKeystore,
-    community_id: &str,
-    channel_id: &str,
-) {
+pub fn delete_channel_mek(keystore: &StrongholdKeystore, community_id: &str, channel_id: &str) {
     use rekindle_crypto::keychain::VAULT_COMMUNITIES;
     use rekindle_crypto::Keychain as _;
 
@@ -516,6 +449,168 @@ pub fn delete_channel_mek(
             community = %community_id, channel = %channel_id,
             "channel MEK deleted from Stronghold"
         );
+    }
+}
+
+// ── Per-generation MEK persistence ──
+//
+// When MEK rotates (member departure), the old generation must remain in
+// Stronghold so historical messages stay decryptable. Each generation gets
+// its own key: `mek_{community}_{channel}_{generation}`. A metadata key
+// `mek_generations_{community}_{channel}` tracks known generation numbers
+// (Stronghold has no prefix iteration).
+
+/// Persist a channel MEK at a specific generation to Stronghold.
+///
+/// Also updates the generations-list metadata key so `load_all_channel_mek_generations`
+/// can enumerate all stored generations without prefix scanning.
+pub fn persist_channel_mek_generation(
+    keystore: &StrongholdKeystore,
+    community_id: &str,
+    channel_id: &str,
+    mek: &rekindle_crypto::group::media_key::MediaEncryptionKey,
+) {
+    use rekindle_crypto::keychain::VAULT_COMMUNITIES;
+    use rekindle_crypto::Keychain as _;
+
+    let generation = mek.generation();
+    let payload = mek.to_wire_bytes();
+    let key_name = format!("mek_{community_id}_{channel_id}_{generation}");
+
+    if let Err(e) = keystore.store_key(VAULT_COMMUNITIES, &key_name, &payload) {
+        tracing::warn!(
+            error = %e, community = %community_id, channel = %channel_id, generation,
+            "failed to persist channel MEK generation to Stronghold"
+        );
+        return;
+    }
+
+    // Update the generations index
+    update_generations_index(keystore, community_id, channel_id, generation);
+
+    // Also update the "latest" key for backward compatibility with existing code
+    let latest_key = format!("mek_{community_id}_{channel_id}");
+    let _ = keystore.store_key(VAULT_COMMUNITIES, &latest_key, &payload);
+
+    if let Err(e) = keystore.save() {
+        tracing::warn!(
+            error = %e, community = %community_id, channel = %channel_id, generation,
+            "failed to save Stronghold snapshot after MEK generation persist"
+        );
+    } else {
+        tracing::debug!(
+            community = %community_id, channel = %channel_id, generation,
+            "channel MEK generation persisted to Stronghold"
+        );
+    }
+}
+
+/// Persist either a community-level or channel-level MEK.
+pub fn store_mek(
+    keystore: &StrongholdKeystore,
+    community_id: &str,
+    channel_id: Option<&str>,
+    mek: &rekindle_crypto::group::media_key::MediaEncryptionKey,
+) {
+    if let Some(channel_id) = channel_id {
+        persist_channel_mek_generation(keystore, community_id, channel_id, mek);
+    } else {
+        persist_mek(keystore, community_id, mek);
+    }
+}
+
+/// Load a specific MEK generation for a channel from Stronghold.
+pub fn load_channel_mek_generation(
+    keystore: &StrongholdKeystore,
+    community_id: &str,
+    channel_id: &str,
+    generation: u64,
+) -> Option<rekindle_crypto::group::media_key::MediaEncryptionKey> {
+    use rekindle_crypto::keychain::VAULT_COMMUNITIES;
+    use rekindle_crypto::Keychain as _;
+
+    let key_name = format!("mek_{community_id}_{channel_id}_{generation}");
+    match keystore.load_key(VAULT_COMMUNITIES, &key_name) {
+        Ok(Some(bytes)) => {
+            rekindle_crypto::group::media_key::MediaEncryptionKey::from_wire_bytes(&bytes)
+        }
+        _ => None,
+    }
+}
+
+/// Load all persisted MEK generations for a channel from Stronghold.
+///
+/// Returns MEKs sorted by generation (ascending). Used on startup to
+/// populate `channel_mek_cache` so historical messages remain decryptable.
+pub fn load_all_channel_mek_generations(
+    keystore: &StrongholdKeystore,
+    community_id: &str,
+    channel_id: &str,
+) -> Vec<rekindle_crypto::group::media_key::MediaEncryptionKey> {
+    let generations = load_generations_index(keystore, community_id, channel_id);
+    let mut meks = Vec::new();
+    for gen in generations {
+        if let Some(mek) = load_channel_mek_generation(keystore, community_id, channel_id, gen) {
+            meks.push(mek);
+        }
+    }
+    meks.sort_by_key(rekindle_crypto::group::media_key::MediaEncryptionKey::generation);
+    meks
+}
+
+/// Load all known MEKs for a community or channel.
+pub fn load_all_meks(
+    keystore: &StrongholdKeystore,
+    community_id: &str,
+    channel_id: Option<&str>,
+) -> Vec<rekindle_crypto::group::media_key::MediaEncryptionKey> {
+    if let Some(channel_id) = channel_id {
+        return load_all_channel_mek_generations(keystore, community_id, channel_id);
+    }
+    load_mek(keystore, community_id).into_iter().collect()
+}
+
+/// Update the generations-index metadata key with a new generation number.
+fn update_generations_index(
+    keystore: &StrongholdKeystore,
+    community_id: &str,
+    channel_id: &str,
+    generation: u64,
+) {
+    use rekindle_crypto::keychain::VAULT_COMMUNITIES;
+    use rekindle_crypto::Keychain as _;
+
+    let index_key = format!("mek_generations_{community_id}_{channel_id}");
+    let mut generations = load_generations_index(keystore, community_id, channel_id);
+
+    if !generations.contains(&generation) {
+        generations.push(generation);
+        generations.sort_unstable();
+    }
+
+    // Serialize as JSON array of u64
+    let payload = serde_json::to_vec(&generations).unwrap_or_default();
+    if let Err(e) = keystore.store_key(VAULT_COMMUNITIES, &index_key, &payload) {
+        tracing::warn!(
+            error = %e, community = %community_id, channel = %channel_id,
+            "failed to update MEK generations index"
+        );
+    }
+}
+
+/// Load the generations-index for a channel from Stronghold.
+fn load_generations_index(
+    keystore: &StrongholdKeystore,
+    community_id: &str,
+    channel_id: &str,
+) -> Vec<u64> {
+    use rekindle_crypto::keychain::VAULT_COMMUNITIES;
+    use rekindle_crypto::Keychain as _;
+
+    let index_key = format!("mek_generations_{community_id}_{channel_id}");
+    match keystore.load_key(VAULT_COMMUNITIES, &index_key) {
+        Ok(Some(bytes)) => serde_json::from_slice(&bytes).unwrap_or_default(),
+        _ => Vec::new(),
     }
 }
 
@@ -620,5 +715,126 @@ mod tests {
         assert!(ks.key_exists(VAULT_IDENTITY, KEY_ED25519_PRIVATE).unwrap());
         ks.delete_key(VAULT_IDENTITY, KEY_ED25519_PRIVATE).unwrap();
         assert!(!ks.key_exists(VAULT_IDENTITY, KEY_ED25519_PRIVATE).unwrap());
+    }
+
+    #[test]
+    fn per_generation_mek_roundtrip() {
+        use rekindle_crypto::group::media_key::MediaEncryptionKey;
+
+        let dir = TempDir::new().unwrap();
+        let ks = StrongholdKeystore::initialize(dir.path(), "testpass").unwrap();
+
+        let mek_gen1 = MediaEncryptionKey::generate(1);
+        let mek_gen2 = MediaEncryptionKey::generate(2);
+
+        // Persist two generations
+        persist_channel_mek_generation(&ks, "comm_a", "ch_01", &mek_gen1);
+        persist_channel_mek_generation(&ks, "comm_a", "ch_01", &mek_gen2);
+
+        // Load specific generation
+        let loaded = load_channel_mek_generation(&ks, "comm_a", "ch_01", 1).unwrap();
+        assert_eq!(loaded.generation(), 1);
+        assert_eq!(loaded.as_bytes(), mek_gen1.as_bytes());
+
+        let loaded = load_channel_mek_generation(&ks, "comm_a", "ch_01", 2).unwrap();
+        assert_eq!(loaded.generation(), 2);
+        assert_eq!(loaded.as_bytes(), mek_gen2.as_bytes());
+
+        // Nonexistent generation returns None
+        assert!(load_channel_mek_generation(&ks, "comm_a", "ch_01", 99).is_none());
+    }
+
+    #[test]
+    fn load_all_generations_returns_sorted() {
+        use rekindle_crypto::group::media_key::MediaEncryptionKey;
+
+        let dir = TempDir::new().unwrap();
+        let ks = StrongholdKeystore::initialize(dir.path(), "testpass").unwrap();
+
+        // Persist out of order
+        let mek3 = MediaEncryptionKey::generate(3);
+        let mek1 = MediaEncryptionKey::generate(1);
+        let mek2 = MediaEncryptionKey::generate(2);
+
+        persist_channel_mek_generation(&ks, "comm_b", "ch_02", &mek3);
+        persist_channel_mek_generation(&ks, "comm_b", "ch_02", &mek1);
+        persist_channel_mek_generation(&ks, "comm_b", "ch_02", &mek2);
+
+        let all = load_all_channel_mek_generations(&ks, "comm_b", "ch_02");
+        assert_eq!(all.len(), 3);
+        assert_eq!(all[0].generation(), 1);
+        assert_eq!(all[1].generation(), 2);
+        assert_eq!(all[2].generation(), 3);
+    }
+
+    #[test]
+    fn per_generation_survives_reopen() {
+        use rekindle_crypto::group::media_key::MediaEncryptionKey;
+
+        let dir = TempDir::new().unwrap();
+        let mek = MediaEncryptionKey::generate(42);
+        let key_bytes = mek.as_bytes().to_vec();
+
+        // Persist and close
+        {
+            let ks = StrongholdKeystore::initialize(dir.path(), "pass").unwrap();
+            persist_channel_mek_generation(&ks, "comm_c", "ch_03", &mek);
+        }
+
+        // Reopen and verify
+        {
+            let ks = StrongholdKeystore::initialize(dir.path(), "pass").unwrap();
+            let loaded = load_channel_mek_generation(&ks, "comm_c", "ch_03", 42).unwrap();
+            assert_eq!(loaded.generation(), 42);
+            assert_eq!(loaded.as_bytes(), key_bytes.as_slice());
+        }
+    }
+
+    #[test]
+    fn different_channels_isolated() {
+        use rekindle_crypto::group::media_key::MediaEncryptionKey;
+
+        let dir = TempDir::new().unwrap();
+        let ks = StrongholdKeystore::initialize(dir.path(), "testpass").unwrap();
+
+        let mek_a = MediaEncryptionKey::generate(1);
+        let mek_b = MediaEncryptionKey::generate(1);
+
+        persist_channel_mek_generation(&ks, "comm_d", "ch_alpha", &mek_a);
+        persist_channel_mek_generation(&ks, "comm_d", "ch_beta", &mek_b);
+
+        // Each channel has its own generation namespace
+        let all_alpha = load_all_channel_mek_generations(&ks, "comm_d", "ch_alpha");
+        let all_beta = load_all_channel_mek_generations(&ks, "comm_d", "ch_beta");
+
+        assert_eq!(all_alpha.len(), 1);
+        assert_eq!(all_beta.len(), 1);
+        assert_eq!(all_alpha[0].as_bytes(), mek_a.as_bytes());
+        assert_eq!(all_beta[0].as_bytes(), mek_b.as_bytes());
+    }
+
+    #[test]
+    fn load_all_meks_wraps_community_and_channel_variants() {
+        use rekindle_crypto::group::media_key::MediaEncryptionKey;
+
+        let dir = TempDir::new().unwrap();
+        let ks = StrongholdKeystore::initialize(dir.path(), "testpass").unwrap();
+
+        let community_mek = MediaEncryptionKey::generate(3);
+        let channel_mek_a = MediaEncryptionKey::generate(1);
+        let channel_mek_b = MediaEncryptionKey::generate(2);
+
+        persist_mek(&ks, "comm_e", &community_mek);
+        persist_channel_mek_generation(&ks, "comm_e", "ch_01", &channel_mek_b);
+        persist_channel_mek_generation(&ks, "comm_e", "ch_01", &channel_mek_a);
+
+        let community_all = load_all_meks(&ks, "comm_e", None);
+        assert_eq!(community_all.len(), 1);
+        assert_eq!(community_all[0].generation(), 3);
+
+        let channel_all = load_all_meks(&ks, "comm_e", Some("ch_01"));
+        assert_eq!(channel_all.len(), 2);
+        assert_eq!(channel_all[0].generation(), 1);
+        assert_eq!(channel_all[1].generation(), 2);
     }
 }

@@ -141,6 +141,7 @@ mod tests {
             color: 0,
             hoist: false,
             mentionable: false,
+            self_assignable: false,
             lamport: 1,
         };
         let mut roles = HashMap::new();
@@ -181,6 +182,7 @@ mod tests {
             color: 0,
             hoist: false,
             mentionable: false,
+            self_assignable: false,
             lamport: 2,
         };
         state.roles.insert(rid(1), admin_role);
@@ -213,7 +215,10 @@ mod tests {
 
         // Expired (now=5000)
         let perms = compute_permissions(&pseudo(10), None, &state, 5000);
-        assert!(perms & SEND_MESSAGES != 0, "timeout expired, perms restored");
+        assert!(
+            perms & SEND_MESSAGES != 0,
+            "timeout expired, perms restored"
+        );
     }
 
     #[test]
@@ -229,6 +234,7 @@ mod tests {
                 color: 0,
                 hoist: false,
                 mentionable: false,
+                self_assignable: false,
                 lamport: 1,
             },
         );
@@ -249,6 +255,7 @@ mod tests {
                 color: 0,
                 hoist: false,
                 mentionable: false,
+                self_assignable: false,
                 lamport: 1,
             },
         );

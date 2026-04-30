@@ -71,6 +71,9 @@ pub struct MemberPresence {
     /// RSVPs for scheduled events.
     pub event_rsvps: Vec<EventRSVP>,
 
+    /// Reader-aggregated onboarding answers submitted by this member.
+    pub onboarding_answers: Option<Vec<OnboardingAnswer>>,
+
     /// Advertised message history ranges for mutual aid (shared lockers).
     pub history_ranges: Vec<HistoryRange>,
 }
@@ -92,6 +95,14 @@ pub struct EventRSVP {
     pub event_id: EventId,
     /// "going", "interested", "declined"
     pub status: String,
+}
+
+/// Answer text submitted for an onboarding question.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct OnboardingAnswer {
+    pub question_id: String,
+    pub answer_text: String,
 }
 
 /// Range of message history this member has cached locally.
@@ -124,6 +135,7 @@ impl Default for MemberPresence {
             call_type: None,
             push_relay_route: None,
             event_rsvps: Vec::new(),
+            onboarding_answers: None,
             history_ranges: Vec::new(),
         }
     }

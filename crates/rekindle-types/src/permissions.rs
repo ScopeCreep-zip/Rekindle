@@ -17,6 +17,7 @@ pub const MANAGE_NICKNAMES: u64 = 1 << 8;
 pub const MANAGE_EXPRESSIONS: u64 = 1 << 9;
 pub const VIEW_AUDIT_LOG: u64 = 1 << 10;
 pub const VIEW_INSIGHTS: u64 = 1 << 11;
+pub const CREATE_EXPRESSIONS: u64 = 1 << 12;
 
 /// Text permissions (bits 16-31)
 pub const SEND_MESSAGES: u64 = 1 << 16;
@@ -146,18 +147,50 @@ mod tests {
     fn bits_dont_overlap() {
         // Verify no two constants share a bit
         let all_consts = [
-            VIEW_CHANNELS, MANAGE_CHANNELS, MANAGE_ROLES, MANAGE_COMMUNITY,
-            CREATE_INVITES, KICK_MEMBERS, BAN_MEMBERS, TIMEOUT_MEMBERS,
-            MANAGE_NICKNAMES, MANAGE_EXPRESSIONS, VIEW_AUDIT_LOG, VIEW_INSIGHTS,
-            SEND_MESSAGES, EMBED_LINKS, ATTACH_FILES, ADD_REACTIONS,
-            MENTION_EVERYONE, MANAGE_MESSAGES, READ_HISTORY, SEND_TTS,
-            USE_EXTERNAL_EMOJIS, USE_EXTERNAL_STICKERS, PIN_MESSAGES,
-            SEND_VOICE_MESSAGES, SEND_POLLS, BYPASS_SLOWMODE,
-            CONNECT, SPEAK, MUTE_MEMBERS, DEAFEN_MEMBERS, MOVE_MEMBERS,
-            USE_VOICE_ACTIVITY, PRIORITY_SPEAKER, USE_SOUNDBOARD,
-            USE_EXTERNAL_SOUNDS, REQUEST_TO_SPEAK, STREAM,
-            MANAGE_THREADS, CREATE_PUBLIC_THREADS, CREATE_PRIVATE_THREADS, SEND_IN_THREADS,
-            MANAGE_EVENTS, CREATE_EVENTS,
+            VIEW_CHANNELS,
+            MANAGE_CHANNELS,
+            MANAGE_ROLES,
+            MANAGE_COMMUNITY,
+            CREATE_INVITES,
+            KICK_MEMBERS,
+            BAN_MEMBERS,
+            TIMEOUT_MEMBERS,
+            MANAGE_NICKNAMES,
+            MANAGE_EXPRESSIONS,
+            VIEW_AUDIT_LOG,
+            VIEW_INSIGHTS,
+            CREATE_EXPRESSIONS,
+            SEND_MESSAGES,
+            EMBED_LINKS,
+            ATTACH_FILES,
+            ADD_REACTIONS,
+            MENTION_EVERYONE,
+            MANAGE_MESSAGES,
+            READ_HISTORY,
+            SEND_TTS,
+            USE_EXTERNAL_EMOJIS,
+            USE_EXTERNAL_STICKERS,
+            PIN_MESSAGES,
+            SEND_VOICE_MESSAGES,
+            SEND_POLLS,
+            BYPASS_SLOWMODE,
+            CONNECT,
+            SPEAK,
+            MUTE_MEMBERS,
+            DEAFEN_MEMBERS,
+            MOVE_MEMBERS,
+            USE_VOICE_ACTIVITY,
+            PRIORITY_SPEAKER,
+            USE_SOUNDBOARD,
+            USE_EXTERNAL_SOUNDS,
+            REQUEST_TO_SPEAK,
+            STREAM,
+            MANAGE_THREADS,
+            CREATE_PUBLIC_THREADS,
+            CREATE_PRIVATE_THREADS,
+            SEND_IN_THREADS,
+            MANAGE_EVENTS,
+            CREATE_EVENTS,
             ADMINISTRATOR,
         ];
         for (i, a) in all_consts.iter().enumerate() {

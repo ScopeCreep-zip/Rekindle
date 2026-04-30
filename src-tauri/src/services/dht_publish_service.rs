@@ -86,10 +86,7 @@ async fn persist_dht_key_to_db(
 }
 
 /// Parse an optional keypair string into a `KeyPair`, logging a warning on failure.
-fn parse_stored_keypair(
-    keypair_str: Option<&String>,
-    label: &str,
-) -> Option<veilid_core::KeyPair> {
+fn parse_stored_keypair(keypair_str: Option<&String>, label: &str) -> Option<veilid_core::KeyPair> {
     keypair_str.and_then(|s| {
         s.parse()
             .map_err(|e| {
@@ -137,7 +134,7 @@ pub async fn publish_mailbox(
         *secret.as_ref().ok_or("identity secret not available")?
     };
 
-    let routing_context = state_helpers::require_routing_context(state)?;
+    let routing_context = state_helpers::require_safe_routing_context(state)?;
 
     // Build a Veilid KeyPair from our Ed25519 identity keys.
     let identity = rekindle_crypto::Identity::from_secret_bytes(&secret_bytes);
@@ -209,24 +206,23 @@ pub async fn publish_profile(
     let (public_key, display_name, status_message) =
         (id.public_key, id.display_name, id.status_message);
     let route_blob = state_helpers::our_route_blob(state).unwrap_or_default();
-    let routing_context = state_helpers::require_routing_context(state)?;
+    let routing_context = state_helpers::require_safe_routing_context(state)?;
     let temp_dht = rekindle_protocol::dht::DHTManager::new(routing_context);
 
     let bundle = prekey_bundle_bytes.as_deref().unwrap_or(&[]);
     let owner_keypair = parse_stored_keypair(dht_owner_keypair_str.as_ref(), "profile");
 
-    let (profile_key, keypair, is_new) =
-        rekindle_protocol::dht::profile::open_or_create_profile(
-            &temp_dht,
-            existing_dht_key.as_deref(),
-            owner_keypair,
-            &display_name,
-            &status_message,
-            bundle,
-            &route_blob,
-        )
-        .await
-        .map_err(|e| format!("DHT profile publish: {e}"))?;
+    let (profile_key, keypair, is_new) = rekindle_protocol::dht::profile::open_or_create_profile(
+        &temp_dht,
+        existing_dht_key.as_deref(),
+        owner_keypair,
+        &display_name,
+        &status_message,
+        bundle,
+        &route_blob,
+    )
+    .await
+    .map_err(|e| format!("DHT profile publish: {e}"))?;
 
     state_helpers::store_dht_record(
         state,
@@ -235,7 +231,14 @@ pub async fn publish_profile(
     );
 
     let new_keypair = if is_new { keypair } else { None };
-    persist_dht_key_to_db(pool, &public_key, &profile_key, new_keypair, &PROFILE_COLUMNS).await?;
+    persist_dht_key_to_db(
+        pool,
+        &public_key,
+        &profile_key,
+        new_keypair,
+        &PROFILE_COLUMNS,
+    )
+    .await?;
 
     tracing::info!(
         profile_key = %profile_key,
@@ -257,11 +260,10 @@ pub async fn publish_friend_list(
     let public_key = state_helpers::current_owner_key(state)
         .map_err(|_| "identity not set before friend list publish".to_string())?;
 
-    let routing_context = state_helpers::require_routing_context(state)?;
+    let routing_context = state_helpers::require_safe_routing_context(state)?;
     let temp_dht = rekindle_protocol::dht::DHTManager::new(routing_context);
 
-    let owner_keypair =
-        parse_stored_keypair(friend_list_owner_keypair_str.as_ref(), "friend list");
+    let owner_keypair = parse_stored_keypair(friend_list_owner_keypair_str.as_ref(), "friend list");
 
     let (friend_list_key, keypair, is_new) =
         rekindle_protocol::dht::friends::open_or_create_friend_list(
@@ -318,7 +320,7 @@ pub async fn publish_account(
         .ok_or("identity secret not available for account key derivation")?;
     let encryption_key = rekindle_crypto::DhtRecordKey::derive_account_key(&secret_bytes);
 
-    let routing_context = state_helpers::require_routing_context(state)?;
+    let routing_context = state_helpers::require_safe_routing_context(state)?;
 
     let owner_keypair = parse_stored_keypair(account_owner_keypair_str.as_ref(), "account");
 
@@ -347,8 +349,7 @@ pub async fn publish_account(
                         key = %existing_key, error = %e,
                         "failed to open existing account record — creating new one"
                     );
-                    let enc_key =
-                        rekindle_crypto::DhtRecordKey::derive_account_key(&secret_bytes);
+                    let enc_key = rekindle_crypto::DhtRecordKey::derive_account_key(&secret_bytes);
                     create_fresh_account_record(
                         &routing_context,
                         enc_key,

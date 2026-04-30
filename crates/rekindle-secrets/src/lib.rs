@@ -10,6 +10,7 @@ pub mod derive;
 pub mod invite;
 pub mod keys;
 pub mod mek;
+pub mod rotator;
 pub mod sign;
 
 // Re-export ed25519_dalek for callers that need SigningKey/VerifyingKey types

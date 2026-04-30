@@ -118,6 +118,8 @@ export function subscribeDmChatEvents(
               id: Date.now(),
               senderId: event.data.from,
               body: event.data.body,
+              decryptionFailed: event.data.decryptionFailed,
+              automodBlurred: event.data.automodBlurred,
               timestamp: event.data.timestamp,
               isOwn: false,
             });
@@ -148,6 +150,8 @@ export function subscribeCommunityChannelChatEvents(
         id: Date.now(),
         senderId: event.data.from,
         body: event.data.body,
+        decryptionFailed: event.data.decryptionFailed,
+        automodBlurred: event.data.automodBlurred,
         timestamp: event.data.timestamp,
         isOwn: false,
         serverMessageId: event.data.serverMessageId,

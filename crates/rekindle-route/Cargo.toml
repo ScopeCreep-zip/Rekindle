@@ -1,0 +1,14 @@
+[package]
+name = "rekindle-route"
+version = "0.1.0"
+edition = "2021"
+description = "Route lifecycle and cache primitives for Rekindle v2.0"
+
+[lints]
+workspace = true
+
+[dependencies]
+tokio = { workspace = true }
+tracing = { workspace = true }
+veilid-core = { version = "0.5.2", default-features = true }
+

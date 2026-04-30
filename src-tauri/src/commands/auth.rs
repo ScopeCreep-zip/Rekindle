@@ -305,7 +305,7 @@ pub async fn login(
     )
     .await?;
 
-    // Spawn background services — awaits coordinator route restoration so communities
+    // Spawn background services — waits for route restoration so communities
     // are usable immediately after login returns.
     start_background_services(
         &app,
@@ -449,7 +449,7 @@ pub async fn logout(
 
     // Clean up user-specific DHT state (close records, release route, clear identity)
     // but keep the Veilid node alive for re-login
-    services::veilid_service::logout_cleanup(Some(&app), &state).await;
+    services::veilid::logout_cleanup(Some(&app), &state).await;
 
     // Re-open the login window (it was closed during show_buddy_list)
     crate::windows::open_login(&app, active_key.as_deref())?;
@@ -581,7 +581,7 @@ pub async fn delete_identity(
         }
 
         // Clean up user-specific DHT state (node stays alive)
-        services::veilid_service::logout_cleanup(Some(&app), state.inner()).await;
+        services::veilid::logout_cleanup(Some(&app), state.inner()).await;
 
         // Destroy all windows except login so labels are immediately freed
         for (label, window) in app.webview_windows() {
@@ -678,13 +678,18 @@ async fn load_communities_from_db(
     use crate::state::RoleDefinition;
 
     let ok = owner_key.to_string();
-    let (community_rows, channel_rows, role_rows, category_rows, member_key_rows) = db_call(pool, move |conn| {
+    let (community_rows, channel_rows, role_rows, category_rows, member_key_rows, event_rsvp_rows) = db_call(pool, move |conn| {
         let mut comm_stmt = conn
             .prepare(
-                "SELECT id, name, description, my_role, my_role_ids, dht_record_key, dht_owner_keypair, \
-                 my_pseudonym_key, mek_generation, manifest_key, member_registry_key, my_subkey_index, \
-                 coordinator_pseudonym, coordinator_epoch, governance_key \
-                 FROM communities WHERE owner_key = ?1",
+                "SELECT c.id, c.name, c.description, c.my_role, c.my_role_ids, c.dht_owner_keypair, \
+                 c.my_pseudonym_key, c.mek_generation, c.member_registry_key, c.my_subkey_index, \
+                 COALESCE(cm.onboarding_complete, 0) \
+                 FROM communities c \
+                 LEFT JOIN community_members cm \
+                   ON cm.owner_key = c.owner_key \
+                  AND cm.community_id = c.id \
+                  AND cm.pseudonym_key = c.my_pseudonym_key \
+                 WHERE c.owner_key = ?1",
             )?;
         let communities = comm_stmt
             .query_map(rusqlite::params![ok], |row| {
@@ -694,16 +699,12 @@ async fn load_communities_from_db(
                     db::get_str_opt(row, "description"),
                     db::get_str(row, "my_role"),
                     db::get_str(row, "my_role_ids"),
-                    db::get_str_opt(row, "dht_record_key"),
                     db::get_str_opt(row, "dht_owner_keypair"),
                     db::get_str_opt(row, "my_pseudonym_key"),
                     row.get::<_, i64>("mek_generation").unwrap_or(0).cast_unsigned(),
-                    db::get_str_opt(row, "manifest_key"),
                     db::get_str_opt(row, "member_registry_key"),
                     row.get::<_, Option<i64>>("my_subkey_index").unwrap_or(None).map(|v| u32::try_from(v).unwrap_or(0)),
-                    db::get_str_opt(row, "coordinator_pseudonym"),
-                    row.get::<_, i64>("coordinator_epoch").unwrap_or(0).cast_unsigned(),
-                    db::get_str_opt(row, "governance_key"),
+                    row.get::<_, i64>(10).unwrap_or(0) != 0,
                 ))
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -711,7 +712,7 @@ async fn load_communities_from_db(
         // Load community roles
         let mut role_stmt = conn
             .prepare(
-                "SELECT community_id, role_id, name, color, permissions, position, hoist, mentionable \
+                "SELECT community_id, role_id, name, color, permissions, position, hoist, mentionable, self_assignable \
                  FROM community_roles WHERE owner_key = ?1 ORDER BY position",
             )?;
         let role_rows = role_stmt
@@ -725,6 +726,7 @@ async fn load_communities_from_db(
                     row.get::<_, i32>("position").unwrap_or(0),
                     row.get::<_, i32>("hoist").unwrap_or(0) != 0,
                     row.get::<_, i32>("mentionable").unwrap_or(0) != 0,
+                    row.get::<_, i32>("self_assignable").unwrap_or(0) != 0,
                 ))
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -746,8 +748,18 @@ async fn load_communities_from_db(
             })?
             .collect::<Result<Vec<_>, _>>()?;
 
-        let mut chan_stmt = conn
-            .prepare("SELECT id, community_id, name, channel_type, category_id, topic, slowmode_seconds, nsfw, message_record_key, mek_generation, log_key, my_sequence FROM channels WHERE owner_key = ?1 ORDER BY sort_order")?;
+        let mut chan_stmt = conn.prepare(
+            "SELECT ch.id, ch.community_id, ch.name, ch.channel_type, ch.category_id, ch.topic, \
+                    ch.slowmode_seconds, ch.nsfw, ch.message_record_key, ch.mek_generation, \
+                    ch.log_key, ch.my_sequence, COALESCE(np.level, 0) AS notification_level \
+             FROM channels ch
+             LEFT JOIN notification_preferences np
+               ON np.owner_key = ch.owner_key
+              AND np.community_id = ch.community_id
+              AND np.channel_id = ch.id
+             WHERE ch.owner_key = ?1
+             ORDER BY ch.sort_order",
+        )?;
         let channels = chan_stmt
             .query_map(rusqlite::params![ok], |row| {
                 Ok((
@@ -763,6 +775,7 @@ async fn load_communities_from_db(
                     row.get::<_, i64>("mek_generation").unwrap_or(0).cast_unsigned(),
                     db::get_str_opt(row, "log_key"),
                     row.get::<_, i64>("my_sequence").unwrap_or(0).cast_unsigned(),
+                    row.get::<_, i64>("notification_level").unwrap_or(0),
                 ))
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -781,7 +794,20 @@ async fn load_communities_from_db(
             })?
             .collect::<Result<Vec<_>, _>>()?;
 
-        Ok((communities, channels, role_rows, category_rows, member_keys))
+        let mut event_rsvp_stmt = conn.prepare(
+            "SELECT community_id, event_id, status FROM community_event_rsvps WHERE owner_key = ?1",
+        )?;
+        let event_rsvp_rows = event_rsvp_stmt
+            .query_map(rusqlite::params![ok], |row| {
+                Ok((
+                    db::get_str(row, "community_id"),
+                    db::get_str(row, "event_id"),
+                    db::get_str(row, "status"),
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok((communities, channels, role_rows, category_rows, member_keys, event_rsvp_rows))
     })
     .await?;
 
@@ -792,43 +818,60 @@ async fn load_communities_from_db(
         description,
         my_role,
         my_role_ids_json,
-        dht_record_key,
         dht_owner_keypair,
         my_pseudonym_key,
         mek_generation,
-        db_manifest_key,
         db_member_registry_key,
         db_subkey_index,
-        db_coordinator_pseudonym,
-        db_coordinator_epoch,
-        db_governance_key,
+        onboarding_complete,
     ) in &community_rows
     {
         let mut channel_log_keys = std::collections::HashMap::new();
         let mut channel_sequences = std::collections::HashMap::new();
         let channels: Vec<ChannelInfo> = channel_rows
             .iter()
-            .filter(|(_, cid, _, _, _, _, _, _, _, _, _, _)| cid == community_id)
-            .map(|(id, _, ch_name, ch_type, cat_id, topic, slowmode, nsfw, msg_key, mek_gen, log_key, my_seq)| {
-                if let Some(ref lk) = log_key {
-                    channel_log_keys.insert(id.clone(), lk.clone());
-                }
-                if *my_seq > 0 {
-                    channel_sequences.insert(id.clone(), *my_seq);
-                }
-                ChannelInfo {
-                    id: id.clone(),
-                    name: ch_name.clone(),
-                    channel_type: ch_type.clone(),
-                    unread_count: 0,
-                    category_id: cat_id.clone(),
-                    topic: topic.clone(),
-                    slowmode_seconds: *slowmode,
-                    nsfw: *nsfw,
-                    message_record_key: msg_key.clone(),
-                    mek_generation: *mek_gen,
-                }
-            })
+            .filter(|(_, cid, _, _, _, _, _, _, _, _, _, _, _)| cid == community_id)
+            .map(
+                |(
+                    id,
+                    _,
+                    ch_name,
+                    ch_type,
+                    cat_id,
+                    topic,
+                    slowmode,
+                    nsfw,
+                    msg_key,
+                    mek_gen,
+                    log_key,
+                    my_seq,
+                    notification_level,
+                )| {
+                    if let Some(ref lk) = log_key {
+                        channel_log_keys.insert(id.clone(), lk.clone());
+                    }
+                    if *my_seq > 0 {
+                        channel_sequences.insert(id.clone(), *my_seq);
+                    }
+                    ChannelInfo {
+                        id: id.clone(),
+                        name: ch_name.clone(),
+                        channel_type: ch_type.clone(),
+                        unread_count: 0,
+                        category_id: cat_id.clone(),
+                        topic: topic.clone(),
+                        slowmode_seconds: *slowmode,
+                        nsfw: *nsfw,
+                        message_record_key: msg_key.clone(),
+                        mek_generation: *mek_gen,
+                        notification_level: match notification_level {
+                            1 => "mentions".to_string(),
+                            2 => "nothing".to_string(),
+                            _ => "all".to_string(),
+                        },
+                    }
+                },
+            )
             .collect();
 
         let my_role_ids: Vec<u32> =
@@ -838,7 +881,7 @@ async fn load_communities_from_db(
             .iter()
             .filter(|(cid, ..)| cid == community_id)
             .map(
-                |(_, role_id, rname, color, permissions, position, hoist, mentionable)| {
+                |(_, role_id, rname, color, permissions, position, hoist, mentionable, self_assignable)| {
                     RoleDefinition {
                         id: *role_id,
                         name: rname.clone(),
@@ -847,17 +890,18 @@ async fn load_communities_from_db(
                         position: *position,
                         hoist: *hoist,
                         mentionable: *mentionable,
+                        self_assignable: *self_assignable,
                     }
                 },
             )
             .collect();
 
-        // In v2, the community ID IS the manifest key (created as such in community_service).
-        // Restore from DB column, or fall back to dht_record_key or community_id.
-        let manifest_key = db_manifest_key
-            .clone()
-            .or_else(|| dht_record_key.clone())
-            .or_else(|| Some(community_id.clone()));
+        let governance_key = Some(community_id.clone());
+        let my_event_rsvps = event_rsvp_rows
+            .iter()
+            .filter(|(cid, _, _)| cid == community_id)
+            .map(|(_, event_id, status)| (event_id.clone(), status.clone()))
+            .collect();
 
         let mut community = CommunityState {
             id: community_id.clone(),
@@ -876,22 +920,18 @@ async fn load_communities_from_db(
             my_role_ids,
             roles,
             my_role: Some(my_role.clone()),
-            dht_record_key: dht_record_key.clone(),
             dht_owner_keypair: dht_owner_keypair.clone(),
             my_pseudonym_key: my_pseudonym_key.clone(),
             mek_generation: *mek_generation,
-            manifest_key,
             member_registry_key: db_member_registry_key.clone(),
             my_subkey_index: *db_subkey_index,
-            coordinator_pseudonym: db_coordinator_pseudonym.clone(),
-            coordinator_route_blob: None,
-            coordinator_epoch: *db_coordinator_epoch,
             gossip: Some(crate::state::GossipOverlay::default()),
             slot_keypair: None,
-            manifest_owner_keypair: None,
             channel_log_keys,
             channel_sequences,
             pending_syncs: std::collections::HashMap::new(),
+            watched_records: std::collections::HashSet::new(),
+            record_sequences: std::collections::HashMap::new(),
             peer_sequences: std::collections::HashMap::new(),
             registry_owner_keypair: None,
             slot_seed: None,
@@ -904,7 +944,10 @@ async fn load_communities_from_db(
             presence_poll_shutdown_tx: None,
             dht_keepalive_shutdown_tx: None,
             open_community_records: crate::state::CommunityRecords::default(),
-            governance_key: db_governance_key.clone(),
+            my_event_rsvps,
+            event_rsvps_by_event: std::collections::HashMap::new(),
+            onboarding_complete: *onboarding_complete,
+            governance_key,
             governance_state: None, // rebuilt from DHT during hydration
             lamport_counter: 0,
         };
@@ -950,6 +993,7 @@ fn restore_community_pseudonyms_and_meks(
 
     let mut pseudonym_updates: Vec<(String, String)> = Vec::new();
     let mut mek_updates: Vec<(String, MediaEncryptionKey)> = Vec::new();
+    let mut channel_mek_updates: Vec<(String, String, MediaEncryptionKey)> = Vec::new();
     let mut regenerated_community_ids: Vec<String> = Vec::new();
 
     for (community_id, is_owner) in &community_info {
@@ -978,14 +1022,30 @@ fn restore_community_pseudonyms_and_meks(
                 tracing::warn!(
                     community = %community_id,
                     "MEK missing from Stronghold for joined community — \
-                     will be delivered when connecting to coordinator"
+                     will be delivered when connecting to an online member"
                 );
             }
         }
     }
 
-    // Load manifest + slot keypairs + slot seeds from Stronghold
-    let mut manifest_keypair_updates: Vec<(String, String)> = Vec::new();
+    {
+        let communities = state.communities.read();
+        let keystore = keystore_handle.lock();
+        if let Some(ref ks) = *keystore {
+            for community in communities.values() {
+                for channel in &community.channels {
+                    let all = crate::keystore::load_all_meks(ks, &community.id, Some(&channel.id));
+                    if let Some(mek) = all.into_iter().max_by_key(
+                        rekindle_crypto::group::media_key::MediaEncryptionKey::generation,
+                    ) {
+                        channel_mek_updates.push((community.id.clone(), channel.id.clone(), mek));
+                    }
+                }
+            }
+        }
+    }
+
+    // Load slot/registry key material from Stronghold
     let mut slot_keypair_updates: Vec<(String, String)> = Vec::new();
     let mut slot_seed_updates: Vec<(String, String)> = Vec::new();
     let mut registry_keypair_updates: Vec<(String, String)> = Vec::new();
@@ -993,9 +1053,6 @@ fn restore_community_pseudonyms_and_meks(
         let keystore = keystore_handle.lock();
         if let Some(ref ks) = *keystore {
             for (community_id, _) in &community_info {
-                if let Some(kp) = crate::keystore::load_manifest_keypair(ks, community_id) {
-                    manifest_keypair_updates.push((community_id.clone(), kp));
-                }
                 if let Some(kp) = crate::keystore::load_slot_keypair(ks, community_id) {
                     slot_keypair_updates.push((community_id.clone(), kp));
                 }
@@ -1028,12 +1085,6 @@ fn restore_community_pseudonyms_and_meks(
             }
         }
 
-        // Restore manifest + slot keypairs
-        for (community_id, kp) in manifest_keypair_updates {
-            if let Some(c) = communities.get_mut(&community_id) {
-                c.manifest_owner_keypair = Some(kp);
-            }
-        }
         for (community_id, kp) in slot_keypair_updates {
             if let Some(c) = communities.get_mut(&community_id) {
                 c.slot_keypair = Some(kp);
@@ -1061,6 +1112,19 @@ fn restore_community_pseudonyms_and_meks(
                 "restored MEK from Stronghold"
             );
             mek_cache.insert(community_id, mek);
+        }
+    }
+
+    {
+        let mut channel_mek_cache = state.channel_mek_cache.lock();
+        for (community_id, channel_id, mek) in channel_mek_updates {
+            tracing::debug!(
+                community = %community_id,
+                channel = %channel_id,
+                generation = mek.generation(),
+                "restored channel MEK from Stronghold"
+            );
+            channel_mek_cache.insert((community_id, channel_id), mek);
         }
     }
 }
@@ -1105,7 +1169,13 @@ fn start_background_services(
     let game_state = Arc::clone(state);
     let game_pool = pool.clone();
     let game_handle = tauri::async_runtime::spawn(async move {
-        services::game_service::start_game_detection(game_app, game_state, game_pool, game_shutdown_rx).await;
+        services::game_service::start_game_detection(
+            game_app,
+            game_state,
+            game_pool,
+            game_shutdown_rx,
+        )
+        .await;
     });
 
     // Store the game handle so logout can abort it
@@ -1156,14 +1226,13 @@ fn spawn_login_services(
         let bg_app = app.clone();
         let bg_state = Arc::clone(state);
         tokio::spawn(async move {
-            open_community_dht_records(&bg_app, &bg_state).await;
+            open_community_dht_records(&bg_state).await;
             hydrate_community_state_from_dht(&bg_state).await;
             rebuild_governance_from_dht(&bg_state).await;
             tracing::info!("background DHT hydration complete — governance state rebuilt");
 
             // Emit GovernanceUpdated for each community so the frontend refreshes
-            let community_ids: Vec<String> =
-                bg_state.communities.read().keys().cloned().collect();
+            let community_ids: Vec<String> = bg_state.communities.read().keys().cloned().collect();
             for cid in &community_ids {
                 let _ = bg_app.emit(
                     "community-event",
@@ -1189,16 +1258,13 @@ fn spawn_login_services(
     {
         let community_ids: Vec<String> = state.communities.read().keys().cloned().collect();
         for community_id in community_ids {
-            services::community::start_presence_poll(
-                Arc::clone(state),
-                community_id.clone(),
-            );
-            services::community::start_dht_keepalive(
-                Arc::clone(state),
-                community_id,
-            );
+            services::community::start_presence_poll(Arc::clone(state), community_id.clone());
+            services::community::start_dht_keepalive(Arc::clone(state), community_id);
         }
     }
+
+    // ── Phase 5: Start local event reminder scheduler ──
+    let reminder_handle = services::community::start_event_reminders(Arc::clone(state), pool.clone());
 
     // ── Phase 6: Start sync service (first tick at 10s — after election settles) ──
     let (sync_shutdown_tx, sync_shutdown_rx) = mpsc::channel::<()>(1);
@@ -1226,12 +1292,11 @@ fn spawn_login_services(
     let (route_refresh_shutdown_tx, route_refresh_shutdown_rx) = mpsc::channel::<()>(1);
     let route_refresh_app = app.clone();
     let route_refresh_state = Arc::clone(state);
-    let route_refresh_handle =
-        tauri::async_runtime::spawn(services::veilid_service::route_refresh_loop(
-            route_refresh_app,
-            route_refresh_state,
-            route_refresh_shutdown_rx,
-        ));
+    let route_refresh_handle = tauri::async_runtime::spawn(services::veilid::route_refresh_loop(
+        route_refresh_app,
+        route_refresh_state,
+        route_refresh_shutdown_rx,
+    ));
     *state.route_refresh_shutdown_tx.write() = Some(route_refresh_shutdown_tx);
 
     // Idle/auto-away service
@@ -1249,6 +1314,7 @@ fn spawn_login_services(
     // Store sub-task handles so they can be aborted on logout
     {
         let mut handles = state.background_handles.lock();
+        handles.push(reminder_handle);
         handles.push(sync_handle);
         handles.push(dht_handle);
         handles.push(route_refresh_handle);
@@ -1256,183 +1322,92 @@ fn spawn_login_services(
     }
 }
 
-
-
-
-/// Open all community DHT records (manifest + member registry) after login.
+/// Open all community DHT records after login.
 ///
-/// After app restart, Veilid closes all DHT records. Services like elections,
-/// presence polling, and coordinator operations need these records open to
-/// read/write. This must run BEFORE starting coordinator or presence services.
-async fn open_community_dht_records(app_handle: &tauri::AppHandle, state: &SharedState) {
-    use crate::db::DbPool;
-    use rekindle_protocol::dht::DHTManager;
-
-    let Some(rc) = state_helpers::routing_context(state) else {
+/// After app restart, Veilid closes all DHT records. Communities need the
+/// governance, registry, and channel records open before background services
+/// resume.
+async fn open_community_dht_records(state: &SharedState) {
+    let Some(rc) = state_helpers::safe_routing_context(state) else {
         tracing::warn!("open_community_dht_records: no routing context, skipping");
         return;
     };
-    let mgr = DHTManager::new(rc.clone());
-
-    // Collect all record keys and keypairs that need opening
     struct CommunityRecordInfo {
         id: String,
-        manifest_key: String,
+        governance_key: String,
         registry_key: Option<String>,
-        manifest_kp: Option<String>,
-        registry_kp: Option<String>,
-        governance_key: Option<String>,
+        registry_writer: Option<String>,
     }
     let records: Vec<CommunityRecordInfo> = {
         let cs = state.communities.read();
         cs.values()
-            .map(|c| CommunityRecordInfo {
-                id: c.id.clone(),
-                manifest_key: c.manifest_key.clone().unwrap_or_else(|| c.id.clone()),
-                registry_key: c.member_registry_key.clone(),
-                manifest_kp: c.manifest_owner_keypair.clone(),
-                registry_kp: c.registry_owner_keypair.clone(),
-                governance_key: c.governance_key.clone(),
+            .filter_map(|c| {
+                c.governance_key
+                    .as_ref()
+                    .map(|governance_key| CommunityRecordInfo {
+                        id: c.id.clone(),
+                        governance_key: governance_key.clone(),
+                        registry_key: c.member_registry_key.clone(),
+                        registry_writer: c
+                            .registry_owner_keypair
+                            .clone()
+                            .or_else(|| c.slot_keypair.clone()),
+                    })
             })
             .collect()
     };
 
     for rec in &records {
         let community_id = &rec.id;
-        let manifest_key = &rec.manifest_key;
-        let registry_key = &rec.registry_key;
-        let manifest_kp = &rec.manifest_kp;
-        let registry_kp = &rec.registry_kp;
         let governance_key = &rec.governance_key;
-        // v2.0 communities (governance_key present, no separate manifest):
-        // open governance + registry records directly, skip manifest subkey reads
-        let is_v2 = governance_key.is_some();
-        if is_v2 {
-            let gov_key_str = governance_key.as_ref().unwrap();
-            if let Ok(gov_typed) = gov_key_str.parse::<veilid_core::RecordKey>() {
-                if let Err(e) = rc.open_dht_record(gov_typed, None).await {
-                    tracing::debug!(community = %community_id, error = %e, "failed to open v2.0 governance record");
+        let registry_key = &rec.registry_key;
+        let registry_writer = &rec.registry_writer;
+
+        match governance_key.parse::<veilid_core::RecordKey>() {
+            Ok(governance_typed_key) => {
+                if let Err(e) = rc.open_dht_record(governance_typed_key, None).await {
+                    tracing::debug!(
+                        community = %community_id,
+                        error = %e,
+                        "failed to open governance record"
+                    );
                 }
             }
-            if let Some(ref rk) = registry_key {
-                if let Ok(reg_typed) = rk.parse::<veilid_core::RecordKey>() {
-                    // Open with slot keypair if available for write access
-                    let slot_kp = {
-                        let cs = state.communities.read();
-                        cs.get(community_id.as_str()).and_then(|c| c.slot_keypair.clone())
-                    };
-                    if let Some(ref kp_str) = slot_kp {
+            Err(e) => {
+                tracing::warn!(
+                    community = %community_id,
+                    error = %e,
+                    "invalid governance key on login"
+                );
+                continue;
+            }
+        }
+
+        if let Some(ref reg_key) = registry_key {
+            let registry_opened = match reg_key.parse::<veilid_core::RecordKey>() {
+                Ok(registry_typed_key) => {
+                    if let Some(ref kp_str) = registry_writer {
                         if let Ok(kp) = kp_str.parse::<veilid_core::KeyPair>() {
-                            let _ = rc.open_dht_record(reg_typed.clone(), Some(kp)).await;
+                            rc.open_dht_record(registry_typed_key, Some(kp))
+                                .await
+                                .is_ok()
+                        } else {
+                            false
                         }
                     } else {
-                        let _ = rc.open_dht_record(reg_typed, None).await;
+                        rc.open_dht_record(registry_typed_key, None).await.is_ok()
                     }
                 }
-            }
-            // Mark records as open
-            {
-                let mut cs = state.communities.write();
-                if let Some(c) = cs.get_mut(community_id.as_str()) {
-                    c.open_community_records.manifest_key = Some(gov_key_str.clone());
-                    c.open_community_records.registry_key.clone_from(registry_key);
-                    c.open_community_records.records_open = true;
-                }
-            }
-            tracing::debug!(community = %community_id, "opened v2.0 governance + registry records");
-            continue;
-        }
-
-        // v1.0 path: Open manifest writable if we have the owner keypair
-        let manifest_opened = if let Some(ref kp_str) = manifest_kp {
-            if let Ok(kp) = kp_str.parse::<veilid_core::KeyPair>() {
-                match mgr.open_record_writable(manifest_key, kp).await {
-                    Ok(()) => true,
-                    Err(e) => {
-                        tracing::warn!(community = %community_id, error = %e, "failed to open manifest writable — trying read-only");
-                        mgr.open_record(manifest_key).await.is_ok()
-                    }
-                }
-            } else {
-                mgr.open_record(manifest_key).await.is_ok()
-            }
-        } else {
-            mgr.open_record(manifest_key).await.is_ok()
-        };
-        if !manifest_opened {
-            tracing::warn!(community = %community_id, "failed to open manifest record on login");
-            continue;
-        }
-
-        // If registry key is missing, recover it from manifest subkey 12 (registry spine)
-        let effective_registry_key = if registry_key.is_some() {
-            registry_key.clone()
-        } else {
-            match rekindle_protocol::dht::community::member_registry::read_registry_spine(
-                &mgr, manifest_key,
-            )
-            .await
-            {
-                Ok(Some(spine)) if !spine.segments.is_empty() => {
-                    let key = spine.segments[0].record_key.clone();
-                    tracing::info!(
-                        community = %community_id,
-                        registry_key = %key,
-                        "recovered member_registry_key from manifest spine"
-                    );
-                    // Update in-memory state (scoped to drop guard before .await)
-                    {
-                        let mut cs = state.communities.write();
-                        if let Some(c) = cs.get_mut(community_id.as_str()) {
-                            c.member_registry_key = Some(key.clone());
-                        }
-                    }
-                    // Persist to SQLite so we don't have to recover again
-                    let pool: tauri::State<'_, DbPool> = app_handle.state();
-                    let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
-                    let cid = community_id.clone();
-                    let rk = key.clone();
-                    let _ = crate::db_helpers::db_call(pool.inner(), move |conn| {
-                        conn.execute(
-                            "UPDATE communities SET member_registry_key = ?1 WHERE owner_key = ?2 AND id = ?3",
-                            rusqlite::params![rk, owner_key, cid],
-                        )?;
-                        Ok(())
-                    })
-                    .await;
-                    Some(key)
-                }
-                _ => {
-                    tracing::debug!(community = %community_id, "no registry spine — member_registry_key unknown");
-                    None
-                }
-            }
-        };
-
-        // Open member registry writable if we have the registry keypair (needed
-        // for coordinator's add_member_to_registry and presence writes).
-        if let Some(ref reg_key) = effective_registry_key {
-            let registry_opened = if let Some(ref kp_str) = registry_kp {
-                if let Ok(kp) = kp_str.parse::<veilid_core::KeyPair>() {
-                    match mgr.open_record_writable(reg_key, kp).await {
-                        Ok(()) => true,
-                        Err(e) => {
-                            tracing::warn!(community = %community_id, error = %e, "failed to open registry writable — trying read-only");
-                            mgr.open_record(reg_key).await.is_ok()
-                        }
-                    }
-                } else {
-                    mgr.open_record(reg_key).await.is_ok()
-                }
-            } else {
-                mgr.open_record(reg_key).await.is_ok()
+                Err(_) => false,
             };
             if !registry_opened {
-                tracing::warn!(community = %community_id, "failed to open registry record on login");
+                tracing::warn!(
+                    community = %community_id,
+                    "failed to open registry record on login"
+                );
             }
         }
 
-        // Open channel SMPL records — without this, send_channel_message hits "record not open"
         let channel_log_keys: Vec<String> = {
             let cs = state.communities.read();
             cs.get(community_id.as_str())
@@ -1440,14 +1415,30 @@ async fn open_community_dht_records(app_handle: &tauri::AppHandle, state: &Share
                 .unwrap_or_default()
         };
         for key in &channel_log_keys {
-            if let Err(e) = mgr.open_record(key).await {
-                tracing::debug!(community = %community_id, key, error = %e, "failed to open channel SMPL record on login");
+            match key.parse::<veilid_core::RecordKey>() {
+                Ok(channel_typed_key) => {
+                    if let Err(e) = rc.open_dht_record(channel_typed_key, None).await {
+                        tracing::debug!(
+                            community = %community_id,
+                            key,
+                            error = %e,
+                            "failed to open channel SMPL record on login"
+                        );
+                    }
+                }
+                Err(e) => {
+                    tracing::debug!(
+                        community = %community_id,
+                        key,
+                        error = %e,
+                        "invalid channel record key on login"
+                    );
+                }
             }
         }
 
-        // Track all opened records globally and in CommunityRecords
-        let mut all_keys = vec![manifest_key.clone()];
-        if let Some(ref rk) = effective_registry_key {
+        let mut all_keys = vec![governance_key.clone()];
+        if let Some(ref rk) = registry_key {
             all_keys.push(rk.clone());
         }
         all_keys.extend(channel_log_keys.iter().cloned());
@@ -1456,169 +1447,54 @@ async fn open_community_dht_records(app_handle: &tauri::AppHandle, state: &Share
         {
             let mut cs = state.communities.write();
             if let Some(c) = cs.get_mut(community_id.as_str()) {
-                c.open_community_records.manifest_key = Some(manifest_key.clone());
-                c.open_community_records.registry_key.clone_from(&effective_registry_key);
-                c.open_community_records.registry_writer = registry_kp.clone().or_else(|| c.slot_keypair.clone());
+                c.open_community_records.governance_key = Some(governance_key.clone());
+                c.open_community_records
+                    .registry_key
+                    .clone_from(registry_key);
+                c.open_community_records
+                    .registry_writer
+                    .clone_from(registry_writer);
                 c.open_community_records.channel_keys = channel_log_keys;
                 c.open_community_records.records_open = true;
             }
         }
+
+        if let Err(e) =
+            crate::services::community::watch_community_records(state, community_id).await
+        {
+            tracing::debug!(
+                community = %community_id,
+                error = %e,
+                "failed to watch community records after login open"
+            );
+        }
     }
 
-    tracing::info!(count = records.len(), "opened community DHT records after login");
+    tracing::info!(
+        count = records.len(),
+        "opened community DHT records after login"
+    );
 }
 
-/// Hydrate community state from DHT manifest.
-///
-/// DHT manifest is authoritative for structural data (channels, roles, categories).
-/// Reads each community's manifest and merges into CommunityState, preserving
-/// local-only fields like unread_count.
+/// Hydrate registry-linked community state from DHT.
 async fn hydrate_community_state_from_dht(state: &SharedState) {
-    use rekindle_protocol::dht::community::manifest;
     use rekindle_protocol::dht::DHTManager;
 
-    let Some(rc) = state_helpers::routing_context(state) else {
+    let Some(rc) = state_helpers::safe_routing_context(state) else {
         tracing::warn!("hydrate_community_state_from_dht: no routing context, skipping");
         return;
     };
     let mgr = DHTManager::new(rc);
 
-    let community_manifests: Vec<(String, String)> = {
-        let cs = state.communities.read();
-        cs.values()
-            .filter_map(|c| {
-                c.manifest_key.clone().map(|mk| (c.id.clone(), mk))
-            })
-            .collect()
-    };
-
-    for (community_id, manifest_key) in &community_manifests {
-        // Read metadata (name, description) from DHT — authoritative source
-        let dht_metadata = manifest::read_metadata(&mgr, manifest_key).await.unwrap_or(None);
-
-        // Read channels, roles, categories from DHT (records already opened in Phase 1)
-        let dht_channels = manifest::read_channels(&mgr, manifest_key).await.unwrap_or_default();
-        let dht_roles = manifest::read_roles(&mgr, manifest_key).await.unwrap_or_default();
-        let dht_categories = manifest::read_categories(&mgr, manifest_key).await.unwrap_or_default();
-
-        if dht_metadata.is_none() && dht_channels.is_empty() && dht_roles.is_empty() && dht_categories.is_empty() {
-            tracing::debug!(community = %community_id, "DHT manifest empty — keeping SQLite state");
-            continue;
-        }
-
-        let mut communities = state.communities.write();
-        let Some(cs) = communities.get_mut(community_id.as_str()) else {
-            continue;
-        };
-
-        // Merge metadata — DHT is authoritative for name and description
-        if let Some(ref meta) = dht_metadata {
-            if !meta.name.is_empty() {
-                cs.name.clone_from(&meta.name);
-            }
-            cs.description.clone_from(&meta.description);
-            tracing::debug!(
-                community = %community_id,
-                name = %meta.name,
-                "hydrated metadata from DHT manifest"
-            );
-        }
-
-        // Merge channels — DHT is authoritative for structure, preserve local unread_count
-        if !dht_channels.is_empty() {
-            let old_unreads: std::collections::HashMap<String, u32> = cs
-                .channels
-                .iter()
-                .map(|ch| (ch.id.clone(), ch.unread_count))
-                .collect();
-
-            cs.channels = dht_channels
-                .into_iter()
-                .map(|entry| {
-                    let unread = old_unreads.get(&entry.id).copied().unwrap_or(0);
-                    // Extract channel log key into channel_log_keys map
-                    if let Some(ref lk) = entry.log_key {
-                        cs.channel_log_keys.insert(entry.id.clone(), lk.clone());
-                    }
-                    crate::state::ChannelInfo {
-                        id: entry.id,
-                        name: entry.name,
-                        channel_type: crate::state::ChannelType::from(entry.kind),
-                        unread_count: unread,
-                        category_id: entry.category_id,
-                        topic: entry.topic,
-                        slowmode_seconds: if entry.slowmode_seconds > 0 {
-                            Some(entry.slowmode_seconds)
-                        } else {
-                            None
-                        },
-                        nsfw: entry.nsfw,
-                        message_record_key: entry.message_record_key,
-                        mek_generation: entry.mek_generation,
-                    }
-                })
-                .collect();
-
-            tracing::debug!(
-                community = %community_id,
-                channel_count = cs.channels.len(),
-                "hydrated channels from DHT manifest"
-            );
-        }
-
-        // Merge roles — DHT is authoritative
-        if !dht_roles.is_empty() {
-            cs.roles = dht_roles
-                .into_iter()
-                .map(|entry| crate::state::RoleDefinition {
-                    id: entry.id,
-                    name: entry.name,
-                    color: entry.color,
-                    permissions: entry.permissions,
-                    position: entry.position,
-                    hoist: entry.hoist,
-                    mentionable: entry.mentionable,
-                })
-                .collect();
-
-            tracing::debug!(
-                community = %community_id,
-                role_count = cs.roles.len(),
-                "hydrated roles from DHT manifest"
-            );
-        }
-
-        // Merge categories — DHT is authoritative
-        if !dht_categories.is_empty() {
-            cs.categories = dht_categories
-                .into_iter()
-                .map(|entry| crate::state::CategoryInfo {
-                    id: entry.id,
-                    name: entry.name,
-                    sort_order: entry.sort_order,
-                })
-                .collect();
-
-            tracing::debug!(
-                community = %community_id,
-                category_count = cs.categories.len(),
-                "hydrated categories from DHT manifest"
-            );
-        }
-    }
-
-    // Read member registry for each community to recover my_subkey_index + my_role_ids.
-    // DHT registry is authoritative — if SQLite is stale or missing data, recover from DHT.
     {
         use rekindle_protocol::dht::community::member_registry;
 
         // Collect registry info needed for async reads (can't hold lock across await)
         let registry_info: Vec<(String, String, Option<String>)> = {
             let communities = state.communities.read();
-            community_manifests
+            communities
                 .iter()
-                .filter_map(|(cid, _)| {
-                    let cs = communities.get(cid.as_str())?;
+                .filter_map(|(cid, cs)| {
                     let rk = cs.member_registry_key.clone()?;
                     Some((cid.clone(), rk, cs.my_pseudonym_key.clone()))
                 })
@@ -1646,7 +1522,8 @@ async fn hydrate_community_state_from_dht(state: &SharedState) {
                                 );
                             }
                             // Update role_ids from DHT (authoritative) if richer
-                            if !me.role_ids.is_empty() && me.role_ids.len() >= cs.my_role_ids.len() {
+                            if !me.role_ids.is_empty() && me.role_ids.len() >= cs.my_role_ids.len()
+                            {
                                 cs.my_role_ids.clone_from(&me.role_ids);
                             }
                         }
@@ -1655,32 +1532,39 @@ async fn hydrate_community_state_from_dht(state: &SharedState) {
                         // Persist recovered my_subkey_index + role_ids to SQLite so they survive restarts
                         let role_ids_to_persist = {
                             let communities = state.communities.read();
-                            communities.get(community_id.as_str()).map(|cs| cs.my_role_ids.clone())
+                            communities
+                                .get(community_id.as_str())
+                                .map(|cs| cs.my_role_ids.clone())
                         };
                         if recovered_subkey || role_ids_to_persist.is_some() {
                             let app_handle = state.app_handle.read().clone();
                             if let Some(ref ah) = app_handle {
                                 let pool: tauri::State<'_, crate::db::DbPool> = ah.state();
-                                let ok = state_helpers::current_owner_key(state).unwrap_or_default();
+                                let ok =
+                                    state_helpers::current_owner_key(state).unwrap_or_default();
                                 let cid = community_id.clone();
                                 let idx = recovered_index;
                                 let roles_json = role_ids_to_persist
                                     .and_then(|r| serde_json::to_string(&r).ok());
-                                crate::db_helpers::db_fire(pool.inner(), "persist hydrated subkey_index + role_ids", move |conn| {
-                                    if recovered_subkey {
-                                        conn.execute(
+                                crate::db_helpers::db_fire(
+                                    pool.inner(),
+                                    "persist hydrated subkey_index + role_ids",
+                                    move |conn| {
+                                        if recovered_subkey {
+                                            conn.execute(
                                             "UPDATE communities SET my_subkey_index = ?1 WHERE owner_key = ?2 AND id = ?3",
                                             rusqlite::params![idx, &ok, &cid],
                                         )?;
-                                    }
-                                    if let Some(rj) = roles_json {
-                                        conn.execute(
+                                        }
+                                        if let Some(rj) = roles_json {
+                                            conn.execute(
                                             "UPDATE communities SET my_role_ids = ?1 WHERE owner_key = ?2 AND id = ?3",
                                             rusqlite::params![rj, &ok, &cid],
                                         )?;
-                                    }
-                                    Ok(())
-                                });
+                                        }
+                                        Ok(())
+                                    },
+                                );
                             }
                         }
                     }
@@ -1701,18 +1585,16 @@ async fn hydrate_community_state_from_dht(state: &SharedState) {
                 let communities = state.communities.read();
                 communities.get(community_id.as_str()).and_then(|cs| {
                     if cs.slot_keypair.is_none() {
-                        cs.slot_seed.as_ref().and_then(|seed| {
-                            cs.my_subkey_index.map(|idx| (seed.clone(), idx))
-                        })
+                        cs.slot_seed
+                            .as_ref()
+                            .and_then(|seed| cs.my_subkey_index.map(|idx| (seed.clone(), idx)))
                     } else {
                         None
                     }
                 })
             };
             if let Some((seed, idx)) = should_derive {
-                services::community::try_derive_slot_keypair(
-                    state, community_id, &seed, idx,
-                );
+                services::community::try_derive_slot_keypair(state, community_id, &seed, idx);
             }
         }
 
@@ -1749,41 +1631,7 @@ async fn hydrate_community_state_from_dht(state: &SharedState) {
             }
         }
     }
-
-    // Persist hydrated names/descriptions to SQLite so they survive restarts
-    let name_updates: Vec<(String, String, Option<String>)> = {
-        let communities = state.communities.read();
-        community_manifests
-            .iter()
-            .filter_map(|(cid, _)| {
-                communities.get(cid.as_str()).map(|cs| {
-                    (cid.clone(), cs.name.clone(), cs.description.clone())
-                })
-            })
-            .collect()
-    };
-    if !name_updates.is_empty() {
-        let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
-        let app_handle = state.app_handle.read().clone();
-        if let Some(ref ah) = app_handle {
-            let pool: tauri::State<'_, DbPool> = ah.state();
-            for (cid, name, desc) in name_updates {
-                let ok = owner_key.clone();
-                crate::db_helpers::db_fire(pool.inner(), "persist hydrated name", move |conn| {
-                    conn.execute(
-                        "UPDATE communities SET name = ?1, description = ?2 WHERE owner_key = ?3 AND id = ?4",
-                        rusqlite::params![name, desc, ok, cid],
-                    )?;
-                    Ok(())
-                });
-            }
-        }
-    }
-
-    tracing::info!(
-        count = community_manifests.len(),
-        "hydrated community state from DHT manifests"
-    );
+    tracing::info!("hydrated community registry-linked state from DHT");
 }
 
 /// Rebuild governance state from SMPL governance records for all v2.0 communities.
@@ -1792,7 +1640,7 @@ async fn hydrate_community_state_from_dht(state: &SharedState) {
 /// reads all 255 subkeys, runs CRDT merge, and caches the result.
 /// Communities without `governance_key` are skipped (v1.0 communities).
 async fn rebuild_governance_from_dht(state: &SharedState) {
-    let Some(rc) = state_helpers::routing_context(state) else {
+    let Some(rc) = state_helpers::safe_routing_context(state) else {
         tracing::warn!("rebuild_governance_from_dht: no routing context, skipping");
         return;
     };
@@ -1802,7 +1650,9 @@ async fn rebuild_governance_from_dht(state: &SharedState) {
         let cs = state.communities.read();
         cs.values()
             .filter_map(|c| {
-                c.governance_key.as_ref().map(|gk| (c.id.clone(), gk.clone()))
+                c.governance_key
+                    .as_ref()
+                    .map(|gk| (c.id.clone(), gk.clone()))
             })
             .collect()
     };
@@ -1821,15 +1671,21 @@ async fn rebuild_governance_from_dht(state: &SharedState) {
 
         // Use inspect to find which subkeys have been written (seq > 0),
         // then only read those. This avoids 255 sequential DHT reads on startup.
-        let occupied_subkeys: Vec<u32> = match rc.inspect_dht_record(
-            gov_key.clone(),
-            Some(veilid_core::ValueSubkeyRangeSet::full()),
-            veilid_core::DHTReportScope::UpdateGet,
-        ).await {
+        let occupied_subkeys: Vec<u32> = match rc
+            .inspect_dht_record(
+                gov_key.clone(),
+                Some(veilid_core::ValueSubkeyRangeSet::full()),
+                veilid_core::DHTReportScope::UpdateGet,
+            )
+            .await
+        {
             Ok(report) => {
                 // Use network_seqs — reflects what exists on the DHT network,
                 // not just our local cache (which may be empty after restart)
-                report.network_seqs().iter().enumerate()
+                report
+                    .network_seqs()
+                    .iter()
+                    .enumerate()
                     .filter(|(_, &seq)| seq != veilid_core::ValueSeqNum::default())
                     .map(|(i, _)| u32::try_from(i).unwrap_or(0))
                     .collect()
@@ -1841,7 +1697,10 @@ async fn rebuild_governance_from_dht(state: &SharedState) {
         };
 
         // Read occupied subkeys concurrently (bounded to 10 at a time)
-        let mut all_entries: Vec<(rekindle_types::id::PseudonymKey, Vec<rekindle_types::governance::GovernanceEntry>)> = Vec::new();
+        let mut all_entries: Vec<(
+            rekindle_types::id::PseudonymKey,
+            Vec<rekindle_types::governance::GovernanceEntry>,
+        )> = Vec::new();
         {
             use futures::stream::{FuturesUnordered, StreamExt};
             let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(10));
@@ -1859,7 +1718,10 @@ async fn rebuild_governance_from_dht(state: &SharedState) {
             while let Some((_subkey, result)) = futs.next().await {
                 if let Ok(Some(val)) = result {
                     if !val.data().is_empty() {
-                        if let Ok(payload) = serde_json::from_slice::<rekindle_types::governance::GovernanceSubkeyPayload>(val.data()) {
+                        if let Ok(payload) = serde_json::from_slice::<
+                            rekindle_types::governance::GovernanceSubkeyPayload,
+                        >(val.data())
+                        {
                             all_entries.push((payload.author_pseudonym, payload.entries));
                         }
                     }
@@ -1872,14 +1734,28 @@ async fn rebuild_governance_from_dht(state: &SharedState) {
             continue;
         }
 
+        let previous_bans = state_helpers::governance_state(state, community_id)
+            .map(|gov| gov.bans)
+            .unwrap_or_default();
+
         // CRDT merge
         let gov_state = rekindle_governance::merge::merge(&all_entries);
+        let new_bans: Vec<String> = gov_state
+            .bans
+            .iter()
+            .filter(|pseudo| !previous_bans.contains(*pseudo))
+            .map(|pseudo| hex::encode(pseudo.0))
+            .collect();
 
         // Restore lamport_counter from highest lamport in governance entries
         // so new entries don't collide with existing ones
         let max_lamport = all_entries
             .iter()
-            .flat_map(|(_, entries)| entries.iter().map(rekindle_types::governance::GovernanceEntry::lamport))
+            .flat_map(|(_, entries)| {
+                entries
+                    .iter()
+                    .map(rekindle_types::governance::GovernanceEntry::lamport)
+            })
             .max()
             .unwrap_or(0);
 
@@ -1892,7 +1768,46 @@ async fn rebuild_governance_from_dht(state: &SharedState) {
 
         state_helpers::set_governance_state(state, community_id, gov_state);
 
+        let app_handle = { state.app_handle.read().clone() };
+        if let Some(app_handle) = app_handle {
+            let pool: tauri::State<'_, DbPool> = app_handle.state();
+            if let Err(e) = state_helpers::persist_governance_snapshot_to_sqlite(
+                state,
+                pool.inner(),
+                community_id,
+                max_lamport,
+            )
+            .await
+            {
+                tracing::warn!(
+                    community = %community_id,
+                    error = %e,
+                    "failed to persist rebuilt governance snapshot"
+                );
+            }
+        }
+
         tracing::info!(community = %community_id, max_lamport, "rebuilt governance state from DHT");
+
+        if let Some(app_handle) = state_helpers::app_handle(state) {
+            for banned_pseudonym in new_bans {
+                let state = state.clone();
+                let app_handle = app_handle.clone();
+                let community_id = community_id.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(error) = crate::services::community::rotate_text_mek_for_departure(
+                        &app_handle,
+                        &state,
+                        &community_id,
+                        &banned_pseudonym,
+                    )
+                    .await
+                    {
+                        tracing::debug!(community = %community_id, member = %banned_pseudonym, error = %error, "text MEK rotation skipped after governance ban sync");
+                    }
+                });
+            }
+        }
     }
 }
 
@@ -1904,11 +1819,8 @@ pub async fn rebuild_governance_from_dht_public(state: &SharedState) {
 
 /// Public wrapper for `open_community_dht_records` — called from the network
 /// reconnection handler when the routing context wasn't available at login time.
-pub async fn open_community_dht_records_public(
-    app_handle: &tauri::AppHandle,
-    state: &SharedState,
-) {
-    open_community_dht_records(app_handle, state).await;
+pub async fn open_community_dht_records_public(state: &SharedState) {
+    open_community_dht_records(state).await;
 }
 
 /// Allocate a Veilid private route with retry.
@@ -1941,7 +1853,7 @@ async fn allocate_route_with_retry(
                     nh.route_blob = Some(route_blob.blob.clone());
                 }
                 // Notify the frontend immediately about the new route
-                services::veilid_service::emit_network_status(app_handle, state);
+                services::veilid::emit_network_status(app_handle, state);
                 tracing::info!(
                     attempt,
                     blob_len = route_blob.blob.len(),
@@ -2038,9 +1950,9 @@ async fn spawn_dht_publish(
         for cid in community_ids {
             let poll_state = state.clone();
             tokio::spawn(async move {
-                if let Err(e) = services::community::presence_poll_tick_public(
-                    &poll_state, &cid,
-                ).await {
+                if let Err(e) =
+                    services::community::presence_poll_tick_public(&poll_state, &cid).await
+                {
                     tracing::debug!(
                         community = %cid,
                         error = %e,
@@ -2049,7 +1961,9 @@ async fn spawn_dht_publish(
                 }
             });
         }
-        tracing::info!("route allocated — triggered immediate presence re-write for all communities");
+        tracing::info!(
+            "route allocated — triggered immediate presence re-write for all communities"
+        );
     }
 
     // Create or open mailbox DHT record
@@ -2143,7 +2057,7 @@ pub async fn create_conversation_for_friend(
     let (display_name, status_message, owner_key) =
         (id.display_name, id.status_message, id.public_key);
 
-    let routing_context = state_helpers::require_routing_context(state)?;
+    let routing_context = state_helpers::require_safe_routing_context(state)?;
 
     let route_blob = state_helpers::our_route_blob(state).unwrap_or_default();
 

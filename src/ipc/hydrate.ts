@@ -3,8 +3,8 @@ import { setAuthState } from "../stores/auth.store";
 import { fetchAvatarUrl } from "./avatar";
 import { setFriendsState } from "../stores/friends.store";
 import { setCommunityState } from "../stores/community.store";
-import { transformFriendMap, transformCommunityMap, transformMember } from "../utils/transformers";
-import { loadNotificationOverrides } from "../handlers/community.handlers";
+import { transformExpression, transformFriendMap, transformCommunityMap, transformMember } from "../utils/transformers";
+import { handleLoadAutoModRules } from "../handlers/community.handlers";
 
 /**
  * Hydrate frontend stores from the Rust backend.
@@ -47,10 +47,14 @@ export async function hydrateState(): Promise<void> {
       }).catch((e) => {
         console.error(`Failed to hydrate members for ${c.id}:`, e);
       });
+      commands.listExpressions(c.id).then((expressions) => {
+        setCommunityState("communities", c.id, "expressions", expressions.map(transformExpression));
+      }).catch((e) => {
+        console.error(`Failed to hydrate expressions for ${c.id}:`, e);
+      });
+      void handleLoadAutoModRules(c.id);
     }
   } catch (e) {
     console.error("Failed to hydrate communities:", e);
   }
-
-  await loadNotificationOverrides();
 }

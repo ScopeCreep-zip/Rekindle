@@ -28,7 +28,7 @@ interface ChannelListProps {
   onRenameCategory?: (categoryId: string, currentName: string) => void;
   onDeleteCategory?: (categoryId: string) => void;
   onCreateCategory?: () => void;
-  onSetNotification?: (channelId: string, level: "all" | "mentions" | "none") => void;
+  onSetNotification?: (channelId: string, level: "all" | "mentions" | "nothing") => void;
 }
 
 const ChannelList: Component<ChannelListProps> = (props) => {
@@ -124,9 +124,9 @@ const ChannelList: Component<ChannelListProps> = (props) => {
         action: () => props.onSetNotification!(ctx.data.id, "mentions"),
       });
       items.push({
-        label: "Notify: None",
+        label: "Notify: Nothing",
         icon: ICON_BELL,
-        action: () => props.onSetNotification!(ctx.data.id, "none"),
+        action: () => props.onSetNotification!(ctx.data.id, "nothing"),
       });
     }
 

@@ -1,8 +1,9 @@
 import type { FriendInfo, Message as IpcMessage } from "../ipc/commands";
+import type { ExpressionInfo } from "../ipc/commands";
 import type { Friend } from "../stores/friends.store";
 import type { GameInfo } from "../stores/types";
 import type { Message } from "../stores/chat.store";
-import type { Community, Channel, Member } from "../stores/community.store";
+import type { AutoModRule, Community, Channel, Expression, Member } from "../stores/community.store";
 
 /** Convert a single backend FriendInfo to a frontend Friend. */
 export function transformFriend(f: FriendInfo): Friend {
@@ -34,10 +35,12 @@ export function transformFriendMap(friends: FriendInfo[]): Record<string, Friend
 
 /** Backend Message DTO → store Message (no status field — callers add for optimistic sends). */
 export function transformMessage(m: IpcMessage): Message {
+  const decryptionFailed = m.decryptionFailed ?? m.body === "(decryption failed)";
   return {
-    id: m.id, senderId: m.senderId, body: m.body, timestamp: m.timestamp,
+    id: m.id, senderId: m.senderId, body: decryptionFailed ? "" : m.body, timestamp: m.timestamp,
     isOwn: m.isOwn, serverMessageId: m.serverMessageId,
-    reactions: m.reactions, pinned: m.pinned,
+    decryptionFailed, automodBlurred: m.automodBlurred ?? false,
+    reactions: m.reactions, pinned: m.pinned, poll: m.poll,
   };
 }
 
@@ -47,18 +50,56 @@ export function transformMessages(msgs: IpcMessage[]): Message[] {
 }
 
 /** Backend channel DTO → store Channel (handles the channelType→type rename+cast). */
-export function transformChannel(ch: { id: string; name: string; channelType: string; unreadCount: number; categoryId?: string; topic?: string; slowmodeSeconds?: number; nsfw?: boolean; messageRecordKey?: string; mekGeneration?: number }): Channel {
-  return { id: ch.id, name: ch.name, type: ch.channelType as Channel["type"], unreadCount: ch.unreadCount, categoryId: ch.categoryId, topic: ch.topic ?? "", slowmodeSeconds: ch.slowmodeSeconds, nsfw: ch.nsfw, messageRecordKey: ch.messageRecordKey, mekGeneration: ch.mekGeneration };
+export function transformChannel(ch: { id: string; name: string; channelType: string; unreadCount: number; categoryId?: string; topic?: string; slowmodeSeconds?: number; nsfw?: boolean; messageRecordKey?: string; mekGeneration?: number; notificationLevel?: "all" | "mentions" | "nothing" }): Channel {
+  return { id: ch.id, name: ch.name, type: ch.channelType as Channel["type"], unreadCount: ch.unreadCount, categoryId: ch.categoryId, topic: ch.topic ?? "", slowmodeSeconds: ch.slowmodeSeconds, nsfw: ch.nsfw, messageRecordKey: ch.messageRecordKey, mekGeneration: ch.mekGeneration, notificationLevel: ch.notificationLevel ?? "all" };
+}
+
+export function transformExpression(expression: ExpressionInfo): Expression {
+  const inlineDataUrl = expression.inlineDataBase64
+    ? `data:${expression.mediaType ?? "image/png"};base64,${expression.inlineDataBase64}`
+    : null;
+  return {
+    id: expression.expressionId,
+    name: expression.name,
+    kind: expression.kind,
+    contentHash: expression.contentHash,
+    inlineDataBase64: expression.inlineDataBase64 ?? null,
+    inlineDataUrl,
+    mediaType: expression.mediaType ?? null,
+    animated: expression.animated,
+    tags: expression.tags ?? [],
+  };
+}
+
+export function transformAutoModRule(rule: {
+  ruleId: string;
+  name: string;
+  enabled: boolean;
+  keywords: string[];
+  regexPatterns: string[];
+  action: "block_locally" | "blur_content" | "alert_moderators";
+  lamport: number;
+}): AutoModRule {
+  return {
+    ruleId: rule.ruleId,
+    name: rule.name,
+    enabled: rule.enabled,
+    keywords: rule.keywords ?? [],
+    regexPatterns: rule.regexPatterns ?? [],
+    action: rule.action,
+    lamport: rule.lamport,
+  };
 }
 
 /** Backend community detail DTO → store Community. */
 export function transformCommunityDetail(c: {
   id: string; name: string; description: string | null;
-  channels: { id: string; name: string; channelType: string; unreadCount: number; categoryId?: string; topic?: string; slowmodeSeconds?: number; nsfw?: boolean; messageRecordKey?: string; mekGeneration?: number }[];
+  channels: { id: string; name: string; channelType: string; unreadCount: number; categoryId?: string; topic?: string; slowmodeSeconds?: number; nsfw?: boolean; messageRecordKey?: string; mekGeneration?: number; notificationLevel?: "all" | "mentions" | "nothing" }[];
   categories?: { id: string; name: string; sortOrder: number }[];
-  roles?: { id: number; name: string; color: number; permissions: string; position: number; hoist: boolean; mentionable: boolean }[];
+  roles?: { id: number; name: string; color: number; permissions: string; position: number; hoist: boolean; mentionable: boolean; selfAssignable?: boolean }[];
   myRoleIds?: number[]; myPseudonymKey?: string | null; mekGeneration?: number;
-  manifestKey?: string; memberRegistryKey?: string; governanceKey?: string;
+  memberRegistryKey?: string; governanceKey?: string | null;
+  onboardingComplete?: boolean;
 }): Community {
   return {
     id: c.id, name: c.name, description: c.description ?? null,
@@ -68,8 +109,10 @@ export function transformCommunityDetail(c: {
     myRoleIds: c.myRoleIds ?? [0, 1], myPseudonymKey: c.myPseudonymKey ?? null,
     mekGeneration: c.mekGeneration ?? 0,
     events: [],
-    manifestKey: c.manifestKey, memberRegistryKey: c.memberRegistryKey,
-    governanceKey: c.governanceKey,
+    memberRegistryKey: c.memberRegistryKey, governanceKey: c.governanceKey ?? null,
+    onboardingComplete: c.onboardingComplete ?? true,
+    expressions: [],
+    automodRules: [],
   };
 }
 

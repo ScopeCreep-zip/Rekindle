@@ -1,11 +1,43 @@
+pub mod automod;
+pub mod bootstrap;
+pub mod channel_messages;
+pub mod channel_polls;
+pub mod channel_reactions;
 pub mod create;
+pub mod event_reminders;
+pub mod expressions;
+pub mod gossip;
+pub mod governance;
+pub mod inspect;
 pub mod join;
 pub mod keepalive;
+pub mod mek_rotation;
+mod mek_rotation_support;
+pub mod message_notifications;
+pub mod notifications;
 pub mod presence;
+pub mod watch;
 
 // Re-export public API (callers use services::community::function_name)
+pub use bootstrap::build_bootstrap_response;
+pub use channel_messages::{
+    emit_local_chat_event, send_message, start_write_retry_worker, PendingChannelMessage,
+};
+pub use channel_polls::{persist_poll_close, persist_poll_create, persist_poll_vote};
+pub use channel_reactions::persist_reaction;
 pub use create::create_community;
-pub use join::{join_community, rejoin_community};
+pub use event_reminders::{start_event_reminders, wake_event_reminders};
+pub use expressions::{delete_expression, list_expressions, upload_emoji};
+pub use gossip::send_to_mesh;
+pub use governance::write_entry;
 pub(crate) use join::try_derive_slot_keypair;
+pub use join::{join_community, rejoin_community};
 pub use keepalive::start_dht_keepalive;
+pub use mek_rotation::{
+    handle_incoming_mek_transfer, handle_request_mek, rotate_text_mek_for_departure,
+    rotate_voice_mek_for_membership,
+};
+pub use message_notifications::{channel_message_subkey, handle_message_notification};
+pub use notifications::{emit_message_notification, should_emit_message_notification};
 pub use presence::{presence_poll_tick_public, start_presence_poll};
+pub use watch::{mark_watch_inactive, watch_community_records};

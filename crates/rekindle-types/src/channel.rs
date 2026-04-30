@@ -37,9 +37,9 @@ pub enum ChannelEntry {
     /// Add or remove a reaction on a message.
     Reaction {
         message_id: MessageId,
-        /// Unicode emoji string or custom expression ID
-        emoji: String,
-        /// true = add, false = remove. CRDT: LWW per (voter, message_id, emoji).
+        /// Unicode emoji string or "custom:{expression_id_hex}"
+        expression: String,
+        /// true = add, false = remove. CRDT: LWW per (voter, message_id, expression).
         added: bool,
         lamport: u64,
     },
@@ -53,10 +53,7 @@ pub enum ChannelEntry {
     },
 
     /// Delete a message (tombstone). Irreversible in CRDT.
-    Delete {
-        message_id: MessageId,
-        lamport: u64,
-    },
+    Delete { message_id: MessageId, lamport: u64 },
 
     /// Forward a message from another channel/community.
     Forward {
@@ -69,12 +66,26 @@ pub enum ChannelEntry {
         lamport: u64,
     },
 
-    /// Vote in a poll. CRDT: LWW per (voter, message_id).
-    PollVote {
+    /// Create a poll attached to a message. CRDT: author-bound LWW per poll_id.
+    PollCreate {
+        poll_id: [u8; 16],
         message_id: MessageId,
-        option_indices: Vec<u32>,
+        question: String,
+        answers: Vec<String>,
+        multi_select: bool,
+        expires_at: Option<u64>,
         lamport: u64,
     },
+
+    /// Vote in a poll. CRDT: LWW per (poll_id, voter).
+    PollVote {
+        poll_id: [u8; 16],
+        selected_answers: Vec<u8>,
+        lamport: u64,
+    },
+
+    /// Close a poll. CRDT: tombstone by poll_id.
+    PollClose { poll_id: [u8; 16], lamport: u64 },
 
     /// Advertise that we have a file cached locally for peer download.
     AttachmentCached {
@@ -84,10 +95,7 @@ pub enum ChannelEntry {
     },
 
     /// Raise/lower hand in a stage channel.
-    HandRaise {
-        raised: bool,
-        lamport: u64,
-    },
+    HandRaise { raised: bool, lamport: u64 },
 }
 
 impl ChannelEntry {
@@ -99,7 +107,9 @@ impl ChannelEntry {
             | Self::Edit { lamport, .. }
             | Self::Delete { lamport, .. }
             | Self::Forward { lamport, .. }
+            | Self::PollCreate { lamport, .. }
             | Self::PollVote { lamport, .. }
+            | Self::PollClose { lamport, .. }
             | Self::AttachmentCached { lamport, .. }
             | Self::HandRaise { lamport, .. } => *lamport,
         }
@@ -131,17 +141,43 @@ mod tests {
     fn reaction_toggle() {
         let add = ChannelEntry::Reaction {
             message_id: MessageId([1u8; 16]),
-            emoji: "👍".into(),
+            expression: "👍".into(),
             added: true,
             lamport: 10,
         };
         let remove = ChannelEntry::Reaction {
             message_id: MessageId([1u8; 16]),
-            emoji: "👍".into(),
+            expression: "👍".into(),
             added: false,
             lamport: 11,
         };
         // LWW: remove (lamport 11) wins over add (lamport 10)
         assert!(remove.lamport() > add.lamport());
+    }
+
+    #[test]
+    fn poll_entries_report_lamport() {
+        let create = ChannelEntry::PollCreate {
+            poll_id: [2u8; 16],
+            message_id: MessageId([3u8; 16]),
+            question: "Ready?".into(),
+            answers: vec!["Yes".into(), "No".into()],
+            multi_select: false,
+            expires_at: None,
+            lamport: 12,
+        };
+        let vote = ChannelEntry::PollVote {
+            poll_id: [2u8; 16],
+            selected_answers: vec![0],
+            lamport: 13,
+        };
+        let close = ChannelEntry::PollClose {
+            poll_id: [2u8; 16],
+            lamport: 14,
+        };
+
+        assert_eq!(create.lamport(), 12);
+        assert_eq!(vote.lamport(), 13);
+        assert_eq!(close.lamport(), 14);
     }
 }

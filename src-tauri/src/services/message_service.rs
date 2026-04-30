@@ -59,7 +59,14 @@ pub async fn handle_incoming_message(
 
     match msg.payload {
         MessagePayload::DirectMessage { body, .. } => {
-            handle_direct_message(app_handle, state, pool, &msg.sender_hex, &body, msg.timestamp);
+            handle_direct_message(
+                app_handle,
+                state,
+                pool,
+                &msg.sender_hex,
+                &body,
+                msg.timestamp,
+            );
         }
         MessagePayload::ChannelMessage {
             channel_id, body, ..
@@ -131,9 +138,7 @@ pub async fn handle_incoming_message(
         MessagePayload::FriendRequestReceived => {
             let _ = app_handle.emit(
                 "chat-event",
-                &ChatEvent::FriendRequestDelivered {
-                    to: msg.sender_hex,
-                },
+                &ChatEvent::FriendRequestDelivered { to: msg.sender_hex },
             );
         }
         MessagePayload::ProfileKeyRotated {
@@ -232,9 +237,8 @@ fn decrypt_payload(
                     "encrypted message could not be decrypted"
                 );
                 let display_name = state_helpers::friend_display_name(state, sender_hex);
-                let from_label = display_name.unwrap_or_else(|| {
-                    format!("{}...", &sender_hex[..8.min(sender_hex.len())])
-                });
+                let from_label = display_name
+                    .unwrap_or_else(|| format!("{}...", &sender_hex[..8.min(sender_hex.len())]));
                 let _ = app_handle.emit(
                     "notification-event",
                     &crate::channels::NotificationEvent::SystemAlert {
@@ -268,7 +272,15 @@ fn handle_direct_message(
     let sender = sender_hex.to_string();
     let body_clone = body.to_string();
     db_fire(pool, "persist incoming message", move |conn| {
-        crate::message_repo::insert_dm(conn, &owner_key, &sender, &sender, &body_clone, timestamp, false)
+        crate::message_repo::insert_dm(
+            conn,
+            &owner_key,
+            &sender,
+            &sender,
+            &body_clone,
+            timestamp,
+            false,
+        )
     });
 
     // Update unread count
@@ -283,6 +295,8 @@ fn handle_direct_message(
     let event = ChatEvent::MessageReceived {
         from: sender_hex.to_string(),
         body: body.to_string(),
+        decryption_failed: false,
+        automod_blurred: false,
         timestamp: timestamp.cast_unsigned(),
         conversation_id: sender_hex.to_string(),
         server_message_id: None, // DMs have no message ID
@@ -307,12 +321,23 @@ fn handle_channel_message(
     let ch_id = channel_id.to_string();
     let body_clone = body.to_string();
     db_fire(pool, "persist channel message", move |conn| {
-        crate::message_repo::insert_channel_message(conn, &owner_key, &ch_id, &sender, &body_clone, timestamp, false, None)
+        crate::message_repo::insert_channel_message(
+            conn,
+            &owner_key,
+            &ch_id,
+            &sender,
+            &body_clone,
+            timestamp,
+            false,
+            None,
+        )
     });
 
     let event = ChatEvent::MessageReceived {
         from: sender_hex.to_string(),
         body: body.to_string(),
+        decryption_failed: false,
+        automod_blurred: false,
         timestamp: timestamp.cast_unsigned(),
         conversation_id: channel_id.to_string(),
         server_message_id: None, // P2P channel messages — ID assigned by sender
@@ -452,7 +477,12 @@ async fn handle_friend_request_full(
                     friend.display_name = req.display_name.to_string();
                 }
             }
-            crate::friend_repo::fire_update_display_name(state, pool, req.sender_hex, req.display_name);
+            crate::friend_repo::fire_update_display_name(
+                state,
+                pool,
+                req.sender_hex,
+                req.display_name,
+            );
             return;
         }
     }
@@ -535,7 +565,12 @@ async fn handle_friend_accept_full(
     crate::friend_repo::fire_update_friendship_state(state, pool, a.sender_hex, "accepted");
     // Persist profile key to `SQLite`
     if !a.profile_dht_key.is_empty() {
-        crate::friend_repo::fire_update_dht_record_key(state, pool, a.sender_hex, a.profile_dht_key);
+        crate::friend_repo::fire_update_dht_record_key(
+            state,
+            pool,
+            a.sender_hex,
+            a.profile_dht_key,
+        );
         // Start watching the friend's profile DHT record for presence
         if let Err(e) =
             super::presence_service::watch_friend(state, a.sender_hex, a.profile_dht_key).await
@@ -593,11 +628,7 @@ async fn handle_profile_key_rotated(
 }
 
 /// Persist an incoming friend request to `SQLite` for crash/restart recovery.
-fn persist_friend_request(
-    state: &Arc<AppState>,
-    pool: &DbPool,
-    req: &IncomingFriendRequest<'_>,
-) {
+fn persist_friend_request(state: &Arc<AppState>, pool: &DbPool, req: &IncomingFriendRequest<'_>) {
     let owner_key = state_helpers::owner_key_or_default(state);
     let pk = req.sender_hex.to_string();
     let dn = req.display_name.to_string();
@@ -661,7 +692,6 @@ fn handle_unfriended_ack(state: &Arc<AppState>, pool: &DbPool, sender_hex: &str)
     delete_pending_messages_to_recipient(state, pool, sender_hex);
     tracing::info!(from = %sender_hex, "received UnfriendedAck — cleared pending messages");
 }
-
 
 /// Handle a `FriendReject` — if the rejected peer is in our `pending_out` list,
 /// remove them. Otherwise, just emit the event.
@@ -794,10 +824,20 @@ async fn auto_accept_cross_request(
 
     // Persist profile/mailbox keys
     if !req.profile_dht_key.is_empty() {
-        crate::friend_repo::fire_update_dht_record_key(state, pool, req.sender_hex, req.profile_dht_key);
+        crate::friend_repo::fire_update_dht_record_key(
+            state,
+            pool,
+            req.sender_hex,
+            req.profile_dht_key,
+        );
     }
     if !req.mailbox_dht_key.is_empty() {
-        crate::friend_repo::fire_update_mailbox_dht_key(state, pool, req.sender_hex, req.mailbox_dht_key);
+        crate::friend_repo::fire_update_mailbox_dht_key(
+            state,
+            pool,
+            req.sender_hex,
+            req.mailbox_dht_key,
+        );
     }
 
     // 2. Establish Signal session from their prekey bundle
@@ -885,7 +925,7 @@ async fn try_fetch_route_from_dht(state: &Arc<AppState>, peer_id: &str) -> Optio
 
     let record_key: veilid_core::RecordKey = dht_key_str.parse().ok()?;
 
-    let (api, routing_context) = state_helpers::api_and_routing_context(state)?;
+    let (api, routing_context) = state_helpers::safe_api_and_routing_context(state)?;
 
     // Open (no-op if already open) and force-refresh subkey 6 (route blob)
     let _ = routing_context
@@ -926,7 +966,7 @@ async fn try_inline_route_refresh_and_send(
         return false;
     };
 
-    let retry = state_helpers::routing_context(state).and_then(|rc| {
+    let retry = state_helpers::safe_routing_context(state).and_then(|rc| {
         state_helpers::import_route_blob(state, &fresh_blob)
             .ok()
             .map(|rid| (rid, rc))

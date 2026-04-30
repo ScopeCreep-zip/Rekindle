@@ -707,19 +707,17 @@ pub async fn generate_invite(
     };
 
     // Wait up to 30s for DHT publish to complete (route_blob, profile key, mailbox key)
-    let (profile_dht_key, route_blob, mailbox_dht_key) = tokio::time::timeout(
-        std::time::Duration::from_secs(30),
-        async {
+    let (profile_dht_key, route_blob, mailbox_dht_key) =
+        tokio::time::timeout(std::time::Duration::from_secs(30), async {
             loop {
                 match state_helpers::profile_dht_info(state.inner()) {
                     Ok(info) => return info,
                     Err(_) => tokio::time::sleep(std::time::Duration::from_millis(500)).await,
                 }
             }
-        },
-    )
-    .await
-    .map_err(|_| "Network not ready — please wait a moment and try again".to_string())?;
+        })
+        .await
+        .map_err(|_| "Network not ready — please wait a moment and try again".to_string())?;
 
     tracing::info!(
         route_blob_len = route_blob.len(),

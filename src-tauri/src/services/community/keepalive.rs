@@ -23,21 +23,33 @@ pub fn start_dht_keepalive(state: Arc<AppState>, community_id: String) {
         loop {
             tokio::select! {
                 _ = interval.tick() => {
-                    let Some(rc) = state_helpers::routing_context(&state) else {
+                    let Some(rc) = state_helpers::safe_routing_context(&state) else {
                         continue;
                     };
-                    let manifest_key = {
+                    let keys = {
                         let communities = state.communities.read();
-                        communities
-                            .get(&community_id)
-                            .and_then(|c| c.manifest_key.clone().or_else(|| Some(c.id.clone())))
+                        communities.get(&community_id).map(|c| {
+                            let mut keys = Vec::new();
+                            if let Some(key) = c.governance_key.clone() {
+                                keys.push(key);
+                            } else {
+                                keys.push(c.id.clone());
+                            }
+                            if let Some(key) = c.member_registry_key.clone() {
+                                keys.push(key);
+                            }
+                            keys.extend(c.channel_log_keys.values().cloned());
+                            keys
+                        })
                     };
-                    let Some(key) = manifest_key else { continue };
-                    // Touch the record by reading subkey 0 to prevent DHT expiry.
+                    let Some(keys) = keys else { continue };
+                    // Touch the live v2 records by reading subkey 0 to prevent DHT expiry.
                     // Do NOT call open_record — it clobbers the writer on re-open,
                     // which would downgrade a writable open to read-only.
                     let mgr = DHTManager::new(rc);
-                    let _ = mgr.get_value(&key, 0).await;
+                    for key in keys {
+                        let _ = mgr.get_value(&key, 0).await;
+                    }
                 }
                 _ = shutdown_rx.recv() => break,
             }

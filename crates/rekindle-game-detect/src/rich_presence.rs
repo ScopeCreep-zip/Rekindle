@@ -110,11 +110,7 @@ mod tests {
 
     #[test]
     fn parse_plus_connect() {
-        let args: Vec<String> = vec![
-            "cs2".into(),
-            "+connect".into(),
-            "192.168.1.1:27015".into(),
-        ];
+        let args: Vec<String> = vec!["cs2".into(), "+connect".into(), "192.168.1.1:27015".into()];
         let result = parse_connect_args(&args);
         assert_eq!(result, Some(("192.168.1.1".into(), 27015)));
     }
@@ -146,11 +142,7 @@ mod tests {
 
     #[test]
     fn parse_bare_ip_defaults_port() {
-        let args: Vec<String> = vec![
-            "game.exe".into(),
-            "+connect".into(),
-            "192.168.1.1".into(),
-        ];
+        let args: Vec<String> = vec!["game.exe".into(), "+connect".into(), "192.168.1.1".into()];
         let result = parse_connect_args(&args);
         assert_eq!(result, Some(("192.168.1.1".into(), 27015)));
     }

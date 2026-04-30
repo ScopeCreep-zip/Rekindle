@@ -173,7 +173,13 @@ async fn try_reopen_and_update(
 ) -> Result<(), ProtocolError> {
     dht.open_record_writable(key, owner_keypair).await?;
 
-    update_subkey(dht, key, SUBKEY_DISPLAY_NAME, display_name.as_bytes().to_vec()).await?;
+    update_subkey(
+        dht,
+        key,
+        SUBKEY_DISPLAY_NAME,
+        display_name.as_bytes().to_vec(),
+    )
+    .await?;
     update_subkey(
         dht,
         key,

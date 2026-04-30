@@ -64,7 +64,12 @@ impl AudioThread {
         build_stream: F,
     ) -> Result<(), VoiceError>
     where
-        F: FnOnce(u32, u16, Option<String>, std_mpsc::Sender<String>) -> Result<cpal::Stream, VoiceError>
+        F: FnOnce(
+                u32,
+                u16,
+                Option<String>,
+                std_mpsc::Sender<String>,
+            ) -> Result<cpal::Stream, VoiceError>
             + Send
             + 'static,
     {
@@ -97,14 +102,12 @@ impl AudioThread {
         let handle = thread::Builder::new()
             .name(self.labels.audio_thread.into())
             .spawn(move || {
-                let result =
-                    build_stream(sample_rate, channels, device_name_owned, sync_err_tx);
+                let result = build_stream(sample_rate, channels, device_name_owned, sync_err_tx);
                 match result {
                     Ok(stream) => {
                         if let Err(e) = stream.play() {
-                            let _ = init_tx.send(Err(VoiceError::AudioDevice(format!(
-                                "{play_failed}: {e}"
-                            ))));
+                            let _ = init_tx
+                                .send(Err(VoiceError::AudioDevice(format!("{play_failed}: {e}"))));
                             return;
                         }
                         let _ = init_tx.send(Ok(()));

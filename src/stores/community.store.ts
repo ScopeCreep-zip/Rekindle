@@ -13,6 +13,7 @@ export interface Channel {
   nsfw?: boolean;
   messageRecordKey?: string;
   mekGeneration?: number;
+  notificationLevel?: "all" | "mentions" | "nothing";
 }
 
 export interface Category {
@@ -40,6 +41,29 @@ export interface Role {
   position: number;
   hoist: boolean;
   mentionable: boolean;
+  selfAssignable?: boolean;
+}
+
+export interface Expression {
+  id: string;
+  name: string;
+  kind: "emoji" | "sticker" | "soundboard";
+  contentHash: string;
+  inlineDataBase64?: string | null;
+  inlineDataUrl?: string | null;
+  mediaType?: string | null;
+  animated: boolean;
+  tags: string[];
+}
+
+export interface AutoModRule {
+  ruleId: string;
+  name: string;
+  enabled: boolean;
+  keywords: string[];
+  regexPatterns: string[];
+  action: "block_locally" | "blur_content" | "alert_moderators";
+  lamport: number;
 }
 
 export interface EventRsvp {
@@ -95,12 +119,13 @@ export interface Community {
   myPseudonymKey: string | null;
   mekGeneration: number;
   events: CommunityEvent[];
-  manifestKey?: string;
   memberRegistryKey?: string;
-  governanceKey?: string;
+  governanceKey: string | null;
   onboardingConfig?: OnboardingConfig;
   welcomeScreen?: WelcomeScreen;
   onboardingComplete?: boolean;
+  expressions: Expression[];
+  automodRules: AutoModRule[];
 }
 
 export interface VoiceChannelState {
@@ -118,7 +143,6 @@ export interface CommunityState {
   threadMessages: Record<string, Message[]>;
   activeThread: string | null;
   gameServers: Record<string, GameServer[]>;
-  notificationOverrides: Record<string, "all" | "mentions" | "none">;
   communityInvites: Record<string, InviteDto[]>;
   voiceChannels: Record<string, VoiceChannelState>;
 }
@@ -132,7 +156,6 @@ const [communityState, setCommunityState] = createStore<CommunityState>({
   threadMessages: {},
   activeThread: null,
   gameServers: {},
-  notificationOverrides: {},
   communityInvites: {},
   voiceChannels: {},
 });

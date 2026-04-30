@@ -1,15 +1,5 @@
 use std::path::Path;
 
-const SCHEMAS: &[&str] = &[
-    "message",
-    "identity",
-    "presence",
-    "friend",
-    "voice",
-    "account",
-    "conversation",
-];
-
 /// Find the capnp binary, checking standard installation locations on Windows
 fn find_capnp() -> Option<std::path::PathBuf> {
     // First, try the PATH
@@ -19,6 +9,21 @@ fn find_capnp() -> Option<std::path::PathBuf> {
     {
         if output.status.success() {
             return Some(std::path::PathBuf::from("capnp"));
+        }
+    }
+
+    // Standard Homebrew locations on macOS.
+    #[cfg(target_os = "macos")]
+    {
+        for candidate in ["/opt/homebrew/bin/capnp", "/usr/local/bin/capnp"] {
+            let capnp = Path::new(candidate);
+            if capnp.exists() {
+                if let Ok(output) = std::process::Command::new(capnp).arg("--version").output() {
+                    if output.status.success() {
+                        return Some(capnp.to_path_buf());
+                    }
+                }
+            }
         }
     }
 
@@ -59,7 +64,7 @@ fn find_capnp() -> Option<std::path::PathBuf> {
 }
 
 fn main() {
-    let out_dir = std::env::var("OUT_DIR").unwrap();
+    println!("cargo:rustc-check-cfg=cfg(capnp_codegen)");
 
     // Cap'n Proto schema compilation — requires `capnp` CLI tool.
     // Install via:
@@ -77,8 +82,12 @@ fn main() {
             // If capnp is not in PATH, add its directory to PATH for capnpc
             if capnp_path.to_string_lossy() != "capnp" {
                 if let Some(parent) = capnp_path.parent() {
-                    let current_path = std::env::var("PATH").unwrap_or_default();
-                    let new_path = format!("{};{}", parent.display(), current_path);
+                    let current_path =
+                        std::env::var_os("PATH").unwrap_or_else(|| std::ffi::OsString::from(""));
+                    let mut paths = std::env::split_paths(&current_path).collect::<Vec<_>>();
+                    paths.insert(0, parent.to_path_buf());
+                    let new_path = std::env::join_paths(paths)
+                        .expect("failed to join PATH while configuring capnp");
                     std::env::set_var("PATH", &new_path);
                     println!(
                         "cargo:warning=Added {} to PATH for capnpc",
@@ -103,17 +112,9 @@ fn main() {
             println!("cargo:rustc-cfg=capnp_codegen");
         }
     } else {
-        println!("cargo:warning=capnp binary not found — generating stub modules.");
-        println!("cargo:warning=Install capnproto for real serialization support.");
-
-        // Create empty stub files so include!() doesn't fail
-        for schema in SCHEMAS {
-            let path = Path::new(&out_dir).join(format!("{schema}_capnp.rs"));
-            if !path.exists() {
-                std::fs::write(&path, "// stub — install capnp to generate real bindings\n")
-                    .expect("failed to write stub file");
-            }
-        }
+        panic!(
+            "capnp binary not found. Install Cap'n Proto or use the project dev shell so schema codegen can run."
+        );
     }
 
     // Re-run if schemas change

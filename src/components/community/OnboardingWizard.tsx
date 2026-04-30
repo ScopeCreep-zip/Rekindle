@@ -1,5 +1,5 @@
 import { Component, For, Show, createSignal } from "solid-js";
-import { commands } from "../../ipc/commands";
+import { handleSubmitOnboarding } from "../../handlers/community.handlers";
 import type { OnboardingConfig, OnboardingAnswer } from "../../stores/types";
 
 interface OnboardingWizardProps {
@@ -83,8 +83,10 @@ const OnboardingWizard: Component<OnboardingWizardProps> = (props) => {
         questionId: q.questionId,
         selectedOptions: answers()[q.questionId] || [],
       }));
-      await commands.submitOnboardingAnswers(props.communityId, onboardingAnswers);
-      props.onComplete();
+      const success = await handleSubmitOnboarding(props.communityId, onboardingAnswers);
+      if (success) {
+        props.onComplete();
+      }
     } catch (e) {
       setError(String(e));
     } finally {

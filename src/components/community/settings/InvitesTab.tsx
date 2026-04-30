@@ -37,13 +37,13 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
     }
   });
 
-  function manifestKey(): string {
+  function governanceKey(): string {
     const community = communityState.communities[props.communityId];
-    return community?.manifestKey ?? props.communityId;
+    return community?.governanceKey ?? props.communityId;
   }
 
   function buildInviteLink(code: string): string {
-    return `rekindle://invite/${manifestKey()}/${code}`;
+    return `rekindle://invite/${governanceKey()}/${code}`;
   }
 
   async function copyToClipboard(text: string, hash?: string): Promise<void> {

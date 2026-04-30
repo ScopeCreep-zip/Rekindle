@@ -160,12 +160,7 @@ mod tests {
         )
         .unwrap();
 
-        assert!(unwrap_mek(
-            &wrong,
-            &sender.verifying_key().to_bytes(),
-            &wrapped,
-        )
-        .is_err());
+        assert!(unwrap_mek(&wrong, &sender.verifying_key().to_bytes(), &wrapped,).is_err());
     }
 
     #[test]
@@ -194,12 +189,7 @@ mod tests {
     fn wrapped_too_short() {
         let sender = derive_community_pseudonym(&[1u8; 32], "c");
         let recipient = derive_community_pseudonym(&[2u8; 32], "c");
-        assert!(unwrap_mek(
-            &recipient,
-            &sender.verifying_key().to_bytes(),
-            &[0u8; 11],
-        )
-        .is_err());
+        assert!(unwrap_mek(&recipient, &sender.verifying_key().to_bytes(), &[0u8; 11],).is_err());
     }
 
     #[test]
@@ -217,11 +207,6 @@ mod tests {
         )
         .unwrap();
 
-        assert!(unwrap_mek(
-            &recipient_b,
-            &sender_b.verifying_key().to_bytes(),
-            &wrapped,
-        )
-        .is_err());
+        assert!(unwrap_mek(&recipient_b, &sender_b.verifying_key().to_bytes(), &wrapped,).is_err());
     }
 }

@@ -10,7 +10,9 @@ pub mod types;
 
 // Re-export types for convenient access via `dht::community::*`
 pub use audit_log::{AuditAction, AuditChange, AuditLogEntry, AuditTarget};
-pub use automod::{AutoModAction, AutoModConfig, AutoModRule, AutoModTrigger, RaidAction, RaidProtection};
+pub use automod::{
+    AutoModAction, AutoModConfig, AutoModRule, AutoModTrigger, RaidAction, RaidProtection,
+};
 pub use envelope::{
     sign_envelope, verify_envelope, CommunityEnvelope, ControlPayload, OnboardingAnswer,
     PresenceGameInfo, SignedEnvelope,

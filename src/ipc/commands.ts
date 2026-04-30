@@ -18,11 +18,55 @@ export interface Message {
   id: number;
   senderId: string;
   body: string;
+  decryptionFailed?: boolean;
+  automodBlurred?: boolean;
   timestamp: number;
   isOwn: boolean;
   serverMessageId?: string;
   reactions?: { emoji: string; count: number; reactors: string[] }[];
   pinned?: boolean;
+  poll?: {
+    pollId: string;
+    question: string;
+    answers: { index: number; text: string; voteCount: number; voters: string[] }[];
+    multiSelect: boolean;
+    expiresAt?: number;
+    closed: boolean;
+    selectedAnswers: number[];
+  };
+}
+
+export interface ExpressionInfo {
+  expressionId: string;
+  name: string;
+  kind: "emoji" | "sticker" | "soundboard";
+  contentHash: string;
+  inlineDataBase64?: string | null;
+  mediaType?: string | null;
+  animated: boolean;
+  tags: string[];
+}
+
+export interface QuietHoursSettings {
+  enabled: boolean;
+  startHour: number;
+  endHour: number;
+  utcOffsetMinutes: number;
+}
+
+export interface AutoModRuleInfo {
+  ruleId: string;
+  name: string;
+  enabled: boolean;
+  keywords: string[];
+  regexPatterns: string[];
+  action: "block_locally" | "blur_content" | "alert_moderators";
+  lamport: number;
+}
+
+export interface SendChannelMessageResult {
+  status: "delivered" | "queued";
+  messageId: string;
 }
 
 export interface FriendInfo {
@@ -154,13 +198,14 @@ export const commands = {
       id: string;
       name: string;
       description: string | null;
-      channels: { id: string; name: string; channelType: string; unreadCount: number; categoryId?: string; topic?: string }[];
+      channels: { id: string; name: string; channelType: string; unreadCount: number; categoryId?: string; topic?: string; notificationLevel?: "all" | "mentions" | "nothing" }[];
       categories?: { id: string; name: string; sortOrder: number }[];
       myRole: string | null;
       myRoleIds: number[];
-      roles: { id: number; name: string; color: number; permissions: string; position: number; hoist: boolean; mentionable: boolean }[];
+      roles: { id: number; name: string; color: number; permissions: string; position: number; hoist: boolean; mentionable: boolean; selfAssignable?: boolean }[];
       myPseudonymKey: string | null;
       mekGeneration: number;
+      onboardingComplete: boolean;
     }[]>("get_community_details"),
   getCommunityMembers: (communityId: string) =>
     invoke<{ pseudonymKey: string; displayName: string; roleIds: number[]; displayRole: string; status: string; timeoutUntil: number | null }[]>(
@@ -173,7 +218,7 @@ export const commands = {
   createChannel: (communityId: string, name: string, channelType: string, categoryId?: string) =>
     invoke<string>("create_channel", { communityId, name, channelType, categoryId: categoryId ?? null }),
   sendChannelMessage: (channelId: string, body: string, replyToId?: string) =>
-    invoke<string>("send_channel_message", { channelId, body, replyToId: replyToId ?? null }),
+    invoke<SendChannelMessageResult>("send_channel_message", { channelId, body, replyToId: replyToId ?? null }),
   editChannelMessage: (channelId: string, messageId: string, newBody: string) =>
     invoke<void>("edit_channel_message", { channelId, messageId, newBody }),
   deleteChannelMessage: (channelId: string, messageId: string) =>
@@ -182,6 +227,54 @@ export const commands = {
     invoke<Message[]>("get_channel_messages", { channelId, limit }),
   getOlderChannelMessages: (communityId: string, channelId: string, beforeTimestamp: number, limit: number) =>
     invoke<Message[]>("get_older_channel_messages", { communityId, channelId, beforeTimestamp, limit }),
+  createPoll: (
+    communityId: string,
+    channelId: string,
+    messageId: string,
+    question: string,
+    answers: string[],
+    multiSelect: boolean,
+    expiresAt?: number,
+  ) => invoke<string>("create_poll", {
+    communityId,
+    channelId,
+    messageId,
+    question,
+    answers,
+    multiSelect,
+    expiresAt: expiresAt ?? null,
+  }),
+  votePoll: (communityId: string, channelId: string, pollId: string, selectedAnswers: number[]) =>
+    invoke<void>("vote_poll", { communityId, channelId, pollId, selectedAnswers }),
+  closePoll: (communityId: string, channelId: string, pollId: string) =>
+    invoke<void>("close_poll", { communityId, channelId, pollId }),
+  uploadEmoji: (communityId: string, name: string, bytes: number[], animated: boolean) =>
+    invoke<string>("upload_emoji", { communityId, name, bytes, animated }),
+  deleteEmoji: (communityId: string, expressionId: string) =>
+    invoke<void>("delete_emoji", { communityId, expressionId }),
+  listExpressions: (communityId: string) =>
+    invoke<ExpressionInfo[]>("list_expressions", { communityId }),
+  listAutoModRules: (communityId: string) =>
+    invoke<AutoModRuleInfo[]>("list_automod_rules", { communityId }),
+  setAutoModRule: (
+    communityId: string,
+    ruleId: string | null,
+    name: string,
+    enabled: boolean,
+    keywords: string[],
+    regexPatterns: string[],
+    action: "block_locally" | "blur_content" | "alert_moderators",
+  ) => invoke<string>("set_automod_rule", {
+    communityId,
+    ruleId,
+    name,
+    enabled,
+    keywords,
+    regexPatterns,
+    action,
+  }),
+  deleteAutoModRule: (communityId: string, ruleId: string) =>
+    invoke<void>("delete_automod_rule", { communityId, ruleId }),
   removeCommunityMember: (communityId: string, pseudonymKey: string) =>
     invoke<void>("remove_community_member", { communityId, pseudonymKey }),
   leaveCommunity: (communityId: string) =>
@@ -202,6 +295,24 @@ export const commands = {
     ),
   rotateMek: (communityId: string) =>
     invoke<void>("rotate_mek", { communityId }),
+  setChannelNotificationLevel: (
+    communityId: string,
+    channelId: string,
+    level: "all" | "mentions" | "nothing",
+  ) => invoke<void>("set_channel_notification_level", { communityId, channelId, level }),
+  setQuietHours: (
+    enabled: boolean,
+    startHour: number,
+    endHour: number,
+    utcOffsetMinutes?: number,
+  ) => invoke<void>("set_quiet_hours", {
+    enabled,
+    startHour,
+    endHour,
+    utcOffsetMinutes: utcOffsetMinutes ?? null,
+  }),
+  getQuietHours: () =>
+    invoke<QuietHoursSettings>("get_quiet_hours"),
 
   // Reactions
   addReaction: (communityId: string, channelId: string, messageId: string, emoji: string) =>
@@ -251,7 +362,7 @@ export const commands = {
 
   // Community invites
   createCommunityInvite: (communityId: string, maxUses?: number, expiresInSeconds?: number) =>
-    invoke<{ code: string; manifestKey: string }>("create_community_invite", { communityId, maxUses: maxUses ?? null, expiresInSeconds: expiresInSeconds ?? null }),
+    invoke<{ code: string; governanceKey: string }>("create_community_invite", { communityId, maxUses: maxUses ?? null, expiresInSeconds: expiresInSeconds ?? null }),
   revokeCommunityInvite: (communityId: string, codeHash: string) =>
     invoke<void>("revoke_community_invite", { communityId, codeHash }),
   listCommunityInvites: (communityId: string) =>
@@ -261,19 +372,23 @@ export const commands = {
 
   // Roles
   getRoles: (communityId: string) =>
-    invoke<{ id: number; name: string; color: number; permissions: number; position: number; hoist: boolean; mentionable: boolean }[]>(
+    invoke<{ id: number; name: string; color: number; permissions: number; position: number; hoist: boolean; mentionable: boolean; selfAssignable?: boolean }[]>(
       "get_roles", { communityId },
     ),
-  createRole: (communityId: string, name: string, color: number, permissions: string, hoist: boolean, mentionable: boolean) =>
-    invoke<number>("create_role", { communityId, name, color, permissions, hoist, mentionable }),
-  editRole: (communityId: string, roleId: number, name: string | null, color: number | null, permissions: string | null, position: number | null, hoist: boolean | null, mentionable: boolean | null) =>
-    invoke<void>("edit_role", { communityId, roleId, name, color, permissions, position, hoist, mentionable }),
+  createRole: (communityId: string, name: string, color: number, permissions: string, hoist: boolean, mentionable: boolean, selfAssignable: boolean) =>
+    invoke<number>("create_role", { communityId, name, color, permissions, hoist, mentionable, selfAssignable }),
+  editRole: (communityId: string, roleId: number, name: string | null, color: number | null, permissions: string | null, position: number | null, hoist: boolean | null, mentionable: boolean | null, selfAssignable: boolean | null) =>
+    invoke<void>("edit_role", { communityId, roleId, name, color, permissions, position, hoist, mentionable, selfAssignable }),
   deleteRole: (communityId: string, roleId: number) =>
     invoke<void>("delete_role", { communityId, roleId }),
   assignRole: (communityId: string, pseudonymKey: string, roleId: number) =>
     invoke<void>("assign_role", { communityId, pseudonymKey, roleId }),
   unassignRole: (communityId: string, pseudonymKey: string, roleId: number) =>
     invoke<void>("unassign_role", { communityId, pseudonymKey, roleId }),
+  selfAssignRole: (communityId: string, roleId: number) =>
+    invoke<void>("self_assign_role", { communityId, roleId }),
+  selfUnassignRole: (communityId: string, roleId: number) =>
+    invoke<void>("self_unassign_role", { communityId, roleId }),
   timeoutMember: (communityId: string, pseudonymKey: string, durationSeconds: number, reason: string | null) =>
     invoke<void>("timeout_member", { communityId, pseudonymKey, durationSeconds, reason }),
   removeTimeout: (communityId: string, pseudonymKey: string) =>
@@ -311,6 +426,10 @@ export const commands = {
     invoke<void>("cancel_event", { communityId, eventId }),
   rsvpEvent: (communityId: string, eventId: string, status: string) =>
     invoke<void>("rsvp_event", { communityId, eventId, status }),
+  setEventRsvp: (communityId: string, eventId: string, status: string) =>
+    invoke<void>("set_event_rsvp", { communityId, eventId, status }),
+  listEventAttendees: (communityId: string, eventId: string) =>
+    invoke<{ pseudonymKey: string; status: string }[]>("list_event_attendees", { communityId, eventId }),
   getEvents: (communityId: string) =>
     invoke<{ id: string; title: string; description: string; creatorPseudonym: string; startTime: number; endTime: number | null; channelId: string | null; maxAttendees: number | null; createdAt: number; status: string; rsvps: { pseudonymKey: string; status: string }[] }[]>(
       "get_events", { communityId },

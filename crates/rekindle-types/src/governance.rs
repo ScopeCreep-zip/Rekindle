@@ -37,10 +37,7 @@ pub enum GovernanceEntry {
     },
 
     /// Archive (soft-delete) a channel. CRDT: removes from active set.
-    ChannelArchived {
-        channel_id: ChannelId,
-        lamport: u64,
-    },
+    ChannelArchived { channel_id: ChannelId, lamport: u64 },
 
     /// Update channel metadata. CRDT: LWW per field per channel_id.
     ///
@@ -68,6 +65,7 @@ pub enum GovernanceEntry {
         color: u32,
         hoist: bool,
         mentionable: bool,
+        self_assignable: bool,
         lamport: u64,
     },
 
@@ -93,10 +91,7 @@ pub enum GovernanceEntry {
     },
 
     /// Unban a member. Must have higher lamport than the corresponding BanEntry.
-    UnbanEntry {
-        target: PseudonymKey,
-        lamport: u64,
-    },
+    UnbanEntry { target: PseudonymKey, lamport: u64 },
 
     /// Timeout a member temporarily. Strips all permissions except view.
     TimeoutEntry {
@@ -106,6 +101,9 @@ pub enum GovernanceEntry {
         started_at: u64,
         lamport: u64,
     },
+
+    /// Remove an active timeout from a member.
+    RemoveTimeoutEntry { target: PseudonymKey, lamport: u64 },
 
     /// Update community metadata. CRDT: LWW (highest lamport replaces all).
     CommunityMeta {
@@ -118,8 +116,18 @@ pub enum GovernanceEntry {
 
     /// Bump MEK generation. CRDT: Max-Register (highest generation wins).
     /// Written by the deterministic rotator after peer-to-peer MEK distribution.
+    ///
+    /// Readers validate that the writer is the correct deterministic rotator
+    /// (or cascade successor) for the departure event specified by `trigger_departed`.
     MEKGenerationBump {
         generation: u64,
+        /// The pseudonym of the departed member whose leaving triggered this rotation.
+        /// Used by readers to independently verify the writer is the correct rotator.
+        trigger_departed: PseudonymKey,
+        /// For cascading fallback: rotator candidates that timed out before this writer
+        /// took over. Readers verify each was offline (no heartbeat in 30s window).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        cascade_skipped: Vec<PseudonymKey>,
         lamport: u64,
     },
 
@@ -159,6 +167,9 @@ pub enum GovernanceEntry {
         lamport: u64,
     },
 
+    /// Archive a thread. CRDT: tombstone (archived threads excluded from merged state).
+    ThreadArchived { thread_id: ThreadId, lamport: u64 },
+
     /// Create a scheduled event. RSVPs stored in MemberPresence, not here.
     EventCreated {
         event_id: EventId,
@@ -170,12 +181,44 @@ pub enum GovernanceEntry {
         lamport: u64,
     },
 
+    /// Add a custom expression asset. CRDT: OR-Set on expression_id.
+    ExpressionAdded {
+        expression_id: [u8; 16],
+        name: String,
+        /// "emoji" | "sticker" | "soundboard"
+        kind: String,
+        content_hash: String,
+        inline_data: Option<Vec<u8>>,
+        animated: bool,
+        tags: Vec<String>,
+        lamport: u64,
+    },
+
+    /// Remove a custom expression. CRDT: OR-Set tombstone by expression_id.
+    ExpressionRemoved {
+        expression_id: [u8; 16],
+        lamport: u64,
+    },
+
+    /// Archive a scheduled event. CRDT: tombstone.
+    EventArchived { event_id: EventId, lamport: u64 },
+
     /// Onboarding configuration. CRDT: LWW (latest lamport wins).
     OnboardingConfig {
         enabled: bool,
         /// "default", "guided", "gated"
         mode: String,
+        default_channels: Vec<ChannelId>,
+        questions: Vec<OnboardingQuestion>,
         welcome_message: Option<String>,
+        guide_steps: Vec<GuideStep>,
+        lamport: u64,
+    },
+
+    /// Welcome screen shown after onboarding. CRDT: LWW (latest lamport wins).
+    WelcomeScreen {
+        description: String,
+        channels: Vec<WelcomeChannel>,
         lamport: u64,
     },
 
@@ -210,10 +253,7 @@ pub enum GovernanceEntry {
     },
 
     /// Remove a role definition. CRDT: tombstone (archived roles excluded from merged state).
-    RoleArchived {
-        role_id: RoleId,
-        lamport: u64,
-    },
+    RoleArchived { role_id: RoleId, lamport: u64 },
 
     /// Update category metadata. CRDT: LWW per category_id.
     CategoryUpdated {
@@ -237,10 +277,7 @@ pub enum GovernanceEntry {
     },
 
     /// Revoke an invite. CRDT: tombstone by invite_id.
-    InviteRevoked {
-        invite_id: [u8; 16],
-        lamport: u64,
-    },
+    InviteRevoked { invite_id: [u8; 16], lamport: u64 },
 }
 
 /// Wire format for a governance SMPL subkey value.
@@ -252,6 +289,41 @@ pub enum GovernanceEntry {
 pub struct GovernanceSubkeyPayload {
     pub author_pseudonym: PseudonymKey,
     pub entries: Vec<GovernanceEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct OnboardingQuestion {
+    pub question_id: String,
+    pub title: String,
+    pub description: Option<String>,
+    pub required: bool,
+    pub single_select: bool,
+    pub options: Vec<OnboardingOption>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct OnboardingOption {
+    pub option_id: String,
+    pub title: String,
+    pub description: Option<String>,
+    pub emoji: Option<String>,
+    pub roles_to_assign: Vec<RoleId>,
+    pub channels_to_show: Vec<ChannelId>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct GuideStep {
+    pub title: String,
+    pub description: String,
+    pub channel_id: Option<ChannelId>,
+    pub emoji: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct WelcomeChannel {
+    pub channel_id: ChannelId,
+    pub description: String,
+    pub emoji: Option<String>,
 }
 
 impl GovernanceEntry {
@@ -267,14 +339,20 @@ impl GovernanceEntry {
             | Self::BanEntry { lamport, .. }
             | Self::UnbanEntry { lamport, .. }
             | Self::TimeoutEntry { lamport, .. }
+            | Self::RemoveTimeoutEntry { lamport, .. }
             | Self::CommunityMeta { lamport, .. }
             | Self::MEKGenerationBump { lamport, .. }
             | Self::CategoryCreated { lamport, .. }
             | Self::CategoryArchived { lamport, .. }
             | Self::PermissionOverwrite { lamport, .. }
             | Self::ThreadCreated { lamport, .. }
+            | Self::ThreadArchived { lamport, .. }
             | Self::EventCreated { lamport, .. }
+            | Self::ExpressionAdded { lamport, .. }
+            | Self::ExpressionRemoved { lamport, .. }
+            | Self::EventArchived { lamport, .. }
             | Self::OnboardingConfig { lamport, .. }
+            | Self::WelcomeScreen { lamport, .. }
             | Self::AdminDelete { lamport, .. }
             | Self::SegmentAdded { lamport, .. }
             | Self::AutoModRule { lamport, .. }
@@ -343,10 +421,13 @@ mod tests {
                 color: 0,
                 hoist: false,
                 mentionable: false,
+                self_assignable: false,
                 lamport: 3,
             },
             GovernanceEntry::MEKGenerationBump {
                 generation: 1,
+                trigger_departed: PseudonymKey([0; 32]),
+                cascade_skipped: vec![],
                 lamport: 4,
             },
         ];

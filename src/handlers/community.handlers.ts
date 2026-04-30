@@ -6,10 +6,11 @@ import { setCommunityState, communityState } from "../stores/community.store";
 import { authState } from "../stores/auth.store";
 import { addToast } from "../stores/toast.store";
 import type { Message } from "../stores/chat.store";
-import type { Channel, CommunityEvent as CommunityEventType } from "../stores/community.store";
+import type { Channel, CommunityEvent as CommunityEventType, Role } from "../stores/community.store";
 import type { InviteDto } from "../stores/types";
-import { transformChannel, transformCommunityDetail, transformMember, transformMessages } from "../utils/transformers";
+import { transformAutoModRule, transformChannel, transformCommunityDetail, transformExpression, transformMember, transformMessages } from "../utils/transformers";
 import { truncateKey } from "../utils/formatting";
+import { showSystemNotification } from "./notification-events.handlers";
 
 // Typing indicator state
 export interface TypingUser {
@@ -21,6 +22,14 @@ const [typingUsersStore, setTypingUsers] = createStore<Record<string, TypingUser
 const typingTimers: Record<string, number> = {};
 
 export { typingUsersStore as typingUsers };
+
+function computeDisplayRoleName(roleIds: number[], roles: Role[]): string {
+  const highestRole = roleIds
+    .map((roleId) => roles.find((role) => role.id === roleId))
+    .filter((role): role is Role => Boolean(role))
+    .sort((a, b) => b.position - a.position)[0];
+  return highestRole?.name ?? "member";
+}
 
 export async function handleCreateCommunity(name: string): Promise<void> {
   try {
@@ -43,6 +52,8 @@ export async function handleCreateCommunity(name: string): Promise<void> {
         myPseudonymKey: null,
         mekGeneration: 0,
         events: [],
+        expressions: [],
+        automodRules: [],
       });
     }
     // Fetch members so the creator appears in the member list
@@ -83,6 +94,8 @@ export async function handleJoinCommunity(
         myPseudonymKey: null,
         mekGeneration: 0,
         events: [],
+        expressions: [],
+        automodRules: [],
       });
     }
     // Fetch members for the newly joined community
@@ -92,6 +105,8 @@ export async function handleJoinCommunity(
     } catch (e) {
       console.error("Failed to load community members after join:", e);
     }
+    await handleLoadExpressions(communityId);
+    await handleLoadAutoModRules(communityId);
 
     // Auto-select the newly joined community so it appears immediately
     handleSelectCommunity(communityId);
@@ -161,11 +176,11 @@ export async function handleSendChannelMessage(
 
   try {
     const result = await commands.sendChannelMessage(channelId, trimmed, replyToId);
-    const status = result === "queued" ? ("queued" as const) : ("sent" as const);
+    const status = result.status === "queued" ? ("queued" as const) : ("sent" as const);
     setCommunityState("channelMessages", channelId, (msgs) =>
-      msgs.map((m) => (m.id === tempId ? { ...m, status } : m)),
+      msgs.map((m) => (m.id === tempId ? { ...m, status, serverMessageId: result.messageId } : m)),
     );
-    if (result === "queued") {
+    if (result.status === "queued") {
       addToast("Message queued — will deliver when server is reachable", "info");
     }
   } catch (e) {
@@ -217,9 +232,9 @@ export async function handleRetryChannelMessage(
   );
 
   try {
-    await commands.sendChannelMessage(channelId, message.body);
+    const result = await commands.sendChannelMessage(channelId, message.body);
     setCommunityState("channelMessages", channelId, (msgs) =>
-      msgs.map((m) => (m.id === messageId ? { ...m, status: "sent" as const } : m)),
+      msgs.map((m) => (m.id === messageId ? { ...m, status: result.status === "queued" ? "queued" as const : "sent" as const, serverMessageId: result.messageId } : m)),
     );
   } catch {
     setCommunityState("channelMessages", channelId, (msgs) =>
@@ -289,8 +304,89 @@ export function handleSelectCommunity(communityId: string): void {
     console.error("Failed to refresh community details:", e);
     addToast("Failed to refresh community", "error");
   });
+  void handleLoadExpressions(communityId);
   // Fetch unread counts for all channels in this community
   handleLoadUnreadCounts(communityId);
+}
+
+export async function handleLoadExpressions(communityId: string): Promise<void> {
+  try {
+    const expressions = await commands.listExpressions(communityId);
+    setCommunityState("communities", communityId, "expressions", expressions.map(transformExpression));
+  } catch (e) {
+    console.error("Failed to load expressions:", e);
+  }
+}
+
+export async function handleLoadAutoModRules(communityId: string): Promise<void> {
+  try {
+    const rules = await commands.listAutoModRules(communityId);
+    setCommunityState("communities", communityId, "automodRules", rules.map(transformAutoModRule));
+  } catch (e) {
+    console.error("Failed to load automod rules:", e);
+  }
+}
+
+export async function handleSetAutoModRule(
+  communityId: string,
+  rule: {
+    ruleId?: string | null;
+    name: string;
+    enabled: boolean;
+    keywords: string[];
+    regexPatterns: string[];
+    action: "block_locally" | "blur_content" | "alert_moderators";
+  },
+): Promise<void> {
+  try {
+    await commands.setAutoModRule(
+      communityId,
+      rule.ruleId ?? null,
+      rule.name,
+      rule.enabled,
+      rule.keywords,
+      rule.regexPatterns,
+      rule.action,
+    );
+    await handleLoadAutoModRules(communityId);
+  } catch (e) {
+    console.error("Failed to save automod rule:", e);
+    addToast("Failed to save AutoMod rule", "error");
+    throw e;
+  }
+}
+
+export async function handleDeleteAutoModRule(
+  communityId: string,
+  ruleId: string,
+): Promise<void> {
+  try {
+    await commands.deleteAutoModRule(communityId, ruleId);
+    await handleLoadAutoModRules(communityId);
+  } catch (e) {
+    console.error("Failed to delete automod rule:", e);
+    addToast("Failed to delete AutoMod rule", "error");
+    throw e;
+  }
+}
+
+export async function handleUploadEmoji(
+  communityId: string,
+  name: string,
+  bytes: number[],
+  animated: boolean,
+): Promise<string | null> {
+  try {
+    const expressionId = await commands.uploadEmoji(communityId, name, bytes, animated);
+    await handleLoadExpressions(communityId);
+    addToast("Emoji uploaded", "success");
+    return expressionId;
+  } catch (e) {
+    const msg = typeof e === "string" ? e : "Failed to upload emoji";
+    console.error("Failed to upload emoji:", e);
+    addToast(msg, "error");
+    return null;
+  }
 }
 
 export function handleSelectChannel(channelId: string): void {
@@ -519,7 +615,7 @@ export async function handleCreateCommunityInvite(
   communityId: string,
   maxUses?: number,
   expiresInSeconds?: number,
-): Promise<{ code: string; manifestKey: string } | null> {
+): Promise<{ code: string; governanceKey: string } | null> {
   try {
     const result = await commands.createCommunityInvite(communityId, maxUses, expiresInSeconds);
     // Optimistic store update — the raw code is only available to the creator
@@ -722,11 +818,22 @@ export async function handleAssignRole(
   try {
     await commands.assignRole(communityId, pseudonymKey, roleId);
     // Update local state — add roleId to member
-    setCommunityState("communities", communityId, "members",
-      (m) => m.pseudonymKey === pseudonymKey,
-      "roleIds",
-      (ids) => [...ids, roleId],
-    );
+    const community = communityState.communities[communityId];
+    const memberIdx = community?.members.findIndex((member) => member.pseudonymKey === pseudonymKey) ?? -1;
+    if (community && memberIdx >= 0) {
+      const nextRoleIds = community.members[memberIdx].roleIds.includes(roleId)
+        ? community.members[memberIdx].roleIds
+        : [...community.members[memberIdx].roleIds, roleId];
+      setCommunityState("communities", communityId, "members", memberIdx, "roleIds", nextRoleIds);
+      setCommunityState(
+        "communities",
+        communityId,
+        "members",
+        memberIdx,
+        "displayRole",
+        computeDisplayRoleName(nextRoleIds, community.roles),
+      );
+    }
   } catch (e) {
     console.error("Failed to assign role:", e);
     addToast("Failed to assign role", "error");
@@ -741,11 +848,20 @@ export async function handleUnassignRole(
   try {
     await commands.unassignRole(communityId, pseudonymKey, roleId);
     // Update local state — remove roleId from member
-    setCommunityState("communities", communityId, "members",
-      (m) => m.pseudonymKey === pseudonymKey,
-      "roleIds",
-      (ids) => ids.filter((id) => id !== roleId),
-    );
+    const community = communityState.communities[communityId];
+    const memberIdx = community?.members.findIndex((member) => member.pseudonymKey === pseudonymKey) ?? -1;
+    if (community && memberIdx >= 0) {
+      const nextRoleIds = community.members[memberIdx].roleIds.filter((id) => id !== roleId);
+      setCommunityState("communities", communityId, "members", memberIdx, "roleIds", nextRoleIds);
+      setCommunityState(
+        "communities",
+        communityId,
+        "members",
+        memberIdx,
+        "displayRole",
+        computeDisplayRoleName(nextRoleIds, community.roles),
+      );
+    }
   } catch (e) {
     console.error("Failed to unassign role:", e);
     addToast("Failed to unassign role", "error");
@@ -823,13 +939,14 @@ export async function handleCreateRole(
   permissions: string,
   hoist: boolean,
   mentionable: boolean,
+  selfAssignable: boolean,
 ): Promise<number | null> {
   try {
-    const roleId = await commands.createRole(communityId, name, color, permissions, hoist, mentionable);
+    const roleId = await commands.createRole(communityId, name, color, permissions, hoist, mentionable, selfAssignable);
     // Optimistic update — add the new role to the store
     const community = communityState.communities[communityId];
     if (community) {
-      const newRole = { id: roleId, name, color, permissions, position: 0, hoist, mentionable };
+      const newRole = { id: roleId, name, color, permissions, position: 0, hoist, mentionable, selfAssignable };
       setCommunityState("communities", communityId, "roles", [...community.roles, newRole]);
     }
     return roleId;
@@ -849,9 +966,10 @@ export async function handleEditRole(
   position: number | null,
   hoist: boolean | null,
   mentionable: boolean | null,
+  selfAssignable: boolean | null,
 ): Promise<void> {
   try {
-    await commands.editRole(communityId, roleId, name, color, permissions, position, hoist, mentionable);
+    await commands.editRole(communityId, roleId, name, color, permissions, position, hoist, mentionable, selfAssignable);
     // Optimistic update — patch the role in the store
     const community = communityState.communities[communityId];
     if (community) {
@@ -864,6 +982,7 @@ export async function handleEditRole(
         if (position !== null) updated.position = position;
         if (hoist !== null) updated.hoist = hoist;
         if (mentionable !== null) updated.mentionable = mentionable;
+        if (selfAssignable !== null) updated.selfAssignable = selfAssignable;
         setCommunityState("communities", communityId, "roles", idx, updated);
       }
     }
@@ -906,6 +1025,85 @@ export async function handleDeleteRole(
   }
 }
 
+export async function handleSelfAssignRole(
+  communityId: string,
+  roleId: number,
+): Promise<void> {
+  try {
+    await commands.selfAssignRole(communityId, roleId);
+    const community = communityState.communities[communityId];
+    const myPseudonymKey = community?.myPseudonymKey;
+    if (!community || !myPseudonymKey) return;
+    if (!community.myRoleIds.includes(roleId)) {
+      setCommunityState("communities", communityId, "myRoleIds", [...community.myRoleIds, roleId]);
+    }
+    const memberIdx = community.members.findIndex((member) => member.pseudonymKey === myPseudonymKey);
+    if (memberIdx >= 0 && !community.members[memberIdx].roleIds.includes(roleId)) {
+      const nextRoleIds = [...community.members[memberIdx].roleIds, roleId];
+      setCommunityState(
+        "communities",
+        communityId,
+        "members",
+        memberIdx,
+        "roleIds",
+        nextRoleIds,
+      );
+      setCommunityState(
+        "communities",
+        communityId,
+        "members",
+        memberIdx,
+        "displayRole",
+        computeDisplayRoleName(nextRoleIds, community.roles),
+      );
+    }
+  } catch (e) {
+    console.error("Failed to self-assign role:", e);
+    addToast("Failed to assign role", "error");
+  }
+}
+
+export async function handleSelfUnassignRole(
+  communityId: string,
+  roleId: number,
+): Promise<void> {
+  try {
+    await commands.selfUnassignRole(communityId, roleId);
+    const community = communityState.communities[communityId];
+    const myPseudonymKey = community?.myPseudonymKey;
+    if (!community || !myPseudonymKey) return;
+    setCommunityState(
+      "communities",
+      communityId,
+      "myRoleIds",
+      community.myRoleIds.filter((id) => id !== roleId),
+    );
+    const memberIdx = community.members.findIndex((member) => member.pseudonymKey === myPseudonymKey);
+    if (memberIdx >= 0) {
+      const nextRoleIds = community.members[memberIdx].roleIds.filter((id) => id !== roleId);
+      setCommunityState(
+        "communities",
+        communityId,
+        "members",
+        memberIdx,
+        "roleIds",
+        nextRoleIds,
+      );
+      setCommunityState(
+        "communities",
+        communityId,
+        "members",
+        memberIdx,
+        "displayRole",
+        computeDisplayRoleName(nextRoleIds, community.roles),
+      );
+    }
+  } catch (e) {
+    console.error("Failed to self-unassign role:", e);
+    addToast("Failed to remove role", "error");
+  }
+}
+
 // --- Reaction handlers ---
 
 export async function handleAddReaction(
@@ -933,6 +1131,61 @@ export async function handleRemoveReaction(
   } catch (e) {
     console.error("Failed to remove reaction:", e);
     addToast("Failed to remove reaction", "error");
+  }
+}
+
+export async function handleVotePoll(
+  communityId: string,
+  channelId: string,
+  pollId: string,
+  selectedAnswers: number[],
+): Promise<void> {
+  try {
+    await commands.votePoll(communityId, channelId, pollId, selectedAnswers);
+    await handleLoadChannelMessages(channelId, 100);
+  } catch (e) {
+    console.error("Failed to vote in poll:", e);
+    addToast("Failed to vote in poll", "error");
+  }
+}
+
+export async function handleCreatePoll(
+  communityId: string,
+  channelId: string,
+  messageId: string,
+  question: string,
+  answers: string[],
+  multiSelect: boolean,
+): Promise<string | null> {
+  try {
+    const pollId = await commands.createPoll(
+      communityId,
+      channelId,
+      messageId,
+      question,
+      answers,
+      multiSelect,
+    );
+    await handleLoadChannelMessages(channelId, 100);
+    return pollId;
+  } catch (e) {
+    console.error("Failed to create poll:", e);
+    addToast("Failed to create poll", "error");
+    return null;
+  }
+}
+
+export async function handleClosePoll(
+  communityId: string,
+  channelId: string,
+  pollId: string,
+): Promise<void> {
+  try {
+    await commands.closePoll(communityId, channelId, pollId);
+    await handleLoadChannelMessages(channelId, 100);
+  } catch (e) {
+    console.error("Failed to close poll:", e);
+    addToast("Failed to close poll", "error");
   }
 }
 
@@ -1263,39 +1516,20 @@ export async function handleLoadGameServers(communityId: string): Promise<void> 
   }
 }
 
-export function handleSetCommunityNotifications(
-  communityId: string,
-  level: "all" | "mentions" | "none",
-): void {
-  setCommunityState("notificationOverrides", communityId, level);
-}
-
-export function getCommunityNotificationLevel(
-  communityId: string,
-): "all" | "mentions" | "none" {
-  return communityState.notificationOverrides[communityId] ?? "all";
-}
-
 export async function handleSetNotificationOverride(
-  communityId: string, channelId: string, level: "all" | "mentions" | "none"
+  communityId: string, channelId: string, level: "all" | "mentions" | "nothing"
 ): Promise<void> {
-  const { load } = await import("@tauri-apps/plugin-store");
-  setCommunityState("notificationOverrides", `${communityId}:${channelId}`, level);
-  const store = await load("notification-settings.json");
-  await store.set(`${communityId}:${channelId}`, level);
-  await store.save();
-}
-
-export async function loadNotificationOverrides(): Promise<void> {
   try {
-    const { load } = await import("@tauri-apps/plugin-store");
-    const store = await load("notification-settings.json");
-    const entries = await store.entries<"all" | "mentions" | "none">();
-    for (const [key, value] of entries) {
-      setCommunityState("notificationOverrides", key, value);
+    await commands.setChannelNotificationLevel(communityId, channelId, level);
+    const community = communityState.communities[communityId];
+    if (!community) return;
+    const index = community.channels.findIndex((channel) => channel.id === channelId);
+    if (index >= 0) {
+      setCommunityState("communities", communityId, "channels", index, "notificationLevel", level);
     }
-  } catch {
-    // Store may not exist on first run
+  } catch (e) {
+    console.error("Failed to update channel notification level:", e);
+    addToast("Failed to update notification settings", "error");
   }
 }
 
@@ -1374,15 +1608,26 @@ export function subscribeCommunityEventDispatcher(): Promise<UnlistenFn> {
       commands.getCommunityMembers(communityId).then((members) => {
         setCommunityState("communities", communityId, "members", members.map(transformMember));
       }).catch(() => {});
+      void handleLoadExpressions(communityId);
+      void handleLoadAutoModRules(communityId);
+    } else if (event.type === "autoModAlert") {
+      addToast(`AutoMod alert: ${event.data.ruleName}`, "info");
     } else if (event.type === "membersRefreshed") {
       const { communityId } = event.data;
       commands.getCommunityMembers(communityId).then((members) => {
         setCommunityState("communities", communityId, "members", members.map(transformMember));
       }).catch(() => {});
     } else if (event.type === "mekRotated") {
-      const { communityId, newGeneration } = event.data;
+      const { communityId, channelId, newGeneration } = event.data;
       if (communityState.communities[communityId]) {
-        setCommunityState("communities", communityId, "mekGeneration", newGeneration);
+        if (channelId) {
+          const idx = communityState.communities[communityId].channels.findIndex((channel) => channel.id === channelId);
+          if (idx >= 0) {
+            setCommunityState("communities", communityId, "channels", idx, "mekGeneration", newGeneration);
+          }
+        } else {
+          setCommunityState("communities", communityId, "mekGeneration", newGeneration);
+        }
       }
     } else if (event.type === "kicked") {
       const { communityId } = event.data;
@@ -1479,6 +1724,25 @@ export function subscribeCommunityEventDispatcher(): Promise<UnlistenFn> {
         const idx = msgs.findIndex((m) => m.serverMessageId === messageId);
         if (idx >= 0) {
           setCommunityState("channelMessages", channelId, idx, "pinned", false);
+        }
+      }
+    } else if (event.type === "channelMessageDelivered") {
+      const { channelId, messageId } = event.data;
+      const msgs = communityState.channelMessages[channelId];
+      if (msgs) {
+        const idx = msgs.findIndex((m) => m.serverMessageId === messageId);
+        if (idx >= 0) {
+          setCommunityState("channelMessages", channelId, idx, "status", "sent");
+        }
+      }
+    } else if (event.type === "channelMessageDeliveryFailed") {
+      const { channelId, messageId } = event.data;
+      const msgs = communityState.channelMessages[channelId];
+      if (msgs) {
+        const idx = msgs.findIndex((m) => m.serverMessageId === messageId);
+        if (idx >= 0) {
+          setCommunityState("channelMessages", channelId, idx, "status", "failed");
+          addToast("Message delivery failed after retries", "error");
         }
       }
     } else if (event.type === "channelTyping") {
@@ -1648,6 +1912,10 @@ export function subscribeCommunityEventDispatcher(): Promise<UnlistenFn> {
       );
     } else if (event.type === "eventReminder") {
       const { title, minutesUntilStart } = event.data;
+      void showSystemNotification(
+        "Event Reminder",
+        `${title} starts in ${minutesUntilStart} min`,
+      );
       addToast(`Event "${title}" starts in ${minutesUntilStart} min`, "info");
     } else if (event.type === "channelsUpdated") {
       const { communityId, channels, categories } = event.data;
@@ -1707,15 +1975,6 @@ export function subscribeCommunityEventDispatcher(): Promise<UnlistenFn> {
           inv.codeHash === codeHash ? { ...inv, uses: newUseCount } : inv,
         ),
       );
-    } else if (event.type === "membersRefreshed") {
-      const { communityId } = event.data;
-      if (communityState.communities[communityId]) {
-        commands.getCommunityMembers(communityId).then((members) => {
-          setCommunityState("communities", communityId, "members", members.map(transformMember));
-        }).catch((e) => {
-          console.error(`Failed to refresh members for ${communityId}:`, e);
-        });
-      }
     } else if (event.type === "memberDiscovered") {
       const { communityId, pseudonymKey, displayName } = event.data;
       const community = communityState.communities[communityId];
@@ -1779,10 +2038,14 @@ export function subscribeCommunityEventDispatcher(): Promise<UnlistenFn> {
       addToast(locked ? `Channels locked in ${name}` : `Channel lockdown lifted in ${name}`, "info");
     } else if (event.type === "onboardingComplete") {
       const { communityId, pseudonymKey, roleIds } = event.data;
-      const members = communityState.communities[communityId]?.members ?? [];
+      const community = communityState.communities[communityId];
+      const members = community?.members ?? [];
       const idx = members.findIndex((m) => m.pseudonymKey === pseudonymKey);
       if (idx >= 0) {
         setCommunityState("communities", communityId, "members", idx, "roleIds", roleIds);
+      }
+      if (community?.myPseudonymKey === pseudonymKey) {
+        setCommunityState("communities", communityId, "onboardingComplete", true);
       }
     } else if (event.type === "joinRejected") {
       const { reason } = event.data;

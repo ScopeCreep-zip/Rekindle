@@ -99,9 +99,8 @@ pub fn unwrap_mek(
     let recipient_x25519 = super::pseudonym::pseudonym_to_x25519(recipient_signing_key);
 
     // Convert sender's Ed25519 public key to X25519 public key
-    let sender_verifying = VerifyingKey::from_bytes(sender_ed25519_public).map_err(|e| {
-        CryptoError::InvalidKey(format!("invalid sender Ed25519 public key: {e}"))
-    })?;
+    let sender_verifying = VerifyingKey::from_bytes(sender_ed25519_public)
+        .map_err(|e| CryptoError::InvalidKey(format!("invalid sender Ed25519 public key: {e}")))?;
     let sender_x25519 = X25519PublicKey::from(sender_verifying.to_montgomery().to_bytes());
 
     // X25519 ECDH (same shared secret due to commutativity)
@@ -268,11 +267,7 @@ mod tests {
         .unwrap();
 
         // Cannot unwrap community_a's MEK with community_b's keys
-        let result = unwrap_mek(
-            &member_b,
-            &coord_b.verifying_key().to_bytes(),
-            &wrapped_a,
-        );
+        let result = unwrap_mek(&member_b, &coord_b.verifying_key().to_bytes(), &wrapped_a);
         assert!(result.is_err());
     }
 

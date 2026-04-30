@@ -4,6 +4,7 @@ import type { Thread } from "../../stores/community.store";
 import MessageBubble from "./MessageBubble";
 
 interface MessageListProps {
+  communityId?: string;
   messages: Message[];
   ownName: string;
   peerName: string;
@@ -17,9 +18,12 @@ interface MessageListProps {
   onRemoveReaction?: (messageId: string, emoji: string) => void;
   onPin?: (messageId: string) => void;
   onCreateThread?: (messageId: string) => void;
+  onCreatePoll?: (messageId: string) => void;
   onOpenThread?: (thread: Thread) => void;
   onEdit?: (messageId: string, currentBody: string) => void;
   onDelete?: (messageId: string) => void;
+  onVotePoll?: (pollId: string, selectedAnswers: number[]) => void;
+  onClosePoll?: (pollId: string) => void;
   onLoadOlder?: () => void;
   isLoadingOlder?: boolean;
 }
@@ -95,6 +99,7 @@ const MessageList: Component<MessageListProps> = (props) => {
           const thread = () => msg.serverMessageId ? threadByStarterMessage().get(msg.serverMessageId) : undefined;
           return (
             <MessageBubble
+              communityId={props.communityId}
               message={msg}
               senderName={msg.isOwn ? props.ownName : (props.memberNames?.[msg.senderId] ?? props.peerName)}
               myPseudonymKey={props.myPseudonymKey}
@@ -106,9 +111,12 @@ const MessageList: Component<MessageListProps> = (props) => {
               onRemoveReaction={msg.serverMessageId ? (emoji) => props.onRemoveReaction?.(msg.serverMessageId!, emoji) : undefined}
               onPin={props.onPin}
               onCreateThread={thread() ? undefined : props.onCreateThread}
+              onCreatePoll={thread() ? undefined : props.onCreatePoll}
               onOpenThread={thread() ? () => props.onOpenThread?.(thread()!) : undefined}
               onEdit={props.onEdit}
               onDelete={props.onDelete}
+              onVotePoll={props.onVotePoll}
+              onClosePoll={props.onClosePoll}
             />
           );
         }}

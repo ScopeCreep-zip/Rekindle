@@ -10,15 +10,56 @@ use crate::state_helpers;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ReactionGroup {
+    pub emoji: String,
+    pub count: u32,
+    pub reactors: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessagePollAnswer {
+    pub index: u8,
+    pub text: String,
+    pub vote_count: u32,
+    pub voters: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessagePoll {
+    pub poll_id: String,
+    pub question: String,
+    pub answers: Vec<MessagePollAnswer>,
+    pub multi_select: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<u64>,
+    pub closed: bool,
+    #[serde(default)]
+    pub selected_answers: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Message {
     pub id: i64,
     pub sender_id: String,
     pub body: String,
+    #[serde(default)]
+    pub decryption_failed: bool,
+    #[serde(default)]
+    pub automod_blurred: bool,
     pub timestamp: i64,
     pub is_own: bool,
     /// Message ID (present for community channel messages).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub server_message_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reactions: Option<Vec<ReactionGroup>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pinned: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub poll: Option<MessagePoll>,
 }
 
 /// Send a message to a friend (1:1 DM).
@@ -42,7 +83,15 @@ pub async fn send_message(
     let body_clone = body.clone();
     let ok = owner_key.clone();
     db_call(pool.inner(), move |conn| {
-        crate::message_repo::insert_dm(conn, &ok, &to_clone, &sender_key_clone, &body_clone, timestamp, true)
+        crate::message_repo::insert_dm(
+            conn,
+            &ok,
+            &to_clone,
+            &sender_key_clone,
+            &body_clone,
+            timestamp,
+            true,
+        )
     })
     .await?;
 
@@ -104,9 +153,14 @@ pub async fn get_message_history(
                 id: db::get_i64(row, "id"),
                 sender_id: sender,
                 body: db::get_str(row, "body"),
+                decryption_failed: false,
+                automod_blurred: false,
                 timestamp: db::get_i64(row, "timestamp"),
                 is_own,
                 server_message_id: None, // DM history — no server IDs
+                reactions: None,
+                pinned: None,
+                poll: None,
             })
         })?;
 
@@ -136,7 +190,7 @@ pub async fn prepare_chat_session(
         .parse()
         .map_err(|e| format!("invalid DHT key: {e}"))?;
 
-    let Some((_api, routing_context)) = state_helpers::api_and_routing_context(state.inner())
+    let Some((_api, routing_context)) = state_helpers::safe_api_and_routing_context(state.inner())
     else {
         return Ok(());
     };

@@ -259,10 +259,13 @@ impl DHTManager {
     ) -> Result<(), ProtocolError> {
         let record_key = parse_record_key(key)?;
 
-        let options = self.default_writer.as_ref().map(|writer| SetDHTValueOptions {
-            writer: Some(writer.clone()),
-            ..Default::default()
-        });
+        let options = self
+            .default_writer
+            .as_ref()
+            .map(|writer| SetDHTValueOptions {
+                writer: Some(writer.clone()),
+                ..Default::default()
+            });
 
         self.routing_context
             .set_dht_value(record_key, subkey, value, options)
@@ -362,7 +365,10 @@ impl DHTManager {
                 }
             }
         } else if existing_key.is_some() {
-            tracing::warn!(label, "no owner keypair for existing record — creating new one");
+            tracing::warn!(
+                label,
+                "no owner keypair for existing record — creating new one"
+            );
         }
 
         let (key, keypair) = self.create_record(subkey_count).await?;

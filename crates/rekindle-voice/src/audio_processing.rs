@@ -67,11 +67,7 @@ impl AudioProcessor {
         vad_hold_ms: u32,
         frame_duration_ms: u32,
     ) -> Self {
-        let hold_frames = if frame_duration_ms > 0 {
-            vad_hold_ms / frame_duration_ms
-        } else {
-            0
-        };
+        let hold_frames = vad_hold_ms.checked_div(frame_duration_ms).unwrap_or(0);
 
         let echo_canceller = if echo_cancellation {
             match aec3::voip::VoipAec3::builder(SAMPLE_RATE, CHANNELS, CHANNELS).build() {

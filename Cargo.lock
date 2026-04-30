@@ -6041,20 +6041,26 @@ dependencies = [
  "argon2",
  "base64 0.22.1",
  "blake2",
+ "blake3",
  "futures",
  "hex",
  "image",
  "indexmap 2.13.0",
  "iota_stronghold",
  "parking_lot",
+ "proptest",
  "rand 0.8.5",
+ "regex",
  "rekindle-codec",
  "rekindle-crypto",
  "rekindle-game-detect",
+ "rekindle-gossip",
  "rekindle-governance",
  "rekindle-protocol",
  "rekindle-records",
+ "rekindle-route",
  "rekindle-secrets",
+ "rekindle-sync",
  "rekindle-types",
  "rekindle-utils",
  "rekindle-voice",
@@ -6145,11 +6151,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "rekindle-gossip"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "rand 0.8.5",
+ "rekindle-codec",
+ "rekindle-types",
+ "serde",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
 name = "rekindle-governance"
 version = "0.1.0"
 dependencies = [
  "proptest",
+ "regex",
  "rekindle-types",
+ "serde",
  "serde_json",
 ]
 
@@ -6193,10 +6214,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "rekindle-route"
+version = "0.1.0"
+dependencies = [
+ "tokio",
+ "tracing",
+ "veilid-core",
+]
+
+[[package]]
 name = "rekindle-secrets"
 version = "0.1.0"
 dependencies = [
  "aes-gcm",
+ "blake3",
  "ed25519-dalek",
  "hex",
  "hkdf 0.12.4",
@@ -6205,6 +6236,19 @@ dependencies = [
  "sha2 0.10.9",
  "x25519-dalek",
  "zeroize",
+]
+
+[[package]]
+name = "rekindle-sync"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "rekindle-protocol",
+ "rekindle-records",
+ "rekindle-types",
+ "tokio",
+ "tracing",
+ "veilid-core",
 ]
 
 [[package]]
@@ -6231,6 +6275,7 @@ dependencies = [
  "dasp_sample",
  "nnnoiseless",
  "opus",
+ "rekindle-route",
  "serde",
  "thiserror 2.0.18",
  "tokio",

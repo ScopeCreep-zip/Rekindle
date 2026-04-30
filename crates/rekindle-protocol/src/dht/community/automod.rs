@@ -69,13 +69,9 @@ pub enum AutoModAction {
     /// Block the message from being relayed.
     BlockMessage,
     /// Alert moderators in a specific channel.
-    AlertModerators {
-        channel_id: String,
-    },
+    AlertModerators { channel_id: String },
     /// Timeout the member for a duration.
-    TimeoutMember {
-        duration_secs: u64,
-    },
+    TimeoutMember { duration_secs: u64 },
     /// Log the event without taking action.
     LogOnly,
 }
@@ -143,9 +139,7 @@ mod tests {
                 },
                 actions: vec![
                     AutoModAction::BlockMessage,
-                    AutoModAction::TimeoutMember {
-                        duration_secs: 300,
-                    },
+                    AutoModAction::TimeoutMember { duration_secs: 300 },
                 ],
                 exempt_roles: vec![3, 4],
                 exempt_channels: vec![],
@@ -196,9 +190,7 @@ mod tests {
             AutoModAction::AlertModerators {
                 channel_id: "ch_mod".into(),
             },
-            AutoModAction::TimeoutMember {
-                duration_secs: 600,
-            },
+            AutoModAction::TimeoutMember { duration_secs: 600 },
             AutoModAction::LogOnly,
         ];
 

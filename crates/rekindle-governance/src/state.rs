@@ -7,6 +7,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use rekindle_types::governance::{GuideStep, OnboardingQuestion, WelcomeChannel};
 use rekindle_types::id::{CategoryId, ChannelId, EventId, PseudonymKey, RoleId, ThreadId};
 
 /// The merged governance state — produced by `merge::merge()`,
@@ -46,6 +47,9 @@ pub struct GovernanceState {
     /// Active events (LWW per event_id).
     pub events: HashMap<EventId, EventState>,
 
+    /// Active expressions after OR-Set add/remove merge.
+    pub expressions: HashMap<[u8; 16], ExpressionState>,
+
     /// Admin-deleted message IDs (tombstones).
     pub admin_deletes: HashSet<[u8; 16]>,
 
@@ -59,9 +63,23 @@ pub struct GovernanceState {
     /// Onboarding config (LWW).
     pub onboarding: Option<OnboardingState>,
 
+    /// Welcome screen (LWW).
+    pub welcome_screen: Option<WelcomeScreenState>,
+
     /// Track the highest lamport seen per author for ban-entry ordering.
     /// Key: (target_pseudonym) → highest lamport of ban/unban for that target.
     pub ban_lamports: HashMap<PseudonymKey, u64>,
+
+    /// Segment expansions for communities >255 members (Plate Gates).
+    /// Tracks additional governance and registry records.
+    pub segments: Vec<SegmentState>,
+
+    /// Active invites (InviteCreated minus InviteRevoked).
+    /// Key: invite_id. Used for fast lookup by code_hash during join.
+    pub invites: HashMap<[u8; 16], InviteState>,
+
+    /// Highest remove lamport seen per expression_id.
+    pub expression_remove_lamports: HashMap<[u8; 16], u64>,
 }
 
 // ── Sub-states ──
@@ -88,6 +106,7 @@ pub struct RoleState {
     pub color: u32,
     pub hoist: bool,
     pub mentionable: bool,
+    pub self_assignable: bool,
     pub lamport: u64,
 }
 
@@ -133,6 +152,17 @@ pub struct EventState {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct ExpressionState {
+    pub name: String,
+    pub kind: String,
+    pub content_hash: String,
+    pub inline_data: Option<Vec<u8>>,
+    pub animated: bool,
+    pub tags: Vec<String>,
+    pub lamport: u64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct TimeoutState {
     pub duration_seconds: u64,
     pub started_at: u64,
@@ -159,6 +189,34 @@ pub struct AutoModRuleState {
 pub struct OnboardingState {
     pub enabled: bool,
     pub mode: String,
+    pub default_channels: Vec<ChannelId>,
+    pub questions: Vec<OnboardingQuestion>,
     pub welcome_message: Option<String>,
+    pub guide_steps: Vec<GuideStep>,
     pub lamport: u64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct WelcomeScreenState {
+    pub description: String,
+    pub channels: Vec<WelcomeChannel>,
+    pub lamport: u64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SegmentState {
+    pub segment_index: u32,
+    pub registry_key: String,
+    pub governance_key: String,
+    pub slot_range_start: u32,
+    pub slot_range_end: u32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct InviteState {
+    pub code_hash: String,
+    pub max_uses: u32,
+    pub expires_at: Option<u64>,
+    pub encrypted_secrets: String,
+    pub created_lamport: u64,
 }

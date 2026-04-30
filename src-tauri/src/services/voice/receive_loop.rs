@@ -248,9 +248,7 @@ impl VoiceReceiveLoop {
                 None => {
                     // No packet available — try FEC if next packet exists, else PLC
                     if participant.last_packet_time.elapsed() < Duration::from_secs(2) {
-                        if let Some(next_data) =
-                            participant.jitter_buffer.peek_next_audio_data()
-                        {
+                        if let Some(next_data) = participant.jitter_buffer.peek_next_audio_data() {
                             participant
                                 .codec
                                 .decode_fec(next_data)

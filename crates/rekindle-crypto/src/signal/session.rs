@@ -144,8 +144,7 @@ impl SignalSessionManager {
         };
 
         let session_data = serialize_ratchet(&ratchet);
-        self.sessions
-            .store_session(peer_address, &session_data)?;
+        self.sessions.store_session(peer_address, &session_data)?;
 
         // Trust their identity on first use (TOFU)
         self.identity
@@ -260,8 +259,7 @@ impl SignalSessionManager {
         };
 
         let session_data = serialize_ratchet(&ratchet);
-        self.sessions
-            .store_session(peer_address, &session_data)?;
+        self.sessions.store_session(peer_address, &session_data)?;
 
         // Trust their identity on first use (TOFU)
         self.identity
@@ -412,8 +410,7 @@ impl SignalSessionManager {
         let one_time_prekey = if let Some(otpk_id) = one_time_prekey_id {
             let otpk_secret = StaticSecret::random_from_rng(rand::rngs::OsRng);
             let otpk_public = X25519Public::from(&otpk_secret);
-            self.prekeys
-                .store_prekey(otpk_id, otpk_secret.as_bytes())?;
+            self.prekeys.store_prekey(otpk_id, otpk_secret.as_bytes())?;
             Some(otpk_public.as_bytes().to_vec())
         } else {
             None

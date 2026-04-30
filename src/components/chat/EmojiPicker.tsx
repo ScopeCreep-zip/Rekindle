@@ -1,5 +1,7 @@
 import { Component, For, Show, createSignal, createMemo, onMount, onCleanup } from "solid-js";
 
+import ExpressionPicker from "../community/ExpressionPicker";
+
 const EMOJI_CATEGORIES: { name: string; icon: string; emojis: string[] }[] = [
   {
     name: "Gaming",
@@ -107,6 +109,8 @@ const EMOJI_SEARCH_NAMES: Record<string, string[]> = {
 };
 
 interface EmojiPickerProps {
+  communityId?: string;
+  mode?: "reaction" | "message";
   onSelect: (emoji: string) => void;
   onClose: () => void;
 }
@@ -178,6 +182,17 @@ const EmojiPicker: Component<EmojiPickerProps> = (props) => {
         </div>
       </Show>
       <div class="emoji-picker-scroll">
+        <Show when={props.communityId}>
+          <ExpressionPicker
+            communityId={props.communityId!}
+            mode={props.mode ?? "reaction"}
+            searchQuery={searchQuery()}
+            onSelect={(value) => {
+              props.onSelect(value);
+              props.onClose();
+            }}
+          />
+        </Show>
         <For each={filteredCategories()}>
           {(cat, idx) => (
             <div data-category={idx()}>

@@ -16,8 +16,11 @@ interface ThreadPanelProps {
   onReaction?: (messageId: string, emoji: string) => void;
   onRemoveReaction?: (messageId: string, emoji: string) => void;
   onPin?: (messageId: string) => void;
+  onCreatePoll?: (messageId: string) => void;
   onEdit?: (messageId: string, currentBody: string) => void;
   onDelete?: (messageId: string) => void;
+  onVotePoll?: (pollId: string, selectedAnswers: number[]) => void;
+  onClosePoll?: (pollId: string) => void;
   myPseudonymKey?: string | null;
 }
 
@@ -75,6 +78,7 @@ const ThreadPanel: Component<ThreadPanelProps> = (props) => {
             <For each={props.messages}>
               {(msg) => (
                 <MessageBubble
+                  communityId={props.communityId}
                   message={msg}
                   senderName={senderName(msg)}
                   myPseudonymKey={props.myPseudonymKey}
@@ -82,8 +86,11 @@ const ThreadPanel: Component<ThreadPanelProps> = (props) => {
                   onReaction={props.onReaction ? (emoji) => props.onReaction!(msg.serverMessageId!, emoji) : undefined}
                   onRemoveReaction={props.onRemoveReaction ? (emoji) => props.onRemoveReaction!(msg.serverMessageId!, emoji) : undefined}
                   onPin={props.onPin}
+                  onCreatePoll={props.onCreatePoll}
                   onEdit={props.onEdit}
                   onDelete={props.onDelete}
+                  onVotePoll={props.onVotePoll}
+                  onClosePoll={props.onClosePoll}
                 />
               )}
             </For>

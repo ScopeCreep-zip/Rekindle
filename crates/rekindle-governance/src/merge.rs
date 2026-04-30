@@ -89,7 +89,6 @@ pub fn apply_entry(author: &PseudonymKey, entry: &GovernanceEntry, state: &mut G
 fn apply(_author: &PseudonymKey, entry: &GovernanceEntry, state: &mut GovernanceState) {
     match entry {
         // ── Channels: OR-Set (created minus archived) ──
-
         GovernanceEntry::ChannelCreated {
             channel_id,
             name,
@@ -160,7 +159,6 @@ fn apply(_author: &PseudonymKey, entry: &GovernanceEntry, state: &mut Governance
         }
 
         // ── Roles: LWW per role_id ──
-
         GovernanceEntry::RoleDefinition {
             role_id,
             name,
@@ -169,6 +167,7 @@ fn apply(_author: &PseudonymKey, entry: &GovernanceEntry, state: &mut Governance
             color,
             hoist,
             mentionable,
+            self_assignable,
             lamport,
         } => {
             let existing_lamport = state.roles.get(role_id).map(|r| r.lamport).unwrap_or(0);
@@ -182,6 +181,7 @@ fn apply(_author: &PseudonymKey, entry: &GovernanceEntry, state: &mut Governance
                         color: *color,
                         hoist: *hoist,
                         mentionable: *mentionable,
+                        self_assignable: *self_assignable,
                         lamport: *lamport,
                     },
                 );
@@ -189,7 +189,6 @@ fn apply(_author: &PseudonymKey, entry: &GovernanceEntry, state: &mut Governance
         }
 
         // ── Role assignments: LWW-Flag per (target, role_id) ──
-
         GovernanceEntry::RoleAssignment {
             target, role_id, ..
         } => {
@@ -209,7 +208,6 @@ fn apply(_author: &PseudonymKey, entry: &GovernanceEntry, state: &mut Governance
         }
 
         // ── Bans: LWW-Flag per target pseudonym ──
-
         GovernanceEntry::BanEntry {
             target, lamport, ..
         } => {
@@ -229,7 +227,6 @@ fn apply(_author: &PseudonymKey, entry: &GovernanceEntry, state: &mut Governance
         }
 
         // ── Timeout ──
-
         GovernanceEntry::TimeoutEntry {
             target,
             duration_seconds,
@@ -250,8 +247,14 @@ fn apply(_author: &PseudonymKey, entry: &GovernanceEntry, state: &mut Governance
             }
         }
 
-        // ── Metadata: LWW ──
+        GovernanceEntry::RemoveTimeoutEntry { target, lamport } => {
+            let existing_lamport = state.timeouts.get(target).map(|t| t.lamport).unwrap_or(0);
+            if *lamport > existing_lamport {
+                state.timeouts.remove(target);
+            }
+        }
 
+        // ── Metadata: LWW ──
         GovernanceEntry::CommunityMeta {
             name,
             description,
@@ -272,7 +275,6 @@ fn apply(_author: &PseudonymKey, entry: &GovernanceEntry, state: &mut Governance
         }
 
         // ── MEK: Max-Register ──
-
         GovernanceEntry::MEKGenerationBump { generation, .. } => {
             if *generation > state.mek_generation {
                 state.mek_generation = *generation;
@@ -280,7 +282,6 @@ fn apply(_author: &PseudonymKey, entry: &GovernanceEntry, state: &mut Governance
         }
 
         // ── Categories: OR-Set ──
-
         GovernanceEntry::CategoryCreated {
             category_id,
             name,
@@ -309,7 +310,6 @@ fn apply(_author: &PseudonymKey, entry: &GovernanceEntry, state: &mut Governance
         }
 
         // ── Permission overwrites: LWW per (channel, target) ──
-
         GovernanceEntry::PermissionOverwrite {
             channel_id,
             target_type,
@@ -334,7 +334,6 @@ fn apply(_author: &PseudonymKey, entry: &GovernanceEntry, state: &mut Governance
         }
 
         // ── Threads: OR-Set ──
-
         GovernanceEntry::ThreadCreated {
             thread_id,
             parent_channel_id,
@@ -352,8 +351,21 @@ fn apply(_author: &PseudonymKey, entry: &GovernanceEntry, state: &mut Governance
             );
         }
 
-        // ── Events: LWW per event_id ──
+        // ── Thread archived (tombstone) ──
+        GovernanceEntry::ThreadArchived {
+            thread_id, lamport, ..
+        } => {
+            if let Some(thread) = state.threads.get(thread_id) {
+                // Only track for removal — threads don't have created_lamport
+                // so we use the thread's existence as the creation signal.
+                let _ = thread; // exists check
+                if *lamport > 0 {
+                    state.threads.remove(thread_id);
+                }
+            }
+        }
 
+        // ── Events: LWW per event_id ──
         GovernanceEntry::EventCreated {
             event_id,
             name,
@@ -379,12 +391,83 @@ fn apply(_author: &PseudonymKey, entry: &GovernanceEntry, state: &mut Governance
             }
         }
 
-        // ── Onboarding: LWW ──
+        // ── Expressions: OR-Set by expression_id ──
+        GovernanceEntry::ExpressionAdded {
+            expression_id,
+            name,
+            kind,
+            content_hash,
+            inline_data,
+            animated,
+            tags,
+            lamport,
+        } => {
+            let removed_lamport = state
+                .expression_remove_lamports
+                .get(expression_id)
+                .copied()
+                .unwrap_or(0);
+            let existing_lamport = state
+                .expressions
+                .get(expression_id)
+                .map(|expr| expr.lamport)
+                .unwrap_or(0);
+            if *lamport > removed_lamport && *lamport > existing_lamport {
+                state.expressions.insert(
+                    *expression_id,
+                    ExpressionState {
+                        name: name.clone(),
+                        kind: kind.clone(),
+                        content_hash: content_hash.clone(),
+                        inline_data: inline_data.clone(),
+                        animated: *animated,
+                        tags: tags.clone(),
+                        lamport: *lamport,
+                    },
+                );
+            }
+        }
 
+        GovernanceEntry::ExpressionRemoved {
+            expression_id,
+            lamport,
+        } => {
+            let removed_lamport = state
+                .expression_remove_lamports
+                .get(expression_id)
+                .copied()
+                .unwrap_or(0);
+            if *lamport > removed_lamport {
+                state
+                    .expression_remove_lamports
+                    .insert(*expression_id, *lamport);
+            }
+            if let Some(expression) = state.expressions.get(expression_id) {
+                if *lamport > expression.lamport {
+                    state.expressions.remove(expression_id);
+                }
+            }
+        }
+
+        // ── Event archived (tombstone) ──
+        GovernanceEntry::EventArchived {
+            event_id, lamport, ..
+        } => {
+            if let Some(event) = state.events.get(event_id) {
+                if *lamport > event.lamport {
+                    state.events.remove(event_id);
+                }
+            }
+        }
+
+        // ── Onboarding: LWW ──
         GovernanceEntry::OnboardingConfig {
             enabled,
             mode,
+            default_channels,
+            questions,
             welcome_message,
+            guide_steps,
             lamport,
         } => {
             let existing_lamport = state.onboarding.as_ref().map(|o| o.lamport).unwrap_or(0);
@@ -392,28 +475,66 @@ fn apply(_author: &PseudonymKey, entry: &GovernanceEntry, state: &mut Governance
                 state.onboarding = Some(OnboardingState {
                     enabled: *enabled,
                     mode: mode.clone(),
+                    default_channels: default_channels.clone(),
+                    questions: questions.clone(),
                     welcome_message: welcome_message.clone(),
+                    guide_steps: guide_steps.clone(),
+                    lamport: *lamport,
+                });
+            }
+        }
+
+        GovernanceEntry::WelcomeScreen {
+            description,
+            channels,
+            lamport,
+        } => {
+            let existing_lamport = state
+                .welcome_screen
+                .as_ref()
+                .map(|w| w.lamport)
+                .unwrap_or(0);
+            if *lamport > existing_lamport {
+                state.welcome_screen = Some(WelcomeScreenState {
+                    description: description.clone(),
+                    channels: channels.clone(),
                     lamport: *lamport,
                 });
             }
         }
 
         // ── Admin delete (tombstone) ──
-
         GovernanceEntry::AdminDelete { message_id, .. } => {
             state.admin_deletes.insert(*message_id);
         }
 
-        // ── Segment expansion ──
-
-        GovernanceEntry::SegmentAdded { .. } => {
-            // Segment tracking is handled at the record layer, not governance state.
-            // The existence of this entry is enough — the join flow reads it
-            // to discover additional registry/governance records.
+        // ── Segment expansion: tracked for join flow discovery ──
+        GovernanceEntry::SegmentAdded {
+            segment_index,
+            registry_key,
+            governance_key,
+            slot_range_start,
+            slot_range_end,
+            ..
+        } => {
+            // Avoid duplicates — segment_index is unique
+            if !state
+                .segments
+                .iter()
+                .any(|s| s.segment_index == *segment_index)
+            {
+                state.segments.push(SegmentState {
+                    segment_index: *segment_index,
+                    registry_key: registry_key.clone(),
+                    governance_key: governance_key.clone(),
+                    slot_range_start: *slot_range_start,
+                    slot_range_end: *slot_range_end,
+                });
+                state.segments.sort_by_key(|s| s.segment_index);
+            }
         }
 
         // ── AutoMod rules: LWW per rule_id ──
-
         GovernanceEntry::AutoModRule {
             rule_id,
             name,
@@ -442,7 +563,6 @@ fn apply(_author: &PseudonymKey, entry: &GovernanceEntry, state: &mut Governance
         }
 
         // ── Role archived (tombstone) ──
-
         GovernanceEntry::RoleArchived { role_id, lamport } => {
             // Only archive if lamport > definition lamport
             if let Some(role) = state.roles.get(role_id) {
@@ -457,7 +577,6 @@ fn apply(_author: &PseudonymKey, entry: &GovernanceEntry, state: &mut Governance
         }
 
         // ── Category updated: LWW per category_id ──
-
         GovernanceEntry::CategoryUpdated {
             category_id,
             name,
@@ -477,15 +596,35 @@ fn apply(_author: &PseudonymKey, entry: &GovernanceEntry, state: &mut Governance
         }
 
         // ── Invites: OR-Set with revocation tombstone ──
-
-        GovernanceEntry::InviteCreated { .. } => {
-            // Invite entries are stored in governance for discovery by joiners.
-            // No state tracking needed here — the join flow reads raw governance
-            // entries to find matching invite by code_hash.
+        GovernanceEntry::InviteCreated {
+            invite_id,
+            code_hash,
+            max_uses,
+            expires_at,
+            encrypted_secrets,
+            lamport,
+        } => {
+            state.invites.insert(
+                *invite_id,
+                InviteState {
+                    code_hash: code_hash.clone(),
+                    max_uses: *max_uses,
+                    expires_at: *expires_at,
+                    encrypted_secrets: encrypted_secrets.clone(),
+                    created_lamport: *lamport,
+                },
+            );
         }
 
-        GovernanceEntry::InviteRevoked { .. } => {
-            // Revocation tombstone — join flow checks for revocation when matching invites.
+        GovernanceEntry::InviteRevoked {
+            invite_id, lamport, ..
+        } => {
+            // Only revoke if the revocation lamport > creation lamport
+            if let Some(invite) = state.invites.get(invite_id) {
+                if *lamport > invite.created_lamport {
+                    state.invites.remove(invite_id);
+                }
+            }
         }
     }
 }
@@ -551,6 +690,7 @@ mod tests {
                 color: 0,
                 hoist: false,
                 mentionable: false,
+                self_assignable: false,
                 lamport: 2,
             },
             GovernanceEntry::ChannelCreated {
@@ -568,7 +708,10 @@ mod tests {
             },
         ];
         let state = merge(&[(creator, entries)]);
-        assert!(state.channels.is_empty(), "archived channel should be removed");
+        assert!(
+            state.channels.is_empty(),
+            "archived channel should be removed"
+        );
     }
 
     #[test]
@@ -599,7 +742,10 @@ mod tests {
             },
         ];
         let state = merge(&[(creator, entries)]);
-        assert!(state.channels.contains_key(&ch), "channel should still exist");
+        assert!(
+            state.channels.contains_key(&ch),
+            "channel should still exist"
+        );
     }
 
     #[test]
@@ -622,6 +768,7 @@ mod tests {
                 color: 0,
                 hoist: false,
                 mentionable: false,
+                self_assignable: false,
                 lamport: 2,
             },
             GovernanceEntry::RoleDefinition {
@@ -632,6 +779,7 @@ mod tests {
                 color: 0,
                 hoist: false,
                 mentionable: false,
+                self_assignable: false,
                 lamport: 3,
             },
         ];
@@ -661,6 +809,7 @@ mod tests {
                 color: 0,
                 hoist: false,
                 mentionable: false,
+                self_assignable: false,
                 lamport: 2,
             },
             GovernanceEntry::BanEntry {
@@ -690,14 +839,20 @@ mod tests {
             },
             GovernanceEntry::MEKGenerationBump {
                 generation: 3,
+                trigger_departed: PseudonymKey([0xBB; 32]),
+                cascade_skipped: vec![],
                 lamport: 2,
             },
             GovernanceEntry::MEKGenerationBump {
                 generation: 1,
+                trigger_departed: PseudonymKey([0xCC; 32]),
+                cascade_skipped: vec![],
                 lamport: 3,
             },
             GovernanceEntry::MEKGenerationBump {
                 generation: 5,
+                trigger_departed: PseudonymKey([0xDD; 32]),
+                cascade_skipped: vec![],
                 lamport: 4,
             },
         ];
@@ -729,6 +884,7 @@ mod tests {
                 color: 0,
                 hoist: false,
                 mentionable: false,
+                self_assignable: false,
                 lamport: 2,
             },
             GovernanceEntry::ChannelCreated {
@@ -744,6 +900,8 @@ mod tests {
 
         let b_entries = vec![GovernanceEntry::MEKGenerationBump {
             generation: 2,
+            trigger_departed: PseudonymKey([0xEE; 32]),
+            cascade_skipped: vec![],
             lamport: 4,
         }];
 
@@ -754,12 +912,12 @@ mod tests {
         ]);
 
         // Order B, A — should produce same result
-        let state2 = merge(&[
-            (member_b, b_entries),
-            (member_a, a_entries),
-        ]);
+        let state2 = merge(&[(member_b, b_entries), (member_a, a_entries)]);
 
-        assert_eq!(state1, state2, "CRDT convergence: different subkey order must produce same state");
+        assert_eq!(
+            state1, state2,
+            "CRDT convergence: different subkey order must produce same state"
+        );
     }
 
     #[test]
@@ -784,6 +942,7 @@ mod tests {
                 color: 0,
                 hoist: false,
                 mentionable: false,
+                self_assignable: false,
                 lamport: 2,
             },
             GovernanceEntry::RoleAssignment {
@@ -825,6 +984,7 @@ mod tests {
                 color: 0,
                 hoist: false,
                 mentionable: false,
+                self_assignable: false,
                 lamport: 2,
             },
             GovernanceEntry::TimeoutEntry {
@@ -840,6 +1000,136 @@ mod tests {
         assert_eq!(timeout.duration_seconds, 3600);
         assert!(!timeout.is_expired(1500));
         assert!(timeout.is_expired(5000));
+    }
+
+    #[test]
+    fn remove_timeout_clears_active_timeout() {
+        let creator = pseudo(1);
+        let target = pseudo(2);
+        let entries = vec![
+            GovernanceEntry::CommunityMeta {
+                name: Some("C".into()),
+                description: None,
+                icon_hash: None,
+                banner_hash: None,
+                lamport: 1,
+            },
+            GovernanceEntry::RoleDefinition {
+                role_id: role_id(0),
+                name: "everyone".into(),
+                permissions: rekindle_types::permissions::ALL,
+                position: 0,
+                color: 0,
+                hoist: false,
+                mentionable: false,
+                self_assignable: false,
+                lamport: 2,
+            },
+            GovernanceEntry::TimeoutEntry {
+                target: target.clone(),
+                duration_seconds: 3600,
+                reason: None,
+                started_at: 1000,
+                lamport: 3,
+            },
+            GovernanceEntry::RemoveTimeoutEntry {
+                target: target.clone(),
+                lamport: 4,
+            },
+        ];
+        let state = merge(&[(creator, entries)]);
+        assert!(!state.timeouts.contains_key(&target));
+    }
+
+    #[test]
+    fn expression_or_set_remove_with_higher_lamport_wins() {
+        let creator = pseudo(1);
+        let expression_id = [7_u8; 16];
+        let entries = vec![
+            GovernanceEntry::CommunityMeta {
+                name: Some("C".into()),
+                description: None,
+                icon_hash: None,
+                banner_hash: None,
+                lamport: 1,
+            },
+            GovernanceEntry::RoleDefinition {
+                role_id: role_id(0),
+                name: "everyone".into(),
+                permissions: rekindle_types::permissions::ALL,
+                position: 0,
+                color: 0,
+                hoist: false,
+                mentionable: false,
+                self_assignable: false,
+                lamport: 2,
+            },
+            GovernanceEntry::ExpressionAdded {
+                expression_id,
+                name: "wave".into(),
+                kind: "emoji".into(),
+                content_hash: "hash-a".into(),
+                inline_data: Some(vec![1, 2, 3]),
+                animated: false,
+                tags: vec![],
+                lamport: 3,
+            },
+            GovernanceEntry::ExpressionRemoved {
+                expression_id,
+                lamport: 4,
+            },
+        ];
+
+        let state = merge(&[(creator, entries)]);
+        assert!(!state.expressions.contains_key(&expression_id));
+    }
+
+    #[test]
+    fn expression_or_set_add_after_remove_reappears() {
+        let creator = pseudo(1);
+        let expression_id = [8_u8; 16];
+        let entries = vec![
+            GovernanceEntry::CommunityMeta {
+                name: Some("C".into()),
+                description: None,
+                icon_hash: None,
+                banner_hash: None,
+                lamport: 1,
+            },
+            GovernanceEntry::RoleDefinition {
+                role_id: role_id(0),
+                name: "everyone".into(),
+                permissions: rekindle_types::permissions::ALL,
+                position: 0,
+                color: 0,
+                hoist: false,
+                mentionable: false,
+                self_assignable: false,
+                lamport: 2,
+            },
+            GovernanceEntry::ExpressionRemoved {
+                expression_id,
+                lamport: 3,
+            },
+            GovernanceEntry::ExpressionAdded {
+                expression_id,
+                name: "spark".into(),
+                kind: "emoji".into(),
+                content_hash: "hash-b".into(),
+                inline_data: Some(vec![4, 5, 6]),
+                animated: true,
+                tags: vec!["fun".into()],
+                lamport: 4,
+            },
+        ];
+
+        let state = merge(&[(creator, entries)]);
+        let expression = state
+            .expressions
+            .get(&expression_id)
+            .expect("expression should exist");
+        assert_eq!(expression.name, "spark");
+        assert!(expression.animated);
     }
 }
 
@@ -894,13 +1184,40 @@ mod proptests {
                     color: 0,
                     hoist: false,
                     mentionable: false,
+                    self_assignable: false,
                     lamport,
                 }
             }),
+            // ExpressionAdded
+            (prop::array::uniform16(any::<u8>()), any::<u64>()).prop_map(
+                |(expression_id, lamport)| {
+                    GovernanceEntry::ExpressionAdded {
+                        expression_id,
+                        name: "emoji_name".into(),
+                        kind: "emoji".into(),
+                        content_hash: "hash".into(),
+                        inline_data: Some(vec![1, 2, 3]),
+                        animated: false,
+                        tags: vec!["test".into()],
+                        lamport,
+                    }
+                }
+            ),
+            // ExpressionRemoved
+            (prop::array::uniform16(any::<u8>()), any::<u64>()).prop_map(
+                |(expression_id, lamport)| {
+                    GovernanceEntry::ExpressionRemoved {
+                        expression_id,
+                        lamport,
+                    }
+                }
+            ),
             // MEKGenerationBump
-            (any::<u64>(), any::<u64>()).prop_map(|(gen, lamport)| {
+            (any::<u64>(), any::<u64>(), arb_pseudonym()).prop_map(|(gen, lamport, departed)| {
                 GovernanceEntry::MEKGenerationBump {
                     generation: gen,
+                    trigger_departed: departed,
+                    cascade_skipped: vec![],
                     lamport,
                 }
             }),
