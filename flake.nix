@@ -41,6 +41,7 @@
             KONDUCTOR_SHELL = "rekindle";
             SODIUM_USE_PKG_CONFIG = "1";
             REKINDLE_LIB_PATH = rekindleLibPath;
+            LD_LIBRARY_PATH = rekindleLibPath;
           };
         };
       }

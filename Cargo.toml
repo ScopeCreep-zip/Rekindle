@@ -16,6 +16,7 @@ members = [
     "crates/rekindle-voice",
     "crates/rekindle-e2e-server",
     "crates/rekindle-utils",
+    "crates/rekindle-transport",
 ]
 
 [workspace.dependencies]
