@@ -85,7 +85,7 @@ pub use crypto::signal_store::{
 };
 
 // Session state
-pub use session::{Session, SessionIdentity, CommunityMembership};
+pub use session::{Session, SessionIdentity, CommunityMembership, PendingFriendRequest};
 
 // Query engine
 pub use query::{

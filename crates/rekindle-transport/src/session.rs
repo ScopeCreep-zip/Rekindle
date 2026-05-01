@@ -38,6 +38,12 @@ pub struct Session {
     #[serde(default)]
     pub dm_log_key: Option<String>,
 
+    /// Pending inbound friend requests awaiting user action.
+    /// Populated by the InboundHandler when a `DmPayload::FriendRequest`
+    /// arrives. Drained when the user accepts or rejects.
+    #[serde(default)]
+    pub pending_friend_requests: Vec<PendingFriendRequest>,
+
     /// Schema version for forward compatibility.
     #[serde(default = "default_session_version")]
     pub version: u32,
@@ -54,6 +60,7 @@ impl Session {
             identity,
             communities: HashMap::new(),
             dm_log_key: None,
+            pending_friend_requests: Vec::new(),
             version: default_session_version(),
         }
     }
@@ -193,6 +200,67 @@ pub struct CommunityMembership {
     /// Excluded from JSON — stored in OS keyring.
     #[serde(skip)]
     pub slot_seed: Option<[u8; 32]>,
+}
+
+// ── Pending friend requests ─────────────────────────────────────────────
+
+/// An inbound friend request awaiting the user's accept/reject decision.
+///
+/// Created when a `DmPayload::FriendRequest` is received via the
+/// InboundHandler. Stores all the data needed to call
+/// `operations::friend::accept_friend_request` when the user decides.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PendingFriendRequest {
+    /// Requester's Ed25519 public key (hex).
+    pub public_key: String,
+
+    /// Requester's display name.
+    pub display_name: String,
+
+    /// Message attached to the request.
+    pub message: String,
+
+    /// Requester's profile DHT record key (for watching presence after accept).
+    pub profile_dht_key: String,
+
+    /// Requester's route blob (for sending the accept response).
+    pub route_blob: Vec<u8>,
+
+    /// Requester's mailbox DHT key.
+    pub mailbox_dht_key: String,
+
+    /// Requester's prekey bundle (for Signal session establishment).
+    pub prekey_bundle: Vec<u8>,
+
+    /// Invite ID if the request came through an invite link.
+    pub invite_id: Option<String>,
+
+    /// Epoch ms when the request was received.
+    pub received_at: u64,
+}
+
+impl Session {
+    /// Record an inbound friend request. Deduplicates by public key —
+    /// if a request from the same peer already exists, it's replaced
+    /// (the peer may have re-sent with updated route/prekey data).
+    pub fn add_pending_friend_request(&mut self, request: PendingFriendRequest) {
+        self.pending_friend_requests
+            .retain(|r| r.public_key != request.public_key);
+        self.pending_friend_requests.push(request);
+    }
+
+    /// Look up a pending friend request by the requester's public key.
+    pub fn pending_request_by_key(&self, public_key: &str) -> Option<&PendingFriendRequest> {
+        self.pending_friend_requests
+            .iter()
+            .find(|r| r.public_key == public_key)
+    }
+
+    /// Remove a pending friend request (after accept or reject).
+    pub fn remove_pending_friend_request(&mut self, public_key: &str) {
+        self.pending_friend_requests
+            .retain(|r| r.public_key != public_key);
+    }
 }
 
 // ── Atomic file write ───────────────────────────────────────────────────
