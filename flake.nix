@@ -19,6 +19,7 @@
         ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
           alsa-lib.dev
           libopus.dev
+          dbus.dev
         ];
 
         # Runtime library path for Nix-provided shared libs on Linux.
@@ -27,6 +28,7 @@
             libsodium
             libopus
             alsa-lib
+            dbus
           ]));
 
       in {

@@ -45,6 +45,10 @@ uuid = { version = "1", features = ["v4", "fast-rng"] }
 blake3 = "1"
 nucleo = "0.5"
 unicode-width = "0.2"
+hex = "0.4"
+keyring = { version = "3", default-features = false, features = ["apple-native", "windows-native", "sync-secret-service", "linux-native"] }
+clap_complete = "4"
+parking_lot = { workspace = true }
 
 # Workspace crates
 rekindle-transport = { path = "../rekindle-transport" }
