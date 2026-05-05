@@ -87,7 +87,7 @@ const OverviewTab: Component<OverviewTabProps> = (props) => {
       </FormField>
       <Show when={props.canManage}>
         <div class="settings-actions-sticky">
-          <button class="form-btn-save" onClick={handleSaveOverview} disabled={savingOverview()}>
+          <button class="form-btn-primary" onClick={handleSaveOverview} disabled={savingOverview()}>
             <span class="nf-icon">{ICON_SAVE}</span> {savingOverview() ? "Saving..." : "Save Changes"}
           </button>
         </div>

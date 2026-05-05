@@ -7,7 +7,10 @@ use tauri::Manager;
 use crate::state::AppState;
 use crate::state_helpers;
 
-fn tracked_record_keys(state: &Arc<AppState>, community_id: &str) -> Option<Vec<String>> {
+pub(crate) fn tracked_record_keys(
+    state: &Arc<AppState>,
+    community_id: &str,
+) -> Option<Vec<String>> {
     let communities = state.communities.read();
     let community = communities.get(community_id)?;
     let mut keys = Vec::new();
@@ -28,7 +31,7 @@ fn changed_subkeys_from_sequences(local_sequences: &[u64], network_sequences: &[
         .collect()
 }
 
-async fn inspect_record(
+pub(crate) async fn inspect_record(
     state: &Arc<AppState>,
     community_id: &str,
     record_key: &str,

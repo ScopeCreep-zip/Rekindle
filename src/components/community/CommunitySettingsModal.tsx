@@ -13,6 +13,7 @@ import {
   MODERATE_MEMBERS,
   CREATE_INSTANT_INVITE,
   VIEW_AUDIT_LOG,
+  VIEW_INSIGHTS,
 } from "../../ipc/permissions";
 import OverviewTab from "./settings/OverviewTab";
 import ChannelsTab from "./settings/ChannelsTab";
@@ -23,6 +24,7 @@ import SecurityTab from "./settings/SecurityTab";
 import InvitesTab from "./settings/InvitesTab";
 import AuditLogTab from "./settings/AuditLogTab";
 import AutoModTab from "./settings/AutoModTab";
+import AnalyticsTab from "./settings/AnalyticsTab";
 
 export interface ConfirmOptions {
   title: string;
@@ -38,7 +40,7 @@ interface CommunitySettingsModalProps {
   onClose: () => void;
 }
 
-type TabId = "overview" | "channels" | "members" | "invites" | "roles" | "bans" | "audit-log" | "security" | "automod";
+type TabId = "overview" | "channels" | "members" | "invites" | "roles" | "bans" | "audit-log" | "security" | "automod" | "analytics";
 
 const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) => {
   const [activeTab, setActiveTab] = createSignal<TabId>("overview");
@@ -56,6 +58,7 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
   const canModerate = createMemo(() => hasPermission(myPerms(), MODERATE_MEMBERS));
   const canCreateInvite = createMemo(() => hasPermission(myPerms(), CREATE_INSTANT_INVITE));
   const canViewAuditLog = createMemo(() => hasPermission(myPerms(), VIEW_AUDIT_LOG));
+  const canViewInsights = createMemo(() => hasPermission(myPerms(), VIEW_INSIGHTS));
 
   const isAdmin = createMemo(() =>
     canManageCommunity() || canManageChannels() || canManageRoles() || canKick() || canBan()
@@ -79,6 +82,7 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
     if (canManageRoles()) base.push({ id: "roles", label: "Roles" });
     if (canBan()) base.push({ id: "bans", label: "Bans" });
     if (canManageCommunity()) base.push({ id: "automod", label: "AutoMod" });
+    if (canViewInsights()) base.push({ id: "analytics", label: "Analytics" });
     // Merge audit log into security for admins; show standalone if only audit log perm
     if (canViewAuditLog() && !canManageCommunity()) base.push({ id: "audit-log", label: "Audit Log" });
     if (canManageCommunity()) base.push({ id: "security", label: "Security" });
@@ -128,6 +132,7 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
             canKick={canKick()}
             canBan={canBan()}
             canModerate={canModerate()}
+            canManageCommunity={canManageCommunity()}
             requestConfirm={requestConfirm}
           />
         </Show>
@@ -146,6 +151,9 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
         </Show>
         <Show when={activeTab() === "automod"}>
           <AutoModTab community={props.community} />
+        </Show>
+        <Show when={activeTab() === "analytics"}>
+          <AnalyticsTab community={props.community} />
         </Show>
         <Show when={activeTab() === "audit-log"}>
           <AuditLogTab communityId={props.community.id} />

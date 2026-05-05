@@ -33,32 +33,30 @@ export type ChatEvent =
   | { type: "friendRemoved"; data: { publicKey: string } }
   | { type: "friendRequestDelivered"; data: { to: string } }
   | {
-      type: "channelHistoryLoaded";
+      type: "directMessageInvite";
       data: {
-        channelId: string;
-        messages: {
-          id: number;
-          senderId: string;
-          body: string;
-          timestamp: number;
-          isOwn: boolean;
-          serverMessageId?: string;
-          decryptionFailed?: boolean;
-          automodBlurred?: boolean;
-          reactions?: { emoji: string; count: number; reactors: string[] }[];
-          pinned?: boolean;
-          poll?: {
-            pollId: string;
-            question: string;
-            answers: { index: number; text: string; voteCount: number; voters: string[] }[];
-            multiSelect: boolean;
-            expiresAt?: number;
-            closed: boolean;
-            selectedAnswers: number[];
-          };
-        }[];
+        from: string;
+        recordKey: string;
+        initiatorPseudonym: string;
+        isGroup: boolean;
       };
-    };
+    }
+  // Plan §Failure 5 — direct call signalling. The backend is the
+  // single source of truth for call state; the UI just renders.
+  | {
+      type: "incomingCall";
+      data: {
+        callId: string;
+        from: string;
+        displayName: string;
+        kind: "audio" | "video";
+        expiresAtMs: number;
+      };
+    }
+  | { type: "callConnected"; data: { callId: string } }
+  | { type: "callTimedOut"; data: { callId: string } }
+  | { type: "callMissed"; data: { callId: string; from: string } }
+  | { type: "callDeclined"; data: { callId: string; reason: string } };
 
 export type PresenceEvent =
   | { type: "friendOnline"; data: { publicKey: string } }
@@ -108,6 +106,13 @@ export type CommunityEvent =
       data: { communityId: string };
     }
   | {
+      // Architecture §18.4 — eager-fetched expression bytes have landed.
+      // Frontend should re-pull list_expressions for this community so
+      // the picker re-renders with the resolved inline_data_base64.
+      type: "expressionAssetReady";
+      data: { communityId: string; expressionId: string };
+    }
+  | {
       type: "memberJoined";
       data: {
         communityId: string;
@@ -119,6 +124,108 @@ export type CommunityEvent =
   | {
       type: "memberRemoved";
       data: { communityId: string; pseudonymKey: string };
+    }
+  | {
+      type: "raidDetected";
+      data: {
+        communityId: string;
+        joinsInWindow: number;
+        maxJoinsPerInterval: number;
+        joinIntervalSeconds: number;
+      };
+    }
+  | {
+      // Architecture §28.8 — sender pre-fetched OpenGraph metadata.
+      type: "linkPreviewReceived";
+      data: {
+        communityId: string;
+        senderPseudonym: string;
+        channelId: string;
+        messageId: string;
+        url: string;
+        title?: string;
+        description?: string;
+        imageUrl?: string;
+        siteName?: string;
+        fetchedAt: number;
+      };
+    }
+  | {
+      // Architecture §10.6 — reassembled MEK-decrypted video frame.
+      type: "videoFrame";
+      data: {
+        communityId: string;
+        senderPseudonym: string;
+        streamId: string;
+        frameSeq: number;
+        keyframe: boolean;
+        timestamp: number;
+        payloadB64: string;
+      };
+    }
+  | {
+      // Architecture §10.6 — receiver bandwidth ack drives encoder bitrate.
+      type: "videoFrameAck";
+      data: {
+        communityId: string;
+        senderPseudonym: string;
+        channelId: string;
+        streamId: string;
+        lastFrameSeq: number;
+        kbps: number;
+        lossQ8: number;
+      };
+    }
+  | {
+      // Architecture §10.6 — receiver requests an I-frame.
+      type: "videoKeyframeRequest";
+      data: {
+        communityId: string;
+        senderPseudonym: string;
+        channelId: string;
+        streamId: string;
+      };
+    }
+  | {
+      // Architecture §10.6 — out-of-band bandwidth advertisement.
+      type: "videoBandwidthEstimate";
+      data: {
+        communityId: string;
+        senderPseudonym: string;
+        channelId: string;
+        kbps: number;
+        windowSecs: number;
+        lossQ8: number;
+      };
+    }
+  | {
+      // Architecture §10.6 — peer's decode capabilities for adaptive sender.
+      type: "videoMediaCapabilities";
+      data: {
+        communityId: string;
+        senderPseudonym: string;
+        channelId: string;
+        maxPixelCount: number;
+        maxFps: number;
+        codecs: string[];
+      };
+    }
+  | {
+      // Architecture §10.6 + §22 — relay change (full mesh ↔ SFU).
+      // `lamport` is the sender's per-community Lamport clock at the
+      // moment of the topology decision; the reassembler uses it to
+      // resolve simultaneous topology changes from multiple peers
+      // (highest lamport wins, with sender_pseudonym as tiebreaker).
+      type: "videoTopologyChange";
+      data: {
+        communityId: string;
+        senderPseudonym: string;
+        channelId: string;
+        streamId: string;
+        relayHostPseudonym: string | null;
+        reason: string;
+        lamport: number;
+      };
     }
   | {
       type: "mekRotated";
@@ -261,6 +368,7 @@ export type CommunityEvent =
           name: string;
           starterMessageId: string;
           creatorPseudonym: string;
+          forumTag?: string | null;
           createdAt: number;
           archived: boolean;
           autoArchiveSeconds: number;
@@ -374,6 +482,34 @@ export type CommunityEvent =
       };
     }
   | {
+      type: "stageUpdate";
+      data: {
+        communityId: string;
+        channelId: string;
+        topic: string | null;
+        speakers: string[];
+        moderatorPseudonym: string;
+      };
+    }
+  | {
+      type: "speakRequest";
+      data: {
+        communityId: string;
+        channelId: string;
+        requesterPseudonym: string;
+      };
+    }
+  | {
+      type: "speakResponse";
+      data: {
+        communityId: string;
+        channelId: string;
+        requesterPseudonym: string;
+        granted: boolean;
+        moderatorPseudonym: string;
+      };
+    }
+  | {
       type: "channelsUpdated";
       data: {
         communityId: string;
@@ -456,6 +592,17 @@ export type CommunityEvent =
         communityId: string;
         name: string | null;
         description: string | null;
+        iconHash: string | null;
+        bannerHash: string | null;
+      };
+    }
+  | {
+      type: "attachmentDownloaded";
+      data: {
+        communityId: string;
+        channelId: string;
+        attachmentId: string;
+        localPath: string;
       };
     }
   | {
@@ -492,9 +639,36 @@ export type CommunityEvent =
         mode: string;
         hostPseudonym: string | null;
       };
+    }
+  | {
+      // Architecture §10.9 — peer triggered a soundboard sound in a
+      // voice channel. Frontend looks up the cached expression by
+      // `expressionId` and plays the audio at `soundMeta.volume`.
+      type: "soundboardPlay";
+      data: {
+        communityId: string;
+        channelId: string;
+        expressionId: string;
+        actorPseudonym: string;
+      };
     };
 
 export type NotificationEvent =
+  | {
+      type: "messageReceived";
+      data: {
+        title: string;
+        body: string;
+        communityId: string;
+        channelId: string;
+        /**
+         * Resolved per-channel/per-community sound override
+         * (architecture §32 Phase 7 Week 25). `null` means the
+         * frontend should fall back to its bundled default sound.
+         */
+        soundRef: string | null;
+      };
+    }
   | { type: "systemAlert"; data: { title: string; body: string } }
   | { type: "updateAvailable"; data: { version: string } };
 

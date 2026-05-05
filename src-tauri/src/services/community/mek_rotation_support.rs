@@ -188,8 +188,8 @@ pub(crate) async fn distribute_mek(
             sender_pseudonym: my_pseudonym_hex(state, community_id).unwrap_or_default(),
             wrapped_mek: wrapped,
         });
-        let bytes =
-            serde_json::to_vec(&payload).map_err(|e| format!("serialize MEK transfer: {e}"))?;
+        let bytes = rekindle_protocol::capnp_envelope::encode_community_envelope(&payload)
+            .map_err(|e| format!("encode MEK transfer: {e}"))?;
         let _reply = rc
             .app_call(veilid_core::Target::RouteId(route_id), bytes)
             .await
@@ -360,6 +360,8 @@ mod tests {
             id: "community".into(),
             name: "Community".into(),
             description: None,
+            icon_hash: None,
+            banner_hash: None,
             channels: vec![ChannelInfo {
                 id: "voice".into(),
                 name: "Voice".into(),
@@ -367,21 +369,26 @@ mod tests {
                 unread_count: 0,
                 category_id: None,
                 topic: String::new(),
+                forum_tags: None,
+                stage_speakers: Vec::new(),
+                stage_moderator: None,
                 slowmode_seconds: None,
                 nsfw: false,
                 message_record_key: None,
                 mek_generation: generation,
                 notification_level: "all".to_string(),
+                notification_sound_ref: None,
+                parent_voice_channel_id: None,
             }],
             categories: Vec::new(),
             my_role_ids: vec![0],
             roles: Vec::new(),
-            my_role: None,
             dht_owner_keypair: None,
             my_pseudonym_key: Some(hex::encode(pseudo(my_seed).0)),
             mek_generation: generation,
             member_registry_key: None,
             my_subkey_index: None,
+            my_segment_index: None,
             governance_key: None,
             governance_state: None,
             lamport_counter: 0,
@@ -397,12 +404,22 @@ mod tests {
             watched_records: std::collections::HashSet::new(),
             record_sequences: std::collections::HashMap::new(),
             peer_sequences: std::collections::HashMap::new(),
+            channel_last_send_at: std::collections::HashMap::new(),
+            peer_reliability: std::collections::HashMap::new(),
             presence_poll_shutdown_tx: None,
             dht_keepalive_shutdown_tx: None,
             open_community_records: CommunityRecords::default(),
             my_event_rsvps: std::collections::HashMap::new(),
             event_rsvps_by_event: std::collections::HashMap::new(),
             onboarding_complete: false,
+            my_bio: None,
+            my_pronouns: None,
+            my_theme_color: None,
+            my_badges: Vec::new(),
+            my_avatar_ref: None,
+            my_banner_ref: None,
+            member_profiles: std::collections::HashMap::new(),
+            recent_member_joins: std::collections::VecDeque::new(),
         }
     }
 

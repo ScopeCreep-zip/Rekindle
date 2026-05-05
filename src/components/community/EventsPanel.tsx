@@ -47,7 +47,7 @@ function statusBadgeClass(status: string): string {
   switch (status) {
     case "active": return "event-status-badge event-status-active";
     case "completed": return "event-status-badge event-status-completed";
-    case "canceled": return "event-status-badge event-status-canceled";
+    case "cancelled": return "event-status-badge event-status-cancelled";
     default: return "event-status-badge event-status-scheduled";
   }
 }
@@ -78,7 +78,7 @@ const EventCard: Component<{
   }
 
   return (
-    <div class={`event-card ${props.event.status === "canceled" ? "event-card-canceled" : ""}`}>
+    <div class={`event-card ${props.event.status === "cancelled" ? "event-card-cancelled" : ""}`}>
       <div class="event-card-header">
         <div class="event-card-title">{props.event.title}</div>
         <span class={statusBadgeClass(props.event.status)}>{props.event.status}</span>
@@ -169,8 +169,8 @@ const EventsPanel: Component<EventsPanelProps> = (props) => {
     if (f === "all") return all;
     if (f === "upcoming") return all.filter((e) => e.status === "scheduled");
     if (f === "active") return all.filter((e) => e.status === "active");
-    // "past" shows completed + canceled
-    return all.filter((e) => e.status === "completed" || e.status === "canceled");
+    // "past" shows completed + cancelled
+    return all.filter((e) => e.status === "completed" || e.status === "cancelled");
   });
 
   return (

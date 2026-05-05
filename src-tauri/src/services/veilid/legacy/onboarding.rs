@@ -1,15 +1,25 @@
 use std::sync::Arc;
 
+use tauri::Emitter as _;
+
+use crate::channels::CommunityEvent;
 use crate::db::DbPool;
+use crate::services::cross_device_sync::{
+    open_personal_sync_record, read_read_state, write_read_state,
+};
 use crate::state::AppState;
+use rekindle_secrets::sync_key::SyncKey;
 
 pub(crate) fn handle_peer_assisted_join(
+    app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
+    pool: &DbPool,
     community_id: &str,
     pseudonym_key: &str,
     display_name: &str,
     claimed_subkey_index: Option<u32>,
     route_blob: Option<&[u8]>,
+    invite_code: Option<&str>,
 ) {
     {
         let mut communities = state.communities.write();
@@ -22,6 +32,47 @@ pub(crate) fn handle_peer_assisted_join(
         pseudonym = %pseudonym_key,
         "peer join noted — added to known_members"
     );
+
+    // Architecture §16 — when the join request carries a redeemable
+    // invite code, hash it and bump our local uses counter for that
+    // invite (the inviter's row in `community_invites`). The increment
+    // is best-effort: peers without the matching row simply skip the
+    // emission. The InvitesTab counter then live-updates without a
+    // refetch on the inviter's window.
+    if let Some(code) = invite_code {
+        let code_hash = rekindle_secrets::invite::hash_invite_code(code);
+        let cid = community_id.to_string();
+        let owner_key = crate::state_helpers::current_owner_key(state).unwrap_or_default();
+        let app_for_emit = app_handle.clone();
+        let cid_for_emit = cid.clone();
+        let code_hash_for_emit = code_hash.clone();
+        crate::db_helpers::db_fire(pool, "increment invite uses counter", move |conn| {
+            let updated = conn.execute(
+                "UPDATE community_invites SET uses = uses + 1 \
+                 WHERE owner_key = ?1 AND community_id = ?2 AND code_hash = ?3",
+                rusqlite::params![&owner_key, &cid, &code_hash],
+            )?;
+            if updated > 0 {
+                let new_use_count: i64 = conn
+                    .query_row(
+                        "SELECT uses FROM community_invites \
+                         WHERE owner_key = ?1 AND community_id = ?2 AND code_hash = ?3",
+                        rusqlite::params![&owner_key, &cid, &code_hash],
+                        |row| row.get(0),
+                    )
+                    .unwrap_or(0);
+                let _ = app_for_emit.emit(
+                    "community-event",
+                    CommunityEvent::InviteUsed {
+                        community_id: cid_for_emit.clone(),
+                        code_hash: code_hash_for_emit.clone(),
+                        new_use_count: u32::try_from(new_use_count).unwrap_or(u32::MAX),
+                    },
+                );
+            }
+            Ok(())
+        });
+    }
 
     let _ = (display_name, claimed_subkey_index, route_blob);
 }
@@ -182,16 +233,21 @@ pub(crate) async fn handle_onboarding_answers(
             roles.iter().map(role_id_to_legacy).collect()
         });
 
-    {
+    let is_self_completion = {
         let mut communities = state.communities.write();
         if let Some(cs) = communities.get_mut(community_id) {
             cs.member_roles
                 .insert(sender_pseudonym.to_string(), final_role_ids.clone());
             if cs.my_pseudonym_key.as_deref() == Some(sender_pseudonym) {
                 cs.onboarding_complete = true;
+                true
+            } else {
+                false
             }
+        } else {
+            false
         }
-    }
+    };
 
     let pool: tauri::State<'_, DbPool> = app_handle.state();
     if let Ok(owner_key) = crate::state_helpers::current_owner_key(state) {
@@ -205,6 +261,26 @@ pub(crate) async fn handle_onboarding_answers(
                 rusqlite::params![role_ids_json, owner_key, cid, pk],
             )?;
             Ok(())
+        });
+    }
+
+    // Architecture §28.4 — push our own onboarding completion into the
+    // personal SMPL ReadState so other paired devices stop showing the
+    // wizard for this community. We only push for self-completion;
+    // observing another member's completion locally is irrelevant to
+    // our own ReadState. Fire-and-forget — the SMPL write may be slow
+    // and the local SQLite flag already covers this device.
+    if is_self_completion {
+        let state_arc = Arc::clone(state);
+        let pool_arc = pool.inner().clone();
+        let community_id_owned = community_id.to_string();
+        tokio::spawn(async move {
+            if let Err(e) =
+                push_onboarding_complete_to_sync(&state_arc, &pool_arc, &community_id_owned)
+                    .await
+            {
+                tracing::warn!(community = %community_id_owned, error = %e, "failed to push onboarding completion to personal sync");
+            }
         });
     }
 
@@ -246,4 +322,33 @@ pub(crate) async fn handle_onboarding_answers(
         assigned_roles = newly_assigned.len(),
         "processed onboarding answers"
     );
+}
+
+/// Architecture §28.4 — flip the `onboarding_complete[community_id]`
+/// bit on the personal SMPL ReadState (subkey 1). Reads → merges →
+/// writes. The merge is a logical OR so a paired device that already
+/// flipped the flag won't have it cleared. No-ops gracefully when the
+/// personal sync record hasn't been provisioned yet (fresh install
+/// before pairing).
+async fn push_onboarding_complete_to_sync(
+    state: &Arc<AppState>,
+    pool: &DbPool,
+    community_id: &str,
+) -> Result<(), String> {
+    let Some(handle) = open_personal_sync_record(state, pool).await else {
+        return Ok(());
+    };
+    let master_secret = state
+        .identity_secret
+        .lock()
+        .ok_or_else(|| "identity secret not available".to_string())?;
+    let sync_key = SyncKey::from_master_secret(&master_secret);
+    let mut state_doc = read_read_state(state, &handle, &sync_key)
+        .await
+        .unwrap_or_default();
+    state_doc
+        .onboarding_complete
+        .insert(community_id.to_string(), true);
+    write_read_state(state, &handle, &sync_key, state_doc).await?;
+    Ok(())
 }

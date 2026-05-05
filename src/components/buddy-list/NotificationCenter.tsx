@@ -31,8 +31,18 @@ const NotificationCenter: Component = () => {
 
   return (
     <div class="notification-bell-wrapper" ref={panelRef}>
-      <button class="notification-bell" onClick={toggle} title="Notifications">
-        <span class="nf-icon nf-icon-md">{ICON_BELL}</span>
+      <button
+        class="notification-bell"
+        onClick={toggle}
+        title="Notifications"
+        aria-label={
+          notificationState.unreadCount > 0
+            ? `Notifications, ${notificationState.unreadCount} unread`
+            : "Notifications"
+        }
+        aria-expanded={open()}
+      >
+        <span class="nf-icon nf-icon-md" aria-hidden="true">{ICON_BELL}</span>
         <Show when={notificationState.unreadCount > 0}>
           <span class="notification-badge">
             {notificationState.unreadCount > 99
@@ -88,8 +98,9 @@ const NotificationCenter: Component = () => {
                         class="notification-mark-read"
                         onClick={() => markNotificationRead(notification.id)}
                         title="Mark as read"
+                        aria-label="Mark notification as read"
                       >
-                        <span class="nf-icon nf-icon-sm">{ICON_CHECK}</span>
+                        <span class="nf-icon nf-icon-sm" aria-hidden="true">{ICON_CHECK}</span>
                       </button>
                     </Show>
                   </div>

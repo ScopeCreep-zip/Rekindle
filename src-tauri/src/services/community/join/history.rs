@@ -8,7 +8,7 @@ use rekindle_types::presence::MemberPresence;
 use crate::state::AppState;
 use crate::state_helpers;
 
-pub(super) fn schedule_history_catchup(state: Arc<AppState>, community_id: String) {
+pub fn schedule_history_catchup(state: Arc<AppState>, community_id: String) {
     tokio::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_secs(15)).await;
         if let Err(error) = request_history_catchup(&state, &community_id).await {
@@ -60,6 +60,21 @@ async fn request_history_catchup(state: &Arc<AppState>, community_id: &str) -> R
         let Ok(presence) = serde_json::from_slice::<MemberPresence>(value.data()) else {
             continue;
         };
+        // Architecture §26 W26 — verify before trusting history_ranges,
+        // otherwise a forger could advertise bogus ranges to mislead the
+        // mutual-aid sync.
+        let Ok(sig_arr): Result<[u8; 64], _> = presence.signature.as_slice().try_into() else {
+            continue;
+        };
+        if rekindle_secrets::derive::verify_pseudonym_signature(
+            &presence.pseudonym_key.0,
+            &presence.signing_bytes(),
+            &sig_arr,
+        )
+        .is_err()
+        {
+            continue;
+        }
         if presence.route_blob.is_empty() || presence.history_ranges.is_empty() {
             continue;
         }

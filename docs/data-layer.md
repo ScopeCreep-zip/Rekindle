@@ -2,294 +2,207 @@
 
 Rekindle uses three storage backends, each serving a distinct purpose. SQLite
 stores local state and message history. Stronghold encrypts private keys at
-rest. Veilid DHT provides distributed storage for profile data and presence.
+rest. Veilid DHT provides distributed storage for profile data, presence, and
+community state.
 
 ## Storage Backend Summary
 
 | Backend | Scope | Contents |
 |---------|-------|----------|
-| SQLite | Local device | Identity, friends, messages, communities, Signal sessions |
+| SQLite | Local device | Identity, friends, messages, communities, Signal sessions, DMs, sync state, analytics |
 | Stronghold | Local device | Ed25519/X25519 private keys, Signal keying material, MEKs |
-| Veilid DHT | Distributed | Profile info, presence, route blobs, friend lists |
+| Veilid DHT | Distributed | Profile, presence, mailbox, friend list, community governance / registry / channels, account record, personal sync record |
+| Filesystem | Local device | Lost Cargo per-community chunk cache (`<app_data>/file_cache/<community_id>/...`) |
 
 ## SQLite Schema
 
 The database file is stored at `{app_config_dir}/rekindle.db`. All tables
-are defined in `src-tauri/migrations/001_init.sql`.
+are defined in `src-tauri/migrations/001_init.sql`. The current
+`SCHEMA_VERSION` (in `src-tauri/src/db.rs`) is **56** — bump it when the SQL
+file changes.
 
-### identity
+### Identity and Friends
 
-Stores the local user's identity metadata. One row per identity (multi-account
-support).
+- **`identity`** — local user identity. One row per identity (multi-account).
+  Includes Ed25519 public key, display name, DHT record keys for profile /
+  friend list / account / mailbox / personal sync, optional avatar BLOB, and
+  a stable per-device `device_id` (random 16-byte UUID hex) used for the
+  cross-device DeviceList without exposing more PII.
+- **`friend_groups`** — collapsible buddy list groupings (e.g., "Gaming").
+- **`friends`** — friend list with per-identity scoping. Tracks display name,
+  nickname override, group, DHT record key for presence watching, last-seen
+  timestamp, cached avatar, conversation DHT keys (local + remote), mailbox
+  key, and `friendship_state` (`accepted` / `pendingOut` / `removing`).
 
-| Column | Type | Description |
-|--------|------|-------------|
-| id | INTEGER PK | Auto-increment row ID |
-| public_key | TEXT UNIQUE | Ed25519 public key (hex) |
-| display_name | TEXT | User-chosen display name |
-| created_at | INTEGER | Unix timestamp of creation |
-| dht_record_key | TEXT | DHT profile record key |
-| dht_owner_keypair | TEXT | Keypair for DHT profile write access |
-| friend_list_dht_key | TEXT | DHT friend list record key |
-| friend_list_owner_keypair | TEXT | Keypair for friend list write access |
-| avatar_webp | BLOB | Avatar image (WebP format) |
-| account_dht_key | TEXT | Account recovery DHT record key |
-| account_owner_keypair | TEXT | Keypair for account record write access |
-| mailbox_dht_key | TEXT | Mailbox DHT record key (route blob inbox) |
+### Messaging
 
-### friends
+- **`messages`** — chat messages for both 1:1 DMs and community channels.
+  Indexed by `(owner_key, conversation_id, timestamp)`. Carries
+  `message_id` (channel messages), `mek_generation`, `lamport_ts`,
+  `automod_blurred` flag, `forwarded_from_author`, and a `flags` bitmask.
+  Dedup constraint on `(owner_key, conversation_id, conversation_type,
+  sender_key, timestamp)`.
+- **`pending_messages`** — offline retry queue (max 20 retries).
+- **`pending_friend_requests`** — incoming friend requests awaiting user
+  action; carries the requester's PreKeyBundle, profile/route/mailbox info,
+  and optional `invite_id`.
+- **`outgoing_invites`** — sent invites tracked by `invite_id` with status
+  (`pending` / `responded` / `accepted` / `rejected` / `cancelled` / `expired`).
+- **`blocked_users`** — blocked public keys per identity.
+- **`message_delivery`** — per-message per-recipient delivery tracking
+  (sending / delivered / failed) for community channel messages.
 
-Stores the friend list with per-identity scoping.
+### Direct Messages (Architecture §27)
 
-| Column | Type | Description |
-|--------|------|-------------|
-| owner_key | TEXT FK | Identity this friend belongs to |
-| public_key | TEXT | Friend's Ed25519 public key |
-| display_name | TEXT | Friend's display name |
-| nickname | TEXT | Local nickname override |
-| group_id | INTEGER FK | Friend group assignment |
-| added_at | INTEGER | Unix timestamp when added |
-| dht_record_key | TEXT | Friend's DHT profile key (for presence watching) |
-| last_seen_at | INTEGER | Last online timestamp |
-| avatar_webp | BLOB | Cached avatar |
-| local_conversation_key | TEXT | Our conversation DHT record key |
-| local_conversation_keypair | TEXT | Keypair for our conversation record |
-| remote_conversation_key | TEXT | Friend's conversation DHT record key |
-| mailbox_dht_key | TEXT | Friend's mailbox DHT key (route blob fallback) |
+- **`dms`** — DM and group-DM conversations backed by SMPL records (`o_cnt:0`).
+  Holds the SMPL `record_key`, `is_group` flag, initiator identity, our
+  `my_subkey` index, JSON-encoded participant list, `slot_seed_hex`,
+  `wrapped_mek_blob` (group DMs only), and `mek_generation`.
+- **`dm_messages`** — local message log per DM (since one friend can have
+  multiple unlinkable DM contexts).
 
-Primary key: `(owner_key, public_key)`
+### Communities
 
-Index: `idx_friends_group_id` on `(owner_key, group_id)`
+- **`communities`** — joined communities. Tracks DHT record keys (`manifest_key`,
+  `member_registry_key`, `governance_key`), our pseudonym, current MEK
+  generation, plate-gate `my_segment_index`, `my_subkey_index`,
+  `lamport_clock`, and (legacy) coordinator fields.
+- **`channels`** — channels within communities. Types: `text`, `voice`,
+  `announcement`, `forum`, `stage`, `directory`, `media`, `events`, `dm`.
+  Includes `topic`, `slowmode_seconds`, `nsfw` flag, per-channel
+  `message_record_key`, `mek_generation`, `log_key`, and `my_sequence`
+  (our send counter for gap detection).
+- **`community_categories`** — channel categories.
+- **`community_members`** — pseudonym registry per community. Carries roles,
+  timeout, segment index, onboarding flag, and per-community profile fields
+  (`bio`, `pronouns`, `theme_color`, `badges`, `avatar_ref`, `banner_ref`).
+- **`community_member_leaves`** — append-only departure log for analytics
+  (live `community_members` rows are deleted on leave).
+- **`community_roles`** — role definitions. Includes `permissions` bitmask,
+  `position`, `hoist`, `mentionable`, `self_assignable`, and optional
+  `exclusion_group` (architecture §19.4).
+- **`channel_overwrites`** — per-channel allow/deny bitmask overrides for a
+  role or member.
+- **`community_threads`** + **`thread_messages`** — forum-style sub-conversations
+  (auto-archive timestamp, message count). `thread_messages` uses a synthetic
+  INTEGER PK because FTS5 needs `content_rowid` to be a single INTEGER column;
+  the logical key is preserved via UNIQUE constraint.
+- **`community_events`**, **`event_rsvps`**, **`community_event_rsvps`** —
+  scheduled events. `community_events` carries status (`scheduled` /
+  `active` / `completed` / `cancelled`), JSON `recurrence_json` and
+  `location_json`, `cover_image_ref`, and `max_attendees`. `event_rsvps`
+  is the reader-aggregated view; `community_event_rsvps` is our local
+  RSVP state mirrored into presence writes.
+- **`channel_pins`** — pinned messages per channel.
+- **`game_servers`** — community game-server favorites (label, address,
+  game ID).
+- **`community_invites`** — locally-cached invite codes for invites we
+  created. Only `code_hash` lives in the DHT.
+- **`peer_reliability`** — Mutual Aid topology metrics (architecture §14.5):
+  per-peer per-community success/failure counts to weight gossip fan-out so
+  high-reliability "ziplines" emerge organically.
 
-### friend_groups
+### Signal Protocol & Trust
 
-Collapsible groups in the buddy list (e.g., "Gaming", "Work").
+- **`trusted_identities`** — TOFU identity-key tracking with optional
+  `verified` flag for out-of-band confirmation.
+- **`signal_sessions`** — serialized Signal Protocol session state per peer.
+- **`prekeys`** — Signal one-time and signed prekey storage.
 
-| Column | Type | Description |
-|--------|------|-------------|
-| id | INTEGER PK | Auto-increment |
-| owner_key | TEXT FK | Identity that owns this group |
-| name | TEXT | Group display name |
-| sort_order | INTEGER | Display ordering |
+### Notifications & Settings
 
-Unique constraint: `(owner_key, name)`
+- **`notification_preferences`** — per-channel/per-community level (0=All,
+  1=Mentions, 2=Mute) plus optional `sound_ref` (community soundboard
+  expression ID). Falls through channel → community → app-global.
+- **`app_settings`** — global app settings: quiet hours window/timezone offset
+  and the global Do Not Disturb toggle.
 
-### messages
+### Strand Relay (Architecture §13)
 
-All chat messages — both 1:1 DMs and community channel messages.
+- **`strand_relay_offers`** — for each friend who volunteered to relay for us,
+  their dedicated relay route blob and timestamp.
+- **`strand_relay_volunteered`** — outbound: friends we've volunteered to
+  relay for, with the dedicated route ID + blob (so we can revoke and route
+  inbound `RelayEnvelope`s correctly).
 
-| Column | Type | Description |
-|--------|------|-------------|
-| id | INTEGER PK | Auto-increment |
-| owner_key | TEXT FK | Identity this message belongs to |
-| conversation_id | TEXT | Peer public key (DM) or channel ID |
-| conversation_type | TEXT | `dm` or `channel` |
-| sender_key | TEXT | Sender's public key |
-| body | TEXT | Message body (plaintext after decryption) |
-| timestamp | INTEGER | Unix timestamp |
-| is_read | INTEGER | 0 = unread, 1 = read |
-| reply_to_id | INTEGER FK | Referenced message (nullable) |
-| attachment_json | TEXT | Attachment metadata (JSON, nullable) |
-| mek_generation | INTEGER | MEK generation for channel message decryption |
+### Mobile Push Relay (Architecture §17.3 Tier 3)
 
-Indexes:
-- `idx_messages_conversation` on `(owner_key, conversation_id, timestamp)`
-- `idx_messages_unread` on `(owner_key, conversation_id, is_read)` where `is_read = 0`
-- `idx_messages_dedup` unique on `(owner_key, conversation_id, conversation_type, sender_key, timestamp)` (deduplication)
+- **`push_relay_registrations`** — relay pseudonym, device push token,
+  platform (`fcm` / `apns` / `self`), and the JSON list of record keys the
+  relay is watching on this device's behalf.
 
-### communities
+### Analytics
 
-Joined communities with per-identity scoping.
+- **`voice_session_events`** — append-only join/leave log for computing
+  peak-concurrent-voice metrics per channel.
 
-| Column | Type | Description |
-|--------|------|-------------|
-| owner_key | TEXT FK | Identity |
-| id | TEXT | Community ID |
-| name | TEXT | Community name |
-| description | TEXT | Community description |
-| icon_hash | TEXT | Icon content hash |
-| my_role | TEXT | Our role (default: `member`) |
-| my_role_ids | TEXT | Comma-separated role IDs (new multi-role system) |
-| joined_at | INTEGER | Unix timestamp |
-| last_synced | INTEGER | Last DHT sync timestamp |
-| dht_record_key | TEXT | Community DHT record key |
-| dht_owner_keypair | TEXT | Keypair for DHT record write access |
-| my_pseudonym_key | TEXT | Our unlinkable pseudonym key for this community |
-| mek_generation | INTEGER | Current MEK generation (default: 0) |
-| server_route_blob | BLOB | Community server's Veilid route blob |
-| is_hosted | INTEGER | Whether we are hosting this community's server |
+### Cross-Device Sync (Architecture §28.4)
 
-Primary key: `(owner_key, id)`
+- **`paired_devices`** — local cache mirror of the personal DFLT record's
+  device list subkey. Tracks pairing/unpairing timestamps.
+- **`channel_read_state`** — per-channel last-read Lamport. Reconciled into
+  subkey 1 of the personal sync record.
+- **`pending_pairings`** — short-lived rows holding the active pairing code
+  and salt.
 
-### channels
+### Full-Text Search (Architecture §23)
 
-Channels within communities.
+Three FTS5 virtual tables with `unicode61 remove_diacritics 2` tokenizer
+(no `porter` stemming because Rekindle is multilingual):
 
-| Column | Type | Description |
-|--------|------|-------------|
-| owner_key | TEXT FK | Identity |
-| id | TEXT | Channel ID |
-| community_id | TEXT FK | Parent community |
-| name | TEXT | Channel name |
-| channel_type | TEXT | `text` or `voice` |
-| sort_order | INTEGER | Display ordering |
+- `messages_fts` — content table `messages`, content_rowid `id`
+- `thread_messages_fts` — content table `thread_messages`, content_rowid `id`
+- `dm_messages_fts` — content table `dm_messages`, content_rowid `id`
 
-Primary key: `(owner_key, id)`
+Each has `AFTER INSERT/UPDATE/DELETE` triggers keeping the index in lock-step.
 
-Index: `idx_channels_community_id` on `(owner_key, community_id)`
+### Performance Indexes
 
-### community_members
-
-Membership records for communities.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| owner_key | TEXT FK | Identity |
-| community_id | TEXT FK | Community ID |
-| pseudonym_key | TEXT | Member's pseudonym public key (unlinkable per community) |
-| display_name | TEXT | Member's display name |
-| role_ids | TEXT | Comma-separated role IDs |
-| timeout_until | INTEGER | Timeout expiry timestamp (nullable) |
-| joined_at | INTEGER | Unix timestamp |
-
-Primary key: `(owner_key, community_id, pseudonym_key)`
-
-Index: `idx_community_members_community` on `(owner_key, community_id, pseudonym_key)`
-
-### community_roles
-
-Role definitions for communities.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| owner_key | TEXT FK | Identity |
-| community_id | TEXT FK | Community ID |
-| role_id | INTEGER | Role ID |
-| name | TEXT | Role name |
-| color | INTEGER | RGB packed color |
-| permissions | INTEGER | Permission bitmask (u64) |
-| position | INTEGER | Display ordering |
-| hoist | INTEGER | Whether to show role separately in member list |
-| mentionable | INTEGER | Whether role can be @mentioned |
-
-### channel_overwrites
-
-Per-channel permission overrides for roles or members.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| owner_key | TEXT FK | Identity |
-| community_id | TEXT FK | Community ID |
-| channel_id | TEXT FK | Channel ID |
-| target_type | TEXT | `role` or `member` |
-| target_id | TEXT | Role ID or member pseudonym key |
-| allow | INTEGER | Permission bitmask to allow |
-| deny | INTEGER | Permission bitmask to deny |
-
-### trusted_identities
-
-TOFU identity key tracking for key continuity.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| owner_key | TEXT FK | Identity |
-| public_key | TEXT | Peer's public key |
-| identity_key | BLOB | Peer's identity key bytes |
-| verified | INTEGER | 0 = TOFU, 1 = verified out-of-band |
-| first_seen | INTEGER | Unix timestamp of first contact |
-
-### signal_sessions
-
-Persisted Signal Protocol session state.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| owner_key | TEXT FK | Identity |
-| recipient_key | TEXT | Peer's public key |
-| session_data | BLOB | Serialized session state |
-| updated_at | INTEGER | Last modification timestamp |
-
-### prekeys
-
-Signal Protocol prekey storage.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| owner_key | TEXT FK | Identity |
-| id | INTEGER | PreKey ID |
-| key_data | BLOB | Serialized key data |
-| is_signed | INTEGER | 0 = one-time, 1 = signed |
-| created_at | INTEGER | Unix timestamp |
-
-### pending_messages
-
-Offline message queue for retry delivery.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| id | INTEGER PK | Auto-increment |
-| owner_key | TEXT FK | Identity |
-| recipient_key | TEXT | Intended recipient |
-| body | TEXT | Serialized message body |
-| created_at | INTEGER | Unix timestamp |
-| retry_count | INTEGER | Number of delivery attempts (max 20) |
-
-Index: `idx_pending_recipient` on `(owner_key, recipient_key)`
-
-### pending_friend_requests
-
-Incoming friend requests awaiting user action.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| owner_key | TEXT FK | Identity |
-| public_key | TEXT | Requester's public key |
-| display_name | TEXT | Requester's display name |
-| message | TEXT | Optional request message |
-| received_at | INTEGER | Unix timestamp |
-| profile_dht_key | TEXT | Requester's DHT profile key |
-| route_blob | BLOB | Requester's Veilid route blob |
-| mailbox_dht_key | TEXT | Requester's mailbox DHT key |
-| prekey_bundle | BLOB | Requester's Signal PreKeyBundle |
-
-### blocked_users
-
-Users blocked from sending messages.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| owner_key | TEXT FK | Identity |
-| public_key | TEXT | Blocked user's public key |
-| blocked_at | INTEGER | Unix timestamp |
+- `idx_friends_group_id` on `friends(owner_key, group_id)`
+- `idx_messages_conversation` on `messages(owner_key, conversation_id, timestamp)`
+- `idx_messages_unread` on `messages(owner_key, conversation_id, is_read)` where `is_read = 0`
+- `idx_messages_dedup` UNIQUE on `messages(owner_key, conversation_id, conversation_type, sender_key, timestamp)`
+- `idx_messages_message_id` UNIQUE on `messages(owner_key, conversation_id, message_id)` where `message_id IS NOT NULL`
+- `idx_channels_community_id` on `channels(owner_key, community_id)`
+- `idx_community_members_community` on `community_members(owner_key, community_id, pseudonym_key)`
+- `idx_pending_recipient` on `pending_messages(owner_key, recipient_key)`
+- `idx_thread_messages_thread` on `thread_messages(owner_key, community_id, thread_id, timestamp)`
+- `idx_dm_messages_record_ts` on `dm_messages(owner_key, record_key, timestamp)`
+- `idx_member_leaves_recent` on `community_member_leaves(owner_key, community_id, left_at)`
+- `idx_voice_session_events_channel` on `voice_session_events(owner_key, community_id, channel_id, occurred_at)`
 
 ## Schema Versioning
 
-The schema version is tracked by a `SCHEMA_VERSION` constant in `db.rs`. When
-the constant is incremented and the application starts, the database detects a
-mismatch and drops all tables, recreating them from `001_init.sql`.
+The schema version is tracked by a `SCHEMA_VERSION` constant in
+`src-tauri/src/db.rs`. When the constant is incremented and the application
+starts, the database detects a mismatch and drops all tables, recreating
+them from `001_init.sql`.
 
 Because SQLite, Stronghold, and Veilid DHT store interrelated state (friend
 keys, DHT record keypairs, Signal sessions), a schema reset also triggers:
 
 1. Deletion of all `.stronghold` files in the config directory
 2. Removal of the `veilid/` local storage directory
+3. Removal of the Lost Cargo file cache root
 
-This ensures the three stores remain synchronized. Migration files are not used
-because the schema is not yet stable for production.
+This ensures the four stores remain synchronized. Migration files are not
+used because the schema is not yet stable for production.
 
 ## Database Access Pattern
 
-The connection pool is `Arc<std::sync::Mutex<Connection>>` (standard library
-Mutex, not `parking_lot`), used with `spawn_blocking` to avoid blocking the
-async runtime. The `rusqlite` crate (version 0.37) is used instead of `sqlx` to
-match `veilid-core`'s dependency on the same version and avoid `libsqlite3-sys`
-build conflicts.
+The connection pool is `tokio_rusqlite::Connection` — a `tokio_rusqlite`
+async wrapper over `rusqlite` running on a dedicated background thread. All
+database access goes through `db_helpers::{db_call, db_call_or_default,
+db_fire}`. Read-only state lookups go through `state_helpers`.
+
+`rusqlite` 0.37 is used (not `sqlx`) to match `veilid-core`'s dependency on
+the same version and avoid `libsqlite3-sys` build conflicts.
 
 ## Stronghold Vault
 
 Each identity has a dedicated `.stronghold` file in the application config
-directory. The vault is encrypted with a key derived from the user's passphrase
-via Argon2id.
+directory. The vault is encrypted with a key derived from the user's
+passphrase via Argon2id.
 
 ### Vault Namespaces
 
@@ -301,11 +214,12 @@ via Argon2id.
 | `signal` | `signed_prekey` | Current signed prekey |
 | `signal` | `prekey_batch` | Batch of one-time prekeys |
 | `veilid` | `protected_store_key` | Veilid protected store encryption key |
-| `communities` | `mek_{community_id}` | Per-community Media Encryption Key |
+| `communities` | `mek_{community_id}` | Per-community MEK (legacy) |
+| `communities` | `channel_mek_{community_id}_{channel_id}` | Per-channel MEK |
 
-Stronghold is accessed through `iota_stronghold` directly (not via the Tauri
-Stronghold plugin) to allow per-identity snapshot files and configurable Argon2
-parameters for debug builds.
+Stronghold is accessed via `iota_stronghold` directly (not via the Tauri
+Stronghold plugin) to allow per-identity snapshot files and configurable
+Argon2 parameters for debug builds.
 
 ## DHT Record Layout
 
@@ -315,69 +229,108 @@ parameters for debug builds.
 |--------|---------|--------|
 | 0 | Display name | UTF-8 |
 | 1 | Status message | UTF-8 |
-| 2 | Status enum | UTF-8 (`online`, `away`, `busy`, `offline`) |
+| 2 | Status enum | UTF-8 (`online`, `away`, `busy`, `offline`, `invisible`) |
 | 3 | Avatar | WebP bytes |
-| 4 | Game info | Cap'n Proto `GameInfo` |
+| 4 | Game info | Cap'n Proto `GameStatus` |
 | 5 | PreKeyBundle | Cap'n Proto `PreKeyBundle` |
 | 6 | Route blob | Raw bytes (Veilid private route) |
-| 7 | Metadata | Reserved |
+| 7 | Metadata | Reserved (extensible header) |
 
 ### Friend List Record
 
-A DHT record containing serialized friend list entries. Each entry holds a
-public key and display name. Used by peers to discover mutual friends and
-verify friend relationships.
+A DHT record containing serialized friend list entries (Cap'n Proto
+`FriendEntry` array). Used by peers to discover mutual friends and verify
+friend relationships.
 
 ### Mailbox Record (DFLT, 1 subkey)
 
 Each user publishes a mailbox DHT record created with their identity keypair
-(deterministic key). Contains only the user's current Veilid route blob, providing
-a fallback way for peers to find a route when the profile record's subkey 6 is stale.
+(deterministic key). Contains only the user's current Veilid private route
+blob, providing a fallback when a friend's profile subkey 6 is stale.
 
 | Subkey | Content |
 |--------|---------|
 | 0 | Route blob (raw bytes) |
 
-### Community Records (SMPL, multi-writer, 7 subkeys)
-
-Communities use SMPL (multi-writer) DHT records to allow multiple admins to
-update community metadata, channel lists, and member rosters.
-
-| Subkey | Content |
-|--------|---------|
-| 0 | Metadata (name, description, icon, owner key) |
-| 1 | Channels list (JSON) |
-| 2 | Members list (JSON) |
-| 3 | Roles (JSON) |
-| 4 | Invites |
-| 5 | MEK (encrypted, per-member bundles) |
-| 6 | Server route blob |
-
 ### Account Record (DFLT, encrypted)
 
-Private account record encrypted with `DhtRecordKey::derive_account_key()` from
-the user's Ed25519 secret. Contains three child `DHTShortArray` references for
-contacts, chats, and invitations.
+Private account record encrypted with `DhtRecordKey::derive_account_key()`
+from the user's Ed25519 secret. Contains three child `DHTShortArray`
+references for contacts, chats, and invitations.
 
-### Conversation Record (DFLT, encrypted)
+### Personal Sync Record (DFLT, encrypted, architecture §28.4)
 
-Per-friend-pair conversation record encrypted with `DhtRecordKey::derive_conversation_key()`
-from X25519 DH shared secret. Contains a child `DHTLog` for message history.
+Lazy-created on first opt-in to multi-device. Subkeys hold the device list,
+read state per channel, sync preferences, paired device public keys, and
+sync manifest. Reconciled by the cross-device sync service.
+
+### Conversation Record (DFLT, encrypted, per-friend pair)
+
+Each friend pair maintains two DHT records — one owned by each side.
+Records are encrypted with `DhtRecordKey::derive_conversation_key()` from
+the X25519 DH shared secret. Each record contains a child `DHTLog` for
+message history.
+
+### Community Records (SMPL `o_cnt:0`, 255 subkeys — universal v2.0 schema)
+
+All community records share the universal SMPL schema. The `o_cnt: 0`
+property means the creation keypair is discarded after genesis — the
+record has no privileged owner.
+
+- **Governance record** — every member writes their `GovernanceEntry`
+  history to their assigned subkey. Reader merges all subkeys via
+  `rekindle-governance::merge::merge()`.
+- **Member registry record** — claim-and-hold slot model. Members claim a
+  free subkey on join. The MEK vault lives here too, encrypted per-slot.
+- **Channel records** — one SMPL record per channel for message persistence.
+  Same 255-subkey layout. Channel `message_record_key` is stored on the
+  `channels` SQLite row.
+
+When a community grows beyond 255 members, **Plate Gates** (architecture
+§15) add fractal SMPL segments. `community_members.segment_index` and
+`my_segment_index` track which segment hosts each member's slot.
+
+### DM Record (SMPL `o_cnt:0`, 2 or N subkeys)
+
+DMs are SMPL records with `o_cnt:0`, exactly two member subkeys for 2-party
+DMs (or N for group DMs). The MEK is derived deterministically via X25519
+ECDH between identity keys (no key-exchange round-trip). Group DMs wrap the
+MEK per recipient.
+
+## Lost Cargo File Cache (Architecture §28.9)
+
+Per-community filesystem cache for chunked attachments managed by
+`rekindle-files`. Path layout:
+
+```
+<app_data>/file_cache/<community_id>/<aa>/<full_attachment_hex>/<chunk_index>.bin
+                                                                <chunk_index>.meta
+```
+
+Two-character fanout directory follows the Git object-store pattern.
+Eviction runs synchronously after every `cache.insert()` until
+`total_bytes ≤ budget`; pinned attachments are skipped. Pinned-attachment
+IDs come from the merged `governance_state.pinned_attachments` set.
 
 ## Cap'n Proto Serialization
 
-All structured data exchanged over the network is serialized with Cap'n Proto
-for zero-copy deserialization and schema evolution. Schema files live in
-`schemas/` and are compiled at build time via `capnpc` in each crate's
-`build.rs`.
+Network-facing structured data is serialized with Cap'n Proto for zero-copy
+deserialization and schema evolution. Schemas live in `schemas/` and are
+compiled at build time via `capnpc` in `rekindle-protocol`'s `build.rs`.
+The generated Rust modules are included at the protocol crate root via
+`pub mod foo_capnp { include!(...) }` so generated `crate::<schema>_capnp`
+paths resolve.
 
-| Schema | Structs |
-|--------|---------|
-| `message.capnp` | `MessageEnvelope`, `DirectMessage`, `ChannelMessage` |
-| `identity.capnp` | `IdentityRecord`, `PreKeyBundle` |
-| `presence.capnp` | `PresenceRecord`, `GameInfo` |
-| `friend.capnp` | `FriendRequest`, `FriendResponse`, `FriendListEntry` |
-| `community.capnp` | `CommunityRecord`, `ChannelRecord`, `MemberRecord`, `RoleRecord` |
-| `voice.capnp` | `VoiceSignaling`, `VoicePacket` |
-| `conversation.capnp` | `ConversationRecord` |
-| `account.capnp` | `AccountRecord` |
+| Schema | Top-level structs |
+|--------|-------------------|
+| `message.capnp` | `MessageEnvelope`, `ChatMessage`, `Attachment` |
+| `identity.capnp` | `UserProfile`, `PreKeyBundle` |
+| `presence.capnp` | `PresenceUpdate`, `GameStatus` |
+| `friend.capnp` | `FriendRequest`, `FriendList`, `FriendEntry` |
+| `community.capnp` | `Community`, `Channel`, `Role`, `PermissionOverwrite` |
+| `voice.capnp` | `VoiceSignaling` |
+| `conversation.capnp` | `ConversationHeader` |
+| `account.capnp` | `AccountHeader`, `ContactEntry`, `ChatEntry` |
+
+Bincode is used for the v2.0 community gossip envelope and DM payloads —
+those are internal binary formats not intended for cross-language use.

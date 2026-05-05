@@ -28,6 +28,10 @@ fn gossip_only_fetch_core_accepts_matching_dht_message() {
         reply_to: None,
         lamport_ts: 10,
         message_id: Some("msg-1".into()),
+        attachment: None,
+        flags: 0,
+        mentioned_pseudonyms: Vec::new(),
+        mentioned_roles: Vec::new(),
     };
 
     assert!(verify_notification_message(&pending(&ciphertext), &message).is_ok());

@@ -161,6 +161,42 @@ pub fn owner_key_or_default(state: &Arc<AppState>) -> String {
         .unwrap_or_default()
 }
 
+/// Architecture §26 W26 — pull the credentials needed to author a
+/// signed DHT subkey write for a community: the pseudonym public (the
+/// 32-byte verifying key surfaced on the wire as `author_pseudonym`)
+/// and the matching pseudonym signing key derived deterministically
+/// from `(identity_secret, community_id)` via
+/// `rekindle_secrets::derive::derive_community_pseudonym`.
+///
+/// Errors when the user isn't logged in (no identity secret) or when
+/// the local `CommunityState` lacks the cached pseudonym (which only
+/// happens before the join flow finishes priming state).
+pub fn pseudonym_credentials(
+    state: &Arc<AppState>,
+    community_id: &str,
+) -> Result<
+    (
+        rekindle_types::id::PseudonymKey,
+        ed25519_dalek::SigningKey,
+    ),
+    String,
+> {
+    let secret = {
+        let guard = state.identity_secret.lock();
+        *guard.as_ref().ok_or("identity secret not available")?
+    };
+    let signing_key =
+        rekindle_secrets::derive::derive_community_pseudonym(&secret, community_id);
+    let pseudo_bytes = signing_key.verifying_key().to_bytes();
+    let pseudonym = rekindle_types::id::PseudonymKey(pseudo_bytes);
+    let _ = state
+        .communities
+        .read()
+        .get(community_id)
+        .ok_or_else(|| "community not found".to_string())?;
+    Ok((pseudonym, signing_key))
+}
+
 /// Clone the full identity state, or error `"not logged in"`.
 pub fn current_identity(state: &Arc<AppState>) -> Result<IdentityState, String> {
     state
@@ -639,6 +675,11 @@ pub fn set_governance_state(
             .iter()
             .map(|ch| (ch.id.clone(), ch.notification_level.clone()))
             .collect();
+        let existing_notification_sound_refs: std::collections::HashMap<String, Option<String>> =
+            cs.channels
+                .iter()
+                .map(|ch| (ch.id.clone(), ch.notification_sound_ref.clone()))
+                .collect();
 
         let mut channel_log_keys = std::collections::HashMap::new();
         let mut channels: Vec<ChannelInfo> = gov_state
@@ -677,6 +718,9 @@ pub fn set_governance_state(
                     },
                     category_id: ch.category_id.map(|c| hex::encode(c.0)),
                     topic: ch.topic.clone().unwrap_or_default(),
+                    forum_tags: ch.forum_tags.clone(),
+                    stage_speakers: Vec::new(),
+                    stage_moderator: None,
                     slowmode_seconds: ch.slowmode_seconds,
                     nsfw: ch.nsfw.unwrap_or(false),
                     mek_generation: 0,
@@ -684,6 +728,11 @@ pub fn set_governance_state(
                         .get(&id_hex)
                         .cloned()
                         .unwrap_or_else(|| "all".to_string()),
+                    notification_sound_ref: existing_notification_sound_refs
+                        .get(&id_hex)
+                        .cloned()
+                        .unwrap_or(None),
+            parent_voice_channel_id: None,
                 }
             })
             .collect();
@@ -715,6 +764,7 @@ pub fn set_governance_state(
                 hoist: r.hoist,
                 mentionable: r.mentionable,
                 self_assignable: r.self_assignable,
+                exclusion_group: r.exclusion_group.clone(),
             })
             .collect();
         cs.roles.sort_by_key(|role| role.position);
@@ -731,23 +781,74 @@ pub fn set_governance_state(
             .collect();
         cs.categories.sort_by_key(|category| category.sort_order);
 
-        // ── Sync metadata (name, description) ──
+        // ── Sync metadata (name, description, icon_hash, banner_hash) ──
         if let Some(ref meta) = gov_state.metadata {
             cs.name.clone_from(&meta.name);
             cs.description.clone_from(&meta.description);
+            cs.icon_hash.clone_from(&meta.icon_hash);
+            cs.banner_hash.clone_from(&meta.banner_hash);
         }
 
-        // ── Detect creator → set my_role = "owner" ──
-        if is_creator {
-            cs.my_role = Some("owner".to_string());
-        } else {
-            cs.my_role = Some(crate::state::display_role_name(&cs.my_role_ids, &cs.roles));
-        }
+        // Plan §Failure 4 — creator now holds an Owner role with
+        // ADMINISTRATOR perms via the genesis RoleAssignment, so
+        // `display_role_name` resolves to "Owner" naturally; no
+        // is_creator special-case needed at the read sites.
+        let _ = is_creator;
 
         // ── Sync MEK generation ──
         cs.mek_generation = gov_state.mek_generation;
 
         cs.governance_state = Some(gov_state);
+    }
+    drop(communities);
+
+    // ── Sync Lost Cargo pinned-attachment set ──
+    // Drives `state.pinned_attachments[community_id]` from the merged
+    // governance set so the chunk cache eviction sweep honours the
+    // latest AttachmentPinned/unpin entries (architecture §28.9 line 3283).
+    // Also opens the per-community chunk cache lazily — login restores
+    // and runtime governance updates both flow through this function.
+    if let Err(e) = crate::services::community::files::ensure_cache_open(state, community_id) {
+        tracing::debug!(community = %community_id, error = %e, "Lost Cargo cache unavailable");
+    }
+    crate::services::community::files::sync_pinned_from_governance(state, community_id);
+
+    // Plate Gate (architecture §15): open any newly-merged segment SMPL
+    // records so subsequent get_dht_value/watch calls work. Spawned because
+    // the open is async + uses Veilid I/O; failures are logged but don't
+    // block the rest of the merge pipeline.
+    let state_for_open = state.clone();
+    let community_id_owned = community_id.to_string();
+    tokio::spawn(async move {
+        crate::services::community::segments::open_new_segments(&state_for_open, &community_id_owned).await;
+    });
+
+    // Architecture §18.4 + §28.9 line 3286: eager-cache expression assets
+    // for any ExpressionAdded entry that just merged in. Spawned for the
+    // same reason as open_new_segments — uses Veilid app_call I/O.
+    let state_for_eager = state.clone();
+    let community_id_eager = community_id.to_string();
+    tokio::spawn(async move {
+        crate::services::community::expression_assets::eager_fetch_missing(
+            &state_for_eager,
+            &community_id_eager,
+        )
+        .await;
+    });
+
+    // Architecture §32 W16 — materialise EventCreated governance entries
+    // into the SQLite community_events table so late joiners (who saw the
+    // entries via DHT merge but missed the live ControlPayload gossip)
+    // can still see events in get_events / event reminders / calendar UI.
+    if let Some(app_handle) = app_handle(state) {
+        use tauri::Manager;
+        let pool: tauri::State<'_, DbPool> = app_handle.state();
+        crate::services::community::events_hydration::hydrate_events_from_governance(
+            state,
+            pool.inner(),
+            community_id,
+        );
+        crate::services::community::wake_event_reminders(state);
     }
 }
 
@@ -784,6 +885,7 @@ pub async fn persist_governance_snapshot_to_sqlite(
         hoist: i32,
         mentionable: i32,
         self_assignable: i32,
+        exclusion_group: Option<String>,
     }
 
     #[derive(Clone)]
@@ -809,7 +911,6 @@ pub async fn persist_governance_snapshot_to_sqlite(
         community_description,
         icon_hash,
         banner_hash,
-        my_role,
         my_role_ids_json,
         mek_generation,
         channels,
@@ -873,6 +974,7 @@ pub async fn persist_governance_snapshot_to_sqlite(
                 hoist: i32::from(role.hoist),
                 mentionable: i32::from(role.mentionable),
                 self_assignable: i32::from(role.self_assignable),
+                exclusion_group: role.exclusion_group.clone(),
             })
             .collect();
         roles.sort_by(|a, b| {
@@ -923,10 +1025,6 @@ pub async fn persist_governance_snapshot_to_sqlite(
             community.description.clone(),
             metadata.as_ref().and_then(|meta| meta.icon_hash.clone()),
             metadata.as_ref().and_then(|meta| meta.banner_hash.clone()),
-            community
-                .my_role
-                .clone()
-                .unwrap_or_else(|| "member".to_string()),
             serde_json::to_string(&my_role_ids).unwrap_or_else(|_| "[0]".to_string()),
             community.mek_generation.try_into().unwrap_or(i64::MAX),
             channels,
@@ -939,14 +1037,13 @@ pub async fn persist_governance_snapshot_to_sqlite(
     db_call(pool, move |conn| {
         conn.execute(
             "UPDATE communities SET name = ?1, description = ?2, icon_hash = ?3, banner_hash = ?4, \
-             my_role = ?5, my_role_ids = ?6, mek_generation = ?7, lamport_clock = ?8 \
-             WHERE owner_key = ?9 AND id = ?10",
+             my_role_ids = ?5, mek_generation = ?6, lamport_clock = ?7 \
+             WHERE owner_key = ?8 AND id = ?9",
             rusqlite::params![
                 community_name,
                 community_description,
                 icon_hash,
                 banner_hash,
-                my_role,
                 my_role_ids_json,
                 mek_generation,
                 lamport_clock.cast_signed(),
@@ -990,8 +1087,8 @@ pub async fn persist_governance_snapshot_to_sqlite(
         for role in &roles {
             conn.execute(
                 "INSERT INTO community_roles \
-                 (owner_key, community_id, role_id, name, color, permissions, position, hoist, mentionable, self_assignable) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                 (owner_key, community_id, role_id, name, color, permissions, position, hoist, mentionable, self_assignable, exclusion_group) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
                 rusqlite::params![
                     owner_key,
                     community_id_owned,
@@ -1003,6 +1100,7 @@ pub async fn persist_governance_snapshot_to_sqlite(
                     role.hoist,
                     role.mentionable,
                     role.self_assignable,
+                    role.exclusion_group,
                 ],
             )?;
         }

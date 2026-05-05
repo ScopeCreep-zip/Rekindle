@@ -7,6 +7,7 @@ use crate::state::SharedState;
 use crate::state_helpers;
 
 struct ReactionWriteContext {
+    community_id: String,
     channel_key: String,
     reactor_pseudonym: String,
     slot_index: u32,
@@ -64,6 +65,7 @@ fn reaction_write_context(
         .parse::<veilid_core::KeyPair>()
         .map_err(|e| format!("invalid slot keypair: {e}"))?;
     Ok(ReactionWriteContext {
+        community_id: community_id.to_string(),
         channel_key: community
             .channel_log_keys
             .get(channel_id)
@@ -87,11 +89,15 @@ async fn write_reaction_once(
 ) -> Result<(), String> {
     let rc = state_helpers::safe_routing_context(state).ok_or("not attached")?;
     let mgr = rekindle_protocol::dht::DHTManager::new(rc);
+    let (author_pseudo, signing_key) =
+        state_helpers::pseudonym_credentials(state, &context.community_id)?;
     rekindle_protocol::dht::community::channel_record::write_member_reaction(
         &mgr,
         &context.channel_key,
         context.slot_index,
         context.slot_keypair.clone(),
+        author_pseudo,
+        &signing_key,
         reaction,
     )
     .await

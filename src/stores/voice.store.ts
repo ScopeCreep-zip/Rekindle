@@ -20,6 +20,14 @@ export interface VoiceState {
   inputVolume: number;
   outputVolume: number;
   deviceChangeCount: number;
+  /** Architecture §10.6 — desired camera state. VoicePanel writes via
+   *  the toggle button; VideoCallPanel reacts and starts/stops the
+   *  WebCodecs pipeline. Storing in the voice store (rather than as
+   *  component-local state inside VideoCallPanel) keeps the controls
+   *  visible in VoicePanel even when VideoCallPanel is unmounted. */
+  cameraOn: boolean;
+  /** Architecture §10.6 — desired screen-share state. */
+  screenShareOn: boolean;
 }
 
 const [voiceState, setVoiceState] = createStore<VoiceState>({
@@ -35,6 +43,8 @@ const [voiceState, setVoiceState] = createStore<VoiceState>({
   inputVolume: 1.0,
   outputVolume: 1.0,
   deviceChangeCount: 0,
+  cameraOn: false,
+  screenShareOn: false,
 });
 
 export { voiceState, setVoiceState };

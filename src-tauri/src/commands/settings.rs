@@ -19,6 +19,9 @@ pub struct Preferences {
     /// Selected output device name (None = system default).
     #[serde(default)]
     pub output_device: Option<String>,
+    /// Selected camera deviceId (WebView MediaDevices). None = system default.
+    #[serde(default)]
+    pub video_device_id: Option<String>,
     /// Input volume multiplier (0.0–1.0).
     #[serde(default = "default_volume")]
     pub input_volume: f32,
@@ -59,6 +62,7 @@ impl Default for Preferences {
             game_scan_interval_secs: 15,
             input_device: None,
             output_device: None,
+            video_device_id: None,
             input_volume: 1.0,
             output_volume: 1.0,
             noise_suppression: true,

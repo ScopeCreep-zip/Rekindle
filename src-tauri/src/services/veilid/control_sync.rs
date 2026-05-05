@@ -100,30 +100,31 @@ pub(crate) fn handle_sync_request(
     let pool = pool.inner().clone();
 
     tokio::spawn(async move {
-        let messages: Vec<serde_json::Value> = crate::db_helpers::db_call(&pool, move |conn| {
-            let mut stmt = conn.prepare(
-                "SELECT sender_key, body, timestamp, mek_generation, lamport_ts \
-                     FROM messages \
-                     WHERE owner_key = ? AND conversation_id = ? \
-                       AND conversation_type = 'channel' AND timestamp >= ? \
-                     ORDER BY timestamp ASC LIMIT 500",
-            )?;
-            let rows = stmt.query_map(
-                rusqlite::params![owner_key, channel_id_owned, since_ts],
-                |row| {
-                    Ok(serde_json::json!({
-                        "sender_key": row.get::<_, String>(0)?,
-                        "body": row.get::<_, String>(1)?,
-                        "timestamp": row.get::<_, i64>(2)?,
-                        "mek_generation": row.get::<_, Option<i64>>(3)?,
-                        "lamport_ts": row.get::<_, Option<i64>>(4)?,
-                    }))
-                },
-            )?;
-            Ok(rows.filter_map(std::result::Result::ok).collect::<Vec<_>>())
-        })
-        .await
-        .unwrap_or_default();
+        let messages: Vec<rekindle_types::message::SyncedMessage> =
+            crate::db_helpers::db_call(&pool, move |conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT sender_key, body, timestamp, mek_generation, lamport_ts \
+                         FROM messages \
+                         WHERE owner_key = ? AND conversation_id = ? \
+                           AND conversation_type = 'channel' AND timestamp >= ? \
+                         ORDER BY timestamp ASC LIMIT 500",
+                )?;
+                let rows = stmt.query_map(
+                    rusqlite::params![owner_key, channel_id_owned, since_ts],
+                    |row| {
+                        Ok(rekindle_types::message::SyncedMessage {
+                            sender_key: row.get::<_, String>(0)?,
+                            body: row.get::<_, String>(1)?,
+                            timestamp: row.get::<_, i64>(2)?,
+                            mek_generation: row.get::<_, Option<i64>>(3)?,
+                            lamport_ts: row.get::<_, Option<i64>>(4)?,
+                        })
+                    },
+                )?;
+                Ok(rows.filter_map(std::result::Result::ok).collect::<Vec<_>>())
+            })
+            .await
+            .unwrap_or_default();
 
         if messages.is_empty() {
             return;
@@ -150,7 +151,7 @@ pub(crate) fn handle_sync_response(
     state: &Arc<AppState>,
     community_id: &str,
     channel_id: &str,
-    messages: &[serde_json::Value],
+    messages: &[rekindle_types::message::SyncedMessage],
 ) {
     if messages.is_empty() {
         return;
@@ -167,13 +168,10 @@ pub(crate) fn handle_sync_response(
     let owner_key = crate::state_helpers::current_owner_key(state).unwrap_or_default();
 
     for message in messages {
-        let sender = message["sender_key"]
-            .as_str()
-            .unwrap_or_default()
-            .to_string();
-        let body = message["body"].as_str().unwrap_or_default().to_string();
-        let timestamp = message["timestamp"].as_i64().unwrap_or_default();
-        let mek_generation = message["mek_generation"].as_i64();
+        let sender = message.sender_key.clone();
+        let body = message.body.clone();
+        let timestamp = message.timestamp;
+        let mek_generation = message.mek_generation;
         let owner_key = owner_key.clone();
         let channel_id = channel_id.to_string();
         db_fire(pool.inner(), "store sync message", move |conn| {

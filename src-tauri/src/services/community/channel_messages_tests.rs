@@ -13,6 +13,10 @@ fn sample_message() -> ChannelMessage {
         reply_to: None,
         lamport_ts: 88,
         message_id: Some("msg-1".into()),
+        attachment: None,
+        flags: 0,
+        mentioned_pseudonyms: Vec::new(),
+        mentioned_roles: Vec::new(),
     }
 }
 

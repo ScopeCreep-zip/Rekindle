@@ -68,9 +68,12 @@ mod tests {
         };
 
         let tampered = b"ciphertext-from-attacker";
-        let expected_hash = match notification {
-            CommunityEnvelope::MessageNotification { content_hash, .. } => content_hash,
-            _ => unreachable!(),
+        let CommunityEnvelope::MessageNotification {
+            content_hash: expected_hash,
+            ..
+        } = notification
+        else {
+            unreachable!()
         };
 
         assert!(!verify_content_hash(tampered, &expected_hash));

@@ -11,6 +11,7 @@ import CommunityListCompact from "../components/buddy-list/CommunityListCompact"
 import BottomActionBar from "../components/buddy-list/BottomActionBar";
 import AddFriendModal from "../components/buddy-list/AddFriendModal";
 import NewChatModal from "../components/buddy-list/NewChatModal";
+import DmInviteModal from "../components/buddy-list/DmInviteModal";
 import CreateCommunityModal from "../components/community/CreateCommunityModal";
 import JoinCommunityModal from "../components/community/JoinCommunityModal";
 import StatusPicker from "../components/status/StatusPicker";
@@ -26,6 +27,10 @@ import { subscribeBuddyListPresenceEvents } from "../handlers/presence-events.ha
 import { subscribeNotificationHandler } from "../handlers/notification-events.handlers";
 import { subscribeBuddyListVoiceEvents } from "../handlers/voice.handlers";
 import { subscribeDeepLinkHandler } from "../handlers/deep-link.handler";
+import { handleListDms, subscribeDmInbox } from "../handlers/dm.handlers";
+import { refreshMissedCalls, subscribeCallEvents } from "../handlers/calls.handlers";
+import IncomingCallModal from "../components/voice/IncomingCallModal";
+import { handleHydrateRelayState } from "../handlers/relay.handlers";
 import { hydrateState } from "../ipc/hydrate";
 import {
   subscribeNetworkStatus,
@@ -72,9 +77,15 @@ const BuddyListWindow: Component = () => {
     }));
     unlisteners.push(subscribeProfileUpdates(handleProfileUpdated));
     unlisteners.push(subscribeDeepLinkHandler());
+    unlisteners.push(subscribeDmInbox(() => authState.publicKey ?? ""));
+    // Plan §Failure 5 — direct call signalling event subscriber.
+    unlisteners.push(subscribeCallEvents());
+    void refreshMissedCalls();
 
     // Await hydration so store is populated before subsequent commands
     await hydrateState();
+    handleListDms();
+    handleHydrateRelayState();
 
     // Re-emit presence for already-online friends (listeners are now active).
     // Awaited because emit_friends_presence now syncs from DHT first.
@@ -114,6 +125,8 @@ const BuddyListWindow: Component = () => {
 
   return (
     <div class="app-frame">
+      {/* Architecture §32 a11y — keyboard skip link past menu/identity rail. */}
+      <a href="#main-content" class="skip-link">Skip to buddy list</a>
       <Titlebar title="Rekindle" hideOnClose />
       <MenuBar />
       <Show when={!networkAttached()}>
@@ -122,13 +135,15 @@ const BuddyListWindow: Component = () => {
       <UserIdentityBar />
       <TabBar />
       <SearchBar />
-      <Show when={buddyListUI.activeTab === "friends"}>
-        <PendingRequests />
-        <BuddyList />
-      </Show>
-      <Show when={buddyListUI.activeTab === "communities"}>
-        <CommunityListCompact />
-      </Show>
+      <div id="main-content" tabindex="-1" class="window-main">
+        <Show when={buddyListUI.activeTab === "friends"}>
+          <PendingRequests />
+          <BuddyList />
+        </Show>
+        <Show when={buddyListUI.activeTab === "communities"}>
+          <CommunityListCompact />
+        </Show>
+      </div>
       <BottomActionBar />
       <div class="status-bar">
         <StatusPicker currentStatus={authState.status} />
@@ -144,6 +159,10 @@ const BuddyListWindow: Component = () => {
         isOpen={buddyListUI.showJoinCommunity}
         onClose={() => setBuddyListUI("showJoinCommunity", false)}
       />
+      <DmInviteModal />
+      {/* Plan §Failure 5 — overlays whichever window has focus when a
+       *  CallOffer arrives. */}
+      <IncomingCallModal />
     </div>
   );
 };

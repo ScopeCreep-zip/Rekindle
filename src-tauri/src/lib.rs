@@ -93,6 +93,14 @@ fn app_invoke_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Sen
         commands::community::set_channel_overwrite,
         commands::community::delete_channel_overwrite,
         commands::community::set_slowmode,
+        commands::community::admin_delete_channel_message,
+        commands::community::bulk_delete_channel_messages,
+        commands::community::forward_channel_message,
+        commands::community::upload_attachment,
+        commands::community::download_attachment,
+        commands::community::pin_attachment,
+        commands::community::send_voice_message,
+        commands::community::expand_community_segment,
         commands::community::leave_community,
         commands::community::delete_channel,
         commands::community::rename_channel,
@@ -102,6 +110,12 @@ fn app_invoke_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Sen
         commands::community::get_ban_list,
         commands::community::rotate_mek,
         commands::community::set_channel_notification_level,
+        commands::community::set_community_default_notification_level,
+        commands::community::set_notification_sound,
+        commands::community::get_notification_sound,
+        commands::community::set_do_not_disturb,
+        commands::community::get_do_not_disturb,
+        commands::community::get_community_default_notification_level,
         commands::community::set_quiet_hours,
         commands::community::get_quiet_hours,
         commands::community::add_reaction,
@@ -110,6 +124,11 @@ fn app_invoke_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Sen
         commands::community::unpin_message,
         commands::community::get_channel_pins,
         commands::community::get_audit_log,
+        commands::community::get_community_analytics,
+        commands::community::fetch_link_preview,
+        commands::community::get_link_previews_enabled,
+        commands::community::set_link_previews_enabled,
+        commands::community::run_background_sync,
         commands::community::list_automod_rules,
         commands::community::set_automod_rule,
         commands::community::delete_automod_rule,
@@ -118,20 +137,40 @@ fn app_invoke_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Sen
         commands::community::get_welcome_screen,
         commands::community::set_welcome_screen,
         commands::community::submit_onboarding_answers,
+        commands::community::mark_onboarding_complete,
+        commands::community::get_community_policy,
+        commands::community::set_community_policy,
+        commands::community::set_community_avatar,
+        commands::community::set_community_banner,
+        commands::community::get_community_avatar_data_url,
         commands::community::debug_gossip_state,
         commands::community::send_channel_typing,
         commands::community::update_community_presence,
+        commands::community::update_community_profile,
         commands::community::get_older_channel_messages,
         commands::community::set_channel_topic,
+        commands::community::set_channel_forum_tags,
         commands::community::reorder_channels,
         commands::community::create_poll,
         commands::community::vote_poll,
         commands::community::close_poll,
+        commands::community::get_poll_results,
         commands::community::upload_emoji,
+        commands::community::upload_sticker,
+        commands::community::upload_soundboard_sound,
+        commands::community::play_soundboard,
+        commands::community::derive_video_stream_id,
+        commands::community::default_media_capabilities,
+        commands::community::send_video_frame,
+        commands::community::send_video_frame_ack,
+        commands::community::send_video_keyframe_request,
+        commands::community::send_video_bandwidth_estimate,
+        commands::community::notify_video_topology_change,
         commands::community::delete_emoji,
         commands::community::list_expressions,
         // community threads
         commands::community::create_thread,
+        commands::community::get_active_threads,
         commands::community::get_channel_threads,
         commands::community::send_thread_message,
         commands::community::get_thread_messages,
@@ -156,6 +195,9 @@ fn app_invoke_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Sen
         // voice
         commands::voice::join_voice_channel,
         commands::voice::leave_voice,
+        commands::voice::request_to_speak,
+        commands::voice::get_stage_hand_raises,
+        commands::voice::respond_to_speak_request,
         commands::voice::set_mute,
         commands::voice::set_deafen,
         commands::voice::list_audio_devices,
@@ -163,6 +205,11 @@ fn app_invoke_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Sen
         commands::voice::set_voice_mode,
         commands::voice::server_mute_member,
         commands::voice::server_deafen_member,
+        // direct calls (Plan §Failure 5)
+        commands::calls::start_dm_call,
+        commands::calls::accept_dm_call,
+        commands::calls::decline_dm_call,
+        commands::calls::get_missed_calls,
         // status
         commands::status::set_status,
         commands::status::set_nickname,
@@ -173,6 +220,37 @@ fn app_invoke_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Sen
         commands::game::get_game_status,
         commands::game::get_game_name,
         commands::game::launch_game_to_server,
+        // strand relay
+        commands::relay::volunteer_relay,
+        commands::relay::revoke_relay,
+        commands::relay::list_received_relay_offers,
+        commands::relay::list_volunteered_relay_friends,
+        // direct messages
+        commands::dm::list_dms,
+        commands::dm::start_dm,
+        commands::dm::accept_dm_invite,
+        commands::dm::decline_dm_invite,
+        commands::dm::send_dm_message,
+        commands::dm::get_dm_messages,
+        // search (architecture §23)
+        commands::search::search_messages,
+        // cross-device sync (architecture §28.4)
+        commands::sync::ensure_personal_sync_record,
+        commands::sync::start_pairing_session,
+        commands::sync::generate_pairing_qr_svg,
+        commands::sync::accept_pairing_code,
+        commands::sync::read_sync_manifest,
+        commands::sync::write_sync_manifest,
+        commands::sync::read_sync_read_state,
+        commands::sync::write_sync_read_state,
+        commands::sync::read_sync_preferences,
+        commands::sync::write_sync_preferences,
+        commands::sync::read_paired_devices,
+        commands::sync::write_paired_devices,
+        // mobile push relay
+        commands::push_relay::register_with_push_relay,
+        commands::push_relay::unregister_with_push_relay,
+        commands::push_relay::list_push_relay_registrations,
         // settings
         commands::settings::get_preferences,
         commands::settings::set_preferences,
@@ -180,6 +258,7 @@ fn app_invoke_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Sen
         // windows
         commands::window::show_buddy_list,
         commands::window::open_chat_window,
+        commands::window::open_dm_window,
         commands::window::open_settings_window,
         commands::window::open_community_window,
         commands::window::open_profile_window,
@@ -234,6 +313,7 @@ pub fn run() {
         // but never invoked by the frontend, and its hardcoded production Argon2
         // params conflicted with our debug-mode params.
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_autostart::init(
@@ -297,6 +377,18 @@ pub fn run() {
             let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
             std::fs::create_dir_all(&config_dir)
                 .map_err(|e| format!("failed to create config dir: {e}"))?;
+
+            // Resolve the Lost Cargo cache root (per-community sub-dirs are
+            // created on first use). Stays None if the platform doesn't expose
+            // an app data dir — file uploads will fail clearly in that case.
+            if let Ok(data_dir) = app.path().app_data_dir() {
+                let cache_root = data_dir.join("file_cache");
+                if let Err(e) = std::fs::create_dir_all(&cache_root) {
+                    tracing::warn!(error = %e, path = %cache_root.display(), "failed to create file_cache dir");
+                } else {
+                    *state_for_setup.file_cache_root.write() = Some(cache_root);
+                }
+            }
 
             // Initialize SQLite database pool
             let db_path = config_dir.join("rekindle.db");

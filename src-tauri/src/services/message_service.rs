@@ -43,6 +43,108 @@ struct PreparedMessage {
     timestamp: i64,
 }
 
+/// Detect a DM invite or RelayOffer arriving via `app_call`, run the
+/// ingest, and return the serialized reply bytes the dispatcher should
+/// hand back. Returns `None` if the message wasn't one of those payloads
+/// (so the caller can fall through to the generic message handler).
+///
+/// Architecture §27.1 line 2916 — `app_call` is the spec'd transport
+/// for DM invites because the initiator needs a confirmed reply.
+/// Architecture §13.2 step 2 — same model for RelayOffer, where Carol
+/// needs to know Bob actually persisted her relay route.
+pub async fn try_handle_dm_invite_app_call(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    pool: &DbPool,
+    raw_message: &[u8],
+) -> Option<Vec<u8>> {
+    let prepared = prepare_incoming(app_handle, state, pool, raw_message).await?;
+    match prepared.payload {
+        MessagePayload::RelayOffer {
+            relay_route_blob,
+            relay_pseudonym,
+        } => {
+            let ingest = crate::services::relay::add_received_offer(
+                state,
+                pool,
+                &relay_pseudonym,
+                &relay_route_blob,
+            )
+            .await;
+            let reply = match ingest {
+                Ok(()) => {
+                    crate::services::relay::pool::republish_relay_pool(state, pool).await;
+                    MessagePayload::RelayOfferAck {
+                        ok: true,
+                        reason: String::new(),
+                    }
+                }
+                Err(e) => MessagePayload::RelayOfferAck {
+                    ok: false,
+                    reason: e,
+                },
+            };
+            Some(serde_json::to_vec(&reply).unwrap_or_else(|_| b"ACK".to_vec()))
+        }
+        MessagePayload::DmInvite {
+            record_key,
+            slot_seed,
+            alice_pseudonym,
+            alice_subkey,
+            bob_subkey,
+        } => {
+            let result = crate::services::dm::handle_incoming_dm_invite(
+                app_handle,
+                state,
+                pool,
+                &prepared.sender_hex,
+                &record_key,
+                &slot_seed,
+                &alice_pseudonym,
+                alice_subkey,
+                bob_subkey,
+            )
+            .await;
+            let reply = match result {
+                Ok(()) => MessagePayload::DmAccept {
+                    record_key: record_key.clone(),
+                },
+                Err(e) => MessagePayload::DmDecline {
+                    record_key: record_key.clone(),
+                    reason: e,
+                },
+            };
+            Some(serde_json::to_vec(&reply).unwrap_or_else(|_| b"ACK".to_vec()))
+        }
+        // Plan §Failure 5 — direct call offer arrives via `app_call`.
+        // The frontend prompts the user to accept or decline; that
+        // decision flows back through `services::call_signaling` and
+        // becomes the inline reply payload here.
+        MessagePayload::CallOffer {
+            call_id,
+            offer_kind,
+            initiator_pubkey,
+            initiator_x25519_pub,
+            expires_at_ms,
+        } => {
+            let reply = crate::commands::calls::handle_incoming_offer(
+                app_handle,
+                state,
+                pool,
+                &prepared.sender_hex,
+                &call_id,
+                offer_kind,
+                &initiator_pubkey,
+                &initiator_x25519_pub,
+                expires_at_ms,
+            )
+            .await;
+            Some(serde_json::to_vec(&reply).unwrap_or_else(|_| b"ACK".to_vec()))
+        }
+        _ => None,
+    }
+}
+
 /// Handle an incoming message from the Veilid network.
 ///
 /// Flow: parse envelope → verify signature → decrypt if session exists →
@@ -153,6 +255,177 @@ pub async fn handle_incoming_message(
         MessagePayload::UnfriendedAck => {
             handle_unfriended_ack(state, pool, &msg.sender_hex);
         }
+        MessagePayload::RelayOffer {
+            relay_route_blob,
+            relay_pseudonym,
+        } => {
+            // Bob receives Carol's offer (architecture §13.2 step 2).
+            // Persist the blob and republish the (padded) pool so peers
+            // failing direct delivery have a fallback path.
+            if let Err(e) = crate::services::relay::add_received_offer(
+                state,
+                pool,
+                &relay_pseudonym,
+                &relay_route_blob,
+            )
+            .await
+            {
+                tracing::warn!(error = %e, from = %msg.sender_hex, "failed to persist RelayOffer");
+            } else {
+                crate::services::relay::pool::republish_relay_pool(state, pool).await;
+            }
+        }
+        MessagePayload::RelayWithdraw { relay_pseudonym } => {
+            if let Err(e) =
+                crate::services::relay::remove_received_offer(state, pool, &relay_pseudonym).await
+            {
+                tracing::warn!(error = %e, from = %msg.sender_hex, "failed to drop revoked RelayOffer");
+            } else {
+                crate::services::relay::pool::republish_relay_pool(state, pool).await;
+            }
+        }
+        MessagePayload::RelayEnvelope {
+            target_pubkey,
+            inner_payload,
+        } => {
+            // Carol forwards (architecture §13.3 step 3).
+            if let Err(e) = crate::services::relay::handle_relay_envelope(
+                state,
+                pool,
+                &target_pubkey,
+                &inner_payload,
+            )
+            .await
+            {
+                tracing::debug!(error = %e, target = %target_pubkey, "RelayEnvelope dropped");
+            }
+        }
+        MessagePayload::DmInvite {
+            record_key,
+            slot_seed,
+            alice_pseudonym,
+            alice_subkey,
+            bob_subkey,
+        } => {
+            if let Err(e) = crate::services::dm::handle_incoming_dm_invite(
+                app_handle,
+                state,
+                pool,
+                &msg.sender_hex,
+                &record_key,
+                &slot_seed,
+                &alice_pseudonym,
+                alice_subkey,
+                bob_subkey,
+            )
+            .await
+            {
+                tracing::warn!(error = %e, from = %msg.sender_hex, "failed to ingest DmInvite");
+            }
+        }
+        MessagePayload::DmAccept { record_key: _ } => {
+            // DmAccept is the reply to a DmInvite app_call; if it
+            // arrives via app_message instead (peer used the wrong
+            // path) we just log and ignore — Alice's outbound
+            // app_call already resolved with the inline reply.
+            tracing::trace!("received DmAccept via app_message; ignoring");
+        }
+        // Plan §Failure 5 — Call signaling lives on `app_call`. If a
+        // peer mis-sends one of these via `app_message` we just trace.
+        MessagePayload::CallOffer { .. }
+        | MessagePayload::CallAccept { .. }
+        | MessagePayload::CallDecline { .. } => {
+            tracing::trace!("received call signaling via app_message; ignoring");
+        }
+        MessagePayload::RelayOfferAck { ok: _, reason: _ } => {
+            tracing::trace!("received RelayOfferAck via app_message; ignoring");
+        }
+        MessagePayload::DmDecline { record_key, reason: _ } => {
+            if let Err(e) =
+                crate::services::dm::handle_incoming_dm_decline(state, pool, &record_key).await
+            {
+                tracing::debug!(error = %e, "DmDecline drop");
+            }
+        }
+        MessagePayload::GroupDmInvite {
+            record_key,
+            slot_seed,
+            initiator_pseudonym,
+            participants_json,
+            wrapped_mek,
+            mek_generation,
+        } => {
+            if let Err(e) = crate::services::dm::handle_incoming_group_dm_invite(
+                app_handle,
+                state,
+                pool,
+                &msg.sender_hex,
+                &record_key,
+                &slot_seed,
+                &initiator_pseudonym,
+                &participants_json,
+                &wrapped_mek,
+                mek_generation,
+            )
+            .await
+            {
+                tracing::warn!(error = %e, from = %msg.sender_hex, "failed to ingest GroupDmInvite");
+            }
+        }
+        MessagePayload::DmLeave { record_key } => {
+            if let Err(e) = crate::services::dm::handle_incoming_dm_leave(
+                state,
+                pool,
+                &msg.sender_hex,
+                &record_key,
+            )
+            .await
+            {
+                tracing::debug!(error = %e, "DmLeave drop");
+            }
+        }
+        MessagePayload::RegisterPushRelay { .. }
+        | MessagePayload::UnregisterPushRelay { .. } => {
+            // The push-relay daemon is a separate binary
+            // (`rekindle-push-relay`). Desktop clients don't *receive*
+            // these — they only send. Drop silently if we somehow get
+            // one.
+            tracing::debug!("ignoring push-relay register payload at desktop client");
+        }
+        MessagePayload::WakeNotify { ts } => {
+            crate::services::push_relay::handle_wake_notify(state, ts);
+        }
+        MessagePayload::StatusRequest { target_pubkey } => {
+            // Architecture §13.5 — relay friends serve cached presence.
+            // Only respond if (a) the requester is a friend (don't leak
+            // status to strangers) and (b) we relay for the target.
+            if let Err(e) = crate::services::relay::respond_to_status_request(
+                state,
+                pool,
+                &msg.sender_hex,
+                &target_pubkey,
+            )
+            .await
+            {
+                tracing::trace!(error = %e, "StatusRequest dropped");
+            }
+        }
+        MessagePayload::StatusResponse {
+            target_pubkey,
+            status,
+            status_message,
+            last_seen,
+            route_blob,
+        } => {
+            crate::services::relay::handle_status_response(
+                state,
+                &target_pubkey,
+                &status,
+                status_message.as_deref(),
+                last_seen,
+                &route_blob,
+            );
+        }
     }
 }
 
@@ -198,6 +471,10 @@ async fn prepare_incoming(
             | MessagePayload::Unfriended
             | MessagePayload::UnfriendedAck
             | MessagePayload::FriendReject
+            | MessagePayload::RelayEnvelope { .. }
+            | MessagePayload::DmInvite { .. }
+            | MessagePayload::GroupDmInvite { .. }
+            | MessagePayload::WakeNotify { .. }
     ) && !state_helpers::is_friend(state, &sender_hex)
     {
         tracing::debug!(from = %sender_hex, "dropping message from non-friend");
@@ -981,6 +1258,69 @@ async fn try_inline_route_refresh_and_send(
     false
 }
 
+/// Spawn a background `StatusRequest` fan-out (architecture §13.5) so
+/// any relay friend that holds a fresh snapshot of `to` can update our
+/// local cache. Best-effort — does not block the caller.
+fn probe_relay_friends_for_status(state: &Arc<AppState>, pool: &DbPool, to: &str) {
+    let state_clone = state.clone();
+    let pool_clone = pool.clone();
+    let target = to.to_string();
+    tokio::spawn(async move {
+        crate::services::relay::presence::probe_friends_for_status(
+            &state_clone,
+            &pool_clone,
+            &target,
+        )
+        .await;
+    });
+}
+
+/// Strand Relay last-resort fallback (architecture §13.3): when both the
+/// cached route and inline-DHT-refresh fail, look up the recipient's
+/// published relay pool (profile DHT subkey 8) and forward the
+/// already-built envelope through a random non-dummy relay friend.
+/// Strand Relay last-resort fallback (architecture §13.3): fetches the
+/// peer's profile DHT subkey 8 (relay pool) and forwards through a
+/// random non-dummy entry. The friend profile record itself is kept
+/// warm by `sync_service::sync_friend_dht_subkeys`, which reads
+/// subkeys 2/4/5/6 every 30 seconds — Veilid's per-record TTL covers
+/// subkey 8 by association, so we don't need a dedicated keepalive.
+async fn try_relay_fallback_send(
+    state: &Arc<AppState>,
+    to: &str,
+    envelope: &rekindle_protocol::messaging::envelope::MessageEnvelope,
+) -> bool {
+    let Some(dht_key_str) = state_helpers::friend_dht_key(state, to) else {
+        return false;
+    };
+    let Ok(record_key) = dht_key_str.parse::<veilid_core::RecordKey>() else {
+        return false;
+    };
+    let Some(routing_context) = state_helpers::safe_routing_context(state) else {
+        return false;
+    };
+    let _ = routing_context
+        .open_dht_record(record_key.clone(), None)
+        .await;
+    let pool_body = match routing_context
+        .get_dht_value(
+            record_key,
+            rekindle_protocol::dht::profile::SUBKEY_RELAY_POOL,
+            true,
+        )
+        .await
+    {
+        Ok(Some(v)) => v.data().to_vec(),
+        _ => return false,
+    };
+    let Ok(envelope_bytes) = serde_json::to_vec(envelope) else {
+        return false;
+    };
+    crate::services::relay::send::send_via_relay(state, to, &pool_body, &envelope_bytes)
+        .await
+        .is_ok()
+}
+
 /// Build a `MessageEnvelope`, optionally encrypt with Signal, and send via Veilid.
 ///
 /// If no route exists for the peer, the message is queued for retry by `sync_service`.
@@ -1045,6 +1385,17 @@ async fn send_envelope_to_peer(
             tracing::info!(to = %to, "message sent via veilid (after inline route refresh)");
             return Ok(());
         }
+        // Strand Relay fallback (architecture §13.3): try a mutual friend's
+        // published relay pool before giving up to the queue.
+        if try_relay_fallback_send(state, to, &envelope).await {
+            tracing::info!(to = %to, "message sent via strand relay");
+            return Ok(());
+        }
+        // Architecture §13.5: ask our friends if any of them hold a
+        // cached status (and a fresh route blob) for the target. Any
+        // late-arriving StatusResponse will rehydrate the route cache
+        // for the next send.
+        probe_relay_friends_for_status(state, pool, to);
         tracing::debug!(to = %to, "no cached route for peer — queuing message for retry");
         let envelope_json =
             serde_json::to_string(&envelope).map_err(|e| format!("serialize envelope: {e}"))?;
@@ -1069,6 +1420,10 @@ async fn send_envelope_to_peer(
             tracing::info!(to = %to, "message sent via veilid (after send failure + inline route refresh)");
             return Ok(());
         }
+        if try_relay_fallback_send(state, to, &envelope).await {
+            tracing::info!(to = %to, "message sent via strand relay (after send failure)");
+            return Ok(());
+        }
         tracing::warn!(to = %to, error = %e, "send failed — queuing for retry");
         let envelope_json =
             serde_json::to_string(&envelope).map_err(|e| format!("serialize envelope: {e}"))?;
@@ -1078,6 +1433,43 @@ async fn send_envelope_to_peer(
 
     tracing::info!(to = %to, "message sent via veilid");
     Ok(())
+}
+
+/// Send a request-response payload to a peer via Veilid `app_call` and
+/// return the deserialized reply envelope. Used for the DM accept/decline
+/// handshake (architecture §27.1) and other cases where the caller needs
+/// a guaranteed reply rather than queue-on-failure.
+pub async fn send_to_peer_call(
+    state: &Arc<AppState>,
+    to: &str,
+    payload: &MessagePayload,
+) -> Result<MessagePayload, String> {
+    let payload_bytes =
+        serde_json::to_vec(payload).map_err(|e| format!("serialize payload: {e}"))?;
+    let secret_key = {
+        let sk = state.identity_secret.lock();
+        *sk.as_ref().ok_or("signing key not initialized")?
+    };
+    let timestamp = rekindle_utils::timestamp_ms();
+    let nonce = {
+        let mut buf = [0u8; 16];
+        rand::thread_rng().fill_bytes(&mut buf);
+        buf.to_vec()
+    };
+    let envelope = build_envelope_from_secret(&secret_key, timestamp, nonce, payload_bytes);
+
+    let (route_id, routing_context) = state_helpers::try_import_peer_route(state, to)
+        .ok_or_else(|| format!("no cached route for peer {to}"))?;
+
+    let reply_bytes =
+        rekindle_protocol::messaging::sender::send_call(&routing_context, route_id, &envelope)
+            .await
+            .map_err(|e| format!("app_call: {e}"))?;
+
+    // Replies are raw `MessagePayload` JSON (the receiver shapes their
+    // reply directly, not as a full signed envelope).
+    serde_json::from_slice::<MessagePayload>(&reply_bytes)
+        .map_err(|e| format!("decode reply payload: {e}"))
 }
 
 /// Send a direct message to a peer via the Veilid network.

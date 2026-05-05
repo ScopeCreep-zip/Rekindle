@@ -4,7 +4,10 @@ import { fetchAvatarUrl } from "./avatar";
 import { setFriendsState } from "../stores/friends.store";
 import { setCommunityState } from "../stores/community.store";
 import { transformExpression, transformFriendMap, transformCommunityMap, transformMember } from "../utils/transformers";
-import { handleLoadAutoModRules } from "../handlers/community.handlers";
+import {
+  handleLoadAutoModRules,
+  handleResolveCommunityImageDataUrls,
+} from "../handlers/community.handlers";
 
 /**
  * Hydrate frontend stores from the Rust backend.
@@ -53,6 +56,7 @@ export async function hydrateState(): Promise<void> {
         console.error(`Failed to hydrate expressions for ${c.id}:`, e);
       });
       void handleLoadAutoModRules(c.id);
+      void handleResolveCommunityImageDataUrls(c.id);
     }
   } catch (e) {
     console.error("Failed to hydrate communities:", e);

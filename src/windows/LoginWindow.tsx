@@ -2,6 +2,7 @@ import { Component, createSignal, onMount, For, Show } from "solid-js";
 import Titlebar from "../components/titlebar/Titlebar";
 import Avatar from "../components/common/Avatar";
 import Modal from "../components/common/Modal";
+import LoadingButton from "../components/common/LoadingButton";
 import { handleLogin, handleCreateIdentity } from "../handlers/auth.handlers";
 import { commands, avatarDataUrl, IdentitySummary } from "../ipc/commands";
 import { errorMessage } from "../utils/error";
@@ -204,10 +205,10 @@ const LoginWindow: Component = () => {
           <Show when={error() !== null}>
             <div class="form-error">{error()}</div>
           </Show>
-          <button class="form-btn-primary" type="submit" disabled={loading()}>
-            {loading() ? "..." : "Unlock"}
-          </button>
-          <button type="button" class="account-back-btn" onClick={goBack}>
+          <LoadingButton type="submit" loading={loading()} loadingLabel="Unlocking">
+            Unlock
+          </LoadingButton>
+          <button type="button" class="form-btn-secondary" onClick={goBack}>
             ← Switch Account
           </button>
         </form>
@@ -217,7 +218,7 @@ const LoginWindow: Component = () => {
       <Show when={mode() === "create"}>
         <form class="login-container" onSubmit={handleCreateSubmit}>
           <Show when={identities().length > 0}>
-            <button type="button" class="account-back-btn" onClick={goBack}>
+            <button type="button" class="form-btn-secondary" onClick={goBack}>
               ← Back
             </button>
           </Show>
@@ -241,9 +242,9 @@ const LoginWindow: Component = () => {
           <Show when={error() !== null}>
             <div class="form-error">{error()}</div>
           </Show>
-          <button class="form-btn-primary" type="submit" disabled={loading()}>
-            {loading() ? "..." : "Create Identity"}
-          </button>
+          <LoadingButton type="submit" loading={loading()} loadingLabel="Creating identity">
+            Create Identity
+          </LoadingButton>
         </form>
       </Show>
 
@@ -267,13 +268,13 @@ const LoginWindow: Component = () => {
           <div class="form-error">{deleteError()}</div>
         </Show>
         <button
-          class="delete-confirm-btn"
+          class="form-btn-danger"
           onClick={executeDelete}
           disabled={!deletePass().trim()}
         >
           Delete Forever
         </button>
-        <button class="delete-confirm-cancel" onClick={cancelDelete}>
+        <button class="form-btn-secondary" onClick={cancelDelete}>
           Cancel
         </button>
       </Modal>

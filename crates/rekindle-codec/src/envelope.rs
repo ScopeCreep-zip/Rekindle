@@ -171,6 +171,7 @@ mod tests {
             record_key: "VLD0:abc".into(),
             category_id: None,
             position: 0,
+            parent_voice_channel_id: None,
             lamport: 5,
         };
 

@@ -50,6 +50,13 @@ pub fn bootstrap_dflt_schema() -> VeilidAPIResult<DHTSchema> {
     DHTSchema::dflt(1)
 }
 
+/// Build a DFLT schema for the personal cross-device sync record
+/// (architecture §28.4). 16 subkeys: 4 active (manifest / read state /
+/// preferences / device list) + 12 reserved.
+pub fn personal_sync_dflt_schema() -> VeilidAPIResult<DHTSchema> {
+    DHTSchema::dflt(16)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

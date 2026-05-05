@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use regex::Regex;
 use serde::Deserialize;
 
 use crate::state::{AppState, AutoModCompiledCache, CompiledAutoModRule};
@@ -152,10 +151,20 @@ fn compile_rules(
         }
         let trigger: TriggerConfig =
             serde_json::from_str(&rule.trigger_json).map_err(|e| format!("invalid automod rule trigger: {e}"))?;
+        // Architecture §20.4 + §26 W26 — bound the compiled NFA so an
+        // adversarial admin can't ship a regex that DoSes every other
+        // peer's first-message-receive. validate_automod_rule already
+        // enforces these limits at write time; this is the
+        // belt-and-braces enforcement on the receive side.
         let regexes = trigger
             .regex_patterns
             .iter()
-            .map(|pattern| Regex::new(pattern).map_err(|e| format!("invalid automod regex: {e}")))
+            .map(|pattern| {
+                regex::RegexBuilder::new(pattern)
+                    .size_limit(256 * 1024)
+                    .build()
+                    .map_err(|e| format!("invalid automod regex: {e}"))
+            })
             .collect::<Result<Vec<_>, _>>()?;
         rules.push(CompiledAutoModRule {
             rule_id: *rule_id,

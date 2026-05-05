@@ -6,30 +6,30 @@
 
 use crate::error::ProtocolError;
 
-fn capnp_err(e: &capnp::Error) -> ProtocolError {
+pub(crate) fn capnp_err(e: &capnp::Error) -> ProtocolError {
     ProtocolError::Deserialization(format!("capnp: {e}"))
 }
 
-fn not_in_schema(e: capnp::NotInSchema) -> ProtocolError {
-    ProtocolError::Deserialization(format!("capnp enum: {e}"))
+pub(crate) fn not_in_schema(e: capnp::NotInSchema) -> ProtocolError {
+    ProtocolError::UnknownVariant(format!("capnp enum: {e}"))
 }
 
 /// Convert a capnp text reader to an owned String.
-fn text_to_string(t: capnp::text::Reader<'_>) -> Result<String, ProtocolError> {
+pub(crate) fn text_to_string(t: capnp::text::Reader<'_>) -> Result<String, ProtocolError> {
     t.to_str()
         .map(std::borrow::ToOwned::to_owned)
         .map_err(|e| ProtocolError::Deserialization(format!("invalid UTF-8 in capnp text: {e}")))
 }
 
 /// Serialize a Cap'n Proto builder into packed bytes.
-fn pack(builder: &capnp::message::Builder<capnp::message::HeapAllocator>) -> Vec<u8> {
+pub(crate) fn pack(builder: &capnp::message::Builder<capnp::message::HeapAllocator>) -> Vec<u8> {
     let mut output = Vec::new();
     capnp::serialize_packed::write_message(&mut output, builder).expect("write to Vec never fails");
     output
 }
 
 /// Deserialize packed bytes into a Cap'n Proto message reader.
-fn unpack(
+pub(crate) fn unpack(
     data: &[u8],
 ) -> Result<capnp::message::Reader<capnp::serialize::OwnedSegments>, ProtocolError> {
     capnp::serialize_packed::read_message(data, capnp::message::ReaderOptions::new())

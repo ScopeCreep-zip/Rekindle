@@ -1,7 +1,12 @@
 # Coordinator Redesign Research
 
 **Date:** 2026-03-03
-**Status:** Research complete, awaiting decision on approach
+**Status:** Historical — informed the Communities v2.0 redesign, which has
+since been implemented. The flat-SMPL-governance model (no coordinator) is
+now the production architecture. See
+`.claude/docs/rekindle-communities-architecture.md` for the current spec
+and the top-level `docs/protocol.md` / `docs/architecture.md` for how it
+landed in code.
 
 ---
 

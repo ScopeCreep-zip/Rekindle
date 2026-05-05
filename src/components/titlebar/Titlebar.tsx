@@ -20,17 +20,26 @@ const Titlebar: Component<TitlebarProps> = (props) => {
         {props.title}
       </span>
       <div class="xfire-titlebar-spacer" data-tauri-drag-region />
-      <button class="xfire-titlebar-btn" onClick={handleMinimize}>
+      <button
+        class="xfire-titlebar-btn"
+        onClick={handleMinimize}
+        aria-label="Minimize window"
+      >
         &#x2014;
       </button>
       {props.showMaximize && (
-        <button class="xfire-titlebar-btn" onClick={handleMaximize}>
+        <button
+          class="xfire-titlebar-btn"
+          onClick={handleMaximize}
+          aria-label="Maximize window"
+        >
           &#x25A1;
         </button>
       )}
       <button
         class="xfire-titlebar-btn xfire-titlebar-btn-close"
         onClick={props.hideOnClose ? handleHide : handleClose}
+        aria-label={props.hideOnClose ? "Hide window" : "Close window"}
       >
         &#x2715;
       </button>

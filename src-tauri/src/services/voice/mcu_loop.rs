@@ -1,10 +1,19 @@
 //! MCU (Multipoint Control Unit) mixing loop for group voice.
 //!
-//! When this peer is elected voice host and the group has 6+ participants,
-//! the MCU loop receives all incoming voice packets, decodes them per-sender,
-//! mixes audio for each recipient (excluding their own), re-encodes, and sends
-//! via the transport. Non-host participants send only to the host and receive
-//! a single mixed stream back.
+//! When this peer is elected voice host and the group has 5+ participants
+//! (or any time for a stage channel — architecture §10.7 says stages
+//! "always operate in relay mode"), the MCU loop receives all incoming
+//! voice packets, decodes them per-sender, mixes audio for each
+//! recipient (excluding their own), re-encodes, and sends via the
+//! transport. Non-host participants send only to the host and receive a
+//! single mixed stream back.
+//!
+//! **Stage audience handling (architecture §32 Phase 6 Week 20):** in a
+//! stage channel only speakers transmit, so the audience never appears
+//! in the per-sender decode set. The mix-out loop iterates the full
+//! `transport.peer_keys()` list rather than just the decoded-streams
+//! senders, so every connected peer — speaker or audience — receives
+//! the speaker mix.
 
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -87,7 +96,7 @@ impl McuLoop {
                     self.ingest_packet(packet);
                 }
                 _ = tick.tick() => {
-                    self.tick();
+                    self.tick().await;
                 }
             }
         }
@@ -129,7 +138,7 @@ impl McuLoop {
         }
     }
 
-    fn tick(&mut self) {
+    async fn tick(&mut self) {
         // 1. Decode one frame from each sender
         let mut decoded_streams: Vec<(Vec<u8>, Vec<f32>)> = Vec::new();
         for (key, sender) in &mut self.senders {
@@ -157,14 +166,23 @@ impl McuLoop {
             return;
         }
 
-        // 2. For each recipient: mix all EXCEPT their own audio, encode, send
-        let all_keys: Vec<Vec<u8>> = decoded_streams.iter().map(|(k, _)| k.clone()).collect();
+        // 2. Build the recipient set from the FULL connected peer
+        // list, not just the senders. In a stage channel the audience
+        // never sends, so it would otherwise be excluded from the mix
+        // (architecture §10.7 / §32 Phase 6 Week 20). Hex-decode here
+        // so the comparison against `decoded_streams` keys (raw bytes)
+        // works without re-hexing per recipient.
+        let recipient_keys: Vec<Vec<u8>> = {
+            let transport = self.transport.lock().await;
+            select_recipients(&transport.peer_keys(), &self.our_key_bytes)
+        };
 
-        for recipient_key in &all_keys {
-            let hex_keys: Vec<String> = decoded_streams
-                .iter()
-                .map(|(key, _)| hex::encode(key))
-                .collect();
+        let hex_keys: Vec<String> = decoded_streams
+            .iter()
+            .map(|(key, _)| hex::encode(key))
+            .collect();
+
+        for recipient_key in &recipient_keys {
             let streams_for_recipient: Vec<(&str, &[f32])> = decoded_streams
                 .iter()
                 .zip(hex_keys.iter())
@@ -184,7 +202,6 @@ impl McuLoop {
                     encoded.timestamp = rekindle_utils::timestamp_ms();
                     self.sequence = self.sequence.wrapping_add(1);
 
-                    // Find the recipient's pseudonym key to send to them
                     let recipient_hex = hex::encode(recipient_key);
                     let transport = self.transport.clone();
                     tokio::spawn(async move {
@@ -215,5 +232,68 @@ impl McuLoop {
             self.senders.remove(&key);
             tracing::debug!(sender = %hex::encode(&key), "MCU: removed stale sender");
         }
+    }
+}
+
+/// Pure helper extracted from `tick`: given the connected peer list
+/// and our own pseudonym, return the set of recipients the host
+/// should mix audio for. Excludes self; includes audience members
+/// (peers who didn't send a packet this tick) so a stage audience
+/// gets the speaker mix even though they never transmit.
+fn select_recipients(peer_keys_hex: &[String], self_key_bytes: &[u8]) -> Vec<Vec<u8>> {
+    peer_keys_hex
+        .iter()
+        .filter_map(|hex_key| hex::decode(hex_key).ok())
+        .filter(|raw| raw != self_key_bytes)
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::select_recipients;
+
+    #[test]
+    fn select_recipients_excludes_self() {
+        let me = vec![0u8; 32];
+        let me_hex = hex::encode(&me);
+        let peer = vec![1u8; 32];
+        let peer_hex = hex::encode(&peer);
+        let recipients = select_recipients(&[me_hex, peer_hex], &me);
+        assert_eq!(recipients, vec![peer]);
+    }
+
+    #[test]
+    fn select_recipients_includes_silent_audience() {
+        // Stage scenario: alice is host+speaker, bob is speaker, carol
+        // and dave are audience (never send). The host's transport
+        // peer list contains all 4. After excluding self (alice), the
+        // recipients should be bob + carol + dave — including the
+        // silent audience members. This is the regression guard for
+        // architecture §10.7 / §32 Phase 6 Week 20.
+        let alice = vec![1u8; 32];
+        let bob = vec![2u8; 32];
+        let carol = vec![3u8; 32];
+        let dave = vec![4u8; 32];
+        let peers = vec![
+            hex::encode(&alice),
+            hex::encode(&bob),
+            hex::encode(&carol),
+            hex::encode(&dave),
+        ];
+        let recipients = select_recipients(&peers, &alice);
+        assert_eq!(recipients.len(), 3);
+        assert!(recipients.contains(&bob));
+        assert!(recipients.contains(&carol));
+        assert!(recipients.contains(&dave));
+    }
+
+    #[test]
+    fn select_recipients_drops_invalid_hex() {
+        let me = vec![0u8; 32];
+        let recipients = select_recipients(
+            &["not-hex".to_string(), hex::encode(&me)],
+            &me,
+        );
+        assert!(recipients.is_empty(), "self filtered + invalid dropped");
     }
 }

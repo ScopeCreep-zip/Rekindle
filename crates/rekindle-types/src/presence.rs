@@ -47,6 +47,11 @@ pub struct MemberPresence {
     /// Content-addressed avatar reference (BLAKE3 hash).
     pub avatar_ref: Option<String>,
 
+    /// Content-addressed banner reference (BLAKE3 hash). Architecture
+    /// §24.2 / §32 Week 15 specifies a per-community banner alongside
+    /// the avatar.
+    pub banner_ref: Option<String>,
+
     /// Short bio (max 190 chars).
     pub bio: Option<String>,
 
@@ -76,6 +81,34 @@ pub struct MemberPresence {
 
     /// Advertised message history ranges for mutual aid (shared lockers).
     pub history_ranges: Vec<HistoryRange>,
+
+    /// Architecture §26 W26 — Ed25519 signature by `pseudonym_key` over
+    /// [`signing_bytes`]. The SMPL slot keypair on `set_dht_value` is
+    /// community-shared (every member knows the slot seed), so without
+    /// this signature any member could forge a presence write claiming
+    /// to be any other member — including impersonating their voice
+    /// channel state, RSVPs, custom status, or onboarding answers.
+    /// Receivers MUST verify before applying.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub signature: Vec<u8>,
+}
+
+impl MemberPresence {
+    /// Canonical bytes the author signs. Domain-tagged so the signature
+    /// can't be replayed into a different protocol surface.
+    pub fn signing_bytes(&self) -> Vec<u8> {
+        // Clear the signature for the canonical form, then serialise the
+        // rest of the struct deterministically (serde_json field order is
+        // the struct declaration order).
+        let mut canonical = self.clone();
+        canonical.signature = Vec::new();
+        let json = serde_json::to_vec(&canonical).unwrap_or_default();
+        let mut out = Vec::with_capacity(b"rekindle-presence-v1".len() + json.len());
+        out.extend_from_slice(b"rekindle-presence-v1");
+        out.extend_from_slice(&json);
+        out
+    }
+
 }
 
 /// Game currently being played (populated by rekindle-game-detect).
@@ -127,6 +160,7 @@ impl Default for MemberPresence {
             last_heartbeat: 0,
             game_info: None,
             avatar_ref: None,
+            banner_ref: None,
             bio: None,
             pronouns: None,
             theme_color: None,
@@ -137,6 +171,7 @@ impl Default for MemberPresence {
             event_rsvps: Vec::new(),
             onboarding_answers: None,
             history_ranges: Vec::new(),
+            signature: Vec::new(),
         }
     }
 }

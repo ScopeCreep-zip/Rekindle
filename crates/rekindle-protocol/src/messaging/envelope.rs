@@ -83,6 +83,164 @@ pub enum MessagePayload {
     Unfriended,
     /// ACK confirming an `Unfriended` message was received and processed.
     UnfriendedAck,
+    /// Strand Relay (architecture §13.2 step 2): a friend offers a dedicated
+    /// relay route. The recipient appends the blob to their published relay
+    /// pool so other contacts who can't reach them directly can route via
+    /// this friend. The friend can revoke later via `RelayWithdraw`.
+    RelayOffer {
+        /// Opaque Veilid private-route blob created by the relay friend
+        /// for forwarding-only use (kept distinct from her personal route).
+        relay_route_blob: Vec<u8>,
+        /// Hex-encoded Ed25519 public key of the friend volunteering to relay.
+        relay_pseudonym: String,
+    },
+    /// Strand Relay revocation: the relay friend withdraws her offer.
+    RelayWithdraw {
+        relay_pseudonym: String,
+    },
+    /// Bob's `app_call` reply to Carol confirming her `RelayOffer` was
+    /// persisted into his relay pool (architecture §13.2 step 3).
+    RelayOfferAck {
+        ok: bool,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        reason: String,
+    },
+    /// Strand Relay forward request (architecture §13.3 step 2): Alice→Carol.
+    /// Carol sees a friend (`target_pubkey`) referenced and re-emits
+    /// `inner_payload` (an entire opaque MessageEnvelope addressed to Bob)
+    /// onto Bob's current route. Carol cannot read the inner content.
+    RelayEnvelope {
+        /// Hex-encoded Ed25519 public key of the ultimate recipient.
+        target_pubkey: String,
+        /// Opaque envelope bytes — the relay forwards verbatim. Encrypted
+        /// to the target only, so the relay never sees plaintext.
+        inner_payload: Vec<u8>,
+    },
+    /// 2-party DM invite (architecture §27.1): Alice → Bob. Carries the
+    /// SMPL record key and slot seed; the MEK is *not* in the payload —
+    /// both peers derive it deterministically via X25519 ECDH from
+    /// their identity keys.
+    DmInvite {
+        record_key: String,
+        slot_seed: Vec<u8>,
+        alice_pseudonym: String,
+        alice_subkey: u32,
+        bob_subkey: u32,
+    },
+    /// Bob accepts a DM invite (architecture §27.1 line 2917).
+    /// Returned as the `app_call` reply to a `DmInvite` so Alice's
+    /// `start_dm` future resolves with confirmation.
+    DmAccept {
+        record_key: String,
+    },
+    /// Bob declines a DM invite (architecture §27.1).
+    DmDecline {
+        record_key: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        reason: String,
+    },
+    /// Group DM invite (architecture §27.2): MEK is wrapped per
+    /// recipient with X25519 because ECDH only works pairwise.
+    GroupDmInvite {
+        record_key: String,
+        slot_seed: Vec<u8>,
+        initiator_pseudonym: String,
+        /// JSON-encoded `Vec<rekindle_dm::GroupDmParticipant>` to keep the
+        /// envelope crate dependency-free (`rekindle-dm` lives at Tier 7).
+        participants_json: String,
+        wrapped_mek: Vec<u8>,
+        mek_generation: u32,
+    },
+    /// One side leaving a DM (graceful close).
+    DmLeave {
+        record_key: String,
+    },
+    /// Mobile Push Relay registration (architecture §17.3 Tier 3).
+    /// A mobile client asks a headless `veilid-server` push relay to
+    /// watch a list of DHT record keys on its behalf and forward
+    /// content-free wake signals via FCM/APNs (`{"t":"wake"}`). The
+    /// relay never sees ciphertext or metadata about what changed —
+    /// only that *some* registered record fired.
+    RegisterPushRelay {
+        /// Hex-encoded device push token (FCM registration id, APNs
+        /// device token, or opaque ID for self-hosted relays).
+        device_push_token: String,
+        /// Platform identifier ("fcm", "apns", "self") for routing.
+        platform: String,
+        /// Veilid record keys (string-encoded) the relay should watch.
+        record_keys: Vec<String>,
+    },
+    /// Mobile Push Relay revoke. Sent on logout or when the device
+    /// invalidates its push token.
+    UnregisterPushRelay {
+        device_push_token: String,
+    },
+    /// Wake signal — relay → mobile via FCM/APNs (out-of-band) or
+    /// directly via Veilid `app_message` for desktop testing. The
+    /// payload is intentionally empty of metadata: the client
+    /// re-fetches the relevant records itself.
+    WakeNotify {
+        /// Server-side timestamp (seconds) so the client can detect
+        /// stale wakes after device sleep.
+        ts: u64,
+    },
+    /// Strand Relay presence caching (architecture §13.5): a peer asks
+    /// us "do you know `target_pubkey`'s current status?". We respond
+    /// from our own friend-presence state if `target_pubkey` is a
+    /// friend we relay for; otherwise we drop. Faster than a DHT
+    /// lookup (the social CDN pattern).
+    StatusRequest {
+        target_pubkey: String,
+    },
+    /// Direct call offer (architecture §10.10 / Plan §Failure 5).
+    /// The initiator generates an ephemeral X25519 keypair, sends the
+    /// public key here, and awaits `CallAccept` (with the responder's
+    /// public key) so both sides can derive the same `call_key` via
+    /// HKDF-SHA256 over the ECDH shared secret. Shipped via
+    /// `app_call` so the responder's accept/decline returns inline.
+    CallOffer {
+        /// Hex-encoded 16-byte random call identifier (32 chars).
+        call_id: String,
+        /// 0 = audio, 1 = video. Matches `rekindle_calls::CallKind::as_u8`.
+        offer_kind: u8,
+        /// Initiator's hex-encoded Ed25519 identity key. Used by the
+        /// responder to look up display name + avatar.
+        initiator_pubkey: String,
+        /// Initiator's ephemeral X25519 public key (32 bytes).
+        initiator_x25519_pub: Vec<u8>,
+        /// Unix milliseconds when the ring should be considered missed.
+        /// Initiator sets `now + 30_000`.
+        expires_at_ms: u64,
+    },
+    /// Reply to `CallOffer` carrying the responder's X25519 public key
+    /// so the initiator can finish key derivation. Returned as the
+    /// `app_call` reply, never sent unsolicited.
+    CallAccept {
+        call_id: String,
+        acceptor_x25519_pub: Vec<u8>,
+    },
+    /// Reply to `CallOffer` rejecting the call. Same shape as
+    /// `DmDecline` so the dispatcher can mirror existing patterns.
+    CallDecline {
+        call_id: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        reason: String,
+    },
+    /// Reply to a `StatusRequest`. Empty `status` means "I don't have
+    /// data for this peer" so the requester can short-circuit.
+    StatusResponse {
+        target_pubkey: String,
+        status: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        status_message: Option<String>,
+        /// Unix timestamp (seconds) of the last presence update we saw
+        /// for this peer. Lets the requester reject stale snapshots.
+        last_seen: u64,
+        /// The peer's most recent route blob, so the requester can
+        /// short-circuit DHT route lookup as well.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        route_blob: Vec<u8>,
+    },
 }
 
 /// Game information for rich presence.

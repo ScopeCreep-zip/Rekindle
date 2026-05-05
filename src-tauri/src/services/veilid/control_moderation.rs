@@ -95,15 +95,59 @@ pub(crate) fn handle_gossip_control_payloads(
         ControlPayload::VoiceJoin { .. }
         | ControlPayload::VoiceLeave { .. }
         | ControlPayload::VoiceModeSwitch { .. }
+        | ControlPayload::StageUpdate { .. }
+        | ControlPayload::SpeakRequest { .. }
+        | ControlPayload::SpeakResponse { .. }
         | ControlPayload::VoiceMute { .. }
         | ControlPayload::VoiceDeafen { .. }
-        | ControlPayload::VoiceRoster { .. } => {
+        | ControlPayload::VoiceRoster { .. }
+        | ControlPayload::SoundboardPlay { .. } => {
             signaling::handle_voice_signaling(
                 app_handle,
                 state,
                 community_id,
                 sender_pseudonym,
                 payload,
+            );
+        }
+        ControlPayload::VideoFragment { .. }
+        | ControlPayload::VideoParityFragment { .. }
+        | ControlPayload::FrameAck { .. }
+        | ControlPayload::KeyframeRequest { .. }
+        | ControlPayload::BandwidthEstimate { .. }
+        | ControlPayload::TopologyChange { .. }
+        | ControlPayload::MediaCapabilities { .. } => {
+            crate::services::community::video::handle_video_payload(
+                app_handle,
+                state,
+                community_id,
+                sender_pseudonym,
+                payload,
+            );
+        }
+        ControlPayload::LinkPreview {
+            channel_id,
+            message_id,
+            url,
+            title,
+            description,
+            image_url,
+            site_name,
+            fetched_at,
+        } => {
+            crate::services::community::link_previews::handle_incoming_link_preview(
+                app_handle,
+                state,
+                community_id,
+                sender_pseudonym,
+                channel_id,
+                message_id,
+                url,
+                title,
+                description,
+                image_url,
+                site_name,
+                fetched_at,
             );
         }
         other => {
@@ -274,6 +318,12 @@ fn remove_member_from_local_state(
             }
         }
     }
+    crate::services::community::analytics::log_member_leave(
+        pool,
+        &owner_key,
+        community_id,
+        &target_pseudonym,
+    );
     let cid = community_id.to_string();
     let tp = target_pseudonym.clone();
     db_fire(pool, label, move |conn| {

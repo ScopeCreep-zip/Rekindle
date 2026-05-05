@@ -30,15 +30,62 @@
   --color-xfire-text-dim: #8fb9d7;
   --color-xfire-text-clan: #1ba1fd;
   --color-xfire-text-status: #969696;
-  --color-xfire-text-timestamp: #646464;
+  --color-xfire-text-timestamp: #a0a0a0;
   --color-xfire-online: #53d769;
   --color-xfire-away: #ffcc00;
   --color-xfire-ingame: #4fc3f7;
   --color-xfire-busy: #ef4444;
   --color-xfire-offline: #7d7d7d;
-  --color-xfire-link: #0f6896;
+  --color-xfire-link: #5fa8d3;
+  --color-xfire-focus-outline: #5fa8d3;
   --font-family-xfire: "Segoe UI", "Tahoma", sans-serif;
   --font-family-icons: "Symbols Nerd Font Mono";
+}
+
+/* Architecture §32 a11y — motion duration tokens.
+ * Default to 0ms so reduced-motion users get instant transitions; the
+ * `no-preference` media query opts motion-tolerant users in. Consumers
+ * use `var(--motion-duration-base)` etc. directly in transition/animation
+ * declarations; the @keyframes themselves stay defined so motion-tolerant
+ * users get the full effect. */
+:root {
+  --motion-duration-fast: 0ms;
+  --motion-duration-base: 0ms;
+  --motion-duration-slow: 0ms;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  :root {
+    --motion-duration-fast: 120ms;
+    --motion-duration-base: 200ms;
+    --motion-duration-slow: 320ms;
+  }
+}
+
+/* Architecture §32 — coherent z-index scale. Earlier ad-hoc values had
+ * `.modal-overlay: 900` rendering BELOW `.context-menu: 1000`, so a
+ * context menu opened inside a dialog would draw above the dialog
+ * chrome. Tokens make collisions visible and fix it once. Kobalte
+ * primitives portal into these layers via the class on their Content. */
+:root {
+  --z-base: 0;
+  --z-elevated: 10;            /* sticky message-input chrome, fixed headers */
+  --z-dropdown: 100;           /* status picker, mention popover, expression picker */
+  --z-tooltip: 200;
+  --z-popover: 300;            /* member profile popup, hover cards */
+  --z-context-menu: 400;
+  --z-modal-backdrop: 500;
+  --z-modal: 510;              /* modal content sits above its own backdrop */
+  --z-toast: 600;              /* future toast layer; above modals */
+  --z-skip-link: 9999;         /* must beat everything for a11y */
+}
+
+/* Architecture §32 — single chrome-height token. Titlebar, status bar,
+ * menu bar, channel header, member-list header, chat-peer-status, and
+ * BottomActionBar all converge on this size. Replaces ad-hoc 28px
+ * literals scattered through `xfire-theme.css`. */
+:root {
+  --chrome-height: 28px;
 }
 
 @layer base {

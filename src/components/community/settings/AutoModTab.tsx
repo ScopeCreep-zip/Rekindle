@@ -137,7 +137,7 @@ const AutoModTab: Component<AutoModTabProps> = (props) => {
         <span>Rule enabled</span>
       </label>
       <div class="settings-actions-sticky">
-        <button class="form-btn-save" onClick={() => void saveRule()} disabled={saving()}>
+        <button class="form-btn-primary" onClick={() => void saveRule()} disabled={saving()}>
           {saving() ? "Saving..." : editingRuleId() ? "Save Rule" : "Create Rule"}
         </button>
         <button class="settings-copy-btn" onClick={resetForm}>Clear</button>

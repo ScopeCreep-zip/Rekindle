@@ -1,5 +1,6 @@
-use tauri::State;
+use tauri::{Emitter as _, State};
 
+use crate::channels::community_channel::CommunityEvent;
 use crate::db::{self, DbPool};
 use crate::db_helpers::db_call;
 use crate::keystore::KeystoreHandle;
@@ -22,7 +23,12 @@ pub async fn get_communities(state: State<'_, SharedState>) -> Result<Vec<Commun
             name: community.name.clone(),
             description: community.description.clone(),
             channel_count: community.channels.len(),
-            my_role: community.my_role.clone(),
+            // Plan §Failure 4 — display role derived on demand from
+            // (my_role_ids, roles); no separate stored field.
+            my_role: Some(crate::state::display_role_name(
+                &community.my_role_ids,
+                &community.roles,
+            )),
         })
         .collect())
 }
@@ -38,6 +44,8 @@ pub async fn get_community_details(
             id: community.id.clone(),
             name: community.name.clone(),
             description: community.description.clone(),
+            icon_hash: community.icon_hash.clone(),
+            banner_hash: community.banner_hash.clone(),
             channels: community
                 .channels
                 .iter()
@@ -48,8 +56,12 @@ pub async fn get_community_details(
                     unread_count: channel.unread_count,
                     category_id: channel.category_id.clone(),
                     topic: channel.topic.clone(),
+                    forum_tags: channel.forum_tags.clone(),
+                    stage_speakers: channel.stage_speakers.clone(),
+                    stage_moderator: channel.stage_moderator.clone(),
                     slowmode_seconds: channel.slowmode_seconds,
                     notification_level: channel.notification_level.clone(),
+                    notification_sound_ref: channel.notification_sound_ref.clone(),
                 })
                 .collect(),
             categories: community
@@ -61,7 +73,10 @@ pub async fn get_community_details(
                     sort_order: category.sort_order,
                 })
                 .collect(),
-            my_role: community.my_role.clone(),
+            my_role: Some(crate::state::display_role_name(
+                &community.my_role_ids,
+                &community.roles,
+            )),
             my_role_ids: community.my_role_ids.clone(),
             roles: community.roles.iter().map(CommunityRoleDto::from).collect(),
             my_pseudonym_key: community.my_pseudonym_key.clone(),
@@ -69,6 +84,10 @@ pub async fn get_community_details(
             member_registry_key: community.member_registry_key.clone(),
             governance_key: community.governance_key.clone(),
             onboarding_complete: community.onboarding_complete,
+            my_bio: community.my_bio.clone(),
+            my_pronouns: community.my_pronouns.clone(),
+            my_theme_color: community.my_theme_color,
+            my_badges: community.my_badges.clone(),
         })
         .collect())
 }
@@ -136,21 +155,27 @@ pub async fn create_community(
     let mek_gen = community.mek_generation.cast_signed();
     let ok = owner_key;
     db_call(pool.inner(), move |conn| {
-        let owner_role_ids = serde_json::to_string(&[0u32, 1, 2, 3, 4]).unwrap_or_default();
+        // Plan §Failure 4 — owner_role_ids carries @everyone (0) AND
+        // the Owner role's numeric id (u32::MAX, derived from
+        // OWNER_ROLE_ID's first 4 LE bytes). The Owner role definition
+        // is persisted via community_roles below; the role_id matches
+        // the genesis governance entry.
+        let owner_role_ids =
+            serde_json::to_string(&[0u32, u32::MAX]).unwrap_or_default();
         conn.execute(
-            "INSERT INTO communities (owner_key, id, name, my_role, my_role_ids, joined_at, dht_owner_keypair, my_pseudonym_key, mek_generation, member_registry_key, my_subkey_index, governance_key) \
-             VALUES (?, ?, ?, 'owner', ?, ?, ?, ?, ?, ?, 0, ?)",
+            "INSERT INTO communities (owner_key, id, name, my_role_ids, joined_at, dht_owner_keypair, my_pseudonym_key, mek_generation, member_registry_key, my_subkey_index, my_segment_index, governance_key) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?)",
             rusqlite::params![ok, community_id_clone, name_clone, owner_role_ids, now, dht_owner_keypair, pseudonym_key, mek_gen, member_registry_key_db, governance_key_db],
         )?;
 
         for role in &roles_to_persist {
             conn.execute(
-                "INSERT INTO community_roles (owner_key, community_id, role_id, name, color, permissions, position, hoist, mentionable, self_assignable) \
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO community_roles (owner_key, community_id, role_id, name, color, permissions, position, hoist, mentionable, self_assignable, exclusion_group) \
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 rusqlite::params![
                     ok, community_id_clone, role.id, role.name, role.color,
                     role.permissions.cast_signed(), role.position, i32::from(role.hoist), i32::from(role.mentionable),
-                    i32::from(role.self_assignable),
+                    i32::from(role.self_assignable), role.exclusion_group,
                 ],
             )?;
         }
@@ -244,8 +269,8 @@ pub async fn join_community(
     let subkey_idx = my_subkey_index.map(i64::from);
     db_call(pool.inner(), move |conn| {
         conn.execute(
-            "INSERT OR IGNORE INTO communities (owner_key, id, name, my_role, my_role_ids, joined_at, my_pseudonym_key, mek_generation, member_registry_key, my_subkey_index, governance_key) \
-             VALUES (?, ?, ?, 'member', ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT OR IGNORE INTO communities (owner_key, id, name, my_role_ids, joined_at, my_pseudonym_key, mek_generation, member_registry_key, my_subkey_index, my_segment_index, governance_key) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)",
             rusqlite::params![ok, community_id_clone, name, rij, now, pk, mg, member_registry_key, subkey_idx, governance_key_db],
         )?;
 
@@ -261,12 +286,12 @@ pub async fn join_community(
 
         for role in &roles_to_persist {
             conn.execute(
-                "INSERT OR IGNORE INTO community_roles (owner_key, community_id, role_id, name, color, permissions, position, hoist, mentionable, self_assignable) \
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT OR IGNORE INTO community_roles (owner_key, community_id, role_id, name, color, permissions, position, hoist, mentionable, self_assignable, exclusion_group) \
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 rusqlite::params![
                     ok, community_id_clone, role.id, role.name, role.color,
                     role.permissions.cast_signed(), role.position, i32::from(role.hoist), i32::from(role.mentionable),
-                    i32::from(role.self_assignable),
+                    i32::from(role.self_assignable), role.exclusion_group,
                 ],
             )?;
         }
@@ -356,6 +381,14 @@ pub async fn leave_community(
     state.communities.write().remove(&community_id);
 
     let owner_key = state_helpers::current_owner_key(state.inner())?;
+    if !my_pseudonym_key.is_empty() {
+        crate::services::community::analytics::log_member_leave(
+            pool.inner(),
+            &owner_key,
+            &community_id,
+            &my_pseudonym_key,
+        );
+    }
     let community_id_clone = community_id.clone();
     db_call(pool.inner(), move |conn| {
         conn.execute(
@@ -375,20 +408,51 @@ pub async fn update_community_info(
     community_id: String,
     name: Option<String>,
     description: Option<String>,
+    icon_hash: Option<String>,
+    banner_hash: Option<String>,
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
     let owner_key = state_helpers::current_owner_key(state.inner())?;
+
+    // CommunityMeta is LWW per architecture §6.4 — the merged state
+    // replaces every field on a winning entry. To avoid nuking
+    // icon_hash/banner_hash when only name is changed (and vice
+    // versa), preload the current metadata and override only the
+    // explicitly supplied fields.
+    let (current_name, current_description, current_icon, current_banner) = {
+        let communities = state.communities.read();
+        communities
+            .get(&community_id)
+            .and_then(|c| c.governance_state.as_ref())
+            .and_then(|g| g.metadata.as_ref())
+            .map_or_else(
+                || (None, None, None, None),
+                |meta| {
+                    (
+                        Some(meta.name.clone()),
+                        meta.description.clone(),
+                        meta.icon_hash.clone(),
+                        meta.banner_hash.clone(),
+                    )
+                },
+            )
+    };
+
+    let next_name = name.clone().or(current_name);
+    let next_description = description.clone().or(current_description);
+    let next_icon = icon_hash.clone().or(current_icon);
+    let next_banner = banner_hash.clone().or(current_banner);
 
     let lamport = state_helpers::increment_lamport(state.inner(), &community_id);
     crate::services::community::write_entry(
         state.inner(),
         &community_id,
         rekindle_types::governance::GovernanceEntry::CommunityMeta {
-            name: name.clone(),
-            description: description.clone(),
-            icon_hash: None,
-            banner_hash: None,
+            name: next_name.clone(),
+            description: next_description.clone(),
+            icon_hash: next_icon.clone(),
+            banner_hash: next_banner.clone(),
             lamport,
         },
     )
@@ -403,26 +467,67 @@ pub async fn update_community_info(
             if let Some(ref new_description) = description {
                 community.description = Some(new_description.clone());
             }
+            if let Some(ref new_icon) = icon_hash {
+                community.icon_hash = Some(new_icon.clone());
+            }
+            if let Some(ref new_banner) = banner_hash {
+                community.banner_hash = Some(new_banner.clone());
+            }
         }
     }
 
     let cid = community_id.clone();
+    let cid_for_db = cid.clone();
+    let name_for_db = name.clone();
+    let description_for_db = description.clone();
+    let icon_hash_for_db = icon_hash.clone();
+    let banner_hash_for_db = banner_hash.clone();
     db_call(pool.inner(), move |conn| {
-        if let Some(ref new_name) = name {
+        if let Some(ref new_name) = name_for_db {
             conn.execute(
                 "UPDATE communities SET name = ? WHERE owner_key = ? AND id = ?",
-                rusqlite::params![new_name, owner_key, cid],
+                rusqlite::params![new_name, owner_key, cid_for_db],
             )?;
         }
-        if let Some(ref new_description) = description {
+        if let Some(ref new_description) = description_for_db {
             conn.execute(
                 "UPDATE communities SET description = ? WHERE owner_key = ? AND id = ?",
-                rusqlite::params![new_description, owner_key, cid],
+                rusqlite::params![new_description, owner_key, cid_for_db],
+            )?;
+        }
+        if let Some(ref new_icon) = icon_hash_for_db {
+            conn.execute(
+                "UPDATE communities SET icon_hash = ? WHERE owner_key = ? AND id = ?",
+                rusqlite::params![new_icon, owner_key, cid_for_db],
+            )?;
+        }
+        if let Some(ref new_banner) = banner_hash_for_db {
+            conn.execute(
+                "UPDATE communities SET banner_hash = ? WHERE owner_key = ? AND id = ?",
+                rusqlite::params![new_banner, owner_key, cid_for_db],
             )?;
         }
         Ok(())
     })
     .await?;
+
+    // Architecture §32 Phase 5 W15 — broadcast the merged community
+    // info so every window can refresh without a full
+    // `getCommunityDetails`. We send only the fields the caller
+    // explicitly changed (matching the Optional semantics of the
+    // command); receivers leave unchanged fields alone.
+    if let Some(app) = state_helpers::app_handle(state.inner()) {
+        let _ = app.emit(
+            "community-event",
+            CommunityEvent::CommunityUpdated {
+                community_id: cid.clone(),
+                name: name.clone(),
+                description: description.clone(),
+                icon_hash: icon_hash.clone(),
+                banner_hash: banner_hash.clone(),
+            },
+        );
+    }
 
     tracing::info!(community = %community_id, "community info updated");
     Ok(())

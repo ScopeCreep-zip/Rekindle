@@ -42,7 +42,6 @@ async fn assign_role_inner(
             if !c.my_role_ids.contains(&role_id) {
                 c.my_role_ids.push(role_id);
             }
-            c.my_role = Some(crate::state::display_role_name(&c.my_role_ids, &c.roles));
         }
     }
 
@@ -102,7 +101,6 @@ async fn unassign_role_inner(
         let mut communities = state.communities.write();
         if let Some(c) = communities.get_mut(community_id) {
             c.my_role_ids.retain(|&id| id != role_id);
-            c.my_role = Some(crate::state::display_role_name(&c.my_role_ids, &c.roles));
         }
     }
 
@@ -156,6 +154,7 @@ pub async fn create_role(
     hoist: bool,
     mentionable: bool,
     self_assignable: bool,
+    exclusion_group: Option<String>,
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<u32, String> {
@@ -164,6 +163,7 @@ pub async fn create_role(
     let permissions_u64: u64 = permissions
         .parse()
         .map_err(|e| format!("invalid permissions: {e}"))?;
+    let exclusion_group = normalize_exclusion_group(exclusion_group)?;
 
     let (role_id, position) = {
         use rand::RngCore;
@@ -210,6 +210,7 @@ pub async fn create_role(
             hoist,
             mentionable,
             self_assignable,
+            exclusion_group: exclusion_group.clone(),
             lamport,
         },
     )
@@ -224,6 +225,7 @@ pub async fn create_role(
         hoist,
         mentionable,
         self_assignable,
+        exclusion_group: exclusion_group.clone(),
     };
     {
         let mut communities = state.communities.write();
@@ -234,14 +236,54 @@ pub async fn create_role(
     }
 
     let cid = community_id.clone();
+    let exclusion_group_db = exclusion_group;
     db_call(pool.inner(), move |conn| {
         conn.execute(
-            "INSERT OR REPLACE INTO community_roles (owner_key, community_id, role_id, name, color, permissions, position, hoist, mentionable, self_assignable) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            rusqlite::params![owner_key, cid, role_id, name, color, permissions_u64.cast_signed(), position, hoist, mentionable, self_assignable],
+            "INSERT OR REPLACE INTO community_roles (owner_key, community_id, role_id, name, color, permissions, position, hoist, mentionable, self_assignable, exclusion_group) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            rusqlite::params![owner_key, cid, role_id, name, color, permissions_u64.cast_signed(), position, hoist, mentionable, self_assignable, exclusion_group_db],
         )?;
         Ok(())
     }).await?;
     Ok(role_id)
+}
+
+/// Architecture §19.4 — explicit edit verb so callers can either set a
+/// new exclusion-group slug or clear it. Omitting the field entirely on
+/// `edit_role` is "no change". Tagged with serde so the frontend can
+/// pass `{ "kind": "set", "value": "pronouns" }` or
+/// `{ "kind": "clear" }`.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "lowercase")]
+pub enum ExclusionGroupEdit {
+    Set(String),
+    Clear,
+}
+
+/// Architecture §19.4 — exclusion-group slugs are case-insensitive
+/// short tags. Normalise to lowercase and reject overlong / control
+/// chars; treat `Some("")` as `None`.
+fn normalize_exclusion_group(raw: Option<String>) -> Result<Option<String>, String> {
+    match raw {
+        None => Ok(None),
+        Some(s) => {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                return Ok(None);
+            }
+            if trimmed.chars().count() > 32 {
+                return Err("exclusion_group must be ≤32 characters".into());
+            }
+            if !trimmed
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+            {
+                return Err(
+                    "exclusion_group may only contain letters, numbers, '_' or '-'".into()
+                );
+            }
+            Ok(Some(trimmed.to_ascii_lowercase()))
+        }
+    }
 }
 
 /// Edit an existing role in a community.
@@ -259,6 +301,8 @@ pub async fn edit_role(
     hoist: Option<bool>,
     mentionable: Option<bool>,
     self_assignable: Option<bool>,
+    // Architecture §19.4 — see `ExclusionGroupEdit`.
+    exclusion_group: Option<ExclusionGroupEdit>,
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
@@ -269,7 +313,22 @@ pub async fn edit_role(
         .transpose()
         .map_err(|e| format!("invalid permissions: {e}"))?;
 
-    let (cur_name, cur_color, cur_perms, cur_pos, cur_hoist, cur_ment, cur_self_assignable) = {
+    let normalised_exclusion: Option<Option<String>> = match exclusion_group {
+        None => None,
+        Some(ExclusionGroupEdit::Clear) => Some(None),
+        Some(ExclusionGroupEdit::Set(value)) => Some(normalize_exclusion_group(Some(value))?),
+    };
+
+    let (
+        cur_name,
+        cur_color,
+        cur_perms,
+        cur_pos,
+        cur_hoist,
+        cur_ment,
+        cur_self_assignable,
+        cur_exclusion,
+    ) = {
         let communities = state.communities.read();
         let c = communities
             .get(&community_id)
@@ -287,8 +346,10 @@ pub async fn edit_role(
             r.hoist,
             r.mentionable,
             r.self_assignable,
+            r.exclusion_group.clone(),
         )
     };
+    let next_exclusion = normalised_exclusion.clone().unwrap_or(cur_exclusion);
     let lamport = state_helpers::increment_lamport(state.inner(), &community_id);
     crate::services::community::write_entry(
         state.inner(),
@@ -302,6 +363,7 @@ pub async fn edit_role(
             hoist: hoist.unwrap_or(cur_hoist),
             mentionable: mentionable.unwrap_or(cur_ment),
             self_assignable: self_assignable.unwrap_or(cur_self_assignable),
+            exclusion_group: next_exclusion.clone(),
             lamport,
         },
     )
@@ -332,8 +394,10 @@ pub async fn edit_role(
                 if let Some(sa) = self_assignable {
                     r.self_assignable = sa;
                 }
+                if let Some(ref next) = normalised_exclusion {
+                    r.exclusion_group.clone_from(next);
+                }
             }
-            c.my_role = Some(crate::state::display_role_name(&c.my_role_ids, &c.roles));
         }
     }
 
@@ -368,6 +432,10 @@ pub async fn edit_role(
         if let Some(sa) = self_assignable {
             sets.push("self_assignable = ?");
             params.push(Box::new(sa));
+        }
+        if let Some(eg) = normalised_exclusion {
+            sets.push("exclusion_group = ?");
+            params.push(Box::new(eg));
         }
         if !sets.is_empty() {
             let sql = format!(
@@ -414,7 +482,6 @@ pub async fn delete_role(
         if let Some(c) = communities.get_mut(&community_id) {
             c.roles.retain(|r| r.id != role_id);
             c.my_role_ids.retain(|&id| id != role_id);
-            c.my_role = Some(crate::state::display_role_name(&c.my_role_ids, &c.roles));
         }
     }
 

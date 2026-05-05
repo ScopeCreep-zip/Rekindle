@@ -11,7 +11,6 @@ interface ThreadPanelProps {
   onClose: () => void;
   onSend: (communityId: string, threadId: string, body: string) => void;
   onArchive: (communityId: string, threadId: string) => void;
-  onUnarchive: (communityId: string, threadId: string) => void;
   onReply?: (message: Message) => void;
   onReaction?: (messageId: string, emoji: string) => void;
   onRemoveReaction?: (messageId: string, emoji: string) => void;
@@ -59,22 +58,42 @@ const ThreadPanel: Component<ThreadPanelProps> = (props) => {
         <div class="thread-panel">
           <div class="thread-panel-header">
             <span class="nf-icon">{ICON_THREAD}</span>
-            <span class="thread-panel-title">{thread().name}</span>
+            <div class="thread-panel-title-group">
+              <span class="thread-panel-title">{thread().name}</span>
+              <div class="thread-panel-meta">
+                Started by {thread().creatorPseudonym} · {thread().messageCount} messages
+                <Show when={thread().lastMessageAt > 0}>
+                  {` · last active ${new Date(thread().lastMessageAt * 1000).toLocaleString()}`}
+                </Show>
+              </div>
+            </div>
             <Show when={!thread().archived}>
-              <button class="thread-panel-archive-btn" onClick={() => props.onArchive(props.communityId, thread().id)} title="Archive thread">
-                <span class="nf-icon">{ICON_ARCHIVE}</span>
+              <button
+                class="thread-panel-archive-btn"
+                onClick={() => props.onArchive(props.communityId, thread().id)}
+                title="Archive thread"
+                aria-label="Archive thread"
+              >
+                <span class="nf-icon" aria-hidden="true">{ICON_ARCHIVE}</span>
               </button>
             </Show>
-            <Show when={thread().archived}>
-              <button class="thread-panel-archive-btn" onClick={() => props.onUnarchive(props.communityId, thread().id)} title="Unarchive thread">
-                <span class="nf-icon">{ICON_ARCHIVE}</span>
-              </button>
-            </Show>
-            <button class="modal-close-btn" onClick={props.onClose}>
-              <span class="nf-icon">{ICON_CLOSE}</span>
+            <button
+              class="modal-close-btn"
+              onClick={props.onClose}
+              aria-label="Close thread"
+            >
+              <span class="nf-icon" aria-hidden="true">{ICON_CLOSE}</span>
             </button>
           </div>
-          <div class="thread-panel-messages" ref={containerRef}>
+          <div
+            class="thread-panel-messages"
+            ref={containerRef}
+            role="log"
+            aria-live="polite"
+            aria-relevant="additions"
+            aria-atomic="false"
+            aria-label={`Thread: ${thread().name}`}
+          >
             <For each={props.messages}>
               {(msg) => (
                 <MessageBubble
@@ -95,18 +114,16 @@ const ThreadPanel: Component<ThreadPanelProps> = (props) => {
               )}
             </For>
           </div>
-          <Show when={!thread().archived}>
-            <div class="message-input-wrapper">
-              <textarea
-                class="message-input message-input-field"
-                placeholder="Reply to thread..."
-                value={body()}
-                onInput={(e) => setBody(e.currentTarget.value)}
-                onKeyDown={handleKeyDown}
-                rows={2}
-              />
-            </div>
-          </Show>
+          <div class="message-input-wrapper">
+            <textarea
+              class="message-input message-input-field"
+              placeholder={thread().archived ? "Reply to reactivate thread..." : "Reply to thread..."}
+              value={body()}
+              onInput={(e) => setBody(e.currentTarget.value)}
+              onKeyDown={handleKeyDown}
+              rows={2}
+            />
+          </div>
         </div>
       )}
     </Show>

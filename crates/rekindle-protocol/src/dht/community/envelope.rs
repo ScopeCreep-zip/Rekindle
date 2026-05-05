@@ -51,6 +51,23 @@ pub enum CommunityEnvelope {
         channel_id: String,
         pseudonym_key: String,
     },
+    /// Watch Relay (architecture §14.3 / §11.7): a member with an active
+    /// Veilid `watch_dht_values` slot relays a `ValueChange` notification
+    /// to peers via gossip, so members without watch slots still learn
+    /// when a record's subkey changes. The receiver is expected to
+    /// `get_dht_value` to fetch the new value (we deliberately do NOT
+    /// carry ciphertext over gossip — same Chiral Network principle as
+    /// `MessageNotification`).
+    WatchRelay {
+        /// Hex-encoded Veilid record key whose subkey changed.
+        record_key: String,
+        /// Subkey index that changed.
+        subkey: u32,
+        /// blake3 hash of the new value (integrity check after fetch).
+        content_hash: String,
+        /// Sender's pseudonym (for permission/audit).
+        observer_pseudonym: String,
+    },
 }
 
 /// Game information for community presence.
@@ -130,7 +147,7 @@ pub enum ControlPayload {
         mek_encrypted: Vec<u8>,
         mek_generation: u64,
         #[serde(default)]
-        members: Vec<serde_json::Value>,
+        members: Vec<crate::dht::community::types::MemberSummary>,
         /// The member registry DHT record key — needed for elections and presence.
         #[serde(default)]
         member_registry_key: Option<String>,
@@ -273,9 +290,9 @@ pub enum ControlPayload {
 
     // ── Events ──
     /// Broadcast: event created.
-    EventCreated { event: serde_json::Value },
+    EventCreated { event: rekindle_types::event::EventInfo },
     /// Broadcast: event updated.
-    EventUpdated { event: serde_json::Value },
+    EventUpdated { event: rekindle_types::event::EventInfo },
     /// Broadcast: event deleted.
     EventDeleted { event_id: String },
     /// Broadcast: event RSVP changed.
@@ -287,7 +304,9 @@ pub enum ControlPayload {
 
     // ── Threads ──
     /// Broadcast: thread created.
-    ThreadCreated { thread: serde_json::Value },
+    ThreadCreated {
+        thread: rekindle_types::thread::ThreadInfo,
+    },
     /// Broadcast: thread message received.
     ThreadMessageReceived {
         thread_id: String,
@@ -304,7 +323,9 @@ pub enum ControlPayload {
 
     // ── Game servers ──
     /// Broadcast: game server added.
-    GameServerAdded { server: serde_json::Value },
+    GameServerAdded {
+        server: rekindle_types::game_server::GameServerInfo,
+    },
     /// Broadcast: game server removed.
     GameServerRemoved { server_id: String },
 
@@ -366,13 +387,14 @@ pub enum ControlPayload {
     /// Returned via app_call reply. Joiner independently verifies against DHT.
     BootstrapResponse {
         /// All governance entries from all occupied subkeys.
-        governance_entries: Vec<serde_json::Value>,
+        governance_entries: Vec<rekindle_types::governance::GovernanceEntry>,
         /// Online members with presence data and route blobs.
-        member_list: Vec<serde_json::Value>,
+        member_list: Vec<rekindle_types::member::MemberInfo>,
         /// Current MEK per channel, wrapped for the joiner's pseudonym.
-        channel_meks: Vec<serde_json::Value>,
-        /// Last 50 messages per channel (MEK-encrypted ciphertext).
-        recent_messages: Vec<serde_json::Value>,
+        channel_meks: Vec<rekindle_types::mek::ChannelMekDelivery>,
+        /// Last 50 messages per channel (MEK-encrypted ciphertext),
+        /// grouped by channel id (architecture §13.4 line 2068).
+        recent_messages: Vec<rekindle_types::message::BootstrapChannelMessages>,
         /// Owner keypair wrapped for the joiner (shared infrastructure).
         wrapped_owner_keypair: Vec<u8>,
     },
@@ -386,7 +408,7 @@ pub enum ControlPayload {
     /// Response with channel messages from an archiver's local SQLite.
     SyncResponse {
         channel_id: String,
-        messages: Vec<serde_json::Value>,
+        messages: Vec<rekindle_types::message::SyncedMessage>,
     },
 
     // ── Voice channel signaling ──
@@ -407,6 +429,63 @@ pub enum ControlPayload {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         host_pseudonym: Option<String>,
     },
+    /// Broadcast: stage speaker list/topic update.
+    StageUpdate {
+        channel_id: String,
+        topic: Option<String>,
+        speakers: Vec<String>,
+        moderator_pseudonym: String,
+        lamport: u64,
+    },
+    /// Audience member requests permission to speak in a stage channel.
+    SpeakRequest {
+        channel_id: String,
+        requester_pseudonym: String,
+        lamport: u64,
+    },
+    /// Moderator response to a stage speak request.
+    SpeakResponse {
+        channel_id: String,
+        requester_pseudonym: String,
+        granted: bool,
+        moderator_pseudonym: String,
+        lamport: u64,
+    },
+
+    /// Lost Cargo file request (architecture §28.9 line 3252-3256).
+    /// Sent via gossip to broadcast that a peer wants specific chunks of an
+    /// attachment. Sources reply via `app_call` with `AttachmentChunk`
+    /// payloads (one chunk per call).
+    RequestAttachment {
+        channel_id: String,
+        attachment_id: [u8; 16],
+        /// Chunk indices the requester needs. Empty list = "I'll take any
+        /// chunks you have that I don't" (responder consults bitmap
+        /// intersection).
+        requested_chunks: Vec<u32>,
+        requester_pseudonym: String,
+    },
+
+    /// Lost Cargo chunk delivery (architecture §28.9 line 3257-3265). The
+    /// payload of the `app_call` reply when responding to
+    /// `RequestAttachment`. Receiver verifies the SHA-256 plaintext hash
+    /// after FEK decryption (plan §1.J2).
+    AttachmentChunk {
+        attachment_id: [u8; 16],
+        chunk_index: u32,
+        /// Chunk ciphertext (FEK-encrypted). Receiver decrypts with the
+        /// FEK that was wrapped under the channel MEK in the original offer.
+        data: Vec<u8>,
+        /// SHA-256 of the *plaintext* chunk for tamper detection on the
+        /// transport path (defense-in-depth alongside the AES-GCM tag).
+        plaintext_hash: [u8; 32],
+    },
+
+    /// Batched chunk-delivery reply: one or more `AttachmentChunk` entries
+    /// returned in a single `app_call` response. The responder collects
+    /// every chunk it has from the requested set, packs them here, and
+    /// replies once — saves N round trips when one peer holds many chunks.
+    MultiAttachmentChunk { chunks: Vec<ControlPayload> },
 
     /// Moderator action: server-mute a member in a voice channel.
     VoiceMute {
@@ -424,6 +503,133 @@ pub enum ControlPayload {
     VoiceRoster {
         channel_id: String,
         participants: Vec<VoiceRosterEntry>,
+    },
+    /// Soundboard playback trigger (architecture §10.9). Broadcast in
+    /// the voice channel's gossip mesh so every participant plays the
+    /// expression's audio locally — the audio bytes themselves are
+    /// already cached as inline expression assets per §18.4.
+    SoundboardPlay {
+        channel_id: String,
+        /// Expression ID (16-byte UUID hex) of the sound asset.
+        expression_id: String,
+        /// Sender's pseudonym so receivers can attribute or mute per peer.
+        actor_pseudonym: String,
+    },
+
+    /// Architecture §10.6 video / screen-share fragment. Frames are
+    /// VP9-encoded, MEK-encrypted, then split into ≤28 KB chunks so
+    /// they fit inside Veilid `app_message`. The 16-byte `stream_id`
+    /// is `blake3(channel_id || sender_pseudonym)[..16]` so concurrent
+    /// streams in the same channel never collide. Reassembly happens
+    /// in `rekindle-video::Reassembler` on the receive side.
+    VideoFragment {
+        channel_id: String,
+        stream_id: [u8; 16],
+        frame_seq: u32,
+        frag_index: u8,
+        frag_total: u8,
+        keyframe: bool,
+        timestamp: u32,
+        payload: Vec<u8>,
+        signature: Vec<u8>,
+    },
+
+    /// Forward-error-correction parity packet for the matching
+    /// `VideoFragment` data stream (architecture §10.6 line 4080).
+    /// Modelled on RFC 5109 / FlexFEC: a separate packet variant
+    /// carrying Reed-Solomon parity shards so a few dropped data
+    /// fragments don't force a full keyframe re-request. Receivers
+    /// without FEC support ignore these.
+    VideoParityFragment {
+        channel_id: String,
+        stream_id: [u8; 16],
+        frame_seq: u32,
+        parity_index: u8,
+        parity_total: u8,
+        data_count: u8,
+        frame_len: u32,
+        timestamp: u32,
+        payload: Vec<u8>,
+        signature: Vec<u8>,
+    },
+
+    /// Architecture §10.6 — receiver acknowledges fragments roughly
+    /// every 500 ms and reports their measured downstream bandwidth.
+    /// Senders adjust VP9 bitrate to match the slowest receiver.
+    FrameAck {
+        channel_id: String,
+        stream_id: [u8; 16],
+        last_frame_seq: u32,
+        kbps: u32,
+        loss_q8: u8,
+    },
+
+    /// Sent by a receiver who has lost too many inter-frames to keep
+    /// rendering. Senders treat this as a request to encode the next
+    /// frame as a keyframe (architecture §10.6).
+    KeyframeRequest {
+        channel_id: String,
+        stream_id: [u8; 16],
+    },
+
+    /// Bandwidth advertisement decoupled from `FrameAck` — used when
+    /// network conditions change without a frame in flight (e.g.
+    /// Wi-Fi → cellular hand-off).
+    BandwidthEstimate {
+        channel_id: String,
+        kbps: u32,
+        window_secs: u8,
+        loss_q8: u8,
+    },
+
+    /// Capability negotiation broadcast on join. Senders union the
+    /// reported caps and pick a resolution + framerate every receiver
+    /// can decode (architecture §10.6 line 4084).
+    MediaCapabilities {
+        channel_id: String,
+        max_pixel_count: u32,
+        max_fps: u8,
+        codecs: Vec<String>,
+    },
+
+    /// Architecture §10.6 + Phase 6 Week 22 — broadcast that the
+    /// active video relay for a `(channel_id, stream_id)` pair has
+    /// changed. Receivers switch their fetch source to
+    /// `relay_host_pseudonym` and reset their reassembler for that
+    /// stream so they don't pile up partial frames from the old relay.
+    /// `relay_host_pseudonym = None` signals a transition to direct
+    /// mesh delivery (used when participant count drops below the
+    /// relay threshold or the previous relay went offline with no
+    /// successor yet).
+    TopologyChange {
+        channel_id: String,
+        stream_id: [u8; 16],
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        relay_host_pseudonym: Option<String>,
+        /// Free-form reason: `"initial"`, `"relay_left"`,
+        /// `"relay_overloaded"`, `"explicit_request"`. Receivers
+        /// surface this in logs only — behaviour is the same.
+        reason: String,
+        lamport: u64,
+    },
+
+    // ── Link Previews (architecture §28.8) ──
+    /// Sender's pre-fetched OpenGraph metadata for a URL embedded in
+    /// `message_id`. Receivers display inline; gated reader-side by
+    /// the sender's `EMBED_LINKS` permission.
+    LinkPreview {
+        channel_id: String,
+        message_id: String,
+        url: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        description: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        image_url: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        site_name: Option<String>,
+        fetched_at: u64,
     },
     // ── Generic responses ──
 }
@@ -483,6 +689,7 @@ pub fn verify_envelope(signed: &SignedEnvelope) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::capnp_envelope::{encode_community_envelope, encode_signed_envelope};
 
     #[test]
     fn sign_and_verify_roundtrip() {
@@ -495,7 +702,10 @@ mod tests {
             channel_id: "ch_01".into(),
             pseudonym_key: pseudonym_hex.clone(),
         };
-        let envelope_bytes = serde_json::to_vec(&envelope).unwrap();
+        // Wire-format encoding matches the live gossip path (Cap'n
+        // Proto, not JSON) so the signature applies to bytes that the
+        // production code actually sends.
+        let envelope_bytes = encode_community_envelope(&envelope).unwrap();
 
         let signed = sign_envelope(
             &signing_key,
@@ -547,7 +757,7 @@ mod tests {
     }
 
     #[test]
-    fn envelope_message_notification_serde() {
+    fn envelope_message_notification_capnp_roundtrip() {
         let envelope = CommunityEnvelope::MessageNotification {
             channel_id: "ch_01".into(),
             message_id: "msg_abc".into(),
@@ -556,10 +766,10 @@ mod tests {
             lamport_ts: 42,
             sequence: 7,
             content_hash: "abc123".into(),
-            timestamp: 1234567890,
+            timestamp: 1_234_567_890,
         };
-        let json = serde_json::to_string(&envelope).unwrap();
-        let back: CommunityEnvelope = serde_json::from_str(&json).unwrap();
+        let bytes = encode_community_envelope(&envelope).unwrap();
+        let back = crate::capnp_envelope::decode_community_envelope(&bytes).unwrap();
         match back {
             CommunityEnvelope::MessageNotification { channel_id, .. } => {
                 assert_eq!(channel_id, "ch_01");
@@ -568,10 +778,10 @@ mod tests {
         }
     }
 
-    /// Regression guard: MessageNotification must NEVER contain a "ciphertext" field.
-    /// Gossip carries the cargo manifest (metadata), not the cargo (ciphertext).
-    /// Ciphertext exists only on DHT storage nodes (5 replicas), not across the
-    /// entire gossip fan-out graph.
+    /// Regression guard: MessageNotification must NEVER contain a "ciphertext" field
+    /// in the typed Rust enum. Gossip carries the cargo manifest (metadata), not the
+    /// cargo (ciphertext). Ciphertext exists only on DHT storage nodes (5 replicas),
+    /// not across the entire gossip fan-out graph.
     #[test]
     fn message_notification_contains_no_ciphertext() {
         let envelope = CommunityEnvelope::MessageNotification {
@@ -582,20 +792,23 @@ mod tests {
             lamport_ts: 42,
             sequence: 7,
             content_hash: "abc123def456".into(),
-            timestamp: 1234567890,
+            timestamp: 1_234_567_890,
         };
-        let json = serde_json::to_string(&envelope).unwrap();
+        // Debug-format inspection: `Debug` derives the field names the
+        // type really has. If a `ciphertext` field is ever added to
+        // `MessageNotification`, this regression catches it.
+        let debug = format!("{envelope:?}");
         assert!(
-            !json.contains("ciphertext"),
+            !debug.contains("ciphertext"),
             "MessageNotification must NOT contain ciphertext — gossip carries \
-             notifications only. Got: {json}"
+             notifications only. Got: {debug}"
         );
     }
 
-    /// Regression guard: MessageNotification payload stays compact.
-    /// The notification is only metadata. With short on-wire identifiers it
-    /// should remain comfortably under 200 bytes; if ciphertext sneaks in,
-    /// this limit will fail immediately.
+    /// Regression guard: `MessageNotification` packs compactly on the
+    /// wire. Cap'n Proto packed format keeps this notification well
+    /// under the Veilid 32 KB `app_message` limit; if ciphertext
+    /// sneaks in, this limit fails immediately.
     #[test]
     fn message_notification_payload_stays_compact() {
         let envelope = CommunityEnvelope::MessageNotification {
@@ -606,32 +819,36 @@ mod tests {
             lamport_ts: 42,
             sequence: 3,
             content_hash: "abc123".into(),
-            timestamp: 1234567890,
+            timestamp: 1_234_567_890,
         };
-        let bytes = serde_json::to_vec(&envelope).unwrap();
+        let bytes = encode_community_envelope(&envelope).unwrap();
         assert!(
             bytes.len() < 200,
-            "MessageNotification should be compact (< 200 bytes), was {} bytes. \
+            "MessageNotification should be compact (< 200 bytes packed), was {} bytes. \
              If this fails, check if ciphertext or large fields were added.",
             bytes.len()
         );
     }
 
     #[test]
-    fn control_payload_serde() {
+    fn control_payload_capnp_roundtrip() {
         let payload = ControlPayload::MemberLeave {
             pseudonym_key: "abc123".into(),
         };
-        let json = serde_json::to_string(&payload).unwrap();
-        let back: ControlPayload = serde_json::from_str(&json).unwrap();
+        let bytes =
+            encode_community_envelope(&CommunityEnvelope::Control(payload)).unwrap();
+        let back =
+            crate::capnp_envelope::decode_community_envelope(&bytes).unwrap();
         match back {
-            ControlPayload::MemberLeave { pseudonym_key } => assert_eq!(pseudonym_key, "abc123"),
+            CommunityEnvelope::Control(ControlPayload::MemberLeave { pseudonym_key }) => {
+                assert_eq!(pseudonym_key, "abc123");
+            }
             _ => panic!("wrong variant"),
         }
     }
 
     #[test]
-    fn signed_envelope_serde() {
+    fn signed_envelope_capnp_roundtrip() {
         let signed = SignedEnvelope {
             community_id: "comm_01".into(),
             sender_pseudonym: "abc123".into(),
@@ -639,8 +856,8 @@ mod tests {
             signature: vec![0u8; 64],
             ttl: 5,
         };
-        let json = serde_json::to_string(&signed).unwrap();
-        let back: SignedEnvelope = serde_json::from_str(&json).unwrap();
+        let bytes = encode_signed_envelope(&signed);
+        let back = crate::capnp_envelope::decode_signed_envelope(&bytes).unwrap();
         assert_eq!(back.community_id, "comm_01");
     }
 }

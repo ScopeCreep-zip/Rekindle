@@ -89,6 +89,60 @@ pub struct AppState {
     pub automod_cache: Arc<RwLock<HashMap<String, AutoModCompiledCache>>>,
     /// Wake-up signal for the event reminder scheduler.
     pub event_reminder_wake_tx: Arc<RwLock<Option<tokio::sync::watch::Sender<u64>>>>,
+    /// Per-community Lost Cargo chunk caches. `community_id` → `ChunkCache`.
+    /// Initialized lazily on first use of a community's file system. Lives
+    /// on the filesystem under `<app_data>/file_cache/<community_id>/`.
+    pub file_caches: RwLock<HashMap<String, rekindle_files::ChunkCache>>,
+    /// Pinned-attachment IDs per community. Mirrors the merged
+    /// `governance_state.pinned_attachments` set; consulted by the cache
+    /// during eviction sweeps.
+    pub pinned_attachments: RwLock<HashMap<String, rekindle_files::PinnedSet>>,
+    /// Root directory for all per-community Lost Cargo caches. Resolved
+    /// once at app setup from `app_handle.path().app_data_dir()`.
+    pub file_cache_root: RwLock<Option<std::path::PathBuf>>,
+    /// DM MEK cache (architecture §27.1). Keyed by SMPL record key →
+    /// `DmMekChain` holding the genesis MEK plus every materialized
+    /// generation forward. Forward architecture for §5.2 line 1100 +
+    /// §5.3 line 1186: every message envelope carries its `mek_generation`,
+    /// and receivers must hold historical MEKs to decrypt them.
+    pub dm_mek_cache: Mutex<HashMap<String, rekindle_dm::DmMekChain>>,
+
+    /// Strand Relay probe cooldown (architecture §13.5). Keyed by the
+    /// target pseudonym hex → unix-seconds of the last `StatusRequest`
+    /// fan-out. Prevents amplification when send-failure retries
+    /// repeatedly trigger probes (BEP-11-style 60s window).
+    pub relay_probe_cooldown: Mutex<HashMap<String, u64>>,
+
+    /// Mutual Aid §14.5 dirty set for per-peer reliability counters.
+    /// `record_peer_reliability` updates the in-memory map on every
+    /// gossip event and inserts here; a 30s flush task drains this set
+    /// into SQLite. Avoids the hot-path-write amplification of
+    /// per-event upserts (D-fanout × send/recv ≈ 1000 writes/min in
+    /// busy communities).
+    pub relay_reliability_dirty: Mutex<HashSet<(String, String)>>,
+
+    /// Push relay (architecture §17.3 Tier 3) wake-notify debounce.
+    /// Each `WakeNotify` triggers a 30+ second DHT sync sweep; we cap
+    /// to one sweep per debounce window so back-to-back wakes don't
+    /// saturate the network or drain mobile battery.
+    pub last_wake_notify_secs: Mutex<u64>,
+
+    /// Architecture §10.6 video / screen-share reassembly. Per-community
+    /// pending-fragment buffers; cleared on logout via the cleanup path.
+    pub video_reassembly:
+        crate::services::community::video::VideoReassemblyState,
+
+    /// Architecture §17.2 line 2402 — per-channel notification burst
+    /// throttle. Bounds OS popups to 5 per 10 s per channel and folds
+    /// the rest into a single summary notification.
+    pub notification_throttle: crate::services::community::notifications::NotificationThrottle,
+
+    /// Plan §Failure 5 — direct call state, keyed by `call_id`. Holds
+    /// the local X25519 secret + peer public until both sides have
+    /// exchanged keys, then derives the symmetric `call_key` consumed
+    /// by the voice transport. Entries drop on Active→hangup or on
+    /// Outgoing→Missed timeout (which writes a `missed_calls` row).
+    pub active_calls: Arc<Mutex<HashMap<String, rekindle_calls::CallState>>>,
 }
 
 impl Default for AppState {
@@ -126,6 +180,18 @@ impl Default for AppState {
             channel_write_retry_tx: Arc::new(RwLock::new(None)),
             automod_cache: Arc::new(RwLock::new(HashMap::new())),
             event_reminder_wake_tx: Arc::new(RwLock::new(None)),
+            file_caches: RwLock::new(HashMap::new()),
+            pinned_attachments: RwLock::new(HashMap::new()),
+            file_cache_root: RwLock::new(None),
+            dm_mek_cache: Mutex::new(HashMap::new()),
+            relay_probe_cooldown: Mutex::new(HashMap::new()),
+            relay_reliability_dirty: Mutex::new(HashSet::new()),
+            last_wake_notify_secs: Mutex::new(0),
+            video_reassembly:
+                crate::services::community::video::VideoReassemblyState::new(),
+            notification_throttle:
+                crate::services::community::notifications::NotificationThrottle::new(),
+            active_calls: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
@@ -496,8 +562,6 @@ pub struct CommunityState {
     pub my_role_ids: Vec<u32>,
     /// Cached role definitions from merged governance state.
     pub roles: Vec<RoleDefinition>,
-    /// Display string for our highest role.
-    pub my_role: Option<String>,
     /// Owner keypair for the community DHT record (Veilid `KeyPair::to_string()` format).
     /// Required to open the record with write access.
     pub dht_owner_keypair: Option<String>,
@@ -509,8 +573,17 @@ pub struct CommunityState {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub member_registry_key: Option<String>,
     /// Our subkey index in the member registry SMPL record.
+    /// **Local** to our segment's record (0..255). The corresponding global
+    /// slot index used for slot-keypair derivation is
+    /// `my_segment_index * 255 + my_subkey_index` (architecture §15.2 +
+    /// §8.3). For segment 0 these are equal.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub my_subkey_index: Option<u32>,
+    /// Plate Gate (architecture §15): which segment hosts our slot. `None`
+    /// for legacy / unknown; 0 for the genesis segment; 1..=MAX_SEGMENTS
+    /// for each expansion. Persisted to SQLite, restored on login.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub my_segment_index: Option<u32>,
     // ── v2.0 flat governance fields ──
     /// DHT key of the SMPL governance record (o_cnt:0).
     /// This is the canonical community identifier.
@@ -590,6 +663,21 @@ pub struct CommunityState {
     #[serde(skip)]
     pub peer_sequences: HashMap<(String, String), u64>,
 
+    /// Architecture §28.7 slowmode: per-channel timestamp (ms) of our
+    /// last successful send. Compared against the channel's
+    /// `slowmode_seconds` to gate further writes. In-memory only —
+    /// slowmode applies to the active session, not across restarts.
+    #[serde(skip)]
+    pub channel_last_send_at: HashMap<String, i64>,
+
+    /// Mutual Aid topology metrics (architecture §14.5): per-peer
+    /// (success_count, failure_count) over the lifetime of this session.
+    /// Used to weight gossip fan-out selection — the highest-reliability
+    /// peers ("ziplines") emerge organically from usage. Pure in-memory;
+    /// not persisted across restarts.
+    #[serde(skip)]
+    pub peer_reliability: HashMap<String, (u32, u32)>,
+
     /// Shutdown sender for the presence poll loop.
     #[serde(skip)]
     pub presence_poll_shutdown_tx: Option<mpsc::Sender<()>>,
@@ -615,6 +703,62 @@ pub struct CommunityState {
     /// Whether our local member record has completed onboarding for this community.
     #[serde(skip)]
     pub onboarding_complete: bool,
+
+    /// Per-community profile bio (≤190 chars). Same identity, different
+    /// persona per community — the value is propagated to peers via the next
+    /// presence write. Local-only state; on restart it resets to None and
+    /// the user re-edits it from the popup.
+    #[serde(skip)]
+    pub my_bio: Option<String>,
+
+    /// Per-community profile pronouns (≤40 chars per architecture §24.2).
+    /// See `my_bio`.
+    #[serde(skip)]
+    pub my_pronouns: Option<String>,
+
+    /// Per-community profile theme color (0xRRGGBB). See `my_bio`.
+    #[serde(skip)]
+    pub my_theme_color: Option<u32>,
+
+    /// Per-community profile badges (≤8 entries, each ≤32 chars). See `my_bio`.
+    #[serde(skip)]
+    pub my_badges: Vec<String>,
+
+    /// Per-community avatar content reference (BLAKE3 hex hash of the
+    /// image stored as a Lost Cargo expression asset). Architecture
+    /// §24.2 + §32 Week 15.
+    #[serde(skip)]
+    pub my_avatar_ref: Option<String>,
+
+    /// Per-community banner content reference (BLAKE3 hex hash). Same
+    /// caching model as `my_avatar_ref`.
+    #[serde(skip)]
+    pub my_banner_ref: Option<String>,
+
+    /// Architecture §32 Phase 5 Week 15 — community-level icon (the
+    /// avatar shown in the buddy list / community switcher). BLAKE3
+    /// hex hash of the WebP-compressed image cached at
+    /// `<app_data>/community_avatars/<community_id>/<hash>.webp`.
+    /// Synced from `governance.metadata.icon_hash` when CRDT state
+    /// is rebuilt; persisted to the `communities.icon_hash` column.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon_hash: Option<String>,
+
+    /// Architecture §32 Phase 5 Week 15 — community-level banner.
+    /// Same caching model as `icon_hash`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub banner_hash: Option<String>,
+
+    /// Reader-aggregated profile snapshots (peer pseudonym → profile fields).
+    /// Populated by `presence_poll_tick` from peers' presence subkeys.
+    #[serde(skip)]
+    pub member_profiles: HashMap<String, MemberProfileSnapshot>,
+
+    /// Architecture §20.6 raid detector — sliding window of recent
+    /// (timestamp_secs, pseudonym_hex) join observations. Bounded to the
+    /// policy window length when entries are inserted.
+    #[serde(skip)]
+    pub recent_member_joins: std::collections::VecDeque<(u64, String)>,
 }
 
 /// Tracks DHT records opened for a single community.
@@ -648,6 +792,26 @@ pub struct EventRsvpEntry {
     pub status: String,
 }
 
+/// Per-community profile snapshot aggregated from a peer's presence subkey.
+///
+/// The presence poll (`presence/poll.rs::presence_poll_tick`) writes one
+/// entry per discovered member into `CommunityState.member_profiles`.
+/// `get_community_members` joins this map with the SQLite membership rows so
+/// the popup can render `bio` / `pronouns` / `theme_color` / `badges`.
+#[derive(Debug, Clone, Default)]
+pub struct MemberProfileSnapshot {
+    /// Mirror of `MemberPresence.display_name` so mention-resolution
+    /// (architecture §28.5) can map `@name` → pseudonym hex without a
+    /// SQLite round-trip on every send.
+    pub display_name: Option<String>,
+    pub bio: Option<String>,
+    pub pronouns: Option<String>,
+    pub theme_color: Option<u32>,
+    pub badges: Vec<String>,
+    pub avatar_ref: Option<String>,
+    pub banner_ref: Option<String>,
+}
+
 /// A role definition cached from merged governance state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -660,6 +824,11 @@ pub struct RoleDefinition {
     pub hoist: bool,
     pub mentionable: bool,
     pub self_assignable: bool,
+    /// Architecture §19.4 — when set, the member can hold at most one
+    /// role per group (CRDT-enforced; the higher-Lamport assignment
+    /// wins).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exclusion_group: Option<String>,
 }
 
 impl RoleDefinition {
@@ -674,6 +843,7 @@ impl RoleDefinition {
             hoist: dto.hoist,
             mentionable: dto.mentionable,
             self_assignable: dto.self_assignable,
+            exclusion_group: None,
         }
     }
 }
@@ -702,6 +872,12 @@ pub struct ChannelInfo {
     pub category_id: Option<String>,
     #[serde(default)]
     pub topic: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forum_tags: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stage_speakers: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stage_moderator: Option<String>,
     #[serde(default)]
     pub slowmode_seconds: Option<u32>,
     /// Whether this channel is marked NSFW.
@@ -716,6 +892,18 @@ pub struct ChannelInfo {
     /// Local notification preference for this channel.
     #[serde(default = "default_notification_level")]
     pub notification_level: String,
+    /// Architecture §32 Phase 7 Week 25 — channel-level notification
+    /// sound override (BLAKE3 content hash of a soundboard expression).
+    /// `None` means inherit from the community default; the resolver
+    /// in `services/community/notifications.rs::resolve_notification_sound`
+    /// performs the channel → community-default → app-default cascade.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notification_sound_ref: Option<String>,
+    /// Architecture §10.8 — text-in-voice. Hex channel id of the
+    /// parent voice channel when this channel is the text companion of
+    /// a voice channel; `None` for normal channels.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_voice_channel_id: Option<String>,
 }
 
 fn default_notification_level() -> String {
