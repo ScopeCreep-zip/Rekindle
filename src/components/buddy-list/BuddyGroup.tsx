@@ -1,4 +1,4 @@
-import { Component, createSignal, Show, For } from "solid-js";
+import { Component, createSignal, JSX, Show, For } from "solid-js";
 import type { Friend } from "../../stores/friends.store";
 import { handleRenameFriendGroup, handleCreateFriendGroup } from "../../handlers/buddy.handlers";
 import BuddyItem from "./BuddyItem";
@@ -8,7 +8,14 @@ interface BuddyGroupProps {
   friends: Friend[];
   selectedKey: string | null;
   onDoubleClick: (publicKey: string, displayName: string) => void;
-  onContextMenu: (e: MouseEvent, publicKey: string) => void;
+  onSelect: (publicKey: string) => void;
+  /**
+   * Per-item render hook owned by the parent so context-menu wrapping
+   * (`<ContextMenu><ContextMenu.Trigger>...</>`) lives at the level
+   * where the menu's data dependencies (auth, relay state, friend
+   * groups, etc.) are in scope.
+   */
+  renderItem: (friend: Friend, item: JSX.Element) => JSX.Element;
 }
 
 const BuddyGroup: Component<BuddyGroupProps> = (props) => {
@@ -22,7 +29,6 @@ const BuddyGroup: Component<BuddyGroupProps> = (props) => {
 
   function handleGroupContextMenu(e: MouseEvent): void {
     e.preventDefault();
-    // Don't allow renaming the default "Friends" group
     if (props.name === "Friends") return;
     setRenameValue(props.name);
     setRenaming(true);
@@ -31,7 +37,6 @@ const BuddyGroup: Component<BuddyGroupProps> = (props) => {
   async function commitRename(): Promise<void> {
     const newName = renameValue().trim();
     if (newName && newName !== props.name) {
-      // Create/get the group ID then rename
       const groupId = await handleCreateFriendGroup(props.name);
       if (groupId >= 0) {
         await handleRenameFriendGroup(groupId, newName);
@@ -64,7 +69,7 @@ const BuddyGroup: Component<BuddyGroupProps> = (props) => {
             autofocus
           />
           <button
-            class="group-create-ok-btn"
+            class="form-btn-primary"
             onClick={() => commitRename()}
           >
             OK
@@ -76,30 +81,33 @@ const BuddyGroup: Component<BuddyGroupProps> = (props) => {
           onClick={handleToggle}
           onContextMenu={handleGroupContextMenu}
         >
-          {collapsed() ? "\u25B6" : "\u25BC"} {props.name} ({props.friends.length})
+          {collapsed() ? "▶" : "▼"} {props.name} ({props.friends.length})
         </div>
       </Show>
       <Show when={!collapsed()}>
         <For each={props.friends}>
-          {(friend) => (
-            <BuddyItem
-              publicKey={friend.publicKey}
-              displayName={friend.displayName}
-              nickname={friend.nickname}
-              status={friend.status}
-              statusMessage={friend.statusMessage}
-              gameInfo={friend.gameInfo?.gameName ?? null}
-              gameElapsed={friend.gameInfo?.startedAt ?? null}
-              serverAddress={friend.gameInfo?.serverAddress ?? null}
-              lastSeenAt={friend.lastSeenAt}
-              unreadCount={friend.unreadCount}
-              voiceChannel={friend.voiceChannel}
-              friendshipState={friend.friendshipState}
-              selected={props.selectedKey === friend.publicKey}
-              onDoubleClick={props.onDoubleClick}
-              onContextMenu={props.onContextMenu}
-            />
-          )}
+          {(friend) =>
+            props.renderItem(
+              friend,
+              <BuddyItem
+                publicKey={friend.publicKey}
+                displayName={friend.displayName}
+                nickname={friend.nickname}
+                status={friend.status}
+                statusMessage={friend.statusMessage}
+                gameInfo={friend.gameInfo?.gameName ?? null}
+                gameElapsed={friend.gameInfo?.startedAt ?? null}
+                serverAddress={friend.gameInfo?.serverAddress ?? null}
+                lastSeenAt={friend.lastSeenAt}
+                unreadCount={friend.unreadCount}
+                voiceChannel={friend.voiceChannel}
+                friendshipState={friend.friendshipState}
+                selected={props.selectedKey === friend.publicKey}
+                onDoubleClick={props.onDoubleClick}
+                onSelect={props.onSelect}
+              />,
+            )
+          }
         </For>
       </Show>
     </div>

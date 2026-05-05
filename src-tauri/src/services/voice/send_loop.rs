@@ -25,6 +25,11 @@ pub(crate) struct VoiceSendParams {
     pub speaker_ref_rx: broadcast::Receiver<Vec<f32>>,
     /// Community ID for MEK encryption of voice packets. None for 1:1 calls.
     pub community_id: Option<String>,
+    /// Voice channel ID we're transmitting in. Architecture §10.7
+    /// stage-channel gate uses this with the merged `stage_speakers`
+    /// list to drop frames from non-speakers before they hit the
+    /// transport.
+    pub channel_id: String,
     /// Shared app state for MEK cache access.
     pub state: crate::state::SharedState,
 }
@@ -47,6 +52,7 @@ struct VoiceSendLoop {
     send_failures: u64,
     last_quality_report: Instant,
     community_id: Option<String>,
+    channel_id: String,
     state: crate::state::SharedState,
 }
 
@@ -104,6 +110,7 @@ impl VoiceSendLoop {
             send_failures: 0,
             last_quality_report: Instant::now(),
             community_id: params.community_id,
+            channel_id: params.channel_id,
             state: params.state,
         })
     }
@@ -129,6 +136,40 @@ impl VoiceSendLoop {
         self.cleanup();
     }
 
+    /// Architecture §10.7: outside a stage channel, every member may
+    /// transmit. Inside a stage channel, only the listed speakers may.
+    fn is_allowed_to_transmit(&self) -> bool {
+        let Some(ref community_id) = self.community_id else {
+            return true;
+        };
+        let communities = self.state.communities.read();
+        let Some(community) = communities.get(community_id) else {
+            return true;
+        };
+        let Some(channel) = community
+            .channels
+            .iter()
+            .find(|ch| ch.id == self.channel_id)
+        else {
+            return true;
+        };
+        if !matches!(channel.channel_type, crate::state::ChannelType::Stage) {
+            return true;
+        }
+        let Some(my_pseudonym) = community.my_pseudonym_key.as_deref() else {
+            return false;
+        };
+        // Moderator may always speak; audience must be in stage_speakers.
+        if channel
+            .stage_moderator
+            .as_deref()
+            .is_some_and(|m| m == my_pseudonym)
+        {
+            return true;
+        }
+        channel.stage_speakers.iter().any(|s| s == my_pseudonym)
+    }
+
     async fn process_samples(&mut self, samples: Vec<f32>) {
         self.pcm_buffer.extend_from_slice(&samples);
         while self.pcm_buffer.len() >= self.frame_size {
@@ -138,6 +179,22 @@ impl VoiceSendLoop {
     }
 
     async fn process_frame(&mut self, frame_samples: Vec<f32>) {
+        // Architecture §10.7 stage gate: in a stage channel, only the
+        // promoted speakers may transmit. Audience members drain their
+        // capture buffer (so it doesn't backlog) but never encode or
+        // hit the transport.
+        if !self.is_allowed_to_transmit() {
+            if self.was_speaking {
+                self.was_speaking = false;
+                let event = VoiceEvent::UserSpeaking {
+                    public_key: self.public_key.clone(),
+                    speaking: false,
+                };
+                let _ = self.app.emit("voice-event", &event);
+            }
+            return;
+        }
+
         // Skip processing when muted — still drain capture to avoid backpressure
         if self.muted_flag.load(Ordering::Relaxed) {
             if self.was_speaking {

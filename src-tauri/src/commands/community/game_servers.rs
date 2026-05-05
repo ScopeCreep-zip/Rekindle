@@ -43,7 +43,7 @@ pub async fn add_game_server(
         state.inner(),
         &community_id,
         &CommunityEnvelope::Control(ControlPayload::GameServerAdded {
-            server: serde_json::to_value(&server).map_err(|e| format!("serialize server: {e}"))?,
+            server: server.clone(),
         }),
     )?;
 

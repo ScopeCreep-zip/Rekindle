@@ -29,14 +29,16 @@ const ReactionBar: Component<ReactionBarProps> = (props) => {
                 class={`reaction-chip ${isActive() ? "reaction-chip-active" : ""}`}
                 onClick={() => props.onToggle(reaction.emoji)}
                 title={reaction.reactors.join(", ")}
+                aria-label={`${isActive() ? "Remove" : "Add"} reaction ${reaction.emoji} (${reaction.count} ${reaction.count === 1 ? "person" : "people"})`}
+                aria-pressed={isActive()}
               >
                 <Show
                   when={resolveCustomEmojiSrc(reaction.emoji)}
-                  fallback={<span class="reaction-chip-emoji">{reaction.emoji}</span>}
+                  fallback={<span class="reaction-chip-emoji" aria-hidden="true">{reaction.emoji}</span>}
                 >
-                  {(src) => <img class="reaction-chip-expression" src={src()} alt={reaction.emoji} />}
+                  {(src) => <img class="reaction-chip-expression" src={src()} alt="" />}
                 </Show>
-                <span class="reaction-chip-count">{reaction.count}</span>
+                <span class="reaction-chip-count" aria-hidden="true">{reaction.count}</span>
               </button>
             );
           }}

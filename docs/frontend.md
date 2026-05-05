@@ -1,8 +1,8 @@
 # Frontend Architecture
 
-The SolidJS frontend is a thin UI layer. It renders state received from the Rust
-backend and forwards user actions back via Tauri IPC. All business logic,
-cryptography, and networking live in Rust.
+The SolidJS frontend is a thin UI layer. It renders state received from the
+Rust backend and forwards user actions back via Tauri IPC. All business
+logic, cryptography, and networking live in Rust.
 
 ## Technology
 
@@ -25,74 +25,120 @@ cryptography, and networking live in Rust.
 ```
 src/
 ├── main.tsx                          Entry point, path-based routing
-├── windows/                          One top-level component per window type
+├── windows/                          One top-level component per window type (7)
 │   ├── LoginWindow.tsx               Passphrase entry, identity creation
 │   ├── BuddyListWindow.tsx           Main buddy list (narrow vertical)
-│   ├── ChatWindow.tsx                1:1 chat (one per conversation)
+│   ├── ChatWindow.tsx                1:1 friend chat (one window per conversation)
+│   ├── DmWindow.tsx                  DM / group DM (one window per conversation)
 │   ├── CommunityWindow.tsx           Community with channels + members
 │   ├── SettingsWindow.tsx            Preferences and configuration
-│   └── ProfileWindow.tsx             Friend profile viewer
+│   └── ProfileWindow.tsx             Friend / member profile viewer
 ├── components/
 │   ├── titlebar/
 │   │   └── Titlebar.tsx              Custom frameless window titlebar
 │   ├── buddy-list/
 │   │   ├── BuddyList.tsx             Friend list container
-│   │   ├── BuddyGroup.tsx            Collapsible friend group header
+│   │   ├── BuddyGroup.tsx            Collapsible friend group
 │   │   ├── BuddyItem.tsx             Individual friend row
-│   │   ├── UserIdentityBar.tsx       Current user's identity display
+│   │   ├── UserIdentityBar.tsx       Current user identity display
 │   │   ├── BottomActionBar.tsx       Action buttons at list bottom
-│   │   ├── MenuBar.tsx               Top menu bar with actions
-│   │   ├── SearchBar.tsx             Friend search/filter input
-│   │   ├── TabBar.tsx                Tab navigation (friends, communities)
+│   │   ├── MenuBar.tsx               Top menu bar
+│   │   ├── SearchBar.tsx             Friend search/filter
+│   │   ├── TabBar.tsx                Tab navigation (friends, communities, DMs)
 │   │   ├── AddFriendModal.tsx        Add friend by public key or invite link
-│   │   ├── NewChatModal.tsx          Start new conversation
+│   │   ├── PublicKeyTab.tsx          Add-friend "by public key" sub-tab
+│   │   ├── InviteLinkTab.tsx         Add-friend "by invite link" sub-tab
+│   │   ├── DmInviteModal.tsx         Start a new 2-party or group DM
+│   │   ├── NewChatModal.tsx          Start a new 1:1 friend chat
 │   │   ├── PendingRequests.tsx       Incoming friend request list
 │   │   ├── NotificationCenter.tsx    In-app notification display
-│   │   ├── CommunityListCompact.tsx  Compact community list in buddy list sidebar
-│   │   ├── BuddyCreateCommunityModal.tsx  Create community from buddy list
-│   │   └── BuddyJoinCommunityModal.tsx    Join community from buddy list
+│   │   └── CommunityListCompact.tsx  Compact community list in buddy sidebar
 │   ├── chat/
 │   │   ├── MessageList.tsx           Scrollable message history
 │   │   ├── MessageBubble.tsx         Individual message display
+│   │   ├── MessageRichBody.tsx       Markdown / mentions / link previews renderer
 │   │   ├── MessageInput.tsx          Text input with Enter-to-send
-│   │   └── TypingIndicator.tsx       Typing animation
+│   │   ├── TypingIndicator.tsx       Typing animation
+│   │   ├── ReactionBar.tsx           Emoji-reaction strip below messages
+│   │   ├── EmojiPicker.tsx           Emoji + custom-emoji picker
+│   │   ├── AttachmentDisplay.tsx     File attachment thumbnails / download UI
+│   │   ├── PollCard.tsx              Poll voting UI
+│   │   ├── ReplyPreview.tsx          "Replying to…" header above input
+│   │   ├── ForwardMessageDialog.tsx  Forward to another channel/DM
+│   │   ├── ThreadStarter.tsx         Inline "start thread" affordance
+│   │   └── VoiceMessagePlayer.tsx    Voice-message playback
 │   ├── community/
-│   │   ├── CommunityList.tsx         Community browser
-│   │   ├── ChannelList.tsx           Channel sidebar
+│   │   ├── CommunityList.tsx         Community sidebar
+│   │   ├── ChannelList.tsx           Channel sidebar (per community)
+│   │   ├── CategoryHeader.tsx        Channel category collapse header
 │   │   ├── MemberList.tsx            Member list with roles
+│   │   ├── MemberProfilePopup.tsx    Per-community profile popup
 │   │   ├── RoleTag.tsx               Role badge display
 │   │   ├── CreateCommunityModal.tsx  Community creation form
-│   │   ├── CreateChannelModal.tsx    Channel creation form
 │   │   ├── JoinCommunityModal.tsx    Join by invite code
-│   │   ├── CommunitySettingsModal.tsx  Community settings (roles, bans, info)
-│   │   └── RenameChannelModal.tsx    Rename channel dialog
+│   │   ├── CreateChannelModal.tsx    Channel creation form
+│   │   ├── RenameChannelModal.tsx    Rename channel dialog
+│   │   ├── CreateCategoryModal.tsx   Category creation
+│   │   ├── RenameCategoryModal.tsx   Category rename
+│   │   ├── CreateEventModal.tsx      Scheduled event creation
+│   │   ├── EventsPanel.tsx           Upcoming/past events panel
+│   │   ├── CreatePollModal.tsx       Poll creation
+│   │   ├── ForumChannelView.tsx      Forum-channel thread list view
+│   │   ├── ThreadListPanel.tsx       Thread browser
+│   │   ├── ThreadPanel.tsx           Single thread message view
+│   │   ├── PinnedMessagesPanel.tsx   Pinned messages drawer
+│   │   ├── ExpressionPicker.tsx      Emoji/sticker/soundboard picker
+│   │   ├── GameServerList.tsx        Community game-server favorites
+│   │   ├── StagePanel.tsx            Stage-channel speaker/listener panel
+│   │   ├── OnboardingWizard.tsx      First-join onboarding flow
+│   │   ├── WelcomeScreen.tsx         Customizable welcome screen
+│   │   ├── CommunitySettingsModal.tsx  Settings tab container
+│   │   └── settings/
+│   │       ├── OverviewTab.tsx
+│   │       ├── MembersTab.tsx
+│   │       ├── RolesTab.tsx
+│   │       ├── PermissionCheckboxList.tsx
+│   │       ├── BansTab.tsx
+│   │       ├── InvitesTab.tsx
+│   │       ├── ChannelsTab.tsx
+│   │       ├── AutoModTab.tsx
+│   │       ├── AuditLogTab.tsx
+│   │       └── SecurityTab.tsx
 │   ├── voice/
 │   │   ├── VoicePanel.tsx            Voice channel participant panel
 │   │   └── VoiceParticipant.tsx      Individual participant display
 │   ├── status/
-│   │   ├── StatusPicker.tsx          Online/away/busy dropdown
+│   │   ├── StatusPicker.tsx          Online/away/busy/invisible dropdown
 │   │   ├── StatusDot.tsx             Colored status indicator
 │   │   └── NetworkIndicator.tsx      Veilid connection status
+│   ├── settings/
+│   │   ├── RelaySettingsSection.tsx       Strand Relay configuration
+│   │   └── PushRelaySettingsSection.tsx   Mobile push relay configuration
 │   └── common/
 │       ├── Avatar.tsx                User avatar display
 │       ├── ContextMenu.tsx           Right-click context menu
-│       ├── ConfirmDialog.tsx         Confirmation dialog (delete, leave, etc.)
+│       ├── ConfirmDialog.tsx         Confirmation dialog
 │       ├── Modal.tsx                 Generic modal dialog
+│       ├── SimpleInputModal.tsx      Single-input modal (rename, etc.)
+│       ├── FormField.tsx             Labeled input with error slot
 │       ├── Tooltip.tsx               Hover tooltip
 │       ├── Toast.tsx                 Toast notification display
 │       └── ScrollArea.tsx            Custom scrollbar container
 ├── stores/
 │   ├── auth.store.ts                 Login state, identity info
 │   ├── friends.store.ts              Friend list, presence, groups
-│   ├── chat.store.ts                 Conversations, messages, typing
-│   ├── community.store.ts            Communities, channels, members
+│   ├── chat.store.ts                 1:1 conversations, messages, typing
+│   ├── dm.store.ts                   DMs / group DMs
+│   ├── community.store.ts            Communities, channels, members, threads, events
 │   ├── voice.store.ts                Voice connection, mute/deafen, participants
-│   ├── settings.store.ts             User preferences
 │   ├── notification.store.ts         System notifications
+│   ├── settings.store.ts             User preferences
+│   ├── relay.store.ts                Strand Relay state (offers, volunteered friends)
 │   ├── buddylist-ui.store.ts         Buddy list UI state (search, tabs, modals)
-│   └── toast.store.ts                Toast notification queue
+│   ├── toast.store.ts                Toast notification queue
+│   └── types.ts                      Shared TS types
 ├── ipc/
-│   ├── commands.ts                   Typed invoke() wrappers for all commands
+│   ├── commands.ts                   Typed invoke() wrappers (~170 commands)
 │   ├── channels.ts                   Event subscriptions via listen()
 │   ├── invoke.ts                     Conditional invoke (Tauri native / E2E HTTP)
 │   ├── hydrate.ts                    State hydration on login
@@ -102,18 +148,32 @@ src/
 │   ├── titlebar.handlers.ts          Minimize, maximize, close, hide
 │   ├── auth.handlers.ts              Login, create identity, logout
 │   ├── buddy.handlers.ts             Double-click, context menu, add friend
-│   ├── chat.handlers.ts              Send message, key handling
-│   ├── chat-events.handlers.ts       ChatEvent listener (messages, friend requests)
+│   ├── chat.handlers.ts              Send DM, key handling
+│   ├── chat-events.handlers.ts       ChatEvent listener (messages, friend requests, DM invites)
+│   ├── dm.handlers.ts                DM-window key + event handlers
 │   ├── community.handlers.ts         Create, join, channel actions
 │   ├── voice.handlers.ts             Join/leave, mute/deafen
 │   ├── settings.handlers.ts          Preference changes
-│   ├── presence-events.handlers.ts   PresenceEvent listener (online/offline, game, status)
-│   └── notification-events.handlers.ts  NotificationEvent listener (alerts, updates)
+│   ├── relay.handlers.ts             Strand Relay events
+│   ├── presence-events.handlers.ts   PresenceEvent listener (online/offline, status, game)
+│   ├── notification-events.handlers.ts  NotificationEvent listener
+│   └── deep-link.handler.ts          rekindle:// URL handling
+├── hooks/
+│   └── createContextMenu.ts          Reusable context-menu composable
+├── utils/
+│   ├── error.ts                      Error formatting
+│   ├── formatting.ts                 Text formatting (timestamps, counts)
+│   ├── time.ts                       Time formatters
+│   ├── color.ts                      Color/hex helpers
+│   ├── masking.ts                    Public key masking
+│   ├── permissions.ts                Permission bitmask helpers
+│   └── transformers.ts               Data shape transformers
 ├── styles/
 │   ├── global.css                    Global Tailwind styles
 │   ├── animations.css                Keyframe animations
 │   ├── scrollbar.css                 Custom scrollbar styling
 │   └── xfire-theme.css               Xfire-inspired theme variables
+├── assets/                           Static images / icons
 └── icons.ts                          Icon definitions
 ```
 
@@ -128,7 +188,8 @@ each webview only compiles the module tree it renders.
 |------|-----------------|
 | `/login` | `LoginWindow` |
 | `/buddy-list` | `BuddyListWindow` |
-| `/chat?peer={key}` | `ChatWindow` |
+| `/chat?peer={key}` | `ChatWindow` (1:1 friend) |
+| `/dm?record={key}` | `DmWindow` (DM / group DM) |
 | `/community?id={id}` | `CommunityWindow` |
 | `/settings` | `SettingsWindow` |
 | `/profile?key={key}` | `ProfileWindow` |
@@ -137,9 +198,9 @@ The fallback route renders `LoginWindow`.
 
 ## Stores
 
-Stores use SolidJS `createStore()` for reactive state. Each store is populated
-by event listeners registered in `channels.ts` and hydrated on login via
-`hydrate.ts`.
+Stores use SolidJS `createStore()` for reactive state. Each store is
+populated by event listeners registered in `channels.ts` and hydrated on
+login via `hydrate.ts`.
 
 ### auth.store.ts
 
@@ -149,7 +210,7 @@ AuthState {
     publicKey: string | null
     displayName: string | null
     avatarUrl: string | null
-    status: 'online' | 'away' | 'busy' | 'offline'
+    status: 'online' | 'away' | 'busy' | 'offline' | 'invisible'
     statusMessage: string | null
     gameInfo: GameStatus | null
 }
@@ -157,73 +218,37 @@ AuthState {
 
 ### friends.store.ts
 
-```
-FriendsState {
-    friends: Record<publicKey, Friend>
-    pendingRequests: PendingRequest[]
-    showAddFriend: boolean
-    showNewChat: boolean
-}
-
-Friend {
-    publicKey: string
-    displayName: string
-    nickname: string | null
-    status: UserStatus
-    statusMessage: string | null
-    gameInfo: GameInfo | null
-    group: string
-    unreadCount: number
-    lastSeenAt: number | null
-    voiceChannel: string | null
-}
-```
+Friend list, presence, pending requests, and outgoing-invite tracking.
 
 ### chat.store.ts
 
-```
-ChatState {
-    conversations: Record<string, Conversation>
-    activeConversation: string | null
-}
+1:1 friend conversations keyed by peer public key. Messages, typing state,
+last-read timestamps.
 
-Conversation {
-    peerId: string
-    messages: Message[]
-    isTyping: boolean
-    lastRead: number
-}
-```
+### dm.store.ts
+
+DMs and group DMs keyed by SMPL record key. Holds pending invites awaiting
+accept/decline.
 
 ### community.store.ts
 
-```
-CommunityState {
-    communities: Record<id, Community>
-    activeCommunity: string | null
-    activeChannel: string | null
-    channelMessages: Record<channelId, Message[]>
-}
-```
+Joined communities, channel lists, member lists, role definitions, threads,
+events, pins, expressions, and per-channel unread counts.
 
 ### voice.store.ts
 
-```
-VoiceState {
-    isConnected: boolean
-    channelId: string | null
-    isMuted: boolean
-    isDeafened: boolean
-    participants: VoiceParticipant[]
-    connectionQuality: string
-    activeCallType: 'dm' | 'community' | null
-    inputDevice: string | null
-    outputDevice: string | null
-    inputVolume: number
-    outputVolume: number
-    deviceChangeCount: number
-}
-```
+Voice connection state: channel ID, mute/deafen, participant list,
+connection quality, device selection, active call type (`dm` / `community`).
+
+### relay.store.ts
+
+Strand Relay state: received offers (friends volunteering to relay for us)
+and volunteered offers (friends we relay for).
+
+### notification.store.ts / settings.store.ts / toast.store.ts / buddylist-ui.store.ts
+
+Notifications inbox, user preferences, transient toast queue, and buddy-list
+UI state (search query, active tab, open modals).
 
 ## IPC Layer
 
@@ -234,17 +259,16 @@ directly to a `#[tauri::command]` in the Rust backend.
 
 ### channels.ts
 
-Event subscriptions using `listen()` from `@tauri-apps/api/event`. Subscribes
-to seven event channels:
+Event subscriptions using `listen()` from `@tauri-apps/api/event`:
 
 | Event Name | Enum Type | Updates |
 |------------|-----------|---------|
-| `chat-event` | `ChatEvent` | Messages, typing, friend requests, channel history |
+| `chat-event` | `ChatEvent` | Messages, typing, friend requests, DM invites |
 | `presence-event` | `PresenceEvent` | Online/offline, status, game changes |
-| `voice-event` | `VoiceEvent` | Join/leave, speaking, mute state |
+| `voice-event` | `VoiceEvent` | Join/leave, speaking, mute, device change |
 | `notification-event` | `NotificationEvent` | System alerts, update notifications |
-| `community-event` | `CommunityEvent` | Member join/leave, MEK rotation, role changes, kicks |
-| `network-status` | `NetworkStatusEvent` | Veilid attachment state, DHT readiness |
+| `community-event` | `CommunityEvent` | Member changes, MEK rotation, kicks, role changes, threads, events, video, soundboard, raids, … |
+| `network-status` | `NetworkStatusEvent` | Veilid attachment state, DHT readiness, route status |
 | `profile-updated` | (no payload) | Triggers frontend to re-fetch profile data |
 
 In E2E testing mode (`VITE_E2E=true`), `safeListen()` is a no-op because the
@@ -253,10 +277,10 @@ Tauri event system is not available in a browser context.
 ### invoke.ts
 
 Conditional invoke wrapper. In production, delegates to
-`@tauri-apps/api/core` invoke. In E2E mode (`VITE_E2E=true`), sends HTTP POST
-to the E2E bridge server at `http://127.0.0.1:3001/invoke`. Window navigation
-commands (e.g., `show_buddy_list`) trigger browser `location.href` changes in
-E2E mode.
+`@tauri-apps/api/core` invoke. In E2E mode (`VITE_E2E=true`), sends HTTP
+POST to the E2E bridge server at `http://127.0.0.1:3001/invoke` (provided by
+the `rekindle-e2e-server` crate). Window-navigation commands trigger
+browser `location.href` changes in E2E mode.
 
 ## Handler Pattern
 
@@ -271,3 +295,10 @@ Component                    Handler                     IPC
                        handleSendMessage()         sendMessage()
                        handleKeyDown()
 ```
+
+## Hooks and Utilities
+
+`hooks/createContextMenu.ts` provides a reusable composable for context-menu
+state and outside-click handling. `utils/` contains formatting helpers,
+time/color/mask helpers, transformers between IPC payload shapes and store
+shapes, and permission-bitmask helpers shared with `ipc/permissions.ts`.

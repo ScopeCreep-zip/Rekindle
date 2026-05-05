@@ -231,44 +231,40 @@ fn handle_thread_payload(
 
     match payload {
         ControlPayload::ThreadCreated { thread } => {
-            if let Ok(dto) =
-                serde_json::from_value::<crate::channels::community_channel::ThreadInfoDto>(thread)
-            {
-                let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
-                let cid = community_id.to_string();
-                let persisted = dto.clone();
-                crate::db_helpers::db_fire(pool, "persist thread", move |conn| {
-                    conn.execute(
-                        "INSERT OR REPLACE INTO community_threads \
-                         (owner_key, community_id, id, channel_id, name, starter_message_id, \
-                          creator_pseudonym, created_at, archived, auto_archive_seconds, \
-                          last_message_at, message_count) \
-                         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
-                        rusqlite::params![
-                            owner_key,
-                            cid,
-                            persisted.id,
-                            persisted.channel_id,
-                            persisted.name,
-                            persisted.starter_message_id,
-                            persisted.creator_pseudonym,
-                            persisted.created_at,
-                            i32::from(persisted.archived),
-                            persisted.auto_archive_seconds,
-                            persisted.last_message_at,
-                            persisted.message_count,
-                        ],
-                    )?;
-                    Ok(())
-                });
-                let _ = app_handle.emit(
-                    "community-event",
-                    CommunityEvent::ThreadCreated {
-                        community_id: community_id.to_string(),
-                        thread: dto,
-                    },
-                );
-            }
+            let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
+            let cid = community_id.to_string();
+            let persisted = thread.clone();
+            crate::db_helpers::db_fire(pool, "persist thread", move |conn| {
+                conn.execute(
+                    "INSERT OR REPLACE INTO community_threads \
+                     (owner_key, community_id, id, channel_id, name, starter_message_id, \
+                      creator_pseudonym, created_at, archived, auto_archive_seconds, \
+                      last_message_at, message_count) \
+                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
+                    rusqlite::params![
+                        owner_key,
+                        cid,
+                        persisted.id,
+                        persisted.channel_id,
+                        persisted.name,
+                        persisted.starter_message_id,
+                        persisted.creator_pseudonym,
+                        persisted.created_at,
+                        i32::from(persisted.archived),
+                        persisted.auto_archive_seconds,
+                        persisted.last_message_at,
+                        persisted.message_count,
+                    ],
+                )?;
+                Ok(())
+            });
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::ThreadCreated {
+                    community_id: community_id.to_string(),
+                    thread,
+                },
+            );
         }
         ControlPayload::ThreadArchived {
             thread_id,

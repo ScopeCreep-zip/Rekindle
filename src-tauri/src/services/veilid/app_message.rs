@@ -8,6 +8,9 @@ use crate::services::message_service;
 use crate::state::{AppState, OnlineMember};
 use crate::state_helpers;
 
+use rekindle_protocol::capnp_envelope::{
+    decode_signed_envelope, encode_signed_envelope, try_decode_community_envelope,
+};
 use rekindle_protocol::dht::community::envelope::{
     verify_envelope, CommunityEnvelope, ControlPayload, SignedEnvelope,
 };
@@ -38,7 +41,7 @@ pub async fn handle(
         return;
     }
 
-    if let Ok(signed) = serde_json::from_slice::<SignedEnvelope>(&message) {
+    if let Ok(signed) = decode_signed_envelope(&message) {
         handle_gossip_envelope(app_handle, state, signed).await;
         return;
     }
@@ -54,6 +57,15 @@ async fn handle_gossip_envelope(
 ) {
     let community_id = &signed.community_id;
 
+    // Signature verification BEFORE any state mutation (audit P7-W26).
+    // Otherwise an attacker can spam unsigned envelopes with crafted
+    // sender_pseudonym + dedup_key triples to fill the dedup cache and
+    // suppress real gossip from that sender.
+    if let Err(e) = verify_envelope(&signed) {
+        tracing::warn!(error = %e, "rejecting gossip envelope: bad signature");
+        return;
+    }
+
     let dedup_key = extract_dedup_key(&signed);
     {
         let mut cache = state.dedup_cache.lock();
@@ -61,11 +73,6 @@ async fn handle_gossip_envelope(
             tracing::trace!(dedup_key = %dedup_key, "gossip dedup: dropping duplicate");
             return;
         }
-    }
-
-    if let Err(e) = verify_envelope(&signed) {
-        tracing::warn!(error = %e, "rejecting gossip envelope: bad signature");
-        return;
     }
 
     {
@@ -102,7 +109,10 @@ async fn handle_gossip_envelope(
 }
 
 fn extract_dedup_key(signed: &SignedEnvelope) -> String {
-    if let Ok(env) = serde_json::from_slice::<CommunityEnvelope>(&signed.envelope_bytes) {
+    // Forward-compat: `try_decode_community_envelope` returns `Ok(None)`
+    // for unknown union variants. Hash the opaque bytes in that case so
+    // dedup still suppresses replays without rejecting unknown messages.
+    if let Ok(Some(env)) = try_decode_community_envelope(&signed.envelope_bytes) {
         match env {
             CommunityEnvelope::MessageNotification { ref message_id, .. } => message_id.clone(),
             CommunityEnvelope::TypingIndicator {
@@ -119,6 +129,12 @@ fn extract_dedup_key(signed: &SignedEnvelope) -> String {
                 format!("presence:{pseudonym_key}:{bucket}")
             }
             CommunityEnvelope::Control(_) => envelope_hash(&signed.envelope_bytes),
+            CommunityEnvelope::WatchRelay {
+                ref record_key,
+                subkey,
+                ref content_hash,
+                ..
+            } => format!("watch:{record_key}:{subkey}:{content_hash}"),
         }
     } else {
         envelope_hash(&signed.envelope_bytes)
@@ -134,8 +150,8 @@ fn envelope_hash(envelope_bytes: &[u8]) -> String {
 }
 
 pub(crate) fn is_private_control_payload(envelope_bytes: &[u8]) -> bool {
-    if let Ok(CommunityEnvelope::Control(ref payload)) =
-        serde_json::from_slice::<CommunityEnvelope>(envelope_bytes)
+    if let Ok(Some(CommunityEnvelope::Control(ref payload))) =
+        try_decode_community_envelope(envelope_bytes)
     {
         matches!(
             payload,
@@ -152,9 +168,7 @@ pub(crate) fn is_private_control_payload(envelope_bytes: &[u8]) -> bool {
 fn gossip_forward(state: &Arc<AppState>, community_id: &str, signed: &SignedEnvelope) {
     let mut forward = signed.clone();
     forward.ttl = forward.ttl.saturating_sub(1);
-    let Ok(signed_bytes) = serde_json::to_vec(&forward) else {
-        return;
-    };
+    let signed_bytes = encode_signed_envelope(&forward);
 
     let Some(rc) = state_helpers::safe_routing_context(state) else {
         return;
@@ -203,8 +217,19 @@ async fn handle_relayed_envelope(
     state: &Arc<AppState>,
     signed: SignedEnvelope,
 ) {
-    let envelope: CommunityEnvelope = match serde_json::from_slice(&signed.envelope_bytes) {
-        Ok(e) => e,
+    // Forward-compat: `try_decode_community_envelope` returns `Ok(None)`
+    // for unknown union variants. The signature has already been
+    // verified and the envelope already forwarded by `gossip_forward`,
+    // so we simply skip local dispatch in that case.
+    let envelope: CommunityEnvelope = match try_decode_community_envelope(&signed.envelope_bytes) {
+        Ok(Some(e)) => e,
+        Ok(None) => {
+            tracing::debug!(
+                community = %signed.community_id,
+                "relayed envelope has unknown variant — forwarded only"
+            );
+            return;
+        }
         Err(e) => {
             tracing::warn!(error = %e, "invalid relayed envelope");
             return;
@@ -322,6 +347,42 @@ async fn handle_relayed_envelope(
                 payload,
             )
             .await;
+        }
+        CommunityEnvelope::WatchRelay {
+            record_key,
+            subkey,
+            content_hash,
+            observer_pseudonym,
+        } => {
+            // Mutual Aid (architecture §14.3 / §11.7): a peer with a live
+            // watch slot is telling us a record's subkey changed. Fetch
+            // the new value via the existing presence/value pipeline so
+            // we don't depend on holding a DHT watch slot ourselves.
+            let _ = observer_pseudonym;
+            let routing_context = state_helpers::safe_routing_context(state);
+            if let Some(rc) = routing_context {
+                let parsed = record_key.parse::<veilid_core::RecordKey>();
+                if let Ok(parsed) = parsed {
+                    if let Ok(Some(value)) = rc.get_dht_value(parsed, subkey, true).await {
+                        let actual = blake3::hash(value.data()).to_hex().to_string();
+                        if actual == content_hash {
+                            crate::services::presence_service::handle_value_change(
+                                app_handle,
+                                state,
+                                &record_key,
+                                &[subkey],
+                                value.data(),
+                            );
+                        } else {
+                            tracing::debug!(
+                                record_key = %record_key,
+                                subkey,
+                                "WatchRelay content hash mismatch — dropping"
+                            );
+                        }
+                    }
+                }
+            }
         }
     }
 }

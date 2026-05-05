@@ -28,6 +28,25 @@ pub fn sign_with_pseudonym(signing_key: &SigningKey, data: &[u8]) -> [u8; 64] {
     signing_key.sign(data).to_bytes()
 }
 
+/// Verify an Ed25519 signature against a pseudonym public key. Used by
+/// receivers to authenticate that DHT-stored content (governance entries,
+/// channel messages, presence) actually came from the claimed author —
+/// the SMPL slot keypair signature alone proves only "some community
+/// member wrote this," because the slot seed is community-shared (see
+/// `derive_slot_keypair` below).
+pub fn verify_pseudonym_signature(
+    public_key_bytes: &[u8; 32],
+    data: &[u8],
+    signature: &[u8; 64],
+) -> Result<(), CryptoError> {
+    use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+    let vk = VerifyingKey::from_bytes(public_key_bytes)
+        .map_err(|e| CryptoError::Verification(format!("bad pseudonym public key: {e}")))?;
+    let sig = Signature::from_bytes(signature);
+    vk.verify(data, &sig)
+        .map_err(|e| CryptoError::Verification(format!("pseudonym signature: {e}")))
+}
+
 /// Convert a pseudonym Ed25519 signing key to an X25519 static secret.
 ///
 /// Used for ECDH key agreement (MEK wrapping, call key derivation).

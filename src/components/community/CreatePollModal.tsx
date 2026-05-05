@@ -14,6 +14,7 @@ const CreatePollModal: Component<CreatePollModalProps> = (props) => {
   const [question, setQuestion] = createSignal("");
   const [answers, setAnswers] = createSignal(["", ""]);
   const [multiSelect, setMultiSelect] = createSignal(false);
+  const [durationMinutes, setDurationMinutes] = createSignal("");
   const [validationError, setValidationError] = createSignal("");
 
   createEffect(() => {
@@ -21,6 +22,7 @@ const CreatePollModal: Component<CreatePollModalProps> = (props) => {
       setQuestion("");
       setAnswers(["", ""]);
       setMultiSelect(false);
+      setDurationMinutes("");
       setValidationError("");
     }
   });
@@ -49,6 +51,16 @@ const CreatePollModal: Component<CreatePollModalProps> = (props) => {
       setValidationError("At least two answers are required");
       return;
     }
+    const trimmedDuration = durationMinutes().trim();
+    let durationSeconds: number | undefined;
+    if (trimmedDuration) {
+      const minutes = Number(trimmedDuration);
+      if (!Number.isFinite(minutes) || minutes <= 0) {
+        setValidationError("Duration must be a positive number of minutes");
+        return;
+      }
+      durationSeconds = Math.floor(minutes * 60);
+    }
     setValidationError("");
     const pollId = await handleCreatePoll(
       props.communityId,
@@ -57,6 +69,7 @@ const CreatePollModal: Component<CreatePollModalProps> = (props) => {
       trimmedQuestion,
       trimmedAnswers,
       multiSelect(),
+      durationSeconds,
     );
     if (pollId) {
       props.onClose();
@@ -110,6 +123,15 @@ const CreatePollModal: Component<CreatePollModalProps> = (props) => {
           />
           Allow multiple answers
         </label>
+        <input
+          class="form-input"
+          type="number"
+          min="1"
+          step="1"
+          placeholder="Duration in minutes (optional)"
+          value={durationMinutes()}
+          onInput={(e) => setDurationMinutes(e.currentTarget.value)}
+        />
         {validationError() && <div class="form-error">{validationError()}</div>}
         <button class="form-btn-primary" type="submit">
           Create Poll

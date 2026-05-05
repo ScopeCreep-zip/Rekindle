@@ -16,8 +16,13 @@ const ReplyPreview: Component<ReplyPreviewProps> = (props) => {
             <span class="reply-preview-sender">{reply().senderName}</span>
             <span class="reply-preview-body">{reply().body.length > 80 ? reply().body.slice(0, 80) + "..." : reply().body}</span>
           </div>
-          <button class="reply-preview-close" onClick={props.onDismiss} title="Cancel reply">
-            <span class="nf-icon">{ICON_CLOSE}</span>
+          <button
+            class="reply-preview-close"
+            onClick={props.onDismiss}
+            title="Cancel reply"
+            aria-label="Cancel reply"
+          >
+            <span class="nf-icon" aria-hidden="true">{ICON_CLOSE}</span>
           </button>
         </div>
       )}

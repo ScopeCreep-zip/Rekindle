@@ -6,6 +6,7 @@ export const ICON_ADD_FRIEND = "\u{F0014}";      // nf-md-account_plus
 export const ICON_COMMUNITIES = "\u{F0849}";     // nf-md-account_group
 export const ICON_SETTINGS = "\u{F0493}";        // nf-md-cog
 export const ICON_LOGOUT = "\u{F0343}";          // nf-md-logout
+export const ICON_SEARCH = "\u{F0349}";          // nf-md-magnify
 
 // Notifications
 export const ICON_BELL = "\u{F009A}";            // nf-md-bell
@@ -19,6 +20,9 @@ export const ICON_HEADPHONES_OFF = "\u{F07CE}";  // nf-md-headphones_off
 export const ICON_HANGUP = "\u{F03F5}";          // nf-md-phone_hangup
 export const ICON_PHONE = "\u{F03F2}";           // nf-md-phone
 export const ICON_VOLUME_HIGH = "\u{F057E}";     // nf-md-volume_high
+export const ICON_VIDEO = "\u{F0567}";            // nf-md-video
+export const ICON_VIDEO_OFF = "\u{F1417}";        // nf-md-video_off
+export const ICON_SCREEN_SHARE = "\u{F0A1A}";     // nf-md-monitor_share
 
 // Chat
 export const ICON_SEND = "\u{F048A}";            // nf-md-send
@@ -55,4 +59,11 @@ export const ICON_KEY = "\u{F033E}";              // nf-md-key
 export const ICON_PERMS = "\u{F099C}";            // nf-md-shield_lock
 export const ICON_ARROW_UP = "\u{F005D}";          // nf-md-arrow_up
 export const ICON_ARROW_DOWN = "\u{F0045}";        // nf-md-arrow_down
+export const ICON_ARROW_RIGHT = "\u{F0054}";       // nf-md-arrow_right (forward)
+export const ICON_FORWARD = "\u{F045D}";           // nf-md-share (forward action)
+export const ICON_PAPERCLIP = "\u{F03DD}";         // nf-md-paperclip (attach file)
+export const ICON_DOWNLOAD = "\u{F01DA}";          // nf-md-download
+export const ICON_FILE = "\u{F0214}";              // nf-md-file_outline
+export const ICON_FILE_IMAGE = "\u{F021F}";        // nf-md-file_image
+export const ICON_FOLDER_OPEN = "\u{F0770}";       // nf-md-folder_open
 export const ICON_FOLDER = "\u{F024B}";             // nf-md-folder

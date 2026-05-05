@@ -33,6 +33,15 @@ pub enum GovernanceEntry {
         record_key: String,
         category_id: Option<CategoryId>,
         position: u32,
+        /// Architecture §10.8 — text-in-voice. When set, this channel
+        /// is the text companion of the named voice channel; the
+        /// frontend hides it from the channel list unless the local
+        /// member is currently connected to that voice channel. The
+        /// channel record itself is a standard SMPL record (i.e. its
+        /// privacy is client-side filtering, not cryptographic
+        /// gating). `None` for normal channels.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parent_voice_channel_id: Option<ChannelId>,
         lamport: u64,
     },
 
@@ -47,6 +56,7 @@ pub enum GovernanceEntry {
         channel_id: ChannelId,
         name: Option<String>,
         topic: Option<String>,
+        forum_tags: Option<Vec<String>>,
         position: Option<u32>,
         slowmode_seconds: Option<u32>,
         nsfw: Option<bool>,
@@ -66,6 +76,13 @@ pub enum GovernanceEntry {
         hoist: bool,
         mentionable: bool,
         self_assignable: bool,
+        /// Architecture §19.4 — when set, only one role per group may
+        /// be active per member. Assigning a role in this group
+        /// auto-unassigns peers in the same group with a lower
+        /// Lamport. Ignored when `None`. Conventionally a short slug
+        /// like `"pronouns"` or `"region"`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        exclusion_group: Option<String>,
         lamport: u64,
     },
 
@@ -111,6 +128,15 @@ pub enum GovernanceEntry {
         description: Option<String>,
         icon_hash: Option<String>,
         banner_hash: Option<String>,
+        lamport: u64,
+    },
+
+    /// Community-wide default notification level (architecture §17.1
+    /// three-tier cascade tier 1). The most-specific setting wins:
+    /// per-channel local override > community default > implicit "all".
+    /// `level` is one of "all" | "mentions" | "nothing". CRDT: LWW.
+    CommunityNotificationDefault {
+        level: String,
         lamport: u64,
     },
 
@@ -162,15 +188,26 @@ pub enum GovernanceEntry {
         thread_id: ThreadId,
         parent_channel_id: ChannelId,
         name: String,
+        /// "public" | "private" | "announcement" | "forum_post"
+        thread_type: String,
         /// DHT key — created lazily on first message, None initially.
         record_key: Option<String>,
+        /// Explicit invitees for private threads.
+        invited: Vec<PseudonymKey>,
+        /// Tag selected from the parent forum channel, when applicable.
+        forum_tag: Option<String>,
+        /// Auto-archive after this many seconds of inactivity.
+        auto_archive_seconds: u64,
         lamport: u64,
     },
 
     /// Archive a thread. CRDT: tombstone (archived threads excluded from merged state).
     ThreadArchived { thread_id: ThreadId, lamport: u64 },
 
-    /// Create a scheduled event. RSVPs stored in MemberPresence, not here.
+    /// Create or update a scheduled event (architecture §21).
+    /// RSVPs stored in MemberPresence.event_rsvps, not here. CRDT:
+    /// LWW per `event_id` — bumping `lamport` re-publishes any field
+    /// (e.g. status: Scheduled → Active → Completed).
     EventCreated {
         event_id: EventId,
         name: String,
@@ -178,6 +215,28 @@ pub enum GovernanceEntry {
         start_time: u64,
         end_time: Option<u64>,
         channel_id: Option<ChannelId>,
+        /// Spec §21 line 2624 — peer-cached cover image
+        /// (`ContentRef.blake3_hash` style, encoded as a hex string).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cover_image_ref: Option<String>,
+        /// Spec §21 line 2625 — author for display + permission audit.
+        /// Optional for backward compatibility with rows written before
+        /// this field existed; readers fall back to the SMPL author
+        /// pseudonym if `None`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        creator_pseudonym: Option<PseudonymKey>,
+        /// Spec §21 line 2628 — recurrence rule.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        recurrence: Option<crate::event::RecurrenceRule>,
+        /// Spec §21 line 2629 — voice-channel / stage / external /
+        /// in-game. Defaults to whatever `channel_id` referenced (or
+        /// `External("")` if none) for legacy rows.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        location: Option<crate::event::EventLocation>,
+        /// Spec §21 line 2630 — Scheduled / Active / Completed /
+        /// Cancelled. `None` decoded from legacy rows = Scheduled.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        status: Option<crate::event::EventStatus>,
         lamport: u64,
     },
 
@@ -188,9 +247,39 @@ pub enum GovernanceEntry {
         /// "emoji" | "sticker" | "soundboard"
         kind: String,
         content_hash: String,
-        inline_data: Option<Vec<u8>>,
+        /// Architecture §18.4 — Lost Cargo manifest. Receivers fetch the
+        /// asset bytes via the existing `RequestAttachment` /
+        /// `AttachmentChunk` flow. `None` only for Removed-tombstone
+        /// echoes and the rare in-tree fixture; new uploads always set
+        /// this. Replaces the legacy `inline_data` path which could not
+        /// fit in Veilid's 32 KiB subkey limit.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        attachment: Option<crate::attachment::AttachmentOffer>,
         animated: bool,
         tags: Vec<String>,
+        /// Architecture §18.3 — soundboard-specific metadata (duration,
+        /// volume, optional emoji). `None` for emoji/sticker entries
+        /// and for legacy soundboard entries written before the field
+        /// existed; legacy entries default to `volume: 1.0` at read.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sound_meta: Option<crate::expression::SoundboardMeta>,
+        /// Architecture §18.1 line 2455 — author of the asset. Used by
+        /// the audit log and the "uploaded by" display in the picker.
+        /// `None` for legacy entries written before this field existed.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        creator_pseudonym: Option<PseudonymKey>,
+        /// Architecture §18.1 line 2456 — wall-clock seconds at upload.
+        /// `None` for legacy entries; readers fall back to the entry's
+        /// own Lamport for ordering displays.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        created_at: Option<u64>,
+        /// Architecture §18.1 line 2459 — when `Some(false)` peers
+        /// outside this community must not see the asset (gates the
+        /// `USE_EXTERNAL_EMOJIS` cross-community path). `None` and
+        /// `Some(true)` mean shareable; readers treat `None` as `true`
+        /// because the previous behaviour was effectively shareable.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        available_to_peers: Option<bool>,
         lamport: u64,
     },
 
@@ -230,7 +319,42 @@ pub enum GovernanceEntry {
         lamport: u64,
     },
 
-    /// Segment expansion — adds a new registry + governance segment for >255 members.
+    /// Plate Gate (architecture §15.4 lazy channel records) — announces
+    /// that a channel has acquired a segment-N SMPL record for messages
+    /// from members in segment N. Written by the first segment-N member
+    /// to send a message in `channel_id` (architecture §15.4 + DS-aligned
+    /// v2 plan line 993). Other members merge this entry, then
+    /// `open_record` + watch the new key so messages from segment-N peers
+    /// are discoverable. CRDT: LWW per `(channel_id, segment_index)`.
+    ChannelSegmentLinked {
+        channel_id: ChannelId,
+        segment_index: u32,
+        /// SMPL record key for messages from segment-N members in this
+        /// channel. The schema mirrors the segment-0 record (255 slots).
+        record_key: String,
+        lamport: u64,
+    },
+
+    /// Plate Gate (architecture §15) — adds a new registry + governance
+    /// segment when the highest existing segment has its 255 slots filled.
+    /// Admin-only (`MANAGE_COMMUNITY`) per §15.2; merged as ORMap-of-CRDTs
+    /// per Shapiro 2011 / Almeida et al. 2016 (arXiv:1603.01529).
+    ///
+    /// Wire-format note: §4.6 of the architecture spec writes this with
+    /// `segment_index: u16, slot_range: (u16, u16), keys: TypedKey`. The
+    /// in-tree shape uses `u32` and `String` for forward compatibility
+    /// (Veilid `TypedKey` round-trips through `String` everywhere else in
+    /// the codebase; widening `u16→u32` costs nothing and avoids cascade
+    /// edits across merge.rs / validate.rs / audit.rs / proptests).
+    /// Functionally identical.
+    ///
+    /// Slot indices are GLOBAL across segments (architecture §15.2:2271
+    /// "slots 255–509"). A member's `subkey_index` in segment N's record
+    /// is the LOCAL index `0..255`; their global slot is
+    /// `slot_range_start + local_subkey`. Slot keypair derivation
+    /// (§8.3:1659-1676) takes the global index, so per-segment uniqueness
+    /// is automatic — no `segment_index` parameter is needed in the HKDF
+    /// input.
     SegmentAdded {
         segment_index: u32,
         registry_key: String,
@@ -278,17 +402,79 @@ pub enum GovernanceEntry {
 
     /// Revoke an invite. CRDT: tombstone by invite_id.
     InviteRevoked { invite_id: [u8; 16], lamport: u64 },
+
+    /// Lost Cargo: admin pin/unpin of an attachment. Pinned files are
+    /// exempt from local LRU cache eviction (architecture §28.9 line 3283).
+    /// Requires `MANAGE_COMMUNITY`. CRDT: LWW per `attachment_id` —
+    /// later lamport wins; merged state is the boolean `pinned` flag.
+    AttachmentPinned {
+        attachment_id: [u8; 16],
+        /// True = pinned, false = unpinned.
+        pinned: bool,
+        lamport: u64,
+    },
+
+    /// Architecture §10.7 + §20.6 — community-wide policy text plus
+    /// raid-protection thresholds. Notification defaults live in the
+    /// separate `CommunityNotificationDefault` entry (architecture §17.1).
+    /// Peer-side rate detection alerts moderators when join volume
+    /// exceeds `max_joins_per_interval` within `join_interval_seconds`.
+    /// Requires `MANAGE_COMMUNITY`. CRDT: LWW community-wide.
+    CommunityPolicy {
+        /// Optional policy / rules markdown shown to new members
+        /// (architecture §10.7 line 724).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        policy_text: Option<String>,
+        /// Architecture §20.6 default: 20 joins per 10 minutes.
+        max_joins_per_interval: u32,
+        /// Window length for the rate detector. Default 600 s.
+        join_interval_seconds: u32,
+        lamport: u64,
+    },
 }
 
 /// Wire format for a governance SMPL subkey value.
 ///
 /// Wraps governance entries with the author's community pseudonym so the
 /// CRDT merge engine knows who wrote each subkey without relying on the
-/// SMPL slot keypair (which is different from the pseudonym).
+/// SMPL slot keypair (which is community-shared by design — see
+/// `rekindle_secrets::derive::derive_slot_keypair`).
+///
+/// Architecture §26 W26 line 4140 — `signature` is an Ed25519 signature
+/// by the author's pseudonym secret over [`signing_bytes`]. Any reader
+/// MUST verify the signature against `author_pseudonym` (which is itself
+/// the Ed25519 public key) before applying the entries to local state;
+/// otherwise any community member could impersonate any other by writing
+/// a forged payload to any subkey (the slot keypair authentication on
+/// `set_dht_value` proves only "some member wrote this," not which one).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct GovernanceSubkeyPayload {
     pub author_pseudonym: PseudonymKey,
     pub entries: Vec<GovernanceEntry>,
+    /// 64-byte Ed25519 signature over [`signing_bytes`]. Empty `Vec` for
+    /// pre-signature payloads in disk fixtures or in-flight legacy
+    /// rows; readers treat empty signatures as authentication failure
+    /// once SCHEMA_VERSION 59 ships.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub signature: Vec<u8>,
+}
+
+impl GovernanceSubkeyPayload {
+    /// Canonical bytes signed by the author. Receivers reproduce these
+    /// bytes from the deserialized payload and verify against
+    /// `author_pseudonym`. Including the entry count and a domain tag
+    /// stops cross-protocol forgeries (a signature for a presence write
+    /// can't be replayed as a governance write).
+    pub fn signing_bytes(&self) -> Vec<u8> {
+        let entries_json = serde_json::to_vec(&self.entries).unwrap_or_default();
+        let mut out =
+            Vec::with_capacity(b"rekindle-gov-subkey-v1".len() + 32 + 8 + entries_json.len());
+        out.extend_from_slice(b"rekindle-gov-subkey-v1");
+        out.extend_from_slice(&self.author_pseudonym.0);
+        out.extend_from_slice(&(self.entries.len() as u64).to_le_bytes());
+        out.extend_from_slice(&entries_json);
+        out
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -341,6 +527,7 @@ impl GovernanceEntry {
             | Self::TimeoutEntry { lamport, .. }
             | Self::RemoveTimeoutEntry { lamport, .. }
             | Self::CommunityMeta { lamport, .. }
+            | Self::CommunityNotificationDefault { lamport, .. }
             | Self::MEKGenerationBump { lamport, .. }
             | Self::CategoryCreated { lamport, .. }
             | Self::CategoryArchived { lamport, .. }
@@ -359,10 +546,14 @@ impl GovernanceEntry {
             | Self::RoleArchived { lamport, .. }
             | Self::CategoryUpdated { lamport, .. }
             | Self::InviteCreated { lamport, .. }
-            | Self::InviteRevoked { lamport, .. } => *lamport,
+            | Self::InviteRevoked { lamport, .. }
+            | Self::AttachmentPinned { lamport, .. }
+            | Self::ChannelSegmentLinked { lamport, .. }
+            | Self::CommunityPolicy { lamport, .. } => *lamport,
         }
     }
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -377,6 +568,7 @@ mod tests {
             record_key: "VLD0:abc123".into(),
             category_id: None,
             position: 0,
+            parent_voice_channel_id: None,
             lamport: 1,
         };
         let json = serde_json::to_string(&entry).unwrap();
@@ -407,6 +599,7 @@ mod tests {
                 record_key: String::new(),
                 category_id: None,
                 position: 0,
+                parent_voice_channel_id: None,
                 lamport: 1,
             },
             GovernanceEntry::ChannelArchived {
@@ -422,6 +615,7 @@ mod tests {
                 hoist: false,
                 mentionable: false,
                 self_assignable: false,
+                exclusion_group: None,
                 lamport: 3,
             },
             GovernanceEntry::MEKGenerationBump {

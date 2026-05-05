@@ -1,11 +1,35 @@
 use aes_gcm::{
-    aead::{Aead, KeyInit},
+    aead::{generic_array::GenericArray, Aead, AeadInPlace, KeyInit, Payload},
     Aes256Gcm, Nonce,
 };
 use rand::RngCore;
 use zeroize::ZeroizeOnDrop;
 
 use crate::error::CryptoError;
+
+/// Architecture §8 line 1626 — channel-message AAD format:
+/// `channel_record_key || subkey_index_le32 || lamport_ts_le64`.
+/// Binds the ciphertext to its channel + position so an attacker
+/// can't replay a ciphertext into a different channel or at a
+/// different position in the message stream.
+#[derive(Debug, Clone, Copy)]
+pub struct ChannelAad<'a> {
+    pub channel_record_key: &'a [u8],
+    pub subkey_index: u32,
+    pub lamport_ts: u64,
+}
+
+impl ChannelAad<'_> {
+    /// Encode to the canonical wire bytes consumed by AES-GCM.
+    pub fn to_bytes(self) -> Vec<u8> {
+        let mut out =
+            Vec::with_capacity(self.channel_record_key.len() + 4 + 8);
+        out.extend_from_slice(self.channel_record_key);
+        out.extend_from_slice(&self.subkey_index.to_le_bytes());
+        out.extend_from_slice(&self.lamport_ts.to_le_bytes());
+        out
+    }
+}
 
 /// Media Encryption Key for group/channel message encryption.
 ///
@@ -42,7 +66,10 @@ impl MediaEncryptionKey {
         self.generation
     }
 
-    /// Encrypt a plaintext message.
+    /// Encrypt a plaintext message with no associated data. Use only
+    /// for non-channel payloads where AAD binding doesn't apply (MEK
+    /// distribution wraps, voice frames keyed by stream-id, etc.).
+    /// Channel chat messages MUST use [`Self::encrypt_with_aad`].
     pub fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>, CryptoError> {
         let cipher = Aes256Gcm::new_from_slice(&self.key)
             .map_err(|e| CryptoError::EncryptionError(e.to_string()))?;
@@ -59,6 +86,34 @@ impl MediaEncryptionKey {
         let mut output = Vec::with_capacity(12 + ciphertext.len());
         output.extend_from_slice(&nonce_bytes);
         output.extend_from_slice(&ciphertext);
+        Ok(output)
+    }
+
+    /// Architecture §8 line 1626 — encrypt with the canonical channel
+    /// AAD. Output is `nonce(12) || ciphertext+tag`. Receiver must
+    /// reconstruct the same AAD or decryption fails — preventing
+    /// cross-channel and replay-position ciphertext attacks.
+    pub fn encrypt_with_aad(
+        &self,
+        plaintext: &[u8],
+        aad: ChannelAad<'_>,
+    ) -> Result<Vec<u8>, CryptoError> {
+        let cipher = Aes256Gcm::new_from_slice(&self.key)
+            .map_err(|e| CryptoError::EncryptionError(e.to_string()))?;
+
+        let mut nonce_bytes = [0u8; 12];
+        rand::rngs::OsRng.fill_bytes(&mut nonce_bytes);
+        let nonce = GenericArray::clone_from_slice(&nonce_bytes);
+
+        let aad_bytes = aad.to_bytes();
+        let mut buffer = plaintext.to_vec();
+        cipher
+            .encrypt_in_place(&nonce, &aad_bytes, &mut buffer)
+            .map_err(|e| CryptoError::EncryptionError(e.to_string()))?;
+
+        let mut output = Vec::with_capacity(12 + buffer.len());
+        output.extend_from_slice(&nonce_bytes);
+        output.extend_from_slice(&buffer);
         Ok(output)
     }
 
@@ -82,7 +137,9 @@ impl MediaEncryptionKey {
         Some(Self { key, generation })
     }
 
-    /// Decrypt a ciphertext message (expects nonce prepended).
+    /// Decrypt a ciphertext message (expects nonce prepended). Use
+    /// only for the no-AAD path; channel messages must call
+    /// [`Self::decrypt_with_aad`] with the matching `ChannelAad`.
     pub fn decrypt(&self, data: &[u8]) -> Result<Vec<u8>, CryptoError> {
         if data.len() < 12 {
             return Err(CryptoError::DecryptionError("data too short".into()));
@@ -96,6 +153,32 @@ impl MediaEncryptionKey {
 
         cipher
             .decrypt(nonce, ciphertext)
+            .map_err(|e| CryptoError::DecryptionError(e.to_string()))
+    }
+
+    /// Architecture §8 line 1626 — decrypt with the canonical channel
+    /// AAD. Tag verification fails when the receiver reconstructs a
+    /// different AAD, blocking cross-channel replay attacks.
+    pub fn decrypt_with_aad(
+        &self,
+        data: &[u8],
+        aad: ChannelAad<'_>,
+    ) -> Result<Vec<u8>, CryptoError> {
+        if data.len() < 12 {
+            return Err(CryptoError::DecryptionError("data too short".into()));
+        }
+        let cipher = Aes256Gcm::new_from_slice(&self.key)
+            .map_err(|e| CryptoError::DecryptionError(e.to_string()))?;
+        let nonce = Nonce::from_slice(&data[..12]);
+        let aad_bytes = aad.to_bytes();
+        cipher
+            .decrypt(
+                nonce,
+                Payload {
+                    msg: &data[12..],
+                    aad: &aad_bytes,
+                },
+            )
             .map_err(|e| CryptoError::DecryptionError(e.to_string()))
     }
 }

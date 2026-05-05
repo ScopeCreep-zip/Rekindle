@@ -16,6 +16,7 @@ use rand::RngCore;
 use rekindle_types::error::CryptoError;
 use sha2::Sha256;
 use x25519_dalek::PublicKey as X25519PublicKey;
+use zeroize::Zeroizing;
 
 use crate::derive::pseudonym_to_x25519;
 
@@ -23,10 +24,13 @@ use crate::derive::pseudonym_to_x25519;
 const HKDF_INFO: &[u8] = b"rekindle-mek-wrap-v1";
 
 /// Derive an AES-256-GCM wrapping key from an X25519 shared secret.
-fn derive_wrapping_key(shared_secret: &x25519_dalek::SharedSecret) -> [u8; 32] {
+/// The return type wraps the bytes in `Zeroizing` so the wrapping key
+/// is scrubbed from memory when it goes out of scope, even on the
+/// happy path. Audit finding (P7-W26).
+fn derive_wrapping_key(shared_secret: &x25519_dalek::SharedSecret) -> Zeroizing<[u8; 32]> {
     let hkdf = Hkdf::<Sha256>::new(None, shared_secret.as_bytes());
-    let mut key = [0u8; 32];
-    hkdf.expand(HKDF_INFO, &mut key)
+    let mut key = Zeroizing::new([0u8; 32]);
+    hkdf.expand(HKDF_INFO, key.as_mut())
         .expect("32-byte output is valid for HKDF-SHA256");
     key
 }
@@ -52,7 +56,7 @@ pub fn wrap_mek(
     let shared_secret = sender_x25519.diffie_hellman(&recipient_x25519);
     let wrapping_key = derive_wrapping_key(&shared_secret);
 
-    let cipher = Aes256Gcm::new_from_slice(&wrapping_key)
+    let cipher = Aes256Gcm::new_from_slice(&wrapping_key[..])
         .map_err(|e| CryptoError::Encryption(format!("AES-GCM init: {e}")))?;
 
     let mut nonce_bytes = [0u8; 12];
@@ -94,7 +98,7 @@ pub fn unwrap_mek(
     let shared_secret = recipient_x25519.diffie_hellman(&sender_x25519);
     let wrapping_key = derive_wrapping_key(&shared_secret);
 
-    let cipher = Aes256Gcm::new_from_slice(&wrapping_key)
+    let cipher = Aes256Gcm::new_from_slice(&wrapping_key[..])
         .map_err(|e| CryptoError::Decryption(format!("AES-GCM init: {e}")))?;
 
     let nonce = Nonce::from_slice(&wrapped_mek[..12]);

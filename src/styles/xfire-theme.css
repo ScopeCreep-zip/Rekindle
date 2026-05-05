@@ -1,6 +1,72 @@
 /* Xfire skin component classes using Tailwind v4 theme values */
 
 @layer components {
+  /* Architecture §32 a11y — global focus-visible. Every interactive
+   * element gets a 2px accent ring on keyboard focus; mouse focus is
+   * suppressed so the dense Xfire UI stays clean for sighted users.
+   * Per-element overrides can wrap their own ring in a corresponding
+   * `:focus-visible` rule, but the global ring is the safety net so
+   * the audit's "0 focus-visible rules" gap closes in one cascade. */
+  *:focus-visible {
+    outline: 2px solid var(--color-xfire-focus-outline);
+    outline-offset: 2px;
+    border-radius: inherit;
+  }
+  *:focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  /* Architecture §32 a11y — skip link rendered as the first focusable
+   * child of each top-level window. Hidden via `clip-path: inset(100%)`
+   * (modern 2026-canon pattern; not the deprecated `left: -9999px`
+   * trick) so screen readers still announce it; on focus it pops to
+   * the top-left corner so keyboard users can bypass nav. */
+  .skip-link {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: var(--z-skip-link);
+    background: var(--color-xfire-accent);
+    color: var(--color-xfire-text-primary);
+    padding: 8px 16px;
+    text-decoration: none;
+    font-weight: 600;
+    border-radius: 0 0 4px 0;
+    clip-path: inset(100%);
+  }
+  .skip-link:focus {
+    clip-path: inset(0);
+    outline: 2px solid var(--color-xfire-focus-outline);
+    outline-offset: 2px;
+  }
+
+  /* Architecture §32 a11y — `<a href="#main-content">Skip to …</a>`
+   * targets a wrapper that needs to take the `flex: 1` slot inside
+   * `.app-frame` so the footer (`BottomActionBar`, `.status-bar`,
+   * `MessageInput`, etc.) keeps its bottom-stickiness. The wrapper
+   * is a flex column itself so any `flex: 1` descendant (e.g.
+   * `.buddy-list`, `.chat-message-area`) still grows naturally. */
+  .window-main {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  /* Architecture §32 a11y — visually-hidden helper for ARIA live regions
+   * and screen-reader-only labels (D3 / D5 announcements). */
+  .live-region-sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(100%);
+    border: 0;
+  }
+
   /* Nerd Font icon utility */
   .nf-icon {
     font-family: var(--font-family-icons);
@@ -32,7 +98,7 @@
 
   /* Custom titlebar */
   .xfire-titlebar {
-    height: 28px;
+    height: var(--chrome-height);
     display: flex;
     align-items: center;
     padding: 0 8px;
@@ -174,29 +240,6 @@
 
   .form-btn-primary:disabled {
     opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .form-btn-save {
-    padding: 6px 12px;
-    background: var(--color-xfire-accent);
-    color: white;
-    border: none;
-    border-radius: 0.25rem;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    font-family: var(--font-family-xfire);
-    transition: background 0.15s;
-    white-space: nowrap;
-  }
-
-  .form-btn-save:hover {
-    background: color-mix(in srgb, var(--color-xfire-accent) 80%, white);
-  }
-
-  .form-btn-save:disabled {
-    opacity: 0.4;
     cursor: not-allowed;
   }
 
@@ -413,32 +456,44 @@
     color: var(--color-xfire-away);
   }
 
-  /* Status dots */
+  /* Status dots — architecture §32 a11y. The host span carries the
+   * status color via `color`; the inline SVG fills with `currentColor`
+   * so the existing palette tokens still drive the visual identity.
+   * Per WCAG 1.4.1, each status renders a distinct shape (circle vs
+   * ring vs cutout / bar / triangle overlay) so colorblind and
+   * grayscale users can distinguish them without relying on hue. */
   .status-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 12px;
+    height: 12px;
     flex-shrink: 0;
+    line-height: 0;
+  }
+
+  .status-dot svg {
+    display: block;
   }
 
   .status-dot-online {
-    background: var(--color-xfire-online);
+    color: var(--color-xfire-online);
   }
 
   .status-dot-away {
-    background: var(--color-xfire-away);
+    color: var(--color-xfire-away);
   }
 
   .status-dot-busy {
-    background: var(--color-xfire-busy);
+    color: var(--color-xfire-busy);
   }
 
   .status-dot-ingame {
-    background: var(--color-xfire-ingame);
+    color: var(--color-xfire-ingame);
   }
 
   .status-dot-offline {
-    background: var(--color-xfire-offline);
+    color: var(--color-xfire-offline);
   }
 
   /* Chat message area */
@@ -500,7 +555,8 @@
 
   /* Status bar */
   .status-bar {
-    height: 28px;
+    height: var(--chrome-height);
+    flex-shrink: 0;
     background: var(--color-xfire-bg-status);
     border-top: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
     display: flex;
@@ -514,7 +570,7 @@
   /* Context menu */
   .context-menu {
     position: fixed;
-    z-index: 1000;
+    z-index: var(--z-context-menu);
     background: var(--color-xfire-bg-panel);
     border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
     border-radius: 0.25rem;
@@ -538,15 +594,19 @@
     color: var(--color-xfire-busy);
   }
 
-  /* Login */
+  /* Login — must claim the flex-1 slot inside `.app-frame` so the
+   * titlebar stays at the top instead of overflowing. `min-height: 0`
+   * lets the inner content scroll if the form ever overflows. */
   .login-container {
+    flex: 1 1 auto;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: 14px;
     padding: 28px 32px;
-    height: 100%;
+    overflow-y: auto;
   }
 
   .login-title {
@@ -575,8 +635,12 @@
     color: var(--color-xfire-text);
   }
 
-  /* Account Picker */
+  /* Account Picker — like `.login-container`, takes the flex-1 slot so
+   * the bubble grid can scroll inside the window without pushing the
+   * titlebar off-screen. */
   .account-picker {
+    flex: 1 1 auto;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -700,67 +764,10 @@
     background: color-mix(in srgb, var(--color-xfire-accent) 8%, transparent);
   }
 
-  .account-back-btn {
-    background: none;
-    border: none;
-    color: var(--color-xfire-accent);
-    font-size: 11px;
-    cursor: pointer;
-    font-family: var(--font-family-xfire);
-    align-self: flex-start;
-    padding: 0;
-    transition: color 0.15s;
-  }
-
-  .account-back-btn:hover {
-    color: var(--color-xfire-text);
-  }
-
   .delete-confirm-text {
     font-size: 11px;
     color: var(--color-xfire-text-dim);
     margin-bottom: 12px;
-  }
-
-  .delete-confirm-btn {
-    width: 100%;
-    padding: 8px;
-    background: var(--color-xfire-busy);
-    color: white;
-    border: none;
-    border-radius: 4px;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    font-family: var(--font-family-xfire);
-    transition: opacity 0.15s;
-    margin-top: 8px;
-  }
-
-  .delete-confirm-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .delete-confirm-btn:hover:not(:disabled) {
-    background: #dc2626;
-  }
-
-  .delete-confirm-cancel {
-    width: 100%;
-    padding: 6px;
-    background: transparent;
-    border: none;
-    color: var(--color-xfire-text-dim);
-    font-size: 11px;
-    cursor: pointer;
-    font-family: var(--font-family-xfire);
-    margin-top: 4px;
-    transition: color 0.15s;
-  }
-
-  .delete-confirm-cancel:hover {
-    color: var(--color-xfire-text);
   }
 
   /* Settings */
@@ -830,6 +837,7 @@
   /* Profile */
   .profile-content {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
     padding: 24px;
     display: flex;
@@ -913,6 +921,7 @@
 
   /* Typing indicator */
   .typing-indicator {
+    flex-shrink: 0;
     padding: 4px 12px;
     display: flex;
     align-items: center;
@@ -963,13 +972,6 @@
     height: 48px;
   }
 
-  .message-input-picker {
-    position: absolute;
-    bottom: calc(100% + 8px);
-    left: 0;
-    z-index: 20;
-  }
-
   /* Status picker */
   .status-picker {
     position: relative;
@@ -979,7 +981,7 @@
     position: absolute;
     bottom: 100%;
     left: 0;
-    z-index: 100;
+    z-index: var(--z-dropdown);
   }
 
   .status-picker-label {
@@ -1058,6 +1060,15 @@
     font-weight: 700;
     color: white;
     flex-shrink: 0;
+  }
+
+  /* Architecture §32 Phase 5 W15 — when the community has an icon
+   * blob cached locally, the buddy list renders it as an `<img>`
+   * instead of the first-letter placeholder. The image inherits the
+   * `.community-icon` rectangle so layout stays identical. */
+  .community-icon-image {
+    object-fit: cover;
+    background: var(--color-xfire-bg-panel);
   }
 
   .community-name {
@@ -1194,7 +1205,7 @@
   /* ─── Member profile popup ─── */
   .profile-popup {
     position: fixed;
-    z-index: 1000;
+    z-index: var(--z-popover);
     min-width: 200px;
     max-width: 280px;
     padding: 12px;
@@ -1473,18 +1484,76 @@
     white-space: nowrap;
   }
 
+  /* Architecture §28.6 — forum-channel tag chip input. The chip rows
+   * live inside the same flex container as the inline text input so
+   * the visible affordance behaves like a contiguous editable region;
+   * pressing Enter / "," commits, Backspace on empty input pops the
+   * last chip. Used in `CreateChannelModal` and the in-place tag
+   * editor in `ChannelsTab.tsx`. */
+  .forum-tag-chip-input {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 4px 6px;
+    border: 1px solid var(--color-xfire-border);
+    border-radius: 3px;
+    background: var(--color-xfire-bg-input);
+    min-height: 28px;
+  }
+
+  .forum-tag-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 1px 6px;
+    background: color-mix(in srgb, var(--color-xfire-accent) 25%, transparent);
+    border-radius: 2px;
+    color: var(--color-xfire-text-primary);
+    font-size: 11px;
+  }
+
+  .forum-tag-chip-remove {
+    background: transparent;
+    border: none;
+    color: var(--color-xfire-text-secondary);
+    cursor: pointer;
+    padding: 0 2px;
+    font-size: 12px;
+    line-height: 1;
+  }
+
+  .forum-tag-chip-input-field {
+    flex: 1;
+    min-width: 80px;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--color-xfire-text-primary);
+    font-size: 12px;
+  }
+
   /* Modal */
+  /* Kobalte Dialog renders Overlay + Content as siblings inside a Portal,
+   * so the backdrop and the centering layer are separate concerns. */
   .modal-overlay {
     position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.65);
+    z-index: var(--z-modal-backdrop);
+  }
+
+  .modal-overlay-positioner {
+    position: fixed;
+    inset: 0;
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 900;
+    z-index: var(--z-modal);
+    pointer-events: none;
   }
 
   .modal-container {
+    pointer-events: auto;
     background: var(--color-xfire-bg-panel);
     border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
     border-radius: 6px;
@@ -1499,6 +1568,106 @@
   .modal-container-sm { max-width: 360px; }
   .modal-container-md { max-width: 480px; }
   .modal-container-lg { max-width: 680px; }
+
+  /* Plan §Failure 6 — soundboard panel inside VoicePanel */
+  .soundboard-panel {
+    border-top: 1px solid color-mix(in srgb, var(--color-xfire-offline) 15%, transparent);
+    margin-top: 6px;
+  }
+  .soundboard-panel-header {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 10px;
+    background: transparent;
+    border: none;
+    color: var(--color-xfire-text-secondary);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    cursor: pointer;
+  }
+  .soundboard-panel-header:hover {
+    color: var(--color-xfire-text-primary);
+  }
+  .soundboard-panel-count {
+    font-size: 10px;
+    background: color-mix(in srgb, var(--color-xfire-accent) 15%, transparent);
+    color: var(--color-xfire-accent);
+    padding: 1px 6px;
+    border-radius: 8px;
+  }
+  .soundboard-panel-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+    gap: 6px;
+    padding: 6px 10px 10px 10px;
+  }
+  .soundboard-panel-clip {
+    background: var(--color-xfire-bg-input);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    color: var(--color-xfire-text-primary);
+    border-radius: 4px;
+    padding: 6px 4px;
+    font-size: 11px;
+    cursor: pointer;
+    text-align: center;
+    overflow: hidden;
+  }
+  .soundboard-panel-clip:hover {
+    background: color-mix(in srgb, var(--color-xfire-accent) 15%, var(--color-xfire-bg-input));
+  }
+  .soundboard-panel-clip-name {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Plan §Failure 5 — DM call action bar */
+  .dm-call-bar {
+    display: flex;
+    gap: 8px;
+    padding: 6px 10px;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 15%, transparent);
+    background: var(--color-xfire-bg-panel);
+  }
+
+  /* Plan §Failure 5 — incoming-call modal */
+  .incoming-call-modal {
+    padding: 18px 16px;
+    text-align: center;
+  }
+  .incoming-call-modal-header {
+    margin-bottom: 16px;
+  }
+  .incoming-call-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-xfire-text-secondary);
+    text-transform: capitalize;
+    margin-bottom: 6px;
+  }
+  .incoming-call-display-name {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--color-xfire-text-primary);
+  }
+  .incoming-call-timer {
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--color-xfire-text-secondary);
+  }
+  .incoming-call-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+  }
+  .incoming-call-accept,
+  .incoming-call-decline {
+    min-width: 96px;
+  }
 
   .modal-header {
     display: flex;
@@ -1561,7 +1730,7 @@
     color: var(--color-xfire-text);
     white-space: nowrap;
     pointer-events: none;
-    z-index: 800;
+    z-index: var(--z-tooltip);
   }
 
   /* Scroll area */
@@ -1962,7 +2131,7 @@
     position: absolute;
     top: 100%;
     right: 0;
-    z-index: 950;
+    z-index: var(--z-popover);
     width: 260px;
     max-height: 320px;
     background: var(--color-xfire-bg-panel);
@@ -2140,7 +2309,13 @@
 
   .network-dot-connecting {
     background: var(--color-xfire-away);
-    animation: network-pulse 1.5s ease-in-out infinite;
+  }
+
+  /* Architecture §32 a11y — animation only for motion-tolerant users. */
+  @media (prefers-reduced-motion: no-preference) {
+    .network-dot-connecting {
+      animation: network-pulse 1.5s ease-in-out infinite;
+    }
   }
 
   .network-dot-partial {
@@ -2231,17 +2406,6 @@
     border-color: var(--color-xfire-accent);
   }
 
-  .group-create-ok-btn {
-    background: var(--color-xfire-accent);
-    border: none;
-    color: white;
-    font-size: 10px;
-    font-weight: 600;
-    padding: 3px 8px;
-    border-radius: 3px;
-    cursor: pointer;
-    font-family: var(--font-family-xfire);
-  }
 
   /* Avatar upload */
   .avatar-upload-section {
@@ -2460,10 +2624,12 @@
 
   /* Chat peer status bar */
   .chat-peer-status {
+    height: var(--chrome-height);
+    flex-shrink: 0;
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 4px 12px;
+    padding: 0 12px;
     background: color-mix(in srgb, var(--color-xfire-bg-panel) 80%, transparent);
     border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 15%, transparent);
     font-size: 11px;
@@ -2506,45 +2672,6 @@
     border-top: 1px solid color-mix(in srgb, var(--color-xfire-offline) 15%, transparent);
   }
 
-  .profile-btn-message {
-    flex: 1;
-    padding: 6px 12px;
-    border: 1px solid var(--color-xfire-accent);
-    border-radius: 4px;
-    background: transparent;
-    color: var(--color-xfire-accent);
-    font-size: 12px;
-    cursor: pointer;
-    transition: background 0.15s, color 0.15s;
-  }
-
-  .profile-btn-message:hover {
-    background: var(--color-xfire-accent);
-    color: white;
-  }
-
-  .profile-btn-remove {
-    flex: 1;
-    padding: 6px 12px;
-    border: 1px solid var(--color-xfire-busy);
-    border-radius: 4px;
-    background: transparent;
-    color: var(--color-xfire-busy);
-    font-size: 12px;
-    cursor: pointer;
-    transition: background 0.15s, color 0.15s;
-  }
-
-  .profile-btn-remove:hover {
-    background: var(--color-xfire-busy);
-    color: white;
-  }
-
-  .profile-btn-confirm {
-    background: var(--color-xfire-busy);
-    color: white;
-  }
-
   /* Network disconnection banner */
   .network-banner {
     padding: 6px 12px;
@@ -2553,7 +2680,13 @@
     font-size: 11px;
     font-weight: 600;
     text-align: center;
-    animation: network-pulse 2s ease-in-out infinite;
+  }
+
+  /* Architecture §32 a11y — pulse only for motion-tolerant users. */
+  @media (prefers-reduced-motion: no-preference) {
+    .network-banner {
+      animation: network-pulse 2s ease-in-out infinite;
+    }
   }
 
   /* Icon-only action bar buttons */
@@ -3034,7 +3167,7 @@
     gap: 8px;
   }
 
-  .event-card-canceled {
+  .event-card-cancelled {
     opacity: 0.6;
     border-left-color: var(--color-xfire-text-dim);
   }
@@ -3070,7 +3203,7 @@
     color: var(--color-xfire-text-dim);
   }
 
-  .event-status-canceled {
+  .event-status-cancelled {
     background: color-mix(in srgb, #f44336 20%, transparent);
     color: #f44336;
   }
@@ -3276,7 +3409,7 @@
     position: fixed;
     bottom: 12px;
     right: 12px;
-    z-index: 1100;
+    z-index: var(--z-toast);
     display: flex;
     flex-direction: column-reverse;
     gap: 6px;
@@ -3290,9 +3423,15 @@
     color: white;
     pointer-events: auto;
     cursor: pointer;
-    animation: toast-slide-in 0.2s ease-out;
     max-width: 320px;
     word-break: break-word;
+  }
+
+  /* Architecture §32 a11y — toast slide-in only for motion-tolerant users. */
+  @media (prefers-reduced-motion: no-preference) {
+    .toast-message {
+      animation: toast-slide-in var(--motion-duration-base) ease-out;
+    }
   }
 
   .toast-success { background: color-mix(in srgb, var(--color-xfire-online) 90%, black); }
@@ -3380,10 +3519,6 @@
     flex-shrink: 0;
   }
 
-  .menu-bar-item-wrapper {
-    position: relative;
-  }
-
   .menu-bar-item {
     background: transparent;
     border: none;
@@ -3396,12 +3531,15 @@
     transition: background 0.1s, color 0.1s;
   }
 
-  .menu-bar-item:hover {
+  .menu-bar-item:hover,
+  .menu-bar-item:focus-visible {
     background: color-mix(in srgb, white 8%, transparent);
     color: var(--color-xfire-text);
+    outline: none;
   }
 
-  .menu-bar-item-active {
+  /* Kobalte sets data-expanded="" on the trigger while its menu is open. */
+  .menu-bar-item[data-expanded] {
     background: color-mix(in srgb, white 12%, transparent);
     color: var(--color-xfire-text);
   }
@@ -3415,7 +3553,7 @@
     border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 25%, transparent);
     border-radius: 4px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-    z-index: 1000;
+    z-index: var(--z-context-menu);
     padding: 4px 0;
   }
 
@@ -3665,11 +3803,15 @@
   }
 
   /* ─── Emoji picker ─── */
+  /* Plan §Failure 3 — positioning is owned by Kobalte Popover (floating-ui).
+   * `.emoji-picker` keeps only the visual frame; the parent `.emoji-picker-popover`
+   * Popover.Content is portaled into <body> so it escapes the chat area's
+   * overflow clip and the message bubble's stacking context. */
+  .emoji-picker-popover {
+    z-index: var(--z-popover);
+  }
+
   .emoji-picker {
-    position: absolute;
-    bottom: 100%;
-    right: 0;
-    z-index: 1000;
     width: 280px;
     display: flex;
     flex-direction: column;
@@ -3678,7 +3820,6 @@
     border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 25%, transparent);
     border-radius: 6px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-    margin-bottom: 4px;
   }
 
   .emoji-picker-item {
@@ -3710,7 +3851,7 @@
     border-left: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
     display: flex;
     flex-direction: column;
-    z-index: 50;
+    z-index: var(--z-elevated);
   }
 
   .pin-panel-header {
@@ -3880,6 +4021,374 @@
     display: flex;
     flex-direction: column;
     flex-shrink: 0;
+  }
+
+  .forum-channel-view {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    height: 100%;
+    padding: 16px;
+    overflow: hidden;
+  }
+
+  .forum-channel-toolbar {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  .forum-channel-heading {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .forum-channel-title-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .forum-channel-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--color-xfire-text-0);
+  }
+
+  .forum-channel-topic {
+    color: var(--color-xfire-text-2);
+    font-size: 13px;
+  }
+
+  .forum-channel-new-post-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .forum-channel-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .forum-channel-tag {
+    border: 1px solid var(--color-xfire-border);
+    background: var(--color-xfire-bg-2);
+    color: var(--color-xfire-text-1);
+    border-radius: 999px;
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+
+  .forum-channel-tag-active {
+    border-color: var(--color-xfire-accent);
+    color: var(--color-xfire-text-0);
+    background: color-mix(in srgb, var(--color-xfire-accent) 15%, var(--color-xfire-bg-2));
+  }
+
+  .forum-channel-composer {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+    border: 1px solid var(--color-xfire-border);
+    border-radius: 12px;
+    background: var(--color-xfire-bg-2);
+  }
+
+  .forum-channel-composer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .forum-channel-composer-title {
+    font-weight: 700;
+    color: var(--color-xfire-text-0);
+  }
+
+  .forum-channel-composer-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .forum-channel-input,
+  .forum-channel-select,
+  .forum-channel-body {
+    width: 100%;
+  }
+
+  .forum-channel-composer-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+  }
+
+  .forum-channel-thread-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow: auto;
+    padding-right: 4px;
+  }
+
+  .forum-channel-thread-card {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    width: 100%;
+    text-align: left;
+    border: 1px solid var(--color-xfire-border);
+    border-radius: 12px;
+    background: var(--color-xfire-bg-2);
+    padding: 14px 16px;
+  }
+
+  .forum-channel-thread-card:hover {
+    border-color: var(--color-xfire-accent);
+    background: color-mix(in srgb, var(--color-xfire-accent) 8%, var(--color-xfire-bg-2));
+  }
+
+  .forum-channel-thread-topline {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .forum-channel-thread-name {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--color-xfire-text-0);
+  }
+
+  .forum-channel-thread-tag {
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-size: 11px;
+    color: var(--color-xfire-text-1);
+    background: var(--color-xfire-bg-3);
+  }
+
+  .forum-channel-thread-meta {
+    font-size: 12px;
+    color: var(--color-xfire-text-2);
+  }
+
+  .forum-channel-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 220px;
+    border: 1px dashed var(--color-xfire-border);
+    border-radius: 12px;
+    color: var(--color-xfire-text-2);
+  }
+
+  .forum-channel-empty-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--color-xfire-text-1);
+  }
+
+  .forum-channel-empty-subtitle {
+    font-size: 13px;
+  }
+
+  .stage-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    height: 100%;
+    padding: 18px;
+    overflow: auto;
+  }
+
+  .stage-panel-hero {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 18px;
+    border: 1px solid var(--color-xfire-border);
+    border-radius: 14px;
+    background:
+      linear-gradient(135deg,
+        color-mix(in srgb, var(--color-xfire-accent) 16%, var(--color-xfire-bg-2)) 0%,
+        var(--color-xfire-bg-2) 58%,
+        color-mix(in srgb, var(--color-xfire-online) 10%, var(--color-xfire-bg-2)) 100%);
+  }
+
+  .stage-panel-heading {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .stage-panel-title {
+    font-size: 22px;
+    font-weight: 800;
+    color: var(--color-xfire-text-0);
+  }
+
+  .stage-panel-topic {
+    font-size: 13px;
+    color: var(--color-xfire-text-2);
+    max-width: 560px;
+  }
+
+  .stage-panel-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 10px;
+  }
+
+  .stage-panel-join-btn,
+  .stage-panel-leave-btn,
+  .stage-panel-request-btn,
+  .stage-panel-approve-btn,
+  .stage-panel-deny-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border: 1px solid var(--color-xfire-border);
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-weight: 600;
+  }
+
+  .stage-panel-join-btn {
+    background: color-mix(in srgb, var(--color-xfire-online) 18%, var(--color-xfire-bg-3));
+    color: var(--color-xfire-text-0);
+  }
+
+  .stage-panel-leave-btn {
+    background: color-mix(in srgb, var(--color-xfire-bg-3) 85%, black);
+    color: var(--color-xfire-text-1);
+  }
+
+  .stage-panel-request-btn {
+    background: color-mix(in srgb, var(--color-xfire-accent) 16%, var(--color-xfire-bg-3));
+    color: var(--color-xfire-text-0);
+  }
+
+  .stage-panel-request-btn:disabled {
+    opacity: 0.65;
+    cursor: default;
+  }
+
+  .stage-panel-status {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    font-size: 13px;
+    color: var(--color-xfire-text-2);
+  }
+
+  .stage-panel-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .stage-panel-section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-height: 220px;
+    padding: 16px;
+    border: 1px solid var(--color-xfire-border);
+    border-radius: 14px;
+    background: var(--color-xfire-bg-2);
+  }
+
+  .stage-panel-section-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--color-xfire-text-0);
+  }
+
+  .stage-panel-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .stage-panel-member-card,
+  .stage-panel-request-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: var(--color-xfire-bg-3);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-border) 75%, transparent);
+  }
+
+  .stage-panel-member-name {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--color-xfire-text-0);
+  }
+
+  .stage-panel-member-meta {
+    font-size: 12px;
+    color: var(--color-xfire-text-2);
+  }
+
+  .stage-panel-request-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .stage-panel-approve-btn {
+    padding: 9px 11px;
+    background: color-mix(in srgb, var(--color-xfire-online) 18%, var(--color-xfire-bg-3));
+    color: var(--color-xfire-text-0);
+  }
+
+  .stage-panel-deny-btn {
+    padding: 9px 11px;
+    background: color-mix(in srgb, var(--color-xfire-busy) 16%, var(--color-xfire-bg-3));
+    color: var(--color-xfire-text-0);
+  }
+
+  .stage-panel-empty {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    border: 1px dashed var(--color-xfire-border);
+    border-radius: 12px;
+    color: var(--color-xfire-text-2);
+    font-size: 13px;
+    text-align: center;
+    padding: 16px;
+  }
+
+  .stage-panel-requests {
+    min-height: 0;
+  }
+
+  @media (max-width: 1100px) {
+    .stage-panel-grid {
+      grid-template-columns: 1fr;
+    }
   }
 
   .thread-list-content {
@@ -4196,6 +4705,505 @@
     font-size: 11px;
   }
 
+  /* Architecture §32 Phase 5 W15 — per-community avatar + banner edit row. */
+  .profile-popup-edit-image-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .profile-popup-edit-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 1px solid var(--color-xfire-border);
+  }
+
+  .profile-popup-edit-banner {
+    width: 200px;
+    height: 60px;
+    object-fit: cover;
+    border-radius: 4px;
+    border: 1px solid var(--color-xfire-border);
+  }
+
+  .profile-popup-edit-image-placeholder {
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+    padding: 6px 8px;
+    background: var(--color-xfire-bg-secondary);
+    border: 1px dashed var(--color-xfire-border);
+    border-radius: 4px;
+  }
+
+  /* Architecture §10.6 — video / screen-share grid. */
+  .video-call-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px;
+    background: var(--color-xfire-bg-secondary);
+    border: 1px solid var(--color-xfire-border);
+    border-radius: 4px;
+  }
+
+  .video-call-panel-hidden {
+    display: none;
+  }
+
+  .video-call-controls {
+    display: flex;
+    gap: 6px;
+  }
+
+  .video-call-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 6px;
+  }
+
+  .video-call-tile {
+    position: relative;
+    aspect-ratio: 16 / 9;
+    background: black;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .video-call-video,
+  .video-call-canvas,
+  .video-call-canvas canvas {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+
+  .video-call-tile-label {
+    position: absolute;
+    bottom: 4px;
+    left: 4px;
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    font-size: 10px;
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+
+  /* Architecture §24 — community analytics dashboard. */
+  .analytics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .analytics-card {
+    background: var(--color-xfire-bg-secondary);
+    border: 1px solid var(--color-xfire-border);
+    border-radius: 4px;
+    padding: 10px;
+  }
+
+  .analytics-card-label {
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .analytics-card-value {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--color-xfire-text-primary);
+    margin-top: 4px;
+  }
+
+  .analytics-sparkline {
+    margin: 8px 0;
+  }
+
+  .analytics-sparkline-label {
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+    margin-bottom: 4px;
+  }
+
+  .analytics-sparkline-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 1px;
+    height: 44px;
+    padding: 2px;
+    background: var(--color-xfire-bg-secondary);
+    border-radius: 3px;
+  }
+
+  .analytics-sparkline-bar {
+    flex: 1;
+    background: var(--color-xfire-accent);
+    min-height: 2px;
+    border-radius: 1px;
+  }
+
+  .analytics-channel-row {
+    display: grid;
+    grid-template-columns: 140px 1fr 200px;
+    gap: 10px;
+    align-items: center;
+    padding: 6px 0;
+    border-bottom: 1px solid color-mix(in srgb, white 4%, transparent);
+  }
+
+  .analytics-channel-name {
+    font-weight: 600;
+    color: var(--color-xfire-text-primary);
+  }
+
+  .analytics-channel-stats {
+    display: flex;
+    gap: 12px;
+    font-size: 11px;
+    color: var(--color-xfire-text-secondary);
+  }
+
+  .analytics-hours {
+    display: flex;
+    gap: 2px;
+    align-items: flex-end;
+    padding: 4px;
+    background: var(--color-xfire-bg-secondary);
+    border-radius: 3px;
+  }
+
+  .analytics-hour-bar-wrap {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .analytics-hour-bar {
+    width: 100%;
+    background: var(--color-xfire-accent);
+    min-height: 2px;
+    border-radius: 1px;
+  }
+
+  .analytics-hour-label {
+    font-size: 8px;
+    color: var(--color-xfire-text-dim);
+    margin-top: 2px;
+  }
+
+  /* Architecture §23 — message search panel (Cmd/Ctrl-F). */
+  .search-panel-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 60px;
+    z-index: var(--z-modal-backdrop);
+  }
+
+  .search-panel {
+    width: 720px;
+    max-width: 90%;
+    max-height: 80vh;
+    background: var(--color-xfire-bg-primary);
+    border: 1px solid var(--color-xfire-border);
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+    overflow: hidden;
+  }
+
+  .search-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--color-xfire-border);
+  }
+
+  .search-panel-header h3 {
+    margin: 0;
+    font-size: 13px;
+    color: var(--color-xfire-text-primary);
+  }
+
+  .search-panel-close {
+    background: transparent;
+    border: none;
+    color: var(--color-xfire-text-dim);
+    font-size: 18px;
+    cursor: pointer;
+  }
+
+  .search-panel-input-row {
+    display: flex;
+    gap: 6px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--color-xfire-border);
+  }
+
+  .search-panel-query {
+    flex: 1;
+  }
+
+  .search-panel-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--color-xfire-border);
+  }
+
+  .search-panel-pinned {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .search-panel-has {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--color-xfire-border);
+  }
+
+  .search-panel-chip {
+    background: var(--color-xfire-bg-secondary);
+    border: 1px solid var(--color-xfire-border);
+    color: var(--color-xfire-text-secondary);
+    padding: 3px 10px;
+    font-size: 10px;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+
+  .search-panel-chip-active {
+    background: color-mix(in srgb, var(--color-xfire-accent) 30%, transparent);
+    color: var(--color-xfire-accent);
+    border-color: var(--color-xfire-accent);
+  }
+
+  .search-panel-error {
+    padding: 10px 14px;
+    color: #ff7373;
+    font-size: 12px;
+  }
+
+  .search-panel-empty {
+    padding: 24px 14px;
+    text-align: center;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .search-panel-results {
+    flex: 1;
+    overflow-y: auto;
+    padding: 6px 0;
+  }
+
+  .search-panel-hit {
+    padding: 8px 14px;
+    border-bottom: 1px solid color-mix(in srgb, white 4%, transparent);
+  }
+
+  .search-panel-hit-meta {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 4px;
+  }
+
+  .search-panel-hit-scope {
+    font-size: 9px;
+    text-transform: uppercase;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: color-mix(in srgb, white 8%, transparent);
+    color: var(--color-xfire-text-dim);
+  }
+
+  .search-panel-hit-scope-channel {
+    background: color-mix(in srgb, var(--color-xfire-accent) 25%, transparent);
+    color: var(--color-xfire-accent);
+  }
+
+  .search-panel-hit-scope-thread {
+    background: color-mix(in srgb, #c4b06a 25%, transparent);
+    color: #ffd479;
+  }
+
+  .search-panel-hit-time {
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .search-panel-hit-body {
+    font-size: 12px;
+    color: var(--color-xfire-text-secondary);
+  }
+
+  .search-panel-hit-context {
+    color: var(--color-xfire-text-dim);
+    font-size: 11px;
+  }
+
+  .search-panel-hit-match {
+    color: var(--color-xfire-text-primary);
+    margin: 2px 0;
+  }
+
+  .search-panel-footer {
+    padding: 8px 14px;
+    border-top: 1px solid var(--color-xfire-border);
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+    text-align: center;
+  }
+
+  /* Architecture §28.8 — sender-fetched OpenGraph link preview card. */
+  .message-link-preview {
+    display: flex;
+    gap: 10px;
+    margin-top: 6px;
+    padding: 8px 10px;
+    background: var(--color-xfire-bg-secondary);
+    border-left: 3px solid var(--color-xfire-accent);
+    border-radius: 4px;
+    text-decoration: none;
+    color: inherit;
+    max-width: 480px;
+  }
+
+  .message-link-preview:hover {
+    background: color-mix(in srgb, var(--color-xfire-accent) 8%, var(--color-xfire-bg-secondary));
+  }
+
+  .message-link-preview-image {
+    width: 64px;
+    height: 64px;
+    object-fit: cover;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+
+  .message-link-preview-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    overflow: hidden;
+  }
+
+  .message-link-preview-site {
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .message-link-preview-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-xfire-text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .message-link-preview-description {
+    font-size: 12px;
+    color: var(--color-xfire-text-secondary);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* Architecture §28.5 — mention autocomplete popover. */
+  .mention-popover {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    right: 0;
+    margin-bottom: 4px;
+    background: var(--color-xfire-bg-secondary);
+    border: 1px solid var(--color-xfire-border);
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    max-height: 180px;
+    overflow-y: auto;
+    z-index: var(--z-dropdown);
+  }
+
+  .mention-popover-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 6px 10px;
+    background: transparent;
+    border: none;
+    color: var(--color-xfire-text-primary);
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .mention-popover-row-active {
+    background: color-mix(in srgb, var(--color-xfire-accent) 25%, transparent);
+  }
+
+  .mention-popover-tag {
+    font-size: 9px;
+    text-transform: uppercase;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: color-mix(in srgb, white 8%, transparent);
+    color: var(--color-xfire-text-dim);
+  }
+
+  .mention-popover-tag-special {
+    background: color-mix(in srgb, #f44336 25%, transparent);
+    color: #ff9c92;
+  }
+
+  .mention-popover-tag-role {
+    background: color-mix(in srgb, var(--color-xfire-accent) 25%, transparent);
+    color: var(--color-xfire-accent);
+  }
+
+  .mention-popover-label {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Architecture §17.1 — per-channel notification level + sound picker. */
+  .channel-notif-label {
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+    margin-left: 4px;
+  }
+
+  .channel-notif-select {
+    padding: 3px 6px;
+    font-size: 11px;
+    max-width: 140px;
+  }
+
   .channel-topic-label {
     font-size: 11px;
     color: var(--color-xfire-text-dim);
@@ -4297,10 +5305,21 @@
   /* ─── Profile popup actions ─── */
   .profile-popup-actions {
     display: flex;
+    flex-direction: column;
     gap: 6px;
     margin-top: 8px;
     padding-top: 8px;
     border-top: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+  }
+
+  /* Architecture §32 — empty-state hint surfaced when the local
+   * member's per-community profile has no bio / avatar / banner /
+   * pronouns set. Sits above the "Edit profile" button so it doubles
+   * as an inline call-to-action. */
+  .profile-popup-empty-hint {
+    font-size: 11px;
+    color: var(--color-xfire-text-secondary);
+    line-height: 1.4;
   }
 
   .profile-popup-action-btn {
@@ -4316,6 +5335,606 @@
 
   .profile-popup-action-btn:hover {
     background: color-mix(in srgb, var(--color-xfire-accent) 25%, transparent);
+  }
+
+  /* ─── Per-community profile (bio / pronouns / badges / theme) ─── */
+  .profile-popup-pronouns {
+    font-size: 10px;
+    color: var(--profile-accent, var(--color-xfire-accent));
+    padding: 0 8px 4px;
+  }
+
+  .profile-popup-bio {
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+    font-style: italic;
+    padding: 4px 8px;
+    line-height: 1.35;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .profile-popup-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 4px 8px;
+  }
+
+  .profile-popup-badge {
+    font-size: 9px;
+    padding: 1px 6px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--profile-accent, var(--color-xfire-accent)) 15%, transparent);
+    border: 1px solid color-mix(in srgb, var(--profile-accent, var(--color-xfire-accent)) 35%, transparent);
+    color: var(--color-xfire-text);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .profile-popup-edit-form {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px;
+    border-top: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+  }
+
+  .profile-popup-edit-label {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .profile-popup-edit-input,
+  .profile-popup-edit-textarea {
+    background: color-mix(in srgb, var(--color-xfire-bg) 80%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 40%, transparent);
+    color: var(--color-xfire-text);
+    font-size: 11px;
+    padding: 4px 6px;
+    border-radius: 3px;
+    font-family: inherit;
+    resize: vertical;
+  }
+
+  .profile-popup-edit-input:focus,
+  .profile-popup-edit-textarea:focus {
+    outline: none;
+    border-color: var(--color-xfire-accent);
+  }
+
+  .profile-popup-edit-color {
+    width: 40px;
+    height: 22px;
+    padding: 0;
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 40%, transparent);
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .profile-popup-edit-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 2px;
+  }
+
+  .profile-popup-edit-btn {
+    background: color-mix(in srgb, var(--color-xfire-accent) 15%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-accent) 30%, transparent);
+    color: var(--color-xfire-text);
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .profile-popup-edit-btn:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--color-xfire-accent) 25%, transparent);
+  }
+
+  .profile-popup-edit-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .profile-popup-edit-btn-secondary {
+    background: transparent;
+    border-color: color-mix(in srgb, var(--color-xfire-offline) 40%, transparent);
+  }
+
+  /* ─── Bulk message delete (mod selection mode) ─── */
+  .message-list-mod-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    padding: 4px 8px;
+  }
+
+  .message-list-mod-btn {
+    background: transparent;
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 35%, transparent);
+    color: var(--color-xfire-text-dim);
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+
+  .message-list-mod-btn:hover {
+    color: var(--color-xfire-text);
+    border-color: var(--color-xfire-accent);
+  }
+
+  .message-list-selection-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: var(--z-elevated);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    background: color-mix(in srgb, var(--color-xfire-bg) 85%, var(--color-xfire-accent) 15%);
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-accent) 35%, transparent);
+  }
+
+  .message-list-selection-count {
+    font-size: 11px;
+    color: var(--color-xfire-text);
+    margin-right: auto;
+  }
+
+  .message-list-selection-btn {
+    background: color-mix(in srgb, var(--color-xfire-accent) 15%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-accent) 35%, transparent);
+    color: var(--color-xfire-text);
+    font-size: 10px;
+    padding: 3px 10px;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+
+  .message-list-selection-btn:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--color-xfire-accent) 25%, transparent);
+  }
+
+  .message-list-selection-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .message-list-selection-btn-danger {
+    background: color-mix(in srgb, #c0392b 20%, transparent);
+    border-color: color-mix(in srgb, #c0392b 45%, transparent);
+  }
+
+  .message-list-selection-btn-danger:hover:not(:disabled) {
+    background: color-mix(in srgb, #c0392b 35%, transparent);
+  }
+
+  .chat-message-selectable {
+    cursor: pointer;
+    padding-left: 28px;
+    position: relative;
+    transition: background 0.1s;
+  }
+
+  .chat-message-selectable:hover {
+    background: color-mix(in srgb, var(--color-xfire-accent) 8%, transparent);
+  }
+
+  .chat-message-selected {
+    background: color-mix(in srgb, var(--color-xfire-accent) 18%, transparent);
+  }
+
+  .chat-message-select-checkbox {
+    position: absolute;
+    left: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 14px;
+    height: 14px;
+    cursor: pointer;
+    accent-color: var(--color-xfire-accent);
+  }
+
+  /* ─── Lost Cargo attachment card ─── */
+  .attachment-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    margin-top: 4px;
+    border: 1px solid color-mix(in srgb, var(--color-xfire-accent) 30%, transparent);
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--color-xfire-bg) 88%, transparent);
+  }
+
+  .attachment-card-icon {
+    font-size: 22px;
+    color: var(--color-xfire-text-dim);
+    flex-shrink: 0;
+  }
+
+  .attachment-card-icon-ready {
+    color: var(--color-xfire-accent);
+  }
+
+  .attachment-card-meta {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .attachment-card-filename {
+    font-size: 12px;
+    color: var(--color-xfire-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .attachment-card-info {
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .attachment-card-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: color-mix(in srgb, var(--color-xfire-accent) 18%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-accent) 35%, transparent);
+    color: var(--color-xfire-text);
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .attachment-card-btn:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--color-xfire-accent) 30%, transparent);
+  }
+
+  .attachment-card-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .attachment-card-pin-btn {
+    background: transparent;
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 35%, transparent);
+    color: var(--color-xfire-text-dim);
+    font-size: 12px;
+    width: 26px;
+    height: 26px;
+    border-radius: 3px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .attachment-card-pin-btn:hover {
+    color: var(--color-xfire-text);
+    border-color: var(--color-xfire-accent);
+  }
+
+  .attachment-card-pin-btn-active {
+    color: var(--color-xfire-accent);
+    border-color: var(--color-xfire-accent);
+  }
+
+  .message-input-attach-btn,
+  .message-input-mic-btn {
+    background: transparent;
+    border: none;
+    color: var(--color-xfire-text-dim);
+    cursor: pointer;
+    font-size: 16px;
+    padding: 0 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .message-input-attach-btn:hover,
+  .message-input-mic-btn:hover {
+    color: var(--color-xfire-accent);
+  }
+
+  .message-input-mic-btn-active {
+    color: #c0392b;
+  }
+
+  /* Architecture §32 a11y — opacity fade replaces the original
+   * `transform: scale()` pulse. Scale-based pulses are vestibular-
+   * disorder hostile (WCAG 2.3.3 + 2024 vestibular guidance); opacity
+   * preserves the "this is active" affordance without the hazard. */
+  @media (prefers-reduced-motion: no-preference) {
+    .message-input-mic-btn-active {
+      animation: voice-mic-pulse 1s ease-in-out infinite;
+    }
+  }
+
+  .message-input-mic-timer {
+    font-size: 10px;
+    color: var(--color-xfire-text);
+  }
+
+  @keyframes voice-mic-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.55; }
+  }
+
+  /* ─── Voice-message player (architecture §16.4) ─── */
+  .voice-message {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 10px;
+    margin-top: 4px;
+    border: 1px solid color-mix(in srgb, var(--color-xfire-accent) 30%, transparent);
+    border-radius: 16px;
+    background: color-mix(in srgb, var(--color-xfire-bg) 88%, transparent);
+    max-width: 360px;
+  }
+
+  .voice-message-play-btn {
+    background: var(--color-xfire-accent);
+    border: none;
+    color: white;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .voice-message-play-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .voice-message-waveform {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    height: 24px;
+    overflow: hidden;
+  }
+
+  .voice-message-bar {
+    display: inline-block;
+    background: color-mix(in srgb, var(--color-xfire-text-dim) 60%, transparent);
+    border-radius: 1px;
+    flex-shrink: 0;
+  }
+
+  .voice-message-bar-played {
+    background: var(--color-xfire-accent);
+  }
+
+  .voice-message-duration {
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Architecture §17.4 — raid alert overlay rendered at the top of
+   * `CommunityWindow` while the backend's raid detector is firing.
+   * Higher visual weight than the plate-gate banner because the
+   * threat surface (join floods) is more time-sensitive. */
+  .raid-alert-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    background: color-mix(in srgb, var(--color-xfire-busy) 30%, var(--color-xfire-bg-dark));
+    color: var(--color-xfire-busy);
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-busy) 55%, transparent);
+    font-size: 11px;
+  }
+
+  .raid-alert-banner-text {
+    flex: 1;
+    line-height: 1.4;
+  }
+
+  /* ─── Plate Gate (architecture §15) admin banner ─── */
+  .plate-gate-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    margin-bottom: 12px;
+    border-radius: 5px;
+  }
+
+  /* `warning` variant — proactive at ≤10 slots remaining. */
+  .plate-gate-banner-warning {
+    border: 1px solid color-mix(in srgb, var(--color-xfire-away) 55%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-bg) 80%, var(--color-xfire-away) 20%);
+  }
+
+  /* `alert` variant — once segment is full. Higher visual weight so
+   * an admin lingering on this tab can't miss the call to expand. */
+  .plate-gate-banner-alert {
+    border: 1px solid color-mix(in srgb, var(--color-xfire-busy) 55%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-bg) 80%, var(--color-xfire-busy) 20%);
+  }
+
+  .plate-gate-banner-text {
+    flex: 1;
+    font-size: 11px;
+    color: var(--color-xfire-text);
+    line-height: 1.4;
+  }
+
+  .plate-gate-banner-btn {
+    background: var(--color-xfire-accent);
+    border: none;
+    color: white;
+    font-size: 11px;
+    padding: 6px 14px;
+    border-radius: 3px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .plate-gate-banner-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .plate-gate-status {
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+    margin-bottom: 8px;
+    padding: 4px 8px;
+    border-left: 2px solid color-mix(in srgb, var(--color-xfire-accent) 30%, transparent);
+  }
+
+  /* ─── Forwarded message indicator ─── */
+  .message-forwarded-header {
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+    font-style: italic;
+    margin-bottom: 2px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .message-forwarded-icon {
+    color: var(--color-xfire-accent);
+  }
+
+  /* ─── Forward message dialog ─── */
+  .forward-dialog-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: var(--z-modal-backdrop);
+  }
+
+  .forward-dialog {
+    background: var(--color-xfire-bg);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-accent) 35%, transparent);
+    border-radius: 6px;
+    width: 320px;
+    max-width: 90vw;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+  }
+
+  .forward-dialog-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 25%, transparent);
+  }
+
+  .forward-dialog-title {
+    font-size: 12px;
+    color: var(--color-xfire-text);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .forward-dialog-close {
+    background: transparent;
+    border: none;
+    color: var(--color-xfire-text-dim);
+    cursor: pointer;
+    padding: 0;
+    font-size: 14px;
+  }
+
+  .forward-dialog-close:hover {
+    color: var(--color-xfire-text);
+  }
+
+  .forward-dialog-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .forward-dialog-label {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .forward-dialog-select {
+    background: color-mix(in srgb, var(--color-xfire-bg) 80%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 40%, transparent);
+    color: var(--color-xfire-text);
+    font-size: 11px;
+    padding: 4px 6px;
+    border-radius: 3px;
+  }
+
+  .forward-dialog-select:focus {
+    outline: none;
+    border-color: var(--color-xfire-accent);
+  }
+
+  .forward-dialog-hint {
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+    font-style: italic;
+  }
+
+  .forward-dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: 4px;
+  }
+
+  .forward-dialog-btn {
+    background: transparent;
+    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 40%, transparent);
+    color: var(--color-xfire-text);
+    font-size: 10px;
+    padding: 4px 12px;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+
+  .forward-dialog-btn:hover:not(:disabled) {
+    border-color: var(--color-xfire-accent);
+  }
+
+  .forward-dialog-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .forward-dialog-btn-primary {
+    background: color-mix(in srgb, var(--color-xfire-accent) 18%, transparent);
+    border-color: color-mix(in srgb, var(--color-xfire-accent) 35%, transparent);
+  }
+
+  .forward-dialog-btn-primary:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--color-xfire-accent) 28%, transparent);
   }
 
   /* ─── Message highlight (jump to pinned message) ─── */
@@ -4537,6 +6156,42 @@
     padding-top: 8px;
   }
 
+  /* Architecture §18 — expression-picker tab strip + soundboard items. */
+  .expression-picker-tabs {
+    display: flex;
+    gap: 2px;
+    border-bottom: 1px solid var(--color-xfire-border);
+    margin-bottom: 6px;
+  }
+
+  .expression-picker-tab {
+    background: transparent;
+    border: none;
+    padding: 4px 10px;
+    font-size: 11px;
+    color: var(--color-xfire-text-secondary);
+    cursor: pointer;
+  }
+
+  .expression-picker-tab-active {
+    color: var(--color-xfire-text-primary);
+    border-bottom: 2px solid var(--color-xfire-accent);
+  }
+
+  .expression-picker-soundboard-glyph {
+    font-size: 18px;
+    line-height: 1;
+  }
+
+  .expression-picker-soundboard-name {
+    font-size: 10px;
+    color: var(--color-xfire-text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 60px;
+  }
+
   .chat-inline-expression {
     width: 22px;
     height: 22px;
@@ -4626,7 +6281,7 @@
     margin-bottom: 8px;
   }
 
-  .settings-content .form-btn-save,
+  .settings-content .form-btn-primary,
   .settings-content .form-btn-secondary,
   .settings-content .form-btn-danger {
     padding: 5px 10px;
@@ -4637,6 +6292,67 @@
     font-size: 10px;
     color: var(--color-xfire-text-dim);
     font-style: italic;
+  }
+
+  /* Phase 7 W24 — cross-device pairing QR display + camera scanner. */
+  .pairing-qr-display {
+    display: inline-block;
+    padding: 12px;
+    background: #f8fafc;
+    border: 1px solid var(--color-xfire-border);
+    border-radius: 6px;
+    line-height: 0;
+  }
+
+  .pairing-qr-display svg {
+    display: block;
+    width: 256px;
+    height: 256px;
+  }
+
+  .settings-button-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+
+  .qr-scanner-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: var(--z-modal-backdrop);
+    padding: 20px;
+  }
+
+  .qr-scanner-overlay-card {
+    background: var(--color-xfire-bg-panel);
+    border: 1px solid var(--color-xfire-border);
+    border-radius: 8px;
+    padding: 16px;
+    max-width: 480px;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .qr-scanner-overlay-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .qr-scanner-video {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    background: #000;
+    border-radius: 4px;
+    object-fit: cover;
   }
 
   .automod-rule-list {
@@ -4707,42 +6423,37 @@
   50% { opacity: 0.3; }
 }
 
-/* ── Onboarding Wizard ── */
-
-.onboarding-wizard-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-}
+/* ── Onboarding Wizard ──
+ * The wizard renders inside Modal's `.modal-container`, so it provides only
+ * vertical layout + section dividers. Window chrome (background, border,
+ * sizing, shadow) lives on the Modal. */
 
 .onboarding-wizard {
-  background: var(--color-xfire-bg-panel);
-  border: 1px solid var(--color-xfire-border);
-  border-radius: 8px;
-  width: 440px;
-  max-height: 80vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  min-height: 0;
+}
+
+/* Architecture §19.2 — gated communities are takeover dialogs (Esc + close
+ * suppressed via Modal `dismissable={false}`). The banner explains *why*
+ * dismissal is locked so the user understands the takeover. */
+.onboarding-wizard-gated-banner {
+  background: color-mix(in srgb, var(--color-xfire-accent) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-xfire-accent) 40%, transparent);
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--color-xfire-text-primary);
+  line-height: 1.4;
+  margin-bottom: 12px;
 }
 
 .onboarding-wizard-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 16px 20px;
+  justify-content: flex-end;
+  padding-bottom: 10px;
   border-bottom: 1px solid var(--color-xfire-border);
-}
-
-.onboarding-wizard-header h2 {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--color-xfire-text-primary);
-  margin: 0;
 }
 
 .onboarding-progress {
@@ -4753,7 +6464,8 @@
 .onboarding-wizard-body {
   flex: 1;
   overflow-y: auto;
-  padding: 20px;
+  padding: 16px 0;
+  min-height: 0;
 }
 
 .onboarding-welcome p {
@@ -4761,6 +6473,44 @@
   font-size: 14px;
   line-height: 1.5;
   margin: 0;
+}
+
+/* Architecture §19.2 step 3 — gated mode rules acknowledgment. */
+.onboarding-rules {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.onboarding-rules h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-xfire-text-primary);
+  margin: 0;
+}
+
+.onboarding-rules-text {
+  white-space: pre-wrap;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-xfire-text-secondary);
+  background: var(--color-xfire-bg-secondary);
+  border: 1px solid var(--color-xfire-border);
+  border-radius: 4px;
+  padding: 10px 12px;
+  max-height: 240px;
+  overflow-y: auto;
+  margin: 0;
+}
+
+.onboarding-rules-ack {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--color-xfire-text-primary);
+  cursor: pointer;
 }
 
 .onboarding-question h3 {
@@ -4853,43 +6603,8 @@
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  padding: 12px 20px;
+  padding-top: 12px;
   border-top: 1px solid var(--color-xfire-border);
-}
-
-.onboarding-btn-primary {
-  padding: 8px 20px;
-  background: var(--color-xfire-accent);
-  color: white;
-  border: none;
-  border-radius: 4px;
-  font-size: 13px;
-  cursor: pointer;
-  transition: opacity 0.15s;
-}
-
-.onboarding-btn-primary:hover {
-  opacity: 0.9;
-}
-
-.onboarding-btn-primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.onboarding-btn-secondary {
-  padding: 8px 20px;
-  background: transparent;
-  color: var(--color-xfire-text-secondary);
-  border: 1px solid var(--color-xfire-border);
-  border-radius: 4px;
-  font-size: 13px;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.onboarding-btn-secondary:hover {
-  background: var(--color-xfire-bg-tertiary);
 }
 
 /* ── Welcome Screen ── */
@@ -5152,4 +6867,259 @@
   gap: 8px;
   color: var(--color-xfire-text-secondary);
   font-size: 12px;
+}
+
+.dm-invite-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 4px;
+}
+
+.dm-invite-empty {
+  color: var(--color-xfire-text-secondary);
+  font-size: 13px;
+  margin: 0;
+}
+
+.dm-invite-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-xfire-border-subtle);
+  border-radius: 4px;
+  background: var(--color-xfire-bg-elevated);
+}
+
+.dm-invite-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.dm-invite-meta strong {
+  color: var(--color-xfire-text-primary);
+  font-size: 13px;
+}
+
+.dm-invite-kind {
+  color: var(--color-xfire-text-secondary);
+  font-size: 12px;
+}
+
+.dm-invite-key {
+  color: var(--color-xfire-text-tertiary);
+  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.dm-invite-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.relay-section-subtitle {
+  margin-top: 14px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-xfire-text-secondary);
+}
+
+.relay-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--color-xfire-border-subtle);
+}
+
+.relay-row:last-of-type {
+  border-bottom: none;
+}
+
+.relay-row-badge {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-xfire-accent, #4a90e2);
+}
+
+.push-relay-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--color-xfire-border-subtle);
+  gap: 12px;
+}
+
+.push-relay-row:last-of-type {
+  border-bottom: none;
+}
+
+.push-relay-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.push-relay-platform {
+  font-size: 11px;
+  color: var(--color-xfire-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.push-relay-watch-count {
+  font-size: 11px;
+  color: var(--color-xfire-text-tertiary);
+}
+
+/* Architecture §28.5 mention rendering. Privileged classes
+   (everyone/here/role) get the strongest visual; @user mentions
+   are subtler so a chat full of names doesn't become a wall of
+   chips. The `chat-mention-self` modifier highlights when the
+   local member is the actual target. */
+.chat-mention {
+  padding: 0 4px;
+  border-radius: 3px;
+  background: rgba(74, 144, 226, 0.18);
+  color: var(--color-xfire-accent, #4a90e2);
+  font-weight: 500;
+}
+
+.chat-mention-everyone,
+.chat-mention-here {
+  background: rgba(255, 184, 108, 0.22);
+  color: #c2570a;
+}
+
+.chat-mention-role {
+  background: rgba(140, 99, 197, 0.2);
+  color: #6f42c1;
+}
+
+.chat-mention-self {
+  background: rgba(255, 96, 96, 0.28);
+  color: #b3261e;
+}
+
+/* Shared LoadingButton component — async submit + aria-busy. */
+.loading-button-spinner {
+  display: inline-block;
+  margin-right: 6px;
+  animation: loading-button-spin 0.8s linear infinite;
+}
+
+.loading-button-label {
+  display: inline-block;
+}
+
+@keyframes loading-button-spin {
+  0%   { opacity: 0.4; }
+  50%  { opacity: 1; }
+  100% { opacity: 0.4; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading-button-spinner {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+
+/* Architecture §10.8 text-in-voice locked-pane placeholder. */
+.voice-chat-locked {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  padding: 32px;
+  text-align: center;
+}
+
+/* ─── Architecture §32 a11y — high-contrast / forced-colors support ───
+ * Windows High Contrast (forced-colors) and macOS "Increase Contrast"
+ * (prefers-contrast: more) take over color decisions. Map our chrome
+ * to the platform-supplied keywords (CanvasText, ButtonText, etc.) so
+ * focus rings + borders survive the override. APCA Lc target: ≥75 for
+ * essential UI text. */
+
+@media (forced-colors: active) {
+  /* Restore borders on chrome elements that rely on background tinting
+   * for separation — forced-colors strips backgrounds. */
+  .modal-container,
+  .context-menu,
+  .menu-dropdown,
+  .profile-popup,
+  .form-input,
+  .form-textarea,
+  .form-btn-primary,
+  .form-btn-secondary,
+  .form-btn-danger,
+  .channel-item,
+  .member-item,
+  .buddy-item,
+  .community-item,
+  .xfire-titlebar,
+  .status-bar {
+    border: 1px solid CanvasText;
+  }
+
+  /* Selected / active states use the platform's Highlight tokens so
+   * they remain visible. */
+  .channel-item-selected,
+  .member-item .member-name[aria-current],
+  .buddy-item-selected,
+  .community-item-selected,
+  .context-menu-item[data-highlighted],
+  .menu-dropdown-item[data-highlighted],
+  .menu-bar-item[data-expanded] {
+    background: Highlight;
+    color: HighlightText;
+    forced-color-adjust: none;
+  }
+
+  /* Focus rings — forced-colors strips outline colors unless we ask
+   * for the system focus token explicitly. */
+  *:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+
+  /* Icons rendered as font glyphs lose their decorative role; let the
+   * platform pick the foreground. */
+  .nf-icon {
+    color: ButtonText;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --color-xfire-border: rgba(255, 255, 255, 0.55);
+    --color-xfire-text-dim: rgba(255, 255, 255, 0.85);
+    --color-xfire-text-status: rgba(255, 255, 255, 0.85);
+  }
+
+  .form-btn-primary,
+  .form-btn-secondary,
+  .form-btn-danger {
+    border-width: 2px;
+  }
+
+  *:focus-visible {
+    outline-width: 3px;
+  }
 }

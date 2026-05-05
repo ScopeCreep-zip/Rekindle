@@ -12,6 +12,40 @@ use super::helpers::require_permission;
 use super::legacy::{load_channel_messages_from_smpl, merge_message_lists};
 use super::types::SendChannelMessageResponse;
 
+/// Forward a previously-cached channel message to another channel.
+///
+/// `source_*` and `dest_*` may identify the same community or different
+/// communities. The source must already be cached locally (no DHT refetch).
+/// Re-encrypts content with the destination MEK and writes a
+/// `ChannelEntry::Forward` entry plus a gossip notification.
+#[tauri::command]
+pub async fn forward_channel_message(
+    source_community_id: String,
+    source_channel_id: String,
+    source_message_id: String,
+    dest_community_id: String,
+    dest_channel_id: String,
+    app: tauri::AppHandle,
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+) -> Result<SendChannelMessageResponse, String> {
+    let sent = crate::services::community::channel_messages::forward_message(
+        state.inner(),
+        pool.inner(),
+        &source_community_id,
+        &source_channel_id,
+        &source_message_id,
+        &dest_community_id,
+        &dest_channel_id,
+    )
+    .await?;
+    crate::services::community::emit_local_chat_event(&app, &sent, &dest_channel_id);
+    Ok(SendChannelMessageResponse {
+        status: sent.result.status,
+        message_id: sent.result.message_id,
+    })
+}
+
 /// Send a message in a community channel.
 #[tauri::command]
 pub async fn send_channel_message(
@@ -132,7 +166,8 @@ pub async fn get_channel_messages(
     let mpk = my_pseudonym_key.clone();
     let mut messages: Vec<Message> = db_call(pool.inner(), move |conn| {
         let mut stmt = conn.prepare(
-            "SELECT id, sender_key, body, automod_blurred, timestamp, message_id FROM messages \
+            "SELECT id, sender_key, body, automod_blurred, timestamp, message_id, forwarded_from_author, attachment_json, flags \
+                 FROM messages \
                  WHERE owner_key = ? AND conversation_id = ? AND conversation_type = 'channel' \
                  ORDER BY COALESCE(NULLIF(lamport_ts, 0), timestamp) DESC, sender_key DESC LIMIT ?",
         )?;
@@ -140,6 +175,9 @@ pub async fn get_channel_messages(
         let rows = stmt.query_map(rusqlite::params![ok, channel_id_clone, limit], |row| {
             let sender = db::get_str(row, "sender_key");
             let is_own = sender == ok || sender == mpk;
+            let attachment = db::get_str_opt(row, "attachment_json")
+                .and_then(|json| serde_json::from_str::<crate::commands::chat::MessageAttachmentDto>(&json).ok());
+            let flags = u32::try_from(row.get::<_, i64>("flags").unwrap_or(0).max(0)).unwrap_or(0);
             Ok(Message {
                 id: db::get_i64(row, "id"),
                 sender_id: sender,
@@ -152,6 +190,9 @@ pub async fn get_channel_messages(
                 reactions: None,
                 pinned: None,
                 poll: None,
+                forwarded_from_author: db::get_str_opt(row, "forwarded_from_author"),
+                attachment,
+                flags,
             })
         })?;
 
@@ -218,7 +259,8 @@ pub async fn get_older_channel_messages(
     let before_ts = before_timestamp.cast_signed();
     let mut messages: Vec<Message> = db_call(pool.inner(), move |conn| {
         let mut stmt = conn.prepare(
-            "SELECT id, sender_key, body, automod_blurred, timestamp, message_id FROM messages \
+            "SELECT id, sender_key, body, automod_blurred, timestamp, message_id, forwarded_from_author, attachment_json, flags \
+             FROM messages \
              WHERE owner_key = ? AND conversation_id = ? AND conversation_type = 'channel' \
              AND timestamp < ? \
              ORDER BY COALESCE(NULLIF(lamport_ts, 0), timestamp) DESC, sender_key DESC LIMIT ?",
@@ -228,6 +270,9 @@ pub async fn get_older_channel_messages(
             |row| {
                 let sender = db::get_str(row, "sender_key");
                 let is_own = sender == ok || sender == mpk;
+                let attachment = db::get_str_opt(row, "attachment_json")
+                    .and_then(|json| serde_json::from_str::<crate::commands::chat::MessageAttachmentDto>(&json).ok());
+                let flags = u32::try_from(row.get::<_, i64>("flags").unwrap_or(0).max(0)).unwrap_or(0);
                 Ok(Message {
                     id: db::get_i64(row, "id"),
                     sender_id: sender,
@@ -240,6 +285,9 @@ pub async fn get_older_channel_messages(
                     reactions: None,
                     pinned: None,
                     poll: None,
+                    forwarded_from_author: db::get_str_opt(row, "forwarded_from_author"),
+                    attachment,
+                    flags,
                 })
             },
         )?;

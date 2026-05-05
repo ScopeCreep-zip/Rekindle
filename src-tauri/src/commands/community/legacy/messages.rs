@@ -193,18 +193,22 @@ pub(crate) async fn load_channel_messages_from_smpl(
         .unwrap_or_default();
     let reaction_groups = build_reaction_groups(&channel_entries, &subkey_pseudonyms);
     let poll_states = build_poll_states(&channel_entries, &subkey_pseudonyms, &my_pseudonym);
-    let mut filtered: Vec<rekindle_protocol::dht::community::channel_record::ChannelMessage> =
-        channel_entries
-            .iter()
-            .filter_map(|item| match &item.entry {
-                ChannelRecordEntry::Message(message)
-                    if before_timestamp.is_none_or(|before| message.timestamp < before) =>
-                {
-                    Some(message.clone())
-                }
-                _ => None,
-            })
-            .collect();
+    // Architecture §8 line 1626 — track subkey_index alongside each
+    // ChannelMessage so we can reconstruct the AAD for decrypt.
+    let mut filtered: Vec<(
+        u32,
+        rekindle_protocol::dht::community::channel_record::ChannelMessage,
+    )> = channel_entries
+        .iter()
+        .filter_map(|item| match &item.entry {
+            ChannelRecordEntry::Message(message)
+                if before_timestamp.is_none_or(|before| message.timestamp < before) =>
+            {
+                Some((item.subkey_index, message.clone()))
+            }
+            _ => None,
+        })
+        .collect();
     if filtered.len() > usize::try_from(limit).unwrap_or(usize::MAX) {
         let start = filtered.len() - usize::try_from(limit).unwrap_or(filtered.len());
         filtered = filtered.split_off(start);
@@ -214,15 +218,31 @@ pub(crate) async fn load_channel_messages_from_smpl(
         return Ok(Vec::new());
     }
 
+    let channel_record_key_owned = {
+        let communities = state.communities.read();
+        communities
+            .get(community_id)
+            .and_then(|c| {
+                c.channels
+                    .iter()
+                    .find(|ch| ch.id == channel_id)
+                    .and_then(|ch| ch.message_record_key.clone())
+            })
+    };
     let hydrated_messages: Vec<Message> = filtered
         .iter()
-        .map(|message| {
+        .map(|(subkey_index, message)| {
             let decrypted = decrypt_channel_record_message(
                 state,
                 community_id,
                 channel_id,
                 message.mek_generation,
                 &message.ciphertext,
+                crate::commands::community::legacy::channel_materialize::ChannelDecryptContext {
+                    channel_record_key: channel_record_key_owned.as_deref(),
+                    subkey_index: *subkey_index,
+                    lamport_ts: message.lamport_ts,
+                },
             );
             Message {
                 id: 0,
@@ -242,6 +262,9 @@ pub(crate) async fn load_channel_messages_from_smpl(
                     .message_id
                     .as_ref()
                     .and_then(|message_id| poll_states.get(message_id).cloned()),
+                forwarded_from_author: None,
+                attachment: None,
+                flags: 0,
             }
         })
         .collect();
@@ -253,8 +276,9 @@ pub(crate) async fn load_channel_messages_from_smpl(
         let state_for_db = state.clone();
         let community_id_for_db = community_id.to_string();
         let channel_id_for_db = channel_id.to_string();
+        let channel_record_key_for_db = channel_record_key_owned.clone();
         let _ = db_call(pool, move |conn| {
-            for message in &messages_for_db {
+            for (subkey_index, message) in &messages_for_db {
                 let Some(message_id) = message.message_id.as_deref() else {
                     continue;
                 };
@@ -264,6 +288,11 @@ pub(crate) async fn load_channel_messages_from_smpl(
                     &channel_id_for_db,
                     message.mek_generation,
                     &message.ciphertext,
+                    crate::commands::community::legacy::channel_materialize::ChannelDecryptContext {
+                        channel_record_key: channel_record_key_for_db.as_deref(),
+                        subkey_index: *subkey_index,
+                        lamport_ts: message.lamport_ts,
+                    },
                 );
                 let _ = crate::message_repo::insert_channel_message_with_protocol_metadata(
                     conn,

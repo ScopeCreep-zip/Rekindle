@@ -4,6 +4,15 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase", tag = "type", content = "data")]
 pub enum CommunityEvent {
+    /// Architecture §18.4 — eager-fetched expression bytes have landed in
+    /// the local cache. Frontend should re-query `list_expressions` so
+    /// the picker swaps the `:emojiname:` placeholder for the resolved
+    /// inline_data_base64.
+    #[serde(rename_all = "camelCase")]
+    ExpressionAssetReady {
+        community_id: String,
+        expression_id: String,
+    },
     #[serde(rename_all = "camelCase")]
     MemberJoined {
         community_id: String,
@@ -15,6 +24,19 @@ pub enum CommunityEvent {
     MemberRemoved {
         community_id: String,
         pseudonym_key: String,
+    },
+    /// Architecture §20.6 — peer-side raid detector. Emitted by every
+    /// peer that observes the join rate exceeding
+    /// `CommunityPolicy.max_joins_per_interval` within
+    /// `CommunityPolicy.join_interval_seconds`. Moderators in that
+    /// client get a banner / toast and may pause invites or ban floods
+    /// (the spec lists those as the moderator-side responses).
+    #[serde(rename_all = "camelCase")]
+    RaidDetected {
+        community_id: String,
+        joins_in_window: u32,
+        max_joins_per_interval: u32,
+        join_interval_seconds: u32,
     },
     #[serde(rename_all = "camelCase")]
     MekRotated {
@@ -115,6 +137,100 @@ pub enum CommunityEvent {
         community_id: String,
         channel_id: String,
         pseudonym_key: String,
+    },
+    /// Architecture §10.9: a member triggered a soundboard sound in a
+    /// voice channel. The frontend looks up the expression in the local
+    /// cache and plays the audio.
+    #[serde(rename_all = "camelCase")]
+    SoundboardPlay {
+        community_id: String,
+        channel_id: String,
+        expression_id: String,
+        actor_pseudonym: String,
+    },
+    /// Architecture §10.6: a complete video / screen-share frame has
+    /// been reassembled and MEK-decrypted. The frontend hands the bytes
+    /// to a WebCodecs `VideoDecoder` for rendering.
+    #[serde(rename_all = "camelCase")]
+    VideoFrame {
+        community_id: String,
+        sender_pseudonym: String,
+        stream_id: String,
+        frame_seq: u32,
+        keyframe: bool,
+        timestamp: u32,
+        /// Base64-encoded decrypted VP9 frame.
+        payload_b64: String,
+    },
+    /// Architecture §10.6 receiver acknowledgement — surfaces upstream
+    /// kbps so the encoder can adapt VP9 bitrate.
+    #[serde(rename_all = "camelCase")]
+    VideoFrameAck {
+        community_id: String,
+        sender_pseudonym: String,
+        channel_id: String,
+        stream_id: String,
+        last_frame_seq: u32,
+        kbps: u32,
+        loss_q8: u8,
+    },
+    /// Architecture §10.6 — receiver requests an I-frame.
+    #[serde(rename_all = "camelCase")]
+    VideoKeyframeRequest {
+        community_id: String,
+        sender_pseudonym: String,
+        channel_id: String,
+        stream_id: String,
+    },
+    /// Architecture §10.6 — receiver advertises measured bandwidth
+    /// outside of a frame round-trip.
+    #[serde(rename_all = "camelCase")]
+    VideoBandwidthEstimate {
+        community_id: String,
+        sender_pseudonym: String,
+        channel_id: String,
+        kbps: u32,
+        window_secs: u8,
+        loss_q8: u8,
+    },
+    /// Architecture §10.6 line 4084 — peer's decode capabilities.
+    #[serde(rename_all = "camelCase")]
+    VideoMediaCapabilities {
+        community_id: String,
+        sender_pseudonym: String,
+        channel_id: String,
+        max_pixel_count: u32,
+        max_fps: u8,
+        codecs: Vec<String>,
+    },
+    /// Architecture §10.6 + Phase 6 Week 22 — the active video relay
+    /// for a `(channel_id, stream_id)` changed. Frontend should
+    /// re-attach its decoder to the new relay's stream and discard any
+    /// partially-buffered frames from the old one.
+    #[serde(rename_all = "camelCase")]
+    VideoTopologyChange {
+        community_id: String,
+        sender_pseudonym: String,
+        channel_id: String,
+        stream_id: String,
+        relay_host_pseudonym: Option<String>,
+        reason: String,
+        lamport: u64,
+    },
+    /// Architecture §28.8 — sender pre-fetched OpenGraph metadata for
+    /// a URL embedded in `message_id`.
+    #[serde(rename_all = "camelCase")]
+    LinkPreviewReceived {
+        community_id: String,
+        sender_pseudonym: String,
+        channel_id: String,
+        message_id: String,
+        url: String,
+        title: Option<String>,
+        description: Option<String>,
+        image_url: Option<String>,
+        site_name: Option<String>,
+        fetched_at: u64,
     },
     /// A member's presence status changed.
     #[serde(rename_all = "camelCase")]
@@ -277,32 +393,151 @@ pub enum CommunityEvent {
         mode: String,
         host_pseudonym: Option<String>,
     },
+    /// Stage channel speaker/topic update.
+    #[serde(rename_all = "camelCase")]
+    StageUpdate {
+        community_id: String,
+        channel_id: String,
+        topic: Option<String>,
+        speakers: Vec<String>,
+        moderator_pseudonym: String,
+    },
+    /// Local moderator-facing notification for a speak request.
+    #[serde(rename_all = "camelCase")]
+    SpeakRequest {
+        community_id: String,
+        channel_id: String,
+        requester_pseudonym: String,
+    },
+    /// Response to our stage speak request.
+    #[serde(rename_all = "camelCase")]
+    SpeakResponse {
+        community_id: String,
+        channel_id: String,
+        requester_pseudonym: String,
+        granted: bool,
+        moderator_pseudonym: String,
+    },
+    /// Lost Cargo: a download finished — `local_path` is the on-disk file.
+    /// Frontend updates the message bubble's "Download" button to "Open".
+    #[serde(rename_all = "camelCase")]
+    AttachmentDownloaded {
+        community_id: String,
+        channel_id: String,
+        attachment_id: String,
+        local_path: String,
+    },
+    /// Architecture §6 — emitted after any role mutation
+    /// (RoleDefinition, RoleArchived, RolePermissionUpdate). The full
+    /// merged role list is included so the receiver can replace its
+    /// `roles` array atomically without a refetch.
+    #[serde(rename_all = "camelCase")]
+    RolesChanged {
+        community_id: String,
+        roles: Vec<RoleDto>,
+    },
+    /// Architecture §6 — emitted after any channel/category mutation
+    /// (ChannelCreated, ChannelArchived, ChannelUpdated, CategoryCreated,
+    /// CategoryArchived, CategoryUpdated). Carries snapshots of the
+    /// merged channel + category lists so receivers can re-render the
+    /// channel tree in one atomic update.
+    #[serde(rename_all = "camelCase")]
+    ChannelsUpdated {
+        community_id: String,
+        channels: Vec<ChannelsUpdatedChannelDto>,
+        categories: Vec<ChannelsUpdatedCategoryDto>,
+    },
+    /// Architecture §32 Phase 5 W15 — emitted after `update_community_info`
+    /// persists. Carries the new name/description/icon/banner so the
+    /// buddy-list and community window can refresh without a full
+    /// `getCommunityDetails` round-trip.
+    #[serde(rename_all = "camelCase")]
+    CommunityUpdated {
+        community_id: String,
+        name: Option<String>,
+        description: Option<String>,
+        icon_hash: Option<String>,
+        banner_hash: Option<String>,
+    },
+    /// Architecture §16 — emitted after `create_community_invite`
+    /// successfully persists. Carries the new invite metadata (the
+    /// raw code is only returned synchronously to the creator).
+    #[serde(rename_all = "camelCase")]
+    InviteCreated {
+        community_id: String,
+        code_hash: String,
+        created_by: String,
+        max_uses: Option<u32>,
+        uses: u32,
+        expires_at: Option<u64>,
+        created_at: u64,
+    },
+    /// Architecture §16 — emitted when a peer's `MemberJoinRequest`
+    /// validates an invite. Increments the InvitesTab "uses" counter
+    /// without a refetch.
+    #[serde(rename_all = "camelCase")]
+    InviteUsed {
+        community_id: String,
+        code_hash: String,
+        new_use_count: u32,
+    },
+    /// Architecture §16 — emitted after `revoke_community_invite`.
+    #[serde(rename_all = "camelCase")]
+    InviteRevoked {
+        community_id: String,
+        code_hash: String,
+    },
+    /// Architecture §15 — presence poll observed a previously-unknown
+    /// subkey reporting in. Emitted from
+    /// `services/community/presence/poll.rs::persist_discovered_registry_members`
+    /// once per newly-discovered pseudonym so the member list shows
+    /// the joiner without a registry refetch.
+    #[serde(rename_all = "camelCase")]
+    MemberDiscovered {
+        community_id: String,
+        pseudonym_key: String,
+        display_name: String,
+        subkey_index: u32,
+    },
 }
 
-/// Event info DTO for frontend consumption.
+/// Channel snapshot variant emitted in `ChannelsUpdated`. Mirrors
+/// the TS type at `src/ipc/channels.ts::channelsUpdated` exactly so
+/// the frontend handler can consume without an extra transformer.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct EventInfoDto {
+pub struct ChannelsUpdatedChannelDto {
     pub id: String,
-    pub title: String,
-    pub description: String,
-    pub creator_pseudonym: String,
-    pub start_time: u64,
-    pub end_time: Option<u64>,
-    pub channel_id: Option<String>,
-    pub max_attendees: Option<u32>,
-    pub created_at: u64,
-    pub status: String,
-    pub rsvps: Vec<EventRsvpInfoDto>,
+    pub name: String,
+    pub channel_type: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category_id: Option<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub topic: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slowmode_seconds: Option<u32>,
 }
 
-/// RSVP entry DTO for frontend consumption.
+/// Category snapshot variant emitted in `ChannelsUpdated`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct EventRsvpInfoDto {
-    pub pseudonym_key: String,
-    pub status: String,
+pub struct ChannelsUpdatedCategoryDto {
+    pub id: String,
+    pub name: String,
+    pub sort_order: i32,
 }
+
+/// Event info DTO for frontend consumption (architecture §21).
+///
+/// Type alias for the canonical wire/in-memory shape defined in
+/// `rekindle-types::event::EventInfo`. The DTO name is preserved so
+/// existing call sites and IPC consumers don't need to be renamed
+/// during the typed-envelope migration (plan:
+/// `.claude/plans/community-envelope-capnp-migration.md`).
+pub type EventInfoDto = rekindle_types::event::EventInfo;
+
+/// RSVP entry DTO — alias for `rekindle-types::event::EventRsvp`.
+pub type EventRsvpInfoDto = rekindle_types::event::EventRsvp;
 
 /// Role DTO for frontend consumption (mirrors protocol's `RoleDto`).
 ///
@@ -325,6 +560,9 @@ pub struct RoleDto {
     pub mentionable: bool,
     #[serde(default)]
     pub self_assignable: bool,
+    /// Architecture §19.4 — when set, only one role per group may be active per member.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exclusion_group: Option<String>,
 }
 
 impl From<&rekindle_protocol::messaging::RoleDto> for RoleDto {
@@ -338,37 +576,18 @@ impl From<&rekindle_protocol::messaging::RoleDto> for RoleDto {
             hoist: dto.hoist,
             mentionable: dto.mentionable,
             self_assignable: dto.self_assignable,
+            exclusion_group: None,
         }
     }
 }
 
 /// Thread info DTO for frontend consumption.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ThreadInfoDto {
-    pub id: String,
-    pub channel_id: String,
-    pub name: String,
-    pub starter_message_id: String,
-    pub creator_pseudonym: String,
-    pub created_at: u64,
-    pub archived: bool,
-    pub auto_archive_seconds: u32,
-    pub last_message_at: u64,
-    pub message_count: u32,
-}
+/// Thread info DTO — alias for `rekindle-types::thread::ThreadInfo`.
+pub type ThreadInfoDto = rekindle_types::thread::ThreadInfo;
 
-/// Game server info DTO for frontend consumption.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GameServerInfoDto {
-    pub id: String,
-    pub game_id: String,
-    pub label: String,
-    pub address: String,
-    pub added_by: String,
-    pub created_at: u64,
-}
+/// Game server info DTO — alias for
+/// `rekindle-types::game_server::GameServerInfo`.
+pub type GameServerInfoDto = rekindle_types::game_server::GameServerInfo;
 
 impl From<&crate::state::RoleDefinition> for RoleDto {
     fn from(def: &crate::state::RoleDefinition) -> Self {
@@ -381,6 +600,7 @@ impl From<&crate::state::RoleDefinition> for RoleDto {
             hoist: def.hoist,
             mentionable: def.mentionable,
             self_assignable: def.self_assignable,
+            exclusion_group: def.exclusion_group.clone(),
         }
     }
 }
@@ -396,6 +616,7 @@ impl From<&rekindle_protocol::dht::community::types::RoleEntryV2> for RoleDto {
             hoist: r.hoist,
             mentionable: r.mentionable,
             self_assignable: r.self_assignable,
+            exclusion_group: None,
         }
     }
 }

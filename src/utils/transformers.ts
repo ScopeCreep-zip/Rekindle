@@ -41,6 +41,18 @@ export function transformMessage(m: IpcMessage): Message {
     isOwn: m.isOwn, serverMessageId: m.serverMessageId,
     decryptionFailed, automodBlurred: m.automodBlurred ?? false,
     reactions: m.reactions, pinned: m.pinned, poll: m.poll,
+    forwardedFromAuthor: m.forwardedFromAuthor ?? null,
+    attachment: m.attachment
+      ? {
+          attachmentId: m.attachment.attachmentId,
+          filename: m.attachment.filename,
+          mimeType: m.attachment.mimeType,
+          totalSize: m.attachment.totalSize,
+          chunkCount: m.attachment.chunkCount,
+          localPath: m.attachment.localPath ?? null,
+        }
+      : undefined,
+    flags: m.flags ?? 0,
   };
 }
 
@@ -50,8 +62,8 @@ export function transformMessages(msgs: IpcMessage[]): Message[] {
 }
 
 /** Backend channel DTO → store Channel (handles the channelType→type rename+cast). */
-export function transformChannel(ch: { id: string; name: string; channelType: string; unreadCount: number; categoryId?: string; topic?: string; slowmodeSeconds?: number; nsfw?: boolean; messageRecordKey?: string; mekGeneration?: number; notificationLevel?: "all" | "mentions" | "nothing" }): Channel {
-  return { id: ch.id, name: ch.name, type: ch.channelType as Channel["type"], unreadCount: ch.unreadCount, categoryId: ch.categoryId, topic: ch.topic ?? "", slowmodeSeconds: ch.slowmodeSeconds, nsfw: ch.nsfw, messageRecordKey: ch.messageRecordKey, mekGeneration: ch.mekGeneration, notificationLevel: ch.notificationLevel ?? "all" };
+export function transformChannel(ch: { id: string; name: string; channelType: string; unreadCount: number; categoryId?: string; topic?: string; forumTags?: string[]; stageSpeakers?: string[]; stageModerator?: string | null; slowmodeSeconds?: number; nsfw?: boolean; messageRecordKey?: string; mekGeneration?: number; notificationLevel?: "all" | "mentions" | "nothing"; notificationSoundRef?: string | null }): Channel {
+  return { id: ch.id, name: ch.name, type: ch.channelType as Channel["type"], unreadCount: ch.unreadCount, categoryId: ch.categoryId, topic: ch.topic ?? "", forumTags: ch.forumTags ?? undefined, stageSpeakers: ch.stageSpeakers ?? undefined, stageModerator: ch.stageModerator ?? null, slowmodeSeconds: ch.slowmodeSeconds, nsfw: ch.nsfw, messageRecordKey: ch.messageRecordKey, mekGeneration: ch.mekGeneration, notificationLevel: ch.notificationLevel ?? "all", notificationSoundRef: ch.notificationSoundRef ?? null };
 }
 
 export function transformExpression(expression: ExpressionInfo): Expression {
@@ -68,6 +80,10 @@ export function transformExpression(expression: ExpressionInfo): Expression {
     mediaType: expression.mediaType ?? null,
     animated: expression.animated,
     tags: expression.tags ?? [],
+    soundMeta: expression.soundMeta,
+    creatorPseudonym: expression.creatorPseudonym,
+    createdAt: expression.createdAt,
+    availableToPeers: expression.availableToPeers,
   };
 }
 
@@ -94,15 +110,23 @@ export function transformAutoModRule(rule: {
 /** Backend community detail DTO → store Community. */
 export function transformCommunityDetail(c: {
   id: string; name: string; description: string | null;
-  channels: { id: string; name: string; channelType: string; unreadCount: number; categoryId?: string; topic?: string; slowmodeSeconds?: number; nsfw?: boolean; messageRecordKey?: string; mekGeneration?: number; notificationLevel?: "all" | "mentions" | "nothing" }[];
+  iconHash?: string | null;
+  bannerHash?: string | null;
+  channels: { id: string; name: string; channelType: string; unreadCount: number; categoryId?: string; topic?: string; forumTags?: string[]; stageSpeakers?: string[]; stageModerator?: string | null; slowmodeSeconds?: number; nsfw?: boolean; messageRecordKey?: string; mekGeneration?: number; notificationLevel?: "all" | "mentions" | "nothing"; notificationSoundRef?: string | null }[];
   categories?: { id: string; name: string; sortOrder: number }[];
   roles?: { id: number; name: string; color: number; permissions: string; position: number; hoist: boolean; mentionable: boolean; selfAssignable?: boolean }[];
   myRoleIds?: number[]; myPseudonymKey?: string | null; mekGeneration?: number;
   memberRegistryKey?: string; governanceKey?: string | null;
   onboardingComplete?: boolean;
+  myBio?: string | null; myPronouns?: string | null;
+  myThemeColor?: number | null; myBadges?: string[];
 }): Community {
   return {
     id: c.id, name: c.name, description: c.description ?? null,
+    iconHash: c.iconHash ?? null,
+    bannerHash: c.bannerHash ?? null,
+    iconDataUrl: null,
+    bannerDataUrl: null,
     channels: c.channels.map(transformChannel),
     categories: c.categories ?? [],
     members: [], roles: c.roles ?? [],
@@ -113,6 +137,10 @@ export function transformCommunityDetail(c: {
     onboardingComplete: c.onboardingComplete ?? true,
     expressions: [],
     automodRules: [],
+    myBio: c.myBio ?? null,
+    myPronouns: c.myPronouns ?? null,
+    myThemeColor: c.myThemeColor ?? null,
+    myBadges: c.myBadges ?? [],
   };
 }
 
@@ -130,11 +158,17 @@ export function transformMember(m: {
   pseudonymKey: string; displayName: string; roleIds: number[];
   displayRole: string; status: string; timeoutUntil: number | null;
   gameInfo?: GameInfo | null;
+  bio?: string | null; pronouns?: string | null;
+  themeColor?: number | null; badges?: string[];
 }): Member {
   return {
     pseudonymKey: m.pseudonymKey, displayName: m.displayName, roleIds: m.roleIds,
     displayRole: m.displayRole, status: m.status, timeoutUntil: m.timeoutUntil ?? null,
     gameInfo: m.gameInfo ?? null,
+    bio: m.bio ?? null,
+    pronouns: m.pronouns ?? null,
+    themeColor: m.themeColor ?? null,
+    badges: m.badges ?? [],
   };
 }
 

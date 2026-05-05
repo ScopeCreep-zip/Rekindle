@@ -137,6 +137,8 @@ const ChatWindow: Component = () => {
 
   return (
     <div class="app-frame">
+      {/* Architecture §32 a11y — keyboard skip link past status header. */}
+      <a href="#main-content" class="skip-link">Skip to messages</a>
       <Titlebar title={`Chat — ${peerName()}`} showMaximize />
       <div class="chat-peer-status">
         <StatusDot status={peerStatus()} />
@@ -145,12 +147,15 @@ const ChatWindow: Component = () => {
           class={`chat-call-btn ${isInCallWithPeer() ? "chat-call-btn-active" : ""}`}
           onClick={handleCallToggle}
           title={isInCallWithPeer() ? "End Call" : "Voice Call"}
+          aria-label={isInCallWithPeer() ? `End call with ${peerName()}` : `Start voice call with ${peerName()}`}
+          aria-pressed={isInCallWithPeer()}
         >
-          <span class="nf-icon">
+          <span class="nf-icon" aria-hidden="true">
             {isInCallWithPeer() ? ICON_HANGUP : ICON_PHONE}
           </span>
         </button>
       </div>
+      <div id="main-content" tabindex="-1" class="window-main">
       <MessageList
         messages={messages()}
         ownName={ownName()}
@@ -162,6 +167,7 @@ const ChatWindow: Component = () => {
       </Show>
       <TypingIndicator isTyping={conversation().isTyping} peerName={peerName()} />
       <MessageInput peerId={peerId} />
+      </div>
     </div>
   );
 };

@@ -1,4 +1,7 @@
 use rekindle_gossip::mesh::fanout_degree;
+use rekindle_protocol::capnp_envelope::{
+    encode_community_envelope, encode_signed_envelope, try_decode_community_envelope,
+};
 use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, SignedEnvelope};
 use tauri::Manager as _;
 
@@ -27,7 +30,7 @@ pub fn send_to_mesh(
         )
     };
     let envelope_bytes =
-        serde_json::to_vec(envelope).map_err(|e| format!("serialize envelope: {e}"))?;
+        encode_community_envelope(envelope).map_err(|e| format!("encode envelope: {e}"))?;
     let signed = envelope::sign_envelope(
         &signing_key,
         community_id,
@@ -55,10 +58,7 @@ pub fn send_to_mesh(
 }
 
 pub fn send_to_mesh_raw(state: &SharedState, community_id: &str, signed: &SignedEnvelope) {
-    let Ok(signed_bytes) = serde_json::to_vec(signed) else {
-        tracing::warn!(community = %community_id, "send_to_mesh_raw: failed to serialize envelope");
-        return;
-    };
+    let signed_bytes = encode_signed_envelope(signed);
 
     let Some(rc) = state_helpers::safe_routing_context(state) else {
         tracing::warn!(community = %community_id, "send_to_mesh_raw: no routing context");
@@ -85,8 +85,13 @@ pub fn send_to_mesh_raw(state: &SharedState, community_id: &str, signed: &Signed
             .map(|(key, member)| (key.clone(), member.route_blob.clone()))
             .collect()
     };
-    let degree = fanout_degree(peers.len());
-    let selected_peers: Vec<(String, Vec<u8>)> = peers.into_iter().take(degree).collect();
+    // Mutual Aid (architecture §14.5): rank candidates by reliability
+    // (success / (success+failure)) so high-reliability peers — the
+    // "ziplines" — are preferred. New peers (no metrics yet) get a
+    // neutral score so they still get a chance to prove themselves.
+    let scored_peers = sort_peers_by_reliability(state, community_id, peers);
+    let degree = fanout_degree(scored_peers.len());
+    let selected_peers: Vec<(String, Vec<u8>)> = scored_peers.into_iter().take(degree).collect();
 
     tracing::info!(
         community = %community_id,
@@ -95,13 +100,13 @@ pub fn send_to_mesh_raw(state: &SharedState, community_id: &str, signed: &Signed
         "send_to_mesh_raw: sending to gossip fan-out",
     );
 
-    let message_id: Option<String> =
-        serde_json::from_slice::<CommunityEnvelope>(&signed.envelope_bytes)
-            .ok()
-            .and_then(|envelope| match envelope {
-                CommunityEnvelope::MessageNotification { message_id, .. } => Some(message_id),
-                _ => None,
-            });
+    let message_id: Option<String> = try_decode_community_envelope(&signed.envelope_bytes)
+        .ok()
+        .flatten()
+        .and_then(|envelope| match envelope {
+            CommunityEnvelope::MessageNotification { message_id, .. } => Some(message_id),
+            _ => None,
+        });
 
     for (peer_key, route_blob) in selected_peers {
         let rc = rc.clone();
@@ -123,8 +128,10 @@ pub fn send_to_mesh_raw(state: &SharedState, community_id: &str, signed: &Signed
                 if let Some(ref mid) = msg_id {
                     record_delivery(&state_clone, mid, &cid, &pk, "delivered");
                 }
+                record_peer_reliability(&state_clone, &cid, &pk, true);
                 return;
             }
+            record_peer_reliability(&state_clone, &cid, &pk, false);
 
             tracing::info!(community = %cid, peer = %pk, "route stale, attempting DHT re-resolve");
             let fresh_blob = resolve_peer_route_from_db(&state_clone, &cid, &pk).await;
@@ -256,6 +263,200 @@ fn update_peer_route(state: &SharedState, community_id: &str, peer: &str, blob: 
     }
 }
 
+/// Rank gossip candidates by reliability (architecture §14.5). Peers
+/// with no metrics get a neutral score (0.5) so they aren't permanently
+/// shut out. Returns all peers in descending score order.
+fn sort_peers_by_reliability(
+    state: &SharedState,
+    community_id: &str,
+    peers: Vec<(String, Vec<u8>)>,
+) -> Vec<(String, Vec<u8>)> {
+    let scores: std::collections::HashMap<String, f64> = {
+        let communities = state.communities.read();
+        communities
+            .get(community_id)
+            .map(|cs| {
+                cs.peer_reliability
+                    .iter()
+                    .map(|(k, (s, f))| {
+                        let total = f64::from(*s) + f64::from(*f);
+                        let score = if total <= 0.0 {
+                            0.5
+                        } else {
+                            f64::from(*s) / total
+                        };
+                        (k.clone(), score)
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let mut scored: Vec<(f64, (String, Vec<u8>))> = peers
+        .into_iter()
+        .map(|(key, blob)| {
+            let score = scores.get(&key).copied().unwrap_or(0.5);
+            (score, (key, blob))
+        })
+        .collect();
+    // Highest score first; ties broken by peer key for determinism.
+    scored.sort_by(|a, b| {
+        b.0.partial_cmp(&a.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.1 .0.cmp(&b.1 .0))
+    });
+    scored.into_iter().map(|(_, peer)| peer).collect()
+}
+
+/// Bump a peer's reliability counters. Called from the gossip success/
+/// failure paths so the ranking improves over time.
+pub fn record_peer_reliability(
+    state: &SharedState,
+    community_id: &str,
+    peer_key: &str,
+    success: bool,
+) {
+    {
+        let mut communities = state.communities.write();
+        let Some(cs) = communities.get_mut(community_id) else {
+            return;
+        };
+        let entry = cs
+            .peer_reliability
+            .entry(peer_key.to_string())
+            .or_insert((0, 0));
+        if success {
+            entry.0 = entry.0.saturating_add(1);
+        } else {
+            entry.1 = entry.1.saturating_add(1);
+        }
+    }
+    // Mark dirty for the next periodic flush (architecture §14.5). The
+    // flush task drains this set every 30s; consolidating writes saves
+    // ~1000 SQLite upserts/min in busy communities.
+    state
+        .relay_reliability_dirty
+        .lock()
+        .insert((community_id.to_string(), peer_key.to_string()));
+}
+
+/// Load every community's saved reliability counters from SQLite into
+/// the in-memory `peer_reliability` map. Called once on login so the
+/// fan-out ranker boots with prior session knowledge instead of
+/// treating every peer as neutral.
+pub async fn hydrate_peer_reliability(state: &SharedState, pool: &crate::db::DbPool) {
+    let owner_key = state_helpers::owner_key_or_default(state);
+    if owner_key.is_empty() {
+        return;
+    }
+    let owner = owner_key;
+    let rows: Vec<(String, String, i64, i64)> = crate::db_helpers::db_call_or_default(
+        pool,
+        move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT community_id, peer_pseudonym, success_count, failure_count
+                 FROM peer_reliability WHERE owner_key = ?1",
+            )?;
+            let rows = stmt.query_map(rusqlite::params![owner], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, i64>(3)?,
+                ))
+            })?;
+            rows.collect::<rusqlite::Result<Vec<_>>>()
+        },
+    )
+    .await;
+    if rows.is_empty() {
+        return;
+    }
+    let mut communities = state.communities.write();
+    for (community_id, peer, succ, fail) in rows {
+        if let Some(cs) = communities.get_mut(&community_id) {
+            cs.peer_reliability.insert(
+                peer,
+                (
+                    u32::try_from(succ).unwrap_or(0),
+                    u32::try_from(fail).unwrap_or(0),
+                ),
+            );
+        }
+    }
+}
+
+/// Drain the dirty set and upsert all pending counters in a single DB
+/// transaction. Architecture §14.5: in-memory `peer_reliability` is the
+/// source of truth during a session; this batch flush just mirrors it
+/// to SQLite so the score survives restarts.
+pub async fn flush_peer_reliability(state: &crate::state::AppState, pool: &crate::db::DbPool) {
+    let owner_key = state
+        .identity
+        .read()
+        .as_ref()
+        .map(|id| id.public_key.clone())
+        .unwrap_or_default();
+    if owner_key.is_empty() {
+        return;
+    }
+    let dirty: Vec<(String, String)> = {
+        let mut set = state.relay_reliability_dirty.lock();
+        if set.is_empty() {
+            return;
+        }
+        set.drain().collect()
+    };
+    let snapshot: Vec<(String, String, u32, u32)> = {
+        let communities = state.communities.read();
+        dirty
+            .into_iter()
+            .filter_map(|(cid, pk)| {
+                communities
+                    .get(&cid)
+                    .and_then(|cs| cs.peer_reliability.get(&pk))
+                    .map(|&(s, f)| (cid, pk, s, f))
+            })
+            .collect()
+    };
+    if snapshot.is_empty() {
+        return;
+    }
+    let owner = owner_key;
+    let _ = crate::db_helpers::db_call(pool, move |conn| {
+        let tx = conn.transaction()?;
+        for (cid, pk, s, f) in &snapshot {
+            tx.execute(
+                "INSERT INTO peer_reliability
+                    (owner_key, community_id, peer_pseudonym, success_count, failure_count)
+                 VALUES (?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT(owner_key, community_id, peer_pseudonym) DO UPDATE SET
+                   success_count = excluded.success_count,
+                   failure_count = excluded.failure_count",
+                rusqlite::params![owner, cid, pk, i64::from(*s), i64::from(*f)],
+            )?;
+        }
+        tx.commit()
+    })
+    .await;
+}
+
+/// Spawn the periodic flush loop. Idempotent — safe to call multiple
+/// times; the existing shutdown channel is reused.
+pub fn start_peer_reliability_flush(state: SharedState, pool: crate::db::DbPool) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+        interval.tick().await; // skip immediate fire
+        loop {
+            interval.tick().await;
+            // Stop if the user has logged out (no active identity).
+            if state_helpers::owner_key_or_default(&state).is_empty() {
+                break;
+            }
+            flush_peer_reliability(&state, &pool).await;
+        }
+    });
+}
+
 pub fn extract_mesh_dedup_key(envelope: &CommunityEnvelope) -> String {
     match envelope {
         CommunityEnvelope::MessageNotification { message_id, .. } => message_id.clone(),
@@ -273,10 +474,16 @@ pub fn extract_mesh_dedup_key(envelope: &CommunityEnvelope) -> String {
         CommunityEnvelope::Control(_) => {
             use blake2::{digest::consts::U16, Blake2b, Digest};
 
-            let bytes = serde_json::to_vec(envelope).unwrap_or_default();
+            let bytes = encode_community_envelope(envelope).unwrap_or_default();
             let mut hash = Blake2b::<U16>::new();
             hash.update(&bytes);
             hex::encode(hash.finalize())
         }
+        CommunityEnvelope::WatchRelay {
+            record_key,
+            subkey,
+            content_hash,
+            ..
+        } => format!("watch:{record_key}:{subkey}:{content_hash}"),
     }
 }

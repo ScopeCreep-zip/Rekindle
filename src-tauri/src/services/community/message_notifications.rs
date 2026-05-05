@@ -66,19 +66,54 @@ fn emit_message_received(
     );
 }
 
+/// Resolve the channel's SMPL record key (string form) for AAD
+/// reconstruction. Returns `None` when the channel hasn't been merged
+/// from governance yet — callers fall back to the no-AAD path below
+/// for backward-compat with messages written before §8 line 1626 was
+/// implemented.
+fn channel_record_key_for(state: &Arc<AppState>, community_id: &str, channel_id: &str) -> Option<String> {
+    let communities = state.communities.read();
+    communities
+        .get(community_id)?
+        .channels
+        .iter()
+        .find(|ch| ch.id == channel_id)?
+        .message_record_key
+        .clone()
+}
+
 fn decrypt_message_body(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     community_id: &str,
     channel_id: &str,
+    pending: &PendingMessageFetch,
     message: &ChannelMessage,
 ) -> Option<String> {
+    // Architecture §8 line 1626 — reconstruct the same AAD the sender
+    // bound. If the SMPL record key isn't known yet, fall back to the
+    // no-AAD path below for legacy messages written before AAD landed.
+    let record_key = channel_record_key_for(state, community_id, channel_id);
+    let aad_owned = record_key.as_ref().map(|key| {
+        rekindle_crypto::group::media_key::ChannelAad {
+            channel_record_key: key.as_bytes(),
+            subkey_index: pending.subkey_index,
+            lamport_ts: message.lamport_ts,
+        }
+    });
+
     {
         let channel_mek_cache = state.channel_mek_cache.lock();
         if let Some(mek) =
             channel_mek_cache.get(&(community_id.to_string(), channel_id.to_string()))
         {
             if mek.generation() == message.mek_generation {
+                if let Some(aad) = aad_owned {
+                    if let Ok(bytes) = mek.decrypt_with_aad(&message.ciphertext, aad) {
+                        return String::from_utf8(bytes).ok();
+                    }
+                }
+                // Legacy fallback for messages written before AAD landed.
                 return mek
                     .decrypt(&message.ciphertext)
                     .ok()
@@ -91,7 +126,14 @@ fn decrypt_message_body(
     let decrypted = mek_cache
         .get(community_id)
         .filter(|mek| mek.generation() == message.mek_generation)
-        .and_then(|mek| mek.decrypt(&message.ciphertext).ok())
+        .and_then(|mek| {
+            if let Some(aad) = aad_owned {
+                if let Ok(bytes) = mek.decrypt_with_aad(&message.ciphertext, aad) {
+                    return Some(bytes);
+                }
+            }
+            mek.decrypt(&message.ciphertext).ok()
+        })
         .and_then(|bytes| String::from_utf8(bytes).ok());
     drop(mek_cache);
     if decrypted.is_some() {
@@ -146,42 +188,105 @@ async fn message_exists(pool: &DbPool, owner_key: &str, message_id: &str) -> boo
     .unwrap_or(false)
 }
 
+/// Result of fetching a channel notification target — either a regular message
+/// or a forward (which carries an `original_author` for attribution).
+struct FetchedChannelEntry {
+    message: ChannelMessage,
+    /// `Some(pseudonym_hex)` when the entry came from a `ChannelRecordEntry::Forward`.
+    forwarded_from_author: Option<String>,
+}
+
 async fn fetch_channel_message(
     state: &Arc<AppState>,
     community_id: &str,
     channel_id: &str,
     subkey_index: u32,
     message_id: &str,
-) -> Result<ChannelMessage, String> {
-    let channel_record_key = {
-        let communities = state.communities.read();
-        communities
-            .get(community_id)
-            .and_then(|community| community.channel_log_keys.get(channel_id).cloned())
-            .ok_or("channel record key not found")?
-    };
-    let record_key = channel_record_key
-        .parse::<veilid_core::RecordKey>()
-        .map_err(|e| format!("invalid channel record key: {e}"))?;
+) -> Result<FetchedChannelEntry, String> {
+    // Plate Gate (architecture §15.4): a channel may have one SMPL record
+    // per segment that contains a writer. Scan each segment's record at
+    // the given subkey looking for the message_id. Genesis segment 0 is
+    // always present; segment-N records are populated lazily via
+    // `ChannelSegmentLinked` governance entries.
+    let segment_records =
+        crate::services::community::segments::channel_record_keys_per_segment(
+            state,
+            community_id,
+            channel_id,
+        );
+    if segment_records.is_empty() {
+        return Err("channel record key not found".into());
+    }
     let rc = state_helpers::safe_routing_context(state).ok_or("not attached")?;
-    let value = rc
-        .get_dht_value(record_key, subkey_index, true)
-        .await
-        .map_err(|e| format!("get_dht_value failed: {e}"))?
-        .ok_or("channel subkey is empty")?;
-    let entries = decode_channel_entries(value.data())
-        .map_err(|e| format!("invalid channel page payload: {e}"))?;
-    entries
-        .into_iter()
-        .find_map(|entry| match entry {
+    let mut last_error: Option<String> = None;
+    for (_segment_index, record_key_str) in segment_records {
+        let record_key = match record_key_str.parse::<veilid_core::RecordKey>() {
+            Ok(key) => key,
+            Err(e) => {
+                last_error = Some(format!("invalid channel record key: {e}"));
+                continue;
+            }
+        };
+        let value = match rc.get_dht_value(record_key, subkey_index, true).await {
+            Ok(Some(v)) => v,
+            Ok(None) => {
+                continue;
+            }
+            Err(e) => {
+                last_error = Some(format!("get_dht_value failed: {e}"));
+                continue;
+            }
+        };
+        let entries = match decode_channel_entries(value.data()) {
+            Ok(entries) => entries,
+            Err(e) => {
+                last_error = Some(format!("invalid channel page payload: {e}"));
+                continue;
+            }
+        };
+        if let Some(found) = entries.into_iter().find_map(|entry| match entry {
             ChannelRecordEntry::Message(message)
                 if message.message_id.as_deref() == Some(message_id) =>
             {
-                Some(message)
+                Some(FetchedChannelEntry {
+                    message,
+                    forwarded_from_author: None,
+                })
+            }
+            ChannelRecordEntry::Forward(forward)
+                if forward.message_id.as_deref() == Some(message_id) =>
+            {
+                let original_author = forward.original_author.clone();
+                Some(FetchedChannelEntry {
+                    message: ChannelMessage {
+                        sequence: forward.sequence,
+                        sender_pseudonym: forward.sender_pseudonym,
+                        ciphertext: forward.content_snapshot,
+                        mek_generation: forward.mek_generation,
+                        timestamp: forward.timestamp,
+                        reply_to: None,
+                        lamport_ts: forward.lamport_ts,
+                        message_id: forward.message_id,
+                        attachment: None,
+                        // Forwarded messages don't carry the original
+                        // sender's mention metadata across — the
+                        // recipient is being shown the snapshot, not
+                        // re-pinged. Leave flags + lists empty so
+                        // notification routing treats the forward as a
+                        // normal (non-mention) message.
+                        flags: 0,
+                        mentioned_pseudonyms: Vec::new(),
+                        mentioned_roles: Vec::new(),
+                    },
+                    forwarded_from_author: Some(original_author),
+                })
             }
             _ => None,
-        })
-        .ok_or("message id not found in channel page".into())
+        }) {
+            return Ok(found);
+        }
+    }
+    Err(last_error.unwrap_or_else(|| "message id not found in any segment record".into()))
 }
 
 fn update_peer_sequence(
@@ -232,10 +337,17 @@ fn emit_automod_alert(
             gov,
             rekindle_utils::timestamp_secs(),
         );
-        perms & rekindle_types::permissions::TIMEOUT_MEMBERS
-            == rekindle_types::permissions::TIMEOUT_MEMBERS
-            || perms & rekindle_types::permissions::ADMINISTRATOR
-                == rekindle_types::permissions::ADMINISTRATOR
+        // Architecture §32 W17 — alert any member with a moderation
+        // role, not just those who can hand out timeouts. Spec just says
+        // "admins"; in our permission model that's the union of
+        // ADMINISTRATOR + the message/community/role/ban moderation
+        // capabilities. This matches who would actually act on the alert.
+        let mod_mask = rekindle_types::permissions::ADMINISTRATOR
+            | rekindle_types::permissions::MANAGE_COMMUNITY
+            | rekindle_types::permissions::MANAGE_MESSAGES
+            | rekindle_types::permissions::TIMEOUT_MEMBERS
+            | rekindle_types::permissions::BAN_MEMBERS;
+        perms & mod_mask != 0
     };
     if can_moderate {
         let _ = app_handle.emit(
@@ -281,7 +393,7 @@ pub async fn handle_message_notification(
         return Ok(());
     }
 
-    let message = match fetch_channel_message(
+    let fetched = match fetch_channel_message(
         state,
         &pending.community_id,
         &pending.channel_id,
@@ -290,7 +402,7 @@ pub async fn handle_message_notification(
     )
     .await
     {
-        Ok(message) => message,
+        Ok(fetched) => fetched,
         Err(error) => {
             if pending.attempt + 1 < retry::MAX_RETRIES {
                 queue_message_fetch_retry(state.clone(), pending);
@@ -298,6 +410,8 @@ pub async fn handle_message_notification(
             return Err(error);
         }
     };
+    let message = fetched.message;
+    let forwarded_from_author = fetched.forwarded_from_author;
 
     if let Err(error) = verify_notification_message(&pending, &message) {
         if pending.attempt + 1 < retry::MAX_RETRIES {
@@ -312,6 +426,7 @@ pub async fn handle_message_notification(
         state,
         &pending.community_id,
         &pending.channel_id,
+        &pending,
         &message,
     ) else {
         let requester_pseudonym = {
@@ -379,11 +494,24 @@ pub async fn handle_message_notification(
     let lamport_ts = message.lamport_ts;
     let automod_blurred =
         automod_action == crate::services::community::automod::AutoModAction::BlurContent;
+    let forwarded_from_author_for_db = forwarded_from_author.clone();
+    let attachment_json_for_db: Option<String> = message.attachment.as_ref().map(|att| {
+        serde_json::to_string(&serde_json::json!({
+            "attachmentId": hex::encode(att.attachment_id),
+            "filename": att.filename,
+            "mimeType": att.mime_type,
+            "totalSize": att.total_size,
+            "chunkCount": att.chunk_count,
+            "localPath": serde_json::Value::Null,
+        }))
+        .unwrap_or_default()
+    });
+    let flags_for_db = message.flags;
     db_fire(
         pool.inner(),
         "store notified channel message",
         move |conn| {
-            crate::message_repo::insert_channel_message_with_protocol_metadata(
+            crate::message_repo::insert_channel_message_full(
                 conn,
                 &owner_key,
                 &channel_id,
@@ -395,6 +523,9 @@ pub async fn handle_message_notification(
                 &message_id,
                 lamport_ts,
                 automod_blurred,
+                forwarded_from_author_for_db.as_deref(),
+                flags_for_db,
+                attachment_json_for_db.as_deref(),
             )
         },
     );
@@ -450,12 +581,21 @@ pub async fn handle_message_notification(
         );
     }
 
+    // Architecture §28.5 line 3120 — pre-decryption notification
+    // routing uses the cleartext mention metadata the sender stamped
+    // on the envelope. Body parsing is now reserved for tests / legacy
+    // payloads that never carried these fields.
     if crate::services::community::should_emit_message_notification(
         state,
         pool.inner(),
         &pending.community_id,
         &pending.channel_id,
-        &body,
+        &message.sender_pseudonym,
+        crate::services::community::notifications::CleartextMentions {
+            mentioned_pseudonyms: &message.mentioned_pseudonyms,
+            mentioned_roles: &message.mentioned_roles,
+            flags: message.flags,
+        },
     )
     .await
     .unwrap_or(false)
@@ -463,11 +603,13 @@ pub async fn handle_message_notification(
         crate::services::community::emit_message_notification(
             app_handle,
             state,
+            pool.inner(),
             &pending.community_id,
             &pending.channel_id,
             &sender_pseudonym,
             &body,
-        );
+        )
+        .await;
     }
 
     Ok(())

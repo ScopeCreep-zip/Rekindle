@@ -160,48 +160,100 @@ async fn presence_poll_tick(state: &Arc<AppState>, community_id: &str) -> Result
 
     let mut online_members: HashMap<String, OnlineMember> = HashMap::new();
     let mut known_member_keys: HashSet<String> = HashSet::new();
-    let mut discovered_members: Vec<(u32, rekindle_types::presence::MemberPresence)> = Vec::new();
+    let mut discovered_members: Vec<super::registry::DiscoveredRow> = Vec::new();
 
     {
         let scan_rc =
             state_helpers::safe_routing_context(state).ok_or("not attached for presence scan")?;
         let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(10));
         let my_subkey = my_subkey_index.unwrap_or(u32::MAX);
+        let my_segment_index = {
+            let communities = state.communities.read();
+            communities
+                .get(community_id)
+                .and_then(|c| c.my_segment_index)
+                .unwrap_or(0)
+        };
 
-        let reg_key = registry_key
-            .parse::<veilid_core::RecordKey>()
-            .map_err(|e| format!("invalid registry key for scan: {e}"))?;
+        // Plate Gate (architecture §15.5): scan every segment's registry
+        // record. The implicit segment 0 + each `SegmentAdded` discovered
+        // in governance state. Each segment is its own SMPL record holding
+        // 255 LOCAL subkeys; presence rows are tagged with the segment they
+        // came from so SQLite persistence + re-derivation stay correct.
+        let descriptors =
+            crate::services::community::segments::segment_descriptors(state, community_id);
 
         let mut futs = FuturesUnordered::new();
-        for subkey in 0..255u32 {
-            if subkey == my_subkey {
-                continue;
+        for descriptor in &descriptors {
+            let reg_key = match descriptor.registry_key.parse::<veilid_core::RecordKey>() {
+                Ok(k) => k,
+                Err(e) => {
+                    tracing::warn!(
+                        community = %community_id,
+                        segment = descriptor.segment_index,
+                        registry_key = %descriptor.registry_key,
+                        error = %e,
+                        "presence scan: invalid registry key — skipping segment"
+                    );
+                    continue;
+                }
+            };
+            for subkey in 0u32..255u32 {
+                if descriptor.segment_index == my_segment_index && subkey == my_subkey {
+                    continue;
+                }
+                let sem = sem.clone();
+                let rc = scan_rc.clone();
+                let rk = reg_key.clone();
+                let seg_idx = descriptor.segment_index;
+                futs.push(async move {
+                    let permit = sem.acquire().await.unwrap();
+                    let result = rc.get_dht_value(rk, subkey, false).await;
+                    drop(permit);
+                    (seg_idx, subkey, result)
+                });
             }
-            let sem = sem.clone();
-            let rc = scan_rc.clone();
-            let rk = reg_key.clone();
-            futs.push(async move {
-                let permit = sem.acquire().await.unwrap();
-                let result = rc.get_dht_value(rk, subkey, false).await;
-                drop(permit);
-                (subkey, result)
-            });
         }
+        // Reference the legacy single-registry parameter for diagnostics
+        // until C1-2 unifies the registry-key trail; this also silences
+        // the `registry_key` shadowing warning during the staged rollout.
+        let _ = registry_key;
 
-        while let Some((subkey, result)) = futs.next().await {
+        while let Some((seg_idx, subkey, result)) = futs.next().await {
             match result {
                 Ok(Some(val)) if !val.data().is_empty() => {
                     if let Ok(presence) = serde_json::from_slice::<
                         rekindle_types::presence::MemberPresence,
                     >(val.data())
                     {
+                        // Architecture §26 W26 — drop unsigned/forged
+                        // presence rows. The slot keypair is shared, so
+                        // any member could otherwise impersonate any
+                        // other (RSVPs, voice channel, custom status).
+                        let sig_arr: [u8; 64] =
+                            match presence.signature.as_slice().try_into() {
+                                Ok(arr) => arr,
+                                Err(_) => continue,
+                            };
+                        if rekindle_secrets::derive::verify_pseudonym_signature(
+                            &presence.pseudonym_key.0,
+                            &presence.signing_bytes(),
+                            &sig_arr,
+                        )
+                        .is_err()
+                        {
+                            tracing::warn!(
+                                "presence subkey rejected: bad pseudonym signature",
+                            );
+                            continue;
+                        }
                         let pk = hex::encode(presence.pseudonym_key.0);
                         if banned_members.contains(&pk) {
                             tracing::trace!(member = %pk, "presence scan: ignoring banned member");
                             continue;
                         }
                         known_member_keys.insert(pk.clone());
-                        discovered_members.push((subkey, presence.clone()));
+                        discovered_members.push((seg_idx, subkey, presence.clone()));
 
                         if presence.status == "offline" {
                         } else if presence.last_heartbeat <= stale_threshold {
@@ -234,6 +286,7 @@ async fn presence_poll_tick(state: &Arc<AppState>, community_id: &str) -> Result
         &my_pseudonym,
     );
     update_event_rsvp_state(state, community_id, &discovered_members, &my_pseudonym).await;
+    update_member_profiles(state, community_id, &discovered_members);
 
     {
         let communities = state.communities.read();
@@ -363,10 +416,36 @@ async fn presence_poll_tick(state: &Arc<AppState>, community_id: &str) -> Result
     Ok(())
 }
 
+fn update_member_profiles(
+    state: &Arc<AppState>,
+    community_id: &str,
+    discovered_members: &[super::registry::DiscoveredRow],
+) {
+    let mut communities = state.communities.write();
+    let Some(community) = communities.get_mut(community_id) else {
+        return;
+    };
+    for (_segment_index, _subkey, presence) in discovered_members {
+        let pseudonym_hex = hex::encode(presence.pseudonym_key.0);
+        community.member_profiles.insert(
+            pseudonym_hex,
+            crate::state::MemberProfileSnapshot {
+                display_name: presence.display_name.clone(),
+                bio: presence.bio.clone(),
+                pronouns: presence.pronouns.clone(),
+                theme_color: presence.theme_color,
+                badges: presence.badges.clone(),
+                avatar_ref: presence.avatar_ref.clone(),
+                banner_ref: presence.banner_ref.clone(),
+            },
+        );
+    }
+}
+
 async fn update_event_rsvp_state(
     state: &Arc<AppState>,
     community_id: &str,
-    discovered_members: &[(u32, rekindle_types::presence::MemberPresence)],
+    discovered_members: &[super::registry::DiscoveredRow],
     my_pseudonym: &str,
 ) {
     let known_events = load_known_event_ids(state, community_id).await;
@@ -376,7 +455,7 @@ async fn update_event_rsvp_state(
         .collect();
 
     let mut aggregated: HashMap<String, Vec<crate::state::EventRsvpEntry>> = HashMap::new();
-    for (_subkey, presence) in discovered_members {
+    for (_segment_index, _subkey, presence) in discovered_members {
         let pseudonym_key = hex::encode(presence.pseudonym_key.0);
         for rsvp in &presence.event_rsvps {
             if let Some(event_id) = event_by_presence_id.get(&rsvp.event_id.0) {
@@ -472,7 +551,7 @@ fn random_peer_sample(
 fn update_known_member_state(
     state: &Arc<AppState>,
     community_id: &str,
-    discovered_members: &[(u32, rekindle_types::presence::MemberPresence)],
+    discovered_members: &[super::registry::DiscoveredRow],
     known_member_keys: HashSet<String>,
     banned_members: &HashSet<String>,
     my_pseudonym: &str,
@@ -518,11 +597,11 @@ fn current_member_roles(state: &Arc<AppState>, community_id: &str) -> HashMap<St
 fn merge_discovered_roles(
     state: &Arc<AppState>,
     community_id: &str,
-    discovered_members: &[(u32, rekindle_types::presence::MemberPresence)],
+    discovered_members: &[super::registry::DiscoveredRow],
     member_roles: &mut HashMap<String, Vec<u32>>,
 ) {
     if let Some(gov_state) = state_helpers::governance_state(state, community_id) {
-        for (_subkey, presence) in discovered_members {
+        for (_segment_index, _subkey, presence) in discovered_members {
             let pseudonym_hex = hex::encode(presence.pseudonym_key.0);
             let role_ids = gov_state
                 .role_assignments

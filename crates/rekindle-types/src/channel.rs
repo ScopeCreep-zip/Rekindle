@@ -10,7 +10,28 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::attachment::AttachmentOffer;
 use crate::id::MessageId;
+
+/// Bitfield constants for `ChannelEntry::Message.flags`.
+///
+/// Per architecture §16.4: a message with the `VOICE_MESSAGE` flag carries
+/// a single `audio/ogg` Lost Cargo attachment + waveform/duration metadata
+/// in the (MEK-encrypted) body.
+pub mod flags {
+    /// Architecture §16.4 — voice message marker.
+    pub const VOICE_MESSAGE: u32 = 0x10;
+    /// Suppress OS push notification for this message.
+    pub const SUPPRESS_NOTIFICATIONS: u32 = 0x20;
+    /// Architecture §28.5 line 3111 — `mention_everyone` cleartext
+    /// signal. Receivers route notifications without decrypting the
+    /// body. Reader-validates: peers reject this bit from senders
+    /// without `MENTION_EVERYONE` permission (§9.3).
+    pub const MENTION_EVERYONE: u32 = 0x40;
+    /// Architecture §28.5 — `@here` (online-only) cleartext signal.
+    /// Same permission gate as `MENTION_EVERYONE`.
+    pub const MENTION_HERE: u32 = 0x80;
+}
 
 /// Entry written by a member to their subkey in a channel SMPL record.
 ///
@@ -32,6 +53,13 @@ pub enum ChannelEntry {
         reply_to: Option<MessageId>,
         /// Bitfield: VOICE_MESSAGE=0x10, SUPPRESS_NOTIFICATIONS=0x20, etc.
         flags: u32,
+        /// Lost Cargo: optional file attachment offer (architecture §28.9
+        /// line 3233 — "as part of a `ChannelEntry::Message`"). `None` for
+        /// plain messages. Field is `#[serde(default, skip_serializing_if)]`
+        /// so older serialized payloads (no `attachment` key) round-trip
+        /// without a schema bump.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        attachment: Option<AttachmentOffer>,
     },
 
     /// Add or remove a reaction on a message.
@@ -87,10 +115,17 @@ pub enum ChannelEntry {
     /// Close a poll. CRDT: tombstone by poll_id.
     PollClose { poll_id: [u8; 16], lamport: u64 },
 
-    /// Advertise that we have a file cached locally for peer download.
+    /// Advertise that we have all-or-some chunks of a file cached locally
+    /// (architecture §28.9 lines 3268-3274). The bitmap (plan §1.J4)
+    /// resolves the spec's silence on partial-cache peers — downloaders
+    /// route specific chunks to specific peers based on bitmap intersection.
     AttachmentCached {
-        /// BLAKE3 hash of the file content
-        hash: String,
+        attachment_id: [u8; 16],
+        /// LSB-first bit per chunk; length = `ceil(chunk_count / 8)`.
+        chunk_bitmap: Vec<u8>,
+        /// Total chunks in the file. Receivers reject entries whose bitmap
+        /// length does not match `ceil(chunk_count / 8)`.
+        chunk_count: u32,
         lamport: u64,
     },
 
@@ -131,10 +166,33 @@ mod tests {
             sequence: 5,
             reply_to: None,
             flags: 0,
+            attachment: None,
         };
         let json = serde_json::to_string(&entry).unwrap();
         let back: ChannelEntry = serde_json::from_str(&json).unwrap();
         assert_eq!(entry, back);
+    }
+
+    #[test]
+    fn legacy_message_without_attachment_field_deserializes() {
+        // Verifies the #[serde(default)] backward-compat: an old payload
+        // produced before AttachmentOffer existed must still round-trip.
+        let legacy_json = r#"{
+            "type": "message",
+            "message_id": [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+            "content": [222, 173],
+            "mek_generation": 3,
+            "timestamp": 1710000000,
+            "lamport": 100,
+            "sequence": 5,
+            "reply_to": null,
+            "flags": 0
+        }"#;
+        let entry: ChannelEntry = serde_json::from_str(legacy_json).unwrap();
+        match entry {
+            ChannelEntry::Message { attachment, .. } => assert!(attachment.is_none()),
+            _ => panic!("expected Message"),
+        }
     }
 
     #[test]

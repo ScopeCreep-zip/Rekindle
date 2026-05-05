@@ -1,5 +1,6 @@
-use tauri::State;
+use tauri::{Emitter as _, State};
 
+use crate::channels::community_channel::CommunityEvent;
 use crate::db::DbPool;
 use crate::state::SharedState;
 use crate::state_helpers;
@@ -118,13 +119,36 @@ pub async fn create_community_invite(
     let now = i64::try_from(rekindle_utils::timestamp_secs()).unwrap_or(0);
     let mu = max_uses.map_or(0, i64::from);
     let exp = expires_in_seconds.map(|seconds| now + i64::try_from(seconds).unwrap_or(0));
+    let cid_for_db = cid.clone();
     crate::db_helpers::db_fire(pool.inner(), "persist invite locally", move |conn| {
         conn.execute(
             "INSERT OR REPLACE INTO community_invites (owner_key, community_id, code, code_hash, max_uses, expires_at, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            rusqlite::params![owner_key, cid, raw_code, ch, mu, exp, now],
+            rusqlite::params![owner_key, cid_for_db, raw_code, ch, mu, exp, now],
         )?;
         Ok(())
     });
+
+    // Architecture §16 — broadcast the new invite so the InvitesTab
+    // can populate without a `list_community_invites` round-trip. The
+    // raw `code` is intentionally NOT included — only the creator
+    // who called this command sees it (returned synchronously below);
+    // peers receive the invite via DHT governance and never learn
+    // the secret.
+    if let Some(app) = state_helpers::app_handle(state.inner()) {
+        let created_by = state_helpers::current_owner_key(state.inner()).unwrap_or_default();
+        let _ = app.emit(
+            "community-event",
+            CommunityEvent::InviteCreated {
+                community_id: cid.clone(),
+                code_hash: code_hash.clone(),
+                created_by,
+                max_uses,
+                uses: 0,
+                expires_at,
+                created_at: rekindle_utils::timestamp_secs(),
+            },
+        );
+    }
 
     Ok(InviteCreatedDto {
         code,
@@ -150,7 +174,21 @@ pub async fn revoke_community_invite(
             lamport,
         },
     )
-    .await
+    .await?;
+
+    // Architecture §16 — broadcast revocation so the InvitesTab drops
+    // the row without a refetch. Receivers also get the same entry
+    // through the gossip path; this event is the local-only fast path.
+    if let Some(app) = state_helpers::app_handle(state.inner()) {
+        let _ = app.emit(
+            "community-event",
+            CommunityEvent::InviteRevoked {
+                community_id: community_id.clone(),
+                code_hash: code_hash.clone(),
+            },
+        );
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -160,10 +198,11 @@ pub async fn list_community_invites(
     pool: State<'_, DbPool>,
 ) -> Result<Vec<InviteInfoDto>, String> {
     let cid = community_id.clone();
-    let local_invites: Vec<(String, String, i64, Option<i64>, i64)> =
+    let local_invites: Vec<(String, String, i64, Option<i64>, i64, i64)> =
         crate::db_helpers::db_call_or_default(pool.inner(), move |conn| {
             let mut stmt = conn.prepare(
-                "SELECT code_hash, code, max_uses, expires_at, created_at FROM community_invites WHERE community_id = ?",
+                "SELECT code_hash, code, max_uses, expires_at, created_at, uses \
+                 FROM community_invites WHERE community_id = ?",
             )?;
             let rows = stmt.query_map([&cid], |row| {
                 Ok((
@@ -172,6 +211,7 @@ pub async fn list_community_invites(
                     row.get::<_, i64>(2)?,
                     row.get::<_, Option<i64>>(3)?,
                     row.get::<_, i64>(4)?,
+                    row.get::<_, i64>(5)?,
                 ))
             })?;
             rows.collect::<Result<Vec<_>, _>>()
@@ -183,7 +223,7 @@ pub async fn list_community_invites(
     Ok(local_invites
         .into_iter()
         .map(
-            |(code_hash, code, max_uses, expires_at, created_at)| InviteInfoDto {
+            |(code_hash, code, max_uses, expires_at, created_at, uses)| InviteInfoDto {
                 code_hash,
                 created_by: String::new(),
                 max_uses: if max_uses == 0 {
@@ -191,7 +231,7 @@ pub async fn list_community_invites(
                 } else {
                     Some(max_uses.try_into().unwrap_or(0))
                 },
-                uses: 0,
+                uses: u32::try_from(uses).unwrap_or(0),
                 expires_at: expires_at.map(|expires| expires.try_into().unwrap_or(0)),
                 created_at: created_at.try_into().unwrap_or(0),
                 code: Some(code),

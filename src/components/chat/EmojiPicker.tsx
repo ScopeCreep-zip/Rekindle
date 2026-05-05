@@ -113,6 +113,8 @@ interface EmojiPickerProps {
   mode?: "reaction" | "message";
   onSelect: (emoji: string) => void;
   onClose: () => void;
+  /** Architecture §10.9 — when set, soundboard sounds play in this voice channel. */
+  activeVoiceChannelId?: string | null;
 }
 
 const EmojiPicker: Component<EmojiPickerProps> = (props) => {
@@ -187,6 +189,7 @@ const EmojiPicker: Component<EmojiPickerProps> = (props) => {
             communityId={props.communityId!}
             mode={props.mode ?? "reaction"}
             searchQuery={searchQuery()}
+            activeVoiceChannelId={props.activeVoiceChannelId ?? null}
             onSelect={(value) => {
               props.onSelect(value);
               props.onClose();

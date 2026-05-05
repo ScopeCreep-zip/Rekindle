@@ -11,12 +11,19 @@ use rekindle_secrets::derive;
 
 use super::helpers::{hex_to_id_16, random_16_bytes, require_permission};
 
+/// Create a new community channel.
+///
+/// `parent_voice_channel_id` (architecture §10.8 — text-in-voice):
+/// when set, the new channel is the text-in-voice companion of that
+/// voice channel; the frontend hides it unless the local member is
+/// currently joined to the parent voice channel.
 #[tauri::command]
 pub async fn create_channel(
     community_id: String,
     name: String,
     channel_type: String,
     category_id: Option<String>,
+    parent_voice_channel_id: Option<String>,
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<String, String> {
@@ -46,6 +53,9 @@ pub async fn create_channel(
     let parsed_category_id = category_id
         .as_deref()
         .map(|id| rekindle_types::id::CategoryId(hex_to_id_16(id)));
+    let parsed_parent_voice = parent_voice_channel_id
+        .as_deref()
+        .map(|id| rekindle_types::id::ChannelId(hex_to_id_16(id)));
 
     let slot_seed_hex = {
         let communities = state.communities.read();
@@ -87,6 +97,7 @@ pub async fn create_channel(
             record_key: record_key.clone(),
             category_id: parsed_category_id,
             position: next_position,
+            parent_voice_channel_id: parsed_parent_voice,
             lamport,
         },
     )
@@ -100,11 +111,16 @@ pub async fn create_channel(
         unread_count: 0,
         category_id,
         topic: String::new(),
+        forum_tags: None,
+        stage_speakers: Vec::new(),
+        stage_moderator: None,
         slowmode_seconds: None,
         nsfw: false,
         message_record_key: Some(record_key.clone()),
         mek_generation: 0,
         notification_level: "all".to_string(),
+        notification_sound_ref: None,
+        parent_voice_channel_id: parent_voice_channel_id.clone(),
     };
 
     {
@@ -264,6 +280,7 @@ pub async fn move_channel(
             channel_id: rekindle_types::id::ChannelId(hex_to_id_16(&channel_id)),
             name: None,
             topic: None,
+            forum_tags: None,
             position: None,
             slowmode_seconds: None,
             nsfw: None,
@@ -346,6 +363,7 @@ pub async fn set_channel_topic(
             channel_id: rekindle_types::id::ChannelId(hex_to_id_16(&channel_id)),
             name: None,
             topic: Some(topic.clone()),
+            forum_tags: None,
             position: None,
             slowmode_seconds: None,
             nsfw: None,
@@ -359,6 +377,49 @@ pub async fn set_channel_topic(
     if let Some(community) = communities.get_mut(&community_id) {
         if let Some(ch) = community.channels.iter_mut().find(|c| c.id == channel_id) {
             ch.topic = topic;
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn set_channel_forum_tags(
+    community_id: String,
+    channel_id: String,
+    forum_tags: Vec<String>,
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+) -> Result<(), String> {
+    require_permission(state.inner(), &community_id, Permissions::MANAGE_CHANNELS)?;
+    let _ = pool;
+    let tags: Vec<String> = forum_tags
+        .into_iter()
+        .map(|tag| tag.trim().to_string())
+        .filter(|tag| !tag.is_empty())
+        .take(32)
+        .collect();
+    let lamport = state_helpers::increment_lamport(state.inner(), &community_id);
+    crate::services::community::write_entry(
+        state.inner(),
+        &community_id,
+        rekindle_types::governance::GovernanceEntry::ChannelUpdated {
+            channel_id: rekindle_types::id::ChannelId(hex_to_id_16(&channel_id)),
+            name: None,
+            topic: None,
+            forum_tags: Some(tags.clone()),
+            position: None,
+            slowmode_seconds: None,
+            nsfw: None,
+            category_id: None,
+            lamport,
+        },
+    )
+    .await?;
+
+    let mut communities = state.communities.write();
+    if let Some(community) = communities.get_mut(&community_id) {
+        if let Some(ch) = community.channels.iter_mut().find(|c| c.id == channel_id) {
+            ch.forum_tags = if tags.is_empty() { None } else { Some(tags) };
         }
     }
     Ok(())
@@ -382,6 +443,7 @@ pub async fn reorder_channels(
                 channel_id: rekindle_types::id::ChannelId(hex_to_id_16(ch_id)),
                 name: None,
                 topic: None,
+                forum_tags: None,
                 position: Some(u32::try_from(i).unwrap_or(u32::MAX)),
                 slowmode_seconds: None,
                 nsfw: None,

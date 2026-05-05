@@ -1,6 +1,7 @@
 import { Component } from "solid-js";
 import SimpleInputModal from "../common/SimpleInputModal";
 import { handleJoinCommunity } from "../../handlers/community.handlers";
+import { withTimeout, JOIN_TIMEOUT_MS } from "../../utils/request-timeout";
 
 interface JoinCommunityModalProps {
   isOpen: boolean;
@@ -21,11 +22,10 @@ const JoinCommunityModal: Component<JoinCommunityModalProps> = (props) => (
     onClose={props.onClose}
     onSubmit={(input, name) => {
       const deepLink = parseDeepLink(input.trim());
-      if (deepLink) {
-        return handleJoinCommunity(deepLink.communityId, name || "Joined community", deepLink.inviteCode);
-      }
-      // Raw community ID (DHT key)
-      return handleJoinCommunity(input, name || input.slice(0, 12) + "...");
+      const promise = deepLink
+        ? handleJoinCommunity(deepLink.communityId, name || "Joined community", deepLink.inviteCode)
+        : handleJoinCommunity(input, name || input.slice(0, 12) + "...");
+      return withTimeout(promise, JOIN_TIMEOUT_MS, "Join community");
     }}
     placeholder="Invite link or community ID..."
     submitLabel="Join"

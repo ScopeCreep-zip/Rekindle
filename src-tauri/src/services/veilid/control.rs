@@ -79,15 +79,19 @@ fn handle_membership_payload(
             display_name,
             claimed_subkey_index,
             route_blob,
+            invite_code,
             ..
         } => {
             handle_peer_assisted_join(
+                app_handle,
                 state,
+                pool,
                 community_id,
                 &pseudonym_key,
                 &display_name,
                 claimed_subkey_index,
                 route_blob.as_deref(),
+                invite_code.as_deref(),
             );
         }
         ControlPayload::MemberJoined {
@@ -149,17 +153,63 @@ fn handle_membership_payload(
                 "community-event",
                 CommunityEvent::MemberJoined {
                     community_id: community_id.to_string(),
-                    pseudonym_key,
+                    pseudonym_key: pseudonym_key.clone(),
                     display_name,
                     role_ids,
                 },
             );
+
+            // Architecture §20.6 — record the join in the per-community
+            // sliding window; emit a raid alert if the rate trips the
+            // policy threshold.
+            let alert = {
+                let mut communities = state.communities.write();
+                if let Some(cs) = communities.get_mut(community_id) {
+                    let policy = cs
+                        .governance_state
+                        .as_ref()
+                        .and_then(|gs| gs.community_policy.as_ref())
+                        .cloned();
+                    crate::services::community::raid_detection::observe_join(
+                        &mut cs.recent_member_joins,
+                        rekindle_utils::timestamp_secs(),
+                        &pseudonym_key,
+                        policy.as_ref(),
+                    )
+                } else {
+                    None
+                }
+            };
+            if let Some(alert) = alert {
+                let _ = app_handle.emit(
+                    "community-event",
+                    CommunityEvent::RaidDetected {
+                        community_id: community_id.to_string(),
+                        joins_in_window: alert.joins_in_window,
+                        max_joins_per_interval: alert.max_joins_per_interval,
+                        join_interval_seconds: alert.join_interval_seconds,
+                    },
+                );
+                tracing::warn!(
+                    community = %community_id,
+                    joins = alert.joins_in_window,
+                    threshold = alert.max_joins_per_interval,
+                    interval_s = alert.join_interval_seconds,
+                    "raid threshold exceeded — alerting moderators (architecture §20.6)"
+                );
+            }
         }
         ControlPayload::MemberRemoved { pseudonym_key }
         | ControlPayload::MemberLeave { pseudonym_key } => {
             let departed_pseudonym = pseudonym_key.clone();
             let pool: tauri::State<'_, DbPool> = app_handle.state();
             let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
+            crate::services::community::analytics::log_member_leave(
+                pool.inner(),
+                &owner_key,
+                community_id,
+                &pseudonym_key,
+            );
             let cid = community_id.to_string();
             let pk = pseudonym_key.clone();
             crate::db_helpers::db_fire(pool.inner(), "persist MemberRemoved/Leave", move |conn| {

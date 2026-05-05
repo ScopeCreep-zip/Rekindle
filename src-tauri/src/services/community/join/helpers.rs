@@ -6,7 +6,7 @@ use rekindle_types::id::PseudonymKey;
 
 use crate::state::AppState;
 
-pub(super) fn role_id_to_legacy_u32(role_id: &rekindle_types::id::RoleId) -> u32 {
+pub(crate) fn role_id_to_legacy_u32(role_id: &rekindle_types::id::RoleId) -> u32 {
     u32::from_le_bytes([role_id.0[0], role_id.0[1], role_id.0[2], role_id.0[3]])
 }
 

@@ -96,14 +96,14 @@ const ProfileWindow: Component = () => {
         <Show when={friend()}>
           <div class="profile-actions">
             <button
-              class="profile-btn-message"
+              class="form-btn-secondary"
               onClick={() => commands.openChatWindow(publicKey, displayName())}
             >
               <span class="nf-icon">{ICON_SEND}</span> Send Message
             </button>
             <Show when={!confirmRemove()}>
               <button
-                class="profile-btn-remove"
+                class="form-btn-danger"
                 onClick={() => setConfirmRemove(true)}
               >
                 <span class="nf-icon">{ICON_ACCOUNT_REMOVE}</span> Remove Friend
@@ -111,13 +111,13 @@ const ProfileWindow: Component = () => {
             </Show>
             <Show when={confirmRemove()}>
               <button
-                class="profile-btn-remove profile-btn-confirm"
+                class="form-btn-danger"
                 onClick={() => handleRemoveFriend(publicKey)}
               >
                 Confirm Remove
               </button>
               <button
-                class="profile-btn-message"
+                class="form-btn-secondary"
                 onClick={() => setConfirmRemove(false)}
               >
                 Cancel
