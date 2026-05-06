@@ -309,6 +309,24 @@ impl SignalSessionManager {
         self.sessions.delete_session(peer_address)
     }
 
+    /// Load a signed prekey's private key bytes from the store.
+    ///
+    /// Used by the identity ceremony to extract prekey material for
+    /// persistence to the OS keyring.
+    pub fn load_signed_prekey(&self, id: u32) -> Result<Vec<u8>> {
+        self.prekeys
+            .load_signed_prekey(id)?
+            .ok_or_else(|| TransportError::Internal(format!("signed prekey {id} not found")))
+    }
+
+    /// Load a one-time prekey's private key bytes from the store.
+    ///
+    /// Used by the identity ceremony to extract prekey material for
+    /// persistence to the OS keyring.
+    pub fn load_prekey(&self, id: u32) -> Result<Option<Vec<u8>>> {
+        self.prekeys.load_prekey(id)
+    }
+
     /// Generate a PreKeyBundle for publication to DHT.
     pub fn generate_prekey_bundle(
         &self,

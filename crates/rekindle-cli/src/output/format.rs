@@ -8,10 +8,26 @@
 //! `writeln!` macro on a `std::io::Stdout` handle.
 
 use std::io::Write;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::Serialize;
 
 use super::OutputMode;
+
+/// Global quiet flag — when set, `print_text` and `print_kv` suppress output.
+/// Structured output (JSON/JSONL) is NOT suppressed by quiet — it's data, not UI.
+/// Set once at startup via `set_quiet()`, read on every output call.
+static QUIET: AtomicBool = AtomicBool::new(false);
+
+/// Enable quiet mode. Called once from `main.rs` when `--quiet` is set.
+pub fn set_quiet(quiet: bool) {
+    QUIET.store(quiet, Ordering::Relaxed);
+}
+
+/// Whether quiet mode is active.
+fn is_quiet() -> bool {
+    QUIET.load(Ordering::Relaxed)
+}
 
 /// Print a value as pretty-printed JSON.
 pub fn print_json<T: Serialize + ?Sized>(value: &T) -> anyhow::Result<()> {
@@ -30,18 +46,32 @@ pub fn print_jsonl<T: Serialize + ?Sized>(value: &T) -> anyhow::Result<()> {
 }
 
 /// Print a plain text line.
+///
+/// Suppressed when `--quiet` is set. Structured output (JSON/JSONL)
+/// is never suppressed — it's data, not informational UI.
 pub fn print_text(msg: &str) -> anyhow::Result<()> {
+    if is_quiet() {
+        return Ok(());
+    }
     let mut stdout = std::io::stdout().lock();
     writeln!(stdout, "{msg}")?;
     Ok(())
 }
 
-/// Print a value as JSON or JSONL depending on mode.
+/// Print a value in the appropriate format for the current mode.
+///
+/// - JSON mode: pretty-printed JSON
+/// - JSONL mode: single-line JSON
+/// - Text mode: pretty-printed JSON (always readable, never loses data)
+/// - TUI mode: pretty-printed JSON (TUI views render their own widgets)
+///
+/// Commands that want custom text-mode rendering (tables, kv pairs)
+/// should check `mode.is_structured()` and handle text mode themselves
+/// before calling this function.
 pub fn print_structured<T: Serialize + ?Sized>(value: &T, mode: OutputMode) -> anyhow::Result<()> {
     match mode {
-        OutputMode::Json => print_json(value),
         OutputMode::Jsonl => print_jsonl(value),
-        _ => anyhow::bail!("print_structured called in non-structured mode"),
+        _ => print_json(value),
     }
 }
 
@@ -91,7 +121,7 @@ pub fn print_list(items: &[String], mode: OutputMode) -> anyhow::Result<()> {
 /// Text format uses ASCII labels [PASS]/[WARN]/[FAIL] for accessibility.
 /// JSON format includes all check metadata.
 pub fn print_doctor_checks(
-    checks: &[crate::doctor::Check],
+    checks: &[rekindle_types::display::Check],
     mode: OutputMode,
     quiet: bool,
 ) -> anyhow::Result<()> {
@@ -100,17 +130,17 @@ pub fn print_doctor_checks(
             "timestamp": chrono::Utc::now().to_rfc3339(),
             "version": env!("CARGO_PKG_VERSION"),
             "summary": {
-                "pass": checks.iter().filter(|c| c.status == crate::doctor::Status::Pass).count(),
-                "warn": checks.iter().filter(|c| c.status == crate::doctor::Status::Warn).count(),
-                "fail": checks.iter().filter(|c| c.status == crate::doctor::Status::Fail).count(),
+                "pass": checks.iter().filter(|c| c.status == rekindle_types::display::CheckStatus::Pass).count(),
+                "warn": checks.iter().filter(|c| c.status == rekindle_types::display::CheckStatus::Warn).count(),
+                "fail": checks.iter().filter(|c| c.status == rekindle_types::display::CheckStatus::Fail).count(),
             },
             "checks": checks.iter().map(|c| serde_json::json!({
                 "id": c.id,
                 "category": c.category,
                 "status": match c.status {
-                    crate::doctor::Status::Pass => "pass",
-                    crate::doctor::Status::Warn => "warn",
-                    crate::doctor::Status::Fail => "fail",
+                    rekindle_types::display::CheckStatus::Pass => "pass",
+                    rekindle_types::display::CheckStatus::Warn => "warn",
+                    rekindle_types::display::CheckStatus::Fail => "fail",
                 },
                 "value": c.value,
                 "description": c.description,
@@ -128,19 +158,19 @@ pub fn print_doctor_checks(
 
     for check in checks {
         if check.category != current_category {
-            current_category = check.category;
+            current_category = &check.category;
             writeln!(stdout, "\n{}", current_category.to_uppercase())?;
         }
 
         let icon = match check.status {
-            crate::doctor::Status::Pass => "  [PASS]",
-            crate::doctor::Status::Warn => "  [WARN]",
-            crate::doctor::Status::Fail => "  [FAIL]",
+            rekindle_types::display::CheckStatus::Pass => "  [PASS]",
+            rekindle_types::display::CheckStatus::Warn => "  [WARN]",
+            rekindle_types::display::CheckStatus::Fail => "  [FAIL]",
         };
 
         writeln!(stdout, "  {icon} {:<35} {}", check.id, check.value)?;
 
-        if check.status != crate::doctor::Status::Pass && !check.description.is_empty() {
+        if check.status != rekindle_types::display::CheckStatus::Pass && !check.description.is_empty() {
             writeln!(stdout, "    {}", check.description)?;
         }
     }
@@ -148,15 +178,15 @@ pub fn print_doctor_checks(
     // Summary line
     let pass = checks
         .iter()
-        .filter(|c| c.status == crate::doctor::Status::Pass)
+        .filter(|c| c.status == rekindle_types::display::CheckStatus::Pass)
         .count();
     let warn = checks
         .iter()
-        .filter(|c| c.status == crate::doctor::Status::Warn)
+        .filter(|c| c.status == rekindle_types::display::CheckStatus::Warn)
         .count();
     let fail = checks
         .iter()
-        .filter(|c| c.status == crate::doctor::Status::Fail)
+        .filter(|c| c.status == rekindle_types::display::CheckStatus::Fail)
         .count();
     writeln!(stdout, "\n{pass} passed, {warn} warnings, {fail} failures")?;
 
@@ -167,6 +197,7 @@ pub fn print_doctor_checks(
 ///
 /// Format: `[N/M] Label`
 pub fn step_header(step: u32, total: u32, label: &str) -> anyhow::Result<()> {
+    if is_quiet() { return Ok(()); }
     let mut stdout = std::io::stdout().lock();
     writeln!(stdout, "\n  [{step}/{total}] {label}")?;
     Ok(())
@@ -174,6 +205,7 @@ pub fn step_header(step: u32, total: u32, label: &str) -> anyhow::Result<()> {
 
 /// Print a step completion message.
 pub fn step_done(msg: &str) -> anyhow::Result<()> {
+    if is_quiet() { return Ok(()); }
     let mut stdout = std::io::stdout().lock();
     writeln!(stdout, "        {msg} ... done")?;
     Ok(())
@@ -181,6 +213,7 @@ pub fn step_done(msg: &str) -> anyhow::Result<()> {
 
 /// Print a step skip message.
 pub fn step_skip(msg: &str) -> anyhow::Result<()> {
+    if is_quiet() { return Ok(()); }
     let mut stdout = std::io::stdout().lock();
     writeln!(stdout, "        {msg} ... (already done)")?;
     Ok(())
@@ -238,17 +271,17 @@ mod tests {
     #[test]
     fn doctor_check_serialization() {
         let checks = vec![
-            crate::doctor::Check {
+            rekindle_types::display::Check {
                 id: "node.running".into(),
-                category: "node",
-                status: crate::doctor::Status::Pass,
+                category: "node".into(),
+                status: rekindle_types::display::CheckStatus::Pass,
                 value: "active".into(),
                 description: String::new(),
             },
-            crate::doctor::Check {
+            rekindle_types::display::Check {
                 id: "crypto.prekeys.low".into(),
-                category: "crypto",
-                status: crate::doctor::Status::Warn,
+                category: "crypto".into(),
+                status: rekindle_types::display::CheckStatus::Warn,
                 value: "3 remaining".into(),
                 description: "replenish prekeys".into(),
             },
@@ -257,9 +290,9 @@ mod tests {
         // Verify the JSON structure matches the contract
         let output = serde_json::json!({
             "summary": {
-                "pass": checks.iter().filter(|c| c.status == crate::doctor::Status::Pass).count(),
-                "warn": checks.iter().filter(|c| c.status == crate::doctor::Status::Warn).count(),
-                "fail": checks.iter().filter(|c| c.status == crate::doctor::Status::Fail).count(),
+                "pass": checks.iter().filter(|c| c.status == rekindle_types::display::CheckStatus::Pass).count(),
+                "warn": checks.iter().filter(|c| c.status == rekindle_types::display::CheckStatus::Warn).count(),
+                "fail": checks.iter().filter(|c| c.status == rekindle_types::display::CheckStatus::Fail).count(),
             },
         });
         assert_eq!(output["summary"]["pass"], 1);

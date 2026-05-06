@@ -15,7 +15,7 @@ mod social;
 // Re-export all types so callers use `cli::Cli`, `cli::Command`, etc.
 pub use channel::{ChannelCmd, VoiceCmd};
 pub use community::{CommunityCmd, InviteCmd, ModerateCmd, RoleCmd};
-pub use config::{ConfigCmd, DoctorArgs, ExportCmd, ImportCmd};
+pub use config::{ConfigCmd, ExportCmd, ImportCmd};
 pub use identity::{IdentityCmd, InitArgs, StatusArgs};
 pub use keys::{KeyCmd, MekCmd, PrekeyCmd};
 pub use network::{NetworkCmd, NodeCmd};
@@ -51,6 +51,12 @@ pub struct Cli {
     /// Suppress informational output, errors only.
     #[arg(long, global = true)]
     pub quiet: bool,
+
+    /// Force JSONL output on streaming commands (watch, voice join).
+    /// Enables external accessibility wrappers and scripting pipelines
+    /// to consume real-time events without entering the TUI.
+    #[arg(long, global = true)]
+    pub script: bool,
 
     /// Increase log verbosity (repeatable: -v, -vv, -vvv).
     #[arg(long, short, global = true, action = clap::ArgAction::Count)]
@@ -120,9 +126,6 @@ pub enum Command {
     /// Presence management.
     #[command(subcommand)]
     Presence(PresenceCmd),
-
-    /// System health diagnostics.
-    Doctor(DoctorArgs),
 
     /// Configuration inspection.
     #[command(subcommand)]
@@ -195,30 +198,33 @@ mod tests {
     }
 
     #[test]
-    fn parse_doctor() {
-        let cli = Cli::try_parse_from(["rekindle", "doctor"]).unwrap();
-        assert!(matches!(cli.command, Some(Command::Doctor(_))));
-    }
-
-    #[test]
-    fn parse_doctor_with_category() {
-        let cli = Cli::try_parse_from(["rekindle", "doctor", "crypto"]).unwrap();
-        if let Some(Command::Doctor(args)) = cli.command {
-            assert_eq!(args.categories, "crypto");
+    fn parse_status_doctor() {
+        let cli = Cli::try_parse_from(["rekindle", "status", "--doctor"]).unwrap();
+        if let Some(Command::Status(args)) = cli.command {
+            assert_eq!(args.doctor.as_deref(), Some("all"));
         } else {
-            panic!("expected Doctor command");
+            panic!("expected Status");
         }
     }
 
     #[test]
-    fn parse_doctor_exit_code() {
-        let cli =
-            Cli::try_parse_from(["rekindle", "doctor", "--exit-code", "--quiet"]).unwrap();
-        if let Some(Command::Doctor(args)) = cli.command {
-            assert!(args.exit_code);
-            assert!(args.quiet);
+    fn parse_status_watch() {
+        let cli = Cli::try_parse_from(["rekindle", "status", "--watch"]).unwrap();
+        if let Some(Command::Status(args)) = cli.command {
+            assert!(args.watch);
         } else {
-            panic!("expected Doctor command");
+            panic!("expected Status");
+        }
+    }
+
+    #[test]
+    fn parse_status_watch_doctor() {
+        let cli = Cli::try_parse_from(["rekindle", "status", "--watch", "--doctor"]).unwrap();
+        if let Some(Command::Status(args)) = cli.command {
+            assert!(args.watch);
+            assert_eq!(args.doctor.as_deref(), Some("all"));
+        } else {
+            panic!("expected Status");
         }
     }
 
@@ -426,6 +432,12 @@ mod tests {
     fn parse_global_quiet() {
         let cli = Cli::try_parse_from(["rekindle", "--quiet", "status"]).unwrap();
         assert!(cli.quiet);
+    }
+
+    #[test]
+    fn parse_global_script() {
+        let cli = Cli::try_parse_from(["rekindle", "--script", "channel", "watch", "-c", "com", "-C", "ch"]).unwrap();
+        assert!(cli.script);
     }
 
     // ── Error cases ────────────────────────────────────────────────

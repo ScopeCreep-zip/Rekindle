@@ -14,7 +14,6 @@ pub enum CommunityCmd {
     /// Create a new community.
     Create {
         /// Community name.
-        #[arg(long, short = 'n')]
         name: String,
         /// Community description.
         #[arg(long)]
@@ -59,6 +58,49 @@ pub enum CommunityCmd {
         /// Include full channel list and role permissions.
         #[arg(long)]
         verbose: bool,
+    },
+
+    /// Approve a pending member from the waiting room.
+    Approve {
+        /// Community name or governance key.
+        #[arg(long, short = 'c')]
+        community: String,
+        /// Member pseudonym to approve.
+        #[arg(long, short = 'M')]
+        member: String,
+    },
+
+    /// Reject a pending member from the waiting room.
+    Reject {
+        /// Community name or governance key.
+        #[arg(long, short = 'c')]
+        community: String,
+        /// Member pseudonym to reject.
+        #[arg(long, short = 'M')]
+        member: String,
+        /// Reason for rejection.
+        #[arg(long)]
+        reason: Option<String>,
+    },
+
+    /// List pending join requests.
+    Pending {
+        /// Community name or governance key.
+        #[arg(long, short = 'c')]
+        community: String,
+    },
+
+    /// Transfer community ownership to another member.
+    Transfer {
+        /// Community name or governance key.
+        #[arg(long, short = 'c')]
+        community: String,
+        /// New owner's pseudonym key.
+        #[arg(long, short = 'M')]
+        new_owner: String,
+        /// Skip confirmation.
+        #[arg(long)]
+        yes: bool,
     },
 
     /// Invite management.

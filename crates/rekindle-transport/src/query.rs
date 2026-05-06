@@ -12,136 +12,40 @@
 use std::sync::Arc;
 
 use parking_lot::RwLock;
-use serde::Serialize;
 
 use crate::crypto::mek::{MekCache, MekCacheEntrySnapshot};
-use crate::dht::DhtStore;
+use crate::broadcast::dht::DhtStore;
 use crate::error::{TransportError, Result};
 use crate::payload::dht_types::{
-    ChannelEntry, ChannelKind, ChannelMessage,
-    MemberSummary, RoleEntry,
+    ChannelEntry, ChannelKind, ChannelMessage, RoleEntry,
 };
-use crate::peer::PeerRegistry;
+use crate::broadcast::peer_registry::PeerRegistry;
 use crate::session::CommunityMembership;
 use crate::shared::SharedState;
 
-// ── Display types ───────────────────────────────────────────────────────
+// ── Display types (re-exported from rekindle-types) ─────────────────────
+//
+// These are the SSOT definitions in `rekindle_types::display`. The transport
+// crate re-exports them so existing code that imports from here keeps working.
+// New code should import from `rekindle_types::display` directly.
 
-/// Overview of a joined community for list display.
-#[derive(Debug, Clone, Serialize)]
-pub struct CommunityOverview {
-    pub governance_key: String,
-    pub name: String,
-    pub description: String,
-    pub member_count: u32,
-    pub channel_count: u32,
-    pub our_pseudonym: String,
-}
-
-/// Detailed community info for the info command and TUI view.
-#[derive(Debug, Clone, Serialize)]
-pub struct CommunityDetail {
-    pub governance_key: String,
-    pub name: String,
-    pub description: String,
-    pub owner_pseudonym: String,
-    pub created_at: u64,
-    pub member_count: u32,
-    pub channels: Vec<ChannelOverviewDisplay>,
-    pub roles: Vec<RoleDisplay>,
-    pub our_pseudonym: String,
-    pub our_roles: Vec<u32>,
-}
-
-/// Channel info for list and tree display.
-#[derive(Debug, Clone, Serialize)]
-pub struct ChannelOverviewDisplay {
-    pub id: String,
-    pub name: String,
-    pub kind: String,
-    pub category_id: Option<String>,
-    pub topic: String,
-    pub mek_generation: u64,
-    pub log_key: Option<String>,
-    pub sort_order: u16,
-}
-
-/// Decrypted channel message for history display.
-#[derive(Debug, Clone, Serialize)]
-pub struct DecryptedMessageDisplay {
-    pub message_id: String,
-    pub sequence: u64,
-    pub author_pseudonym: String,
-    pub author_display_name: String,
-    pub body: String,
-    pub timestamp: u64,
-    pub reply_to_sequence: Option<u64>,
-    pub mek_generation: u64,
-    /// True if the message body is still encrypted (MEK not cached).
-    pub is_encrypted: bool,
-    /// If encrypted, which MEK generation is needed to decrypt.
-    pub needs_mek: Option<u64>,
-}
-
-/// Friend with resolved display name and presence.
-#[derive(Debug, Clone, Serialize)]
-pub struct FriendDisplay {
-    pub public_key: String,
-    pub display_name: String,
-    pub nickname: Option<String>,
-    pub status: String,
-    pub status_message: String,
-    pub last_seen_ms: Option<u64>,
-    pub profile_dht_key: Option<String>,
-    pub has_route: bool,
-}
-
-/// DM conversation thread for inbox display.
-#[derive(Debug, Clone, Serialize)]
-pub struct DmThreadDisplay {
-    pub peer_key: String,
-    pub peer_name: String,
-    pub last_message_at: u64,
-    pub unread_count: u32,
-    pub messages: Vec<DmMessageDisplay>,
-}
-
-/// Single DM message for display.
-#[derive(Debug, Clone, Serialize)]
-pub struct DmMessageDisplay {
-    pub sender_key: String,
-    pub sender_name: String,
-    pub body: String,
-    pub timestamp: u64,
-    pub is_self: bool,
-}
-
-/// Role info for display.
-#[derive(Debug, Clone, Serialize)]
-pub struct RoleDisplay {
-    pub id: u32,
-    pub name: String,
-    pub color: u32,
-    pub permissions: u64,
-    pub position: i32,
-}
-
-/// Node health data for the doctor diagnostic view.
-#[derive(Debug, Clone, Serialize)]
-pub struct NodeHealthDisplay {
-    pub attachment: String,
-    pub is_attached: bool,
-    pub public_internet_ready: bool,
-    pub uptime_secs: u64,
-    pub peer_count: usize,
-    pub route_allocated: bool,
-}
+pub use rekindle_types::display::{
+    CommunityOverview,
+    CommunityDetail,
+    ChannelOverviewDisplay,
+    DecryptedMessageDisplay,
+    FriendDisplay,
+    DmThreadDisplay,
+    DmMessageDisplay,
+    RoleDisplay,
+    TransportSnapshot,
+};
 
 // ── QueryEngine ─────────────────────────────────────────────────────────
 
 /// High-level query interface for CLI and TUI.
 ///
-/// Obtained via [`TransportNode::query()`](crate::node::TransportNode).
+/// Obtained via [`TransportNode::query()`](crate::broadcast::node::TransportNode).
 /// Composes low-level DHT reads + MEK decryption + profile resolution
 /// into display-ready types.
 pub struct QueryEngine {
@@ -222,6 +126,15 @@ impl QueryEngine {
         &self,
         membership: &CommunityMembership,
     ) -> Result<CommunityDetail> {
+        // Ensure governance and registry records are open for reading.
+        // Records may have been closed since community creation/join.
+        let _ = crate::broadcast::dht::record::open_readonly(
+            self.dht.routing_context(), &membership.governance_key,
+        ).await;
+        let _ = crate::broadcast::dht::record::open_readonly(
+            self.dht.routing_context(), &membership.registry_key,
+        ).await;
+
         let metadata = self
             .dht
             .governance()
@@ -280,72 +193,137 @@ impl QueryEngine {
 
     /// Read channel message history with MEK decryption.
     ///
-    /// Messages with missing MEK generations are returned with
-    /// `is_encrypted = true` and `needs_mek = Some(generation)`.
-    /// The body is set to a human-readable placeholder.
+    /// Per-member DhtLog architecture: each member owns their own
+    /// append-only DhtLog per channel. This method scans the member
+    /// registry for channel_records entries, opens each member's DhtLog,
+    /// reads the last N messages from each, decrypts with the MEK, and
+    /// merges all messages by (lamport_ts, sender_pseudonym) for
+    /// deterministic total ordering across high-latency links.
     pub async fn channel_history(
         &self,
         community_id: &str,
         channel_id: &str,
-        channel_log_key: &str,
+        _channel_log_key: &str,
         registry_key: &str,
         limit: usize,
+        local_channel_record_keys: &std::collections::HashMap<String, String>,
     ) -> Result<Vec<DecryptedMessageDisplay>> {
-        // Read member index for author name resolution
-        let members = self
-            .dht
-            .registry()
-            .read_member_index(registry_key)
-            .await
-            .unwrap_or_default();
+        // Read member index with force_refresh=true to get the latest
+        // channel_records entries (RegisterChannelRecord may have just completed).
+        let members: Vec<crate::payload::dht_types::MemberSummary> = match crate::broadcast::dht::record::get(
+            self.dht.routing_context(), registry_key,
+            crate::payload::dht_types::REGISTRY_MEMBER_INDEX, true,
+        ).await {
+            Ok(Some(data)) => serde_json::from_slice(&data).unwrap_or_default(),
+            _ => Vec::new(),
+        };
 
-        // Read raw channel messages from the log
-        let dht_log = crate::dht::channel_log::DhtLog::open_read(
-            self.dht.routing_context(),
-            channel_log_key,
-        )
-        .await?;
+        // Collect all known DhtLog keys: from registry + from local session.
+        // Local session has our own channel_record_keys that may not have
+        // propagated to the registry yet (RegisterChannelRecord takes time).
+        let mut log_keys_to_scan: Vec<(String, String)> = Vec::new(); // (display_name, log_key)
 
-        #[allow(clippy::cast_possible_truncation)]
-        let raw_entries = dht_log.tail(limit as u32).await?;
+        for member in &members {
+            if let Some(log_key) = member.channel_records.get(channel_id) {
+                log_keys_to_scan.push((member.display_name.clone(), log_key.clone()));
+            }
+        }
 
-        let mek_cache = self.mek_cache.read();
-        let mut messages = Vec::with_capacity(raw_entries.len());
+        // Add our own local record key if not already in the registry list
+        if let Some(local_key) = local_channel_record_keys.get(channel_id) {
+            if !log_keys_to_scan.iter().any(|(_, k)| k == local_key) {
+                log_keys_to_scan.push(("me".to_string(), local_key.clone()));
+            }
+        }
 
-        for raw in &raw_entries {
-            let channel_msg: ChannelMessage = match serde_json::from_slice(raw) {
-                Ok(m) => m,
+        tracing::info!(
+            channel_id,
+            registry_members = members.len(),
+            log_keys_count = log_keys_to_scan.len(),
+            local_keys = local_channel_record_keys.len(),
+            "channel_history: scanning DhtLogs"
+        );
+
+        // Collect raw messages from each member's DhtLog.
+        let mut raw_messages: Vec<(String, ChannelMessage)> = Vec::new();
+
+        for (display_name, log_key) in &log_keys_to_scan {
+
+            let log = match crate::broadcast::dht::channel_log::DhtLog::open_read(
+                self.dht.routing_context(), log_key,
+            ).await {
+                Ok(l) => l,
                 Err(e) => {
-                    tracing::warn!(error = %e, "skipping malformed channel message");
+                    tracing::warn!(
+                        member = %display_name, log = %log_key,
+                        error = %e, "channel_history: cannot open DhtLog"
+                    );
                     continue;
                 }
             };
 
-            let author_name = resolve_pseudonym_name(
-                &channel_msg.sender_pseudonym,
-                &members,
-            );
+            // Read the last `limit` entries from this member's log
+            #[allow(clippy::cast_possible_truncation)]
+            let entries = match log.tail(limit as u32).await {
+                Ok(e) => e,
+                Err(e) => {
+                    tracing::debug!(
+                        member = %display_name, error = %e,
+                        "DhtLog tail read failed"
+                    );
+                    continue;
+                }
+            };
 
-            let message_id = channel_msg
-                .message_id
-                .clone()
-                .unwrap_or_else(|| format!("seq:{}", channel_msg.sequence));
+            for raw in &entries {
+                let msg: ChannelMessage = match serde_json::from_slice(raw) {
+                    Ok(m) => m,
+                    Err(e) => {
+                        tracing::debug!(error = %e, "skipping malformed DhtLog entry");
+                        continue;
+                    }
+                };
+                raw_messages.push((display_name.clone(), msg));
+            }
+        }
 
-            let (body, is_encrypted, needs_mek) =
-                decrypt_channel_body(&mek_cache, community_id, channel_id, &channel_msg);
+        // Decrypt — lock scoped to this block, no awaits
+        let mut messages = Vec::with_capacity(raw_messages.len());
+        {
+            let mek_cache = self.mek_cache.read();
+            for (author_name, channel_msg) in &raw_messages {
+                let message_id = channel_msg
+                    .message_id
+                    .clone()
+                    .unwrap_or_else(|| format!("seq:{}", channel_msg.sequence));
 
-            messages.push(DecryptedMessageDisplay {
-                message_id,
-                sequence: channel_msg.sequence,
-                author_pseudonym: channel_msg.sender_pseudonym,
-                author_display_name: author_name,
-                body,
-                timestamp: channel_msg.timestamp,
-                reply_to_sequence: channel_msg.reply_to,
-                mek_generation: channel_msg.mek_generation,
-                is_encrypted,
-                needs_mek,
-            });
+                let (body, is_encrypted, needs_mek) =
+                    decrypt_channel_body(&mek_cache, community_id, channel_id, channel_msg);
+
+                messages.push(DecryptedMessageDisplay {
+                    message_id,
+                    sequence: channel_msg.sequence,
+                    author_pseudonym: channel_msg.sender_pseudonym.clone(),
+                    author_display_name: author_name.clone(),
+                    body,
+                    timestamp: channel_msg.timestamp,
+                    reply_to_sequence: channel_msg.reply_to,
+                    mek_generation: channel_msg.mek_generation,
+                    is_encrypted,
+                    needs_mek,
+                });
+            }
+        }
+
+        // Deterministic total ordering: Lamport timestamp, then sender pseudonym
+        messages.sort_by(|a, b| {
+            a.timestamp.cmp(&b.timestamp)
+                .then_with(|| a.author_pseudonym.cmp(&b.author_pseudonym))
+        });
+
+        // Return last N messages
+        if messages.len() > limit {
+            messages = messages.split_off(messages.len() - limit);
         }
 
         Ok(messages)
@@ -437,7 +415,7 @@ impl QueryEngine {
         our_public_key: &str,
     ) -> Result<Vec<DmThreadDisplay>> {
         // Read the DM log
-        let dht_log = crate::dht::channel_log::DhtLog::open_read(
+        let dht_log = crate::broadcast::dht::channel_log::DhtLog::open_read(
             self.dht.routing_context(),
             dm_log_key,
         )
@@ -450,12 +428,13 @@ impl QueryEngine {
 
         // Read friend list for name resolution
         let friends = self.dht.friend_list().read(friend_list_key).await?;
-        let friend_names: std::collections::HashMap<&str, &str> = friends
+        // Build name lookup: public_key → display name (nickname if set, else abbreviated key)
+        let friend_display_names: std::collections::HashMap<String, String> = friends
             .friends
             .iter()
-            .filter_map(|f| {
-                f.nickname.as_deref().or(Some(f.public_key.as_str()))
-                    .map(|name| (f.public_key.as_str(), name))
+            .map(|f| {
+                let name = f.nickname.clone().unwrap_or_else(|| abbreviate_key(&f.public_key));
+                (f.public_key.clone(), name)
             })
             .collect();
 
@@ -475,11 +454,16 @@ impl QueryEngine {
                 .and_then(serde_json::Value::as_str)
                 .unwrap_or("")
                 .to_string();
-            let body = entry
+            let body_raw = entry
                 .get("body")
                 .and_then(serde_json::Value::as_str)
-                .unwrap_or("[unreadable]")
-                .to_string();
+                .unwrap_or("[unreadable]");
+            // DM bodies are stored as hex-encoded bytes in the DhtLog.
+            // Decode hex → bytes → UTF-8. Fall back to raw string if decode fails.
+            let body = hex::decode(body_raw)
+                .ok()
+                .and_then(|bytes| String::from_utf8(bytes).ok())
+                .unwrap_or_else(|| body_raw.to_string());
             let timestamp = entry
                 .get("timestamp")
                 .and_then(serde_json::Value::as_u64)
@@ -497,10 +481,10 @@ impl QueryEngine {
                 sender_key.clone()
             };
 
-            let sender_name = friend_names
-                .get(sender_key.as_str())
-                .copied()
-                .map_or_else(|| abbreviate_key(&sender_key), String::from);
+            let sender_name = friend_display_names
+                .get(&sender_key)
+                .cloned()
+                .unwrap_or_else(|| abbreviate_key(&sender_key));
 
             threads.entry(peer_key).or_default().push(DmMessageDisplay {
                 sender_key,
@@ -522,10 +506,10 @@ impl QueryEngine {
                     messages = messages[start..].to_vec();
                 }
                 let last_at = messages.last().map_or(0, |m| m.timestamp);
-                let peer_name = friend_names
-                    .get(peer_key.as_str())
-                    .copied()
-                    .map_or_else(|| abbreviate_key(&peer_key), String::from);
+                let peer_name = friend_display_names
+                    .get(&peer_key)
+                    .cloned()
+                    .unwrap_or_else(|| abbreviate_key(&peer_key));
 
                 DmThreadDisplay {
                     peer_key,
@@ -545,7 +529,7 @@ impl QueryEngine {
     // ── Peer queries ────────────────────────────────────────────────
 
     /// Snapshot of all known peers for display.
-    pub fn peer_snapshot(&self) -> Vec<crate::peer::PeerSnapshot> {
+    pub fn peer_snapshot(&self) -> Vec<crate::broadcast::peer_registry::PeerSnapshot> {
         self.peer_registry.read().snapshot()
     }
 
@@ -562,14 +546,15 @@ impl QueryEngine {
     ///
     /// `route_allocated` requires the route manager which `QueryEngine` doesn't
     /// own. The caller passes it explicitly from `TransportNode::status_snapshot()`.
-    pub fn node_health(&self, shared: &SharedState, route_allocated: bool) -> NodeHealthDisplay {
-        NodeHealthDisplay {
+    pub fn node_health(&self, shared: &SharedState, route_allocated: bool) -> TransportSnapshot {
+        TransportSnapshot {
             attachment: shared.attachment_state().to_string(),
             is_attached: shared.is_attached(),
             public_internet_ready: shared.public_internet_ready(),
             uptime_secs: shared.uptime().as_secs(),
             peer_count: self.peer_registry.read().route_count(),
             route_allocated,
+            route_age_secs: None,
         }
     }
 
@@ -669,17 +654,6 @@ fn role_to_display(entry: &RoleEntry) -> RoleDisplay {
         permissions: entry.permissions,
         position: entry.position,
     }
-}
-
-/// Resolve a pseudonym key to a display name from the member index.
-fn resolve_pseudonym_name(pseudonym_key: &str, members: &[MemberSummary]) -> String {
-    members
-        .iter()
-        .find(|m| m.pseudonym_key == pseudonym_key)
-        .map_or_else(
-            || abbreviate_key(pseudonym_key),
-            |m| m.display_name.clone(),
-        )
 }
 
 /// Abbreviate a hex key for display: first 8 + "…" + last 4.

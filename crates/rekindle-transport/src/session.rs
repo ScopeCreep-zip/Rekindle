@@ -34,9 +34,14 @@ pub struct Session {
     #[serde(default)]
     pub communities: HashMap<String, CommunityMembership>,
 
-    /// DM conversation log DHT key, if created.
+    /// Legacy single DM log key (deprecated — use per-peer dm_log_keys).
     #[serde(default)]
     pub dm_log_key: Option<String>,
+
+    /// Per-peer DM DhtLog spine keys. Maps peer_public_key → DhtLog spine key.
+    /// Created during friend accept. Both peers read/write their shared log.
+    #[serde(default)]
+    pub dm_log_keys: HashMap<String, String>,
 
     /// Pending inbound friend requests awaiting user action.
     /// Populated by the InboundHandler when a `DmPayload::FriendRequest`
@@ -60,6 +65,7 @@ impl Session {
             identity,
             communities: HashMap::new(),
             dm_log_key: None,
+            dm_log_keys: HashMap::new(),
             pending_friend_requests: Vec::new(),
             version: default_session_version(),
         }
@@ -109,7 +115,10 @@ impl Session {
                 reason: format!("session: {e}"),
             }
         })?;
-        atomic_write(path, json.as_bytes()).map_err(|e| {
+        // Append BLAKE3 MAC for integrity verification on load
+        let mac = blake3::keyed_hash(session_mac_key(), json.as_bytes());
+        let wrapper = format!("{json}\n---MAC---\n{}", hex::encode(mac.as_bytes()));
+        atomic_write(path, wrapper.as_bytes()).map_err(|e| {
             TransportError::Internal(format!("session write to {}: {e}", path.display()))
         })
     }
@@ -121,7 +130,27 @@ impl Session {
     pub fn load(path: &Path) -> Result<Option<Self>> {
         match std::fs::read(path) {
             Ok(bytes) => {
-                let session: Self = serde_json::from_slice(&bytes).map_err(|e| {
+                let content = String::from_utf8_lossy(&bytes);
+                // Split MAC from session JSON
+                let (json_str, verified) = if let Some(idx) = content.rfind("\n---MAC---\n") {
+                    let json_part = &content[..idx];
+                    let mac_hex = content[idx + 11..].trim();
+                    let expected = blake3::keyed_hash(session_mac_key(), json_part.as_bytes());
+                    let stored = hex::decode(mac_hex).unwrap_or_default();
+                    if stored.len() == 32 && stored == expected.as_bytes() {
+                        (json_part.to_string(), true)
+                    } else {
+                        return Err(TransportError::Internal(
+                            "session.json integrity check FAILED — file may be tampered".into()
+                        ));
+                    }
+                } else {
+                    // No MAC separator — treat entire content as JSON (should not happen in normal flow)
+                    tracing::warn!("session.json has no integrity MAC — will add on next save");
+                    (content.into_owned(), false)
+                };
+                let _ = verified;
+                let session: Self = serde_json::from_str(&json_str).map_err(|e| {
                     TransportError::DeserializationFailed {
                         type_id: 0,
                         reason: format!("session file {}: {e}", path.display()),
@@ -157,6 +186,16 @@ pub struct SessionIdentity {
 
     /// Friend list DHT record key.
     pub friend_list_dht_key: String,
+
+    /// Friend inbox DHT record key (DFLT(32), published keypair).
+    /// Other users write friend requests here. Our daemon polls it.
+    #[serde(default)]
+    pub friend_inbox_key: String,
+
+    /// Hex-encoded keypair for the friend inbox. Published in our
+    /// profile so anyone can open the inbox for writing.
+    #[serde(default)]
+    pub friend_inbox_keypair_hex: String,
 
     /// Profile DHT record keypair bytes (for re-opening writable).
     /// Excluded from JSON — stored in OS keyring.
@@ -200,6 +239,33 @@ pub struct CommunityMembership {
     /// Excluded from JSON — stored in OS keyring.
     #[serde(skip)]
     pub slot_seed: Option<[u8; 32]>,
+
+    /// Per-channel message record keys owned by this member.
+    /// Maps channel_id → DHT record key (DFLT(1), member-owned).
+    /// Each member creates and owns their own record per channel.
+    /// Persisted in session.json so records survive restart.
+    #[serde(default)]
+    pub channel_record_keys: HashMap<String, String>,
+
+    /// Community mailbox DHT key — the community's RPC endpoint.
+    /// Used to send join requests and governance operations.
+    #[serde(default)]
+    pub community_mailbox_key: String,
+
+    /// Join inbox DHT key (operators only). Used to match ValueChange events
+    /// and trigger inbox processing for auto-approval of join requests.
+    #[serde(default)]
+    pub join_inbox_key: String,
+
+    /// Whether this member is an operator (holds the governance keypair).
+    /// Operators can execute governance writes on behalf of the community.
+    #[serde(default)]
+    pub is_operator: bool,
+
+    /// OS keyring label for the governance keypair, if this member is an operator.
+    /// Format: "community-governance-{short_key}"
+    #[serde(skip)]
+    pub governance_keypair_label: Option<String>,
 }
 
 // ── Pending friend requests ─────────────────────────────────────────────
@@ -263,6 +329,21 @@ impl Session {
     }
 }
 
+// ── Session MAC key ─────────────────────────────────────────────────────
+
+/// Application-scoped MAC key for session integrity.
+///
+/// TODO: This is a static key derived from a hardcoded salt. It protects
+/// against accidental corruption and casual tampering, but NOT against a
+/// sophisticated attacker who reads the source. For signing-key-based MAC,
+/// we'd need to verify after unlock — which changes the startup flow.
+fn session_mac_key() -> &'static [u8; 32] {
+    static KEY: std::sync::OnceLock<[u8; 32]> = std::sync::OnceLock::new();
+    KEY.get_or_init(|| {
+        *blake3::hash(b"rekindle-session-integrity-v1").as_bytes()
+    })
+}
+
 // ── Atomic file write ───────────────────────────────────────────────────
 
 /// Write data to a file atomically: write to `.tmp`, fsync, rename.
@@ -280,6 +361,15 @@ fn atomic_write(path: &Path, data: &[u8]) -> std::io::Result<()> {
     let mut file = std::fs::File::create(&tmp)?;
     file.write_all(data)?;
     file.sync_all()?;
+
+    // Set restrictive permissions before rename — session contains
+    // DHT keys and community membership data.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))?;
+    }
+
     std::fs::rename(&tmp, path)?;
     Ok(())
 }
@@ -296,6 +386,8 @@ mod tests {
             profile_dht_key: "VLD0:profile:key".into(),
             mailbox_dht_key: "VLD0:mailbox:key".into(),
             friend_list_dht_key: "VLD0:friends:key".into(),
+            friend_inbox_key: "VLD0:friend-inbox:key".into(),
+            friend_inbox_keypair_hex: String::new(),
             profile_keypair_bytes: None,
             friend_list_keypair_bytes: None,
         }
@@ -311,6 +403,11 @@ mod tests {
             slot_index: 3,
             community_name: "dev-team".into(),
             slot_seed: None,
+            channel_record_keys: HashMap::new(),
+            community_mailbox_key: "VLD0:mailbox:community".into(),
+            join_inbox_key: String::new(),
+            is_operator: false,
+            governance_keypair_label: None,
         }
     }
 

@@ -1,0 +1,43 @@
+# Node 3: carol — third participant for group dynamics
+#
+# Shell:  docker exec -it --user rekindle rekindle-carol bash
+# TUI:    docker exec -it --user rekindle rekindle-carol rekindle
+# CLI:    docker exec --user rekindle rekindle-carol rekindle status
+# Logs:   docker compose logs -f carol
+
+services:
+  carol:
+    build:
+      context: ../..
+      dockerfile: .config/docker/Dockerfile.compose
+    container_name: rekindle-carol
+    hostname: carol
+    init: false
+    restart: unless-stopped
+    stop_signal: SIGRTMIN+3
+    stop_grace_period: 15s
+    privileged: true
+    environment:
+      RUST_LOG: "info,rekindle=debug,veilid_core=warn"
+      container: docker
+    volumes:
+      - ../../target/release/rekindle:/usr/local/bin/rekindle:ro
+      - ./nodes/carol/display-name:/etc/rekindle/display-name:ro
+      - carol-veilid:/home/rekindle/.local/share/rekindle/veilid
+      - carol-config:/home/rekindle/.config/rekindle
+      - carol-logs:/home/rekindle/.local/state/rekindle/logs
+      - carol-nix:/nix
+    tmpfs:
+      - /run:exec,mode=755
+      - /run/lock:exec,mode=755
+      - /tmp:exec,mode=1777
+
+volumes:
+  carol-veilid:
+    driver: local
+  carol-config:
+    driver: local
+  carol-logs:
+    driver: local
+  carol-nix:
+    driver: local

@@ -8,7 +8,6 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use aes_gcm::{aead::{Aead, KeyInit}, Aes256Gcm, Nonce};
-use serde::Serialize;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use hkdf::Hkdf;
 use rand::RngCore;
@@ -266,13 +265,5 @@ impl Default for MekCache {
     fn default() -> Self { Self::new() }
 }
 
-/// Display-ready snapshot of a single cached MEK entry.
-#[derive(Debug, Clone, Serialize)]
-pub struct MekCacheEntrySnapshot {
-    /// Channel ID (empty string for community-wide MEK).
-    pub channel_id: String,
-    /// MEK generation number.
-    pub generation: u64,
-    /// Seconds since this MEK was cached locally.
-    pub age_secs: u64,
-}
+/// Re-exported from `rekindle_types::display` — the SSOT definition.
+pub use rekindle_types::display::MekCacheEntrySnapshot;

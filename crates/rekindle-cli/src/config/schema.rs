@@ -2,13 +2,11 @@
 //!
 //! Single source of truth for the config file format. Every field has a
 //! documented default value. `deny_unknown_fields` catches typos at parse
-//! time. The config maps to `TransportConfig` for node startup.
+//! time.
 
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
-
-use crate::cli::Cli;
 
 // ── Top-level config ────────────────────────────────────────────────────
 
@@ -44,42 +42,6 @@ impl Default for Config {
             network: NetworkConfig::default(),
             tui: TuiConfig::default(),
         }
-    }
-}
-
-impl Config {
-    /// Convert CLI config to a `TransportConfig` for node startup.
-    ///
-    /// CLI flags override config file values.
-    pub fn to_transport_config(
-        &self,
-        cli: &Cli,
-    ) -> anyhow::Result<rekindle_transport::TransportConfig> {
-        let storage_dir = if let Some(ref s) = cli.storage {
-            s.display().to_string()
-        } else {
-            let dir = crate::helpers::storage_dir(None)?;
-            dir.display().to_string()
-        };
-
-        Ok(rekindle_transport::TransportConfig {
-            storage_dir,
-            namespace: self.global.namespace.clone(),
-            safety: rekindle_transport::SafetyConfig {
-                text: self.network.safety.text.to_transport(),
-                voice: self.network.safety.voice.to_transport(),
-                dht: self.network.safety.dht.to_transport(),
-                rpc: self.network.safety.rpc.to_transport(),
-            },
-            rpc_timeout_ms: self.network.rpc_timeout_ms,
-            dht_write_retries: self.network.dht_write_retries,
-            route_refresh_secs: self.network.route_refresh_secs,
-            route_cache_ttl_secs: self.network.route_cache_ttl_secs,
-            circuit_breaker_threshold: self.network.circuit_breaker_threshold,
-            circuit_breaker_cooldown_secs: self.network.circuit_breaker_cooldown_secs,
-            dedup_cache_capacity: self.network.dedup_cache_capacity,
-            gossip_ttl: self.network.gossip_ttl,
-        })
     }
 }
 
@@ -146,6 +108,14 @@ pub struct NetworkConfig {
     /// Gossip TTL (max forwarding hops).
     #[serde(default = "default_gossip_ttl")]
     pub gossip_ttl: u8,
+
+    /// Allow Veilid to fall back to encrypted file-based key storage when
+    /// the OS Secret Service (dbus org.freedesktop.secrets) is unavailable.
+    ///
+    /// Default: false. Set to true in containers, headless servers, or
+    /// environments without gnome-keyring/kwallet.
+    #[serde(default)]
+    pub allow_insecure_protected_store: bool,
 }
 
 impl Default for NetworkConfig {
@@ -160,6 +130,7 @@ impl Default for NetworkConfig {
             circuit_breaker_cooldown_secs: default_circuit_breaker_cooldown_secs(),
             dedup_cache_capacity: default_dedup_cache_capacity(),
             gossip_ttl: default_gossip_ttl(),
+            allow_insecure_protected_store: false,
         }
     }
 }
@@ -246,25 +217,6 @@ impl SafetyProfileUser {
         }
     }
 
-    /// Convert to transport-layer `SafetyProfile`.
-    pub fn to_transport(&self) -> rekindle_transport::SafetyProfile {
-        rekindle_transport::SafetyProfile {
-            hop_count: self.hop_count,
-            stability: match self.stability.as_str() {
-                "low_latency" => rekindle_transport::config::StabilityPreference::LowLatency,
-                _ => rekindle_transport::config::StabilityPreference::Reliable,
-            },
-            sequencing: match self.sequencing.as_str() {
-                "no_preference" => {
-                    rekindle_transport::config::SequencingPreference::NoPreference
-                }
-                "ensure_ordered" => {
-                    rekindle_transport::config::SequencingPreference::EnsureOrdered
-                }
-                _ => rekindle_transport::config::SequencingPreference::PreferOrdered,
-            },
-        }
-    }
 }
 
 // ── TUI config ──────────────────────────────────────────────────────────
@@ -386,10 +338,4 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[test]
-    fn safety_profile_converts() {
-        let user = SafetyProfileUser::default_text();
-        let transport = user.to_transport();
-        assert_eq!(transport.hop_count, 1);
-    }
 }

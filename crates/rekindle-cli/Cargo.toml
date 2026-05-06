@@ -9,15 +9,24 @@ license = "MIT"
 workspace = true
 
 [features]
-default = ["tui"]
+default = ["tui", "daemon"]
 tui = [
     "dep:ratatui",
     "dep:crossterm",
-    "dep:tui-textarea",
+    "dep:ratatui-textarea",
     "dep:color-eyre",
     "dep:tokio-util",
     "dep:futures-util",
     "dep:opaline",
+    "dep:arboard",
+]
+daemon = [
+    "dep:rekindle-transport",
+    "dep:sd-notify",
+    "dep:snow",
+    "dep:rustix",
+    "dep:postcard",
+    "dep:subtle",
 ]
 
 [[bin]]
@@ -46,22 +55,31 @@ blake3 = "1"
 nucleo = "0.5"
 unicode-width = "0.2"
 hex = "0.4"
-keyring = { version = "3", default-features = false, features = ["apple-native", "windows-native", "sync-secret-service", "linux-native"] }
+keyring = { version = "3", default-features = false, features = ["apple-native", "windows-native", "linux-native"] }
 clap_complete = "4"
 parking_lot = { workspace = true }
 
 # Workspace crates
-rekindle-transport = { path = "../rekindle-transport" }
+rekindle-node = { path = "../rekindle-node" }
 rekindle-types = { path = "../rekindle-types" }
 
 # TUI (feature-gated)
 ratatui = { version = "0.30", optional = true, default-features = false, features = ["crossterm"] }
 crossterm = { version = "0.29", optional = true, features = ["event-stream"] }
-tui-textarea = { version = "0.7", optional = true, default-features = false, features = ["crossterm", "search"] }
+ratatui-textarea = { version = "0.9", optional = true, default-features = false, features = ["crossterm", "search"] }
 color-eyre = { version = "0.6", optional = true }
 tokio-util = { version = "0.7", optional = true }
 futures-util = { version = "0.3", optional = true, default-features = false, features = ["std"] }
 opaline = { version = "0.2", optional = true, features = ["ratatui", "builtin-themes", "gradients"] }
+arboard = { version = "3", optional = true, default-features = false, features = ["wayland-data-control"] }
+
+# Daemon (feature-gated — enables `rekindle node start`)
+rekindle-transport = { path = "../rekindle-transport", optional = true }
+sd-notify = { version = "0.4", optional = true }
+snow = { git = "https://github.com/mcginty/snow", rev = "295dc7b", optional = true }
+rustix = { version = "1", features = ["process"], optional = true }
+postcard = { version = "1", features = ["use-std"], optional = true }
+subtle = { version = "2", optional = true }
 
 [dev-dependencies]
 insta = "1"
