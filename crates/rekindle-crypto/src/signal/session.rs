@@ -8,6 +8,7 @@ use ed25519_dalek::{Signer, SigningKey};
 use hkdf::Hkdf;
 use sha2::Sha256;
 use x25519_dalek::{PublicKey as X25519Public, StaticSecret};
+use zeroize::ZeroizeOnDrop;
 
 /// Metadata produced by initiator-side session establishment.
 ///
@@ -32,8 +33,13 @@ pub struct SignalSessionManager {
     sessions: Box<dyn SessionStore>,
 }
 
-/// An established session's symmetric ratchet state.
-#[derive(Clone)]
+/// An established session's symmetric ratchet state. Architecture
+/// §32 line 4138 mandates `ZeroizeOnDrop` on every secret type — root,
+/// chain, and ratchet keys are scrubbed from memory when the state is
+/// dropped (session close / Drop on session-store eviction). The
+/// `their_ratchet_public` and counters are non-secret so they can be
+/// excluded from zeroize via `#[zeroize(skip)]`.
+#[derive(Clone, ZeroizeOnDrop)]
 struct RatchetState {
     /// Root key — evolves with each DH ratchet step.
     root_key: [u8; 32],
@@ -44,10 +50,13 @@ struct RatchetState {
     /// Our current DH ratchet keypair (X25519).
     our_ratchet_secret: Vec<u8>,
     /// Their current DH ratchet public key.
+    #[zeroize(skip)]
     their_ratchet_public: Vec<u8>,
     /// Send message counter.
+    #[zeroize(skip)]
     send_counter: u64,
     /// Receive message counter.
+    #[zeroize(skip)]
     recv_counter: u64,
 }
 

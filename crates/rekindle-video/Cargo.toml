@@ -1,0 +1,16 @@
+[package]
+name = "rekindle-video"
+version = "0.1.0"
+edition = "2021"
+description = "Video & screen-share fragmentation/reassembly (architecture §10.6)"
+license = "MIT"
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true }
+thiserror = { workspace = true }
+# Architecture §10.6 line 4080 — FEC data on VideoFragment so a small
+# number of dropped fragments doesn't force a keyframe re-request.
+reed-solomon-erasure = "6"

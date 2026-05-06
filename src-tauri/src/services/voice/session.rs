@@ -74,7 +74,38 @@ pub(crate) async fn start_session(
 
     emit_join_events(app, &identity.public_key, &identity.display_name);
 
+    // Architecture §10.6 line 4084 — broadcast our decode capabilities
+    // so other peers cap their VP9 sender at the lowest common
+    // denominator. Only meaningful in community voice channels (no
+    // peers in DM voice). Best-effort; failures are logged but never
+    // block the join.
+    if let Some(community_id) = community_id {
+        if let Err(e) = broadcast_media_capabilities(state, community_id, channel_id) {
+            tracing::warn!(error = %e, "MediaCapabilities broadcast failed");
+        }
+    }
+
     Ok(())
+}
+
+/// Architecture §10.6 line 4084 — capability negotiation. Build a
+/// `ControlPayload::MediaCapabilities` with our interim defaults and
+/// gossip it to the community so senders can pick the lowest common
+/// resolution + framerate every connected peer can decode.
+fn broadcast_media_capabilities(
+    state: &SharedState,
+    community_id: &str,
+    channel_id: &str,
+) -> Result<(), String> {
+    use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
+    let caps = rekindle_video::MediaCapabilities::interim_default();
+    let envelope = CommunityEnvelope::Control(ControlPayload::MediaCapabilities {
+        channel_id: channel_id.to_string(),
+        max_pixel_count: caps.max_pixel_count,
+        max_fps: caps.max_fps,
+        codecs: caps.codecs,
+    });
+    crate::services::community::send_to_mesh(state, community_id, &envelope)
 }
 
 /// Restart capture/playback and respawn send/receive/monitor loops.
@@ -313,6 +344,26 @@ fn create_transport(
         }
     }
 
+    // Architecture §10.3 + §26 W26 — install the per-community
+    // pseudonym signing key so every outbound packet is signed and
+    // receivers can authenticate the sender. For 1:1 calls there's no
+    // community pseudonym; the transport falls back to declining to
+    // build packets (caller will surface a transport error and the UI
+    // shows the call as failed). Calls support is tracked separately;
+    // for the spec-aligned community voice path this gives us §10.3
+    // signature coverage.
+    if let Some(cid) = community_id {
+        if let Ok((_, signing_key)) = state_helpers::pseudonym_credentials(state, cid) {
+            transport.set_signing_key(signing_key);
+        } else {
+            tracing::warn!(
+                community = %cid,
+                channel = %channel_id,
+                "voice transport: pseudonym credentials unavailable, packets cannot be signed",
+            );
+        }
+    }
+
     transport
 }
 
@@ -358,10 +409,13 @@ fn spawn_loops(
     // Speaker reference broadcast channel for AEC
     let (speaker_ref_tx, speaker_ref_rx) = broadcast::channel::<Vec<f32>>(50);
 
-    // Get community_id for MEK encryption (if in a community voice channel)
-    let voice_community_id = {
+    // Pull community_id (for MEK encryption) and channel_id (for the
+    // architecture §10.7 stage gate) from the active voice handle.
+    let (voice_community_id, voice_channel_id) = {
         let ve = state.voice_engine.lock();
-        ve.as_ref().and_then(|h| h.community_id.clone())
+        ve.as_ref().map_or((None, String::new()), |h| {
+            (h.community_id.clone(), h.channel_id.clone())
+        })
     };
 
     // Spawn voice send loop
@@ -377,6 +431,7 @@ fn spawn_loops(
         muted_flag: Arc::clone(muted_flag),
         speaker_ref_rx,
         community_id: voice_community_id.clone(),
+        channel_id: voice_channel_id,
         state: state.clone(),
     }));
 

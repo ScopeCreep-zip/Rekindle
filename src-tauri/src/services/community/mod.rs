@@ -1,21 +1,34 @@
+pub mod analytics;
 pub mod automod;
+pub mod background_sync;
 pub mod bootstrap;
 pub mod channel_messages;
 pub mod channel_polls;
 pub mod channel_reactions;
 pub mod create;
 pub mod event_reminders;
+pub mod events_hydration;
+pub mod expression_assets;
 pub mod expressions;
+pub mod files;
 pub mod gossip;
 pub mod governance;
 pub mod inspect;
 pub mod join;
+pub mod link_previews;
 pub mod keepalive;
 pub mod mek_rotation;
 mod mek_rotation_support;
+pub mod mentions;
 pub mod message_notifications;
 pub mod notifications;
 pub mod presence;
+pub mod raid_detection;
+pub mod segments;
+pub mod stage;
+pub mod threads;
+mod threads_store;
+pub mod video;
 pub mod watch;
 
 // Re-export public API (callers use services::community::function_name)
@@ -27,8 +40,13 @@ pub use channel_polls::{persist_poll_close, persist_poll_create, persist_poll_vo
 pub use channel_reactions::persist_reaction;
 pub use create::create_community;
 pub use event_reminders::{start_event_reminders, wake_event_reminders};
-pub use expressions::{delete_expression, list_expressions, upload_emoji};
-pub use gossip::send_to_mesh;
+pub use expressions::{
+    delete_expression, list_expressions, play_soundboard, upload_emoji, upload_soundboard_sound,
+    upload_sticker,
+};
+pub use gossip::{
+    flush_peer_reliability, hydrate_peer_reliability, send_to_mesh, start_peer_reliability_flush,
+};
 pub use governance::write_entry;
 pub(crate) use join::try_derive_slot_keypair;
 pub use join::{join_community, rejoin_community};
@@ -40,4 +58,5 @@ pub use mek_rotation::{
 pub use message_notifications::{channel_message_subkey, handle_message_notification};
 pub use notifications::{emit_message_notification, should_emit_message_notification};
 pub use presence::{presence_poll_tick_public, start_presence_poll};
+pub use stage::{list_hand_raises, persist_hand_raise};
 pub use watch::{mark_watch_inactive, watch_community_records};

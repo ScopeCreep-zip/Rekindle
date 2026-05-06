@@ -12,6 +12,7 @@ pub mod keys;
 pub mod mek;
 pub mod rotator;
 pub mod sign;
+pub mod sync_key;
 
 // Re-export ed25519_dalek for callers that need SigningKey/VerifyingKey types
 // (e.g., slot_signing_to_veilid conversion in community create/join)

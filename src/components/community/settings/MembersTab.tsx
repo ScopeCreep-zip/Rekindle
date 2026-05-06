@@ -10,6 +10,7 @@ import {
   handleUnassignRole,
   handleTimeoutMember,
   handleRemoveTimeout,
+  handleExpandCommunitySegment,
 } from "../../../handlers/community.handlers";
 import { highestPosition } from "../../../ipc/permissions";
 import {
@@ -26,8 +27,12 @@ interface MembersTabProps {
   canKick: boolean;
   canBan: boolean;
   canModerate: boolean;
+  canManageCommunity: boolean;
   requestConfirm: (opts: ConfirmOptions) => void;
 }
+
+const SLOTS_PER_SEGMENT = 255;
+const MAX_SEGMENTS = 8;
 
 const MembersTab: Component<MembersTabProps> = (props) => {
   const [rolePickerTarget, setRolePickerTarget] = createSignal<string | null>(null);
@@ -81,8 +86,73 @@ const MembersTab: Component<MembersTabProps> = (props) => {
     });
   }
 
+  // Plate Gate (architecture §15): admins see two-state banner — a
+  // proactive `warning` at ≤10 slots remaining ("Approaching segment
+  // limit"), and an `alert` once full ("Segment full — expand"). The
+  // backend validates the actual condition before writing SegmentAdded;
+  // the banner here is purely affordance.
+  const PLATE_WARNING_REMAINING = 10;
+  const segmentCount = () => 1 + (props.community.segments?.length ?? 0);
+  const capacity = () => segmentCount() * SLOTS_PER_SEGMENT;
+  const remaining = () => Math.max(0, capacity() - props.community.members.length);
+  const canExpandMore = () => segmentCount() < MAX_SEGMENTS;
+  const expansionBannerVariant = (): "warning" | "alert" | null => {
+    if (!props.canManageCommunity || !canExpandMore()) return null;
+    if (remaining() === 0) return "alert";
+    if (remaining() <= PLATE_WARNING_REMAINING) return "warning";
+    return null;
+  };
+  const [expanding, setExpanding] = createSignal(false);
+
+  async function onClickExpand(): Promise<void> {
+    if (expanding()) return;
+    setExpanding(true);
+    try {
+      await handleExpandCommunitySegment(props.community.id);
+    } finally {
+      setExpanding(false);
+    }
+  }
+
   return (
     <div class="settings-section">
+      <Show when={expansionBannerVariant() !== null}>
+        <div
+          class={`plate-gate-banner plate-gate-banner-${expansionBannerVariant()}`}
+          role={expansionBannerVariant() === "alert" ? "alert" : "status"}
+        >
+          <div class="plate-gate-banner-text">
+            <Show
+              when={expansionBannerVariant() === "alert"}
+              fallback={
+                <>
+                  <strong>Approaching segment limit ({remaining()} slots left).</strong>{" "}
+                  Expand to a new SMPL segment so the community can keep admitting
+                  members. Each segment holds up to {SLOTS_PER_SEGMENT} more members.
+                </>
+              }
+            >
+              <strong>This community has reached its segment capacity.</strong>{" "}
+              Expand to a new SMPL segment to admit more members. Each segment
+              holds up to {SLOTS_PER_SEGMENT} additional members.
+            </Show>
+          </div>
+          <button
+            class="plate-gate-banner-btn"
+            disabled={expanding()}
+            onClick={() => void onClickExpand()}
+          >
+            {expanding() ? "Expanding…" : "Expand community"}
+          </button>
+        </div>
+      </Show>
+      <Show when={props.canManageCommunity && (props.community.segments?.length ?? 0) > 0}>
+        <div class="plate-gate-status">
+          Plate Gate: {segmentCount()} segments · capacity {capacity()} ·
+          {" "}{props.community.members.length} members ·{" "}
+          {remaining()} slots open
+        </div>
+      </Show>
       <div class="member-list-header">
         Members — {props.community.members.length}
       </div>

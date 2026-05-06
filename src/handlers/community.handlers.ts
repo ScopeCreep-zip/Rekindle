@@ -5,12 +5,18 @@ import { subscribeCommunityEvents } from "../ipc/channels";
 import { setCommunityState, communityState } from "../stores/community.store";
 import { authState } from "../stores/auth.store";
 import { addToast } from "../stores/toast.store";
+import { announce } from "../components/common/AnnounceRegion";
 import type { Message } from "../stores/chat.store";
+import { clearBulkSelection } from "../stores/chat.store";
 import type { Channel, CommunityEvent as CommunityEventType, Role } from "../stores/community.store";
 import type { InviteDto } from "../stores/types";
 import { transformAutoModRule, transformChannel, transformCommunityDetail, transformExpression, transformMember, transformMessages } from "../utils/transformers";
+import type { CreateEventRequest, EventInfo } from "../ipc/commands";
+import { setLinkPreviews } from "../stores/link_preview.store";
 import { truncateKey } from "../utils/formatting";
 import { showSystemNotification } from "./notification-events.handlers";
+import { settingsState } from "../stores/settings.store";
+import { voiceState } from "../stores/voice.store";
 
 // Typing indicator state
 export interface TypingUser {
@@ -122,18 +128,28 @@ export async function handleCreateChannel(
   name: string,
   channelType: string,
   categoryId?: string,
-): Promise<void> {
+  parentVoiceChannelId?: string,
+): Promise<string> {
   try {
     const channelId = await commands.createChannel(
       communityId,
       name,
       channelType,
       categoryId,
+      parentVoiceChannelId,
     );
     setCommunityState("communities", communityId, "channels", (chs) => [
       ...chs,
-      { id: channelId, name, type: channelType as Channel["type"], unreadCount: 0, categoryId },
+      {
+        id: channelId,
+        name,
+        type: channelType as Channel["type"],
+        unreadCount: 0,
+        categoryId,
+        parentVoiceChannelId: parentVoiceChannelId ?? null,
+      },
     ]);
+    return channelId;
   } catch (e) {
     const msg = typeof e === "string" ? e : "Failed to create channel";
     console.error("Failed to create channel:", e);
@@ -327,6 +343,48 @@ export async function handleLoadAutoModRules(communityId: string): Promise<void>
   }
 }
 
+// Architecture §32 Phase 5 Week 15 — resolve `iconHash` and
+// `bannerHash` to `data:image/webp;base64,...` URLs and cache them on
+// the community store. The icon is rendered in
+// `CommunityListCompact.tsx` and `CommunityWindow` headers; resolving
+// once on hydration avoids re-fetching the base64 on every render.
+// The setter (`set_community_avatar`) returns a hash that the caller
+// can pass to `updateCommunityInfo` — when the new hash arrives via
+// the `communityUpdated` event we'll re-resolve on demand.
+export async function handleResolveCommunityImageDataUrls(
+  communityId: string,
+): Promise<void> {
+  const community = communityState.communities[communityId];
+  if (!community) return;
+
+  const iconHash = community.iconHash ?? null;
+  const bannerHash = community.bannerHash ?? null;
+
+  if (iconHash) {
+    try {
+      const url = await commands.getCommunityAvatarDataUrl(communityId, iconHash);
+      setCommunityState("communities", communityId, "iconDataUrl", url ?? null);
+    } catch (e) {
+      console.error(`Failed to resolve community icon for ${communityId}:`, e);
+      setCommunityState("communities", communityId, "iconDataUrl", null);
+    }
+  } else {
+    setCommunityState("communities", communityId, "iconDataUrl", null);
+  }
+
+  if (bannerHash) {
+    try {
+      const url = await commands.getCommunityAvatarDataUrl(communityId, bannerHash);
+      setCommunityState("communities", communityId, "bannerDataUrl", url ?? null);
+    } catch (e) {
+      console.error(`Failed to resolve community banner for ${communityId}:`, e);
+      setCommunityState("communities", communityId, "bannerDataUrl", null);
+    }
+  } else {
+    setCommunityState("communities", communityId, "bannerDataUrl", null);
+  }
+}
+
 export async function handleSetAutoModRule(
   communityId: string,
   rule: {
@@ -389,6 +447,75 @@ export async function handleUploadEmoji(
   }
 }
 
+// Architecture §18.2 — sticker upload (Lost Cargo, eager-cached).
+export async function handleUploadSticker(
+  communityId: string,
+  name: string,
+  bytes: number[],
+  animated: boolean,
+  tags?: string[],
+): Promise<string | null> {
+  try {
+    const expressionId = await commands.uploadSticker(communityId, name, bytes, animated, tags);
+    await handleLoadExpressions(communityId);
+    addToast("Sticker uploaded", "success");
+    return expressionId;
+  } catch (e) {
+    const msg = typeof e === "string" ? e : "Failed to upload sticker";
+    console.error("Failed to upload sticker:", e);
+    addToast(msg, "error");
+    return null;
+  }
+}
+
+// Architecture §18.3 — soundboard sound upload. Caller supplies
+// duration measured by `decodeAudioData`, volume in 0.0..=1.0 and
+// optional emoji glyph; backend rejects clips longer than 5 s.
+export async function handleUploadSoundboardSound(
+  communityId: string,
+  name: string,
+  bytes: number[],
+  durationSeconds: number,
+  volume: number,
+  emoji?: string,
+  tags?: string[],
+): Promise<string | null> {
+  try {
+    const expressionId = await commands.uploadSoundboardSound(
+      communityId,
+      name,
+      bytes,
+      durationSeconds,
+      volume,
+      emoji,
+      tags,
+    );
+    await handleLoadExpressions(communityId);
+    addToast("Soundboard sound uploaded", "success");
+    return expressionId;
+  } catch (e) {
+    const msg = typeof e === "string" ? e : "Failed to upload sound";
+    console.error("Failed to upload soundboard sound:", e);
+    addToast(msg, "error");
+    return null;
+  }
+}
+
+// Architecture §10.9 — trigger soundboard playback in the active
+// voice channel. Receivers fetch the cached audio and play locally.
+export async function handlePlaySoundboard(
+  communityId: string,
+  channelId: string,
+  expressionId: string,
+): Promise<void> {
+  try {
+    await commands.playSoundboard(communityId, channelId, expressionId);
+  } catch (e) {
+    console.error("Failed to play soundboard sound:", e);
+    addToast("Failed to play sound", "error");
+  }
+}
+
 export function handleSelectChannel(channelId: string): void {
   setCommunityState("activeChannel", channelId);
 
@@ -413,6 +540,29 @@ export function handleSelectChannel(channelId: string): void {
         });
       }
     }
+  }
+
+  const activeCommunityId = communityState.activeCommunity;
+  if (activeCommunityId) {
+    void refreshStageHandRaises(activeCommunityId, channelId);
+  }
+}
+
+async function refreshStageHandRaises(communityId: string, channelId: string): Promise<void> {
+  const community = communityState.communities[communityId];
+  const channel = community?.channels.find((item) => item.id === channelId);
+  if (!channel || channel.type !== "stage") {
+    return;
+  }
+
+  try {
+    const pendingRequests = await commands.getStageHandRaises(communityId, channelId);
+    setCommunityState("voiceChannels", channelId, (prev) => {
+      const state = prev ?? { participants: [], mode: "mcu" as const, hostPseudonym: null };
+      return { ...state, pendingRequests };
+    });
+  } catch (e) {
+    console.error("Failed to load stage hand raises:", e);
   }
 }
 
@@ -568,6 +718,47 @@ export async function handleUnbanMember(
   } catch (e) {
     console.error("Failed to unban member:", e);
     addToast("Failed to unban member", "error");
+  }
+}
+
+// Architecture §10 — moderator voice actions. Server-mute / server-
+// deafen broadcast a `Control` envelope through the gossip mesh and
+// require `MUTE_MEMBERS` / `DEAFEN_MEMBERS` respectively (validated
+// at the backend boundary; the menu also gates UX so the option only
+// surfaces when the local user has the perm and the target is in
+// `voiceChannels[channelId].participants`).
+export async function handleServerMuteMember(
+  communityId: string,
+  channelId: string,
+  targetPseudonym: string,
+  muted: boolean,
+): Promise<void> {
+  try {
+    await commands.serverMuteMember(communityId, channelId, targetPseudonym, muted);
+    addToast(muted ? "Member server-muted" : "Member un-muted", "success");
+  } catch (e) {
+    console.error("Failed to server-mute member:", e);
+    addToast("Failed to update server-mute", "error");
+  }
+}
+
+export async function handleServerDeafenMember(
+  communityId: string,
+  channelId: string,
+  targetPseudonym: string,
+  deafened: boolean,
+): Promise<void> {
+  try {
+    await commands.serverDeafenMember(
+      communityId,
+      channelId,
+      targetPseudonym,
+      deafened,
+    );
+    addToast(deafened ? "Member server-deafened" : "Member un-deafened", "success");
+  } catch (e) {
+    console.error("Failed to server-deafen member:", e);
+    addToast("Failed to update server-deafen", "error");
   }
 }
 
@@ -761,6 +952,24 @@ export async function handleSetChannelTopic(
   } catch (e) {
     console.error("Failed to set channel topic:", e);
     addToast("Failed to set channel topic", "error");
+  }
+}
+
+export async function handleSetChannelForumTags(
+  communityId: string,
+  channelId: string,
+  forumTags: string[],
+): Promise<void> {
+  try {
+    await commands.setChannelForumTags(communityId, channelId, forumTags);
+    setCommunityState("communities", communityId, "channels",
+      (ch) => ch.id === channelId,
+      "forumTags",
+      forumTags.length > 0 ? forumTags : undefined,
+    );
+  } catch (e) {
+    console.error("Failed to set forum tags:", e);
+    addToast("Failed to set forum tags", "error");
   }
 }
 
@@ -1104,6 +1313,224 @@ export async function handleSelfUnassignRole(
   }
 }
 
+export async function handleUpdateCommunityProfile(
+  communityId: string,
+  bio: string | null,
+  pronouns: string | null,
+  themeColor: number | null,
+  badges: string[],
+  avatarRef: string | null = null,
+  bannerRef: string | null = null,
+): Promise<boolean> {
+  try {
+    await commands.updateCommunityProfile(
+      communityId,
+      bio,
+      pronouns,
+      themeColor,
+      badges,
+      avatarRef,
+      bannerRef,
+    );
+    setCommunityState("communities", communityId, {
+      myBio: bio,
+      myPronouns: pronouns,
+      myThemeColor: themeColor,
+      myBadges: badges,
+      myAvatarRef: avatarRef,
+      myBannerRef: bannerRef,
+    });
+    const community = communityState.communities[communityId];
+    const myPseudonymKey = community?.myPseudonymKey;
+    if (community && myPseudonymKey) {
+      const memberIdx = community.members.findIndex((m) => m.pseudonymKey === myPseudonymKey);
+      if (memberIdx >= 0) {
+        setCommunityState("communities", communityId, "members", memberIdx, {
+          bio,
+          pronouns,
+          themeColor,
+          badges,
+          avatarRef,
+          bannerRef,
+        });
+      }
+    }
+    addToast("Profile updated", "success");
+    return true;
+  } catch (e) {
+    const msg = typeof e === "string" ? e : "Failed to update profile";
+    console.error("Failed to update community profile:", e);
+    addToast(msg, "error");
+    return false;
+  }
+}
+
+export async function handleUploadAttachment(
+  communityId: string,
+  channelId: string,
+  filePath: string,
+): Promise<string | null> {
+  try {
+    const id = await commands.uploadAttachment(communityId, channelId, filePath);
+    addToast("File uploaded", "success");
+    return id;
+  } catch (e) {
+    const msg = typeof e === "string" ? e : "Upload failed";
+    console.error("Upload failed:", e);
+    addToast(msg, "error");
+    return null;
+  }
+}
+
+export async function handleDownloadAttachment(
+  communityId: string,
+  channelId: string,
+  attachmentId: string,
+  defaultFilename: string,
+): Promise<boolean> {
+  try {
+    const { save } = await import("@tauri-apps/plugin-dialog");
+    const savePath = await save({ defaultPath: defaultFilename });
+    if (!savePath) return false;
+    await commands.downloadAttachment(communityId, channelId, attachmentId, savePath as string);
+    return true;
+  } catch (e) {
+    const msg = typeof e === "string" ? e : "Download failed";
+    console.error("Download failed:", e);
+    addToast(msg, "error");
+    return false;
+  }
+}
+
+export async function handlePinAttachment(
+  communityId: string,
+  attachmentId: string,
+  pinned: boolean,
+): Promise<void> {
+  try {
+    await commands.pinAttachment(communityId, attachmentId, pinned);
+    addToast(pinned ? "Attachment pinned" : "Attachment unpinned", "success");
+  } catch (e) {
+    const msg = typeof e === "string" ? e : "Pin update failed";
+    console.error("Pin update failed:", e);
+    addToast(msg, "error");
+  }
+}
+
+/**
+ * Send a recorded voice message (architecture §16.4) — the Opus bytes are
+ * base64-encoded by the caller; the backend chunks + FEK-encrypts them via
+ * the same Lost Cargo flow as a regular file attachment, then writes a
+ * carrying ChannelMessage with `flags |= VOICE_MESSAGE` and the duration +
+ * waveform metadata embedded in the body.
+ */
+/**
+ * Plate Gate (architecture §15): admin expands the community to a new
+ * SMPL segment when the highest existing segment hits its 255-slot cap.
+ * Backend validates `MANAGE_COMMUNITY` and that the segment is full;
+ * returns the new `segment_index`.
+ */
+export async function handleExpandCommunitySegment(
+  communityId: string,
+): Promise<number | null> {
+  try {
+    const newIndex = await commands.expandCommunitySegment(communityId);
+    addToast(`Community expanded — segment ${newIndex} ready for new members`, "success");
+    return newIndex;
+  } catch (e) {
+    const msg = typeof e === "string" ? e : "Expansion failed";
+    console.error("Plate Gate expansion failed:", e);
+    addToast(msg, "error");
+    return null;
+  }
+}
+
+export async function handleSendVoiceMessage(
+  communityId: string,
+  channelId: string,
+  opusBytesB64: string,
+  durationMs: number,
+  waveformB64: string,
+): Promise<boolean> {
+  try {
+    await commands.sendVoiceMessage(
+      communityId,
+      channelId,
+      opusBytesB64,
+      durationMs,
+      waveformB64,
+    );
+    return true;
+  } catch (e) {
+    const msg = typeof e === "string" ? e : "Voice message failed";
+    console.error("Voice message failed:", e);
+    addToast(msg, "error");
+    return false;
+  }
+}
+
+export async function handleForwardChannelMessage(
+  sourceCommunityId: string,
+  sourceChannelId: string,
+  sourceMessageId: string,
+  destCommunityId: string,
+  destChannelId: string,
+): Promise<boolean> {
+  try {
+    await commands.forwardChannelMessage(
+      sourceCommunityId,
+      sourceChannelId,
+      sourceMessageId,
+      destCommunityId,
+      destChannelId,
+    );
+    addToast("Message forwarded", "success");
+    return true;
+  } catch (e) {
+    const msg = typeof e === "string" ? e : "Forward failed";
+    console.error("Forward failed:", e);
+    addToast(msg, "error");
+    return false;
+  }
+}
+
+/**
+ * Bulk-delete a set of channel messages as a moderator. The backend writes
+ * one `GovernanceEntry::AdminDelete` per id (capped at 100), gossips
+ * `MessageDeleted` for each, purges the local SQLite row, and emits a local
+ * `MessageDeleted` event so the UI updates immediately. Per
+ * `feedback_no_fallback.md` we do NOT optimistically remove from the store —
+ * the backend's local emit is the single source of truth.
+ */
+export async function handleBulkDeleteChannelMessages(
+  communityId: string,
+  channelId: string,
+  messageIds: string[],
+  reason?: string,
+): Promise<void> {
+  if (messageIds.length === 0) {
+    clearBulkSelection();
+    return;
+  }
+  try {
+    const deleted = await commands.bulkDeleteChannelMessages(
+      communityId,
+      channelId,
+      messageIds,
+      reason,
+    );
+    clearBulkSelection();
+    addToast(
+      `Deleted ${deleted} message${deleted === 1 ? "" : "s"}`,
+      "success",
+    );
+  } catch (e) {
+    const msg = typeof e === "string" ? e : "Bulk delete failed";
+    console.error("Bulk delete failed:", e);
+    addToast(msg, "error");
+  }
+}
+
 // --- Reaction handlers ---
 
 export async function handleAddReaction(
@@ -1156,6 +1583,7 @@ export async function handleCreatePoll(
   question: string,
   answers: string[],
   multiSelect: boolean,
+  durationSeconds?: number,
 ): Promise<string | null> {
   try {
     const pollId = await commands.createPoll(
@@ -1165,6 +1593,7 @@ export async function handleCreatePoll(
       question,
       answers,
       multiSelect,
+      durationSeconds,
     );
     await handleLoadChannelMessages(channelId, 100);
     return pollId;
@@ -1253,12 +1682,7 @@ export async function handleUpdateCommunityPresence(
 
 // --- Community Event CRUD handlers ---
 
-function transformEvent(e: {
-  id: string; title: string; description: string; creatorPseudonym: string;
-  startTime: number; endTime: number | null; channelId: string | null;
-  maxAttendees: number | null; createdAt: number; status: string;
-  rsvps: { pseudonymKey: string; status: string }[];
-}): CommunityEventType {
+function transformEvent(e: EventInfo): CommunityEventType {
   return {
     id: e.id,
     title: e.title,
@@ -1274,6 +1698,9 @@ function transformEvent(e: {
       pseudonymKey: r.pseudonymKey,
       status: r.status as "going" | "maybe" | "declined",
     })),
+    coverImageRef: e.coverImageRef,
+    recurrence: e.recurrence,
+    location: e.location,
   };
 }
 
@@ -1288,15 +1715,10 @@ export async function handleLoadEvents(communityId: string): Promise<void> {
 
 export async function handleCreateEvent(
   communityId: string,
-  title: string,
-  description: string,
-  startTime: number,
-  endTime?: number,
-  channelId?: string,
-  maxAttendees?: number,
+  request: CreateEventRequest,
 ): Promise<string | null> {
   try {
-    const eventId = await commands.createEvent(communityId, title, description, startTime, endTime, channelId, maxAttendees);
+    const eventId = await commands.createEvent(communityId, request);
     // Event will arrive via broadcast — but optimistically reload
     await handleLoadEvents(communityId);
     return eventId;
@@ -1369,9 +1791,18 @@ export async function handleCreateThread(
   channelId: string,
   name: string,
   starterMessageId: string,
+  forumTag?: string | null,
+  autoArchiveSeconds?: number,
 ): Promise<string | null> {
   try {
-    const threadId = await commands.createThread(communityId, channelId, name, starterMessageId);
+    const threadId = await commands.createThread(
+      communityId,
+      channelId,
+      name,
+      starterMessageId,
+      forumTag,
+      autoArchiveSeconds,
+    );
     // Thread will arrive via broadcast — but optimistically reload
     await handleLoadChannelThreads(communityId, channelId);
     return threadId;
@@ -1383,16 +1814,37 @@ export async function handleCreateThread(
 }
 
 export async function handleLoadChannelThreads(
-  communityId: string,
-  channelId: string,
+    communityId: string,
+    channelId: string,
 ): Promise<void> {
   try {
-    const threads = await commands.getChannelThreads(communityId, channelId);
+    const threads = await commands.getActiveThreads(communityId, channelId);
     setCommunityState("channelThreads", channelId, threads);
   } catch (e) {
     console.error("Failed to load channel threads:", e);
     addToast("Failed to load threads", "error");
   }
+}
+
+export async function handleCreateForumPost(
+  communityId: string,
+  channelId: string,
+  name: string,
+  body: string,
+  forumTag?: string | null,
+): Promise<string | null> {
+  const starterMessageId = `forum-post-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+  const threadId = await handleCreateThread(
+    communityId,
+    channelId,
+    name,
+    starterMessageId,
+    forumTag,
+  );
+  if (!threadId) return null;
+  await handleSendThreadMessage(communityId, threadId, body);
+  await handleLoadChannelThreads(communityId, channelId);
+  return threadId;
 }
 
 export async function handleSendThreadMessage(
@@ -1533,9 +1985,46 @@ export async function handleSetNotificationOverride(
   }
 }
 
+// Architecture §32 Phase 7 Week 25 — channel-level notification sound
+// override. `soundRef` is the soundboard expression's content_hash;
+// passing `null` clears the override and re-inherits from the
+// community default → app default cascade (resolved server-side in
+// `services/community/notifications.rs::resolve_notification_sound`).
+export async function handleSetChannelNotificationSound(
+  communityId: string,
+  channelId: string,
+  soundRef: string | null,
+): Promise<void> {
+  try {
+    await commands.setNotificationSound(communityId, channelId, soundRef);
+    const community = communityState.communities[communityId];
+    if (!community) return;
+    const index = community.channels.findIndex((channel) => channel.id === channelId);
+    if (index >= 0) {
+      setCommunityState(
+        "communities",
+        communityId,
+        "channels",
+        index,
+        "notificationSoundRef",
+        soundRef,
+      );
+    }
+    addToast("Notification sound updated", "success");
+  } catch (e) {
+    console.error("Failed to update channel notification sound:", e);
+    addToast("Failed to update sound", "error");
+  }
+}
+
 export function subscribeCommunityEventDispatcher(): Promise<UnlistenFn> {
   return subscribeCommunityEvents((event) => {
-    if (event.type === "memberJoined") {
+    if (event.type === "expressionAssetReady") {
+      // Architecture §18.4 — eager-fetch landed for this expression;
+      // refresh the community's expression list so the picker re-renders
+      // with the resolved inline_data_base64 instead of `:emojiname:`.
+      void handleLoadExpressions(event.data.communityId);
+    } else if (event.type === "memberJoined") {
       const { communityId, pseudonymKey, displayName, roleIds } = event.data;
       const community = communityState.communities[communityId];
       if (community) {
@@ -1552,6 +2041,30 @@ export function subscribeCommunityEventDispatcher(): Promise<UnlistenFn> {
       setCommunityState("communities", communityId, "members", (prev) =>
         prev.filter((m) => m.pseudonymKey !== pseudonymKey),
       );
+    } else if (event.type === "raidDetected") {
+      // Architecture §20.6 — backend's per-community sliding window
+      // tripped the policy threshold; surface a moderator banner via
+      // the toast layer. The user can then take the spec-listed
+      // actions (pause invites, ban floods, raise verification).
+      const { joinsInWindow, maxJoinsPerInterval, joinIntervalSeconds } = event.data;
+      addToast(
+        `Raid detected: ${joinsInWindow} joins in the last ${joinIntervalSeconds}s ` +
+          `(threshold ${maxJoinsPerInterval}). Consider pausing invites.`,
+        "error",
+      );
+    } else if (event.type === "linkPreviewReceived") {
+      // Architecture §28.8 — sender pre-fetched OpenGraph metadata.
+      // Persist keyed by messageId so MessageBubble can render the
+      // card under the message body.
+      const { messageId, url, title, description, imageUrl, siteName, fetchedAt } = event.data;
+      setLinkPreviews(messageId, {
+        url,
+        title,
+        description,
+        imageUrl,
+        siteName,
+        fetchedAt,
+      });
     } else if (event.type === "rolesChanged") {
       const { communityId, roles } = event.data;
       if (communityState.communities[communityId]) {
@@ -1610,6 +2123,9 @@ export function subscribeCommunityEventDispatcher(): Promise<UnlistenFn> {
       }).catch(() => {});
       void handleLoadExpressions(communityId);
       void handleLoadAutoModRules(communityId);
+      if (communityState.activeCommunity === communityId && communityState.activeChannel) {
+        void handleLoadChannelThreads(communityId, communityState.activeChannel);
+      }
     } else if (event.type === "autoModAlert") {
       addToast(`AutoMod alert: ${event.data.ruleName}`, "info");
     } else if (event.type === "membersRefreshed") {
@@ -1624,6 +2140,14 @@ export function subscribeCommunityEventDispatcher(): Promise<UnlistenFn> {
           const idx = communityState.communities[communityId].channels.findIndex((channel) => channel.id === channelId);
           if (idx >= 0) {
             setCommunityState("communities", communityId, "channels", idx, "mekGeneration", newGeneration);
+          }
+          // Architecture §7.2 + §10.7 — voice MEK rotates on every
+          // join/leave for forward+backward secrecy. Surface a toast
+          // when it's the channel the user is actively connected to
+          // so they have a visible cue that keys advanced (e.g., a
+          // new speaker just joined the stage).
+          if (voiceState.activeCallType === "community" && voiceState.channelId === channelId) {
+            announce("Voice keys rotated", "polite");
           }
         } else {
           setCommunityState("communities", communityId, "mekGeneration", newGeneration);
@@ -1887,14 +2411,19 @@ export function subscribeCommunityEventDispatcher(): Promise<UnlistenFn> {
       }
     } else if (event.type === "threadArchived") {
       const { threadId, archived } = event.data;
-      // Update archived flag in all channelThreads entries
       const allChannelIds = Object.keys(communityState.channelThreads);
       for (const channelId of allChannelIds) {
         const threads = communityState.channelThreads[channelId];
         if (threads) {
           const idx = threads.findIndex((t) => t.id === threadId);
           if (idx >= 0) {
-            setCommunityState("channelThreads", channelId, idx, "archived", archived);
+            if (archived) {
+              setCommunityState("channelThreads", channelId, (prev) =>
+                (prev ?? []).filter((thread) => thread.id !== threadId),
+              );
+            } else {
+              setCommunityState("channelThreads", channelId, idx, "archived", false);
+            }
             break;
           }
         }
@@ -2011,6 +2540,48 @@ export function subscribeCommunityEventDispatcher(): Promise<UnlistenFn> {
       commands.setVoiceMode(mode, hostPseudonym ?? undefined).catch((e) => {
         console.error("Failed to set voice mode:", e);
       });
+    } else if (event.type === "stageUpdate") {
+      const { communityId, channelId, topic, speakers, moderatorPseudonym } = event.data;
+      setCommunityState("communities", communityId, "channels",
+        (channel) => channel.id === channelId,
+        (channel) => ({
+          ...channel,
+          topic: topic ?? channel.topic,
+          stageSpeakers: speakers,
+          stageModerator: moderatorPseudonym,
+        }),
+      );
+      setCommunityState("voiceChannels", channelId, (prev) => {
+        const state = prev ?? { participants: [], mode: "mcu" as const, hostPseudonym: null };
+        return {
+          ...state,
+          mode: "mcu",
+          speakers,
+          moderatorPseudonym,
+          topic: topic ?? state.topic ?? null,
+        };
+      });
+      void refreshStageHandRaises(communityId, channelId);
+    } else if (event.type === "speakRequest") {
+      const { channelId, requesterPseudonym } = event.data;
+      setCommunityState("voiceChannels", channelId, (prev) => {
+        const state = prev ?? { participants: [], mode: "mcu" as const, hostPseudonym: null };
+        const pendingRequests = state.pendingRequests ?? [];
+        if (pendingRequests.includes(requesterPseudonym)) return state;
+        return { ...state, pendingRequests: [...pendingRequests, requesterPseudonym] };
+      });
+      addToast(`Speak request from ${requesterPseudonym.slice(0, 12)}`, "info");
+    } else if (event.type === "speakResponse") {
+      const { communityId, channelId, requesterPseudonym, granted } = event.data;
+      setCommunityState("voiceChannels", channelId, (prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          pendingRequests: (prev.pendingRequests ?? []).filter((value) => value !== requesterPseudonym),
+        };
+      });
+      void refreshStageHandRaises(communityId, channelId);
+      addToast(granted ? "Request to speak approved" : "Request to speak denied", granted ? "success" : "info");
     } else if (event.type === "systemMessage") {
       const { communityId, body, timestamp } = event.data;
       const activeChannel = communityState.activeChannel;
@@ -2025,13 +2596,13 @@ export function subscribeCommunityEventDispatcher(): Promise<UnlistenFn> {
         setCommunityState("channelMessages", activeChannel, (prev) => [...(prev ?? []), sysMsg]);
       }
     } else if (event.type === "raidAlert") {
+      // Architecture §17.4 — raid alert lives in store; CommunityWindow
+      // renders a banner overlay (`role="alert"`) for higher visibility
+      // than a transient toast. The flag persists until the backend
+      // emits `active: false` (or the user clears it client-side via
+      // `dismissRaidAlertLocal`).
       const { communityId, active } = event.data;
-      const name = communityState.communities[communityId]?.name ?? communityId;
-      if (active) {
-        addToast(`Raid alert active in ${name}`, "error");
-      } else {
-        addToast(`Raid alert cleared in ${name}`, "info");
-      }
+      setCommunityState("communities", communityId, "raidAlertActive", active);
     } else if (event.type === "channelLockdown") {
       const { communityId, locked } = event.data;
       const name = communityState.communities[communityId]?.name ?? communityId;
@@ -2047,6 +2618,25 @@ export function subscribeCommunityEventDispatcher(): Promise<UnlistenFn> {
       if (community?.myPseudonymKey === pseudonymKey) {
         setCommunityState("communities", communityId, "onboardingComplete", true);
       }
+    } else if (event.type === "joinAccepted") {
+      // Architecture §7.4 — peer accepted our join request and the
+      // MEK has landed in the local cache. Refresh the community
+      // detail so the new MEK generation, member registry slot, and
+      // governance state propagate into the store, then surface a
+      // success toast so the joining user sees the explicit confirmation.
+      const { communityId } = event.data;
+      addToast("Joined community — encryption keys received", "success");
+      void commands.getCommunityDetails().then((details) => {
+        const detail = details.find((d) => d.id === communityId);
+        if (detail) {
+          setCommunityState(
+            "communities",
+            communityId,
+            transformCommunityDetail(detail),
+          );
+          void handleResolveCommunityImageDataUrls(communityId);
+        }
+      });
     } else if (event.type === "joinRejected") {
       const { reason } = event.data;
       addToast(`Join rejected: ${reason}`, "error");
@@ -2061,12 +2651,59 @@ export function subscribeCommunityEventDispatcher(): Promise<UnlistenFn> {
         });
       }
     } else if (event.type === "communityUpdated") {
-      const { communityId, name, description } = event.data;
+      const { communityId, name, description, iconHash, bannerHash } = event.data;
       if (name !== null) {
         setCommunityState("communities", communityId, "name", name);
       }
       if (description !== null) {
         setCommunityState("communities", communityId, "description", description);
+      }
+      // Architecture §32 Phase 5 W15 — when the icon/banner hash
+      // changes the cached data URL is stale; clear it and re-resolve
+      // through the local cache so the buddy-list icon updates.
+      if (iconHash !== null) {
+        setCommunityState("communities", communityId, "iconHash", iconHash);
+      }
+      if (bannerHash !== null) {
+        setCommunityState("communities", communityId, "bannerHash", bannerHash);
+      }
+      if (iconHash !== null || bannerHash !== null) {
+        void handleResolveCommunityImageDataUrls(communityId);
+      }
+    } else if (event.type === "attachmentDownloaded") {
+      const { communityId, channelId, attachmentId, localPath } = event.data;
+      const messages = communityState.channelMessages[channelId];
+      if (!messages) return;
+      const idx = messages.findIndex((m) => m.attachment?.attachmentId === attachmentId);
+      if (idx < 0) return;
+      const _ = communityId;
+      setCommunityState("channelMessages", channelId, idx, "attachment", (att) =>
+        att ? { ...att, localPath } : att,
+      );
+    } else if (event.type === "soundboardPlay") {
+      // Architecture §10.9 — peer triggered a soundboard sound. The
+      // backend already gated permissions, rate-limit, and cooldown;
+      // we look up the cached expression and play it locally.
+      const { communityId, channelId, expressionId } = event.data;
+      if (!settingsState.soundEnabled) return;
+      if (voiceState.isDeafened) return;
+      const community = communityState.communities[communityId];
+      if (!community) return;
+      const expression = (community.expressions ?? []).find((e) => e.id === expressionId);
+      const dataUrl = expression?.inlineDataUrl;
+      if (!dataUrl) return;
+      const _ = channelId;
+      try {
+        const audio = new Audio(dataUrl);
+        const exprVolume = expression?.soundMeta?.volume;
+        const expr = typeof exprVolume === "number" ? Math.min(Math.max(exprVolume, 0), 1) : 1.0;
+        const out = Math.min(Math.max(voiceState.outputVolume, 0), 1);
+        audio.volume = expr * out;
+        void audio.play().catch((e) => {
+          console.warn("soundboard playback failed:", e);
+        });
+      } catch (e) {
+        console.warn("soundboard playback failed:", e);
       }
     }
   });
@@ -2095,14 +2732,20 @@ export async function handleLoadWelcomeScreen(communityId: string): Promise<void
 export async function handleSubmitOnboarding(
   communityId: string,
   answers: { questionId: string; selectedOptions: string[] }[],
+  acknowledgedRules?: boolean,
 ): Promise<boolean> {
   try {
-    await commands.submitOnboardingAnswers(communityId, answers);
+    await commands.submitOnboardingAnswers(communityId, answers, acknowledgedRules);
+    // Plan §Failure 8 — persist the completion flag in SQLite so the
+    // wizard doesn't re-trigger on the next launch. The mesh broadcast
+    // started by `submit_onboarding_answers` covers other peers; this
+    // covers the local device (send_to_mesh excludes loopback).
+    await commands.markOnboardingComplete(communityId);
     setCommunityState("communities", communityId, "onboardingComplete", true);
     return true;
   } catch (e) {
     console.error("Failed to submit onboarding:", e);
-    addToast("Failed to complete onboarding", "error");
+    addToast(`Failed to complete onboarding: ${String(e)}`, "error");
     return false;
   }
 }

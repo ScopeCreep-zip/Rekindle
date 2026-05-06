@@ -106,15 +106,13 @@ const CreateEventModal: Component<CreateEventModalProps> = (props) => {
         max && !isNaN(max) ? max : undefined,
       );
     } else {
-      await handleCreateEvent(
-        props.communityId,
-        t,
-        description().trim(),
-        start,
-        end,
-        undefined,
-        max && !isNaN(max) ? max : undefined,
-      );
+      await handleCreateEvent(props.communityId, {
+        title: t,
+        description: description().trim(),
+        startTime: start,
+        endTime: end,
+        maxAttendees: max && !isNaN(max) ? max : undefined,
+      });
     }
     props.onClose();
   }

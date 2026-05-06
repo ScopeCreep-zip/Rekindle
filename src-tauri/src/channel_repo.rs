@@ -13,8 +13,8 @@ pub fn insert_channel(
     community_id: &str,
 ) -> Result<(), rusqlite::Error> {
     conn.execute(
-        "INSERT INTO channels (owner_key, id, community_id, name, channel_type, category_id, topic, slowmode_seconds, nsfw, message_record_key, mek_generation) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO channels (owner_key, id, community_id, name, channel_type, category_id, topic, slowmode_seconds, nsfw, message_record_key, mek_generation, parent_voice_channel_id) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         rusqlite::params![
             owner_key,
             channel.id,
@@ -27,6 +27,7 @@ pub fn insert_channel(
             i32::from(channel.nsfw),
             channel.message_record_key,
             channel.mek_generation.cast_signed(),
+            channel.parent_voice_channel_id,
         ],
     )?;
     Ok(())
@@ -40,8 +41,8 @@ pub fn upsert_channel(
     community_id: &str,
 ) -> Result<(), rusqlite::Error> {
     conn.execute(
-        "INSERT OR IGNORE INTO channels (owner_key, id, community_id, name, channel_type, category_id, topic, slowmode_seconds, nsfw, message_record_key, mek_generation) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT OR IGNORE INTO channels (owner_key, id, community_id, name, channel_type, category_id, topic, slowmode_seconds, nsfw, message_record_key, mek_generation, parent_voice_channel_id) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         rusqlite::params![
             owner_key,
             channel.id,
@@ -54,6 +55,7 @@ pub fn upsert_channel(
             i32::from(channel.nsfw),
             channel.message_record_key,
             channel.mek_generation.cast_signed(),
+            channel.parent_voice_channel_id,
         ],
     )?;
     Ok(())

@@ -51,7 +51,8 @@ bitflags! {
         const CHANGE_NICKNAME           = 1 << 26;
         const MANAGE_NICKNAMES          = 1 << 27;
         const MANAGE_ROLES              = 1 << 28;
-        // bits 29-32 reserved
+        const BYPASS_SLOWMODE           = 1 << 29;
+        // bits 30-32 reserved
 
         // ── Events ──
         const MANAGE_EVENTS             = 1 << 33;
@@ -78,6 +79,9 @@ bitflags! {
         // bits 54-55 reserved
         const SEND_POLLS                = 1 << 56;
         const VIEW_CREATOR_MONETIZATION_ANALYTICS = 1 << 57;
+        // ── Rekindle-specific (bits ≥58, beyond the Discord-defined range) ──
+        /// Architecture §24.1 — view local-only community analytics.
+        const VIEW_INSIGHTS              = 1 << 58;
     }
 }
 
@@ -154,6 +158,7 @@ pub fn moderator_default() -> Permissions {
         | Permissions::MODERATE_MEMBERS
         | Permissions::MANAGE_EVENTS
         | Permissions::MANAGE_THREADS
+        | Permissions::BYPASS_SLOWMODE
 }
 
 /// Default permissions for the Admin role (id=3).

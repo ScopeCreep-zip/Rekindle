@@ -10,7 +10,7 @@ pub type DbPool = tokio_rusqlite::Connection;
 /// Bump this every time `001_init.sql` changes.  On mismatch the entire
 /// database is wiped and recreated from the schema — safe because the app
 /// is not live yet and identity keys live in Stronghold, not `SQLite`.
-const SCHEMA_VERSION: i64 = 38;
+const SCHEMA_VERSION: i64 = 66;
 
 /// Result of opening the database — includes a flag indicating whether the
 /// schema was recreated from scratch (so the caller can wipe dependent storage).
@@ -70,22 +70,30 @@ pub fn create_pool(db_path: &str) -> Result<DbOpenResult, String> {
 }
 
 /// Drop every user table so the schema can be cleanly re-applied.
+///
+/// Virtual tables (FTS5) must be dropped before regular tables — they own
+/// shadow tables (`<name>_data`, `<name>_idx`, etc.) which SQLite refuses
+/// to drop directly. We identify them via `sql LIKE 'CREATE VIRTUAL%'`
+/// and skip rows whose `sql` is NULL (shadow tables).
 fn drop_all_tables(conn: &Connection) -> Result<(), String> {
     // Must disable FK checks while dropping to avoid ordering issues.
     conn.execute_batch("PRAGMA foreign_keys=OFF;")
         .map_err(|e| format!("failed to disable foreign keys: {e}"))?;
 
-    let mut stmt = conn
-        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
-        .map_err(|e| format!("failed to list tables: {e}"))?;
-    let tables: Vec<String> = stmt
-        .query_map([], |row| row.get(0))
-        .map_err(|e| format!("failed to query tables: {e}"))?
-        .filter_map(std::result::Result::ok)
-        .collect();
-    drop(stmt);
+    let virtual_tables = list_tables_matching(
+        conn,
+        "type='table' AND sql LIKE 'CREATE VIRTUAL%' AND name NOT LIKE 'sqlite_%'",
+    )?;
+    for table in &virtual_tables {
+        conn.execute_batch(&format!("DROP TABLE IF EXISTS \"{table}\";"))
+            .map_err(|e| format!("failed to drop virtual table {table}: {e}"))?;
+    }
 
-    for table in &tables {
+    let real_tables = list_tables_matching(
+        conn,
+        "type='table' AND sql LIKE 'CREATE TABLE%' AND name NOT LIKE 'sqlite_%'",
+    )?;
+    for table in &real_tables {
         conn.execute_batch(&format!("DROP TABLE IF EXISTS \"{table}\";"))
             .map_err(|e| format!("failed to drop table {table}: {e}"))?;
     }
@@ -94,6 +102,19 @@ fn drop_all_tables(conn: &Connection) -> Result<(), String> {
         .map_err(|e| format!("failed to re-enable foreign keys: {e}"))?;
 
     Ok(())
+}
+
+fn list_tables_matching(conn: &Connection, where_clause: &str) -> Result<Vec<String>, String> {
+    let sql = format!("SELECT name FROM sqlite_master WHERE {where_clause}");
+    let mut stmt = conn
+        .prepare(&sql)
+        .map_err(|e| format!("failed to list tables: {e}"))?;
+    let names: Vec<String> = stmt
+        .query_map([], |row| row.get(0))
+        .map_err(|e| format!("failed to query tables: {e}"))?
+        .filter_map(std::result::Result::ok)
+        .collect();
+    Ok(names)
 }
 
 /// Extract a `String` column by name, returning `""` on any failure.

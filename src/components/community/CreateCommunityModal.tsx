@@ -1,4 +1,7 @@
-import { Component, Show, createSignal } from "solid-js";
+import { Component, Show, createEffect, createSignal } from "solid-js";
+
+import Modal from "../common/Modal";
+import LoadingButton from "../common/LoadingButton";
 import { handleCreateCommunity } from "../../handlers/community.handlers";
 
 interface CreateCommunityModalProps {
@@ -11,7 +14,17 @@ const CreateCommunityModal: Component<CreateCommunityModalProps> = (props) => {
   const [submitting, setSubmitting] = createSignal(false);
   const [error, setError] = createSignal("");
 
-  const handleSubmit = async () => {
+  // Reset on every open so a previous error / name doesn't carry over.
+  createEffect(() => {
+    if (props.isOpen) {
+      setName("");
+      setError("");
+      setSubmitting(false);
+    }
+  });
+
+  async function handleSubmit(e?: Event): Promise<void> {
+    e?.preventDefault();
     const trimmed = name().trim();
     if (!trimmed) {
       setError("Community name is required");
@@ -21,59 +34,48 @@ const CreateCommunityModal: Component<CreateCommunityModalProps> = (props) => {
     setSubmitting(true);
     try {
       await handleCreateCommunity(trimmed);
-      setName("");
       props.onClose();
-    } catch (e) {
-      setError(String(e));
+    } catch (err) {
+      setError(String(err));
     } finally {
       setSubmitting(false);
     }
-  };
-
-  const handleKeyDown = (e: KeyboardEvent) => {
-    if (e.key === "Enter" && !submitting()) {
-      handleSubmit();
-    }
-  };
+  }
 
   return (
-    <Show when={props.isOpen}>
-      <div class="modal-overlay" onClick={() => props.onClose()}>
-        <div class="modal-content" onClick={(e) => e.stopPropagation()}>
-          <div class="modal-header">
-            <span class="modal-title">Create Community</span>
-            <button class="modal-close-btn" onClick={() => props.onClose()}>x</button>
-          </div>
-          <div class="modal-body">
-            <input
-              class="form-input"
-              type="text"
-              placeholder="Community name..."
-              value={name()}
-              onInput={(e) => setName(e.currentTarget.value)}
-              onKeyDown={handleKeyDown}
-              autofocus
-            />
-
-            <Show when={error()}>
-              <div class="form-error">{error()}</div>
-            </Show>
-          </div>
-          <div class="modal-footer">
-            <button class="form-btn-cancel" onClick={() => props.onClose()}>
-              Cancel
-            </button>
-            <button
-              class="form-btn-primary"
-              onClick={handleSubmit}
-              disabled={submitting() || !name().trim()}
-            >
-              {submitting() ? "Creating..." : "Create"}
-            </button>
-          </div>
+    <Modal isOpen={props.isOpen} title="Create Community" onClose={props.onClose}>
+      <form class="form-group" onSubmit={(e) => void handleSubmit(e)}>
+        <input
+          class="form-input"
+          type="text"
+          placeholder="Community name..."
+          value={name()}
+          onInput={(e) => setName(e.currentTarget.value)}
+          autofocus
+        />
+        <Show when={error()}>
+          <div class="form-error" role="alert">{error()}</div>
+        </Show>
+        <div class="form-field-row">
+          <button
+            type="button"
+            class="form-btn-secondary"
+            onClick={() => props.onClose()}
+            disabled={submitting()}
+          >
+            Cancel
+          </button>
+          <LoadingButton
+            type="submit"
+            loading={submitting()}
+            disabled={!name().trim()}
+            loadingLabel="Creating"
+          >
+            Create
+          </LoadingButton>
         </div>
-      </div>
-    </Show>
+      </form>
+    </Modal>
   );
 };
 

@@ -29,6 +29,13 @@ pub enum ProtocolError {
     #[error("deserialization error: {0}")]
     Deserialization(String),
 
+    /// A Cap'n Proto union returned a discriminant the local schema
+    /// doesn't know about. Distinct from `Deserialization` so callers
+    /// can implement gossip-relay forward-compat (verify signature,
+    /// decrement TTL, forward bytes intact, do not dispatch).
+    #[error("unknown union variant: {0}")]
+    UnknownVariant(String),
+
     #[error("network error: {0}")]
     Network(String),
 

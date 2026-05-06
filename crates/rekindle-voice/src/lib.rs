@@ -44,22 +44,31 @@ pub struct VoiceConfig {
 
 /// Returns recommended voice settings based on group size (9E: Adaptive Codec).
 ///
-/// Smaller groups get higher bitrate for clarity. Larger groups trade quality
-/// for lower bandwidth since the MCU host must redistribute all streams.
+/// Smaller groups get higher bitrate and lower jitter for clarity.
+/// Larger groups grow the jitter target so MCU mixing can absorb
+/// per-source desynchronisation; the latency cost is acceptable
+/// because large-group calls are typically meeting-style rather than
+/// duplex conversation.
 pub fn voice_config_for_group_size(n: usize) -> VoiceConfig {
     match n {
         0..=3 => VoiceConfig {
-            // High quality for small groups
+            // Small groups (1:1 calls and 2-3 person huddles): keep
+            // the default low-latency jitter target so mouth-to-ear
+            // stays under the architecture §32 line 4147 budget.
             ..VoiceConfig::default()
         },
         4..=8 => VoiceConfig {
-            // Slightly lower bitrate — still 20ms frames
-            jitter_buffer_ms: 200,
+            // 80ms jitter — accepts ~40ms more latency to absorb
+            // multi-source MCU desynchronisation.
+            jitter_buffer_ms: 80,
             ..VoiceConfig::default()
         },
         _ => VoiceConfig {
-            // 9+ participants: lower quality to reduce bandwidth
-            jitter_buffer_ms: 250,
+            // 9+ participants: 120ms target trades latency for
+            // glitch-free mixing at scale. Spec target may not be
+            // met for these sessions; group-call UX is meeting-style
+            // rather than realtime duplex, so the trade is acceptable.
+            jitter_buffer_ms: 120,
             ..VoiceConfig::default()
         },
     }
@@ -70,8 +79,18 @@ impl Default for VoiceConfig {
         Self {
             sample_rate: 48000,
             channels: 1,
-            frame_size: 960,       // 20ms at 48kHz
-            jitter_buffer_ms: 200, // Veilid has 100-500ms jitter
+            frame_size: 960, // 20ms at 48kHz
+            // Architecture §32 Phase 7 W26 line 4147 ("<100ms
+            // mouth-to-ear") leaves room for ~40ms of jitter buffer
+            // after capture + Opus algorithmic + decode + playback
+            // overhead. 40ms matches the industry VoIP defaults
+            // (Mumble 20–50ms, Discord ~40ms, WebRTC ~50ms) and is
+            // achievable over Veilid's `SafetySelection::Unsafe`
+            // per-packet routes used by voice. Adaptive jitter
+            // (start small, grow on observed loss) is the proper
+            // long-term solution; until then 40ms is the
+            // spec-compliant default.
+            jitter_buffer_ms: 40,
             vad_threshold: 0.02,
             vad_hold_ms: 300,
             noise_suppression: true,

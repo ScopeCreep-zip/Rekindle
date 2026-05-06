@@ -1,0 +1,20 @@
+[package]
+name = "rekindle-calls"
+version = "0.1.0"
+edition = "2021"
+description = "Direct calls — X25519 ECDH call_key derivation, ring timer, missed-call state (architecture §10.10 Tier 7)"
+license = "MIT"
+
+[lints]
+workspace = true
+
+[dependencies]
+rekindle-types = { path = "../rekindle-types" }
+serde = { workspace = true }
+thiserror = { workspace = true }
+hex = { workspace = true }
+sha2 = "0.10"
+hkdf = "0.12"
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+zeroize = { version = "1", features = ["derive"] }
+rand = { workspace = true }

@@ -1,9 +1,15 @@
+pub mod call_signaling;
 pub mod community;
+pub mod cross_device_sync;
 pub mod dht_publish_service;
+pub mod dm;
 pub mod game_service;
 pub mod idle_service;
 pub mod message_service;
 pub mod presence_service;
+pub mod push_relay;
+pub mod relay;
+pub mod search;
 pub mod sync_service;
 pub mod veilid;
 pub mod voice;

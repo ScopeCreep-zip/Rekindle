@@ -51,9 +51,22 @@ const CommunityListCompact: Component = () => {
                   onDblClick={() => handleDoubleClick(community)}
                   title={`Double-click to open ${community.name}`}
                 >
-                  <div class="community-icon">
-                    {community.name.charAt(0).toUpperCase()}
-                  </div>
+                  <Show
+                    when={community.iconDataUrl}
+                    fallback={
+                      <div class="community-icon">
+                        {community.name.charAt(0).toUpperCase()}
+                      </div>
+                    }
+                  >
+                    {(url) => (
+                      <img
+                        class="community-icon community-icon-image"
+                        src={url()}
+                        alt={community.name}
+                      />
+                    )}
+                  </Show>
                   <span class="community-name">{community.name}</span>
                   <Show when={unreads() > 0}>
                     <span class="buddy-unread-badge">{unreads()}</span>

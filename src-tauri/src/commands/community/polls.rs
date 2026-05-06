@@ -16,10 +16,10 @@ pub async fn create_poll(
     question: String,
     answers: Vec<String>,
     multi_select: bool,
-    expires_at: Option<u64>,
+    duration_seconds: Option<u64>,
 ) -> Result<String, String> {
     let _ = pool;
-    require_permission(state.inner(), &community_id, Permissions::SEND_MESSAGES)?;
+    require_permission(state.inner(), &community_id, Permissions::SEND_POLLS)?;
     crate::services::community::persist_poll_create(
         state.inner(),
         &community_id,
@@ -28,7 +28,7 @@ pub async fn create_poll(
         &question,
         answers,
         multi_select,
-        expires_at,
+        duration_seconds,
     )
     .await
 }
@@ -71,6 +71,25 @@ pub async fn close_poll(
         &channel_id,
         &poll_id,
         moderator_override,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn get_poll_results(
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+    community_id: String,
+    channel_id: String,
+    poll_id: String,
+) -> Result<Vec<u32>, String> {
+    let _ = pool;
+    require_permission(state.inner(), &community_id, Permissions::VIEW_CHANNEL)?;
+    crate::services::community::channel_polls::get_poll_results(
+        state.inner(),
+        &community_id,
+        &channel_id,
+        &poll_id,
     )
     .await
 }

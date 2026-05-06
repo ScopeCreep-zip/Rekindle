@@ -5,7 +5,6 @@ export type BuddyListTab = "friends" | "communities";
 export interface BuddyListUIState {
   activeTab: BuddyListTab;
   searchQuery: string;
-  menuOpen: string | null;
   showCreateCommunity: boolean;
   showJoinCommunity: boolean;
 }
@@ -13,7 +12,6 @@ export interface BuddyListUIState {
 const [buddyListUI, setBuddyListUI] = createStore<BuddyListUIState>({
   activeTab: "friends",
   searchQuery: "",
-  menuOpen: null,
   showCreateCommunity: false,
   showJoinCommunity: false,
 });

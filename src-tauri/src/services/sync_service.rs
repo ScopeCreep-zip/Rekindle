@@ -1089,12 +1089,20 @@ async fn retry_pending_channel_message(
             reply_to: None,
             lamport_ts: channel_msg.lamport_ts,
             message_id: Some(channel_msg.message_id.clone()),
+            attachment: None,
+            flags: channel_msg.mention_flag_bits,
+            mentioned_pseudonyms: channel_msg.mentioned_pseudonyms.clone(),
+            mentioned_roles: channel_msg.mentioned_roles.clone(),
         };
+    let (author_pseudo, signing_key) =
+        state_helpers::pseudonym_credentials(state, &channel_msg.community_id)?;
     rekindle_protocol::dht::community::channel_record::write_member_message(
         &mgr,
         &channel_key,
         slot_index,
         writer,
+        author_pseudo,
+        &signing_key,
         &channel_record_message,
     )
     .await

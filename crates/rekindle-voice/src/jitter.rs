@@ -158,6 +158,7 @@ mod tests {
             sequence: seq,
             timestamp: u64::from(seq) * 20,
             audio_data: vec![0; 160],
+            signature: Vec::new(),
         }
     }
 

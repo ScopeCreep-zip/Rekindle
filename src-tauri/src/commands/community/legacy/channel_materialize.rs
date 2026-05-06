@@ -221,20 +221,48 @@ pub(crate) fn build_poll_states(
         .collect()
 }
 
+/// Architecture §8 line 1626 — context required to reconstruct the
+/// AAD that the sender bound when encrypting. None of these are
+/// secret; they're derived from the SMPL channel record + the
+/// inbound `ChannelMessage`'s lamport timestamp.
+#[derive(Clone, Copy)]
+pub(crate) struct ChannelDecryptContext<'a> {
+    pub channel_record_key: Option<&'a str>,
+    pub subkey_index: u32,
+    pub lamport_ts: u64,
+}
+
 pub(crate) fn decrypt_channel_record_message(
     state: &SharedState,
     community_id: &str,
     channel_id: &str,
     mek_generation: u64,
     ciphertext: &[u8],
+    ctx: ChannelDecryptContext<'_>,
 ) -> DecryptedMessageBody {
+    let aad = ctx.channel_record_key.map(|key| {
+        rekindle_crypto::group::media_key::ChannelAad {
+            channel_record_key: key.as_bytes(),
+            subkey_index: ctx.subkey_index,
+            lamport_ts: ctx.lamport_ts,
+        }
+    });
+    let try_decrypt = |mek: &rekindle_crypto::group::media_key::MediaEncryptionKey| {
+        if let Some(aad) = aad {
+            if let Ok(bytes) = mek.decrypt_with_aad(ciphertext, aad) {
+                return Some(bytes);
+            }
+        }
+        // Architecture §8 fallback for legacy messages written before AAD.
+        mek.decrypt(ciphertext).ok()
+    };
     {
         let channel_mek_cache = state.channel_mek_cache.lock();
         if let Some(mek) =
             channel_mek_cache.get(&(community_id.to_string(), channel_id.to_string()))
         {
             if mek.generation() == mek_generation {
-                if let Ok(bytes) = mek.decrypt(ciphertext) {
+                if let Some(bytes) = try_decrypt(mek) {
                     return DecryptedMessageBody {
                         body: String::from_utf8_lossy(&bytes).into_owned(),
                         decryption_failed: false,
@@ -250,12 +278,12 @@ pub(crate) fn decrypt_channel_record_message(
 
     let mek_cache = state.mek_cache.lock();
     match mek_cache.get(community_id) {
-        Some(mek) if mek.generation() == mek_generation => match mek.decrypt(ciphertext) {
-            Ok(bytes) => DecryptedMessageBody {
+        Some(mek) if mek.generation() == mek_generation => match try_decrypt(mek) {
+            Some(bytes) => DecryptedMessageBody {
                 body: String::from_utf8_lossy(&bytes).into_owned(),
                 decryption_failed: false,
             },
-            Err(_) => DecryptedMessageBody {
+            None => DecryptedMessageBody {
                 body: String::new(),
                 decryption_failed: true,
             },

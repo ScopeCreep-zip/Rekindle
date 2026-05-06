@@ -142,6 +142,10 @@ impl VoiceReceiveLoop {
             return;
         }
 
+        if !self.sender_allowed_for_stage(&packet.sender_key) {
+            return;
+        }
+
         // Decrypt voice frame with community MEK
         if let Some(ref cid) = self.community_id {
             let mek_cache = self.state.mek_cache.lock();
@@ -211,6 +215,29 @@ impl VoiceReceiveLoop {
                 let _ = self.app.emit("voice-event", &event);
             }
         }
+    }
+
+    fn sender_allowed_for_stage(&self, sender_key: &[u8]) -> bool {
+        let Some(ref community_id) = self.community_id else {
+            return true;
+        };
+
+        let communities = self.state.communities.read();
+        let Some(community) = communities.get(community_id) else {
+            return true;
+        };
+        let Some(active_voice) = self.state.voice_engine.lock().as_ref().map(|handle| handle.channel_id.clone()) else {
+            return true;
+        };
+        let Some(channel) = community.channels.iter().find(|channel| channel.id == active_voice) else {
+            return true;
+        };
+        if !matches!(channel.channel_type, crate::state::ChannelType::Stage) {
+            return true;
+        }
+
+        let sender_hex = hex::encode(sender_key);
+        channel.stage_speakers.contains(&sender_hex)
     }
 
     fn tick(&mut self) {

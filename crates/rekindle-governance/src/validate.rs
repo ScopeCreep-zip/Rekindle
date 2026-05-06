@@ -19,6 +19,28 @@ const MAX_STICKERS: usize = 30;
 const MAX_SOUNDBOARD_SOUNDS: usize = 48;
 const MAX_AUTOMOD_KEYWORDS: usize = 1000;
 const MAX_AUTOMOD_REGEX_PATTERNS: usize = 10;
+/// Architecture §20.4 + §26 W26 — adversarial admins can ship pathological
+/// regex patterns whose compiled NFA fits in the default 10 MiB ceiling
+/// but still takes seconds to assemble. Cap individual pattern source
+/// length so a malicious `AutoModRule` can't DoS every other peer's
+/// `compile_rules` pass on first message receive.
+const MAX_AUTOMOD_REGEX_PATTERN_LEN: usize = 512;
+const MAX_AUTOMOD_KEYWORD_LEN: usize = 256;
+/// Tighten the regex compiler's NFA budget below the 10 MiB default.
+/// Architecture §20.4 — moderation rules are advisory and short by
+/// design; 256 KiB compiled NFA is plenty for the stated keyword/regex
+/// patterns and rejects anything pathological well before it becomes a
+/// receive-side DoS.
+const AUTOMOD_REGEX_SIZE_LIMIT: usize = 256 * 1024;
+
+// Architecture §19.1 (lines 2520-2531) — onboarding shape limits.
+const MAX_ONBOARDING_QUESTIONS: usize = 5;
+const MAX_ONBOARDING_OPTIONS_PER_QUESTION: usize = 10;
+const MAX_ONBOARDING_GUIDE_STEPS: usize = 10;
+const MAX_ONBOARDING_WELCOME_CHARS: usize = 500;
+const MAX_ONBOARDING_QUESTION_TITLE_CHARS: usize = 100;
+// Architecture §19.3 — welcome screen featured channels max 5.
+const MAX_WELCOME_SCREEN_CHANNELS: usize = 5;
 
 /// Check if `writer` had permission to write `entry` given the current `state`.
 ///
@@ -71,6 +93,13 @@ pub fn validate_write(
 
         GovernanceEntry::CommunityMeta { .. } => has(perms, MANAGE_COMMUNITY),
 
+        // Notification default (architecture §17.1 tier 1) is admin-only;
+        // any member's local override still trumps it via the resolver.
+        GovernanceEntry::CommunityNotificationDefault { level, .. } => {
+            matches!(level.as_str(), "all" | "mentions" | "nothing")
+                && has(perms, MANAGE_COMMUNITY)
+        }
+
         // MEK generation bumps use Max-Register (highest generation wins).
         // Rotator authority is verified by checking trigger_departed + cascade_skipped
         // against the deterministic rotator selection algorithm. However, since the
@@ -89,31 +118,77 @@ pub fn validate_write(
             has(perms, MANAGE_CHANNELS) || has(perms, MANAGE_ROLES)
         }
 
-        GovernanceEntry::ThreadCreated { .. } => {
-            has(perms, SEND_MESSAGES) // any member who can send can create threads
-        }
+        GovernanceEntry::ThreadCreated {
+            parent_channel_id,
+            thread_type,
+            invited,
+            forum_tag,
+            ..
+        } => validate_thread_create(
+            writer,
+            *parent_channel_id,
+            thread_type,
+            invited,
+            forum_tag.as_deref(),
+            state,
+        ),
 
-        GovernanceEntry::ThreadArchived { .. } => has(perms, MANAGE_CHANNELS),
+        GovernanceEntry::ThreadArchived { .. } => has(perms, MANAGE_THREADS),
 
         GovernanceEntry::EventCreated { .. } => has(perms, CREATE_EVENTS),
 
         GovernanceEntry::EventArchived { .. } => has(perms, MANAGE_EVENTS),
 
-        GovernanceEntry::ExpressionAdded { kind, animated, .. } => {
+        GovernanceEntry::ExpressionAdded {
+            kind,
+            animated,
+            sound_meta,
+            ..
+        } => {
             (has(perms, MANAGE_EXPRESSIONS) || has(perms, CREATE_EXPRESSIONS))
                 && expression_within_limits(kind, *animated, state)
+                && soundboard_meta_valid(kind, sound_meta.as_ref())
         }
 
         GovernanceEntry::ExpressionRemoved { .. } => has(perms, MANAGE_EXPRESSIONS),
 
-        GovernanceEntry::OnboardingConfig { .. } => has(perms, MANAGE_COMMUNITY),
+        GovernanceEntry::OnboardingConfig {
+            mode,
+            questions,
+            welcome_message,
+            guide_steps,
+            ..
+        } => {
+            has(perms, MANAGE_COMMUNITY)
+                && onboarding_within_limits(mode, questions, welcome_message.as_deref(), guide_steps)
+        }
 
-        GovernanceEntry::WelcomeScreen { .. } => has(perms, MANAGE_COMMUNITY),
+        GovernanceEntry::WelcomeScreen { channels, .. } => {
+            has(perms, MANAGE_COMMUNITY) && channels.len() <= MAX_WELCOME_SCREEN_CHANNELS
+        }
 
         GovernanceEntry::AdminDelete { .. } => has(perms, MANAGE_MESSAGES),
 
+        // Lost Cargo: pinning a file requires MANAGE_COMMUNITY (admin-only)
+        // per architecture §28.9 line 3283.
+        GovernanceEntry::AttachmentPinned { .. } => has(perms, MANAGE_COMMUNITY),
+
+        // Community-wide policy (notification default + raid thresholds):
+        // architecture §17.1 + §20.6 — admin-only.
+        GovernanceEntry::CommunityPolicy { .. } => has(perms, MANAGE_COMMUNITY),
+
         // Segment expansion requires admin-level access
         GovernanceEntry::SegmentAdded { .. } => has(perms, MANAGE_COMMUNITY),
+
+        // Plate Gate lazy channel records (architecture §15.4): any member
+        // with SEND_MESSAGES can announce a new channel-segment record —
+        // they're the one creating the SMPL record and writing the first
+        // message into it. Reader-validates: peers reject ChannelSegmentLinked
+        // entries from members without channel write access, and reject
+        // entries that name a channel that doesn't exist in governance state.
+        GovernanceEntry::ChannelSegmentLinked { channel_id, .. } => {
+            has(perms, SEND_MESSAGES) && state.channels.contains_key(channel_id)
+        }
 
         GovernanceEntry::AutoModRule {
             rule_id,
@@ -187,6 +262,66 @@ fn expression_within_limits(kind: &str, animated: bool, state: &GovernanceState)
     }
 }
 
+/// Architecture §19.1 line 2520-2531 — onboarding shape caps. We
+/// enforce these at the validate layer (in addition to the Tauri
+/// command pre-flight) so a tampered governance entry that exceeds
+/// limits is dropped on the floor by every honest peer.
+fn onboarding_within_limits(
+    mode: &str,
+    questions: &[rekindle_types::governance::OnboardingQuestion],
+    welcome_message: Option<&str>,
+    guide_steps: &[rekindle_types::governance::GuideStep],
+) -> bool {
+    if !matches!(mode, "default" | "guided" | "gated") {
+        return false;
+    }
+    if questions.len() > MAX_ONBOARDING_QUESTIONS {
+        return false;
+    }
+    if guide_steps.len() > MAX_ONBOARDING_GUIDE_STEPS {
+        return false;
+    }
+    if let Some(text) = welcome_message {
+        if text.chars().count() > MAX_ONBOARDING_WELCOME_CHARS {
+            return false;
+        }
+    }
+    for question in questions {
+        if question.title.chars().count() > MAX_ONBOARDING_QUESTION_TITLE_CHARS {
+            return false;
+        }
+        if question.options.len() > MAX_ONBOARDING_OPTIONS_PER_QUESTION {
+            return false;
+        }
+    }
+    true
+}
+
+/// Architecture §18.3 — soundboard entries must carry valid duration /
+/// volume / emoji metadata. Emoji and sticker entries must NOT carry it
+/// (any peer that smuggles `sound_meta` onto a non-soundboard entry has
+/// produced an invalid wire object — drop it on the floor).
+fn soundboard_meta_valid(
+    kind: &str,
+    sound_meta: Option<&rekindle_types::expression::SoundboardMeta>,
+) -> bool {
+    use rekindle_types::expression::SoundboardMeta;
+    match (kind, sound_meta) {
+        ("soundboard", Some(meta)) => {
+            SoundboardMeta::validate_duration(meta.duration_seconds).is_ok()
+                && SoundboardMeta::validate_volume(meta.volume).is_ok()
+                && SoundboardMeta::validate_emoji(meta.emoji.as_deref()).is_ok()
+        }
+        // Legacy soundboard entries (pre-meta) are still acceptable —
+        // peers display them with default volume 1.0 and skip duration
+        // enforcement until the entry is rewritten by the uploader.
+        ("soundboard", None) => true,
+        // Emoji / sticker entries must not carry sound_meta.
+        (_, None) => true,
+        (_, Some(_)) => false,
+    }
+}
+
 fn validate_automod_rule(
     rule_id: &[u8; 16],
     enabled: bool,
@@ -210,11 +345,29 @@ fn validate_automod_rule(
     let Ok(trigger) = serde_json::from_str::<TriggerConfig>(trigger_json) else {
         return false;
     };
+    // Length caps before compile so a 1 MB regex source can't even
+    // reach the regex parser. Mirrors the spec's "small filter rules"
+    // intent (§20.4) and prevents per-rule receive-side DoS.
+    if trigger
+        .keywords
+        .iter()
+        .any(|k| k.len() > MAX_AUTOMOD_KEYWORD_LEN)
+    {
+        return false;
+    }
     if trigger
         .regex_patterns
         .iter()
-        .any(|pattern| regex::Regex::new(pattern).is_err())
+        .any(|pattern| pattern.len() > MAX_AUTOMOD_REGEX_PATTERN_LEN)
     {
+        return false;
+    }
+    if trigger.regex_patterns.iter().any(|pattern| {
+        regex::RegexBuilder::new(pattern)
+            .size_limit(AUTOMOD_REGEX_SIZE_LIMIT)
+            .build()
+            .is_err()
+    }) {
         return false;
     }
 
@@ -233,6 +386,46 @@ fn validate_automod_rule(
     let next_keywords = current_totals.0 + if enabled { trigger.keywords.len() } else { 0 };
     let next_regexes = current_totals.1 + if enabled { trigger.regex_patterns.len() } else { 0 };
     next_keywords <= MAX_AUTOMOD_KEYWORDS && next_regexes <= MAX_AUTOMOD_REGEX_PATTERNS
+}
+
+fn validate_thread_create(
+    writer: &PseudonymKey,
+    parent_channel_id: rekindle_types::id::ChannelId,
+    thread_type: &str,
+    invited: &[PseudonymKey],
+    forum_tag: Option<&str>,
+    state: &GovernanceState,
+) -> bool {
+    let channel_perms = compute_permissions(
+        writer,
+        Some(&parent_channel_id),
+        state,
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_secs())
+            .unwrap_or(0),
+    );
+
+    match thread_type {
+        "public" => has(channel_perms, SEND_MESSAGES),
+        "private" => {
+            has(channel_perms, CREATE_PRIVATE_THREADS)
+                && invited.iter().all(|invitee| invitee != writer)
+        }
+        "announcement" => has(channel_perms, MANAGE_THREADS),
+        "forum_post" => {
+            state.channels.get(&parent_channel_id).is_some_and(|channel| {
+                channel.channel_type == "forum"
+                    && forum_tag.is_none_or(|tag| {
+                        channel
+                            .forum_tags
+                            .as_ref()
+                            .is_some_and(|tags| tags.iter().any(|candidate| candidate == tag))
+                    })
+            }) && has(channel_perms, SEND_MESSAGES)
+        }
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -261,6 +454,7 @@ mod tests {
                 hoist: false,
                 mentionable: false,
                 self_assignable: false,
+                exclusion_group: None,
                 lamport: 1,
             },
         );
@@ -274,6 +468,7 @@ mod tests {
                 hoist: false,
                 mentionable: false,
                 self_assignable: false,
+                exclusion_group: None,
                 lamport: 2,
             },
         );
@@ -301,6 +496,7 @@ mod tests {
             record_key: "k".into(),
             category_id: None,
             position: 0,
+            parent_voice_channel_id: None,
             lamport: 10,
         };
         assert!(validate_write(&pseudo(1), &entry, &state));
@@ -316,6 +512,7 @@ mod tests {
             record_key: "k".into(),
             category_id: None,
             position: 0,
+            parent_voice_channel_id: None,
             lamport: 10,
         };
         // pseudo(99) has only @everyone perms — no MANAGE_CHANNELS
@@ -332,6 +529,7 @@ mod tests {
             record_key: "k".into(),
             category_id: None,
             position: 0,
+            parent_voice_channel_id: None,
             lamport: 10,
         };
         // pseudo(5) is admin
@@ -373,7 +571,11 @@ mod tests {
             thread_id: rekindle_types::id::ThreadId([0; 16]),
             parent_channel_id: rekindle_types::id::ChannelId([0; 16]),
             name: "discussion".into(),
+            thread_type: "public".into(),
             record_key: None,
+            invited: Vec::new(),
+            forum_tag: None,
+            auto_archive_seconds: 86_400,
             lamport: 10,
         };
         // @everyone has SEND_MESSAGES
@@ -394,6 +596,7 @@ mod tests {
                 hoist: false,
                 mentionable: false,
                 self_assignable: true,
+                exclusion_group: None,
                 lamport: 3,
             },
         );
@@ -416,9 +619,13 @@ mod tests {
                     name: format!("emoji-{index}"),
                     kind: "emoji".into(),
                     content_hash: format!("hash-{index}"),
-                    inline_data: Some(vec![index]),
+                    attachment: None,
                     animated: false,
                     tags: vec![],
+                    sound_meta: None,
+                    creator_pseudonym: None,
+                    created_at: None,
+                    available_to_peers: true,
                     lamport: u64::from(index),
                 },
             );
@@ -429,10 +636,265 @@ mod tests {
             name: "overflow".into(),
             kind: "emoji".into(),
             content_hash: "hash-overflow".into(),
-            inline_data: Some(vec![1, 2, 3]),
+            attachment: None,
             animated: false,
             tags: vec![],
+            sound_meta: None,
+            creator_pseudonym: None,
+            created_at: None,
+            available_to_peers: Some(true),
             lamport: 50,
+        };
+        assert!(!validate_write(&pseudo(5), &entry, &state));
+    }
+
+    #[test]
+    fn expression_limit_rejects_extra_animated_emoji() {
+        // Architecture §18.1 — separate 50-cap for animated; the
+        // static count + animated count are independent, so a server
+        // at the static limit can still accept animated uploads until
+        // the animated bucket also fills.
+        let mut state = state_with_creator_and_roles();
+        for index in 0..50_u8 {
+            state.expressions.insert(
+                [index; 16],
+                crate::state::ExpressionState {
+                    name: format!("anim-{index}"),
+                    kind: "emoji".into(),
+                    content_hash: format!("anim-hash-{index}"),
+                    attachment: None,
+                    animated: true,
+                    tags: vec![],
+                    sound_meta: None,
+                    creator_pseudonym: None,
+                    created_at: None,
+                    available_to_peers: true,
+                    lamport: u64::from(index),
+                },
+            );
+        }
+
+        let entry = GovernanceEntry::ExpressionAdded {
+            expression_id: [200_u8; 16],
+            name: "anim-overflow".into(),
+            kind: "emoji".into(),
+            content_hash: "anim-hash-overflow".into(),
+            attachment: None,
+            animated: true,
+            tags: vec![],
+            sound_meta: None,
+            creator_pseudonym: None,
+            created_at: None,
+            available_to_peers: Some(true),
+            lamport: 100,
+        };
+        assert!(
+            !validate_write(&pseudo(5), &entry, &state),
+            "51st animated emoji must be rejected"
+        );
+
+        // Sanity: a static-emoji upload should still succeed at the
+        // animated cap because the buckets are independent.
+        let static_entry = GovernanceEntry::ExpressionAdded {
+            expression_id: [201_u8; 16],
+            name: "still-fine".into(),
+            kind: "emoji".into(),
+            content_hash: "still-fine-hash".into(),
+            attachment: None,
+            animated: false,
+            tags: vec![],
+            sound_meta: None,
+            creator_pseudonym: None,
+            created_at: None,
+            available_to_peers: Some(true),
+            lamport: 101,
+        };
+        assert!(
+            validate_write(&pseudo(5), &static_entry, &state),
+            "static slot still has room when animated bucket is full"
+        );
+    }
+
+    #[test]
+    fn soundboard_entry_with_valid_meta_accepted() {
+        use rekindle_types::expression::SoundboardMeta;
+        let state = state_with_creator_and_roles();
+        let entry = GovernanceEntry::ExpressionAdded {
+            expression_id: [10_u8; 16],
+            name: "horn".into(),
+            kind: "soundboard".into(),
+            content_hash: "h".into(),
+            attachment: None,
+            animated: false,
+            tags: vec![],
+            sound_meta: Some(SoundboardMeta {
+                duration_seconds: 2.5,
+                volume: 0.8,
+                emoji: Some("📯".into()),
+            }),
+            creator_pseudonym: None,
+            created_at: None,
+            available_to_peers: Some(true),
+            lamport: 5,
+        };
+        assert!(validate_write(&pseudo(5), &entry, &state));
+    }
+
+    #[test]
+    fn soundboard_entry_rejects_overlong_duration() {
+        use rekindle_types::expression::SoundboardMeta;
+        let state = state_with_creator_and_roles();
+        let entry = GovernanceEntry::ExpressionAdded {
+            expression_id: [11_u8; 16],
+            name: "ten_sec".into(),
+            kind: "soundboard".into(),
+            content_hash: "h".into(),
+            attachment: None,
+            animated: false,
+            tags: vec![],
+            sound_meta: Some(SoundboardMeta {
+                duration_seconds: 10.0,
+                volume: 1.0,
+                emoji: None,
+            }),
+            creator_pseudonym: None,
+            created_at: None,
+            available_to_peers: Some(true),
+            lamport: 5,
+        };
+        assert!(!validate_write(&pseudo(5), &entry, &state));
+    }
+
+    #[test]
+    fn soundboard_entry_rejects_volume_outside_range() {
+        use rekindle_types::expression::SoundboardMeta;
+        let state = state_with_creator_and_roles();
+        let entry = GovernanceEntry::ExpressionAdded {
+            expression_id: [12_u8; 16],
+            name: "loud".into(),
+            kind: "soundboard".into(),
+            content_hash: "h".into(),
+            attachment: None,
+            animated: false,
+            tags: vec![],
+            sound_meta: Some(SoundboardMeta {
+                duration_seconds: 1.0,
+                volume: 1.5,
+                emoji: None,
+            }),
+            creator_pseudonym: None,
+            created_at: None,
+            available_to_peers: Some(true),
+            lamport: 5,
+        };
+        assert!(!validate_write(&pseudo(5), &entry, &state));
+    }
+
+    #[test]
+    fn emoji_entry_rejects_smuggled_sound_meta() {
+        use rekindle_types::expression::SoundboardMeta;
+        let state = state_with_creator_and_roles();
+        let entry = GovernanceEntry::ExpressionAdded {
+            expression_id: [13_u8; 16],
+            name: "weird".into(),
+            kind: "emoji".into(),
+            content_hash: "h".into(),
+            attachment: None,
+            animated: false,
+            tags: vec![],
+            sound_meta: Some(SoundboardMeta {
+                duration_seconds: 1.0,
+                volume: 1.0,
+                emoji: None,
+            }),
+            creator_pseudonym: None,
+            created_at: None,
+            available_to_peers: Some(true),
+            lamport: 5,
+        };
+        assert!(!validate_write(&pseudo(5), &entry, &state));
+    }
+
+    #[test]
+    fn onboarding_rejects_too_many_questions() {
+        use rekindle_types::governance::{OnboardingOption, OnboardingQuestion};
+        let state = state_with_creator_and_roles();
+        let mut questions = Vec::new();
+        for i in 0..6_u8 {
+            questions.push(OnboardingQuestion {
+                question_id: format!("q{i}"),
+                title: "x".into(),
+                description: None,
+                required: false,
+                single_select: true,
+                options: vec![OnboardingOption {
+                    option_id: "o".into(),
+                    title: "o".into(),
+                    description: None,
+                    emoji: None,
+                    roles_to_assign: vec![],
+                    channels_to_show: vec![],
+                }],
+            });
+        }
+        let entry = GovernanceEntry::OnboardingConfig {
+            enabled: true,
+            mode: "guided".into(),
+            default_channels: vec![],
+            questions,
+            welcome_message: None,
+            guide_steps: vec![],
+            lamport: 10,
+        };
+        assert!(!validate_write(&pseudo(5), &entry, &state));
+    }
+
+    #[test]
+    fn onboarding_rejects_overlong_welcome_message() {
+        let state = state_with_creator_and_roles();
+        let entry = GovernanceEntry::OnboardingConfig {
+            enabled: true,
+            mode: "default".into(),
+            default_channels: vec![],
+            questions: vec![],
+            welcome_message: Some("a".repeat(501)),
+            guide_steps: vec![],
+            lamport: 10,
+        };
+        assert!(!validate_write(&pseudo(5), &entry, &state));
+    }
+
+    #[test]
+    fn onboarding_rejects_unknown_mode() {
+        let state = state_with_creator_and_roles();
+        let entry = GovernanceEntry::OnboardingConfig {
+            enabled: true,
+            mode: "bogus".into(),
+            default_channels: vec![],
+            questions: vec![],
+            welcome_message: None,
+            guide_steps: vec![],
+            lamport: 10,
+        };
+        assert!(!validate_write(&pseudo(5), &entry, &state));
+    }
+
+    #[test]
+    fn welcome_screen_rejects_too_many_channels() {
+        use rekindle_types::governance::WelcomeChannel;
+        let state = state_with_creator_and_roles();
+        let mut channels = Vec::new();
+        for i in 0..6_u8 {
+            channels.push(WelcomeChannel {
+                channel_id: rekindle_types::id::ChannelId([i; 16]),
+                description: "d".into(),
+                emoji: None,
+            });
+        }
+        let entry = GovernanceEntry::WelcomeScreen {
+            description: "d".into(),
+            channels,
+            lamport: 11,
         };
         assert!(!validate_write(&pseudo(5), &entry, &state));
     }

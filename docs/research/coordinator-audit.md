@@ -1,5 +1,13 @@
 # Coordinator Architecture Audit
 
+> **Historical document.** This audit describes the v1.0 rotating-coordinator
+> architecture, which has since been **removed**. Communities now use the
+> Communities v2.0 flat-SMPL-governance model (no coordinator, no privileged
+> nodes). Kept here as the rationale for the v2.0 redesign — see
+> `coordinator-redesign-research.md` for the next-step research and
+> `.claude/docs/rekindle-communities-architecture.md` for the current
+> architecture.
+
 ## Date: 2026-03-03
 
 ## Critical Findings (System-Breaking)
