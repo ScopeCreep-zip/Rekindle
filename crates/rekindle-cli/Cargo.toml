@@ -1,0 +1,88 @@
+[package]
+name = "rekindle-cli"
+version = "0.1.0"
+edition = "2021"
+description = "CLI and TUI for the Rekindle decentralized communication platform"
+license = "MIT"
+
+[lints]
+workspace = true
+
+[features]
+default = ["tui", "daemon"]
+tui = [
+    "dep:ratatui",
+    "dep:crossterm",
+    "dep:ratatui-textarea",
+    "dep:color-eyre",
+    "dep:tokio-util",
+    "dep:futures-util",
+    "dep:opaline",
+    "dep:arboard",
+]
+daemon = [
+    "dep:rekindle-transport",
+    "dep:sd-notify",
+    "dep:snow",
+    "dep:rustix",
+    "dep:postcard",
+    "dep:subtle",
+]
+
+[[bin]]
+name = "rekindle"
+path = "src/main.rs"
+
+[dependencies]
+# CLI core
+clap = { version = "4", features = ["derive", "env", "std", "help", "usage", "error-context"] }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tracing-appender = "0.2"
+toml = "0.8"
+dirs = "6"
+zeroize = { version = "1", features = ["derive"] }
+owo-colors = "4"
+comfy-table = "7"
+dialoguer = "0.11"
+chrono = { version = "0.4", features = ["serde", "clock"], default-features = false }
+uuid = { version = "1", features = ["v4", "fast-rng"] }
+blake3 = "1"
+nucleo = "0.5"
+unicode-width = "0.2"
+hex = "0.4"
+keyring = { version = "3", default-features = false, features = ["apple-native", "windows-native", "linux-native"] }
+clap_complete = "4"
+parking_lot = { workspace = true }
+
+# Workspace crates
+rekindle-node = { path = "../rekindle-node" }
+rekindle-types = { path = "../rekindle-types" }
+
+# TUI (feature-gated)
+ratatui = { version = "0.30", optional = true, default-features = false, features = ["crossterm"] }
+crossterm = { version = "0.29", optional = true, features = ["event-stream"] }
+ratatui-textarea = { version = "0.9", optional = true, default-features = false, features = ["crossterm", "search"] }
+color-eyre = { version = "0.6", optional = true }
+tokio-util = { version = "0.7", optional = true }
+futures-util = { version = "0.3", optional = true, default-features = false, features = ["std"] }
+opaline = { version = "0.2", optional = true, features = ["ratatui", "builtin-themes", "gradients"] }
+arboard = { version = "3", optional = true, default-features = false, features = ["wayland-data-control"] }
+
+# Daemon (feature-gated — enables `rekindle node start`)
+rekindle-transport = { path = "../rekindle-transport", optional = true }
+sd-notify = { version = "0.4", optional = true }
+snow = { git = "https://github.com/mcginty/snow", rev = "295dc7b", optional = true }
+rustix = { version = "1", features = ["process"], optional = true }
+postcard = { version = "1", features = ["use-std"], optional = true }
+subtle = { version = "2", optional = true }
+
+[dev-dependencies]
+insta = "1"
+assert_cmd = "2"
+predicates = "3"
+tokio-test = "0.4"

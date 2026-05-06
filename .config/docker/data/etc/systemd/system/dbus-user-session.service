@@ -1,0 +1,16 @@
+[Unit]
+Description=D-Bus user session bus for rekindle user
+Before=gnome-keyring.service
+
+[Service]
+Type=simple
+User=rekindle
+Group=rekindle
+Environment=HOME=/home/rekindle
+ExecStartPre=+/bin/mkdir -p /run/user/1000
+ExecStartPre=+/bin/chown rekindle:rekindle /run/user/1000
+ExecStartPre=+/bin/chmod 700 /run/user/1000
+ExecStart=/usr/bin/dbus-daemon --session --address=unix:path=/run/user/1000/bus --nofork --nopidfile --syslog-only
+
+[Install]
+WantedBy=multi-user.target
