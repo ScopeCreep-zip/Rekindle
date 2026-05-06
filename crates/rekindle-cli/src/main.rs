@@ -1,12 +1,10 @@
+#![recursion_limit = "512"]
 //! Entrypoint for the `rekindle` CLI binary.
 //!
-//! Responsibilities:
-//! - Parse CLI arguments via clap
-//! - Detect output mode (Tui/Text/Json/Jsonl) — single call, single decision point
-//! - Initialize tracing to file via tracing-appender (never stdout)
-//! - Dispatch to cli_run() for all non-TUI commands
-//! - Format errors with what + why + remediation pattern
-//! - Exit with correct exit code from the error contract
+//! The CLI is an IPC client to the rekindle-node daemon. Every command
+//! sends an `IpcRequest` over the Noise IK encrypted bus and renders
+//! the `IpcResponse`. The CLI never touches `TransportNode`, `Session`,
+//! or the OS keyring directly.
 
 #![forbid(unsafe_code)]
 #![deny(clippy::print_stdout)]
@@ -18,19 +16,20 @@ mod helpers;
 mod output;
 mod transport;
 
-// Command modules
 mod channel;
 mod community;
 mod dm;
-mod doctor;
 mod friends;
+mod governance;
 mod identity;
 mod keys;
 mod network;
 mod presence;
 mod voice;
 
-// TUI (feature-gated)
+#[cfg(feature = "daemon")]
+mod node_daemon;
+
 #[cfg(feature = "tui")]
 mod tui;
 #[cfg(feature = "tui")]
@@ -41,21 +40,21 @@ use owo_colors::OwoColorize;
 
 use cli::{Cli, Command};
 use output::OutputMode;
+use transport::DaemonClient;
 
 #[allow(clippy::print_stderr)]
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
-    // Install color-eyre BEFORE ratatui init.
-    // ratatui wraps the current panic hook, so color-eyre must be installed first.
     #[cfg(feature = "tui")]
     if let Err(e) = color_eyre::install() {
         eprintln!("warning: color-eyre install failed: {e}");
     }
 
-    // Tracing to file — never stdout (would corrupt TUI buffer)
     let _guard = helpers::init_tracing();
-
     let cli = Cli::parse();
+
+    let is_structured = matches!(cli.format.as_deref(), Some("json" | "jsonl"));
+    output::format::set_quiet(cli.quiet || is_structured);
 
     let is_tui_command = matches!(
         &cli.command,
@@ -67,7 +66,7 @@ async fn main() {
             )
     );
 
-    let mode = OutputMode::detect(cli.format.as_deref(), is_tui_command, cli.no_color);
+    let mode = OutputMode::detect(cli.format.as_deref(), is_tui_command, cli.no_color, cli.script);
 
     let result = match mode {
         #[cfg(feature = "tui")]
@@ -90,88 +89,106 @@ async fn main() {
 }
 
 async fn cli_run(cli: Cli, mode: OutputMode) -> anyhow::Result<()> {
-    // Commands that don't need config or transport
     if let Some(Command::Completions { shell }) = &cli.command {
         cli::print_completions(*shell);
         return Ok(());
     }
 
-    // Load and validate config
     let cfg = config::load(cli.config.as_deref())
         .map_err(|e| anyhow::anyhow!(error::CliError::Config(e.to_string())))?;
     config::validate(&cfg)
         .map_err(|e| anyhow::anyhow!(error::CliError::Validation(e.to_string())))?;
 
-    // Commands that need config but not transport
     match &cli.command {
         Some(Command::Config(cmd)) => return config::dispatch(cmd, &cfg, mode),
-        None => {
-            // Bare invocation without TUI feature — print help
-            Cli::parse_from(["rekindle", "--help"]);
-            unreachable!()
-        }
+        None => { Cli::parse_from(["rekindle", "--help"]); unreachable!() }
         _ => {}
     }
 
-    // Load session (if identity exists)
-    let session_path = helpers::session_path()?;
-    let session = rekindle_transport::Session::load(&session_path)?;
-
-    // Commands that need session but check initialization
-    if let Some(Command::Init(args)) = &cli.command {
-        return identity::cmd_init(args, &cfg, session.as_ref(), mode).await;
+    // `node start` runs the daemon in-process — no IPC client needed.
+    #[cfg(feature = "daemon")]
+    if let Some(Command::Node(cli::NodeCmd::Start { attach_timeout, .. })) = &cli.command {
+        let timeout = *attach_timeout;
+        return node_daemon::run_daemon(timeout).await;
+    }
+    #[cfg(not(feature = "daemon"))]
+    if let Some(Command::Node(cli::NodeCmd::Start { .. })) = &cli.command {
+        anyhow::bail!(
+            "daemon support not compiled\n\
+             rebuild with: cargo build --features daemon\n\
+             or install the full package from your distribution"
+        );
     }
 
-    // Everything below requires an initialized session
-    let session = session.ok_or_else(|| {
-        error::CliError::NotInitialized("no identity found — run: rekindle init".into())
-    })?;
+    // Status is special: it must return local info even when the daemon is down.
+    if let Some(Command::Status(ref args)) = cli.command {
+        match DaemonClient::connect().await {
+            Ok(client) => {
+                let result = network::cmd_status(&client, args, mode).await;
+                client.shutdown().await;
+                return result;
+            }
+            Err(_) => {
+                return network::cmd_status_offline(mode);
+            }
+        }
+    }
 
-    // Acquire transport
-    let handle = transport::acquire(&cfg, &cli).await?;
+    let client = DaemonClient::connect().await?;
 
-    // Dispatch command
     let result = dispatch_command(
         cli.command.expect("command required"),
-        &handle,
+        &client,
         &cfg,
-        &session,
         mode,
-    )
-    .await;
+    ).await;
 
-    // Shutdown transport if we own it
-    handle.shutdown_if_owned().await?;
-
+    client.shutdown().await;
     result
 }
 
+#[allow(clippy::too_many_lines)]
 async fn dispatch_command(
     command: Command,
-    handle: &transport::TransportHandle,
+    client: &DaemonClient,
     cfg: &config::schema::Config,
-    session: &rekindle_transport::Session,
     mode: OutputMode,
 ) -> anyhow::Result<()> {
     match command {
-        // Init is handled above (before transport acquisition)
-        Command::Init(_) | Command::Completions { .. } | Command::Config(_) => unreachable!(),
-
-        Command::Status(args) => network::cmd_status(&args, handle, session, mode).await,
-        Command::Identity(cmd) => identity::dispatch(&cmd, handle, session, cfg, mode).await,
-        Command::Node(cmd) => network::dispatch_node(&cmd, handle, mode),
-        Command::Network(cmd) => network::dispatch_network(&cmd, handle, session, mode).await,
-        Command::Friend(cmd) => friends::dispatch(&cmd, handle, session, mode).await,
-        Command::Dm(cmd) => dm::dispatch(&cmd, handle, session, mode).await,
-        Command::Community(cmd) => community::dispatch(&cmd, handle, session, cfg, mode).await,
-        Command::Role(cmd) => community::dispatch_role(&cmd, handle, session, mode).await,
-        Command::Moderate(cmd) => community::dispatch_moderate(&cmd, handle, session, mode).await,
-        Command::Channel(cmd) => channel::dispatch(&cmd, handle, session, mode).await,
-        Command::Voice(cmd) => voice::dispatch(&cmd, handle, session, mode).await,
-        Command::Key(cmd) => keys::dispatch(&cmd, handle, session, mode).await,
-        Command::Presence(cmd) => presence::dispatch(&cmd, handle, session, mode).await,
-        Command::Doctor(args) => doctor::cmd_doctor(&args, handle, session, mode).await,
-        Command::Export(cmd) => identity::dispatch_export(&cmd, session, mode).await,
-        Command::Import(cmd) => identity::dispatch_import(&cmd, cfg, mode),
+        Command::Completions { .. } | Command::Config(_) | Command::Status(_) => unreachable!("handled before dispatch"),
+        Command::Init(args) => identity::cmd_init(&args, client, mode).await,
+        Command::Identity(cmd) => identity::dispatch(&cmd, client, mode).await,
+        Command::Node(cmd) => match cmd {
+            cli::NodeCmd::Start { .. } => unreachable!("handled before daemon connect"),
+            cli::NodeCmd::Stop => {
+                let value = client.request_ok(rekindle_node::ipc::protocol::IpcRequest::Shutdown).await?;
+                if mode.is_structured() {
+                    output::format::print_structured(&value, mode)
+                } else {
+                    output::format::print_text("Daemon shutdown initiated.")
+                }
+            }
+            cli::NodeCmd::Restart => {
+                output::format::print_text("Restart: use 'rekindle node stop && rekindle node start'")
+            }
+            cli::NodeCmd::Attach | cli::NodeCmd::Detach => {
+                let value = client.request_ok(rekindle_node::ipc::protocol::IpcRequest::NetworkStatus).await?;
+                output::format::print_structured(&value, mode)
+            }
+        },
+        Command::Network(cmd) => network::dispatch(&cmd, client, mode).await,
+        Command::Friend(cmd) => friends::dispatch(&cmd, client, mode).await,
+        Command::Dm(cmd) => dm::dispatch(&cmd, client, mode).await,
+        Command::Community(cmd) => community::dispatch(&cmd, client, cfg, mode).await,
+        Command::Role(cmd) => governance::dispatch_role(&cmd, client, mode).await,
+        Command::Moderate(cmd) => governance::dispatch_moderate(&cmd, client, mode).await,
+        Command::Channel(cmd) => channel::dispatch(&cmd, client, mode).await,
+        Command::Voice(cmd) => voice::dispatch(&cmd, client, mode).await,
+        Command::Key(cmd) => keys::dispatch(&cmd, client, mode).await,
+        Command::Presence(cmd) => presence::dispatch(&cmd, client, mode).await,
+        Command::Export(cmd) => identity::dispatch_export(&cmd, client, mode).await,
+        Command::Import(_cmd) => {
+            output::format::print_text("Import: use 'rekindle init' after placing the bundle file")
+        }
     }
 }

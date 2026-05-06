@@ -1,0 +1,156 @@
+# Rekindle Test Node — systemd + Nix multi-user
+# Base: Debian 13 (Trixie) with systemd as PID 1
+#
+# Provides a full Linux environment for each test node:
+# - systemd for proper process management and service lifecycle
+# - Multi-user Nix daemon (Determinate Systems installer)
+# - Kernel keyring (keyutils) for rekindle credential storage
+# - Veilid runtime dependencies (TLS, DNS)
+# - Debug tools (curl, dig, ip, ss, htop)
+#
+# The rekindle binary is bind-mounted at runtime from the host build,
+# not baked into the image. This means `cargo build --release` on the
+# host is all you need — no image rebuild for code changes.
+
+FROM debian:trixie
+
+ARG USERNAME=rekindle
+ARG USER_UID=1000
+ARG USER_GID=${USER_UID}
+
+# =============================================================================
+# System packages
+# =============================================================================
+ENV DEBIAN_FRONTEND=noninteractive
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Core system
+    systemd \
+    systemd-sysv \
+    dbus \
+    # Secret Service provider for Veilid's protected store.
+    # gnome-keyring-daemon implements org.freedesktop.secrets over dbus.
+    # No GUI desktop needed — it runs as a headless daemon.
+    gnome-keyring \
+    libpam-gnome-keyring \
+    # Rekindle runtime deps
+    ca-certificates \
+    libssl3 \
+    keyutils \
+    # Network tools (Veilid needs DNS, TLS; we need debugging)
+    iproute2 \
+    curl \
+    dnsutils \
+    netcat-openbsd \
+    # Process management and debugging
+    procps \
+    htop \
+    less \
+    tree \
+    jq \
+    # Essential tools
+    bash \
+    bash-completion \
+    sudo \
+    git \
+    vim-tiny \
+    xz-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+# =============================================================================
+# systemd configuration for container environment
+# =============================================================================
+# Mask services that don't work or aren't needed in containers
+RUN systemctl mask \
+    systemd-logind.service \
+    getty.target \
+    console-getty.service \
+    systemd-networkd.service \
+    systemd-resolved.service \
+    systemd-timesyncd.service \
+    systemd-hostnamed.service \
+    systemd-machined.service \
+    systemd-journald-audit.socket \
+    systemd-udevd.service \
+    systemd-udev-trigger.service \
+    systemd-firstboot.service \
+    systemd-machine-id-commit.service \
+    first-boot-complete.target
+
+RUN systemctl set-default multi-user.target
+
+# =============================================================================
+# Create user with sudo and kernel keyring access
+# =============================================================================
+RUN groupadd --gid ${USER_GID} ${USERNAME} \
+    && useradd --uid ${USER_UID} --gid ${USER_GID} -m -s /bin/bash ${USERNAME} \
+    && echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/${USERNAME} \
+    && chmod 0440 /etc/sudoers.d/${USERNAME}
+
+# =============================================================================
+# XDG directories for rekindle state persistence
+# =============================================================================
+RUN mkdir -p \
+      /home/${USERNAME}/.local/share/rekindle/veilid \
+      /home/${USERNAME}/.config/rekindle \
+      /home/${USERNAME}/.local/state/rekindle/logs \
+    && chown -R ${USERNAME}:${USERNAME} /home/${USERNAME}
+
+# =============================================================================
+# Nix installation (Determinate Systems installer)
+# =============================================================================
+# Multi-user daemon mode — systemd manages the nix-daemon socket/service.
+# --no-start-daemon because systemd isn't running during build.
+RUN curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | \
+    sh -s -- install linux \
+    --extra-conf "sandbox = false" \
+    --extra-conf "experimental-features = nix-command flakes" \
+    --extra-conf "trusted-users = root ${USERNAME}" \
+    --extra-conf "max-jobs = auto" \
+    --extra-conf "accept-flake-config = true" \
+    --no-start-daemon \
+    --no-confirm
+
+RUN systemctl enable nix-daemon.socket nix-daemon.service
+
+# =============================================================================
+# Rekindle init service — runs on first boot if no session exists
+# =============================================================================
+# The init script reads /etc/rekindle/display-name to get the node's identity.
+# That file is bind-mounted per node from .config/docker/nodes/<name>/display-name.
+# No env var hacks — systemd runs the script, the script reads a file.
+#
+COPY .config/docker/data/etc/systemd/system/dbus-user-session.service /etc/systemd/system/dbus-user-session.service
+COPY .config/docker/data/etc/systemd/system/gnome-keyring.service /etc/systemd/system/gnome-keyring.service
+COPY .config/docker/data/etc/systemd/system/rekindle-node.service /etc/systemd/system/rekindle-node.service
+COPY .config/docker/data/etc/systemd/system/rekindle-init.service /etc/systemd/system/rekindle-init.service
+COPY .config/docker/data/usr/local/bin/rekindle-init.sh /usr/local/bin/rekindle-init.sh
+COPY .config/docker/data/etc/rekindle/config.toml /etc/rekindle/config.toml
+RUN chmod 755 /usr/local/bin/rekindle-init.sh \
+    && mkdir -p /etc/rekindle /run/user/1000 \
+    && chown ${USERNAME}:${USERNAME} /run/user/1000 \
+    && systemctl enable dbus-user-session.service gnome-keyring.service rekindle-node.service rekindle-init.service
+
+# =============================================================================
+# Final setup
+# =============================================================================
+VOLUME [ \
+    "/home/${USERNAME}/.local/share/rekindle/veilid", \
+    "/home/${USERNAME}/.config/rekindle", \
+    "/home/${USERNAME}/.local/state/rekindle/logs", \
+    "/nix" \
+]
+
+# Runtime environment for docker exec --user rekindle
+ENV HOME=/home/${USERNAME}
+ENV XDG_RUNTIME_DIR=/run/user/${USER_UID}
+ENV DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${USER_UID}/bus
+ENV RUST_LOG=info,rekindle=debug,veilid_core=warn
+
+WORKDIR /home/${USERNAME}
+
+# systemd as PID 1
+STOPSIGNAL SIGRTMIN+3
+ENTRYPOINT ["/lib/systemd/systemd"]

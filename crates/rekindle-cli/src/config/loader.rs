@@ -212,6 +212,9 @@ fn merge_network(
     if overlay.gossip_ttl != 5 {
         base.gossip_ttl = overlay.gossip_ttl;
     }
+    if overlay.allow_insecure_protected_store {
+        base.allow_insecure_protected_store = true;
+    }
 }
 
 fn merge_tui(base: &mut super::schema::TuiConfig, overlay: &super::schema::TuiConfig) {

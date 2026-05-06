@@ -7,9 +7,13 @@
 //! v1.0 types from rekindle-protocol — those are replaced, not wrapped.
 
 pub mod channel;
+pub mod config;
+pub mod display;
 pub mod error;
 pub mod governance;
 pub mod id;
 pub mod invite;
+pub mod notification;
 pub mod permissions;
 pub mod presence;
+pub mod subscription_events;

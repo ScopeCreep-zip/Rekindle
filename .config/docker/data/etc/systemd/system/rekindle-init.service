@@ -1,0 +1,21 @@
+[Unit]
+Description=Rekindle identity initialization (first boot only)
+After=network-online.target gnome-keyring.service rekindle-node.service
+Wants=network-online.target
+Requires=gnome-keyring.service rekindle-node.service
+ConditionPathExists=!/home/rekindle/.local/state/rekindle/session.json
+
+[Service]
+Type=oneshot
+User=rekindle
+Group=rekindle
+Environment=HOME=/home/rekindle
+Environment=RUST_LOG=info,rekindle=debug,veilid_core=warn
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+ExecStart=/usr/local/bin/rekindle-init.sh
+RemainAfterExit=yes
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

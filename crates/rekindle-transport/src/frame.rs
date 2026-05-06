@@ -54,12 +54,18 @@ pub enum TypeId {
     // ── Voice (MEK encrypted, HMAC authenticated) ────────────────
     VoicePacket       = 0x11,
 
-    // ── RPC request/response (app_call, Ed25519 signed) ──────────
-    BootstrapRequest  = 0x20,
-    BootstrapResponse = 0x21,
-    MekTransfer       = 0x22,
+    // ── Community RPC (app_call, Ed25519 signed) ────────────────
+    /// Member leave notification (best-effort, triggers rekey).
+    CommunityLeave    = 0x21,
+    /// Governance operation from admin/moderator (permissioned).
+    CommunityGovOp    = 0x22,
+
+    // ── Sync + DM RPC (app_call, Ed25519 signed) ────────────────
+    /// History sync request to archiver node.
     SyncRequest       = 0x23,
+    /// History sync response from archiver.
     SyncResponse      = 0x24,
+    /// DM-class message via app_call (friend request/accept handshake).
     DmCall            = 0x25,
 }
 
@@ -79,9 +85,8 @@ impl TypeId {
             0x0A => Some(Self::DmPresenceUpdate),
             0x10 => Some(Self::GossipBroadcast),
             0x11 => Some(Self::VoicePacket),
-            0x20 => Some(Self::BootstrapRequest),
-            0x21 => Some(Self::BootstrapResponse),
-            0x22 => Some(Self::MekTransfer),
+            0x21 => Some(Self::CommunityLeave),
+            0x22 => Some(Self::CommunityGovOp),
             0x23 => Some(Self::SyncRequest),
             0x24 => Some(Self::SyncResponse),
             0x25 => Some(Self::DmCall),
@@ -92,8 +97,6 @@ impl TypeId {
     /// Whether this type requires Ed25519 signature verification on receive.
     #[allow(clippy::unused_self, clippy::trivially_copy_pass_by_ref)]
     pub fn requires_signature(&self) -> bool {
-        // Every type requires signature verification. No exceptions.
-        // Friend requests are TOFU-signed (self-asserted key), but still verified.
         true
     }
 
@@ -120,9 +123,8 @@ impl TypeId {
     /// Whether this type is an RPC (app_call) payload.
     pub fn is_rpc(self) -> bool {
         matches!(self,
-            Self::BootstrapRequest
-            | Self::BootstrapResponse
-            | Self::MekTransfer
+            Self::CommunityLeave
+            | Self::CommunityGovOp
             | Self::SyncRequest
             | Self::SyncResponse
             | Self::DmCall
@@ -141,7 +143,7 @@ pub fn encode(type_id: TypeId, payload: &[u8]) -> Result<Vec<u8>> {
         });
     }
 
-    #[allow(clippy::cast_possible_truncation)] // guarded by MAX_PAYLOAD_SIZE check above
+    #[allow(clippy::cast_possible_truncation)]
     let len = payload.len() as u16;
     let mut frame = Vec::with_capacity(HEADER_SIZE + payload.len());
     frame.push(PROTOCOL_VERSION);
@@ -155,13 +157,6 @@ pub fn encode(type_id: TypeId, payload: &[u8]) -> Result<Vec<u8>> {
 ///
 /// Validates the version byte, type ID, and declared length against
 /// actual data length. Returns the type ID and a slice of the payload.
-///
-/// # Errors
-///
-/// - `InvalidFrame` if the data is too short for a header.
-/// - `UnknownVersion` if the version byte is not recognized.
-/// - `UnknownType` if the type ID byte is not recognized.
-/// - `InvalidFrame` if the declared length doesn't match available data.
 pub fn decode(data: &[u8]) -> Result<(TypeId, &[u8])> {
     if data.len() < HEADER_SIZE {
         return Err(TransportError::InvalidFrame {
@@ -249,11 +244,11 @@ mod tests {
 
     #[test]
     fn all_type_ids_have_stable_byte_values() {
-        // Guard against accidental reordering of the enum repr values.
         assert_eq!(TypeId::DmMessage as u8, 0x01);
         assert_eq!(TypeId::GossipBroadcast as u8, 0x10);
         assert_eq!(TypeId::VoicePacket as u8, 0x11);
-        assert_eq!(TypeId::BootstrapRequest as u8, 0x20);
+        assert_eq!(TypeId::CommunityLeave as u8, 0x21);
+        assert_eq!(TypeId::CommunityGovOp as u8, 0x22);
         assert_eq!(TypeId::DmCall as u8, 0x25);
     }
 

@@ -1,0 +1,62 @@
+[package]
+name = "rekindle-node"
+version = "0.1.0"
+edition = "2021"
+description = "Rekindle daemon — IPC bus, state management, and Veilid bridge"
+license = "MIT"
+
+[lints]
+workspace = true
+
+[dependencies]
+# Workspace crates — rekindle-transport is the SOLE Veilid boundary.
+# rekindle-node NEVER imports veilid-core directly.
+rekindle-transport = { path = "../rekindle-transport" }
+rekindle-types = { path = "../rekindle-types" }
+
+# Async runtime
+tokio = { workspace = true }
+futures = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+postcard = { version = "1", features = ["use-std"] }
+toml = "0.8"
+
+# IPC transport encryption (Noise IK)
+snow = { git = "https://github.com/mcginty/snow", rev = "295dc7b" }
+
+# Crypto utilities
+blake3 = "1"
+zeroize = { version = "1", features = ["derive"] }
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+aes-gcm = "0.10"
+rand = "0.8"
+subtle = "2"
+
+# Identifiers
+uuid = { version = "1", features = ["v4", "v7", "serde"] }
+
+# Safe syscalls (UCred extraction)
+rustix = { version = "1", features = ["process"] }
+
+# Logging and errors
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Concurrency
+parking_lot = { workspace = true }
+
+# systemd integration (sd_notify READY=1, watchdog keepalive)
+sd-notify = "0.4"
+
+# OS keyring for signing key storage
+keyring = { version = "3", default-features = false, features = ["apple-native", "windows-native", "linux-native"] }
+hex = "0.4"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "macros"] }
+tempfile = "3"

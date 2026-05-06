@@ -1,0 +1,41 @@
+[Unit]
+Description=Rekindle node daemon (IPC bus + Veilid transport)
+Documentation=https://github.com/scopecreep-zip/rekindle
+After=network-online.target gnome-keyring.service dbus-user-session.service
+Wants=network-online.target
+Requires=gnome-keyring.service dbus-user-session.service
+Before=rekindle-init.service
+StartLimitBurst=5
+StartLimitIntervalSec=300
+
+[Service]
+Type=notify
+ExecStart=/usr/local/bin/rekindle node start
+ExecStop=/usr/local/bin/rekindle node stop
+Restart=on-failure
+RestartSec=5
+User=rekindle
+Group=rekindle
+
+# Startup: Veilid attach can take 30-60 seconds on slow networks.
+TimeoutStartSec=90
+# Shutdown: graceful drain budget.
+TimeoutStopSec=15
+# Watchdog: daemon must ping every 30s or systemd kills it.
+WatchdogSec=30
+
+# Environment
+Environment=HOME=/home/rekindle
+Environment=RUST_LOG=rekindle=debug,rekindle_transport=debug,rekindle_node=debug,veilid_core=warn
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+
+# Security hardening
+NoNewPrivileges=yes
+LimitCORE=0
+LimitNOFILE=65536
+LimitMEMLOCK=64M
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target

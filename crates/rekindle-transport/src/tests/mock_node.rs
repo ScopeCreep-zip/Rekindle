@@ -25,9 +25,9 @@ use std::sync::Arc;
 use parking_lot::RwLock;
 
 use crate::crypto::mek::{Mek, MekCache, MekCacheEntrySnapshot};
-use crate::peer::{PeerRegistry, PeerSnapshot, CircuitSummary};
-use crate::route::RouteManager;
-use crate::shared::{AttachmentState, NodeStatusSnapshot, SharedState, TransportNotification};
+use crate::broadcast::peer_registry::{PeerRegistry, PeerSnapshot, CircuitSummary};
+use crate::broadcast::peer_route::RouteManager;
+use crate::shared::{AttachmentState, TransportSnapshot, SharedState, TransportNotification};
 
 /// Mock transport node for testing without Veilid.
 ///
@@ -170,12 +170,12 @@ impl MockNode {
     ///
     /// Uses `route_allocated_override` instead of `RouteManager::has_route()`
     /// because `RouteManager::set_route` requires a Veilid `RouteId`.
-    pub fn status_snapshot(&self) -> NodeStatusSnapshot {
+    pub fn status_snapshot(&self) -> TransportSnapshot {
         let peer_reg = self.peer_registry.read();
         let route_allocated = self
             .route_allocated_override
             .load(std::sync::atomic::Ordering::Acquire);
-        NodeStatusSnapshot {
+        TransportSnapshot {
             attachment: self.shared.attachment_state().to_string(),
             is_attached: self.shared.is_attached(),
             public_internet_ready: self.shared.public_internet_ready(),

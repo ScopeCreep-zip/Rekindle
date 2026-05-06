@@ -1,0 +1,70 @@
+[Unit]
+Description=Rekindle node daemon (IPC bus + Veilid transport)
+Documentation=https://github.com/scopecreep-zip/rekindle
+After=network-online.target
+Wants=network-online.target
+# Prevent restart loops: max 5 restarts in 5 minutes.
+StartLimitBurst=5
+StartLimitIntervalSec=300
+
+[Service]
+Type=notify
+ExecStart=/usr/bin/rekindle node start
+ExecStop=/usr/bin/rekindle node stop
+Restart=on-failure
+RestartSec=5
+
+# Startup: Veilid attach can take 30-60 seconds on slow networks.
+TimeoutStartSec=90
+# Shutdown: graceful drain budget.
+TimeoutStopSec=15
+# Watchdog: daemon must ping every 30s or systemd kills it.
+WatchdogSec=30
+
+# ── Security Hardening ────────────────────────────────────────────────
+# Defense-in-depth: multiple independent layers, each reduces blast radius.
+
+# Privilege escalation prevention.
+NoNewPrivileges=yes
+
+# Filesystem restrictions.
+ProtectHome=read-only
+ProtectSystem=strict
+
+# XDG directories managed by systemd (creates if needed, correct ownership).
+RuntimeDirectory=rekindle
+StateDirectory=rekindle
+ConfigurationDirectory=rekindle
+
+# Explicit read-write paths (ProtectSystem=strict blocks everything else).
+ReadWritePaths=%h/.local/state/rekindle
+ReadWritePaths=%h/.local/share/rekindle
+
+# Kernel hardening.
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+# W^X enforcement: no memory region may be both writable and executable.
+MemoryDenyWriteExecute=yes
+
+# ── Resource Limits ───────────────────────────────────────────────────
+
+# File descriptors: 10K+ agent connections need headroom.
+LimitNOFILE=65536
+# No core dumps (may contain secrets from Stronghold or key material).
+LimitCORE=0
+# Memory lock limit for Stronghold mlock pages.
+LimitMEMLOCK=64M
+# Hard memory cap to prevent runaway growth.
+MemoryMax=512M
+
+# ── Environment ───────────────────────────────────────────────────────
+
+Environment=RUST_LOG=info,veilid_core=warn
+# Optional user override file (not required to exist).
+EnvironmentFile=-%h/.config/rekindle/daemon.env
+
+[Install]
+WantedBy=default.target

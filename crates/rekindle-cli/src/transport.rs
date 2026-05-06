@@ -1,313 +1,198 @@
-//! Transport node lifecycle management for the CLI.
+//! Daemon client for the CLI and TUI.
 //!
-//! Provides `TransportHandle` which owns or borrows a running `TransportNode`,
-//! and `CliHandler` which implements the `InboundHandler` trait to bridge
-//! transport events into the CLI/TUI event system.
+//! `DaemonClient` connects to the rekindle-node daemon over the Noise IK
+//! encrypted IPC bus. CLI commands use `request_ok()` for request-response.
+//! The TUI calls `take_event_receiver()` to get a typed stream of
+//! `SubscriptionEvent`s for real-time rendering.
 
 use std::sync::Arc;
 use std::time::Duration;
 
-use parking_lot::RwLock;
+use anyhow::Context;
 use tokio::sync::mpsc;
-use tracing::info;
+use uuid::Uuid;
 
-use rekindle_transport::{
-    InboundHandler, TransportEvent, TransportNode,
-    VerifiedSender,
-    crypto::mek::MekCache,
-    payload::dm::DmPayload,
-    payload::gossip::{GossipPayload, SignedGossipEnvelope},
-    payload::rpc::{CallResponse, InboundCall},
-    payload::voice::VoicePayload,
+use rekindle_node::ipc::{
+    self,
+    client::BusClient,
+    protocol::{IpcRequest, IpcResponse},
+    message::SecurityLevel,
 };
+use rekindle_types::subscription_events::SubscriptionEvent;
 
-use crate::config::schema::Config;
-use crate::cli::Cli;
+/// Default RPC timeout — 5 seconds.
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
+/// Long timeout for operations involving Veilid network I/O.
+const LONG_TIMEOUT: Duration = Duration::from_secs(180);
 
-// ── CLI Event (transport → CLI/TUI) ─────────────────────────────────────
-
-/// Events from the transport layer, bridged to the CLI/TUI event loop.
+/// The CLI/TUI's connection to the rekindle-node daemon.
 ///
-/// The `InboundHandler` pushes these into an mpsc channel. The CLI's
-/// one-shot commands drain them after each operation. The TUI's event
-/// loop drains them continuously in `tokio::select!`.
-#[derive(Debug, Clone)]
-pub enum CliEvent {
-    Dm {
-        sender_key: String,
-        sender_name: String,
-        payload: DmPayload,
-        timestamp: u64,
-    },
-    Gossip {
-        community_id: String,
-        sender_pseudonym: String,
-        payload: GossipPayload,
-        lamport_ts: u64,
-    },
-    ValueChange {
-        record_key: String,
-        subkeys: Vec<u32>,
-    },
-    Transport(TransportEvent),
-    VoicePacket {
-        sender_key: String,
-    },
+/// Two consumption modes:
+/// - **CLI one-shot**: `request_ok()` for request-response, never subscribes.
+/// - **TUI persistent**: `take_event_receiver()` at startup, sends `Subscribe`,
+///   receives typed `SubscriptionEvent`s in real-time.
+pub struct DaemonClient {
+    client: Arc<BusClient>,
+    /// Typed event receiver — taken once by the TUI via `take_event_receiver()`.
+    event_rx: Option<mpsc::UnboundedReceiver<SubscriptionEvent>>,
 }
 
-// ── Transport Handle ────────────────────────────────────────────────────
+impl DaemonClient {
+    /// Connect to the running daemon.
+    pub async fn connect() -> anyhow::Result<Self> {
+        let socket_path = ipc::socket_path()
+            .map_err(|e| anyhow::anyhow!("cannot resolve daemon socket path: {e}"))?;
 
-/// Owns a running `TransportNode` and provides the shared state
-/// (MEK cache, event channel) that command modules need.
-///
-/// The event channel (`event_rx`) receives authenticated payloads from
-/// the `CliHandler`'s `InboundHandler` implementation. Watch commands
-/// drain it for live-streaming. One-shot commands ignore it.
-pub struct TransportHandle {
-    node: TransportNode,
-    pub mek_cache: Arc<RwLock<MekCache>>,
-    pub event_rx: Arc<tokio::sync::Mutex<mpsc::UnboundedReceiver<CliEvent>>>,
-}
+        if !socket_path.exists() {
+            anyhow::bail!(
+                "daemon not running (socket not found at {})\n\
+                 start the daemon: rekindle node start",
+                socket_path.display()
+            );
+        }
 
-impl TransportHandle {
-    /// Access the underlying transport node.
-    pub fn node(&self) -> &TransportNode {
-        &self.node
-    }
-
-    /// Shut down the transport node gracefully.
-    pub async fn shutdown_if_owned(self) -> anyhow::Result<()> {
-        info!("shutting down transport node");
-        self.node
-            .shutdown()
+        let server_pub = ipc::noise_keys::read_bus_public_key()
             .await
-            .map_err(|e| anyhow::anyhow!("transport shutdown: {e}"))
-    }
-}
+            .context("daemon is not running (no bus public key found)")?;
 
-// ── CLI Handler (InboundHandler impl) ───────────────────────────────────
+        // Ephemeral keypair: each CLI invocation gets a fresh X25519 key for the
+        // Noise IK handshake. CLI clients are stateless — no persistent IPC identity.
+        let client_keypair = ipc::generate_keypair()
+            .map_err(|e| anyhow::anyhow!("ephemeral keypair generation failed: {e}"))?;
 
-/// Implements `InboundHandler` to bridge transport events to the CLI.
-///
-/// Every callback pushes a `CliEvent` into the mpsc channel for consumption
-/// by watch commands and the TUI event loop. Additionally, when a
-/// `FriendRequest` DM arrives, the handler persists it to the session file
-/// so `rekindle friend requests` and `rekindle friend accept` can access it
-/// across CLI invocations.
-struct CliHandler {
-    event_tx: mpsc::UnboundedSender<CliEvent>,
-    /// Path to the session JSON file for persisting pending friend requests.
-    session_path: std::path::PathBuf,
-}
-
-#[allow(clippy::manual_async_fn)]
-impl InboundHandler for CliHandler {
-    fn on_dm(
-        &self,
-        sender: &VerifiedSender,
-        payload: DmPayload,
-        timestamp: u64,
-    ) -> impl std::future::Future<Output = ()> + Send {
-        let tx = self.event_tx.clone();
-        let sender_key = sender.public_key.clone();
-        let sender_name = sender.display_name.clone();
-        let session_path = self.session_path.clone();
-        let payload_clone = payload.clone();
-        async move {
-            // Persist friend requests to the session file so they survive
-            // across CLI invocations. The user can then run
-            // `rekindle friend accept` in a separate command.
-            if let DmPayload::FriendRequest {
-                ref display_name,
-                ref message,
-                ref prekey_bundle,
-                ref profile_dht_key,
-                ref route_blob,
-                ref mailbox_dht_key,
-                ref invite_id,
-            } = payload_clone
-            {
-                let pending = rekindle_transport::PendingFriendRequest {
-                    public_key: sender_key.clone(),
-                    display_name: display_name.clone(),
-                    message: message.clone(),
-                    profile_dht_key: profile_dht_key.clone(),
-                    route_blob: route_blob.clone(),
-                    mailbox_dht_key: mailbox_dht_key.clone(),
-                    prekey_bundle: prekey_bundle.clone(),
-                    invite_id: invite_id.clone(),
-                    received_at: timestamp,
-                };
-
-                // Load → mutate → save atomically
-                if let Ok(Some(mut session)) =
-                    rekindle_transport::Session::load(&session_path)
-                {
-                    session.add_pending_friend_request(pending);
-                    if let Err(e) = session.save(&session_path) {
-                        tracing::warn!(error = %e, "failed to persist pending friend request");
-                    } else {
-                        tracing::info!(
-                            from = %sender_key,
-                            name = %display_name,
-                            "friend request received and persisted"
-                        );
-                    }
-                }
-            }
-
-            let _ = tx.send(CliEvent::Dm {
-                sender_key,
-                sender_name,
-                payload: payload_clone,
-                timestamp,
-            });
-        }
-    }
-
-    fn on_gossip(
-        &self,
-        community_id: &str,
-        sender_pseudonym: &str,
-        payload: GossipPayload,
-        lamport_ts: u64,
-    ) -> impl std::future::Future<Output = ()> + Send {
-        let tx = self.event_tx.clone();
-        let cid = community_id.to_owned();
-        let sender = sender_pseudonym.to_owned();
-        async move {
-            let _ = tx.send(CliEvent::Gossip {
-                community_id: cid,
-                sender_pseudonym: sender,
-                payload,
-                lamport_ts,
-            });
-        }
-    }
-
-    fn on_gossip_forward(
-        &self,
-        _envelope: &SignedGossipEnvelope,
-    ) -> impl std::future::Future<Output = ()> + Send {
-        // CLI doesn't forward gossip — that's the transport's job
-        async {}
-    }
-
-    fn on_voice(
-        &self,
-        sender_key: &str,
-        _packet: VoicePayload,
-    ) -> impl std::future::Future<Output = ()> + Send {
-        let tx = self.event_tx.clone();
-        let key = sender_key.to_owned();
-        async move {
-            let _ = tx.send(CliEvent::VoicePacket { sender_key: key });
-        }
-    }
-
-    fn on_call(
-        &self,
-        _sender_pseudonym: Option<&str>,
-        _request: InboundCall,
-    ) -> impl std::future::Future<Output = CallResponse> + Send {
-        // CLI acknowledges RPC calls but doesn't serve data
-        // (it's a client, not a community archiver)
-        async move { CallResponse::Ack }
-    }
-
-    fn on_value_change(
-        &self,
-        record_key: &str,
-        changed_subkeys: Vec<u32>,
-        _first_value: Option<Vec<u8>>,
-    ) -> impl std::future::Future<Output = ()> + Send {
-        let tx = self.event_tx.clone();
-        let key = record_key.to_owned();
-        async move {
-            let _ = tx.send(CliEvent::ValueChange {
-                record_key: key,
-                subkeys: changed_subkeys,
-            });
-        }
-    }
-
-    fn on_event(
-        &self,
-        event: TransportEvent,
-    ) -> impl std::future::Future<Output = ()> + Send {
-        let tx = self.event_tx.clone();
-        async move {
-            let _ = tx.send(CliEvent::Transport(event));
-        }
-    }
-}
-
-// ── Acquire ─────────────────────────────────────────────────────────────
-
-/// Start a transport node and return a handle.
-///
-/// Creates the `CliHandler`, starts the node, waits for network attachment,
-/// and returns the handle with shared state.
-pub async fn acquire(cfg: &Config, cli: &Cli) -> anyhow::Result<TransportHandle> {
-    let (event_tx, event_rx) = mpsc::unbounded_channel();
-    let session_path = crate::helpers::session_path()?;
-    let handler = Arc::new(CliHandler {
-        event_tx: event_tx.clone(),
-        session_path,
-    });
-
-    let transport_config = cfg.to_transport_config(cli)?;
-
-    info!(
-        namespace = %transport_config.namespace,
-        storage = %transport_config.storage_dir,
-        "starting transport node"
-    );
-
-    let node = TransportNode::start(transport_config, handler)
+        let sender_id = Uuid::now_v7();
+        let mut client = BusClient::connect_with_retry(
+            sender_id,
+            &socket_path,
+            &server_pub,
+            client_keypair.as_inner(),
+            3,
+            Duration::from_millis(500),
+        )
         .await
-        .map_err(|e| anyhow::anyhow!("failed to start transport node: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("daemon connection failed: {e}"))?;
 
-    // Wait for network attachment
-    let timeout_secs = 30u64; // Default attach timeout
-    wait_for_attachment(&node, timeout_secs).await?;
+        // Take the event receiver before wrapping in Arc (Arc prevents &mut access)
+        let event_rx = client.take_event_receiver();
 
-    let mek_cache = Arc::new(RwLock::new(MekCache::new()));
+        Ok(Self {
+            client: Arc::new(client),
+            event_rx,
+        })
+    }
 
-    // event_tx is owned solely by the CliHandler — no redundant copy stored.
-    // The handler pushes events; watch commands drain event_rx.
-    // M2 TUI bridge will restructure acquire() to return the sender separately.
-    drop(event_tx);
+    /// Take the subscription event receiver. Can only be called once.
+    ///
+    /// The TUI calls this at startup to get the typed event stream.
+    /// CLI one-shot commands never call this.
+    pub fn take_event_receiver(&mut self) -> Option<mpsc::UnboundedReceiver<SubscriptionEvent>> {
+        self.event_rx.take()
+    }
 
-    Ok(TransportHandle {
-        node,
-        mek_cache,
-        event_rx: Arc::new(tokio::sync::Mutex::new(event_rx)),
-    })
+    /// Subscribe to all events from the daemon.
+    ///
+    /// Sends `IpcRequest::Subscribe` with a wildcard filter. The server's
+    /// EventRouter registers this connection for all event categories.
+    pub async fn subscribe_all(&self) -> anyhow::Result<()> {
+        use rekindle_types::subscription_events::SubscriptionFilter;
+        let response = self.request(IpcRequest::Subscribe {
+            filters: vec![SubscriptionFilter::all()],
+        }).await?;
+        match response {
+            IpcResponse::Ok(_) => {
+                tracing::info!("subscribed to all daemon events");
+                Ok(())
+            }
+            IpcResponse::Error { code, message, .. } => {
+                anyhow::bail!("subscribe failed ({code}): {message}")
+            }
+            IpcResponse::Event(_) => {
+                // Subscribe likely succeeded, event arrived in the response slot
+                tracing::warn!("event during subscribe handshake — subscribe assumed successful");
+                Ok(())
+            }
+        }
+    }
+
+    /// Send a request and return the raw `IpcResponse`.
+    pub async fn request(&self, request: IpcRequest) -> anyhow::Result<IpcResponse> {
+        let timeout = request_timeout(&request);
+        self.client
+            .request(request, SecurityLevel::Open, timeout)
+            .await
+            .map_err(|e| {
+                let msg = e.to_string();
+                if msg.contains("timed out") {
+                    anyhow::anyhow!(crate::error::CliError::Timeout(
+                        format!("no response within {}s", timeout.as_secs())
+                    ))
+                } else if msg.contains("connection closed") || msg.contains("channel closed") {
+                    anyhow::anyhow!(crate::error::CliError::Daemon {
+                        code: 503,
+                        message: "daemon connection lost".into(),
+                    })
+                } else {
+                    anyhow::anyhow!(msg)
+                }
+            })
+    }
+
+    /// Send a request and unwrap success as `serde_json::Value`.
+    pub async fn request_ok(&self, request: IpcRequest) -> anyhow::Result<serde_json::Value> {
+        match self.request(request).await? {
+            IpcResponse::Ok(value) => Ok(value),
+            IpcResponse::Error { code, message, remediation } => {
+                let cli_err = match code {
+                    403 => crate::error::CliError::Auth(message),
+                    503 => crate::error::CliError::NotInitialized(message),
+                    408 => crate::error::CliError::Timeout(message),
+                    _ => crate::error::CliError::Daemon { code, message },
+                };
+                if let Some(hint) = remediation {
+                    tracing::debug!(hint, "daemon remediation hint");
+                }
+                Err(anyhow::anyhow!(cli_err))
+            }
+            IpcResponse::Event(_) => {
+                tracing::warn!("event leaked into request-response path");
+                Err(anyhow::anyhow!(crate::error::CliError::Daemon {
+                    code: 500,
+                    message: "unexpected event in request-response flow".into(),
+                }))
+            }
+        }
+    }
+
+    /// Gracefully shut down the client connection.
+    pub async fn shutdown(self) {
+        match Arc::try_unwrap(self.client) {
+            Ok(client) => client.shutdown().await,
+            Err(arc) => {
+                tracing::debug!(
+                    refs = Arc::strong_count(&arc),
+                    "client shutdown with outstanding refs — dropping"
+                );
+                drop(arc);
+            }
+        }
+    }
 }
 
-/// Wait for the transport node to attach to the network.
-///
-/// Polls the shared state until attachment is confirmed or timeout expires.
-/// Attachment is confirmed when `is_attached()` returns true AND
-/// `public_internet_ready()` returns true.
-async fn wait_for_attachment(node: &TransportNode, timeout_secs: u64) -> anyhow::Result<()> {
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(timeout_secs);
-    let poll_interval = Duration::from_millis(250);
-
-    loop {
-        if node.is_ready() {
-            info!("network attached and public internet ready");
-            return Ok(());
-        }
-
-        if tokio::time::Instant::now() > deadline {
-            let state = node.shared().attachment_state();
-            return Err(crate::error::CliError::Timeout(format!(
-                "network attachment timed out after {timeout_secs}s (state: {state})"
-            )).into());
-        }
-
-        tokio::time::sleep(poll_interval).await;
+fn request_timeout(request: &IpcRequest) -> Duration {
+    match request {
+        IpcRequest::IdentityCreate { .. }
+        | IpcRequest::IdentityRotate
+        | IpcRequest::IdentityDestroy { .. }
+        | IpcRequest::IdentityWipe { .. }
+        | IpcRequest::CommunityCreate { .. }
+        | IpcRequest::CommunityJoin { .. }
+        | IpcRequest::FriendAdd { .. }
+        | IpcRequest::FriendAccept { .. }
+        | IpcRequest::Unlock { .. }
+        | IpcRequest::ChannelSend { .. }
+        | IpcRequest::DmSend { .. }
+        | IpcRequest::DmInbox { .. }
+        | IpcRequest::ChannelHistory { .. } => LONG_TIMEOUT,
+        _ => DEFAULT_TIMEOUT,
     }
 }

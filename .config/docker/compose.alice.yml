@@ -1,0 +1,46 @@
+# Node 1: alice — community creator, friend requester
+#
+# Shell:  docker exec -it --user rekindle rekindle-alice bash
+# TUI:    docker exec -it --user rekindle rekindle-alice rekindle
+# CLI:    docker exec --user rekindle rekindle-alice rekindle status
+# Logs:   docker compose logs -f alice
+
+services:
+  alice:
+    build:
+      context: ../..
+      dockerfile: .config/docker/Dockerfile.compose
+    container_name: rekindle-alice
+    hostname: alice
+    init: false
+    restart: unless-stopped
+    stop_signal: SIGRTMIN+3
+    stop_grace_period: 15s
+    privileged: true
+    environment:
+      RUST_LOG: "info,rekindle=debug,veilid_core=warn"
+      container: docker
+    volumes:
+      # Release binaries from host build (patchelf'd for FHS)
+      - ../../target/release/rekindle:/usr/local/bin/rekindle:ro
+      # Per-node identity: display name read by rekindle-init.sh
+      - ./nodes/alice/display-name:/etc/rekindle/display-name:ro
+      # Persistent state
+      - alice-veilid:/home/rekindle/.local/share/rekindle/veilid
+      - alice-config:/home/rekindle/.config/rekindle
+      - alice-logs:/home/rekindle/.local/state/rekindle/logs
+      - alice-nix:/nix
+    tmpfs:
+      - /run:exec,mode=755
+      - /run/lock:exec,mode=755
+      - /tmp:exec,mode=1777
+
+volumes:
+  alice-veilid:
+    driver: local
+  alice-config:
+    driver: local
+  alice-logs:
+    driver: local
+  alice-nix:
+    driver: local

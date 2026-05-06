@@ -1,0 +1,406 @@
+# Rekindle Multi-Node Test Environment
+# 3 independent nodes (alice, bob, carol) for multi-user testing
+#
+# Quickstart:
+#   mise run rekindle:build         # Build release binary
+#   mise run rekindle:up            # Build image + start all 3 nodes
+#   mise run rekindle:status        # Check init progress
+#   docker exec -it --user rekindle rekindle-alice bash   # Shell into alice
+#   mise run rekindle:down          # Stop all
+#   mise run rekindle:reset         # Destroy volumes + restart fresh
+
+["rekindle:build"]
+description = "Build rekindle binary (release, FHS-patched for containers)"
+alias = ["rkb"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "Building rekindle binary (release)..."
+cargo build -p rekindle-transport -p rekindle-cli --release
+
+# Strip nix store paths from binaries so they run on stock Debian/Ubuntu.
+# Same pattern as open-sesame build:deb (patchelf --set-interpreter + --remove-rpath).
+ARCH=$(uname -m)
+case "$ARCH" in
+  x86_64)  INTERP="/lib64/ld-linux-x86-64.so.2" ;;
+  aarch64) INTERP="/lib/ld-linux-aarch64.so.1" ;;
+  *)       echo "ERROR: unsupported architecture '$ARCH' for patchelf" >&2; exit 1 ;;
+esac
+
+for bin in rekindle; do
+  BINARY="target/release/${bin}"
+  if [[ -f "${BINARY}" ]]; then
+    patchelf --set-interpreter "$INTERP" --remove-rpath "$BINARY"
+    echo "  ${BINARY} (FHS-patched)"
+  else
+    echo "  WARNING: ${BINARY} not found"
+  fi
+done
+
+echo ""
+echo "Next steps:"
+echo "   mise run rekindle:up      # Start all 3 test nodes"
+echo "   mise run rekindle:reset   # Destroy + rebuild + restart"
+'''
+
+["rekindle:up"]
+description = "🚀 Build image + start all 3 test nodes"
+alias = ["rku"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "🚀 Starting Rekindle Multi-Node Test Environment"
+echo "================================================="
+echo ""
+
+# Ensure binaries exist and are FHS-patched
+if [[ ! -f target/release/rekindle ]]; then
+  echo "Release binaries not found — building..."
+  mise run rekindle:build
+  echo ""
+fi
+
+echo "🐳 Building container image (if needed)..."
+docker compose build
+echo ""
+
+echo "🚀 Starting nodes: alice, bob, carol..."
+docker compose up -d
+echo ""
+
+echo "⏳ Waiting for systemd to initialize in each container..."
+sleep 5
+
+echo ""
+echo "📋 Container status:"
+docker compose ps
+echo ""
+
+echo "⏳ Waiting for rekindle-init.service to complete (identity creation)..."
+echo "   This takes 30-60 seconds per node (Veilid network attachment)."
+echo "   Run 'mise run rekindle:status' to check progress."
+echo ""
+echo "💡 Quick access:"
+echo "   docker exec -it --user rekindle rekindle-alice bash   # Shell into alice"
+echo "   docker exec -it --user rekindle rekindle-bob bash     # Shell into bob"
+echo "   docker exec -it --user rekindle rekindle-carol bash   # Shell into carol"
+echo "   mise run rekindle:logs alice                    # Follow alice's logs"
+echo "   mise run rekindle:status                        # Check all nodes"
+'''
+
+["rekindle:down"]
+description = "🛑 Stop all test nodes (preserves volumes)"
+alias = ["rkd"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "🛑 Stopping all rekindle test nodes..."
+docker compose down
+echo "✅ Stopped. Volumes preserved for quick restart."
+echo "   To destroy volumes: mise run rekindle:clean"
+'''
+
+["rekindle:restart"]
+description = "🔁 Restart containers without wiping state (picks up new binary)"
+alias = ["rkrs"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "🔁 Restarting rekindle test nodes (preserving state)"
+echo "====================================================="
+echo ""
+
+echo "Step 1: Stopping containers..."
+docker compose down
+echo ""
+
+echo "Step 2: Starting containers..."
+docker compose up -d
+echo ""
+
+echo "⏳ Waiting for systemd..."
+sleep 5
+
+docker compose ps
+echo ""
+echo "✅ Restarted. All identities, communities, and friend state preserved."
+echo ""
+echo "💡 Quick access:"
+echo "   docker exec -it --user rekindle rekindle-alice bash   # Shell into alice"
+echo "   docker exec -it --user rekindle rekindle-bob bash     # Shell into bob"
+echo "   docker exec -it --user rekindle rekindle-carol bash   # Shell into carol"
+echo "   mise run rekindle:status                        # Check all nodes"
+'''
+
+["rekindle:clean"]
+description = "🧹 Destroy all volumes and state (full reset)"
+alias = ["rkc"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "🧹 Destroying all rekindle test state..."
+echo "   This removes all identities, sessions, and Veilid state."
+echo ""
+
+docker compose down -v
+echo ""
+echo "✅ All volumes destroyed."
+echo "   Run 'mise run rekindle:up' to create fresh nodes."
+'''
+
+["rekindle:reset"]
+description = "🔄 Full reset: destroy + rebuild + restart"
+alias = ["rkr"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "🔄 Full reset of rekindle test environment"
+echo "==========================================="
+echo ""
+
+echo "Step 1/3: Destroying existing state..."
+docker compose down -v
+echo ""
+
+echo "Step 2/3: Building release binary..."
+mise run rekindle:build
+echo ""
+
+echo "Step 3/3: Building image + starting nodes..."
+docker compose build
+docker compose up -d
+echo ""
+
+echo "⏳ Waiting for systemd..."
+sleep 5
+
+docker compose ps
+echo ""
+echo "✅ Reset complete. Nodes initializing identities."
+echo "   Run 'mise run rekindle:status' to check progress."
+echo ""
+echo "💡 Quick access:"
+echo "   docker exec -it --user rekindle rekindle-alice bash   # Shell into alice"
+echo "   docker exec -it --user rekindle rekindle-bob bash     # Shell into bob"
+echo "   docker exec -it --user rekindle rekindle-carol bash   # Shell into carol"
+echo "   mise run rekindle:status                        # Check all nodes"
+'''
+
+["rekindle:status"]
+description = "📊 Check init status of all test nodes"
+alias = ["rks"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "📊 Rekindle Test Node Status"
+echo "============================"
+echo ""
+
+for node in alice bob carol; do
+  container="rekindle-${node}"
+  echo "── ${node} ──"
+
+  if ! docker ps -q -f "name=${container}" | grep -q .; then
+    echo "   Container not running"
+    echo ""
+    continue
+  fi
+
+  # Check daemon status
+  daemon_status=$(docker exec "${container}" systemctl is-active rekindle-node.service 2>/dev/null || echo "unknown")
+  echo "   daemon: ${daemon_status}"
+
+  # Check if init service completed
+  init_status=$(docker exec "${container}" systemctl is-active rekindle-init.service 2>/dev/null || echo "unknown")
+  case "${init_status}" in
+    active|inactive)
+      # Check if session file exists (init completed successfully)
+      if docker exec "${container}" test -f /home/rekindle/.local/state/rekindle/session.json 2>/dev/null; then
+        echo "   ✅ Identity initialized"
+        # Show public key
+        pubkey=$(docker exec --user rekindle "${container}" rekindle identity show --json 2>/dev/null | jq -r '.public_key // empty' 2>/dev/null || echo "")
+        if [[ -n "${pubkey}" ]]; then
+          echo "   🔑 Public key: ${pubkey:0:16}..."
+        fi
+      else
+        echo "   ⏳ Init service completed but no session (may have failed)"
+        echo "   📋 Check: docker exec ${container} journalctl -u rekindle-init.service --no-pager"
+      fi
+      ;;
+    activating)
+      echo "   ⏳ Initializing identity (Veilid attaching to network)..."
+      ;;
+    failed)
+      echo "   ❌ Init failed"
+      echo "   📋 Check: docker exec ${container} journalctl -u rekindle-init.service --no-pager"
+      ;;
+    *)
+      echo "   ❓ Init status: ${init_status}"
+      ;;
+  esac
+
+  # Show container uptime (use jq instead of --format to avoid mise tera template conflicts)
+  uptime=$(docker inspect "${container}" 2>/dev/null | jq -r '.[0].State.StartedAt // "unknown"')
+  echo "   ⏱  Started: ${uptime}"
+  echo ""
+done
+'''
+
+["rekindle:shell"]
+description = "🐚 Print shell command for a test node (copy/paste to enter)"
+alias = ["rksh"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+NODE="${1:-alice}"
+CONTAINER="rekindle-${NODE}"
+
+if ! docker ps -q -f "name=${CONTAINER}" | grep -q .; then
+  echo "❌ Container ${CONTAINER} is not running"
+  echo "   Start with: mise run rekindle:up"
+  exit 1
+fi
+
+echo "🐚 Run this command to enter ${NODE}'s container:"
+echo ""
+echo "   docker exec -it --user rekindle ${CONTAINER} bash"
+echo ""
+echo "   Inside the container:"
+echo "   - rekindle           # Launch TUI"
+echo "   - rekindle status    # Check node status"
+echo "   - rekindle doctor    # Run diagnostics"
+'''
+
+["rekindle:logs"]
+description = "📜 Follow a node's rekindle logs (usage: mise run rekindle:logs <alice|bob|carol>)"
+alias = ["rkl"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+NODE="${1:-alice}"
+CONTAINER="rekindle-${NODE}"
+
+if ! docker ps -q -f "name=${CONTAINER}" | grep -q .; then
+  echo "❌ Container ${CONTAINER} is not running"
+  exit 1
+fi
+
+echo "📜 Following ${NODE}'s rekindle log..."
+echo "   (Ctrl+C to stop)"
+echo ""
+
+# Follow the latest log file
+docker exec "${CONTAINER}" bash -c \
+  'tail -f /home/rekindle/.local/state/rekindle/logs/rekindle.log.* 2>/dev/null || echo "No log files yet"'
+'''
+
+["rekindle:health"]
+description = "🏥 Show systemd units, journal logs, and CLI status for nodes (usage: mise run rekindle:health [alice|bob|carol])"
+alias = ["rkh"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+# If a node name is passed, scope to that node. Otherwise check all.
+if [[ -n "${1:-}" ]]; then
+  NODES=("$1")
+else
+  NODES=(alice bob carol)
+fi
+
+for node in "${NODES[@]}"; do
+  container="rekindle-${node}"
+  echo "════════════════════════════════════════════════════════════════"
+  echo "  ${node}"
+  echo "════════════════════════════════════════════════════════════════"
+  echo ""
+
+  if ! docker ps -q -f "name=${container}" | grep -q .; then
+    echo "  Container not running"
+    echo ""
+    continue
+  fi
+
+  # Systemd unit status
+  echo "── systemd units ──"
+  for unit in rekindle-node rekindle-init dbus-user-session gnome-keyring; do
+    status=$(docker exec "${container}" systemctl is-active "${unit}.service" 2>/dev/null || echo "not-found")
+    printf "  %-25s %s\n" "${unit}" "${status}"
+  done
+  echo ""
+
+  # CLI status (as rekindle user)
+  echo "── rekindle status ──"
+  docker exec --user rekindle "${container}" rekindle status 2>&1 | sed 's/^/  /'
+  echo ""
+
+  # Journal: rekindle-node (last 20 lines)
+  echo "── rekindle-node.service journal (last 20) ──"
+  docker exec "${container}" journalctl -u rekindle-node.service --no-pager -n 20 2>&1 | sed 's/^/  /'
+  echo ""
+
+  # Journal: rekindle-init
+  echo "── rekindle-init.service journal ──"
+  docker exec "${container}" journalctl -u rekindle-init.service --no-pager 2>&1 | sed 's/^/  /'
+  echo ""
+done
+'''
+
+["rekindle:journal"]
+description = "📋 Show full systemd journal for a node (usage: mise run rekindle:journal <alice|bob|carol>)"
+alias = ["rkj"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+NODE="${1:-alice}"
+CONTAINER="rekindle-${NODE}"
+
+if ! docker ps -q -f "name=${CONTAINER}" | grep -q .; then
+  echo "❌ Container ${CONTAINER} is not running"
+  exit 1
+fi
+
+echo "Full systemd journal for ${NODE}..."
+echo ""
+echo "── rekindle-node.service ──"
+docker exec "${CONTAINER}" journalctl -u rekindle-node.service --no-pager
+echo ""
+echo "── rekindle-init.service ──"
+docker exec "${CONTAINER}" journalctl -u rekindle-init.service --no-pager
+echo ""
+echo "── dbus-user-session.service ──"
+docker exec "${CONTAINER}" journalctl -u dbus-user-session.service --no-pager
+echo ""
+echo "── gnome-keyring.service ──"
+docker exec "${CONTAINER}" journalctl -u gnome-keyring.service --no-pager
+'''
+
+["rekindle:exec"]
+description = "🔧 Run a rekindle CLI command on a node (usage: mise run rekindle:exec alice status)"
+alias = ["rke"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+NODE="${1:-alice}"
+shift || true
+CMD="${*:-status}"
+CONTAINER="rekindle-${NODE}"
+
+if ! docker ps -q -f "name=${CONTAINER}" | grep -q .; then
+  echo "❌ Container ${CONTAINER} is not running"
+  exit 1
+fi
+
+docker exec --user rekindle "${CONTAINER}" rekindle ${CMD}
+'''

@@ -67,6 +67,75 @@ pub struct GamePresence {
     pub server_address: Option<String>,
 }
 
+// ── SubscriptionEvent conversion ───────────────────────────────────────
+
+use rekindle_types::subscription_events::{
+    SubscriptionEvent, ChannelMessageEvent,
+    TypingEvent, TypingContext,
+    FriendEvent, PresenceEvent,
+};
+
+impl DmPayload {
+    /// Convert a DM payload into a `SubscriptionEvent` given sender context.
+    ///
+    /// Pure data transformation — no state mutation, no I/O, no logging.
+    pub fn into_event(self, sender_key: &str, timestamp: u64) -> SubscriptionEvent {
+        match self {
+            Self::DirectMessage { body, .. } =>
+                SubscriptionEvent::ChannelMessage(ChannelMessageEvent::DirectMessageReceived {
+                    peer_key: sender_key.into(),
+                    timestamp,
+                    sender_name: None, // enriched from friend list by SubscriptionManager
+                    body: Some(String::from_utf8_lossy(&body).to_string()),
+                }),
+            Self::Typing { typing } => {
+                if typing {
+                    SubscriptionEvent::Typing(TypingEvent::Started {
+                        context: TypingContext::Dm { peer_key: sender_key.into() },
+                        who: sender_key.into(),
+                    })
+                } else {
+                    SubscriptionEvent::Typing(TypingEvent::Stopped {
+                        context: TypingContext::Dm { peer_key: sender_key.into() },
+                        who: sender_key.into(),
+                    })
+                }
+            }
+            Self::FriendRequest { display_name, message, .. } =>
+                SubscriptionEvent::Friend(FriendEvent::RequestReceived {
+                    from_key: sender_key.into(), display_name, message,
+                }),
+            Self::FriendAccept { .. } =>
+                SubscriptionEvent::Friend(FriendEvent::Accepted {
+                    peer_key: sender_key.into(), dm_log_key: String::new(),
+                }),
+            Self::FriendReject =>
+                SubscriptionEvent::Friend(FriendEvent::Rejected { peer_key: sender_key.into() }),
+            Self::FriendRequestAck =>
+                SubscriptionEvent::Friend(FriendEvent::RequestAcknowledged { peer_key: sender_key.into() }),
+            Self::Unfriend =>
+                SubscriptionEvent::Friend(FriendEvent::Removed { peer_key: sender_key.into() }),
+            Self::UnfriendAck =>
+                SubscriptionEvent::Friend(FriendEvent::RemoveAcknowledged { peer_key: sender_key.into() }),
+            Self::ProfileKeyRotated { new_profile_dht_key } =>
+                SubscriptionEvent::Friend(FriendEvent::ProfileKeyRotated {
+                    peer_key: sender_key.into(), new_profile_dht_key,
+                }),
+            Self::PresenceUpdate { status, game_info } => {
+                let status_str = match status {
+                    0 => "online", 1 => "away", 2 => "busy",
+                    3 => "offline", 4 => "invisible", _ => "unknown",
+                };
+                SubscriptionEvent::Presence(PresenceEvent::FriendChanged {
+                    peer_key: sender_key.into(),
+                    status: status_str.into(),
+                    game_name: game_info.map(|g| g.game_name),
+                })
+            }
+        }
+    }
+}
+
 /// Deserialize a DM payload from raw bytes based on the frame TypeId.
 pub fn deserialize_dm(type_id: TypeId, bytes: &[u8]) -> Result<DmPayload> {
     postcard::from_bytes(bytes).map_err(|e| TransportError::DeserializationFailed {

@@ -1,0 +1,12 @@
+# mise.toml — Task automation for Rekindle
+# Dependencies: cargo, docker compose
+
+[settings]
+experimental = true
+task_output = "prefix"
+
+[task_config]
+includes = [
+    ".config/mise/toml/rekindle.compose.toml",
+    ".config/mise/toml/rekindle.test.toml",
+]

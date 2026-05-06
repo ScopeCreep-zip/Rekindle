@@ -1,0 +1,43 @@
+# Node 2: bob — community joiner, friend acceptor
+#
+# Shell:  docker exec -it --user rekindle rekindle-bob bash
+# TUI:    docker exec -it --user rekindle rekindle-bob rekindle
+# CLI:    docker exec --user rekindle rekindle-bob rekindle status
+# Logs:   docker compose logs -f bob
+
+services:
+  bob:
+    build:
+      context: ../..
+      dockerfile: .config/docker/Dockerfile.compose
+    container_name: rekindle-bob
+    hostname: bob
+    init: false
+    restart: unless-stopped
+    stop_signal: SIGRTMIN+3
+    stop_grace_period: 15s
+    privileged: true
+    environment:
+      RUST_LOG: "info,rekindle=debug,veilid_core=warn"
+      container: docker
+    volumes:
+      - ../../target/release/rekindle:/usr/local/bin/rekindle:ro
+      - ./nodes/bob/display-name:/etc/rekindle/display-name:ro
+      - bob-veilid:/home/rekindle/.local/share/rekindle/veilid
+      - bob-config:/home/rekindle/.config/rekindle
+      - bob-logs:/home/rekindle/.local/state/rekindle/logs
+      - bob-nix:/nix
+    tmpfs:
+      - /run:exec,mode=755
+      - /run/lock:exec,mode=755
+      - /tmp:exec,mode=1777
+
+volumes:
+  bob-veilid:
+    driver: local
+  bob-config:
+    driver: local
+  bob-logs:
+    driver: local
+  bob-nix:
+    driver: local
