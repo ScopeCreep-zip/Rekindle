@@ -18,7 +18,7 @@ const ConfirmDialog: Component<ConfirmDialogProps> = (props) => (
       <div class="confirm-dialog-actions">
         <button class="form-btn-secondary" onClick={props.onCancel}>Cancel</button>
         <button
-          class={props.danger ? "form-btn-danger" : "form-btn-save"}
+          class={props.danger ? "form-btn-danger" : "form-btn-primary"}
           onClick={props.onConfirm}
         >
           {props.confirmLabel ?? "Confirm"}

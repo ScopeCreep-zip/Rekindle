@@ -39,6 +39,20 @@ pub fn start_dht_keepalive(state: Arc<AppState>, community_id: String) {
                                 keys.push(key);
                             }
                             keys.extend(c.channel_log_keys.values().cloned());
+                            // Mutual Aid (architecture §14.1) + Plate Gate
+                            // (§15.4): warm segment-N governance, registry,
+                            // and channel-segment records too — otherwise
+                            // expansion segments expire while the rest stay
+                            // hot, fragmenting the community's DHT presence.
+                            if let Some(gov) = c.governance_state.as_ref() {
+                                for seg in &gov.segments {
+                                    keys.push(seg.governance_key.clone());
+                                    keys.push(seg.registry_key.clone());
+                                }
+                                for csr in gov.channel_segment_records.values() {
+                                    keys.push(csr.record_key.clone());
+                                }
+                            }
                             keys
                         })
                     };

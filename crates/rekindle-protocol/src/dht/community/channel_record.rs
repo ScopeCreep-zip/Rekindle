@@ -42,6 +42,30 @@ pub struct ChannelMessage {
     /// Unique message ID (for deduplication).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message_id: Option<String>,
+    /// Lost Cargo: optional file attachment offer (architecture §28.9
+    /// line 3233 — offer travels embedded in the chat message). Serialized
+    /// as a missing key for plain messages so legacy peers parse correctly.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attachment: Option<rekindle_types::attachment::AttachmentOffer>,
+    /// Per `ChannelEntry::Message.flags` bitfield — VOICE_MESSAGE=0x10,
+    /// SUPPRESS_NOTIFICATIONS=0x20, etc. See `rekindle_types::channel::flags`.
+    /// Defaults to 0 for plain messages so legacy payloads parse unchanged.
+    #[serde(default)]
+    pub flags: u32,
+    /// Architecture §28.5 line 3105-3120 — cleartext mention metadata.
+    /// Receivers route notifications **before** decrypting the body
+    /// (mentions are visible to all gossip participants anyway, since
+    /// the message body — once decrypted — would name the same
+    /// pseudonyms in plaintext per spec line 3116). The
+    /// `@everyone` / `@here` cleartext signals live in `flags`
+    /// (`MENTION_EVERYONE = 0x40`, `MENTION_HERE = 0x80`) so
+    /// non-mention messages stay byte-for-byte identical to the legacy
+    /// wire shape. Reader-validates: peers reject those bits from
+    /// senders without `MENTION_EVERYONE` permission (§9.3).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mentioned_pseudonyms: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mentioned_roles: Vec<String>,
 }
 
 /// A durable reaction entry written to a channel record subkey.
@@ -97,15 +121,82 @@ pub struct ChannelPollClose {
     pub lamport: u64,
 }
 
+/// A durable hand-raise entry written to a channel record subkey.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelHandRaise {
+    /// true = raise hand, false = lower hand.
+    pub raised: bool,
+    /// Lamport logical timestamp for LWW merge.
+    pub lamport: u64,
+}
+
+/// Lost Cargo: a peer's advertisement of which chunks of an attachment
+/// it has cached locally (architecture §28.9 lines 3268-3274 + plan
+/// §1.J4 bitmap). Downloaders scan all member subkeys for these entries
+/// to find sources.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelAttachmentCached {
+    pub attachment_id: [u8; 16],
+    /// LSB-first bit per chunk; length = `ceil(chunk_count / 8)`.
+    #[serde(with = "base64_bytes")]
+    pub chunk_bitmap: Vec<u8>,
+    /// Total chunks of the file. Receivers reject entries whose bitmap
+    /// length does not match `ceil(chunk_count / 8)`.
+    pub chunk_count: u32,
+    pub author_pseudonym: String,
+    /// Lamport logical timestamp for LWW per (author_pseudonym, attachment_id).
+    pub lamport_ts: u64,
+}
+
+/// A durable forwarded-message entry written to a channel record subkey.
+///
+/// Forwarding re-encrypts the source message body with the destination
+/// channel's MEK so destination members can decrypt without needing the
+/// source community's key. The `original_author` pseudonym is preserved
+/// for display attribution; cross-community pseudonyms use independent
+/// derivations so the value is NOT linkable across communities.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelForward {
+    /// Sequence number assigned by the forwarder for this dest-channel write.
+    pub sequence: u64,
+    /// Forwarder's pseudonym public key (hex) in the destination community.
+    pub sender_pseudonym: String,
+    /// Source message id (string form, e.g. "msg_<uuid>").
+    pub original_message_id: String,
+    /// Source channel id (hex, 16 bytes).
+    pub original_channel_id: String,
+    /// Source author's pseudonym (hex, 32 bytes) for display only.
+    pub original_author: String,
+    /// Source body re-encrypted with the destination channel's MEK.
+    #[serde(with = "base64_bytes")]
+    pub content_snapshot: Vec<u8>,
+    /// MEK generation used for `content_snapshot`.
+    pub mek_generation: u64,
+    /// Unix timestamp (milliseconds) of the forward write.
+    pub timestamp: u64,
+    /// Lamport logical timestamp for causal ordering at the destination.
+    #[serde(default)]
+    pub lamport_ts: u64,
+    /// Unique forward id (for deduplication on the destination channel).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message_id: Option<String>,
+}
+
 /// Any durable entry stored in a channel record page.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data", rename_all = "snake_case")]
 pub enum ChannelRecordEntry {
     Message(ChannelMessage),
+    Forward(ChannelForward),
+    AttachmentCached(ChannelAttachmentCached),
     Reaction(ChannelReaction),
     PollCreate(ChannelPollCreate),
     PollVote(ChannelPollVote),
     PollClose(ChannelPollClose),
+    HandRaise(ChannelHandRaise),
 }
 
 /// A decoded channel record entry together with the subkey it came from.
@@ -119,70 +210,133 @@ impl ChannelRecordEntry {
     pub fn lamport(&self) -> u64 {
         match self {
             Self::Message(message) => message.lamport_ts,
+            Self::Forward(forward) => forward.lamport_ts,
+            Self::AttachmentCached(cached) => cached.lamport_ts,
             Self::Reaction(reaction) => reaction.lamport,
             Self::PollCreate(create) => create.lamport,
             Self::PollVote(vote) => vote.lamport,
             Self::PollClose(close) => close.lamport,
+            Self::HandRaise(hand_raise) => hand_raise.lamport,
         }
     }
 }
 
+/// Architecture §26 W26 — wraps the per-subkey entry vec with the
+/// author's pseudonym + an Ed25519 signature. The SMPL slot keypair on
+/// `set_dht_value` is community-shared (every member knows the slot
+/// seed), so without this wrapper any member could forge entries
+/// claiming to be any other member. Receivers MUST verify the signature
+/// against `author_pseudonym` before treating the entries as authentic.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelSubkeyPayload {
+    pub author_pseudonym: rekindle_types::id::PseudonymKey,
+    pub entries: Vec<ChannelRecordEntry>,
+    /// 64-byte Ed25519 signature over [`signing_bytes`]. Empty `Vec`
+    /// only on legacy/disk fixtures predating SCHEMA_VERSION 59.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub signature: Vec<u8>,
+}
+
+impl ChannelSubkeyPayload {
+    /// Canonical bytes the author signs. Includes a domain tag so the
+    /// signature can't be lifted into a different protocol context
+    /// (governance, presence, gossip). Includes the entry count so a
+    /// truncated re-write by a forger is rejected.
+    pub fn signing_bytes(&self) -> Vec<u8> {
+        let entries_json = serde_json::to_vec(&self.entries).unwrap_or_default();
+        let mut out =
+            Vec::with_capacity(b"rekindle-channel-subkey-v1".len() + 32 + 8 + entries_json.len());
+        out.extend_from_slice(b"rekindle-channel-subkey-v1");
+        out.extend_from_slice(&self.author_pseudonym.0);
+        out.extend_from_slice(&(self.entries.len() as u64).to_le_bytes());
+        out.extend_from_slice(&entries_json);
+        out
+    }
+}
+
+/// Decode raw subkey bytes into the entry vec, verifying the author's
+/// pseudonym signature AND that every entry's per-record sender field
+/// matches the wrapper-level author. Returns `Err` for any signature
+/// failure, length mismatch, or per-entry sender forgery so callers
+/// don't quietly treat forged entries as authentic.
+///
+/// Architecture §26 W26 — three entry variants carry their own sender
+/// field (`ChannelMessage.sender_pseudonym`,
+/// `ChannelForward.sender_pseudonym`,
+/// `ChannelAttachmentCached.author_pseudonym`). Without this binding the
+/// wrapper signature would only prove "signed by author X"; X could
+/// then write entries claiming `sender_pseudonym = victim` and the
+/// receiver would attribute them to victim. We reject the entire
+/// payload on any mismatch — a single forged entry taints the rest
+/// because they all flowed through the same writer who tried to lie.
 pub fn decode_channel_entries(data: &[u8]) -> Result<Vec<ChannelRecordEntry>, ProtocolError> {
-    if let Ok(entries) = serde_json::from_slice::<Vec<ChannelRecordEntry>>(data) {
-        return Ok(entries);
+    let payload: ChannelSubkeyPayload = serde_json::from_slice(data)
+        .map_err(|e| ProtocolError::Deserialization(format!("channel subkey: {e}")))?;
+    let sig_arr: [u8; 64] = payload
+        .signature
+        .as_slice()
+        .try_into()
+        .map_err(|_| ProtocolError::Verification("channel subkey signature length".into()))?;
+    rekindle_secrets::derive::verify_pseudonym_signature(
+        &payload.author_pseudonym.0,
+        &payload.signing_bytes(),
+        &sig_arr,
+    )
+    .map_err(|e| ProtocolError::Verification(format!("channel subkey signature: {e}")))?;
+    let author_hex = hex::encode(payload.author_pseudonym.0);
+    for entry in &payload.entries {
+        match entry {
+            ChannelRecordEntry::Message(msg) => {
+                if !msg.sender_pseudonym.eq_ignore_ascii_case(&author_hex) {
+                    return Err(ProtocolError::Verification(
+                        "channel message sender_pseudonym does not match subkey author".into(),
+                    ));
+                }
+            }
+            ChannelRecordEntry::Forward(fwd) => {
+                if !fwd.sender_pseudonym.eq_ignore_ascii_case(&author_hex) {
+                    return Err(ProtocolError::Verification(
+                        "channel forward sender_pseudonym does not match subkey author".into(),
+                    ));
+                }
+            }
+            ChannelRecordEntry::AttachmentCached(att) => {
+                if !att.author_pseudonym.eq_ignore_ascii_case(&author_hex) {
+                    return Err(ProtocolError::Verification(
+                        "channel attachment-cached author_pseudonym does not match subkey author"
+                            .into(),
+                    ));
+                }
+            }
+            ChannelRecordEntry::Reaction(_)
+            | ChannelRecordEntry::HandRaise(_)
+            | ChannelRecordEntry::PollCreate(_)
+            | ChannelRecordEntry::PollVote(_)
+            | ChannelRecordEntry::PollClose(_) => {
+                // No sender field; attribution is by subkey ownership
+                // (the wrapper-level author), which is already verified.
+            }
+        }
     }
-    serde_json::from_slice::<Vec<ChannelMessage>>(data)
-        .map(|messages| {
-            messages
-                .into_iter()
-                .map(ChannelRecordEntry::Message)
-                .collect()
-        })
-        .map_err(|e| ProtocolError::Deserialization(format!("channel entries: {e}")))
+    Ok(payload.entries)
 }
 
-fn encode_page_entries(entries: &[ChannelRecordEntry]) -> Result<Vec<u8>, ProtocolError> {
-    serde_json::to_vec(entries)
-        .map_err(|e| ProtocolError::Serialization(format!("channel entries: {e}")))
-}
-
-/// Read messages from a specific subkey in the channel record.
-pub async fn read_messages(
-    dht: &DHTManager,
-    key: &str,
-    subkey: u32,
-) -> Result<Vec<ChannelMessage>, ProtocolError> {
-    match dht.get_value(key, subkey).await? {
-        Some(data) => decode_channel_entries(&data).map(|entries| {
-            entries
-                .into_iter()
-                .filter_map(|entry| match entry {
-                    ChannelRecordEntry::Message(message) => Some(message),
-                    ChannelRecordEntry::Reaction(_)
-                    | ChannelRecordEntry::PollCreate(_)
-                    | ChannelRecordEntry::PollVote(_)
-                    | ChannelRecordEntry::PollClose(_) => None,
-                })
-                .collect()
-        }),
-        None => Ok(Vec::new()),
-    }
-}
-
-/// Write messages to a specific subkey in the channel record.
-pub async fn write_messages(
-    dht: &DHTManager,
-    key: &str,
-    subkey: u32,
-    messages: &[ChannelMessage],
-) -> Result<(), ProtocolError> {
-    let entries: Vec<ChannelRecordEntry> = messages
-        .iter()
-        .cloned()
-        .map(ChannelRecordEntry::Message)
-        .collect();
-    let bytes = encode_page_entries(&entries)?;
-    dht.set_value(key, subkey, bytes).await
+fn encode_page_entries(
+    author_pseudonym: rekindle_types::id::PseudonymKey,
+    pseudonym_signing_key: &ed25519_dalek::SigningKey,
+    entries: Vec<ChannelRecordEntry>,
+) -> Result<Vec<u8>, ProtocolError> {
+    let mut payload = ChannelSubkeyPayload {
+        author_pseudonym,
+        entries,
+        signature: Vec::new(),
+    };
+    let sig =
+        rekindle_secrets::derive::sign_with_pseudonym(pseudonym_signing_key, &payload.signing_bytes());
+    payload.signature = sig.to_vec();
+    serde_json::to_vec(&payload)
+        .map_err(|e| ProtocolError::Serialization(format!("channel subkey: {e}")))
 }
 
 /// Watch a channel record for new messages.
@@ -239,6 +393,8 @@ pub async fn write_member_message(
     channel_key: &str,
     member_index: u32,
     writer: veilid_core::KeyPair,
+    author_pseudonym: rekindle_types::id::PseudonymKey,
+    pseudonym_signing_key: &ed25519_dalek::SigningKey,
     message: &ChannelMessage,
 ) -> Result<(), ProtocolError> {
     write_member_entry(
@@ -246,6 +402,8 @@ pub async fn write_member_message(
         channel_key,
         member_index,
         writer,
+        author_pseudonym,
+        pseudonym_signing_key,
         ChannelRecordEntry::Message(message.clone()),
     )
     .await
@@ -257,6 +415,8 @@ pub async fn write_member_reaction(
     channel_key: &str,
     member_index: u32,
     writer: veilid_core::KeyPair,
+    author_pseudonym: rekindle_types::id::PseudonymKey,
+    pseudonym_signing_key: &ed25519_dalek::SigningKey,
     reaction: &ChannelReaction,
 ) -> Result<(), ProtocolError> {
     write_member_entry(
@@ -264,6 +424,8 @@ pub async fn write_member_reaction(
         channel_key,
         member_index,
         writer,
+        author_pseudonym,
+        pseudonym_signing_key,
         ChannelRecordEntry::Reaction(reaction.clone()),
     )
     .await
@@ -275,6 +437,8 @@ pub async fn write_member_poll_create(
     channel_key: &str,
     member_index: u32,
     writer: veilid_core::KeyPair,
+    author_pseudonym: rekindle_types::id::PseudonymKey,
+    pseudonym_signing_key: &ed25519_dalek::SigningKey,
     poll_create: &ChannelPollCreate,
 ) -> Result<(), ProtocolError> {
     write_member_entry(
@@ -282,6 +446,8 @@ pub async fn write_member_poll_create(
         channel_key,
         member_index,
         writer,
+        author_pseudonym,
+        pseudonym_signing_key,
         ChannelRecordEntry::PollCreate(poll_create.clone()),
     )
     .await
@@ -293,6 +459,8 @@ pub async fn write_member_poll_vote(
     channel_key: &str,
     member_index: u32,
     writer: veilid_core::KeyPair,
+    author_pseudonym: rekindle_types::id::PseudonymKey,
+    pseudonym_signing_key: &ed25519_dalek::SigningKey,
     poll_vote: &ChannelPollVote,
 ) -> Result<(), ProtocolError> {
     write_member_entry(
@@ -300,6 +468,8 @@ pub async fn write_member_poll_vote(
         channel_key,
         member_index,
         writer,
+        author_pseudonym,
+        pseudonym_signing_key,
         ChannelRecordEntry::PollVote(poll_vote.clone()),
     )
     .await
@@ -311,6 +481,8 @@ pub async fn write_member_poll_close(
     channel_key: &str,
     member_index: u32,
     writer: veilid_core::KeyPair,
+    author_pseudonym: rekindle_types::id::PseudonymKey,
+    pseudonym_signing_key: &ed25519_dalek::SigningKey,
     poll_close: &ChannelPollClose,
 ) -> Result<(), ProtocolError> {
     write_member_entry(
@@ -318,7 +490,80 @@ pub async fn write_member_poll_close(
         channel_key,
         member_index,
         writer,
+        author_pseudonym,
+        pseudonym_signing_key,
         ChannelRecordEntry::PollClose(poll_close.clone()),
+    )
+    .await
+}
+
+/// Write a hand-raise entry to a member's subkey in the channel SMPL record.
+pub async fn write_member_hand_raise(
+    dht: &DHTManager,
+    channel_key: &str,
+    member_index: u32,
+    writer: veilid_core::KeyPair,
+    author_pseudonym: rekindle_types::id::PseudonymKey,
+    pseudonym_signing_key: &ed25519_dalek::SigningKey,
+    hand_raise: &ChannelHandRaise,
+) -> Result<(), ProtocolError> {
+    write_member_entry(
+        dht,
+        channel_key,
+        member_index,
+        writer,
+        author_pseudonym,
+        pseudonym_signing_key,
+        ChannelRecordEntry::HandRaise(hand_raise.clone()),
+    )
+    .await
+}
+
+/// Write an `AttachmentCached` entry to a member's subkey in the channel SMPL
+/// record (Lost Cargo source advertisement, architecture §28.9 line 3268).
+pub async fn write_member_attachment_cached(
+    dht: &DHTManager,
+    channel_key: &str,
+    member_index: u32,
+    writer: veilid_core::KeyPair,
+    author_pseudonym: rekindle_types::id::PseudonymKey,
+    pseudonym_signing_key: &ed25519_dalek::SigningKey,
+    cached: &ChannelAttachmentCached,
+) -> Result<(), ProtocolError> {
+    write_member_entry(
+        dht,
+        channel_key,
+        member_index,
+        writer,
+        author_pseudonym,
+        pseudonym_signing_key,
+        ChannelRecordEntry::AttachmentCached(cached.clone()),
+    )
+    .await
+}
+
+/// Write a forwarded-message entry to a member's subkey in the channel SMPL record.
+///
+/// Forwards are stored as their own variant (not wrapped in `Message`) so the
+/// destination channel's UI can render the "Forwarded from" attribution
+/// without re-parsing message bodies.
+pub async fn write_member_forward(
+    dht: &DHTManager,
+    channel_key: &str,
+    member_index: u32,
+    writer: veilid_core::KeyPair,
+    author_pseudonym: rekindle_types::id::PseudonymKey,
+    pseudonym_signing_key: &ed25519_dalek::SigningKey,
+    forward: &ChannelForward,
+) -> Result<(), ProtocolError> {
+    write_member_entry(
+        dht,
+        channel_key,
+        member_index,
+        writer,
+        author_pseudonym,
+        pseudonym_signing_key,
+        ChannelRecordEntry::Forward(forward.clone()),
     )
     .await
 }
@@ -326,10 +571,13 @@ pub async fn write_member_poll_close(
 fn message_from_entry(entry: &ChannelRecordEntry) -> Option<&ChannelMessage> {
     match entry {
         ChannelRecordEntry::Message(message) => Some(message),
-        ChannelRecordEntry::Reaction(_)
+        ChannelRecordEntry::Forward(_)
+        | ChannelRecordEntry::AttachmentCached(_)
+        | ChannelRecordEntry::Reaction(_)
         | ChannelRecordEntry::PollCreate(_)
         | ChannelRecordEntry::PollVote(_)
-        | ChannelRecordEntry::PollClose(_) => None,
+        | ChannelRecordEntry::PollClose(_)
+        | ChannelRecordEntry::HandRaise(_) => None,
     }
 }
 
@@ -338,10 +586,16 @@ async fn write_member_entry(
     channel_key: &str,
     member_index: u32,
     writer: veilid_core::KeyPair,
+    author_pseudonym: rekindle_types::id::PseudonymKey,
+    pseudonym_signing_key: &ed25519_dalek::SigningKey,
     entry: ChannelRecordEntry,
 ) -> Result<(), ProtocolError> {
     let subkey = u32::from(CHANNEL_OWNER_SUBKEY_COUNT) + member_index;
 
+    // Architecture §26 W26 — only inherit existing entries that pass the
+    // author signature check. Otherwise a forger who overwrote our
+    // subkey via the shared slot_seed would launder their entries into
+    // every subsequent legitimate write we make.
     let mut entries = match dht.get_value(channel_key, subkey).await? {
         Some(data) => decode_channel_entries(&data).unwrap_or_default(),
         None => Vec::new(),
@@ -349,10 +603,18 @@ async fn write_member_entry(
 
     entries.push(entry);
 
-    let mut bytes = encode_page_entries(&entries)?;
+    let mut bytes = encode_page_entries(
+        author_pseudonym.clone(),
+        pseudonym_signing_key,
+        entries.clone(),
+    )?;
     while bytes.len() > MAX_PAGE_SIZE && entries.len() > 1 {
         entries.remove(0);
-        bytes = encode_page_entries(&entries)?;
+        bytes = encode_page_entries(
+            author_pseudonym.clone(),
+            pseudonym_signing_key,
+            entries.clone(),
+        )?;
     }
 
     dht.set_value_with_writer(channel_key, subkey, bytes, writer)

@@ -11,6 +11,23 @@ pub struct MemberDto {
     pub display_role: String,
     pub status: String,
     pub timeout_until: Option<u64>,
+    /// Per-community profile bio (peer-aggregated from presence subkey).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bio: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pronouns: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub theme_color: Option<u32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub badges: Vec<String>,
+    /// BLAKE3 hash referencing the member's per-community avatar asset
+    /// (architecture §24.2). The bytes themselves are fetched from the
+    /// local Lost Cargo cache or a peer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avatar_ref: Option<String>,
+    /// BLAKE3 hash referencing the member's per-community banner asset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub banner_ref: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -35,8 +52,20 @@ pub struct ChannelInfoDto {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub topic: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forum_tags: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stage_speakers: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stage_moderator: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slowmode_seconds: Option<u32>,
     pub notification_level: String,
+    /// Architecture §32 Phase 7 Week 25 — channel-level notification
+    /// sound override (BLAKE3 content hash of a soundboard expression).
+    /// `None` means inherit from the community default; the receive
+    /// path resolves the cascade in `resolve_notification_sound`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notification_sound_ref: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -45,7 +74,12 @@ pub struct QuietHoursSettingsDto {
     pub enabled: bool,
     pub start_hour: u8,
     pub end_hour: u8,
-    pub utc_offset_minutes: i16,
+    /// Architecture §17.2 — IANA timezone identifier (e.g.,
+    /// `"America/Los_Angeles"`). The frontend seeds this with
+    /// `Intl.DateTimeFormat().resolvedOptions().timeZone` on first
+    /// configuration; the backend resolver in `is_quiet_hours_active`
+    /// uses `chrono-tz` so DST transitions are handled automatically.
+    pub timezone: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -146,6 +180,15 @@ pub struct CommunityDetail {
     pub id: String,
     pub name: String,
     pub description: Option<String>,
+    /// Architecture §32 Phase 5 Week 15 — community-level icon/banner
+    /// references. Each is the BLAKE3 hex hash of a WebP-compressed
+    /// image cached at `<app_data>/community_avatars/<id>/<hash>.webp`.
+    /// Resolved to a `data:image/webp;base64,...` URL by
+    /// `get_community_avatar_data_url`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon_hash: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub banner_hash: Option<String>,
     pub channels: Vec<ChannelInfoDto>,
     pub categories: Vec<CategoryInfoDto>,
     pub my_role: Option<String>,
@@ -156,4 +199,13 @@ pub struct CommunityDetail {
     pub member_registry_key: Option<String>,
     pub governance_key: Option<String>,
     pub onboarding_complete: bool,
+    /// Our per-community profile values for prefilling the edit form.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub my_bio: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub my_pronouns: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub my_theme_color: Option<u32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub my_badges: Vec<String>,
 }

@@ -28,11 +28,40 @@ pub async fn handle_app_call(
     tracing::debug!(call_id = %call_id, "app_call received");
 
     let message = call.message().to_vec();
-    let reply_bytes = match serde_json::from_slice::<CommunityEnvelope>(&message) {
-        Ok(CommunityEnvelope::Control(ControlPayload::BootstrapRequest {
+
+    // Cross-device sync envelopes are tagged with their own discriminator,
+    // so try them first (architecture §28.4 device pairing).
+    if let Ok(rekindle_types::cross_device_sync::SyncEnvelope::PairingRequest(payload)) =
+        serde_json::from_slice(&message)
+    {
+        let pool: tauri::State<'_, DbPool> = app_handle.state();
+        let reply = match crate::services::cross_device_sync::handle_pairing_app_call(
+            state,
+            pool.inner(),
+            payload,
+        )
+        .await
+        {
+            Ok(accept) => serde_json::to_vec(&accept).unwrap_or_else(|_| b"ACK".to_vec()),
+            Err(e) => {
+                tracing::warn!(call_id = %call_id, error = %e, "pairing app_call failed");
+                b"ACK".to_vec()
+            }
+        };
+        if let Some(api) = state_helpers::veilid_api(state) {
+            if let Err(e) = api.app_call_reply(call_id, reply).await {
+                tracing::warn!(error = %e, "failed to reply to pairing app_call");
+            }
+        }
+        return;
+    }
+
+    let reply_bytes = match rekindle_protocol::capnp_envelope::try_decode_community_envelope(&message)
+    {
+        Ok(Some(CommunityEnvelope::Control(ControlPayload::BootstrapRequest {
             joiner_pseudonym,
             governance_key,
-        })) => {
+        }))) => {
             if let Some(community_id) = resolve_bootstrap_community_id(state, &governance_key) {
                 crate::services::community::build_bootstrap_response(
                     state,
@@ -40,6 +69,7 @@ pub async fn handle_app_call(
                     &governance_key,
                     &joiner_pseudonym,
                 )
+                .await
                 .unwrap_or_else(|e| {
                     tracing::warn!(call_id = %call_id, error = %e, "failed to build bootstrap response");
                     b"ACK".to_vec()
@@ -53,13 +83,13 @@ pub async fn handle_app_call(
                 b"ACK".to_vec()
             }
         }
-        Ok(CommunityEnvelope::Control(ControlPayload::MekTransfer {
+        Ok(Some(CommunityEnvelope::Control(ControlPayload::MekTransfer {
             community_id,
             channel_id,
             generation: _,
             sender_pseudonym,
             wrapped_mek,
-        })) => {
+        }))) => {
             if let Err(error) = crate::services::community::handle_incoming_mek_transfer(
                 app_handle,
                 state,
@@ -72,11 +102,66 @@ pub async fn handle_app_call(
             }
             b"ACK".to_vec()
         }
+        Ok(Some(CommunityEnvelope::Control(ControlPayload::RequestAttachment {
+            channel_id: _,
+            attachment_id,
+            requested_chunks,
+            requester_pseudonym,
+        }))) => {
+            // Find the community that owns this attachment by scanning each
+            // open file cache for the requested attachment_id. The requester's
+            // pseudonym is informational here — permission to read the file
+            // is implicit in being able to decrypt the FEK (which only
+            // community members can do).
+            let _ = requester_pseudonym;
+            let attachment_uuid = uuid::Uuid::from_bytes(attachment_id);
+            let owning_community = {
+                let caches = state.file_caches.read();
+                caches
+                    .iter()
+                    .find_map(|(cid, cache)| {
+                        cache
+                            .stats_per_attachment()
+                            .contains_key(&attachment_uuid)
+                            .then(|| cid.clone())
+                    })
+            };
+            match owning_community {
+                Some(cid) => crate::services::community::files::serve_attachment_request(
+                    state,
+                    &cid,
+                    attachment_id,
+                    &requested_chunks,
+                )
+                .unwrap_or_else(|| b"ACK".to_vec()),
+                None => b"ACK".to_vec(),
+            }
+        }
         _ => {
             let pool: tauri::State<'_, DbPool> = app_handle.state();
-            message_service::handle_incoming_message(app_handle, state, pool.inner(), &message)
+            // Architecture §27.1: a DmInvite arriving via app_call must
+            // get a structured DmAccept/DmDecline reply, not a bare
+            // ACK. Try that path first; fall through to the generic
+            // handler for everything else.
+            if let Some(reply) = message_service::try_handle_dm_invite_app_call(
+                app_handle,
+                state,
+                pool.inner(),
+                &message,
+            )
+            .await
+            {
+                reply
+            } else {
+                message_service::handle_incoming_message(
+                    app_handle,
+                    state,
+                    pool.inner(),
+                    &message,
+                )
                 .await;
-            b"ACK".to_vec()
+                b"ACK".to_vec()
+            }
         }
     };
 

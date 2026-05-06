@@ -8,11 +8,14 @@ import {
   handleDeleteChannel,
   handleSetSlowmode,
   handleSetChannelTopic,
+  handleSetChannelForumTags,
   handleReorderChannels,
   handleReorderCategories,
   handleCreateCategory,
   handleDeleteCategory,
   handleRenameCategory,
+  handleSetNotificationOverride,
+  handleSetChannelNotificationSound,
 } from "../../../handlers/community.handlers";
 import {
   hasPermission,
@@ -56,6 +59,8 @@ const ChannelsTab: Component<ChannelsTabProps> = (props) => {
   const [slowmodeValue, setSlowmodeValue] = createSignal(0);
   const [editTopicId, setEditTopicId] = createSignal<string | null>(null);
   const [topicValue, setTopicValue] = createSignal("");
+  const [editForumTagsId, setEditForumTagsId] = createSignal<string | null>(null);
+  const [forumTagsValue, setForumTagsValue] = createSignal("");
 
   function startRename(channel: { id: string; name: string }): void {
     setRenamingChannelId(channel.id);
@@ -115,6 +120,35 @@ const ChannelsTab: Component<ChannelsTabProps> = (props) => {
     setTopicValue(channel.topic ?? "");
   }
 
+  // Architecture §17.1 tier 1 — per-channel notification override is
+  // local-only; it does not propagate to peers. The handler writes to
+  // `notification_preferences` in SQLite, mirrors the change into
+  // in-memory `CommunityState`, and reflects it back into the store
+  // so the dropdown shows the new selection without a reload.
+  function changeChannelNotifLevel(
+    channelId: string,
+    level: "all" | "mentions" | "nothing",
+  ): void {
+    void handleSetNotificationOverride(props.community.id, channelId, level);
+  }
+
+  // Architecture §32 Phase 7 Week 25 — sound override: channel →
+  // community default → app default. We store the soundboard
+  // expression's content_hash (so the asset survives renames). Empty
+  // selection clears the override and falls back through the cascade.
+  function changeChannelSound(channelId: string, soundRef: string): void {
+    void handleSetChannelNotificationSound(
+      props.community.id,
+      channelId,
+      soundRef.length > 0 ? soundRef : null,
+    );
+  }
+
+  // Soundboard expressions in this community, used to populate the
+  // notification-sound picker. Falls back to "(default)" when empty.
+  const soundboardSounds = () =>
+    (props.community.expressions ?? []).filter((expr) => expr.kind === "soundboard");
+
   async function submitTopic(channelId: string): Promise<void> {
     await handleSetChannelTopic(props.community.id, channelId, topicValue());
     setEditTopicId(null);
@@ -123,6 +157,25 @@ const ChannelsTab: Component<ChannelsTabProps> = (props) => {
   function cancelTopic(): void {
     setEditTopicId(null);
     setTopicValue("");
+  }
+
+  function startEditForumTags(channel: { id: string; forumTags?: string[] }): void {
+    setEditForumTagsId(channel.id);
+    setForumTagsValue((channel.forumTags ?? []).join(", "));
+  }
+
+  async function submitForumTags(channelId: string): Promise<void> {
+    const tags = forumTagsValue()
+      .split(",")
+      .map((tag) => tag.trim())
+      .filter(Boolean);
+    await handleSetChannelForumTags(props.community.id, channelId, tags);
+    setEditForumTagsId(null);
+  }
+
+  function cancelForumTags(): void {
+    setEditForumTagsId(null);
+    setForumTagsValue("");
   }
 
   function moveChannelUp(index: number): void {
@@ -277,7 +330,7 @@ const ChannelsTab: Component<ChannelsTabProps> = (props) => {
                 </Show>
                 <Show when={renamingCategoryId() === cat.id}>
                   <button
-                    class="form-btn-save channel-manage-btn"
+                    class="form-btn-primary channel-manage-btn"
                     onClick={() => submitCategoryRename(cat.id)}
                     title="Save"
                   >
@@ -331,7 +384,7 @@ const ChannelsTab: Component<ChannelsTabProps> = (props) => {
                 }}
               />
               <button
-                class="form-btn-save"
+                class="form-btn-primary"
                 onClick={handleCreateCat}
                 disabled={!newCategoryName().trim()}
               >
@@ -421,7 +474,7 @@ const ChannelsTab: Component<ChannelsTabProps> = (props) => {
                 </Show>
                 <Show when={renamingChannelId() === channel.id}>
                   <button
-                    class="form-btn-save channel-manage-btn"
+                    class="form-btn-primary channel-manage-btn"
                     onClick={() => submitRename(channel.id)}
                     title="Save"
                   >
@@ -496,7 +549,7 @@ const ChannelsTab: Component<ChannelsTabProps> = (props) => {
                       }}
                       placeholder="Seconds"
                     />
-                    <button class="form-btn-save channel-manage-btn" onClick={() => submitSlowmode(channel.id)}>
+                    <button class="form-btn-primary channel-manage-btn" onClick={() => submitSlowmode(channel.id)}>
                       <span class="nf-icon">{ICON_SAVE}</span>
                     </button>
                     <button class="form-btn-secondary channel-manage-btn" onClick={cancelSlowmode}>
@@ -535,10 +588,81 @@ const ChannelsTab: Component<ChannelsTabProps> = (props) => {
                       }}
                       placeholder="Channel topic..."
                     />
-                    <button class="form-btn-save channel-manage-btn" onClick={() => submitTopic(channel.id)}>
+                    <button class="form-btn-primary channel-manage-btn" onClick={() => submitTopic(channel.id)}>
                       <span class="nf-icon">{ICON_SAVE}</span>
                     </button>
                     <button class="form-btn-secondary channel-manage-btn" onClick={cancelTopic}>
+                      Cancel
+                    </button>
+                  </span>
+                </Show>
+              </div>
+            </Show>
+            {/* Architecture §17.1 tier 1 — local per-channel notification
+                level + per-channel sound override. Visible to every member,
+                not just admins (it's a personal preference). */}
+            <div class="channel-settings-inline">
+              <span class="channel-settings-inline-row">
+                <label class="channel-notif-label">Notifications:</label>
+                <select
+                  class="form-select channel-notif-select"
+                  value={channel.notificationLevel ?? "all"}
+                  onChange={(e) => {
+                    const value = e.currentTarget.value as "all" | "mentions" | "nothing";
+                    void changeChannelNotifLevel(channel.id, value);
+                  }}
+                >
+                  <option value="all">All messages</option>
+                  <option value="mentions">Mentions only</option>
+                  <option value="nothing">Nothing</option>
+                </select>
+                <label class="channel-notif-label">Sound:</label>
+                <select
+                  class="form-select channel-notif-select"
+                  value={channel.notificationSoundRef ?? ""}
+                  onChange={(e) => changeChannelSound(channel.id, e.currentTarget.value)}
+                >
+                  <option value="">(default)</option>
+                  <For each={soundboardSounds()}>
+                    {(sound) => (
+                      <option value={sound.contentHash}>{sound.name}</option>
+                    )}
+                  </For>
+                </select>
+              </span>
+            </div>
+            <Show when={props.canManageChannels && channel.type === "forum"}>
+              <div class="channel-settings-inline">
+                <Show when={editForumTagsId() === channel.id} fallback={
+                  <span class="channel-settings-inline-row">
+                    <Show when={(channel.forumTags?.length ?? 0) > 0}>
+                      <span class="channel-topic-label">{channel.forumTags?.join(", ")}</span>
+                    </Show>
+                    <button
+                      class="form-btn-secondary channel-manage-btn"
+                      onClick={() => startEditForumTags(channel)}
+                      title="Set Forum Tags"
+                    >
+                      Forum Tags
+                    </button>
+                  </span>
+                }>
+                  <span class="channel-settings-inline-row">
+                    <input
+                      class="form-input channel-topic-input"
+                      type="text"
+                      value={forumTagsValue()}
+                      onInput={(e) => setForumTagsValue(e.currentTarget.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") submitForumTags(channel.id);
+                        if (e.key === "Escape") cancelForumTags();
+                      }}
+                      placeholder="news, updates, support"
+                    />
+                    <button class="form-btn-primary channel-manage-btn" onClick={() => submitForumTags(channel.id)}>
+                      <span class="nf-icon">{ICON_SAVE}</span>
+                    </button>
+                    <button class="form-btn-secondary channel-manage-btn" onClick={cancelForumTags}>
                       Cancel
                     </button>
                   </span>
@@ -611,7 +735,7 @@ const ChannelsTab: Component<ChannelsTabProps> = (props) => {
                     </For>
                   </div>
                   <div class="form-field-row">
-                    <button class="form-btn-save" onClick={handleSaveOverwrite}>
+                    <button class="form-btn-primary" onClick={handleSaveOverwrite}>
                       <span class="nf-icon">{ICON_SAVE}</span> Save Overwrite
                     </button>
                     <button class="form-btn-danger" onClick={handleDeleteOverwrite}>
@@ -648,7 +772,7 @@ const ChannelsTab: Component<ChannelsTabProps> = (props) => {
             <select
               class="form-select channel-type-select"
               value={newChannelType()}
-              onChange={(e) => setNewChannelType(e.currentTarget.value as "text" | "voice" | "announcement")}
+              onChange={(e) => setNewChannelType(e.currentTarget.value as "text" | "voice" | "announcement" | "forum" | "stage" | "directory" | "media" | "events" | "dm")}
             >
               <option value="text">Text</option>
               <option value="voice">Voice</option>
@@ -660,7 +784,7 @@ const ChannelsTab: Component<ChannelsTabProps> = (props) => {
               <option value="events">Events</option>
             </select>
             <button
-              class="form-btn-save"
+              class="form-btn-primary"
               onClick={handleCreateCh}
               disabled={!newChannelName().trim() || creatingChannel()}
             >

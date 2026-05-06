@@ -268,6 +268,12 @@ pub async fn login_core(
     // Restore friends and communities from SQLite into AppState (scoped to this identity)
     load_friends_from_db(pool, state, public_key).await?;
     load_communities_from_db(pool, state, public_key).await?;
+    // Mutual Aid §14.5: warm the gossip topology ranker with prior
+    // session counters so it doesn't treat every peer as neutral.
+    services::community::hydrate_peer_reliability(state, pool).await;
+    // Periodically batch-flush the dirty reliability set to SQLite so
+    // we trade ~1000 hot-path writes/min for one transaction every 30s.
+    services::community::start_peer_reliability_flush(Arc::clone(state), pool.clone());
 
     // Derive pseudonyms for each community and load MEKs from Stronghold
     restore_community_pseudonyms_and_meks(state, keystore_handle, &key_array);
@@ -669,298 +675,546 @@ async fn load_friends_from_db(
     Ok(())
 }
 
+// ── community-load row DTOs ──
+//
+// Typed structs replace the long tuples that used to live in this query
+// fan-out. Each one mirrors the SELECT columns exactly so query helpers
+// can be small and named.
+
+struct CommunityRow {
+    id: String,
+    name: String,
+    description: Option<String>,
+    icon_hash: Option<String>,
+    banner_hash: Option<String>,
+    my_role_ids_json: String,
+    dht_owner_keypair: Option<String>,
+    my_pseudonym_key: Option<String>,
+    mek_generation: u64,
+    member_registry_key: Option<String>,
+    my_subkey_index: Option<u32>,
+    my_segment_index: Option<u32>,
+    onboarding_complete: bool,
+}
+
+struct ChannelRow {
+    id: String,
+    community_id: String,
+    name: String,
+    channel_type: ChannelType,
+    category_id: Option<String>,
+    topic: String,
+    slowmode_seconds: Option<u32>,
+    nsfw: bool,
+    message_record_key: Option<String>,
+    mek_generation: u64,
+    log_key: Option<String>,
+    my_sequence: u64,
+    notification_level: i64,
+    notification_sound_ref: Option<String>,
+    parent_voice_channel_id: Option<String>,
+}
+
+struct RoleRow {
+    community_id: String,
+    role_id: u32,
+    name: String,
+    color: u32,
+    permissions: u64,
+    position: i32,
+    hoist: bool,
+    mentionable: bool,
+    self_assignable: bool,
+    exclusion_group: Option<String>,
+}
+
+struct CategoryRow {
+    community_id: String,
+    id: String,
+    name: String,
+    sort_order: i32,
+}
+
+struct MemberRow {
+    community_id: String,
+    pseudonym_key: String,
+    display_name: Option<String>,
+    bio: Option<String>,
+    pronouns: Option<String>,
+    theme_color: Option<i64>,
+    badges_json: String,
+    avatar_ref: Option<String>,
+    banner_ref: Option<String>,
+}
+
+struct EventRsvpRow {
+    community_id: String,
+    event_id: String,
+    status: String,
+}
+
+struct SlowmodeRow {
+    community_id: String,
+    channel_id: String,
+    last_send_ms: i64,
+}
+
+struct CommunityLoaderRows {
+    communities: Vec<CommunityRow>,
+    channels: Vec<ChannelRow>,
+    roles: Vec<RoleRow>,
+    categories: Vec<CategoryRow>,
+    members: Vec<MemberRow>,
+    event_rsvps: Vec<EventRsvpRow>,
+    slowmode: Vec<SlowmodeRow>,
+}
+
+fn load_community_rows(
+    conn: &rusqlite::Connection,
+    owner_key: &str,
+) -> rusqlite::Result<Vec<CommunityRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT c.id, c.name, c.description, c.icon_hash, c.banner_hash, \
+         c.my_role_ids, c.dht_owner_keypair, c.my_pseudonym_key, c.mek_generation, \
+         c.member_registry_key, c.my_subkey_index, c.my_segment_index, \
+         COALESCE(cm.onboarding_complete, 0) \
+         FROM communities c \
+         LEFT JOIN community_members cm \
+           ON cm.owner_key = c.owner_key \
+          AND cm.community_id = c.id \
+          AND cm.pseudonym_key = c.my_pseudonym_key \
+         WHERE c.owner_key = ?1",
+    )?;
+    let rows = stmt.query_map(rusqlite::params![owner_key], |row| {
+        // SELECT order (column index → role):
+        // 0=id, 1=name, 2=description, 3=icon_hash, 4=banner_hash,
+        // 5=my_role_ids, 6=dht_owner_keypair, 7=my_pseudonym_key,
+        // 8=mek_generation, 9=member_registry_key, 10=my_subkey_index,
+        // 11=my_segment_index, 12=COALESCE(onboarding_complete).
+        // Onboarding is the only un-aliased column (the COALESCE),
+        // so we read it positionally; everything else uses by-name.
+        Ok(CommunityRow {
+            id: db::get_str(row, "id"),
+            name: db::get_str(row, "name"),
+            description: db::get_str_opt(row, "description"),
+            icon_hash: db::get_str_opt(row, "icon_hash"),
+            banner_hash: db::get_str_opt(row, "banner_hash"),
+            my_role_ids_json: db::get_str(row, "my_role_ids"),
+            dht_owner_keypair: db::get_str_opt(row, "dht_owner_keypair"),
+            my_pseudonym_key: db::get_str_opt(row, "my_pseudonym_key"),
+            mek_generation: row
+                .get::<_, i64>("mek_generation")
+                .unwrap_or(0)
+                .cast_unsigned(),
+            member_registry_key: db::get_str_opt(row, "member_registry_key"),
+            my_subkey_index: row
+                .get::<_, Option<i64>>("my_subkey_index")
+                .unwrap_or(None)
+                .map(|v| u32::try_from(v).unwrap_or(0)),
+            my_segment_index: row
+                .get::<_, Option<i64>>("my_segment_index")
+                .unwrap_or(None)
+                .map(|v| u32::try_from(v).unwrap_or(0)),
+            onboarding_complete: row.get::<_, i64>(12).unwrap_or(0) != 0,
+        })
+    })?;
+    rows.collect::<rusqlite::Result<Vec<_>>>()
+}
+
+fn load_role_rows(
+    conn: &rusqlite::Connection,
+    owner_key: &str,
+) -> rusqlite::Result<Vec<RoleRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT community_id, role_id, name, color, permissions, position, hoist, mentionable, self_assignable, exclusion_group \
+         FROM community_roles WHERE owner_key = ?1 ORDER BY position",
+    )?;
+    let rows = stmt.query_map(rusqlite::params![owner_key], |row| {
+        Ok(RoleRow {
+            community_id: db::get_str(row, "community_id"),
+            role_id: row.get::<_, u32>("role_id").unwrap_or(0),
+            name: db::get_str(row, "name"),
+            color: row.get::<_, u32>("color").unwrap_or(0),
+            permissions: row
+                .get::<_, i64>("permissions")
+                .unwrap_or(0)
+                .cast_unsigned(),
+            position: row.get::<_, i32>("position").unwrap_or(0),
+            hoist: row.get::<_, i32>("hoist").unwrap_or(0) != 0,
+            mentionable: row.get::<_, i32>("mentionable").unwrap_or(0) != 0,
+            self_assignable: row.get::<_, i32>("self_assignable").unwrap_or(0) != 0,
+            exclusion_group: db::get_str_opt(row, "exclusion_group"),
+        })
+    })?;
+    rows.collect::<rusqlite::Result<Vec<_>>>()
+}
+
+fn load_category_rows(
+    conn: &rusqlite::Connection,
+    owner_key: &str,
+) -> rusqlite::Result<Vec<CategoryRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT community_id, id, name, sort_order \
+         FROM community_categories WHERE owner_key = ?1 ORDER BY sort_order",
+    )?;
+    let rows = stmt.query_map(rusqlite::params![owner_key], |row| {
+        Ok(CategoryRow {
+            community_id: db::get_str(row, "community_id"),
+            id: db::get_str(row, "id"),
+            name: db::get_str(row, "name"),
+            sort_order: row.get::<_, i32>("sort_order").unwrap_or(0),
+        })
+    })?;
+    rows.collect::<rusqlite::Result<Vec<_>>>()
+}
+
+fn load_channel_rows(
+    conn: &rusqlite::Connection,
+    owner_key: &str,
+) -> rusqlite::Result<Vec<ChannelRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT ch.id, ch.community_id, ch.name, ch.channel_type, ch.category_id, ch.topic, \
+                ch.slowmode_seconds, ch.nsfw, ch.message_record_key, ch.mek_generation, \
+                ch.log_key, ch.my_sequence, ch.parent_voice_channel_id, \
+                COALESCE(np.level, 0) AS notification_level, \
+                np.sound_ref AS notification_sound_ref \
+         FROM channels ch
+         LEFT JOIN notification_preferences np
+           ON np.owner_key = ch.owner_key
+          AND np.community_id = ch.community_id
+          AND np.channel_id = ch.id
+         WHERE ch.owner_key = ?1
+         ORDER BY ch.sort_order",
+    )?;
+    let rows = stmt.query_map(rusqlite::params![owner_key], |row| {
+        Ok(ChannelRow {
+            id: db::get_str(row, "id"),
+            community_id: db::get_str(row, "community_id"),
+            name: db::get_str(row, "name"),
+            channel_type: row.get::<_, ChannelType>("channel_type")?,
+            category_id: db::get_str_opt(row, "category_id"),
+            topic: db::get_str(row, "topic"),
+            slowmode_seconds: row
+                .get::<_, Option<i64>>("slowmode_seconds")
+                .unwrap_or(None)
+                .map(|v| u32::try_from(v).unwrap_or(0)),
+            nsfw: row.get::<_, i64>("nsfw").unwrap_or(0) != 0,
+            message_record_key: db::get_str_opt(row, "message_record_key"),
+            mek_generation: row
+                .get::<_, i64>("mek_generation")
+                .unwrap_or(0)
+                .cast_unsigned(),
+            log_key: db::get_str_opt(row, "log_key"),
+            my_sequence: row
+                .get::<_, i64>("my_sequence")
+                .unwrap_or(0)
+                .cast_unsigned(),
+            notification_level: row.get::<_, i64>("notification_level").unwrap_or(0),
+            notification_sound_ref: db::get_str_opt(row, "notification_sound_ref"),
+            parent_voice_channel_id: db::get_str_opt(row, "parent_voice_channel_id"),
+        })
+    })?;
+    rows.collect::<rusqlite::Result<Vec<_>>>()
+}
+
+fn load_member_rows(
+    conn: &rusqlite::Connection,
+    owner_key: &str,
+) -> rusqlite::Result<Vec<MemberRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT community_id, pseudonym_key, display_name, bio, pronouns, theme_color, badges,
+                avatar_ref, banner_ref
+         FROM community_members WHERE owner_key = ?1",
+    )?;
+    let rows = stmt.query_map(rusqlite::params![owner_key], |row| {
+        Ok(MemberRow {
+            community_id: db::get_str(row, "community_id"),
+            pseudonym_key: db::get_str(row, "pseudonym_key"),
+            display_name: row
+                .get::<_, Option<String>>("display_name")
+                .unwrap_or_default(),
+            bio: row.get::<_, Option<String>>("bio").unwrap_or_default(),
+            pronouns: row.get::<_, Option<String>>("pronouns").unwrap_or_default(),
+            theme_color: row
+                .get::<_, Option<i64>>("theme_color")
+                .unwrap_or_default(),
+            badges_json: row
+                .get::<_, String>("badges")
+                .unwrap_or_else(|_| "[]".into()),
+            avatar_ref: row.get::<_, Option<String>>("avatar_ref").unwrap_or_default(),
+            banner_ref: row.get::<_, Option<String>>("banner_ref").unwrap_or_default(),
+        })
+    })?;
+    rows.collect::<rusqlite::Result<Vec<_>>>()
+}
+
+fn load_event_rsvp_rows(
+    conn: &rusqlite::Connection,
+    owner_key: &str,
+) -> rusqlite::Result<Vec<EventRsvpRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT community_id, event_id, status FROM community_event_rsvps WHERE owner_key = ?1",
+    )?;
+    let rows = stmt.query_map(rusqlite::params![owner_key], |row| {
+        Ok(EventRsvpRow {
+            community_id: db::get_str(row, "community_id"),
+            event_id: db::get_str(row, "event_id"),
+            status: db::get_str(row, "status"),
+        })
+    })?;
+    rows.collect::<rusqlite::Result<Vec<_>>>()
+}
+
+fn load_slowmode_rows(
+    conn: &rusqlite::Connection,
+    owner_key: &str,
+) -> rusqlite::Result<Vec<SlowmodeRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT community_id, channel_id, last_send_ms FROM channel_slowmode_state \
+         WHERE owner_key = ?1",
+    )?;
+    let rows = stmt.query_map(rusqlite::params![owner_key], |row| {
+        Ok(SlowmodeRow {
+            community_id: db::get_str(row, "community_id"),
+            channel_id: db::get_str(row, "channel_id"),
+            last_send_ms: row.get::<_, i64>("last_send_ms").unwrap_or(0),
+        })
+    })?;
+    rows.collect::<rusqlite::Result<Vec<_>>>()
+}
+
+/// Run the six SELECT queries in a single connection trip and return
+/// row DTOs grouped by table.
+async fn fetch_community_loader_rows(
+    pool: &DbPool,
+    owner_key: &str,
+) -> Result<CommunityLoaderRows, String> {
+    let ok = owner_key.to_string();
+    db_call(pool, move |conn| {
+        Ok(CommunityLoaderRows {
+            communities: load_community_rows(conn, &ok)?,
+            channels: load_channel_rows(conn, &ok)?,
+            roles: load_role_rows(conn, &ok)?,
+            categories: load_category_rows(conn, &ok)?,
+            members: load_member_rows(conn, &ok)?,
+            event_rsvps: load_event_rsvp_rows(conn, &ok)?,
+            slowmode: load_slowmode_rows(conn, &ok)?,
+        })
+    })
+    .await
+}
+
+fn channel_info_from_row(row: &ChannelRow) -> ChannelInfo {
+    ChannelInfo {
+        id: row.id.clone(),
+        name: row.name.clone(),
+        channel_type: row.channel_type.clone(),
+        unread_count: 0,
+        category_id: row.category_id.clone(),
+        topic: row.topic.clone(),
+        forum_tags: None,
+        stage_speakers: Vec::new(),
+        stage_moderator: None,
+        slowmode_seconds: row.slowmode_seconds,
+        nsfw: row.nsfw,
+        message_record_key: row.message_record_key.clone(),
+        mek_generation: row.mek_generation,
+        notification_level: match row.notification_level {
+            1 => "mentions".to_string(),
+            2 => "nothing".to_string(),
+            _ => "all".to_string(),
+        },
+        notification_sound_ref: row.notification_sound_ref.clone(),
+        parent_voice_channel_id: row.parent_voice_channel_id.clone(),
+    }
+}
+
+/// Project channels for one community, also extracting log keys and
+/// per-channel sequence counters.
+fn assemble_channels_for(
+    community_id: &str,
+    rows: &[ChannelRow],
+) -> (
+    Vec<ChannelInfo>,
+    std::collections::HashMap<String, String>,
+    std::collections::HashMap<String, u64>,
+) {
+    let mut log_keys = std::collections::HashMap::new();
+    let mut sequences = std::collections::HashMap::new();
+    let channels = rows
+        .iter()
+        .filter(|r| r.community_id == community_id)
+        .map(|r| {
+            if let Some(ref lk) = r.log_key {
+                log_keys.insert(r.id.clone(), lk.clone());
+            }
+            if r.my_sequence > 0 {
+                sequences.insert(r.id.clone(), r.my_sequence);
+            }
+            channel_info_from_row(r)
+        })
+        .collect();
+    (channels, log_keys, sequences)
+}
+
+fn assemble_roles_for(
+    community_id: &str,
+    rows: &[RoleRow],
+) -> Vec<crate::state::RoleDefinition> {
+    rows.iter()
+        .filter(|r| r.community_id == community_id)
+        .map(|r| crate::state::RoleDefinition {
+            id: r.role_id,
+            name: r.name.clone(),
+            color: r.color,
+            permissions: r.permissions,
+            position: r.position,
+            hoist: r.hoist,
+            mentionable: r.mentionable,
+            self_assignable: r.self_assignable,
+            exclusion_group: r.exclusion_group.clone(),
+        })
+        .collect()
+}
+
+fn assemble_categories_for(community_id: &str, rows: &[CategoryRow]) -> Vec<CategoryInfo> {
+    rows.iter()
+        .filter(|r| r.community_id == community_id)
+        .map(|r| CategoryInfo {
+            id: r.id.clone(),
+            name: r.name.clone(),
+            sort_order: r.sort_order,
+        })
+        .collect()
+}
+
+fn assemble_known_members_for(
+    community_id: &str,
+    rows: &[MemberRow],
+) -> std::collections::HashSet<String> {
+    rows.iter()
+        .filter(|r| r.community_id == community_id)
+        .map(|r| r.pseudonym_key.clone())
+        .collect()
+}
+
+fn assemble_member_profiles_for(
+    community_id: &str,
+    rows: &[MemberRow],
+) -> std::collections::HashMap<String, crate::state::MemberProfileSnapshot> {
+    rows.iter()
+        .filter(|r| r.community_id == community_id)
+        .map(|r| {
+            let badges: Vec<String> = serde_json::from_str(&r.badges_json).unwrap_or_default();
+            let theme_color = r.theme_color.and_then(|c| u32::try_from(c).ok());
+            (
+                r.pseudonym_key.clone(),
+                crate::state::MemberProfileSnapshot {
+                    display_name: r.display_name.clone(),
+                    bio: r.bio.clone(),
+                    pronouns: r.pronouns.clone(),
+                    theme_color,
+                    badges,
+                    avatar_ref: r.avatar_ref.clone(),
+                    banner_ref: r.banner_ref.clone(),
+                },
+            )
+        })
+        .collect()
+}
+
+fn assemble_event_rsvps_for(
+    community_id: &str,
+    rows: &[EventRsvpRow],
+) -> std::collections::HashMap<String, String> {
+    rows.iter()
+        .filter(|r| r.community_id == community_id)
+        .map(|r| (r.event_id.clone(), r.status.clone()))
+        .collect()
+}
+
+fn assemble_slowmode_for(
+    community_id: &str,
+    rows: &[SlowmodeRow],
+) -> std::collections::HashMap<String, i64> {
+    rows.iter()
+        .filter(|r| r.community_id == community_id)
+        .map(|r| (r.channel_id.clone(), r.last_send_ms))
+        .collect()
+}
+
+fn build_community_state(community: &CommunityRow, rows: &CommunityLoaderRows) -> CommunityState {
+    let (channels, channel_log_keys, channel_sequences) =
+        assemble_channels_for(&community.id, &rows.channels);
+    let my_role_ids: Vec<u32> =
+        serde_json::from_str(&community.my_role_ids_json).unwrap_or_else(|_| vec![0, 1]);
+    let roles = assemble_roles_for(&community.id, &rows.roles);
+    CommunityState {
+        id: community.id.clone(),
+        name: community.name.clone(),
+        description: community.description.clone(),
+        icon_hash: community.icon_hash.clone(),
+        banner_hash: community.banner_hash.clone(),
+        channels,
+        categories: assemble_categories_for(&community.id, &rows.categories),
+        my_role_ids,
+        roles,
+        dht_owner_keypair: community.dht_owner_keypair.clone(),
+        my_pseudonym_key: community.my_pseudonym_key.clone(),
+        mek_generation: community.mek_generation,
+        member_registry_key: community.member_registry_key.clone(),
+        my_subkey_index: community.my_subkey_index,
+        my_segment_index: community.my_segment_index,
+        gossip: Some(crate::state::GossipOverlay::default()),
+        slot_keypair: None,
+        channel_log_keys,
+        channel_sequences,
+        pending_syncs: std::collections::HashMap::new(),
+        watched_records: std::collections::HashSet::new(),
+        record_sequences: std::collections::HashMap::new(),
+        peer_sequences: std::collections::HashMap::new(),
+        channel_last_send_at: assemble_slowmode_for(&community.id, &rows.slowmode),
+        peer_reliability: std::collections::HashMap::new(),
+        registry_owner_keypair: None,
+        slot_seed: None,
+        member_roles: std::collections::HashMap::new(),
+        known_members: assemble_known_members_for(&community.id, &rows.members),
+        presence_poll_shutdown_tx: None,
+        dht_keepalive_shutdown_tx: None,
+        open_community_records: crate::state::CommunityRecords::default(),
+        my_event_rsvps: assemble_event_rsvps_for(&community.id, &rows.event_rsvps),
+        event_rsvps_by_event: std::collections::HashMap::new(),
+        onboarding_complete: community.onboarding_complete,
+        governance_key: Some(community.id.clone()),
+        governance_state: None,
+        lamport_counter: 0,
+        my_bio: None,
+        my_pronouns: None,
+        my_theme_color: None,
+        my_badges: Vec::new(),
+        my_avatar_ref: None,
+        my_banner_ref: None,
+        member_profiles: assemble_member_profiles_for(&community.id, &rows.members),
+        // Plan §Failure 4 — display role is derived on demand from
+        // (my_role_ids, roles) via `state::display_role_name`. The Owner
+        // role lives in `roles` after the genesis CRDT merge and outranks
+        // @everyone by `position: i32::MAX`, so the resolver naturally
+        // returns "Owner" for the creator. No separate `my_role` field.
+        recent_member_joins: std::collections::VecDeque::new(),
+    }
+}
+
 /// Load communities and channels from `SQLite` into `AppState`, scoped to the given identity.
 async fn load_communities_from_db(
     pool: &DbPool,
     state: &SharedState,
     owner_key: &str,
 ) -> Result<(), String> {
-    use crate::state::RoleDefinition;
-
-    let ok = owner_key.to_string();
-    let (community_rows, channel_rows, role_rows, category_rows, member_key_rows, event_rsvp_rows) = db_call(pool, move |conn| {
-        let mut comm_stmt = conn
-            .prepare(
-                "SELECT c.id, c.name, c.description, c.my_role, c.my_role_ids, c.dht_owner_keypair, \
-                 c.my_pseudonym_key, c.mek_generation, c.member_registry_key, c.my_subkey_index, \
-                 COALESCE(cm.onboarding_complete, 0) \
-                 FROM communities c \
-                 LEFT JOIN community_members cm \
-                   ON cm.owner_key = c.owner_key \
-                  AND cm.community_id = c.id \
-                  AND cm.pseudonym_key = c.my_pseudonym_key \
-                 WHERE c.owner_key = ?1",
-            )?;
-        let communities = comm_stmt
-            .query_map(rusqlite::params![ok], |row| {
-                Ok((
-                    db::get_str(row, "id"),
-                    db::get_str(row, "name"),
-                    db::get_str_opt(row, "description"),
-                    db::get_str(row, "my_role"),
-                    db::get_str(row, "my_role_ids"),
-                    db::get_str_opt(row, "dht_owner_keypair"),
-                    db::get_str_opt(row, "my_pseudonym_key"),
-                    row.get::<_, i64>("mek_generation").unwrap_or(0).cast_unsigned(),
-                    db::get_str_opt(row, "member_registry_key"),
-                    row.get::<_, Option<i64>>("my_subkey_index").unwrap_or(None).map(|v| u32::try_from(v).unwrap_or(0)),
-                    row.get::<_, i64>(10).unwrap_or(0) != 0,
-                ))
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
-
-        // Load community roles
-        let mut role_stmt = conn
-            .prepare(
-                "SELECT community_id, role_id, name, color, permissions, position, hoist, mentionable, self_assignable \
-                 FROM community_roles WHERE owner_key = ?1 ORDER BY position",
-            )?;
-        let role_rows = role_stmt
-            .query_map(rusqlite::params![ok], |row| {
-                Ok((
-                    db::get_str(row, "community_id"),
-                    row.get::<_, u32>("role_id").unwrap_or(0),
-                    db::get_str(row, "name"),
-                    row.get::<_, u32>("color").unwrap_or(0),
-                    row.get::<_, i64>("permissions").unwrap_or(0).cast_unsigned(),
-                    row.get::<_, i32>("position").unwrap_or(0),
-                    row.get::<_, i32>("hoist").unwrap_or(0) != 0,
-                    row.get::<_, i32>("mentionable").unwrap_or(0) != 0,
-                    row.get::<_, i32>("self_assignable").unwrap_or(0) != 0,
-                ))
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
-
-        // Load community categories
-        let mut cat_stmt = conn
-            .prepare(
-                "SELECT community_id, id, name, sort_order \
-                 FROM community_categories WHERE owner_key = ?1 ORDER BY sort_order",
-            )?;
-        let category_rows = cat_stmt
-            .query_map(rusqlite::params![ok], |row| {
-                Ok((
-                    db::get_str(row, "community_id"),
-                    db::get_str(row, "id"),
-                    db::get_str(row, "name"),
-                    row.get::<_, i32>("sort_order").unwrap_or(0),
-                ))
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
-
-        let mut chan_stmt = conn.prepare(
-            "SELECT ch.id, ch.community_id, ch.name, ch.channel_type, ch.category_id, ch.topic, \
-                    ch.slowmode_seconds, ch.nsfw, ch.message_record_key, ch.mek_generation, \
-                    ch.log_key, ch.my_sequence, COALESCE(np.level, 0) AS notification_level \
-             FROM channels ch
-             LEFT JOIN notification_preferences np
-               ON np.owner_key = ch.owner_key
-              AND np.community_id = ch.community_id
-              AND np.channel_id = ch.id
-             WHERE ch.owner_key = ?1
-             ORDER BY ch.sort_order",
-        )?;
-        let channels = chan_stmt
-            .query_map(rusqlite::params![ok], |row| {
-                Ok((
-                    db::get_str(row, "id"),
-                    db::get_str(row, "community_id"),
-                    db::get_str(row, "name"),
-                    row.get::<_, ChannelType>("channel_type")?,
-                    db::get_str_opt(row, "category_id"),
-                    db::get_str(row, "topic"),
-                    row.get::<_, Option<i64>>("slowmode_seconds").unwrap_or(None).map(|v| u32::try_from(v).unwrap_or(0)),
-                    row.get::<_, i64>("nsfw").unwrap_or(0) != 0,
-                    db::get_str_opt(row, "message_record_key"),
-                    row.get::<_, i64>("mek_generation").unwrap_or(0).cast_unsigned(),
-                    db::get_str_opt(row, "log_key"),
-                    row.get::<_, i64>("my_sequence").unwrap_or(0).cast_unsigned(),
-                    row.get::<_, i64>("notification_level").unwrap_or(0),
-                ))
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
-
-        // Load member pseudonym keys for the known_members cache
-        let mut member_stmt = conn
-            .prepare(
-                "SELECT community_id, pseudonym_key FROM community_members WHERE owner_key = ?1",
-            )?;
-        let member_keys = member_stmt
-            .query_map(rusqlite::params![ok], |row| {
-                Ok((
-                    db::get_str(row, "community_id"),
-                    db::get_str(row, "pseudonym_key"),
-                ))
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
-
-        let mut event_rsvp_stmt = conn.prepare(
-            "SELECT community_id, event_id, status FROM community_event_rsvps WHERE owner_key = ?1",
-        )?;
-        let event_rsvp_rows = event_rsvp_stmt
-            .query_map(rusqlite::params![ok], |row| {
-                Ok((
-                    db::get_str(row, "community_id"),
-                    db::get_str(row, "event_id"),
-                    db::get_str(row, "status"),
-                ))
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
-
-        Ok((communities, channels, role_rows, category_rows, member_keys, event_rsvp_rows))
-    })
-    .await?;
-
+    let rows = fetch_community_loader_rows(pool, owner_key).await?;
     let mut communities = state.communities.write();
-    for (
-        community_id,
-        name,
-        description,
-        my_role,
-        my_role_ids_json,
-        dht_owner_keypair,
-        my_pseudonym_key,
-        mek_generation,
-        db_member_registry_key,
-        db_subkey_index,
-        onboarding_complete,
-    ) in &community_rows
-    {
-        let mut channel_log_keys = std::collections::HashMap::new();
-        let mut channel_sequences = std::collections::HashMap::new();
-        let channels: Vec<ChannelInfo> = channel_rows
-            .iter()
-            .filter(|(_, cid, _, _, _, _, _, _, _, _, _, _, _)| cid == community_id)
-            .map(
-                |(
-                    id,
-                    _,
-                    ch_name,
-                    ch_type,
-                    cat_id,
-                    topic,
-                    slowmode,
-                    nsfw,
-                    msg_key,
-                    mek_gen,
-                    log_key,
-                    my_seq,
-                    notification_level,
-                )| {
-                    if let Some(ref lk) = log_key {
-                        channel_log_keys.insert(id.clone(), lk.clone());
-                    }
-                    if *my_seq > 0 {
-                        channel_sequences.insert(id.clone(), *my_seq);
-                    }
-                    ChannelInfo {
-                        id: id.clone(),
-                        name: ch_name.clone(),
-                        channel_type: ch_type.clone(),
-                        unread_count: 0,
-                        category_id: cat_id.clone(),
-                        topic: topic.clone(),
-                        slowmode_seconds: *slowmode,
-                        nsfw: *nsfw,
-                        message_record_key: msg_key.clone(),
-                        mek_generation: *mek_gen,
-                        notification_level: match notification_level {
-                            1 => "mentions".to_string(),
-                            2 => "nothing".to_string(),
-                            _ => "all".to_string(),
-                        },
-                    }
-                },
-            )
-            .collect();
-
-        let my_role_ids: Vec<u32> =
-            serde_json::from_str(my_role_ids_json).unwrap_or_else(|_| vec![0, 1]);
-
-        let roles: Vec<RoleDefinition> = role_rows
-            .iter()
-            .filter(|(cid, ..)| cid == community_id)
-            .map(
-                |(_, role_id, rname, color, permissions, position, hoist, mentionable, self_assignable)| {
-                    RoleDefinition {
-                        id: *role_id,
-                        name: rname.clone(),
-                        color: *color,
-                        permissions: *permissions,
-                        position: *position,
-                        hoist: *hoist,
-                        mentionable: *mentionable,
-                        self_assignable: *self_assignable,
-                    }
-                },
-            )
-            .collect();
-
-        let governance_key = Some(community_id.clone());
-        let my_event_rsvps = event_rsvp_rows
-            .iter()
-            .filter(|(cid, _, _)| cid == community_id)
-            .map(|(_, event_id, status)| (event_id.clone(), status.clone()))
-            .collect();
-
-        let mut community = CommunityState {
-            id: community_id.clone(),
-            name: name.clone(),
-            description: description.clone(),
-            channels,
-            categories: category_rows
-                .iter()
-                .filter(|(cid, _, _, _)| cid == community_id)
-                .map(|(_, id, name, sort_order)| CategoryInfo {
-                    id: id.clone(),
-                    name: name.clone(),
-                    sort_order: *sort_order,
-                })
-                .collect(),
-            my_role_ids,
-            roles,
-            my_role: Some(my_role.clone()),
-            dht_owner_keypair: dht_owner_keypair.clone(),
-            my_pseudonym_key: my_pseudonym_key.clone(),
-            mek_generation: *mek_generation,
-            member_registry_key: db_member_registry_key.clone(),
-            my_subkey_index: *db_subkey_index,
-            gossip: Some(crate::state::GossipOverlay::default()),
-            slot_keypair: None,
-            channel_log_keys,
-            channel_sequences,
-            pending_syncs: std::collections::HashMap::new(),
-            watched_records: std::collections::HashSet::new(),
-            record_sequences: std::collections::HashMap::new(),
-            peer_sequences: std::collections::HashMap::new(),
-            registry_owner_keypair: None,
-            slot_seed: None,
-            member_roles: std::collections::HashMap::new(),
-            known_members: member_key_rows
-                .iter()
-                .filter(|(cid, _)| cid == community_id)
-                .map(|(_, pk)| pk.clone())
-                .collect(),
-            presence_poll_shutdown_tx: None,
-            dht_keepalive_shutdown_tx: None,
-            open_community_records: crate::state::CommunityRecords::default(),
-            my_event_rsvps,
-            event_rsvps_by_event: std::collections::HashMap::new(),
-            onboarding_complete: *onboarding_complete,
-            governance_key,
-            governance_state: None, // rebuilt from DHT during hydration
-            lamport_counter: 0,
-        };
-        // Recalculate display role from role definitions (DB value may be stale),
-        // but preserve "owner" — it's authoritative from SQLite and not derivable
-        // from role definitions alone.
-        if community.my_role.as_deref() != Some("owner") {
-            community.my_role = Some(crate::state::display_role_name(
-                &community.my_role_ids,
-                &community.roles,
-            ));
-        }
-        communities.insert(community_id.clone(), community);
+    for community in &rows.communities {
+        let community_state = build_community_state(community, &rows);
+        communities.insert(community.id.clone(), community_state);
     }
     Ok(())
 }
@@ -1259,7 +1513,15 @@ fn spawn_login_services(
         let community_ids: Vec<String> = state.communities.read().keys().cloned().collect();
         for community_id in community_ids {
             services::community::start_presence_poll(Arc::clone(state), community_id.clone());
-            services::community::start_dht_keepalive(Arc::clone(state), community_id);
+            services::community::start_dht_keepalive(Arc::clone(state), community_id.clone());
+            // Mutual Aid §14.2: returning members request missing message
+            // ranges from peers who advertise them. The 15-second delay
+            // inside the helper lets the presence poll populate
+            // `history_ranges` first.
+            services::community::join::schedule_history_catchup(
+                Arc::clone(state),
+                community_id,
+            );
         }
     }
 
@@ -1722,6 +1984,28 @@ async fn rebuild_governance_from_dht(state: &SharedState) {
                             rekindle_types::governance::GovernanceSubkeyPayload,
                         >(val.data())
                         {
+                            // Architecture §26 W26 — drop subkey reads
+                            // whose author signature doesn't verify. The
+                            // SMPL slot keypair is community-shared, so
+                            // any member could otherwise forge a payload
+                            // claiming to be the creator.
+                            let sig_arr: [u8; 64] = match payload.signature.as_slice().try_into() {
+                                Ok(arr) => arr,
+                                Err(_) => continue,
+                            };
+                            if rekindle_secrets::derive::verify_pseudonym_signature(
+                                &payload.author_pseudonym.0,
+                                &payload.signing_bytes(),
+                                &sig_arr,
+                            )
+                            .is_err()
+                            {
+                                tracing::warn!(
+                                    community = %community_id,
+                                    "governance subkey rejected: bad pseudonym signature",
+                                );
+                                continue;
+                            }
                             all_entries.push((payload.author_pseudonym, payload.entries));
                         }
                     }

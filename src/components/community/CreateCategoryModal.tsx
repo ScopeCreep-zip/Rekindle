@@ -1,5 +1,7 @@
-import { Component, Show, createSignal } from "solid-js";
-import { ICON_CLOSE } from "../../icons";
+import { Component, createEffect, createSignal } from "solid-js";
+
+import Modal from "../common/Modal";
+import LoadingButton from "../common/LoadingButton";
 import { handleCreateCategory } from "../../handlers/community.handlers";
 
 interface CreateCategoryModalProps {
@@ -12,43 +14,45 @@ const CreateCategoryModal: Component<CreateCategoryModalProps> = (props) => {
   const [name, setName] = createSignal("");
   const [loading, setLoading] = createSignal(false);
 
+  createEffect(() => {
+    if (props.isOpen) {
+      setName("");
+      setLoading(false);
+    }
+  });
+
   async function handleSubmit(e: Event): Promise<void> {
     e.preventDefault();
     if (!name().trim()) return;
     setLoading(true);
-    await handleCreateCategory(props.communityId, name().trim());
-    setLoading(false);
-    setName("");
-    props.onClose();
+    try {
+      await handleCreateCategory(props.communityId, name().trim());
+      props.onClose();
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
-    <Show when={props.isOpen}>
-      <div class="modal-overlay" onClick={props.onClose}>
-        <div class="modal-container modal-container-sm" onClick={(e) => e.stopPropagation()}>
-          <div class="modal-header">
-            <span class="modal-title">Create Category</span>
-            <button class="modal-close-btn" onClick={props.onClose}>
-              <span class="nf-icon">{ICON_CLOSE}</span>
-            </button>
-          </div>
-          <div class="modal-body">
-            <form onSubmit={handleSubmit} class="form-group">
-              <input
-                class="form-input"
-                placeholder="Category name"
-                value={name()}
-                onInput={(e) => setName(e.currentTarget.value)}
-                autofocus
-              />
-              <button class="form-btn-primary" type="submit" disabled={loading() || !name().trim()}>
-                {loading() ? "Creating..." : "Create"}
-              </button>
-            </form>
-          </div>
-        </div>
-      </div>
-    </Show>
+    <Modal isOpen={props.isOpen} title="Create Category" onClose={props.onClose} size="sm">
+      <form onSubmit={(e) => void handleSubmit(e)} class="form-group">
+        <input
+          class="form-input"
+          placeholder="Category name"
+          value={name()}
+          onInput={(e) => setName(e.currentTarget.value)}
+          autofocus
+        />
+        <LoadingButton
+          type="submit"
+          loading={loading()}
+          disabled={!name().trim()}
+          loadingLabel="Creating"
+        >
+          Create
+        </LoadingButton>
+      </form>
+    </Modal>
   );
 };
 

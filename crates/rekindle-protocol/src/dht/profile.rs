@@ -10,8 +10,12 @@ pub const SUBKEY_GAME_INFO: u32 = 4;
 pub const SUBKEY_PREKEY_BUNDLE: u32 = 5;
 pub const SUBKEY_ROUTE_BLOB: u32 = 6;
 pub const SUBKEY_METADATA: u32 = 7;
+/// Strand Relay pool (architecture §13.2 step 3-4): JSON-encoded
+/// `Vec<Vec<u8>>` of opaque relay route blobs from friends, padded with
+/// dummies for size privacy.
+pub const SUBKEY_RELAY_POOL: u32 = 8;
 
-pub const PROFILE_SUBKEY_COUNT: u32 = 8;
+pub const PROFILE_SUBKEY_COUNT: u32 = 9;
 
 /// Create a new profile DHT record and initialize subkeys.
 ///

@@ -97,6 +97,15 @@ pub async fn logout_cleanup(app_handle: Option<&tauri::AppHandle>, state: &AppSt
         super::status::emit_network_status(ah, state);
     }
 
+    // Final flush of in-memory peer-reliability counters before we drop
+    // the per-community state. Skipped silently if no app handle / pool.
+    if let Some(ah) = app_handle {
+        use tauri::Manager as _;
+        if let Some(pool_state) = ah.try_state::<crate::db::DbPool>() {
+            crate::services::community::flush_peer_reliability(state, pool_state.inner()).await;
+        }
+    }
+
     *state.identity.write() = None;
     state.friends.write().clear();
     state.communities.write().clear();
@@ -104,6 +113,8 @@ pub async fn logout_cleanup(app_handle: Option<&tauri::AppHandle>, state: &AppSt
     *state.identity_secret.lock() = None;
     state.mek_cache.lock().clear();
     state.channel_mek_cache.lock().clear();
+    state.dm_mek_cache.lock().clear();
+    state.relay_probe_cooldown.lock().clear();
     state.dedup_cache.lock().clear();
 
     tracing::info!("logout cleanup complete — node still running");

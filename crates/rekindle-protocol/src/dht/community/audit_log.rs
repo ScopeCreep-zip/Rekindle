@@ -107,7 +107,7 @@ mod tests {
             target: AuditTarget::Member("user_xyz".into()),
             changes: vec![],
             reason: Some("Spamming".into()),
-            timestamp: 1234567890,
+            timestamp: 1_234_567_890,
             signature: vec![0u8; 64],
         };
 
@@ -201,7 +201,7 @@ mod tests {
                 },
             ],
             reason: None,
-            timestamp: 1234567890,
+            timestamp: 1_234_567_890,
             signature: vec![0u8; 64],
         };
 

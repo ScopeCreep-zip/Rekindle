@@ -24,15 +24,24 @@ pub async fn create_event(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
     community_id: String,
-    title: String,
-    description: String,
-    start_time: u64,
-    end_time: Option<u64>,
-    channel_id: Option<String>,
-    max_attendees: Option<u32>,
+    request: CreateEventRequest,
 ) -> Result<String, String> {
     require_permission(state.inner(), &community_id, Permissions::MANAGE_EVENTS)?;
     let _ = pool;
+    let title = request.title;
+    let description = request.description;
+    if title.chars().count() > rekindle_types::event::MAX_EVENT_NAME_CHARS {
+        return Err(format!(
+            "event name exceeds {} characters (architecture §21)",
+            rekindle_types::event::MAX_EVENT_NAME_CHARS
+        ));
+    }
+    if description.chars().count() > rekindle_types::event::MAX_EVENT_DESCRIPTION_CHARS {
+        return Err(format!(
+            "event description exceeds {} characters (architecture §21)",
+            rekindle_types::event::MAX_EVENT_DESCRIPTION_CHARS
+        ));
+    }
     let event_id = format!("evt_{}", hex::encode(random_nonce(8)));
 
     let creator_pseudonym = {
@@ -44,27 +53,103 @@ pub async fn create_event(
     };
     let event = EventInfoDto {
         id: event_id.clone(),
-        title,
-        description,
-        creator_pseudonym,
-        start_time,
-        end_time,
-        channel_id,
-        max_attendees,
+        title: title.clone(),
+        description: description.clone(),
+        creator_pseudonym: creator_pseudonym.clone(),
+        start_time: request.start_time,
+        end_time: request.end_time,
+        channel_id: request.channel_id.clone(),
+        max_attendees: request.max_attendees,
         created_at: rekindle_utils::timestamp_secs(),
         status: "scheduled".to_string(),
         rsvps: Vec::new(),
+        cover_image_ref: request.cover_image_ref.clone(),
+        recurrence: request.recurrence.clone(),
+        location: request.location.clone(),
     };
+
+    // Architecture §21 line 2642 — events persist as governance entries
+    // so they survive across restarts and replay deterministically on
+    // every peer. The control-payload broadcast below is the fast UX
+    // path (immediate frontend update); governance is the durable one.
+    let lamport = state_helpers::increment_lamport(state.inner(), &community_id);
+    let governance_event_id = parse_event_id(&event_id);
+    crate::services::community::write_entry(
+        state.inner(),
+        &community_id,
+        rekindle_types::governance::GovernanceEntry::EventCreated {
+            event_id: governance_event_id,
+            name: title,
+            description: Some(description),
+            start_time: request.start_time,
+            end_time: request.end_time,
+            channel_id: request.channel_id.as_deref().map(parse_channel_id),
+            cover_image_ref: request.cover_image_ref,
+            creator_pseudonym: parse_pseudonym(&creator_pseudonym),
+            recurrence: request.recurrence,
+            location: request.location,
+            status: Some(rekindle_types::event::EventStatus::Scheduled),
+            lamport,
+        },
+    )
+    .await?;
 
     crate::services::community::send_to_mesh(
         state.inner(),
         &community_id,
         &CommunityEnvelope::Control(ControlPayload::EventCreated {
-            event: serde_json::to_value(&event).map_err(|e| format!("serialize event: {e}"))?,
+            event: event.clone(),
         }),
     )?;
 
     Ok(event_id)
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateEventRequest {
+    pub title: String,
+    pub description: String,
+    pub start_time: u64,
+    pub end_time: Option<u64>,
+    pub channel_id: Option<String>,
+    pub max_attendees: Option<u32>,
+    /// Architecture §21 line 2624 — peer-cached cover image hex hash.
+    pub cover_image_ref: Option<String>,
+    /// Architecture §21 line 2628 — recurrence rule (None = one-off).
+    pub recurrence: Option<rekindle_types::event::RecurrenceRule>,
+    /// Architecture §21 line 2629 — event location.
+    pub location: Option<rekindle_types::event::EventLocation>,
+}
+
+/// Parse the legacy `evt_{16hex}` event_id into the 16-byte EventId
+/// the governance entry expects. Returns zero-bytes on parse failure
+/// — the entry would still write but be rejected by the CRDT validate
+/// pass; callers should ensure the random_nonce flow generates valid
+/// hex.
+fn parse_event_id(id: &str) -> rekindle_types::id::EventId {
+    let stripped = id.strip_prefix("evt_").unwrap_or(id);
+    let mut buf = [0u8; 16];
+    if let Ok(decoded) = hex::decode(stripped) {
+        let len = decoded.len().min(16);
+        buf[..len].copy_from_slice(&decoded[..len]);
+    }
+    rekindle_types::id::EventId(buf)
+}
+
+fn parse_channel_id(id: &str) -> rekindle_types::id::ChannelId {
+    let mut buf = [0u8; 16];
+    if let Ok(decoded) = hex::decode(id) {
+        let len = decoded.len().min(16);
+        buf[..len].copy_from_slice(&decoded[..len]);
+    }
+    rekindle_types::id::ChannelId(buf)
+}
+
+fn parse_pseudonym(hex_str: &str) -> Option<rekindle_types::id::PseudonymKey> {
+    let bytes = hex::decode(hex_str).ok()?;
+    let arr: [u8; 32] = bytes.as_slice().try_into().ok()?;
+    Some(rekindle_types::id::PseudonymKey(arr))
 }
 
 #[tauri::command]
@@ -97,12 +182,15 @@ pub async fn edit_event(
         created_at: existing.created_at,
         status: existing.status,
         rsvps: existing.rsvps,
+        cover_image_ref: existing.cover_image_ref,
+        recurrence: existing.recurrence,
+        location: existing.location,
     };
     crate::services::community::send_to_mesh(
         state.inner(),
         &community_id,
         &CommunityEnvelope::Control(ControlPayload::EventUpdated {
-            event: serde_json::to_value(&event).map_err(|e| format!("serialize event: {e}"))?,
+            event: event.clone(),
         }),
     )
 }
@@ -136,14 +224,14 @@ pub async fn cancel_event(
         return Err("event not found".into());
     };
     let event = EventInfoDto {
-        status: "canceled".to_string(),
+        status: "cancelled".to_string(),
         ..existing
     };
     crate::services::community::send_to_mesh(
         state.inner(),
         &community_id,
         &CommunityEnvelope::Control(ControlPayload::EventUpdated {
-            event: serde_json::to_value(&event).map_err(|e| format!("serialize event: {e}"))?,
+            event: event.clone(),
         }),
     )
 }
@@ -284,13 +372,16 @@ pub async fn get_events(
     let mut events: Vec<EventInfoDto> = db_call(pool.inner(), move |conn| {
         let mut stmt = conn.prepare(
             "SELECT id, title, description, creator_pseudonym, start_time, end_time, \
-                    channel_id, max_attendees, created_at, status \
+                    channel_id, max_attendees, created_at, status, \
+                    cover_image_ref, recurrence_json, location_json \
              FROM community_events \
              WHERE owner_key = ?1 AND community_id = ?2 \
              ORDER BY start_time ASC",
         )?;
         let events: Vec<EventInfoDto> = stmt
             .query_map(rusqlite::params![owner_key, community_id_for_db], |row| {
+                let recurrence_json: Option<String> = row.get(11).ok();
+                let location_json: Option<String> = row.get(12).ok();
                 Ok(EventInfoDto {
                     id: row.get(0)?,
                     title: row.get(1)?,
@@ -303,6 +394,13 @@ pub async fn get_events(
                     created_at: row.get::<_, i64>(8).unwrap_or(0).cast_unsigned(),
                     status: row.get(9)?,
                     rsvps: Vec::new(),
+                    cover_image_ref: row.get(10).ok(),
+                    recurrence: recurrence_json
+                        .as_deref()
+                        .and_then(|s| serde_json::from_str(s).ok()),
+                    location: location_json
+                        .as_deref()
+                        .and_then(|s| serde_json::from_str(s).ok()),
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;

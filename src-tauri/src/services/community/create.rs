@@ -87,8 +87,15 @@ pub async fn create_community(state: &Arc<AppState>, name: &str) -> Result<Strin
         .map_err(|e| format!("creator slot keypair derivation failed: {e}"))?;
     let creator_slot_veilid = slot_signing_to_veilid(&creator_slot_kp);
 
-    // 7. Write genesis governance entries to slot 0
+    // 7. Write genesis governance entries to slot 0.
+    //    Plan §Failure 4 — five entries: community meta, @everyone role,
+    //    Owner role with ADMINISTRATOR, RoleAssignment binding the
+    //    creator to Owner, and the genesis #general channel. Without
+    //    the owner role + assignment, the creator's `my_role_ids` ends
+    //    up `[0]` (only @everyone) and admin UI gates fail because the
+    //    ADMINISTRATOR bit is never set on any role they hold.
     let channel_id = random_channel_id();
+    const OWNER_ROLE_ID: RoleId = RoleId([0xFFu8; 16]);
     let genesis_entries = vec![
         GovernanceEntry::CommunityMeta {
             name: Some(name.to_string()),
@@ -106,7 +113,25 @@ pub async fn create_community(state: &Arc<AppState>, name: &str) -> Result<Strin
             hoist: false,
             mentionable: false,
             self_assignable: false,
+            exclusion_group: None,
             lamport: 2,
+        },
+        GovernanceEntry::RoleDefinition {
+            role_id: OWNER_ROLE_ID,
+            name: "Owner".into(),
+            permissions: permissions::ADMINISTRATOR,
+            position: u32::MAX,
+            color: 0xC1_7C_17,
+            hoist: true,
+            mentionable: false,
+            self_assignable: false,
+            exclusion_group: None,
+            lamport: 3,
+        },
+        GovernanceEntry::RoleAssignment {
+            target: my_pseudo.clone(),
+            role_id: OWNER_ROLE_ID,
+            lamport: 4,
         },
         GovernanceEntry::ChannelCreated {
             channel_id,
@@ -115,14 +140,23 @@ pub async fn create_community(state: &Arc<AppState>, name: &str) -> Result<Strin
             record_key: ch_key.clone(),
             category_id: None,
             position: 0,
-            lamport: 3,
+            parent_voice_channel_id: None,
+            lamport: 5,
         },
     ];
-    let gov_payload = serde_json::to_vec(&GovernanceSubkeyPayload {
+    // Architecture §26 W26 — sign the genesis payload with the
+    // creator's pseudonym secret so future readers can verify the
+    // creator's authorship before applying the community-meta entries.
+    let mut genesis_payload = GovernanceSubkeyPayload {
         author_pseudonym: my_pseudo.clone(),
         entries: genesis_entries.clone(),
-    })
-    .map_err(|e| format!("genesis serialization failed: {e}"))?;
+        signature: Vec::new(),
+    };
+    let genesis_sig =
+        derive::sign_with_pseudonym(&pseudonym_signing, &genesis_payload.signing_bytes());
+    genesis_payload.signature = genesis_sig.to_vec();
+    let gov_payload = serde_json::to_vec(&genesis_payload)
+        .map_err(|e| format!("genesis serialization failed: {e}"))?;
     let write_opts = SetDHTValueOptions {
         writer: Some(creator_slot_veilid.clone()),
         ..Default::default()
@@ -131,8 +165,9 @@ pub async fn create_community(state: &Arc<AppState>, name: &str) -> Result<Strin
         .await
         .map_err(|e| format!("genesis governance write failed: {e}"))?;
 
-    // 8. Write creator's MemberPresence to registry slot 0
-    let presence = MemberPresence {
+    // 8. Write creator's MemberPresence to registry slot 0 — signed
+    //    so peers can verify the creator authored this row.
+    let mut presence = MemberPresence {
         pseudonym_key: my_pseudo.clone(),
         display_name: Some(state_helpers::identity_display_name(state)),
         status: match state_helpers::identity_status(state)
@@ -148,6 +183,9 @@ pub async fn create_community(state: &Arc<AppState>, name: &str) -> Result<Strin
         last_heartbeat: rekindle_utils::timestamp_secs(),
         ..Default::default()
     };
+    let presence_sig =
+        derive::sign_with_pseudonym(&pseudonym_signing, &presence.signing_bytes());
+    presence.signature = presence_sig.to_vec();
     let presence_bytes =
         serde_json::to_vec(&presence).map_err(|e| format!("presence serialization failed: {e}"))?;
     let reg_write_opts = SetDHTValueOptions {
@@ -183,6 +221,8 @@ pub async fn create_community(state: &Arc<AppState>, name: &str) -> Result<Strin
         id: gov_key.clone(),
         name: name.to_string(),
         description: None,
+        icon_hash: None,
+        banner_hash: None,
         channels: vec![ChannelInfo {
             id: channel_id_hex.clone(),
             name: "general".to_string(),
@@ -190,25 +230,50 @@ pub async fn create_community(state: &Arc<AppState>, name: &str) -> Result<Strin
             unread_count: 0,
             category_id: None,
             topic: String::new(),
+            forum_tags: None,
+            stage_speakers: Vec::new(),
+            stage_moderator: None,
             slowmode_seconds: None,
             nsfw: false,
             message_record_key: Some(ch_key.clone()),
             mek_generation: 0,
             notification_level: "all".to_string(),
+            notification_sound_ref: None,
+            parent_voice_channel_id: None,
         }],
         categories: Vec::new(),
-        my_role_ids: vec![0],
-        roles: vec![RoleDefinition {
-            id: 0,
-            name: "@everyone".into(),
-            color: 0,
-            permissions: permissions::DEFAULT_EVERYONE,
-            position: 0,
-            hoist: false,
-            mentionable: false,
-            self_assignable: false,
-        }],
-        my_role: Some("owner".to_string()),
+        // Plan §Failure 4 — creator now holds @everyone (id 0) AND
+        // Owner (id derived from OWNER_ROLE_ID's first 4 LE bytes —
+        // 0xFFFFFFFF). Frontend `hasPermission` short-circuits on the
+        // ADMINISTRATOR bit on the Owner role, unlocking admin UI.
+        my_role_ids: vec![
+            0,
+            super::join::helpers::role_id_to_legacy_u32(&OWNER_ROLE_ID),
+        ],
+        roles: vec![
+            RoleDefinition {
+                id: 0,
+                name: "@everyone".into(),
+                color: 0,
+                permissions: permissions::DEFAULT_EVERYONE,
+                position: 0,
+                hoist: false,
+                mentionable: false,
+                self_assignable: false,
+                exclusion_group: None,
+            },
+            RoleDefinition {
+                id: super::join::helpers::role_id_to_legacy_u32(&OWNER_ROLE_ID),
+                name: "Owner".into(),
+                color: 0xC1_7C_17,
+                permissions: permissions::ADMINISTRATOR,
+                position: i32::MAX,
+                hoist: true,
+                mentionable: false,
+                self_assignable: false,
+                exclusion_group: None,
+            },
+        ],
         dht_owner_keypair: gov_owner_keypair
             .as_ref()
             .map(std::string::ToString::to_string),
@@ -216,9 +281,10 @@ pub async fn create_community(state: &Arc<AppState>, name: &str) -> Result<Strin
         mek_generation,
         member_registry_key: Some(reg_key.clone()),
         my_subkey_index: Some(creator_slot),
+        my_segment_index: Some(0),
         governance_key: Some(gov_key.clone()),
         governance_state: Some(gov_state),
-        lamport_counter: 3,
+        lamport_counter: 5,
         gossip: Some(GossipOverlay::default()),
         slot_keypair: Some(creator_slot_veilid.to_string()),
         channel_log_keys: [(channel_id_hex, ch_key.clone())].into_iter().collect(),
@@ -227,18 +293,28 @@ pub async fn create_community(state: &Arc<AppState>, name: &str) -> Result<Strin
         watched_records: std::collections::HashSet::new(),
         record_sequences: std::collections::HashMap::new(),
         peer_sequences: std::collections::HashMap::new(),
+        channel_last_send_at: std::collections::HashMap::new(),
+        peer_reliability: std::collections::HashMap::new(),
         registry_owner_keypair: reg_owner_keypair
             .as_ref()
             .map(std::string::ToString::to_string),
         slot_seed: Some(hex::encode(slot_seed.0)),
         member_roles: std::collections::HashMap::new(),
-        known_members: [my_pseudo_hex].into_iter().collect(),
+        known_members: [my_pseudo_hex.clone()].into_iter().collect(),
         presence_poll_shutdown_tx: None,
         dht_keepalive_shutdown_tx: None,
         open_community_records: crate::state::CommunityRecords::default(),
         my_event_rsvps: std::collections::HashMap::new(),
         event_rsvps_by_event: std::collections::HashMap::new(),
         onboarding_complete: true,
+        my_bio: None,
+        my_pronouns: None,
+        my_theme_color: None,
+        my_badges: Vec::new(),
+        my_avatar_ref: None,
+        my_banner_ref: None,
+        member_profiles: std::collections::HashMap::new(),
+        recent_member_joins: std::collections::VecDeque::new(),
     };
 
     state.communities.write().insert(gov_key.clone(), community);
@@ -255,6 +331,32 @@ pub async fn create_community(state: &Arc<AppState>, name: &str) -> Result<Strin
             cs.open_community_records.channel_keys = vec![ch_key.clone()];
             cs.open_community_records.records_open = true;
         }
+    }
+
+    // Initialize Lost Cargo file cache for the new community.
+    if let Err(e) = super::files::ensure_cache_open(state, &gov_key) {
+        tracing::warn!(community = %gov_key, error = %e, "Lost Cargo cache unavailable on create");
+    }
+
+    // Plan §Failure 4 — synchronously persist the creator into
+    // `community_members` SQLite + emit `MemberDiscovered` so the UI's
+    // Members panel populates immediately rather than waiting for the
+    // 30-second presence poll. Reuses the same helper the periodic
+    // poll uses (`registry::persist_discovered_registry_members`).
+    {
+        let creator_role_ids = vec![
+            0u32,
+            super::join::helpers::role_id_to_legacy_u32(&OWNER_ROLE_ID),
+        ];
+        let mut member_roles = std::collections::HashMap::new();
+        member_roles.insert(my_pseudo_hex.clone(), creator_role_ids);
+        super::presence::registry::persist_discovered_registry_members(
+            state,
+            &gov_key,
+            &[(0u32, 0u32, presence.clone())],
+            &member_roles,
+            &std::collections::HashSet::new(),
+        );
     }
 
     // 12. Start background services for watch/presence/keepalive

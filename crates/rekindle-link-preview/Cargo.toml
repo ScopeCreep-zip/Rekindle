@@ -1,0 +1,15 @@
+[package]
+name = "rekindle-link-preview"
+version = "0.1.0"
+edition = "2021"
+description = "OpenGraph link preview fetcher for Rekindle (architecture §28.8)"
+license = "MIT"
+
+[dependencies]
+rekindle-types = { path = "../rekindle-types" }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "gzip", "brotli", "charset", "stream"] }
+url = "2"
+tracing = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+futures = { workspace = true }

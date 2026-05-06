@@ -5,10 +5,42 @@ import { subscribeChatEvents } from "../ipc/channels";
 import { friendsState, setFriendsState } from "../stores/friends.store";
 import { setNotificationState } from "../stores/notification.store";
 import { communityState, setCommunityState } from "../stores/community.store";
+import { chatState, setChatState } from "../stores/chat.store";
 import { handleTypingIndicator, handleIncomingMessage, handleResetUnread } from "./chat.handlers";
 import { handleRefreshFriends } from "./buddy.handlers";
 import type { Message } from "../stores/chat.store";
-import { transformMessage, transformNewFriend } from "../utils/transformers";
+import { transformNewFriend } from "../utils/transformers";
+
+// Architecture §16 — flip the optimistic "sending"/"queued" status
+// on the matching outbound DM to "sent". The Rust ack carries the
+// SQLite-row timestamp (ms); the optimistic frontend used a slightly
+// earlier `Date.now()` so we accept a small fuzz window. The matching
+// pass scans all conversations because a single ack doesn't carry
+// the peer id (the message_id is unique enough on its own).
+function applyMessageAck(messageId: number): void {
+  const FUZZ_MS = 5000;
+  for (const peerId in chatState.conversations) {
+    const convo = chatState.conversations[peerId];
+    if (!convo) continue;
+    const idx = convo.messages.findIndex(
+      (m) =>
+        m.isOwn &&
+        (m.status === "sending" || m.status === "queued") &&
+        Math.abs(m.timestamp - messageId) <= FUZZ_MS,
+    );
+    if (idx >= 0) {
+      setChatState(
+        "conversations",
+        peerId,
+        "messages",
+        idx,
+        "status",
+        "sent" as const,
+      );
+      return;
+    }
+  }
+}
 
 export function subscribeBuddyListChatEvents(): Promise<UnlistenFn> {
   return subscribeChatEvents((event) => {
@@ -97,6 +129,10 @@ export function subscribeBuddyListChatEvents(): Promise<UnlistenFn> {
       }
       case "friendRequestDelivered": {
         // Optional: could show a delivery indicator on the pending friend
+        break;
+      }
+      case "messageAck": {
+        applyMessageAck(event.data.messageId);
         break;
       }
     }
@@ -214,21 +250,6 @@ export function subscribeCommunityChannelChatEvents(
             break;
           }
         }
-      }
-    } else if (event.type === "channelHistoryLoaded") {
-      const { channelId, messages: serverMsgs } = event.data;
-      const existing = communityState.channelMessages[channelId] ?? [];
-      const existingKeys = new Set(
-        existing.map((m) => `${m.timestamp}:${m.senderId}`),
-      );
-      const newMsgs = serverMsgs
-        .filter((m) => !existingKeys.has(`${m.timestamp}:${m.senderId}`))
-        .map(transformMessage);
-      if (newMsgs.length > 0) {
-        const merged = [...existing, ...newMsgs].sort(
-          (a, b) => a.timestamp - b.timestamp,
-        );
-        setCommunityState("channelMessages", channelId, merged);
       }
     }
   });

@@ -1,5 +1,5 @@
 mod poll;
-mod registry;
+pub(crate) mod registry;
 mod sync;
 
 use std::sync::Arc;

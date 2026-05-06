@@ -111,6 +111,35 @@ export async function handleToggleDeafen(): Promise<void> {
   }
 }
 
+export async function handleRequestToSpeak(
+  communityId: string,
+  channelId: string,
+): Promise<void> {
+  try {
+    await commands.requestToSpeak(communityId, channelId);
+  } catch (e) {
+    console.error("Failed to request to speak:", e);
+  }
+}
+
+export async function handleRespondToSpeakRequest(
+  communityId: string,
+  channelId: string,
+  requesterPseudonym: string,
+  granted: boolean,
+): Promise<void> {
+  try {
+    await commands.respondToSpeakRequest(
+      communityId,
+      channelId,
+      requesterPseudonym,
+      granted,
+    );
+  } catch (e) {
+    console.error("Failed to respond to speak request:", e);
+  }
+}
+
 export function subscribeBuddyListVoiceEvents(): Promise<UnlistenFn> {
   return subscribeVoiceEvents((event) => {
     switch (event.type) {

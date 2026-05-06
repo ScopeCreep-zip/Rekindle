@@ -1,12 +1,18 @@
 import { Component, Show, createSignal } from "solid-js";
 import type { Message } from "../../stores/chat.store";
+import { createMemo } from "solid-js";
+import { Popover } from "@kobalte/core/popover";
 import ReactionBar from "./ReactionBar";
 import EmojiPicker from "./EmojiPicker";
 import MessageRichBody from "./MessageRichBody";
 import PollCard from "./PollCard";
 import ThreadStarter from "./ThreadStarter";
+import AttachmentDisplay from "./AttachmentDisplay";
+import VoiceMessagePlayer from "./VoiceMessagePlayer";
+import { FLAG_VOICE_MESSAGE } from "../../stores/chat.store";
 import { formatTimestamp } from "../../utils/formatting";
-import { ICON_DOTS, ICON_CHECK, ICON_CLOSE_CIRCLE, ICON_REFRESH, ICON_REPLY, ICON_EMOTICON, ICON_PIN, ICON_THREAD, ICON_PENCIL, ICON_DELETE, ICON_TIMEOUT, ICON_PLUS_BOX } from "../../icons";
+import { linkPreviews } from "../../stores/link_preview.store";
+import { ICON_DOTS, ICON_CHECK, ICON_CLOSE_CIRCLE, ICON_REFRESH, ICON_REPLY, ICON_EMOTICON, ICON_PIN, ICON_THREAD, ICON_PENCIL, ICON_DELETE, ICON_TIMEOUT, ICON_PLUS_BOX, ICON_FORWARD } from "../../icons";
 
 interface MessageBubbleProps {
   communityId?: string;
@@ -27,11 +33,28 @@ interface MessageBubbleProps {
   onCreatePoll?: (messageId: string) => void;
   onVotePoll?: (pollId: string, selectedAnswers: number[]) => void;
   onClosePoll?: (pollId: string) => void;
+  /** Bulk-delete selection mode: render checkbox + suppress action toolbar. */
+  selectable?: boolean;
+  selected?: boolean;
+  onToggleSelect?: () => void;
+  /** Open forward-message dialog for this message. */
+  onForward?: (messageId: string) => void;
+  /** Channel id this message belongs to (used by attachment download flow). */
+  channelId?: string;
 }
+
 
 const MessageBubble: Component<MessageBubbleProps> = (props) => {
   const [showEmojiPicker, setShowEmojiPicker] = createSignal(false);
   const [revealedBlurred, setRevealedBlurred] = createSignal(false);
+  // Architecture §28.8 — keyed by serverMessageId; absent when the
+  // sender hadn't fetched a preview (no URL, missing permission,
+  // OpenGraph fetch failed, etc.).
+  const preview = createMemo(() => {
+    const id = props.message.serverMessageId;
+    if (!id) return undefined;
+    return linkPreviews[id];
+  });
 
   const senderClass = () =>
     props.message.isOwn
@@ -70,8 +93,72 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
     }
   }
 
+  function handleBubbleClick(): void {
+    if (props.selectable && props.onToggleSelect) {
+      props.onToggleSelect();
+    }
+  }
+
+  /** Decode `{durationMs, waveformB64}` JSON when this is a voice message
+   *  (architecture §16.4 — metadata travels in the carrying Message body). */
+  const voiceMeta = createMemo<{ durationMs: number; waveform: Uint8Array } | null>(() => {
+    if (!(props.message.flags && (props.message.flags & FLAG_VOICE_MESSAGE) !== 0)) return null;
+    const body = props.message.body;
+    if (!body) return null;
+    try {
+      const parsed = JSON.parse(body) as { durationMs?: number; waveformB64?: string };
+      const durationMs = parsed.durationMs ?? 0;
+      const b64 = parsed.waveformB64 ?? "";
+      const bin = atob(b64);
+      const waveform = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) waveform[i] = bin.charCodeAt(i);
+      return { durationMs, waveform };
+    } catch {
+      return null;
+    }
+  });
+
+  // Architecture §32 a11y — screen-reader announcement composed from
+  // sender + timestamp + body. Read by the parent message-list's
+  // `role="log"` live region whenever a new bubble is appended.
+  const ariaAnnouncement = (): string => {
+    const ts = new Date(props.message.timestamp).toLocaleTimeString(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+    });
+    const sender = props.senderName || (props.message.isOwn ? "You" : "Unknown");
+    const body = props.message.decryptionFailed
+      ? "Unable to decrypt — waiting for encryption keys"
+      : props.message.body;
+    return `${sender} at ${ts}: ${body}`;
+  };
+
   return (
-    <div class="chat-message message-enter" data-message-id={props.message.serverMessageId ?? undefined}>
+    <div
+      class={`chat-message message-enter ${props.selectable ? "chat-message-selectable" : ""} ${props.selected ? "chat-message-selected" : ""}`}
+      data-message-id={props.message.serverMessageId ?? undefined}
+      role="article"
+      aria-label={ariaAnnouncement()}
+      onClick={handleBubbleClick}
+    >
+      <Show when={props.selectable}>
+        <input
+          type="checkbox"
+          class="chat-message-select-checkbox"
+          checked={props.selected ?? false}
+          onChange={() => props.onToggleSelect?.()}
+          onClick={(e) => e.stopPropagation()}
+        />
+      </Show>
+      {/* Forwarded indicator */}
+      <Show when={props.message.forwardedFromAuthor}>
+        {(author) => (
+          <div class="message-forwarded-header">
+            <span class="nf-icon message-forwarded-icon">{ICON_FORWARD}</span>
+            Forwarded from {author().slice(0, 12)}…
+          </div>
+        )}
+      </Show>
       {/* Reply context */}
       <Show when={props.replyToMessage}>
         {(replyMsg) => (
@@ -97,59 +184,81 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
           class="message-retry-btn"
           onClick={handleRetryClick}
           title="Click to retry"
+          aria-label="Retry sending message"
         >
-          <span class="nf-icon">{ICON_REFRESH}</span>
+          <span class="nf-icon" aria-hidden="true">{ICON_REFRESH}</span>
         </button>
       </Show>
 
       {/* Action toolbar (appears on hover) */}
       <div class="message-actions">
         <Show when={props.onReply}>
-          <button class="message-action-btn" title="Reply" onClick={() => props.onReply?.(props.message)}>
-            <span class="nf-icon">{ICON_REPLY}</span>
+          <button class="message-action-btn" title="Reply" aria-label="Reply" onClick={() => props.onReply?.(props.message)}>
+            <span class="nf-icon" aria-hidden="true">{ICON_REPLY}</span>
           </button>
         </Show>
         <Show when={props.onReaction}>
-          <button class="message-action-btn" title="React" onClick={() => setShowEmojiPicker(!showEmojiPicker())}>
-            <span class="nf-icon">{ICON_EMOTICON}</span>
-          </button>
+          {/* Plan §Failure 3 — Kobalte Popover with Popover.Portal so the
+           * picker escapes the chat-message-area's `overflow-y: auto`
+           * clip and the `.chat-message` stacking context. Mirrors the
+           * MemberList Popover.Portal pattern. */}
+          <Popover open={showEmojiPicker()} onOpenChange={setShowEmojiPicker}>
+            <Popover.Trigger
+              as="button"
+              class="message-action-btn"
+              title="React"
+              aria-label="Add reaction"
+            >
+              <span class="nf-icon" aria-hidden="true">{ICON_EMOTICON}</span>
+            </Popover.Trigger>
+            <Popover.Portal>
+              <Popover.Content class="emoji-picker-popover">
+                <EmojiPicker
+                  communityId={props.communityId}
+                  onSelect={(emoji) => props.onReaction?.(emoji)}
+                  mode="reaction"
+                  onClose={() => setShowEmojiPicker(false)}
+                />
+              </Popover.Content>
+            </Popover.Portal>
+          </Popover>
         </Show>
         <Show when={props.onPin && props.message.serverMessageId}>
-          <button class="message-action-btn" title={props.message.pinned ? "Unpin" : "Pin"} onClick={() => props.onPin?.(props.message.serverMessageId!)}>
-            <span class="nf-icon">{ICON_PIN}</span>
+          <button
+            class="message-action-btn"
+            title={props.message.pinned ? "Unpin" : "Pin"}
+            aria-label={props.message.pinned ? "Unpin message" : "Pin message"}
+            onClick={() => props.onPin?.(props.message.serverMessageId!)}
+          >
+            <span class="nf-icon" aria-hidden="true">{ICON_PIN}</span>
           </button>
         </Show>
         <Show when={props.onCreateThread && props.message.serverMessageId}>
-          <button class="message-action-btn" title="Create Thread" onClick={() => props.onCreateThread?.(props.message.serverMessageId!)}>
-            <span class="nf-icon">{ICON_THREAD}</span>
+          <button class="message-action-btn" title="Create Thread" aria-label="Create thread" onClick={() => props.onCreateThread?.(props.message.serverMessageId!)}>
+            <span class="nf-icon" aria-hidden="true">{ICON_THREAD}</span>
           </button>
         </Show>
         <Show when={props.onCreatePoll && props.message.serverMessageId && !props.message.poll}>
-          <button class="message-action-btn" title="Create Poll" onClick={() => props.onCreatePoll?.(props.message.serverMessageId!)}>
-            <span class="nf-icon">{ICON_PLUS_BOX}</span>
+          <button class="message-action-btn" title="Create Poll" aria-label="Create poll" onClick={() => props.onCreatePoll?.(props.message.serverMessageId!)}>
+            <span class="nf-icon" aria-hidden="true">{ICON_PLUS_BOX}</span>
+          </button>
+        </Show>
+        <Show when={props.onForward && props.message.serverMessageId}>
+          <button class="message-action-btn" title="Forward" aria-label="Forward message" onClick={() => props.onForward?.(props.message.serverMessageId!)}>
+            <span class="nf-icon" aria-hidden="true">{ICON_FORWARD}</span>
           </button>
         </Show>
         <Show when={props.message.isOwn && props.onEdit && props.message.serverMessageId}>
-          <button class="message-action-btn" title="Edit" onClick={() => props.onEdit?.(props.message.serverMessageId!, props.message.body)}>
-            <span class="nf-icon">{ICON_PENCIL}</span>
+          <button class="message-action-btn" title="Edit" aria-label="Edit message" onClick={() => props.onEdit?.(props.message.serverMessageId!, props.message.body)}>
+            <span class="nf-icon" aria-hidden="true">{ICON_PENCIL}</span>
           </button>
         </Show>
         <Show when={props.onDelete && props.message.serverMessageId}>
-          <button class="message-action-btn" title="Delete" onClick={() => props.onDelete?.(props.message.serverMessageId!)}>
-            <span class="nf-icon">{ICON_DELETE}</span>
+          <button class="message-action-btn" title="Delete" aria-label="Delete message" onClick={() => props.onDelete?.(props.message.serverMessageId!)}>
+            <span class="nf-icon" aria-hidden="true">{ICON_DELETE}</span>
           </button>
         </Show>
       </div>
-
-      {/* Emoji picker popup */}
-      <Show when={showEmojiPicker()}>
-        <EmojiPicker
-          communityId={props.communityId}
-          onSelect={(emoji) => props.onReaction?.(emoji)}
-          mode="reaction"
-          onClose={() => setShowEmojiPicker(false)}
-        />
-      </Show>
 
       <Show
         when={props.message.decryptionFailed}
@@ -171,6 +280,62 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
           <span class="message-decrypt-failed-icon nf-icon">&#xf023;</span>
           Unable to decrypt — waiting for encryption keys
         </div>
+      </Show>
+
+      {/* Architecture §28.8 — sender-fetched OpenGraph card. The
+       * sender's IP is exposed to the destination site at fetch time;
+       * receivers always reader-validate the EMBED_LINKS permission
+       * via `services/community/link_previews.rs::handle_incoming_link_preview`. */}
+      <Show when={preview()}>
+        {(p) => (
+          <a
+            class="message-link-preview"
+            href={p().url}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`Link preview: ${p().title ?? p().url}`}
+          >
+            <Show when={p().imageUrl}>
+              <img class="message-link-preview-image" src={p().imageUrl!} alt="" />
+            </Show>
+            <div class="message-link-preview-body">
+              <Show when={p().siteName}>
+                <div class="message-link-preview-site">{p().siteName}</div>
+              </Show>
+              <Show when={p().title}>
+                <div class="message-link-preview-title">{p().title}</div>
+              </Show>
+              <Show when={p().description}>
+                <div class="message-link-preview-description">{p().description}</div>
+              </Show>
+            </div>
+          </a>
+        )}
+      </Show>
+
+      <Show when={props.message.attachment && voiceMeta()}>
+        {(meta) => (
+          <Show when={props.communityId && props.channelId}>
+            <VoiceMessagePlayer
+              communityId={props.communityId!}
+              channelId={props.channelId!}
+              attachment={props.message.attachment!}
+              durationMs={meta().durationMs}
+              waveform={meta().waveform}
+            />
+          </Show>
+        )}
+      </Show>
+      <Show when={props.message.attachment && !voiceMeta() ? props.message.attachment : null}>
+        {(att) => (
+          <Show when={props.communityId && props.channelId}>
+            <AttachmentDisplay
+              communityId={props.communityId!}
+              channelId={props.channelId!}
+              attachment={att()}
+            />
+          </Show>
+        )}
       </Show>
 
       <Show when={props.message.poll}>

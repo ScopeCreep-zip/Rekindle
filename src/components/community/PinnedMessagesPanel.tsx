@@ -30,10 +30,10 @@ const PinnedMessagesPanel: Component<PinnedMessagesPanelProps> = (props) => {
   return (
     <div class="pin-panel">
       <div class="pin-panel-header">
-        <span class="nf-icon">{ICON_PIN}</span>
+        <span class="nf-icon" aria-hidden="true">{ICON_PIN}</span>
         Pinned Messages ({pinnedMessages().length})
-        <button class="modal-close-btn" onClick={props.onClose}>
-          <span class="nf-icon">{ICON_CLOSE}</span>
+        <button class="modal-close-btn" onClick={props.onClose} aria-label="Close pinned messages panel">
+          <span class="nf-icon" aria-hidden="true">{ICON_CLOSE}</span>
         </button>
       </div>
       <div class="pin-panel-list">

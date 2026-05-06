@@ -20,7 +20,7 @@ interface BuddyItemProps {
   friendshipState?: string;
   selected: boolean;
   onDoubleClick: (publicKey: string, displayName: string) => void;
-  onContextMenu: (e: MouseEvent, publicKey: string) => void;
+  onSelect: (publicKey: string) => void;
 }
 
 function formatElapsed(seconds: number): string {
@@ -37,8 +37,8 @@ const BuddyItem: Component<BuddyItemProps> = (props) => {
     props.onDoubleClick(props.publicKey, props.displayName);
   }
 
-  function handleCtxMenu(e: MouseEvent): void {
-    props.onContextMenu(e, props.publicKey);
+  function handleClick(): void {
+    props.onSelect(props.publicKey);
   }
 
   const isOffline = () => props.status === "offline";
@@ -66,8 +66,8 @@ const BuddyItem: Component<BuddyItemProps> = (props) => {
   return (
     <div
       class={`buddy-item ${props.selected ? "buddy-item-selected" : ""}`}
+      onClick={handleClick}
       onDblClick={handleDblClick}
-      onContextMenu={handleCtxMenu}
     >
       <Show when={(props.friendshipState ?? "accepted") !== "pendingOut"}>
         <StatusDot status={props.status} />

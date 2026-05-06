@@ -208,7 +208,7 @@ const RolesTab: Component<RolesTabProps> = (props) => {
                 />
               </FormField>
               <div class="form-field-row">
-                <button class="form-btn-save" onClick={handleSaveEditRole} disabled={savingRole()}>
+                <button class="form-btn-primary" onClick={handleSaveEditRole} disabled={savingRole()}>
                   <span class="nf-icon">{ICON_SAVE}</span> {savingRole() ? "Saving..." : "Save"}
                 </button>
                 <button class="form-btn-secondary" onClick={() => setEditingRoleId(null)} disabled={savingRole()}>
@@ -287,7 +287,7 @@ const RolesTab: Component<RolesTabProps> = (props) => {
           </FormField>
           <div class="form-field-row">
             <button
-              class="form-btn-save"
+              class="form-btn-primary"
               onClick={handleCreateNewRole}
               disabled={!newRoleName().trim() || creatingRole()}
             >

@@ -121,6 +121,22 @@ mod tests {
     }
 
     #[test]
+    fn select_rotator_never_returns_departed_member() {
+        // Audit P7-W26: the chosen rotator must come from `remaining`.
+        // If `departed` were accidentally included in `remaining`, the
+        // selection algorithm would happily return them — proving that
+        // the caller (`online_recipients`) is the only thing keeping the
+        // departed pseudonym out. This test pins that contract by
+        // showing that even when the algorithm runs over `remaining`
+        // without `departed`, the result is in `remaining`.
+        let departed = key(0);
+        let remaining = vec![key(1), key(2), key(3)];
+        let chosen = select_rotator(&departed, &remaining).unwrap();
+        assert!(remaining.contains(&chosen));
+        assert_ne!(chosen, departed);
+    }
+
+    #[test]
     fn different_departed_may_select_different_rotator() {
         let remaining = vec![key(1), key(2), key(3)];
         let first = select_rotator(&key(10), &remaining).unwrap();
@@ -156,7 +172,7 @@ mod tests {
         let candidates = cascade_candidates(&departed, &remaining, 2);
         // Should return at most 3 candidates (primary + 2 cascades)
         assert!(candidates.len() <= 3);
-        assert!(candidates.len() >= 1);
+        assert!(!candidates.is_empty());
 
         // First candidate must be the same as select_rotator
         let primary = select_rotator(&departed, &remaining).unwrap();

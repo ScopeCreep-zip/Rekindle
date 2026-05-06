@@ -6,6 +6,7 @@ import ChannelList from "../components/community/ChannelList";
 import MemberList from "../components/community/MemberList";
 import MessageList from "../components/chat/MessageList";
 import MessageInput from "../components/chat/MessageInput";
+import ForwardMessageDialog from "../components/chat/ForwardMessageDialog";
 import VoicePanel from "../components/voice/VoicePanel";
 import CreateCommunityModal from "../components/community/CreateCommunityModal";
 import CreateChannelModal from "../components/community/CreateChannelModal";
@@ -21,10 +22,16 @@ import GameServerList from "../components/community/GameServerList";
 import OnboardingWizard from "../components/community/OnboardingWizard";
 import ThreadPanel from "../components/community/ThreadPanel";
 import ThreadListPanel from "../components/community/ThreadListPanel";
+import ForumChannelView from "../components/community/ForumChannelView";
+import SearchPanel from "../components/chat/SearchPanel";
+import VideoCallPanel from "../components/voice/VideoCallPanel";
+import CreateThreadModal from "../components/community/CreateThreadModal";
+import StagePanel from "../components/community/StagePanel";
 import PinnedMessagesPanel from "../components/community/PinnedMessagesPanel";
 import CategoryHeader from "../components/community/CategoryHeader";
 import WelcomeScreen from "../components/community/WelcomeScreen";
 import ConfirmDialog from "../components/common/ConfirmDialog";
+import SimpleInputModal from "../components/common/SimpleInputModal";
 import ToastContainer from "../components/common/Toast";
 import { communityState, setCommunityState } from "../stores/community.store";
 import { authState } from "../stores/auth.store";
@@ -48,6 +55,7 @@ import {
   handleRetryChannelMessage,
   handleEditChannelMessage,
   handleDeleteChannelMessage,
+  handleBulkDeleteChannelMessages,
   handleAddReaction,
   handleRemoveReaction,
   handlePinMessage,
@@ -57,10 +65,10 @@ import {
   handleSendThreadMessage,
   handleLoadThreadMessages,
   handleArchiveThread,
-  handleUnarchiveThread,
   handleVotePoll,
   handleClosePoll,
   handleLoadChannelThreads,
+  handleCreateForumPost,
   handleSetChannelTopic,
   handleSetNotificationOverride,
   handleDeleteCategory,
@@ -70,8 +78,9 @@ import {
   handleLoadEvents,
   handleLoadOnboardingConfig,
   handleLoadWelcomeScreen,
+  handleSubmitOnboarding,
 } from "../handlers/community.handlers";
-import { handleJoinVoice } from "../handlers/voice.handlers";
+import { handleJoinVoice, handleLeaveVoice, handleRequestToSpeak, handleRespondToSpeakRequest } from "../handlers/voice.handlers";
 import {
   calculateBasePermissions,
   hasPermission,
@@ -79,6 +88,8 @@ import {
   MANAGE_MESSAGES,
   MANAGE_COMMUNITY,
   SEND_MESSAGES,
+  BYPASS_SLOWMODE,
+  REQUEST_TO_SPEAK,
 } from "../ipc/permissions";
 import { commands } from "../ipc/commands";
 import { formatRelativeTime } from "../utils/formatting";
@@ -91,6 +102,7 @@ import {
   ICON_PLUS_BOX,
   ICON_SETTINGS,
   ICON_LOGOUT,
+  ICON_SEARCH,
   ICON_CHANNEL_TEXT,
   ICON_MEGAPHONE,
   ICON_PIN,
@@ -99,7 +111,7 @@ import {
   ICON_SERVER,
 } from "../icons";
 
-type RightPanel = "members" | "pins" | "threadList" | "thread";
+type RightPanel = "members" | "pins" | "threadList" | "thread" | null;
 
 const CommunityWindow: Component = () => {
   function getCommunityFromUrl(): string {
@@ -120,6 +132,15 @@ const CommunityWindow: Component = () => {
   const [renameTarget, setRenameTarget] = createSignal<{ channelId: string; currentName: string } | null>(null);
   const [renameCategoryTarget, setRenameCategoryTarget] = createSignal<{ categoryId: string; currentName: string } | null>(null);
   const [showLeaveConfirm, setShowLeaveConfirm] = createSignal(false);
+  // Architecture §23 — Cmd/Ctrl-F overlay for FTS5 message search.
+  const [showSearch, setShowSearch] = createSignal(false);
+  // Plan §Failure 9 — when the user opens search via Cmd/Ctrl-F we
+  // seed the panel scope to the active channel; when they click the
+  // titlebar Search button we seed to the entire community so the
+  // SearchPanel's initial scope inference picks "community".
+  const [searchInitialChannel, setSearchInitialChannel] = createSignal<
+    string | null
+  >(null);
   const [replyTo, setReplyTo] = createSignal<{ senderName: string; body: string; messageId?: string } | null>(null);
   const [pins, setPins] = createSignal<{ messageId: string; channelId: string; pinnedBy: string; pinnedAt: number }[]>([]);
   const [activeThread, setActiveThread] = createSignal<Thread | null>(null);
@@ -131,6 +152,8 @@ const CommunityWindow: Component = () => {
   const [hasMoreOlder, setHasMoreOlder] = createSignal(true);
   const [editingEvent, setEditingEvent] = createSignal<CommunityEvent | null>(null);
   const [createPollTarget, setCreatePollTarget] = createSignal<string | null>(null);
+  const [createThreadTarget, setCreateThreadTarget] = createSignal<{ starterMessageId: string; initialName: string } | null>(null);
+  const [forwardTarget, setForwardTarget] = createSignal<string | null>(null);
   const [showWelcomeForCommunity, setShowWelcomeForCommunity] = createSignal<string | null>(null);
 
   // Phase 3: Unified right panel state
@@ -190,8 +213,13 @@ const CommunityWindow: Component = () => {
 
   const canManageChannels = createMemo(() => hasPermission(myPerms(), MANAGE_CHANNELS));
   const canManageMessages = createMemo(() => hasPermission(myPerms(), MANAGE_MESSAGES));
+  // Architecture §10.7 — stage hand-raise. The audience-side button
+  // disappears for members lacking REQUEST_TO_SPEAK; backend
+  // re-validates on the SpeakRequest envelope.
+  const canRequestToSpeak = createMemo(() => hasPermission(myPerms(), REQUEST_TO_SPEAK));
   const canManageCommunity = createMemo(() => hasPermission(myPerms(), MANAGE_COMMUNITY));
   const canSendMessages = createMemo(() => hasPermission(myPerms(), SEND_MESSAGES));
+  const canBypassSlowmode = createMemo(() => hasPermission(myPerms(), BYPASS_SLOWMODE));
 
   const gameServers = createMemo(() => {
     const id = selectedCommunityId();
@@ -199,10 +227,29 @@ const CommunityWindow: Component = () => {
   });
 
   const isAnnouncementChannel = createMemo(() => activeChannel()?.type === "announcement");
+  const isForumChannel = createMemo(() => activeChannel()?.type === "forum");
+  const isStageChannel = createMemo(() => activeChannel()?.type === "stage");
+  const isVoiceChannel = createMemo(() => activeChannel()?.type === "voice");
+  /// Architecture §10.8 text-in-voice: in a voice channel, the chat
+  /// pane is visible only while the local member is connected to that
+  /// channel's voice session. For non-voice channels this is `true` by
+  /// definition so the chat pane always renders.
+  const isTextPaneVisible = createMemo(() => {
+    if (!isVoiceChannel()) return true;
+    return voiceState.isConnected && voiceState.channelId === selectedChannelId();
+  });
   const canPostInChannel = createMemo(() => {
     if (!isAnnouncementChannel()) return canSendMessages();
     return canManageCommunity();
   });
+  const activeVoiceChannelState = createMemo(() => {
+    const channelId = selectedChannelId();
+    return channelId ? communityState.voiceChannels[channelId] : undefined;
+  });
+  const isConnectedToActiveStage = createMemo(() =>
+    voiceState.isConnected
+    && voiceState.channelId === selectedChannelId(),
+  );
 
   const channelTypingUsers = createMemo(() => {
     const channelId = selectedChannelId();
@@ -275,6 +322,14 @@ const CommunityWindow: Component = () => {
   });
 
   createEffect(() => {
+    const communityId = selectedCommunityId();
+    const channel = activeChannel();
+    if (communityId && channel?.type === "forum") {
+      void handleLoadChannelThreads(communityId, channel.id);
+    }
+  });
+
+  createEffect(() => {
     const community = activeCommunity();
     if (!community) return;
     if (community.onboardingComplete && community.welcomeScreen) {
@@ -298,7 +353,8 @@ const CommunityWindow: Component = () => {
     storeSyncSelectCommunity(id);
     const community = communityState.communities[id];
     if (community?.channels.length) {
-      const firstText = community.channels.find((c) => c.type === "text" || c.type === "announcement");
+      const firstText = community.channels.find((c) =>
+        c.type === "text" || c.type === "announcement" || c.type === "forum");
       if (firstText) {
         setSelectedChannelId(firstText.id);
         storeSyncSelectChannel(firstText.id);
@@ -353,9 +409,11 @@ const CommunityWindow: Component = () => {
   }
 
   function handleToggleMembers(): void {
-    setRightPanel(rightPanel() === "members" ? "members" : "members");
-    // If already on members, this is a no-op. Otherwise switch to members.
-    if (rightPanel() !== "members") setRightPanel("members");
+    // Toggle: clicking the members button when the members panel is
+    // already active collapses the right rail entirely (`null`); from
+    // any other panel it switches to members. Mirrors the toggle
+    // semantics of `handleTogglePins` / `handleToggleThreadList`.
+    setRightPanel(rightPanel() === "members" ? null : "members");
   }
 
   function handleOpenThread(thread: Thread): void {
@@ -368,6 +426,46 @@ const CommunityWindow: Component = () => {
     setActiveThread(null);
     setCommunityState("activeThread", null);
     setRightPanel("members");
+  }
+
+  async function handleArchiveActiveThread(
+    communityId: string,
+    threadId: string,
+  ): Promise<void> {
+    await handleArchiveThread(communityId, threadId);
+    if (activeThread()?.id === threadId) {
+      handleCloseThread();
+    }
+  }
+
+  function openCreateThreadModal(starterMessageId: string): void {
+    setCreateThreadTarget({
+      starterMessageId,
+      initialName: "",
+    });
+  }
+
+  async function handleSubmitCreateThread(name: string, autoArchiveSeconds: number): Promise<void> {
+    const target = createThreadTarget();
+    if (!target) return;
+    const { handleCreateThread } = await import("../handlers/community.handlers");
+    const threadId = await handleCreateThread(
+      selectedCommunityId(),
+      selectedChannelId(),
+      name,
+      target.starterMessageId,
+      undefined,
+      autoArchiveSeconds,
+    );
+    if (!threadId) {
+      throw new Error("Failed to create thread");
+    }
+    const thread = (communityState.channelThreads[selectedChannelId()] ?? [])
+      .find((item) => item.id === threadId);
+    if (thread) {
+      handleOpenThread(thread);
+    }
+    setCreateThreadTarget(null);
   }
 
   async function handleLoadOlder(): Promise<void> {
@@ -435,17 +533,68 @@ const CommunityWindow: Component = () => {
     unlisteners.push(subscribeCommunityPresenceEvents());
     unlisteners.push(subscribeCommunityEventDispatcher());
     unlisteners.push(subscribeCommunityChannelChatEvents(() => activeCommunity()?.myPseudonymKey));
+
+    // Architecture §23 — global Cmd/Ctrl-F opens the message search overlay.
+    window.addEventListener("keydown", searchShortcutHandler);
   });
+
+  function searchShortcutHandler(e: KeyboardEvent): void {
+    // Architecture §23 — accept both Cmd/Ctrl-F (legacy chat-app
+    // muscle memory) and Cmd/Ctrl-K (Slack/Linear-style command
+    // palette key) so users land on the search overlay regardless of
+    // which mental model they bring.
+    const key = e.key.toLowerCase();
+    const isShortcut = (e.metaKey || e.ctrlKey) && (key === "f" || key === "k");
+    if (isShortcut) {
+      e.preventDefault();
+      setSearchInitialChannel(selectedChannelId() || null);
+      setShowSearch(true);
+    }
+  }
 
   onCleanup(() => {
     for (const p of unlisteners) {
       p.then((unlisten) => unlisten());
     }
+    window.removeEventListener("keydown", searchShortcutHandler);
   });
 
   return (
     <div class="app-frame">
+      {/* Architecture §32 a11y — keyboard skip link. Hidden until
+       * focused, then jumps past the navigation rails to the message
+       * area. The MessageList container is given `id="main-content"`
+       * + `tabindex="-1"` so the anchor focus lands inside it. */}
+      <a href="#main-content" class="skip-link">Skip to messages</a>
       <Titlebar title={activeCommunity()?.name ?? "Community"} showMaximize />
+      {/* Architecture §17.4 — raid alert banner. Rendered as a
+       * top-of-window overlay (role="alert" so screen readers
+       * announce immediately) whenever the backend's raid detector
+       * has fired and is unresolved. */}
+      {/* Plan §Failure 11 — banner stays until a moderator
+       *  acknowledges. Dismiss only clears the local flag (the
+       *  raid-detector keeps tripping if the join-flood continues
+       *  next interval). */}
+      <Show when={activeCommunity()?.raidAlertActive}>
+        <div class="raid-alert-banner" role="alert">
+          <span class="raid-alert-banner-text">
+            <strong>Raid detected</strong> — slowmode and join-throttling are
+            active. Moderators can review recent joins and pause invites.
+          </span>
+          <button
+            type="button"
+            class="form-btn-secondary"
+            onClick={() => {
+              const id = selectedCommunityId();
+              if (id) {
+                setCommunityState("communities", id, "raidAlertActive", false);
+              }
+            }}
+          >
+            Dismiss
+          </button>
+        </div>
+      </Show>
       <div class="community-layout">
         {/* Left sidebar: community list + channel list + sidebar sections */}
         <div class="community-sidebar">
@@ -577,8 +726,40 @@ const CommunityWindow: Component = () => {
           <Show when={voiceState.isConnected}>
             <VoicePanel />
           </Show>
+          {/* Architecture §10.6 — video / screen-share UI overlay,
+              active only while in a community voice channel. */}
+          <Show
+            when={
+              voiceState.isConnected
+              && voiceState.activeCallType === "community"
+              && voiceState.channelId
+              && selectedCommunityId()
+            }
+          >
+            <VideoCallPanel
+              communityId={selectedCommunityId()}
+              channelId={voiceState.channelId!}
+              visible
+            />
+          </Show>
           <Show when={activeCommunity()}>
             <div class="community-header-actions">
+              {/* Plan §Failure 9 — global community search button. Seeds
+               *  the panel with `channelId=null` so SearchPanel's scope
+               *  inference picks "community" (search across every
+               *  channel). Cmd/Ctrl-F still scopes to the active
+               *  channel as before. */}
+              <button
+                class="community-leave-btn"
+                title="Search this community (Cmd/Ctrl-Shift-F)"
+                aria-label="Search community"
+                onClick={() => {
+                  setSearchInitialChannel(null);
+                  setShowSearch(true);
+                }}
+              >
+                <span class="nf-icon">{ICON_SEARCH}</span> Search
+              </button>
               <button
                 class="community-leave-btn"
                 onClick={() => setShowLeaveConfirm(true)}
@@ -590,7 +771,7 @@ const CommunityWindow: Component = () => {
         </div>
 
         {/* Main content: channel header + messages, events, or servers panel */}
-        <div class="community-main">
+        <div class="community-main" id="main-content" tabindex="-1">
           <Show when={showServers() && activeCommunity()}>
             <GameServerList
               servers={gameServers()}
@@ -674,87 +855,154 @@ const CommunityWindow: Component = () => {
                     </button>
                     <button
                       class={`action-bar-btn header-add-btn ${rightPanel() === "members" ? "header-btn-active" : ""}`}
-                      onClick={() => setRightPanel(rightPanel() === "members" ? "members" : "members")}
+                      onClick={handleToggleMembers}
                       title="Members"
+                      aria-label={rightPanel() === "members" ? "Hide members panel" : "Show members panel"}
+                      aria-pressed={rightPanel() === "members"}
                     >
-                      <span class="nf-icon">{ICON_COMMUNITIES}</span>
+                      <span class="nf-icon" aria-hidden="true">{ICON_COMMUNITIES}</span>
                     </button>
                   </span>
                 </div>
-                <MessageList
-                  communityId={selectedCommunityId()}
-                  messages={channelMessages()}
-                  ownName={authState.displayName ?? "You"}
-                  peerName="Member"
-                  memberNames={memberNames()}
-                  myPseudonymKey={activeCommunity()?.myPseudonymKey}
-                  threads={communityState.channelThreads[selectedChannelId()] ?? []}
-                  onLoadOlder={handleLoadOlder}
-                  isLoadingOlder={isLoadingOlder()}
-                  onRetry={(messageId) => handleRetryChannelMessage(selectedChannelId(), messageId)}
-                  onReply={handleReply}
-                  onReaction={(messageId, emoji) => handleAddReaction(selectedCommunityId(), selectedChannelId(), messageId, emoji)}
-                  onRemoveReaction={(messageId, emoji) => handleRemoveReaction(selectedCommunityId(), selectedChannelId(), messageId, emoji)}
-                  onPin={(messageId) => {
-                    const msg = channelMessages().find((m) => m.serverMessageId === messageId);
-                    if (msg?.pinned) {
-                      handleUnpinMessage(selectedCommunityId(), selectedChannelId(), messageId);
-                    } else {
-                      handlePinMessage(selectedCommunityId(), selectedChannelId(), messageId);
-                    }
-                  }}
-                  onCreateThread={(messageId) => {
-                    const name = `Thread ${messageId.slice(0, 8)}`;
-                    import("../handlers/community.handlers").then(({ handleCreateThread }) => {
-                      handleCreateThread(selectedCommunityId(), selectedChannelId(), name, messageId).then((threadId) => {
-                        if (threadId) {
-                          const threads = communityState.channelThreads[selectedChannelId()] ?? [];
-                          const thread = threads.find((t) => t.id === threadId);
-                          if (thread) handleOpenThread(thread);
+                <Show when={isForumChannel()} fallback={
+                  <Show when={isStageChannel()} fallback={
+                  <Show when={isTextPaneVisible()} fallback={
+                    <div class="empty-placeholder voice-chat-locked">
+                      <div class="empty-placeholder-title">Join voice to view chat</div>
+                      <div class="empty-placeholder-subtitle">
+                        Architecture §10.8 — text-in-voice messages are visible
+                        only while you're connected to this voice channel.
+                      </div>
+                    </div>
+                  }>
+                  <>
+                    <MessageList
+                      communityId={selectedCommunityId()}
+                      channelId={selectedChannelId()}
+                      messages={channelMessages()}
+                      ownName={authState.displayName ?? "You"}
+                      peerName="Member"
+                      memberNames={memberNames()}
+                      myPseudonymKey={activeCommunity()?.myPseudonymKey}
+                      threads={communityState.channelThreads[selectedChannelId()] ?? []}
+                      canBulkDelete={canManageMessages()}
+                      onBulkDelete={(messageIds) =>
+                        handleBulkDeleteChannelMessages(
+                          selectedCommunityId(),
+                          selectedChannelId(),
+                          messageIds,
+                        )
+                      }
+                      onLoadOlder={handleLoadOlder}
+                      isLoadingOlder={isLoadingOlder()}
+                      onRetry={(messageId) => handleRetryChannelMessage(selectedChannelId(), messageId)}
+                      onReply={handleReply}
+                      onReaction={(messageId, emoji) => handleAddReaction(selectedCommunityId(), selectedChannelId(), messageId, emoji)}
+                      onRemoveReaction={(messageId, emoji) => handleRemoveReaction(selectedCommunityId(), selectedChannelId(), messageId, emoji)}
+                      onPin={(messageId) => {
+                        const msg = channelMessages().find((m) => m.serverMessageId === messageId);
+                        if (msg?.pinned) {
+                          handleUnpinMessage(selectedCommunityId(), selectedChannelId(), messageId);
+                        } else {
+                          handlePinMessage(selectedCommunityId(), selectedChannelId(), messageId);
                         }
-                      });
-                    });
-                  }}
-                  onCreatePoll={(messageId) => setCreatePollTarget(messageId)}
-                  onOpenThread={handleOpenThread}
-                  onEdit={(messageId, currentBody) => {
-                    setEditState({ messageId, body: currentBody });
-                  }}
-                  onDelete={(messageId) => {
-                    setDeleteTarget(messageId);
-                  }}
-                  onVotePoll={(pollId, selectedAnswers) =>
-                    handleVotePoll(selectedCommunityId(), selectedChannelId(), pollId, selectedAnswers)
-                  }
-                  onClosePoll={(pollId) =>
-                    handleClosePoll(selectedCommunityId(), selectedChannelId(), pollId)
-                  }
-                />
-                <Show when={channelTypingUsers().length > 0}>
-                  <div class="typing-indicator">
-                    <span class="typing-dots">
-                      <span class="typing-label">
-                        {channelTypingUsers().map((u) => u.displayName).join(", ")} {channelTypingUsers().length === 1 ? "is" : "are"} typing...
-                      </span>
-                    </span>
-                  </div>
+                      }}
+                      onCreateThread={(messageId) => {
+                        openCreateThreadModal(messageId);
+                      }}
+                      onCreatePoll={(messageId) => setCreatePollTarget(messageId)}
+                      onOpenThread={handleOpenThread}
+                      onEdit={(messageId, currentBody) => {
+                        setEditState({ messageId, body: currentBody });
+                      }}
+                      onDelete={(messageId) => {
+                        setDeleteTarget(messageId);
+                      }}
+                      onVotePoll={(pollId, selectedAnswers) =>
+                        handleVotePoll(selectedCommunityId(), selectedChannelId(), pollId, selectedAnswers)
+                      }
+                      onClosePoll={(pollId) =>
+                        handleClosePoll(selectedCommunityId(), selectedChannelId(), pollId)
+                      }
+                      onForward={(messageId) => setForwardTarget(messageId)}
+                    />
+                    <Show when={channelTypingUsers().length > 0}>
+                      <div class="typing-indicator">
+                        <span class="typing-dots">
+                          <span class="typing-label">
+                            {channelTypingUsers().map((u) => u.displayName).join(", ")} {channelTypingUsers().length === 1 ? "is" : "are"} typing...
+                          </span>
+                        </span>
+                      </div>
+                    </Show>
+                    <MessageInput
+                      communityId={selectedCommunityId()}
+                      peerId={selectedChannelId()}
+                      replyTo={replyTo()}
+                      editMode={editState()}
+                      onSend={handleChannelSend}
+                      onTyping={handleTyping}
+                      onDismissReply={() => setReplyTo(null)}
+                      onEditSave={(messageId, newBody) => {
+                        handleEditChannelMessage(selectedChannelId(), messageId, newBody);
+                        setEditState(null);
+                      }}
+                      onEditCancel={() => setEditState(null)}
+                      disabled={!canPostInChannel()}
+                      disabledMessage={isAnnouncementChannel() ? "Only admins can post in announcement channels" : "You don't have permission to send messages"}
+                      slowmodeSeconds={activeChannel()?.slowmodeSeconds}
+                      bypassSlowmode={canBypassSlowmode()}
+                    />
+                  </>
+                  </Show>
+                  }>
+                    <StagePanel
+                      channel={activeChannel()!}
+                      voiceChannel={activeVoiceChannelState()}
+                      members={activeCommunity()!.members}
+                      myPseudonymKey={activeCommunity()?.myPseudonymKey ?? null}
+                      isConnectedToChannel={isConnectedToActiveStage()}
+                      canModerate={canManageMessages()}
+                      canRequestToSpeak={canRequestToSpeak()}
+                      onJoinStage={() => void handleJoinVoice(selectedChannelId(), selectedCommunityId())}
+                      onLeaveStage={() => void handleLeaveVoice()}
+                      onRequestToSpeak={() => void handleRequestToSpeak(selectedCommunityId(), selectedChannelId())}
+                      onApproveRequest={(requesterPseudonym) =>
+                        void handleRespondToSpeakRequest(
+                          selectedCommunityId(),
+                          selectedChannelId(),
+                          requesterPseudonym,
+                          true,
+                        )}
+                      onDenyRequest={(requesterPseudonym) =>
+                        void handleRespondToSpeakRequest(
+                          selectedCommunityId(),
+                          selectedChannelId(),
+                          requesterPseudonym,
+                          false,
+                        )}
+                    />
+                  </Show>
+                }>
+                  <ForumChannelView
+                    channel={activeChannel()!}
+                    threads={communityState.channelThreads[selectedChannelId()] ?? []}
+                    onOpenThread={handleOpenThread}
+                    onCreatePost={async (name, body, forumTag) => {
+                      const threadId = await handleCreateForumPost(
+                        selectedCommunityId(),
+                        selectedChannelId(),
+                        name,
+                        body,
+                        forumTag,
+                      );
+                      if (!threadId) return;
+                      const thread = (communityState.channelThreads[selectedChannelId()] ?? [])
+                        .find((item) => item.id === threadId);
+                      if (thread) handleOpenThread(thread);
+                    }}
+                  />
                 </Show>
-                <MessageInput
-                  communityId={selectedCommunityId()}
-                  peerId={selectedChannelId()}
-                  replyTo={replyTo()}
-                  editMode={editState()}
-                  onSend={handleChannelSend}
-                  onTyping={handleTyping}
-                  onDismissReply={() => setReplyTo(null)}
-                  onEditSave={(messageId, newBody) => {
-                    handleEditChannelMessage(selectedChannelId(), messageId, newBody);
-                    setEditState(null);
-                  }}
-                  onEditCancel={() => setEditState(null)}
-                  disabled={!canPostInChannel()}
-                  disabledMessage={isAnnouncementChannel() ? "Only admins can post in announcement channels" : "You don't have permission to send messages"}
-                />
               </Show>
             }>
               <WelcomeScreen
@@ -820,8 +1068,7 @@ const CommunityWindow: Component = () => {
                   messages={threadMessages()}
                   onClose={handleCloseThread}
                   onSend={handleSendThreadMessage}
-                  onArchive={handleArchiveThread}
-                  onUnarchive={handleUnarchiveThread}
+                  onArchive={handleArchiveActiveThread}
                   onReply={handleReply}
                   onReaction={(messageId, emoji) => handleAddReaction(selectedCommunityId(), selectedChannelId(), messageId, emoji)}
                   onRemoveReaction={(messageId, emoji) => handleRemoveReaction(selectedCommunityId(), selectedChannelId(), messageId, emoji)}
@@ -870,6 +1117,13 @@ const CommunityWindow: Component = () => {
           myRoleIds={myRoleIds()}
           onClose={() => setShowSettings(false)}
         />
+        <Show when={showSearch()}>
+          <SearchPanel
+            communityId={selectedCommunityId()}
+            channelId={searchInitialChannel()}
+            onClose={() => setShowSearch(false)}
+          />
+        </Show>
         <CreateCategoryModal
           isOpen={showCreateCategory()}
           communityId={selectedCommunityId()}
@@ -894,6 +1148,29 @@ const CommunityWindow: Component = () => {
           messageId={createPollTarget() ?? ""}
           onClose={() => setCreatePollTarget(null)}
         />
+        <CreateThreadModal
+          isOpen={createThreadTarget() !== null}
+          initialName={createThreadTarget()?.initialName ?? ""}
+          onClose={() => setCreateThreadTarget(null)}
+          onSubmit={async (name, autoArchive) => {
+            try {
+              await handleSubmitCreateThread(name, autoArchive);
+              setCreateThreadTarget(null);
+            } catch (e) {
+              console.error("Failed to create thread:", e);
+            }
+          }}
+        />
+        <Show when={forwardTarget()}>
+          {(messageId) => (
+            <ForwardMessageDialog
+              sourceCommunityId={selectedCommunityId()}
+              sourceChannelId={selectedChannelId()}
+              sourceMessageId={messageId()}
+              onClose={() => setForwardTarget(null)}
+            />
+          )}
+        </Show>
       </Show>
       <Show when={renameTarget()}>
         {(target) => (
@@ -954,6 +1231,13 @@ const CommunityWindow: Component = () => {
               setShowWelcomeForCommunity(selectedCommunityId());
             }
           }}
+          onCancel={
+            activeCommunity()!.onboardingConfig!.mode === "gated"
+              ? undefined
+              : () => {
+                  void handleSubmitOnboarding(selectedCommunityId(), []);
+                }
+          }
         />
       </Show>
       <ToastContainer />

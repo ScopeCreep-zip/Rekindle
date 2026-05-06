@@ -72,6 +72,7 @@ pub async fn rename_channel(
             channel_id: rekindle_types::id::ChannelId(hex_to_id_16(&channel_id)),
             name: Some(new_name.clone()),
             topic: None,
+            forum_tags: None,
             position: None,
             slowmode_seconds: None,
             nsfw: None,

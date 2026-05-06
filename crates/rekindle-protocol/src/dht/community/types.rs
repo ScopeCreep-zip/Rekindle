@@ -509,7 +509,7 @@ mod tests {
             name: "Test".into(),
             description: Some("desc".into()),
             icon_hash: None,
-            created_at: 1234567890,
+            created_at: 1_234_567_890,
             owner_pseudonym: "abc".into(),
             last_refreshed: 0,
         };

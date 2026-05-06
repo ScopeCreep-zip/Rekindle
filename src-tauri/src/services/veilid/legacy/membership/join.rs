@@ -8,7 +8,7 @@ use tauri::{Emitter, Manager};
 pub(crate) struct JoinAcceptedData<'a> {
     mek_wire_bytes: &'a [u8],
     mek_generation: u64,
-    members: &'a [serde_json::Value],
+    members: &'a [rekindle_protocol::dht::community::types::MemberSummary],
     member_registry_key: Option<&'a str>,
     slot_index: Option<u32>,
     wrapped_slot_seed: Option<&'a [u8]>,
@@ -17,7 +17,7 @@ pub(crate) struct JoinAcceptedData<'a> {
 pub(crate) fn join_accepted_data<'a>(
     mek_wire_bytes: &'a [u8],
     mek_generation: u64,
-    members: &'a [serde_json::Value],
+    members: &'a [rekindle_protocol::dht::community::types::MemberSummary],
     member_registry_key: Option<&'a str>,
     slot_index: Option<u32>,
     wrapped_slot_seed: Option<&'a [u8]>,
@@ -226,11 +226,7 @@ pub(crate) async fn handle_join_accepted(
         }
     }
 
-    let parsed_members: Vec<MemberSummary> = data
-        .members
-        .iter()
-        .filter_map(|v| serde_json::from_value(v.clone()).ok())
-        .collect();
+    let parsed_members: Vec<MemberSummary> = data.members.to_vec();
 
     if let Some(ref my_pk) = my_pseudonym {
         if let Some(me) = parsed_members.iter().find(|m| m.pseudonym_key == *my_pk) {
@@ -428,6 +424,23 @@ fn spawn_peer_bootstrap(
                 if let Ok(presence) =
                     serde_json::from_slice::<rekindle_types::presence::MemberPresence>(val.data())
                 {
+                    // Architecture §26 W26 — verify the presence row was
+                    // signed by the claimed pseudonym before treating it
+                    // as authoritative routing info.
+                    let Ok(sig_arr): Result<[u8; 64], _> =
+                        presence.signature.as_slice().try_into()
+                    else {
+                        continue;
+                    };
+                    if rekindle_secrets::derive::verify_pseudonym_signature(
+                        &presence.pseudonym_key.0,
+                        &presence.signing_bytes(),
+                        &sig_arr,
+                    )
+                    .is_err()
+                    {
+                        continue;
+                    }
                     if !presence.route_blob.is_empty() && presence.status != "offline" {
                         let mut communities = state.communities.write();
                         if let Some(cs) = communities.get_mut(&community_id) {

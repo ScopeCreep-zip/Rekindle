@@ -142,6 +142,7 @@ mod tests {
             hoist: false,
             mentionable: false,
             self_assignable: false,
+            exclusion_group: None,
             lamport: 1,
         };
         let mut roles = HashMap::new();
@@ -183,6 +184,7 @@ mod tests {
             hoist: false,
             mentionable: false,
             self_assignable: false,
+            exclusion_group: None,
             lamport: 2,
         };
         state.roles.insert(rid(1), admin_role);
@@ -235,6 +237,7 @@ mod tests {
                 hoist: false,
                 mentionable: false,
                 self_assignable: false,
+                exclusion_group: None,
                 lamport: 1,
             },
         );
@@ -256,6 +259,7 @@ mod tests {
                 hoist: false,
                 mentionable: false,
                 self_assignable: false,
+                exclusion_group: None,
                 lamport: 1,
             },
         );

@@ -8,6 +8,13 @@ use crate::codec::EncodedFrame;
 use crate::error::VoiceError;
 
 /// Voice packet for network transmission.
+///
+/// Architecture §10.3 + §26 W26 — `signature` is an Ed25519 signature
+/// by the sender's pseudonym secret over [`signing_bytes`]. Receivers
+/// MUST verify against `sender_key` before mixing/playing the audio,
+/// otherwise any community member could MEK-encrypt audio claiming to
+/// be any other (the MEK is community-shared and authenticates only
+/// "some member encrypted this", not "this specific member").
 #[derive(Clone, Serialize, Deserialize)]
 pub struct VoicePacket {
     /// Sender public key (32 bytes).
@@ -16,8 +23,33 @@ pub struct VoicePacket {
     pub sequence: u32,
     /// Timestamp in milliseconds.
     pub timestamp: u64,
-    /// Opus-encoded audio data.
+    /// Opus-encoded audio data (MEK-encrypted ciphertext on the wire
+    /// for community channels; plaintext for 1:1 calls).
     pub audio_data: Vec<u8>,
+    /// 64-byte Ed25519 signature over [`signing_bytes`]. Receivers
+    /// reject packets with an empty or invalid signature.
+    #[serde(default)]
+    pub signature: Vec<u8>,
+}
+
+impl VoicePacket {
+    /// Canonical bytes the sender signs. Domain-tagged so a signature
+    /// for a chat or governance subkey can't be replayed as a voice
+    /// packet (and vice versa).
+    pub fn signing_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(
+            b"rekindle-voice-packet-v1".len()
+                + self.sender_key.len()
+                + 12
+                + self.audio_data.len(),
+        );
+        out.extend_from_slice(b"rekindle-voice-packet-v1");
+        out.extend_from_slice(&self.sender_key);
+        out.extend_from_slice(&self.sequence.to_le_bytes());
+        out.extend_from_slice(&self.timestamp.to_le_bytes());
+        out.extend_from_slice(&self.audio_data);
+        out
+    }
 }
 
 /// Voice channel operating mode.
@@ -52,6 +84,11 @@ pub struct VoiceTransport {
     channel_id: String,
     api: Option<VeilidAPI>,
     sender_key: Vec<u8>,
+    /// Architecture §10.3 + §26 W26 — pseudonym signing key for voice
+    /// packet authentication. Derived from the user's identity secret +
+    /// community_id (or identity secret alone for 1:1 calls). Cleared on
+    /// disconnect so a stale key can't sign packets after channel exit.
+    signing_key: Option<ed25519_dalek::SigningKey>,
     /// Connected peers: pseudonym_key (hex) → route info.
     peers: HashMap<String, PeerRoute>,
     /// Current operating mode.
@@ -80,6 +117,7 @@ impl VoiceTransport {
             channel_id,
             api: None,
             sender_key: Vec::new(),
+            signing_key: None,
             peers: HashMap::new(),
             mode: VoiceMode::default(),
         }
@@ -92,6 +130,14 @@ impl VoiceTransport {
     pub fn init(&mut self, api: VeilidAPI, sender_key: Vec<u8>) {
         self.api = Some(api);
         self.sender_key = sender_key;
+    }
+
+    /// Architecture §26 W26 — install the pseudonym signing key the
+    /// transport uses to sign every outbound voice packet. Caller is
+    /// responsible for re-installing on community switch (the key is
+    /// derived per-community).
+    pub fn set_signing_key(&mut self, signing_key: ed25519_dalek::SigningKey) {
+        self.signing_key = Some(signing_key);
     }
 
     /// Legacy single-peer connect (wraps `init` + `add_peer`).
@@ -242,16 +288,38 @@ impl VoiceTransport {
         self.peers.clear();
         self.api = None;
         self.sender_key.clear();
+        self.signing_key = None;
         self.mode = VoiceMode::default();
         tracing::info!(channel = %self.channel_id, "voice transport disconnected");
     }
 
-    /// Deserialize an incoming voice packet from raw bytes.
+    /// Deserialize an incoming voice packet from raw bytes and verify
+    /// its Ed25519 signature against `sender_key`. Architecture §10.3 +
+    /// §26 W26 — packets with missing or invalid signatures are
+    /// rejected (returns `VoiceError::Transport`).
     ///
     /// Expects data WITHOUT the `b'V'` type tag prefix — the dispatch loop
     /// should strip the tag before calling this.
     pub fn receive(data: &[u8]) -> Result<VoicePacket, VoiceError> {
-        bincode::deserialize(data).map_err(|e| VoiceError::Transport(format!("{e}")))
+        let packet: VoicePacket =
+            bincode::deserialize(data).map_err(|e| VoiceError::Transport(format!("{e}")))?;
+        let sig_arr: [u8; 64] = packet
+            .signature
+            .as_slice()
+            .try_into()
+            .map_err(|_| VoiceError::Transport("voice packet signature length".into()))?;
+        let sender_arr: [u8; 32] = packet
+            .sender_key
+            .as_slice()
+            .try_into()
+            .map_err(|_| VoiceError::Transport("voice packet sender_key length".into()))?;
+        use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+        let vk = VerifyingKey::from_bytes(&sender_arr)
+            .map_err(|e| VoiceError::Transport(format!("voice packet sender_key invalid: {e}")))?;
+        let sig = Signature::from_bytes(&sig_arr);
+        vk.verify(&packet.signing_bytes(), &sig)
+            .map_err(|e| VoiceError::Transport(format!("voice packet signature: {e}")))?;
+        Ok(packet)
     }
 
     /// Whether the transport has any connected peers.
@@ -266,12 +334,25 @@ impl VoiceTransport {
 
     /// Build the wire-format packet data from an encoded frame.
     fn build_packet_data(&self, frame: &EncodedFrame) -> Result<Vec<u8>, VoiceError> {
-        let packet = VoicePacket {
+        // Architecture §10.3 + §26 W26 — sign every outbound packet so
+        // receivers can authenticate the sender. Without this any
+        // community member could MEK-encrypt audio claiming any
+        // pseudonym; the MEK is shared and only proves community
+        // membership, not which specific member sent the audio.
+        let signing_key = self
+            .signing_key
+            .as_ref()
+            .ok_or_else(|| VoiceError::Transport("voice signing key not installed".into()))?;
+        let mut packet = VoicePacket {
             sender_key: self.sender_key.clone(),
             sequence: frame.sequence,
             timestamp: frame.timestamp,
             audio_data: frame.data.clone(),
+            signature: Vec::new(),
         };
+        use ed25519_dalek::Signer;
+        let sig = signing_key.sign(&packet.signing_bytes());
+        packet.signature = sig.to_bytes().to_vec();
 
         let payload =
             bincode::serialize(&packet).map_err(|e| VoiceError::Transport(format!("{e}")))?;

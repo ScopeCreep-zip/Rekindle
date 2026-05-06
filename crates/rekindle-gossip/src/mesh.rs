@@ -23,14 +23,14 @@ impl<T> GossipMesh<T> {
 
 /// Compute the mesh fan-out degree for the current online population.
 ///
-/// - `0` online peers: no fan-out
-/// - `1..=20`: direct mesh
-/// - `21..=60`: degree 6
-/// - `61+`: degree 8
+/// Architecture §3 line 315: `D = min(N, 6)` for `N ≤ 20`, `6` for
+/// `21..=60`, `8` for `61+`. The dedup cache + 5-hop TTL guarantee
+/// delivery without flooding even when most peers don't receive a
+/// direct copy.
 pub fn fanout_degree(online_count: usize) -> usize {
     match online_count {
         0 => 0,
-        1..=20 => online_count,
+        1..=20 => online_count.min(6),
         21..=60 => 6,
         _ => 8,
     }
@@ -44,7 +44,10 @@ mod tests {
     fn fanout_degree_matches_architecture_ranges() {
         assert_eq!(fanout_degree(0), 0);
         assert_eq!(fanout_degree(1), 1);
-        assert_eq!(fanout_degree(20), 20);
+        assert_eq!(fanout_degree(5), 5);
+        assert_eq!(fanout_degree(6), 6);
+        assert_eq!(fanout_degree(7), 6);
+        assert_eq!(fanout_degree(20), 6);
         assert_eq!(fanout_degree(21), 6);
         assert_eq!(fanout_degree(60), 6);
         assert_eq!(fanout_degree(61), 8);

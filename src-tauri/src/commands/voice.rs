@@ -36,6 +36,11 @@ pub async fn join_voice_channel(
     )
     .await?;
 
+    if let Some(ref cid) = community_id {
+        maybe_apply_stage_audience_gate(state.inner(), cid, &channel_id);
+        log_voice_join_event(&state, cid, &channel_id, &app);
+    }
+
     // Broadcast VoiceJoin via gossip so other community members add us as a peer
     if let Some(ref cid) = community_id {
         let route_blob = crate::state_helpers::our_route_blob(&state).unwrap_or_default();
@@ -68,8 +73,11 @@ pub async fn leave_voice(
             .unwrap_or_default()
     };
     if let Some(ref cid) = community_id {
+        log_voice_leave_event(&state, cid, &channel_id, &app);
         let envelope = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
-            rekindle_protocol::dht::community::envelope::ControlPayload::VoiceLeave { channel_id },
+            rekindle_protocol::dht::community::envelope::ControlPayload::VoiceLeave {
+                channel_id: channel_id.clone(),
+            },
         );
         let _ = crate::services::community::send_to_mesh(state.inner(), cid, &envelope);
     }
@@ -319,4 +327,209 @@ pub async fn server_deafen_member(
     );
     crate::services::community::send_to_mesh(state.inner(), &community_id, &envelope)?;
     Ok(())
+}
+
+#[tauri::command]
+pub async fn request_to_speak(
+    community_id: String,
+    channel_id: String,
+    state: State<'_, SharedState>,
+) -> Result<(), String> {
+    crate::commands::community::require_permission(
+        state.inner(),
+        &community_id,
+        rekindle_protocol::dht::community::permissions_v2::Permissions::REQUEST_TO_SPEAK,
+    )?;
+    let requester_pseudonym = {
+        let communities = state.communities.read();
+        communities
+            .get(&community_id)
+            .and_then(|community| community.my_pseudonym_key.clone())
+            .ok_or("no pseudonym key for this community")?
+    };
+    crate::services::community::persist_hand_raise(
+        state.inner(),
+        &community_id,
+        &channel_id,
+        true,
+    )
+    .await?;
+    let lamport = crate::state_helpers::increment_lamport(state.inner(), &community_id);
+    let envelope = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
+        rekindle_protocol::dht::community::envelope::ControlPayload::SpeakRequest {
+            channel_id,
+            requester_pseudonym,
+            lamport,
+        },
+    );
+    crate::services::community::send_to_mesh(state.inner(), &community_id, &envelope)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_stage_hand_raises(
+    community_id: String,
+    channel_id: String,
+    state: State<'_, SharedState>,
+) -> Result<Vec<String>, String> {
+    crate::commands::community::require_permission(
+        state.inner(),
+        &community_id,
+        rekindle_protocol::dht::community::permissions_v2::Permissions::VIEW_CHANNEL,
+    )?;
+    crate::services::community::list_hand_raises(state.inner(), &community_id, &channel_id).await
+}
+
+#[tauri::command]
+pub async fn respond_to_speak_request(
+    community_id: String,
+    channel_id: String,
+    requester_pseudonym: String,
+    granted: bool,
+    app_handle: tauri::AppHandle,
+    state: State<'_, SharedState>,
+) -> Result<(), String> {
+    crate::commands::community::require_permission(
+        state.inner(),
+        &community_id,
+        rekindle_protocol::dht::community::permissions_v2::Permissions::MANAGE_MESSAGES,
+    )?;
+    let moderator_pseudonym = {
+        let communities = state.communities.read();
+        communities
+            .get(&community_id)
+            .and_then(|community| community.my_pseudonym_key.clone())
+            .ok_or("no pseudonym key for this community")?
+    };
+
+    if granted {
+        crate::services::community::rotate_voice_mek_for_membership(
+            &app_handle,
+            state.inner(),
+            &community_id,
+            &channel_id,
+            &requester_pseudonym,
+            true,
+        )
+        .await?;
+    }
+
+    let lamport = crate::state_helpers::increment_lamport(state.inner(), &community_id);
+    let envelope = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
+        rekindle_protocol::dht::community::envelope::ControlPayload::SpeakResponse {
+            channel_id: channel_id.clone(),
+            requester_pseudonym: requester_pseudonym.clone(),
+            granted,
+            moderator_pseudonym: moderator_pseudonym.clone(),
+            lamport,
+        },
+    );
+    crate::services::community::send_to_mesh(state.inner(), &community_id, &envelope)?;
+
+    if granted {
+        let speakers = {
+            let communities = state.communities.read();
+            let channel = communities
+                .get(&community_id)
+                .and_then(|community| community.channels.iter().find(|channel| channel.id == channel_id))
+                .ok_or("channel not found")?;
+            let mut speakers = channel.stage_speakers.clone();
+            if !speakers.contains(&requester_pseudonym) {
+                speakers.push(requester_pseudonym.clone());
+            }
+            speakers
+        };
+        let stage_update = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
+            rekindle_protocol::dht::community::envelope::ControlPayload::StageUpdate {
+                channel_id,
+                topic: None,
+                speakers,
+                moderator_pseudonym,
+                lamport: lamport.saturating_add(1),
+            },
+        );
+        crate::services::community::send_to_mesh(state.inner(), &community_id, &stage_update)?;
+    }
+
+    Ok(())
+}
+
+fn log_voice_join_event(
+    state: &State<'_, SharedState>,
+    community_id: &str,
+    channel_id: &str,
+    app: &tauri::AppHandle,
+) {
+    use tauri::Manager as _;
+    let owner = state_helpers::owner_key_or_default(state.inner());
+    let pseudo = my_pseudonym_for(state.inner(), community_id);
+    let pool: tauri::State<'_, crate::db::DbPool> = app.state();
+    crate::services::community::analytics::log_voice_join(
+        pool.inner(),
+        &owner,
+        community_id,
+        channel_id,
+        &pseudo,
+    );
+}
+
+fn log_voice_leave_event(
+    state: &State<'_, SharedState>,
+    community_id: &str,
+    channel_id: &str,
+    app: &tauri::AppHandle,
+) {
+    use tauri::Manager as _;
+    let owner = state_helpers::owner_key_or_default(state.inner());
+    let pseudo = my_pseudonym_for(state.inner(), community_id);
+    let pool: tauri::State<'_, crate::db::DbPool> = app.state();
+    crate::services::community::analytics::log_voice_leave(
+        pool.inner(),
+        &owner,
+        community_id,
+        channel_id,
+        &pseudo,
+    );
+}
+
+fn my_pseudonym_for(state: &SharedState, community_id: &str) -> String {
+    state
+        .communities
+        .read()
+        .get(community_id)
+        .and_then(|c| c.my_pseudonym_key.clone())
+        .unwrap_or_default()
+}
+
+fn maybe_apply_stage_audience_gate(
+    state: &SharedState,
+    community_id: &str,
+    channel_id: &str,
+) {
+    let (is_stage, my_pseudonym, speakers) = {
+        let communities = state.communities.read();
+        let Some(community) = communities.get(community_id) else {
+            return;
+        };
+        let Some(channel) = community.channels.iter().find(|channel| channel.id == channel_id) else {
+            return;
+        };
+        (
+            matches!(channel.channel_type, crate::state::ChannelType::Stage),
+            community.my_pseudonym_key.clone().unwrap_or_default(),
+            channel.stage_speakers.clone(),
+        )
+    };
+
+    if !is_stage || speakers.contains(&my_pseudonym) {
+        return;
+    }
+
+    let mut ve = state.voice_engine.lock();
+    if let Some(ref mut handle) = *ve {
+        handle.engine.set_muted(true);
+        handle
+            .muted_flag
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    }
 }

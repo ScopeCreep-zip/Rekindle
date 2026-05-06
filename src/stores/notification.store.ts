@@ -7,6 +7,16 @@ export interface Notification {
   body: string;
   timestamp: number;
   read: boolean;
+  /** Set when type === "message" — the originating community. */
+  communityId?: string;
+  /** Set when type === "message" — the originating channel. */
+  channelId?: string;
+  /**
+   * Architecture §32 Phase 7 Week 25 — resolved per-channel /
+   * per-community sound override. `null` means use the bundled
+   * default. Only populated for `type === "message"` notifications.
+   */
+  soundRef?: string | null;
 }
 
 export interface NotificationState {

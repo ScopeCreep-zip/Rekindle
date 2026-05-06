@@ -64,4 +64,53 @@ pub enum ChatEvent {
     FriendRequestDelivered {
         to: String,
     },
+    /// Emitted when an inbound DM invite is received (architecture §27).
+    /// The frontend prompts the user to accept or decline, which calls
+    /// `accept_dm_invite` / `decline_dm_invite` Tauri commands.
+    #[serde(rename_all = "camelCase")]
+    DirectMessageInvite {
+        from: String,
+        record_key: String,
+        initiator_pseudonym: String,
+        is_group: bool,
+    },
+    /// Plan §Failure 5 — incoming direct call. The frontend mounts an
+    /// IncomingCallModal and dispatches `accept_dm_call` /
+    /// `decline_dm_call`; the modal closes when the modal-side timer
+    /// reaches `expires_at_ms` or the user picks an action.
+    #[serde(rename_all = "camelCase")]
+    IncomingCall {
+        call_id: String,
+        from: String,
+        display_name: String,
+        kind: String,
+        expires_at_ms: u64,
+    },
+    /// Plan §Failure 5 — emitted on both sides once the X25519
+    /// handshake completes and the voice transport has been started.
+    #[serde(rename_all = "camelCase")]
+    CallConnected {
+        call_id: String,
+    },
+    /// Plan §Failure 5 — outgoing call's 30 s timer expired without an
+    /// accept. Frontend shows a toast and clears the outgoing-call
+    /// state from `calls.store`.
+    #[serde(rename_all = "camelCase")]
+    CallTimedOut {
+        call_id: String,
+    },
+    /// Plan §Failure 5 — incoming call ring expired locally without
+    /// the user answering. Frontend updates the missed-call badge.
+    #[serde(rename_all = "camelCase")]
+    CallMissed {
+        call_id: String,
+        from: String,
+    },
+    /// Plan §Failure 5 — peer declined the call (received as the
+    /// `app_call` reply on the caller side).
+    #[serde(rename_all = "camelCase")]
+    CallDeclined {
+        call_id: String,
+        reason: String,
+    },
 }

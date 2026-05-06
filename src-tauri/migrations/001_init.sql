@@ -13,7 +13,14 @@ CREATE TABLE IF NOT EXISTS identity (
     avatar_webp BLOB,
     account_dht_key TEXT,
     account_owner_keypair TEXT,
-    mailbox_dht_key TEXT
+    mailbox_dht_key TEXT,
+    -- Architecture §28.4: personal DFLT record key for cross-device sync.
+    -- Created lazily on first launch when the user opts into multi-device.
+    personal_sync_record_key TEXT,
+    personal_sync_owner_keypair TEXT,
+    -- Stable per-device id (random 16-byte UUID hex). Identifies *this*
+    -- physical device in the DeviceList without exposing more PII.
+    device_id TEXT
 );
 
 CREATE TABLE IF NOT EXISTS friend_groups (
@@ -56,7 +63,9 @@ CREATE TABLE IF NOT EXISTS messages (
     attachment_json TEXT,
     mek_generation INTEGER,
     lamport_ts INTEGER DEFAULT 0,
-    message_id TEXT
+    message_id TEXT,
+    forwarded_from_author TEXT,
+    flags INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(owner_key, conversation_id, timestamp);
@@ -72,8 +81,8 @@ CREATE TABLE IF NOT EXISTS communities (
     name TEXT NOT NULL,
     description TEXT,
     icon_hash TEXT,
-    my_role TEXT NOT NULL DEFAULT 'member',
-    my_role_ids TEXT NOT NULL DEFAULT '[0,1]',
+    banner_hash TEXT,
+    my_role_ids TEXT NOT NULL DEFAULT '[0]',
     joined_at INTEGER NOT NULL,
     last_synced INTEGER,
     dht_record_key TEXT,
@@ -83,6 +92,8 @@ CREATE TABLE IF NOT EXISTS communities (
     manifest_key TEXT,
     member_registry_key TEXT,
     my_subkey_index INTEGER,
+    -- Plate Gate: which segment the user joined into. 0 = primary.
+    my_segment_index INTEGER NOT NULL DEFAULT 0,
     coordinator_pseudonym TEXT,
     coordinator_route_blob BLOB,
     coordinator_epoch INTEGER NOT NULL DEFAULT 0,
@@ -106,6 +117,12 @@ CREATE TABLE IF NOT EXISTS channels (
     mek_generation INTEGER NOT NULL DEFAULT 0,
     log_key TEXT,
     my_sequence INTEGER NOT NULL DEFAULT 0,
+    -- Architecture §10.8 — text-in-voice. Hex channel id of the parent
+    -- voice channel when this channel is the text companion of a voice
+    -- channel; NULL for normal channels. Frontend uses this to hide
+    -- text-in-voice channels unless the local member is connected to
+    -- the parent voice.
+    parent_voice_channel_id TEXT,
     PRIMARY KEY (owner_key, id),
     FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
 );
@@ -119,7 +136,25 @@ CREATE TABLE IF NOT EXISTS community_members (
     timeout_until INTEGER,
     joined_at INTEGER NOT NULL,
     subkey_index INTEGER,
+    -- Plate Gate (architecture §15): which segment hosts this member's slot.
+    -- 0 = primary segment (the genesis registry); 1..=MAX_SEGMENTS for each
+    -- expansion. The local subkey within that segment's registry record is
+    -- always `subkey_index - segment_index * 255`.
+    segment_index INTEGER NOT NULL DEFAULT 0,
     onboarding_complete INTEGER NOT NULL DEFAULT 0,
+    -- Per-community profile fields (architecture §8.2 / §24.2). Mirrored
+    -- from peer MemberPresence at registry-poll time so they survive
+    -- restarts; without these the member list shows pseudonym keys
+    -- after a relaunch.
+    bio TEXT,
+    pronouns TEXT,
+    theme_color INTEGER,
+    badges TEXT NOT NULL DEFAULT '[]',
+    -- BLAKE3 content references for avatar + banner. The bytes
+    -- themselves live in the local Lost Cargo cache or as an inline
+    -- expression asset (architecture §32 Week 15).
+    avatar_ref TEXT,
+    banner_ref TEXT,
     PRIMARY KEY (owner_key, community_id, pseudonym_key)
 );
 
@@ -134,6 +169,8 @@ CREATE TABLE IF NOT EXISTS community_roles (
     hoist INTEGER NOT NULL DEFAULT 0,
     mentionable INTEGER NOT NULL DEFAULT 0,
     self_assignable INTEGER NOT NULL DEFAULT 0,
+    -- Architecture §19.4 — mutually exclusive role groups (NULL = independent).
+    exclusion_group TEXT,
     PRIMARY KEY (owner_key, community_id, role_id)
 );
 
@@ -214,6 +251,22 @@ CREATE TABLE IF NOT EXISTS pending_friend_requests (
     PRIMARY KEY (owner_key, public_key)
 );
 
+-- Plan §Failure 5 / Architecture §10.10 — direct call ring timeouts.
+-- Written when an Outgoing call's 30 s timer fires without an accept,
+-- or when an Incoming call expires without the local user answering.
+-- Surfaced via `getMissedCalls` for the BuddyList badge.
+CREATE TABLE IF NOT EXISTS missed_calls (
+    call_id TEXT NOT NULL,
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    peer_key TEXT NOT NULL,
+    kind INTEGER NOT NULL CHECK(kind IN (0, 1)),
+    expired_at INTEGER NOT NULL,
+    PRIMARY KEY (owner_key, call_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_missed_calls_owner_peer
+    ON missed_calls(owner_key, peer_key, expired_at DESC);
+
 CREATE TABLE IF NOT EXISTS blocked_users (
     owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
     public_key TEXT NOT NULL,
@@ -231,6 +284,13 @@ CREATE TABLE IF NOT EXISTS notification_preferences (
     channel_id TEXT NOT NULL DEFAULT '',
     level INTEGER NOT NULL DEFAULT 0
         CHECK(level IN (0, 1, 2)),
+    -- Architecture §32 Phase 7 Week 25 — per-community + per-channel
+    -- notification sound override. NULL means "inherit from the next
+    -- level up": channel row falls through to the (community_id, '')
+    -- row, which falls through to the app-global `notification_sound`
+    -- bool in `app_settings`. Value is an expression `sound_id` from
+    -- the community soundboard (`ExpressionAdded { kind: "sound" }`).
+    sound_ref TEXT,
     PRIMARY KEY (owner_key, community_id, channel_id)
 );
 
@@ -241,10 +301,42 @@ CREATE TABLE IF NOT EXISTS app_settings (
         CHECK(quiet_hours_start_minute >= 0 AND quiet_hours_start_minute < 1440),
     quiet_hours_end_minute INTEGER NOT NULL DEFAULT 420
         CHECK(quiet_hours_end_minute >= 0 AND quiet_hours_end_minute < 1440),
-    quiet_hours_utc_offset_minutes INTEGER NOT NULL DEFAULT 0
-        CHECK(quiet_hours_utc_offset_minutes >= -840 AND quiet_hours_utc_offset_minutes <= 840),
+    -- Architecture §17.2 — IANA timezone string (e.g.,
+    -- "America/Los_Angeles") drives DST-aware quiet-hours resolution.
+    -- The frontend defaults to `Intl.DateTimeFormat().resolvedOptions().timeZone`
+    -- on first save; "UTC" is the safe seed when no row exists.
+    quiet_hours_timezone TEXT NOT NULL DEFAULT 'UTC',
+    -- Architecture §32 Phase 7 Week 25 — global Do Not Disturb. When 1,
+    -- ALL notification dispatches are suppressed regardless of channel
+    -- level, community default, quiet hours window, or mention status.
+    -- The user-facing UI surfaces it as a one-click toggle in the tray
+    -- menu separate from the time-bounded quiet hours.
+    do_not_disturb INTEGER NOT NULL DEFAULT 0
+        CHECK(do_not_disturb IN (0, 1)),
+    -- Architecture §28.8 line 3220 — link preview generation reveals the
+    -- user's IP to the target server (the OpenGraph fetch bypasses
+    -- Veilid). When 0, the sender skips the fetch entirely so URLs
+    -- remain bare in the chat. Default 1 (enabled) matches the typical
+    -- chat-app expectation of inline previews.
+    link_previews_enabled INTEGER NOT NULL DEFAULT 1
+        CHECK(link_previews_enabled IN (0, 1)),
     PRIMARY KEY (owner_key)
 );
+
+-- Architecture §28.7 / §32 W18 — per-channel slowmode bookkeeping.
+-- Tracks the millisecond timestamp of this device's last send into a
+-- channel so the cooldown window survives app restarts. Without this
+-- table the in-memory `channel_last_send_at` resets on relaunch and a
+-- user could circumvent a channel's configured slowmode by quitting.
+CREATE TABLE IF NOT EXISTS channel_slowmode_state (
+    owner_key TEXT NOT NULL,
+    community_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    last_send_ms INTEGER NOT NULL,
+    PRIMARY KEY (owner_key, community_id, channel_id)
+);
+CREATE INDEX IF NOT EXISTS idx_channel_slowmode_state_owner
+    ON channel_slowmode_state(owner_key, community_id);
 
 CREATE TABLE IF NOT EXISTS outgoing_invites (
     owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
@@ -276,7 +368,11 @@ CREATE TABLE IF NOT EXISTS community_threads (
 );
 
 -- Thread messages (messages within a thread).
+-- Thread reply messages (architecture §11). The synthetic `id` PK is
+-- required by FTS5 (`content_rowid` must be a single INTEGER column),
+-- with the original logical key kept as a UNIQUE constraint.
 CREATE TABLE IF NOT EXISTS thread_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     owner_key TEXT NOT NULL,
     community_id TEXT NOT NULL,
     thread_id TEXT NOT NULL,
@@ -285,7 +381,7 @@ CREATE TABLE IF NOT EXISTS thread_messages (
     body TEXT NOT NULL DEFAULT '',
     timestamp INTEGER NOT NULL,
     reply_to_id TEXT,
-    PRIMARY KEY (owner_key, community_id, thread_id, message_id)
+    UNIQUE (owner_key, community_id, thread_id, message_id)
 );
 CREATE INDEX IF NOT EXISTS idx_thread_messages_thread
     ON thread_messages(owner_key, community_id, thread_id, timestamp);
@@ -303,7 +399,21 @@ CREATE TABLE IF NOT EXISTS community_events (
     channel_id TEXT,
     max_attendees INTEGER,
     created_at INTEGER NOT NULL,
-    status TEXT NOT NULL DEFAULT 'scheduled',
+    -- Architecture §21 line 2630 — Scheduled / Active / Completed /
+    -- Cancelled. CHECK constraint matches the EventStatus enum
+    -- (`rekindle-types::event::EventStatus`).
+    status TEXT NOT NULL DEFAULT 'scheduled'
+        CHECK(status IN ('scheduled', 'active', 'completed', 'cancelled')),
+    -- Architecture §21 line 2624 — peer-cached cover image hex hash.
+    cover_image_ref TEXT,
+    -- Architecture §21 line 2628 — JSON-serialized RecurrenceRule.
+    -- NULL for one-off events; non-NULL holds the full struct so the
+    -- frontend can render "every 2 weeks on Mon, Wed" without back-end
+    -- date math.
+    recurrence_json TEXT,
+    -- Architecture §21 line 2629 — JSON-serialized EventLocation enum.
+    -- Falls back to channel_id-based VoiceChannel for legacy rows.
+    location_json TEXT,
     PRIMARY KEY (owner_key, community_id, id)
 );
 
@@ -360,6 +470,14 @@ CREATE TABLE IF NOT EXISTS community_invites (
     max_uses INTEGER NOT NULL DEFAULT 0,
     expires_at INTEGER,
     created_at INTEGER NOT NULL,
+    -- Architecture §16 — local uses counter incremented every time a
+    -- `MemberJoinRequest` with this code_hash validates against a
+    -- governance entry we hold. Non-authoritative: each peer counts
+    -- only the requests they personally observed via gossip; the
+    -- displayed value is a best-effort UX hint, not an enforcement
+    -- threshold (the `max_uses` policy is enforced by the inviter at
+    -- write time, not by reader consensus).
+    uses INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (owner_key, community_id, code_hash)
 );
 
@@ -373,3 +491,230 @@ CREATE TABLE IF NOT EXISTS message_delivery (
     last_attempt_at INTEGER,
     PRIMARY KEY (message_id, recipient_pseudonym)
 );
+
+-- Strand Relay Network (architecture §13). For each friend who has volunteered
+-- to relay traffic to us, we keep their dedicated relay route blob locally so
+-- we can publish a padded relay pool subkey on our profile DHT record. Bob
+-- adds rows here when he receives a `RelayOffer` from Carol.
+CREATE TABLE IF NOT EXISTS strand_relay_offers (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    relay_pseudonym TEXT NOT NULL,
+    relay_route_blob BLOB NOT NULL,
+    received_at INTEGER NOT NULL,
+    PRIMARY KEY (owner_key, relay_pseudonym)
+);
+
+-- Strand Relay outbound: when *we* volunteer to relay for a friend, we keep
+-- the dedicated route id locally so we can revoke it later and so we know
+-- which friend a given inbound RelayEnvelope is meant for (matched by route id).
+CREATE TABLE IF NOT EXISTS strand_relay_volunteered (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    friend_public_key TEXT NOT NULL,
+    relay_route_id TEXT NOT NULL,
+    relay_route_blob BLOB NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (owner_key, friend_public_key)
+);
+
+-- Direct messages and group DMs (architecture §27). Each row is one DM
+-- conversation backed by a 2-or-N-member SMPL record (o_cnt:0). For
+-- 2-party DMs `mek_generation` indexes the ratchet; for group DMs it
+-- mirrors the broadcast generation. `participants_json` is a JSON
+-- array of {pseudonym, subkey, public_key} for group DMs; for 2-party
+-- DMs it has exactly two entries.
+CREATE TABLE IF NOT EXISTS dms (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    record_key TEXT NOT NULL,
+    is_group INTEGER NOT NULL DEFAULT 0,
+    initiator_public_key TEXT NOT NULL,
+    initiator_pseudonym TEXT NOT NULL,
+    my_subkey INTEGER NOT NULL,
+    participants_json TEXT NOT NULL,
+    -- 32-byte slot seed (hex) used to derive the SMPL slot keypairs for
+    -- both peers. Persisted so writes survive a restart without re-
+    -- exchanging the seed.
+    slot_seed_hex TEXT NOT NULL DEFAULT '',
+    -- Group DMs only (architecture §27.2): the wrapped MEK envelope
+    -- (X25519+AES-256-GCM) addressed to *us*. Stashed at receive time
+    -- so the user can defer accept; unwrapped on accept and dropped
+    -- after the plaintext MEK lands in `dm_mek_cache`. For 2-party DMs
+    -- this column is empty (MEK is re-derived from identity on demand).
+    wrapped_mek_blob BLOB,
+    mek_generation INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    last_message_at INTEGER,
+    PRIMARY KEY (owner_key, record_key)
+);
+
+-- Local message log for DMs. Mirrors `messages` but per-DM (not per-friend)
+-- since a single friend can have multiple DM conversations across pseudonym
+-- contexts (architecture §27.1 unlinkability).
+CREATE TABLE IF NOT EXISTS dm_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    record_key TEXT NOT NULL,
+    sender_pseudonym TEXT NOT NULL,
+    body TEXT NOT NULL,
+    timestamp INTEGER NOT NULL,
+    sequence INTEGER NOT NULL DEFAULT 0,
+    mek_generation INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_dm_messages_record_ts
+    ON dm_messages(owner_key, record_key, timestamp);
+
+-- Mutual Aid topology metrics (architecture §14.5). Per-community
+-- per-peer success/failure counters used to weight gossip fan-out
+-- selection so high-reliability "ziplines" emerge organically. Pure
+-- numeric counters; no PII beyond pseudonyms which are already public
+-- within a community.
+CREATE TABLE IF NOT EXISTS peer_reliability (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    community_id TEXT NOT NULL,
+    peer_pseudonym TEXT NOT NULL,
+    success_count INTEGER NOT NULL DEFAULT 0,
+    failure_count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (owner_key, community_id, peer_pseudonym)
+);
+
+-- Mobile push relay registrations (architecture §17.3 Tier 3). A self-
+-- hosted or shared headless `veilid-server` watches the listed DHT
+-- record keys on this device's behalf and pings FCM/APNs with a
+-- content-free wake. Stored locally so the client can re-register or
+-- revoke from any session.
+CREATE TABLE IF NOT EXISTS push_relay_registrations (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    relay_pseudonym TEXT NOT NULL,
+    device_push_token TEXT NOT NULL,
+    platform TEXT NOT NULL CHECK(platform IN ('fcm', 'apns', 'self')),
+    record_keys_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (owner_key, relay_pseudonym)
+);
+
+-- Community member departure log (architecture §24.1). The live
+-- membership table loses rows when a member leaves; analytics need a
+-- separate append-only log so "leaves in last 7 days" stays computable.
+CREATE TABLE IF NOT EXISTS community_member_leaves (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    community_id TEXT NOT NULL,
+    pseudonym_key TEXT NOT NULL,
+    left_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_member_leaves_recent
+    ON community_member_leaves(owner_key, community_id, left_at);
+
+-- Voice session join/leave log (architecture §24.1). Used to compute
+-- "peak concurrent voice" per channel — events stream in as voice
+-- sessions start and stop, the analytics query replays them as a sweep
+-- to find the maximum concurrent count.
+CREATE TABLE IF NOT EXISTS voice_session_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    community_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    member_pseudonym TEXT NOT NULL,
+    event_type TEXT NOT NULL CHECK(event_type IN ('join', 'leave')),
+    occurred_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_voice_session_events_channel
+    ON voice_session_events(owner_key, community_id, channel_id, occurred_at);
+
+-- Local cache of devices paired to this identity (architecture §28.4).
+-- The authoritative list lives in subkey 3 of the personal DFLT record;
+-- this is just a fast read/write target for the settings UI.
+CREATE TABLE IF NOT EXISTS paired_devices (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    device_id TEXT NOT NULL,
+    device_public_key TEXT NOT NULL,
+    display_name TEXT NOT NULL DEFAULT '',
+    paired_at INTEGER NOT NULL,
+    unpaired_at INTEGER,
+    PRIMARY KEY (owner_key, device_id)
+);
+
+-- Read-state mirror — this device's view of "last read Lamport per
+-- channel". Reconciled into subkey 1 of the personal DFLT record.
+CREATE TABLE IF NOT EXISTS channel_read_state (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    community_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    last_read_lamport INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (owner_key, community_id, channel_id)
+);
+
+-- Pending pairing sessions — short-lived rows the existing device
+-- writes when generating a code, the new device drops as it accepts.
+CREATE TABLE IF NOT EXISTS pending_pairings (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    pairing_code TEXT NOT NULL,
+    pairing_salt BLOB NOT NULL,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    PRIMARY KEY (owner_key, pairing_code)
+);
+
+-- FTS5 indexes for local search (architecture §23). External-content tables
+-- per https://sqlite.org/fts5.html#external_content_tables — index lives in
+-- a parallel virtual table, content stays in the canonical row table, and
+-- AFTER INSERT/UPDATE/DELETE triggers keep them in lock-step.
+--
+-- Tokenizer: `unicode61 remove_diacritics 2` — Unicode-aware splitting on
+-- punctuation/whitespace with strict diacritic folding (the "form 2"
+-- variant the FTS5 reference recommends for case- and accent-insensitive
+-- matching). No `porter` stemming because it's English-only and Rekindle
+-- targets multilingual chat. bm25() ranking is built-in.
+CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+    body,
+    content='messages',
+    content_rowid='id',
+    tokenize='unicode61 remove_diacritics 2'
+);
+
+CREATE TRIGGER IF NOT EXISTS messages_fts_ai AFTER INSERT ON messages BEGIN
+    INSERT INTO messages_fts(rowid, body) VALUES (new.id, new.body);
+END;
+CREATE TRIGGER IF NOT EXISTS messages_fts_ad AFTER DELETE ON messages BEGIN
+    INSERT INTO messages_fts(messages_fts, rowid, body) VALUES('delete', old.id, old.body);
+END;
+CREATE TRIGGER IF NOT EXISTS messages_fts_au AFTER UPDATE ON messages BEGIN
+    INSERT INTO messages_fts(messages_fts, rowid, body) VALUES('delete', old.id, old.body);
+    INSERT INTO messages_fts(rowid, body) VALUES (new.id, new.body);
+END;
+
+CREATE VIRTUAL TABLE IF NOT EXISTS thread_messages_fts USING fts5(
+    body,
+    content='thread_messages',
+    content_rowid='id',
+    tokenize='unicode61 remove_diacritics 2'
+);
+
+CREATE TRIGGER IF NOT EXISTS thread_messages_fts_ai AFTER INSERT ON thread_messages BEGIN
+    INSERT INTO thread_messages_fts(rowid, body) VALUES (new.id, new.body);
+END;
+CREATE TRIGGER IF NOT EXISTS thread_messages_fts_ad AFTER DELETE ON thread_messages BEGIN
+    INSERT INTO thread_messages_fts(thread_messages_fts, rowid, body) VALUES('delete', old.id, old.body);
+END;
+CREATE TRIGGER IF NOT EXISTS thread_messages_fts_au AFTER UPDATE ON thread_messages BEGIN
+    INSERT INTO thread_messages_fts(thread_messages_fts, rowid, body) VALUES('delete', old.id, old.body);
+    INSERT INTO thread_messages_fts(rowid, body) VALUES (new.id, new.body);
+END;
+
+CREATE VIRTUAL TABLE IF NOT EXISTS dm_messages_fts USING fts5(
+    body,
+    content='dm_messages',
+    content_rowid='id',
+    tokenize='unicode61 remove_diacritics 2'
+);
+
+CREATE TRIGGER IF NOT EXISTS dm_messages_fts_ai AFTER INSERT ON dm_messages BEGIN
+    INSERT INTO dm_messages_fts(rowid, body) VALUES (new.id, new.body);
+END;
+CREATE TRIGGER IF NOT EXISTS dm_messages_fts_ad AFTER DELETE ON dm_messages BEGIN
+    INSERT INTO dm_messages_fts(dm_messages_fts, rowid, body) VALUES('delete', old.id, old.body);
+END;
+CREATE TRIGGER IF NOT EXISTS dm_messages_fts_au AFTER UPDATE ON dm_messages BEGIN
+    INSERT INTO dm_messages_fts(dm_messages_fts, rowid, body) VALUES('delete', old.id, old.body);
+    INSERT INTO dm_messages_fts(rowid, body) VALUES (new.id, new.body);
+END;

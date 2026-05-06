@@ -1,5 +1,6 @@
 import { Component, Show, createSignal, createEffect } from "solid-js";
 import Modal from "./Modal";
+import LoadingButton from "./LoadingButton";
 
 interface SimpleInputModalProps {
   isOpen: boolean;
@@ -71,9 +72,14 @@ const SimpleInputModal: Component<SimpleInputModalProps> = (props) => {
         <Show when={error()}>
           <div class="form-error">{error()}</div>
         </Show>
-        <button class="form-btn-primary" type="submit" disabled={!value().trim() || submitting()}>
-          {submitting() ? "..." : (props.submitLabel ?? "Submit")}
-        </button>
+        <LoadingButton
+          type="submit"
+          loading={submitting()}
+          disabled={!value().trim()}
+          loadingLabel="Submitting"
+        >
+          {props.submitLabel ?? "Submit"}
+        </LoadingButton>
       </form>
     </Modal>
   );

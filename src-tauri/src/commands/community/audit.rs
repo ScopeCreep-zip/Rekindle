@@ -77,6 +77,23 @@ pub async fn get_audit_log(
                 rekindle_types::governance::GovernanceSubkeyPayload,
             >(val.data())
             {
+                // Architecture §26 W26 — only show audit entries from
+                // signature-verified subkeys; otherwise the audit log
+                // would echo the impersonator's claimed identity.
+                let Ok(sig_arr): Result<[u8; 64], _> =
+                    payload.signature.as_slice().try_into()
+                else {
+                    continue;
+                };
+                if rekindle_secrets::derive::verify_pseudonym_signature(
+                    &payload.author_pseudonym.0,
+                    &payload.signing_bytes(),
+                    &sig_arr,
+                )
+                .is_err()
+                {
+                    continue;
+                }
                 let actor = hex::encode(payload.author_pseudonym.0);
                 for entry in payload.entries {
                     rows.push(governance_entry_to_audit_row(&actor, entry));

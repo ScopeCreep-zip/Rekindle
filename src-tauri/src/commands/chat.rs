@@ -60,6 +60,31 @@ pub struct Message {
     pub pinned: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub poll: Option<MessagePoll>,
+    /// Pseudonym (hex) of the original author when this row was a forward.
+    /// `None` for native messages. Frontend renders a "Forwarded from X" header.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forwarded_from_author: Option<String>,
+    /// Lost Cargo attachment metadata (architecture §28.9). Decoded from
+    /// the SQLite `attachment_json` column. `None` for plain messages.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attachment: Option<MessageAttachmentDto>,
+    /// Bitfield from `ChannelEntry::Message.flags` — VOICE_MESSAGE=0x10
+    /// (architecture §16.4), SUPPRESS_NOTIFICATIONS=0x20, etc. Frontend
+    /// branches on these to switch render mode (voice player vs text).
+    #[serde(default)]
+    pub flags: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageAttachmentDto {
+    pub attachment_id: String,
+    pub filename: String,
+    pub mime_type: String,
+    pub total_size: u64,
+    pub chunk_count: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_path: Option<String>,
 }
 
 /// Send a message to a friend (1:1 DM).
@@ -161,6 +186,9 @@ pub async fn get_message_history(
                 reactions: None,
                 pinned: None,
                 poll: None,
+                forwarded_from_author: None,
+                attachment: None,
+                flags: 0,
             })
         })?;
 

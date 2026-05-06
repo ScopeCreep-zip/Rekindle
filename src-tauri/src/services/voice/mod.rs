@@ -1,4 +1,5 @@
 pub(crate) mod device_monitor;
+pub(crate) mod election;
 pub(crate) mod mcu_loop;
 pub(crate) mod receive_loop;
 pub(crate) mod send_loop;

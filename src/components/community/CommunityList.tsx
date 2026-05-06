@@ -1,8 +1,6 @@
 import { Component, For, Show } from "solid-js";
+import { ContextMenu } from "@kobalte/core/context-menu";
 import { communityState, Community } from "../../stores/community.store";
-import ContextMenu from "../common/ContextMenu";
-import type { ContextMenuItem } from "../common/ContextMenu";
-import { createContextMenu } from "../../hooks/createContextMenu";
 import { ICON_SETTINGS, ICON_LOGOUT, ICON_COPY } from "../../icons";
 
 interface CommunityListProps {
@@ -14,42 +12,9 @@ interface CommunityListProps {
 
 const CommunityList: Component<CommunityListProps> = (props) => {
   const list = () => Object.values(communityState.communities);
-  const menu = createContextMenu<Community>();
 
   function unreads(c: Community): number {
     return c.channels.reduce((sum, ch) => sum + (ch.unreadCount ?? 0), 0);
-  }
-
-  function contextMenuItems(): ContextMenuItem[] {
-    const ctx = menu.state();
-    if (!ctx) return [];
-    const community = ctx.data;
-    const items: ContextMenuItem[] = [];
-
-    if (props.onSettings) {
-      items.push({
-        label: "Settings",
-        icon: ICON_SETTINGS,
-        action: () => props.onSettings!(community.id),
-      });
-    }
-
-    items.push({
-      label: "Copy ID",
-      icon: ICON_COPY,
-      action: () => navigator.clipboard.writeText(community.id),
-    });
-
-    if (props.onLeave) {
-      items.push({
-        label: "Leave",
-        icon: ICON_LOGOUT,
-        action: () => props.onLeave!(community.id),
-        danger: true,
-      });
-    }
-
-    return items;
   }
 
   return (
@@ -60,33 +25,54 @@ const CommunityList: Component<CommunityListProps> = (props) => {
         </div>
       }>
         {(community: Community) => (
-          <div
-            class={`community-item ${props.selectedId === community.id ? "community-item-selected" : ""}`}
-            onClick={() => props.onSelect(community.id)}
-            onContextMenu={(e) => menu.open(e, community)}
-          >
-            <div class="community-icon">
-              {community.name.charAt(0).toUpperCase()}
-            </div>
-            <span class="community-name">
-              {community.name}
-            </span>
-            <Show when={unreads(community) > 0}>
-              <span class="community-unread-badge">{unreads(community)}</span>
-            </Show>
-          </div>
+          <ContextMenu>
+            <ContextMenu.Trigger
+              as="div"
+              class={`community-item ${props.selectedId === community.id ? "community-item-selected" : ""}`}
+              onClick={() => props.onSelect(community.id)}
+            >
+              <div class="community-icon">
+                {community.name.charAt(0).toUpperCase()}
+              </div>
+              <span class="community-name">
+                {community.name}
+              </span>
+              <Show when={unreads(community) > 0}>
+                <span class="community-unread-badge">{unreads(community)}</span>
+              </Show>
+            </ContextMenu.Trigger>
+            <ContextMenu.Portal>
+              <ContextMenu.Content class="context-menu">
+                <Show when={props.onSettings}>
+                  <ContextMenu.Item
+                    class="context-menu-item"
+                    onSelect={() => props.onSettings!(community.id)}
+                  >
+                    <span class="nf-icon context-menu-icon">{ICON_SETTINGS}</span>
+                    Settings
+                  </ContextMenu.Item>
+                </Show>
+                <ContextMenu.Item
+                  class="context-menu-item"
+                  onSelect={() => navigator.clipboard.writeText(community.id)}
+                >
+                  <span class="nf-icon context-menu-icon">{ICON_COPY}</span>
+                  Copy ID
+                </ContextMenu.Item>
+                <Show when={props.onLeave}>
+                  <ContextMenu.Item
+                    class="context-menu-item context-menu-item-danger"
+                    onSelect={() => props.onLeave!(community.id)}
+                  >
+                    <span class="nf-icon context-menu-icon">{ICON_LOGOUT}</span>
+                    Leave
+                  </ContextMenu.Item>
+                </Show>
+              </ContextMenu.Content>
+            </ContextMenu.Portal>
+          </ContextMenu>
         )}
       </For>
-      <Show when={menu.state()}>
-        {(pos) => (
-          <ContextMenu
-            items={contextMenuItems()}
-            x={pos().x}
-            y={pos().y}
-            onClose={menu.close}
-          />
-        )}
-      </Show>
     </div>
   );
 };

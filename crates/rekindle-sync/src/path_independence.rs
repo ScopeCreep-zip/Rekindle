@@ -35,7 +35,7 @@ fn smpl_only_write_is_processed_via_inspect_without_gossip() {
     queue_fetch_task(
         &mut queue,
         "channel_record",
-        gaps[0].subkey as u32,
+        u32::try_from(gaps[0].subkey).unwrap(),
         ciphertext,
     );
 
@@ -79,7 +79,7 @@ fn inspect_only_detects_and_processes_when_gossip_and_watch_fail() {
     queue_fetch_task(
         &mut queue,
         "channel_record",
-        gaps[0].subkey as u32,
+        u32::try_from(gaps[0].subkey).unwrap(),
         ciphertext,
     );
 

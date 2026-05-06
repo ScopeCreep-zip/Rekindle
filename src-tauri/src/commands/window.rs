@@ -41,6 +41,17 @@ pub async fn open_chat_window(
     windows::open_chat_window(&app, &public_key, &display_name)
 }
 
+/// Open a DM window for a SMPL-record-backed direct message
+/// (architecture §27).
+#[tauri::command]
+pub async fn open_dm_window(
+    record_key: String,
+    title_hint: String,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    windows::open_dm_window(&app, &record_key, &title_hint)
+}
+
 /// Open the settings window, optionally to a specific tab.
 #[tauri::command]
 pub async fn open_settings_window(

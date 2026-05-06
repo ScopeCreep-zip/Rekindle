@@ -88,6 +88,43 @@ pub fn open_chat_window(
     Ok(())
 }
 
+/// Open a DM window for a SMPL-record-backed direct message
+/// conversation (architecture §27). Each DM gets its own window, keyed
+/// by the truncated record key — distinct from `open_chat_window`,
+/// which is for legacy 1:1 friend chats over Signal Protocol.
+pub fn open_dm_window(
+    app: &AppHandle,
+    record_key: &str,
+    title_hint: &str,
+) -> Result<(), String> {
+    let suffix: String = record_key
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .take(20)
+        .collect();
+    let label = format!("dm-{suffix}");
+
+    if let Some(window) = app.get_webview_window(&label) {
+        let _ = window.show();
+        let _ = window.set_focus();
+        return Ok(());
+    }
+
+    let url = WebviewUrl::App(format!("/dm?record={record_key}").into());
+    WebviewWindowBuilder::new(app, &label, url)
+        .title(format!("DM - {title_hint}"))
+        .inner_size(480.0, 550.0)
+        .min_inner_size(380.0, 400.0)
+        .decorations(false)
+        .transparent(true)
+        .shadow(true)
+        .resizable(true)
+        .build()
+        .map_err(|e: tauri::Error| e.to_string())?;
+
+    Ok(())
+}
+
 /// Open the settings window (single instance), optionally to a specific tab.
 ///
 /// If the window already exists, emits a `settings-switch-tab` event to change
