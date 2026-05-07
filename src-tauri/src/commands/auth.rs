@@ -1411,7 +1411,7 @@ fn start_background_services(
     dht_keys: DhtKeysConfig,
 ) {
     // Initialize Signal Protocol session manager (returns serialized PreKeyBundle)
-    let prekey_bundle_bytes = initialize_signal_manager(state, secret_key);
+    let prekey_bundle_bytes = initialize_signal_manager(app, state, secret_key);
 
     // Clear any stale background handles from a previous session
     state.background_handles.lock().clear();
@@ -2409,10 +2409,13 @@ pub async fn create_conversation_for_friend(
 ///
 /// Returns the serialized `PreKeyBundle` bytes if generation succeeded,
 /// so the caller can publish them to DHT profile subkey 5.
-fn initialize_signal_manager(state: &SharedState, secret_key: &[u8; 32]) -> Option<Vec<u8>> {
-    use rekindle_crypto::signal::{
-        MemoryIdentityStore, MemoryPreKeyStore, MemorySessionStore, SignalSessionManager,
-    };
+fn initialize_signal_manager(
+    app: &tauri::AppHandle,
+    state: &SharedState,
+    secret_key: &[u8; 32],
+) -> Option<Vec<u8>> {
+    use rekindle_crypto::signal::SignalSessionManager;
+    use tauri::Manager as _;
 
     // Derive the X25519 key pair from the Ed25519 secret key for X3DH
     let identity = rekindle_crypto::Identity::from_secret_bytes(secret_key);
@@ -2428,10 +2431,25 @@ fn initialize_signal_manager(state: &SharedState, secret_key: &[u8; 32]) -> Opti
     let registration_id =
         u32::from_le_bytes([pub_bytes[0], pub_bytes[1], pub_bytes[2], pub_bytes[3]]);
 
-    let identity_store =
-        MemoryIdentityStore::new(identity_private, identity_public, registration_id);
-    let prekey_store = MemoryPreKeyStore::new();
-    let session_store = MemorySessionStore::new();
+    // B7/D4 (P0.1+P0.5+P1.2) — Stronghold-backed Signal stores. Without
+    // this, every restart wiped Memory*Stores and friends had to re-handshake
+    // — a social-engineering opportunity for vulnerable users (an attacker
+    // who can prompt a re-handshake can substitute their own key). The
+    // Stronghold-backed wrappers prime their in-memory cache from disk on
+    // construction and write-through to Stronghold on every store, so the
+    // session graph survives restart and corruption is recoverable rather
+    // than the default state.
+    let keystore_handle: tauri::State<'_, crate::keystore::KeystoreHandle> = app.state();
+    let identity_store = crate::signal_stores::StrongholdIdentityStore::new(
+        keystore_handle.inner().clone(),
+        identity_private,
+        identity_public,
+        registration_id,
+    );
+    let prekey_store =
+        crate::signal_stores::StrongholdPreKeyStore::new(keystore_handle.inner().clone());
+    let session_store =
+        crate::signal_stores::StrongholdSessionStore::new(keystore_handle.inner().clone());
 
     let manager = SignalSessionManager::new(
         Box::new(identity_store),

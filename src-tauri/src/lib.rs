@@ -12,6 +12,7 @@ pub mod keystore;
 pub mod message_repo;
 pub mod serde_helpers;
 mod services;
+pub mod signal_stores;
 pub mod state;
 pub mod state_helpers;
 mod tray;

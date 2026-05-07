@@ -672,6 +672,310 @@ fn derive_key(passphrase: &str) -> Vec<u8> {
     key
 }
 
+// ─── B7/D4 (P0.5): Stronghold delegate helpers for Signal stores ────────────
+//
+// Architecture §11 — Signal sessions/prekeys/identity must persist across
+// restart so a corrupted-on-disk session is recoverable, not the default
+// state. The previous Memory*Store implementations lost everything on app
+// exit, forcing every friend to re-handshake on every launch. For a
+// vulnerable user this is a social-engineering opportunity: an attacker
+// who can prompt a re-handshake can substitute their own keys.
+//
+// All helpers below mirror the persist_mek / load_mek pattern (line 185+):
+// - take a `&StrongholdKeystore` handle (already locked by caller)
+// - use VAULT_SIGNAL from rekindle-crypto::keychain
+// - encode key names with stable string prefixes so old/new entries don't
+//   collide
+//
+// Indices: Stronghold has no list-keys API, so for the multi-entry stores
+// (sessions, prekeys, trusted identities) we maintain a separate "index"
+// record holding the current keys. Index updates are best-effort (log on
+// fail); the per-entry persist is the authoritative write.
+
+const SIGNAL_SESSION_PREFIX: &str = "session:";
+const SIGNAL_PREKEY_PREFIX: &str = "prekey:";
+const SIGNAL_SIGNED_PREKEY_PREFIX: &str = "signed_prekey:";
+const SIGNAL_TRUSTED_PREFIX: &str = "trusted:";
+const SIGNAL_REGISTRATION_KEY: &str = "registration_id";
+const SIGNAL_SESSION_INDEX: &str = "session_index";
+const SIGNAL_PREKEY_INDEX: &str = "prekey_index";
+
+/// Persist Signal identity key pair + registration ID. Loaded once at login;
+/// the in-memory store mirrors it for fast access.
+pub fn persist_signal_identity(
+    keystore: &StrongholdKeystore,
+    identity_private: &[u8],
+    identity_public: &[u8],
+    registration_id: u32,
+) -> Result<(), String> {
+    use rekindle_crypto::keychain::{KEY_SIGNAL_IDENTITY, VAULT_SIGNAL};
+    use rekindle_crypto::Keychain as _;
+
+    let mut blob = Vec::with_capacity(identity_private.len() + identity_public.len() + 8);
+    blob.extend_from_slice(&u32::try_from(identity_private.len()).unwrap_or(0).to_le_bytes());
+    blob.extend_from_slice(identity_private);
+    blob.extend_from_slice(&u32::try_from(identity_public.len()).unwrap_or(0).to_le_bytes());
+    blob.extend_from_slice(identity_public);
+    keystore
+        .store_key(VAULT_SIGNAL, KEY_SIGNAL_IDENTITY, &blob)
+        .map_err(|e| format!("persist signal identity: {e}"))?;
+    keystore
+        .store_key(
+            VAULT_SIGNAL,
+            SIGNAL_REGISTRATION_KEY,
+            &registration_id.to_le_bytes(),
+        )
+        .map_err(|e| format!("persist signal registration_id: {e}"))?;
+    keystore
+        .save()
+        .map_err(|e| format!("save snapshot after signal identity: {e}"))
+}
+
+/// Load the persisted Signal identity. Returns None if never persisted.
+pub fn load_signal_identity(
+    keystore: &StrongholdKeystore,
+) -> Option<(Vec<u8>, Vec<u8>, u32)> {
+    use rekindle_crypto::keychain::{KEY_SIGNAL_IDENTITY, VAULT_SIGNAL};
+    use rekindle_crypto::Keychain as _;
+
+    let blob = keystore.load_key(VAULT_SIGNAL, KEY_SIGNAL_IDENTITY).ok()??;
+    if blob.len() < 8 {
+        return None;
+    }
+    let priv_len = u32::from_le_bytes(blob[0..4].try_into().ok()?) as usize;
+    if blob.len() < 4 + priv_len + 4 {
+        return None;
+    }
+    let private = blob[4..4 + priv_len].to_vec();
+    let pub_len_offset = 4 + priv_len;
+    let pub_len =
+        u32::from_le_bytes(blob[pub_len_offset..pub_len_offset + 4].try_into().ok()?) as usize;
+    if blob.len() < pub_len_offset + 4 + pub_len {
+        return None;
+    }
+    let public = blob[pub_len_offset + 4..pub_len_offset + 4 + pub_len].to_vec();
+    let reg_bytes = keystore.load_key(VAULT_SIGNAL, SIGNAL_REGISTRATION_KEY).ok()??;
+    let registration_id = u32::from_le_bytes(reg_bytes.as_slice().try_into().ok()?);
+    Some((private, public, registration_id))
+}
+
+/// Persist a per-peer trusted-identity entry (TOFU).
+pub fn persist_trusted_identity(
+    keystore: &StrongholdKeystore,
+    peer_address: &str,
+    identity_key: &[u8],
+) -> Result<(), String> {
+    use rekindle_crypto::keychain::VAULT_SIGNAL;
+    use rekindle_crypto::Keychain as _;
+
+    let key_name = format!("{SIGNAL_TRUSTED_PREFIX}{peer_address}");
+    keystore
+        .store_key(VAULT_SIGNAL, &key_name, identity_key)
+        .map_err(|e| format!("persist trusted identity: {e}"))?;
+    keystore
+        .save()
+        .map_err(|e| format!("save snapshot after trusted identity: {e}"))
+}
+
+/// Load the trusted identity for a peer (None if no prior interaction).
+pub fn load_trusted_identity(
+    keystore: &StrongholdKeystore,
+    peer_address: &str,
+) -> Option<Vec<u8>> {
+    use rekindle_crypto::keychain::VAULT_SIGNAL;
+    use rekindle_crypto::Keychain as _;
+
+    let key_name = format!("{SIGNAL_TRUSTED_PREFIX}{peer_address}");
+    keystore.load_key(VAULT_SIGNAL, &key_name).ok()?
+}
+
+/// Persist a Signal session for a peer, updating the session index so the
+/// store can list known peers after restart.
+pub fn persist_signal_session(
+    keystore: &StrongholdKeystore,
+    peer_address: &str,
+    session_data: &[u8],
+) -> Result<(), String> {
+    use rekindle_crypto::keychain::VAULT_SIGNAL;
+    use rekindle_crypto::Keychain as _;
+
+    let key_name = format!("{SIGNAL_SESSION_PREFIX}{peer_address}");
+    keystore
+        .store_key(VAULT_SIGNAL, &key_name, session_data)
+        .map_err(|e| format!("persist signal session: {e}"))?;
+    add_to_string_index(keystore, SIGNAL_SESSION_INDEX, peer_address)?;
+    keystore
+        .save()
+        .map_err(|e| format!("save snapshot after signal session: {e}"))
+}
+
+/// Load a Signal session for a peer (None if no prior session).
+pub fn load_signal_session(
+    keystore: &StrongholdKeystore,
+    peer_address: &str,
+) -> Option<Vec<u8>> {
+    use rekindle_crypto::keychain::VAULT_SIGNAL;
+    use rekindle_crypto::Keychain as _;
+
+    let key_name = format!("{SIGNAL_SESSION_PREFIX}{peer_address}");
+    keystore.load_key(VAULT_SIGNAL, &key_name).ok()?
+}
+
+/// Delete a Signal session and remove it from the index.
+pub fn delete_signal_session(keystore: &StrongholdKeystore, peer_address: &str) {
+    use rekindle_crypto::keychain::VAULT_SIGNAL;
+    use rekindle_crypto::Keychain as _;
+
+    let key_name = format!("{SIGNAL_SESSION_PREFIX}{peer_address}");
+    if let Err(e) = keystore.delete_key(VAULT_SIGNAL, &key_name) {
+        tracing::warn!(peer = %peer_address, error = %e, "delete signal session failed");
+    }
+    let _ = remove_from_string_index(keystore, SIGNAL_SESSION_INDEX, peer_address);
+    if let Err(e) = keystore.save() {
+        tracing::warn!(error = %e, "save snapshot after signal session delete failed");
+    }
+}
+
+/// List all peers with persisted Signal sessions (used at login to populate
+/// the in-memory cache).
+pub fn list_signal_sessions(keystore: &StrongholdKeystore) -> Vec<String> {
+    load_string_index(keystore, SIGNAL_SESSION_INDEX)
+}
+
+/// Persist a one-time prekey, updating the prekey index.
+pub fn persist_signal_prekey(
+    keystore: &StrongholdKeystore,
+    prekey_id: u32,
+    key_data: &[u8],
+) -> Result<(), String> {
+    use rekindle_crypto::keychain::VAULT_SIGNAL;
+    use rekindle_crypto::Keychain as _;
+
+    let key_name = format!("{SIGNAL_PREKEY_PREFIX}{prekey_id}");
+    keystore
+        .store_key(VAULT_SIGNAL, &key_name, key_data)
+        .map_err(|e| format!("persist signal prekey: {e}"))?;
+    add_to_string_index(keystore, SIGNAL_PREKEY_INDEX, &prekey_id.to_string())?;
+    keystore
+        .save()
+        .map_err(|e| format!("save snapshot after signal prekey: {e}"))
+}
+
+/// Load a one-time prekey by id (None if missing or already consumed).
+pub fn load_signal_prekey(keystore: &StrongholdKeystore, prekey_id: u32) -> Option<Vec<u8>> {
+    use rekindle_crypto::keychain::VAULT_SIGNAL;
+    use rekindle_crypto::Keychain as _;
+
+    let key_name = format!("{SIGNAL_PREKEY_PREFIX}{prekey_id}");
+    keystore.load_key(VAULT_SIGNAL, &key_name).ok()?
+}
+
+/// Delete a consumed one-time prekey and remove from index.
+pub fn delete_signal_prekey(keystore: &StrongholdKeystore, prekey_id: u32) {
+    use rekindle_crypto::keychain::VAULT_SIGNAL;
+    use rekindle_crypto::Keychain as _;
+
+    let key_name = format!("{SIGNAL_PREKEY_PREFIX}{prekey_id}");
+    if let Err(e) = keystore.delete_key(VAULT_SIGNAL, &key_name) {
+        tracing::warn!(prekey_id, error = %e, "delete signal prekey failed");
+    }
+    let _ = remove_from_string_index(keystore, SIGNAL_PREKEY_INDEX, &prekey_id.to_string());
+    if let Err(e) = keystore.save() {
+        tracing::warn!(error = %e, "save snapshot after signal prekey delete failed");
+    }
+}
+
+/// List all currently-persisted one-time prekey IDs.
+pub fn list_signal_prekey_ids(keystore: &StrongholdKeystore) -> Vec<u32> {
+    load_string_index(keystore, SIGNAL_PREKEY_INDEX)
+        .into_iter()
+        .filter_map(|s| s.parse::<u32>().ok())
+        .collect()
+}
+
+/// Persist a signed prekey by id.
+pub fn persist_signal_signed_prekey(
+    keystore: &StrongholdKeystore,
+    signed_prekey_id: u32,
+    key_data: &[u8],
+) -> Result<(), String> {
+    use rekindle_crypto::keychain::VAULT_SIGNAL;
+    use rekindle_crypto::Keychain as _;
+
+    let key_name = format!("{SIGNAL_SIGNED_PREKEY_PREFIX}{signed_prekey_id}");
+    keystore
+        .store_key(VAULT_SIGNAL, &key_name, key_data)
+        .map_err(|e| format!("persist signed prekey: {e}"))?;
+    keystore
+        .save()
+        .map_err(|e| format!("save snapshot after signed prekey: {e}"))
+}
+
+/// Load a signed prekey by id (None if missing).
+pub fn load_signal_signed_prekey(
+    keystore: &StrongholdKeystore,
+    signed_prekey_id: u32,
+) -> Option<Vec<u8>> {
+    use rekindle_crypto::keychain::VAULT_SIGNAL;
+    use rekindle_crypto::Keychain as _;
+
+    let key_name = format!("{SIGNAL_SIGNED_PREKEY_PREFIX}{signed_prekey_id}");
+    keystore.load_key(VAULT_SIGNAL, &key_name).ok()?
+}
+
+// ─── String-index helpers (Stronghold has no list-keys API) ─────────────────
+
+fn load_string_index(keystore: &StrongholdKeystore, index_name: &str) -> Vec<String> {
+    use rekindle_crypto::keychain::VAULT_SIGNAL;
+    use rekindle_crypto::Keychain as _;
+
+    let Ok(Some(blob)) = keystore.load_key(VAULT_SIGNAL, index_name) else {
+        return Vec::new();
+    };
+    serde_json::from_slice::<Vec<String>>(&blob).unwrap_or_default()
+}
+
+fn save_string_index(
+    keystore: &StrongholdKeystore,
+    index_name: &str,
+    entries: &[String],
+) -> Result<(), String> {
+    use rekindle_crypto::keychain::VAULT_SIGNAL;
+    use rekindle_crypto::Keychain as _;
+
+    let blob = serde_json::to_vec(entries).map_err(|e| format!("serialize index: {e}"))?;
+    keystore
+        .store_key(VAULT_SIGNAL, index_name, &blob)
+        .map_err(|e| format!("store index: {e}"))
+}
+
+fn add_to_string_index(
+    keystore: &StrongholdKeystore,
+    index_name: &str,
+    entry: &str,
+) -> Result<(), String> {
+    let mut entries = load_string_index(keystore, index_name);
+    if !entries.iter().any(|e| e == entry) {
+        entries.push(entry.to_string());
+        save_string_index(keystore, index_name, &entries)?;
+    }
+    Ok(())
+}
+
+fn remove_from_string_index(
+    keystore: &StrongholdKeystore,
+    index_name: &str,
+    entry: &str,
+) -> Result<(), String> {
+    let mut entries = load_string_index(keystore, index_name);
+    let original_len = entries.len();
+    entries.retain(|e| e != entry);
+    if entries.len() != original_len {
+        save_string_index(keystore, index_name, &entries)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
