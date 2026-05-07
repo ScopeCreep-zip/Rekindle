@@ -325,22 +325,13 @@ async fn presence_poll_tick(state: &Arc<AppState>, community_id: &str) -> Result
             .unwrap_or_default()
     };
 
-    let needs_sync = {
-        let mut communities = state.communities.write();
-        if let Some(cs) = communities.get_mut(community_id) {
-            let counter = cs.gossip.as_ref().map_or(0, |g| g.lamport_counter);
-            let was_needs_sync = cs.gossip.as_ref().is_none_or(|g| g.needs_initial_sync);
-            cs.gossip = Some(GossipOverlay {
-                peers: selected,
-                online_members,
-                lamport_counter: counter,
-                needs_initial_sync: was_needs_sync,
-            });
-            was_needs_sync && n > 0
-        } else {
-            false
-        }
-    };
+    let needs_sync = rebuild_gossip_and_drain_pending(
+        state,
+        community_id,
+        selected,
+        online_members,
+        n,
+    );
 
     if !offline_members.is_empty() {
         if let Some(app_handle) = state_helpers::app_handle(state) {
@@ -546,6 +537,71 @@ fn random_peer_sample(
         .into_iter()
         .filter_map(|k| online.get(k).map(|v| (k.clone(), v.clone())))
         .collect()
+}
+
+/// A1/P4.1 — atomic gossip-overlay rebuild + pending-broadcast drain.
+///
+/// Combines the previously-inline write-lock rebuild and the post-drop
+/// drain so `presence_poll_tick` stays under the workspace `too_many_lines`
+/// budget. Returns whether a sync request should follow (was previously
+/// `needs_initial_sync` AND we now have peers).
+///
+/// Lock order: takes `state.communities.write()` only for the rebuild,
+/// drops it, then re-calls `send_to_mesh_raw` (which takes its own read
+/// lock) for each drained envelope. Releasing between phases is required
+/// because `send_to_mesh_raw` would otherwise deadlock on the same lock.
+fn rebuild_gossip_and_drain_pending(
+    state: &Arc<AppState>,
+    community_id: &str,
+    selected: HashMap<String, crate::state::OnlineMember>,
+    online_members: HashMap<String, crate::state::OnlineMember>,
+    n: usize,
+) -> bool {
+    let (needs_sync, drained_pending) = {
+        let mut communities = state.communities.write();
+        let Some(cs) = communities.get_mut(community_id) else {
+            return false;
+        };
+        let counter = cs.gossip.as_ref().map_or(0, |g| g.lamport_counter);
+        let was_needs_sync = cs.gossip.as_ref().is_none_or(|g| g.needs_initial_sync);
+        // Preserve pending_mesh_broadcasts across the rebuild so a queue
+        // accumulated while peers was empty isn't wiped. Drain when peers
+        // are about to become non-empty so we can re-send post-rebuild.
+        let mut pending: std::collections::VecDeque<
+            rekindle_protocol::dht::community::envelope::SignedEnvelope,
+        > = cs
+            .gossip
+            .as_mut()
+            .map(|g| std::mem::take(&mut g.pending_mesh_broadcasts))
+            .unwrap_or_default();
+        let will_have_peers = !selected.is_empty();
+        let drained = if will_have_peers {
+            std::mem::take(&mut pending)
+        } else {
+            std::collections::VecDeque::new()
+        };
+        cs.gossip = Some(GossipOverlay {
+            peers: selected,
+            online_members,
+            lamport_counter: counter,
+            needs_initial_sync: was_needs_sync,
+            pending_mesh_broadcasts: pending,
+        });
+        (was_needs_sync && n > 0, drained)
+    };
+
+    if !drained_pending.is_empty() {
+        tracing::info!(
+            community = %community_id,
+            queued = drained_pending.len(),
+            "presence_poll_tick: draining pending mesh broadcasts now that peers are online"
+        );
+        for envelope in drained_pending {
+            super::super::gossip::send_to_mesh_raw(state, community_id, &envelope);
+        }
+    }
+
+    needs_sync
 }
 
 fn update_known_member_state(

@@ -255,6 +255,16 @@ pub struct GossipOverlay {
     /// True until the first successful sync after coming online.
     /// Used to trigger a `SyncRequest` to online peers for catch-up.
     pub needs_initial_sync: bool,
+    /// A1/P4.1 — broadcasts queued because `peers` was empty at send time.
+    /// `send_to_mesh_raw` enqueues here instead of dropping; the next
+    /// presence poll that lands online peers drains the queue and re-sends.
+    /// Bounded at 100 (oldest dropped) so an offline burst doesn't OOM.
+    /// Without this, the first member of a fresh community broadcast all
+    /// their join announcements / MEK requests / governance updates to a
+    /// zero-peer mesh — silently lost.
+    pub pending_mesh_broadcasts: std::collections::VecDeque<
+        rekindle_protocol::dht::community::envelope::SignedEnvelope,
+    >,
 }
 
 impl Default for GossipOverlay {
@@ -264,6 +274,7 @@ impl Default for GossipOverlay {
             online_members: HashMap::new(),
             lamport_counter: 0,
             needs_initial_sync: true,
+            pending_mesh_broadcasts: std::collections::VecDeque::with_capacity(16),
         }
     }
 }

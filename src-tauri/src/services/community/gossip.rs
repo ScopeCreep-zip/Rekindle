@@ -76,7 +76,32 @@ pub fn send_to_mesh_raw(state: &SharedState, community_id: &str, signed: &Signed
             return;
         };
         if gossip.peers.is_empty() {
-            tracing::warn!(community = %community_id, "send_to_mesh_raw: no gossip peers - message will not be delivered");
+            // A1/P4.1 — enqueue instead of dropping. The next presence poll
+            // that lands online peers (presence/poll.rs::presence_poll_tick)
+            // drains this queue and re-sends. Bounded at MAX_PENDING (oldest
+            // dropped when the cap is hit) so an extended offline burst —
+            // e.g. a member joining a community whose creator is offline
+            // and producing no peer responses — doesn't OOM the process.
+            // Without this, the very first MEK request / governance update
+            // / join announcement from a fresh joiner vanished silently and
+            // they appeared invisible to everyone else even after coming
+            // online.
+            const MAX_PENDING: usize = 100;
+            drop(communities); // release read lock before taking write
+            let mut comms = state.communities.write();
+            if let Some(community) = comms.get_mut(community_id) {
+                if let Some(g) = community.gossip.as_mut() {
+                    if g.pending_mesh_broadcasts.len() >= MAX_PENDING {
+                        g.pending_mesh_broadcasts.pop_front();
+                    }
+                    g.pending_mesh_broadcasts.push_back(signed.clone());
+                    tracing::info!(
+                        community = %community_id,
+                        queued = g.pending_mesh_broadcasts.len(),
+                        "send_to_mesh_raw: peers empty, queued for later drain"
+                    );
+                }
+            }
             return;
         }
         gossip

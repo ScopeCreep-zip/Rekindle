@@ -134,6 +134,7 @@ pub async fn join_community(
             online_members: initial_online,
             lamport_counter: 0,
             needs_initial_sync: true,
+            pending_mesh_broadcasts: std::collections::VecDeque::with_capacity(16),
         }),
         slot_keypair: Some(slot_veilid.to_string()),
         channel_log_keys,
