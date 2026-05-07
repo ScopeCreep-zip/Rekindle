@@ -1365,19 +1365,43 @@ async fn send_envelope_to_peer(
     let payload_bytes =
         serde_json::to_vec(payload).map_err(|e| format!("serialize payload: {e}"))?;
 
-    // Optionally encrypt with Signal
+    // B8/P3.3 — when encrypt is requested, refuse to fall back to plaintext.
+    // The previous `_ => payload_bytes` arm silently sent the body in clear
+    // when has_session returned false or errored, which an active attacker
+    // who can corrupt your local Signal session state could trigger to
+    // intercept the plaintext.
+    //
+    // Vulnerable-user safety stance: fail-closed. The caller's Result<(),
+    // String> propagates to the Tauri IPC layer; the frontend toast shows
+    // the specific reason and points the user at the explicit
+    // "Re-establish secure session" path. No silent downgrade.
     let final_payload = if encrypt {
         let signal = state.signal_manager.lock();
-        if let Some(handle) = signal.as_ref() {
-            match handle.manager.has_session(to) {
-                Ok(true) => handle
-                    .manager
-                    .encrypt(to, &payload_bytes)
-                    .map_err(|e| format!("Signal encrypt: {e}"))?,
-                _ => payload_bytes,
+        let handle = signal.as_ref().ok_or_else(|| {
+            format!(
+                "No Signal manager — cannot send encrypted message to {to}. \
+                 Sign in to initialize Signal sessions."
+            )
+        })?;
+        match handle.manager.has_session(to) {
+            Ok(true) => handle
+                .manager
+                .encrypt(to, &payload_bytes)
+                .map_err(|e| format!("Signal encrypt failed for {to}: {e}"))?,
+            Ok(false) => {
+                return Err(format!(
+                    "No secure session with {to}. They haven't completed a Signal handshake yet — \
+                     they need to accept your friend request before you can send encrypted messages. \
+                     Verify their safety number out-of-band before resuming sensitive conversation."
+                ));
             }
-        } else {
-            payload_bytes
+            Err(e) => {
+                return Err(format!(
+                    "Signal session check failed for {to}: {e}. \
+                     The session may be corrupted; re-establish from Friend → Reset Secure Session \
+                     after verifying their safety number out-of-band."
+                ));
+            }
         }
     } else {
         payload_bytes
