@@ -242,13 +242,23 @@ pub async fn join_community(
     let pseudonym_key = my_pseudonym_key.unwrap_or_else(|| owner_key.clone());
     let joiner_name = state_helpers::identity_display_name(state.inner());
 
+    // A2/P1.1 — fail-loud MEK persist on join. The previous code silently
+    // skipped when keystore was locked, so the MEK lived only in
+    // `state.mek_cache` and didn't survive restart. Vulnerable users need
+    // to see "Stronghold locked — MEK not persisted" rather than a green
+    // "Joined!" toast they can't trust. Surface the error through the
+    // Tauri IPC `Result<(), String>` boundary so handlers/community.handlers.ts
+    // shows the actual cause (the A6 fix renders `e` directly).
     {
         let mek_cache = state.mek_cache.lock();
         if let Some(mek) = mek_cache.get(&community_id) {
             let ks = keystore_handle.lock();
-            if let Some(ref keystore) = *ks {
-                crate::keystore::persist_mek(keystore, &community_id, mek);
-            }
+            let keystore = ks.as_ref().ok_or_else(|| {
+                "Stronghold keystore not open — MEK persist requires unlocked vault. \
+                 Try logging out and back in."
+                    .to_string()
+            })?;
+            crate::keystore::persist_mek_strict(keystore, &community_id, mek)?;
         }
     }
 

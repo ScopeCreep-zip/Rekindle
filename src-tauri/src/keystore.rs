@@ -202,6 +202,42 @@ pub fn persist_mek(
     }
 }
 
+/// Strict variant of `persist_mek` for command handlers that must surface
+/// failure to the frontend instead of silently logging.
+///
+/// Architecture §17 (community/MEK durability across restarts): the cached
+/// MEK lives in `state.mek_cache` until persisted to Stronghold. If
+/// Stronghold is locked or its snapshot save fails, the MEK survives only
+/// in memory — on the next app restart the user can't decrypt channel
+/// messages from this generation and has to wait for an MEK request/cascade.
+/// Vulnerable users need to know this happened, not see a silent "Joined!"
+/// toast. Caller (`commands::community::crud::join_community`) propagates
+/// the `Err` through the Tauri IPC boundary; the frontend's toast (A6 fix
+/// at handlers/community.handlers.ts:120-126) renders the message.
+pub fn persist_mek_strict(
+    keystore: &StrongholdKeystore,
+    community_id: &str,
+    mek: &rekindle_crypto::group::media_key::MediaEncryptionKey,
+) -> Result<(), String> {
+    use rekindle_crypto::keychain::{mek_key_name, VAULT_COMMUNITIES};
+    use rekindle_crypto::Keychain as _;
+
+    let payload = mek.to_wire_bytes();
+    let key_name = mek_key_name(community_id);
+    keystore
+        .store_key(VAULT_COMMUNITIES, &key_name, &payload)
+        .map_err(|e| {
+            format!("Stronghold locked or busy — MEK not persisted (will be lost on restart): {e}")
+        })?;
+    keystore
+        .save()
+        .map_err(|e| {
+            format!("Stronghold snapshot save failed — MEK in memory only (will be lost on restart): {e}")
+        })?;
+    tracing::debug!(community = %community_id, "MEK persisted to Stronghold (strict)");
+    Ok(())
+}
+
 /// Load a community's MEK from the open Stronghold keystore.
 ///
 /// Returns `Some(mek)` if successfully deserialized, `None` otherwise.
