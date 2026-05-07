@@ -237,6 +237,49 @@ pub enum MessagePayload {
         #[serde(default, skip_serializing_if = "String::is_empty")]
         reason: String,
     },
+    /// P3.3 session renewal — Alice → Bob: "my Signal session for you is
+    /// broken (decrypt failures, lost on upgrade, deliberate reset);
+    /// please re-handshake. Here's my fresh PreKeyBundle." This is the
+    /// REQUEST half of the user-confirmed renewal flow.
+    ///
+    /// Receiver emits NotificationEvent::SessionResetRequested for user
+    /// review (per vulnerable-user safety stance — no auto-process). The
+    /// user confirms after verifying the sender's safety number
+    /// out-of-band, then `accept_session_reset` consumes the stored
+    /// bundle, calls establish_session(sender, bundle), and sends back
+    /// SessionResetAccept with the X3DH metadata.
+    SessionResetRequest {
+        /// Requester's serialized PreKeyBundle (JSON of
+        /// rekindle_crypto::signal::PreKeyBundle). Receiver feeds this
+        /// into establish_session(sender, bundle) on user-accept.
+        our_prekey_bundle: Vec<u8>,
+    },
+    /// P3.3 session renewal — Bob → Alice: "I accepted, here's the X3DH
+    /// metadata so you can call respond_to_session and complete the
+    /// renewal." Alice verifies our_identity_key against her stored
+    /// trusted-identity record (TOFU update on user confirmation) before
+    /// applying the new session.
+    SessionResetAccept {
+        /// Bob's X25519 ephemeral public key generated during his
+        /// establish_session. Alice uses this in respond_to_session.
+        ephemeral_key: Vec<u8>,
+        /// Which of Alice's signed prekeys Bob used.
+        signed_prekey_id: u32,
+        /// Which of Alice's one-time prekeys Bob consumed (if any).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        one_time_prekey_id: Option<u32>,
+        /// Bob's identity key (X25519 form, 32 bytes). Alice verifies
+        /// this matches her stored trusted-identity for Bob.
+        our_identity_key: Vec<u8>,
+    },
+    /// P3.3 session renewal — Bob → Alice: "I declined the reset
+    /// request." Alice's UI surfaces the decline; her existing local
+    /// session state stays whatever it was (broken from her side, but
+    /// Bob continues to use his existing session).
+    SessionResetDecline {
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        reason: String,
+    },
     /// Reply to a `StatusRequest`. Empty `status` means "I don't have
     /// data for this peer" so the requester can short-circuit.
     StatusResponse {

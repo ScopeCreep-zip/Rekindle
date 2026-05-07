@@ -143,6 +143,14 @@ pub struct AppState {
     /// by the voice transport. Entries drop on Active→hangup or on
     /// Outgoing→Missed timeout (which writes a `missed_calls` row).
     pub active_calls: Arc<Mutex<HashMap<String, rekindle_calls::CallState>>>,
+
+    /// P3.3 — incoming SessionResetRequest payloads awaiting user
+    /// confirmation. Keyed by sender pubkey hex. Value is the
+    /// requester's serialized PreKeyBundle. Held in memory only — if the
+    /// process crashes before the user decides, the request is lost (the
+    /// peer would need to re-send). Per safety stance, we never persist
+    /// pending key material to disk before user explicit consent.
+    pub pending_session_resets: Arc<Mutex<HashMap<String, Vec<u8>>>>,
 }
 
 impl Default for AppState {
@@ -192,6 +200,7 @@ impl Default for AppState {
             notification_throttle:
                 crate::services::community::notifications::NotificationThrottle::new(),
             active_calls: Arc::new(Mutex::new(HashMap::new())),
+            pending_session_resets: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }

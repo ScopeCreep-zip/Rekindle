@@ -678,7 +678,18 @@ export type NotificationEvent =
       };
     }
   | { type: "systemAlert"; data: { title: string; body: string } }
-  | { type: "updateAvailable"; data: { version: string } };
+  | { type: "updateAvailable"; data: { version: string } }
+  | {
+      // P3.3 — peer requested a Signal session reset. Frontend MUST show
+      // a confirmation modal displaying the safety_number for OOB
+      // verification before invoking commands.acceptSessionReset.
+      type: "sessionResetRequested";
+      data: {
+        peerPublicKey: string;
+        peerDisplayName: string;
+        safetyNumber: string;
+      };
+    };
 
 export type NetworkStatusEvent = {
   attachmentState: string;

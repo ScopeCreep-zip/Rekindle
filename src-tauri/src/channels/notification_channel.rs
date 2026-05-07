@@ -26,6 +26,21 @@ pub enum NotificationEvent {
     UpdateAvailable {
         version: String,
     },
+    /// P3.3 session renewal — peer sent a SessionResetRequest. Frontend
+    /// surfaces a confirmation modal showing the peer's display name +
+    /// safety number; user must verify out-of-band before accepting.
+    /// Carries the safety_number (BLAKE3 of sorted (our_identity_key,
+    /// peer_identity_key) — same on both sides) so the user can compare
+    /// against the value the peer reads from their UI.
+    #[serde(rename_all = "camelCase")]
+    SessionResetRequested {
+        peer_public_key: String,
+        peer_display_name: String,
+        /// Hex-encoded short safety number (8 hex chars = 32 bits) for
+        /// out-of-band comparison. Bigger than a phone number but small
+        /// enough to read aloud.
+        safety_number: String,
+    },
 }
 
 /// Pushed to the frontend whenever network-relevant state changes

@@ -981,8 +981,26 @@ export const commands = {
   /// number out-of-band and wants to re-handshake. NOT auto-invoked on
   /// decrypt failure (vulnerable-user safety stance forbids
   /// auto-rehandshake).
+  ///
+  /// P3.3 — also sends a SessionResetRequest to the peer carrying our
+  /// fresh PreKeyBundle. Peer's UI prompts them to verify our safety
+  /// number before accepting; on accept they reply with
+  /// SessionResetAccept which our backend processes to install the new
+  /// responder-side session.
   resetSignalSession: (peerPublicKey: string) =>
     invoke<void>("reset_signal_session", { peerPublicKey }),
+  /// P3.3 — accept a SessionResetRequest after verifying the peer's
+  /// safety number out-of-band. Frontend MUST gate this behind explicit
+  /// user consent (modal showing safety_number from
+  /// NotificationEvent::SessionResetRequested).
+  acceptSessionReset: (peerPublicKey: string) =>
+    invoke<void>("accept_session_reset", { peerPublicKey }),
+  /// P3.3 — decline a SessionResetRequest.
+  declineSessionReset: (peerPublicKey: string, reason?: string) =>
+    invoke<void>("decline_session_reset", {
+      peerPublicKey,
+      reason: reason ?? null,
+    }),
   getMissedCalls: () => invoke<MissedCallRow[]>("get_missed_calls"),
 
   // Status

@@ -617,21 +617,160 @@ pub async fn cancel_request(
 /// established at the next FriendAccept-style handshake.
 ///
 /// Idempotent — calling on a peer with no active session is a no-op.
+///
+/// P3.3 update — also sends a SessionResetRequest to the peer carrying
+/// our fresh PreKeyBundle. The peer's UI surfaces a confirmation modal
+/// (NotificationEvent::SessionResetRequested) before any session state
+/// changes on their side; if they accept, they install a fresh session
+/// and reply with SessionResetAccept which our message_service handles
+/// to install our matching responder-side session. If they decline,
+/// they send SessionResetDecline and our local session stays deleted
+/// but no fresh session is established (caller knows the peer doesn't
+/// want to renew).
 #[tauri::command]
 pub async fn reset_signal_session(
     peer_public_key: String,
     state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
 ) -> Result<(), String> {
     if peer_public_key.is_empty() {
         return Err("peer public key required".to_string());
     }
-    let signal = state.signal_manager.lock();
-    let handle = signal.as_ref().ok_or("Signal manager not initialized")?;
-    handle
-        .manager
-        .delete_session(&peer_public_key)
-        .map_err(|e| format!("delete_session: {e}"))?;
-    tracing::info!(peer = %peer_public_key, "Signal session reset by user");
+    if !state_helpers::is_friend(state.inner(), &peer_public_key) {
+        return Err("can only reset sessions with existing friends".to_string());
+    }
+    // Generate a fresh PreKeyBundle for the peer to consume in their
+    // establish_session. Generated even when we already have an active
+    // session — the renewal point is to rotate to fresh keys.
+    let our_prekey_bundle = {
+        let signal = state.signal_manager.lock();
+        let handle = signal.as_ref().ok_or("Signal manager not initialized")?;
+        handle
+            .manager
+            .delete_session(&peer_public_key)
+            .map_err(|e| format!("delete_session: {e}"))?;
+        let bundle = handle
+            .manager
+            .generate_prekey_bundle(1, Some(1))
+            .map_err(|e| format!("generate_prekey_bundle: {e}"))?;
+        serde_json::to_vec(&bundle)
+            .map_err(|e| format!("serialize PreKeyBundle: {e}"))?
+    };
+    tracing::info!(
+        peer = %peer_public_key,
+        "Signal session reset by user; sending SessionResetRequest"
+    );
+    let payload = rekindle_protocol::messaging::envelope::MessagePayload::SessionResetRequest {
+        our_prekey_bundle,
+    };
+    // Send unencrypted (encrypt: false) — the recipient's session for
+    // us is presumed broken too, so an encrypted send would fail at
+    // send_envelope_to_peer's B8 "no session" check.
+    crate::services::message_service::send_to_peer_raw(
+        state.inner(),
+        pool.inner(),
+        &peer_public_key,
+        &payload,
+    )
+    .await
+    .map_err(|e| format!("send SessionResetRequest: {e}"))?;
+    Ok(())
+}
+
+/// P3.3 — accept a SessionResetRequest from a peer. Consumes the
+/// stashed bundle from `state.pending_session_resets`, calls
+/// establish_session(peer, peer_bundle), and sends SessionResetAccept
+/// back with the X3DH metadata so the peer can complete the renewal on
+/// their side via respond_to_session.
+///
+/// MUST only be invoked after the user has verified the peer's safety
+/// number out-of-band. The frontend's session-reset modal is responsible
+/// for showing the safety_number from the NotificationEvent and
+/// requiring explicit user consent before invoking this command.
+#[tauri::command]
+pub async fn accept_session_reset(
+    peer_public_key: String,
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+) -> Result<(), String> {
+    if !state_helpers::is_friend(state.inner(), &peer_public_key) {
+        return Err("can only accept session reset from existing friends".to_string());
+    }
+    // Consume the stashed bundle.
+    let peer_bundle_bytes = state
+        .pending_session_resets
+        .lock()
+        .remove(&peer_public_key)
+        .ok_or("no pending session reset for this peer (it may have expired or already been processed)")?;
+    let peer_bundle: rekindle_crypto::signal::PreKeyBundle =
+        serde_json::from_slice(&peer_bundle_bytes)
+            .map_err(|e| format!("invalid PreKeyBundle in pending reset: {e}"))?;
+
+    // Install fresh initiator-side session for the peer.
+    let session_init = {
+        let signal = state.signal_manager.lock();
+        let handle = signal.as_ref().ok_or("Signal manager not initialized")?;
+        let _ = handle.manager.delete_session(&peer_public_key);
+        handle
+            .manager
+            .establish_session(&peer_public_key, &peer_bundle)
+            .map_err(|e| format!("establish_session: {e}"))?
+    };
+
+    // Reply with our X3DH metadata so peer can install their matching
+    // responder-side session.
+    let our_identity_key = {
+        let our_secret = (*state.identity_secret.lock())
+            .ok_or("identity secret not loaded")?;
+        let our_identity = rekindle_crypto::Identity::from_secret_bytes(&our_secret);
+        our_identity.to_x25519_public().as_bytes().to_vec()
+    };
+    let payload = rekindle_protocol::messaging::envelope::MessagePayload::SessionResetAccept {
+        ephemeral_key: session_init.ephemeral_public_key,
+        signed_prekey_id: session_init.signed_prekey_id,
+        one_time_prekey_id: session_init.one_time_prekey_id,
+        our_identity_key,
+    };
+    crate::services::message_service::send_to_peer_raw(
+        state.inner(),
+        pool.inner(),
+        &peer_public_key,
+        &payload,
+    )
+    .await
+    .map_err(|e| format!("send SessionResetAccept: {e}"))?;
+    tracing::info!(
+        peer = %peer_public_key,
+        "Signal session renewal accepted; SessionResetAccept dispatched"
+    );
+    Ok(())
+}
+
+/// P3.3 — decline a SessionResetRequest. Clears the stashed bundle and
+/// sends SessionResetDecline so the peer knows we said no (their UI can
+/// surface the rejection so the user understands the renewal didn't
+/// complete).
+#[tauri::command]
+pub async fn decline_session_reset(
+    peer_public_key: String,
+    reason: Option<String>,
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+) -> Result<(), String> {
+    state
+        .pending_session_resets
+        .lock()
+        .remove(&peer_public_key);
+    let payload = rekindle_protocol::messaging::envelope::MessagePayload::SessionResetDecline {
+        reason: reason.unwrap_or_default(),
+    };
+    let _ = crate::services::message_service::send_to_peer_raw(
+        state.inner(),
+        pool.inner(),
+        &peer_public_key,
+        &payload,
+    )
+    .await;
     Ok(())
 }
 

@@ -9,6 +9,7 @@ import { setNotificationState } from "../stores/notification.store";
 import { authState } from "../stores/auth.store";
 import { settingsState } from "../stores/settings.store";
 import { communityState } from "../stores/community.store";
+import { commands } from "../ipc/commands";
 
 export async function showSystemNotification(title: string, body: string): Promise<void> {
   try {
@@ -87,6 +88,47 @@ export function subscribeNotificationHandler(): Promise<UnlistenFn> {
             type: "system",
             title: event.data.title,
             body: event.data.body,
+            timestamp: Date.now(),
+            read: false,
+          },
+        ]);
+        setNotificationState("unreadCount", (c) => c + 1);
+        break;
+      }
+      case "sessionResetRequested": {
+        // P3.3 — peer wants to re-establish the Signal session. Show
+        // a confirm dialog with the safety_number so the user verifies
+        // the peer's identity out-of-band BEFORE accepting. This is
+        // the user-driven side of the safety stance: no auto-process,
+        // no creative paths, the user must affirm the safety number.
+        const { peerPublicKey, peerDisplayName, safetyNumber } = event.data;
+        const accepted = window.confirm(
+          `${peerDisplayName} wants to reset the secure session.\n\n` +
+            `Safety number: ${safetyNumber}\n\n` +
+            `Compare this number with ${peerDisplayName} on a different ` +
+            `channel (phone call, in person, separate trusted app) BEFORE ` +
+            `accepting. If the numbers don't match, click Cancel — accepting ` +
+            `would install an attacker's keys.\n\n` +
+            `Accept and re-establish secure session?`,
+        );
+        if (accepted) {
+          void commands.acceptSessionReset(peerPublicKey).catch((e) => {
+            console.error("Failed to accept session reset:", e);
+          });
+        } else {
+          void commands.declineSessionReset(peerPublicKey, "user declined").catch((e) => {
+            console.error("Failed to decline session reset:", e);
+          });
+        }
+        // Also persist to the notification list so the user sees it in
+        // the notifications panel even if they dismissed the modal.
+        setNotificationState("notifications", (prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            type: "system",
+            title: "Session Reset Request",
+            body: `${peerDisplayName} requested a session reset (safety number: ${safetyNumber})`,
             timestamp: Date.now(),
             read: false,
           },
