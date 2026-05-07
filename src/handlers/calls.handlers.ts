@@ -68,6 +68,24 @@ export function subscribeCallEvents(): Promise<UnlistenFn> {
         addToast(reason ? `Call declined: ${reason}` : "Call declined", "info");
         break;
       }
+      case "callEnded": {
+        // C2 hangup — fired by both the local end_dm_call command (via
+        // backend emit) and the remote peer's CallEnd payload arrival.
+        // Clears the active-call slot uniformly.
+        const { callId, reason } = event.data;
+        if (callsState.activeCall?.callId === callId) {
+          setCallsState("activeCall", null);
+        }
+        // Also handle the rare case where activeCall hasn't been
+        // populated yet because callConnected raced with callEnded.
+        if (callsState.outgoingCall?.callId === callId) {
+          setCallsState("outgoingCall", null);
+        }
+        if (reason) {
+          addToast(`Call ended: ${reason}`, "info");
+        }
+        break;
+      }
       default:
         // Other ChatEvent variants are owned by other subscribers.
         break;
@@ -115,6 +133,23 @@ export async function handleStartDmCall(
   } catch (e) {
     setCallsState("outgoingCall", null);
     addToast(`Call failed: ${String(e)}`, "error");
+  }
+}
+
+/// C2 hangup — end an Active call. Notifies the backend which removes
+/// from active_calls, sends CallEnd to the peer, and emits CallEnded
+/// locally so the listener clears callsState.activeCall.
+export async function handleEndDmCall(callId: string, reason?: string): Promise<void> {
+  try {
+    await commands.endDmCall(callId, reason);
+  } catch (e) {
+    addToast(`Failed to end call: ${String(e)}`, "error");
+    // Backend may have already removed the call (race with callEnded
+    // event); clear the local slot defensively so the UI doesn't get
+    // stuck showing an "Active" call that's already gone server-side.
+    if (callsState.activeCall?.callId === callId) {
+      setCallsState("activeCall", null);
+    }
   }
 }
 

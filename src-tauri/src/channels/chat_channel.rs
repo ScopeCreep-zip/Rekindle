@@ -113,4 +113,14 @@ pub enum ChatEvent {
         call_id: String,
         reason: String,
     },
+    /// C2 hangup — an Active call was ended (locally via the hangup
+    /// button, or remotely via the peer's CallEnd payload). Frontend
+    /// clears `callsState.activeCall`. Distinct from `CallTimedOut`
+    /// (which fires before the call ever connected) and `CallDeclined`
+    /// (the inline app_call reply rejecting the offer).
+    #[serde(rename_all = "camelCase")]
+    CallEnded {
+        call_id: String,
+        reason: String,
+    },
 }

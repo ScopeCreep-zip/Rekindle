@@ -56,7 +56,8 @@ export type ChatEvent =
   | { type: "callConnected"; data: { callId: string } }
   | { type: "callTimedOut"; data: { callId: string } }
   | { type: "callMissed"; data: { callId: string; from: string } }
-  | { type: "callDeclined"; data: { callId: string; reason: string } };
+  | { type: "callDeclined"; data: { callId: string; reason: string } }
+  | { type: "callEnded"; data: { callId: string; reason: string } };
 
 export type PresenceEvent =
   | { type: "friendOnline"; data: { publicKey: string } }

@@ -7,7 +7,8 @@ import { authState } from "../stores/auth.store";
 import { friendsState } from "../stores/friends.store";
 import { dmState, setDmState } from "../stores/dm.store";
 import { handleSendDm, subscribeDmInbox, handleListDms } from "../handlers/dm.handlers";
-import { handleStartDmCall } from "../handlers/calls.handlers";
+import { handleStartDmCall, handleEndDmCall } from "../handlers/calls.handlers";
+import { callsState } from "../stores/calls.store";
 import { commands } from "../ipc/commands";
 import type { Message } from "../stores/chat.store";
 
@@ -89,6 +90,17 @@ const DmWindow: Component = () => {
     await handleStartDmCall(peer, peerName(), video);
   }
 
+  /// C2 — show an "Active call" indicator + hangup when a connected
+  /// DM call's peer matches this window's peer. The active-call slot
+  /// is populated by handlers/calls.handlers.ts when ChatEvent::CallConnected
+  /// fires; cleared when CallEnded (from local hangup or remote CallEnd).
+  const activeCallForThisDm = createMemo(() => {
+    const active = callsState.activeCall;
+    const peer = dmPeerKey();
+    if (!active || !peer) return null;
+    return active.peerKey === peer ? active : null;
+  });
+
   return (
     <div class="app-frame">
       {/* Architecture §32 a11y — keyboard skip link past titlebar. */}
@@ -110,22 +122,54 @@ const DmWindow: Component = () => {
            *  group DMs because the offer/accept signalling is 1:1
            *  only at this stage. */}
           <Show when={dmPeerKey()}>
-            <div class="dm-call-bar">
-              <button
-                type="button"
-                class="form-btn-secondary"
-                onClick={() => void startCall(false)}
-              >
-                Voice call
-              </button>
-              <button
-                type="button"
-                class="form-btn-secondary"
-                onClick={() => void startCall(true)}
-              >
-                Video call
-              </button>
-            </div>
+            <Show
+              when={activeCallForThisDm()}
+              fallback={
+                <div class="dm-call-bar">
+                  <button
+                    type="button"
+                    class="form-btn-secondary"
+                    onClick={() => void startCall(false)}
+                  >
+                    Voice call
+                  </button>
+                  <button
+                    type="button"
+                    class="form-btn-secondary"
+                    onClick={() => void startCall(true)}
+                  >
+                    Video call
+                  </button>
+                </div>
+              }
+            >
+              {(active) => (
+                /* C2 — active-call indicator with hangup. Shows the
+                 * call kind so the user knows whether they're in
+                 * audio or video. Video frame rendering is not yet
+                 * wired (DM video transport is follow-up work);
+                 * the existing voice transport carries audio for
+                 * both kinds today. */
+                <div class="dm-call-bar dm-call-bar-active">
+                  <span>
+                    {active().kind === "video" ? "Video" : "Voice"} call active
+                    <Show when={active().kind === "video"}>
+                      {" "}
+                      <span style="opacity: 0.7; font-size: 0.85em;">
+                        (audio only — video frame UI coming soon)
+                      </span>
+                    </Show>
+                  </span>
+                  <button
+                    type="button"
+                    class="form-btn-secondary"
+                    onClick={() => void handleEndDmCall(active().callId)}
+                  >
+                    Hang up
+                  </button>
+                </div>
+              )}
+            </Show>
           </Show>
           <MessageList
             messages={messages()}

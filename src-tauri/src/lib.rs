@@ -210,6 +210,7 @@ fn app_invoke_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Sen
         commands::calls::start_dm_call,
         commands::calls::accept_dm_call,
         commands::calls::decline_dm_call,
+        commands::calls::end_dm_call,
         commands::calls::get_missed_calls,
         // status
         commands::status::set_status,

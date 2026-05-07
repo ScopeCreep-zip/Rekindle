@@ -191,6 +191,72 @@ pub async fn accept_dm_call(
     Ok(())
 }
 
+/// C2 hangup — end an Active call (post-handshake). Removes from
+/// active_calls, sends a CallEnd payload to the peer so they also clear
+/// their state, and emits ChatEvent::CallEnded locally so the frontend's
+/// callsState.activeCall slot clears.
+///
+/// Distinct from `decline_dm_call` (which is the user rejecting an
+/// inbound CallOffer before accepting). `end_dm_call` is the user
+/// hanging up an already-connected call.
+#[tauri::command]
+pub async fn end_dm_call(
+    call_id: String,
+    reason: Option<String>,
+    app: tauri::AppHandle,
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+) -> Result<(), String> {
+    let peer_pubkey = {
+        let mut calls = state.active_calls.lock();
+        let call = calls
+            .remove(&call_id)
+            .ok_or_else(|| format!("no active call with id {call_id}"))?;
+        // CallState implements Drop (zeroizing the X25519 secret), so we
+        // can't move fields out partially. Clone the pubkey String, then
+        // let the rest of `call` drop normally — its zeroize-on-drop runs
+        // and the X25519 secret is wiped from memory.
+        call.peer_pubkey.clone()
+    };
+
+    let reason_str = reason.unwrap_or_default();
+
+    // Notify the peer their CallState is now stale. Best-effort —
+    // app_message may fail if the peer just dropped offline; the
+    // 30-second presence-poll on their side will eventually GC the
+    // stale call entry. We don't return an error here because the
+    // local-side hangup must succeed regardless of peer reachability.
+    let payload = rekindle_protocol::messaging::envelope::MessagePayload::CallEnd {
+        call_id: call_id.clone(),
+        reason: reason_str.clone(),
+    };
+    if let Err(e) = crate::services::message_service::send_to_peer_raw(
+        state.inner(),
+        pool.inner(),
+        &peer_pubkey,
+        &payload,
+    )
+    .await
+    {
+        tracing::info!(
+            call_id = %call_id,
+            peer = %peer_pubkey,
+            error = %e,
+            "CallEnd send to peer failed; their state will GC on next poll"
+        );
+    }
+
+    // Emit local CallEnded so the frontend clears callsState.activeCall.
+    let _ = app.emit(
+        "chat-event",
+        &crate::channels::ChatEvent::CallEnded {
+            call_id: call_id.clone(),
+            reason: reason_str,
+        },
+    );
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn decline_dm_call(
     call_id: String,

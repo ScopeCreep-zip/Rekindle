@@ -337,6 +337,24 @@ pub async fn handle_incoming_message(
         | MessagePayload::CallDecline { .. } => {
             tracing::trace!("received call signaling via app_message; ignoring");
         }
+        // C2 hangup — peer ended the active call. Remove from local
+        // active_calls map and emit ChatEvent::CallEnded so the
+        // frontend's calls.handlers.ts can clear callsState.activeCall.
+        MessagePayload::CallEnd { call_id, reason } => {
+            let removed = state.active_calls.lock().remove(&call_id).is_some();
+            if removed {
+                let _ = app_handle.emit(
+                    "chat-event",
+                    &ChatEvent::CallEnded {
+                        call_id: call_id.clone(),
+                        reason: reason.clone(),
+                    },
+                );
+                tracing::info!(call_id = %call_id, %reason, "remote ended DM call");
+            } else {
+                tracing::debug!(call_id = %call_id, "CallEnd for unknown call_id; ignoring");
+            }
+        }
         MessagePayload::RelayOfferAck { ok: _, reason: _ } => {
             tracing::trace!("received RelayOfferAck via app_message; ignoring");
         }

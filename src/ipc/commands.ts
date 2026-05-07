@@ -972,6 +972,10 @@ export const commands = {
     invoke<void>("accept_dm_call", { callId }),
   declineDmCall: (callId: string, reason?: string) =>
     invoke<void>("decline_dm_call", { callId, reason: reason ?? null }),
+  /// C2 hangup — end an Active call (post-handshake), distinct from
+  /// declineDmCall (which rejects a CallOffer before accepting).
+  endDmCall: (callId: string, reason?: string) =>
+    invoke<void>("end_dm_call", { callId, reason: reason ?? null }),
   getMissedCalls: () => invoke<MissedCallRow[]>("get_missed_calls"),
 
   // Status

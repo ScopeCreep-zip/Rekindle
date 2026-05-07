@@ -226,6 +226,17 @@ pub enum MessagePayload {
         #[serde(default, skip_serializing_if = "String::is_empty")]
         reason: String,
     },
+    /// C2 hangup — sent by either party to end an Active call. Receiver
+    /// removes the call from `state.active_calls` and emits
+    /// `ChatEvent::CallEnded` so the frontend can clear `activeCall`.
+    /// Distinct from `CallDecline` (which is the inline `app_call` reply
+    /// to a CallOffer) — this one travels via `app_message` after the
+    /// call is established.
+    CallEnd {
+        call_id: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        reason: String,
+    },
     /// Reply to a `StatusRequest`. Empty `status` means "I don't have
     /// data for this peer" so the requester can short-circuit.
     StatusResponse {
