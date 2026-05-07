@@ -436,15 +436,17 @@ pub async fn handle_message_notification(
                 .and_then(|community| community.my_pseudonym_key.clone())
         };
         if let Some(requester_pseudonym) = requester_pseudonym {
-            let request = rekindle_protocol::dht::community::envelope::CommunityEnvelope::Control(
-                rekindle_protocol::dht::community::envelope::ControlPayload::RequestMEK {
-                    channel_id: pending.channel_id.clone(),
-                    needed_generation: message.mek_generation,
-                    requester_pseudonym,
-                },
+            // A3/P1.3 — spawn a retry loop with cascade fall-through instead of
+            // a single fire-and-forget send. The previous send dropped silently
+            // if the deterministic responder was offline, leaving the message
+            // permanently undecryptable until a future rotation broadcast.
+            crate::services::community::spawn_mek_request_with_retry(
+                state.clone(),
+                pending.community_id.clone(),
+                pending.channel_id.clone(),
+                message.mek_generation,
+                requester_pseudonym,
             );
-            let _ =
-                crate::services::community::send_to_mesh(state, &pending.community_id, &request);
         }
         emit_message_received(
             app_handle,

@@ -237,6 +237,11 @@ struct RequestMEKPayload @0xea0010000000a000 {
     channelId            @0 :Text;
     neededGeneration     @1 :UInt64;
     requesterPseudonym   @2 :Text;
+    # A3/P1.3 — cascade index. Field is appended (Cap'n Proto rule: new
+    # fields are zero-default for older peers that don't send it). 0 =
+    # deterministic top-rank responder. Requester increments after each
+    # 5s timeout to fall through to the next-best candidate.
+    cascadeIndex         @3 :UInt32;
 }
 
 struct MekTransferPayload @0xea0011000000a000 {

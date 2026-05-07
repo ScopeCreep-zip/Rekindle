@@ -448,6 +448,7 @@ async fn handle_join_and_roles_payload(
             channel_id,
             needed_generation,
             requester_pseudonym,
+            cascade_index,
         } => {
             if let Err(error) = crate::services::community::handle_request_mek(
                 app_handle,
@@ -456,6 +457,7 @@ async fn handle_join_and_roles_payload(
                 &channel_id,
                 needed_generation,
                 &requester_pseudonym,
+                cascade_index,
             )
             .await
             {

@@ -53,7 +53,7 @@ pub use join::{join_community, rejoin_community};
 pub use keepalive::start_dht_keepalive;
 pub use mek_rotation::{
     handle_incoming_mek_transfer, handle_request_mek, rotate_text_mek_for_departure,
-    rotate_voice_mek_for_membership,
+    rotate_voice_mek_for_membership, spawn_mek_request_with_retry,
 };
 pub use message_notifications::{channel_message_subkey, handle_message_notification};
 pub use notifications::{emit_message_notification, should_emit_message_notification};

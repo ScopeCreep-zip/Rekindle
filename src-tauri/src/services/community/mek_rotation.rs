@@ -19,6 +19,7 @@ fn selected_request_responder(
     community_id: &str,
     requester_pseudonym: &str,
     candidates: &[String],
+    cascade_index: u32,
 ) -> Result<bool, String> {
     let mut candidate_keys = candidates
         .iter()
@@ -28,10 +29,30 @@ fn selected_request_responder(
         candidate_keys.push(me);
     }
     let requester = pseudonym_from_hex(requester_pseudonym).ok_or("invalid requester pseudonym")?;
-    let Some(selected) = select_mek_responder(&requester, &candidate_keys) else {
+    // A3/P1.3 — cascade fall-through. cascade_index=0 is the deterministic
+    // top-rank responder (matches legacy `select_mek_responder`). Higher
+    // values pick the next-best candidate so the request makes progress
+    // even when the elected responder is offline. We compute up to
+    // cascade_index+1 candidates and pick the entry at that index.
+    if cascade_index == 0 {
+        let Some(selected) = select_mek_responder(&requester, &candidate_keys) else {
+            return Ok(false);
+        };
+        return Ok(my_pseudonym(state, community_id).as_ref() == Some(&selected));
+    }
+    let cascade = cascade_candidates(
+        &requester,
+        &candidate_keys
+            .iter()
+            .filter(|m| *m != &requester)
+            .cloned()
+            .collect::<Vec<_>>(),
+        cascade_index as usize,
+    );
+    let Some(selected) = cascade.get(cascade_index as usize) else {
         return Ok(false);
     };
-    Ok(my_pseudonym(state, community_id).as_ref() == Some(&selected))
+    Ok(my_pseudonym(state, community_id).as_ref() == Some(selected))
 }
 
 fn apply_received_mek(
@@ -208,13 +229,20 @@ pub async fn handle_request_mek(
     channel_id: &str,
     needed_generation: u64,
     requester_pseudonym: &str,
+    cascade_index: u32,
 ) -> Result<(), String> {
     let recipients = online_recipients(state, community_id, None);
     let candidates = recipients
         .iter()
         .map(|recipient| recipient.pseudonym_hex.clone())
         .collect::<Vec<_>>();
-    if !selected_request_responder(state, community_id, requester_pseudonym, &candidates)? {
+    if !selected_request_responder(
+        state,
+        community_id,
+        requester_pseudonym,
+        &candidates,
+        cascade_index,
+    )? {
         return Ok(());
     }
 
@@ -240,6 +268,95 @@ pub async fn handle_request_mek(
         false,
     )
     .await
+}
+
+/// A3/P1.3 — request MEK from peers with cascade fall-through retry.
+///
+/// Sends an initial `RequestMEK` (cascade_index=0) to the gossip mesh.
+/// If no `MekTransfer` arrives within 5s (i.e., `lookup_mek` still
+/// returns `None` for the needed generation), advances to cascade_index=1
+/// — the next-best candidate per `cascade_candidates`. Repeats up to
+/// MAX_CASCADES total (3 attempts: 0, 1, 2).
+///
+/// Spawned as a fire-and-forget tokio task by the caller — replaces the
+/// previous fire-and-forget single send that silently lost the request
+/// when the elected responder was offline.
+/// True iff the in-memory cache holds the requested `(channel_id, generation)`.
+/// Used by the retry loop to bail early once `MekTransfer` populates either
+/// the channel-scoped or community-wide MEK cache.
+fn mek_cache_has_generation(
+    state: &AppState,
+    community_id: &str,
+    channel_id: &str,
+    generation: u64,
+) -> bool {
+    if let Some(mek) = state
+        .channel_mek_cache
+        .lock()
+        .get(&(community_id.to_string(), channel_id.to_string()))
+    {
+        if mek.generation() == generation {
+            return true;
+        }
+    }
+    if let Some(mek) = state.mek_cache.lock().get(community_id) {
+        if mek.generation() == generation {
+            return true;
+        }
+    }
+    false
+}
+
+pub fn spawn_mek_request_with_retry(
+    state: Arc<AppState>,
+    community_id: String,
+    channel_id: String,
+    needed_generation: u64,
+    requester_pseudonym: String,
+) {
+    tokio::spawn(async move {
+        const MAX_CASCADES: u32 = 3;
+        const RETRY_DEADLINE_MS: u64 = 5_000;
+        for cascade_index in 0..MAX_CASCADES {
+            // Bail early if the MEK arrived via a concurrent path (parallel
+            // rotation broadcast, an MekTransfer reply that already landed,
+            // a different channel's request that produced the same gen).
+            if mek_cache_has_generation(&state, &community_id, &channel_id, needed_generation) {
+                return;
+            }
+            // Build & broadcast RequestMEK at the current cascade level.
+            let request = CommunityEnvelope::Control(ControlPayload::RequestMEK {
+                channel_id: channel_id.clone(),
+                needed_generation,
+                requester_pseudonym: requester_pseudonym.clone(),
+                cascade_index,
+            });
+            if let Err(e) = super::send_to_mesh(&state, &community_id, &request) {
+                tracing::warn!(
+                    community = %community_id,
+                    channel = %channel_id,
+                    cascade_index,
+                    error = %e,
+                    "RequestMEK broadcast failed — will retry at next cascade level"
+                );
+            } else {
+                tracing::debug!(
+                    community = %community_id,
+                    channel = %channel_id,
+                    needed_generation,
+                    cascade_index,
+                    "RequestMEK sent"
+                );
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(RETRY_DEADLINE_MS)).await;
+        }
+        tracing::warn!(
+            community = %community_id,
+            channel = %channel_id,
+            needed_generation,
+            "MEK request gave up after MAX_CASCADES attempts — channel messages remain undecryptable until next rotation broadcast"
+        );
+    });
 }
 
 pub fn handle_incoming_mek_transfer(
@@ -366,7 +483,7 @@ mod tests {
             .into_iter()
             .filter(|seed| {
                 let state = state_with_pseudonym(*seed);
-                selected_request_responder(&state, "community", &requester, &candidates)
+                selected_request_responder(&state, "community", &requester, &candidates, 0)
                     .expect("selection should succeed")
             })
             .collect::<Vec<_>>();
@@ -381,7 +498,7 @@ mod tests {
         let candidates = vec![requester.clone(), pseudo_hex(8)];
 
         assert!(
-            !selected_request_responder(&state, "community", &requester, &candidates)
+            !selected_request_responder(&state, "community", &requester, &candidates, 0)
                 .expect("selection should succeed")
         );
     }

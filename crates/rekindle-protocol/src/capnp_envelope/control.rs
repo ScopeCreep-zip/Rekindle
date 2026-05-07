@@ -333,12 +333,13 @@ fn write_mek_rotated(mut p: cap::m_e_k_rotated_payload::Builder<'_>, payload: &C
 }
 
 fn write_request_mek(mut p: cap::request_m_e_k_payload::Builder<'_>, payload: &ControlPayload) {
-    let ControlPayload::RequestMEK { channel_id, needed_generation, requester_pseudonym } = payload else {
+    let ControlPayload::RequestMEK { channel_id, needed_generation, requester_pseudonym, cascade_index } = payload else {
         unreachable!("write_request_mek: variant mismatch")
     };
     p.set_channel_id(channel_id);
     p.set_needed_generation(*needed_generation);
     p.set_requester_pseudonym(requester_pseudonym);
+    p.set_cascade_index(*cascade_index);
 }
 
 fn write_mek_transfer(mut p: cap::mek_transfer_payload::Builder<'_>, payload: &ControlPayload) {
@@ -985,6 +986,10 @@ fn read_request_mek(p: cap::request_m_e_k_payload::Reader<'_>) -> Result<Control
         channel_id: text_to_string(p.get_channel_id().map_err(|e| capnp_err(&e))?)?,
         needed_generation: p.get_needed_generation(),
         requester_pseudonym: text_to_string(p.get_requester_pseudonym().map_err(|e| capnp_err(&e))?)?,
+        // Cap'n Proto fills missing fields with zero on read, so peers
+        // pre-dating cascadeIndex transparently produce cascade_index=0
+        // (the deterministic top-rank responder).
+        cascade_index: p.get_cascade_index(),
     })
 }
 

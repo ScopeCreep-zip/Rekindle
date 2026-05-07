@@ -232,6 +232,15 @@ pub enum ControlPayload {
         needed_generation: u64,
         /// Requester's pseudonym for deterministic responder selection.
         requester_pseudonym: String,
+        /// A3/P1.3 — cascade index for responder fall-through. `0` means the
+        /// deterministic top-rank responder; receivers compare against
+        /// `cascade_candidates(requester, members)[cascade_index]` and only
+        /// reply if they're the candidate at that rank. Requester increments
+        /// after each 5-second timeout so the next-best candidate takes over
+        /// when the elected responder is offline. Default `0` keeps the wire
+        /// format backward-compatible with peers that pre-date this field.
+        #[serde(default)]
+        cascade_index: u32,
     },
     /// Direct app_call delivery of wrapped MEK material to a single peer.
     MekTransfer {
