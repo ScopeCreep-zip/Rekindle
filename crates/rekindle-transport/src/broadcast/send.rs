@@ -106,6 +106,80 @@ impl Sender {
         report
     }
 
+    /// Broadcast a signed gossip envelope with bounded parallelism.
+    ///
+    /// Sends to up to `max_concurrent` peers simultaneously via JoinSet.
+    /// Each send has its own routing context call. Failures are collected
+    /// but don't abort remaining sends.
+    pub async fn broadcast_gossip_parallel(
+        &self,
+        targets: &[(String, PeerTarget)],
+        envelope: &SignedGossipEnvelope,
+        max_concurrent: usize,
+    ) -> BroadcastReport {
+        let envelope_bytes = match postcard::to_stdvec(envelope) {
+            Ok(b) => b,
+            Err(e) => return BroadcastReport {
+                delivered: 0,
+                failures: vec![("*".into(), format!("serialization: {e}"))],
+            },
+        };
+        let frame_bytes = match frame::encode(TypeId::GossipBroadcast, &envelope_bytes) {
+            Ok(f) => f,
+            Err(e) => return BroadcastReport {
+                delivered: 0,
+                failures: vec![("*".into(), format!("frame: {e}"))],
+            },
+        };
+        let rc = match build_routing_context(&self.api, &self.config.safety.text) {
+            Ok(rc) => rc,
+            Err(e) => return BroadcastReport {
+                delivered: 0,
+                failures: vec![("*".into(), format!("routing: {e}"))],
+            },
+        };
+
+        let mut report = BroadcastReport::default();
+        let mut join_set = tokio::task::JoinSet::new();
+        let mut target_iter = targets.iter();
+        let mut pending = 0usize;
+
+        loop {
+            while pending < max_concurrent {
+                let Some((peer_key, target)) = target_iter.next() else { break };
+                let rc = rc.clone();
+                let frame = frame_bytes.clone();
+                let route_id = target.route_id.clone();
+                let key = peer_key.clone();
+                join_set.spawn(async move {
+                    let result = rc.app_message(Target::RouteId(route_id), frame).await;
+                    (key, result)
+                });
+                pending += 1;
+            }
+
+            if pending == 0 { break; }
+
+            match join_set.join_next().await {
+                Some(Ok((key, Ok(())))) => {
+                    report.delivered += 1;
+                    let _ = key;
+                }
+                Some(Ok((key, Err(e)))) => {
+                    report.failures.push((key, e.to_string()));
+                }
+                Some(Err(e)) => {
+                    report.failures.push(("*".into(), format!("join: {e}")));
+                }
+                None => break,
+            }
+            pending -= 1;
+        }
+
+        debug!(delivered = report.delivered, failed = report.failures.len(), "parallel gossip broadcast");
+        report
+    }
+
     /// Send an encrypted, signed voice packet to a single peer.
     ///
     /// The payload must already be a serialized `VoicePayload` with signature

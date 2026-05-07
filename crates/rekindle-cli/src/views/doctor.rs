@@ -230,6 +230,14 @@ impl View for DoctorView {
         Ok(())
     }
 
+    fn on_subscription_event(&mut self, event: &rekindle_types::subscription_events::SubscriptionEvent) -> Result<()> {
+        use rekindle_types::subscription_events::{SubscriptionEvent, NetworkEvent};
+        if matches!(event, SubscriptionEvent::Network(NetworkEvent::AttachmentChanged { .. })) {
+            self.checks.clear(); // triggers reload appearance on next render
+        }
+        Ok(())
+    }
+
     fn focus_ring(&mut self) -> &mut FocusRing {
         &mut self.focus
     }

@@ -34,6 +34,8 @@ pub struct StatusBarState {
     pub mode: Mode,
     /// Breadcrumb path — e.g., "dev-team / #general".
     pub breadcrumb: String,
+    /// Compact typing context — e.g., "alice typing" (empty when nobody typing).
+    pub typing_context: String,
     /// Whether the node is attached to the network.
     pub node_attached: bool,
     /// Number of known peers.
@@ -82,6 +84,12 @@ pub fn render(
         )
     };
 
+    let typing = if state.typing_context.is_empty() {
+        Span::raw("")
+    } else {
+        Span::styled(format!(" {} ", state.typing_context), Style::new().dim().italic())
+    };
+
     let node_glyph = theme.status_glyph(state.node_attached);
     let node_text = if state.node_attached {
         format!(" {node_glyph} {} peers ", state.peer_count)
@@ -100,6 +108,7 @@ pub fn render(
     let line = Line::from(vec![
         mode_badge,
         breadcrumb,
+        typing,
         separator.clone(),
         node_span,
         separator,

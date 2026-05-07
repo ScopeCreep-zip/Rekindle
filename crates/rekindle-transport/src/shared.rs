@@ -6,16 +6,16 @@
 //!
 //! # Thread Safety
 //!
-//! Attachment state uses atomics for lock-free reads. The subscriber list
-//! uses a `parking_lot::RwLock` which is only write-locked when adding or
-//! cleaning up subscribers — never in the hot path of reading state.
+//! Attachment state uses atomics for lock-free reads. Notification delivery
+//! uses `tokio::sync::broadcast` — lock-free, no subscriber management needed.
+//! Receivers that fall behind by 4096 events get `RecvError::Lagged` and must
+//! handle it (typically by skipping missed events and continuing).
 
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
-use parking_lot::RwLock;
-use tokio::sync::mpsc;
+use tokio::sync::broadcast;
 
 // Re-export from rekindle-types — the single source of truth for IPC-boundary types.
 pub use rekindle_types::notification::{AttachmentState, TransportNotification};
@@ -27,10 +27,8 @@ pub use rekindle_types::notification::{AttachmentState, TransportNotification};
 /// Created once at `TransportNode::start()`, shared via `Arc` between the
 /// dispatch loop (writer) and any number of CLI/TUI consumers (readers).
 ///
-/// Attachment state reads are lock-free via atomics. Subscriber management
-/// uses a `RwLock` that is write-locked only on subscribe/cleanup — the
-/// `notify()` hot path holds a read lock to iterate existing subscribers,
-/// upgrading to write only when dead subscribers need removal.
+/// Attachment state reads are lock-free via atomics. Notification delivery
+/// uses `tokio::sync::broadcast` — no locks in the hot path.
 pub struct SharedState {
     /// Current attachment state, stored as u8 discriminant.
     attachment: AtomicU8,
@@ -40,20 +38,20 @@ pub struct SharedState {
     public_internet_ready: AtomicBool,
     /// Timestamp when the node was started.
     started_at: Instant,
-    /// Broadcast subscribers. Each subscriber gets a clone of every notification.
-    /// Dead subscribers (receiver dropped) are cleaned up on the next `notify()`.
-    subscribers: RwLock<Vec<mpsc::UnboundedSender<TransportNotification>>>,
+    /// Broadcast channel for transport notifications. Lock-free delivery.
+    event_tx: broadcast::Sender<TransportNotification>,
 }
 
 impl SharedState {
     /// Create a new shared state with initial values.
     pub fn new() -> Arc<Self> {
+        let (event_tx, _) = broadcast::channel(4096);
         Arc::new(Self {
             attachment: AtomicU8::new(AttachmentState::Detached as u8),
             is_attached: AtomicBool::new(false),
             public_internet_ready: AtomicBool::new(false),
             started_at: Instant::now(),
-            subscribers: RwLock::new(Vec::new()),
+            event_tx,
         })
     }
 
@@ -76,12 +74,9 @@ impl SharedState {
 
     /// Broadcast a notification to all subscribers.
     ///
-    /// Subscribers whose receivers have been dropped are automatically removed.
-    /// This is the only place subscribers are cleaned up — no background task
-    /// needed.
+    /// Lock-free. Lagged receivers automatically skip missed events.
     pub fn notify(&self, event: &TransportNotification) {
-        let mut subs = self.subscribers.write();
-        subs.retain(|tx| tx.send(event.clone()).is_ok());
+        let _ = self.event_tx.send(event.clone());
     }
 
     // ── Readers (called by CLI/TUI, lock-free) ──────────────────────
@@ -106,20 +101,17 @@ impl SharedState {
         self.started_at.elapsed()
     }
 
-    /// Subscribe to transport notifications. Returns a receiver that gets
-    /// a clone of every notification broadcast by the dispatch loop.
+    /// Subscribe to transport notifications.
     ///
-    /// Multiple subscribers are supported. Dropping the receiver automatically
-    /// unsubscribes on the next `notify()` call.
-    pub fn subscribe(&self) -> mpsc::UnboundedReceiver<TransportNotification> {
-        let (tx, rx) = mpsc::unbounded_channel();
-        self.subscribers.write().push(tx);
-        rx
+    /// Multiple subscribers supported. Dropping the receiver auto-unsubscribes
+    /// (broadcast channel semantics). Lagged receivers get `RecvError::Lagged`.
+    pub fn subscribe(&self) -> broadcast::Receiver<TransportNotification> {
+        self.event_tx.subscribe()
     }
 
     /// Number of active subscribers (for diagnostics).
     pub fn subscriber_count(&self) -> usize {
-        self.subscribers.read().len()
+        self.event_tx.receiver_count()
     }
 }
 
@@ -150,20 +142,13 @@ mod tests {
             let state = AttachmentState::from_u8(raw);
             assert_eq!(state as u8, raw);
         }
-        // Out of range falls back to Detached
         assert_eq!(AttachmentState::from_u8(255), AttachmentState::Detached);
     }
 
     #[test]
     fn attachment_state_from_veilid_string() {
-        assert_eq!(
-            AttachmentState::from_veilid_string("FullyAttached"),
-            AttachmentState::FullyAttached
-        );
-        assert_eq!(
-            AttachmentState::from_veilid_string("garbage"),
-            AttachmentState::Detached
-        );
+        assert_eq!(AttachmentState::from_veilid_string("FullyAttached"), AttachmentState::FullyAttached);
+        assert_eq!(AttachmentState::from_veilid_string("garbage"), AttachmentState::Detached);
     }
 
     #[test]
@@ -195,17 +180,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn shared_state_cleans_up_dropped_subscribers() {
+    async fn shared_state_subscriber_count_decrements_on_drop() {
         let state = SharedState::new();
         let rx1 = state.subscribe();
         let _rx2 = state.subscribe();
         assert_eq!(state.subscriber_count(), 2);
-
-        // Drop rx1
         drop(rx1);
-
-        // Next notify cleans up the dead subscriber
-        state.notify(&TransportNotification::LocalRoutesDied { count: 1 });
+        // broadcast channel decrements receiver_count on drop automatically
         assert_eq!(state.subscriber_count(), 1);
     }
 

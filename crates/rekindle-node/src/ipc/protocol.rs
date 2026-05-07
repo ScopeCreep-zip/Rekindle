@@ -146,6 +146,8 @@ pub enum IpcRequest {
     Subscribe { filters: Vec<SubscriptionFilter> },
     /// Unsubscribe from events matching filters.
     Unsubscribe { filters: Vec<SubscriptionFilter> },
+    /// Mark a context as read — clears daemon-side unread counter and emits UnreadChanged(0).
+    MarkRead { context: ReadContext },
 
     // ── Keys / MEK ───────────────────────────────────────────────
     /// List cached MEKs for a community.
@@ -329,6 +331,7 @@ impl std::fmt::Debug for IpcRequest {
             Self::DmInbox { limit } => f.debug_struct("DmInbox").field("limit", limit).finish(),
             Self::Subscribe { filters } => f.debug_struct("Subscribe").field("filter_count", &filters.len()).finish(),
             Self::Unsubscribe { filters } => f.debug_struct("Unsubscribe").field("filter_count", &filters.len()).finish(),
+            Self::MarkRead { context } => f.debug_struct("MarkRead").field("context", context).finish(),
             Self::MekList { community } => f.debug_struct("MekList").field("community", community).finish(),
             Self::MekRotate { community, channel } => f.debug_struct("MekRotate").field("community", community).field("channel", channel).finish(),
             Self::MekRequest { community, channel, generation } => f.debug_struct("MekRequest").field("community", community).field("channel", channel).field("generation", generation).finish(),
@@ -374,6 +377,16 @@ impl std::fmt::Debug for IpcRequest {
             Self::Shutdown => write!(f, "Shutdown"),
         }
     }
+}
+
+// ── Read Context ────────────────────────────────────────────────────────
+
+/// Context for marking a conversation as read. Makes invalid states
+/// unrepresentable — exactly one of Channel or Dm, never both/neither.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ReadContext {
+    Channel { community: String, channel: String },
+    Dm { peer: String },
 }
 
 // ── IPC Response ────────────────────────────────────────────────────────

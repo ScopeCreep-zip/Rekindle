@@ -14,6 +14,8 @@ pub mod spinner;
 pub mod status_bar;
 pub mod tab_bar;
 pub mod toast;
+pub mod typing_indicator;
+pub mod unread_badge;
 
 use crossterm::event::KeyEvent;
 use ratatui::layout::Rect;

@@ -235,6 +235,20 @@ pub async fn dispatch(ctx: &DaemonContext, request: IpcRequest) -> IpcResponse {
         // If they arrive here, something bypassed the server layer.
         IpcRequest::Subscribe { .. } => IpcResponse::error(400, "subscribe must be handled by the IPC bus server, not daemon dispatch"),
         IpcRequest::Unsubscribe { .. } => IpcResponse::error(400, "unsubscribe must be handled by the IPC bus server, not daemon dispatch"),
+        IpcRequest::MarkRead { context } => {
+            let subs = ctx.subscriptions.read();
+            if let Some(ref mgr) = *subs {
+                match &context {
+                    crate::ipc::protocol::ReadContext::Channel { community, channel } => {
+                        mgr.mark_channel_read(community, channel);
+                    }
+                    crate::ipc::protocol::ReadContext::Dm { peer } => {
+                        mgr.mark_dm_read(peer);
+                    }
+                }
+            }
+            IpcResponse::ok(&serde_json::json!({ "status": "read" }))
+        }
         IpcRequest::NetworkStatus => admin::handle_network_status(ctx, state),
         IpcRequest::NetworkPeers => admin::handle_network_peers(ctx, state),
         IpcRequest::AgentRegister { name, agent_type, capabilities } =>

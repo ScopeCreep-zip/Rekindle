@@ -63,6 +63,10 @@ pub struct MessageList {
     channel: String,
     /// Monotonically increasing counter — incremented on every mutation.
     generation: u64,
+    /// Generation when cached_items was last built.
+    last_rendered_generation: u64,
+    /// Cached rendered items from last build_items() call.
+    cached_items: Vec<ListItem<'static>>,
     /// Whether this component is currently focused.
     is_focused: bool,
     /// Last read message index (for unread separator).
@@ -79,6 +83,8 @@ impl MessageList {
             community,
             channel,
             generation: 0,
+            last_rendered_generation: u64::MAX,
+            cached_items: Vec::new(),
             is_focused: false,
             last_read_index: None,
         }
@@ -152,13 +158,22 @@ impl MessageList {
     /// Remove a message by its ID. No-op if not found.
     pub fn remove_by_id(&mut self, message_id: &str) {
         self.messages.retain(|r| r.msg.message_id != message_id);
-        // Fix selection if it's now out of bounds
         if let Some(sel) = self.list_state.selected() {
             if sel >= self.len() && !self.is_empty() {
                 self.list_state.select(Some(self.len() - 1));
             }
         }
         self.generation += 1;
+    }
+
+    /// Update the body of a message in-place (for Edited events).
+    pub fn update_body(&mut self, message_id: &str, new_body: &str) {
+        if let Some(r) = self.messages.iter_mut().find(|r| r.msg.message_id == message_id) {
+            r.msg.body = format!("{new_body} (edited)");
+            r.msg.is_encrypted = false;
+            r.msg.needs_mek = None;
+            self.generation += 1;
+        }
     }
 
     /// Scroll up by one message. Disables auto-scroll.
@@ -359,7 +374,11 @@ impl Component for MessageList {
             return Ok(());
         }
 
-        let items = self.build_items();
+        if self.generation != self.last_rendered_generation {
+            self.cached_items = self.build_items();
+            self.last_rendered_generation = self.generation;
+        }
+        let items = self.cached_items.clone();
 
         let list = List::new(items)
             .block(

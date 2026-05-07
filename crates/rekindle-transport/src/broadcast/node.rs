@@ -360,7 +360,7 @@ impl TransportNode {
     /// Subscribe to transport notifications. Returns a receiver that gets
     /// a clone of every event the dispatch loop broadcasts. Multiple
     /// subscribers are supported.
-    pub fn subscribe(&self) -> tokio::sync::mpsc::UnboundedReceiver<TransportNotification> {
+    pub fn subscribe(&self) -> tokio::sync::broadcast::Receiver<TransportNotification> {
         self.shared_state.subscribe()
     }
 

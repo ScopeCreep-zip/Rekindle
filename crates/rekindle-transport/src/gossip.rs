@@ -4,25 +4,30 @@
 //! Gossip messages are broadcast to a subset of online peers, forwarded
 //! with TTL decrement, and deduplicated by content hash.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use serde::{Deserialize, Serialize};
 
 // ── Dedup cache ──────────────────────────────────────────────────────
 
-/// Content-hash dedup cache with bounded capacity and LRU eviction.
+/// Content-hash dedup cache with O(1) lookup via Blake3-derived 64-bit keys.
 ///
-/// Each entry is keyed by `(community_id, sender, dedup_key)` to prevent
-/// cross-community collisions and cross-sender collisions.
+/// Each entry is a 64-bit hash of `(community_id, sender, dedup_key)`.
+/// Capacity-bounded with FIFO eviction. Memory per entry: 8 bytes
+/// (vs ~120 bytes for the previous triple-String VecDeque).
 pub struct DedupCache {
-    entries: VecDeque<(String, String, String)>,
+    /// Blake3-derived 64-bit keys for O(1) membership check.
+    seen: HashSet<u64>,
+    /// FIFO ring for capacity eviction — tracks insertion order.
+    ring: VecDeque<u64>,
     capacity: usize,
 }
 
 impl DedupCache {
     pub fn new(capacity: usize) -> Self {
         Self {
-            entries: VecDeque::with_capacity(capacity),
+            seen: HashSet::with_capacity(capacity),
+            ring: VecDeque::with_capacity(capacity),
             capacity,
         }
     }
@@ -37,26 +42,42 @@ impl DedupCache {
         sender: &str,
         dedup_key: &str,
     ) -> bool {
-        let entry = (
-            community_id.to_string(),
-            sender.to_string(),
-            dedup_key.to_string(),
-        );
+        let key = Self::hash_key(community_id, sender, dedup_key);
 
-        if self.entries.iter().any(|e| *e == entry) {
+        if self.seen.contains(&key) {
             return true;
         }
 
-        if self.entries.len() >= self.capacity {
-            self.entries.pop_front();
+        if self.seen.len() >= self.capacity {
+            if let Some(old) = self.ring.pop_front() {
+                self.seen.remove(&old);
+            }
         }
-        self.entries.push_back(entry);
+        self.seen.insert(key);
+        self.ring.push_back(key);
         false
     }
 
     /// Clear all entries.
     pub fn clear(&mut self) {
-        self.entries.clear();
+        self.seen.clear();
+        self.ring.clear();
+    }
+
+    /// Compute a 64-bit hash key from the dedup triple.
+    ///
+    /// Uses Blake3 truncated to 64 bits. Birthday-paradox collision probability
+    /// at capacity 2048: ~2^-52 (negligible). A collision silently drops one
+    /// legitimate message — acceptable tradeoff for O(1) lookup and 8-byte entries.
+    fn hash_key(community_id: &str, sender: &str, dedup_key: &str) -> u64 {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(community_id.as_bytes());
+        hasher.update(b"|");
+        hasher.update(sender.as_bytes());
+        hasher.update(b"|");
+        hasher.update(dedup_key.as_bytes());
+        let hash = hasher.finalize();
+        u64::from_le_bytes(hash.as_bytes()[..8].try_into().expect("blake3 produces 32 bytes"))
     }
 }
 

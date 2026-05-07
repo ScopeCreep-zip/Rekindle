@@ -280,6 +280,45 @@ async fn dispatch_dm<H: InboundHandler>(handler: &Arc<H>, type_id: TypeId, paylo
     handler.on_dm(&sender, dm_payload, signed.timestamp).await;
 }
 
+// ── Voice sequence window for replay protection ───────────────────────
+
+/// Per-sender sliding window for voice sequence number replay protection.
+struct VoiceSeqWindow {
+    max_seen: u32,
+    /// Bitfield tracking which of the last 100 sequences have been seen.
+    seen_bitmap: u128,
+}
+
+impl VoiceSeqWindow {
+    fn new(seq: u32) -> Self {
+        Self { max_seen: seq, seen_bitmap: 1 }
+    }
+
+    /// Returns `true` if the sequence is valid (not replayed, within window).
+    fn check_and_record(&mut self, seq: u32) -> bool {
+        if seq > self.max_seen {
+            let shift = (seq - self.max_seen).min(128);
+            self.seen_bitmap = self.seen_bitmap.checked_shl(shift).unwrap_or(0) | 1;
+            self.max_seen = seq;
+            true
+        } else {
+            let age = self.max_seen - seq;
+            if age >= 100 { return false; }
+            let mask = 1u128 << age;
+            if self.seen_bitmap & mask != 0 { return false; }
+            self.seen_bitmap |= mask;
+            true
+        }
+    }
+}
+
+/// Maximum tracked voice senders. Prevents unbounded memory growth from
+/// spoofed sender keys. Oldest (least recently active) evicted at capacity.
+const VOICE_SEQ_TRACKER_CAP: usize = 10_000;
+
+static VOICE_SEQ_TRACKER: std::sync::LazyLock<parking_lot::Mutex<std::collections::HashMap<String, VoiceSeqWindow>>> =
+    std::sync::LazyLock::new(|| parking_lot::Mutex::new(std::collections::HashMap::new()));
+
 async fn dispatch_voice<H: InboundHandler>(handler: &Arc<H>, payload: &[u8]) {
     let voice: VoicePayload = match postcard::from_bytes(payload) {
         Ok(v) => v,
@@ -294,6 +333,26 @@ async fn dispatch_voice<H: InboundHandler>(handler: &Arc<H>, payload: &[u8]) {
         let sig_result = verify_voice_signature(&voice.sender_key_hex, &sig_data, &voice.signature);
         if let Err(e) = sig_result {
             warn!(error = %e, sender = %voice.sender_key_hex, "dropping voice: bad signature");
+            return;
+        }
+    }
+
+    // Replay protection: reject replayed or out-of-window sequence numbers
+    {
+        let mut tracker = VOICE_SEQ_TRACKER.lock();
+        // Evict oldest sender if at capacity and this is a new sender
+        if !tracker.contains_key(&voice.sender_key_hex) && tracker.len() >= VOICE_SEQ_TRACKER_CAP {
+            if let Some(oldest_key) = tracker.iter()
+                .min_by_key(|(_, w)| w.max_seen)
+                .map(|(k, _)| k.clone())
+            {
+                tracker.remove(&oldest_key);
+            }
+        }
+        let window = tracker.entry(voice.sender_key_hex.clone())
+            .or_insert_with(|| VoiceSeqWindow::new(voice.sequence));
+        if !window.check_and_record(voice.sequence) {
+            trace!(sender = %voice.sender_key_hex, seq = voice.sequence, "dropping voice: replayed or out-of-window");
             return;
         }
     }

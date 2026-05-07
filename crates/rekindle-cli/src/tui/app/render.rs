@@ -59,6 +59,9 @@ impl App {
             &status_bar::StatusBarState {
                 mode,
                 breadcrumb: self.breadcrumb(),
+                typing_context: crate::tui::components::typing_indicator::format_typing_compact(
+                    &self.nav.current_view_mut().typing_names(),
+                ),
                 node_attached: self.node_was_connected,
                 peer_count: 0,
                 hints: hints_line,

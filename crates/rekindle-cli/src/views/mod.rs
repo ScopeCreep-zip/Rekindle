@@ -59,6 +59,12 @@ pub trait View {
         Ok(())
     }
 
+    /// Active typers in the current context (for status bar display).
+    /// Returns display names of people currently typing. Default: empty.
+    fn typing_names(&self) -> Vec<String> {
+        Vec::new()
+    }
+
     /// Advance time-dependent state (animations, expiry).
     fn tick(&mut self) -> Result<()> {
         Ok(())

@@ -334,8 +334,13 @@ async fn read_append_write(
     crate::broadcast::dht_writes::set(node, inbox_key, subkey, bytes, None).await
 }
 
-/// Verify our entry is present in the subkey after writing.
+/// Verify our specific entry is present in the subkey after writing.
 /// Retries with exponential backoff on failure (concurrent writer race).
+///
+/// NOTE: This does NOT use `dht_writes::set_and_verify()` because that
+/// primitive checks for any non-empty data. This function checks for a
+/// SPECIFIC entry by `sender_public_key` — a stronger, content-aware
+/// verification needed for inbox read-append-write atomicity.
 async fn verify_entry_present(
     node: &TransportNode, inbox_key: &str, subkey: u32, entry: &FriendRequestEntry,
 ) -> bool {

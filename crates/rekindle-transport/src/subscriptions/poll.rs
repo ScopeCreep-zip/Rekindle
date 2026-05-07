@@ -64,100 +64,46 @@ pub async fn run_poll_loop(
                     continue;
                 }
 
+                const MAX_CONCURRENT_POLLS: usize = 8;
+
                 let mut records_with_changes = 0u32;
-                let mut total_inspected = 0u32;
-                let mut total_populated = 0u32;
-                let mut total_read = 0u32;
-                let mut inspect_failures = 0u32;
+                #[allow(clippy::cast_possible_truncation)]
+                let total_inspected = entries.len() as u32;
+                let mut join_set = tokio::task::JoinSet::new();
+                let mut entries_iter = entries.into_iter();
+                let mut pending = 0usize;
 
-                for (record_key, subkeys) in &entries {
-                    total_inspected += 1;
-                    let record_start = Instant::now();
-
-                    // NOTE: inspect() + get() is not atomic (benign TOCTOU). Between
-                    // inspect and get, a subkey could be written (false negative — caught
-                    // by next sweep) or cleared (stale read — harmless). Tier 1 (watch)
-                    // and tier 2 (direct notification) provide sub-second delivery; this
-                    // poll loop is the guaranteed fallback, not the primary path.
-
-                    // Step 1: Inspect — one network call for all subkeys
-                    let populated = match crate::broadcast::dht_writes::inspect(
-                        &node, record_key, Some(subkeys),
-                    ).await {
-                        Ok(report) => {
-                            let pop: Vec<u32> = report.subkeys().iter()
-                                .zip(report.local_seqs().iter())
-                                .filter(|(_, seq)| seq.is_some())
-                                .map(|(sk, _)| sk)
-                                .collect();
-                            debug!(
-                                record_key = &record_key[..20.min(record_key.len())],
-                                populated = pop.len(),
-                                total_subkeys = subkeys.len(),
-                                inspect_ms = record_start.elapsed().as_millis(),
-                                "poll: inspect complete"
-                            );
-                            pop
-                        }
-                        Err(e) => {
-                            warn!(
-                                record_key = &record_key[..20.min(record_key.len())],
-                                error = %e,
-                                "poll: inspect failed, falling back to full read (SLOW)"
-                            );
-                            inspect_failures += 1;
-                            subkeys.clone()
-                        }
-                    };
-
-                    if populated.is_empty() {
-                        continue;
+                loop {
+                    while pending < MAX_CONCURRENT_POLLS {
+                        let Some((record_key, subkeys)) = entries_iter.next() else { break };
+                        let n = Arc::clone(&node);
+                        join_set.spawn(async move {
+                            poll_single_record(&n, &record_key, &subkeys).await
+                        });
+                        pending += 1;
                     }
 
-                    #[allow(clippy::cast_possible_truncation)]
-                    { total_populated += populated.len() as u32; }
+                    if pending == 0 { break; }
 
-                    // Step 2: Read only populated subkeys with force_refresh
-                    let mut changed_subkeys = Vec::new();
-                    for &subkey in &populated {
-                        total_read += 1;
-                        match crate::broadcast::dht_writes::get(&node, record_key, subkey, true).await {
-                            Ok(Some(data)) if !data.is_empty() => {
-                                changed_subkeys.push(subkey);
-                            }
-                            Ok(_) => {}
-                            Err(e) => {
-                                debug!(
-                                    record_key = &record_key[..20.min(record_key.len())],
-                                    subkey, error = %e,
-                                    "poll: get failed"
-                                );
+                    match join_set.join_next().await {
+                        Some(Ok(Some((record_key, changed)))) => {
+                            records_with_changes += 1;
+                            if change_tx.send((record_key, changed)).await.is_err() {
+                                info!("poll: change channel closed, exiting");
+                                return;
                             }
                         }
+                        Some(Ok(None)) => {} // no changes
+                        Some(Err(e)) => { warn!(error = %e, "poll: task panic"); }
+                        None => break,
                     }
-
-                    // Step 3: Signal changes
-                    if !changed_subkeys.is_empty() {
-                        records_with_changes += 1;
-                        debug!(
-                            record_key = &record_key[..20.min(record_key.len())],
-                            changed = changed_subkeys.len(),
-                            record_ms = record_start.elapsed().as_millis(),
-                            "poll: record has changes, signaling"
-                        );
-                        if change_tx.send((record_key.clone(), changed_subkeys)).await.is_err() {
-                            info!("poll: change channel closed, exiting");
-                            return;
-                        }
-                    }
+                    pending -= 1;
                 }
 
                 info!(
                     records_inspected = total_inspected,
                     records_with_changes,
-                    total_populated,
-                    total_read,
-                    inspect_failures,
+                    concurrent_max = MAX_CONCURRENT_POLLS,
                     sweep_ms = sweep_start.elapsed().as_millis(),
                     "poll: sweep complete"
                 );
@@ -168,4 +114,39 @@ pub async fn run_poll_loop(
             }
         }
     }
+}
+
+/// Poll a single DHT record: inspect → filter populated → get(force_refresh).
+///
+/// Returns `None` if no changes, `Some((record_key, changed_subkeys))` if changes found.
+async fn poll_single_record(
+    node: &TransportNode,
+    record_key: &str,
+    subkeys: &[u32],
+) -> Option<(String, Vec<u32>)> {
+    let populated = match crate::broadcast::dht_writes::inspect(node, record_key, Some(subkeys)).await {
+        Ok(report) => {
+            report.subkeys().iter()
+                .zip(report.local_seqs().iter())
+                .filter(|(_, seq)| seq.is_some())
+                .map(|(sk, _)| sk)
+                .collect::<Vec<u32>>()
+        }
+        Err(e) => {
+            warn!(record_key = &record_key[..20.min(record_key.len())], error = %e, "poll: inspect failed, fallback to full read");
+            subkeys.to_vec()
+        }
+    };
+
+    if populated.is_empty() { return None; }
+
+    let mut changed = Vec::new();
+    for &subkey in &populated {
+        match crate::broadcast::dht_writes::get(node, record_key, subkey, true).await {
+            Ok(Some(data)) if !data.is_empty() => changed.push(subkey),
+            _ => {}
+        }
+    }
+
+    if changed.is_empty() { None } else { Some((record_key.to_string(), changed)) }
 }

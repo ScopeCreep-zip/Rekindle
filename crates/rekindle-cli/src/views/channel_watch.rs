@@ -28,7 +28,7 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::Frame;
 
 use rekindle_types::display::DecryptedMessageDisplay;
-use rekindle_types::subscription_events::{SubscriptionEvent, ChannelMessageEvent, TypingEvent, TypingContext};
+use rekindle_types::subscription_events::{SubscriptionEvent, ChannelMessageEvent, TypingEvent, TypingContext, PresenceEvent};
 
 use crate::helpers;
 use crate::tui::action::{Action, CommandResult};
@@ -136,30 +136,11 @@ impl ChannelWatchView {
             .retain(|_, instant| instant.elapsed() < cutoff);
     }
 
-    /// Build the typing indicator display line.
+    /// Build compact typing indicator text using the shared component.
     fn typing_display(&self) -> Option<String> {
-        if self.typing_indicators.is_empty() {
-            return None;
-        }
-        let names: Vec<String> = self
-            .typing_indicators
-            .keys()
-            .take(3)
-            .map(|k| helpers::abbreviate_key(k))
-            .collect();
-        let suffix = if self.typing_indicators.len() > 3 {
-            format!(" and {} others", self.typing_indicators.len() - 3)
-        } else {
-            String::new()
-        };
-        match names.len() {
-            1 => Some(format!("{}{suffix} is typing...", names[0])),
-            2 => Some(format!("{} and {}{suffix} are typing...", names[0], names[1])),
-            _ => Some(format!(
-                "{}, {}, and {}{suffix} are typing...",
-                names[0], names[1], names[2]
-            )),
-        }
+        let names = self.typing_names();
+        if names.is_empty() { return None; }
+        Some(crate::tui::components::typing_indicator::format_typing_compact(&names))
     }
 }
 
@@ -429,11 +410,13 @@ impl View for ChannelWatchView {
                 community, channel, message_id, sender_pseudonym,
                 sequence, timestamp, body, reply_to_sequence,
             }) if *community == self.community && *channel == self.channel => {
+                let display_name = self.peer_list.resolve_name(sender_pseudonym)
+                    .unwrap_or_else(|| helpers::abbreviate_key(sender_pseudonym));
                 self.message_list.push(DecryptedMessageDisplay {
                     message_id: message_id.clone(),
                     sequence: *sequence,
                     author_pseudonym: sender_pseudonym.clone(),
-                    author_display_name: helpers::abbreviate_key(sender_pseudonym),
+                    author_display_name: display_name,
                     body: body.clone().unwrap_or_else(|| "(decrypting...)".into()),
                     timestamp: *timestamp,
                     reply_to_sequence: *reply_to_sequence,
@@ -441,6 +424,11 @@ impl View for ChannelWatchView {
                     is_encrypted: body.is_none(),
                     needs_mek: if body.is_none() { Some(0) } else { None },
                 });
+            }
+            SubscriptionEvent::ChannelMessage(ChannelMessageEvent::Edited {
+                community, channel, message_id, body: Some(ref body_text), ..
+            }) if *community == self.community && *channel == self.channel => {
+                self.message_list.update_body(message_id, body_text);
             }
             SubscriptionEvent::ChannelMessage(ChannelMessageEvent::Deleted {
                 community, channel, message_id,
@@ -457,9 +445,26 @@ impl View for ChannelWatchView {
             }) if *community == self.community && *channel == self.channel => {
                 self.typing_indicators.remove(who);
             }
+            SubscriptionEvent::Presence(PresenceEvent::CommunityMemberChanged {
+                community, pseudonym, status, ..
+            }) if *community == self.community => {
+                self.peer_list.update_member_status(pseudonym, status);
+            }
+            SubscriptionEvent::UnreadChanged {
+                context: rekindle_types::subscription_events::UnreadContext::Channel { community, channel },
+                count,
+            } => {
+                self.channel_tree.set_channel_unread(community, channel, *count);
+            }
             _ => {}
         }
         Ok(())
+    }
+
+    fn typing_names(&self) -> Vec<String> {
+        self.typing_indicators.keys()
+            .map(|k| self.peer_list.resolve_name(k).unwrap_or_else(|| helpers::abbreviate_key(k)))
+            .collect()
     }
 
     fn tick(&mut self) -> Result<()> {

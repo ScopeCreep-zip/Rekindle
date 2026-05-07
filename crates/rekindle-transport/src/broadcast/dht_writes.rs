@@ -146,6 +146,47 @@ pub async fn inspect(
     result
 }
 
+// ── Write-then-verify ──────────────────────────────────────────────────
+
+/// Write data to a DHT subkey and verify propagation with exponential backoff.
+///
+/// Returns `Ok(true)` if verified, `Ok(false)` if verification timed out
+/// (the write may still propagate — advisory, not a failure).
+pub async fn set_and_verify(
+    node: &TransportNode,
+    record_key: &str,
+    subkey: u32,
+    data: Vec<u8>,
+    writer: Option<veilid_core::KeyPair>,
+    deadline_secs: u64,
+) -> Result<bool> {
+    set(node, record_key, subkey, data, writer).await?;
+
+    let deadline = std::time::Duration::from_secs(deadline_secs);
+    let start = std::time::Instant::now();
+    let mut backoff = std::time::Duration::from_millis(500);
+    let ceiling = std::time::Duration::from_secs(5);
+
+    loop {
+        match get(node, record_key, subkey, true).await {
+            Ok(Some(data)) if !data.is_empty() && data != b"[]" => {
+                info!(record_key, subkey, elapsed_ms = start.elapsed().as_millis(), "set_and_verify: confirmed");
+                return Ok(true);
+            }
+            _ => {}
+        }
+
+        if start.elapsed() >= deadline {
+            warn!(record_key, subkey, deadline_secs, "set_and_verify: propagation not confirmed");
+            return Ok(false);
+        }
+
+        debug!(record_key, subkey, backoff_ms = backoff.as_millis(), "set_and_verify: retrying");
+        tokio::time::sleep(backoff).await;
+        backoff = (backoff * 2).min(ceiling);
+    }
+}
+
 // ── DhtLog (append-only log built on DHT records) ──────────────────────
 
 /// Create a new DhtLog. Returns `(DhtLog, owner_keypair)`.

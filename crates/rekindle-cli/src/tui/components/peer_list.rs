@@ -64,6 +64,25 @@ impl PeerList {
         });
     }
 
+    /// Update a member's presence status in-place.
+    pub fn update_member_status(&mut self, pseudonym: &str, status: &str) {
+        if let Some(m) = self.members.iter_mut().find(|m| m.key == pseudonym) {
+            m.status = status.to_string();
+        }
+        // Re-sort by presence rank
+        self.members.sort_by(|a, b| {
+            presence_rank(&a.status).cmp(&presence_rank(&b.status))
+                .then(a.display_name.cmp(&b.display_name))
+        });
+    }
+
+    /// Resolve a pseudonym key to a display name, if known.
+    pub fn resolve_name(&self, pseudonym: &str) -> Option<String> {
+        self.members.iter()
+            .find(|m| m.key == pseudonym)
+            .map(|m| m.display_name.clone())
+    }
+
     /// Number of members.
     pub fn len(&self) -> usize {
         self.members.len()
@@ -135,7 +154,8 @@ impl Component for PeerList {
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> anyhow::Result<()> {
-        let title = format!(" Members ({}) ", self.len());
+        let online = self.members.iter().filter(|m| m.status == "online").count();
+        let title = format!(" Members ({online}/{}) ", self.len());
         let block = Block::bordered()
             .title(title)
             .border_style(if self.is_focused {

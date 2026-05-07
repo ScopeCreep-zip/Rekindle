@@ -324,6 +324,10 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
             loop {
                 watchdog_interval.tick().await;
                 notify_watchdog();
+                // Flush buffered audit entries on timer (complements buffer-full flush)
+                if let Some(ref mut logger) = *daemon_ctx.audit.lock() {
+                    let _ = logger.maybe_flush();
+                }
                 tracing::trace!(
                     state = lifecycle.state().as_str(),
                     "watchdog ping"
@@ -337,6 +341,13 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
     // ── 11. Graceful shutdown ─────────────────────────────────────
     lifecycle.transition(DaemonState::ShuttingDown);
     tracing::info!("draining connections...");
+
+    // Flush audit log before dropping connections
+    if let Some(ref mut logger) = *daemon_ctx.audit.lock() {
+        if let Err(e) = logger.flush() {
+            tracing::warn!(error = %e, "audit flush on shutdown failed");
+        }
+    }
 
     // Drop the bus server first — closes the socket, disconnects all clients
     // including the daemon's own subscriber. The subscriber task will exit

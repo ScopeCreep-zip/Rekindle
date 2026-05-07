@@ -114,6 +114,23 @@ impl DaemonClient {
         }
     }
 
+    /// Subscribe with a community-scoped filter.
+    ///
+    /// Narrows the event stream to only events from the given community.
+    /// The daemon's EventRouter enforces this server-side.
+    pub async fn subscribe_scoped(&self, community: &str) -> anyhow::Result<()> {
+        use rekindle_types::subscription_events::SubscriptionFilter;
+        let response = self.request(IpcRequest::Subscribe {
+            filters: vec![SubscriptionFilter::community(community.to_string())],
+        }).await?;
+        match response {
+            IpcResponse::Error { code, message, .. } => {
+                anyhow::bail!("subscribe_scoped failed ({code}): {message}")
+            }
+            IpcResponse::Ok(_) | IpcResponse::Event(_) => Ok(()),
+        }
+    }
+
     /// Send a request and return the raw `IpcResponse`.
     pub async fn request(&self, request: IpcRequest) -> anyhow::Result<IpcResponse> {
         let timeout = request_timeout(&request);

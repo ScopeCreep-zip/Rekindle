@@ -208,6 +208,10 @@ impl PresenceInfo {
     }
 }
 
+/// Maximum presence entries per community. Prevents memory exhaustion from
+/// an attacker registering thousands of pseudonyms.
+const MAX_PRESENCE_PER_COMMUNITY: usize = 10_000;
+
 /// Presence state for community members and DM peers.
 #[derive(Debug, Default)]
 pub struct PresenceState {
@@ -224,6 +228,21 @@ impl PresenceState {
         status: &str, game_name: Option<&str>, game_id: Option<u32>,
     ) {
         let key = (community.to_string(), pseudonym.to_string());
+
+        // Cap check: reject new pseudonyms if at limit for this community.
+        // O(n) scan per community — acceptable at MAX_PRESENCE_PER_COMMUNITY=10k
+        // (~microseconds). If this hot path shows up in profiles, add a
+        // per-community counter HashMap<String, usize>.
+        if !self.members.contains_key(&key) {
+            let community_count = self.members.keys()
+                .filter(|(c, _)| c == community)
+                .count();
+            if community_count >= MAX_PRESENCE_PER_COMMUNITY {
+                tracing::debug!(community, pseudonym = &pseudonym[..12.min(pseudonym.len())], "presence cap reached, rejecting");
+                return;
+            }
+        }
+
         self.members.insert(key, PresenceInfo {
             status: status.to_string(),
             game_name: game_name.map(String::from),

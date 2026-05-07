@@ -89,11 +89,80 @@ impl ChannelTree {
     /// Builds the flat node list from community memberships. Communities
     /// are sorted alphabetically. Channels within each community are
     /// sorted by category then sort_order.
+    /// Set a single channel's unread count and recompute the community aggregate.
+    pub fn set_channel_unread(&mut self, community: &str, channel: &str, count: u32) {
+        if let Some(node) = self.nodes.iter_mut().find(|n| matches!(&n.id, TreeNodeId::Channel { community: c, channel: ch } if c == community && ch == channel)) {
+            node.unread = count;
+        }
+        // Recompute community aggregate
+        let total: u32 = self.nodes.iter()
+            .filter_map(|n| match &n.id {
+                TreeNodeId::Channel { community: c, .. } if c == community => Some(n.unread),
+                _ => None,
+            })
+            .sum();
+        if let Some(node) = self.nodes.iter_mut().find(|n| matches!(&n.id, TreeNodeId::Community(k) if k == community)) {
+            node.unread = total;
+        }
+    }
+
+    /// Update unread counts in bulk without rebuilding the tree.
+    #[allow(dead_code)] // Used by set_communities diff path; direct callers arrive in M1
+    pub fn update_unreads(&mut self, unreads: &std::collections::HashMap<(String, String), u32>) {
+        for node in &mut self.nodes {
+            if let TreeNodeId::Channel { ref community, ref channel } = node.id {
+                if let Some(&count) = unreads.get(&(community.clone(), channel.clone())) {
+                    node.unread = count;
+                }
+            }
+        }
+        // Recompute community aggregates
+        let totals: std::collections::HashMap<String, u32> = self.nodes.iter()
+            .filter_map(|n| match &n.id {
+                TreeNodeId::Channel { community, .. } => Some((community.clone(), n.unread)),
+                _ => None,
+            })
+            .fold(std::collections::HashMap::new(), |mut acc, (k, v)| {
+                *acc.entry(k).or_default() += v;
+                acc
+            });
+        for node in &mut self.nodes {
+            if let TreeNodeId::Community(ref key) = node.id {
+                if let Some(&total) = totals.get(key) {
+                    node.unread = total;
+                }
+            }
+        }
+    }
+
     pub fn set_communities(
         &mut self,
         communities: &[(String, String, Vec<ChannelEntry>)], // (gov_key, name, channels)
         dm_peers: &[(String, String, u32)], // (peer_key, display_name, unread)
     ) {
+        // Skip full rebuild if only community keys match — just update unreads
+        let new_keys: Vec<&str> = communities.iter().map(|(k, _, _)| k.as_str()).collect();
+        let existing_keys: Vec<&str> = self.nodes.iter()
+            .filter_map(|n| match &n.id {
+                TreeNodeId::Community(k) => Some(k.as_str()),
+                _ => None,
+            })
+            .collect();
+        if new_keys == existing_keys && !new_keys.is_empty() {
+            // Keys unchanged — update unreads in-place
+            for (gov_key, _, channels) in communities {
+                for ch in channels {
+                    if let Some(node) = self.nodes.iter_mut().find(|n| matches!(&n.id, TreeNodeId::Channel { community, channel } if community == gov_key && channel == &ch.id)) {
+                        node.unread = ch.unread;
+                    }
+                }
+                if let Some(node) = self.nodes.iter_mut().find(|n| matches!(&n.id, TreeNodeId::Community(k) if k == gov_key)) {
+                    node.unread = channels.iter().map(|c| c.unread).sum();
+                }
+            }
+            return;
+        }
+
         self.nodes.clear();
 
         for (gov_key, name, channels) in communities {
@@ -292,11 +361,7 @@ impl ChannelTree {
 
                 let label = helpers::sanitize_for_display(&node.label);
 
-                let unread_badge = if node.unread > 0 {
-                    format!(" ({})", node.unread)
-                } else {
-                    String::new()
-                };
+                let unread_badge = super::unread_badge::format_unread(node.unread);
 
                 let mut spans = vec![
                     Span::raw(format!("{indent}{connector}{expand_marker}{channel_prefix}")),
@@ -304,7 +369,7 @@ impl ChannelTree {
                 ];
 
                 if !unread_badge.is_empty() {
-                    spans.push(Span::styled(unread_badge, Style::new().bold()));
+                    spans.push(Span::styled(format!(" {unread_badge}"), Style::new().bold()));
                 }
 
                 ListItem::new(Line::from(spans))

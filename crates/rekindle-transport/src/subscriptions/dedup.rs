@@ -124,37 +124,44 @@ impl Default for EventDedup {
 
 // ── Blake3 content hashing ─────────────────────────────────────────────
 
-/// Compute the Blake3 digest of an event's canonical content.
-///
-/// The hash covers semantically meaningful fields only. Pathway-specific
-/// metadata (which tier delivered it, arrival timestamp) is excluded so
-/// the same event from different tiers produces the same digest.
+/// Feed a value into a Blake3 hasher. Trait-based dispatch keeps the macro simple.
+trait HashField { fn hash_into(&self, h: &mut blake3::Hasher); }
+impl HashField for str    { fn hash_into(&self, h: &mut blake3::Hasher) { h.update(self.as_bytes()); } }
+impl HashField for String { fn hash_into(&self, h: &mut blake3::Hasher) { h.update(self.as_bytes()); } }
+impl HashField for u32    { fn hash_into(&self, h: &mut blake3::Hasher) { h.update(&self.to_le_bytes()); } }
+impl HashField for u64    { fn hash_into(&self, h: &mut blake3::Hasher) { h.update(&self.to_le_bytes()); } }
+impl HashField for bool   { fn hash_into(&self, h: &mut blake3::Hasher) { h.update(&[u8::from(*self)]); } }
+impl HashField for usize  { fn hash_into(&self, h: &mut blake3::Hasher) { h.update(&(*self as u64).to_le_bytes()); } }
+impl<T: HashField + ?Sized> HashField for &T { fn hash_into(&self, h: &mut blake3::Hasher) { (**self).hash_into(h); } }
+
+/// Hash a tag followed by pipe-separated fields into a Blake3 hasher.
+macro_rules! hash_fields {
+    ($h:expr, $tag:expr $(, $field:expr)* $(,)?) => {{
+        $h.update($tag.as_bytes());
+        $( $h.update(b"|"); HashField::hash_into(&$field, $h); )*
+    }};
+}
+
 fn hash_event(event: &SubscriptionEvent) -> [u8; 32] {
-    let mut hasher = blake3::Hasher::new();
-
-    // Tag with the outer discriminant to prevent cross-type collisions
-    hasher.update(event_discriminant_tag(event).as_bytes());
-    hasher.update(b"|");
-
+    let mut h = blake3::Hasher::new();
+    h.update(event_discriminant_tag(event).as_bytes());
+    h.update(b"|");
+    #[allow(clippy::match_same_arms)]
     match event {
-        SubscriptionEvent::ChannelMessage(msg) => hash_channel_message(&mut hasher, msg),
-        SubscriptionEvent::Typing(t) => hash_typing(&mut hasher, t),
-        SubscriptionEvent::Presence(p) => hash_presence(&mut hasher, p),
-        SubscriptionEvent::Membership(m) => hash_membership(&mut hasher, m),
-        SubscriptionEvent::Friend(f) => hash_friend(&mut hasher, f),
-        SubscriptionEvent::Crypto(c) => hash_crypto(&mut hasher, c),
-        SubscriptionEvent::Voice(v) => hash_voice(&mut hasher, v),
-        SubscriptionEvent::Governance(g) => hash_governance(&mut hasher, g),
-        SubscriptionEvent::Social(s) => hash_social(&mut hasher, s),
-        SubscriptionEvent::Network(n) => hash_network(&mut hasher, n),
-        SubscriptionEvent::System(s) => hash_system(&mut hasher, s),
-        SubscriptionEvent::UnreadChanged { .. } => {
-            // Never reaches here — check() returns true early for UnreadChanged
-            hasher.update(b"unread");
-        }
+        SubscriptionEvent::ChannelMessage(m) => hash_channel_message(&mut h, m),
+        SubscriptionEvent::Typing(t) => hash_typing(&mut h, t),
+        SubscriptionEvent::Presence(p) => hash_presence(&mut h, p),
+        SubscriptionEvent::Membership(m) => hash_membership(&mut h, m),
+        SubscriptionEvent::Friend(f) => hash_friend(&mut h, f),
+        SubscriptionEvent::Crypto(c) => hash_crypto(&mut h, c),
+        SubscriptionEvent::Voice(v) => hash_voice(&mut h, v),
+        SubscriptionEvent::Governance(g) => hash_governance(&mut h, g),
+        SubscriptionEvent::Social(s) => hash_social(&mut h, s),
+        SubscriptionEvent::Network(n) => hash_network(&mut h, n),
+        SubscriptionEvent::System(s) => hash_system(&mut h, s),
+        SubscriptionEvent::UnreadChanged { .. } => { h.update(b"unread"); }
     }
-
-    *hasher.finalize().as_bytes()
+    *h.finalize().as_bytes()
 }
 
 fn event_discriminant_tag(event: &SubscriptionEvent) -> &'static str {
@@ -176,367 +183,156 @@ fn event_discriminant_tag(event: &SubscriptionEvent) -> &'static str {
 
 fn hash_channel_message(h: &mut blake3::Hasher, msg: &ChannelMessageEvent) {
     match msg {
-        ChannelMessageEvent::New { community, channel, message_id, .. } => {
-            h.update(b"new|");
-            h.update(community.as_bytes());
-            h.update(b"|");
-            h.update(channel.as_bytes());
-            h.update(b"|");
-            h.update(message_id.as_bytes());
-        }
-        ChannelMessageEvent::Edited { community, channel, message_id, .. } => {
-            h.update(b"edited|");
-            h.update(community.as_bytes());
-            h.update(b"|");
-            h.update(channel.as_bytes());
-            h.update(b"|");
-            h.update(message_id.as_bytes());
-        }
-        ChannelMessageEvent::Deleted { community, channel, message_id } => {
-            h.update(b"deleted|");
-            h.update(community.as_bytes());
-            h.update(b"|");
-            h.update(channel.as_bytes());
-            h.update(b"|");
-            h.update(message_id.as_bytes());
-        }
+        ChannelMessageEvent::New { community, channel, message_id, .. } =>
+            hash_fields!(h, "new", community, channel, message_id),
+        ChannelMessageEvent::Edited { community, channel, message_id, .. } =>
+            hash_fields!(h, "edited", community, channel, message_id),
+        ChannelMessageEvent::Deleted { community, channel, message_id } =>
+            hash_fields!(h, "deleted", community, channel, message_id),
         ChannelMessageEvent::DirectMessageReceived { peer_key, timestamp, .. } => {
-            h.update(b"dm|");
-            h.update(peer_key.as_bytes());
-            h.update(b"|");
-            // Bucketize to 1-second granularity to tolerate clock skew across pathways
-            h.update(&(timestamp / 1000).to_le_bytes());
+            hash_fields!(h, "dm", peer_key, timestamp / 1000); // 1s bucketing
         }
     }
 }
 
 fn hash_typing(h: &mut blake3::Hasher, t: &TypingEvent) {
-    let now_bucket = rekindle_utils::timestamp_secs() / 5; // 5-second bucketing
+    let bucket = rekindle_utils::timestamp_secs() / 5;
     match t {
-        TypingEvent::Started { context, who } => {
-            h.update(b"start|");
-            hash_typing_context(h, context);
-            h.update(b"|");
-            h.update(who.as_bytes());
-            h.update(b"|");
-            h.update(&now_bucket.to_le_bytes());
-        }
-        TypingEvent::Stopped { context, who } => {
-            h.update(b"stop|");
-            hash_typing_context(h, context);
-            h.update(b"|");
-            h.update(who.as_bytes());
-            h.update(b"|");
-            h.update(&now_bucket.to_le_bytes());
-        }
+        TypingEvent::Started { context, who } => { hash_fields!(h, "start"); hash_typing_context(h, context); hash_fields!(h, "", who, bucket); }
+        TypingEvent::Stopped { context, who } => { hash_fields!(h, "stop"); hash_typing_context(h, context); hash_fields!(h, "", who, bucket); }
     }
 }
 
 fn hash_typing_context(h: &mut blake3::Hasher, ctx: &TypingContext) {
     match ctx {
-        TypingContext::Channel { community, channel } => {
-            h.update(b"ch:");
-            h.update(community.as_bytes());
-            h.update(b":");
-            h.update(channel.as_bytes());
-        }
-        TypingContext::Dm { peer_key } => {
-            h.update(b"dm:");
-            h.update(peer_key.as_bytes());
-        }
+        TypingContext::Channel { community, channel } => hash_fields!(h, "ch", community, channel),
+        TypingContext::Dm { peer_key } => hash_fields!(h, "dm", peer_key),
     }
 }
 
 fn hash_presence(h: &mut blake3::Hasher, p: &PresenceEvent) {
-    let now_bucket = rekindle_utils::timestamp_secs() / 30; // 30-second bucketing
+    let bucket = rekindle_utils::timestamp_secs() / 30;
     match p {
-        PresenceEvent::CommunityMemberChanged { community, pseudonym, status, .. } => {
-            h.update(b"community|");
-            h.update(community.as_bytes());
-            h.update(b"|");
-            h.update(pseudonym.as_bytes());
-            h.update(b"|");
-            h.update(status.as_bytes());
-            h.update(b"|");
-            h.update(&now_bucket.to_le_bytes());
-        }
-        PresenceEvent::FriendChanged { peer_key, status, .. } => {
-            h.update(b"friend|");
-            h.update(peer_key.as_bytes());
-            h.update(b"|");
-            h.update(status.as_bytes());
-            h.update(b"|");
-            h.update(&now_bucket.to_le_bytes());
-        }
+        PresenceEvent::CommunityMemberChanged { community, pseudonym, status, .. } =>
+            hash_fields!(h, "community", community, pseudonym, status, bucket),
+        PresenceEvent::FriendChanged { peer_key, status, .. } =>
+            hash_fields!(h, "friend", peer_key, status, bucket),
     }
 }
 
 fn hash_membership(h: &mut blake3::Hasher, m: &MembershipEvent) {
     match m {
-        MembershipEvent::JoinRequested { community, pseudonym, .. } => {
-            h.update(b"join_req|"); h.update(community.as_bytes()); h.update(b"|"); h.update(pseudonym.as_bytes());
-        }
-        MembershipEvent::JoinAccepted { community, .. } => {
-            h.update(b"join_acc|"); h.update(community.as_bytes());
-        }
-        MembershipEvent::JoinRejected { community, reason } => {
-            h.update(b"join_rej|"); h.update(community.as_bytes()); h.update(b"|"); h.update(reason.as_bytes());
-        }
-        MembershipEvent::Joined { community, pseudonym, .. } => {
-            h.update(b"joined|"); h.update(community.as_bytes()); h.update(b"|"); h.update(pseudonym.as_bytes());
-        }
-        MembershipEvent::Left { community, pseudonym } => {
-            h.update(b"left|"); h.update(community.as_bytes()); h.update(b"|"); h.update(pseudonym.as_bytes());
-        }
-        MembershipEvent::Removed { community, pseudonym } => {
-            h.update(b"removed|"); h.update(community.as_bytes()); h.update(b"|"); h.update(pseudonym.as_bytes());
-        }
-        MembershipEvent::Kicked { community, target_pseudonym } => {
-            h.update(b"kicked|"); h.update(community.as_bytes()); h.update(b"|"); h.update(target_pseudonym.as_bytes());
-        }
-        MembershipEvent::Banned { community, target_pseudonym } => {
-            h.update(b"banned|"); h.update(community.as_bytes()); h.update(b"|"); h.update(target_pseudonym.as_bytes());
-        }
-        MembershipEvent::Unbanned { community, target_pseudonym } => {
-            h.update(b"unbanned|"); h.update(community.as_bytes()); h.update(b"|"); h.update(target_pseudonym.as_bytes());
-        }
-        MembershipEvent::TimedOut { community, target_pseudonym, .. } => {
-            h.update(b"timeout|"); h.update(community.as_bytes()); h.update(b"|"); h.update(target_pseudonym.as_bytes());
-        }
-        MembershipEvent::TimeoutRemoved { community, target_pseudonym } => {
-            h.update(b"timeout_rm|"); h.update(community.as_bytes()); h.update(b"|"); h.update(target_pseudonym.as_bytes());
-        }
-        MembershipEvent::TimeoutStatusChanged { community, pseudonym, .. } => {
-            h.update(b"timeout_st|"); h.update(community.as_bytes()); h.update(b"|"); h.update(pseudonym.as_bytes());
-        }
+        MembershipEvent::JoinRequested { community, pseudonym, .. } => hash_fields!(h, "join_req", community, pseudonym),
+        MembershipEvent::JoinAccepted { community, .. } => hash_fields!(h, "join_acc", community),
+        MembershipEvent::JoinRejected { community, reason } => hash_fields!(h, "join_rej", community, reason),
+        MembershipEvent::Joined { community, pseudonym, .. } => hash_fields!(h, "joined", community, pseudonym),
+        MembershipEvent::Left { community, pseudonym } => hash_fields!(h, "left", community, pseudonym),
+        MembershipEvent::Removed { community, pseudonym } => hash_fields!(h, "removed", community, pseudonym),
+        MembershipEvent::Kicked { community, target_pseudonym } => hash_fields!(h, "kicked", community, target_pseudonym),
+        MembershipEvent::Banned { community, target_pseudonym } => hash_fields!(h, "banned", community, target_pseudonym),
+        MembershipEvent::Unbanned { community, target_pseudonym } => hash_fields!(h, "unbanned", community, target_pseudonym),
+        MembershipEvent::TimedOut { community, target_pseudonym, .. } => hash_fields!(h, "timeout", community, target_pseudonym),
+        MembershipEvent::TimeoutRemoved { community, target_pseudonym } => hash_fields!(h, "timeout_rm", community, target_pseudonym),
+        MembershipEvent::TimeoutStatusChanged { community, pseudonym, .. } => hash_fields!(h, "timeout_st", community, pseudonym),
         MembershipEvent::RolesChanged { community, pseudonym, role_ids } => {
-            h.update(b"roles|"); h.update(community.as_bytes()); h.update(b"|"); h.update(pseudonym.as_bytes());
+            hash_fields!(h, "roles", community, pseudonym);
             for id in role_ids { h.update(&id.to_le_bytes()); }
         }
-        MembershipEvent::OnboardingCompleted { community, pseudonym, .. } => {
-            h.update(b"onboard|"); h.update(community.as_bytes()); h.update(b"|"); h.update(pseudonym.as_bytes());
-        }
-        MembershipEvent::OnboardingAnswersSubmitted { community, sender_pseudonym, .. } => {
-            h.update(b"onboard_ans|"); h.update(community.as_bytes()); h.update(b"|"); h.update(sender_pseudonym.as_bytes());
-        }
+        MembershipEvent::OnboardingCompleted { community, pseudonym, .. } => hash_fields!(h, "onboard", community, pseudonym),
+        MembershipEvent::OnboardingAnswersSubmitted { community, sender_pseudonym, .. } => hash_fields!(h, "onboard_ans", community, sender_pseudonym),
     }
 }
 
 fn hash_friend(h: &mut blake3::Hasher, f: &FriendEvent) {
     match f {
-        FriendEvent::RequestReceived { from_key, .. } => {
-            h.update(b"req|"); h.update(from_key.as_bytes());
-        }
-        FriendEvent::RequestAcknowledged { peer_key } => {
-            h.update(b"ack|"); h.update(peer_key.as_bytes());
-        }
-        FriendEvent::Accepted { peer_key, .. } => {
-            h.update(b"acc|"); h.update(peer_key.as_bytes());
-        }
-        FriendEvent::Rejected { peer_key } => {
-            h.update(b"rej|"); h.update(peer_key.as_bytes());
-        }
-        FriendEvent::Removed { peer_key } => {
-            h.update(b"rem|"); h.update(peer_key.as_bytes());
-        }
-        FriendEvent::RemoveAcknowledged { peer_key } => {
-            h.update(b"rem_ack|"); h.update(peer_key.as_bytes());
-        }
-        FriendEvent::ProfileKeyRotated { peer_key, new_profile_dht_key } => {
-            h.update(b"rot|"); h.update(peer_key.as_bytes()); h.update(b"|"); h.update(new_profile_dht_key.as_bytes());
-        }
+        FriendEvent::RequestReceived { from_key, .. } => hash_fields!(h, "req", from_key),
+        FriendEvent::RequestAcknowledged { peer_key } => hash_fields!(h, "ack", peer_key),
+        FriendEvent::Accepted { peer_key, .. } => hash_fields!(h, "acc", peer_key),
+        FriendEvent::Rejected { peer_key } => hash_fields!(h, "rej", peer_key),
+        FriendEvent::Removed { peer_key } => hash_fields!(h, "rem", peer_key),
+        FriendEvent::RemoveAcknowledged { peer_key } => hash_fields!(h, "rem_ack", peer_key),
+        FriendEvent::ProfileKeyRotated { peer_key, new_profile_dht_key } => hash_fields!(h, "rot", peer_key, new_profile_dht_key),
     }
 }
 
 fn hash_crypto(h: &mut blake3::Hasher, c: &CryptoEvent) {
     match c {
-        CryptoEvent::MekRotated { community, channel, generation, .. } => {
-            h.update(b"mek_rot|"); h.update(community.as_bytes());
-            h.update(b"|"); h.update(channel.as_deref().unwrap_or("all").as_bytes());
-            h.update(b"|"); h.update(&generation.to_le_bytes());
-        }
-        CryptoEvent::MekRequested { community, channel, needed_generation, requester_pseudonym } => {
-            h.update(b"mek_req|"); h.update(community.as_bytes());
-            h.update(b"|"); h.update(channel.as_bytes());
-            h.update(b"|"); h.update(&needed_generation.to_le_bytes());
-            h.update(b"|"); h.update(requester_pseudonym.as_bytes());
-        }
-        CryptoEvent::MekTransferred { community, channel, generation, sender_pseudonym } => {
-            h.update(b"mek_xfer|"); h.update(community.as_bytes());
-            h.update(b"|"); h.update(channel.as_deref().unwrap_or("all").as_bytes());
-            h.update(b"|"); h.update(&generation.to_le_bytes());
-            h.update(b"|"); h.update(sender_pseudonym.as_bytes());
-        }
-        CryptoEvent::AdminKeypairGranted { community } => {
-            h.update(b"admin_kp|"); h.update(community.as_bytes());
-        }
-        CryptoEvent::SlotKeypairGranted { community, slot_index, segment_index } => {
-            h.update(b"slot_kp|"); h.update(community.as_bytes());
-            h.update(b"|"); h.update(&slot_index.to_le_bytes());
-            h.update(b"|"); h.update(&segment_index.to_le_bytes());
-        }
+        CryptoEvent::MekRotated { community, channel, generation, .. } =>
+            hash_fields!(h, "mek_rot", community, channel.as_deref().unwrap_or("all"), *generation),
+        CryptoEvent::MekRequested { community, channel, needed_generation, requester_pseudonym } =>
+            hash_fields!(h, "mek_req", community, channel, *needed_generation, requester_pseudonym),
+        CryptoEvent::MekTransferred { community, channel, generation, sender_pseudonym } =>
+            hash_fields!(h, "mek_xfer", community, channel.as_deref().unwrap_or("all"), *generation, sender_pseudonym),
+        CryptoEvent::AdminKeypairGranted { community } => hash_fields!(h, "admin_kp", community),
+        CryptoEvent::SlotKeypairGranted { community, slot_index, segment_index } =>
+            hash_fields!(h, "slot_kp", community, *slot_index, *segment_index),
     }
 }
 
 fn hash_voice(h: &mut blake3::Hasher, v: &VoiceEvent) {
-    let now_bucket = rekindle_utils::timestamp_secs() / 5;
+    let bucket = rekindle_utils::timestamp_secs() / 5;
     match v {
-        VoiceEvent::Joined { community, channel, pseudonym } => {
-            h.update(b"join|"); h.update(community.as_bytes());
-            h.update(b"|"); h.update(channel.as_bytes());
-            h.update(b"|"); h.update(pseudonym.as_bytes());
-            h.update(b"|"); h.update(&now_bucket.to_le_bytes());
-        }
-        VoiceEvent::Left { community, channel, pseudonym } => {
-            h.update(b"leave|"); h.update(community.as_bytes());
-            h.update(b"|"); h.update(channel.as_bytes());
-            h.update(b"|"); h.update(pseudonym.as_bytes());
-            h.update(b"|"); h.update(&now_bucket.to_le_bytes());
-        }
-        VoiceEvent::ModeChanged { community, channel, mode, .. } => {
-            h.update(b"mode|"); h.update(community.as_bytes());
-            h.update(b"|"); h.update(channel.as_bytes());
-            h.update(b"|"); h.update(mode.as_bytes());
-        }
-        VoiceEvent::MuteChanged { community, channel, target_pseudonym, muted } => {
-            h.update(b"mute|"); h.update(community.as_bytes());
-            h.update(b"|"); h.update(channel.as_bytes());
-            h.update(b"|"); h.update(target_pseudonym.as_bytes());
-            h.update(b"|"); h.update(&[u8::from(*muted)]);
-        }
-        VoiceEvent::DeafenChanged { community, channel, target_pseudonym, deafened } => {
-            h.update(b"deafen|"); h.update(community.as_bytes());
-            h.update(b"|"); h.update(channel.as_bytes());
-            h.update(b"|"); h.update(target_pseudonym.as_bytes());
-            h.update(b"|"); h.update(&[u8::from(*deafened)]);
-        }
-        VoiceEvent::RosterUpdated { community, channel, participant_count } => {
-            h.update(b"roster|"); h.update(community.as_bytes());
-            h.update(b"|"); h.update(channel.as_bytes());
-            h.update(b"|"); h.update(&(*participant_count as u64).to_le_bytes());
-        }
+        VoiceEvent::Joined { community, channel, pseudonym } => hash_fields!(h, "join", community, channel, pseudonym, bucket),
+        VoiceEvent::Left { community, channel, pseudonym } => hash_fields!(h, "leave", community, channel, pseudonym, bucket),
+        VoiceEvent::ModeChanged { community, channel, mode, .. } => hash_fields!(h, "mode", community, channel, mode),
+        VoiceEvent::MuteChanged { community, channel, target_pseudonym, muted } => hash_fields!(h, "mute", community, channel, target_pseudonym, *muted),
+        VoiceEvent::DeafenChanged { community, channel, target_pseudonym, deafened } => hash_fields!(h, "deafen", community, channel, target_pseudonym, *deafened),
+        VoiceEvent::RosterUpdated { community, channel, participant_count } => hash_fields!(h, "roster", community, channel, *participant_count),
     }
 }
 
 fn hash_governance(h: &mut blake3::Hasher, g: &GovernanceEvent) {
     match g {
-        GovernanceEvent::MetadataChanged { community } => {
-            h.update(b"meta|"); h.update(community.as_bytes());
-        }
-        GovernanceEvent::ChannelsChanged { community } => {
-            h.update(b"channels|"); h.update(community.as_bytes());
-        }
-        GovernanceEvent::RolesChanged { community } => {
-            h.update(b"roles|"); h.update(community.as_bytes());
-        }
-        GovernanceEvent::BansChanged { community } => {
-            h.update(b"bans|"); h.update(community.as_bytes());
-        }
-        GovernanceEvent::InvitesChanged { community } => {
-            h.update(b"invites|"); h.update(community.as_bytes());
-        }
-        GovernanceEvent::ChannelPermissionsChanged { community, channel } => {
-            h.update(b"perms|"); h.update(community.as_bytes()); h.update(b"|"); h.update(channel.as_bytes());
-        }
-        GovernanceEvent::GovernanceSubkeyUpdated { community, subkey_index, lamport_ts } => {
-            h.update(b"subkey|"); h.update(community.as_bytes());
-            h.update(b"|"); h.update(&subkey_index.to_le_bytes());
-            h.update(b"|"); h.update(&lamport_ts.to_le_bytes());
-        }
+        GovernanceEvent::MetadataChanged { community } => hash_fields!(h, "meta", community),
+        GovernanceEvent::ChannelsChanged { community } => hash_fields!(h, "channels", community),
+        GovernanceEvent::RolesChanged { community } => hash_fields!(h, "roles", community),
+        GovernanceEvent::BansChanged { community } => hash_fields!(h, "bans", community),
+        GovernanceEvent::InvitesChanged { community } => hash_fields!(h, "invites", community),
+        GovernanceEvent::ChannelPermissionsChanged { community, channel } => hash_fields!(h, "perms", community, channel),
+        GovernanceEvent::GovernanceSubkeyUpdated { community, subkey_index, lamport_ts } =>
+            hash_fields!(h, "subkey", community, *subkey_index, *lamport_ts),
     }
 }
 
 fn hash_social(h: &mut blake3::Hasher, s: &SocialEvent) {
     match s {
-        SocialEvent::ReactionAdded { community, channel, message_id, emoji, reactor_pseudonym } => {
-            h.update(b"rxn+|"); h.update(community.as_bytes());
-            h.update(b"|"); h.update(channel.as_bytes());
-            h.update(b"|"); h.update(message_id.as_bytes());
-            h.update(b"|"); h.update(emoji.as_bytes());
-            h.update(b"|"); h.update(reactor_pseudonym.as_bytes());
-        }
-        SocialEvent::ReactionRemoved { community, channel, message_id, emoji, reactor_pseudonym } => {
-            h.update(b"rxn-|"); h.update(community.as_bytes());
-            h.update(b"|"); h.update(channel.as_bytes());
-            h.update(b"|"); h.update(message_id.as_bytes());
-            h.update(b"|"); h.update(emoji.as_bytes());
-            h.update(b"|"); h.update(reactor_pseudonym.as_bytes());
-        }
-        SocialEvent::MessagePinned { community, channel, message_id, pinned_by } => {
-            h.update(b"pin+|"); h.update(community.as_bytes());
-            h.update(b"|"); h.update(channel.as_bytes());
-            h.update(b"|"); h.update(message_id.as_bytes());
-            h.update(b"|"); h.update(pinned_by.as_bytes());
-        }
-        SocialEvent::MessageUnpinned { community, channel, message_id } => {
-            h.update(b"pin-|"); h.update(community.as_bytes());
-            h.update(b"|"); h.update(channel.as_bytes());
-            h.update(b"|"); h.update(message_id.as_bytes());
-        }
-        SocialEvent::ThreadCreated { community, thread_id, .. } => {
-            h.update(b"thread+|"); h.update(community.as_bytes()); h.update(b"|"); h.update(thread_id.as_bytes());
-        }
-        SocialEvent::ThreadMessagePosted { community, thread_id, message_id, .. } => {
-            h.update(b"thread_msg|"); h.update(community.as_bytes());
-            h.update(b"|"); h.update(thread_id.as_bytes());
-            h.update(b"|"); h.update(message_id.as_bytes());
-        }
-        SocialEvent::ThreadArchiveChanged { community, thread_id, archived } => {
-            h.update(b"thread_arc|"); h.update(community.as_bytes());
-            h.update(b"|"); h.update(thread_id.as_bytes());
-            h.update(b"|"); h.update(&[u8::from(*archived)]);
-        }
-        SocialEvent::EventCreated { community, event_id, .. } => {
-            h.update(b"event+|"); h.update(community.as_bytes()); h.update(b"|"); h.update(event_id.as_bytes());
-        }
-        SocialEvent::EventUpdated { community, event_id, .. } => {
-            h.update(b"event~|"); h.update(community.as_bytes()); h.update(b"|"); h.update(event_id.as_bytes());
-        }
-        SocialEvent::EventDeleted { community, event_id } => {
-            h.update(b"event-|"); h.update(community.as_bytes()); h.update(b"|"); h.update(event_id.as_bytes());
-        }
-        SocialEvent::EventRsvpChanged { community, event_id, pseudonym, rsvp_status } => {
-            h.update(b"rsvp|"); h.update(community.as_bytes());
-            h.update(b"|"); h.update(event_id.as_bytes());
-            h.update(b"|"); h.update(pseudonym.as_bytes());
-            h.update(b"|"); h.update(rsvp_status.as_bytes());
-        }
-        SocialEvent::EventReminder { community, event_id, minutes_until_start, .. } => {
-            h.update(b"remind|"); h.update(community.as_bytes());
-            h.update(b"|"); h.update(event_id.as_bytes());
-            h.update(b"|"); h.update(&minutes_until_start.to_le_bytes());
-        }
-        SocialEvent::GameServerAdded { community, server_id, .. } => {
-            h.update(b"game+|"); h.update(community.as_bytes()); h.update(b"|"); h.update(server_id.as_bytes());
-        }
-        SocialEvent::GameServerRemoved { community, server_id } => {
-            h.update(b"game-|"); h.update(community.as_bytes()); h.update(b"|"); h.update(server_id.as_bytes());
-        }
+        SocialEvent::ReactionAdded { community, channel, message_id, emoji, reactor_pseudonym } =>
+            hash_fields!(h, "rxn+", community, channel, message_id, emoji, reactor_pseudonym),
+        SocialEvent::ReactionRemoved { community, channel, message_id, emoji, reactor_pseudonym } =>
+            hash_fields!(h, "rxn-", community, channel, message_id, emoji, reactor_pseudonym),
+        SocialEvent::MessagePinned { community, channel, message_id, pinned_by } =>
+            hash_fields!(h, "pin+", community, channel, message_id, pinned_by),
+        SocialEvent::MessageUnpinned { community, channel, message_id } =>
+            hash_fields!(h, "pin-", community, channel, message_id),
+        SocialEvent::ThreadCreated { community, thread_id, .. } => hash_fields!(h, "thread+", community, thread_id),
+        SocialEvent::ThreadMessagePosted { community, thread_id, message_id, .. } =>
+            hash_fields!(h, "thread_msg", community, thread_id, message_id),
+        SocialEvent::ThreadArchiveChanged { community, thread_id, archived } =>
+            hash_fields!(h, "thread_arc", community, thread_id, *archived),
+        SocialEvent::EventCreated { community, event_id, .. } => hash_fields!(h, "event+", community, event_id),
+        SocialEvent::EventUpdated { community, event_id, .. } => hash_fields!(h, "event~", community, event_id),
+        SocialEvent::EventDeleted { community, event_id } => hash_fields!(h, "event-", community, event_id),
+        SocialEvent::EventRsvpChanged { community, event_id, pseudonym, rsvp_status } =>
+            hash_fields!(h, "rsvp", community, event_id, pseudonym, rsvp_status),
+        SocialEvent::EventReminder { community, event_id, minutes_until_start, .. } =>
+            hash_fields!(h, "remind", community, event_id, *minutes_until_start),
+        SocialEvent::GameServerAdded { community, server_id, .. } => hash_fields!(h, "game+", community, server_id),
+        SocialEvent::GameServerRemoved { community, server_id } => hash_fields!(h, "game-", community, server_id),
     }
 }
 
 fn hash_network(h: &mut blake3::Hasher, n: &NetworkEvent) {
     match n {
-        NetworkEvent::AttachmentChanged { is_attached, public_internet_ready } => {
-            h.update(b"attach|");
-            h.update(&[u8::from(*is_attached), u8::from(*public_internet_ready)]);
-        }
-        NetworkEvent::LocalRoutesDied { count } => {
-            h.update(b"local_routes|"); h.update(&(*count as u64).to_le_bytes());
-        }
+        NetworkEvent::AttachmentChanged { is_attached, public_internet_ready } =>
+            hash_fields!(h, "attach", *is_attached, *public_internet_ready),
+        NetworkEvent::LocalRoutesDied { count } => hash_fields!(h, "local_routes", *count),
         NetworkEvent::RemoteRoutesDied { peer_keys } => {
             h.update(b"remote_routes|");
             for k in peer_keys { h.update(k.as_bytes()); h.update(b","); }
         }
-        NetworkEvent::WatchRenewed { record_key } => {
-            h.update(b"watch_ok|"); h.update(record_key.as_bytes());
-        }
-        NetworkEvent::WatchReestablished { record_key } => {
-            h.update(b"watch_re|"); h.update(record_key.as_bytes());
-        }
-        NetworkEvent::WatchFailed { record_key, error } => {
-            h.update(b"watch_fail|"); h.update(record_key.as_bytes()); h.update(b"|"); h.update(error.as_bytes());
-        }
+        NetworkEvent::WatchRenewed { record_key } => hash_fields!(h, "watch_ok", record_key),
+        NetworkEvent::WatchReestablished { record_key } => hash_fields!(h, "watch_re", record_key),
+        NetworkEvent::WatchFailed { record_key, error } => hash_fields!(h, "watch_fail", record_key, error),
         NetworkEvent::ValueChanged { record_key, changed_subkeys } => {
             h.update(b"value|"); h.update(record_key.as_bytes());
             for sk in changed_subkeys { h.update(&sk.to_le_bytes()); }
@@ -545,43 +341,23 @@ fn hash_network(h: &mut blake3::Hasher, n: &NetworkEvent) {
 }
 
 fn hash_system(h: &mut blake3::Hasher, s: &SystemEvent) {
-    let now_bucket = rekindle_utils::timestamp_secs() / 10; // 10-second bucketing
+    let bucket = rekindle_utils::timestamp_secs() / 10;
     match s {
         SystemEvent::Announcement { community, body, .. } => {
             h.update(b"announce|");
             h.update(community.as_deref().unwrap_or("global").as_bytes());
-            h.update(b"|");
-            // Hash the body content, not the full body (avoid length-based collisions)
-            let body_hash = blake3::hash(body.as_bytes());
-            h.update(body_hash.as_bytes());
-            h.update(b"|");
-            h.update(&now_bucket.to_le_bytes());
+            h.update(b"|"); h.update(blake3::hash(body.as_bytes()).as_bytes());
+            h.update(b"|"); h.update(&bucket.to_le_bytes());
         }
-        SystemEvent::RaidAlert { community, active } => {
-            h.update(b"raid|"); h.update(community.as_bytes()); h.update(b"|"); h.update(&[u8::from(*active)]);
-        }
-        SystemEvent::ChannelLockdown { community, locked } => {
-            h.update(b"lockdown|"); h.update(community.as_bytes()); h.update(b"|"); h.update(&[u8::from(*locked)]);
-        }
-        SystemEvent::Kicked { community } => {
-            h.update(b"kicked|"); h.update(community.as_bytes());
-        }
-        SystemEvent::BootstrapRequested { community, joiner_pseudonym } => {
-            h.update(b"boot_req|"); h.update(community.as_bytes()); h.update(b"|"); h.update(joiner_pseudonym.as_bytes());
-        }
-        SystemEvent::BootstrapReceived { community } => {
-            h.update(b"boot_recv|"); h.update(community.as_bytes());
-        }
-        SystemEvent::SyncRequested { community, channel, since_timestamp } => {
-            h.update(b"sync_req|"); h.update(community.as_bytes());
-            h.update(b"|"); h.update(channel.as_bytes());
-            h.update(b"|"); h.update(&since_timestamp.to_le_bytes());
-        }
-        SystemEvent::SyncReceived { community, channel, message_count } => {
-            h.update(b"sync_recv|"); h.update(community.as_bytes());
-            h.update(b"|"); h.update(channel.as_bytes());
-            h.update(b"|"); h.update(&(*message_count as u64).to_le_bytes());
-        }
+        SystemEvent::RaidAlert { community, active } => hash_fields!(h, "raid", community, *active),
+        SystemEvent::ChannelLockdown { community, locked } => hash_fields!(h, "lockdown", community, *locked),
+        SystemEvent::Kicked { community } => hash_fields!(h, "kicked", community),
+        SystemEvent::BootstrapRequested { community, joiner_pseudonym } => hash_fields!(h, "boot_req", community, joiner_pseudonym),
+        SystemEvent::BootstrapReceived { community } => hash_fields!(h, "boot_recv", community),
+        SystemEvent::SyncRequested { community, channel, since_timestamp } =>
+            hash_fields!(h, "sync_req", community, channel, *since_timestamp),
+        SystemEvent::SyncReceived { community, channel, message_count } =>
+            hash_fields!(h, "sync_recv", community, channel, *message_count),
     }
 }
 

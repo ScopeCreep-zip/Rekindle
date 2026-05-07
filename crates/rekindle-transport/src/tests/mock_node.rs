@@ -162,7 +162,7 @@ impl MockNode {
     /// Subscribe to transport notifications.
     pub fn subscribe(
         &self,
-    ) -> tokio::sync::mpsc::UnboundedReceiver<TransportNotification> {
+    ) -> tokio::sync::broadcast::Receiver<TransportNotification> {
         self.shared.subscribe()
     }
 

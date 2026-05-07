@@ -159,6 +159,16 @@ impl Component for InputBox {
                 None
             }
 
+            // Undo / Redo
+            KeyCode::Char('z') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.textarea.undo();
+                None
+            }
+            KeyCode::Char('y') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.textarea.redo();
+                None
+            }
+
             // All other keys go to the textarea
             _ => {
                 // Check length limit before inserting

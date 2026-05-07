@@ -1,5 +1,7 @@
 //! TEA reducer — process_action() maps Actions to state mutations.
 
+use rekindle_node::ipc::protocol::IpcRequest;
+
 use super::super::action::{Action, SearchMode, ToastLevel};
 use super::super::terminal::Tui;
 use super::App;
@@ -103,6 +105,13 @@ impl App {
             Action::ShowDashboard => {
                 self.nav.navigate(ViewKind::Dashboard, self.theme.use_unicode());
                 self.load_dashboard_data();
+                // Widen subscription back to all events
+                let client = std::sync::Arc::clone(&self.client);
+                tokio::spawn(async move {
+                    if let Err(e) = client.subscribe_all().await {
+                        tracing::warn!(error = %e, "failed to widen subscription");
+                    }
+                });
             }
             Action::ShowIdentitySettings => {
                 self.nav.navigate(ViewKind::IdentitySettings, self.theme.use_unicode());
@@ -112,13 +121,37 @@ impl App {
                 let kind = ViewKind::ChannelWatch { community: community.clone(), channel: channel.clone() };
                 self.nav.navigate(kind, self.theme.use_unicode());
                 self.load_channel_history(&community, &channel);
+                // Narrow subscription + mark-read on the daemon
+                let client = std::sync::Arc::clone(&self.client);
+                let gov = community.clone();
+                let ch = channel.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = client.subscribe_scoped(&gov).await {
+                        tracing::warn!(community = %gov, error = %e, "failed to scope subscription");
+                    }
+                    if let Err(e) = client.request_ok(IpcRequest::MarkRead {
+                        context: rekindle_node::ipc::protocol::ReadContext::Channel { community: gov, channel: ch },
+                    }).await {
+                        tracing::debug!(error = %e, "mark-read failed");
+                    }
+                });
             }
             Action::ShowDmInbox => {
                 self.nav.navigate(ViewKind::DmInbox, self.theme.use_unicode());
                 self.load_dm_inbox();
             }
             Action::ShowDmThread { peer_key } => {
-                self.nav.navigate(ViewKind::DmThread { peer_key }, self.theme.use_unicode());
+                self.nav.navigate(ViewKind::DmThread { peer_key: peer_key.clone() }, self.theme.use_unicode());
+                // Mark DM as read on the daemon
+                let client = std::sync::Arc::clone(&self.client);
+                let pk = peer_key;
+                tokio::spawn(async move {
+                    if let Err(e) = client.request_ok(IpcRequest::MarkRead {
+                        context: rekindle_node::ipc::protocol::ReadContext::Dm { peer: pk },
+                    }).await {
+                        tracing::debug!(error = %e, "DM mark-read failed");
+                    }
+                });
             }
             Action::ShowFriendList => {
                 self.nav.navigate(ViewKind::FriendList, self.theme.use_unicode());

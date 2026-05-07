@@ -23,7 +23,7 @@ use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph};
 use ratatui::Frame;
 
 use rekindle_types::display::{DmThreadDisplay, DmMessageDisplay};
-use rekindle_types::subscription_events::{SubscriptionEvent, ChannelMessageEvent};
+use rekindle_types::subscription_events::{SubscriptionEvent, ChannelMessageEvent, TypingEvent, TypingContext};
 
 use crate::helpers;
 use crate::tui::action::{Action, CommandResult};
@@ -50,6 +50,9 @@ pub struct DmInboxView {
     /// Per-conversation scroll positions: peer_key → (list_selection_index).
     /// Saved when switching away from a thread, restored when switching back.
     scroll_positions: std::collections::HashMap<String, usize>,
+    /// Peers currently typing (for indicator display in C5/C8).
+    #[allow(dead_code)]
+    typing_peers: std::collections::HashSet<String>,
     /// Panel rects from last draw for click-to-focus.
     click_rects: std::collections::HashMap<FocusId, Rect>,
 }
@@ -69,6 +72,7 @@ impl DmInboxView {
             loaded: false,
             use_unicode,
             scroll_positions: std::collections::HashMap::new(),
+            typing_peers: std::collections::HashSet::new(),
             click_rects: std::collections::HashMap::new(),
         }
     }
@@ -338,6 +342,14 @@ impl View for DmInboxView {
             }
 
             self.threads.sort_by(|a, b| b.last_message_at.cmp(&a.last_message_at));
+        } else if let SubscriptionEvent::Typing(TypingEvent::Started {
+            context: TypingContext::Dm { peer_key }, ..
+        }) = event {
+            self.typing_peers.insert(peer_key.clone());
+        } else if let SubscriptionEvent::Typing(TypingEvent::Stopped {
+            context: TypingContext::Dm { peer_key }, ..
+        }) = event {
+            self.typing_peers.remove(peer_key.as_str());
         }
         Ok(())
     }

@@ -103,6 +103,40 @@ pub struct DmMessageDisplay {
     pub is_self: bool,
 }
 
+// ── Channel ─────────────────────────────────────────────────────────────
+
+/// Channel info for TUI community info and channel tree views.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChannelDisplay {
+    pub channel_id: String,
+    pub name: String,
+    pub kind: String,
+    pub topic: String,
+    pub unread_count: u32,
+}
+
+// ── Member Presence ─────────────────────────────────────────────────────
+
+/// Member presence for TUI peer list and community info views.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemberPresence {
+    pub pseudonym: String,
+    pub display_name: Option<String>,
+    pub status: String,
+    pub role_name: Option<String>,
+}
+
+// ── Friend Request ──────────────────────────────────────────────────────
+
+/// Pending friend request for TUI friend list view.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendRequestDisplay {
+    pub from_key: String,
+    pub display_name: String,
+    pub message: String,
+    pub sent_at: u64,
+}
+
 // ── Roles ───────────────────────────────────────────────────────────────
 
 /// Role info for display.

@@ -245,13 +245,30 @@ impl SubscriptionManager {
 
     // ── Inbound event routing ──────────────────────────────────────────
 
+    /// Maximum allowed Lamport clock drift above local value.
+    /// Rejects gossip from peers claiming impossibly far-future timestamps.
+    const MAX_LAMPORT_DRIFT: u64 = 10_000;
+
     /// Route a gossip payload. Called by the daemon's InboundHandler.
     ///
-    /// Pipeline: payload.into_event() → state_effects → dedup → emit
+    /// Pipeline: drift check → payload.into_event() → state_effects → dedup → emit
     pub fn on_gossip(
         &self, community_id: &str, sender_pseudonym: &str,
         payload: GossipPayload, lamport_ts: u64,
     ) {
+        // Lamport drift rejection — prevents clock corruption from malicious peers
+        let local_ts = self.meshes.read().get(community_id).map_or(0, |m| m.clock.value());
+        if lamport_ts > local_ts + Self::MAX_LAMPORT_DRIFT {
+            warn!(
+                community = community_id,
+                sender = &sender_pseudonym[..12.min(sender_pseudonym.len())],
+                received = lamport_ts, local = local_ts,
+                drift = lamport_ts - local_ts,
+                "rejecting gossip: Lamport clock drift exceeds maximum"
+            );
+            return;
+        }
+
         debug!(community = community_id, sender = &sender_pseudonym[..12.min(sender_pseudonym.len())], lamport = lamport_ts, "sub: on_gossip");
         let event = payload.into_event(community_id, sender_pseudonym);
         self.process_event(event);

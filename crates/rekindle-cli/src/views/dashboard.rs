@@ -456,6 +456,27 @@ impl View for DashboardView {
         None
     }
 
+    fn on_subscription_event(&mut self, event: &rekindle_types::subscription_events::SubscriptionEvent) -> Result<()> {
+        use rekindle_types::subscription_events::{SubscriptionEvent, NetworkEvent, PresenceEvent, GovernanceEvent};
+        match event {
+            SubscriptionEvent::Network(NetworkEvent::AttachmentChanged { is_attached, public_internet_ready }) => {
+                self.node_attached = *is_attached;
+                self.node_public_internet = *public_internet_ready;
+            }
+            SubscriptionEvent::Presence(PresenceEvent::FriendChanged { peer_key, status, .. }) => {
+                if let Some(f) = self.friends.iter_mut().find(|f| f.public_key == *peer_key) {
+                    f.status.clone_from(status);
+                }
+            }
+            SubscriptionEvent::Governance(GovernanceEvent::ChannelsChanged { .. }) => {
+                // Trigger reload on next render cycle
+                self.loaded = false;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
     fn focus_ring(&mut self) -> &mut FocusRing {
         &mut self.focus
     }

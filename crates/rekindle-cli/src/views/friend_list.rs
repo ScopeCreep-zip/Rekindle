@@ -267,6 +267,34 @@ impl View for FriendListView {
         }
     }
 
+    fn on_subscription_event(&mut self, event: &rekindle_types::subscription_events::SubscriptionEvent) -> Result<()> {
+        use rekindle_types::subscription_events::{SubscriptionEvent, FriendEvent, PresenceEvent};
+        match event {
+            SubscriptionEvent::Friend(FriendEvent::RequestReceived { from_key, display_name, message }) => {
+                if !self.pending_requests.iter().any(|r| r.public_key == *from_key) {
+                    self.pending_requests.push(PendingRequestDisplay {
+                        public_key: from_key.clone(),
+                        display_name: display_name.clone(),
+                        message: message.clone(),
+                    });
+                }
+            }
+            SubscriptionEvent::Friend(FriendEvent::Accepted { peer_key, .. }) => {
+                self.pending_requests.retain(|r| r.public_key != *peer_key);
+            }
+            SubscriptionEvent::Friend(FriendEvent::Removed { peer_key }) => {
+                self.friends.retain(|f| f.public_key != *peer_key);
+            }
+            SubscriptionEvent::Presence(PresenceEvent::FriendChanged { peer_key, status, .. }) => {
+                if let Some(f) = self.friends.iter_mut().find(|f| f.public_key == *peer_key) {
+                    f.status.clone_from(status);
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
     fn focus_ring(&mut self) -> &mut FocusRing {
         &mut self.focus
     }

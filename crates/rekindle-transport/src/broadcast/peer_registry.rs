@@ -18,7 +18,11 @@ pub struct PeerTarget {
 #[derive(Debug, Clone)]
 struct CachedRoute {
     blob: Vec<u8>,
+    /// Blake3 hash of blob for cheap equality check on update.
+    blob_hash: u64,
     imported_at: Instant,
+    /// Cached imported RouteId. Invalidated when blob changes.
+    imported_route_id: Option<veilid_core::RouteId>,
 }
 
 /// Per-peer failure tracking for circuit breaking.
@@ -53,18 +57,56 @@ impl PeerRegistry {
         }
     }
 
-    /// Cache a peer's route blob.
+    /// Cache a peer's route blob. If the blob is unchanged (same hash),
+    /// only refreshes the timestamp — preserves the cached RouteId.
     pub fn cache_route(&mut self, peer_key: &str, blob: Vec<u8>) {
         if blob.is_empty() {
             return;
+        }
+        let blob_hash = {
+            let h = blake3::hash(&blob);
+            u64::from_le_bytes(h.as_bytes()[..8].try_into().expect("blake3 is 32 bytes"))
+        };
+        // If blob unchanged, preserve existing RouteId and just refresh timestamp
+        if let Some(existing) = self.routes.get_mut(peer_key) {
+            if existing.blob_hash == blob_hash {
+                existing.imported_at = Instant::now();
+                return;
+            }
         }
         self.routes.insert(
             peer_key.to_string(),
             CachedRoute {
                 blob,
+                blob_hash,
                 imported_at: Instant::now(),
+                imported_route_id: None,
             },
         );
+    }
+
+    /// Get a cached RouteId, importing only if needed.
+    ///
+    /// Returns `None` if no route cached or route is stale.
+    /// On cache hit with valid RouteId: zero Veilid API calls.
+    /// On cache hit without RouteId: calls `import_fn`, caches result.
+    pub fn get_or_import(
+        &mut self,
+        peer_key: &str,
+        import_fn: impl FnOnce(&[u8]) -> crate::error::Result<PeerTarget>,
+    ) -> Option<crate::error::Result<PeerTarget>> {
+        let cached = self.routes.get_mut(peer_key)?;
+        if cached.imported_at.elapsed().as_secs() > self.route_ttl_secs {
+            return None;
+        }
+        if let Some(ref route_id) = cached.imported_route_id {
+            return Some(Ok(PeerTarget { route_id: route_id.clone() }));
+        }
+        let result = import_fn(&cached.blob);
+        if let Ok(ref target) = result {
+            cached.imported_route_id = Some(target.route_id.clone());
+        }
+        Some(result)
     }
 
     /// Get a cached route blob if it's not stale.
@@ -76,9 +118,19 @@ impl PeerRegistry {
         Some(&cached.blob)
     }
 
-    /// Remove a peer's cached route.
+    /// Remove a peer's cached route entirely.
     pub fn invalidate_route(&mut self, peer_key: &str) {
         self.routes.remove(peer_key);
+    }
+
+    /// Invalidate only the cached RouteId without removing the blob.
+    /// Called on send failure — forces re-import on next `get_or_import()`.
+    /// Wired by gossip broadcast failure handling in M1.
+    #[allow(dead_code)]
+    pub fn invalidate_route_id(&mut self, peer_key: &str) {
+        if let Some(cached) = self.routes.get_mut(peer_key) {
+            cached.imported_route_id = None;
+        }
     }
 
     /// Evict all stale routes and return the keys of evicted peers.
@@ -114,21 +166,35 @@ impl PeerRegistry {
     /// from an attacker sending from many pseudonyms.
     const MAX_CIRCUIT_ENTRIES: usize = 4096;
 
+    /// Minimum age (seconds) before a circuit breaker entry can be evicted.
+    /// Prevents an attacker from rapidly cycling pseudonyms to flush their
+    /// own tripped circuit breaker.
+    const MIN_CIRCUIT_ENTRY_AGE_SECS: u64 = 300;
+
     /// Record a failure against a peer's circuit breaker.
     ///
     /// If the circuits map exceeds `MAX_CIRCUIT_ENTRIES`, the oldest entry
-    /// (by `last_failure` timestamp) is evicted before inserting. This bounds
-    /// memory growth from attackers using many pseudonyms.
+    /// that is older than `MIN_CIRCUIT_ENTRY_AGE_SECS` is evicted. If all
+    /// entries are younger than the minimum age, eviction is refused — the
+    /// new peer won't get tracked (benign: it gets retried normally).
     pub fn record_failure(&mut self, peer_key: &str) {
-        // Evict oldest if at capacity and this is a new key
         if self.circuits.len() >= Self::MAX_CIRCUIT_ENTRIES && !self.circuits.contains_key(peer_key) {
             if let Some(oldest_key) = self
                 .circuits
                 .iter()
+                .filter(|(_, state)| state.last_failure.elapsed().as_secs() >= Self::MIN_CIRCUIT_ENTRY_AGE_SECS)
                 .min_by_key(|(_, state)| state.last_failure)
                 .map(|(k, _)| k.clone())
             {
                 self.circuits.remove(&oldest_key);
+            } else {
+                // All entries younger than minimum age — refuse to evict.
+                tracing::warn!(
+                    capacity = Self::MAX_CIRCUIT_ENTRIES,
+                    min_age_secs = Self::MIN_CIRCUIT_ENTRY_AGE_SECS,
+                    "circuit breaker at capacity with all entries too young to evict"
+                );
+                return;
             }
         }
 
