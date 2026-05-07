@@ -404,7 +404,66 @@ async fn presence_poll_tick(state: &Arc<AppState>, community_id: &str) -> Result
         run_initial_sync(state, community_id, d).await;
     }
 
+    // A5/P4.3 — Plate Gate auto-expand. If we're an admin and the highest
+    // segment has filled up (every slot occupied), spawn a background task
+    // that creates the next segment. Without this, the 256th member of any
+    // community is permanently rejected with "Community is full" until an
+    // admin manually invokes expand_community_segment from the UI.
+    // Spawned because the expand involves multiple Veilid I/Os (create
+    // record × 2, write SegmentAdded entry) and we don't want to block
+    // the rest of the poll cycle.
+    maybe_auto_expand_segment(state, community_id);
+
     Ok(())
+}
+
+/// A5/P4.3 — admin-side trigger for Plate Gate segment expansion.
+///
+/// Architecture §15.1: trigger condition is "all 255 slots in the highest
+/// segment occupied". Architecture §15.2: action is "any admin writes a
+/// SegmentAdded governance entry". Per the v2.0 plan, a non-admin joiner
+/// hitting a full registry returns the existing "Community is full" error
+/// — they cannot self-elect to expand. This helper covers the admin side.
+fn maybe_auto_expand_segment(state: &Arc<AppState>, community_id: &str) {
+    use rekindle_protocol::dht::community::permissions_v2::Permissions;
+    if crate::commands::community::require_permission(
+        state,
+        community_id,
+        Permissions::MANAGE_COMMUNITY,
+    )
+    .is_err()
+    {
+        return; // not an admin — wait for one to come online
+    }
+    let state_clone = state.clone();
+    let cid = community_id.to_string();
+    tokio::spawn(async move {
+        match super::super::segments::highest_segment_full(&state_clone, &cid).await {
+            Ok(true) => {
+                tracing::info!(
+                    community = %cid,
+                    "highest segment is full — auto-expanding (admin trigger)"
+                );
+                if let Err(e) =
+                    super::super::segments::expand_community_segment(&state_clone, &cid).await
+                {
+                    tracing::warn!(
+                        community = %cid,
+                        error = %e,
+                        "auto segment expansion failed — next admin's poll will retry"
+                    );
+                }
+            }
+            Ok(false) => {} // segment has open slots; no expansion needed
+            Err(e) => {
+                tracing::debug!(
+                    community = %cid,
+                    error = %e,
+                    "highest_segment_full check failed — skipping expansion"
+                );
+            }
+        }
+    });
 }
 
 fn update_member_profiles(
