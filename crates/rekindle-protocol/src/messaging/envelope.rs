@@ -386,7 +386,149 @@ pub fn verify_invite_blob(blob: &InviteBlob) -> Result<(), String> {
 
     verifying_key
         .verify(&signable_bytes, &signature)
-        .map_err(|e| format!("invalid invite signature: {e}"))
+        .map_err(|e| {
+            // Most signature failures users hit in practice are version
+            // mismatches: the sender's build pre-dates the B11 issued_at
+            // field, so the canonical bytes the receiver reconstructs
+            // (which always include `"issued_at": 0`) don't match what
+            // the sender signed. Surface this hint instead of just the
+            // raw cryptographic error so the user knows what to do.
+            if blob.issued_at == 0 {
+                format!(
+                    "invite link is from an older app version (no issued_at). \
+                     Ask the sender to regenerate the invite on a current build. \
+                     (raw: {e})"
+                )
+            } else {
+                format!("invalid invite signature: {e}")
+            }
+        })
+}
+
+#[cfg(test)]
+mod invite_blob_tests {
+    use super::*;
+
+    fn make_secret() -> [u8; 32] {
+        // Fixed test secret so the test is deterministic.
+        let mut s = [0u8; 32];
+        for (i, b) in s.iter_mut().enumerate() {
+            *b = (i as u8).wrapping_add(1);
+        }
+        s
+    }
+
+    fn pubkey_hex(secret: &[u8; 32]) -> String {
+        use ed25519_dalek::SigningKey;
+        let sk = SigningKey::from_bytes(secret);
+        hex::encode(sk.verifying_key().to_bytes())
+    }
+
+    #[test]
+    fn create_then_verify_round_trips_with_issued_at() {
+        let secret = make_secret();
+        let pk = pubkey_hex(&secret);
+        let blob = create_invite_blob(
+            &secret,
+            &pk,
+            "Alice",
+            "VLD0:mailbox-key",
+            "VLD0:profile-key",
+            &[1u8, 2, 3],
+            &[10u8, 20, 30, 40],
+            Some("inv-123"),
+            1_715_000_000_000,
+        );
+        verify_invite_blob(&blob).expect("freshly-minted blob must verify on the same build");
+        assert_eq!(blob.issued_at, 1_715_000_000_000);
+    }
+
+    #[test]
+    fn verify_rejects_pre_b11_blob_missing_issued_at() {
+        // Simulate a pre-B11 sender by signing without issued_at, then
+        // verifying with the new code path. The signature reconstruction
+        // includes issued_at:0 (serde default for missing field), so the
+        // canonical bytes differ from what the sender signed → mismatch.
+        // This is the no-legacy-compat behavior: the user must regenerate
+        // the invite on a current build.
+        use ed25519_dalek::{Signer, SigningKey};
+        let secret = make_secret();
+        let signing = SigningKey::from_bytes(&secret);
+        let pk = pubkey_hex(&secret);
+        let pre_b11_signable = serde_json::json!({
+            "public_key": pk,
+            "display_name": "Alice",
+            "mailbox_dht_key": "VLD0:mailbox",
+            "profile_dht_key": "VLD0:profile",
+            "route_blob": &[1u8, 2, 3],
+            "prekey_bundle": &[10u8, 20],
+            "invite_id": Some("inv-old"),
+        });
+        let signable_bytes = serde_json::to_vec(&pre_b11_signable).unwrap();
+        let signature = signing.sign(&signable_bytes);
+        let blob = InviteBlob {
+            public_key: pk,
+            display_name: "Alice".to_string(),
+            mailbox_dht_key: "VLD0:mailbox".to_string(),
+            profile_dht_key: "VLD0:profile".to_string(),
+            route_blob: vec![1u8, 2, 3],
+            prekey_bundle: vec![10u8, 20],
+            invite_id: Some("inv-old".to_string()),
+            issued_at: 0, // pre-B11 sender didn't include this field
+            signature: signature.to_bytes().to_vec(),
+        };
+        let err = verify_invite_blob(&blob).expect_err("pre-B11 blob must be rejected");
+        // The error message hints at the version mismatch instead of
+        // showing the raw cryptographic error.
+        assert!(
+            err.contains("older app version"),
+            "got: {err}",
+        );
+    }
+
+    #[test]
+    fn check_recency_within_window() {
+        let secret = make_secret();
+        let pk = pubkey_hex(&secret);
+        let blob = create_invite_blob(
+            &secret,
+            &pk,
+            "Alice",
+            "mb",
+            "pr",
+            &[],
+            &[],
+            None,
+            1_715_000_000_000,
+        );
+        // 1 day after issuance
+        let now = blob.issued_at + 24 * 3600 * 1000;
+        check_invite_recency(&blob, now, 7 * 24 * 3600).expect("within window");
+    }
+
+    #[test]
+    fn check_recency_rejects_zero_issued_at() {
+        let secret = make_secret();
+        let pk = pubkey_hex(&secret);
+        let mut blob = create_invite_blob(
+            &secret,
+            &pk,
+            "Alice",
+            "mb",
+            "pr",
+            &[],
+            &[],
+            None,
+            1_715_000_000_000,
+        );
+        blob.issued_at = 0;
+        let err = check_invite_recency(&blob, 1_715_000_000_000, 7 * 24 * 3600)
+            .expect_err("issued_at=0 must be rejected");
+        assert!(
+            err.contains("missing issued_at"),
+            "got: {err}",
+        );
+    }
 }
 
 /// Reject an invite that was minted more than `max_age_secs` ago.
