@@ -10,6 +10,7 @@ import {
   handleCreateFriendGroup,
   handleMoveFriendToGroup,
   handleBlockUser,
+  handleResetSignalSession,
 } from "../../handlers/buddy.handlers";
 import {
   handleRevokeRelay,
@@ -210,6 +211,18 @@ const BuddyList: Component = () => {
             onSelect={() => navigator.clipboard.writeText(key)}
           >
             Copy Public Key
+          </ContextMenu.Item>
+
+          {/* B6 — explicit Signal session reset. Confirms with the user
+            * because the safety stance forbids auto-rehandshake; the
+            * user is expected to verify the peer's safety number
+            * out-of-band before resuming sensitive conversations on
+            * the new session. */}
+          <ContextMenu.Item
+            class="context-menu-item"
+            onSelect={() => void handleResetSignalSession(key, name)}
+          >
+            Reset Secure Session
           </ContextMenu.Item>
 
           <ContextMenu.Separator class="context-menu-separator" />

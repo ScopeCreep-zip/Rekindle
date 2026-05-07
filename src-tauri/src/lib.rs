@@ -61,6 +61,7 @@ fn app_invoke_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Sen
         commands::friends::cancel_invite,
         commands::friends::get_outgoing_invites,
         commands::friends::emit_friends_presence,
+        commands::friends::reset_signal_session,
         // community
         commands::community::create_community,
         commands::community::join_community,

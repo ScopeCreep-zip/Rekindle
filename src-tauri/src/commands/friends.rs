@@ -602,6 +602,39 @@ pub async fn cancel_request(
     Ok(())
 }
 
+/// B6 — explicit user-driven Signal session reset for a peer.
+///
+/// The hardened safety stance forbids auto-rehandshake on decrypt
+/// failure (an attacker who corrupts session state could force an
+/// auto-recovery that substitutes their own keys). Instead, the user
+/// initiates the reset explicitly from the friend's context menu after
+/// verifying their safety number out-of-band.
+///
+/// Effect: deletes the local Signal session record for the peer. The
+/// next outbound encrypted message hits send_envelope_to_peer's "no
+/// session with {peer}" error (B8) which prompts the user to verify
+/// the peer's safety number before resuming. A fresh session is
+/// established at the next FriendAccept-style handshake.
+///
+/// Idempotent — calling on a peer with no active session is a no-op.
+#[tauri::command]
+pub async fn reset_signal_session(
+    peer_public_key: String,
+    state: State<'_, SharedState>,
+) -> Result<(), String> {
+    if peer_public_key.is_empty() {
+        return Err("peer public key required".to_string());
+    }
+    let signal = state.signal_manager.lock();
+    let handle = signal.as_ref().ok_or("Signal manager not initialized")?;
+    handle
+        .manager
+        .delete_session(&peer_public_key)
+        .map_err(|e| format!("delete_session: {e}"))?;
+    tracing::info!(peer = %peer_public_key, "Signal session reset by user");
+    Ok(())
+}
+
 /// Create a new friend group.
 #[tauri::command]
 pub async fn create_friend_group(

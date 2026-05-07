@@ -976,6 +976,13 @@ export const commands = {
   /// declineDmCall (which rejects a CallOffer before accepting).
   endDmCall: (callId: string, reason?: string) =>
     invoke<void>("end_dm_call", { callId, reason: reason ?? null }),
+  /// B6 — explicit user-driven Signal session reset. Surfaced from the
+  /// friend context menu when the user has verified the peer's safety
+  /// number out-of-band and wants to re-handshake. NOT auto-invoked on
+  /// decrypt failure (vulnerable-user safety stance forbids
+  /// auto-rehandshake).
+  resetSignalSession: (peerPublicKey: string) =>
+    invoke<void>("reset_signal_session", { peerPublicKey }),
   getMissedCalls: () => invoke<MissedCallRow[]>("get_missed_calls"),
 
   // Status

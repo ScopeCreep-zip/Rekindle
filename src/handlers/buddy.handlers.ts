@@ -23,6 +23,35 @@ export async function handleRemoveFriend(publicKey: string): Promise<void> {
   }
 }
 
+/// B6 — explicit Signal session reset for a friend. The user must
+/// confirm because resetting the session means: (1) the next encrypted
+/// send to this peer will fail with "no session" until both sides
+/// re-handshake, (2) old undecryptable messages stay undecryptable,
+/// (3) the new session may be MitM'd if the peer's safety number isn't
+/// verified out-of-band first. Returns null on success, or the error
+/// string for the caller's toast.
+export async function handleResetSignalSession(
+  publicKey: string,
+  displayName?: string,
+): Promise<string | null> {
+  const name = displayName ?? publicKey.slice(0, 12);
+  const confirmed = window.confirm(
+    `Reset secure session with ${name}?\n\n` +
+      `This will delete the current Signal session. Both of you will need ` +
+      `to re-handshake on the next message exchange. Old undecryptable ` +
+      `messages stay lost.\n\n` +
+      `Verify their safety number out-of-band before resuming sensitive ` +
+      `conversations after the new session is established.`,
+  );
+  if (!confirmed) return null;
+  try {
+    await commands.resetSignalSession(publicKey);
+    return null;
+  } catch (e) {
+    return errorMessage(e);
+  }
+}
+
 export async function handleAddFriend(
   publicKey: string,
   message: string,
