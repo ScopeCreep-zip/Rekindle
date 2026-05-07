@@ -82,6 +82,13 @@ export type PresenceEvent =
 
 export type VoiceEvent =
   | {
+      // Emitted by backend after local node successfully joins a voice channel.
+      // Carries activeCallType so the frontend doesn't decide that locally —
+      // fixes C1 (VideoCallPanel never mounted because activeCallType was null).
+      type: "localJoined";
+      data: { channelId: string; activeCallType: "community" | "dm" };
+    }
+  | {
       type: "userJoined";
       data: { publicKey: string; displayName: string };
     }

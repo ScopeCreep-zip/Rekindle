@@ -10,6 +10,18 @@ let voiceEventUnlisten: UnlistenFn | null = null;
 export async function initVoiceEventListener(): Promise<UnlistenFn> {
   return subscribeVoiceEvents((event) => {
     switch (event.type) {
+      case "localJoined":
+        // Backend-authoritative join state — every frontend (Tauri GUI, CLI,
+        // future TUI) mirrors the same activeCallType from this single event.
+        // Fixes C1: VideoCallPanel's <Show> gate at CommunityWindow.tsx:731-744
+        // requires activeCallType === "community" but the prior frontend-only
+        // set ran AFTER the gate evaluated, so the panel never mounted.
+        setVoiceState({
+          isConnected: true,
+          channelId: event.data.channelId,
+          activeCallType: event.data.activeCallType,
+        });
+        break;
       case "userJoined":
         setVoiceState("participants", (prev) => [
           ...prev.filter((p) => p.publicKey !== event.data.publicKey),
@@ -55,15 +67,17 @@ export async function initVoiceEventListener(): Promise<UnlistenFn> {
 
 export async function handleJoinVoice(channelId: string, communityId?: string): Promise<void> {
   try {
+    // Subscribe BEFORE the command fires so the LocalJoined event the backend
+    // emits during start_session reaches us — late subscription would miss it.
+    if (!voiceEventUnlisten) {
+      voiceEventUnlisten = await initVoiceEventListener();
+    }
     await commands.joinVoiceChannel(channelId, communityId);
-
-    // Subscribe to voice events
-    voiceEventUnlisten = await initVoiceEventListener();
-
-    setVoiceState({
-      isConnected: true,
-      channelId,
-    });
+    // Backend emits VoiceEvent::LocalJoined which the listener mirrors into
+    // voiceState (isConnected + channelId + activeCallType). No manual set
+    // here — that was the C1 bug: prior code set isConnected/channelId but
+    // not activeCallType, so the <Show> gate at CommunityWindow.tsx:731-744
+    // never opened and VideoCallPanel never mounted.
   } catch (e) {
     console.error("Failed to join voice:", e);
   }

@@ -74,6 +74,18 @@ pub(crate) async fn start_session(
 
     emit_join_events(app, &identity.public_key, &identity.display_name);
 
+    // Backend-authoritative `active_call_type` so every frontend (Tauri GUI,
+    // CLI, future TUI) mirrors the same state without per-frontend branching.
+    // Fixes C1: VideoCallPanel never mounted because activeCallType was null
+    // — the prior frontend-only set in voice.handlers.ts had no equivalent
+    // for non-Tauri clients. The frontend listens for this event and sets
+    // its store; the manual set in handleJoinVoice goes away.
+    let local_joined = VoiceEvent::LocalJoined {
+        channel_id: channel_id.to_string(),
+        active_call_type: if community_id.is_some() { "community" } else { "dm" }.to_string(),
+    };
+    let _ = app.emit("voice-event", &local_joined);
+
     // Architecture §10.6 line 4084 — broadcast our decode capabilities
     // so other peers cap their VP9 sender at the lowest common
     // denominator. Only meaningful in community voice channels (no
