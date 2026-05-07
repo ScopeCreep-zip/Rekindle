@@ -71,7 +71,8 @@ export async function handleCreateCommunity(name: string): Promise<void> {
     }
   } catch (e) {
     console.error("Failed to create community:", e);
-    addToast("Failed to create community", "error");
+    const msg = typeof e === "string" ? e : "Failed to create community";
+    addToast(msg, "error");
   }
 }
 
@@ -118,8 +119,12 @@ export async function handleJoinCommunity(
     handleSelectCommunity(communityId);
     addToast("Joined community!", "success");
   } catch (e) {
+    // Surface the backend's specific error string (banned / full / invalid invite / Stronghold locked / etc.)
+    // rather than swallowing it as a generic "Failed to join community" — the user can't act on a
+    // message that hides the cause.
     console.error("Failed to join community:", e);
-    addToast("Failed to join community", "error");
+    const msg = typeof e === "string" ? e : "Failed to join community";
+    addToast(msg, "error");
   }
 }
 
