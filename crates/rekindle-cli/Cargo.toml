@@ -30,7 +30,11 @@ daemon = [
 ]
 
 [[bin]]
-name = "rekindle"
+# Renamed from "rekindle" to avoid collision with the Tauri app binary.
+# src-tauri's package is named "rekindle" which produces the desktop app binary;
+# we keep that as the user-facing name (Applications/Rekindle.app etc.) and
+# expose the CLI as "rekindle-cli".
+name = "rekindle-cli"
 path = "src/main.rs"
 
 [dependencies]

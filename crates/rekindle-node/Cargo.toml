@@ -57,6 +57,9 @@ sd-notify = "0.4"
 keyring = { version = "3", default-features = false, features = ["apple-native", "windows-native", "linux-native"] }
 hex = "0.4"
 
+# Filesystem paths (used in macOS socket-path resolution at ipc/transport.rs)
+dirs = "6"
+
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros"] }
 tempfile = "3"
