@@ -139,7 +139,7 @@ impl AuditLogger {
 /// and computes the hash for chain linking.
 fn recover_chain_state(path: &Path) -> anyhow::Result<(u64, [u8; 32])> {
     let content = std::fs::read_to_string(path)?;
-    let last_line = content.lines().filter(|l| !l.is_empty()).next_back();
+    let last_line = content.lines().rfind(|l| !l.is_empty());
 
     match last_line {
         Some(line) => {
