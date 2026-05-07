@@ -280,6 +280,13 @@ pub struct InviteBlob {
     /// Correlation token linking this invite to tracked outgoing invites.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub invite_id: Option<String>,
+    /// Unix epoch milliseconds when the invite was minted (B11 hardening).
+    /// Recipients enforce a max-age policy via [`check_invite_recency`] so
+    /// leaked / harvested links can't be redeemed indefinitely. Older
+    /// invites (pre-issued_at-field) decode with `0` here and are rejected
+    /// as stale by [`check_invite_recency`] — no legacy fallback.
+    #[serde(default)]
+    pub issued_at: u64,
     /// Ed25519 signature over the JSON of all fields above.
     pub signature: Vec<u8>,
 }
@@ -287,7 +294,9 @@ pub struct InviteBlob {
 /// Create a signed invite blob from identity credentials.
 ///
 /// Signs over a JSON-serialized form of the invite data (excluding the
-/// signature field itself) using the Ed25519 secret key.
+/// signature field itself) using the Ed25519 secret key. `issued_at_ms` is
+/// covered by the signature so a third party cannot back-date a leaked
+/// blob to extend its useful life past the recipient's recency window.
 pub fn create_invite_blob(
     secret_key: &[u8; 32],
     public_key: &str,
@@ -297,6 +306,7 @@ pub fn create_invite_blob(
     route_blob: &[u8],
     prekey_bundle: &[u8],
     invite_id: Option<&str>,
+    issued_at_ms: u64,
 ) -> InviteBlob {
     use ed25519_dalek::{Signer, SigningKey};
 
@@ -311,6 +321,7 @@ pub fn create_invite_blob(
         "route_blob": route_blob,
         "prekey_bundle": prekey_bundle,
         "invite_id": invite_id,
+        "issued_at": issued_at_ms,
     });
     let signable_bytes = serde_json::to_vec(&signable).unwrap_or_default();
     let signature = signing_key.sign(&signable_bytes);
@@ -323,6 +334,7 @@ pub fn create_invite_blob(
         route_blob: route_blob.to_vec(),
         prekey_bundle: prekey_bundle.to_vec(),
         invite_id: invite_id.map(str::to_string),
+        issued_at: issued_at_ms,
         signature: signature.to_bytes().to_vec(),
     }
 }
@@ -357,12 +369,49 @@ pub fn verify_invite_blob(blob: &InviteBlob) -> Result<(), String> {
         "route_blob": blob.route_blob,
         "prekey_bundle": blob.prekey_bundle,
         "invite_id": blob.invite_id,
+        "issued_at": blob.issued_at,
     });
     let signable_bytes = serde_json::to_vec(&signable).unwrap_or_default();
 
     verifying_key
         .verify(&signable_bytes, &signature)
         .map_err(|e| format!("invalid invite signature: {e}"))
+}
+
+/// Reject an invite that was minted more than `max_age_secs` ago.
+///
+/// Defense-in-depth alongside the sender-side `mark_invite_responded`
+/// single-use enforcement: even if an attacker harvests a link and
+/// presents it to multiple receivers, the recency window caps how long
+/// the harvest remains useful. Vulnerable-user safety stance: leaked
+/// links shouldn't grant indefinite reach. Default policy in
+/// `add_friend_from_invite` is 7 days.
+///
+/// `now_ms` is supplied by the caller (rather than read from the
+/// system clock) so this stays as a pure protocol helper. An invite
+/// with `issued_at == 0` is rejected as a pre-recency-field blob —
+/// the sender must regenerate. No legacy fallback.
+pub fn check_invite_recency(
+    blob: &InviteBlob,
+    now_ms: u64,
+    max_age_secs: u64,
+) -> Result<(), String> {
+    if blob.issued_at == 0 {
+        return Err(
+            "invite is missing issued_at — please ask the sender to regenerate the invite link"
+                .to_string(),
+        );
+    }
+    let age_ms = now_ms.saturating_sub(blob.issued_at);
+    let max_age_ms = max_age_secs.saturating_mul(1_000);
+    if age_ms > max_age_ms {
+        let age_days = age_ms / (24 * 3600 * 1000);
+        let max_age_days = max_age_secs / (24 * 3600);
+        return Err(format!(
+            "invite expired ({age_days}d old, max {max_age_days}d) — please ask the sender to generate a new invite"
+        ));
+    }
+    Ok(())
 }
 
 /// Encode an invite blob as a `rekindle://` URL.

@@ -753,6 +753,11 @@ pub async fn generate_invite(
     // Generate a unique invite_id
     let invite_id = uuid::Uuid::new_v4().to_string();
 
+    // B11 hardening — issued_at is now signature-covered so a third party
+    // can't back-date a leaked blob to extend its useful life. Recipients
+    // enforce the recency window via check_invite_recency in
+    // add_friend_from_invite (default 7 days).
+    let issued_at_ms = rekindle_utils::timestamp_ms();
     let blob = rekindle_protocol::messaging::create_invite_blob(
         &secret_key,
         &public_key,
@@ -762,6 +767,7 @@ pub async fn generate_invite(
         &route_blob,
         &prekey_bundle,
         Some(&invite_id),
+        issued_at_ms,
     );
     let url = rekindle_protocol::messaging::encode_invite_url(&blob);
 
@@ -782,9 +788,17 @@ pub async fn add_friend_from_invite(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    // Decode and verify the invite
+    // Decode and verify the invite (signature + issued_at recency window).
+    // B11 hardening — defense-in-depth alongside the sender-side
+    // mark_invite_responded single-use enforcement: even if an attacker
+    // harvests a link, the 7-day recency window caps how long the harvest
+    // remains useful. Vulnerable-user safety stance: leaked links shouldn't
+    // grant indefinite reach.
+    const MAX_INVITE_AGE_SECS: u64 = 7 * 24 * 3600; // 7 days
     let blob = rekindle_protocol::messaging::decode_invite_url(&invite_string)?;
     rekindle_protocol::messaging::verify_invite_blob(&blob)?;
+    let now_ms = rekindle_utils::timestamp_ms();
+    rekindle_protocol::messaging::check_invite_recency(&blob, now_ms, MAX_INVITE_AGE_SECS)?;
 
     let owner_key = state_helpers::current_owner_key(state.inner())?;
 
