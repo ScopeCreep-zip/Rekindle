@@ -775,7 +775,18 @@ async fn handle_friend_request_full(
         crate::invite_helpers::mark_invite_responded(pool, &owner_key, iid, req.sender_hex);
     }
 
-    persist_friend_request(state, pool, req);
+    // B5/P3.1 — persist BEFORE emit so the DB row exists by the time
+    // chat-event reaches the frontend. Crash between emit-and-persist
+    // (the prior db_fire spawn behavior) left a phantom request in memory
+    // that vanished on restart and could never be accepted.
+    if let Err(e) = persist_friend_request(state, pool, req).await {
+        tracing::warn!(
+            from = %req.sender_hex,
+            error = %e,
+            "failed to persist friend request — skipping event emit and ACK to avoid phantom UI state"
+        );
+        return;
+    }
     let event = ChatEvent::FriendRequest {
         from: req.sender_hex.to_string(),
         display_name: req.display_name.to_string(),
@@ -905,7 +916,22 @@ async fn handle_profile_key_rotated(
 }
 
 /// Persist an incoming friend request to `SQLite` for crash/restart recovery.
-fn persist_friend_request(state: &Arc<AppState>, pool: &DbPool, req: &IncomingFriendRequest<'_>) {
+///
+/// B5/P3.1 — synchronous persist (await the DB write) so the row exists
+/// before the `ChatEvent::FriendRequest` event reaches the frontend. The
+/// previous `db_fire` fire-and-forget spawn meant the event could land
+/// in the buddy list while the row was still queued; a crash mid-window
+/// left a phantom request in memory that vanished on restart and could
+/// never be accepted. With awaited persist, the event is the trailing edge
+/// of a durable write — the frontend never sees an entry whose backing
+/// row doesn't exist. Returns `Err` so the caller can skip the event emit
+/// when the persist itself failed (rather than emitting an event whose
+/// row never landed).
+async fn persist_friend_request(
+    state: &Arc<AppState>,
+    pool: &DbPool,
+    req: &IncomingFriendRequest<'_>,
+) -> Result<(), String> {
     let owner_key = state_helpers::owner_key_or_default(state);
     let pk = req.sender_hex.to_string();
     let dn = req.display_name.to_string();
@@ -916,7 +942,7 @@ fn persist_friend_request(state: &Arc<AppState>, pool: &DbPool, req: &IncomingFr
     let pkb = req.prekey_bundle.to_vec();
     let iid = req.invite_id.map(str::to_string);
     let now = crate::db::timestamp_now();
-    db_fire(pool, "persist incoming friend request", move |conn| {
+    db_call(pool, move |conn| {
         conn.execute(
             "INSERT OR REPLACE INTO pending_friend_requests \
              (owner_key, public_key, display_name, message, received_at, profile_dht_key, route_blob, mailbox_dht_key, prekey_bundle, invite_id) \
@@ -924,7 +950,8 @@ fn persist_friend_request(state: &Arc<AppState>, pool: &DbPool, req: &IncomingFr
             rusqlite::params![owner_key, pk, dn, msg, now, pdk, rb, mdk, pkb, iid],
         )?;
         Ok(())
-    });
+    })
+    .await
 }
 
 /// Delete a `pending_friend_requests` row for a given peer.
