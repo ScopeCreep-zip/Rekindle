@@ -794,14 +794,42 @@ async fn handle_friend_request_full(
     };
     let _ = app_handle.emit("chat-event", &event);
 
-    // Send delivery ACK back to the requester
-    let _ = send_to_peer_raw(
+    // B10/P3.4 — try the ACK send immediately; if it fails (peer offline,
+    // route stale, app_message rejected), queue for retry through the
+    // sync_service pending_messages loop. The previous `let _ = ...` swallow
+    // meant the sender never learned we received their friend request and
+    // kept retrying it forever from their side, eventually appearing
+    // duplicate-spammy in the receiver's buddy list. The queue is bounded
+    // (20 retries × 30s = 10 minutes per the existing sync_service drop
+    // policy) so this can't loop forever.
+    if let Err(e) = send_to_peer_raw(
         state,
         pool,
         req.sender_hex,
         &MessagePayload::FriendRequestReceived,
     )
-    .await;
+    .await
+    {
+        tracing::info!(
+            to = %req.sender_hex,
+            error = %e,
+            "FriendRequestReceived ACK send failed, queueing for sync_service retry"
+        );
+        if let Err(e) = build_and_queue_envelope(
+            state,
+            pool,
+            req.sender_hex,
+            &MessagePayload::FriendRequestReceived,
+        )
+        .await
+        {
+            tracing::warn!(
+                to = %req.sender_hex,
+                error = %e,
+                "failed to queue FriendRequestReceived ACK for retry — sender may keep re-sending the request"
+            );
+        }
+    }
 }
 
 /// Handle a `FriendAccept` with profile key, route blob, and mailbox key exchange.
