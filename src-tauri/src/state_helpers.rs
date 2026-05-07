@@ -641,6 +641,10 @@ pub fn set_governance_state(
 ) {
     use crate::state::{CategoryInfo, ChannelInfo, ChannelType, RoleDefinition};
 
+    // Set true if the rebuild adds any new watch targets so we spawn a
+    // watch_community_records refresh after dropping the write lock.
+    let mut needs_watch_refresh = false;
+
     let mut communities = state.communities.write();
     if let Some(cs) = communities.get_mut(community_id) {
         // ── Sync my_role_ids from CRDT state ──
@@ -657,6 +661,19 @@ pub fn set_governance_state(
                 }
             }
         }
+
+        // ── Capture prior watch targets for diff-based refresh (A4/P0.4) ──
+        // After the rebuild we compare the new set against this snapshot so
+        // we only spawn watch_community_records when keys actually changed.
+        // Without this, an admin creating a channel remotely produced an
+        // updated cs.channel_log_keys but no watch — followers never received
+        // messages on the new channel.
+        let prior_channel_keys: std::collections::HashSet<String> = cs
+            .open_community_records
+            .channel_keys
+            .iter()
+            .cloned()
+            .collect();
 
         // ── Sync channels from governance ChannelCreated entries ──
         // Build a map of existing unread counts to preserve them
@@ -749,7 +766,22 @@ pub fn set_governance_state(
         });
         cs.channels = channels;
         cs.channel_log_keys.clone_from(&channel_log_keys);
-        cs.open_community_records.channel_keys = channel_log_keys.into_values().collect();
+        // Build the full watch-target set: channel logs + secondary-segment
+        // governance/registry records. Plate Gate §15.4 needs followers to
+        // watch segment-N records so admin-driven membership changes (e.g.
+        // RoleAssignment in segment 2) propagate to everyone, not just the
+        // members holding that segment.
+        let mut new_channel_keys: Vec<String> = channel_log_keys.into_values().collect();
+        for seg in &gov_state.segments {
+            if seg.segment_index == 0 {
+                continue; // primary segment — already on parent record's governance_key/registry_key
+            }
+            new_channel_keys.push(seg.governance_key.clone());
+            new_channel_keys.push(seg.registry_key.clone());
+        }
+        new_channel_keys.sort();
+        new_channel_keys.dedup();
+        cs.open_community_records.channel_keys = new_channel_keys;
 
         // ── Sync roles from governance RoleDefinition entries ──
         cs.roles = gov_state
@@ -798,6 +830,38 @@ pub fn set_governance_state(
         // ── Sync MEK generation ──
         cs.mek_generation = gov_state.mek_generation;
 
+        // ── Prune banned pseudonyms from gossip overlay (A4/P0.4 — arch §13) ──
+        // When a peer is banned via CRDT merge, they must immediately stop
+        // receiving our outbound gossip and disappear from local member lists.
+        // The merge already excluded them from gov_state.role_assignments etc.,
+        // but the gossip overlay (peers, online_members) and known_members are
+        // separate state on CommunityState and need explicit pruning here —
+        // otherwise send_to_mesh keeps fanning out to a banned ex-member.
+        if !gov_state.bans.is_empty() {
+            let banned_hex: std::collections::HashSet<String> = gov_state
+                .bans
+                .iter()
+                .map(|p| hex::encode(p.0))
+                .collect();
+            if let Some(gossip) = cs.gossip.as_mut() {
+                gossip.peers.retain(|hex_key, _| !banned_hex.contains(hex_key));
+                gossip
+                    .online_members
+                    .retain(|hex_key, _| !banned_hex.contains(hex_key));
+            }
+            cs.known_members
+                .retain(|hex_key| !banned_hex.contains(hex_key));
+        }
+
+        // Detect whether any new watch targets appeared so we only spawn
+        // watch_community_records when something actually changed (avoids
+        // needless Veilid traffic on every governance merge).
+        needs_watch_refresh = cs
+            .open_community_records
+            .channel_keys
+            .iter()
+            .any(|k| !prior_channel_keys.contains(k));
+
         cs.governance_state = Some(gov_state);
     }
     drop(communities);
@@ -822,6 +886,31 @@ pub fn set_governance_state(
     tokio::spawn(async move {
         crate::services::community::segments::open_new_segments(&state_for_open, &community_id_owned).await;
     });
+
+    // A4/P0.4 — refresh watches whenever the merge added new watch targets
+    // (a remote admin creates a channel, or a Plate Gate segment-N record
+    // appears for the first time). Without this, cs.channel_log_keys gets
+    // updated but no watch_dht_values is issued, so followers never receive
+    // ValueChange events for the new records and the channel stays empty.
+    // Idempotent at the Veilid level — already-watched records renew safely.
+    if needs_watch_refresh {
+        let state_for_watch = state.clone();
+        let community_id_for_watch = community_id.to_string();
+        tokio::spawn(async move {
+            if let Err(e) = crate::services::community::watch::watch_community_records(
+                &state_for_watch,
+                &community_id_for_watch,
+            )
+            .await
+            {
+                tracing::warn!(
+                    community = %community_id_for_watch,
+                    error = %e,
+                    "failed to refresh watches after governance update"
+                );
+            }
+        });
+    }
 
     // Architecture §18.4 + §28.9 line 3286: eager-cache expression assets
     // for any ExpressionAdded entry that just merged in. Spawned for the
