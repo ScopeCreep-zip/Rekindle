@@ -1596,15 +1596,44 @@ pub async fn send_friend_request(
         }
     };
 
-    // Gather our profile and mailbox DHT keys + route blob for the invite payload
+    // Gather our profile and mailbox DHT keys + route blob for the invite payload.
+    //
+    // B4/P3.2 — if our route_blob hasn't been allocated yet (e.g. user hits
+    // "Add friend" within seconds of login, before Veilid finishes private
+    // route setup), wait up to 5 seconds for it to land. Sending the request
+    // with an empty blob meant the receiver had no inbound path to reply on
+    // and the friend handshake silently stalled.
     let (profile_dht_key, route_blob, mailbox_dht_key) = {
-        let node = state.node.read();
-        let nh = node.as_ref().ok_or("node not initialized")?;
-        (
-            nh.profile_dht_key.clone().unwrap_or_default(),
-            nh.route_blob.clone().unwrap_or_default(),
-            nh.mailbox_dht_key.clone().unwrap_or_default(),
-        )
+        let read_nh = || -> Result<(String, Vec<u8>, String), String> {
+            let node = state.node.read();
+            let nh = node.as_ref().ok_or("node not initialized")?;
+            Ok((
+                nh.profile_dht_key.clone().unwrap_or_default(),
+                nh.route_blob.clone().unwrap_or_default(),
+                nh.mailbox_dht_key.clone().unwrap_or_default(),
+            ))
+        };
+        let mut tuple = read_nh()?;
+        if tuple.1.is_empty() {
+            const POLL_INTERVAL_MS: u64 = 100;
+            const MAX_WAIT_MS: u64 = 5_000;
+            let mut waited_ms = 0_u64;
+            while tuple.1.is_empty() && waited_ms < MAX_WAIT_MS {
+                tokio::time::sleep(std::time::Duration::from_millis(POLL_INTERVAL_MS)).await;
+                waited_ms += POLL_INTERVAL_MS;
+                tuple = read_nh()?;
+            }
+            if tuple.1.is_empty() {
+                return Err(
+                    "Veilid private route not allocated yet — try again in a moment".to_string(),
+                );
+            }
+            tracing::info!(
+                waited_ms,
+                "send_friend_request: route blob became available after wait"
+            );
+        }
+        tuple
     };
 
     tracing::info!(
@@ -1613,11 +1642,6 @@ pub async fn send_friend_request(
         route_count = route_blob.first().copied().unwrap_or(0),
         "send_friend_request: our route blob info"
     );
-    if route_blob.is_empty() {
-        tracing::warn!(
-            "sending friend request with empty route blob — peer will fetch from DHT profile"
-        );
-    }
 
     let payload = MessagePayload::FriendRequest {
         display_name,
