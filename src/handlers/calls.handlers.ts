@@ -73,16 +73,14 @@ export function subscribeCallEvents(): Promise<UnlistenFn> {
         // Queue if multiple offers race in — IncomingCallModal shows
         // the head of the list.
         setCallsState("incomingCalls", (prev) => [...prev, entry]);
-        // Wave 12 W12.1 — ringing.
-        // - Background webviews stay silent (the OS notification reaches
-        //   the user globally; multiple webviews ringing in unison is
-        //   confusing).
+        // W12-fix.B — ring even when the window is hidden / unfocused;
+        // hearing the call is the WHOLE point. Web Audio plays from
+        // background webviews fine. Multi-window overlap is acceptable
+        // (you'll hear the ring louder); the alternative — silent ring
+        // when the window isn't focused — is unusable.
         // - Already-in-call gets the call-waiting beep instead of a full
         //   ring (Discord/Telegram convention).
         // - User can disable ringtone entirely via settingsState.
-        if (typeof document !== "undefined" && document.visibilityState === "hidden") {
-          break;
-        }
         if (!settingsState.ringtoneEnabled) break;
         stopActiveRing();
         if (callsState.activeCall != null) {
@@ -97,11 +95,20 @@ export function subscribeCallEvents(): Promise<UnlistenFn> {
         stopActiveRing();
         // Promote either the outgoing call (Alice path) or the head
         // incoming call (Bob path) to the active slot.
+        //
+        // W12-fix.D — handle the race where callConnected arrives
+        // BEFORE the startDmCall promise resolves. In that case the
+        // seed entry's callId is still "" (set by handleStartDmCall
+        // before the round-trip). Match on peerKey as a fallback so
+        // the active-slot transition still happens; the callId field
+        // is filled in from the event.
         const out = callsState.outgoingCall;
-        if (out && out.callId === callId) {
-          setCallsState("activeCall", out);
-          setCallsState("outgoingCall", null);
-          break;
+        if (out) {
+          if (out.callId === callId || out.callId === "") {
+            setCallsState("activeCall", { ...out, callId });
+            setCallsState("outgoingCall", null);
+            break;
+          }
         }
         const idx = callsState.incomingCalls.findIndex((c) => c.callId === callId);
         if (idx >= 0) {
@@ -163,9 +170,9 @@ export function subscribeCallEvents(): Promise<UnlistenFn> {
             expiresAtMs,
           },
         ]);
-        if (typeof document !== "undefined" && document.visibilityState === "hidden") {
-          break;
-        }
+        // W12-fix.B — always ring (background or foreground). The
+        // window-focus path is handled by the backend bringing the
+        // window forward (W12-fix.C); the ring is the audio cue.
         if (!settingsState.ringtoneEnabled) break;
         stopActiveRing();
         activeRing = playIncomingRing({ volume: settingsState.ringtoneVolume });

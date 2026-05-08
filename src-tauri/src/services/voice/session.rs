@@ -356,14 +356,21 @@ fn create_transport(
         }
     }
 
-    // Architecture §10.3 + §26 W26 — install the per-community
-    // pseudonym signing key so every outbound packet is signed and
-    // receivers can authenticate the sender. For 1:1 calls there's no
-    // community pseudonym; the transport falls back to declining to
-    // build packets (caller will surface a transport error and the UI
-    // shows the call as failed). Calls support is tracked separately;
-    // for the spec-aligned community voice path this gives us §10.3
-    // signature coverage.
+    // Architecture §10.3 + §26 W26 — install the signing key so every
+    // outbound packet is signed and receivers can authenticate the
+    // sender. Two distinct paths:
+    //   - Community voice: per-community pseudonym signing key (so
+    //     receivers verify that the sender is a community member).
+    //   - 1:1 DM call (W12-fix.A): user's identity Ed25519 secret. The
+    //     packet carries the user's Ed25519 pubkey as `sender_key` and
+    //     the receiver verifies against it; the call peer is the only
+    //     legitimate sender for this transport so any other identity's
+    //     packets get filtered downstream.
+    //
+    // Without this, `build_packet_data` returns "voice signing key not
+    // installed" and EVERY outbound voice packet is dropped → caller
+    // can talk into their mic but the receiver hears silence (the
+    // primary "no audio" symptom in 1:1 calls).
     if let Some(cid) = community_id {
         if let Ok((_, signing_key)) = state_helpers::pseudonym_credentials(state, cid) {
             transport.set_signing_key(signing_key);
@@ -373,6 +380,23 @@ fn create_transport(
                 channel = %channel_id,
                 "voice transport: pseudonym credentials unavailable, packets cannot be signed",
             );
+        }
+    } else {
+        // 1:1 DM call. The user's local identity Ed25519 secret is the
+        // signing key; the matching pubkey is what the receiver
+        // already knows from the CallOffer/CallAccept handshake.
+        let secret_bytes = state.identity_secret.lock().clone();
+        match secret_bytes {
+            Some(bytes) => {
+                let signing_key = ed25519_dalek::SigningKey::from_bytes(&bytes);
+                transport.set_signing_key(signing_key);
+            }
+            None => {
+                tracing::warn!(
+                    channel = %channel_id,
+                    "voice transport: local identity secret unavailable, 1:1 call audio will be silent",
+                );
+            }
         }
     }
 

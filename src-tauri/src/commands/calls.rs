@@ -132,6 +132,7 @@ pub async fn start_dm_call(
             finalize_outgoing_accept(
                 &app,
                 state.inner(),
+                pool.inner(),
                 &call_id,
                 &peer_public_key,
                 &acceptor_x25519_pub,
@@ -402,6 +403,8 @@ pub async fn handle_incoming_group_offer(
             expires_at_ms,
         },
     );
+    // W12-fix.C — bring window forward for group call too.
+    crate::windows::surface_window_for_call(app);
 
     let now = rekindle_utils::timestamp_ms();
     let remaining = expires_at_ms.saturating_sub(now);
@@ -871,6 +874,7 @@ fn generate_call_id() -> String {
 async fn finalize_outgoing_accept(
     app: &tauri::AppHandle,
     state: &SharedState,
+    pool: &DbPool,
     call_id: &str,
     peer_public_key: &str,
     acceptor_x25519_pub: &[u8],
@@ -902,7 +906,34 @@ async fn finalize_outgoing_accept(
         }
     }
 
-    crate::services::voice::session::start_session(peer_public_key, None, app, state).await?;
+    // W12-fix.A — if our voice session can't start, the call is
+    // effectively dead on our side. Surface the error to the caller's
+    // start_dm_call promise instead of silently emitting CallConnected
+    // (which would leave the UI showing "active call" with no audio).
+    // Send a CallEnd to the peer so they tear down their just-started
+    // session too — without it, the receiver's UI would show "in call"
+    // pointing at a peer that never connected.
+    if let Err(e) =
+        crate::services::voice::session::start_session(peer_public_key, None, app, state).await
+    {
+        state.active_calls.lock().remove(call_id);
+        let hangup = rekindle_protocol::messaging::envelope::MessagePayload::CallEnd {
+            call_id: call_id.to_string(),
+            reason: format!("voice session failed: {e}"),
+        };
+        if let Err(send_err) = crate::services::message_service::send_to_peer_raw(
+            state,
+            pool,
+            peer_public_key,
+            &hangup,
+        )
+        .await
+        {
+            tracing::trace!(error = %send_err,
+                "best-effort CallEnd on session-fail send dropped");
+        }
+        return Err(format!("voice session failed: {e}"));
+    }
     let _ = app.emit(
         "chat-event",
         &ChatEvent::CallConnected {
@@ -1038,6 +1069,9 @@ pub async fn handle_incoming_offer(
             is_group: false,
         },
     );
+    // W12-fix.C — bring the app forward + flash taskbar so the user
+    // notices the ring even if they're in another window.
+    crate::windows::surface_window_for_call(app);
 
     // Wait for accept/decline or fall through to timeout. We use a
     // wall-clock deadline rather than `now + 30_000` to honour the
@@ -1070,10 +1104,21 @@ pub async fn handle_incoming_offer(
                     call.status = CallStatus::Active;
                 }
             }
+            // W12-fix.A — if start_session fails on the receiver, the
+            // caller MUST learn (otherwise: caller hears silence, both
+            // sides disagree about whether the call is "live"). Decline
+            // with the underlying error so the caller sees a clear
+            // toast instead of an ambiguous connect-then-quiet state.
             if let Err(e) =
                 crate::services::voice::session::start_session(sender_hex, None, app, state).await
             {
-                tracing::warn!(error = %e, call = %call_id, "failed to start voice session for accepted call");
+                tracing::error!(error = %e, call = %call_id,
+                    "voice session failed to start on accepted call; declining");
+                state.active_calls.lock().remove(call_id);
+                return MessagePayload::CallDecline {
+                    call_id: call_id.to_string(),
+                    reason: format!("voice session failed: {e}"),
+                };
             }
             let _ = app.emit(
                 "chat-event",

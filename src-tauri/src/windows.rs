@@ -193,6 +193,38 @@ pub fn open_community_window(
     Ok(())
 }
 
+/// W12-fix.C — surface a window for an incoming call.
+///
+/// Brings the BuddyList window forward (show + focus) and flashes the
+/// taskbar / dock icon so the user notices even if they're using another
+/// app. Mirrors how Discord/Signal/Telegram make their app
+/// unmistakably present when a call arrives.
+///
+/// On macOS the dock icon bounces; on Windows the taskbar entry
+/// flashes; on Linux the window manager sets an urgency hint.
+/// Best-effort: failures are logged but never abort the ring path.
+pub fn surface_window_for_call(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("buddy-list") {
+        if let Err(e) = window.show() {
+            tracing::warn!(error = %e, "surface_window_for_call: show failed");
+        }
+        if let Err(e) = window.unminimize() {
+            tracing::trace!(error = %e, "surface_window_for_call: unminimize failed");
+        }
+        if let Err(e) = window.set_focus() {
+            tracing::warn!(error = %e, "surface_window_for_call: set_focus failed");
+        }
+        // Critical attention type: dock bounce continues until focus,
+        // taskbar flash continues until clicked. Acceptable for a
+        // call ring — that's the user-attention semantics we want.
+        if let Err(e) = window.request_user_attention(Some(tauri::UserAttentionType::Critical)) {
+            tracing::trace!(error = %e, "surface_window_for_call: user_attention failed");
+        }
+    } else {
+        tracing::debug!("surface_window_for_call: buddy-list window not found");
+    }
+}
+
 /// Wave 12 W12.7 — pop out the active call into its own Tauri webview
 /// window. The new window mounts the same `<CallController />` (per
 /// main.tsx) and a `/call` route that renders the active-call surface.
