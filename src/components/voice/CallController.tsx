@@ -1,9 +1,11 @@
-import { Component, onCleanup, onMount } from "solid-js";
+import { Component, Show, onCleanup, onMount } from "solid-js";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import IncomingCallModal from "./IncomingCallModal";
 import CallWaitingBanner from "./CallWaitingBanner";
 import OutgoingCallPanel from "./OutgoingCallPanel";
 import GroupCallPanel from "./GroupCallPanel";
+import ActiveCallPanel from "./ActiveCallPanel";
+import { callsState } from "../../stores/calls.store";
 import { refreshMissedCalls, subscribeCallEvents } from "../../handlers/calls.handlers";
 import { subscribeNotificationHandler } from "../../handlers/notification-events.handlers";
 
@@ -37,6 +39,19 @@ const CallController: Component = () => {
       <CallWaitingBanner />
       <OutgoingCallPanel />
       <GroupCallPanel />
+      {/* W13-fix.2 — globally-mounted active-call panel so the receiver
+       *  sees call controls (timer, mute, hangup, etc.) immediately
+       *  after Accept, regardless of which window they're in. Was
+       *  only mounted inside DmWindow before — meaning if you accepted
+       *  from anywhere else (BuddyList, ChatWindow, ProfileWindow),
+       *  the modal disappeared and you saw NOTHING. */}
+      <Show when={callsState.activeCall}>
+        {(call) => (
+          <div class="global-active-call-overlay">
+            <ActiveCallPanel call={call()} mode="inline" />
+          </div>
+        )}
+      </Show>
     </>
   );
 };

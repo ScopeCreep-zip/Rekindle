@@ -1,6 +1,5 @@
 import { Component, Show, createEffect, createSignal, onCleanup } from "solid-js";
 import { Dialog } from "@kobalte/core/dialog";
-import { DropdownMenu } from "@kobalte/core/dropdown-menu";
 import { callsState } from "../../stores/calls.store";
 import {
   handleAcceptIncomingCall,
@@ -21,6 +20,12 @@ const IncomingCallModal: Component = () => {
   };
 
   const [now, setNow] = createSignal(Date.now());
+  // W13-fix.3 — inline expand-on-click for the decline-with-reason
+  // menu. Replaces a Kobalte DropdownMenu nested inside the modal
+  // Dialog whose Portal collided with the Dialog overlay's z-index,
+  // making clicks on the menu items invisible to the user. Inline
+  // section = no portal conflict.
+  const [showDeclineOptions, setShowDeclineOptions] = createSignal(false);
   let interval: ReturnType<typeof setInterval> | undefined;
 
   createEffect(() => {
@@ -69,64 +74,69 @@ const IncomingCallModal: Component = () => {
                   >
                     Decline
                   </button>
-                  {/* Wave 12 W12.12 — decline-with-reason + temp-mute. */}
-                  <DropdownMenu placement="bottom-end">
-                    <DropdownMenu.Trigger
-                      class="form-btn-secondary incoming-call-decline-more"
-                      title="More decline options"
-                      aria-label="More decline options"
-                    >
-                      ▾
-                    </DropdownMenu.Trigger>
-                    <DropdownMenu.Portal>
-                      <DropdownMenu.Content class="context-menu">
-                        <DropdownMenu.Item
-                          class="context-menu-item"
-                          onSelect={() =>
-                            void handleDeclineIncomingCall(entry().callId, "I'm busy right now")
-                          }
-                        >
-                          Decline — I'm busy
-                        </DropdownMenu.Item>
-                        <DropdownMenu.Item
-                          class="context-menu-item"
-                          onSelect={() =>
-                            void handleDeclineIncomingCall(entry().callId, "I'll call back later")
-                          }
-                        >
-                          Decline — I'll call back later
-                        </DropdownMenu.Item>
-                        <DropdownMenu.Item
-                          class="context-menu-item"
-                          onSelect={() => {
-                            const reason = window.prompt("Decline reason:");
-                            if (reason && reason.trim()) {
-                              void handleDeclineIncomingCall(entry().callId, reason.trim());
-                            }
-                          }}
-                        >
-                          Decline — Custom message…
-                        </DropdownMenu.Item>
-                        <DropdownMenu.Separator class="context-menu-separator" />
-                        <DropdownMenu.Item
-                          class="context-menu-item"
-                          onSelect={async () => {
-                            // 1 hour mute, then decline.
-                            await commands
-                              .muteCallerTemp(entry().peerKey, 60 * 60 * 1000)
-                              .catch((e) => console.warn("muteCallerTemp:", e));
-                            void handleDeclineIncomingCall(
-                              entry().callId,
-                              "user is unavailable",
-                            );
-                          }}
-                        >
-                          Mute caller for 1 hour
-                        </DropdownMenu.Item>
-                      </DropdownMenu.Content>
-                    </DropdownMenu.Portal>
-                  </DropdownMenu>
+                  {/* W13-fix.3 — inline toggle (was nested DropdownMenu
+                   *  whose Portal collided with the Dialog overlay's
+                   *  z-index, making clicks invisible). */}
+                  <button
+                    type="button"
+                    class="form-btn-secondary incoming-call-decline-more"
+                    title="More decline options"
+                    aria-label="More decline options"
+                    aria-expanded={showDeclineOptions()}
+                    onClick={() => setShowDeclineOptions((v) => !v)}
+                  >
+                    {showDeclineOptions() ? "▴" : "▾"}
+                  </button>
                 </div>
+                <Show when={showDeclineOptions()}>
+                  <div class="incoming-call-decline-options" role="group" aria-label="Decline with reason">
+                    <button
+                      type="button"
+                      class="form-btn-secondary"
+                      onClick={() =>
+                        void handleDeclineIncomingCall(entry().callId, "I'm busy right now")
+                      }
+                    >
+                      I'm busy
+                    </button>
+                    <button
+                      type="button"
+                      class="form-btn-secondary"
+                      onClick={() =>
+                        void handleDeclineIncomingCall(entry().callId, "I'll call back later")
+                      }
+                    >
+                      Call back later
+                    </button>
+                    <button
+                      type="button"
+                      class="form-btn-secondary"
+                      onClick={() => {
+                        const reason = window.prompt("Decline reason:");
+                        if (reason && reason.trim()) {
+                          void handleDeclineIncomingCall(entry().callId, reason.trim());
+                        }
+                      }}
+                    >
+                      Custom message…
+                    </button>
+                    <button
+                      type="button"
+                      class="form-btn-secondary"
+                      onClick={async () => {
+                        await commands
+                          .muteCallerTemp(entry().peerKey, 60 * 60 * 1000)
+                          .catch((e) => console.warn("muteCallerTemp:", e));
+                        void handleDeclineIncomingCall(
+                          entry().callId,
+                          "user is unavailable",
+                        );
+                      }}
+                    >
+                      Mute caller for 1 hour
+                    </button>
+                  </div>
+                </Show>
               </Dialog.Content>
             </div>
           </Dialog.Portal>
