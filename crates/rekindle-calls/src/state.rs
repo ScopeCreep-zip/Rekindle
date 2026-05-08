@@ -45,6 +45,12 @@ pub enum CallStatus {
     Outgoing,
     /// Remote peer dialed; awaiting local accept/decline.
     Incoming,
+    /// Wave 13 — accept arrived (caller side) or user clicked Accept
+    /// (receiver side); voice transport is being brought up but not
+    /// yet ready to carry frames. Brief intermediate state — exists
+    /// so the UI can distinguish "we sent the accept envelope but
+    /// audio isn't flowing yet" from "we're talking".
+    Connecting,
     /// Both sides exchanged keys; voice transport is up.
     Active,
     /// Ring expired without an accept (architecture §10.10 — 30 s).

@@ -152,7 +152,14 @@ impl VoiceReceiveLoop {
             return;
         }
 
-        // Decrypt voice frame with community MEK
+        // Decrypt voice frame.
+        // W13.14 — for 1:1 DM calls, use the AEAD call_key on the
+        // active call entry whose peer_pubkey matches the packet's
+        // sender_key. This is also the receiver-side peer-pubkey
+        // filter: a packet whose sender_key doesn't match a known
+        // active 1:1 call's peer is silently dropped (defends against
+        // an attacker on the same private route injecting signed
+        // audio claiming to be a third party).
         if let Some(ref cid) = self.community_id {
             let mek_cache = self.state.mek_cache.lock();
             if let Some(mek) = mek_cache.get(cid) {
@@ -162,6 +169,29 @@ impl VoiceReceiveLoop {
                         tracing::trace!(error = %e, "voice MEK decrypt failed — skipping packet");
                         return;
                     }
+                }
+            }
+        } else {
+            // 1:1 DM call. Look up the peer's call_key by matching
+            // sender_key to a CallState's peer_pubkey.
+            let sender_hex = hex::encode(&packet.sender_key);
+            let call_key = {
+                let calls = self.state.active_calls.lock();
+                calls
+                    .values()
+                    .find(|c| c.peer_pubkey == sender_hex)
+                    .and_then(|c| c.call_key)
+            };
+            let Some(key) = call_key else {
+                tracing::trace!(sender = %sender_hex,
+                    "1:1 voice packet from unknown sender — dropping");
+                return;
+            };
+            match rekindle_voice::transport::decrypt_packet_audio(&key, &packet) {
+                Ok(plaintext) => packet.audio_data = plaintext,
+                Err(e) => {
+                    tracing::trace!(error = %e, "1:1 voice AEAD decrypt failed — dropping");
+                    return;
                 }
             }
         }

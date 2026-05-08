@@ -38,7 +38,9 @@ const OutgoingCallPanel: Component = () => {
       {(entry) => (
         <div class="outgoing-call-panel" role="alertdialog" aria-live="polite">
           <div class="outgoing-call-panel-name">{entry().displayName}</div>
-          <div class="outgoing-call-panel-kind">Calling… {entry().kind} call</div>
+          <div class="outgoing-call-panel-kind">
+            {entry().status === "ringing" ? "Ringing…" : "Calling…"} {entry().kind} call
+          </div>
           <div class="outgoing-call-panel-timer">{remainingSeconds()}s</div>
           <button
             type="button"

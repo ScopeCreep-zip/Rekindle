@@ -41,7 +41,32 @@ pub(crate) async fn start_session(
     let (muted_flag, deafened_flag) = init_engine(state, &prefs, channel_id, community_id)?;
     start_audio_devices(state)?;
 
-    let transport = create_transport(state, &identity.public_key, channel_id, community_id);
+    // W13.12 — for 1:1 DM voice, resolve the peer's route via the
+    // fallback chain (cache → DHT subkey 6 → mailbox) BEFORE creating
+    // the transport. If all three fail, return Err so the caller's
+    // accept_dm_call / handle_accept_received converts to CallDecline /
+    // CallEnd; we never silently transport.init() without a peer.
+    let resolved_route = if community_id.is_none() {
+        match resolve_peer_route(state, channel_id).await {
+            Some(blob) => Some(blob),
+            None => {
+                return Err(format!(
+                    "no route to peer {} (cache + DHT + mailbox all empty)",
+                    channel_id
+                ));
+            }
+        }
+    } else {
+        None
+    };
+
+    let transport = create_transport(
+        state,
+        &identity.public_key,
+        channel_id,
+        community_id,
+        resolved_route.as_deref(),
+    );
     let shared_transport = std::sync::Arc::new(tokio::sync::Mutex::new(transport));
 
     // Store shared transport on VoiceEngineHandle for VoiceJoin/Leave + MCU access
@@ -327,11 +352,30 @@ fn restart_audio_devices(state: &SharedState) -> Result<(), String> {
     Ok(())
 }
 
+/// W13.12 — resolve the peer's route blob via the full fallback chain.
+/// 1) in-memory peer route cache (populated by presence_service watches)
+/// 2) inline DHT fetch of the peer's profile subkey 6
+/// 3) mailbox-route fallback
+/// Returns `None` only if every path fails — that's the signal to the
+/// caller that the call cannot connect.
+async fn resolve_peer_route(state: &SharedState, peer_pubkey_hex: &str) -> Option<Vec<u8>> {
+    if let Some(blob) = state_helpers::cached_route_blob(state, peer_pubkey_hex) {
+        return Some(blob);
+    }
+    if let Some(blob) =
+        crate::services::message_service::try_fetch_route_from_dht(state, peer_pubkey_hex).await
+    {
+        return Some(blob);
+    }
+    None
+}
+
 fn create_transport(
     state: &SharedState,
     public_key: &str,
     channel_id: &str,
     community_id: Option<&str>,
+    resolved_peer_route: Option<&[u8]>,
 ) -> rekindle_voice::transport::VoiceTransport {
     let mut transport = rekindle_voice::transport::VoiceTransport::new(channel_id.to_string());
 
@@ -343,16 +387,18 @@ fn create_transport(
             // Community voice: peers arrive dynamically via VoiceJoin gossip.
             // Just initialize the transport — don't try to connect to a single peer.
             transport.init(api, sender_key);
-        } else {
-            // 1:1 DM voice: single remote peer looked up by channel_id.
-            let route_blob = state_helpers::cached_route_blob(state, channel_id);
-            if let Some(blob) = route_blob {
-                if let Err(e) = transport.connect(api, &blob, sender_key) {
-                    tracing::warn!(error = %e, channel = %channel_id, "voice transport connect failed — audio only local");
-                }
-            } else {
-                transport.init(api, sender_key);
+        } else if let Some(blob) = resolved_peer_route {
+            // W13.12 — 1:1 DM voice: caller resolved the peer route via
+            // resolve_peer_route() (cache → DHT → mailbox). If we got
+            // here, the blob is non-empty.
+            if let Err(e) = transport.connect(api, blob, sender_key) {
+                tracing::warn!(error = %e, channel = %channel_id,
+                    "voice transport connect failed — audio only local");
             }
+        } else {
+            // Defensive — start_session is supposed to fail before here
+            // when the route can't be resolved.
+            transport.init(api, sender_key);
         }
     }
 
@@ -384,7 +430,7 @@ fn create_transport(
     } else {
         // 1:1 DM call. The user's local identity Ed25519 secret is the
         // signing key; the matching pubkey is what the receiver
-        // already knows from the CallOffer/CallAccept handshake.
+        // already knows from the CallInvite/CallAccept handshake.
         let secret_bytes = state.identity_secret.lock().clone();
         match secret_bytes {
             Some(bytes) => {
@@ -397,6 +443,25 @@ fn create_transport(
                     "voice transport: local identity secret unavailable, 1:1 call audio will be silent",
                 );
             }
+        }
+
+        // W13.14 — install the AEAD call_key for audio encryption.
+        // For 1:1 calls, channel_id IS the peer pubkey hex; look up
+        // the CallState entry whose peer_pubkey matches and whose
+        // call_key is set.
+        let call_key_opt = {
+            let calls = state.active_calls.lock();
+            calls
+                .values()
+                .find(|c| c.peer_pubkey == channel_id)
+                .and_then(|c| c.call_key)
+        };
+        match call_key_opt {
+            Some(key) => transport.set_call_key(key),
+            None => tracing::warn!(
+                channel = %channel_id,
+                "voice transport: no call_key on CallState — audio will be unencrypted at app layer",
+            ),
         }
     }
 

@@ -116,59 +116,10 @@ pub async fn try_handle_dm_invite_app_call(
             };
             Some(serde_json::to_vec(&reply).unwrap_or_else(|_| b"ACK".to_vec()))
         }
-        // Plan §Failure 5 — direct call offer arrives via `app_call`.
-        // The frontend prompts the user to accept or decline; that
-        // decision flows back through `services::call_signaling` and
-        // becomes the inline reply payload here.
-        MessagePayload::CallOffer {
-            call_id,
-            offer_kind,
-            initiator_pubkey,
-            initiator_x25519_pub,
-            expires_at_ms,
-        } => {
-            let reply = crate::commands::calls::handle_incoming_offer(
-                app_handle,
-                state,
-                pool,
-                &prepared.sender_hex,
-                &call_id,
-                offer_kind,
-                &initiator_pubkey,
-                &initiator_x25519_pub,
-                expires_at_ms,
-            )
-            .await;
-            Some(serde_json::to_vec(&reply).unwrap_or_else(|_| b"ACK".to_vec()))
-        }
-        // Wave 12 W12.9 — group call offer arrives via app_call, same
-        // shape as 1:1 CallOffer but with a per-recipient wrapped
-        // call_key. handle_incoming_group_offer prompts the user to
-        // accept/decline and returns the inline reply.
-        MessagePayload::GroupCallOffer {
-            call_id,
-            offer_kind,
-            initiator_pubkey,
-            initiator_x25519_pub,
-            participants,
-            wrapped_call_key,
-            expires_at_ms,
-        } => {
-            let reply = crate::commands::calls::handle_incoming_group_offer(
-                app_handle,
-                state,
-                &prepared.sender_hex,
-                &call_id,
-                offer_kind,
-                &initiator_pubkey,
-                &initiator_x25519_pub,
-                participants,
-                &wrapped_call_key,
-                expires_at_ms,
-            )
-            .await;
-            Some(serde_json::to_vec(&reply).unwrap_or_else(|_| b"ACK".to_vec()))
-        }
+        // Wave 13 — call signaling no longer travels via app_call
+        // (CallInvite/Accept/Decline/Ringing all dispatch via
+        // process_envelope's app_message arms). DmInvite + RelayOffer
+        // are the only remaining app_call payloads in this codebase.
         _ => None,
     }
 }
@@ -358,16 +309,74 @@ pub async fn handle_incoming_message(
             // app_call already resolved with the inline reply.
             tracing::trace!("received DmAccept via app_message; ignoring");
         }
-        // Plan §Failure 5 — Call signaling lives on `app_call`. If a
-        // peer mis-sends one of these via `app_message` we just trace.
-        MessagePayload::CallOffer { .. }
-        | MessagePayload::CallAccept { .. }
-        | MessagePayload::CallDecline { .. } => {
-            tracing::trace!("received call signaling via app_message; ignoring");
+        // Wave 13 W13.4 — peer is calling us. Dispatch into the new
+        // services::calls state machine which inserts CallState=Incoming,
+        // emits ChatEvent::IncomingCall, surfaces the window, and fires
+        // CallRinging back as an alerting ack.
+        MessagePayload::CallInvite {
+            call_id,
+            offer_kind,
+            initiator_pubkey,
+            initiator_x25519_pub,
+            expires_at_ms,
+        } => {
+            crate::services::calls::handle_incoming_invite(
+                app_handle,
+                state,
+                pool,
+                &msg.sender_hex,
+                &call_id,
+                offer_kind,
+                &initiator_pubkey,
+                &initiator_x25519_pub,
+                expires_at_ms,
+            )
+            .await;
         }
-        // C2 hangup — peer ended the active call. Remove from local
-        // active_calls map and emit ChatEvent::CallEnded so the
-        // frontend's calls.handlers.ts can clear callsState.activeCall.
+        // Wave 13 W13.6 — peer accepted our outgoing call. Derive the
+        // shared call_key, start voice session, transition to Active.
+        MessagePayload::CallAccept {
+            call_id,
+            acceptor_x25519_pub,
+        } => {
+            crate::services::calls::handle_accept_received(
+                app_handle,
+                state,
+                pool,
+                &msg.sender_hex,
+                &call_id,
+                &acceptor_x25519_pub,
+            )
+            .await;
+        }
+        // Wave 13 W13.8 — peer declined our outgoing call. Drop
+        // CallState, emit CallDeclined.
+        MessagePayload::CallDecline { call_id, reason } => {
+            crate::services::calls::handle_decline_received(
+                app_handle,
+                state,
+                &msg.sender_hex,
+                &call_id,
+                reason,
+            )
+            .await;
+        }
+        // Wave 13 — alerting ack from receiver: "I got your invite,
+        // I'm ringing the user now." Best-effort; drives the
+        // OutgoingCallPanel "Calling…" → "Ringing…" transition.
+        MessagePayload::CallRinging { call_id } => {
+            crate::services::calls::handle_ringing_received(
+                app_handle,
+                state,
+                &msg.sender_hex,
+                &call_id,
+            )
+            .await;
+        }
+        // Wave 13 W13.9 — hangup / cancel. Works for any state
+        // (Outgoing / Incoming / Connecting / Active) so a
+        // cancel-while-ringing or decline-after-accept-race cleans up
+        // both sides cleanly.
         MessagePayload::CallEnd { call_id, reason } => {
             let removed = state.active_calls.lock().remove(&call_id).is_some();
             if removed {
@@ -438,10 +447,13 @@ pub async fn handle_incoming_message(
                 );
             }
         }
-        // Wave 12 W12.9 — group call signaling. Offer/Accept/Decline
-        // travel via app_call (handled by the call_signaling helper —
-        // these arms only fire if a peer mis-sends via app_message).
-        // ParticipantJoined/Left are gossip-style notices.
+        // Wave 12 W12.9 + Wave 13 W13.13 — all group call signaling now
+        // travels via app_message (was app_call in W12.9; flipped in
+        // W13.13 to match 1:1 calls). The group_calls dispatcher
+        // routes Offer → handle_incoming_group_invite, Accept →
+        // handle_group_accept_received, Decline →
+        // handle_group_decline_received, ParticipantJoined/Left →
+        // gossip-style chat-event re-emit.
         payload @ (MessagePayload::GroupCallOffer { .. }
         | MessagePayload::GroupCallAccept { .. }
         | MessagePayload::GroupCallDecline { .. }
@@ -1623,7 +1635,7 @@ async fn is_blocked(state: &Arc<AppState>, pool: &DbPool, sender_hex: &str) -> b
 /// to recover without waiting for the 30-second sync loop. Returns the route blob
 /// bytes on success, or `None` if the peer has no DHT key, the node is detached,
 /// or the DHT fetch fails.
-async fn try_fetch_route_from_dht(state: &Arc<AppState>, peer_id: &str) -> Option<Vec<u8>> {
+pub(crate) async fn try_fetch_route_from_dht(state: &Arc<AppState>, peer_id: &str) -> Option<Vec<u8>> {
     let dht_key_str = state_helpers::friend_dht_key(state, peer_id)?;
 
     let record_key: veilid_core::RecordKey = dht_key_str.parse().ok()?;

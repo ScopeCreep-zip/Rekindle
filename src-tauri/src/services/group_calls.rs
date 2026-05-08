@@ -55,10 +55,10 @@ pub enum GroupCallStatus {
 
 /// Drop impl is implicit via StaticSecret + array; both zeroize.
 
-/// Dispatcher for group-call MessagePayload variants that arrived via
-/// app_message. Offer/Accept/Decline are normally app_call replies and
-/// shouldn't reach here; we trace and drop them. The two gossip
-/// variants (ParticipantJoined / Left) update grid state on receivers.
+/// Wave 13 W13.13 — dispatcher for group-call MessagePayload variants
+/// that arrived via app_message. After W13.13, ALL group call
+/// signaling travels via app_message (was app_call in W12.9; the
+/// architectural mismatch was the same one that broke 1:1 calls).
 pub async fn handle_group_call_payload(
     app: &tauri::AppHandle,
     state: &SharedState,
@@ -67,11 +67,37 @@ pub async fn handle_group_call_payload(
     payload: MessagePayload,
 ) {
     match payload {
-        MessagePayload::GroupCallOffer { call_id, .. }
-        | MessagePayload::GroupCallAccept { call_id, .. }
-        | MessagePayload::GroupCallDecline { call_id, .. } => {
-            tracing::trace!(call_id = %call_id, sender = %sender_hex,
-                "group call signaling via app_message; expected app_call");
+        MessagePayload::GroupCallOffer {
+            call_id,
+            offer_kind,
+            initiator_pubkey,
+            initiator_x25519_pub,
+            participants,
+            wrapped_call_key,
+            expires_at_ms,
+        } => {
+            handle_incoming_group_invite(
+                app,
+                state,
+                sender_hex,
+                &call_id,
+                offer_kind,
+                &initiator_pubkey,
+                &initiator_x25519_pub,
+                participants,
+                &wrapped_call_key,
+                expires_at_ms,
+            )
+            .await;
+        }
+        MessagePayload::GroupCallAccept {
+            call_id,
+            acceptor_pubkey,
+        } => {
+            handle_group_accept_received(app, state, sender_hex, &call_id, &acceptor_pubkey).await;
+        }
+        MessagePayload::GroupCallDecline { call_id, reason } => {
+            handle_group_decline_received(app, state, sender_hex, &call_id, reason).await;
         }
         MessagePayload::GroupCallParticipantJoined { call_id, participant_pubkey } => {
             // Receivers update their grid only if the announced
@@ -121,22 +147,183 @@ pub async fn handle_group_call_payload(
     }
 }
 
-/// Used by the app_call dispatcher in `commands::calls` when an
-/// incoming GroupCallOffer arrives. Inserts a state entry, emits the
-/// frontend ring event, and parks on a oneshot for accept/decline.
-pub fn unwrap_offer(
-    our_secret: &StaticSecret,
-    initiator_x25519_pub: &[u8],
+/// Wave 13 — receiver-side entry into a group call. Mirrors the
+/// `handle_incoming_invite` shape for 1:1 but with the per-recipient
+/// X25519 unwrap.
+pub async fn handle_incoming_group_invite(
+    app: &tauri::AppHandle,
+    state: &SharedState,
+    sender_hex: &str,
     call_id: &str,
-    our_pubkey: &str,
-    wrapped: &[u8],
-) -> Result<[u8; 32], String> {
-    unwrap_call_key(
-        our_secret,
+    offer_kind: u8,
+    initiator_pubkey: &str,
+    initiator_x25519_pub: &[u8],
+    participants: Vec<String>,
+    wrapped_call_key: &[u8],
+    expires_at_ms: u64,
+) {
+    use rekindle_calls::CallKind;
+    let kind = CallKind::from_u8(offer_kind).unwrap_or(CallKind::Audio);
+    let display_name = crate::state_helpers::friend_display_name(state, sender_hex)
+        .unwrap_or_else(|| {
+            if initiator_pubkey.len() > 16 {
+                format!("{}…", &initiator_pubkey[..16])
+            } else {
+                initiator_pubkey.to_string()
+            }
+        });
+
+    if initiator_x25519_pub.len() != 32 {
+        tracing::warn!(call_id = %call_id, "GroupCallOffer with bad x25519 length");
+        return;
+    }
+
+    // Temp-mute lookup mirrors 1:1 — silently drop if peer is muted.
+    {
+        let now = rekindle_utils::timestamp_ms();
+        let mut muted = state.temp_call_muted.lock();
+        if let Some(&expires_at) = muted.get(sender_hex) {
+            if now < expires_at {
+                return;
+            }
+            muted.remove(sender_hex);
+        }
+    }
+
+    // Convert our Ed25519 secret → X25519 (same as W12.9 receiver path).
+    let our_ed_pubkey = match crate::state_helpers::current_identity(state) {
+        Ok(i) => i.public_key,
+        Err(_) => return,
+    };
+    let our_x25519_secret = {
+        let secret_opt = state.identity_secret.lock().clone();
+        match secret_opt {
+            Some(bytes) => {
+                let identity = rekindle_crypto::Identity::from_secret_bytes(&bytes);
+                identity.to_x25519_secret()
+            }
+            None => return,
+        }
+    };
+    let call_key = match unwrap_call_key(
+        &our_x25519_secret,
         initiator_x25519_pub,
         call_id,
-        our_pubkey,
-        wrapped,
-    )
-    .map_err(|e| e.to_string())
+        &our_ed_pubkey,
+        wrapped_call_key,
+    ) {
+        Ok(k) => k,
+        Err(e) => {
+            tracing::warn!(call_id = %call_id, error = %e,
+                "group call key unwrap failed (likely not a participant)");
+            return;
+        }
+    };
+
+    {
+        let mut calls = state.group_calls.lock();
+        calls.insert(
+            call_id.to_string(),
+            GroupCallState {
+                call_id: call_id.to_string(),
+                initiator_pubkey: initiator_pubkey.to_string(),
+                kind: offer_kind,
+                participants: participants.clone(),
+                accepted: HashSet::new(),
+                our_x25519_secret: Some(our_x25519_secret),
+                call_key: Some(call_key),
+                status: GroupCallStatus::Incoming,
+            },
+        );
+    }
+
+    let kind_str = match kind {
+        CallKind::Audio => "audio",
+        CallKind::Video => "video",
+    };
+    let _ = app.emit(
+        "chat-event",
+        &ChatEvent::IncomingGroupCall {
+            call_id: call_id.to_string(),
+            from: sender_hex.to_string(),
+            display_name,
+            kind: kind_str.into(),
+            participants,
+            expires_at_ms,
+        },
+    );
+    crate::windows::surface_window_for_call(app);
 }
+
+/// Wave 13 — initiator receives a participant's accept. Updates the
+/// GroupCallState (Outgoing → Active on first accept), emits
+/// ChatEvent::GroupCallConnected on first transition + always emits
+/// ParticipantJoined so the grid updates.
+pub async fn handle_group_accept_received(
+    app: &tauri::AppHandle,
+    state: &SharedState,
+    sender_hex: &str,
+    call_id: &str,
+    acceptor_pubkey: &str,
+) {
+    let _ = sender_hex; // sender == acceptor in normal flow
+    let became_active = {
+        let mut calls = state.group_calls.lock();
+        let Some(call) = calls.get_mut(call_id) else {
+            return;
+        };
+        if !call.participants.contains(&acceptor_pubkey.to_string()) {
+            tracing::warn!(call = %call_id, acceptor = %acceptor_pubkey,
+                "GroupCallAccept from non-invitee; ignoring");
+            return;
+        }
+        call.accepted.insert(acceptor_pubkey.to_string());
+        if call.status == GroupCallStatus::Outgoing {
+            call.status = GroupCallStatus::Active;
+            true
+        } else {
+            false
+        }
+    };
+    if became_active {
+        let _ = app.emit(
+            "chat-event",
+            &ChatEvent::GroupCallConnected {
+                call_id: call_id.to_string(),
+            },
+        );
+    }
+    let _ = app.emit(
+        "chat-event",
+        &ChatEvent::GroupCallParticipantJoined {
+            call_id: call_id.to_string(),
+            participant_pubkey: acceptor_pubkey.to_string(),
+        },
+    );
+}
+
+/// Wave 13 — participant declines a group call.
+pub async fn handle_group_decline_received(
+    app: &tauri::AppHandle,
+    state: &SharedState,
+    sender_hex: &str,
+    call_id: &str,
+    reason: String,
+) {
+    let known = {
+        let calls = state.group_calls.lock();
+        calls.contains_key(call_id)
+    };
+    if !known {
+        return;
+    }
+    let _ = app.emit(
+        "chat-event",
+        &ChatEvent::GroupCallParticipantLeft {
+            call_id: call_id.to_string(),
+            participant_pubkey: sender_hex.to_string(),
+            reason,
+        },
+    );
+}
+

@@ -93,28 +93,35 @@ export function subscribeCallEvents(): Promise<UnlistenFn> {
       case "callConnected": {
         const { callId } = event.data;
         stopActiveRing();
-        // Promote either the outgoing call (Alice path) or the head
-        // incoming call (Bob path) to the active slot.
-        //
-        // W12-fix.D — handle the race where callConnected arrives
-        // BEFORE the startDmCall promise resolves. In that case the
-        // seed entry's callId is still "" (set by handleStartDmCall
-        // before the round-trip). Match on peerKey as a fallback so
-        // the active-slot transition still happens; the callId field
-        // is filled in from the event.
+        // W13.11 — under the new fire-and-forget signaling, the
+        // backend's start_dm_call returns the call_id synchronously
+        // BEFORE any callConnected event can fire (callConnected
+        // requires a CallAccept envelope round-trip; that takes
+        // strictly longer than the local IPC return). The W12-fix.D
+        // empty-string-fallback shim is no longer needed; matching by
+        // exact callId is enough.
         const out = callsState.outgoingCall;
-        if (out) {
-          if (out.callId === callId || out.callId === "") {
-            setCallsState("activeCall", { ...out, callId });
-            setCallsState("outgoingCall", null);
-            break;
-          }
+        if (out && out.callId === callId) {
+          setCallsState("activeCall", out);
+          setCallsState("outgoingCall", null);
+          break;
         }
         const idx = callsState.incomingCalls.findIndex((c) => c.callId === callId);
         if (idx >= 0) {
           const entry = callsState.incomingCalls[idx];
           setCallsState("activeCall", entry);
           setCallsState("incomingCalls", (prev) => prev.filter((_, i) => i !== idx));
+        }
+        break;
+      }
+      case "callRinging": {
+        // W13 — receiver acknowledged our invite and is ringing the
+        // user. Flip the OutgoingCallPanel label from "Calling…" to
+        // "Ringing…" via a status field on the entry.
+        const { callId } = event.data;
+        const out = callsState.outgoingCall;
+        if (out && out.callId === callId) {
+          setCallsState("outgoingCall", "status", "ringing");
         }
         break;
       }
@@ -330,6 +337,7 @@ export async function handleStartDmCall(
     kind: video ? "video" : "audio",
     expiresAtMs,
     startedAtMs: Date.now(),
+    status: "calling",
   };
   setCallsState("outgoingCall", seed);
   if (settingsState.ringtoneEnabled) {

@@ -12,6 +12,12 @@ export interface CallEntry {
   kind: "audio" | "video";
   expiresAtMs: number;
   startedAtMs: number;
+  /**
+   * Wave 13 — UX hint for the OutgoingCallPanel. "calling" until we
+   * receive a CallRinging ack from the receiver, then "ringing".
+   * Undefined for incoming/active entries.
+   */
+  status?: "calling" | "ringing";
   /** Wave 12 W12.6 — peer's last-known media flags. Updated by
    *  chat-event::callMediaStateChanged. UI mounts video/screen tiles
    *  in response. Undefined means "no ping received yet"; default

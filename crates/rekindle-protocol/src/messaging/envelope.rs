@@ -192,13 +192,22 @@ pub enum MessagePayload {
     StatusRequest {
         target_pubkey: String,
     },
-    /// Direct call offer (architecture §10.10 / Plan §Failure 5).
-    /// The initiator generates an ephemeral X25519 keypair, sends the
-    /// public key here, and awaits `CallAccept` (with the responder's
-    /// public key) so both sides can derive the same `call_key` via
-    /// HKDF-SHA256 over the ECDH shared secret. Shipped via
-    /// `app_call` so the responder's accept/decline returns inline.
-    CallOffer {
+    /// Wave 13 — direct call invitation. Travels as fire-and-forget
+    /// `app_message`, mirroring the FriendRequest handshake that already
+    /// works in this codebase. Replaces the old `CallOffer` (which was
+    /// shipped via `app_call` and forced the caller to block on a 30 s
+    /// inline reply — wrong primitive for human reaction time, fights
+    /// NAT rebind / route refresh, no reference chat app does it that
+    /// way).
+    ///
+    /// Caller flow: insert CallState=Outgoing, fire CallInvite, return.
+    /// Receiver flow: process_envelope → handle_incoming_invite →
+    /// emit ChatEvent::IncomingCall + ring + surface window.
+    /// User-accept: receiver fires CallAccept (separate envelope).
+    /// User-decline: receiver fires CallDecline (separate envelope).
+    /// 30 s with no reply: each side independently times out and
+    /// fires CallTimedOut / CallMissed.
+    CallInvite {
         /// Hex-encoded 16-byte random call identifier (32 chars).
         call_id: String,
         /// 0 = audio, 1 = video. Matches `rekindle_calls::CallKind::as_u8`.
@@ -206,32 +215,45 @@ pub enum MessagePayload {
         /// Initiator's hex-encoded Ed25519 identity key. Used by the
         /// responder to look up display name + avatar.
         initiator_pubkey: String,
-        /// Initiator's ephemeral X25519 public key (32 bytes).
+        /// Initiator's ephemeral X25519 public key (32 bytes). The
+        /// receiver derives the shared call_key via X25519 ECDH +
+        /// HKDF-SHA256 once they accept and learn the
+        /// acceptor_x25519_pub from the receiver-side X25519 keypair.
         initiator_x25519_pub: Vec<u8>,
         /// Unix milliseconds when the ring should be considered missed.
-        /// Initiator sets `now + 30_000`.
+        /// Initiator sets `now + 30_000`. Each side enforces locally.
         expires_at_ms: u64,
     },
-    /// Reply to `CallOffer` carrying the responder's X25519 public key
-    /// so the initiator can finish key derivation. Returned as the
-    /// `app_call` reply, never sent unsolicited.
+    /// Wave 13 — optional alerting ack: "I got the invite, I'm ringing
+    /// the user now." Lets the caller's UI distinguish "in transit"
+    /// from "ringing" (Discord/Signal don't bother but it's cheap and
+    /// informative). Best-effort; loss is acceptable.
+    CallRinging {
+        call_id: String,
+    },
+    /// Wave 13 — receiver's accept (was an inline RPC reply in the old
+    /// CallOffer/app_call design; now its own fire-and-forget envelope
+    /// over `app_message`). Carries the responder's X25519 public key
+    /// so the caller can derive the same call_key via ECDH + HKDF.
+    /// Sent AFTER the receiver's local voice session is up so the call
+    /// is bidirectional from the moment the caller acts on the accept.
     CallAccept {
         call_id: String,
         acceptor_x25519_pub: Vec<u8>,
     },
-    /// Reply to `CallOffer` rejecting the call. Same shape as
-    /// `DmDecline` so the dispatcher can mirror existing patterns.
+    /// Wave 13 — receiver's explicit decline (was an inline RPC reply;
+    /// now standalone `app_message`).
     CallDecline {
         call_id: String,
         #[serde(default, skip_serializing_if = "String::is_empty")]
         reason: String,
     },
-    /// C2 hangup — sent by either party to end an Active call. Receiver
+    /// Hangup — sent by either party to end an Active call. Receiver
     /// removes the call from `state.active_calls` and emits
     /// `ChatEvent::CallEnded` so the frontend can clear `activeCall`.
-    /// Distinct from `CallDecline` (which is the inline `app_call` reply
-    /// to a CallOffer) — this one travels via `app_message` after the
-    /// call is established.
+    /// Wave 13 W13.9 — also handles Dialing / Incoming / Connecting
+    /// state so a cancel-while-ringing race cleans up cleanly on both
+    /// sides.
     CallEnd {
         call_id: String,
         #[serde(default, skip_serializing_if = "String::is_empty")]

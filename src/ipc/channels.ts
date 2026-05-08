@@ -59,6 +59,13 @@ export type ChatEvent =
   | { type: "callDeclined"; data: { callId: string; reason: string } }
   | { type: "callEnded"; data: { callId: string; reason: string } }
   | {
+      // Wave 13 — alerting hint: receiver got our CallInvite and is
+      // ringing the user. Drives "Calling…" → "Ringing…" transition
+      // on the OutgoingCallPanel.
+      type: "callRinging";
+      data: { callId: string };
+    }
+  | {
       // Wave 12 W12.6 — peer flipped a media flag mid-call. Frontend
       // mounts/unmounts the corresponding tile.
       type: "callMediaStateChanged";

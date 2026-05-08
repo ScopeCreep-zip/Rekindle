@@ -21,6 +21,12 @@ aec3 = "0.1"
 veilid-core = { version = "0.5.2", features = ["footgun"] }
 bincode = "1"
 ed25519-dalek = "2"
+# Wave 13 W13.14 — AEAD audio encryption under the X25519-ECDH-derived
+# call_key for 1:1 calls. Architecture §10.10 mandates audio be
+# encrypted under call_key; previously only signed (Veilid private
+# routes encrypted at transport, but exposed if a relay node compromised
+# or a route blob leaked).
+chacha20poly1305 = "0.10"
 rekindle-route = { path = "../rekindle-route" }
 
 [dev-dependencies]

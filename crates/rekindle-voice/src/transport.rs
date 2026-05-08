@@ -1,11 +1,71 @@
 use std::collections::HashMap;
 
+use chacha20poly1305::{
+    aead::{Aead, KeyInit},
+    ChaCha20Poly1305, Key, Nonce,
+};
 use rekindle_route::contexts::RouteContextSpec;
 use serde::{Deserialize, Serialize};
 use veilid_core::{RoutingContext, SafetySelection, Sequencing, Target, VeilidAPI};
 
 use crate::codec::EncodedFrame;
 use crate::error::VoiceError;
+
+// Wave 13 W13.14 — AEAD audio encryption under the X25519-derived
+// call_key. ChaCha20-Poly1305 chosen for low-CPU (matters for mobile),
+// constant-time (no timing oracles), large nonce space (12 bytes —
+// no birthday attack at audio packet rates), and a Rust ecosystem
+// implementation already used elsewhere in the project's crypto
+// dependencies.
+
+/// Domain-tag bytes that go into the nonce derivation so a chat or
+/// governance ChaCha20-Poly1305 secret can never collide with a voice
+/// nonce reused (defense-in-depth — the call_key is already
+/// domain-separated by `derive_call_key`'s HKDF info).
+const VOICE_AEAD_DOMAIN: &[u8; 4] = b"vca1";
+
+/// Build a 12-byte nonce from `(sequence, timestamp)`. Each packet
+/// gets a unique nonce because the (sequence, timestamp) pair is
+/// strictly monotonic per call. Sender and receiver reconstruct the
+/// same nonce from the public packet fields — no extra wire bytes.
+fn aead_nonce(sequence: u32, timestamp: u64) -> [u8; 12] {
+    // 4-byte domain tag + 4-byte sequence + 4 low-order bytes of
+    // timestamp. (sequence, timestamp) is monotonic per call so the
+    // resulting 12-byte nonce is unique even if timestamps roll over
+    // every ~50 days at 48 kHz Opus framing — at which point sequence
+    // alone is 32 bits of fresh space.
+    let mut nonce = [0u8; 12];
+    nonce[..4].copy_from_slice(VOICE_AEAD_DOMAIN);
+    nonce[4..8].copy_from_slice(&sequence.to_le_bytes());
+    nonce[8..12].copy_from_slice(&((timestamp & 0xFFFF_FFFF) as u32).to_le_bytes());
+    nonce
+}
+
+fn encrypt_audio(
+    call_key: &[u8; 32],
+    sequence: u32,
+    timestamp: u64,
+    plaintext: &[u8],
+) -> Result<Vec<u8>, VoiceError> {
+    let cipher = ChaCha20Poly1305::new(Key::from_slice(call_key));
+    let nonce = aead_nonce(sequence, timestamp);
+    cipher
+        .encrypt(Nonce::from_slice(&nonce), plaintext)
+        .map_err(|e| VoiceError::Transport(format!("aead encrypt: {e}")))
+}
+
+/// Receive-side decrypt entry point. Made public so receive_loop can
+/// run the decrypt step after signature verification.
+pub fn decrypt_packet_audio(
+    call_key: &[u8; 32],
+    packet: &VoicePacket,
+) -> Result<Vec<u8>, VoiceError> {
+    let cipher = ChaCha20Poly1305::new(Key::from_slice(call_key));
+    let nonce = aead_nonce(packet.sequence, packet.timestamp);
+    cipher
+        .decrypt(Nonce::from_slice(&nonce), packet.audio_data.as_slice())
+        .map_err(|e| VoiceError::Transport(format!("aead decrypt: {e}")))
+}
 
 /// Voice packet for network transmission.
 ///
@@ -89,6 +149,12 @@ pub struct VoiceTransport {
     /// community_id (or identity secret alone for 1:1 calls). Cleared on
     /// disconnect so a stale key can't sign packets after channel exit.
     signing_key: Option<ed25519_dalek::SigningKey>,
+    /// Wave 13 W13.14 — optional AEAD key for audio encryption.
+    /// `Some(call_key)` for 1:1 DM calls (X25519 ECDH derived). For
+    /// community voice, the per-channel MEK is applied at a higher
+    /// layer in `services/voice/send_loop.rs`, so this stays None and
+    /// audio_data passes through unmodified.
+    call_key: Option<[u8; 32]>,
     /// Connected peers: pseudonym_key (hex) → route info.
     peers: HashMap<String, PeerRoute>,
     /// Current operating mode.
@@ -118,9 +184,26 @@ impl VoiceTransport {
             api: None,
             sender_key: Vec::new(),
             signing_key: None,
+            call_key: None,
             peers: HashMap::new(),
             mode: VoiceMode::default(),
         }
+    }
+
+    /// Wave 13 W13.14 — install the AEAD call_key for 1:1 DM calls so
+    /// every outbound packet's `audio_data` is ChaCha20-Poly1305
+    /// encrypted under the X25519-ECDH-derived shared key.
+    /// Architecture §10.10 mandate. Receivers verify the signature
+    /// against the (encrypted) audio_data, then decrypt.
+    pub fn set_call_key(&mut self, call_key: [u8; 32]) {
+        self.call_key = Some(call_key);
+    }
+
+    /// Get the installed call_key (for the receive path which decrypts
+    /// after signature verify). Returns None for community voice or
+    /// when no call has set up a key yet.
+    pub fn call_key(&self) -> Option<[u8; 32]> {
+        self.call_key
     }
 
     /// Initialize the transport with a Veilid API and sender identity.
@@ -289,6 +372,7 @@ impl VoiceTransport {
         self.api = None;
         self.sender_key.clear();
         self.signing_key = None;
+        self.call_key = None;
         self.mode = VoiceMode::default();
         tracing::info!(channel = %self.channel_id, "voice transport disconnected");
     }
@@ -333,21 +417,33 @@ impl VoiceTransport {
     }
 
     /// Build the wire-format packet data from an encoded frame.
+    ///
+    /// Wave 13 W13.14 — for 1:1 DM calls (`call_key` installed), the
+    /// Opus payload is AEAD-encrypted under ChaCha20-Poly1305 with a
+    /// deterministic per-packet nonce derived from `(sequence,
+    /// timestamp)`. The 16-byte tag is appended; receivers reconstruct
+    /// the same nonce and verify+decrypt. For community voice
+    /// (`call_key.is_none()`), the audio_data passes through and the
+    /// per-channel MEK applied at a higher layer remains the encryption.
     fn build_packet_data(&self, frame: &EncodedFrame) -> Result<Vec<u8>, VoiceError> {
-        // Architecture §10.3 + §26 W26 — sign every outbound packet so
-        // receivers can authenticate the sender. Without this any
-        // community member could MEK-encrypt audio claiming any
-        // pseudonym; the MEK is shared and only proves community
-        // membership, not which specific member sent the audio.
         let signing_key = self
             .signing_key
             .as_ref()
             .ok_or_else(|| VoiceError::Transport("voice signing key not installed".into()))?;
+
+        // W13.14 — encrypt audio_data with ChaCha20-Poly1305 if a
+        // call_key is installed.
+        let audio_data = if let Some(key) = self.call_key.as_ref() {
+            encrypt_audio(key, frame.sequence, frame.timestamp, &frame.data)?
+        } else {
+            frame.data.clone()
+        };
+
         let mut packet = VoicePacket {
             sender_key: self.sender_key.clone(),
             sequence: frame.sequence,
             timestamp: frame.timestamp,
-            audio_data: frame.data.clone(),
+            audio_data,
             signature: Vec::new(),
         };
         use ed25519_dalek::Signer;

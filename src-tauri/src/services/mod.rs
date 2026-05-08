@@ -1,4 +1,4 @@
-pub mod call_signaling;
+pub mod calls;
 pub mod community;
 pub mod group_calls;
 pub mod cross_device_sync;

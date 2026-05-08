@@ -123,6 +123,14 @@ pub enum ChatEvent {
         call_id: String,
         reason: String,
     },
+    /// Wave 13 — alerting hint from receiver: "I got the invite, I'm
+    /// ringing the user now." Lets the caller's UI flip "Calling…" to
+    /// "Ringing…" without waiting for the actual accept/decline.
+    /// Best-effort; loss is acceptable.
+    #[serde(rename_all = "camelCase")]
+    CallRinging {
+        call_id: String,
+    },
     /// Wave 12 W12.6 — peer toggled their mic / camera / screen-share
     /// mid-call. Frontend's `ActiveCallPanel` / `VideoCallPanel` mount or
     /// unmount tiles in response. Sender authority: each side controls
