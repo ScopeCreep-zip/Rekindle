@@ -237,6 +237,102 @@ pub enum MessagePayload {
         #[serde(default, skip_serializing_if = "String::is_empty")]
         reason: String,
     },
+    /// Wave 12 W12.6 — mid-call media state change. Sent by either party
+    /// when the local mute / camera / screen-share toggle flips so the
+    /// peer's UI can reactively show or hide the corresponding tile.
+    /// Does NOT renegotiate the `call_key` — this is a non-renegotiation
+    /// state ping, not a fresh handshake. Travels via `app_message`
+    /// after the call is established (post-CallAccept).
+    CallMediaState {
+        call_id: String,
+        /// Sender's microphone is currently producing audio (i.e. they
+        /// are NOT muted). Receivers can use this for a UI hint;
+        /// authoritative mute is enforced by the sender ceasing to
+        /// transmit audio frames.
+        audio: bool,
+        /// Sender's camera is on and they're transmitting VP9 frames
+        /// for `track_label = "camera"`. Receivers mount a video tile
+        /// when this flips true.
+        video: bool,
+        /// Sender's screen-share is on and they're transmitting VP9
+        /// frames for `track_label = "screen"`. Independent of `video`
+        /// so the two streams can co-exist.
+        screen: bool,
+        /// Wall-clock millis at the sender; used by receivers to drop
+        /// out-of-order updates (last-write-wins on this single field).
+        timestamp_ms: u64,
+    },
+    /// Wave 12 W12.11 — in-call emoji reaction. Receivers float the
+    /// emoji over their call panel for ~2 s. Fire-and-forget via
+    /// `app_message`; loss is acceptable (it's eye-candy, not state).
+    CallReaction {
+        call_id: String,
+        /// Single grapheme cluster (e.g. "👍", "❤️"). Receivers cap
+        /// length to a small bound to defeat oversized-emoji DoS via
+        /// hand-crafted clients.
+        emoji: String,
+        /// Sender's millis-since-epoch — receivers use this to dedup
+        /// rapid-fire spamming and to drop reactions that arrived
+        /// after their TTL window.
+        timestamp_ms: u64,
+    },
+    /// Wave 12 W12.9 — group call offer. The initiator sends one
+    /// envelope PER invitee, each with that invitee's per-recipient
+    /// `wrapped_call_key` (X25519 + HKDF + AES-256-GCM). Other
+    /// invitees can't decrypt this recipient's wrap, so the call_key
+    /// stays scoped to the explicit invite list. Travels via
+    /// `app_call` so the responder's accept/decline returns inline.
+    GroupCallOffer {
+        call_id: String,
+        /// 0 = audio, 1 = video.
+        offer_kind: u8,
+        /// Initiator's hex-encoded Ed25519 identity key.
+        initiator_pubkey: String,
+        /// Initiator's ephemeral X25519 public key (32 bytes). Used by
+        /// the recipient to derive the same wrap_key the initiator
+        /// used to seal `wrapped_call_key`.
+        initiator_x25519_pub: Vec<u8>,
+        /// Hex pubkeys of every invitee, included so each recipient
+        /// can render the participant grid before they accept and so
+        /// late joins know who's expected.
+        participants: Vec<String>,
+        /// 60-byte (12 nonce + 32 ciphertext + 16 tag) per-recipient
+        /// sealed call_key. Only THIS recipient can decrypt — see
+        /// rekindle_calls::group::wrap_call_key.
+        wrapped_call_key: Vec<u8>,
+        /// Unix millis when the ring expires.
+        expires_at_ms: u64,
+    },
+    /// Wave 12 W12.9 — reply to GroupCallOffer carrying the
+    /// acceptor's identity so other participants can be told who
+    /// joined. Returned as the inline `app_call` reply.
+    GroupCallAccept {
+        call_id: String,
+        acceptor_pubkey: String,
+    },
+    /// Wave 12 W12.9 — reply rejecting a GroupCallOffer.
+    GroupCallDecline {
+        call_id: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        reason: String,
+    },
+    /// Wave 12 W12.9 — gossiped notice that another participant has
+    /// joined a group call already in progress (post-acceptance). Not
+    /// authoritative; receivers verify the participant is in the
+    /// call's invite list before adding to their grid.
+    GroupCallParticipantJoined {
+        call_id: String,
+        participant_pubkey: String,
+    },
+    /// Wave 12 W12.9 — gossiped notice that a participant has left.
+    /// Receivers prune their grid; voice topology re-elects mesh / SFU
+    /// as needed.
+    GroupCallParticipantLeft {
+        call_id: String,
+        participant_pubkey: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        reason: String,
+    },
     /// P3.3 session renewal — Alice → Bob: "my Signal session for you is
     /// broken (decrypt failures, lost on upgrade, deliberate reset);
     /// please re-handshake. Here's my fresh PreKeyBundle." This is the

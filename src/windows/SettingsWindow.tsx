@@ -246,6 +246,14 @@ const SettingsWindow: Component = () => {
     handleSaveSettings({ [key]: !settingsState[key] });
   }
 
+  // Wave 12 W12.2 — slider for numeric settings (ringtone volume).
+  function handleSliderChange(
+    key: keyof typeof settingsState,
+    value: number,
+  ): void {
+    handleSaveSettings({ [key]: value });
+  }
+
   function handleSaveName(): void {
     const name = nameInput().trim();
     if (name && name !== authState.displayName) {
@@ -408,6 +416,48 @@ const SettingsWindow: Component = () => {
             onChange={() => handleToggle("soundEnabled")}
           />
           <span class="buddy-name">Sound Effects</span>
+        </label>
+
+        {/* Wave 12 W12.2 — call-specific audio gates. Ringtone is
+            independent of message Sound Effects so the user can silence
+            chat dings while still hearing the ring. */}
+        <div class="settings-section-title">Calls</div>
+        <label class="settings-option">
+          <input
+            type="checkbox"
+            checked={settingsState.ringtoneEnabled}
+            onChange={() => handleToggle("ringtoneEnabled")}
+          />
+          <span class="buddy-name">Play ringtone on incoming calls</span>
+        </label>
+        <label class="settings-option">
+          <span class="buddy-name">Ringtone volume</span>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            value={settingsState.ringtoneVolume}
+            onInput={(e) =>
+              handleSliderChange(
+                "ringtoneVolume",
+                Number(e.currentTarget.value),
+              )
+            }
+          />
+          <span class="settings-hint" style="min-width: 36px; text-align: right;">
+            {Math.round(settingsState.ringtoneVolume * 100)}%
+          </span>
+        </label>
+        <label class="settings-option">
+          <input
+            type="checkbox"
+            checked={settingsState.inCallDndAutoEnable}
+            onChange={() => handleToggle("inCallDndAutoEnable")}
+          />
+          <span class="buddy-name">
+            Suppress message notifications while in a call
+          </span>
         </label>
 
         {/* Architecture §17.2 — Do Not Disturb suppresses every

@@ -18,6 +18,7 @@ import {
   relayState,
 } from "../../handlers/relay.handlers";
 import { handleStartDm } from "../../handlers/dm.handlers";
+import { handleStartDmCall } from "../../handlers/calls.handlers";
 import { authState } from "../../stores/auth.store";
 import { commands } from "../../ipc/commands";
 import BuddyGroup from "./BuddyGroup";
@@ -135,6 +136,22 @@ const BuddyList: Component = () => {
             onSelect={() => commands.openChatWindow(key, name)}
           >
             Chat
+          </ContextMenu.Item>
+          {/* Wave 12 W12.8 — quick-call entries so the user doesn't have
+           *  to enter a DM window first. handleStartDmCall seeds the
+           *  outgoingCall store entry; OutgoingCallPanel (mounted in
+           *  CallController) surfaces the "Calling…" UX globally. */}
+          <ContextMenu.Item
+            class="context-menu-item"
+            onSelect={() => void handleStartDmCall(key, name, false)}
+          >
+            Voice Call
+          </ContextMenu.Item>
+          <ContextMenu.Item
+            class="context-menu-item"
+            onSelect={() => void handleStartDmCall(key, name, true)}
+          >
+            Video Call
           </ContextMenu.Item>
           <ContextMenu.Item
             class="context-menu-item"

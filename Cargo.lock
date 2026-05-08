@@ -7271,6 +7271,8 @@ dependencies = [
 name = "rekindle-calls"
 version = "0.1.0"
 dependencies = [
+ "aes-gcm",
+ "blake3",
  "hex",
  "hkdf 0.12.4",
  "rand 0.8.5",

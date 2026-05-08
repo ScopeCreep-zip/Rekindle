@@ -15,6 +15,9 @@ export async function handleLoadSettings(): Promise<void> {
       autoAwayMinutes: prefs.autoAwayMinutes,
       autoVolunteerRelayForNewFriends:
         prefs.autoVolunteerRelayForNewFriends ?? false,
+      ringtoneEnabled: prefs.ringtoneEnabled ?? true,
+      ringtoneVolume: prefs.ringtoneVolume ?? 0.4,
+      inCallDndAutoEnable: prefs.inCallDndAutoEnable ?? true,
     });
   } catch (e) {
     console.error("Failed to load settings:", e);
@@ -48,6 +51,15 @@ export async function handleSaveSettings(
       }),
       ...(settings.autoVolunteerRelayForNewFriends !== undefined && {
         autoVolunteerRelayForNewFriends: settings.autoVolunteerRelayForNewFriends,
+      }),
+      ...(settings.ringtoneEnabled !== undefined && {
+        ringtoneEnabled: settings.ringtoneEnabled,
+      }),
+      ...(settings.ringtoneVolume !== undefined && {
+        ringtoneVolume: settings.ringtoneVolume,
+      }),
+      ...(settings.inCallDndAutoEnable !== undefined && {
+        inCallDndAutoEnable: settings.inCallDndAutoEnable,
       }),
     };
     await commands.setPreferences(updated);

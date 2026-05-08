@@ -26,6 +26,18 @@ export interface SettingsState {
    *  through the same path as audio. WebView enumerates camera devices
    *  client-side so the dropdown lives entirely in the frontend. */
   selectedVideoDeviceId: string | null;
+  /** W12.2 — gates the synthesized ring on incoming calls and the
+   *  ringback on outgoing calls. Independent from `soundEnabled`
+   *  (which only covers message notification sounds) so the user can
+   *  silence message dings while still hearing call rings, or vice
+   *  versa. */
+  ringtoneEnabled: boolean;
+  /** Linear volume for ringtone / ringback / busy tone, [0, 1]. */
+  ringtoneVolume: number;
+  /** Suppress OS notifications + message-arrival sounds while a call
+   *  is active so a noisy chat doesn't distract the participants.
+   *  In-app modals still surface. */
+  inCallDndAutoEnable: boolean;
 }
 
 const [settingsState, setSettingsState] = createStore<SettingsState>({
@@ -41,6 +53,9 @@ const [settingsState, setSettingsState] = createStore<SettingsState>({
   selectedInputDevice: null,
   selectedOutputDevice: null,
   selectedVideoDeviceId: null,
+  ringtoneEnabled: true,
+  ringtoneVolume: 0.4,
+  inCallDndAutoEnable: true,
 });
 
 export { settingsState, setSettingsState };

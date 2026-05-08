@@ -8,7 +8,8 @@ import { subscribeProfilePresenceEvents } from "../handlers/presence-events.hand
 import { hydrateState } from "../ipc/hydrate";
 import { commands } from "../ipc/commands";
 import { handleRemoveFriend } from "../handlers/buddy.handlers";
-import { ICON_SEND, ICON_ACCOUNT_REMOVE } from "../icons";
+import { handleStartDmCall } from "../handlers/calls.handlers";
+import { ICON_SEND, ICON_ACCOUNT_REMOVE, ICON_PHONE, ICON_VIDEO } from "../icons";
 
 function getKeyFromUrl(): string {
   const params = new URLSearchParams(window.location.search);
@@ -100,6 +101,21 @@ const ProfileWindow: Component = () => {
               onClick={() => commands.openChatWindow(publicKey, displayName())}
             >
               <span class="nf-icon">{ICON_SEND}</span> Send Message
+            </button>
+            {/* Wave 12 W12.8 — call buttons in profile header. */}
+            <button
+              class="form-btn-secondary"
+              title="Start a voice call"
+              onClick={() => void handleStartDmCall(publicKey, displayName(), false)}
+            >
+              <span class="nf-icon">{ICON_PHONE}</span> Voice Call
+            </button>
+            <button
+              class="form-btn-secondary"
+              title="Start a video call"
+              onClick={() => void handleStartDmCall(publicKey, displayName(), true)}
+            >
+              <span class="nf-icon">{ICON_VIDEO}</span> Video Call
             </button>
             <Show when={!confirmRemove()}>
               <button

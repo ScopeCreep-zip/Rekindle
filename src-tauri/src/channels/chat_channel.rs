@@ -123,4 +123,66 @@ pub enum ChatEvent {
         call_id: String,
         reason: String,
     },
+    /// Wave 12 W12.6 — peer toggled their mic / camera / screen-share
+    /// mid-call. Frontend's `ActiveCallPanel` / `VideoCallPanel` mount or
+    /// unmount tiles in response. Sender authority: each side controls
+    /// its own flags; this event only carries the SENDER's state, not
+    /// the receiver's.
+    #[serde(rename_all = "camelCase")]
+    CallMediaStateChanged {
+        call_id: String,
+        audio: bool,
+        video: bool,
+        screen: bool,
+        timestamp_ms: u64,
+    },
+    /// Wave 12 W12.11 — peer fired an emoji reaction during the call.
+    /// Frontend floats the glyph over the call panel for ~2 s.
+    #[serde(rename_all = "camelCase")]
+    CallReactionReceived {
+        call_id: String,
+        sender: String,
+        emoji: String,
+        timestamp_ms: u64,
+    },
+    /// Wave 12 W12.9 — incoming group call. Mirrors `IncomingCall` but
+    /// for 1:N: carries the full participants list so the recipient's
+    /// UI can render "Alice is calling you to a group with B, C…".
+    #[serde(rename_all = "camelCase")]
+    IncomingGroupCall {
+        call_id: String,
+        from: String,
+        display_name: String,
+        kind: String,
+        participants: Vec<String>,
+        expires_at_ms: u64,
+    },
+    /// Wave 12 W12.9 — group call has at least one acceptor; we're now
+    /// in an active group call. Frontend transitions to the grid UI.
+    #[serde(rename_all = "camelCase")]
+    GroupCallConnected {
+        call_id: String,
+    },
+    /// Wave 12 W12.9 — another participant joined an in-progress
+    /// group call. Frontend adds their tile to the grid.
+    #[serde(rename_all = "camelCase")]
+    GroupCallParticipantJoined {
+        call_id: String,
+        participant_pubkey: String,
+    },
+    /// Wave 12 W12.9 — a participant left. Frontend removes their tile
+    /// and re-elects voice topology if needed.
+    #[serde(rename_all = "camelCase")]
+    GroupCallParticipantLeft {
+        call_id: String,
+        participant_pubkey: String,
+        reason: String,
+    },
+    /// Wave 12 W12.9 — the entire group call has ended (last
+    /// participant left, or the local user hung up).
+    #[serde(rename_all = "camelCase")]
+    GroupCallEnded {
+        call_id: String,
+        reason: String,
+    },
 }

@@ -7,6 +7,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod group;
 pub mod state;
 
 use hkdf::Hkdf;
@@ -15,6 +16,11 @@ use thiserror::Error;
 use x25519_dalek::{PublicKey, StaticSecret};
 
 pub use state::{CallKind, CallState, CallStatus};
+
+// Wave 12 W12.9 — re-export the X25519 types so consumer crates
+// (src-tauri/services/group_calls.rs) don't have to depend on
+// x25519-dalek directly.
+pub use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret as X25519StaticSecret};
 
 /// HKDF info string. Distinct from the friend / DM key derivations so
 /// the same X25519 keypair can never produce the same secret across

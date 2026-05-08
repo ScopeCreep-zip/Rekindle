@@ -41,6 +41,23 @@ pub enum NotificationEvent {
         /// enough to read aloud.
         safety_number: String,
     },
+    /// Wave 12 W12.3 — global call/awareness notification. Sibling to the
+    /// existing `chat-event::IncomingCall` (which drives the in-app
+    /// modal); this variant is the OS-layer ring channel so a CLI / TUI
+    /// frontend can hook its own notifier (terminal bell, libnotify,
+    /// etc.) without re-implementing protocol logic. Carries `call_id`
+    /// so frontends can correlate ringtone start/stop to the call's
+    /// lifecycle, and `is_group` so the UI distinguishes a 1:1 modal
+    /// from a group banner.
+    #[serde(rename_all = "camelCase")]
+    CallIncoming {
+        call_id: String,
+        from: String,
+        display_name: String,
+        kind: String,
+        expires_at_ms: u64,
+        is_group: bool,
+    },
 }
 
 /// Pushed to the frontend whenever network-relevant state changes

@@ -141,6 +141,34 @@ pub async fn try_handle_dm_invite_app_call(
             .await;
             Some(serde_json::to_vec(&reply).unwrap_or_else(|_| b"ACK".to_vec()))
         }
+        // Wave 12 W12.9 — group call offer arrives via app_call, same
+        // shape as 1:1 CallOffer but with a per-recipient wrapped
+        // call_key. handle_incoming_group_offer prompts the user to
+        // accept/decline and returns the inline reply.
+        MessagePayload::GroupCallOffer {
+            call_id,
+            offer_kind,
+            initiator_pubkey,
+            initiator_x25519_pub,
+            participants,
+            wrapped_call_key,
+            expires_at_ms,
+        } => {
+            let reply = crate::commands::calls::handle_incoming_group_offer(
+                app_handle,
+                state,
+                &prepared.sender_hex,
+                &call_id,
+                offer_kind,
+                &initiator_pubkey,
+                &initiator_x25519_pub,
+                participants,
+                &wrapped_call_key,
+                expires_at_ms,
+            )
+            .await;
+            Some(serde_json::to_vec(&reply).unwrap_or_else(|_| b"ACK".to_vec()))
+        }
         _ => None,
     }
 }
@@ -354,6 +382,79 @@ pub async fn handle_incoming_message(
             } else {
                 tracing::debug!(call_id = %call_id, "CallEnd for unknown call_id; ignoring");
             }
+        }
+        // Wave 12 W12.6 — peer toggled their mic / camera / screen-share.
+        // Emit a chat-event so the frontend's ActiveCallPanel /
+        // VideoCallPanel can mount/unmount tiles reactively. Drop if the
+        // call_id isn't ours so the receiver doesn't get spurious UI
+        // changes for a call that already ended.
+        MessagePayload::CallMediaState {
+            call_id,
+            audio,
+            video,
+            screen,
+            timestamp_ms,
+        } => {
+            let known = state.active_calls.lock().contains_key(&call_id);
+            if known {
+                let _ = app_handle.emit(
+                    "chat-event",
+                    &ChatEvent::CallMediaStateChanged {
+                        call_id,
+                        audio,
+                        video,
+                        screen,
+                        timestamp_ms,
+                    },
+                );
+            } else {
+                tracing::debug!(call_id = %call_id, "CallMediaState for unknown call; ignoring");
+            }
+        }
+        // Wave 12 W12.11 — peer fired an in-call emoji reaction. Cap
+        // emoji length and drop unknown call_ids so we don't surface
+        // floating reactions for calls that already ended (or were
+        // never accepted).
+        MessagePayload::CallReaction {
+            call_id,
+            emoji,
+            timestamp_ms,
+        } => {
+            const MAX_EMOJI_BYTES: usize = 32;
+            if emoji.len() > MAX_EMOJI_BYTES {
+                tracing::debug!(
+                    "dropping CallReaction with oversized emoji ({} bytes)",
+                    emoji.len()
+                );
+            } else if state.active_calls.lock().contains_key(&call_id) {
+                let _ = app_handle.emit(
+                    "chat-event",
+                    &ChatEvent::CallReactionReceived {
+                        call_id,
+                        sender: msg.sender_hex.clone(),
+                        emoji,
+                        timestamp_ms,
+                    },
+                );
+            }
+        }
+        // Wave 12 W12.9 — group call signaling. Offer/Accept/Decline
+        // travel via app_call (handled by the call_signaling helper —
+        // these arms only fire if a peer mis-sends via app_message).
+        // ParticipantJoined/Left are gossip-style notices.
+        payload @ (MessagePayload::GroupCallOffer { .. }
+        | MessagePayload::GroupCallAccept { .. }
+        | MessagePayload::GroupCallDecline { .. }
+        | MessagePayload::GroupCallParticipantJoined { .. }
+        | MessagePayload::GroupCallParticipantLeft { .. }) => {
+            crate::services::group_calls::handle_group_call_payload(
+                app_handle,
+                state,
+                pool,
+                &msg.sender_hex,
+                payload,
+            )
+            .await;
         }
         // P3.3 — Signal session-renewal payload trio. Extracted into a
         // helper so the main dispatcher stays under the workspace

@@ -193,6 +193,37 @@ pub fn open_community_window(
     Ok(())
 }
 
+/// Wave 12 W12.7 — pop out the active call into its own Tauri webview
+/// window. The new window mounts the same `<CallController />` (per
+/// main.tsx) and a `/call` route that renders the active-call surface.
+/// Both webviews see the same call lifecycle events because the
+/// backend emits to ALL webviews — they just both reactively render
+/// from `callsState`.
+pub fn open_call_window(app: &AppHandle, call_id: &str) -> Result<(), String> {
+    let label = format!("call-{}", &call_id[..12.min(call_id.len())]);
+
+    if let Some(window) = app.get_webview_window(&label) {
+        let _ = window.show();
+        let _ = window.set_focus();
+        return Ok(());
+    }
+
+    let url = WebviewUrl::App(format!("/call?id={call_id}").into());
+    WebviewWindowBuilder::new(app, &label, url)
+        .title("Call")
+        .inner_size(420.0, 540.0)
+        .min_inner_size(360.0, 420.0)
+        .decorations(false)
+        .transparent(true)
+        .shadow(true)
+        .resizable(true)
+        .always_on_top(false)
+        .build()
+        .map_err(|e: tauri::Error| e.to_string())?;
+
+    Ok(())
+}
+
 /// Open a profile window for viewing a friend's profile.
 pub fn open_profile_window(
     app: &AppHandle,

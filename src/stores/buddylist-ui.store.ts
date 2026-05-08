@@ -7,6 +7,8 @@ export interface BuddyListUIState {
   searchQuery: string;
   showCreateCommunity: boolean;
   showJoinCommunity: boolean;
+  /** Wave 12 W12.10 — multi-friend group-call picker modal. */
+  showStartGroupCall: boolean;
 }
 
 const [buddyListUI, setBuddyListUI] = createStore<BuddyListUIState>({
@@ -14,6 +16,7 @@ const [buddyListUI, setBuddyListUI] = createStore<BuddyListUIState>({
   searchQuery: "",
   showCreateCommunity: false,
   showJoinCommunity: false,
+  showStartGroupCall: false,
 });
 
 export function switchTab(tab: BuddyListTab): void {

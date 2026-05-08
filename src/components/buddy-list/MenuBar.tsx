@@ -3,6 +3,7 @@ import { Menubar } from "@kobalte/core/menubar";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { commands } from "../../ipc/commands";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { setBuddyListUI } from "../../stores/buddylist-ui.store";
 
 const REPO_URL = "https://github.com/ScopeCreep-zip/Rekindle";
 
@@ -53,6 +54,21 @@ const MenuBar: Component = () => {
               onSelect={handleQuit}
             >
               Quit
+            </Menubar.Item>
+          </Menubar.Content>
+        </Menubar.Portal>
+      </Menubar.Menu>
+
+      {/* Wave 12 W12.10 — group call entry point. */}
+      <Menubar.Menu>
+        <Menubar.Trigger class="menu-bar-item">Calls</Menubar.Trigger>
+        <Menubar.Portal>
+          <Menubar.Content class="menu-dropdown">
+            <Menubar.Item
+              class="menu-dropdown-item"
+              onSelect={() => setBuddyListUI("showStartGroupCall", true)}
+            >
+              Start Group Call…
             </Menubar.Item>
           </Menubar.Content>
         </Menubar.Portal>

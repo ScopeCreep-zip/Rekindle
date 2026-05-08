@@ -3,6 +3,7 @@ import { render } from "solid-js/web";
 import { createSignal, onMount, Match, Switch, lazy, Suspense } from "solid-js";
 import "./styles/global.css";
 import AnnounceRegion from "./components/common/AnnounceRegion";
+import CallController from "./components/voice/CallController";
 
 // Lazy-load window components so each webview only compiles
 // the module tree it actually renders (login → 1 tree, not 6).
@@ -13,6 +14,7 @@ const DmWindow = lazy(() => import("./windows/DmWindow"));
 const CommunityWindow = lazy(() => import("./windows/CommunityWindow"));
 const SettingsWindow = lazy(() => import("./windows/SettingsWindow"));
 const ProfileWindow = lazy(() => import("./windows/ProfileWindow"));
+const CallWindow = lazy(() => import("./windows/CallWindow"));
 
 function App() {
   const [route, setRoute] = createSignal(window.location.pathname);
@@ -29,6 +31,10 @@ function App() {
        * live region to write into, regardless of which window is
        * currently rendered by the route Switch. */}
       <AnnounceRegion />
+      {/* Wave 12 W12.1 — global call/notification subscription host so
+       *  incoming calls ring + show modal + persist notifications in any
+       *  webview, not only the BuddyListWindow context. */}
+      <CallController />
       <Suspense>
         <Switch fallback={<LoginWindow />}>
           <Match when={route() === "/login"}>
@@ -51,6 +57,9 @@ function App() {
           </Match>
           <Match when={route().startsWith("/profile")}>
             <ProfileWindow />
+          </Match>
+          <Match when={route().startsWith("/call")}>
+            <CallWindow />
           </Match>
         </Switch>
       </Suspense>

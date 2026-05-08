@@ -23,6 +23,9 @@ export const ICON_VOLUME_HIGH = "\u{F057E}";     // nf-md-volume_high
 export const ICON_VIDEO = "\u{F0567}";            // nf-md-video
 export const ICON_VIDEO_OFF = "\u{F1417}";        // nf-md-video_off
 export const ICON_SCREEN_SHARE = "\u{F0A1A}";     // nf-md-monitor_share
+// Wave 12 W12.7 — pop-out / picture-in-picture controls.
+export const ICON_OPEN_IN_NEW = "\u{F03CC}";       // nf-md-open_in_new
+export const ICON_PIP = "\u{F0DC9}";               // nf-md-picture_in_picture_bottom_right
 
 // Chat
 export const ICON_SEND = "\u{F048A}";            // nf-md-send

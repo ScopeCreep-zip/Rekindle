@@ -18,3 +18,8 @@ hkdf = "0.12"
 x25519-dalek = { version = "2", features = ["static_secrets"] }
 zeroize = { version = "1", features = ["derive"] }
 rand = { workspace = true }
+# Wave 12 W12.9 — group call key wrap. The initiator generates a
+# random 32-byte call_key once, then per-recipient: derives a
+# wrap_key via X25519 + HKDF, and seals call_key with AES-256-GCM.
+aes-gcm = "0.10"
+blake3 = "1"

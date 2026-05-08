@@ -7,10 +7,10 @@ import { authState } from "../stores/auth.store";
 import { friendsState } from "../stores/friends.store";
 import { dmState, setDmState } from "../stores/dm.store";
 import { handleSendDm, subscribeDmInbox, handleListDms } from "../handlers/dm.handlers";
-import { handleStartDmCall, handleEndDmCall } from "../handlers/calls.handlers";
+import { handleStartDmCall } from "../handlers/calls.handlers";
 import { callsState } from "../stores/calls.store";
 import { commands } from "../ipc/commands";
-import VideoCallPanel from "../components/voice/VideoCallPanel";
+import ActiveCallPanel from "../components/voice/ActiveCallPanel";
 import type { Message } from "../stores/chat.store";
 
 function getRecordKeyFromUrl(): string {
@@ -144,34 +144,13 @@ const DmWindow: Component = () => {
                 </div>
               }
             >
-              {(active) => (
-                /* C2 — active-call indicator with hangup. W11.4 —
-                 * when the call is `video`, mount VideoCallPanel in
-                 * "dm" mode so encoded VP9 frames flow through the
-                 * Signal-encrypted DM transport. The existing voice
-                 * transport carries audio for both call kinds. */
-                <>
-                  <div class="dm-call-bar dm-call-bar-active">
-                    <span>
-                      {active().kind === "video" ? "Video" : "Voice"} call active
-                    </span>
-                    <button
-                      type="button"
-                      class="form-btn-secondary"
-                      onClick={() => void handleEndDmCall(active().callId)}
-                    >
-                      Hang up
-                    </button>
-                  </div>
-                  <Show when={active().kind === "video" && dmPeerKey()}>
-                    <VideoCallPanel
-                      mode="dm"
-                      peerId={dmPeerKey()!}
-                      visible
-                    />
-                  </Show>
-                </>
-              )}
+              {/* Wave 12 W12.5 — replaces the bare "Call active + Hangup"
+               * indicator with the full ActiveCallPanel: timer, mute,
+               * deafen, hangup, camera toggle, audio device pickers,
+               * speaking indicator, connection-quality bars. The panel
+               * also mounts VideoCallPanel mode="dm" when cameraOn is
+               * true. */}
+              {(active) => <ActiveCallPanel call={active()} mode="inline" />}
             </Show>
           </Show>
           <MessageList

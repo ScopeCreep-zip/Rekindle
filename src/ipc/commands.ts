@@ -156,6 +156,10 @@ export interface Preferences {
   autoAwayMinutes: number;
   /** W11.3 — auto-volunteer Strand Relay for new friend accepts. */
   autoVolunteerRelayForNewFriends: boolean;
+  /** Wave 12 W12.2 — ringtone gates + DND auto-suppress. */
+  ringtoneEnabled?: boolean;
+  ringtoneVolume?: number;
+  inCallDndAutoEnable?: boolean;
 }
 
 export type ExclusionGroupEdit =
@@ -978,6 +982,36 @@ export const commands = {
   /// declineDmCall (which rejects a CallOffer before accepting).
   endDmCall: (callId: string, reason?: string) =>
     invoke<void>("end_dm_call", { callId, reason: reason ?? null }),
+  /// Wave 12 W12.6 — fire-and-forget mid-call media-state ping so the
+  /// peer's UI mounts/unmounts video and screen-share tiles in sync
+  /// with our local toggle.
+  sendCallMediaState: (
+    callId: string,
+    audio: boolean,
+    video: boolean,
+    screen: boolean,
+  ) =>
+    invoke<void>("send_call_media_state", { callId, audio, video, screen }),
+  /// Wave 12 W12.12 — temporarily silence a caller. Future incoming
+  /// offers from `peerPublicKey` auto-decline with "user is
+  /// unavailable" without ringing until `durationMs` elapses. Cleared
+  /// on backend restart (in-memory only).
+  muteCallerTemp: (peerPublicKey: string, durationMs: number) =>
+    invoke<void>("mute_caller_temp", { peerPublicKey, durationMs }),
+  /// Wave 12 W12.11 — fire an in-call emoji reaction at the peer.
+  /// Best-effort; loss is tolerable.
+  sendCallReaction: (callId: string, emoji: string) =>
+    invoke<void>("send_call_reaction", { callId, emoji }),
+  /// Wave 12 W12.9 — group calls. Initiator fans out a per-recipient
+  /// wrapped call_key to every invitee.
+  startGroupCall: (participantPubkeys: string[], video: boolean) =>
+    invoke<string>("start_group_call", { participantPubkeys, video }),
+  acceptGroupCall: (callId: string) =>
+    invoke<void>("accept_group_call", { callId }),
+  declineGroupCall: (callId: string, reason?: string) =>
+    invoke<void>("decline_group_call", { callId, reason: reason ?? null }),
+  endGroupCall: (callId: string, reason?: string) =>
+    invoke<void>("end_group_call", { callId, reason: reason ?? null }),
   /// B6 — explicit user-driven Signal session reset. Surfaced from the
   /// friend context menu when the user has verified the peer's safety
   /// number out-of-band and wants to re-handshake. NOT auto-invoked on
@@ -1037,6 +1071,9 @@ export const commands = {
     invoke<void>("open_community_window", { communityId, communityName }),
   openProfileWindow: (publicKey: string, displayName: string) =>
     invoke<void>("open_profile_window", { publicKey, displayName }),
+  /// Wave 12 W12.7 — pop the active call into its own webview window.
+  openCallWindow: (callId: string) =>
+    invoke<void>("open_call_window", { callId }),
   getNetworkStatus: () => invoke<NetworkStatus>("get_network_status"),
 
   // Onboarding & Welcome Screen

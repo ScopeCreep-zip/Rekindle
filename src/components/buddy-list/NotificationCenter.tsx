@@ -4,8 +4,10 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
 } from "../../stores/notification.store";
-import { ICON_BELL, ICON_CHECK } from "../../icons";
+import { ICON_BELL, ICON_CHECK, ICON_PHONE, ICON_SEND } from "../../icons";
 import { formatRelativeTime } from "../../utils/formatting";
+import { handleStartDmCall } from "../../handlers/calls.handlers";
+import { commands } from "../../ipc/commands";
 
 const NotificationCenter: Component = () => {
   const [open, setOpen] = createSignal(false);
@@ -92,6 +94,45 @@ const NotificationCenter: Component = () => {
                       <span class="notification-time">
                         {formatRelativeTime(notification.timestamp)}
                       </span>
+                      {/* Wave 12 W12.8 — missed-call action row. */}
+                      <Show
+                        when={
+                          notification.type === "missed_call" &&
+                          notification.peerKey != null
+                        }
+                      >
+                        <div class="notification-actions">
+                          <button
+                            type="button"
+                            class="form-btn-secondary notification-action-btn"
+                            title="Call back"
+                            onClick={() => {
+                              const peerKey = notification.peerKey!;
+                              const name = notification.body.split(" (")[0];
+                              const kind = notification.callKind ?? "audio";
+                              void handleStartDmCall(peerKey, name, kind === "video");
+                              markNotificationRead(notification.id);
+                            }}
+                          >
+                            <span class="nf-icon" aria-hidden="true">{ICON_PHONE}</span>
+                            Call back
+                          </button>
+                          <button
+                            type="button"
+                            class="form-btn-secondary notification-action-btn"
+                            title="Send a message"
+                            onClick={() => {
+                              const peerKey = notification.peerKey!;
+                              const name = notification.body.split(" (")[0];
+                              void commands.openChatWindow(peerKey, name);
+                              markNotificationRead(notification.id);
+                            }}
+                          >
+                            <span class="nf-icon" aria-hidden="true">{ICON_SEND}</span>
+                            Message
+                          </button>
+                        </div>
+                      </Show>
                     </div>
                     <Show when={!notification.read}>
                       <button

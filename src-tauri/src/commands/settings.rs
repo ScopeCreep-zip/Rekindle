@@ -47,6 +47,25 @@ pub struct Preferences {
     /// menu.
     #[serde(default)]
     pub auto_volunteer_relay_for_new_friends: bool,
+    /// Wave 12 W12.2 — gates the synthesized incoming-call ring and
+    /// outgoing ringback. Independent of `notification_sound` (which
+    /// covers message dings) so the user can silence one without the
+    /// other. Default ON.
+    #[serde(default = "default_true")]
+    pub ringtone_enabled: bool,
+    /// Wave 12 W12.2 — linear volume for ringtone / ringback / busy
+    /// tone, [0, 1]. Default 0.4 (matches the synth lib's clamp).
+    #[serde(default = "default_ringtone_volume")]
+    pub ringtone_volume: f32,
+    /// Wave 12 W12.2 — when ON, suppresses OS notifications and
+    /// message-arrival sounds while a call is active so a noisy chat
+    /// doesn't distract participants. In-app modals still surface.
+    #[serde(default = "default_true")]
+    pub in_call_dnd_auto_enable: bool,
+}
+
+fn default_ringtone_volume() -> f32 {
+    0.4
 }
 
 fn default_volume() -> f32 {
@@ -79,6 +98,9 @@ impl Default for Preferences {
             echo_cancellation: true,
             auto_away_minutes: 10,
             auto_volunteer_relay_for_new_friends: false,
+            ringtone_enabled: true,
+            ringtone_volume: 0.4,
+            in_call_dnd_auto_enable: true,
         }
     }
 }

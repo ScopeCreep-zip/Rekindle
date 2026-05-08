@@ -57,7 +57,54 @@ export type ChatEvent =
   | { type: "callTimedOut"; data: { callId: string } }
   | { type: "callMissed"; data: { callId: string; from: string } }
   | { type: "callDeclined"; data: { callId: string; reason: string } }
-  | { type: "callEnded"; data: { callId: string; reason: string } };
+  | { type: "callEnded"; data: { callId: string; reason: string } }
+  | {
+      // Wave 12 W12.6 — peer flipped a media flag mid-call. Frontend
+      // mounts/unmounts the corresponding tile.
+      type: "callMediaStateChanged";
+      data: {
+        callId: string;
+        audio: boolean;
+        video: boolean;
+        screen: boolean;
+        timestampMs: number;
+      };
+    }
+  | {
+      // Wave 12 W12.11 — peer fired an emoji reaction during the call.
+      type: "callReactionReceived";
+      data: {
+        callId: string;
+        sender: string;
+        emoji: string;
+        timestampMs: number;
+      };
+    }
+  | {
+      // Wave 12 W12.9 — group call lifecycle events.
+      type: "incomingGroupCall";
+      data: {
+        callId: string;
+        from: string;
+        displayName: string;
+        kind: "audio" | "video";
+        participants: string[];
+        expiresAtMs: number;
+      };
+    }
+  | { type: "groupCallConnected"; data: { callId: string } }
+  | {
+      type: "groupCallParticipantJoined";
+      data: { callId: string; participantPubkey: string };
+    }
+  | {
+      type: "groupCallParticipantLeft";
+      data: { callId: string; participantPubkey: string; reason: string };
+    }
+  | {
+      type: "groupCallEnded";
+      data: { callId: string; reason: string };
+    };
 
 export type PresenceEvent =
   | { type: "friendOnline"; data: { publicKey: string } }
@@ -688,6 +735,20 @@ export type NotificationEvent =
         peerPublicKey: string;
         peerDisplayName: string;
         safetyNumber: string;
+      };
+    }
+  | {
+      // Wave 12 W12.3 — sibling to chat-event::incomingCall, used as the
+      // OS-level / CLI-frontend ring channel. Carries call_id so the
+      // ringtone start/stop is correlatable to the call's lifecycle.
+      type: "callIncoming";
+      data: {
+        callId: string;
+        from: string;
+        displayName: string;
+        kind: "audio" | "video";
+        expiresAtMs: number;
+        isGroup: boolean;
       };
     };
 

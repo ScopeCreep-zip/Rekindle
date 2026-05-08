@@ -9,7 +9,17 @@ import { setNotificationState } from "../stores/notification.store";
 import { authState } from "../stores/auth.store";
 import { settingsState } from "../stores/settings.store";
 import { communityState } from "../stores/community.store";
+import { callsState } from "../stores/calls.store";
 import { commands } from "../ipc/commands";
+
+// Wave 12 W12.2 — true when an in-call DND auto-suppression should
+// short-circuit message OS notifications / sounds. The user-facing
+// modal still surfaces; only the noisy ambient channels are gated.
+function inCallSuppress(): boolean {
+  return (
+    settingsState.inCallDndAutoEnable && callsState.activeCall != null
+  );
+}
 
 export async function showSystemNotification(title: string, body: string): Promise<void> {
   try {
@@ -33,6 +43,7 @@ export async function showSystemNotification(title: string, body: string): Promi
 // default sound when the asset isn't cached locally.
 function playNotificationSound(communityId: string | undefined, soundRef: string | null | undefined): void {
   if (!settingsState.soundEnabled) return;
+  if (inCallSuppress()) return;
   if (!soundRef || !communityId) return;
   const community = communityState.communities[communityId];
   if (!community) return;
@@ -60,7 +71,13 @@ export function subscribeNotificationHandler(): Promise<UnlistenFn> {
         // Architecture §32 Phase 7 Week 25 — `soundRef` is the
         // resolved sound override (channel → community → null). The
         // `null` case lets us fall through to the bundled default.
-        void showSystemNotification(event.data.title, event.data.body);
+        // Wave 12 W12.2 — in-call DND auto-suppression silences the
+        // message ding + OS notification while a call is active so a
+        // noisy chat doesn't distract participants. The notification
+        // inbox row is still persisted (read on next visit).
+        if (!inCallSuppress()) {
+          void showSystemNotification(event.data.title, event.data.body);
+        }
         playNotificationSound(event.data.communityId, event.data.soundRef);
         setNotificationState("notifications", (prev) => [
           ...prev,
@@ -154,6 +171,21 @@ export function subscribeNotificationHandler(): Promise<UnlistenFn> {
           },
         ]);
         setNotificationState("unreadCount", (c) => c + 1);
+        break;
+      }
+      case "callIncoming": {
+        // Wave 12 W12.3 — OS-level awareness only. The chat-event::
+        // incomingCall path populates the in-app modal and drives the
+        // synthesized ringtone (handled in calls.handlers.ts). The
+        // missed-call inbox row gets written from the
+        // chat-event::callMissed / callTimedOut arms in calls.handlers
+        // so the inbox isn't polluted with mid-flight events.
+        if (!settingsState.notifications) break;
+        const { displayName, kind, isGroup } = event.data;
+        const title = isGroup
+          ? `Incoming group ${kind} call`
+          : `Incoming ${kind} call`;
+        void showSystemNotification(title, displayName);
         break;
       }
     }

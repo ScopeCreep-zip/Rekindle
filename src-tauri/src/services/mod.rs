@@ -1,5 +1,6 @@
 pub mod call_signaling;
 pub mod community;
+pub mod group_calls;
 pub mod cross_device_sync;
 pub mod dht_publish_service;
 pub mod dm;

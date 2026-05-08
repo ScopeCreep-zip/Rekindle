@@ -14,6 +14,7 @@ import NewChatModal from "../components/buddy-list/NewChatModal";
 import DmInviteModal from "../components/buddy-list/DmInviteModal";
 import CreateCommunityModal from "../components/community/CreateCommunityModal";
 import JoinCommunityModal from "../components/community/JoinCommunityModal";
+import StartGroupCallModal from "../components/buddy-list/StartGroupCallModal";
 import StatusPicker from "../components/status/StatusPicker";
 import NetworkIndicator from "../components/status/NetworkIndicator";
 import { authState, setAuthState } from "../stores/auth.store";
@@ -24,12 +25,9 @@ import { handleLoadPendingRequests } from "../handlers/buddy.handlers";
 import { handleGetGameStatus } from "../handlers/settings.handlers";
 import { subscribeBuddyListChatEvents } from "../handlers/chat-events.handlers";
 import { subscribeBuddyListPresenceEvents } from "../handlers/presence-events.handlers";
-import { subscribeNotificationHandler } from "../handlers/notification-events.handlers";
 import { subscribeBuddyListVoiceEvents } from "../handlers/voice.handlers";
 import { subscribeDeepLinkHandler } from "../handlers/deep-link.handler";
 import { handleListDms, subscribeDmInbox } from "../handlers/dm.handlers";
-import { refreshMissedCalls, subscribeCallEvents } from "../handlers/calls.handlers";
-import IncomingCallModal from "../components/voice/IncomingCallModal";
 import { handleHydrateRelayState } from "../handlers/relay.handlers";
 import { hydrateState } from "../ipc/hydrate";
 import {
@@ -67,10 +65,12 @@ const BuddyListWindow: Component = () => {
   }
 
   onMount(async () => {
-    // Register event listeners FIRST so no events are missed during hydration
+    // Register event listeners FIRST so no events are missed during hydration.
+    // Note: subscribeCallEvents() and subscribeNotificationHandler() are
+    // mounted globally by <CallController /> in main.tsx (Wave 12 W12.1) so
+    // incoming-call ring/modal works in every webview, not just this one.
     unlisteners.push(subscribeBuddyListChatEvents());
     unlisteners.push(subscribeBuddyListPresenceEvents());
-    unlisteners.push(subscribeNotificationHandler());
     unlisteners.push(subscribeBuddyListVoiceEvents());
     unlisteners.push(subscribeNetworkStatus((event: NetworkStatusEvent) => {
       setNetworkAttached(event.isAttached);
@@ -78,9 +78,6 @@ const BuddyListWindow: Component = () => {
     unlisteners.push(subscribeProfileUpdates(handleProfileUpdated));
     unlisteners.push(subscribeDeepLinkHandler());
     unlisteners.push(subscribeDmInbox(() => authState.publicKey ?? ""));
-    // Plan §Failure 5 — direct call signalling event subscriber.
-    unlisteners.push(subscribeCallEvents());
-    void refreshMissedCalls();
 
     // Await hydration so store is populated before subsequent commands
     await hydrateState();
@@ -160,9 +157,13 @@ const BuddyListWindow: Component = () => {
         onClose={() => setBuddyListUI("showJoinCommunity", false)}
       />
       <DmInviteModal />
-      {/* Plan §Failure 5 — overlays whichever window has focus when a
-       *  CallOffer arrives. */}
-      <IncomingCallModal />
+      <StartGroupCallModal
+        isOpen={buddyListUI.showStartGroupCall}
+        onClose={() => setBuddyListUI("showStartGroupCall", false)}
+      />
+      {/* Wave 12 W12.1 — IncomingCallModal moved to <CallController />
+       *  in main.tsx so it overlays the active window in every webview,
+       *  not only the BuddyList. */}
     </div>
   );
 };

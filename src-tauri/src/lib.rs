@@ -214,6 +214,13 @@ fn app_invoke_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Sen
         commands::calls::accept_dm_call,
         commands::calls::decline_dm_call,
         commands::calls::end_dm_call,
+        commands::calls::send_call_media_state,
+        commands::calls::send_call_reaction,
+        commands::calls::mute_caller_temp,
+        commands::calls::start_group_call,
+        commands::calls::accept_group_call,
+        commands::calls::decline_group_call,
+        commands::calls::end_group_call,
         commands::calls::get_missed_calls,
         // status
         commands::status::set_status,
@@ -268,6 +275,7 @@ fn app_invoke_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Sen
         commands::window::open_settings_window,
         commands::window::open_community_window,
         commands::window::open_profile_window,
+        commands::window::open_call_window,
         commands::window::get_network_status,
     ]
 }
