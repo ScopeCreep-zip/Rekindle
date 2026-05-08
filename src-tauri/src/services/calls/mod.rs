@@ -318,6 +318,16 @@ pub async fn handle_accept_received(
         crate::services::voice::session::start_session(&peer_pubkey, None, app, state).await
     {
         state.active_calls.lock().remove(call_id);
+        // W15.3 — tear down any partial voice state. The W14.1
+        // pre-staged voice_packet_rx_staged + voice_packet_tx
+        // were set BEFORE start_session ran; without this teardown
+        // they orphan and the next call's pre-stage briefly races
+        // with stale routing.
+        crate::services::voice::shutdown::shutdown_voice(
+            state,
+            &crate::services::voice::shutdown::VoiceShutdownOpts::FULL,
+        )
+        .await;
         let hangup = MessagePayload::CallEnd {
             call_id: call_id.to_string(),
             reason: format!("voice session failed: {e}"),
@@ -462,7 +472,24 @@ async fn cancel_outgoing_for_glare(
     peer_pubkey: &str,
     app: &tauri::AppHandle,
 ) {
-    state.active_calls.lock().remove(call_id);
+    // W15.4 — capture status before the remove so we know whether
+    // voice was running. If it was, tear it down so the loser's mic
+    // and speakers actually stop.
+    let was_voice_up = {
+        let mut calls = state.active_calls.lock();
+        if let Some(c) = calls.remove(call_id) {
+            matches!(c.status, CallStatus::Active | CallStatus::Connecting)
+        } else {
+            false
+        }
+    };
+    if was_voice_up {
+        crate::services::voice::shutdown::shutdown_voice(
+            state,
+            &crate::services::voice::shutdown::VoiceShutdownOpts::FULL,
+        )
+        .await;
+    }
     let payload = MessagePayload::CallEnd {
         call_id: call_id.to_string(),
         reason: "glare-resolved-we-lost".into(),

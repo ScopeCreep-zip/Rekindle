@@ -143,6 +143,22 @@ pub enum ChatEvent {
     CallRinging {
         call_id: String,
     },
+    /// Wave 15 W15.6 — caller-side started a call. Emitted by
+    /// start_dm_call IMMEDIATELY after CallState insert + CallInvite
+    /// send (so the call_id is known and the invite is on the wire).
+    /// Mirrors the IncomingCall payload shape so frontends populate
+    /// the OutgoingCallPanel from authoritative backend data — no
+    /// local clock + arg-shuffling. Tauri seeds outgoingCall + starts
+    /// ringback; CLI prints "Calling X…"; TUI flips a status indicator.
+    /// Per `feedback_backend_owns_policy.md` — every frontend reads the
+    /// same event payload, no per-frontend policy code.
+    CallStarted {
+        call_id: String,
+        kind: String,
+        peer_key: String,
+        peer_display_name: String,
+        expires_at_ms: u64,
+    },
     /// Wave 14 W14.3 — backend asks frontends to focus a conversation.
     /// Emitted on call entry from both caller and receiver paths.
     /// Tauri opens/focuses the ChatWindow; CLI switches active

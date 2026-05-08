@@ -54,6 +54,19 @@ export type ChatEvent =
       };
     }
   | {
+      // Wave 15 W15.6 — backend-emitted on start_dm_call after CallState
+      // insert + CallInvite send. Frontends read full payload; no
+      // per-frontend seed math.
+      type: "callStarted";
+      data: {
+        callId: string;
+        kind: "audio" | "video";
+        peerKey: string;
+        peerDisplayName: string;
+        expiresAtMs: number;
+      };
+    }
+  | {
       // Wave 14 W14.2 — payload extended with the data every frontend
       // needs to react identically. `expectedLocalCamera` is the
       // backend's "video calls expect camera-on" policy delivered as

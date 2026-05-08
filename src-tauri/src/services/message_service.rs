@@ -378,8 +378,28 @@ pub async fn handle_incoming_message(
         // cancel-while-ringing or decline-after-accept-race cleans up
         // both sides cleanly.
         MessagePayload::CallEnd { call_id, reason } => {
-            let removed = state.active_calls.lock().remove(&call_id).is_some();
+            // W15.2 — capture status before remove so we know whether
+            // voice was actually running. Tear it down if so.
+            let (removed, was_voice_up) = {
+                let mut calls = state.active_calls.lock();
+                if let Some(c) = calls.remove(&call_id) {
+                    let voice_up = matches!(
+                        c.status,
+                        rekindle_calls::CallStatus::Active | rekindle_calls::CallStatus::Connecting
+                    );
+                    (true, voice_up)
+                } else {
+                    (false, false)
+                }
+            };
             if removed {
+                if was_voice_up {
+                    crate::services::voice::shutdown::shutdown_voice(
+                        state,
+                        &crate::services::voice::shutdown::VoiceShutdownOpts::FULL,
+                    )
+                    .await;
+                }
                 let _ = app_handle.emit(
                     "chat-event",
                     &ChatEvent::CallEnded {

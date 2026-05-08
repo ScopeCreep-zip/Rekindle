@@ -110,9 +110,6 @@ pub async fn start_dm_call(
         return Err(format!("call invite send failed: {e}"));
     }
 
-    // W14.3 — backend-driven conversation focus. Caller lands in the
-    // chat with the peer immediately, while ringback plays in the
-    // OutgoingCallPanel.
     let display_name = state_helpers::friend_display_name(state.inner(), &peer_public_key)
         .unwrap_or_else(|| {
             if peer_public_key.len() > 16 {
@@ -121,6 +118,28 @@ pub async fn start_dm_call(
                 peer_public_key.clone()
             }
         });
+
+    // W15.6 — backend-emitted CallStarted so frontends populate the
+    // outgoing-call store from authoritative backend data. Tauri seeds
+    // outgoingCall + starts ringback; CLI prints "Calling X…"; TUI
+    // flips a status indicator. Per feedback_backend_owns_policy.md.
+    let _ = app.emit(
+        "chat-event",
+        &ChatEvent::CallStarted {
+            call_id: call_id.clone(),
+            kind: match kind {
+                CallKind::Audio => "audio".into(),
+                CallKind::Video => "video".into(),
+            },
+            peer_key: peer_public_key.clone(),
+            peer_display_name: display_name.clone(),
+            expires_at_ms,
+        },
+    );
+
+    // W14.3 — backend-driven conversation focus. Caller lands in the
+    // chat with the peer immediately, while ringback plays in the
+    // OutgoingCallPanel.
     let _ = app.emit(
         "chat-event",
         &ChatEvent::ConversationFocusRequested {
@@ -179,6 +198,14 @@ pub async fn accept_dm_call(
     .await
     {
         state.active_calls.lock().remove(&call_id);
+        // W15.3 — tear down any partial voice state (cpal capture
+        // started but loops never spawned, voice_packet_tx pre-set,
+        // etc.) so the next call doesn't inherit stale handles.
+        crate::services::voice::shutdown::shutdown_voice(
+            state.inner(),
+            &crate::services::voice::shutdown::VoiceShutdownOpts::FULL,
+        )
+        .await;
         // Tell the caller we couldn't accept after all.
         let _ = crate::services::message_service::send_to_peer_raw(
             state.inner(),
@@ -300,12 +327,16 @@ pub async fn end_dm_call(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let peer_pubkey = {
+    let (peer_pubkey, was_voice_up) = {
         let mut calls = state.active_calls.lock();
         let call = calls
             .remove(&call_id)
             .ok_or_else(|| format!("no active call with id {call_id}"))?;
-        call.peer_pubkey.clone()
+        let voice_up = matches!(
+            call.status,
+            CallStatus::Active | CallStatus::Connecting
+        );
+        (call.peer_pubkey.clone(), voice_up)
     };
     let reason_str = reason.unwrap_or_default();
     let payload = MessagePayload::CallEnd {
@@ -322,6 +353,17 @@ pub async fn end_dm_call(
     {
         tracing::info!(call_id = %call_id, peer = %peer_pubkey, error = %e,
             "CallEnd send failed; their state will GC on their own timeout");
+    }
+    // W15.2 — tear down the voice session so the mic, speaker, and the
+    // send/recv loops actually stop. Without this, hangup leaves audio
+    // devices open and the next call inherits stale loop state. Skip
+    // when voice was never started (Outgoing or Incoming status only).
+    if was_voice_up {
+        crate::services::voice::shutdown::shutdown_voice(
+            state.inner(),
+            &crate::services::voice::shutdown::VoiceShutdownOpts::FULL,
+        )
+        .await;
     }
     let _ = app.emit(
         "chat-event",

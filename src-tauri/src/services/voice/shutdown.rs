@@ -113,4 +113,11 @@ pub(crate) async fn shutdown_voice(state: &AppState, opts: &VoiceShutdownOpts) {
 
     // Clear voice packet channel
     *state.voice_packet_tx.write() = None;
+    // W15.5 — also clear the W14.1 pre-staged receiver. Without this,
+    // a hangup-during-setup or session-fail path leaves an orphaned
+    // Receiver in voice_packet_rx_staged. The next call's pre-stage
+    // overwrites the Sender but the orphaned channel briefly re-routes
+    // audio packets to a dropped consumer — silent audio loss across
+    // call boundaries.
+    *state.voice_packet_rx_staged.lock() = None;
 }

@@ -61,6 +61,29 @@ export { stopActiveRing };
 export function subscribeCallEvents(): Promise<UnlistenFn> {
   return subscribeChatEvents((event) => {
     switch (event.type) {
+      case "callStarted": {
+        // W15.6 — backend-emitted on start_dm_call. Seed outgoingCall
+        // store from authoritative backend payload (no local clock
+        // arithmetic) and start the synthesized ringback. CLI/TUI
+        // would react identically (print "Calling X…" + terminal
+        // bell). Per feedback_backend_owns_policy.md.
+        const { callId, kind, peerKey, peerDisplayName, expiresAtMs } = event.data;
+        const seed: CallEntry = {
+          callId,
+          peerKey,
+          displayName: peerDisplayName,
+          kind,
+          expiresAtMs,
+          startedAtMs: Date.now(),
+          status: "calling",
+        };
+        setCallsState("outgoingCall", seed);
+        if (settingsState.ringtoneEnabled) {
+          stopActiveRing();
+          activeRing = playOutgoingRingback({ volume: settingsState.ringtoneVolume });
+        }
+        break;
+      }
       case "incomingCall": {
         const { callId, from, displayName, kind, expiresAtMs } = event.data;
         const entry: CallEntry = {
@@ -288,19 +311,25 @@ export function subscribeCallEvents(): Promise<UnlistenFn> {
         break;
       }
       case "callEnded": {
-        // C2 hangup — fired by both the local end_dm_call command (via
-        // backend emit) and the remote peer's CallEnd payload arrival.
-        // Clears the active-call slot uniformly.
+        // Hangup / cancel / remote-end — fires from end_dm_call (local
+        // emit) and from process_envelope::CallEnd (peer's CallEnd
+        // payload). W15.1 — clear ALL three call slots that might
+        // reference this callId, not just activeCall + outgoingCall.
+        // Cancel-while-ringing path: peer's CallEnd arrives while we're
+        // still in IncomingCall state — without filtering incomingCalls,
+        // the IncomingCallModal stays zombie because head() still
+        // returns the entry.
         const { callId, reason } = event.data;
         stopActiveRing();
         if (callsState.activeCall?.callId === callId) {
           setCallsState("activeCall", null);
         }
-        // Also handle the rare case where activeCall hasn't been
-        // populated yet because callConnected raced with callEnded.
         if (callsState.outgoingCall?.callId === callId) {
           setCallsState("outgoingCall", null);
         }
+        setCallsState("incomingCalls", (prev) =>
+          prev.filter((c) => c.callId !== callId),
+        );
         if (reason) {
           addToast(`Call ended: ${reason}`, "info");
         }
@@ -333,35 +362,25 @@ export async function refreshMissedCalls(): Promise<void> {
 /// `outgoingCall` store entry up-front so the UI shows "Calling…"
 /// immediately rather than waiting for the round-trip.
 ///
-/// Wave 12 W12.1 — also starts the synthesized ringback so the caller
-/// hears feedback while the offer is in flight. Stopped on connect /
-/// decline / timeout / cancel.
+/// Wave 15 W15.6 — thin IPC kicker. Backend's start_dm_call emits the
+/// authoritative ChatEvent::CallStarted which seeds the outgoingCall
+/// store + starts ringback in the case "callStarted" arm above. No
+/// local seed math, no per-frontend policy. Tauri / CLI / TUI all
+/// react identically from the same event stream.
+///
+/// `displayName` arg is unused now (backend resolves via friend_display_name)
+/// but kept for source compatibility with the buddy-list / chat header
+/// call sites until those are pruned.
 export async function handleStartDmCall(
   peerKey: string,
-  displayName: string,
+  _displayName: string,
   video: boolean,
 ): Promise<void> {
-  const expiresAtMs = Date.now() + 30_000;
-  const seed: CallEntry = {
-    callId: "",
-    peerKey,
-    displayName,
-    kind: video ? "video" : "audio",
-    expiresAtMs,
-    startedAtMs: Date.now(),
-    status: "calling",
-  };
-  setCallsState("outgoingCall", seed);
-  if (settingsState.ringtoneEnabled) {
-    stopActiveRing();
-    activeRing = playOutgoingRingback({ volume: settingsState.ringtoneVolume });
-  }
   try {
-    const callId = await commands.startDmCall(peerKey, video);
-    setCallsState("outgoingCall", "callId", callId);
+    await commands.startDmCall(peerKey, video);
+    // Backend emits ChatEvent::CallStarted; the case arm seeds
+    // outgoingCall + ringback. No local state mutation here.
   } catch (e) {
-    stopActiveRing();
-    setCallsState("outgoingCall", null);
     addToast(`Call failed: ${String(e)}`, "error");
   }
 }
