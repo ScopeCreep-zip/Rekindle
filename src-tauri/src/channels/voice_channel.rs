@@ -41,4 +41,12 @@ pub enum VoiceEvent {
         device_name: String,
         reason: String,
     },
+    /// Wave 14 W14.4 — voice packets dropped since last emit.
+    /// Surfaces silent failures (channel full, no active call,
+    /// AEAD decrypt fail) at info!/warn! log + as a frontend event.
+    /// Backend-driven policy: emit every 1 s if count > 0.
+    PacketsDropped {
+        reason: String,
+        count: u64,
+    },
 }

@@ -110,6 +110,26 @@ pub async fn start_dm_call(
         return Err(format!("call invite send failed: {e}"));
     }
 
+    // W14.3 — backend-driven conversation focus. Caller lands in the
+    // chat with the peer immediately, while ringback plays in the
+    // OutgoingCallPanel.
+    let display_name = state_helpers::friend_display_name(state.inner(), &peer_public_key)
+        .unwrap_or_else(|| {
+            if peer_public_key.len() > 16 {
+                format!("{}…", &peer_public_key[..16])
+            } else {
+                peer_public_key.clone()
+            }
+        });
+    let _ = app.emit(
+        "chat-event",
+        &ChatEvent::ConversationFocusRequested {
+            peer_key: peer_public_key,
+            display_name,
+            reason: "call-started".into(),
+        },
+    );
+
     Ok(call_id)
 }
 
@@ -196,13 +216,48 @@ pub async fn accept_dm_call(
     }
 
     // Local UI transitions to Active.
-    {
+    let (kind_str, expected_local_camera) = {
         let mut calls = state.active_calls.lock();
-        if let Some(c) = calls.get_mut(&call_id) {
-            c.status = CallStatus::Active;
+        match calls.get_mut(&call_id) {
+            Some(c) => {
+                c.status = CallStatus::Active;
+                let kind_str = match c.kind {
+                    CallKind::Audio => "audio",
+                    CallKind::Video => "video",
+                };
+                (kind_str.to_string(), matches!(c.kind, CallKind::Video))
+            }
+            None => ("audio".to_string(), false),
         }
-    }
-    let _ = app.emit("chat-event", &ChatEvent::CallConnected { call_id });
+    };
+    let peer_display_name = state_helpers::friend_display_name(state.inner(), &peer_pubkey)
+        .unwrap_or_else(|| {
+            if peer_pubkey.len() > 16 {
+                format!("{}…", &peer_pubkey[..16])
+            } else {
+                peer_pubkey.clone()
+            }
+        });
+    let _ = app.emit(
+        "chat-event",
+        &ChatEvent::CallConnected {
+            call_id: call_id.clone(),
+            kind: kind_str,
+            peer_key: peer_pubkey.clone(),
+            peer_display_name: peer_display_name.clone(),
+            expected_local_camera,
+        },
+    );
+    // W14.3 — backend-driven conversation focus. Receiver lands in the
+    // chat with the caller as part of accepting.
+    let _ = app.emit(
+        "chat-event",
+        &ChatEvent::ConversationFocusRequested {
+            peer_key: peer_pubkey,
+            display_name: peer_display_name,
+            reason: "call-accepted".into(),
+        },
+    );
     Ok(())
 }
 

@@ -5,6 +5,7 @@ import { commands } from "../ipc/commands";
 import { addToast } from "../stores/toast.store";
 import { settingsState } from "../stores/settings.store";
 import { setNotificationState } from "../stores/notification.store";
+import { setVoiceState } from "../stores/voice.store";
 import { friendsState } from "../stores/friends.store";
 import {
   playBusyTone,
@@ -91,27 +92,38 @@ export function subscribeCallEvents(): Promise<UnlistenFn> {
         break;
       }
       case "callConnected": {
-        const { callId } = event.data;
+        const { callId, expectedLocalCamera } = event.data;
         stopActiveRing();
-        // W13.11 — under the new fire-and-forget signaling, the
-        // backend's start_dm_call returns the call_id synchronously
-        // BEFORE any callConnected event can fire (callConnected
-        // requires a CallAccept envelope round-trip; that takes
-        // strictly longer than the local IPC return). The W12-fix.D
-        // empty-string-fallback shim is no longer needed; matching by
-        // exact callId is enough.
+        // W13.11 — fire-and-forget signaling guarantees the backend's
+        // start_dm_call returns synchronously BEFORE any callConnected
+        // event can fire. Match by exact callId.
         const out = callsState.outgoingCall;
         if (out && out.callId === callId) {
           setCallsState("activeCall", out);
           setCallsState("outgoingCall", null);
-          break;
+        } else {
+          const idx = callsState.incomingCalls.findIndex((c) => c.callId === callId);
+          if (idx >= 0) {
+            const entry = callsState.incomingCalls[idx];
+            setCallsState("activeCall", entry);
+            setCallsState("incomingCalls", (prev) => prev.filter((_, i) => i !== idx));
+          }
         }
-        const idx = callsState.incomingCalls.findIndex((c) => c.callId === callId);
-        if (idx >= 0) {
-          const entry = callsState.incomingCalls[idx];
-          setCallsState("activeCall", entry);
-          setCallsState("incomingCalls", (prev) => prev.filter((_, i) => i !== idx));
+        // W14.2 — backend told us the camera policy. Tauri reacts by
+        // starting capture; the policy itself lives in the backend's
+        // event emit (not here).
+        if (expectedLocalCamera) {
+          setVoiceState("cameraOn", true);
         }
+        break;
+      }
+      case "conversationFocusRequested": {
+        // W14.3 — backend asked us to surface the conversation. Tauri
+        // opens/focuses the ChatWindow. The "when" decision (after
+        // CallInvite send / after Accept resolution) lives in the
+        // backend; we just navigate.
+        const { peerKey, displayName } = event.data;
+        void commands.openChatWindow(peerKey, displayName);
         break;
       }
       case "callRinging": {

@@ -279,7 +279,10 @@ impl VoiceSendLoop {
                     }
                 };
                 if let Err(e) = send_result {
-                    tracing::debug!(error = %e, "voice send loop: transport send failed");
+                    // W14.4 — promoted from debug! to warn! so a
+                    // failing send (no peers / no signing key /
+                    // route closed) is visible without RUST_LOG=debug.
+                    tracing::warn!(error = %e, "voice send loop: transport send failed");
                     self.send_failures += 1;
                 }
                 self.packets_sent += 1;

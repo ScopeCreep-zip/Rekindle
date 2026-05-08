@@ -89,8 +89,21 @@ pub enum ChatEvent {
     /// Plan §Failure 5 — emitted on both sides once the X25519
     /// handshake completes and the voice transport has been started.
     #[serde(rename_all = "camelCase")]
+    /// Wave 14 W14.2 — payload extended with the data every frontend
+    /// needs to react identically. Backend emits the policy
+    /// (`expected_local_camera`); each frontend interprets natively
+    /// (Tauri starts WebCodecs capture; CLI prints "video active";
+    /// TUI flips a status indicator). Per `feedback_backend_owns_policy`,
+    /// no frontend should encode "video means camera" itself.
     CallConnected {
         call_id: String,
+        kind: String,
+        peer_key: String,
+        peer_display_name: String,
+        /// True iff `call.kind == CallKind::Video`. Frontends with a
+        /// camera should turn it on; CLI/TUI without one ignore the
+        /// field naturally.
+        expected_local_camera: bool,
     },
     /// Plan §Failure 5 — outgoing call's 30 s timer expired without an
     /// accept. Frontend shows a toast and clears the outgoing-call
@@ -127,9 +140,23 @@ pub enum ChatEvent {
     /// ringing the user now." Lets the caller's UI flip "Calling…" to
     /// "Ringing…" without waiting for the actual accept/decline.
     /// Best-effort; loss is acceptable.
-    #[serde(rename_all = "camelCase")]
     CallRinging {
         call_id: String,
+    },
+    /// Wave 14 W14.3 — backend asks frontends to focus a conversation.
+    /// Emitted on call entry from both caller and receiver paths.
+    /// Tauri opens/focuses the ChatWindow; CLI switches active
+    /// conversation context; TUI navigates. Per
+    /// `feedback_backend_owns_policy.md` — the policy "call entry
+    /// focuses the conversation" lives ONCE in the backend's emit
+    /// sites; every frontend reacts uniformly.
+    ConversationFocusRequested {
+        peer_key: String,
+        display_name: String,
+        /// "call-started" (caller-side, after CallInvite send) or
+        /// "call-accepted" (either side, after CallConnected).
+        /// Frontends MAY surface differently; not load-bearing.
+        reason: String,
     },
     /// Wave 12 W12.6 — peer toggled their mic / camera / screen-share
     /// mid-call. Frontend's `ActiveCallPanel` / `VideoCallPanel` mount or

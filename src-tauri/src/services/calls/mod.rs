@@ -318,17 +318,41 @@ pub async fn handle_accept_received(
         return;
     }
 
-    // Promote to Active and emit CallConnected.
-    {
+    // Promote to Active and emit CallConnected with W14.2 payload.
+    let (kind_str, expected_local_camera) = {
         let mut calls = state.active_calls.lock();
-        if let Some(call) = calls.get_mut(call_id) {
-            call.status = CallStatus::Active;
+        match calls.get_mut(call_id) {
+            Some(call) => {
+                call.status = CallStatus::Active;
+                let kind_str = match call.kind {
+                    CallKind::Audio => "audio",
+                    CallKind::Video => "video",
+                };
+                (kind_str.to_string(), matches!(call.kind, CallKind::Video))
+            }
+            None => ("audio".to_string(), false),
         }
-    }
+    };
+    let peer_display_name = state_helpers::friend_display_name(state, &peer_pubkey)
+        .unwrap_or_else(|| short_pubkey(&peer_pubkey));
     let _ = app.emit(
         "chat-event",
         &ChatEvent::CallConnected {
             call_id: call_id.to_string(),
+            kind: kind_str,
+            peer_key: peer_pubkey.clone(),
+            peer_display_name: peer_display_name.clone(),
+            expected_local_camera,
+        },
+    );
+    // W14.3 — focus the conversation on the caller side too. Receiver
+    // already focused on accept; caller focuses now that voice is up.
+    let _ = app.emit(
+        "chat-event",
+        &ChatEvent::ConversationFocusRequested {
+            peer_key: peer_pubkey,
+            display_name: peer_display_name,
+            reason: "call-accepted".into(),
         },
     );
 }

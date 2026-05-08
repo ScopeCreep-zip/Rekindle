@@ -53,7 +53,20 @@ export type ChatEvent =
         expiresAtMs: number;
       };
     }
-  | { type: "callConnected"; data: { callId: string } }
+  | {
+      // Wave 14 W14.2 — payload extended with the data every frontend
+      // needs to react identically. `expectedLocalCamera` is the
+      // backend's "video calls expect camera-on" policy delivered as
+      // data; Tauri starts WebCodecs capture; CLI/TUI ignore.
+      type: "callConnected";
+      data: {
+        callId: string;
+        kind: "audio" | "video";
+        peerKey: string;
+        peerDisplayName: string;
+        expectedLocalCamera: boolean;
+      };
+    }
   | { type: "callTimedOut"; data: { callId: string } }
   | { type: "callMissed"; data: { callId: string; from: string } }
   | { type: "callDeclined"; data: { callId: string; reason: string } }
@@ -64,6 +77,18 @@ export type ChatEvent =
       // on the OutgoingCallPanel.
       type: "callRinging";
       data: { callId: string };
+    }
+  | {
+      // Wave 14 W14.3 — backend asks frontends to focus a conversation.
+      // Emitted on call entry from both caller and receiver paths.
+      // Tauri opens/focuses ChatWindow; CLI switches active prompt
+      // context; TUI navigates.
+      type: "conversationFocusRequested";
+      data: {
+        peerKey: string;
+        displayName: string;
+        reason: string;
+      };
     }
   | {
       // Wave 12 W12.6 — peer flipped a media flag mid-call. Frontend
@@ -160,6 +185,14 @@ export type VoiceEvent =
   | {
       type: "deviceChanged";
       data: { deviceType: string; deviceName: string; reason: string };
+    }
+  | {
+      // Wave 14 W14.4 — backend tells us audio packets were dropped
+      // since the last 1s tick. Frontend may surface as a toast or
+      // status-bar indicator so the user sees "audio interrupted"
+      // instead of confused silence.
+      type: "packetsDropped";
+      data: { reason: string; count: number };
     };
 
 export type CommunityEvent =

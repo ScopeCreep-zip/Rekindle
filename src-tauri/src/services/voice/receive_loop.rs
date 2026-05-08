@@ -183,14 +183,30 @@ impl VoiceReceiveLoop {
                     .and_then(|c| c.call_key)
             };
             let Some(key) = call_key else {
-                tracing::trace!(sender = %sender_hex,
-                    "1:1 voice packet from unknown sender — dropping");
+                // W14.4 — promoted from trace! to info! + counter.
+                // Common during the dispatch race; goes away once
+                // W14.1's permanent ingress + per-peer RecvContext
+                // pre-registration lands.
+                tracing::info!(sender = %sender_hex,
+                    "1:1 voice packet from non-active-call sender — dropping");
+                self.state
+                    .voice_pkt_drops
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 return;
             };
             match rekindle_voice::transport::decrypt_packet_audio(&key, &packet) {
                 Ok(plaintext) => packet.audio_data = plaintext,
                 Err(e) => {
-                    tracing::trace!(error = %e, "1:1 voice AEAD decrypt failed — dropping");
+                    // W14.4 — AEAD decrypt failure. Either a tampered
+                    // packet (security-relevant) or a key mismatch
+                    // between sender + receiver (architectural bug —
+                    // W13.14 call_key install gone wrong). Surface as
+                    // warn! with counter.
+                    tracing::warn!(error = %e, sender = %sender_hex,
+                        "1:1 voice AEAD decrypt failed — dropping (key mismatch or tamper)");
+                    self.state
+                        .voice_pkt_drops
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     return;
                 }
             }

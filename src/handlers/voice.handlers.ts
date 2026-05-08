@@ -3,6 +3,7 @@ import { commands } from "../ipc/commands";
 import { subscribeVoiceEvents } from "../ipc/channels";
 import { voiceState, setVoiceState } from "../stores/voice.store";
 import { friendsState, setFriendsState } from "../stores/friends.store";
+import { addToast } from "../stores/toast.store";
 
 let voiceEventUnlisten: UnlistenFn | null = null;
 
@@ -61,6 +62,18 @@ export async function initVoiceEventListener(): Promise<UnlistenFn> {
       case "deviceChanged":
         setVoiceState("deviceChangeCount", (prev) => prev + 1);
         break;
+      case "packetsDropped": {
+        // W14.4 — backend tells us audio packets were dropped over
+        // the last 1 s. Toast so the user sees an objective signal
+        // ("audio interrupted") rather than confused silence. Backend
+        // already logged details at info!/warn!.
+        const { count, reason } = event.data;
+        addToast(
+          `Voice packets dropped: ${count} (${reason})`,
+          "error",
+        );
+        break;
+      }
     }
   });
 }

@@ -28,14 +28,39 @@ pub async fn handle(
         match rekindle_voice::transport::VoiceTransport::receive(voice_data) {
             Ok(packet) => {
                 let tx = state.voice_packet_tx.read().clone();
-                if let Some(tx) = tx {
-                    if tx.try_send(packet).is_err() {
-                        tracing::trace!("voice packet channel full or closed, dropping packet");
+                match tx {
+                    Some(tx) => {
+                        if tx.try_send(packet).is_err() {
+                            // W14.4 — was trace! (invisible). Channel
+                            // full = real backpressure; surface it.
+                            tracing::warn!("voice packet channel full, dropping packet");
+                            state
+                                .voice_pkt_drops
+                                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        }
+                    }
+                    None => {
+                        // W14.4 — voice_packet_tx is None. Once W14.1's
+                        // permanent-ingress refactor lands this branch
+                        // is unreachable. Until then, the lazy-init
+                        // race (caller-side post-CallAccept) drops
+                        // packets here.
+                        tracing::warn!(
+                            "voice packet arrived before voice session was set up — dropping (W14.1 will fix)"
+                        );
+                        state
+                            .voice_pkt_drops
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     }
                 }
             }
             Err(e) => {
-                tracing::trace!(error = %e, "failed to deserialize voice packet");
+                // Deserialize / signature verify failure. Could be a
+                // forged packet or a stale-bytes-on-route artifact.
+                tracing::info!(error = %e, "voice packet rejected (deserialize/sig)");
+                state
+                    .voice_pkt_drops
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
         }
         return;

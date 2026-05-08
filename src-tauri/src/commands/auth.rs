@@ -1458,6 +1458,12 @@ fn spawn_login_services(
         return;
     }
 
+    // W14.4 — voice drop telemetry: 1s tick that emits
+    // VoiceEvent::PacketsDropped if any packets were dropped since the
+    // last tick. Lives at login scope so it's available even before the
+    // first call session starts.
+    crate::services::voice::session::spawn_drop_telemetry(state, app);
+
     // Pre-set existing DHT keys from SQLite on NodeHandle
     {
         let mut node = state.node.write();

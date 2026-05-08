@@ -457,10 +457,20 @@ fn create_transport(
                 .and_then(|c| c.call_key)
         };
         match call_key_opt {
-            Some(key) => transport.set_call_key(key),
+            Some(key) => {
+                // W14.5 — visible in production so we know AEAD is live
+                // for every 1:1 call. Drops the silent-failure surface
+                // where a missing call_key would mean audio fails on
+                // the receiver's AEAD verify with no log.
+                tracing::info!(
+                    channel = %channel_id,
+                    "1:1 voice transport: call_key installed (AEAD active)"
+                );
+                transport.set_call_key(key);
+            }
             None => tracing::warn!(
                 channel = %channel_id,
-                "voice transport: no call_key on CallState — audio will be unencrypted at app layer",
+                "1:1 voice transport: NO call_key on CallState — audio will fail AEAD on receiver",
             ),
         }
     }
@@ -585,6 +595,33 @@ fn spawn_loops(
             handle.device_monitor_handle = monitor_handle;
         }
     }
+}
+
+/// W14.4 — spawn a 1-second polling task that emits VoiceEvent::PacketsDropped
+/// when the global drop counter is non-zero, then resets it. Lets the
+/// frontend (Tauri toast / CLI log line / TUI status indicator) surface
+/// silent voice failures in near-real-time. Called once at login.
+pub(crate) fn spawn_drop_telemetry(state: &SharedState, app: &tauri::AppHandle) {
+    let task_state = state.clone();
+    let task_app = app.clone();
+    let handle = tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            let count = task_state
+                .voice_pkt_drops
+                .swap(0, std::sync::atomic::Ordering::Relaxed);
+            if count > 0 {
+                let _ = task_app.emit(
+                    "voice-event",
+                    &VoiceEvent::PacketsDropped {
+                        reason: "voice_pkt_drops".into(),
+                        count,
+                    },
+                );
+            }
+        }
+    });
+    state.background_handles.lock().push(handle);
 }
 
 fn emit_join_events(app: &tauri::AppHandle, public_key: &str, display_name: &str) {
