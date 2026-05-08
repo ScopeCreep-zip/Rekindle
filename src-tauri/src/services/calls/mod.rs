@@ -231,6 +231,13 @@ pub async fn handle_incoming_invite(
 /// accepted; derive the shared `call_key`, start the voice session,
 /// transition to Active. If voice session fails, send a CallEnd back
 /// so the receiver's just-started session tears down.
+///
+/// W14.1 — IMMEDIATELY upon CallAccept arrival, pre-create the voice
+/// packet mpsc channel and stash both ends on AppState. This way the
+/// app_message dispatcher (services/veilid/app_message.rs) can route
+/// inbound voice packets into the buffer before start_session
+/// finishes — eliminating the dispatch race where the receiver's first
+/// audio frames arrived during start_session setup and were dropped.
 pub async fn handle_accept_received(
     app: &tauri::AppHandle,
     state: &SharedState,
@@ -242,6 +249,17 @@ pub async fn handle_accept_received(
     if acceptor_x25519_pub.len() != 32 {
         tracing::warn!(call = %call_id, "CallAccept with bad x25519 length");
         return;
+    }
+
+    // W14.1 — pre-stage the voice receive channel BEFORE any await
+    // points so packets arriving during the rest of the accept handler
+    // buffer in the channel rather than getting dropped at dispatch.
+    {
+        let (tx, rx) = tokio::sync::mpsc::channel(200);
+        *state.voice_packet_tx.write() = Some(tx);
+        *state.voice_packet_rx_staged.lock() = Some(rx);
+        tracing::info!(call = %call_id,
+            "W14.1 — pre-staged voice receive channel on CallAccept arrival");
     }
 
     // Take the secret + verify state matches.

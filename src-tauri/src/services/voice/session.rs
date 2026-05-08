@@ -513,9 +513,25 @@ fn spawn_loops(
     deafened_flag: &Arc<AtomicBool>,
     member_names: std::collections::HashMap<String, String>,
 ) {
-    // Set up voice packet receive channel
-    let (voice_packet_tx, voice_packet_rx) = mpsc::channel(200);
-    *state.voice_packet_tx.write() = Some(voice_packet_tx);
+    // Set up voice packet receive channel.
+    // W14.1 — if the caller's handle_accept_received pre-staged a
+    // receiver (because it created the mpsc the moment CallAccept
+    // landed, BEFORE waiting on derive_call_key + start_session), take
+    // that receiver. Otherwise create a fresh channel. Either way,
+    // voice_packet_tx ends up Some so the app_message dispatcher can
+    // route packets — eliminating the dispatch race that dropped the
+    // receiver's first ~200ms of audio.
+    let voice_packet_rx = {
+        let mut staged = state.voice_packet_rx_staged.lock();
+        if let Some(rx) = staged.take() {
+            tracing::info!("voice receive: using pre-staged channel from CallAccept handler");
+            rx
+        } else {
+            let (tx, rx) = mpsc::channel(200);
+            *state.voice_packet_tx.write() = Some(tx);
+            rx
+        }
+    };
 
     // Speaker reference broadcast channel for AEC
     let (speaker_ref_tx, speaker_ref_rx) = broadcast::channel::<Vec<f32>>(50);
