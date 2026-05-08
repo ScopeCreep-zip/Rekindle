@@ -19,6 +19,8 @@ veilid-core = { version = "0.5.2", default-features = true }
 # Async
 tokio = { workspace = true }
 futures = { workspace = true }
+async-trait = "0.1"
+backoff = "0.4"
 
 # Serialization — postcard for wire, serde for trait bounds
 serde = { workspace = true }

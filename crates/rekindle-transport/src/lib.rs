@@ -31,6 +31,7 @@ pub mod crypto;
 pub mod payload;
 pub mod community;
 pub mod operations;
+pub mod envelope_store;
 
 #[cfg(test)]
 mod tests;
@@ -71,6 +72,12 @@ pub use crypto::signal_store::{
 
 // Session state
 pub use session::{Session, SessionIdentity, CommunityMembership, PendingFriendRequest};
+
+// W16.1 — envelope reliability primitive contract + default impls
+pub use envelope_store::{
+    EnvelopeKind, EnvelopeStore, JsonEnvelopeStore, MemoryEnvelopeStore,
+    PendingEnvelope, PersistedCallState, StoreError,
+};
 
 // Query engine
 pub use query::{

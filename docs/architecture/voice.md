@@ -149,9 +149,14 @@ because:
    [`rekindle-calls`](crates.md#rekindle-calls)).
 
 The transport layer (`VoiceTransport`) wraps `routing_context.app_message`
-with the route blob from the per-peer registry entry. Failed sends are
-silently dropped — voice is loss-tolerant by design, and retransmission
-would add latency without benefit.
+with the route blob from the per-peer registry entry. **Voice frames are
+loss-tolerant** — Opus FEC + PLC handle small gaps; retransmission would
+add latency without benefit, so failed frame sends are dropped after
+warn-level telemetry (W14.4 `VoiceEvent::PacketsDropped` with reason).
+**Voice signaling envelopes are NOT loss-tolerant** — they flow through
+the W16 `pending_envelopes` reliability primitive (per-recipient seq_ack,
+receiver dedup, route-aware retry up to 5 min, crash recovery for
+Dialing/Incoming states); see §Signaling and session state below.
 
 `VoiceMode` lets a session prefer ordered delivery (`PreferOrdered`)
 when the network conditions warrant it; the default is
@@ -181,18 +186,52 @@ per-source gain.
 
 ## Signaling and session state
 
-Voice signaling (join, leave, hand-raise, server mute, server deafen)
-uses `app_call` for confirmed delivery — the caller needs to know that
-the voice peer accepted before opening capture/playback streams.
+**Wave 13 / Wave 16 supersession**: Voice and call signaling moved off
+Veilid `app_call` (synchronous RPC) to fire-and-forget `app_message`,
+layered with the W16 `pending_envelopes` reliability primitive
+(per-recipient seq_ack, receiver dedup, durable retry up to 5 min,
+crash-survives recovery). Reasons:
 
-`services/voice/signaling.rs` defines the wire types; `session.rs` holds
-the per-channel session state in `VoiceSessionMap`. Session state lives
-in `AppState.voice_engine` as `VoiceEngineHandle` (engine + transport +
-the four background task join handles).
+- `app_call`'s synchronous RPC layer collapses at ~25 s under network
+  churn; a long ring window can lose the call mid-handshake.
+- `app_call` traffic shape leaks "this is a call signal" vs DM (a
+  privacy regression for vulnerable users).
+- Reference architectures (SimpleX, Signal RingRTC, WebRTC standard) all
+  use async signaling for the same reasons.
+
+The supersession applies to both 1:1 call signaling
+(`CallInvite`/`CallAccept`/`CallDecline`/`CallRinging`/`CallEnd`/
+`CallMediaState`) and group call signaling
+(`GroupCallOffer`/`GroupCallAccept`/`GroupCallDecline`).
+Receiver-side reliability is "voice peer accepted" knowledge via the
+`ChatEvent::CallAccept`/`CallConnected` path; senders learn delivery
+outcomes via `ChatEvent::EnvelopeDelivered`/`EnvelopeDeliveryFailed`.
+
+`services/calls/mod.rs` owns the call state machine; `services/calls/
+state.rs` defines the per-call status (Outgoing, Incoming, Connecting,
+Active); `services/calls/ring_timer.rs` enforces 30 s timeouts on
+Dialing and Incoming. Voice transport setup
+(`services/voice/session.rs`) only runs after the W14.1 permanent
+ingress is in place — no per-call channel construction races.
+
+`services/voice/signaling.rs` retains the wire types for community
+voice operations (join/leave/handraise/server-mute) which still use a
+combination of governance entries and gossip. `session.rs` holds the
+per-channel session state in `VoiceSessionMap`. Session state lives in
+`AppState.voice_engine` as `VoiceEngineHandle` (engine + transport +
+background task join handles).
+
+**Active call state is intentionally NOT persisted** — matches Signal
+RingRTC and Discord Voice Gateway. Voice transport state (cpal stream
+identity, opus encoder state, AEAD nonce counters, jitter buffer state,
+signing key context) is process-bound and cannot meaningfully resume
+across crash. Only Dialing/Incoming envelopes persist (W16.3) so a
+30 s ring window survives a quick app restart.
 
 On disconnect or shutdown, `services/voice/shutdown.rs` joins the
 background tasks, drops the cpal streams (which terminates the capture
-and playback threads), and clears the registry's `voice_channel` field.
+and playback threads), clears the registry's `voice_channel` field, and
+clears `state.voice_packet_tx` + `state.voice_packet_rx_staged` (W15.5).
 
 ## Device hot-plug and failure recovery
 

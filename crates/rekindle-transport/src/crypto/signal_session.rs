@@ -464,27 +464,28 @@ mod tests {
     use super::*;
     use crate::crypto::signal_store::{MemoryIdentityStore, MemoryPreKeyStore, MemorySessionStore};
     use std::collections::HashMap;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
+    use parking_lot::Mutex;
 
     struct SharedSessionStore(Arc<Mutex<HashMap<String, Vec<u8>>>>);
 
     impl SessionStore for SharedSessionStore {
         fn load_session(&self, address: &str) -> Result<Option<Vec<u8>>> {
-            Ok(self.0.lock().unwrap().get(address).cloned())
+            Ok(self.0.lock().get(address).cloned())
         }
         fn store_session(&self, address: &str, data: &[u8]) -> Result<()> {
-            self.0.lock().unwrap().insert(address.to_string(), data.to_vec());
+            self.0.lock().insert(address.to_string(), data.to_vec());
             Ok(())
         }
         fn has_session(&self, address: &str) -> Result<bool> {
-            Ok(self.0.lock().unwrap().contains_key(address))
+            Ok(self.0.lock().contains_key(address))
         }
         fn delete_session(&self, address: &str) -> Result<()> {
-            self.0.lock().unwrap().remove(address);
+            self.0.lock().remove(address);
             Ok(())
         }
         fn list_sessions(&self) -> Result<Vec<String>> {
-            Ok(self.0.lock().unwrap().keys().cloned().collect())
+            Ok(self.0.lock().keys().cloned().collect())
         }
     }
 
@@ -498,7 +499,7 @@ mod tests {
         let (alice_priv, alice_pub) = make_keypair();
         let (bob_priv, bob_pub) = make_keypair();
 
-        let alice_sessions = Arc::new(Mutex::new(HashMap::new()));
+        let alice_sessions: Arc<Mutex<HashMap<String, Vec<u8>>>> = Arc::new(Mutex::new(HashMap::new()));
 
         let alice = SignalSessionManager::new(
             Box::new(MemoryIdentityStore::new(alice_priv, alice_pub.clone(), 1)),
@@ -518,7 +519,7 @@ mod tests {
         alice.establish_session(&bob_addr, &bob_bundle).unwrap();
 
         // Extract ephemeral private key from Alice's session, derive public for respond
-        let alice_data = alice_sessions.lock().unwrap().get(&bob_addr).unwrap().clone();
+        let alice_data = alice_sessions.lock().get(&bob_addr).unwrap().clone();
         let pos = 96;
         let len = u32::from_le_bytes(alice_data[pos..pos + 4].try_into().unwrap()) as usize;
         let ephemeral_secret_bytes: [u8; 32] = alice_data[pos + 4..pos + 4 + len].try_into().unwrap();

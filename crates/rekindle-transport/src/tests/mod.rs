@@ -61,7 +61,7 @@ fn gossip_payload_roundtrip() {
         lamport_ts: 42,
         sequence: 3,
         content_hash: "abc123".into(),
-        timestamp: 1234567890,
+        timestamp: 1_234_567_890,
     };
     let bytes = postcard::to_stdvec(&payload).unwrap();
     let back: GossipPayload = postcard::from_bytes(&bytes).unwrap();
@@ -90,7 +90,7 @@ fn voice_payload_roundtrip() {
     let payload = VoicePayload {
         sender_key_hex: "deadbeef".into(),
         sequence: 42,
-        timestamp: 1234567890,
+        timestamp: 1_234_567_890,
         encrypted_audio: vec![0xAB; 100],
         hmac: [0x42; 16],
         signature: vec![0xCC; 64],
@@ -180,7 +180,7 @@ fn message_notification_stays_compact() {
         lamport_ts: 42,
         sequence: 3,
         content_hash: "abc123".into(),
-        timestamp: 1234567890,
+        timestamp: 1_234_567_890,
     };
     let bytes = postcard::to_stdvec(&payload).unwrap();
     assert!(

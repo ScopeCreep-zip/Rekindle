@@ -224,8 +224,8 @@ paths resolve.
 
 | Primitive | Usage |
 |-----------|-------|
-| `app_message(target, data)` | Fire-and-forget delivery to a `RouteId` |
-| `app_call(target, data)` | Request-response delivery (DM invite handshake) |
+| `app_message(target, data)` | Fire-and-forget delivery to a `RouteId`. Used for DMs, friend-add, call signaling (W13/W16), DM invites, and voice/video frames. Reliability for envelopes that need it (signaling, friend-add, DMs) is layered on top via the W16 `pending_envelopes` SQLite primitive: per-recipient seq_ack, receiver dedup, route-aware retry up to 5 min, crash-survives recovery. |
+| `app_call(target, data)` | Request-response delivery. Reserved for operations that genuinely need an inline reply: MEK delivery, file chunk transfer, bootstrap bundles. **Not used for call signaling or DM invites** — Wave 13/16 superseded those with `app_message + W16 reliability layer` to avoid `app_call`'s connection-table exhaustion under bootstrap, ~25 s collapse under network churn, and signaling-vs-DM traffic-shape leakage. See `docs/architecture/voice.md` and the `.claude/docs/rekindle-communities-architecture.md` §10.10 / §27 for the design rationale. |
 | `create_dht_record(schema)` | Create a new DHT record (DFLT or SMPL) |
 | `open_dht_record(key, keypair)` | Open existing record with optional write access |
 | `set_dht_value(key, subkey, data)` | Write to a subkey of an owned record |

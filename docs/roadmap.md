@@ -148,6 +148,9 @@ acceptable latency.
 - [x] Server-side mute/deafen (`server_mute_member`, `server_deafen_member`)
 - [x] Voice mode switching (`set_voice_mode`)
 - [x] Voice session join/leave analytics (`voice_session_events`)
+- [x] Call signaling reliability layer (W13 fire-and-forget + W16 `pending_envelopes` retry queue, per-recipient seq_ack, receiver dedup, crash-recovers Dialing/Incoming)
+- [x] Backend-owned call state machine and authoritative event emit (W14/W15) — every frontend renders identical lifecycle from the same event stream
+- [x] AEAD audio encryption under derived `call_key` (W13.14, ChaCha20-Poly1305 in `crates/rekindle-voice/src/transport.rs`)
 - [ ] Connection quality monitoring and display
 
 ## Phase 6: Advanced Features
