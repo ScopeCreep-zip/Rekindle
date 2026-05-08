@@ -1,0 +1,47 @@
+# Dependency review — blocks PRs that introduce vulnerable, yanked, or
+# license-incompatible dependencies.
+#
+# Uses GitHub's official `dependency-review-action`, which inspects the
+# diff between the PR's base and head and reports any new dependency
+# meeting the failure criteria. Complements the daily `cargo audit`
+# scheduled run by providing per-PR feedback before merge.
+
+name: Dependency Review
+
+on:
+  pull_request:
+    branches: [main, "codex/**"]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    name: Review dependency diff
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          # Mirror the allow-list from deny.toml so this check stays in
+          # sync with the cargo-deny policy.
+          allow-licenses: >-
+            MIT,
+            Apache-2.0,
+            Apache-2.0 WITH LLVM-exception,
+            BSD-2-Clause,
+            BSD-3-Clause,
+            ISC,
+            Zlib,
+            0BSD,
+            Unicode-DFS-2016,
+            Unicode-3.0,
+            CC0-1.0,
+            CDLA-Permissive-2.0,
+            MPL-2.0,
+            BSL-1.0,
+            Unlicense
+          comment-summary-in-pr: on-failure

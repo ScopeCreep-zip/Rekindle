@@ -1,0 +1,75 @@
+# Lychee — fast async link checker for docs and code comments.
+# Spec: https://github.com/lycheeverse/lychee
+#
+# Run with:  lychee --config lychee.toml '**/*.md'
+# CI gate:   .github/workflows/lint.yml `lychee` job.
+
+# Verbosity. `info` is loud; `warn` is the right CI default.
+verbose = "info"
+
+# How long to wait for each link.
+timeout = 20
+
+# Retries on transient errors.
+max_retries = 2
+
+# Maximum number of concurrent requests.
+max_concurrency = 14
+
+# User-agent string. Some sites block default Lychee headers; setting
+# a recognisable UA reduces false 403s.
+user_agent = "lychee/0.15 (+https://github.com/lycheeverse/lychee; Rekindle docs)"
+
+# Treat redirects as success.
+no_progress = true
+include_verbatim = false
+
+# Cache live results for 1 day to avoid hammering remotes on repeat
+# CI runs and to speed up local invocations.
+cache = true
+max_cache_age = "1d"
+
+# Status codes to accept beyond the 2xx default. Some sites return
+# these for valid pages.
+accept = ["200..=299", "403", "429"]
+
+# Skip patterns. Reduces false-positives on transient or
+# rate-limited remotes.
+exclude = [
+    "^https?://localhost",
+    "^https?://127\\.0\\.0\\.1",
+    "^https?://0\\.0\\.0\\.0",
+    "^https?://\\[::1\\]",
+    "^https?://example\\.com",
+    "^https?://example\\.org",
+    "^https?://[^/]*\\.local(/|$)",
+    "^https?://(www\\.)?reddit\\.com",
+    "^https?://(www\\.)?twitter\\.com",
+    "^https?://(www\\.)?x\\.com",
+    "^https?://(www\\.)?linkedin\\.com",
+    "^https?://(www\\.)?facebook\\.com",
+    "^mailto:",
+    "^tel:",
+]
+
+# Skip the legacy/ directory — those are reverse-engineering artefacts,
+# not living docs.
+exclude_path = [
+    "legacy/",
+    "node_modules/",
+    "target/",
+    "dist/",
+    "src-tauri/gen/",
+]
+
+# Headers to send. Some GitHub raw-content URLs need this.
+headers = [
+    "accept = text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+]
+
+# Don't fail on absence of fragment IDs (`#section`); many target
+# pages don't use stable anchors.
+include_fragments = false
+
+# Run only over markdown — code comments are out of scope for now.
+file_types = ["markdown"]

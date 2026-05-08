@@ -1,0 +1,147 @@
+# AI-assisted-contribution attestation check.
+#
+# Policy: every commit that was authored / substantially shaped by an
+# AI assistant must include an `Assisted-by:` trailer. See
+# `docs/contributor/ai-assisted-contributions.md` for the full policy.
+#
+# What this workflow does:
+#
+#   1. Walk every commit in the PR diff range.
+#   2. For each commit, scan the touched code for AI tells:
+#      - Placeholder TODO comments AI assistants emit verbatim.
+#      - Tautological tests.
+#      - Suspicious test fixtures.
+#      - "I'm an AI"-style accidental signatures in comments.
+#   3. If any commit has tells but no `Assisted-by:` trailer in its
+#      message, comment a soft warning on the PR with the file:line
+#      and the policy link.
+#
+# This is a *warning*, not a block. False positives exist; the goal
+# is to nudge contributors toward disclosure, not to gatekeep.
+
+name: AI attestation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  attest:
+    name: AI attestation hint
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect AI tells without attestation
+        id: detect
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.sha }}
+          HEAD_REF: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          # AI-tell regexes. Tuned for low false-positive on real
+          # contributor work; anything matching these is fairly
+          # likely a stub / hallucination / model-leak.
+          tells=(
+              '^\+.*//[[:space:]]*TODO:[[:space:]]*implement[[:space:]]+(this|me|here)'
+              '^\+.*//[[:space:]]*In a real implementation'
+              '^\+.*//[[:space:]]*This is (just )?a placeholder'
+              '^\+.*//[[:space:]]*For demonstration[[:space:]]+(purposes|only)'
+              '^\+.*//[[:space:]]*Pseudo-code'
+              '^\+.*//[[:space:]]*FIXME:[[:space:]]*replace[[:space:]]+this[[:space:]]+(before|when)'
+              '^\+.*expect\(.*\)\.toBeDefined\(\)'
+              '^\+.*expect\(.*\)\.not\.toBeNull\(\)'
+              '^\+.*expect\(typeof[[:space:]]+.*\)\.toBe\("(?:object|string|number)"\)'
+              "^\\+.*I'?m (?:an )?(?:AI|assistant|language model)"
+              '^\+.*As an AI'
+              '^\+.*Knowledge cutoff'
+          )
+          # Build the union pattern.
+          # shellcheck disable=SC2155
+          local_pat=$(IFS='|'; echo "${tells[*]}")
+          pat="(${local_pat})"
+
+          flagged_commits=()
+
+          # Walk every commit in the PR.
+          for sha in $(git rev-list --reverse "$BASE_REF..$HEAD_REF"); do
+              # Skip merge commits (no AI authorship).
+              if [ "$(git rev-list --parents -n 1 "$sha" | wc -w)" -gt "2" ]; then
+                  continue
+              fi
+              diff=$(git show --no-color --format= "$sha" 2>/dev/null || true)
+              if [[ -z "$diff" ]]; then
+                  continue
+              fi
+              if echo "$diff" | grep -qE "$pat"; then
+                  msg=$(git log -1 --format=%B "$sha")
+                  if ! echo "$msg" | grep -qiE '^Assisted-by:[[:space:]]*\S'; then
+                      flagged_commits+=("$sha")
+                  fi
+              fi
+          done
+
+          if [[ ${#flagged_commits[@]} -gt 0 ]]; then
+              {
+                  echo "## AI tells without \`Assisted-by:\` attestation"
+                  echo
+                  echo "The following commits include patterns commonly emitted by"
+                  echo "AI coding assistants but their messages do not carry an"
+                  echo "\`Assisted-by:\` trailer:"
+                  echo
+                  for sha in "${flagged_commits[@]}"; do
+                      subject=$(git log -1 --format='%h %s' "$sha")
+                      echo "- \`$subject\`"
+                  done
+                  echo
+                  echo "If these commits were AI-assisted, please amend each one to"
+                  echo "include an \`Assisted-by:\` trailer. See"
+                  echo "[\`docs/contributor/ai-assisted-contributions.md\`](../blob/main/docs/contributor/ai-assisted-contributions.md)"
+                  echo "for the trailer format."
+                  echo
+                  echo "If these commits were *not* AI-assisted, the patterns above"
+                  echo "(placeholder TODOs, tautological assertions, etc.) are"
+                  echo "still anti-patterns — please clean them up before merge."
+                  echo
+                  echo "_(This is a soft warning. The PR is not blocked.)_"
+              } > pr-comment.md
+              echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+              echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Comment on PR
+        if: steps.detect.outputs.found == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('pr-comment.md', 'utf8');
+            const marker = '## AI tells without `Assisted-by:` attestation';
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find((c) => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }

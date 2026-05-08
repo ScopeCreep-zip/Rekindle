@@ -1,0 +1,69 @@
+# Supply-chain audit — RustSec advisory DB + cargo-deny policy.
+#
+# Runs on every PR, every push to main, and on a daily schedule so a
+# newly-disclosed CVE in a transitive dep is caught even when the
+# repo is otherwise quiet.
+#
+# Policy lives in deny.toml. See docs/security/supply-chain-policy.md.
+
+name: Audit
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main, "codex/**"]
+  schedule:
+    # 04:13 UTC daily — staggered off the hour to spread runner load.
+    - cron: "13 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write   # so the scheduled run can open an issue when an advisory fires
+
+jobs:
+  cargo-audit:
+    name: cargo-audit (RustSec)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: Audit
+        run: cargo audit --deny warnings
+
+  cargo-deny:
+    name: cargo-deny (advisories / bans / licenses / sources)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cargo-deny
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+          # All four sub-checks. The deny.toml config drives behaviour.
+          arguments: --workspace --all-features
+
+  pnpm-audit:
+    name: pnpm audit
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Audit production deps
+        run: pnpm audit --prod --audit-level high

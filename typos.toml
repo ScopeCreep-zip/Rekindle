@@ -1,0 +1,78 @@
+# typos — fast typo checker for source code and docs.
+# Spec: https://github.com/crate-ci/typos
+#
+# Run with:  typos
+#            typos --write-changes   (auto-apply)
+#
+# CI runs `typos` as a non-blocking warning to start. Promote to a
+# blocking gate once the false-positive set has been pinned in
+# `[default.extend-words]` below.
+
+[default]
+extend-ignore-identifiers-re = [
+    # Veilid identifiers and crypto field names that look like typos:
+    "VLD0",
+    "[A-Za-z]{2,}_[A-Z0-9]{2,}",
+    # Hex / base32 / base64 literals in tests + docs.
+    "[A-Za-z0-9]{32,}",
+]
+
+[default.extend-words]
+# Project-specific vocabulary that typos would otherwise flag.
+# Keep this list short — every entry here is something we *do* spell
+# this way intentionally.
+chiral = "chiral"
+chiralgrams = "chiralgrams"
+porter = "porter"
+porters = "porters"
+rotator = "rotator"
+veilid = "veilid"
+schwarzschild = "schwarzschild"
+qpid = "qpid"
+xfire = "xfire"
+veilidchat = "veilidchat"
+mlkem = "mlkem"
+pqxdh = "pqxdh"
+
+[files]
+extend-exclude = [
+    "*.lock",
+    "Cargo.lock",
+    "pnpm-lock.yaml",
+    "flake.lock",
+    "target/",
+    "node_modules/",
+    "dist/",
+    "src-tauri/gen/",
+    "legacy/",
+    "*.min.js",
+    "*.min.css",
+    "*.png",
+    "*.jpg",
+    "*.gif",
+    "*.ico",
+    "*.icns",
+    "*.woff",
+    "*.woff2",
+    "*.ttf",
+    "*.otf",
+    "*.exe",
+    "*.dmg",
+    "*.dll",
+    "*.so",
+    "*.dylib",
+]
+ignore-hidden = false
+ignore-files = true
+ignore-dot = false
+ignore-vcs = true
+ignore-global = true
+ignore-parent = true
+
+[type.rust]
+# Rust-specific overrides — none needed beyond the defaults; the
+# default dictionary already covers Rust's identifier patterns.
+
+[type.markdown]
+# Allow markdown to use whatever the prose says.
+extend-glob = ["*.md"]

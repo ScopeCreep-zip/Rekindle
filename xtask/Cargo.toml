@@ -1,0 +1,22 @@
+[package]
+name = "xtask"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "Custom workspace tasks beyond what cargo provides natively. See README at /docs/contributor/architecture-rules.md."
+license = "MIT"
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "xtask"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+walkdir = "2"
+ignore = "0.4"
+serde = { version = "1", features = ["derive"] }
+toml_edit = "0.22"

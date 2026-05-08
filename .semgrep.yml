@@ -1,0 +1,287 @@
+# Semgrep — static analysis covering web-app DAST patterns at SAST time.
+# Spec: https://semgrep.dev/docs/
+# Run with:  semgrep --config .semgrep.yml --error
+#
+# This config layers four registry rulesets that cover the JS/TS/SolidJS
+# attack surface (innerHTML, dangerouslySetInnerHTML, prototype
+# pollution, open redirect, eval / Function ctor, untrusted deserialise,
+# DOM-XSS sinks, Trojan source) plus a small set of project-specific
+# rules for Tauri-IPC misuse and `rekindle://` deep-link handling.
+#
+# CI gate: `.github/workflows/lint.yml` `semgrep` job.
+
+rules: []
+
+# Pull in registry rulesets via the `--config` flag — Semgrep 2026
+# accepts multiple `p/*` IDs alongside this file. The `lint.yml`
+# workflow invokes:
+#
+#   semgrep --config .semgrep.yml \
+#           --config p/javascript \
+#           --config p/typescript \
+#           --config p/owasp-top-ten \
+#           --config p/security-audit \
+#           --config p/react \
+#           --error
+#
+# The custom rules below extend the registry coverage.
+
+# ─── Custom Rekindle rules ─────────────────────────────────────────────
+
+include:
+  - "src/**"
+  - "scripts/**"
+  - "e2e/**"
+
+exclude:
+  - "src-tauri/gen/**"
+  - "node_modules/**"
+  - "dist/**"
+  - "target/**"
+  - "legacy/**"
+  - "**/*.spec.ts"
+
+# Fail the run on findings of these severities.
+severity: ["WARNING", "ERROR"]
+
+custom_rules:
+  # ── DOM-XSS sinks ───────────────────────────────────────────────
+  - id: rekindle-no-inner-html
+    pattern-either:
+      - pattern: $X.innerHTML = $V
+      - pattern: |
+          <$EL innerHTML={$V}>
+      - pattern: |
+          <$EL innerHTML={$V} />
+    message: |
+      `innerHTML` is a DOM-XSS sink. Use SolidJS's `{value}` interpolation
+      (which escapes by default) or, when SVG/HTML really must be injected,
+      add a SAFETY comment proving the source is trusted (only Rust IPC
+      output that itself sanitises) and disable this rule with
+      `// nosemgrep: rekindle-no-inner-html` on the specific line.
+    languages: [typescript, javascript, tsx]
+    severity: ERROR
+    paths:
+      include:
+        - "src/**"
+
+  - id: rekindle-no-dangerous-set-inner-html
+    pattern-either:
+      - pattern: $X.dangerouslySetInnerHTML = $V
+      - pattern: |
+          <$EL dangerouslySetInnerHTML={$V}>
+    message: |
+      `dangerouslySetInnerHTML` is a DOM-XSS sink and the React-ism doesn't
+      apply to SolidJS — flag for review.
+    languages: [typescript, javascript, tsx]
+    severity: ERROR
+
+  # ── eval / Function constructor ─────────────────────────────────
+  - id: rekindle-no-eval
+    pattern-either:
+      - pattern: eval($X)
+      - pattern: new Function($...ARGS)
+      - pattern: setTimeout($X, ...) where $X is string
+      - pattern: setInterval($X, ...) where $X is string
+    message: |
+      `eval`, `new Function`, and string-form `setTimeout`/`setInterval`
+      are arbitrary-code-execution sinks. Refuse.
+    languages: [typescript, javascript, tsx]
+    severity: ERROR
+
+  # ── Open redirect / location injection ──────────────────────────
+  - id: rekindle-no-unchecked-href-assignment
+    pattern-either:
+      - pattern: window.location = $V
+      - pattern: window.location.href = $V
+      - pattern: window.location.replace($V)
+      - pattern: window.location.assign($V)
+    message: |
+      Direct assignment to `window.location` from variable input is an
+      open-redirect vector. Validate the URL via the existing helpers
+      in `src/ipc/` or open external URLs through `@tauri-apps/plugin-opener`
+      which respects the system handler.
+    languages: [typescript, javascript, tsx]
+    severity: WARNING
+
+  # ── Prototype pollution ─────────────────────────────────────────
+  - id: rekindle-no-prototype-pollution-merge
+    pattern-either:
+      - pattern: Object.assign($T, JSON.parse($X))
+      - pattern: |
+          for ($K of Object.keys(JSON.parse($X))) {
+            $T[$K] = ...
+          }
+    message: |
+      Merging unverified JSON.parse output into an object is a prototype-
+      pollution vector. Wrap the parse in a schema validator or use
+      `Object.create(null)` as the merge target.
+    languages: [typescript, javascript, tsx]
+    severity: WARNING
+
+  # ── Tauri IPC: ensure invoke() targets are typed ────────────────
+  - id: rekindle-no-raw-tauri-invoke
+    pattern-either:
+      - pattern: invoke($CMD, $...REST) where $CMD is string
+      - pattern: $T.invoke($CMD, $...REST) where $CMD is string
+    message: |
+      Use the typed wrappers in `src/ipc/commands.ts` rather than calling
+      `invoke()` with a string command name. The wrappers:
+        1. Make the IPC contract reviewable in one place.
+        2. Make refactors break loudly at compile time.
+        3. Match the camelCase / type expectations of the Tauri ACL.
+      If you have a genuine reason to escape this rule (e.g., a dynamic
+      command name from a generator), `// nosemgrep:` the line and document
+      the rationale.
+    languages: [typescript, tsx]
+    severity: WARNING
+    paths:
+      include:
+        - "src/**"
+      exclude:
+        - "src/ipc/commands.ts"
+        - "src/ipc/invoke.ts"
+
+  # ── rekindle:// deep-link handling ──────────────────────────────
+  - id: rekindle-deep-link-no-direct-render
+    pattern-either:
+      - pattern: |
+          $V = $URL.searchParams.get(...)
+          ...
+          $X.innerHTML = $V
+      - pattern: |
+          const $V = location.hash.slice(1);
+          ...
+          $X.innerHTML = $V
+    message: |
+      Deep-link payloads (`rekindle://`) come from outside the application
+      — they're attacker-controlled. Never render their values via
+      innerHTML or any raw HTML sink. Decrypt + Cap'n Proto decode first,
+      then render the decoded fields through SolidJS interpolation.
+    languages: [typescript, javascript, tsx]
+    severity: ERROR
+
+  # ── Console logging of secrets ──────────────────────────────────
+  - id: rekindle-no-secret-in-log
+    pattern-either:
+      - pattern: console.log($..., $X.privateKey, ...)
+      - pattern: console.log($..., $X.passphrase, ...)
+      - pattern: console.log($..., $X.masterSecret, ...)
+      - pattern: console.log($..., $X.signingKey, ...)
+      - pattern: console.log($..., $X.mek, ...)
+      - pattern: console.log($..., $X.slotSeed, ...)
+    message: |
+      Never log secret-bearing fields. They land in browser devtools and
+      potentially in any external observability sink. The Rust side has
+      `Debug` redaction on these fields; mirror the convention here.
+    languages: [typescript, javascript, tsx]
+    severity: ERROR
+
+  # ── Crypto: deny ad-hoc primitives in TS land ───────────────────
+  - id: rekindle-no-frontend-crypto-primitives
+    pattern-either:
+      - pattern: crypto.subtle.encrypt(...)
+      - pattern: crypto.subtle.decrypt(...)
+      - pattern: crypto.subtle.sign(...)
+      - pattern: crypto.subtle.verify(...)
+      - pattern: crypto.subtle.importKey(...)
+    message: |
+      All cryptographic operations belong in the Rust backend via
+      `rekindle-secrets` (Tier 2 sole crypto boundary). Frontend crypto
+      defeats the architectural sole-boundary property and creates a
+      drift between Rust + TS implementations of the same primitive.
+      Add a Tauri command for the operation instead.
+    languages: [typescript, javascript, tsx]
+    severity: ERROR
+    paths:
+      include:
+        - "src/**"
+
+  # ── Bare `#[allow(...)]` without `reason = "..."` ────────────────
+  - id: rekindle-no-bare-allow
+    languages: [rust]
+    severity: ERROR
+    pattern-either:
+      - pattern: |
+          #[allow($...LINTS)]
+      - pattern: |
+          #![allow($...LINTS)]
+    pattern-not-regex: 'reason\s*='
+    message: |
+      Every `#[allow(...)]` (and `#![allow(...)]`) must include a
+      `reason = "..."` argument explaining why the lint is being
+      silenced. Bare allows are forbidden — they hide AI-generated
+      shortcuts, dead-code helpers, and lazy escape hatches.
+
+      Quick fix:
+          #[allow(clippy::some_lint, reason = "specific justification")]
+
+      Better: prefer `#[expect(...)]` for transient suppressions —
+      the lint must actually fire or the expect itself errors.
+
+      One-shot retrofit for existing bare allows:
+          cargo xtask retrofit-allow-reasons
+
+      See docs/contributor/ai-assisted-contributions.md §2.
+
+  # ── AI tells: placeholder / implement-this comments ──────────────
+  - id: rekindle-no-ai-placeholder-comments
+    languages: [rust, typescript, javascript, tsx]
+    severity: WARNING
+    pattern-regex: '(?i)//\s*(TODO\s*:\s*(implement|finish|complete|do this|fix this)|In a real implementation|This is (just )?a placeholder|For now,? we|For demonstration|Pseudo-code|FIXME\s*:\s*(replace|finish|implement) (?:this )?(?:before |when )?(?:shipping|production|going live))'
+    message: |
+      Likely AI-generated stub comment. Either implement the missing
+      behaviour now or remove the unfinished code. AI assistants
+      frequently leave placeholder comments that pass review because
+      they look like normal TODO comments.
+
+      If this comment is intentional and tracking real follow-up work,
+      open a GitHub issue and link to it from the comment, e.g.:
+          // TODO(#42): implement after C1-2 lands
+
+      See docs/contributor/ai-assisted-contributions.md §6.
+
+  # ── AI tell: tautological tests ──────────────────────────────────
+  - id: rekindle-no-tautological-test
+    languages: [typescript, tsx]
+    severity: WARNING
+    paths:
+      include:
+        - "**/*.spec.ts"
+        - "**/*.spec.tsx"
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "e2e/**"
+    pattern-either:
+      - pattern: expect($X).toBeDefined()
+      - pattern: expect($X).not.toBeNull()
+      - pattern: expect($X).not.toBeUndefined()
+      - pattern: expect(typeof $X).toBe("object")
+      - pattern: expect(typeof $X).toBe("string")
+      - pattern: expect(typeof $X).toBe("number")
+    message: |
+      Tautological assertion. `toBeDefined()` / `not.toBeNull()` /
+      `typeof === "..."` pass for almost any value and don't exercise
+      real behaviour. AI tools love these because they make tests
+      "pass" without testing anything.
+
+      Replace with assertions on actual values:
+          expect(result).toBe(expected);
+          expect(result).toEqual({ ... });
+          expect(result.someField).toBe(...);
+
+      See docs/contributor/ai-assisted-contributions.md §4.
+
+  # ── AI tell: fabricated package import (Rust) ────────────────────
+  - id: rekindle-no-suspicious-extern-crate
+    languages: [rust]
+    severity: WARNING
+    pattern-regex: '(extern crate|use)\s+(crypto_validator|auth_helper|secure_utils|safe_io|easy_crypto|simple_auth)(\s|::)'
+    message: |
+      `crypto_validator`, `auth_helper`, `secure_utils`, and similar
+      generic-sounding names are common AI hallucinations
+      (slopsquatting). Verify the crate exists at https://crates.io
+      and check its publication history before adding it.
+
+      See docs/contributor/ai-assisted-contributions.md §3 for the
+      slopsquatting checklist.

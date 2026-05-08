@@ -1,0 +1,277 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rekindle.app/policy-schema/v1/schema.json",
+  "title": "Rekindle Enterprise Policy",
+  "description": "JSON Schema for the canonical enterprise-policy document Rekindle reads at startup. Modelled on Mozilla Firefox `policies.json` (flat keys, JSON value types). Distribution: signed bundle on disk OR OS-native policy store (Windows registry / macOS managed preferences / Linux config). See docs/contributor/enterprise-policy.md for the full reference.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["policies"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Reserved — schema URL for tooling. Ignored by the loader."
+    },
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1,
+      "description": "Schema version. Bumped when breaking changes ship."
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Bundle-level metadata. Display only — does not affect policy resolution.",
+      "properties": {
+        "organization": {
+          "type": "string",
+          "description": "Organisation name shown in 'Managed by …' hints."
+        },
+        "contactEmail": {
+          "type": "string",
+          "format": "email",
+          "description": "Admin contact for policy questions; surfaced in the policy-audit window."
+        },
+        "supportUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL surfaced in the policy-audit window."
+        },
+        "issuedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Bundle issue date (RFC 3339)."
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Bundle expiry date. After this, the loader treats the policy as advisory and shows a warning."
+        }
+      }
+    },
+    "policies": {
+      "type": "object",
+      "description": "The policy keys. Every key is optional — unset keys fall through to the application default.",
+      "additionalProperties": false,
+      "properties": {
+        "_comment": {
+          "type": "string",
+          "description": "Optional admin comment. Ignored by the loader."
+        },
+
+        "_lock": {
+          "type": "array",
+          "description": "List of policy keys that are MANDATORY (cannot be overridden by user preference). Every key in this list MUST also have a value set in `policies`. Keys not in this list are RECOMMENDED — applied as defaults but the user can override.",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+
+        "Identity.requireKeypairVerification": {
+          "type": "boolean",
+          "description": "Block sign-in unless the local identity keypair has been verified out-of-band against an admin-provided fingerprint."
+        },
+        "Identity.allowedFingerprintList": {
+          "type": "array",
+          "description": "Whitelist of identity-key fingerprints that are allowed to use this Rekindle install. Empty list means no whitelist.",
+          "items": { "type": "string", "pattern": "^[0-9a-fA-F:]{16,}$" }
+        },
+        "Identity.maxOfflineHours": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 8760,
+          "description": "Force re-auth after N hours offline. 0 = never re-auth (default)."
+        },
+        "Identity.disableMultipleIdentities": {
+          "type": "boolean",
+          "description": "Restrict the install to a single Rekindle identity. Useful for managed devices where users should only use the corporate identity."
+        },
+
+        "Federation.allowedBootstrapNodes": {
+          "type": "array",
+          "description": "Veilid bootstrap node addresses that the daemon may use. Empty list means use the network defaults. Locks Rekindle to a private Veilid mesh when populated.",
+          "items": { "type": "string" }
+        },
+        "Federation.outboundProxyUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "SOCKS5 / HTTP proxy URL for non-Veilid egress (e.g., link-preview OpenGraph fetches). Honour `none` to disable that egress entirely."
+        },
+        "Federation.disableLinkPreview": {
+          "type": "boolean",
+          "description": "Disable OpenGraph link previews (suppresses external HTTP egress for link metadata)."
+        },
+        "Federation.disablePushRelay": {
+          "type": "boolean",
+          "description": "Forbid enrolment with any mobile push relay. The Tier-3 wake-notify channel is unavailable when set."
+        },
+
+        "Communities.allowCreate": {
+          "type": "boolean",
+          "description": "Permit the user to create new communities."
+        },
+        "Communities.allowedJoinList": {
+          "type": "array",
+          "description": "Whitelist of community DHT keys the user may join. Empty list means no whitelist (any community is joinable).",
+          "items": { "type": "string", "pattern": "^VLD0:[A-Za-z0-9_-]+$" }
+        },
+        "Communities.blockedJoinList": {
+          "type": "array",
+          "description": "Deny-list of community DHT keys. Joining one of these is refused at the IPC boundary.",
+          "items": { "type": "string", "pattern": "^VLD0:[A-Za-z0-9_-]+$" }
+        },
+        "Communities.mandatoryList": {
+          "type": "array",
+          "description": "Communities the user is auto-joined into on first login. Display-only signal in the UI; does NOT bypass community-side governance — the user still needs an invite.",
+          "items": { "type": "string", "pattern": "^VLD0:[A-Za-z0-9_-]+$" }
+        },
+
+        "Messaging.allowFileSharing": {
+          "type": "boolean",
+          "description": "Permit Lost-Cargo file attachments."
+        },
+        "Messaging.maxFileSizeBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Hard cap on individual file size for outbound attachments."
+        },
+        "Messaging.blockedFileExtensions": {
+          "type": "array",
+          "description": "Deny-list of file extensions for outbound attachments. Lower-case, no leading dot. Example: ['exe', 'scr', 'msi'].",
+          "items": { "type": "string", "pattern": "^[a-z0-9]{1,16}$" }
+        },
+        "Messaging.allowVoiceMessage": {
+          "type": "boolean",
+          "description": "Permit recording/sending voice messages."
+        },
+        "Messaging.disableMarkdown": {
+          "type": "boolean",
+          "description": "Render messages as plain text only. Disables markdown bold / italic / code-fence rendering."
+        },
+        "Messaging.mandatoryDisclaimer": {
+          "type": "string",
+          "maxLength": 1024,
+          "description": "Text displayed once per session in every conversation pane (e.g., legal-required disclaimer)."
+        },
+        "Messaging.localRetentionDays": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 36500,
+          "description": "Local message-history retention in days. 0 = unlimited (default). After this, local SQLite rows are pruned. Note: peers retain their own copies — this is a *local* policy."
+        },
+
+        "Voice.allowCalls": {
+          "type": "boolean",
+          "description": "Permit 1:1 and group voice calls."
+        },
+        "Voice.allowScreenShare": {
+          "type": "boolean",
+          "description": "Permit screen sharing in voice calls."
+        },
+        "Voice.muteOnJoin": {
+          "type": "boolean",
+          "description": "Auto-mute microphone on entering a voice channel / call."
+        },
+        "Voice.disableRecording": {
+          "type": "boolean",
+          "description": "Refuse to start a local recording. Scope: client UI only; cannot prevent remote participants from recording (they're on their own clients)."
+        },
+        "Voice.maxCallDurationMinutes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Force-end calls after N minutes. 0 = unlimited (default)."
+        },
+
+        "Privacy.disableGameDetection": {
+          "type": "boolean",
+          "description": "Disable the cross-platform process scanner and rich-presence game-info field."
+        },
+        "Privacy.hidePresence": {
+          "type": "boolean",
+          "description": "Suppress presence-status broadcast (online/away/busy). Honours Rekindle's privacy posture: presence is only visible to peers anyway, but disabling it removes one metadata channel."
+        },
+        "Privacy.disableTypingIndicator": {
+          "type": "boolean",
+          "description": "Suppress typing-indicator gossip messages."
+        },
+        "Privacy.disableTelemetry": {
+          "type": "boolean",
+          "description": "Reserved. Rekindle ships zero telemetry by design — this key is documented so admins can pin the property explicitly."
+        },
+
+        "Update.channel": {
+          "type": "string",
+          "enum": ["stable", "beta", "dev"],
+          "description": "Update channel. Default 'stable'."
+        },
+        "Update.checkIntervalHours": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 168,
+          "description": "How often to poll for updates."
+        },
+        "Update.allowManualCheck": {
+          "type": "boolean",
+          "description": "Permit user-initiated update checks."
+        },
+        "Update.minimumVersion": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-[A-Za-z0-9.-]+)?$",
+          "description": "Refuse to start the app if the installed version is older than this. Forces auto-upgrade flow."
+        },
+        "Update.deferralMaxDays": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 90,
+          "description": "Maximum days a user may defer a pending update before it is enforced."
+        },
+
+        "UI.organisationName": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "Organisation name surfaced in the 'Managed by …' hint and the policy-audit window."
+        },
+        "UI.organisationLogoUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "HTTPS URL of an organisation logo to display in the buddy-list header. Must be HTTPS."
+        },
+        "UI.loginMotd": {
+          "type": "string",
+          "maxLength": 2048,
+          "description": "Message-of-the-day shown on the login window."
+        },
+        "UI.helpUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL the in-app 'Help' link points to (typically the org's IT support portal)."
+        },
+        "UI.disableLaunchToTray": {
+          "type": "boolean",
+          "description": "Force the app to start as a visible window rather than hidden in the system tray."
+        },
+
+        "Audit.localLogRetentionDays": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3650,
+          "description": "How long to retain client-side audit log entries on disk. 0 = no audit log written."
+        },
+        "Audit.logSignInEvents": {
+          "type": "boolean",
+          "description": "Record sign-in attempts (success + failure) to the local audit log."
+        },
+        "Audit.logCommunityEvents": {
+          "type": "boolean",
+          "description": "Record community join/leave/role-change events to the local audit log."
+        },
+        "Audit.logCallMetadata": {
+          "type": "boolean",
+          "description": "Record call start/end/participant-count to the local audit log. METADATA ONLY — no audio, no transcript, no message bodies. Anything else would conflict with E2E (see policy-trust-model.md §3)."
+        },
+        "Audit.shipEndpointUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "Optional HTTPS endpoint to ship audit-log entries to. METADATA-ONLY scope is enforced at the source: no ciphertext, no plaintext payload, no peer pseudonyms. The user is shown a 'logs are forwarded to <endpoint>' notice in the audit window. Set to empty string to disable shipping."
+        }
+      }
+    }
+  }
+}

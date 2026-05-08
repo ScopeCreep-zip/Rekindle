@@ -1,0 +1,77 @@
+name: Feature request
+description: Suggest a new capability or improvement for Rekindle.
+title: "[feature] <one-line summary>"
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement. Before filing, please skim
+        [`docs/communities.md`](https://github.com/ScopeCreep-zip/Rekindle/blob/main/docs/architecture/communities.md)
+        §13 ("Features Intentionally Omitted"). Some popular feature ideas
+        conflict with the project's privacy posture or P2P architecture and
+        will be declined for principled reasons rather than capacity reasons.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user-facing problem are you trying to solve? Describe the situation, not the proposed solution.
+      placeholder: When I try to do X with Rekindle today, I run into Y.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How would you like Rekindle to behave? Sketch the interaction or feature.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What workarounds or other approaches have you considered? Why are they not good enough?
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Privacy / security / decentralisation impact
+      description: |
+        If your proposal touches identity, networking, encryption, or any
+        always-on background behavior, describe the impact. We will not
+        ship features that introduce plaintext fallbacks, deterministic
+        timing leaks, server-side metadata sinks, or auto-recovery paths
+        that bypass user consent.
+
+  - type: dropdown
+    id: subsystem
+    attributes:
+      label: Subsystem
+      multiple: true
+      options:
+        - "1:1 messaging"
+        - "Communities"
+        - "DMs / group DMs"
+        - "Voice / video"
+        - "Game detection"
+        - "File sharing"
+        - "Cross-device sync"
+        - "Strand Relay / Push Relay"
+        - "Frontend / UI"
+        - "Tauri shell / window management"
+        - "Daemon / CLI"
+        - "Documentation"
+        - "Other"
+
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Confirmation
+      options:
+        - label: I searched existing issues and did not find a duplicate.
+          required: true
+        - label: I read `docs/architecture/communities.md` §13 and my proposal is not on the omitted list.
+          required: false

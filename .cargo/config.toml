@@ -1,5 +1,13 @@
 # Cargo configuration for cross-platform builds
 
+# ── Aliases ────────────────────────────────────────────────────
+# `cargo xtask <subcommand>` invokes the workspace-wide guardrail
+# tasks defined in xtask/src/main.rs. See:
+#   docs/contributor/architecture-rules.md
+#   docs/contributor/ai-assisted-contributions.md §5
+[alias]
+xtask = "run --quiet --package xtask --"
+
 [env]
 # CMake 4.x compatibility: Allow older CMakeLists.txt files (opus uses cmake_minimum_required < 3.5)
 CMAKE_POLICY_VERSION_MINIMUM = "3.5"

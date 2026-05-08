@@ -1,0 +1,270 @@
+# Cross-language linting and security CI.
+#
+# This workflow runs every linter that has a config file in the repo
+# root. The Rust toolchain (cargo fmt, cargo clippy) lives in
+# ci.yml; this file covers everything else, plus security audits of
+# the GitHub Actions workflows themselves.
+#
+# Configs referenced (each lint job reads its own dotfile):
+#   biome.json, .stylelintrc.json, knip.config.ts (frontend)
+#   taplo.toml, .markdownlint-cli2.yaml (structured data + docs)
+#   .sqlfluff (SQLite migrations)
+#   typos.toml (typos)
+#   lychee.toml (link checker)
+#   .gitleaks.toml (secret scan)
+#   .actionlint.yaml, .zizmor.yml (workflow audits)
+
+name: Lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main, "codex/**"]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────
+  # Frontend — Biome + Stylelint + knip.
+  # ──────────────────────────────────────────────────────────────────
+  frontend:
+    name: Frontend (biome / stylelint / knip)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - run: pnpm install --frozen-lockfile
+
+      # The package.json devDependencies for biome / stylelint / knip
+      # are pending; once they land the next steps just work. Until
+      # then this job is skipped at install time. See
+      # docs/contributor/linting.md "Pending devDependencies".
+      - name: Biome — check
+        if: ${{ hashFiles('node_modules/.bin/biome') != '' }}
+        run: pnpm exec biome check src/
+
+      - name: Stylelint — CSS lint
+        if: ${{ hashFiles('node_modules/.bin/stylelint') != '' }}
+        run: pnpm exec stylelint 'src/styles/**/*.css'
+
+      - name: knip — unused exports / files
+        if: ${{ hashFiles('node_modules/.bin/knip') != '' }}
+        run: pnpm exec knip
+
+  # ──────────────────────────────────────────────────────────────────
+  # TOML — taplo format-check.
+  # ──────────────────────────────────────────────────────────────────
+  toml:
+    name: TOML (taplo)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install taplo
+        run: cargo install taplo-cli --locked
+      - name: taplo format --check
+        run: taplo format --check
+
+  # ──────────────────────────────────────────────────────────────────
+  # Markdown — markdownlint-cli2 + lychee link check.
+  # ──────────────────────────────────────────────────────────────────
+  markdown:
+    name: Markdown (markdownlint / lychee)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: markdownlint-cli2
+        uses: DavidAnson/markdownlint-cli2-action@v17
+        with:
+          config: .markdownlint-cli2.yaml
+          globs: "**/*.md"
+
+      - name: lychee — link check
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: --config lychee.toml '**/*.md'
+          fail: true
+
+  # ──────────────────────────────────────────────────────────────────
+  # SQL — sqlfluff against SQLite migrations.
+  # ──────────────────────────────────────────────────────────────────
+  sql:
+    name: SQL (sqlfluff)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install sqlfluff
+        run: pip install sqlfluff
+
+      - name: sqlfluff lint
+        run: sqlfluff lint src-tauri/migrations/
+
+  # ──────────────────────────────────────────────────────────────────
+  # Workflows — actionlint + zizmor (security audit).
+  # ──────────────────────────────────────────────────────────────────
+  workflows:
+    name: Workflows (actionlint / zizmor)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: actionlint
+        uses: docker://rhysd/actionlint:latest
+        with:
+          args: -color -config-file .actionlint.yaml
+
+      - name: zizmor
+        uses: zizmorcore/zizmor-action@v1
+        with:
+          advanced-security: false
+          # Read ignore rules from .zizmor.yml.
+
+  # ──────────────────────────────────────────────────────────────────
+  # Shell — shellcheck + shfmt against scripts/.
+  # ──────────────────────────────────────────────────────────────────
+  shell:
+    name: Shell (shellcheck / shfmt)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: shellcheck
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: scripts
+
+      - name: shfmt
+        run: |
+          curl -sSfL https://github.com/mvdan/sh/releases/latest/download/shfmt_linux_amd64 -o /usr/local/bin/shfmt
+          chmod +x /usr/local/bin/shfmt
+          shfmt -d -i 4 -ci -bn scripts/
+
+  # ──────────────────────────────────────────────────────────────────
+  # Nix — nixfmt + statix + deadnix + flake check.
+  # ──────────────────────────────────────────────────────────────────
+  nix:
+    name: Nix (nixfmt / statix / deadnix / flake check)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: nixfmt --check
+        run: |
+          nix shell nixpkgs#nixfmt-rfc-style --command nixfmt --check $(find . -name '*.nix' -not -path './target/*' -not -path './node_modules/*')
+
+      - name: statix
+        run: |
+          nix shell nixpkgs#statix --command statix check .
+
+      - name: deadnix
+        run: |
+          nix shell nixpkgs#deadnix --command deadnix --fail .
+
+      - name: nix flake check
+        run: nix flake check --accept-flake-config
+
+  # ──────────────────────────────────────────────────────────────────
+  # Typos — fast typo checker for source + docs.
+  # ──────────────────────────────────────────────────────────────────
+  typos:
+    name: Typos
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: crate-ci/typos@master
+
+  # ──────────────────────────────────────────────────────────────────
+  # Secrets — gitleaks history + working-tree scan.
+  # ──────────────────────────────────────────────────────────────────
+  secrets:
+    name: Secrets (gitleaks)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
+
+  # ──────────────────────────────────────────────────────────────────
+  # Semgrep — SAST that covers the DAST patterns Tauri webview exposes:
+  # innerHTML, eval, prototype pollution, deep-link sinks, crypto
+  # primitives in TS land. Combines registry rulesets + custom rules
+  # in .semgrep.yml.
+  # ──────────────────────────────────────────────────────────────────
+  semgrep:
+    name: Semgrep (SAST)
+    runs-on: ubuntu-24.04
+    container:
+      image: returntocorp/semgrep:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: semgrep ci
+        env:
+          # Workflow runs in container so semgrep is preinstalled.
+          SEMGREP_RULES: >-
+            p/javascript
+            p/typescript
+            p/owasp-top-ten
+            p/security-audit
+            p/react
+        run: |
+          semgrep \
+            --config "$SEMGREP_RULES" \
+            --config .semgrep.yml \
+            --error \
+            --metrics=off \
+            --strict
+
+  # ──────────────────────────────────────────────────────────────────
+  # Cap'n Proto schemas — capnp compile validation.
+  # ──────────────────────────────────────────────────────────────────
+  capnp:
+    name: Cap'n Proto (capnp compile)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install capnp
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y capnproto
+
+      - name: capnp compile (validate every schema)
+        run: |
+          for f in schemas/*.capnp; do
+            echo "::group::$f"
+            capnp compile -orust:/tmp --src-prefix=schemas "$f"
+            echo "::endgroup::"
+          done

@@ -1,0 +1,60 @@
+[sqlfluff]
+# SQLFluff — SQL linter + formatter. Dialect locked to SQLite because
+# that's what `src-tauri/migrations/001_init.sql` targets via rusqlite.
+#
+# Run with:    sqlfluff lint src-tauri/migrations/
+#              sqlfluff fix  src-tauri/migrations/
+#
+# CI gate: .github/workflows/lint.yml `sqlfluff` job.
+#
+# Reference: https://docs.sqlfluff.com/en/stable/configuration.html
+dialect = sqlite
+templater = raw
+exclude_rules =
+    # Disabled — tableless SELECTs are common in Rekindle migrations
+    # for one-shot upserts.
+    AM04,
+    # Allow trailing-comma trade-offs in long INSERT lists.
+    LT07
+runaway_limit = 10
+output_line_length = 100
+processes = 0
+large_file_skip_byte_limit = 0
+ignore = parsing
+warnings = none
+
+[sqlfluff:indentation]
+indent_unit = space
+tab_space_size = 4
+indented_joins = false
+indented_using_on = true
+indented_on_contents = true
+indented_ctes = false
+
+[sqlfluff:layout:type:comma]
+spacing_before = touch
+line_position = trailing
+
+[sqlfluff:rules]
+allow_scalar = true
+single_table_references = consistent
+unquoted_identifiers_policy = all
+
+[sqlfluff:rules:capitalisation.keywords]
+capitalisation_policy = upper
+
+[sqlfluff:rules:capitalisation.identifiers]
+extended_capitalisation_policy = lower
+
+[sqlfluff:rules:capitalisation.functions]
+capitalisation_policy = upper
+
+[sqlfluff:rules:capitalisation.literals]
+capitalisation_policy = lower
+
+[sqlfluff:rules:capitalisation.types]
+extended_capitalisation_policy = upper
+
+[sqlfluff:rules:references.special_chars]
+unquoted_identifiers_policy = all
+quoted_identifiers_policy = all

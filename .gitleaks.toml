@@ -1,0 +1,76 @@
+# gitleaks — secret-scanning configuration.
+# Spec: https://github.com/gitleaks/gitleaks
+#
+# Run with:  gitleaks detect --source . --verbose
+#            gitleaks detect --staged --verbose   (pre-commit)
+#
+# We extend the default ruleset with project-specific allowlists for
+# false positives (test fixtures with deliberately-weak keys, hex
+# strings in docs, etc.).
+
+title = "Rekindle gitleaks config"
+
+# Use the upstream default rule pack as a baseline.
+[extend]
+useDefault = true
+
+# ─── Repository-wide allowlist ──────────────────────────────────────────
+[[allowlists]]
+description = "Hex strings and example pubkeys in docs / tests"
+# Match only inside markdown and Rust test files. Outside these,
+# the default rule set applies.
+paths = [
+    '''docs/.*\.md$''',
+    '''.*/tests/.*\.rs$''',
+    '''e2e/fixtures/.*''',
+    '''legacy/.*''',
+    '''CHANGELOG\.md$''',
+    '''.*\.cdx\.json$''',
+    # Generated lockfiles — high false-positive rate, rarely the real
+    # source of leaks (lockfile content is hashes of registry assets).
+    '''Cargo\.lock$''',
+    '''pnpm-lock\.yaml$''',
+    '''flake\.lock$''',
+]
+
+[[allowlists]]
+description = "Test fixtures with deliberately weak / placeholder keys"
+regexes = [
+    # Common Ed25519 / X25519 test seed patterns
+    '''(0102030405060708)+''',
+    '''(deadbeef)+''',
+    '''0xabcd''',
+    '''AABBCCDDEEFF''',
+    # Project-specific placeholders
+    '''VLD0:[A-Za-z0-9_-]{0,8}\\.\\.\\.''',
+    '''\\b[Pp]laceholder[Kk]ey\\b''',
+    '''\\b[Pp]laceholder[Tt]oken\\b''',
+]
+
+# ─── Custom rules in addition to the default pack ───────────────────────
+
+[[rules]]
+id = "stronghold-vault-leak"
+description = "Stronghold vault file content (binary header)"
+regex = '''STRONGHOLD\x00\x00'''
+keywords = ["STRONGHOLD"]
+
+[[rules]]
+id = "ed25519-private-key-hex"
+description = "Possible 64-byte Ed25519 private key in hex"
+# 128 hex chars (64 bytes) on its own line. Tightened with negative
+# lookbehinds via the allowlist regexes above.
+regex = '''(?i)(?:ed25519[_-]?(?:secret|private|priv)|priv_key|secret_key)[\s:=\"']*([a-f0-9]{128})'''
+keywords = ["ed25519", "secret_key", "priv_key", "private_key"]
+
+[[rules]]
+id = "x25519-private-key-hex"
+description = "Possible 32-byte X25519 private key in hex"
+regex = '''(?i)(?:x25519[_-]?(?:secret|private|priv)|x25519_priv)[\s:=\"']*([a-f0-9]{64})'''
+keywords = ["x25519"]
+
+[[rules]]
+id = "stronghold-passphrase"
+description = "Hard-coded Stronghold passphrase"
+regex = '''(?i)stronghold[_-]?passphrase[\s:=\"']*([^\"'\s][^\"']{8,})'''
+keywords = ["stronghold_passphrase", "STRONGHOLD_PASSPHRASE"]

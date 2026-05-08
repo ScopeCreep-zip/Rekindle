@@ -1,0 +1,107 @@
+# PR size labeler — apply size labels to every pull request and post a
+# review-burden hint when a PR exceeds the soft threshold.
+#
+# Rationale: AI tools sometimes generate giant diffs. A 2 000-line
+# refactor PR is reviewable; a 2 000-line "first commit" feature PR
+# almost certainly hides architectural drift. We don't block large
+# PRs — sometimes they're necessary — but we want them to be
+# reviewed deliberately.
+
+name: PR size
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  size:
+    name: Label PR size
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply size label
+        uses: codelytv/pr-size-labeler@v1
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          xs_label: "size/xs"
+          xs_max_size: "20"
+          s_label: "size/s"
+          s_max_size: "100"
+          m_label: "size/m"
+          m_max_size: "300"
+          l_label: "size/l"
+          l_max_size: "800"
+          xl_label: "size/xl"
+          fail_if_xl: "false"
+          message_if_xl: |
+            This PR is larger than 800 lines.
+
+            Large PRs are accepted but get extra review attention. Before
+            requesting review, please confirm:
+
+            - [ ] No business logic was added to `src/components/**`,
+                  `src/handlers/**`, or `src/stores/**`.
+            - [ ] No new bare `#[allow(...)]` directives without a
+                  `reason = "…"` argument.
+            - [ ] No tier-boundary violations
+                  (`cargo xtask check-boundaries`).
+            - [ ] No fabricated dependencies — every new crate / package
+                  was verified on its registry page.
+            - [ ] If AI-assisted, the commit messages include
+                  `Assisted-by:` trailers.
+            - [ ] The PR could not reasonably be split into smaller
+                  reviewable PRs.
+
+            See `docs/contributor/ai-assisted-contributions.md` for the
+            full guidance.
+
+            (This message is automated; the PR is not blocked.)
+
+  comment-on-large-additions:
+    name: Comment on large additions
+    runs-on: ubuntu-24.04
+    if: github.event.pull_request.additions > 800
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const marker = '<!-- pr-size-large-warning -->';
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            if (comments.some((c) => c.body && c.body.includes(marker))) {
+              return; // already commented
+            }
+            const body = [
+              marker,
+              '## Large PR — review-burden checklist',
+              '',
+              `This PR adds **${context.payload.pull_request.additions}** lines and removes **${context.payload.pull_request.deletions}**.`,
+              '',
+              'Before requesting review, please run:',
+              '',
+              '```sh',
+              'lefthook run pre-commit --all',
+              'cargo xtask check',
+              'pnpm exec depcruise --config .dependency-cruiser.cjs src',
+              '```',
+              '',
+              'And confirm no architectural invariants were broken — see',
+              '`docs/contributor/architecture-rules.md` and',
+              '`docs/contributor/ai-assisted-contributions.md`.',
+            ].join('\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });

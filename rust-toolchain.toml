@@ -1,0 +1,18 @@
+[toolchain]
+channel = "1.92.0"
+components = ["rustfmt", "clippy", "rust-src"]
+profile = "default"
+
+# Pinned toolchain for the workspace.
+#
+# Why 1.92.0:
+#   * CLAUDE.md states "Rust 1.92+" as the development requirement.
+#   * Veilid's deeply nested future types push the recursion limit;
+#     newer compilers monomorphise them faster.
+#   * The Konductor Nix flake pins this same channel; this file keeps
+#     non-Nix contributors and CI on the same compiler.
+#
+# clippy.toml's `msrv = "1.87"` is the *minimum supported* version
+# (the floor we promise not to break). The toolchain pinned here is
+# what we *develop and ship with* — usually a few minor versions
+# ahead of MSRV.

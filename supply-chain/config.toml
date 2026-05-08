@@ -1,0 +1,59 @@
+# cargo-vet configuration.
+#
+# Run with:  cargo vet
+#
+# cargo-vet lets the project record cryptographically-verifiable audits
+# of third-party crates. Audits can be authored locally
+# (`audits.toml`) or imported from trusted upstream projects via
+# `imports.lock` (Mozilla, Bytecode Alliance, Embark, etc.).
+#
+# Spec: https://mozilla.github.io/cargo-vet/
+
+[cargo-vet]
+version = "0.10"
+
+# ─── Imports ────────────────────────────────────────────────────────────
+#
+# Pull in audits from trusted upstream projects so we don't have to
+# re-audit the same crates from scratch. Mozilla and Bytecode Alliance
+# audit the bulk of the Rust ecosystem; Embark audits gamedev-relevant
+# crates (relevant for our Tauri shell and voice pipeline).
+
+[imports.bytecode-alliance]
+url = "https://raw.githubusercontent.com/bytecodealliance/wasmtime/main/supply-chain/audits.toml"
+
+[imports.embark-studios]
+url = "https://raw.githubusercontent.com/EmbarkStudios/rust-ecosystem/main/audits.toml"
+
+[imports.google]
+url = "https://raw.githubusercontent.com/google/rust-crate-audits/main/audits.toml"
+
+[imports.isrg]
+url = "https://raw.githubusercontent.com/divviup/libprio-rs/main/supply-chain/audits.toml"
+
+[imports.mozilla]
+url = "https://raw.githubusercontent.com/mozilla/supply-chain/main/audits.toml"
+
+[imports.zcash]
+url = "https://raw.githubusercontent.com/zcash/rust-ecosystem/main/supply-chain/audits.toml"
+
+# ─── Trusted publishers ─────────────────────────────────────────────────
+#
+# Rule out the wider ecosystem and trust crates published by specific
+# crates.io account names. Use this sparingly — these accounts gain
+# implicit trust for everything they publish.
+#
+# Add entries as `[[trusted.<crate-name>]]  user-id = <crates.io ID>`.
+# Find user IDs at https://crates.io/users/<name> (visible in the URL).
+
+# (no entries yet — populate during the first `cargo vet` run)
+
+# ─── Default audit policies ─────────────────────────────────────────────
+#
+# These define the criteria a crate must satisfy to be considered
+# "vetted" for our project. The default `safe-to-deploy` is the
+# Mozilla-standard criterion: the audit verifies the crate does no
+# malicious or otherwise-dangerous things.
+
+[policy.default]
+criteria = "safe-to-deploy"

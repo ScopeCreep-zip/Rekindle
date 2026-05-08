@@ -1,0 +1,56 @@
+# Taplo — TOML formatter and linter.
+# Spec: https://taplo.tamasfe.dev/configuration/
+#
+# Run with:    taplo format          (writes)
+#              taplo format --check  (CI gate)
+#              taplo lint             (schema validation)
+#
+# Schemas resolve from https://taplo.tamasfe.dev/schemas/v1/store/index.json
+# and the catalog automatically picks the right one for known files
+# (Cargo.toml, rust-toolchain.toml, dependabot.yml, etc.).
+
+include = [
+    "Cargo.toml",
+    "crates/**/Cargo.toml",
+    "src-tauri/Cargo.toml",
+    "rustfmt.toml",
+    "rust-toolchain.toml",
+    "deny.toml",
+    "clippy.toml",
+    "taplo.toml",
+    "supply-chain/*.toml",
+]
+exclude = [
+    "target/**",
+    "node_modules/**",
+    "dist/**",
+    "src-tauri/gen/**",
+    "legacy/**",
+]
+
+# ─── Formatting ─────────────────────────────────────────────────────────
+[formatting]
+align_entries = false
+align_comments = true
+array_trailing_comma = true
+array_auto_expand = true
+array_auto_collapse = false
+column_width = 100
+compact_arrays = false
+compact_inline_tables = false
+indent_string = "    "
+inline_table_expand = false
+reorder_keys = false
+reorder_arrays = false
+trailing_newline = true
+crlf = false
+
+# ─── Per-file overrides ─────────────────────────────────────────────────
+# Cargo.toml has a canonical key order; taplo can sort it according to
+# its built-in schema if reorder_keys is on. We keep author-ordered
+# Cargo.toml so diffs stay legible.
+[[rule]]
+include = ["Cargo.toml", "**/Cargo.toml"]
+keys = ["dependencies", "dev-dependencies", "build-dependencies"]
+[rule.formatting]
+reorder_keys = true

@@ -420,7 +420,39 @@ pub async fn handle_message_notification(
         return Err(error.into());
     }
 
-    state_helpers::merge_lamport(state, &pending.community_id, message.lamport_ts);
+    // M10.4 — receiver-side slowmode (architecture §28.7 line 3187).
+    // Sender-side enforcement is advisory; modified clients can ignore
+    // their own slowmode UI. Honest receivers drop sub-window writes
+    // unless the sender holds BYPASS_SLOWMODE (bit 29).
+    if !crate::services::community::receiver_limits::check_slowmode(
+        state,
+        &pending.community_id,
+        &pending.channel_id,
+        &message.sender_pseudonym,
+        rekindle_utils::timestamp_secs(),
+    ) {
+        tracing::trace!(
+            community = %pending.community_id,
+            channel = %pending.channel_id,
+            sender = %message.sender_pseudonym,
+            "slowmode floor exceeded — dropping silently"
+        );
+        return Ok(());
+    }
+
+    if !state_helpers::merge_lamport(state, &pending.community_id, message.lamport_ts) {
+        // M9.2 — sender's claimed Lamport is too far ahead of our
+        // local clock. Drop the message: a forged-future timestamp
+        // from a malicious peer must not fast-forward our clock.
+        tracing::trace!(
+            community = %pending.community_id,
+            channel = %pending.channel_id,
+            sender = %message.sender_pseudonym,
+            received_lamport = message.lamport_ts,
+            "lamport drift cap exceeded — dropping message silently"
+        );
+        return Ok(());
+    }
     let Some(body) = decrypt_message_body(
         app_handle,
         state,

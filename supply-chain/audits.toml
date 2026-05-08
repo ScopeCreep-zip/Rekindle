@@ -1,0 +1,38 @@
+# Local cargo-vet audits.
+#
+# Audits authored by Rekindle maintainers. Each audit cryptographically
+# certifies that a specific crate version (or version range) was
+# reviewed for the criterion declared. Edit by hand or via
+# `cargo vet certify <crate> <version>`.
+#
+# Spec: https://mozilla.github.io/cargo-vet/audit-entries.html
+
+# ─── Criteria ───────────────────────────────────────────────────────────
+#
+# Inherit Mozilla's standard criteria + add a project-specific one for
+# crypto-handling crates that must meet a higher bar.
+
+[criteria.crypto-reviewed]
+description = """
+This crate manipulates cryptographic key material, ciphertext, or
+signatures, and has been reviewed by a Rekindle maintainer for:
+
+  * correct primitive choice (matches docs/security/crypto-primitives.md)
+  * constant-time implementations where applicable
+  * Zeroize-on-drop for any secret type
+  * no panics on attacker-controlled input
+"""
+implies = "safe-to-deploy"
+
+# ─── Audits ─────────────────────────────────────────────────────────────
+#
+# Populate during the first `cargo vet` run. Initial audits should
+# focus on the critical-path crypto/network crates not covered by the
+# upstream import sets in `config.toml`.
+
+# Example template (uncomment and fill in real audits):
+#
+# [[audits.example-crate]]
+# version = "1.2.3"
+# criteria = "safe-to-deploy"
+# notes = "Reviewed by <maintainer-handle> on YYYY-MM-DD; no concerns."

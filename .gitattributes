@@ -1,0 +1,70 @@
+# Normalise line endings to LF on checkout for every text file. Avoids
+# CRLF-vs-LF noise in PRs from Windows contributors.
+
+* text=auto eol=lf
+
+# Source code — explicit LF.
+*.rs           text eol=lf
+*.toml         text eol=lf
+*.lock         text eol=lf
+*.ts           text eol=lf
+*.tsx          text eol=lf
+*.js           text eol=lf
+*.jsx          text eol=lf
+*.mjs          text eol=lf
+*.cjs          text eol=lf
+*.json         text eol=lf
+*.jsonc        text eol=lf
+*.html         text eol=lf
+*.css          text eol=lf
+*.md           text eol=lf
+*.yml          text eol=lf
+*.yaml         text eol=lf
+*.nix          text eol=lf
+*.sh           text eol=lf
+*.capnp        text eol=lf
+
+# Lockfiles — text but binary-diff in PR review (large + machine-generated).
+Cargo.lock     text eol=lf -diff merge=binary
+pnpm-lock.yaml text eol=lf -diff merge=binary
+flake.lock     text eol=lf -diff merge=binary
+
+# Binary assets.
+*.png          binary
+*.jpg          binary
+*.jpeg         binary
+*.gif          binary
+*.ico          binary
+*.icns         binary
+*.webp         binary
+*.bmp          binary
+*.tiff         binary
+*.svg          text eol=lf
+*.woff         binary
+*.woff2        binary
+*.ttf          binary
+*.otf          binary
+*.eot          binary
+*.mp3          binary
+*.ogg          binary
+*.wav          binary
+*.flac         binary
+*.mp4          binary
+*.webm         binary
+*.zip          binary
+*.gz           binary
+*.tar          binary
+*.7z           binary
+*.dll          binary
+*.exe          binary
+*.dylib        binary
+*.so           binary
+*.dmg          binary
+*.AppImage     binary
+*.deb          binary
+*.rpm          binary
+*.msi          binary
+*.pdf          binary
+
+# Reverse-engineering artefacts under legacy/ — never normalise.
+legacy/**      binary

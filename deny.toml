@@ -1,0 +1,161 @@
+# cargo-deny configuration for the Rekindle workspace.
+#
+# Run with:    cargo deny check
+# Sub-checks:  cargo deny check advisories
+#              cargo deny check bans
+#              cargo deny check licenses
+#              cargo deny check sources
+#
+# Spec: https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+# Check every target the workspace builds for.
+all-features = false
+no-default-features = false
+
+[output]
+feature-depth = 1
+
+# ─── Advisories ─────────────────────────────────────────────────────────
+#
+# RustSec advisory database. Any `vulnerability` is denied; `unmaintained`
+# / `unsound` / `notice` are warnings the maintainer must triage. Yanked
+# crates always fail.
+#
+# When a transient false-positive blocks CI, add the advisory ID to
+# `ignore` with a `// reason` line. Do not blanket-ignore.
+
+[advisories]
+db-path = "$CARGO_HOME/advisory-dbs"
+db-urls = ["https://github.com/rustsec/advisory-db"]
+yanked = "deny"
+ignore = [
+    # No active ignores. Add new entries as `{ id = "RUSTSEC-XXXX-XXXX", reason = "..." }`.
+]
+
+# ─── Licenses ───────────────────────────────────────────────────────────
+#
+# Rekindle is MIT. The allowlist below covers MIT-compatible permissive
+# licenses we accept in the dependency graph. Copyleft (GPL family),
+# OSL, RPSL, MS-RL, MS-PL, etc. are not on the allowlist; cargo-deny
+# will fail the check if they appear.
+
+[licenses]
+confidence-threshold = 0.93
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "0BSD",
+    "Unicode-DFS-2016",
+    "Unicode-3.0",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+    "MPL-2.0",
+    "OpenSSL",
+    "BSL-1.0",
+    "Unlicense",
+]
+exceptions = [
+    # Per-crate license overrides go here when a crate is dual-licensed
+    # but cargo-deny cannot detect the SPDX correctly. Keep this list
+    # short; prefer asking upstream to fix their `license` field.
+]
+
+[[licenses.clarify]]
+# `ring` ships with a non-standard license expression that cargo-deny
+# cannot parse without a hint.
+crate = "ring"
+expression = "MIT AND ISC AND OpenSSL"
+license-files = [{ path = "LICENSE", hash = 0xbd0eed23 }]
+
+# ─── Bans ───────────────────────────────────────────────────────────────
+#
+# Disallow specific crates we don't want anywhere in the dep graph. Also
+# warn on duplicate versions of the same crate (a common cause of
+# binary bloat and subtle correctness bugs in the cryptography stack).
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+highlight = "all"
+deny = [
+    # OpenSSL bindings are forbidden — we use Rustls / RustCrypto / ring.
+    # Tauri pulls in `openssl` indirectly on some platforms; if the
+    # check fires for that reason, file an upstream issue rather than
+    # whitelisting here.
+    { name = "openssl-sys", reason = "Use Rustls / RustCrypto / ring instead." },
+
+    # Old-style ed25519 / x25519 wrappers — only the dalek implementations are vetted.
+    { name = "ed25519", reason = "Use ed25519-dalek directly." },
+
+    # ─── Tier-2 sole crypto boundary (PENDING enforcement) ──────────────
+    #
+    # The architectural rule is: only `rekindle-secrets` may import the
+    # following crypto crates directly. Every other crate must consume
+    # them through `rekindle-secrets`'s public API.
+    #
+    # Today, six crates still import these directly (rekindle-crypto,
+    # rekindle-dm, rekindle-calls, rekindle-voice, rekindle-node,
+    # rekindle-protocol, etc.) — see `cargo xtask check-boundaries` for
+    # the full list. The `wrappers = ["rekindle-secrets"]` clause
+    # below would fail the build for those crates, so it is COMMENTED
+    # OUT until the cleanup sweep documented in
+    # docs/contributor/ai-assisted-contributions.md §5 lands.
+    #
+    # The xtask boundary check enforces a softer version of the same
+    # rule today (warn-style listing) so contributors see the goal.
+    #
+    # { name = "ed25519-dalek",     wrappers = ["rekindle-secrets"], reason = "Tier 2 sole crypto boundary." },
+    # { name = "x25519-dalek",      wrappers = ["rekindle-secrets"], reason = "Tier 2 sole crypto boundary." },
+    # { name = "aes-gcm",           wrappers = ["rekindle-secrets"], reason = "Tier 2 sole crypto boundary." },
+    # { name = "chacha20poly1305",  wrappers = ["rekindle-secrets"], reason = "Tier 2 sole crypto boundary." },
+    # { name = "hkdf",              wrappers = ["rekindle-secrets"], reason = "Tier 2 sole crypto boundary." },
+    #
+    # ─── Veilid centralisation (PENDING enforcement) ────────────────────
+    #
+    # Only `rekindle-transport` (daemon track) and `rekindle-protocol`
+    # (desktop track) may import veilid-core directly. Several crates
+    # still violate this (rekindle-records, rekindle-route,
+    # rekindle-sync, rekindle-voice, rekindle-node) — same situation
+    # as the crypto rule.
+    #
+    # { name = "veilid-core",       wrappers = ["rekindle-transport", "rekindle-protocol"], reason = "Veilid integration is centralised." },
+]
+skip = [
+    # Tolerated duplicates. Each entry must be revisited when the
+    # upstream is updated. Keep the list short.
+]
+skip-tree = [
+    # `windows-sys` is famously many-versioned across the dep graph.
+    # Skip the whole tree to keep the duplicate-version warning useful
+    # on crates we actually own.
+    { name = "windows-sys" },
+    { name = "windows" },
+]
+
+# ─── Sources ────────────────────────────────────────────────────────────
+#
+# Crates may only come from crates.io plus the explicitly-allowed git
+# remotes already pinned in the workspace `Cargo.toml`. Anything else is
+# a supply-chain red flag — cargo-deny will fail the check.
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = [
+    # Pinned git deps already in Cargo.toml. Keep this list in sync
+    # with `[patch.crates-io]` and any `git = "..."` entries.
+    "https://github.com/mcginty/snow",
+]
+
+[sources.allow-org]
+# No org-level allowlists. Per-repo allowance is more auditable.
+github = []
+gitlab = []
+bitbucket = []

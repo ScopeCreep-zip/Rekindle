@@ -1,0 +1,26 @@
+# actionlint — GitHub Actions workflow linter.
+# Spec: https://github.com/rhysd/actionlint
+#
+# Run with:  actionlint -config-file .actionlint.yaml
+#
+# actionlint pairs with shellcheck (for inline `run:` scripts) and
+# zizmor (for security issues actionlint doesn't cover). Configured
+# to run shellcheck on every `run:` block.
+
+self-hosted-runner:
+  # No self-hosted runners declared. Add labels here if any are
+  # introduced; otherwise actionlint warns when a workflow targets
+  # an unrecognised runner.
+  labels: []
+
+# Configuration for matrix-job validation.
+config-variables: null
+
+# Path patterns to lint. Default: .github/workflows/*.yml
+# (actionlint's CLI default; no override needed.)
+
+# Runner versions to keep recent. Pinning these here helps actionlint
+# produce a clearer error when a workflow uses a deprecated runner.
+paths:
+  ".github/workflows/*.yml":
+    ignore: []

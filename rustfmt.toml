@@ -1,0 +1,22 @@
+# rustfmt configuration for the Rekindle workspace.
+#
+# Conservative defaults — keeps `cargo fmt --all -- --check` deterministic
+# across contributors and matches what the Konductor Nix dev shell expects.
+# Avoids unstable options so this file is usable on the pinned stable
+# toolchain (see `rust-toolchain.toml`).
+
+edition = "2021"
+max_width = 100
+hard_tabs = false
+tab_spaces = 4
+newline_style = "Unix"
+use_small_heuristics = "Default"
+reorder_imports = true
+reorder_modules = true
+remove_nested_parens = true
+match_arm_leading_pipes = "Never"
+fn_args_layout = "Tall"
+trailing_comma = "Vertical"
+trailing_semicolon = true
+use_field_init_shorthand = true
+use_try_shorthand = true

@@ -69,7 +69,7 @@ accounts, and control your social graph. Rekindle takes a different approach:
 - Stronghold vault (AES-256-GCM + Argon2id KDF) protects private keys
 - Signal Protocol sessions established via DHT-published PreKeyBundles
 - Trust-on-first-use (TOFU) with optional out-of-band key verification
-- Four-layer encryption stack (see [docs/security.md](docs/security.md))
+- Four-layer encryption stack (see [docs/security/overview.md](docs/security/overview.md))
 
 ### Desktop Integration
 - Frameless skinned windows with custom titlebar (classic IM aesthetic)
@@ -248,17 +248,26 @@ online (up to 20 attempts).
 
 ## Documentation
 
-| Document | Description |
-|----------|-------------|
-| [architecture.md](docs/architecture.md) | System architecture, layer responsibilities, data flow diagrams |
-| [protocol.md](docs/protocol.md) | Veilid integration, message lifecycle, DHT record layouts |
-| [security.md](docs/security.md) | Four-layer encryption stack, identity model, threat analysis |
-| [data-layer.md](docs/data-layer.md) | SQLite schema, Stronghold vault, DHT record layout |
-| [frontend.md](docs/frontend.md) | SolidJS frontend, routing, stores, IPC layer |
-| [crates.md](docs/crates.md) | Pure Rust crate reference (protocol, crypto, game-detect, voice, server) |
-| [tauri-backend.md](docs/tauri-backend.md) | Tauri commands, events, services, state management |
-| [development.md](docs/development.md) | Build commands, testing, code conventions |
-| [roadmap.md](docs/roadmap.md) | Implementation phases and completion status |
+For new contributors, the entry points are:
+
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) — bird's-eye-view of the codebase, points into `/docs`.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to set up dev env, coding standards, PR process.
+- [`SECURITY.md`](SECURITY.md) — vulnerability disclosure policy.
+- [`docs/README.md`](docs/README.md) — full technical documentation index, organised by audience (user / contributor / architecture / protocol / security / decisions).
+
+Headline reads:
+
+| Topic | Document |
+|-------|----------|
+| System architecture | [`docs/architecture/overview.md`](docs/architecture/overview.md) |
+| Chiral-network communities (v2.0) | [`docs/architecture/communities.md`](docs/architecture/communities.md) |
+| Network protocol & wire formats | [`docs/protocol/overview.md`](docs/protocol/overview.md) |
+| Security model & encryption layers | [`docs/security/overview.md`](docs/security/overview.md) |
+| Data storage (SQLite, Stronghold, DHT) | [`docs/architecture/data-layer.md`](docs/architecture/data-layer.md) |
+| Rust crate reference (22 crates) | [`docs/architecture/crates.md`](docs/architecture/crates.md) |
+| SolidJS frontend | [`docs/architecture/frontend.md`](docs/architecture/frontend.md) |
+| Tauri backend | [`docs/architecture/tauri-backend.md`](docs/architecture/tauri-backend.md) |
+| Implementation roadmap | [`docs/roadmap.md`](docs/roadmap.md) |
 
 ## License
 

@@ -1,0 +1,11 @@
+{
+  "$schema": "../schema.json",
+  "schemaVersion": 1,
+  "metadata": {
+    "organization": "Example Org"
+  },
+  "policies": {
+    "_comment": "Minimal policy bundle — only an org name is set. Every other policy falls through to the application default. Useful as a starting point.",
+    "UI.organisationName": "Example Org"
+  }
+}

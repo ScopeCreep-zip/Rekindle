@@ -1,0 +1,25 @@
+# zizmor — GitHub Actions static-security audit.
+# Spec: https://docs.zizmor.sh/configuration/
+#
+# zizmor catches workflow security issues actionlint does not:
+# script injection via `${{ github.event.* }}` interpolation,
+# untrusted checkouts of `pull_request_target`, missing
+# `permissions:` blocks, hard-coded credentials, dangerous triggers,
+# pwn-request patterns. CI gate: .github/workflows/lint.yml `zizmor` job.
+#
+# Run with:  zizmor .
+
+rules:
+  # ── Use the default ruleset and let it audit everything. ──────────
+  # Per-rule overrides go below if a finding is intentional.
+
+  # Example pattern (commented):
+  # template-injection:
+  #   ignore:
+  #     - audit.yml:42:13
+  #       reason: "Hard-coded environment variable, not user input."
+
+# ── Audit-wide settings ────────────────────────────────────────────
+# Zizmor inspects only files under .github/workflows by default. Add
+# composite-action paths here when we ship our own actions.
+extra-paths: []

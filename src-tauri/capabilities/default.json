@@ -1,11 +1,18 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicemicro/tauri-apps/tauri-v2/crates/tauri-utils/schema/capability.json",
   "identifier": "default",
-  "description": "Default capability for Rekindle windows",
-  "windows": ["login", "buddy-list", "chat-*", "community-*", "settings", "profile-*"],
+  "description": "Default capability for Rekindle windows. Permissions enforce minimum-privilege: each window pattern can only invoke the listed Tauri commands. The `core:window:*` block uses explicit per-action grants instead of `core:window:default` so removing or adding a window operation is auditable in this file. Plugin-level `*:default` bundles are still used pending a per-IPC-call audit; see docs/security/threat-model.md §5b W4 for the open work.",
+  "windows": [
+    "login",
+    "buddy-list",
+    "chat-*",
+    "dm-*",
+    "community-*",
+    "settings",
+    "profile-*"
+  ],
   "permissions": [
     "core:default",
-    "core:window:default",
     "core:window:allow-start-dragging",
     "core:window:allow-close",
     "core:window:allow-minimize",

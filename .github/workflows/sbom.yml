@@ -1,0 +1,93 @@
+# SBOM generation — CycloneDX format for both Rust (cargo) and
+# JavaScript (pnpm) ecosystems.
+#
+# Runs on every tag push and on workflow_dispatch. The generated SBOMs
+# are uploaded as workflow artefacts and (on tag) attached to the
+# GitHub Release. See docs/security/supply-chain-policy.md.
+
+name: SBOM
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed to attach SBOMs to releases
+
+jobs:
+  cargo-sbom:
+    name: CycloneDX (Cargo)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cargo-cyclonedx
+        run: cargo install cargo-cyclonedx --locked
+
+      - name: Generate SBOM
+        run: |
+          cargo cyclonedx \
+            --format json \
+            --override-filename rekindle-cargo-sbom \
+            --target-in-filename
+        # The output lands at ./rekindle-cargo-sbom_<target>.cdx.json
+        # alongside any per-crate SBOMs.
+
+      - name: Upload as workflow artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rekindle-cargo-sbom
+          path: |
+            rekindle-cargo-sbom*.cdx.json
+            target/cyclonedx/**/*.cdx.json
+            **/bom.json
+
+      - name: Attach to release (on tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            rekindle-cargo-sbom*.cdx.json
+          fail_on_unmatched_files: false
+
+  pnpm-sbom:
+    name: CycloneDX (pnpm)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Install @cyclonedx/cdxgen
+        run: npm install -g @cyclonedx/cdxgen
+
+      - name: Generate SBOM
+        run: |
+          cdxgen \
+            -t pnpm \
+            -o rekindle-pnpm-sbom.cdx.json \
+            --spec-version 1.6 \
+            .
+
+      - name: Upload as workflow artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rekindle-pnpm-sbom
+          path: rekindle-pnpm-sbom.cdx.json
+
+      - name: Attach to release (on tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: rekindle-pnpm-sbom.cdx.json
+          fail_on_unmatched_files: false

@@ -1,0 +1,139 @@
+# Main CI — runs on every push to main and every PR.
+#
+# Three matrix jobs:
+#   * fmt + clippy + test — Rust workspace
+#   * frontend lint + mock IPC tests — pnpm
+#   * cross-platform build smoke test — Tauri build per OS
+#
+# The release pipeline lives in release.yml and is triggered by tags.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main, "codex/**"]
+  workflow_dispatch:
+
+# Cancel in-progress runs on the same ref when a new commit lands.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ────────────────────────────────────────────────────────────────
+  # Rust: fmt + clippy + test on Ubuntu (the cheap path).
+  # ────────────────────────────────────────────────────────────────
+  rust:
+    name: Rust (fmt / clippy / test)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system deps for Tauri
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev libssl-dev libsoup-3.0-dev pkg-config \
+            build-essential
+
+      - name: Install Rust toolchain
+        # rust-toolchain.toml pins the version; this just makes sure
+        # the components are present.
+        run: |
+          rustup show
+          rustup component add rustfmt clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "ci-rust"
+
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: cargo test
+        run: cargo test --workspace --no-fail-fast
+
+  # ────────────────────────────────────────────────────────────────
+  # Frontend: pnpm install + lint + mock IPC suite.
+  # ────────────────────────────────────────────────────────────────
+  frontend:
+    name: Frontend (pnpm)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Mock IPC tests
+        run: pnpm test:mock
+
+  # ────────────────────────────────────────────────────────────────
+  # Cross-platform build smoke test. Verifies Tauri builds clean on
+  # all three target OSes; doesn't run the GUI.
+  # ────────────────────────────────────────────────────────────────
+  tauri-build:
+    name: Tauri build (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14, windows-2022]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: rustup show
+
+      - name: Install system deps (Linux)
+        if: matrix.os == 'ubuntu-24.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev libssl-dev libsoup-3.0-dev pkg-config
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "ci-tauri-${{ matrix.os }}"
+
+      - name: cargo check (workspace, default features)
+        run: cargo check --workspace

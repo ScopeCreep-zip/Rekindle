@@ -3,7 +3,7 @@
 This roadmap is split between the original 1:1 messaging phases and the
 ongoing **Communities v2.0** migration (the flat-SMPL-governance redesign).
 1:1 messaging is substantially complete; communities are under active
-development on the `codex/communities-review` branch.
+development on long-lived `codex/communities-*` branches.
 
 Status legend: `[x]` done · `[~]` in progress · `[ ]` not started.
 
@@ -112,7 +112,7 @@ Communities now use the **Communities v2.0** flat-governance model:
 - [ ] **C1-2** lazy per-segment channel records + `ChannelSegmentLinked`
       governance entry. Until this lands, offline catch-up for members in
       segments ≥1 falls back to gossip-only delivery — see "Plate-Gate
-      Scaling and Cross-Segment Routing" in `docs/architecture.md`.
+      Scaling and Cross-Segment Routing" in [`architecture/overview.md`](architecture/overview.md).
 - [ ] Community browser / discovery (no public directory yet)
 - [ ] Updater wiring (`check_for_updates` is currently a stub)
 
@@ -120,9 +120,10 @@ Communities now use the **Communities v2.0** flat-governance model:
 
 | Document | Purpose |
 |----------|---------|
-| `.claude/docs/rekindle-communities-architecture.md` | v2.0 architecture spec |
-| `.claude/plans/communities-migration-master-plan.md` | 8-phase migration roadmap |
-| `.claude/plans/ds-aligned/rekindle-architecture-v2.md` | Chiral Network research |
+| [`architecture/communities.md`](architecture/communities.md) | Public-facing v2.0 chiral-network architecture |
+| [`architecture/overview.md`](architecture/overview.md) | System layer stack and data flows |
+| [`protocol/overview.md`](protocol/overview.md) | Wire formats, Veilid primitives, DHT layouts |
+| [`security/overview.md`](security/overview.md) | Five-layer encryption stack and threat model |
 
 ## Phase 5: Voice
 
