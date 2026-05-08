@@ -737,6 +737,7 @@ const CommunityWindow: Component = () => {
             }
           >
             <VideoCallPanel
+              mode="community"
               communityId={selectedCommunityId()}
               channelId={voiceState.channelId!}
               visible

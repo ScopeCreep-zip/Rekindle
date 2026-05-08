@@ -338,6 +338,63 @@ mod tests {
     }
 
     #[test]
+    fn load_existing_prekey_bundle_returns_none_when_empty() {
+        // P1.2 — fresh Stronghold-equivalent (Memory* store starts empty)
+        // → load_existing_prekey_bundle returns None so caller mints fresh.
+        let identity = Identity::generate();
+        let mgr = make_manager(&identity);
+        let result = mgr.load_existing_prekey_bundle(1, Some(1)).unwrap();
+        assert!(result.is_none(), "empty store must return None");
+    }
+
+    #[test]
+    fn load_existing_prekey_bundle_reuses_after_generate() {
+        // P1.2 — after generate_prekey_bundle persists prekey #1 +
+        // signed_prekey #1, a subsequent load_existing_prekey_bundle
+        // must return the SAME public keys (no fresh generation).
+        let identity = Identity::generate();
+        let mgr = make_manager(&identity);
+
+        let original = mgr.generate_prekey_bundle(1, Some(1)).unwrap();
+        let loaded = mgr
+            .load_existing_prekey_bundle(1, Some(1))
+            .unwrap()
+            .expect("bundle must be loadable after generate");
+
+        assert_eq!(original.identity_key, loaded.identity_key);
+        assert_eq!(original.signed_prekey, loaded.signed_prekey);
+        assert_eq!(
+            original.one_time_prekey, loaded.one_time_prekey,
+            "one-time prekey must be reused, not regenerated"
+        );
+        assert_eq!(original.registration_id, loaded.registration_id);
+        // The signature is deterministic over (identity_private,
+        // signed_prekey_public) so re-signing yields the same bytes.
+        assert_eq!(
+            original.signed_prekey_signature, loaded.signed_prekey_signature,
+            "signature must be stable across reuse"
+        );
+    }
+
+    #[test]
+    fn load_existing_prekey_bundle_returns_none_when_otpk_missing() {
+        // P1.2 — if the requested one-time prekey ID isn't in the
+        // store but the signed prekey is, return None so the caller
+        // re-generates rather than building a partial bundle.
+        let identity = Identity::generate();
+        let mgr = make_manager(&identity);
+
+        // Generate signed_prekey only (no OTPK).
+        let _ = mgr.generate_prekey_bundle(1, None).unwrap();
+        // Asking for OTPK #1 — not present.
+        let result = mgr.load_existing_prekey_bundle(1, Some(1)).unwrap();
+        assert!(
+            result.is_none(),
+            "missing one-time prekey must force regeneration"
+        );
+    }
+
+    #[test]
     fn empty_message_encrypt_decrypt() {
         let (alice_mgr, bob_mgr, alice_addr, bob_addr) = establish_session_pair();
 

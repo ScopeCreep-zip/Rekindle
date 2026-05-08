@@ -1,7 +1,18 @@
-//! `PreKey` generation and bundle creation for Signal Protocol.
+//! `PreKey` bundle wire type for Signal Protocol session establishment.
 //!
-//! Pre-key bundles are published to DHT profile subkey 5 so that
-//! new contacts can establish a Signal session asynchronously.
+//! Pre-key bundles are published to DHT profile subkey 5 so that new
+//! contacts can establish a Signal session asynchronously. Generation,
+//! bundle creation, and reuse-on-restart logic all live in
+//! [`crate::signal::session::SignalSessionManager`]:
+//! - `generate_prekey_bundle` — mint fresh keys + persist via the
+//!   PreKeyStore + return a bundle for DHT publication
+//! - `load_existing_prekey_bundle` (P1.2) — reconstruct a bundle from
+//!   already-persisted keys without overwriting them
+//!
+//! Rotation is driven from `auth.rs::initialize_signal_manager`, which
+//! prefers the existing bundle (so peers' cached PreKeyBundles stay
+//! valid across restarts) and only mints fresh keys when Stronghold is
+//! empty.
 
 use serde::{Deserialize, Serialize};
 
@@ -19,5 +30,3 @@ pub struct PreKeyBundle {
     /// Registration ID for Signal Protocol.
     pub registration_id: u32,
 }
-
-// TODO: Implement prekey generation, bundle creation, and rotation

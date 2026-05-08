@@ -79,8 +79,23 @@ pub struct MemberPresence {
     /// Reader-aggregated onboarding answers submitted by this member.
     pub onboarding_answers: Option<Vec<OnboardingAnswer>>,
 
-    /// Advertised message history ranges for mutual aid (shared lockers).
-    pub history_ranges: Vec<HistoryRange>,
+    /// W11.2 — advertised message history ranges, encrypted under the
+    /// current community MEK (architecture §14.3 mutual aid + §16.3
+    /// reader-validates). Plaintext history_ranges leaked metadata to
+    /// any reader of the registry record (community members today, but
+    /// also banned ex-members who cached the registry key, and any
+    /// network observer with access to Veilid's DHT storage nodes).
+    /// Encrypting under the rotating MEK means post-ban access is
+    /// revoked at the next MEK rotation (already wired) and observers
+    /// without membership see only opaque ciphertext.
+    ///
+    /// `None` for fresh joiners who haven't computed their first
+    /// history advertisement yet, OR for members whose MEK is missing /
+    /// stale at write time. Receivers without the matching MEK
+    /// generation skip the field gracefully and fall back to direct
+    /// DHT reads.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub history_ranges_encrypted: Option<EncryptedHistoryRanges>,
 
     /// Architecture §26 W26 — Ed25519 signature by `pseudonym_key` over
     /// [`signing_bytes`]. The SMPL slot keypair on `set_dht_value` is
@@ -148,6 +163,24 @@ pub struct HistoryRange {
     pub newest_lamport: u64,
 }
 
+/// W11.2 — wire format for MEK-encrypted history advertisements.
+///
+/// `ciphertext` is `nonce(12) || aes256gcm_ciphertext_with_tag` over a
+/// JSON-serialized `Vec<HistoryRange>`. `mek_generation` is the
+/// generation of the MEK used at encrypt time so receivers know which
+/// cached MEK to try (and can skip if they don't have it).
+///
+/// The whole `EncryptedHistoryRanges` struct is included in
+/// `MemberPresence::signing_bytes` so its authenticity is bound to the
+/// presence row's signature — an attacker who substitutes the
+/// ciphertext invalidates the signature and the receiver drops the row.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct EncryptedHistoryRanges {
+    pub mek_generation: u64,
+    pub ciphertext: Vec<u8>,
+}
+
 impl Default for MemberPresence {
     fn default() -> Self {
         Self {
@@ -170,7 +203,7 @@ impl Default for MemberPresence {
             push_relay_route: None,
             event_rsvps: Vec::new(),
             onboarding_answers: None,
-            history_ranges: Vec::new(),
+            history_ranges_encrypted: None,
             signature: Vec::new(),
         }
     }
@@ -193,6 +226,46 @@ mod tests {
         let json = serde_json::to_string(&presence).unwrap();
         let back: MemberPresence = serde_json::from_str(&json).unwrap();
         assert_eq!(presence, back);
+    }
+
+    #[test]
+    fn encrypted_history_ranges_roundtrip() {
+        // W11.2 — wire format must survive serde and the signature
+        // path. Build a MemberPresence with the encrypted field
+        // populated and verify serialize → deserialize produces an
+        // identical struct (signing_bytes consistency).
+        let presence = MemberPresence {
+            pseudonym_key: PseudonymKey([0xCD; 32]),
+            display_name: Some("Tester".into()),
+            history_ranges_encrypted: Some(EncryptedHistoryRanges {
+                mek_generation: 7,
+                ciphertext: vec![0xDE, 0xAD, 0xBE, 0xEF, 0x10, 0x20, 0x30],
+            }),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&presence).unwrap();
+        let back: MemberPresence = serde_json::from_str(&json).unwrap();
+        assert_eq!(presence, back);
+        // The same input produces identical signing bytes → signature
+        // verification is stable across encode/decode.
+        assert_eq!(presence.signing_bytes(), back.signing_bytes());
+    }
+
+    #[test]
+    fn encrypted_history_ranges_omitted_when_none() {
+        // `skip_serializing_if = "Option::is_none"` keeps the JSON
+        // small for the common case (most presence rows don't carry
+        // history ads). Confirm the field literally doesn't appear in
+        // the wire form when None.
+        let presence = MemberPresence {
+            pseudonym_key: PseudonymKey([0; 32]),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&presence).unwrap();
+        assert!(
+            !json.contains("historyRangesEncrypted"),
+            "absent field must not serialize"
+        );
     }
 
     #[test]

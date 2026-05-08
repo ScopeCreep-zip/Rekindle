@@ -190,10 +190,72 @@ pub(crate) async fn distribute_mek(
         });
         let bytes = rekindle_protocol::capnp_envelope::encode_community_envelope(&payload)
             .map_err(|e| format!("encode MEK transfer: {e}"))?;
-        let _reply = rc
+        let reply = rc
             .app_call(veilid_core::Target::RouteId(route_id), bytes)
             .await
             .map_err(|e| format!("app_call MEK transfer failed: {e}"))?;
+
+        // P1.3 — verify the recipient sent back a structured
+        // `MekTransferAck` confirming BOTH the network arrival and the
+        // app-layer unwrap. Bare `ACK` reply means the recipient hit
+        // an unwrap error (logged on their side); we record a debug
+        // trace so the operator can investigate. Generation mismatch
+        // would indicate a misrouted app_call — also logged but not
+        // hard-failed because the next rotation will recover.
+        if reply == b"ACK" {
+            tracing::debug!(
+                community = %community_id,
+                recipient = %recipient.pseudonym_hex,
+                generation = mek.generation(),
+                "MEK transfer recipient replied with bare ACK (unwrap likely failed)"
+            );
+        } else {
+            match rekindle_protocol::capnp_envelope::try_decode_community_envelope(&reply) {
+                Ok(Some(CommunityEnvelope::Control(ControlPayload::MekTransferAck {
+                    generation: ack_gen,
+                    channel_id: ack_channel,
+                    requester_pseudonym,
+                    ..
+                }))) => {
+                    if ack_gen != mek.generation() {
+                        tracing::warn!(
+                            community = %community_id,
+                            recipient = %recipient.pseudonym_hex,
+                            sent_gen = mek.generation(),
+                            ack_gen,
+                            "MekTransferAck generation mismatch — possible misrouted app_call"
+                        );
+                    } else if ack_channel.as_deref() != channel_id {
+                        tracing::warn!(
+                            community = %community_id,
+                            recipient = %recipient.pseudonym_hex,
+                            sent_channel = ?channel_id,
+                            ack_channel = ?ack_channel,
+                            "MekTransferAck channel_id mismatch"
+                        );
+                    } else {
+                        tracing::trace!(
+                            community = %community_id,
+                            recipient = %recipient.pseudonym_hex,
+                            requester = %requester_pseudonym,
+                            generation = ack_gen,
+                            "MekTransferAck verified"
+                        );
+                    }
+                }
+                Ok(_) => tracing::debug!(
+                    community = %community_id,
+                    recipient = %recipient.pseudonym_hex,
+                    "MEK transfer reply was not a MekTransferAck variant"
+                ),
+                Err(e) => tracing::debug!(
+                    community = %community_id,
+                    recipient = %recipient.pseudonym_hex,
+                    error = %e,
+                    "MEK transfer reply could not be decoded as community envelope"
+                ),
+            }
+        }
     }
 
     Ok(())

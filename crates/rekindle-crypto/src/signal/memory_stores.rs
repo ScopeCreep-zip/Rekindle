@@ -8,7 +8,8 @@
 //! implement the traits using Stronghold + `SQLite` via the Tauri backend.
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+
+use parking_lot::Mutex;
 
 use crate::signal::store::{IdentityKeyStore, PreKeyStore, SessionStore};
 use crate::CryptoError;
@@ -45,7 +46,7 @@ impl IdentityKeyStore for MemoryIdentityStore {
     }
 
     fn is_trusted_identity(&self, address: &str, identity_key: &[u8]) -> Result<bool, CryptoError> {
-        let trusted = self.trusted.lock().unwrap();
+        let trusted = self.trusted.lock();
         match trusted.get(address) {
             Some(stored) => Ok(stored == identity_key),
             None => Ok(true), // TOFU: trust on first use
@@ -55,7 +56,6 @@ impl IdentityKeyStore for MemoryIdentityStore {
     fn save_identity(&self, address: &str, identity_key: &[u8]) -> Result<(), CryptoError> {
         self.trusted
             .lock()
-            .unwrap()
             .insert(address.to_string(), identity_key.to_vec());
         Ok(())
     }
@@ -86,19 +86,18 @@ impl Default for MemoryPreKeyStore {
 
 impl PreKeyStore for MemoryPreKeyStore {
     fn load_prekey(&self, prekey_id: u32) -> Result<Option<Vec<u8>>, CryptoError> {
-        Ok(self.prekeys.lock().unwrap().get(&prekey_id).cloned())
+        Ok(self.prekeys.lock().get(&prekey_id).cloned())
     }
 
     fn store_prekey(&self, prekey_id: u32, key_data: &[u8]) -> Result<(), CryptoError> {
         self.prekeys
             .lock()
-            .unwrap()
             .insert(prekey_id, key_data.to_vec());
         Ok(())
     }
 
     fn remove_prekey(&self, prekey_id: u32) -> Result<(), CryptoError> {
-        self.prekeys.lock().unwrap().remove(&prekey_id);
+        self.prekeys.lock().remove(&prekey_id);
         Ok(())
     }
 
@@ -106,7 +105,6 @@ impl PreKeyStore for MemoryPreKeyStore {
         Ok(self
             .signed_prekeys
             .lock()
-            .unwrap()
             .get(&signed_prekey_id)
             .cloned())
     }
@@ -118,7 +116,6 @@ impl PreKeyStore for MemoryPreKeyStore {
     ) -> Result<(), CryptoError> {
         self.signed_prekeys
             .lock()
-            .unwrap()
             .insert(signed_prekey_id, key_data.to_vec());
         Ok(())
     }
@@ -147,27 +144,26 @@ impl Default for MemorySessionStore {
 
 impl SessionStore for MemorySessionStore {
     fn load_session(&self, address: &str) -> Result<Option<Vec<u8>>, CryptoError> {
-        Ok(self.sessions.lock().unwrap().get(address).cloned())
+        Ok(self.sessions.lock().get(address).cloned())
     }
 
     fn store_session(&self, address: &str, session_data: &[u8]) -> Result<(), CryptoError> {
         self.sessions
             .lock()
-            .unwrap()
             .insert(address.to_string(), session_data.to_vec());
         Ok(())
     }
 
     fn has_session(&self, address: &str) -> Result<bool, CryptoError> {
-        Ok(self.sessions.lock().unwrap().contains_key(address))
+        Ok(self.sessions.lock().contains_key(address))
     }
 
     fn delete_session(&self, address: &str) -> Result<(), CryptoError> {
-        self.sessions.lock().unwrap().remove(address);
+        self.sessions.lock().remove(address);
         Ok(())
     }
 
     fn list_sessions(&self) -> Result<Vec<String>, CryptoError> {
-        Ok(self.sessions.lock().unwrap().keys().cloned().collect())
+        Ok(self.sessions.lock().keys().cloned().collect())
     }
 }

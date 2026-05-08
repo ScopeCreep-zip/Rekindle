@@ -8,6 +8,11 @@ export interface SettingsState {
   startMinimized: boolean;
   showGameActivity: boolean;
   autoAwayMinutes: number;
+  /** W11.3 — when ON, accepting a new friend request also volunteers
+   *  a Strand Relay route for that friend (architecture §13). OFF by
+   *  default; explicit consent gate per the vulnerable-user threat
+   *  model. Per-friend, never network-wide. */
+  autoVolunteerRelayForNewFriends: boolean;
   /** Architecture §32 W26 + plan §Failure 1 — enumerated input devices
    *  for the Settings → Audio dropdowns. Hydrated by `listAudioDevices`. */
   inputDevices: AudioDeviceInfo[];
@@ -30,6 +35,7 @@ const [settingsState, setSettingsState] = createStore<SettingsState>({
   startMinimized: true,
   showGameActivity: true,
   autoAwayMinutes: 10,
+  autoVolunteerRelayForNewFriends: false,
   inputDevices: [],
   outputDevices: [],
   selectedInputDevice: null,

@@ -253,6 +253,37 @@ struct MekTransferPayload @0xea0011000000a000 {
     wrappedMek           @5 :Data;
 }
 
+# P1.3 — requester → responder ack confirming successful MekTransfer
+# ingestion. Sent as the `app_call` reply by the receiver of
+# MekTransfer immediately after MEK unwrap succeeds, so the responder
+# has positive confirmation that the transfer landed at the app
+# layer (not just the network layer). Carries the same identifying
+# triple as MekTransfer + the requester's pseudonym so the responder
+# can match the ack against in-flight transfers.
+struct MekTransferAckPayload @0xea0043000000a000 {
+    communityId          @0 :Text;
+    hasChannelId         @1 :Bool;
+    channelId            @2 :Text;
+    generation           @3 :UInt64;
+    requesterPseudonym   @4 :Text;
+}
+
+# P4.3 — joiner → admins request to expand the community's Plate Gate
+# segments when every slot in the highest existing segment is occupied.
+# Sent via gossip when the joiner lacks MANAGE_COMMUNITY; any admin
+# receiving this responds by calling `expand_community_segment` which
+# emits a `SegmentAdded` governance entry. The joiner watches for the
+# new segment via the merged governance state and retries slot claim.
+struct RequestSegmentExpansionPayload @0xea0044000000a000 {
+    communityId          @0 :Text;
+    requesterPseudonym   @1 :Text;
+    # Highest segment_index the joiner observed as full when the
+    # request was issued — admins use this to dedup concurrent
+    # requests (only the first admin to expand wins; later requests
+    # see the new segment and no-op).
+    fullSegmentIndex     @2 :UInt32;
+}
+
 struct OnboardingCompletePayload @0xea0012000000a000 {
     pseudonymKey         @0 :Text;
     roleIds              @1 :List(UInt32);
@@ -645,5 +676,7 @@ struct ControlPayload @0xeaffffff00000001 {
         mediaCapabilities        @64 :MediaCapabilitiesPayload;
         topologyChange           @65 :TopologyChangePayload;
         linkPreview              @66 :LinkPreviewPayload;
+        mekTransferAck           @67 :MekTransferAckPayload;
+        requestSegmentExpansion  @68 :RequestSegmentExpansionPayload;
     }
 }

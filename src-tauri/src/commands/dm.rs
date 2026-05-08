@@ -72,3 +72,54 @@ pub async fn get_dm_messages(
     let limit = limit.unwrap_or(200);
     Ok(dm::load_dm_messages(state.inner(), pool.inner(), &record_key, limit).await)
 }
+
+/// W11.4 (P6.2) — send one encoded video frame to a 1:1 DM peer.
+///
+/// Mirrors `commands::community::video::send_video_frame` but routes
+/// 1:1 via the Signal-encrypted `send_envelope_to_peer` path instead
+/// of mesh fan-out, and uses no community MEK (Signal Double Ratchet
+/// already covers confidentiality + authenticity).
+///
+/// The frontend produces VP9 chunks via WebCodecs and base64-encodes
+/// them for IPC; the backend chunks ≤28 KB, wraps each chunk in a
+/// `DmVideoFragment` payload, and sends through the existing DM
+/// transport. Returns the number of fragments dispatched.
+#[tauri::command]
+pub async fn send_dm_video_frame(
+    peer_pubkey: String,
+    request: SendDmVideoFrameRequest,
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+) -> Result<u32, String> {
+    use base64::Engine as _;
+    let stream_id_bytes =
+        hex::decode(&request.stream_id_hex).map_err(|e| format!("invalid stream_id hex: {e}"))?;
+    let stream_id: [u8; 16] = stream_id_bytes
+        .as_slice()
+        .try_into()
+        .map_err(|_| "stream_id must be 16 bytes".to_string())?;
+    let payload = base64::engine::general_purpose::STANDARD
+        .decode(request.encoded_payload_b64.as_bytes())
+        .map_err(|e| format!("invalid base64 payload: {e}"))?;
+    dm::video::send_dm_video_frame(
+        state.inner(),
+        pool.inner(),
+        &peer_pubkey,
+        stream_id,
+        request.frame_seq,
+        request.keyframe,
+        request.timestamp,
+        &payload,
+    )
+    .await
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SendDmVideoFrameRequest {
+    pub stream_id_hex: String,
+    pub frame_seq: u32,
+    pub keyframe: bool,
+    pub timestamp: u32,
+    pub encoded_payload_b64: String,
+}

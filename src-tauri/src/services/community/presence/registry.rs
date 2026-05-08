@@ -136,6 +136,16 @@ pub(super) async fn write_our_presence(
             );
         }
         let snapshot = read_self_presence_snapshot(state, community_id);
+        // W11.2 — encrypt history_ranges under current community MEK
+        // before writing the registry row. `None` is the correct
+        // graceful-skip when (a) we have no ranges to advertise yet,
+        // or (b) MEK isn't cached (the receive path already falls back
+        // to direct DHT reads in that case).
+        let history_ranges_encrypted = if history_ranges.is_empty() {
+            None
+        } else {
+            encrypt_history_ranges(state, community_id, &history_ranges)
+        };
         let mut presence = rekindle_types::presence::MemberPresence {
             pseudonym_key: rekindle_types::id::PseudonymKey(
                 hex::decode(my_pseudonym)
@@ -148,7 +158,7 @@ pub(super) async fn write_our_presence(
             route_blob: our_route_blob.unwrap_or_default(),
             last_heartbeat: rekindle_utils::timestamp_secs(),
             event_rsvps: snapshot.event_rsvps,
-            history_ranges,
+            history_ranges_encrypted,
             bio: snapshot.bio,
             pronouns: snapshot.pronouns,
             theme_color: snapshot.theme_color,
@@ -371,4 +381,53 @@ pub(crate) fn persist_discovered_registry_members(
             Ok(())
         },
     );
+}
+
+/// W11.2 — encrypt the local history ranges with the current community
+/// MEK. Returns `None` when no MEK is cached (community freshly joined,
+/// pre-MEK-distribution); the caller treats that as "skip this field"
+/// and still writes the rest of the presence row.
+fn encrypt_history_ranges(
+    state: &Arc<AppState>,
+    community_id: &str,
+    ranges: &[rekindle_types::presence::HistoryRange],
+) -> Option<rekindle_types::presence::EncryptedHistoryRanges> {
+    let mek = {
+        let cache = state.mek_cache.lock();
+        cache.get(community_id).cloned()?
+    };
+    let plaintext = serde_json::to_vec(ranges).ok()?;
+    let ciphertext = mek.encrypt(&plaintext).ok()?;
+    Some(rekindle_types::presence::EncryptedHistoryRanges {
+        mek_generation: mek.generation(),
+        ciphertext,
+    })
+}
+
+/// W11.2 — decrypt history ranges from a peer's presence row using the
+/// MEK generation declared by the sender. Returns `None` when:
+/// - we don't have that MEK generation cached (we joined after rotation
+///   or haven't received the wrap yet);
+/// - decryption fails (corrupted ciphertext, wrong key, etc.).
+///
+/// The caller treats `None` as "skip this peer's history advertisement
+/// for now" — they fall through to direct DHT reads for catchup, which
+/// is the existing behavior pre-encryption.
+pub(in crate::services::community) fn decrypt_history_ranges(
+    state: &Arc<AppState>,
+    community_id: &str,
+    encrypted: &rekindle_types::presence::EncryptedHistoryRanges,
+) -> Option<Vec<rekindle_types::presence::HistoryRange>> {
+    let mek = {
+        let cache = state.mek_cache.lock();
+        cache.get(community_id).cloned()?
+    };
+    if mek.generation() != encrypted.mek_generation {
+        // Mismatched generation — could be a peer publishing under an
+        // older MEK we've already rotated away from, or a fresher MEK
+        // we haven't received yet. Either way, we can't decrypt.
+        return None;
+    }
+    let plaintext = mek.decrypt(&encrypted.ciphertext).ok()?;
+    serde_json::from_slice(&plaintext).ok()
 }

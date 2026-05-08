@@ -36,6 +36,10 @@ struct InviteContext {
     slot_seed_hex: String,
     bootstrap_bundle: Option<BootstrapBundle>,
     mek_generation: u64,
+    /// M10.3 — pseudonym of the member who wrote the `InviteCreated`
+    /// governance entry. Used by `claim_registry_slot` to enforce the
+    /// per-inviter active-invite quota before any registry slot write.
+    inviter_pseudonym: PseudonymKey,
 }
 
 pub async fn join_community(
@@ -65,11 +69,13 @@ pub async fn join_community(
     let (registry_typed_key, claimed_segment, my_slot, slot_veilid) = claim_registry_slot(
         state,
         &rc,
+        governance_key_str,
         &invite.registry_key,
         &invite.slot_seed_hex,
+        &invite.inviter_pseudonym,
         &identity.pseudo,
         &identity.pseudonym_signing,
-        &governance.gov_state.segments,
+        &governance.gov_state,
     )
     .await?;
     let (initial_peers, initial_online, known_members) = collect_initial_presence_state(
@@ -347,7 +353,7 @@ async fn decode_invite_context(
     pseudo_hex: &str,
 ) -> Result<InviteContext, String> {
     let code_hash = rekindle_secrets::invite::hash_invite_code(invite_code);
-    let encrypted_b64 = find_invite_in_governance(all_entries, &code_hash)?;
+    let (encrypted_b64, inviter_pseudonym) = find_invite_in_governance(all_entries, &code_hash)?;
     let encrypted = {
         use base64::Engine;
         base64::engine::general_purpose::STANDARD
@@ -402,6 +408,7 @@ async fn decode_invite_context(
         slot_seed_hex: secrets.slot_seed,
         bootstrap_bundle,
         mek_generation,
+        inviter_pseudonym,
     })
 }
 
@@ -418,17 +425,80 @@ struct SegmentClaimCandidate {
 async fn claim_registry_slot(
     state: &Arc<AppState>,
     rc: &veilid_core::RoutingContext,
+    community_id: &str,
     invite_registry_key: &str,
     slot_seed_hex: &str,
+    inviter_pseudonym: &PseudonymKey,
     my_pseudo: &PseudonymKey,
     pseudonym_signing: &ed25519_dalek::SigningKey,
-    segments: &[rekindle_governance::state::SegmentState],
+    gov_state: &rekindle_governance::state::GovernanceState,
 ) -> Result<(RecordKey, u32, u32, veilid_core::KeyPair), String> {
+    // M10.3 — joiner-side quota check (architecture §20.6 line 2607).
+    // Reader-validates also drops over-quota InviteCreated entries at
+    // merge time (`validate.rs::InviteCreated`), but the joiner enforces
+    // explicitly here as defense-in-depth: if the joiner's local merge
+    // accepted the invite (e.g. quota was reached just after this
+    // invite's lamport), the slot claim is still refused so the joiner
+    // doesn't write a slot the rest of the community will reject.
+    if !rekindle_governance::invite_quota::check_active_invites_cap(gov_state, inviter_pseudonym) {
+        return Err("invite quota exceeded for inviter — community is rate-limiting joins".into());
+    }
+
     let slot_seed_bytes: [u8; 32] = hex::decode(slot_seed_hex)
         .map_err(|e| format!("invalid slot seed hex: {e}"))?
         .try_into()
         .map_err(|_| "slot seed must be 32 bytes")?;
 
+    // First attempt with the merged-state segment list at join time.
+    let outcome = try_claim_in_candidates(
+        rc,
+        invite_registry_key,
+        &slot_seed_bytes,
+        &gov_state.segments,
+        my_pseudo,
+        pseudonym_signing,
+        state,
+    )
+    .await?;
+    if let Some(claimed) = outcome.claimed {
+        return Ok(claimed);
+    }
+
+    // P4.3 — Plate Gate auto-expand. All candidate segments are full
+    // (last_full_segment is `Some`). If our local pseudonym holds
+    // MANAGE_COMMUNITY we expand inline and retry against the new
+    // segment; otherwise we gossip a RequestSegmentExpansion and poll
+    // governance for up to 30s waiting for any admin's SegmentAdded.
+    if let Some(full_seg) = outcome.last_full_segment {
+        return auto_expand_and_retry(
+            state,
+            rc,
+            community_id,
+            invite_registry_key,
+            &slot_seed_bytes,
+            my_pseudo,
+            pseudonym_signing,
+            full_seg,
+        )
+        .await;
+    }
+    Err("No reachable segment registry — Veilid attach may have failed".to_string())
+}
+
+struct ClaimAttemptOutcome {
+    claimed: Option<(RecordKey, u32, u32, veilid_core::KeyPair)>,
+    last_full_segment: Option<u32>,
+}
+
+async fn try_claim_in_candidates(
+    rc: &veilid_core::RoutingContext,
+    invite_registry_key: &str,
+    slot_seed_bytes: &[u8; 32],
+    governance_segments: &[rekindle_governance::state::SegmentState],
+    my_pseudo: &PseudonymKey,
+    pseudonym_signing: &ed25519_dalek::SigningKey,
+    state: &Arc<AppState>,
+) -> Result<ClaimAttemptOutcome, String> {
     // Build the candidate list: segment 0 from the invite, plus every
     // additional segment merged from governance. Sort ascending so we
     // prefer the lowest-indexed segment with space (deterministic +
@@ -439,7 +509,7 @@ async fn claim_registry_slot(
         registry_key: invite_registry_key.to_string(),
         slot_range_start: 0,
     });
-    for seg in segments {
+    for seg in governance_segments {
         if seg.segment_index == 0 {
             continue; // segment 0 is implicit
         }
@@ -498,7 +568,7 @@ async fn claim_registry_slot(
         // Slot keypair derivation uses the GLOBAL slot index (architecture
         // §8.3 + §15.2 — slot 255 = local subkey 0 of segment 1, etc.).
         let global_slot = candidate.slot_range_start + local_subkey;
-        let slot_kp = derive::derive_slot_keypair(&slot_seed_bytes, global_slot)
+        let slot_kp = derive::derive_slot_keypair(slot_seed_bytes, global_slot)
             .map_err(|e| format!("slot keypair derivation failed: {e}"))?;
         let slot_veilid = super::super::create::slot_signing_to_veilid(&slot_kp);
         let mut presence = MemberPresence {
@@ -544,16 +614,155 @@ async fn claim_registry_slot(
             ));
         }
 
-        return Ok((registry_typed_key, candidate.segment_index, local_subkey, slot_veilid));
+        return Ok(ClaimAttemptOutcome {
+            claimed: Some((registry_typed_key, candidate.segment_index, local_subkey, slot_veilid)),
+            last_full_segment,
+        });
     }
 
-    if let Some(seg) = last_full_segment {
-        Err(format!(
-            "Community is full — all 255 slots in segment {seg} occupied. Admin must call expand_community_segment to add a new segment."
-        ))
+    Ok(ClaimAttemptOutcome {
+        claimed: None,
+        last_full_segment,
+    })
+}
+
+/// P4.3 — handle the "all segments full" path: trigger an expansion
+/// (inline if we have `MANAGE_COMMUNITY`, otherwise gossip-request and
+/// wait for an admin), then retry slot claim once.
+async fn auto_expand_and_retry(
+    state: &Arc<AppState>,
+    rc: &veilid_core::RoutingContext,
+    community_id: &str,
+    invite_registry_key: &str,
+    slot_seed_bytes: &[u8; 32],
+    my_pseudo: &PseudonymKey,
+    pseudonym_signing: &ed25519_dalek::SigningKey,
+    full_segment_index: u32,
+) -> Result<(RecordKey, u32, u32, veilid_core::KeyPair), String> {
+    use rekindle_governance::permissions::compute_permissions;
+    use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
+    use rekindle_types::permissions::MANAGE_COMMUNITY;
+
+    let (have_manage_community, requester_pseudonym) = {
+        let communities = state.communities.read();
+        let cs = communities.get(community_id);
+        let pseudo_hex = cs.and_then(|c| c.my_pseudonym_key.clone()).unwrap_or_default();
+        let perms = cs.and_then(|c| c.governance_state.as_ref()).map_or(0, |gov| {
+            compute_permissions(my_pseudo, None, gov, rekindle_utils::time::timestamp_secs())
+        });
+        ((perms & MANAGE_COMMUNITY) != 0, pseudo_hex)
+    };
+
+    // Surface the wait state to the user via a SystemAlert
+    // notification BEFORE either expansion path runs — the inline
+    // admin path still takes seconds for the SegmentAdded write +
+    // merge, and the gossip path needs the user to understand the 30s
+    // delay isn't a hung join. The frontend's NotificationPanel
+    // displays this immediately; success or failure is reported by
+    // the join command's own Result via the existing
+    // `Failed to join community: ${e}` toast template (P4.4).
+    emit_join_pending_alert(state, have_manage_community);
+
+    if have_manage_community {
+        // Inline path — we are an admin; call expand_community_segment
+        // ourselves. After the SegmentAdded entry is written and merged
+        // into our local state, retry slot claim once against the new
+        // segment list.
+        tracing::info!(
+            community = %community_id,
+            full_segment_index,
+            "Plate Gate: joiner has MANAGE_COMMUNITY — expanding inline"
+        );
+        super::super::segments::expand_community_segment(state, community_id)
+            .await
+            .map_err(|e| format!("inline segment expansion failed: {e}"))?;
     } else {
-        Err("No reachable segment registry — Veilid attach may have failed".to_string())
+        // Gossip path — request expansion from any online admin and
+        // poll governance for the new segment. Inviter's responder
+        // election (`select_request_responder` analog) isn't necessary
+        // here because we want any admin to act; first to expand wins
+        // via CRDT (later admins' attempts no-op when they see the
+        // segment already exists in their merged state).
+        tracing::info!(
+            community = %community_id,
+            full_segment_index,
+            "Plate Gate: joiner lacks MANAGE_COMMUNITY — gossiping RequestSegmentExpansion"
+        );
+        let envelope =
+            CommunityEnvelope::Control(ControlPayload::RequestSegmentExpansion {
+                community_id: community_id.to_string(),
+                requester_pseudonym,
+                full_segment_index,
+            });
+        super::super::send_to_mesh(state, community_id, &envelope)
+            .map_err(|e| format!("RequestSegmentExpansion broadcast failed: {e}"))?;
     }
+
+    // Wait up to 30s for the new segment to land in our merged
+    // governance state. Poll every 500ms — quicker than a watch-driven
+    // notify, simpler than a Notify channel, and bounded.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    let mut new_segments: Vec<rekindle_governance::state::SegmentState>;
+    loop {
+        new_segments = state_helpers::governance_state(state, community_id)
+            .map(|gov| gov.segments)
+            .unwrap_or_default();
+        let max_seg = new_segments.iter().map(|s| s.segment_index).max().unwrap_or(0);
+        if max_seg > full_segment_index {
+            break;
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(format!(
+                "Community is full and no admin expanded within 30s. The community has {} active segment(s); admins must run expand_community_segment to grow it.",
+                new_segments.len() + 1 // +1 because segment 0 is implicit
+            ));
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+
+    // Retry once with the post-expansion segment list.
+    let outcome = try_claim_in_candidates(
+        rc,
+        invite_registry_key,
+        slot_seed_bytes,
+        &new_segments,
+        my_pseudo,
+        pseudonym_signing,
+        state,
+    )
+    .await?;
+    if let Some(claimed) = outcome.claimed {
+        return Ok(claimed);
+    }
+    // Brand-new segment shouldn't already be full (255 slots, single
+    // joiner). If we hit this it's a race against many concurrent
+    // joiners; surface so the caller can retry the entire join.
+    Err("Community segment expanded but still full — concurrent joiner race; please retry".into())
+}
+
+/// W11.x completeness — emit a `SystemAlert` notification so the user
+/// understands the 30-second wait during Plate Gate auto-expand isn't
+/// a hung join. The body diverges by path:
+/// - Admin joiner: "expanding the community" (sub-second to seconds)
+/// - Non-admin joiner: "waiting for an admin to expand" (up to 30s)
+fn emit_join_pending_alert(state: &Arc<AppState>, have_manage_community: bool) {
+    use crate::channels::NotificationEvent;
+    use tauri::Emitter;
+    let Some(app) = state.app_handle.read().clone() else {
+        return;
+    };
+    let body = if have_manage_community {
+        "Community is full — expanding capacity. This will take a few seconds.".to_string()
+    } else {
+        "Community is full — waiting for an admin to expand it. Up to 30 seconds.".to_string()
+    };
+    let _ = app.emit(
+        "notification-event",
+        &NotificationEvent::SystemAlert {
+            title: "Joining community…".to_string(),
+            body,
+        },
+    );
 }
 
 async fn collect_initial_presence_state(

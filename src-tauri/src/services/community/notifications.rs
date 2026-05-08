@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use tauri::Emitter;
 
@@ -58,10 +57,7 @@ impl NotificationThrottle {
     }
 
     fn now_ms() -> u128 {
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_millis())
-            .unwrap_or(0)
+        u128::from(rekindle_utils::time::timestamp_ms())
     }
 
     /// Architecture §17.2 line 2402 — record an attempt to notify and

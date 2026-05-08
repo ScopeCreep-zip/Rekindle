@@ -471,15 +471,15 @@ fn update_member_profiles(
     community_id: &str,
     discovered_members: &[super::registry::DiscoveredRow],
 ) {
-    let mut communities = state.communities.write();
-    let Some(community) = communities.get_mut(community_id) else {
-        return;
-    };
-    for (_segment_index, _subkey, presence) in discovered_members {
-        let pseudonym_hex = hex::encode(presence.pseudonym_key.0);
-        community.member_profiles.insert(
-            pseudonym_hex,
-            crate::state::MemberProfileSnapshot {
+    let mut profiles_changed = false;
+    {
+        let mut communities = state.communities.write();
+        let Some(community) = communities.get_mut(community_id) else {
+            return;
+        };
+        for (_segment_index, _subkey, presence) in discovered_members {
+            let pseudonym_hex = hex::encode(presence.pseudonym_key.0);
+            let next = crate::state::MemberProfileSnapshot {
                 display_name: presence.display_name.clone(),
                 bio: presence.bio.clone(),
                 pronouns: presence.pronouns.clone(),
@@ -487,8 +487,35 @@ fn update_member_profiles(
                 badges: presence.badges.clone(),
                 avatar_ref: presence.avatar_ref.clone(),
                 banner_ref: presence.banner_ref.clone(),
-            },
-        );
+            };
+            // Wave 5 / D1 — only flag the frontend refresh if a field
+            // actually changed. Without this, every 30 s presence
+            // poll would emit `MembersRefreshed`, which the frontend
+            // treats as a re-fetch trigger — burning IPC bandwidth
+            // for no visual delta.
+            let prev = community.member_profiles.get(&pseudonym_hex);
+            if prev.is_none_or(|existing| existing != &next) {
+                profiles_changed = true;
+                community.member_profiles.insert(pseudonym_hex, next);
+            }
+        }
+    }
+
+    // Wave 5 / D1 — surface profile updates to every frontend (Tauri
+    // GUI today; future CLI/TUI subscribers via the same event stream)
+    // so member panels re-render with the latest bio/pronouns/avatar/
+    // banner/theme/badges. The frontend already listens for
+    // `MembersRefreshed` and re-calls `getCommunityMembers`, which
+    // returns the merged profile snapshot from `member_profiles`.
+    if profiles_changed {
+        if let Some(app_handle) = state_helpers::app_handle(state) {
+            let _ = app_handle.emit(
+                "community-event",
+                CommunityEvent::MembersRefreshed {
+                    community_id: community_id.to_string(),
+                },
+            );
+        }
     }
 }
 

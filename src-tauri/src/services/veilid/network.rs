@@ -86,11 +86,21 @@ pub async fn handle_app_call(
         Ok(Some(CommunityEnvelope::Control(ControlPayload::MekTransfer {
             community_id,
             channel_id,
-            generation: _,
+            generation,
             sender_pseudonym,
             wrapped_mek,
         }))) => {
-            if let Err(error) = crate::services::community::handle_incoming_mek_transfer(
+            // P1.3 — reply with a Cap'n-Proto-encoded `MekTransferAck`
+            // instead of a bare `b"ACK"`. Confirms BOTH (1) the unwrap
+            // succeeded at the app layer (a network-layer success
+            // alone leaves the responder uncertain whether decryption
+            // worked) and (2) the generation we ack'd matches what
+            // they sent (catches misrouted app_calls).
+            //
+            // On unwrap failure we still reply `b"ACK"` so the
+            // responder's app_call await resolves; the caller's
+            // tracing surfaces the error path.
+            match crate::services::community::handle_incoming_mek_transfer(
                 app_handle,
                 state,
                 &community_id,
@@ -98,9 +108,39 @@ pub async fn handle_app_call(
                 &sender_pseudonym,
                 &wrapped_mek,
             ) {
-                tracing::warn!(call_id = %call_id, error = %error, "failed to handle incoming MEK transfer");
+                Ok(_) => {
+                    let requester_pseudonym = {
+                        let communities = state.communities.read();
+                        communities
+                            .get(&community_id)
+                            .and_then(|cs| cs.my_pseudonym_key.clone())
+                            .unwrap_or_default()
+                    };
+                    let ack = CommunityEnvelope::Control(ControlPayload::MekTransferAck {
+                        community_id: community_id.clone(),
+                        channel_id: channel_id.clone(),
+                        generation,
+                        requester_pseudonym,
+                    });
+                    rekindle_protocol::capnp_envelope::encode_community_envelope(&ack)
+                        .unwrap_or_else(|e| {
+                            tracing::warn!(
+                                call_id = %call_id,
+                                error = %e,
+                                "failed to encode MekTransferAck — falling back to bare ACK"
+                            );
+                            b"ACK".to_vec()
+                        })
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        call_id = %call_id,
+                        error = %error,
+                        "failed to handle incoming MEK transfer — replying bare ACK"
+                    );
+                    b"ACK".to_vec()
+                }
             }
-            b"ACK".to_vec()
         }
         Ok(Some(CommunityEnvelope::Control(ControlPayload::RequestAttachment {
             channel_id: _,

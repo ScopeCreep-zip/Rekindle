@@ -70,7 +70,10 @@ pub enum GovernanceEntry {
         name: String,
         /// 64-bit permission bitmask (see `permissions` module)
         permissions: u64,
-        /// Lower position = more powerful (same as Discord hierarchy)
+        /// Architecture §9.3 line 1946 — higher position = higher rank
+        /// (Discord convention). Used for moderation hierarchy: a member
+        /// can only ban/timeout/manage another member whose max role
+        /// position is strictly less than the actor's own max position.
         position: u32,
         color: u32,
         hoist: bool,

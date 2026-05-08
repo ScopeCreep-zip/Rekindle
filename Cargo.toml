@@ -24,6 +24,39 @@ members = [
     "crates/rekindle-transport",
     "crates/rekindle-cli",
     "crates/rekindle-node",
+    "xtask",
+]
+# W-1 #12 — `rekindle-cli` and `rekindle-node` are sister artifacts
+# from the merged feat/rekindle-cli work. They are NOT shipped with the
+# Tauri app and use the OS keyring as their secret store (rejected as
+# primary store for vulnerable users — Stronghold is primary in the
+# Tauri path). Excluding them from default builds keeps `cargo build`
+# focused on what the shipped app needs.
+#
+# To build the daemon: `cargo build -p rekindle-node`
+# To build the CLI:    `cargo build -p rekindle-cli`
+default-members = [
+    "src-tauri",
+    "crates/rekindle-types",
+    "crates/rekindle-secrets",
+    "crates/rekindle-governance",
+    "crates/rekindle-codec",
+    "crates/rekindle-gossip",
+    "crates/rekindle-route",
+    "crates/rekindle-records",
+    "crates/rekindle-files",
+    "crates/rekindle-link-preview",
+    "crates/rekindle-dm",
+    "crates/rekindle-calls",
+    "crates/rekindle-video",
+    "crates/rekindle-sync",
+    "crates/rekindle-protocol",
+    "crates/rekindle-crypto",
+    "crates/rekindle-game-detect",
+    "crates/rekindle-voice",
+    "crates/rekindle-e2e-server",
+    "crates/rekindle-utils",
+    "crates/rekindle-transport",
 ]
 
 [workspace.dependencies]

@@ -124,6 +124,15 @@ pub fn start_inspect_loop(state: Arc<AppState>, community_id: String) {
         loop {
             interval.tick().await;
 
+            // W-1 #16 — re-attempt watches on any tracked record whose
+            // previous watch died (Veilid renew_watch returned false,
+            // OR establish-time `Ok(false)` at first attempt). Without
+            // this, dead watches stayed dead until the next value-
+            // change event, which by definition cannot fire on a dead
+            // watch — meaning some records would silently lose their
+            // notification stream until the user restarted.
+            super::watch::retry_dead_watches(&state, &community_id).await;
+
             let Some(tracked_records) = tracked_record_keys(&state, &community_id) else {
                 return;
             };

@@ -33,6 +33,12 @@ pub(crate) struct VoiceReceiveParams {
 struct ParticipantDecoder {
     codec: rekindle_voice::codec::OpusCodec,
     jitter_buffer: rekindle_voice::jitter::JitterBuffer,
+    /// M9.3 — per-peer anti-replay window. Rejects duplicate sequence
+    /// numbers (replay) at network ingress, before the jitter buffer
+    /// sees the packet. The jitter buffer's "drop late packet" check
+    /// only protects already-played sequences within the buffer's
+    /// lifetime; this window protects the full WINDOW_SIZE history.
+    replay_window: rekindle_voice::replay_window::VoiceSeqWindow,
     is_speaking: bool,
     last_packet_time: Instant,
 }
@@ -190,6 +196,8 @@ impl VoiceReceiveLoop {
                             jitter_buffer: rekindle_voice::jitter::JitterBuffer::new(
                                 self.jitter_buffer_ms,
                             ),
+                            replay_window:
+                                rekindle_voice::replay_window::VoiceSeqWindow::new(),
                             is_speaking: false,
                             last_packet_time: Instant::now(),
                         },
@@ -203,6 +211,17 @@ impl VoiceReceiveLoop {
         }
 
         if let Some(participant) = self.participants.get_mut(&sender_key) {
+            // M9.3 — drop replays before the jitter buffer sees them.
+            // A captured packet replayed by a malicious relay would
+            // otherwise be re-decoded and re-mixed into the audio
+            // stream, leaking timing/content patterns.
+            if !participant.replay_window.check_and_insert(packet.sequence) {
+                tracing::trace!(
+                    seq = packet.sequence,
+                    "voice replay window: dropping replay/too-old packet"
+                );
+                return;
+            }
             participant.jitter_buffer.push(packet);
             participant.last_packet_time = Instant::now();
 

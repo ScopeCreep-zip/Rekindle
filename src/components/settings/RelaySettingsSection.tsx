@@ -6,6 +6,8 @@ import {
   handleVolunteerRelay,
   relayState,
 } from "../../handlers/relay.handlers";
+import { handleSaveSettings } from "../../handlers/settings.handlers";
+import { settingsState } from "../../stores/settings.store";
 
 /// Strand Relay Network (architecture §13) configuration block: shows
 /// which friends we relay for, which friends offer to relay for us, and
@@ -14,6 +16,13 @@ const RelaySettingsSection: Component = () => {
   onMount(() => {
     handleHydrateRelayState();
   });
+
+  const toggleAutoVolunteer = (): void => {
+    void handleSaveSettings({
+      autoVolunteerRelayForNewFriends:
+        !settingsState.autoVolunteerRelayForNewFriends,
+    });
+  };
 
   const volunteeredKeys = createMemo(() => Object.keys(relayState.volunteeredFor));
   const receivedKeys = createMemo(() => Object.keys(relayState.receivedOffersFrom));
@@ -35,6 +44,25 @@ const RelaySettingsSection: Component = () => {
         peers may use that route as a fallback when they can't reach your
         friend directly.
       </div>
+
+      {/* W11.3 — explicit-consent toggle: when ON, accepting a new
+          friend request also volunteers a relay route for that
+          friend. OFF by default; per-friend never network-wide. */}
+      <label class="settings-toggle-row">
+        <input
+          type="checkbox"
+          checked={settingsState.autoVolunteerRelayForNewFriends}
+          onChange={toggleAutoVolunteer}
+        />
+        <span class="settings-toggle-label">
+          Auto-volunteer to relay for new friends
+        </span>
+        <div class="settings-hint">
+          Only volunteers for friends you accept after enabling this. Existing
+          friends are unchanged — opt them in via "Volunteer for a friend"
+          below.
+        </div>
+      </label>
 
       <div class="relay-section-subtitle">Friends I relay for</div>
       <Show

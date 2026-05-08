@@ -51,6 +51,8 @@ pub fn encode_control_payload(
         CP::MEKRotated { .. } => write_mek_rotated(b.reborrow().init_mek_rotated(), payload),
         CP::RequestMEK { .. } => write_request_mek(b.reborrow().init_request_mek(), payload),
         CP::MekTransfer { .. } => write_mek_transfer(b.reborrow().init_mek_transfer(), payload),
+        CP::MekTransferAck { .. } => write_mek_transfer_ack(b.reborrow().init_mek_transfer_ack(), payload),
+        CP::RequestSegmentExpansion { .. } => write_request_segment_expansion(b.reborrow().init_request_segment_expansion(), payload),
         CP::OnboardingComplete { .. } => write_onboarding_complete(b.reborrow().init_onboarding_complete(), payload),
         CP::MemberRolesChanged { .. } => write_member_roles_changed(b.reborrow().init_member_roles_changed(), payload),
         CP::ChannelOverwriteChanged { .. } => write_channel_overwrite_changed(b.reborrow().init_channel_overwrite_changed(), payload),
@@ -126,6 +128,8 @@ pub fn decode_control_payload(r: schema::Reader<'_>) -> Result<ControlPayload, P
         Which::MekRotated(p) => read_mek_rotated(p.map_err(|e| capnp_err(&e))?),
         Which::RequestMek(p) => read_request_mek(p.map_err(|e| capnp_err(&e))?),
         Which::MekTransfer(p) => read_mek_transfer(p.map_err(|e| capnp_err(&e))?),
+        Which::MekTransferAck(p) => read_mek_transfer_ack(p.map_err(|e| capnp_err(&e))?),
+        Which::RequestSegmentExpansion(p) => read_request_segment_expansion(p.map_err(|e| capnp_err(&e))?),
         Which::OnboardingComplete(p) => read_onboarding_complete(p.map_err(|e| capnp_err(&e))?),
         Which::MemberRolesChanged(p) => read_member_roles_changed(p.map_err(|e| capnp_err(&e))?),
         Which::ChannelOverwriteChanged(p) => read_channel_overwrite_changed(p.map_err(|e| capnp_err(&e))?),
@@ -352,6 +356,26 @@ fn write_mek_transfer(mut p: cap::mek_transfer_payload::Builder<'_>, payload: &C
     p.set_generation(*generation);
     p.set_sender_pseudonym(sender_pseudonym);
     p.set_wrapped_mek(wrapped_mek);
+}
+
+fn write_mek_transfer_ack(mut p: cap::mek_transfer_ack_payload::Builder<'_>, payload: &ControlPayload) {
+    let ControlPayload::MekTransferAck { community_id, channel_id, generation, requester_pseudonym } = payload else {
+        unreachable!("write_mek_transfer_ack: variant mismatch")
+    };
+    p.set_community_id(community_id);
+    p.set_has_channel_id(channel_id.is_some());
+    if let Some(c) = channel_id { p.set_channel_id(c); }
+    p.set_generation(*generation);
+    p.set_requester_pseudonym(requester_pseudonym);
+}
+
+fn write_request_segment_expansion(mut p: cap::request_segment_expansion_payload::Builder<'_>, payload: &ControlPayload) {
+    let ControlPayload::RequestSegmentExpansion { community_id, requester_pseudonym, full_segment_index } = payload else {
+        unreachable!("write_request_segment_expansion: variant mismatch")
+    };
+    p.set_community_id(community_id);
+    p.set_requester_pseudonym(requester_pseudonym);
+    p.set_full_segment_index(*full_segment_index);
 }
 
 fn write_onboarding_complete(mut p: cap::onboarding_complete_payload::Builder<'_>, payload: &ControlPayload) {
@@ -1002,6 +1026,25 @@ fn read_mek_transfer(p: cap::mek_transfer_payload::Reader<'_>) -> Result<Control
         generation: p.get_generation(),
         sender_pseudonym: text_to_string(p.get_sender_pseudonym().map_err(|e| capnp_err(&e))?)?,
         wrapped_mek: p.get_wrapped_mek().map_err(|e| capnp_err(&e))?.to_vec(),
+    })
+}
+
+fn read_mek_transfer_ack(p: cap::mek_transfer_ack_payload::Reader<'_>) -> Result<ControlPayload, ProtocolError> {
+    Ok(ControlPayload::MekTransferAck {
+        community_id: text_to_string(p.get_community_id().map_err(|e| capnp_err(&e))?)?,
+        channel_id: if p.get_has_channel_id() {
+            Some(text_to_string(p.get_channel_id().map_err(|e| capnp_err(&e))?)?)
+        } else { None },
+        generation: p.get_generation(),
+        requester_pseudonym: text_to_string(p.get_requester_pseudonym().map_err(|e| capnp_err(&e))?)?,
+    })
+}
+
+fn read_request_segment_expansion(p: cap::request_segment_expansion_payload::Reader<'_>) -> Result<ControlPayload, ProtocolError> {
+    Ok(ControlPayload::RequestSegmentExpansion {
+        community_id: text_to_string(p.get_community_id().map_err(|e| capnp_err(&e))?)?,
+        requester_pseudonym: text_to_string(p.get_requester_pseudonym().map_err(|e| capnp_err(&e))?)?,
+        full_segment_index: p.get_full_segment_index(),
     })
 }
 

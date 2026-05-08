@@ -15,6 +15,7 @@
 //!   from Bob's published pool, wrap the envelope, send through it.
 
 pub mod forward;
+pub mod health;
 pub mod offer;
 pub mod pool;
 pub mod presence;

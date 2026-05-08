@@ -10,10 +10,18 @@ pub(crate) fn role_id_to_legacy_u32(role_id: &rekindle_types::id::RoleId) -> u32
     u32::from_le_bytes([role_id.0[0], role_id.0[1], role_id.0[2], role_id.0[3]])
 }
 
+/// Look up an invite by `code_hash` in the raw governance subkey entries.
+/// Returns the encrypted secrets blob and the inviter's pseudonym (the
+/// writer of the subkey carrying the `InviteCreated` entry).
+///
+/// M10.3 — the inviter pseudonym is propagated to `claim_registry_slot`
+/// so the joiner-side quota check (`invite_quota::check_active_invites_cap`)
+/// can run before any slot write, in addition to the reader-validates
+/// merge filter at `validate.rs::InviteCreated`.
 pub(super) fn find_invite_in_governance(
     subkeys: &[(PseudonymKey, Vec<GovernanceEntry>)],
     code_hash: &str,
-) -> Result<String, String> {
+) -> Result<(String, PseudonymKey), String> {
     let mut revoked_ids: std::collections::HashSet<[u8; 16]> = std::collections::HashSet::new();
     for (_, entries) in subkeys {
         for entry in entries {
@@ -23,7 +31,7 @@ pub(super) fn find_invite_in_governance(
         }
     }
 
-    for (_, entries) in subkeys {
+    for (author, entries) in subkeys {
         for entry in entries {
             if let GovernanceEntry::InviteCreated {
                 invite_id,
@@ -43,7 +51,7 @@ pub(super) fn find_invite_in_governance(
                             return Err("invite has expired".into());
                         }
                     }
-                    return Ok(encrypted_secrets.clone());
+                    return Ok((encrypted_secrets.clone(), author.clone()));
                 }
             }
         }

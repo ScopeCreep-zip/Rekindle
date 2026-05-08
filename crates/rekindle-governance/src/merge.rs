@@ -86,7 +86,7 @@ pub fn apply_entry(author: &PseudonymKey, entry: &GovernanceEntry, state: &mut G
 /// Apply a single governance entry to the accumulated state.
 ///
 /// Each entry type has its own CRDT merge rule (see architecture doc §4.4).
-fn apply(_author: &PseudonymKey, entry: &GovernanceEntry, state: &mut GovernanceState) {
+fn apply(author: &PseudonymKey, entry: &GovernanceEntry, state: &mut GovernanceState) {
     match entry {
         // ── Channels: OR-Set (created minus archived) ──
         GovernanceEntry::ChannelCreated {
@@ -401,7 +401,7 @@ fn apply(_author: &PseudonymKey, entry: &GovernanceEntry, state: &mut Governance
                 if *lamport != existing.created_lamport {
                     return *lamport > existing.created_lamport;
                 }
-                _author.0 > existing.creator.0
+                author.0 > existing.creator.0
             });
 
             if should_replace {
@@ -420,7 +420,7 @@ fn apply(_author: &PseudonymKey, entry: &GovernanceEntry, state: &mut Governance
                         invited: invited.clone(),
                         forum_tag: forum_tag.clone(),
                         auto_archive_seconds: *auto_archive_seconds,
-                        creator: _author.clone(),
+                        creator: author.clone(),
                         created_lamport: *lamport,
                         archived_lamport,
                     },
@@ -778,6 +778,7 @@ fn apply(_author: &PseudonymKey, entry: &GovernanceEntry, state: &mut Governance
                     expires_at: *expires_at,
                     encrypted_secrets: encrypted_secrets.clone(),
                     created_lamport: *lamport,
+                    creator_pseudonym: author.clone(),
                 },
             );
         }

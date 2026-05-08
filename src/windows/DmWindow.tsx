@@ -10,6 +10,7 @@ import { handleSendDm, subscribeDmInbox, handleListDms } from "../handlers/dm.ha
 import { handleStartDmCall, handleEndDmCall } from "../handlers/calls.handlers";
 import { callsState } from "../stores/calls.store";
 import { commands } from "../ipc/commands";
+import VideoCallPanel from "../components/voice/VideoCallPanel";
 import type { Message } from "../stores/chat.store";
 
 function getRecordKeyFromUrl(): string {
@@ -144,30 +145,32 @@ const DmWindow: Component = () => {
               }
             >
               {(active) => (
-                /* C2 — active-call indicator with hangup. Shows the
-                 * call kind so the user knows whether they're in
-                 * audio or video. Video frame rendering is not yet
-                 * wired (DM video transport is follow-up work);
-                 * the existing voice transport carries audio for
-                 * both kinds today. */
-                <div class="dm-call-bar dm-call-bar-active">
-                  <span>
-                    {active().kind === "video" ? "Video" : "Voice"} call active
-                    <Show when={active().kind === "video"}>
-                      {" "}
-                      <span style="opacity: 0.7; font-size: 0.85em;">
-                        (audio only — video frame UI coming soon)
-                      </span>
-                    </Show>
-                  </span>
-                  <button
-                    type="button"
-                    class="form-btn-secondary"
-                    onClick={() => void handleEndDmCall(active().callId)}
-                  >
-                    Hang up
-                  </button>
-                </div>
+                /* C2 — active-call indicator with hangup. W11.4 —
+                 * when the call is `video`, mount VideoCallPanel in
+                 * "dm" mode so encoded VP9 frames flow through the
+                 * Signal-encrypted DM transport. The existing voice
+                 * transport carries audio for both call kinds. */
+                <>
+                  <div class="dm-call-bar dm-call-bar-active">
+                    <span>
+                      {active().kind === "video" ? "Video" : "Voice"} call active
+                    </span>
+                    <button
+                      type="button"
+                      class="form-btn-secondary"
+                      onClick={() => void handleEndDmCall(active().callId)}
+                    >
+                      Hang up
+                    </button>
+                  </div>
+                  <Show when={active().kind === "video" && dmPeerKey()}>
+                    <VideoCallPanel
+                      mode="dm"
+                      peerId={dmPeerKey()!}
+                      visible
+                    />
+                  </Show>
+                </>
               )}
             </Show>
           </Show>

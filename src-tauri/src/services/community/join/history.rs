@@ -75,11 +75,28 @@ async fn request_history_catchup(state: &Arc<AppState>, community_id: &str) -> R
         {
             continue;
         }
-        if presence.route_blob.is_empty() || presence.history_ranges.is_empty() {
+        if presence.route_blob.is_empty() {
             continue;
         }
-        let ads = presence
-            .history_ranges
+        // W11.2 — history_ranges are encrypted under the community MEK.
+        // Members without the matching MEK generation cached (fresh
+        // joiners pre-distribution, or after a rotation we missed) skip
+        // this peer's advertisement and fall through to direct DHT
+        // reads as before.
+        let Some(encrypted) = presence.history_ranges_encrypted.as_ref() else {
+            continue;
+        };
+        let Some(decrypted) = super::super::presence::registry::decrypt_history_ranges(
+            state,
+            community_id,
+            encrypted,
+        ) else {
+            continue;
+        };
+        if decrypted.is_empty() {
+            continue;
+        }
+        let ads = decrypted
             .iter()
             .map(|range| HistoryAd {
                 channel_id: hex::encode(range.channel_id.0),

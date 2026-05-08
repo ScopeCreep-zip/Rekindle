@@ -237,6 +237,7 @@ fn app_invoke_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Sen
         commands::dm::decline_dm_invite,
         commands::dm::send_dm_message,
         commands::dm::get_dm_messages,
+        commands::dm::send_dm_video_frame,
         // search (architecture §23)
         commands::search::search_messages,
         // cross-device sync (architecture §28.4)

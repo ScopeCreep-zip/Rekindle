@@ -83,6 +83,27 @@ pub struct AppState {
     /// Global dedup cache for gossip mesh message deduplication.
     /// Prevents processing/forwarding the same message twice.
     pub dedup_cache: Mutex<DedupCache>,
+    /// M10.4 — receiver-side per-(community, sender) gossip rate floor
+    /// (architecture §20.2 line 2585). Refilled at 10 tokens/sec; bursts
+    /// up to 10. Modified clients that ignore their own send-side limit
+    /// still get their messages dropped here on every honest receiver.
+    /// Prunes idle buckets when the map exceeds 10_000 entries.
+    pub gossip_rate_limits:
+        Mutex<HashMap<(String, String), rekindle_gossip::rate_limit::TokenBucket>>,
+    /// M10.4 — receiver-side per-(community, channel, sender) last-send
+    /// timestamps (unix seconds). Compared against the channel's
+    /// `slowmode_seconds` (and the sender's `BYPASS_SLOWMODE` permission)
+    /// to drop sub-window writes. Architecture §28.7 line 3187 — the
+    /// gossip layer must enforce a floor even when modified clients
+    /// ignore client-side slowmode UI.
+    pub channel_last_received: Mutex<HashMap<(String, String, String), u64>>,
+    /// Wave 7 P7.3 — per-relay circuit-breaker state. Keyed by
+    /// `blake3(route_blob)` so identical routes collapse to the same
+    /// breaker. In-memory only; resets on restart, which is the
+    /// correct behavior — a previously-broken relay deserves a fresh
+    /// chance after the network has presumably reshuffled.
+    pub relay_health:
+        Mutex<HashMap<crate::services::relay::health::RelayKey, crate::services::relay::health::RelayHealth>>,
     /// Sender for queued SMPL channel-message writes.
     pub channel_write_retry_tx: Arc<RwLock<Option<rekindle_records::retry::WriteQueueHandle>>>,
     /// Per-community compiled AutoMod cache.
@@ -131,6 +152,11 @@ pub struct AppState {
     /// pending-fragment buffers; cleared on logout via the cleanup path.
     pub video_reassembly:
         crate::services::community::video::VideoReassemblyState,
+    /// W11.4 — per-peer DM video reassembly state. Mirrors community
+    /// `video_reassembly` but keyed by peer pubkey instead of
+    /// (community_id, channel_id, stream_id). Pruned per-frame on
+    /// stale-TTL inside the helper.
+    pub dm_video_reassembly: crate::services::dm::video::DmVideoReassemblyState,
 
     /// Architecture §17.2 line 2402 — per-channel notification burst
     /// throttle. Bounds OS popups to 5 per 10 s per channel and folds
@@ -185,6 +211,9 @@ impl Default for AppState {
             community_circuit_breakers: RwLock::new(HashMap::new()),
             app_handle: RwLock::new(None),
             dedup_cache: Mutex::new(DedupCache::new(1024)),
+            gossip_rate_limits: Mutex::new(HashMap::new()),
+            channel_last_received: Mutex::new(HashMap::new()),
+            relay_health: Mutex::new(HashMap::new()),
             channel_write_retry_tx: Arc::new(RwLock::new(None)),
             automod_cache: Arc::new(RwLock::new(HashMap::new())),
             event_reminder_wake_tx: Arc::new(RwLock::new(None)),
@@ -197,6 +226,8 @@ impl Default for AppState {
             last_wake_notify_secs: Mutex::new(0),
             video_reassembly:
                 crate::services::community::video::VideoReassemblyState::new(),
+            dm_video_reassembly:
+                crate::services::dm::video::DmVideoReassemblyState::new(),
             notification_throttle:
                 crate::services::community::notifications::NotificationThrottle::new(),
             active_calls: Arc::new(Mutex::new(HashMap::new())),
@@ -818,7 +849,7 @@ pub struct EventRsvpEntry {
 /// entry per discovered member into `CommunityState.member_profiles`.
 /// `get_community_members` joins this map with the SQLite membership rows so
 /// the popup can render `bio` / `pronouns` / `theme_color` / `badges`.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MemberProfileSnapshot {
     /// Mirror of `MemberPresence.display_name` so mention-resolution
     /// (architecture §28.5) can map `@name` → pseudonym hex without a

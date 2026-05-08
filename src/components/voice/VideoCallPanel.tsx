@@ -1,6 +1,7 @@
 import { Component, For, Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { commands } from "../../ipc/commands";
 import { subscribeCommunityEvents } from "../../ipc/channels";
+import { listen } from "@tauri-apps/api/event";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { setVoiceState, voiceState } from "../../stores/voice.store";
 import { settingsState } from "../../stores/settings.store";
@@ -19,12 +20,23 @@ import { settingsState } from "../../stores/settings.store";
 // available in WKWebView 17.5+ and WebKitGTK 2.46+, so this canvas
 // path runs on all three of our target platforms.
 
-interface VideoCallPanelProps {
-  communityId: string;
-  channelId: string;
-  /** When false the panel is invisible — used to keep state alive across panel toggles. */
-  visible: boolean;
-}
+/** W11.4 — `community` panel routes encoded frames through gossip
+ *  fan-out + MEK; `dm` panel routes 1:1 via Signal Double Ratchet. The
+ *  decoder side is identical (WebCodecs VP9). */
+type VideoCallPanelProps =
+  | {
+      mode: "community";
+      communityId: string;
+      channelId: string;
+      /** When false the panel is invisible — used to keep state alive across panel toggles. */
+      visible: boolean;
+    }
+  | {
+      mode: "dm";
+      /** Hex-encoded peer Ed25519 public key. */
+      peerId: string;
+      visible: boolean;
+    };
 
 interface RemoteStream {
   streamId: string;
@@ -74,6 +86,10 @@ const VideoCallPanel: Component<VideoCallPanelProps> = (props) => {
   let screenLowestReceiverKbps = 800;
 
   let unlistenCommunity: Promise<UnlistenFn> | null = null;
+  /** W11.4 — DM mode tap into the per-peer `dm-video-frame` Tauri
+   *  event instead of community gossip. Either community OR dm
+   *  unlisten is non-null at runtime; both clean up in onCleanup. */
+  let unlistenDm: Promise<UnlistenFn> | null = null;
 
   const localCameraVideoRef: { value: HTMLVideoElement | undefined } = { value: undefined };
   const localScreenVideoRef: { value: HTMLVideoElement | undefined } = { value: undefined };
@@ -82,65 +98,95 @@ const VideoCallPanel: Component<VideoCallPanelProps> = (props) => {
   // events, instantiate one VideoDecoder per (sender, streamId),
   // render decoded frames to a canvas. Topology changes drop and
   // re-create the decoder for clean reattachment.
+  //
+  // W11.4 — community vs dm modes listen on different event surfaces.
+  // Community uses the existing gossip-fed `community-event` stream;
+  // DM uses the per-peer `dm-video-frame` event emitted by
+  // message_service::process_envelope after Signal decryption +
+  // reassembly.
   onMount(() => {
-    unlistenCommunity = subscribeCommunityEvents((event) => {
-      if (event.type === "videoFrame") {
-        const { communityId, senderPseudonym, streamId, frameSeq, keyframe, timestamp, payloadB64 } = event.data;
-        if (communityId !== props.communityId) return;
-        ingestRemoteFrame(senderPseudonym, streamId, frameSeq, keyframe, timestamp, payloadB64);
-      } else if (event.type === "videoTopologyChange") {
-        const { communityId, streamId } = event.data;
-        if (communityId !== props.communityId) return;
-        // Drop matching remote so the next frame seeds a fresh decoder.
-        setRemotes((prev) => {
-          const out = prev.filter((r) => {
-            if (r.streamId === streamId) {
-              try {
-                r.decoder.close();
-              } catch (e) {
-                console.error("decoder close failed:", e);
+    if (props.mode === "community") {
+      const communityIdLocal = props.communityId;
+      unlistenCommunity = subscribeCommunityEvents((event) => {
+        if (event.type === "videoFrame") {
+          const { communityId, senderPseudonym, streamId, frameSeq, keyframe, timestamp, payloadB64 } = event.data;
+          if (communityId !== communityIdLocal) return;
+          ingestRemoteFrame(senderPseudonym, streamId, frameSeq, keyframe, timestamp, payloadB64);
+        } else if (event.type === "videoTopologyChange") {
+          const { communityId, streamId } = event.data;
+          if (communityId !== communityIdLocal) return;
+          // Drop matching remote so the next frame seeds a fresh decoder.
+          setRemotes((prev) => {
+            const out = prev.filter((r) => {
+              if (r.streamId === streamId) {
+                try {
+                  r.decoder.close();
+                } catch (e) {
+                  console.error("decoder close failed:", e);
+                }
+                return false;
               }
-              return false;
-            }
-            return true;
+              return true;
+            });
+            return out;
           });
-          return out;
-        });
-      } else if (event.type === "videoKeyframeRequest") {
-        const { streamId } = event.data;
-        if (streamId === cameraStreamId) {
-          cameraLastKeyframeMs = 0; // forces next encode to be a keyframe
-        } else if (streamId === screenStreamId) {
-          screenLastKeyframeMs = 0;
-        }
-      } else if (event.type === "videoFrameAck") {
-        // Architecture §10.6 line 4081 — receiver-reported downstream
-        // kbps. Adapt encoder bitrate to the slowest receiver. The
-        // encoder API doesn't allow per-frame bitrate changes mid-stream,
-        // but the next configure() call (e.g. on next keyframe interval)
-        // will pick up the new value. Track the running min.
-        const { streamId, kbps } = event.data;
-        if (streamId === cameraStreamId) {
+        } else if (event.type === "videoKeyframeRequest") {
+          const { streamId } = event.data;
+          if (streamId === cameraStreamId) {
+            cameraLastKeyframeMs = 0; // forces next encode to be a keyframe
+          } else if (streamId === screenStreamId) {
+            screenLastKeyframeMs = 0;
+          }
+        } else if (event.type === "videoFrameAck") {
+          // Architecture §10.6 line 4081 — receiver-reported downstream
+          // kbps. Adapt encoder bitrate to the slowest receiver. The
+          // encoder API doesn't allow per-frame bitrate changes mid-stream,
+          // but the next configure() call (e.g. on next keyframe interval)
+          // will pick up the new value. Track the running min.
+          const { streamId, kbps } = event.data;
+          if (streamId === cameraStreamId) {
+            cameraLowestReceiverKbps = Math.min(cameraLowestReceiverKbps, kbps);
+          } else if (streamId === screenStreamId) {
+            screenLowestReceiverKbps = Math.min(screenLowestReceiverKbps, kbps);
+          }
+        } else if (event.type === "videoBandwidthEstimate") {
+          // Out-of-band bandwidth update — same handling as FrameAck kbps.
+          // We don't track per-stream because BandwidthEstimate is
+          // channel-scoped; treat it as a community-wide hint and clamp
+          // both streams' reported kbps.
+          const { kbps } = event.data;
           cameraLowestReceiverKbps = Math.min(cameraLowestReceiverKbps, kbps);
-        } else if (streamId === screenStreamId) {
           screenLowestReceiverKbps = Math.min(screenLowestReceiverKbps, kbps);
         }
-      } else if (event.type === "videoBandwidthEstimate") {
-        // Out-of-band bandwidth update — same handling as FrameAck kbps.
-        // We don't track per-stream because BandwidthEstimate is
-        // channel-scoped; treat it as a community-wide hint and clamp
-        // both streams' reported kbps.
-        const { kbps } = event.data;
-        cameraLowestReceiverKbps = Math.min(cameraLowestReceiverKbps, kbps);
-        screenLowestReceiverKbps = Math.min(screenLowestReceiverKbps, kbps);
-      }
-    });
+      });
+    } else {
+      const peerIdLocal = props.peerId;
+      unlistenDm = listen<{
+        peerPubkey: string;
+        streamIdHex: string;
+        frameSeq: number;
+        keyframe: boolean;
+        timestamp: number;
+        encodedPayloadB64: string;
+      }>("dm-video-frame", (msg) => {
+        if (msg.payload.peerPubkey !== peerIdLocal) return;
+        ingestRemoteFrame(
+          msg.payload.peerPubkey,
+          msg.payload.streamIdHex,
+          msg.payload.frameSeq,
+          msg.payload.keyframe,
+          msg.payload.timestamp,
+          msg.payload.encodedPayloadB64,
+        );
+      });
+    }
   });
 
   onCleanup(() => {
     void stopCamera();
     void stopScreen();
     unlistenCommunity?.then((unlisten) => unlisten());
+    unlistenDm?.then((unlisten) => unlisten());
     for (const r of remotes()) {
       try {
         r.decoder.close();
@@ -161,6 +207,17 @@ const VideoCallPanel: Component<VideoCallPanelProps> = (props) => {
     let s = "";
     for (let i = 0; i < bytes.length; i += 1) s += String.fromCharCode(bytes[i]);
     return btoa(s);
+  }
+
+  /** W11.4 — DM-mode random 16-byte stream id (hex). DM is 1:1, so
+   *  there's no per-channel collision risk that would require the
+   *  backend's deterministic derivation. */
+  function randomStreamIdHex(): string {
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    let s = "";
+    for (const b of bytes) s += b.toString(16).padStart(2, "0");
+    return s;
   }
 
   function ingestRemoteFrame(
@@ -194,12 +251,16 @@ const VideoCallPanel: Component<VideoCallPanelProps> = (props) => {
         error: (e: Error) => {
           console.error("VideoDecoder error:", e);
           // Architecture §10.6 line 4081 — decoder lost track of the
-          // stream; ask the sender for a keyframe.
-          void commands.sendVideoKeyframeRequest(
-            props.communityId,
-            props.channelId,
-            streamId,
-          );
+          // stream; ask the sender for a keyframe. Community-only —
+          // DM mode has no out-of-band keyframe-request channel yet,
+          // we rely on the sender's regular 2-second keyframe cadence.
+          if (props.mode === "community") {
+            void commands.sendVideoKeyframeRequest(
+              props.communityId,
+              props.channelId,
+              streamId,
+            );
+          }
         },
       });
       decoder.configure({ codec: "vp09.00.30.08" });
@@ -220,7 +281,7 @@ const VideoCallPanel: Component<VideoCallPanelProps> = (props) => {
       // every keyframe interval (~2 s). For loss/kbps we report
       // conservative defaults; a future iteration will measure real
       // network jitter via the WebRTC stats API.
-      if (keyframe) {
+      if (keyframe && props.mode === "community") {
         void commands.sendVideoFrameAck(
           props.communityId,
           props.channelId,
@@ -232,12 +293,14 @@ const VideoCallPanel: Component<VideoCallPanelProps> = (props) => {
       }
     } catch (e) {
       console.error("decode chunk failed:", e);
-      // Request a keyframe so the decoder can recover.
-      void commands.sendVideoKeyframeRequest(
-        props.communityId,
-        props.channelId,
-        streamId,
-      );
+      // Request a keyframe so the decoder can recover (community only).
+      if (props.mode === "community") {
+        void commands.sendVideoKeyframeRequest(
+          props.communityId,
+          props.channelId,
+          streamId,
+        );
+      }
     }
   }
 
@@ -245,7 +308,15 @@ const VideoCallPanel: Component<VideoCallPanelProps> = (props) => {
     label: "camera" | "screen",
     stream: MediaStream,
   ): Promise<{ encoder: VideoEncoder; stop: () => void }> {
-    const streamIdHex = await commands.deriveVideoStreamId(props.communityId, props.channelId, label);
+    // Community streams use the deterministic backend-derived id so
+    // (channel_id || sender_pseudonym || track_label) collisions are
+    // impossible across concurrent senders. DM streams are 1:1 — a
+    // local random 16-byte UUID is sufficient and avoids a backend
+    // round-trip per camera/screen start.
+    const streamIdHex =
+      props.mode === "community"
+        ? await commands.deriveVideoStreamId(props.communityId, props.channelId, label)
+        : randomStreamIdHex();
     const track = stream.getVideoTracks()[0];
     if (!track) throw new Error("no video track");
 
@@ -279,13 +350,22 @@ const VideoCallPanel: Component<VideoCallPanelProps> = (props) => {
         const seq = (frameSeq += 1);
         if (label === "camera") cameraFrameSeq = seq;
         else screenFrameSeq = seq;
-        void commands.sendVideoFrame(props.communityId, props.channelId, {
+        const frameRequest = {
           streamIdHex,
           frameSeq: seq,
           keyframe: chunk.type === "key",
           timestamp: Math.floor(performance.now()),
           encodedPayloadB64: payloadB64,
-        });
+        };
+        if (props.mode === "community") {
+          void commands.sendVideoFrame(
+            props.communityId,
+            props.channelId,
+            frameRequest,
+          );
+        } else {
+          void commands.sendDmVideoFrame(props.peerId, frameRequest);
+        }
       },
       error: (e: Error) => {
         console.error("VideoEncoder error:", e);
@@ -343,15 +423,20 @@ const VideoCallPanel: Component<VideoCallPanelProps> = (props) => {
     if (label === "camera") cameraStreamId = streamIdHex;
     else screenStreamId = streamIdHex;
 
-    // Architecture §10.6 + Phase 6 W22 — broadcast initial topology so
-    // receivers know to expect frames from us on this stream.
-    void commands.notifyVideoTopologyChange(
-      props.communityId,
-      props.channelId,
-      streamIdHex,
-      null,
-      "initial",
-    );
+    // Architecture §10.6 + Phase 6 W22 — community broadcasts initial
+    // topology so receivers spin up decoders. DM has only one
+    // receiver who will spin up their decoder on the first keyframe
+    // (handled in `ingestRemoteFrame`), so no topology broadcast is
+    // needed.
+    if (props.mode === "community") {
+      void commands.notifyVideoTopologyChange(
+        props.communityId,
+        props.channelId,
+        streamIdHex,
+        null,
+        "initial",
+      );
+    }
 
     return {
       encoder,

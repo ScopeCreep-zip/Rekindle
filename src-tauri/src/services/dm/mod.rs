@@ -12,6 +12,7 @@ pub mod create;
 pub mod ingest;
 pub mod messages;
 pub mod store;
+pub mod video;
 
 pub use accept::accept_dm_invite;
 pub use create::start_dm;

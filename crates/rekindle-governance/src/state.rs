@@ -262,6 +262,30 @@ impl TimeoutState {
     }
 }
 
+impl GovernanceState {
+    /// Architecture §9.3 line 1946 — return the highest `RoleState.position`
+    /// across all roles assigned to `member`. Higher position = higher rank
+    /// (Discord convention). Members with no role assignments default to 0
+    /// (the @everyone-equivalent floor).
+    ///
+    /// Used by `validate_write` to enforce role hierarchy on Ban / Timeout /
+    /// RoleAssignment / RoleUnassignment entries: a writer can only act on a
+    /// target whose max position is strictly less than the writer's.
+    pub fn member_max_position(&self, member: &PseudonymKey) -> u32 {
+        self.role_assignments
+            .get(member)
+            .map(|role_ids| {
+                role_ids
+                    .iter()
+                    .filter_map(|rid| self.roles.get(rid))
+                    .map(|role| role.position)
+                    .max()
+                    .unwrap_or(0)
+            })
+            .unwrap_or(0)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct AutoModRuleState {
     pub name: String,
@@ -319,4 +343,9 @@ pub struct InviteState {
     pub expires_at: Option<u64>,
     pub encrypted_secrets: String,
     pub created_lamport: u64,
+    /// M10.3 — the inviter's pseudonym, populated from the writing
+    /// governance subkey at merge time. Used for the per-inviter
+    /// active-invite quota in `invite_quota.rs` and for audit-log
+    /// attribution.
+    pub creator_pseudonym: PseudonymKey,
 }

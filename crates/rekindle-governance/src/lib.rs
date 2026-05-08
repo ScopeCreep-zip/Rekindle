@@ -13,6 +13,7 @@
 //! See architecture doc §4.4 for merge rules.
 //! See rekindle-architecture-v2.md §4.4 for field specifications.
 
+pub mod invite_quota;
 pub mod merge;
 pub mod permissions;
 pub mod state;

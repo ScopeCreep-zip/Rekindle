@@ -29,6 +29,52 @@ pub fn mark_watch_inactive(state: &Arc<AppState>, record_key: &str) {
     }
 }
 
+/// W-1 #16 — return the set of tracked community record keys that are
+/// currently NOT in `watched_records`. The inspect loop calls this each
+/// tick and attempts to re-establish those watches; this turns watch
+/// death (Veilid `renew_watch == false`) from a silent observability
+/// hole into an actively-retried recovery.
+pub fn unwatched_tracked_records(state: &Arc<AppState>, community_id: &str) -> Vec<String> {
+    let communities = state.communities.read();
+    let Some(community) = communities.get(community_id) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    if let Some(ref gov_key) = community.open_community_records.governance_key {
+        if !community.watched_records.contains(gov_key) {
+            out.push(gov_key.clone());
+        }
+    }
+    if let Some(ref reg_key) = community.open_community_records.registry_key {
+        if !community.watched_records.contains(reg_key) {
+            out.push(reg_key.clone());
+        }
+    }
+    for ch_key in &community.open_community_records.channel_keys {
+        if !community.watched_records.contains(ch_key) {
+            out.push(ch_key.clone());
+        }
+    }
+    out
+}
+
+/// W-1 #16 — re-attempt watches on any tracked record whose previous
+/// watch died (`Ok(false)` at establish OR `count == 0` value-change).
+/// Called from the inspect loop tick. Idempotent: records already
+/// watched are skipped via the `unwatched_tracked_records` filter.
+pub async fn retry_dead_watches(state: &Arc<AppState>, community_id: &str) {
+    let Some(rc) = state_helpers::safe_routing_context(state) else {
+        return;
+    };
+    let pending = unwatched_tracked_records(state, community_id);
+    if pending.is_empty() {
+        return;
+    }
+    for record_key in pending {
+        watch_record(&rc, state, community_id, "retry", &record_key).await;
+    }
+}
+
 async fn watch_record(
     rc: &veilid_core::RoutingContext,
     state: &Arc<AppState>,

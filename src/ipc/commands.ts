@@ -154,6 +154,8 @@ export interface Preferences {
   noiseSuppression: boolean;
   echoCancellation: boolean;
   autoAwayMinutes: number;
+  /** W11.3 — auto-volunteer Strand Relay for new friend accepts. */
+  autoVolunteerRelayForNewFriends: boolean;
 }
 
 export type ExclusionGroupEdit =
@@ -1169,6 +1171,18 @@ export const commands = {
     request: SendVideoFrameRequest,
   ) =>
     invoke<number>("send_video_frame", { communityId, channelId, request }),
+  /**
+   * W11.4 (P6.2) — send one encoded video frame to a 1:1 DM peer.
+   * Mirrors `sendVideoFrame` shape but routes through the existing
+   * Signal-encrypted DM transport instead of community gossip.
+   * Backend chunks ≤28 KB and wraps each chunk in a
+   * `DmVideoFragment` payload. Returns the number of fragments sent.
+   */
+  sendDmVideoFrame: (
+    peerPubkey: string,
+    request: SendVideoFrameRequest,
+  ) =>
+    invoke<number>("send_dm_video_frame", { peerPubkey, request }),
   /**
    * Derive the deterministic 16-byte stream_id the encoder must stamp
    * into each outbound `VideoFragment`. `trackLabel` distinguishes

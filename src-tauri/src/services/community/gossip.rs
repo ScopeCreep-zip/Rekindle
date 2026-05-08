@@ -133,65 +133,97 @@ pub fn send_to_mesh_raw(state: &SharedState, community_id: &str, signed: &Signed
             _ => None,
         });
 
-    for (peer_key, route_blob) in selected_peers {
-        let rc = rc.clone();
-        let data = signed_bytes.clone();
-        let cid = community_id.to_string();
-        let state_clone = state.clone();
-        let msg_id = message_id.clone();
-        let pk = peer_key.clone();
-        tokio::spawn(async move {
-            let send_result = match rc.api().import_remote_private_route(route_blob) {
-                Ok(route_id) => {
-                    rc.app_message(veilid_core::Target::RouteId(route_id), data.clone())
-                        .await
-                }
-                Err(e) => Err(veilid_core::VeilidAPIError::generic(e)),
-            };
+    // M9.6 — own the per-peer fan-out tasks via a single supervising
+    // tokio task that holds a `JoinSet`. Previously each peer was
+    // detached via `tokio::spawn`, leaving tasks orphaned forever (no
+    // shutdown signal could reach them, no observability into in-
+    // flight sends, no cancellation on community-leave). The JoinSet
+    // bundles all peer sends into one parent — the parent exits only
+    // when every peer send has run, and dropping the JoinSet (parent
+    // cancellation) cleanly cancels every in-flight peer send too.
+    let rc_owner = rc.clone();
+    let data_owner = signed_bytes.clone();
+    let cid_owner = community_id.to_string();
+    let state_owner = state.clone();
+    let msg_id_owner = message_id.clone();
+    tokio::spawn(async move {
+        let mut set = tokio::task::JoinSet::new();
+        for (peer_key, route_blob) in selected_peers {
+            let rc = rc_owner.clone();
+            let data = data_owner.clone();
+            let cid = cid_owner.clone();
+            let state_clone = state_owner.clone();
+            let msg_id = msg_id_owner.clone();
+            let pk = peer_key.clone();
+            set.spawn(async move {
+                send_to_one_peer(rc, data, cid, state_clone, msg_id, pk, route_blob).await;
+            });
+        }
+        // Drain the set so its tasks complete before the supervisor
+        // returns. Errors from `join_next` are ignored (each per-peer
+        // task records its own delivery/reliability outcome).
+        while set.join_next().await.is_some() {}
+    });
+}
 
-            if send_result.is_ok() {
-                if let Some(ref mid) = msg_id {
-                    record_delivery(&state_clone, mid, &cid, &pk, "delivered");
+async fn send_to_one_peer(
+    rc: veilid_core::RoutingContext,
+    data: Vec<u8>,
+    cid: String,
+    state_clone: SharedState,
+    msg_id: Option<String>,
+    pk: String,
+    route_blob: Vec<u8>,
+) {
+    let send_result = match rc.api().import_remote_private_route(route_blob) {
+        Ok(route_id) => {
+            rc.app_message(veilid_core::Target::RouteId(route_id), data.clone())
+                .await
+        }
+        Err(e) => Err(veilid_core::VeilidAPIError::generic(e)),
+    };
+
+    if send_result.is_ok() {
+        if let Some(ref mid) = msg_id {
+            record_delivery(&state_clone, mid, &cid, &pk, "delivered");
+        }
+        record_peer_reliability(&state_clone, &cid, &pk, true);
+        return;
+    }
+    record_peer_reliability(&state_clone, &cid, &pk, false);
+
+    tracing::info!(community = %cid, peer = %pk, "route stale, attempting DHT re-resolve");
+    let fresh_blob = resolve_peer_route_from_db(&state_clone, &cid, &pk).await;
+    if let Some(blob) = fresh_blob {
+        match rc.api().import_remote_private_route(blob.clone()) {
+            Ok(route_id) => {
+                if let Err(e) = rc
+                    .app_message(veilid_core::Target::RouteId(route_id), data)
+                    .await
+                {
+                    tracing::warn!(community = %cid, peer = %pk, error = %e, "re-resolved route still failed");
+                    if let Some(ref mid) = msg_id {
+                        record_delivery(&state_clone, mid, &cid, &pk, "failed");
+                    }
+                } else {
+                    update_peer_route(&state_clone, &cid, &pk, blob);
+                    if let Some(ref mid) = msg_id {
+                        record_delivery(&state_clone, mid, &cid, &pk, "delivered");
+                    }
                 }
-                record_peer_reliability(&state_clone, &cid, &pk, true);
-                return;
             }
-            record_peer_reliability(&state_clone, &cid, &pk, false);
-
-            tracing::info!(community = %cid, peer = %pk, "route stale, attempting DHT re-resolve");
-            let fresh_blob = resolve_peer_route_from_db(&state_clone, &cid, &pk).await;
-            if let Some(blob) = fresh_blob {
-                match rc.api().import_remote_private_route(blob.clone()) {
-                    Ok(route_id) => {
-                        if let Err(e) = rc
-                            .app_message(veilid_core::Target::RouteId(route_id), data)
-                            .await
-                        {
-                            tracing::warn!(community = %cid, peer = %pk, error = %e, "re-resolved route still failed");
-                            if let Some(ref mid) = msg_id {
-                                record_delivery(&state_clone, mid, &cid, &pk, "failed");
-                            }
-                        } else {
-                            update_peer_route(&state_clone, &cid, &pk, blob);
-                            if let Some(ref mid) = msg_id {
-                                record_delivery(&state_clone, mid, &cid, &pk, "delivered");
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        tracing::warn!(community = %cid, peer = %pk, error = %e, "re-resolved route also invalid");
-                        if let Some(ref mid) = msg_id {
-                            record_delivery(&state_clone, mid, &cid, &pk, "failed");
-                        }
-                    }
-                }
-            } else {
-                tracing::warn!(community = %cid, peer = %pk, "no fresh route found in DHT");
+            Err(e) => {
+                tracing::warn!(community = %cid, peer = %pk, error = %e, "re-resolved route also invalid");
                 if let Some(ref mid) = msg_id {
                     record_delivery(&state_clone, mid, &cid, &pk, "failed");
                 }
             }
-        });
+        }
+    } else {
+        tracing::warn!(community = %cid, peer = %pk, "no fresh route found in DHT");
+        if let Some(ref mid) = msg_id {
+            record_delivery(&state_clone, mid, &cid, &pk, "failed");
+        }
     }
 }
 

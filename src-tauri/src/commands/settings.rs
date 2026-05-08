@@ -37,6 +37,16 @@ pub struct Preferences {
     /// Minutes of inactivity before auto-away (0 = disabled).
     #[serde(default = "default_auto_away")]
     pub auto_away_minutes: u32,
+    /// W11.3 — when ON, accepting a friend request also volunteers a
+    /// Strand Relay route for that friend so they can route via you
+    /// when their direct route is unavailable. OFF by default
+    /// (explicit consent per `feedback_vulnerable_users_no_creative_paths.md`).
+    /// Per-friend, never network-wide — chiral §28.4 invite-gated
+    /// model. The toggle does not retroactively volunteer for
+    /// existing friends; users opt those in via the friend context
+    /// menu.
+    #[serde(default)]
+    pub auto_volunteer_relay_for_new_friends: bool,
 }
 
 fn default_volume() -> f32 {
@@ -68,6 +78,7 @@ impl Default for Preferences {
             noise_suppression: true,
             echo_cancellation: true,
             auto_away_minutes: 10,
+            auto_volunteer_relay_for_new_friends: false,
         }
     }
 }

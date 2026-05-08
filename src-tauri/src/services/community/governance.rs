@@ -185,9 +185,36 @@ pub async fn write_entry(
         writer: Some(slot_kp),
         ..Default::default()
     };
-    rc.set_dht_value(gov_key, my_slot, payload, Some(write_opts))
+    let write_outcome = rc
+        .set_dht_value(gov_key.clone(), my_slot, payload.clone(), Some(write_opts))
         .await
         .map_err(|e| format!("governance SMPL write failed: {e}"))?;
+    // M9.5 — Veilid's `set_dht_value` returns `Some(stale_data)` when
+    // the network's view is newer than ours, which means our write was
+    // NOT accepted. Surface that as an error so the caller doesn't
+    // emit the GovernanceUpdated event for a write that didn't land.
+    if let Some(stale) = write_outcome {
+        return Err(format!(
+            "governance write conflicted with newer network state ({} bytes); aborting",
+            stale.data().len()
+        ));
+    }
+    // M9.5 — read-back verification. Even when the push succeeds at
+    // our local node, network propagation can fail (offline storage
+    // nodes, route fault). Force a fresh read and confirm the payload
+    // we wrote is what the network now serves.
+    let verify = rc
+        .get_dht_value(gov_key, my_slot, true)
+        .await
+        .map_err(|e| format!("governance verify read-back failed: {e}"))?
+        .ok_or("governance verify: read-back returned empty after write")?;
+    if verify.data() != payload.as_slice() {
+        return Err(format!(
+            "governance verify failed: read-back differs ({} bytes vs our {})",
+            verify.data().len(),
+            payload.len()
+        ));
+    }
 
     let notification = CommunityEnvelope::Control(ControlPayload::GovernanceUpdated {
         governance_key: gov_key_str,

@@ -13,6 +13,8 @@ export async function handleLoadSettings(): Promise<void> {
       startMinimized: prefs.startMinimized,
       showGameActivity: prefs.gameDetectionEnabled,
       autoAwayMinutes: prefs.autoAwayMinutes,
+      autoVolunteerRelayForNewFriends:
+        prefs.autoVolunteerRelayForNewFriends ?? false,
     });
   } catch (e) {
     console.error("Failed to load settings:", e);
@@ -43,6 +45,9 @@ export async function handleSaveSettings(
       }),
       ...(settings.autoAwayMinutes !== undefined && {
         autoAwayMinutes: settings.autoAwayMinutes,
+      }),
+      ...(settings.autoVolunteerRelayForNewFriends !== undefined && {
+        autoVolunteerRelayForNewFriends: settings.autoVolunteerRelayForNewFriends,
       }),
     };
     await commands.setPreferences(updated);

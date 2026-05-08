@@ -295,6 +295,39 @@ pub enum MessagePayload {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         route_blob: Vec<u8>,
     },
+    /// W11.4 (P6.2) — DM video frame fragment for 1:1 video calls.
+    ///
+    /// The frame's `ciphertext` is encrypted by the existing
+    /// `send_envelope_to_peer` Signal Double Ratchet path before
+    /// transport — this variant is the inner plaintext payload that
+    /// gets wrapped. Receivers reassemble fragments by `(stream_id,
+    /// frame_seq)` until `fragment_count` chunks accumulate, then hand
+    /// off to the WebCodecs VideoDecoder.
+    ///
+    /// We use the same VP9 + 480p shape as community video but route
+    /// 1:1 instead of mesh. Mirrors `CommunityEnvelope::VideoFragment`
+    /// (architecture §10.6) without MEK or community context: the DM
+    /// session keys (Signal) cover both authentication and
+    /// confidentiality.
+    DmVideoFragment {
+        /// 16-byte stream identifier — stable for the lifetime of one
+        /// camera or screen-share session within a call.
+        stream_id: [u8; 16],
+        /// Monotonic frame counter per stream, starting at 0.
+        frame_seq: u32,
+        /// 0-based fragment index within this frame.
+        fragment_index: u16,
+        /// Total fragments for this frame. Receivers wait until they
+        /// have all `fragment_count` to reassemble.
+        fragment_count: u16,
+        /// True for VP9 keyframes (decoder bootstrapping).
+        keyframe: bool,
+        /// Encoder-provided presentation timestamp.
+        timestamp: u32,
+        /// VP9 chunk bytes (no nested encryption — Signal layer
+        /// encrypts the whole envelope before transport).
+        chunk: Vec<u8>,
+    },
 }
 
 /// Game information for rich presence.

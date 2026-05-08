@@ -57,6 +57,12 @@ impl TokenBucket {
         self.capacity
     }
 
+    /// Timestamp of the last refill, used by receiver-side limiters
+    /// to identify idle buckets for pruning (M10.4).
+    pub fn last_refill(&self) -> Instant {
+        self.last_refill
+    }
+
     /// Convenience constructor for the default 10 msg/sec channel limit.
     pub fn ten_per_second() -> Self {
         Self::new(10, 10)

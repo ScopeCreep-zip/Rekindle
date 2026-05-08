@@ -251,6 +251,50 @@ pub enum ControlPayload {
         sender_pseudonym: String,
         wrapped_mek: Vec<u8>,
     },
+    /// P1.3 — requester → responder ack confirming successful
+    /// `MekTransfer` ingestion. Sent as the `app_call` reply by the
+    /// MekTransfer receiver after MEK unwrap succeeds. Lets the
+    /// responder distinguish app-layer success (decryption worked)
+    /// from network-layer success (packet arrived) so a misrouted or
+    /// generation-mismatched transfer surfaces in observability
+    /// rather than disappearing into a synchronous `ACK`.
+    ///
+    /// Wire format: Cap'n Proto `MekTransferAckPayload` (ordinal 67 in
+    /// `community_envelope.capnp`). Forward-compatible: peers built
+    /// before this variant existed see `Which::NotInSchema` and fall
+    /// back to treating the reply as a bare ACK.
+    MekTransferAck {
+        community_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        channel_id: Option<String>,
+        generation: u64,
+        /// Hex pseudonym of the receiver (us, the requester) — lets
+        /// the responder match the ack against in-flight transfers
+        /// indexed by `(community_id, channel_id, generation,
+        /// requester_pseudonym)`.
+        requester_pseudonym: String,
+    },
+    /// P4.3 — joiner → admins gossip request to expand the community's
+    /// Plate Gate segments. Issued by `claim_registry_slot` when every
+    /// slot in the highest existing segment is occupied AND the joiner
+    /// lacks `MANAGE_COMMUNITY`. Admins receiving this gossip
+    /// invoke `expand_community_segment` which emits a `SegmentAdded`
+    /// governance entry; the joiner watches for the new segment via
+    /// the merged governance state and retries slot claim.
+    ///
+    /// Wire format: Cap'n Proto `RequestSegmentExpansionPayload`
+    /// (ordinal 68 in `community_envelope.capnp`).
+    RequestSegmentExpansion {
+        community_id: String,
+        requester_pseudonym: String,
+        /// Highest segment_index the joiner saw as full when the
+        /// request was issued. Admins use this to dedup concurrent
+        /// expansion requests — only the first admin's
+        /// `expand_community_segment` call lands; later receivers see
+        /// `next_segment_index > full_segment_index + 1` in their
+        /// merged governance state and no-op.
+        full_segment_index: u32,
+    },
     /// Broadcast: member completed onboarding.
     OnboardingComplete {
         pseudonym_key: String,
@@ -851,6 +895,88 @@ mod tests {
         match back {
             CommunityEnvelope::Control(ControlPayload::MemberLeave { pseudonym_key }) => {
                 assert_eq!(pseudonym_key, "abc123");
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn mek_transfer_ack_capnp_roundtrip() {
+        // P1.3 — verify the new MekTransferAck variant survives Cap'n
+        // Proto encode/decode with all fields preserved including the
+        // optional channel_id (hasChannelId boolean toggle).
+        let payload = ControlPayload::MekTransferAck {
+            community_id: "veilid:abc".into(),
+            channel_id: Some("ch_42".into()),
+            generation: 17,
+            requester_pseudonym: "deadbeef".repeat(4), // 32-hex-char pseudonym
+        };
+        let bytes =
+            encode_community_envelope(&CommunityEnvelope::Control(payload)).unwrap();
+        let back =
+            crate::capnp_envelope::decode_community_envelope(&bytes).unwrap();
+        match back {
+            CommunityEnvelope::Control(ControlPayload::MekTransferAck {
+                community_id,
+                channel_id,
+                generation,
+                requester_pseudonym,
+            }) => {
+                assert_eq!(community_id, "veilid:abc");
+                assert_eq!(channel_id.as_deref(), Some("ch_42"));
+                assert_eq!(generation, 17);
+                assert_eq!(requester_pseudonym, "deadbeef".repeat(4));
+            }
+            _ => panic!("wrong variant"),
+        }
+
+        // Also verify the channel_id == None path round-trips cleanly
+        // — this is the community-wide MEK case.
+        let payload_none = ControlPayload::MekTransferAck {
+            community_id: "veilid:xyz".into(),
+            channel_id: None,
+            generation: 99,
+            requester_pseudonym: "cafebabe".repeat(4),
+        };
+        let bytes =
+            encode_community_envelope(&CommunityEnvelope::Control(payload_none)).unwrap();
+        let back =
+            crate::capnp_envelope::decode_community_envelope(&bytes).unwrap();
+        match back {
+            CommunityEnvelope::Control(ControlPayload::MekTransferAck {
+                channel_id,
+                generation,
+                ..
+            }) => {
+                assert!(channel_id.is_none(), "None channel_id must round-trip");
+                assert_eq!(generation, 99);
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn request_segment_expansion_capnp_roundtrip() {
+        // P4.3 — RequestSegmentExpansion variant must round-trip
+        // cleanly through the Cap'n Proto codec.
+        let payload = ControlPayload::RequestSegmentExpansion {
+            community_id: "veilid:plate".into(),
+            requester_pseudonym: "feedface".repeat(4),
+            full_segment_index: 0,
+        };
+        let bytes =
+            encode_community_envelope(&CommunityEnvelope::Control(payload)).unwrap();
+        let back =
+            crate::capnp_envelope::decode_community_envelope(&bytes).unwrap();
+        match back {
+            CommunityEnvelope::Control(ControlPayload::RequestSegmentExpansion {
+                community_id,
+                requester_pseudonym,
+                full_segment_index,
+            }) => {
+                assert_eq!(community_id, "veilid:plate");
+                assert_eq!(requester_pseudonym, "feedface".repeat(4));
+                assert_eq!(full_segment_index, 0);
             }
             _ => panic!("wrong variant"),
         }

@@ -2457,23 +2457,42 @@ fn initialize_signal_manager(
         Box::new(session_store),
     );
 
-    // Generate initial PreKeyBundle (signed prekey #1, one-time prekey #1)
-    let bundle_bytes = match manager.generate_prekey_bundle(1, Some(1)) {
-        Ok(bundle) => {
+    // P1.2 — prefer the existing prekey bundle if Stronghold already
+    // has prekey #1 + signed_prekey #1 from a prior login. Calling
+    // `generate_prekey_bundle` unconditionally would overwrite both
+    // keys in Stronghold AND publish a fresh bundle to DHT subkey 5,
+    // breaking peers' cached PreKeyBundles + any in-flight messages
+    // encrypted under the previous bundle. Mint fresh ONLY when no
+    // existing bundle is loadable.
+    let bundle_result = match manager.load_existing_prekey_bundle(1, Some(1)) {
+        Ok(Some(bundle)) => {
             tracing::info!(
                 registration_id = bundle.registration_id,
-                "Signal session manager initialized with PreKeyBundle"
+                "Signal session manager initialized — reusing existing PreKeyBundle from Stronghold"
             );
-            match serde_json::to_vec(&bundle) {
-                Ok(bytes) => Some(bytes),
-                Err(e) => {
-                    tracing::warn!(error = %e, "failed to serialize PreKeyBundle for DHT publication");
-                    None
-                }
-            }
+            Ok(bundle)
+        }
+        Ok(None) => {
+            tracing::info!(
+                "No existing PreKeyBundle in Stronghold — generating fresh bundle"
+            );
+            manager.generate_prekey_bundle(1, Some(1))
         }
         Err(e) => {
-            tracing::warn!(error = %e, "failed to generate initial PreKeyBundle — sessions will still work via respond_to_session");
+            tracing::warn!(error = %e, "failed to load existing PreKeyBundle — falling through to generate");
+            manager.generate_prekey_bundle(1, Some(1))
+        }
+    };
+    let bundle_bytes = match bundle_result {
+        Ok(bundle) => match serde_json::to_vec(&bundle) {
+            Ok(bytes) => Some(bytes),
+            Err(e) => {
+                tracing::warn!(error = %e, "failed to serialize PreKeyBundle for DHT publication");
+                None
+            }
+        },
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to obtain PreKeyBundle — sessions will still work via respond_to_session");
             None
         }
     };

@@ -10,6 +10,7 @@ workspace = true
 [dependencies]
 rekindle-types = { path = "../rekindle-types" }
 rekindle-codec = { path = "../rekindle-codec" }
+blake3 = "1"
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }

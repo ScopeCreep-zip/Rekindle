@@ -6,3 +6,33 @@ future-size-threshold = 32768
 large-error-threshold = 256
 msrv = "1.87"
 avoid-breaking-exported-api = false
+
+# ─── Disallowed methods ─────────────────────────────────────────────────
+# Each entry maps a "do not call" path to a recommended replacement or
+# reason. When clippy fires it, the hint is shown to the contributor.
+# Spec: https://rust-lang.github.io/rust-clippy/master/#disallowed_methods
+
+disallowed-methods = [
+    # ── Concurrency: prefer parking_lot over std::sync ───────────
+    # parking_lot::Mutex is faster, doesn't poison on panic, and
+    # matches the convention already used across the workspace.
+    { path = "std::sync::Mutex::new", reason = "Use parking_lot::Mutex::new — faster, no poison." },
+    { path = "std::sync::RwLock::new", reason = "Use parking_lot::RwLock::new." },
+
+    # ── Time: prefer rekindle-utils helpers ──────────────────────
+    # rekindle-utils::time provides monotonic + clock helpers that
+    # respect the project's testing seam.
+    { path = "std::time::SystemTime::now", reason = "Use rekindle_utils::time::now_ms / now_secs for testability." },
+]
+
+# ─── Disallowed types ──────────────────────────────────────────────────
+# Same idea, applied to types. We keep this short — most "do not use"
+# cases are better expressed at the dependency-graph level via
+# cargo-deny `[bans]` and the per-crate boundary check in
+# `cargo xtask check-boundaries`.
+
+disallowed-types = [
+    # No entries today. When a "do not import this type from outside
+    # crate X" rule is needed, cargo-deny `wrappers` is usually the
+    # cleaner enforcement point — see deny.toml `[bans]`.
+]

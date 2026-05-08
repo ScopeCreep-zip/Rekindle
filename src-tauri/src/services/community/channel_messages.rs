@@ -68,7 +68,6 @@ struct ChannelWriteContext {
     slot_index: u32,
     /// Which segment hosts the writer. Captured here so retry queues +
     /// audit logging carry segment context.
-    #[allow(dead_code)]
     segment_index: u32,
 }
 
@@ -642,6 +641,17 @@ async fn retry_write_once(state: &SharedState, pending: &PendingWrite) -> Result
         .ok_or("channel write retry context not found")?;
     let message: ChannelMessage = serde_json::from_slice(&pending.data)
         .map_err(|e| format!("deserialize queued channel message: {e}"))?;
+    // Trace the segment context BEFORE the actual write attempt so any
+    // backend tracing pipeline correlating retry-failures to a segment
+    // (Plate Gate audit case) sees the join even if `write_message_once`
+    // succeeds. Mirrors the contract on `ChannelWriteContext.segment_index`.
+    tracing::trace!(
+        community = %context.community_id,
+        channel = %context.channel_id,
+        segment_index = context.segment_index,
+        attempt = pending.attempt,
+        "retrying queued channel write"
+    );
     write_message_once(state, &context, &message, context.slot_index).await?;
     emit_delivery_event(
         state,

@@ -7,6 +7,7 @@ pub mod error;
 pub mod jitter;
 pub mod mixer;
 pub mod playback;
+pub mod replay_window;
 pub mod transport;
 
 pub use error::VoiceError;

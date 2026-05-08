@@ -20,3 +20,4 @@ serde = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 hex = "0.4"
+parking_lot = "0.12"

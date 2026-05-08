@@ -414,6 +414,28 @@ pub async fn accept_request(
         crate::invite_helpers::mark_invite_accepted(pool.inner(), &ok, iid);
     }
 
+    // W11.3 — auto-volunteer to relay for the new friend if the user
+    // has explicitly opted in via Settings. Default is OFF; turning it
+    // on is an explicit consent that future friend-accepts also extend
+    // a Strand Relay route. Failures are non-fatal — the friendship
+    // succeeds either way; the user can volunteer manually via the
+    // friend context menu later.
+    if auto_volunteer_relay_enabled(&app) {
+        if let Err(e) = crate::services::relay::offer::volunteer_relay(
+            state.inner(),
+            pool.inner(),
+            &public_key,
+        )
+        .await
+        {
+            tracing::debug!(
+                friend = %public_key,
+                error = %e,
+                "auto-volunteer Strand Relay route failed (friendship still accepted)"
+            );
+        }
+    }
+
     let _ = app.emit(
         "chat-event",
         &ChatEvent::FriendRequestAccepted {
@@ -423,6 +445,23 @@ pub async fn accept_request(
     );
 
     Ok(())
+}
+
+/// W11.3 — read the auto-volunteer Strand Relay preference from the
+/// Tauri Store. Defaults to `false` (no auto-volunteer) on any error
+/// or when the field is absent — explicit consent per
+/// `feedback_vulnerable_users_no_creative_paths.md`.
+fn auto_volunteer_relay_enabled(app: &tauri::AppHandle) -> bool {
+    use tauri_plugin_store::StoreExt;
+    let Ok(store) = app.store("preferences.json") else {
+        return false;
+    };
+    let Some(val) = store.get("preferences") else {
+        return false;
+    };
+    val.get("autoVolunteerRelayForNewFriends")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
 }
 
 /// Pending friend request data: `(profile_dht_key, mailbox_dht_key, route_blob, prekey_bundle, invite_id)`.

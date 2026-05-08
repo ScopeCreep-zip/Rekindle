@@ -452,7 +452,53 @@ pub async fn handle_incoming_message(
                 &route_blob,
             );
         }
+        MessagePayload::DmVideoFragment {
+            stream_id,
+            frame_seq,
+            fragment_index,
+            fragment_count,
+            keyframe,
+            timestamp,
+            chunk,
+        } => {
+            // W11.4 — accumulate fragments and emit a `videoFrame`
+            // event when the last chunk lands. The Signal layer has
+            // already verified authenticity (sender's identity key is
+            // bound to the envelope), so we don't repeat per-fragment
+            // signatures the way community video does.
+            if let Some(frame) = state.dm_video_reassembly.record_fragment(
+                &msg.sender_hex,
+                stream_id,
+                frame_seq,
+                fragment_index,
+                fragment_count,
+                keyframe,
+                timestamp,
+                chunk,
+            ) {
+                emit_dm_video_frame(app_handle, &msg.sender_hex, &frame);
+            }
+        }
     }
+}
+
+fn emit_dm_video_frame(
+    app_handle: &tauri::AppHandle,
+    sender_hex: &str,
+    frame: &crate::services::dm::video::AssembledFrame,
+) {
+    use base64::Engine as _;
+    use tauri::Emitter;
+    let payload = serde_json::json!({
+        "kind": "dmVideoFrame",
+        "peerPubkey": sender_hex,
+        "streamIdHex": hex::encode(frame.stream_id),
+        "frameSeq": frame.frame_seq,
+        "keyframe": frame.keyframe,
+        "timestamp": frame.timestamp,
+        "encodedPayloadB64": base64::engine::general_purpose::STANDARD.encode(&frame.data),
+    });
+    let _ = app_handle.emit("dm-video-frame", payload);
 }
 
 /// Parse envelope, check block list, decrypt, deserialize payload, and filter non-friends.
@@ -1972,6 +2018,21 @@ pub async fn send_to_peer_raw(
     payload: &MessagePayload,
 ) -> Result<(), String> {
     send_envelope_to_peer(state, pool, to, payload, false).await
+}
+
+/// W11.4 — encrypted-only public wrapper for DM payloads that MUST go
+/// through the Signal Double Ratchet (DM video fragments,
+/// future encrypted control messages). Mirrors `send_to_peer_raw`
+/// but with `encrypt = true`. Fails closed (no plaintext fallback)
+/// if no Signal session exists — caller surfaces the error so the
+/// user is offered the explicit re-handshake path.
+pub async fn send_to_peer_encrypted(
+    state: &Arc<AppState>,
+    pool: &DbPool,
+    to: &str,
+    payload: &MessagePayload,
+) -> Result<(), String> {
+    send_envelope_to_peer(state, pool, to, payload, true).await
 }
 
 // ---------------------------------------------------------------------------

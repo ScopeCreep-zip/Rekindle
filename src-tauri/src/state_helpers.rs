@@ -1270,13 +1270,26 @@ pub fn increment_lamport(state: &Arc<AppState>, community_id: &str) -> u64 {
 }
 
 /// Merge a received Lamport timestamp into the community's counter.
-/// `counter = max(counter, received) + 1` — standard Lamport merge rule.
-/// Used on every gossip message receive.
-pub fn merge_lamport(state: &Arc<AppState>, community_id: &str, received: u64) {
+/// `counter = max(counter, received) + 1` — standard Lamport merge rule
+/// gated by `MAX_LAMPORT_DRIFT` (M9.2). Returns `true` on accept,
+/// `false` on drift-reject. Caller should drop the corresponding
+/// envelope when this returns `false` so a forged-future Lamport from
+/// a malicious peer cannot fast-forward our clock.
+pub fn merge_lamport(state: &Arc<AppState>, community_id: &str, received: u64) -> bool {
     let mut communities = state.communities.write();
     if let Some(cs) = communities.get_mut(community_id) {
         let mut clock = rekindle_gossip::lamport::LamportClock::new(cs.lamport_counter);
-        cs.lamport_counter = clock.merge(received);
+        match clock.merge(received) {
+            Some(advanced) => {
+                cs.lamport_counter = advanced;
+                true
+            }
+            None => false,
+        }
+    } else {
+        // Unknown community — let downstream decide; we make no claim
+        // about clock state.
+        true
     }
 }
 

@@ -75,6 +75,24 @@ async fn handle_gossip_envelope(
         }
     }
 
+    // M10.4 — receiver-side per-sender gossip rate floor (architecture
+    // §20.2 line 2585). The 10 msg/s cap is enforced even on senders
+    // running modified clients that ignore their own send-side limit.
+    // Drop is silent: we do not forward, do not ack, do not log at info
+    // level (that would amplify the attack via tracing storms).
+    if !crate::services::community::receiver_limits::check_gossip_rate(
+        state,
+        community_id,
+        &signed.sender_pseudonym,
+    ) {
+        tracing::trace!(
+            community = %community_id,
+            sender = %signed.sender_pseudonym,
+            "gossip rate floor exceeded — dropping silently"
+        );
+        return;
+    }
+
     {
         let mut communities = state.communities.write();
         if let Some(cs) = communities.get_mut(community_id) {
@@ -359,6 +377,29 @@ async fn handle_relayed_envelope(
             // the new value via the existing presence/value pipeline so
             // we don't depend on holding a DHT watch slot ourselves.
             let _ = observer_pseudonym;
+
+            // W11.1 — if we have our OWN active watch on this record, our
+            // direct value-change callback will fire (or has already
+            // fired) for the same change. Skipping the relay fetch here
+            // saves a redundant `get_dht_value` round-trip per gossip
+            // notice in the steady state where most members hold their
+            // own watch slots. Members who couldn't get a slot still
+            // fall through to the fetch path below.
+            let we_already_watch = {
+                let communities = state.communities.read();
+                communities
+                    .values()
+                    .any(|cs| cs.watched_records.contains(&record_key))
+            };
+            if we_already_watch {
+                tracing::trace!(
+                    record_key = %record_key,
+                    subkey,
+                    "WatchRelay: skipping fetch — own watch covers this record"
+                );
+                return;
+            }
+
             let routing_context = state_helpers::safe_routing_context(state);
             if let Some(rc) = routing_context {
                 let parsed = record_key.parse::<veilid_core::RecordKey>();
