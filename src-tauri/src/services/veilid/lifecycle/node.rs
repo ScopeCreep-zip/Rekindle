@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::state::{AppState, DHTManagerHandle, NodeHandle, RoutingManagerHandle};
 use tauri::Manager;
 use tokio::sync::mpsc;
@@ -60,6 +62,32 @@ pub async fn initialize_node(
         ),
         route_lifecycle: rekindle_route::lifecycle::RouteLifecycle::new(std::time::Instant::now()),
     });
+
+    // W16.9b — adopt the running VeilidAPI into a TransportNode in
+    // outbound-only mode. Provides Sender / Caller / DhtStore / peer
+    // registry to W16.10's `operations::friend::send_friend_request`
+    // (and future W16.10c/.10b/.10d migrations) without consuming the
+    // host's `update_rx` (the existing `lifecycle::dispatch::run_dispatch_loop`
+    // keeps that). The transport's own dispatch is dormant — incoming
+    // events stay on the legacy code path until each flow migrates.
+    let transport_session = Arc::clone(&state.transport_session);
+    let transport_api = state
+        .node
+        .read()
+        .as_ref()
+        .map(|nh| nh.api.clone())
+        .ok_or("node handle missing immediately after creation — internal bug")?;
+    let transport_config = rekindle_transport::config::TransportConfig {
+        storage_dir: storage_dir.to_string_lossy().into_owned(),
+        ..Default::default()
+    };
+    let tn = rekindle_transport::TransportNode::adopt_outbound(
+        transport_config,
+        transport_api,
+        &transport_session,
+    );
+    *state.transport.write() = Some(Arc::new(tn));
+    tracing::info!("transport node adopted (outbound-only) for W16 send paths");
 
     tracing::info!("rekindle node started and attached");
     Ok(update_rx)

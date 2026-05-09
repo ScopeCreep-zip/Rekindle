@@ -35,7 +35,10 @@ pub struct TransportNode {
     api: VeilidAPI,
     config: Arc<TransportConfig>,
     shutdown_tx: mpsc::Sender<()>,
-    dispatch_handle: tokio::task::JoinHandle<()>,
+    /// `None` for outbound-only adoption (W16.9b) — host runs its own
+    /// dispatch loop, transport provides senders/DHT/peer registry only.
+    /// `Some` for full adoption with transport-owned dispatch.
+    dispatch_handle: Option<tokio::task::JoinHandle<()>>,
     route_refresh_handle: Option<tokio::task::JoinHandle<()>>,
     route_refresh_shutdown_tx: Option<mpsc::Sender<()>>,
     route_manager: Arc<parking_lot::RwLock<RouteManager>>,
@@ -128,7 +131,7 @@ impl TransportNode {
             api,
             config,
             shutdown_tx,
-            dispatch_handle,
+            dispatch_handle: Some(dispatch_handle),
             route_refresh_handle: Some(route_refresh_handle),
             route_refresh_shutdown_tx: Some(rr_tx),
             route_manager,
@@ -153,13 +156,13 @@ impl TransportNode {
     /// On [`Self::shutdown`], `adopt`-ed nodes do NOT detach or shut
     /// down Veilid (the host owns lifecycle). Pass `owns_veilid: false`
     /// to skip the api.detach()/api.shutdown() steps.
-    pub async fn adopt<H: InboundHandler>(
+    pub fn adopt<H: InboundHandler>(
         config: TransportConfig,
         api: VeilidAPI,
         update_rx: mpsc::Receiver<VeilidUpdate>,
-        handler: Arc<H>,
-        session: Arc<parking_lot::RwLock<Option<crate::session::Session>>>,
-    ) -> Result<Self> {
+        handler: &Arc<H>,
+        session: &Arc<parking_lot::RwLock<Option<crate::session::Session>>>,
+    ) -> Self {
         info!(namespace = %config.namespace, "adopting external Veilid node into transport");
 
         let config = Arc::new(config);
@@ -173,7 +176,7 @@ impl TransportNode {
 
         let (shutdown_tx, shutdown_rx) = mpsc::channel(1);
         let dispatch_handle = {
-            let h = Arc::clone(&handler);
+            let h = Arc::clone(handler);
             let c = Arc::clone(&config);
             let a = api.clone();
             let ss = Arc::clone(&shared_state);
@@ -185,24 +188,86 @@ impl TransportNode {
             let a = api.clone();
             let rm = Arc::clone(&route_manager);
             let secs = config.route_refresh_secs;
-            let sess = Arc::clone(&session);
+            let sess = Arc::clone(session);
             let cfg = Arc::clone(&config);
             tokio::spawn(run_route_refresh_loop(a, rm, secs, rr_rx, sess, cfg))
         };
 
         info!("transport node adopted (host owns Veilid lifecycle)");
 
-        Ok(Self {
+        Self {
             api,
             config,
             shutdown_tx,
-            dispatch_handle,
+            dispatch_handle: Some(dispatch_handle),
             route_refresh_handle: Some(route_refresh_handle),
             route_refresh_shutdown_tx: Some(rr_tx),
             route_manager,
             peer_registry,
             shared_state,
-        })
+        }
+    }
+
+    /// W16.9b — adopt an externally-managed Veilid API for OUTBOUND-ONLY use.
+    ///
+    /// The host process keeps its own dispatch loop on `update_rx` (e.g.
+    /// src-tauri's `lifecycle::dispatch::run_dispatch_loop`). This mode
+    /// gives the caller `Sender`, `Caller`, `DhtStore`, and the peer
+    /// registry — everything needed for outbound `app_message`,
+    /// `app_call`, and DHT operations — without consuming inbound
+    /// updates. Useful during migration: the host's existing
+    /// receive-side service code keeps handling inbound events while
+    /// new send paths route through transport's typed APIs (e.g.
+    /// `operations::friend::send_friend_request`, `operations::dm_invite`).
+    ///
+    /// The route_refresh_loop is still spawned because outbound sends
+    /// need fresh local routes. Inbound dispatch is the host's job.
+    ///
+    /// Use [`Self::shutdown_borrowed`] to stop the route refresh loop
+    /// when shutting down. The `dispatch_handle` is `None`, so shutdown
+    /// is a noop on that front.
+    pub fn adopt_outbound(
+        config: TransportConfig,
+        api: VeilidAPI,
+        session: &Arc<parking_lot::RwLock<Option<crate::session::Session>>>,
+    ) -> Self {
+        info!(namespace = %config.namespace, "adopting Veilid (outbound-only) into transport");
+
+        let config = Arc::new(config);
+        let route_manager = Arc::new(parking_lot::RwLock::new(RouteManager::new()));
+        let peer_registry = Arc::new(parking_lot::RwLock::new(PeerRegistry::new(
+            config.route_cache_ttl_secs,
+            config.circuit_breaker_threshold,
+            config.circuit_breaker_cooldown_secs,
+        )));
+        let shared_state = SharedState::new();
+
+        // Send-side only — no dispatch loop.
+        let (shutdown_tx, _shutdown_rx) = mpsc::channel(1);
+
+        let (rr_tx, rr_rx) = mpsc::channel(1);
+        let route_refresh_handle = {
+            let a = api.clone();
+            let rm = Arc::clone(&route_manager);
+            let secs = config.route_refresh_secs;
+            let sess = Arc::clone(session);
+            let cfg = Arc::clone(&config);
+            tokio::spawn(run_route_refresh_loop(a, rm, secs, rr_rx, sess, cfg))
+        };
+
+        info!("transport node adopted (outbound-only — host owns dispatch + Veilid lifecycle)");
+
+        Self {
+            api,
+            config,
+            shutdown_tx,
+            dispatch_handle: None,
+            route_refresh_handle: Some(route_refresh_handle),
+            route_refresh_shutdown_tx: Some(rr_tx),
+            route_manager,
+            peer_registry,
+            shared_state,
+        }
     }
 
     /// Shutdown without detaching/teardown of Veilid (for `adopt`-ed
@@ -217,8 +282,10 @@ impl TransportNode {
             let _ = h.await;
         }
         let _ = self.shutdown_tx.send(()).await;
-        if let Err(e) = self.dispatch_handle.await {
-            warn!(error = %e, "dispatch loop join failed");
+        if let Some(handle) = self.dispatch_handle.take() {
+            if let Err(e) = handle.await {
+                warn!(error = %e, "dispatch loop join failed");
+            }
         }
         info!("transport node (borrowed) dispatch + route refresh stopped");
         Ok(())
@@ -236,8 +303,10 @@ impl TransportNode {
         }
 
         let _ = self.shutdown_tx.send(()).await;
-        if let Err(e) = self.dispatch_handle.await {
-            warn!(error = %e, "dispatch loop join failed");
+        if let Some(handle) = self.dispatch_handle.take() {
+            if let Err(e) = handle.await {
+                warn!(error = %e, "dispatch loop join failed");
+            }
         }
 
         // Best-effort release of our allocated route before detach.

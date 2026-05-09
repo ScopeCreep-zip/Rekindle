@@ -27,6 +27,26 @@ pub struct AppState {
     pub dht_manager: Arc<RwLock<Option<DHTManagerHandle>>>,
     /// Routing manager for private route lifecycle.
     pub routing_manager: Arc<RwLock<Option<RoutingManagerHandle>>>,
+    /// W16.9b — outbound-only `TransportNode` adopted against the host's
+    /// running VeilidAPI (`NodeHandle.api`). Provides `Sender`, `Caller`,
+    /// `DhtStore`, peer registry, and route refresh — without consuming
+    /// `update_rx` (host's `lifecycle::dispatch::run_dispatch_loop`
+    /// keeps that). Send paths in transport's `operations::*`
+    /// (`friend::send_friend_request`, `dm_invite::send_dm_invite`,
+    /// future `calls::*`) call into this. Receive paths go through
+    /// existing src-tauri services until those services migrate
+    /// flow-by-flow.
+    pub transport: Arc<RwLock<Option<Arc<rekindle_transport::TransportNode>>>>,
+    /// W16.9b — transport's `Session` mirroring src-tauri's identity +
+    /// friend-inbox metadata. Populated at login (W16.9c). Shared with
+    /// the transport's route_refresh_loop so community routes refresh
+    /// alongside the personal route. `None` before login.
+    pub transport_session:
+        Arc<parking_lot::RwLock<Option<rekindle_transport::session::Session>>>,
+    /// W16.9b — durable retry queue store (W16.1). Used by
+    /// `EnvelopeQueue` for DM body sends + future expect-reply flows.
+    /// `Some` after app startup wires `SqliteEnvelopeStore`.
+    pub envelope_store: Arc<RwLock<Option<Arc<dyn rekindle_transport::EnvelopeStore>>>>,
     /// Signal session manager (set after identity unlock).
     pub signal_manager: Arc<Mutex<Option<SignalManagerHandle>>>,
     /// Game detector state.
@@ -228,6 +248,9 @@ impl Default for AppState {
             node: Arc::new(RwLock::new(None)),
             dht_manager: Arc::new(RwLock::new(None)),
             routing_manager: Arc::new(RwLock::new(None)),
+            transport: Arc::new(RwLock::new(None)),
+            transport_session: Arc::new(parking_lot::RwLock::new(None)),
+            envelope_store: Arc::new(RwLock::new(None)),
             signal_manager: Arc::new(Mutex::new(None)),
             game_detector: Arc::new(Mutex::new(None)),
             voice_engine: Arc::new(Mutex::new(None)),
