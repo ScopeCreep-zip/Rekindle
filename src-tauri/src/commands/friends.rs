@@ -357,24 +357,33 @@ pub async fn accept_request(
 
     // Establish initiator-side Signal session using the requester's stored prekey bundle.
     // We (the acceptor) are the Signal initiator; the requester will be the responder.
-    // Clear any stale session first (e.g., from a previous friendship that was removed).
+    //
+    // W16.10e (fix B) — guard against re-establishing a session that's
+    // already up. Our `rekindle-crypto` Signal port does not have
+    // libsignal's `archiveCurrentState` / `previous_session_states`
+    // mechanism (`crates/rekindle-crypto/src/signal/session.rs:156, 271`
+    // unconditionally `store_session` overwrites). Calling
+    // `establish_session` redundantly destroys a working session AND
+    // forces the peer to re-handshake on their side
+    // (consuming a one-time prekey, advancing ratchet state).
+    //
+    // Pattern matches libsignal's `SessionBuilder.java:116` short-circuit
+    // (`if sessionRecord.hasSessionState(version, baseKey) ... return Optional.absent();`)
+    // adapted to our simpler primitive: if we already have a session
+    // AND the peer's identity_key matches what we trust, the existing
+    // session is good — skip the X3DH and reuse it.
     let session_init = if let Some(ref prekey_bytes) = pending_prekey_bundle {
         let signal = state.signal_manager.lock();
         if let Some(handle) = signal.as_ref() {
-            let _ = handle.manager.delete_session(&public_key);
-            if let Ok(bundle) =
-                serde_json::from_slice::<rekindle_crypto::signal::PreKeyBundle>(prekey_bytes)
-            {
-                match handle.manager.establish_session(&public_key, &bundle) {
-                    Ok(info) => {
-                        tracing::info!(peer = %public_key, "established initiator Signal session on accept");
-                        Some(info)
-                    }
+            // Parse identity_key out of the bundle ahead of the session
+            // check so the TOFU comparison can short-circuit.
+            let bundle =
+                match serde_json::from_slice::<rekindle_crypto::signal::PreKeyBundle>(prekey_bytes)
+                {
+                    Ok(b) => Some(b),
                     Err(e) => {
-                        // W16.10d — was silent warn. Per Signal/SimpleX
-                        // consensus on never-silent crypto failures.
                         tracing::error!(peer = %public_key, error = %e,
-                            "failed to establish Signal session on accept — recipient won't receive ephemeral_key, encrypted DMs to them will fail AEAD on their side");
+                            "failed to deserialize stored prekey bundle — cannot establish Signal session");
                         let peer_label = state_helpers::friend_display_name(state.inner(), &public_key)
                             .unwrap_or_else(|| format!("{}…", &public_key[..16.min(public_key.len())]));
                         let _ = app.emit(
@@ -382,9 +391,7 @@ pub async fn accept_request(
                             &crate::channels::NotificationEvent::SystemAlert {
                                 title: "Couldn't establish secure session".into(),
                                 body: format!(
-                                    "Failed to establish encrypted session with {peer_label}: {e}. \
-                                     Their side will not receive the session-init data; \
-                                     subsequent encrypted messages will fail. \
+                                    "Stored prekey bundle for {peer_label} is unparseable. \
                                      Tell them to re-send the friend request, then verify their \
                                      safety number out-of-band before accepting again."
                                 ),
@@ -392,26 +399,60 @@ pub async fn accept_request(
                         );
                         None
                     }
+                };
+
+            // Bundle parse failure was already handled in the match
+            // above (None branch + SystemAlert). If we still have a
+            // bundle, decide whether to skip (existing session OK) or
+            // establish a fresh one.
+            match bundle {
+                None => None,
+                Some(bundle) => {
+                    let already_established = handle
+                        .manager
+                        .has_session(&public_key)
+                        .unwrap_or(false)
+                        && handle
+                            .manager
+                            .is_trusted_identity(&public_key, &bundle.identity_key)
+                            .unwrap_or(false);
+                    if already_established {
+                        tracing::info!(peer = %public_key,
+                            "session already established for peer — skipping establish_session \
+                             (W16.10e idempotency)");
+                        None
+                    } else {
+                        match handle.manager.establish_session(&public_key, &bundle) {
+                            Ok(info) => {
+                                tracing::info!(peer = %public_key,
+                                    "established initiator Signal session on accept");
+                                Some(info)
+                            }
+                            Err(e) => {
+                                // W16.10d — was silent warn. Per Signal/SimpleX
+                                // consensus on never-silent crypto failures.
+                                tracing::error!(peer = %public_key, error = %e,
+                                    "failed to establish Signal session on accept — recipient won't receive ephemeral_key, encrypted DMs to them will fail AEAD on their side");
+                                let peer_label = state_helpers::friend_display_name(state.inner(), &public_key)
+                                    .unwrap_or_else(|| format!("{}…", &public_key[..16.min(public_key.len())]));
+                                let _ = app.emit(
+                                    "notification-event",
+                                    &crate::channels::NotificationEvent::SystemAlert {
+                                        title: "Couldn't establish secure session".into(),
+                                        body: format!(
+                                            "Failed to establish encrypted session with {peer_label}: {e}. \
+                                             Their side will not receive the session-init data; \
+                                             subsequent encrypted messages will fail. \
+                                             Tell them to re-send the friend request, then verify their \
+                                             safety number out-of-band before accepting again."
+                                        ),
+                                    },
+                                );
+                                None
+                            }
+                        }
+                    }
                 }
-            } else {
-                // W16.10d — was silent warn. Surface the bundle-parse
-                // failure so the user can re-handshake.
-                tracing::error!(peer = %public_key,
-                    "failed to deserialize stored prekey bundle — cannot establish Signal session");
-                let peer_label = state_helpers::friend_display_name(state.inner(), &public_key)
-                    .unwrap_or_else(|| format!("{}…", &public_key[..16.min(public_key.len())]));
-                let _ = app.emit(
-                    "notification-event",
-                    &crate::channels::NotificationEvent::SystemAlert {
-                        title: "Couldn't establish secure session".into(),
-                        body: format!(
-                            "Stored prekey bundle for {peer_label} is unparseable. \
-                             Tell them to re-send the friend request, then verify their \
-                             safety number out-of-band before accepting again."
-                        ),
-                    },
-                );
-                None
             }
         } else {
             None

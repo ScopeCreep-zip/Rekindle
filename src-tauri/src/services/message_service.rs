@@ -778,8 +778,39 @@ fn handle_friend_accept(
 
     let signal = state.signal_manager.lock();
     if let Some(handle) = signal.as_ref() {
-        // Clear any stale session first (e.g., from a previous friendship that was removed)
-        let _ = handle.manager.delete_session(sender_hex);
+        // W16.10e (fix C) — guard against re-running responder X3DH on a
+        // session that's already up. Our `rekindle-crypto` Signal port
+        // overwrites session storage on every `respond_to_session` call
+        // AND consumes a fresh one-time prekey
+        // (`session.rs:242: self.prekeys.remove_prekey(otpk_id)?`). If
+        // the peer's FriendAccept retries (their FriendRequestReceived
+        // ACK was lost; sync_service re-fires), running this twice
+        // wipes the working session AND the second call fails with
+        // "one-time prekey not found" because the otpk was consumed.
+        //
+        // Pattern matches libsignal's `SessionBuilder.java:116`
+        // short-circuit (`hasSessionState(version, baseKey)` →
+        // `return Optional.absent()`), adapted to our simpler primitive:
+        // skip if we already have a session AND the peer's identity_key
+        // matches the trusted record. The `delete_session` call (was
+        // unconditional) is dropped — it's the symptom, not the cure;
+        // with the guard in place there's nothing stale to delete.
+        let already_established = handle
+            .manager
+            .has_session(sender_hex)
+            .unwrap_or(false)
+            && handle
+                .manager
+                .is_trusted_identity(sender_hex, &their_identity_key)
+                .unwrap_or(false);
+
+        if already_established {
+            tracing::info!(from = %sender_hex,
+                "session already established for peer — skipping respond_to_session \
+                 (W16.10e idempotency; preserves working session + one-time prekey)");
+            return;
+        }
+
         match handle.manager.respond_to_session(
             sender_hex,
             &their_identity_key,
@@ -1223,26 +1254,113 @@ async fn handle_friend_request_full(
             auto_accept_cross_request(app_handle, state, pool, req).await;
             return;
         }
-        if fs == crate::state::FriendshipState::Removing
-            || fs == crate::state::FriendshipState::Accepted
-        {
-            // Removing: previous friendship being removed — clear stale state.
-            // Accepted: peer removed us (their Unfriended was lost/delayed) and
-            // re-added us. Following Briar's "re-add = new contact" pattern:
-            // remove stale friendship state and treat as fresh incoming request.
+        if fs == crate::state::FriendshipState::Accepted {
+            // W16.10e (fix A) — receive-side dedup. The previous behavior
+            // (silent wipe + re-prompt the user as a fresh incoming request)
+            // matched the comment's "Briar re-add = new contact" intent
+            // but missed Briar's actual receive-side dedup at the BSP
+            // layer. With our existing retry queue (sync_service @ 30s),
+            // network duplicates of the same FriendRequest are routine —
+            // and every duplicate was destroying the working session.
+            //
+            // Pattern matches SimpleX's `withInvLock c (strEncode inv)` +
+            // `case conn` discriminator (Agent.hs ~L1900): an Active
+            // duplex connection refuses retry mutations; only the
+            // bundle's identity_key change (genuine peer re-onboard)
+            // requires explicit user consent.
+            //
+            // libsignal's analog is `IdentityKeyStore::is_trusted_identity`
+            // TOFU (IdentityKeyStore.java:54-60): identity matches stored
+            // → safe to proceed; mismatch → require explicit user trust
+            // via Direction::SENDING UntrustedIdentityException.
+            let bundle_identity_key = serde_json::from_slice::<
+                rekindle_crypto::signal::PreKeyBundle,
+            >(req.prekey_bundle)
+            .ok()
+            .map(|b| b.identity_key);
+
+            let identity_matches = if let Some(ref ik) = bundle_identity_key {
+                let signal = state.signal_manager.lock();
+                signal
+                    .as_ref()
+                    .and_then(|h| h.manager.is_trusted_identity(req.sender_hex, ik).ok())
+                    .unwrap_or(false)
+            } else {
+                false
+            };
+
+            if identity_matches {
+                // Network retry — peer is the same identity, just re-sending
+                // because their FriendRequestReceived ACK never landed
+                // (or the retry queue is in flight). Re-send the ACK
+                // synchronously to silence their retry; do NOT wipe the
+                // friendship, do NOT prompt the user, do NOT touch the
+                // Signal session.
+                tracing::info!(
+                    from = %req.sender_hex,
+                    "FriendRequest from already-Accepted peer with matching identity — \
+                     treating as retry, re-sending ACK"
+                );
+                if let Err(e) = send_to_peer_raw(
+                    state,
+                    pool,
+                    req.sender_hex,
+                    &MessagePayload::FriendRequestReceived,
+                )
+                .await
+                {
+                    tracing::debug!(
+                        to = %req.sender_hex,
+                        error = %e,
+                        "failed to re-send FriendRequestReceived ACK on retry — sender's \
+                         retry queue will fire again later"
+                    );
+                }
+                return;
+            }
+
+            // Identity mismatch — peer re-onboarded with new keys, OR
+            // someone is impersonating. Per the vulnerable-user safety
+            // stance (`feedback_vulnerable_users_no_creative_paths.md`):
+            // never silently wipe / never auto-trust new keys / always
+            // require explicit user consent verified against an
+            // out-of-band safety number. Surface as a SystemAlert
+            // pointing at the existing Reset Secure Session path; the
+            // user's friendship + session stay untouched until they
+            // explicitly confirm.
+            let peer_label = state_helpers::friend_display_name(state, req.sender_hex)
+                .unwrap_or_else(|| {
+                    format!("{}…", &req.sender_hex[..16.min(req.sender_hex.len())])
+                });
+            tracing::error!(
+                from = %req.sender_hex,
+                "FriendRequest from already-Accepted peer with DIFFERENT identity_key — \
+                 leaving existing friendship intact, asking user to verify and reset"
+            );
+            let _ = app_handle.emit(
+                "notification-event",
+                &crate::channels::NotificationEvent::SystemAlert {
+                    title: "Peer's identity key has changed".into(),
+                    body: format!(
+                        "{peer_label} sent a friend request with a new identity key. \
+                         This usually means they re-installed the app, but it could also \
+                         be an impersonation attempt. Verify their safety number out-of-band \
+                         (phone call, in person), then click 'Reset Secure Session' from \
+                         their friend menu to accept the new keys."
+                    ),
+                },
+            );
+            return;
+        }
+        if fs == crate::state::FriendshipState::Removing {
+            // Removing: user explicitly initiated removal. Clear stale
+            // state and treat the incoming request as a fresh contact.
             state.friends.write().remove(req.sender_hex);
-
-            // Delete stale DB rows so future accept creates a clean entry
             crate::friend_repo::fire_delete_friend(state, pool, req.sender_hex);
-
-            // Clean up any lingering pending request row
             delete_pending_request_row(state, pool, req.sender_hex);
-
             tracing::info!(
                 from = %req.sender_hex,
-                previous_state = ?fs,
-                "received friend request from {} peer — treating as new request",
-                if fs == crate::state::FriendshipState::Removing { "Removing" } else { "Accepted" }
+                "received friend request from Removing peer — treating as new request"
             );
         } else {
             // PendingIn or other unexpected state — just update display name
@@ -1672,16 +1790,34 @@ async fn auto_accept_cross_request(
     }
 
     // 2. Establish Signal session from their prekey bundle
-    // Clear any stale session first (e.g., from a previous friendship that was removed)
+    //
+    // W16.10e (fix B variant) — same idempotency guard as the
+    // accept_request path: skip establish_session if we already have a
+    // working session AND the bundle's identity_key matches our trusted
+    // record. Without this, network-duplicated cross-request handling
+    // wipes the working session on the second arrival.
     let session_init = if req.prekey_bundle.is_empty() {
         None
     } else {
         let signal = state.signal_manager.lock();
         if let Some(handle) = signal.as_ref() {
-            let _ = handle.manager.delete_session(req.sender_hex);
             if let Ok(bundle) =
                 serde_json::from_slice::<rekindle_crypto::signal::PreKeyBundle>(req.prekey_bundle)
             {
+                let already_established = handle
+                    .manager
+                    .has_session(req.sender_hex)
+                    .unwrap_or(false)
+                    && handle
+                        .manager
+                        .is_trusted_identity(req.sender_hex, &bundle.identity_key)
+                        .unwrap_or(false);
+                if already_established {
+                    tracing::info!(peer = %req.sender_hex,
+                        "session already established for peer — skipping establish_session \
+                         on cross-request (W16.10e idempotency)");
+                    None
+                } else {
                 match handle.manager.establish_session(req.sender_hex, &bundle) {
                     Ok(info) => {
                         tracing::info!(peer = %req.sender_hex, "established Signal session on cross-request auto-accept");
@@ -1710,6 +1846,7 @@ async fn auto_accept_cross_request(
                         );
                         None
                     }
+                }
                 }
             } else {
                 None
