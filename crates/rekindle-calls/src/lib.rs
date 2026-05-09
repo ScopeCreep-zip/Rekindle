@@ -9,6 +9,7 @@
 
 pub mod group;
 pub mod state;
+pub mod state_machine;
 
 use hkdf::Hkdf;
 use sha2::Sha256;
@@ -16,6 +17,7 @@ use thiserror::Error;
 use x25519_dalek::{PublicKey, StaticSecret};
 
 pub use state::{CallKind, CallState, CallStatus};
+pub use state_machine::{CallEvent, CallStateMachine, Effect};
 
 // Wave 12 W12.9 — re-export the X25519 types so consumer crates
 // (src-tauri/services/group_calls.rs) don't have to depend on

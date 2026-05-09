@@ -183,7 +183,7 @@ mod tests {
         stack.toasts.push_front(Toast {
             message: "old".into(),
             level: ToastLevel::Info,
-            created_at: Instant::now() - Duration::from_secs(10),
+            created_at: Instant::now().checked_sub(Duration::from_secs(10)).unwrap_or_else(Instant::now),
         });
         stack.toasts.push_front(Toast {
             message: "new".into(),
@@ -201,7 +201,7 @@ mod tests {
         stack.toasts.push_front(Toast {
             message: "error".into(),
             level: ToastLevel::Error,
-            created_at: Instant::now() - Duration::from_secs(60),
+            created_at: Instant::now().checked_sub(Duration::from_secs(60)).unwrap_or_else(Instant::now),
         });
         stack.tick();
         assert_eq!(stack.toasts.len(), 1);
@@ -213,7 +213,7 @@ mod tests {
         stack.toasts.push_front(Toast {
             message: "warn".into(),
             level: ToastLevel::Warning,
-            created_at: Instant::now() - Duration::from_secs(60),
+            created_at: Instant::now().checked_sub(Duration::from_secs(60)).unwrap_or_else(Instant::now),
         });
         stack.tick();
         assert_eq!(stack.toasts.len(), 1);

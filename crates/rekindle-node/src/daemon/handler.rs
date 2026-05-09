@@ -91,6 +91,7 @@ impl DaemonHandler {
 impl InboundHandler for DaemonHandler {
     fn on_dm(
         &self, sender: &VerifiedSender, payload: DmPayload, timestamp: u64,
+        _seq: u64, _correlation_id: Option<&str>,
     ) -> impl std::future::Future<Output = ()> + Send {
         debug!(sender = &sender.public_key[..12.min(sender.public_key.len())], "handler: on_dm");
 
@@ -206,6 +207,24 @@ impl InboundHandler for DaemonHandler {
                     ).await
                 }
                 InboundCall::Sync(_) | InboundCall::Dm(_) => CallResponse::Ack,
+                InboundCall::CallInvite(invite) => {
+                    // W16.5b — the daemon shell doesn't yet host a
+                    // `CallRuntime` (calls are GUI features wired via
+                    // the Tauri shell). Reply with a typed Rejected so
+                    // the caller's UI surfaces "Couldn't reach {peer}"
+                    // via `CallUnreachable { reason: "send_failed" }`
+                    // — equivalent to the receiver's call capability
+                    // being absent. W16.18 wires the CallRuntime here
+                    // for cross-shell parity.
+                    debug!(
+                        call_id = %invite.call_id,
+                        sender = ?sender_ps,
+                        "InboundCall::CallInvite at daemon — no CallRuntime; rejecting"
+                    );
+                    CallResponse::Rejected {
+                        reason: "daemon has no call runtime".into(),
+                    }
+                }
             }
         }
     }

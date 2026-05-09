@@ -51,8 +51,7 @@ pub(crate) async fn start_session(
             Some(blob) => Some(blob),
             None => {
                 return Err(format!(
-                    "no route to peer {} (cache + DHT + mailbox all empty)",
-                    channel_id
+                    "no route to peer {channel_id} (cache + DHT + mailbox all empty)"
                 ));
             }
         }
@@ -431,18 +430,15 @@ fn create_transport(
         // 1:1 DM call. The user's local identity Ed25519 secret is the
         // signing key; the matching pubkey is what the receiver
         // already knows from the CallInvite/CallAccept handshake.
-        let secret_bytes = state.identity_secret.lock().clone();
-        match secret_bytes {
-            Some(bytes) => {
-                let signing_key = ed25519_dalek::SigningKey::from_bytes(&bytes);
-                transport.set_signing_key(signing_key);
-            }
-            None => {
-                tracing::warn!(
-                    channel = %channel_id,
-                    "voice transport: local identity secret unavailable, 1:1 call audio will be silent",
-                );
-            }
+        let secret_bytes = *state.identity_secret.lock();
+        if let Some(bytes) = secret_bytes {
+            let signing_key = ed25519_dalek::SigningKey::from_bytes(&bytes);
+            transport.set_signing_key(signing_key);
+        } else {
+            tracing::warn!(
+                channel = %channel_id,
+                "voice transport: local identity secret unavailable, 1:1 call audio will be silent",
+            );
         }
 
         // W13.14 — install the AEAD call_key for audio encryption.
@@ -456,22 +452,21 @@ fn create_transport(
                 .find(|c| c.peer_pubkey == channel_id)
                 .and_then(|c| c.call_key)
         };
-        match call_key_opt {
-            Some(key) => {
-                // W14.5 — visible in production so we know AEAD is live
-                // for every 1:1 call. Drops the silent-failure surface
-                // where a missing call_key would mean audio fails on
-                // the receiver's AEAD verify with no log.
-                tracing::info!(
-                    channel = %channel_id,
-                    "1:1 voice transport: call_key installed (AEAD active)"
-                );
-                transport.set_call_key(key);
-            }
-            None => tracing::warn!(
+        if let Some(key) = call_key_opt {
+            // W14.5 — visible in production so we know AEAD is live
+            // for every 1:1 call. Drops the silent-failure surface
+            // where a missing call_key would mean audio fails on
+            // the receiver's AEAD verify with no log.
+            tracing::info!(
+                channel = %channel_id,
+                "1:1 voice transport: call_key installed (AEAD active)"
+            );
+            transport.set_call_key(key);
+        } else {
+            tracing::warn!(
                 channel = %channel_id,
                 "1:1 voice transport: NO call_key on CallState — audio will fail AEAD on receiver",
-            ),
+            );
         }
     }
 

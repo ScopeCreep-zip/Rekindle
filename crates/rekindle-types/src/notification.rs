@@ -190,6 +190,344 @@ pub enum TransportNotification {
         channel_id: String,
         participant_key: String,
     },
+
+    /// W16 — an envelope was successfully delivered after being queued.
+    /// Optional UI surface: "Sending…" → "Sent" indicator on a message
+    /// or call-state transition.
+    EnvelopeDelivered {
+        /// Wire-format string from `EnvelopeKind::as_str()`. UI maps to
+        /// its own categorization.
+        kind: String,
+        /// Optional grouping key (call_id for call envelopes,
+        /// conversation peer for DMs, etc.).
+        correlation_id: Option<String>,
+    },
+
+    /// W16 — an envelope hit max_retries and was dead-lettered. For call
+    /// envelopes, the call state machine consumes this and tears down
+    /// the call with a clear reason; for DMs the UI shows a
+    /// delivery-failed indicator on the message.
+    EnvelopeDeliveryFailed {
+        /// Wire-format string from `EnvelopeKind::as_str()`.
+        kind: String,
+        /// Optional grouping key.
+        correlation_id: Option<String>,
+        /// Last transport error (route lookup failure, network error,
+        /// peer offline, etc.).
+        last_error: String,
+    },
+
+    // ── W16.4: Call lifecycle (1:1) ─────────────────────────────────
+    //
+    // Emit sites land in W16.6 (operations::calls send paths) and
+    // W16.7 (receive dispatch + ring timer). Each frontend (Tauri,
+    // CLI, daemon) maps these to its own UI surface — Tauri emits
+    // chat-events; CLI prints typed lines; daemon forwards via IPC.
+
+    /// Caller-side: `start_dm_call` enqueued the CallInvite. UI seeds
+    /// the OutgoingCallPanel from this payload.
+    CallStarted {
+        call_id: String,
+        /// "audio" | "video".
+        kind: String,
+        peer_key: String,
+        peer_display_name: String,
+        /// ms epoch when the ring expires.
+        expires_at_ms: u64,
+        /// ms epoch when the local CallState was inserted (the moment
+        /// the user clicked "Voice Call"). Backend-stamped so all
+        /// frontends share the same start time.
+        started_at_ms: u64,
+        /// "calling" — initial. Transitions to "ringing" / "connecting"
+        /// / "active" via [`CallStatusChanged`].
+        status: String,
+    },
+
+    /// Receiver-side: a CallInvite arrived. UI mounts IncomingCallModal.
+    IncomingCall {
+        call_id: String,
+        /// "audio" | "video".
+        kind: String,
+        /// Caller's hex-encoded Ed25519 pubkey.
+        from: String,
+        /// Caller's display name (resolved from friend list / contact
+        /// link / pseudonym lookup; empty if unknown).
+        display_name: String,
+        expires_at_ms: u64,
+        /// ms epoch when the CallInvite was received locally.
+        received_at_ms: u64,
+        /// True for `IncomingGroupCall`-derived flows; false for 1:1.
+        /// Frontends with separate group/1:1 UI render accordingly.
+        is_group: bool,
+    },
+
+    /// Caller-side alerting hint: receiver got the invite and is
+    /// ringing the user. Optional UI surface — flips
+    /// "Calling…" → "Ringing…" without waiting for accept/decline.
+    CallRinging {
+        call_id: String,
+    },
+
+    /// Voice transport up on both sides. Frontends transition from
+    /// OutgoingCallPanel / IncomingCallModal to ActiveCallPanel.
+    CallConnected {
+        call_id: String,
+        /// "audio" | "video".
+        kind: String,
+        peer_key: String,
+        peer_display_name: String,
+        /// ms epoch when voice transport started locally.
+        started_at_ms: u64,
+        /// True when `kind == "video"`. Tauri starts WebCodecs
+        /// capture; CLI/daemon ignore (no camera).
+        expected_local_camera: bool,
+    },
+
+    /// Receiver declined or caller cancelled. Frontend clears the
+    /// outgoing/incoming UI slot.
+    CallDeclined {
+        call_id: String,
+        /// Optional reason ("user cancelled", "busy", custom message).
+        reason: String,
+    },
+
+    /// Active call ended (hangup, peer hung up, network drop with
+    /// retry-cap-hit, etc.). Frontend clears `activeCall`.
+    CallEnded {
+        call_id: String,
+        reason: String,
+    },
+
+    /// Caller-side timeout: 30 s ring expired with no accept.
+    /// Distinct from `CallMissed` (receiver-side) so the UI can show
+    /// "no answer" vs. "you missed a call".
+    CallTimedOut {
+        call_id: String,
+    },
+
+    /// W16.5b — Caller-side: the wire-level invite (`app_call`) failed
+    /// inside Veilid's 5–10 s RPC budget. The receiver is unreachable
+    /// RIGHT NOW (offline, no route, route expired, etc.) — distinct
+    /// from `CallTimedOut` (the 30 s user-decision ring expired with
+    /// receiver online but not answering). Frontend shows "Couldn't
+    /// reach {peer} — they may be offline" and clears the outgoing
+    /// call slot immediately, instead of waiting for the 30 s ring
+    /// to expire.
+    CallUnreachable {
+        call_id: String,
+        /// Reason classification:
+        /// - `"timeout"` — receiver didn't reply within Veilid's RPC
+        ///   budget (`network.rpc.timeout_ms`, default 5000 ms,
+        ///   doubled to 10000 ms through private routes).
+        /// - `"no_route"` — `InvalidTarget` / `NoConnection` — peer
+        ///   route blob is stale or peer has no usable route.
+        /// - `"service_unavailable"` — peer responded that the
+        ///   capability is disabled.
+        /// - `"send_failed"` — other transport-level error.
+        reason: String,
+    },
+
+    /// Receiver-side timeout: 30 s ring expired without the user
+    /// answering. Persists a `missed_calls` row.
+    CallMissed {
+        call_id: String,
+        from: String,
+    },
+
+    /// State transition not covered by the dedicated variants above
+    /// (e.g. Outgoing → Connecting before Connected fires). UI uses
+    /// this as a fine-grained progress indicator.
+    CallStatusChanged {
+        call_id: String,
+        /// "calling" | "ringing" | "connecting" | "active" | "ended".
+        status: String,
+        /// ms epoch of the transition.
+        timestamp_ms: u64,
+    },
+
+    /// Mid-call peer media toggle (mic / camera / screen-share).
+    /// Frontend mounts/unmounts the corresponding tile.
+    CallMediaStateChanged {
+        call_id: String,
+        /// Peer's mic active.
+        audio: bool,
+        /// Peer's camera active.
+        video: bool,
+        /// Peer's screen-share active.
+        screen: bool,
+        timestamp_ms: u64,
+    },
+
+    /// Mid-call emoji reaction from peer. UI floats the glyph for ~2 s.
+    CallReactionReceived {
+        call_id: String,
+        /// Sender's hex Ed25519 pubkey.
+        sender: String,
+        /// Single grapheme cluster, length-capped by receiver to
+        /// defeat oversized-emoji DoS.
+        emoji: String,
+        timestamp_ms: u64,
+    },
+
+    /// Backend asks frontends to surface the conversation with the peer.
+    /// Emitted on call entry (caller-side after CallInvite send;
+    /// receiver-side after acceptance). Tauri brings the chat window
+    /// forward; CLI switches active conversation context.
+    ConversationFocusRequested {
+        peer_key: String,
+        display_name: String,
+        /// "call-started" | "call-accepted" | future reasons.
+        reason: String,
+    },
+
+    // ── W16.4: Group call lifecycle ─────────────────────────────────
+
+    /// Caller-side: `start_group_call` fanned out invites. Mirror of
+    /// [`CallStarted`] for groups.
+    GroupCallStarted {
+        call_id: String,
+        kind: String,
+        initiator_pubkey: String,
+        /// Hex pubkeys of all invitees.
+        participants: Vec<String>,
+        expires_at_ms: u64,
+        started_at_ms: u64,
+    },
+
+    /// Receiver-side: a `GroupCallOffer` arrived. UI mounts the
+    /// IncomingGroupCallModal.
+    IncomingGroupCall {
+        call_id: String,
+        kind: String,
+        from: String,
+        display_name: String,
+        participants: Vec<String>,
+        expires_at_ms: u64,
+        received_at_ms: u64,
+    },
+
+    /// Group call has at least one acceptor; frontend transitions to
+    /// the GroupCallPanel grid.
+    GroupCallConnected {
+        call_id: String,
+    },
+
+    /// A new participant joined an in-progress group call. Frontend
+    /// adds their tile to the grid.
+    GroupCallParticipantJoined {
+        call_id: String,
+        participant_pubkey: String,
+    },
+
+    /// A specific invitee rejected the group call.
+    GroupCallParticipantDeclined {
+        call_id: String,
+        participant_pubkey: String,
+        reason: String,
+    },
+
+    /// A participant left mid-call.
+    GroupCallParticipantLeft {
+        call_id: String,
+        participant_pubkey: String,
+        reason: String,
+    },
+
+    /// Entire group call has ended (last participant left, or
+    /// initiator hung up).
+    GroupCallEnded {
+        call_id: String,
+        reason: String,
+    },
+
+    /// Group call invitation expired without acceptance. Receiver-side.
+    GroupCallMissed {
+        call_id: String,
+        from: String,
+    },
+
+    // ── W16.4: Voice control (mute / deafen / voice-mode) ───────────
+    //
+    // Emit sites land in W16.12 (operations::voice). Each event carries
+    // `source: "local" | "remote"` so the frontend can distinguish
+    // its own toggle (already optimistically reflected in UI) from a
+    // peer's mute that needs to update a participant tile.
+
+    MuteChanged {
+        /// Sender's mic state: `true` = mic active (NOT muted).
+        audio: bool,
+        /// Hex Ed25519 pubkey of whoever's mute changed. For local
+        /// changes this matches the user's own identity.
+        peer_key: String,
+        /// "local" | "remote".
+        source: String,
+    },
+
+    DeafenChanged {
+        /// Sender's deafen state.
+        deafened: bool,
+        peer_key: String,
+        /// "local" | "remote".
+        source: String,
+    },
+
+    VoiceModeChanged {
+        /// "voiceActivity" | "pushToTalk".
+        mode: String,
+    },
+
+    // ── W16.4: Voice transport telemetry ────────────────────────────
+
+    /// Audio packets dropped on receive (bad MEK decrypt, missing
+    /// signing key, AEAD failure, replay-window-drop, etc.). Coalesced
+    /// per-reason at ~1 Hz so the UI sees one event per reason per
+    /// second.
+    PacketsDropped {
+        /// "mek_decrypt_failed" | "signing_key_missing" |
+        /// "call_key_missing" | "aead_decrypt_failed" |
+        /// "replay_window_drop" | "no_recv_context" | "channel_full".
+        reason: String,
+        /// Number of drops in this coalesced window.
+        count: u64,
+    },
+
+    /// Per-peer connection quality sample, emitted at ~1 Hz during
+    /// active calls. UI maps to bars / latency badge / loss indicator.
+    ConnectionQuality {
+        peer_key: String,
+        /// Round-trip time in milliseconds.
+        rtt_ms: u32,
+        /// Packet loss as percent (0-100).
+        loss_percent: u8,
+    },
+
+    // ── W16.4: Device hot-swap ──────────────────────────────────────
+
+    /// Audio device changed (Bluetooth headset connect/disconnect, USB
+    /// audio interface, default-device change in OS).
+    DeviceChanged {
+        /// "input" | "output".
+        device_type: String,
+        /// New device's name (cpal HostId).
+        device_name: String,
+        /// "hotswap" | "user_select" | "default_changed".
+        reason: String,
+    },
+
+    // ── W16.4: DM invite reply (W16.10b) ────────────────────────────
+
+    /// Initiator-side: a `DmInviteReply` arrived for a request matched
+    /// by `correlation_id`. The expect-reply path in `EnvelopeQueue`
+    /// already wakes the awaiting future via `deliver_reply`; this
+    /// notification is for shells that want to log / display the
+    /// outcome separately.
+    DmInviteReplyReceived {
+        correlation_id: String,
+        /// "accepted" | "declined".
+        decision: String,
+        /// Present when accepted; carries the new DM record key.
+        dm_log_key: Option<String>,
+    },
 }
 
 #[cfg(test)]

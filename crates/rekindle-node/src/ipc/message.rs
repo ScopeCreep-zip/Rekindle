@@ -72,14 +72,10 @@ impl Timestamp {
     #[must_use]
     pub fn now(epoch: Instant) -> Self {
         // Monotonic and wall clock milliseconds. u128→u64 truncation is safe:
-        // 2^64 ms = 584 million years. The daemon will not run that long.
-        #[allow(clippy::cast_possible_truncation)]
-        let monotonic_ms = epoch.elapsed().as_millis() as u64;
-        #[allow(clippy::cast_possible_truncation)]
-        let wall_ms = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0);
+        // 2^64 ms = 584 million years. The daemon will not run that long;
+        // saturate to u64::MAX in the impossible case rather than #[allow].
+        let monotonic_ms = u64::try_from(epoch.elapsed().as_millis()).unwrap_or(u64::MAX);
+        let wall_ms = rekindle_utils::timestamp_ms();
         Self {
             monotonic_ms,
             wall_ms,

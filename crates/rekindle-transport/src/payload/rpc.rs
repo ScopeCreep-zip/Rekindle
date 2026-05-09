@@ -155,6 +155,40 @@ pub struct SyncResponse {
     pub messages: Vec<Vec<u8>>,
 }
 
+// ── 1:1 Call invite (W16.5b) ────────────────────────────────────────────
+
+/// Caller's `CallInvite` payload, dispatched via Veilid `app_call`.
+///
+/// W16.5b — replaces the old `DmPayload::CallInvite` (which travelled as
+/// fire-and-forget `app_message`). The hybrid design uses `app_call` for
+/// the wire-level invite-and-ringing handshake (5–10 s budget; matches
+/// SIP 100-Trying / 180-Ringing semantics), then `app_message` for the
+/// post-decision `CallAccept` / `CallDecline` (user-decision time
+/// unbounded by Veilid's RPC budget).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CallInvitePayload {
+    /// Hex-encoded 16-byte random call identifier (32 chars).
+    pub call_id: String,
+    /// 0 = audio, 1 = video. Matches `rekindle_calls::CallKind::as_u8`.
+    pub offer_kind: u8,
+    /// Initiator's ephemeral X25519 public key (32 bytes). Receiver
+    /// derives the shared `call_key` via X25519 ECDH + HKDF-SHA256
+    /// once they accept and learn the acceptor's X25519 pub.
+    pub initiator_x25519_pub: Vec<u8>,
+    /// ms epoch when the ring expires (caller's clock).
+    pub expires_at_ms: u64,
+}
+
+/// Receiver's synchronous `CallRinging` reply payload, returned inside
+/// `app_call_reply`. W16.5b — receiver's state machine processes the
+/// invite (persists CallState=Incoming, emits IncomingCall notification,
+/// spawns 30s ring timer) and replies with this within ~100 ms, well
+/// inside Veilid's 5–10 s RPC budget.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CallRingingPayload {
+    pub call_id: String,
+}
+
 // ── Inbound call dispatch ───────────────────────────────────────────────
 
 /// Inbound RPC request dispatched to the handler.
@@ -171,6 +205,9 @@ pub enum InboundCall {
     Sync(SyncRequest),
     /// DM-class message via app_call (friend handshake).
     Dm(Vec<u8>),
+    /// W16.5b — 1:1 call invite. Receiver replies synchronously with
+    /// `CallResponse::CallRinging` via `app_call_reply`.
+    CallInvite(CallInvitePayload),
 }
 
 /// Response from the handler to an inbound RPC.
@@ -182,6 +219,11 @@ pub enum CallResponse {
     Ack,
     /// Request rejected with reason.
     Rejected { reason: String },
+    /// W16.5b — typed reply for `InboundCall::CallInvite`. Carries
+    /// `CallRingingPayload` so the caller can drive its state machine
+    /// with `CallEvent::RingingReceived` and emit
+    /// `TransportNotification::CallRinging`.
+    CallRinging(CallRingingPayload),
 }
 
 /// Deserialize an inbound app_call payload by TypeId.
@@ -209,6 +251,13 @@ pub fn deserialize_inbound_call(type_id: TypeId, bytes: &[u8]) -> Result<Inbound
             Ok(InboundCall::Sync(req))
         }
         TypeId::DmCall => Ok(InboundCall::Dm(bytes.to_vec())),
+        TypeId::CallInvite => {
+            let req: CallInvitePayload = postcard::from_bytes(bytes)
+                .map_err(|e| TransportError::DeserializationFailed {
+                    type_id: type_id as u8, reason: e.to_string(),
+                })?;
+            Ok(InboundCall::CallInvite(req))
+        }
         _ => Err(TransportError::UnknownType { type_id: type_id as u8 }),
     }
 }

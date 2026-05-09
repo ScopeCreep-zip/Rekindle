@@ -276,8 +276,19 @@ async fn dispatch_dm<H: InboundHandler>(handler: &Arc<H>, type_id: TypeId, paylo
         display_name: String::new(),
     };
 
-    // Deliver to InboundHandler — the daemon forwards to SubscriptionManager
-    handler.on_dm(&sender, dm_payload, signed.timestamp).await;
+    // W16.7 — pass through seq + correlation_id from the wire envelope
+    // so the implementer can run SeqTracker dedup before processing.
+    // The fields are inside the Ed25519 signature scope (W16.3), so a
+    // peer can't forge them after the fact.
+    handler
+        .on_dm(
+            &sender,
+            dm_payload,
+            signed.timestamp,
+            signed.seq,
+            signed.correlation_id.as_deref(),
+        )
+        .await;
 }
 
 async fn dispatch_voice<H: InboundHandler>(handler: &Arc<H>, payload: &[u8]) {

@@ -27,12 +27,19 @@ use crate::crypto::envelope::{sign_payload, SignedPayload};
 /// that don't use Signal encryption (FriendRequest, FriendAccept), the
 /// payload is plaintext serialized bytes — the signature still provides
 /// integrity and sender authentication.
+///
+/// W16.3 — `seq` and `correlation_id` are envelope-level metadata for
+/// the receiver-side dedup primitive. Callers from outside the queue
+/// (e.g. one-shot DM body sends) pass `seq=0`, `correlation_id=None`;
+/// callers from inside `EnvelopeQueue` pass the row's allocated values.
 pub fn build_dm_envelope(
     sender_secret: &[u8; 32],
     sender_public_hex: &str,
+    seq: u64,
+    correlation_id: Option<&str>,
     payload_bytes: &[u8],
 ) -> SignedPayload {
-    sign_payload(sender_secret, sender_public_hex, payload_bytes)
+    sign_payload(sender_secret, sender_public_hex, seq, correlation_id, payload_bytes)
 }
 
 /// Extract the inner payload bytes from a verified DM envelope.

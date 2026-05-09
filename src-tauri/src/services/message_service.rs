@@ -313,159 +313,19 @@ pub async fn handle_incoming_message(
         // services::calls state machine which inserts CallState=Incoming,
         // emits ChatEvent::IncomingCall, surfaces the window, and fires
         // CallRinging back as an alerting ack.
-        MessagePayload::CallInvite {
-            call_id,
-            offer_kind,
-            initiator_pubkey,
-            initiator_x25519_pub,
-            expires_at_ms,
-        } => {
-            crate::services::calls::handle_incoming_invite(
-                app_handle,
-                state,
-                pool,
-                &msg.sender_hex,
-                &call_id,
-                offer_kind,
-                &initiator_pubkey,
-                &initiator_x25519_pub,
-                expires_at_ms,
-            )
-            .await;
-        }
-        // Wave 13 W13.6 — peer accepted our outgoing call. Derive the
-        // shared call_key, start voice session, transition to Active.
-        MessagePayload::CallAccept {
-            call_id,
-            acceptor_x25519_pub,
-        } => {
-            crate::services::calls::handle_accept_received(
-                app_handle,
-                state,
-                pool,
-                &msg.sender_hex,
-                &call_id,
-                &acceptor_x25519_pub,
-            )
-            .await;
-        }
-        // Wave 13 W13.8 — peer declined our outgoing call. Drop
-        // CallState, emit CallDeclined.
-        MessagePayload::CallDecline { call_id, reason } => {
-            crate::services::calls::handle_decline_received(
-                app_handle,
-                state,
-                &msg.sender_hex,
-                &call_id,
-                reason,
-            )
-            .await;
-        }
-        // Wave 13 — alerting ack from receiver: "I got your invite,
-        // I'm ringing the user now." Best-effort; drives the
-        // OutgoingCallPanel "Calling…" → "Ringing…" transition.
-        MessagePayload::CallRinging { call_id } => {
-            crate::services::calls::handle_ringing_received(
-                app_handle,
-                state,
-                &msg.sender_hex,
-                &call_id,
-            )
-            .await;
-        }
-        // Wave 13 W13.9 — hangup / cancel. Works for any state
-        // (Outgoing / Incoming / Connecting / Active) so a
-        // cancel-while-ringing or decline-after-accept-race cleans up
-        // both sides cleanly.
-        MessagePayload::CallEnd { call_id, reason } => {
-            // W15.2 — capture status before remove so we know whether
-            // voice was actually running. Tear it down if so.
-            let (removed, was_voice_up) = {
-                let mut calls = state.active_calls.lock();
-                if let Some(c) = calls.remove(&call_id) {
-                    let voice_up = matches!(
-                        c.status,
-                        rekindle_calls::CallStatus::Active | rekindle_calls::CallStatus::Connecting
-                    );
-                    (true, voice_up)
-                } else {
-                    (false, false)
-                }
-            };
-            if removed {
-                if was_voice_up {
-                    crate::services::voice::shutdown::shutdown_voice(
-                        state,
-                        &crate::services::voice::shutdown::VoiceShutdownOpts::FULL,
-                    )
-                    .await;
-                }
-                let _ = app_handle.emit(
-                    "chat-event",
-                    &ChatEvent::CallEnded {
-                        call_id: call_id.clone(),
-                        reason: reason.clone(),
-                    },
-                );
-                tracing::info!(call_id = %call_id, %reason, "remote ended DM call");
-            } else {
-                tracing::debug!(call_id = %call_id, "CallEnd for unknown call_id; ignoring");
-            }
-        }
-        // Wave 12 W12.6 — peer toggled their mic / camera / screen-share.
-        // Emit a chat-event so the frontend's ActiveCallPanel /
-        // VideoCallPanel can mount/unmount tiles reactively. Drop if the
-        // call_id isn't ours so the receiver doesn't get spurious UI
-        // changes for a call that already ended.
-        MessagePayload::CallMediaState {
-            call_id,
-            audio,
-            video,
-            screen,
-            timestamp_ms,
-        } => {
-            let known = state.active_calls.lock().contains_key(&call_id);
-            if known {
-                let _ = app_handle.emit(
-                    "chat-event",
-                    &ChatEvent::CallMediaStateChanged {
-                        call_id,
-                        audio,
-                        video,
-                        screen,
-                        timestamp_ms,
-                    },
-                );
-            } else {
-                tracing::debug!(call_id = %call_id, "CallMediaState for unknown call; ignoring");
-            }
-        }
-        // Wave 12 W12.11 — peer fired an in-call emoji reaction. Cap
-        // emoji length and drop unknown call_ids so we don't surface
-        // floating reactions for calls that already ended (or were
-        // never accepted).
-        MessagePayload::CallReaction {
-            call_id,
-            emoji,
-            timestamp_ms,
-        } => {
-            const MAX_EMOJI_BYTES: usize = 32;
-            if emoji.len() > MAX_EMOJI_BYTES {
-                tracing::debug!(
-                    "dropping CallReaction with oversized emoji ({} bytes)",
-                    emoji.len()
-                );
-            } else if state.active_calls.lock().contains_key(&call_id) {
-                let _ = app_handle.emit(
-                    "chat-event",
-                    &ChatEvent::CallReactionReceived {
-                        call_id,
-                        sender: msg.sender_hex.clone(),
-                        emoji,
-                        timestamp_ms,
-                    },
-                );
-            }
+        // Wave 13 — call signaling group: invite/accept/decline/ringing
+        // /end/media-state/reaction. Extracted into a helper to keep the
+        // dispatcher under the workspace too_many_lines budget. The
+        // helper itself goes away in W16.6 when call signaling moves
+        // into rekindle-transport::operations::calls.
+        payload @ (MessagePayload::CallInvite { .. }
+        | MessagePayload::CallAccept { .. }
+        | MessagePayload::CallDecline { .. }
+        | MessagePayload::CallRinging { .. }
+        | MessagePayload::CallEnd { .. }
+        | MessagePayload::CallMediaState { .. }
+        | MessagePayload::CallReaction { .. }) => {
+            handle_call_signaling_payload(app_handle, state, pool, &msg.sender_hex, payload).await;
         }
         // Wave 12 W12.9 + Wave 13 W13.13 — all group call signaling now
         // travels via app_message (was app_call in W12.9; flipped in
@@ -485,8 +345,7 @@ pub async fn handle_incoming_message(
                 pool,
                 &msg.sender_hex,
                 payload,
-            )
-            .await;
+            );
         }
         // P3.3 — Signal session-renewal payload trio. Extracted into a
         // helper so the main dispatcher stays under the workspace
@@ -895,6 +754,179 @@ fn handle_friend_accept(
             Err(e) => {
                 tracing::warn!(from = %sender_hex, error = %e, "failed to establish responder Signal session");
             }
+        }
+    }
+}
+
+/// Wave 13 — dispatcher for the seven 1:1 call-signaling payload
+/// variants. Extracted from `handle_incoming_message` so the main
+/// dispatcher stays under the workspace too_many_lines budget. The
+/// helper itself is scheduled for deletion in W16.6 when call signaling
+/// moves into `rekindle-transport::operations::calls`.
+async fn handle_call_signaling_payload(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    pool: &DbPool,
+    sender_hex: &str,
+    payload: MessagePayload,
+) {
+    match payload {
+        MessagePayload::CallInvite {
+            call_id,
+            offer_kind,
+            initiator_pubkey,
+            initiator_x25519_pub,
+            expires_at_ms,
+        } => {
+            crate::services::calls::handle_incoming_invite(
+                app_handle,
+                state,
+                pool,
+                sender_hex,
+                &call_id,
+                offer_kind,
+                &initiator_pubkey,
+                &initiator_x25519_pub,
+                expires_at_ms,
+            )
+            .await;
+        }
+        // Wave 13 W13.6 — peer accepted our outgoing call. Derive the
+        // shared call_key, start voice session, transition to Active.
+        MessagePayload::CallAccept {
+            call_id,
+            acceptor_x25519_pub,
+        } => {
+            crate::services::calls::handle_accept_received(
+                app_handle,
+                state,
+                pool,
+                sender_hex,
+                &call_id,
+                &acceptor_x25519_pub,
+            )
+            .await;
+        }
+        // Wave 13 W13.8 — peer declined our outgoing call. Drop
+        // CallState, emit CallDeclined.
+        MessagePayload::CallDecline { call_id, reason } => {
+            crate::services::calls::handle_decline_received(
+                app_handle,
+                state,
+                sender_hex,
+                &call_id,
+                reason,
+            );
+        }
+        // Wave 13 — alerting ack from receiver: "I got your invite,
+        // I'm ringing the user now." Best-effort; drives the
+        // OutgoingCallPanel "Calling…" → "Ringing…" transition.
+        MessagePayload::CallRinging { call_id } => {
+            crate::services::calls::handle_ringing_received(
+                app_handle,
+                state,
+                sender_hex,
+                &call_id,
+            );
+        }
+        // Wave 13 W13.9 — hangup / cancel. Works for any state
+        // (Outgoing / Incoming / Connecting / Active) so a
+        // cancel-while-ringing or decline-after-accept-race cleans up
+        // both sides cleanly.
+        MessagePayload::CallEnd { call_id, reason } => {
+            // W15.2 — capture status before remove so we know whether
+            // voice was actually running. Tear it down if so.
+            let (removed, was_voice_up) = {
+                let mut calls = state.active_calls.lock();
+                if let Some(c) = calls.remove(&call_id) {
+                    let voice_up = matches!(
+                        c.status,
+                        rekindle_calls::CallStatus::Active | rekindle_calls::CallStatus::Connecting
+                    );
+                    (true, voice_up)
+                } else {
+                    (false, false)
+                }
+            };
+            if removed {
+                if was_voice_up {
+                    crate::services::voice::shutdown::shutdown_voice(
+                        state,
+                        &crate::services::voice::shutdown::VoiceShutdownOpts::FULL,
+                    )
+                    .await;
+                }
+                let _ = app_handle.emit(
+                    "chat-event",
+                    &ChatEvent::CallEnded {
+                        call_id: call_id.clone(),
+                        reason: reason.clone(),
+                    },
+                );
+                tracing::info!(call_id = %call_id, %reason, "remote ended DM call");
+            } else {
+                tracing::debug!(call_id = %call_id, "CallEnd for unknown call_id; ignoring");
+            }
+        }
+        // Wave 12 W12.6 — peer toggled their mic / camera / screen-share.
+        // Emit a chat-event so the frontend's ActiveCallPanel /
+        // VideoCallPanel can mount/unmount tiles reactively. Drop if the
+        // call_id isn't ours so the receiver doesn't get spurious UI
+        // changes for a call that already ended.
+        MessagePayload::CallMediaState {
+            call_id,
+            audio,
+            video,
+            screen,
+            timestamp_ms,
+        } => {
+            let known = state.active_calls.lock().contains_key(&call_id);
+            if known {
+                let _ = app_handle.emit(
+                    "chat-event",
+                    &ChatEvent::CallMediaStateChanged {
+                        call_id,
+                        audio,
+                        video,
+                        screen,
+                        timestamp_ms,
+                    },
+                );
+            } else {
+                tracing::debug!(call_id = %call_id, "CallMediaState for unknown call; ignoring");
+            }
+        }
+        // Wave 12 W12.11 — peer fired an in-call emoji reaction. Cap
+        // emoji length and drop unknown call_ids so we don't surface
+        // floating reactions for calls that already ended (or were
+        // never accepted).
+        MessagePayload::CallReaction {
+            call_id,
+            emoji,
+            timestamp_ms,
+        } => {
+            const MAX_EMOJI_BYTES: usize = 32;
+            if emoji.len() > MAX_EMOJI_BYTES {
+                tracing::debug!(
+                    "dropping CallReaction with oversized emoji ({} bytes)",
+                    emoji.len()
+                );
+            } else if state.active_calls.lock().contains_key(&call_id) {
+                let _ = app_handle.emit(
+                    "chat-event",
+                    &ChatEvent::CallReactionReceived {
+                        call_id,
+                        sender: sender_hex.to_string(),
+                        emoji,
+                        timestamp_ms,
+                    },
+                );
+            }
+        }
+        _ => {
+            // Caller restricts payloads via the outer match; unreachable
+            // in normal flow. Dropping silently for safety.
+            tracing::debug!("handle_call_signaling_payload: non-call payload reached helper");
         }
     }
 }

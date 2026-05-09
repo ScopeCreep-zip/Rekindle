@@ -432,7 +432,7 @@ mod tests {
         let store = KeymapStore::load().unwrap();
         let line = store.hint_line(KeymapContext::Default);
         assert!(line.contains("Quit"), "hint should contain Quit: {line}");
-        assert!(line.contains("|"), "hints should be pipe-separated: {line}");
+        assert!(line.contains('|'), "hints should be pipe-separated: {line}");
     }
 
     #[test]

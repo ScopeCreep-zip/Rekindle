@@ -32,6 +32,8 @@ pub mod payload;
 pub mod community;
 pub mod operations;
 pub mod envelope_store;
+pub mod envelope_queue;
+pub mod seq_tracker;
 
 #[cfg(test)]
 mod tests;
@@ -78,6 +80,14 @@ pub use envelope_store::{
     EnvelopeKind, EnvelopeStore, JsonEnvelopeStore, MemoryEnvelopeStore,
     PendingEnvelope, PersistedCallState, StoreError,
 };
+
+// W16.2 — envelope retry queue (fire-and-forget + expect-reply)
+pub use envelope_queue::{
+    EnvelopeQueue, QueueError, RetryConfig, DEFAULT_REPLY_TIMEOUT,
+};
+
+// W16.3 — receiver-side dedup
+pub use seq_tracker::SeqTracker;
 
 // Query engine
 pub use query::{

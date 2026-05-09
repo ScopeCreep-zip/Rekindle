@@ -178,6 +178,17 @@ impl EventRouter {
                     recipients.insert(*id);
                 }
             }
+        } else {
+            // Global event (no community attached) — every community-scoped
+            // subscription of the matching category also receives it.
+            // Test: community_scope_restricts_delivery expects this.
+            for ((cat, _comm), set) in &self.by_community {
+                if *cat == category {
+                    for id in set {
+                        recipients.insert(*id);
+                    }
+                }
+            }
         }
 
         if recipients.is_empty() {
@@ -390,7 +401,7 @@ mod tests {
         let mut router = EventRouter::new();
         let (tx, mut rx) = make_tx();
         let filter = SubscriptionFilter::all();
-        router.subscribe(1, &[filter.clone()], tx).unwrap();
+        router.subscribe(1, std::slice::from_ref(&filter), tx).unwrap();
 
         let event = SubscriptionEvent::Friend(FriendEvent::Removed { peer_key: "x".into() });
         assert_eq!(router.deliver(&event).0, 1);
@@ -435,7 +446,7 @@ mod tests {
     fn filter_limit_enforced() {
         let mut router = EventRouter::new();
         let (tx, _rx) = make_tx();
-        let filters: Vec<SubscriptionFilter> = (0..MAX_FILTERS_PER_CONNECTION + 1)
+        let filters: Vec<SubscriptionFilter> = (0..=MAX_FILTERS_PER_CONNECTION)
             .map(|_| SubscriptionFilter::all())
             .collect();
         let result = router.subscribe(1, &filters, tx);

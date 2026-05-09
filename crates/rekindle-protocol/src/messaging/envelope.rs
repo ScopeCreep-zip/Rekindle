@@ -607,7 +607,8 @@ mod invite_blob_tests {
         // Fixed test secret so the test is deterministic.
         let mut s = [0u8; 32];
         for (i, b) in s.iter_mut().enumerate() {
-            *b = (i as u8).wrapping_add(1);
+            // i is bounded 0..32 by the iterator, fits in u8.
+            *b = u8::try_from(i).expect("i < 32").wrapping_add(1);
         }
         s
     }

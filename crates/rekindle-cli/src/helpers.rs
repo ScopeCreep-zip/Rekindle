@@ -408,6 +408,78 @@ pub fn resolve_channel_id(channel: &str) -> String {
     channel.to_string()
 }
 
+// ── Audit log ───────────────────────────────────────────────────────────
+
+/// Append a destructive action to the audit log.
+///
+/// The audit log at `${XDG_STATE_HOME}/rekindle/audit.jsonl` records
+/// every destructive operation (leave community, remove friend, block
+/// peer, rotate MEK, destroy identity) with a BLAKE3 hash chain for
+/// tamper detection.
+///
+/// Each entry is a single JSON line:
+/// ```json
+/// {"ts":"2026-04-30T23:00:00Z","action":"leave_community","target":"dev-team","outcome":"ok","prev_hash":"..."}
+/// ```
+///
+/// This is best-effort — audit failures are logged but don't block the
+/// operation. An inaccessible log directory or full disk should not
+/// prevent the user from leaving a community.
+pub fn audit_log(action: &str, target: &str, outcome: &str) {
+    let result = audit_log_inner(action, target, outcome);
+    if let Err(e) = result {
+        tracing::warn!(error = %e, action, target, "audit log write failed (non-fatal)");
+    }
+}
+
+fn audit_log_inner(action: &str, target: &str, outcome: &str) -> anyhow::Result<()> {
+    use std::io::Write;
+
+    let log_dir = dirs::state_dir()
+        .unwrap_or_else(|| {
+            dirs::home_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join(".local/state")
+        })
+        .join("rekindle");
+    std::fs::create_dir_all(&log_dir)?;
+
+    let path = log_dir.join("audit.jsonl");
+
+    // Read last line to compute hash chain
+    let prev_hash = match std::fs::read_to_string(&path) {
+        Ok(content) => {
+            content
+                .lines()
+                .last()
+                .map_or_else(
+                    || "genesis".to_string(),
+                    |line| {
+                        let hash = blake3::hash(line.as_bytes());
+                        hex::encode(&hash.as_bytes()[..16])
+                    },
+                )
+        }
+        Err(_) => "genesis".to_string(),
+    };
+
+    let ts = chrono::Utc::now().to_rfc3339();
+    let entry = serde_json::json!({
+        "ts": ts,
+        "action": action,
+        "target": sanitize_for_display(target),
+        "outcome": outcome,
+        "prev_hash": prev_hash,
+    });
+
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)?;
+    writeln!(file, "{}", serde_json::to_string(&entry)?)?;
+
+    Ok(())
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -681,79 +753,6 @@ mod tests {
 
     #[test]
     fn format_uptime_days() {
-        assert_eq!(format_uptime(277200), "3d 5h");
+        assert_eq!(format_uptime(277_200), "3d 5h");
     }
-}
-
-// ── Audit log ───────────────────────────────────────────────────────────
-
-/// Append a destructive action to the audit log.
-///
-/// The audit log at `${XDG_STATE_HOME}/rekindle/audit.jsonl` records
-/// every destructive operation (leave community, remove friend, block
-/// peer, rotate MEK, destroy identity) with a BLAKE3 hash chain for
-/// tamper detection.
-///
-/// Each entry is a single JSON line:
-/// ```json
-/// {"ts":"2026-04-30T23:00:00Z","action":"leave_community","target":"dev-team","outcome":"ok","prev_hash":"..."}
-/// ```
-///
-/// This is best-effort — audit failures are logged but don't block the
-/// operation. An inaccessible log directory or full disk should not
-/// prevent the user from leaving a community.
-pub fn audit_log(action: &str, target: &str, outcome: &str) {
-    let result = audit_log_inner(action, target, outcome);
-    if let Err(e) = result {
-        tracing::warn!(error = %e, action, target, "audit log write failed (non-fatal)");
-    }
-}
-
-fn audit_log_inner(action: &str, target: &str, outcome: &str) -> anyhow::Result<()> {
-    use std::io::Write;
-
-    let log_dir = dirs::state_dir()
-        .unwrap_or_else(|| {
-            dirs::home_dir()
-                .unwrap_or_else(|| PathBuf::from("."))
-                .join(".local/state")
-        })
-        .join("rekindle");
-    std::fs::create_dir_all(&log_dir)?;
-
-    let path = log_dir.join("audit.jsonl");
-
-    // Read last line to compute hash chain
-    let prev_hash = match std::fs::read_to_string(&path) {
-        Ok(content) => {
-            content
-                .lines()
-                .last()
-                .map_or_else(
-                    || "genesis".to_string(),
-                    |line| {
-                        let hash = blake3::hash(line.as_bytes());
-                        hex::encode(&hash.as_bytes()[..16])
-                    },
-                )
-        }
-        Err(_) => "genesis".to_string(),
-    };
-
-    let ts = chrono::Utc::now().to_rfc3339();
-    let entry = serde_json::json!({
-        "ts": ts,
-        "action": action,
-        "target": sanitize_for_display(target),
-        "outcome": outcome,
-        "prev_hash": prev_hash,
-    });
-
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)?;
-    writeln!(file, "{}", serde_json::to_string(&entry)?)?;
-
-    Ok(())
 }

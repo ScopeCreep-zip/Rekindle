@@ -181,7 +181,9 @@ async fn send_dm_payload(
 
     node.sender().send_dm(
         &target, type_id, signing_key,
-        &session.identity.public_key_hex, &payload_bytes,
+        &session.identity.public_key_hex,
+        0, None,
+        &payload_bytes,
     ).await
 }
 

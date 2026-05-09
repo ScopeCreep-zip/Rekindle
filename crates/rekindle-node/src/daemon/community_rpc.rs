@@ -24,13 +24,7 @@ pub(crate) const HANDLER_DEADLINE: Duration = Duration::from_secs(12);
 static REGISTRY_KEYPAIR_CACHE: std::sync::LazyLock<parking_lot::Mutex<std::collections::HashMap<String, Vec<u8>>>> =
     std::sync::LazyLock::new(|| parking_lot::Mutex::new(std::collections::HashMap::new()));
 
-#[allow(clippy::cast_possible_truncation)]
-fn now_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0)
-}
+use rekindle_utils::timestamp_ms as now_ms;
 
 // ── DHT Inbox Processor ───────────────────────────────────────────────
 

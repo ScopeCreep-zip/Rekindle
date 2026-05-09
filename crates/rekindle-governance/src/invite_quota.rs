@@ -116,13 +116,15 @@ mod tests {
 
     #[test]
     fn cap_respects_community_policy_override() {
-        let mut state = GovernanceState::default();
-        state.community_policy = Some(CommunityPolicyState {
-            policy_text: None,
-            max_joins_per_interval: 5,
-            join_interval_seconds: 600,
-            lamport: 1,
-        });
+        let mut state = GovernanceState {
+            community_policy: Some(CommunityPolicyState {
+                policy_text: None,
+                max_joins_per_interval: 5,
+                join_interval_seconds: 600,
+                lamport: 1,
+            }),
+            ..Default::default()
+        };
         for i in 0..5_u8 {
             let mut iid = [0u8; 16];
             iid[0] = i;

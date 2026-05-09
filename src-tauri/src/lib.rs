@@ -6,6 +6,7 @@ pub mod commands;
 pub mod db;
 pub mod db_helpers;
 mod deep_links;
+pub mod envelope_store_sqlite;
 pub mod friend_repo;
 pub mod invite_helpers;
 pub mod keystore;

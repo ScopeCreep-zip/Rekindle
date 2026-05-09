@@ -237,6 +237,77 @@ CREATE TABLE IF NOT EXISTS pending_messages (
 
 CREATE INDEX IF NOT EXISTS idx_pending_recipient ON pending_messages (owner_key, recipient_key);
 
+-- W16.1 / W16.9 — unified envelope retry queue (the rekindle-transport
+-- `EnvelopeStore` trait persisted via SQLite for the Tauri shell).
+-- Replaces the legacy `pending_messages` use for envelope retries
+-- (DM body / friend-add / call signaling / DM invite). Per-kind retry
+-- caps are stored on the row so the queue's tick loop can enforce
+-- them without the per-kind config being centralized in SQL.
+CREATE TABLE IF NOT EXISTS pending_envelopes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    recipient_key TEXT NOT NULL,
+    envelope_kind TEXT NOT NULL,
+    seq INTEGER NOT NULL,
+    correlation_id TEXT,
+    payload BLOB NOT NULL,
+    created_at_ms INTEGER NOT NULL,
+    next_retry_at_ms INTEGER NOT NULL,
+    retry_count INTEGER NOT NULL DEFAULT 0,
+    max_retries INTEGER NOT NULL,
+    last_error TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_pending_envelopes_eligible
+    ON pending_envelopes (owner_key, next_retry_at_ms);
+CREATE INDEX IF NOT EXISTS idx_pending_envelopes_correlation
+    ON pending_envelopes (correlation_id);
+
+-- W16.3 — receiver-side dedup state. Veilid `app_message` has no
+-- built-in dedup; without this table a duplicate transport-level
+-- retransmit would mount a second IncomingCallModal, etc.
+CREATE TABLE IF NOT EXISTS seen_envelopes (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    sender_key TEXT NOT NULL,
+    envelope_kind TEXT NOT NULL,
+    correlation_id TEXT NOT NULL DEFAULT '',
+    last_seq INTEGER NOT NULL,
+    last_seen_at_ms INTEGER NOT NULL,
+    PRIMARY KEY (owner_key, sender_key, envelope_kind, correlation_id)
+);
+
+-- W16.3 — sender-side seq tracking. Persisted so seq survives
+-- restart; without this the post-crash seq could go backward and
+-- the receiver would drop our legitimate envelopes as duplicates.
+CREATE TABLE IF NOT EXISTS outbound_seqs (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    recipient_key TEXT NOT NULL,
+    envelope_kind TEXT NOT NULL,
+    correlation_id TEXT NOT NULL DEFAULT '',
+    next_seq INTEGER NOT NULL,
+    PRIMARY KEY (owner_key, recipient_key, envelope_kind, correlation_id)
+);
+
+-- W16.8 — Dialing/Incoming call state for crash recovery. Active
+-- calls intentionally NOT persisted (matches Signal RingRTC + Discord
+-- — voice transport state is process-bound and cannot meaningfully
+-- resume). On startup the runtime's `recover()` loads these rows,
+-- rehydrates the in-memory state machine, and either resumes the
+-- ring (if expires_at_ms is still in the future) or persists a
+-- missed-call notification (if it already expired).
+CREATE TABLE IF NOT EXISTS active_call_states (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    call_id TEXT NOT NULL,
+    peer_pubkey TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    status TEXT NOT NULL,
+    expires_at_ms INTEGER NOT NULL,
+    my_x25519_secret BLOB,
+    peer_x25519_pub BLOB,
+    group_participants TEXT NOT NULL DEFAULT '',
+    inserted_at_ms INTEGER NOT NULL,
+    PRIMARY KEY (owner_key, call_id)
+);
+
 CREATE TABLE IF NOT EXISTS pending_friend_requests (
     owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
     public_key TEXT NOT NULL,

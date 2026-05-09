@@ -97,11 +97,7 @@ impl AuditLogger {
     ) -> anyhow::Result<()> {
         let msg_hash = *blake3::hash(payload).as_bytes();
 
-        #[allow(clippy::cast_possible_truncation)] // wall clock ms: u128 → u64 safe for 584M years
-        let timestamp_ms = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0);
+        let timestamp_ms = rekindle_utils::timestamp_ms();
 
         let entry = AuditEntry {
             sequence: self.next_sequence,

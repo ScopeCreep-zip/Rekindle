@@ -270,7 +270,7 @@ mod tests {
 
     #[test]
     fn doctor_check_serialization() {
-        let checks = vec![
+        let checks = [
             rekindle_types::display::Check {
                 id: "node.running".into(),
                 category: "node".into(),

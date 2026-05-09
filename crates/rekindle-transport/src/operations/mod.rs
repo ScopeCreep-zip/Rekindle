@@ -22,3 +22,4 @@ pub mod roles;
 pub mod moderation;
 pub mod invites;
 pub mod channel_admin;
+pub mod calls;

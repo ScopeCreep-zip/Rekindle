@@ -28,7 +28,7 @@ use crate::state::SharedState;
 /// Caller-side: spawn a tokio task that fires `CallTimedOut` if the
 /// call is still Outgoing at `expires_at_ms`.
 pub fn spawn_dialing_timeout(
-    state: SharedState,
+    state: &SharedState,
     pool: DbPool,
     app: tauri::AppHandle,
     call_id: String,
@@ -66,7 +66,7 @@ pub fn spawn_dialing_timeout(
 /// Receiver-side: spawn a tokio task that fires `CallMissed` if the
 /// call is still Incoming at `expires_at_ms`.
 pub fn spawn_incoming_timeout(
-    state: SharedState,
+    state: &SharedState,
     pool: DbPool,
     app: tauri::AppHandle,
     call_id: String,

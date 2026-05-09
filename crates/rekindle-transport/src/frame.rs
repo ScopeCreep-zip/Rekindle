@@ -67,6 +67,53 @@ pub enum TypeId {
     SyncResponse      = 0x24,
     /// DM-class message via app_call (friend request/accept handshake).
     DmCall            = 0x25,
+
+    // ── W16: 1:1 Call signaling ──────────────────────────────────
+    //
+    // W16.5b: hybrid `app_call` + `app_message` design (matches SIP
+    // 100-Trying / 180-Ringing / 200-OK):
+    //   - CallInvite is RPC (`app_call`) — receiver replies
+    //     synchronously inside `app_call_reply` with a typed
+    //     `CallResponse::CallRinging { call_id }`. The 5-10 s RPC
+    //     budget is plenty for "I got the invite, I'm ringing the
+    //     user." Veilid's `op_id` waiter table provides automatic
+    //     dedup. CallRinging is no longer a wire envelope.
+    //   - CallAccept / CallDecline / CallEnd / CallMediaState /
+    //     CallReaction are `app_message` because user-decision time
+    //     is unbounded by Veilid's RPC budget.
+    /// Caller → receiver: ringing initiated. RPC (`app_call`).
+    CallInvite        = 0x30,
+    /// Receiver → caller: accepted (carries acceptor X25519 pub).
+    CallAccept        = 0x31,
+    /// Receiver → caller: declined.
+    CallDecline       = 0x32,
+    /// Either side: hangup or cancel.
+    CallEnd           = 0x33,
+    // 0x34 (CallRinging) reserved — was a wire envelope before W16.5b;
+    // now travels as `CallResponse::CallRinging` inside the synchronous
+    // `app_call_reply` for `CallInvite`.
+    /// Mid-call: peer toggled mic / camera / screen-share.
+    CallMediaState    = 0x35,
+    /// Mid-call: emoji reaction.
+    CallReaction      = 0x36,
+
+    // ── W16: Group call signaling (fire-and-forget app_message) ──
+    /// Caller → invitee: group call invite (per-invitee fan-out).
+    GroupCallOffer    = 0x37,
+    /// Invitee → caller: group call accept.
+    GroupCallAccept   = 0x38,
+    /// Invitee → caller: group call decline.
+    GroupCallDecline  = 0x39,
+
+    // ── W16: DM invite (request/reply via expect-reply primitive) ─
+    /// DM invite request — initiator awaits a reply with the new DM record key.
+    DmInviteRequest   = 0x40,
+    /// DM invite reply — receiver's accept/decline + DM record key on accept.
+    DmInviteReply     = 0x41,
+    /// Group DM invite request.
+    GroupDmInviteRequest = 0x42,
+    /// Group DM invite reply.
+    GroupDmInviteReply   = 0x43,
 }
 
 impl TypeId {
@@ -90,15 +137,28 @@ impl TypeId {
             0x23 => Some(Self::SyncRequest),
             0x24 => Some(Self::SyncResponse),
             0x25 => Some(Self::DmCall),
+            0x30 => Some(Self::CallInvite),
+            0x31 => Some(Self::CallAccept),
+            0x32 => Some(Self::CallDecline),
+            0x33 => Some(Self::CallEnd),
+            // 0x34 (CallRinging) — see W16.5b note above.
+            0x35 => Some(Self::CallMediaState),
+            0x36 => Some(Self::CallReaction),
+            0x37 => Some(Self::GroupCallOffer),
+            0x38 => Some(Self::GroupCallAccept),
+            0x39 => Some(Self::GroupCallDecline),
+            0x40 => Some(Self::DmInviteRequest),
+            0x41 => Some(Self::DmInviteReply),
+            0x42 => Some(Self::GroupDmInviteRequest),
+            0x43 => Some(Self::GroupDmInviteReply),
             _    => None,
         }
     }
 
-    /// Whether this type requires Ed25519 signature verification on receive.
-    #[allow(clippy::unused_self, clippy::trivially_copy_pass_by_ref)]
-    pub fn requires_signature(&self) -> bool {
-        true
-    }
+    // (Removed `requires_signature` — every TypeId requires Ed25519
+    // signature verification by definition; the dispatch path enforces
+    // it unconditionally. The function had zero callers and was
+    // suppressing two valid clippy lints.)
 
     /// Whether this type carries encrypted content that needs decryption.
     pub fn requires_decryption(self) -> bool {
@@ -128,6 +188,11 @@ impl TypeId {
             | Self::SyncRequest
             | Self::SyncResponse
             | Self::DmCall
+            // W16.5b — CallInvite uses Veilid's app_call so the
+            // synchronous CallRinging reply matches SIP 180-Ringing
+            // semantics. Receiver reply payload is
+            // `CallResponse::CallRinging { call_id }`.
+            | Self::CallInvite
         )
     }
 }

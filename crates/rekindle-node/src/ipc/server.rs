@@ -487,11 +487,7 @@ async fn route_frame(state: &ServerState, sender_conn_id: u64, payload: &[u8]) {
     {
         let conns = state.connections.read().await;
         if let Some(conn) = conns.get(&sender_conn_id) {
-            #[allow(clippy::cast_possible_truncation)]
-            let now_ms = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_millis() as u64)
-                .unwrap_or(0);
+            let now_ms = rekindle_utils::timestamp_ms();
             let last = conn.last_token_refill.load(std::sync::atomic::Ordering::Relaxed);
             if now_ms.saturating_sub(last) >= RATE_LIMIT_REFILL_MS {
                 conn.rate_tokens.store(RATE_LIMIT_MAX_TOKENS, std::sync::atomic::Ordering::Relaxed);

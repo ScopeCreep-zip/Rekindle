@@ -66,7 +66,7 @@ enum Command {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
-    match dispatch(cli.cmd) {
+    match dispatch(&cli.cmd) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("xtask: {e:#}");
@@ -75,7 +75,7 @@ fn main() -> ExitCode {
     }
 }
 
-fn dispatch(cmd: Command) -> Result<()> {
+fn dispatch(cmd: &Command) -> Result<()> {
     let root = workspace_root()?;
     match cmd {
         Command::Check => {
@@ -105,7 +105,7 @@ fn dispatch(cmd: Command) -> Result<()> {
         Command::CheckBoundaries => check_boundaries(&root),
         Command::CheckFileSizes => check_file_sizes(&root),
         Command::CheckAllowReasons => check_allow_reasons(&root),
-        Command::RetrofitAllowReasons { dry_run } => retrofit_allow_reasons(&root, dry_run),
+        Command::RetrofitAllowReasons { dry_run } => retrofit_allow_reasons(&root, *dry_run),
     }
 }
 
@@ -281,9 +281,8 @@ fn check_file_sizes(root: &Path) -> Result<()> {
 
     if warnings > 0 {
         println!(
-            "\n{} file(s) over threshold. These are tracked in the cleanup sweep —\n\
-             new files added in a PR should stay under threshold.",
-            warnings
+            "\n{warnings} file(s) over threshold. These are tracked in the cleanup sweep —\n\
+             new files added in a PR should stay under threshold."
         );
     }
     Ok(())
@@ -330,13 +329,6 @@ fn check_allow_reasons(root: &Path) -> Result<()> {
     Err(anyhow!("{} bare allow(s)", bare_allow.len()))
 }
 
-#[derive(Debug)]
-struct BareAllow {
-    path: PathBuf,
-    lineno: usize,
-    lints: Vec<String>,
-}
-
 fn find_bare_allows(root: &Path) -> Result<Vec<(PathBuf, usize, Vec<String>)>> {
     let mut out = Vec::new();
     let walker = WalkBuilder::new(root)
@@ -356,9 +348,8 @@ fn find_bare_allows(root: &Path) -> Result<Vec<(PathBuf, usize, Vec<String>)>> {
         if path.extension().and_then(|e| e.to_str()) != Some("rs") {
             continue;
         }
-        let txt = match std::fs::read_to_string(path) {
-            Ok(t) => t,
-            Err(_) => continue,
+        let Ok(txt) = std::fs::read_to_string(path) else {
+            continue;
         };
         for (lineno, line) in txt.lines().enumerate() {
             let trimmed = line.trim_start();
@@ -371,23 +362,15 @@ fn find_bare_allows(root: &Path) -> Result<Vec<(PathBuf, usize, Vec<String>)>> {
             }
         }
     }
-    Ok(out
-        .into_iter()
-        .map(|BareAllow { path, lineno, lints }| (path, lineno, lints))
-        .collect::<Vec<_>>()
-        .into_iter()
-        .map(|(a, b, c)| (a, b, c))
-        .collect())
+    Ok(out)
 }
 
 fn extract_lints(line: &str) -> Vec<String> {
-    let start = match line.find('(') {
-        Some(i) => i + 1,
-        None => return Vec::new(),
+    let Some(start) = line.find('(').map(|i| i + 1) else {
+        return Vec::new();
     };
-    let end = match line.rfind(')') {
-        Some(i) => i,
-        None => return Vec::new(),
+    let Some(end) = line.rfind(')') else {
+        return Vec::new();
     };
     if end <= start {
         return Vec::new();

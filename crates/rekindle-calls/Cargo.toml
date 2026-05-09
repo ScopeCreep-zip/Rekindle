@@ -10,6 +10,7 @@ workspace = true
 
 [dependencies]
 rekindle-types = { path = "../rekindle-types" }
+rekindle-utils = { path = "../rekindle-utils" }
 serde = { workspace = true }
 thiserror = { workspace = true }
 hex = { workspace = true }

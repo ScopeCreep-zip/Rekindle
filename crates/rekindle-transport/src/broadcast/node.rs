@@ -137,6 +137,93 @@ impl TransportNode {
         })
     }
 
+    /// W16.9 — adopt an EXTERNALLY-MANAGED Veilid API + update channel.
+    ///
+    /// Use this when the host process already owns Veilid bootstrap
+    /// (e.g. `src-tauri/src/services/veilid/lifecycle/node.rs` runs
+    /// `api_startup` + `attach` itself for historical reasons). The
+    /// transport adopts the running `VeilidAPI` and the `Receiver` end
+    /// of the host's existing update channel, spawns its own dispatch
+    /// loop on top, and otherwise behaves identically to [`Self::start`].
+    ///
+    /// **Caller MUST stop calling its own dispatch loop on the same
+    /// `update_rx`** — both consumers can't share a single mpsc receiver.
+    /// The transport now owns the dispatch.
+    ///
+    /// On [`Self::shutdown`], `adopt`-ed nodes do NOT detach or shut
+    /// down Veilid (the host owns lifecycle). Pass `owns_veilid: false`
+    /// to skip the api.detach()/api.shutdown() steps.
+    pub async fn adopt<H: InboundHandler>(
+        config: TransportConfig,
+        api: VeilidAPI,
+        update_rx: mpsc::Receiver<VeilidUpdate>,
+        handler: Arc<H>,
+        session: Arc<parking_lot::RwLock<Option<crate::session::Session>>>,
+    ) -> Result<Self> {
+        info!(namespace = %config.namespace, "adopting external Veilid node into transport");
+
+        let config = Arc::new(config);
+        let route_manager = Arc::new(parking_lot::RwLock::new(RouteManager::new()));
+        let peer_registry = Arc::new(parking_lot::RwLock::new(PeerRegistry::new(
+            config.route_cache_ttl_secs,
+            config.circuit_breaker_threshold,
+            config.circuit_breaker_cooldown_secs,
+        )));
+        let shared_state = SharedState::new();
+
+        let (shutdown_tx, shutdown_rx) = mpsc::channel(1);
+        let dispatch_handle = {
+            let h = Arc::clone(&handler);
+            let c = Arc::clone(&config);
+            let a = api.clone();
+            let ss = Arc::clone(&shared_state);
+            tokio::spawn(dispatch::run_dispatch_loop(h, c, update_rx, shutdown_rx, a, ss))
+        };
+
+        let (rr_tx, rr_rx) = mpsc::channel(1);
+        let route_refresh_handle = {
+            let a = api.clone();
+            let rm = Arc::clone(&route_manager);
+            let secs = config.route_refresh_secs;
+            let sess = Arc::clone(&session);
+            let cfg = Arc::clone(&config);
+            tokio::spawn(run_route_refresh_loop(a, rm, secs, rr_rx, sess, cfg))
+        };
+
+        info!("transport node adopted (host owns Veilid lifecycle)");
+
+        Ok(Self {
+            api,
+            config,
+            shutdown_tx,
+            dispatch_handle,
+            route_refresh_handle: Some(route_refresh_handle),
+            route_refresh_shutdown_tx: Some(rr_tx),
+            route_manager,
+            peer_registry,
+            shared_state,
+        })
+    }
+
+    /// Shutdown without detaching/teardown of Veilid (for `adopt`-ed
+    /// nodes — the host process owns Veilid lifecycle and will detach
+    /// itself).
+    pub async fn shutdown_borrowed(mut self) -> Result<()> {
+        info!("transport node (borrowed) shutting down dispatch + route refresh");
+        if let Some(tx) = self.route_refresh_shutdown_tx.take() {
+            let _ = tx.send(()).await;
+        }
+        if let Some(h) = self.route_refresh_handle.take() {
+            let _ = h.await;
+        }
+        let _ = self.shutdown_tx.send(()).await;
+        if let Err(e) = self.dispatch_handle.await {
+            warn!(error = %e, "dispatch loop join failed");
+        }
+        info!("transport node (borrowed) dispatch + route refresh stopped");
+        Ok(())
+    }
+
     /// Graceful shutdown: signal all background tasks, detach, shut down Veilid.
     pub async fn shutdown(mut self) -> Result<()> {
         info!("transport node shutting down");

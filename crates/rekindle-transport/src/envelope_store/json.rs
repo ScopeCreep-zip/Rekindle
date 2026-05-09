@@ -347,13 +347,13 @@ mod tests {
         let dir = tempdir().unwrap();
         let store = JsonEnvelopeStore::new(dir.path());
         let id = store
-            .enqueue(sample_envelope("alice", "bob", EnvelopeKind::CallInvite))
+            .enqueue(sample_envelope("alice", "bob", EnvelopeKind::CallAccept))
             .await
             .unwrap();
         assert!(id > 0);
         let eligible = store.load_eligible("alice", 200, 64).await.unwrap();
         assert_eq!(eligible.len(), 1);
-        assert_eq!(eligible[0].kind, EnvelopeKind::CallInvite);
+        assert_eq!(eligible[0].kind, EnvelopeKind::CallAccept);
         let none = store.load_eligible("alice", 50, 64).await.unwrap();
         assert!(none.is_empty(), "row not yet eligible");
     }
@@ -375,9 +375,9 @@ mod tests {
     async fn cancel_by_correlation_drops_matching_rows() {
         let dir = tempdir().unwrap();
         let store = JsonEnvelopeStore::new(dir.path());
-        let mut e1 = sample_envelope("alice", "bob", EnvelopeKind::CallInvite);
+        let mut e1 = sample_envelope("alice", "bob", EnvelopeKind::CallAccept);
         e1.correlation_id = Some("call-1".into());
-        let mut e2 = sample_envelope("alice", "bob", EnvelopeKind::CallInvite);
+        let mut e2 = sample_envelope("alice", "bob", EnvelopeKind::CallAccept);
         e2.correlation_id = Some("call-2".into());
         let mut e3 = sample_envelope("alice", "bob", EnvelopeKind::CallEnd);
         e3.correlation_id = Some("call-1".into());
@@ -396,15 +396,15 @@ mod tests {
         let dir = tempdir().unwrap();
         let store = JsonEnvelopeStore::new(dir.path());
         let s1 = store
-            .next_outbound_seq("alice", "bob", EnvelopeKind::CallInvite, "")
+            .next_outbound_seq("alice", "bob", EnvelopeKind::CallAccept, "")
             .await
             .unwrap();
         let s2 = store
-            .next_outbound_seq("alice", "bob", EnvelopeKind::CallInvite, "")
+            .next_outbound_seq("alice", "bob", EnvelopeKind::CallAccept, "")
             .await
             .unwrap();
         let s3 = store
-            .next_outbound_seq("alice", "bob", EnvelopeKind::CallAccept, "")
+            .next_outbound_seq("alice", "bob", EnvelopeKind::CallEnd, "")
             .await
             .unwrap();
         assert_eq!(s1, 1);
@@ -417,16 +417,16 @@ mod tests {
         let dir = tempdir().unwrap();
         let store = JsonEnvelopeStore::new(dir.path());
         let last = store
-            .get_last_inbound_seq("alice", "bob", EnvelopeKind::CallInvite, "")
+            .get_last_inbound_seq("alice", "bob", EnvelopeKind::CallAccept, "")
             .await
             .unwrap();
         assert!(last.is_none());
         store
-            .record_inbound_seq("alice", "bob", EnvelopeKind::CallInvite, "", 7, 100)
+            .record_inbound_seq("alice", "bob", EnvelopeKind::CallAccept, "", 7, 100)
             .await
             .unwrap();
         let seen = store
-            .get_last_inbound_seq("alice", "bob", EnvelopeKind::CallInvite, "")
+            .get_last_inbound_seq("alice", "bob", EnvelopeKind::CallAccept, "")
             .await
             .unwrap();
         assert_eq!(seen, Some(7));
@@ -463,7 +463,7 @@ mod tests {
         {
             let store = JsonEnvelopeStore::new(dir.path());
             store
-                .enqueue(sample_envelope("alice", "bob", EnvelopeKind::CallInvite))
+                .enqueue(sample_envelope("alice", "bob", EnvelopeKind::CallAccept))
                 .await
                 .unwrap();
         }

@@ -45,9 +45,17 @@ impl Sender {
         type_id: TypeId,
         sender_secret: &[u8; 32],
         sender_public_hex: &str,
+        seq: u64,
+        correlation_id: Option<&str>,
         payload: &[u8],
     ) -> Result<()> {
-        let signed = sign_payload(sender_secret, sender_public_hex, payload);
+        let signed = sign_payload(
+            sender_secret,
+            sender_public_hex,
+            seq,
+            correlation_id,
+            payload,
+        );
         let signed_bytes = postcard::to_stdvec(&signed)
             .map_err(|e| TransportError::SerializationFailed { reason: e.to_string() })?;
         let frame_bytes = frame::encode(type_id, &signed_bytes)?;
@@ -190,7 +198,17 @@ impl Caller {
         request_payload: &[u8],
         timeout: Duration,
     ) -> Result<Vec<u8>> {
-        let signed = sign_payload(sender_secret, sender_public_hex, request_payload);
+        // RPC paths don't go through envelope_queue's dedup (they're
+        // synchronous one-shots, not retry-driven). seq=0 / correlation=None
+        // is the convention for non-queued sends — receiver's
+        // SeqTracker only applies on the app_message dispatch path.
+        let signed = sign_payload(
+            sender_secret,
+            sender_public_hex,
+            0,
+            None,
+            request_payload,
+        );
         let signed_bytes = postcard::to_stdvec(&signed)
             .map_err(|e| TransportError::SerializationFailed { reason: e.to_string() })?;
         let frame_bytes = frame::encode(type_id, &signed_bytes)?;

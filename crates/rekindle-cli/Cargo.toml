@@ -72,6 +72,7 @@ ratatui = { version = "0.30", optional = true, default-features = false, feature
 crossterm = { version = "0.29", optional = true, features = ["event-stream"] }
 ratatui-textarea = { version = "0.9", optional = true, default-features = false, features = ["crossterm", "search"] }
 color-eyre = { version = "0.6", optional = true }
+rekindle-utils = { path = "../rekindle-utils" }
 tokio-util = { version = "0.7", optional = true }
 futures-util = { version = "0.3", optional = true, default-features = false, features = ["std"] }
 opaline = { version = "0.2", optional = true, features = ["ratatui", "builtin-themes", "gradients"] }

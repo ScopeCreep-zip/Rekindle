@@ -12,6 +12,8 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
+use crate::frame::TypeId;
+
 pub mod json;
 pub mod memory;
 
@@ -23,17 +25,21 @@ pub use memory::MemoryEnvelopeStore;
 /// correlation_id).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum EnvelopeKind {
-    // ── Fire-and-forget signaling (W16 reliability layer) ──
-    /// Caller → receiver: ringing initiated.
-    CallInvite,
+    // ── 1:1 Call signaling — post-decision phase (W16 + W16.5b) ──
+    //
+    // CallInvite + CallRinging dropped per W16.5b: the wire-level
+    // invite-and-ringing handshake travels via Veilid `app_call`
+    // (5-10 s budget; matches SIP 100-Trying / 180-Ringing) — see
+    // `payload::rpc::{CallInvitePayload, CallRingingPayload}` and
+    // `operations::calls::CallRuntime::interpret_one(SendCallInvite)`.
+    // The `EnvelopeQueue` only handles the user-decision response
+    // (Accept/Decline/End) which is unbounded by Veilid's RPC budget.
     /// Receiver → caller: accepted; carries acceptor X25519 pub.
     CallAccept,
     /// Receiver → caller: declined.
     CallDecline,
     /// Either side: hangup or cancel.
     CallEnd,
-    /// Receiver → caller: alerting ack ("I'm ringing the user").
-    CallRinging,
     /// Mid-call: peer toggled mic / camera / screen.
     CallMediaState,
     /// Mid-call: emoji reaction.
@@ -70,11 +76,9 @@ impl EnvelopeKind {
     /// Wire-format string for diagnostics, JSON storage, and dedup keying.
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::CallInvite => "call_invite",
             Self::CallAccept => "call_accept",
             Self::CallDecline => "call_decline",
             Self::CallEnd => "call_end",
-            Self::CallRinging => "call_ringing",
             Self::CallMediaState => "call_media_state",
             Self::CallReaction => "call_reaction",
             Self::GroupCallOffer => "group_call_offer",
@@ -95,11 +99,9 @@ impl EnvelopeKind {
     /// schema bump that drops a kind).
     pub fn from_wire(s: &str) -> Option<Self> {
         Some(match s {
-            "call_invite" => Self::CallInvite,
             "call_accept" => Self::CallAccept,
             "call_decline" => Self::CallDecline,
             "call_end" => Self::CallEnd,
-            "call_ringing" => Self::CallRinging,
             "call_media_state" => Self::CallMediaState,
             "call_reaction" => Self::CallReaction,
             "group_call_offer" => Self::GroupCallOffer,
@@ -125,6 +127,36 @@ impl EnvelopeKind {
     /// True if this kind is an expected reply for a request.
     pub fn is_reply(self) -> bool {
         matches!(self, Self::DmInviteReply | Self::GroupDmInviteReply)
+    }
+
+    /// Map this kind to its wire `TypeId` for `Sender::send_dm` framing.
+    /// Returns `None` for kinds that don't flow through `app_message`
+    /// (e.g. `FriendRequestInbox` / `FriendAcceptInbox` are DHT writes;
+    /// the queue refuses to enqueue them and W16.10 routes them through
+    /// `operations::friend` directly).
+    pub fn wire_type_id(self) -> Option<TypeId> {
+        Some(match self {
+            // 1:1 call signaling — post-decision phase (W16 + W16.5b)
+            Self::CallAccept => TypeId::CallAccept,
+            Self::CallDecline => TypeId::CallDecline,
+            Self::CallEnd => TypeId::CallEnd,
+            Self::CallMediaState => TypeId::CallMediaState,
+            Self::CallReaction => TypeId::CallReaction,
+            // Group calls (W16 — fire-and-forget)
+            Self::GroupCallOffer => TypeId::GroupCallOffer,
+            Self::GroupCallAccept => TypeId::GroupCallAccept,
+            Self::GroupCallDecline => TypeId::GroupCallDecline,
+            // DM invites (W16 — expect-reply)
+            Self::DmInviteRequest => TypeId::DmInviteRequest,
+            Self::DmInviteReply => TypeId::DmInviteReply,
+            Self::GroupDmInviteRequest => TypeId::GroupDmInviteRequest,
+            Self::GroupDmInviteReply => TypeId::GroupDmInviteReply,
+            // DM body — Signal-encrypted
+            Self::DmMessage => TypeId::DmMessage,
+            // 3-phase friend-add inbox writes — DHT writes, no app_message TypeId.
+            // The queue refuses these; W16.10 routes through operations::friend.
+            Self::FriendRequestInbox | Self::FriendAcceptInbox => return None,
+        })
     }
 }
 

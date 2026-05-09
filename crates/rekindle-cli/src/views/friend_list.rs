@@ -95,11 +95,7 @@ impl FriendListView {
 
             // Format last seen from epoch ms
             let last_seen = friend.last_seen_ms.map(|ms| {
-                #[allow(clippy::cast_possible_truncation)]
-                let now_ms = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .expect("system clock")
-                    .as_millis() as u64;
+                let now_ms = rekindle_utils::timestamp_ms();
                 let elapsed = std::time::Duration::from_millis(now_ms.saturating_sub(ms));
                 format!("  {}", helpers::format_duration_ago(elapsed))
             }).unwrap_or_default();

@@ -262,8 +262,13 @@ impl SubscriptionManager {
     /// Pipeline: payload.into_event() → state_effects → dedup → emit
     pub fn on_dm(&self, sender_key: &str, payload: DmPayload, timestamp: u64) {
         debug!(sender = &sender_key[..12.min(sender_key.len())], timestamp, "sub: on_dm");
-        let event = payload.into_event(sender_key, timestamp);
-        self.process_event(event);
+        // W16.4 — call signaling and DM invites return None (they
+        // surface via TransportNotification, not SubscriptionEvent).
+        // The receive dispatch (W16.7) routes them to the call state
+        // machine before reaching this layer.
+        if let Some(event) = payload.into_event(sender_key, timestamp) {
+            self.process_event(event);
+        }
     }
 
     /// Central event processing pipeline: enrich → state effects → dedup → emit.

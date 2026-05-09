@@ -226,7 +226,7 @@ mod tests {
             id: 0,
             owner_key: owner.to_string(),
             recipient_key: "bob".into(),
-            kind: EnvelopeKind::CallInvite,
+            kind: EnvelopeKind::CallAccept,
             seq: 1,
             correlation_id: Some("call-x".into()),
             payload: vec![1, 2, 3],
@@ -259,17 +259,17 @@ mod tests {
     async fn dedup_round_trip() {
         let store = MemoryEnvelopeStore::new();
         assert!(store
-            .get_last_inbound_seq("a", "b", EnvelopeKind::CallInvite, "")
+            .get_last_inbound_seq("a", "b", EnvelopeKind::CallAccept, "")
             .await
             .unwrap()
             .is_none());
         store
-            .record_inbound_seq("a", "b", EnvelopeKind::CallInvite, "", 5, 100)
+            .record_inbound_seq("a", "b", EnvelopeKind::CallAccept, "", 5, 100)
             .await
             .unwrap();
         assert_eq!(
             store
-                .get_last_inbound_seq("a", "b", EnvelopeKind::CallInvite, "")
+                .get_last_inbound_seq("a", "b", EnvelopeKind::CallAccept, "")
                 .await
                 .unwrap(),
             Some(5)

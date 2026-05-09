@@ -80,7 +80,7 @@ pub async fn start_dm_call(
 
     // Schedule the 30 s ring timer (services/calls/ring_timer.rs).
     crate::services::calls::ring_timer::spawn_dialing_timeout(
-        state.inner().clone(),
+        state.inner(),
         pool.inner().clone(),
         app.clone(),
         call_id.clone(),
@@ -520,7 +520,7 @@ pub async fn start_group_call(
     // Fire one CallInvite-shaped envelope per invitee, each carrying
     // their per-recipient wrapped call_key. Fire-and-forget, in
     // parallel via spawned tasks so a slow invitee doesn't block.
-    for invitee in participant_pubkeys.iter().cloned() {
+    for invitee in participant_pubkeys {
         let task_state = state.inner().clone();
         let task_pool = pool.inner().clone();
         let task_call_id = call_id.clone();
@@ -556,7 +556,7 @@ pub async fn start_group_call(
                 let calls = task_state.group_calls.lock();
                 calls
                     .get(&task_call_id)
-                    .and_then(|c| c.our_x25519_secret.as_ref().map(|s| s.to_bytes()))
+                    .and_then(|c| c.our_x25519_secret.as_ref().map(rekindle_calls::X25519StaticSecret::to_bytes))
             };
             let Some(secret_bytes) = secret_bytes else {
                 return;

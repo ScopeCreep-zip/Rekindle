@@ -53,13 +53,13 @@ pub enum GroupCallStatus {
     Ended,
 }
 
-/// Drop impl is implicit via StaticSecret + array; both zeroize.
+// Drop impl is implicit via StaticSecret + array; both zeroize.
 
 /// Wave 13 W13.13 — dispatcher for group-call MessagePayload variants
 /// that arrived via app_message. After W13.13, ALL group call
 /// signaling travels via app_message (was app_call in W12.9; the
 /// architectural mismatch was the same one that broke 1:1 calls).
-pub async fn handle_group_call_payload(
+pub fn handle_group_call_payload(
     app: &tauri::AppHandle,
     state: &SharedState,
     _pool: &DbPool,
@@ -87,17 +87,16 @@ pub async fn handle_group_call_payload(
                 participants,
                 &wrapped_call_key,
                 expires_at_ms,
-            )
-            .await;
+            );
         }
         MessagePayload::GroupCallAccept {
             call_id,
             acceptor_pubkey,
         } => {
-            handle_group_accept_received(app, state, sender_hex, &call_id, &acceptor_pubkey).await;
+            handle_group_accept_received(app, state, sender_hex, &call_id, &acceptor_pubkey);
         }
         MessagePayload::GroupCallDecline { call_id, reason } => {
-            handle_group_decline_received(app, state, sender_hex, &call_id, reason).await;
+            handle_group_decline_received(app, state, sender_hex, &call_id, reason);
         }
         MessagePayload::GroupCallParticipantJoined { call_id, participant_pubkey } => {
             // Receivers update their grid only if the announced
@@ -107,8 +106,7 @@ pub async fn handle_group_call_payload(
                 let calls = state.group_calls.lock();
                 calls
                     .get(&call_id)
-                    .map(|c| c.participants.contains(&participant_pubkey))
-                    .unwrap_or(false)
+                    .is_some_and(|c| c.participants.contains(&participant_pubkey))
             };
             if known {
                 let _ = app.emit(
@@ -129,8 +127,7 @@ pub async fn handle_group_call_payload(
                 let calls = state.group_calls.lock();
                 calls
                     .get(&call_id)
-                    .map(|c| c.participants.contains(&participant_pubkey))
-                    .unwrap_or(false)
+                    .is_some_and(|c| c.participants.contains(&participant_pubkey))
             };
             if known {
                 let _ = app.emit(
@@ -150,7 +147,7 @@ pub async fn handle_group_call_payload(
 /// Wave 13 — receiver-side entry into a group call. Mirrors the
 /// `handle_incoming_invite` shape for 1:1 but with the per-recipient
 /// X25519 unwrap.
-pub async fn handle_incoming_group_invite(
+pub fn handle_incoming_group_invite(
     app: &tauri::AppHandle,
     state: &SharedState,
     sender_hex: &str,
@@ -196,7 +193,7 @@ pub async fn handle_incoming_group_invite(
         Err(_) => return,
     };
     let our_x25519_secret = {
-        let secret_opt = state.identity_secret.lock().clone();
+        let secret_opt = *state.identity_secret.lock();
         match secret_opt {
             Some(bytes) => {
                 let identity = rekindle_crypto::Identity::from_secret_bytes(&bytes);
@@ -259,7 +256,7 @@ pub async fn handle_incoming_group_invite(
 /// GroupCallState (Outgoing → Active on first accept), emits
 /// ChatEvent::GroupCallConnected on first transition + always emits
 /// ParticipantJoined so the grid updates.
-pub async fn handle_group_accept_received(
+pub fn handle_group_accept_received(
     app: &tauri::AppHandle,
     state: &SharedState,
     sender_hex: &str,
@@ -303,7 +300,7 @@ pub async fn handle_group_accept_received(
 }
 
 /// Wave 13 — participant declines a group call.
-pub async fn handle_group_decline_received(
+pub fn handle_group_decline_received(
     app: &tauri::AppHandle,
     state: &SharedState,
     sender_hex: &str,

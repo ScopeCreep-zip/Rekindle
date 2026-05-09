@@ -13,6 +13,7 @@ workspace = true
 # rekindle-node NEVER imports veilid-core directly.
 rekindle-transport = { path = "../rekindle-transport" }
 rekindle-types = { path = "../rekindle-types" }
+rekindle-utils = { path = "../rekindle-utils" }
 
 # Async runtime
 tokio = { workspace = true }

@@ -217,7 +217,7 @@ pub async fn handle_incoming_invite(
     // W13.2 — schedule local 30 s timeout. Independent of the caller's
     // timeout (each side enforces its own).
     ring_timer::spawn_incoming_timeout(
-        state.clone(),
+        state,
         pool.clone(),
         app.clone(),
         call_id.to_string(),
@@ -388,7 +388,7 @@ pub async fn handle_accept_received(
 /// W13.8 — receive arm for `CallDecline`. Caller-side: receiver
 /// rejected the call. Drop the CallState and emit CallDeclined.
 /// Idempotent — silently no-ops on unknown call_id.
-pub async fn handle_decline_received(
+pub fn handle_decline_received(
     app: &tauri::AppHandle,
     state: &SharedState,
     sender_hex: &str,
@@ -417,7 +417,7 @@ pub async fn handle_decline_received(
 /// has the invite and is ringing the user. Emits a chat-event the
 /// frontend can use to flip the OutgoingCallPanel label from
 /// "Calling…" to "Ringing…".
-pub async fn handle_ringing_received(
+pub fn handle_ringing_received(
     app: &tauri::AppHandle,
     state: &SharedState,
     sender_hex: &str,

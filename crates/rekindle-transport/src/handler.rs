@@ -60,8 +60,38 @@ pub enum TransportEvent {
 /// that every call to these methods has passed full authentication.
 pub trait InboundHandler: Send + Sync + 'static {
     /// An authenticated DM payload arrived from a verified peer.
-    fn on_dm(&self, sender: &VerifiedSender, payload: DmPayload, timestamp: u64)
-        -> impl Future<Output = ()> + Send;
+    ///
+    /// W16.4 — `DmPayload` includes call signaling variants
+    /// (`CallInvite`, `CallAccept`, `CallDecline`, `CallEnd`,
+    /// `CallRinging`, `CallMediaState`, `CallReaction`,
+    /// `GroupCallOffer`, `GroupCallAccept`, `GroupCallDecline`) and
+    /// DM invite request/reply variants
+    /// (`DmInviteRequest`, `DmInviteReply`, `GroupDmInviteRequest`,
+    /// `GroupDmInviteReply`).
+    ///
+    /// W16.7 — `seq` and `correlation_id` are envelope-level metadata
+    /// from the [`SignedPayload`](crate::crypto::envelope::SignedPayload)
+    /// wrapper. Implementers MUST dedup via
+    /// [`crate::SeqTracker::check_and_record`] before processing —
+    /// Veilid's `app_message` has no built-in dedup and a duplicate
+    /// CallInvite would mount a second IncomingCallModal, etc.
+    ///
+    /// Implementations are expected to pattern-match on the payload
+    /// variant and route to:
+    /// - **Call signaling** → [`crate::operations::calls::CallRuntime`]
+    ///   via [`crate::operations::calls::CallRuntime::route_dm_payload`].
+    /// - **DM invite reply** → [`crate::EnvelopeQueue::deliver_reply`]
+    ///   (the `correlation_id` parameter wakes the request-side oneshot).
+    /// - **DM body / friend-add / presence / etc.** → existing handler
+    ///   logic (subscription event, persisted history row, etc.).
+    fn on_dm(
+        &self,
+        sender: &VerifiedSender,
+        payload: DmPayload,
+        timestamp: u64,
+        seq: u64,
+        correlation_id: Option<&str>,
+    ) -> impl Future<Output = ()> + Send;
 
     /// An authenticated gossip broadcast arrived from a community member.
     fn on_gossip(

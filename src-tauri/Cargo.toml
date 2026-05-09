@@ -35,6 +35,14 @@ rekindle-crypto = { path = "../crates/rekindle-crypto" }
 rekindle-game-detect = { path = "../crates/rekindle-game-detect" }
 rekindle-voice = { path = "../crates/rekindle-voice" }
 rekindle-utils = { path = "../crates/rekindle-utils" }
+# W16.9 — adoption of the unified transport boundary. Tauri shell
+# becomes a thin frontend over rekindle-transport (parity with
+# rekindle-cli and rekindle-node). Initially used for the W16
+# reliability primitive (envelope_queue, SeqTracker) and call
+# signaling (operations::calls); subsequent waves migrate more
+# services through transport.
+rekindle-transport = { path = "../crates/rekindle-transport" }
+async-trait = "0.1"
 ed25519-dalek = "2"
 futures.workspace = true
 

@@ -154,6 +154,8 @@ pub async fn send_friend_request(
                         crate::frame::TypeId::FriendRequestAck,
                         signing_key_bytes,
                         &session.identity.public_key_hex,
+                        0,
+                        None,
                         &notify_bytes,
                     ).await;
                     info!("direct notification sent to target via route");

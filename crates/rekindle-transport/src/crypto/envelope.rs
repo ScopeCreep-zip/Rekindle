@@ -12,44 +12,89 @@ use crate::payload::gossip::SignedGossipEnvelope;
 
 /// A signed payload wrapper for DM and RPC messages.
 ///
-/// The signature covers `timestamp_bytes(8 LE) || payload`.
+/// The signature covers `timestamp(8 LE) || seq(8 LE) || correlation_id_len(4 LE) || correlation_id_bytes || payload`.
 /// The sender's Ed25519 public key is included for verification.
+///
+/// W16.3: `seq` and `correlation_id` are envelope-level metadata used by
+/// the receiver-side dedup primitive (`SeqTracker`). The signature
+/// covers them so they can't be forged after the wire — a peer can't
+/// inject a duplicate envelope with a fresh seq to bypass dedup.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SignedPayload {
     /// Sender's Ed25519 public key (hex-encoded, 64 chars).
     pub sender_key_hex: String,
     /// Unix timestamp in milliseconds.
     pub timestamp: u64,
+    /// W16.3 — per-recipient sequence allocated by `EnvelopeQueue`.
+    /// Receiver tracks the last-seen seq per (sender, kind, correlation_id)
+    /// and drops envelopes with `seq <= last_seen` as duplicates.
+    pub seq: u64,
+    /// W16.3 — optional grouping key. For call envelopes this is the
+    /// `call_id`; for DM invites the request's correlation_id; `None`
+    /// for envelopes that aren't part of a logical group.
+    pub correlation_id: Option<String>,
     /// The serialized inner payload (type-specific).
     pub payload: Vec<u8>,
-    /// Ed25519 signature over `timestamp(8 LE) || payload`.
+    /// Ed25519 signature over `timestamp(8 LE) || seq(8 LE) ||
+    /// correlation_id_len(4 LE) || correlation_id_bytes || payload`.
     pub signature: Vec<u8>,
 }
 
 /// Sign a payload with the sender's Ed25519 secret key.
 ///
-/// Produces a [`SignedPayload`] with the signature computed over
-/// `timestamp(8 LE) || payload`.
+/// Produces a [`SignedPayload`] with the signature covering timestamp,
+/// seq, correlation_id, and payload.
 pub fn sign_payload(
     sender_secret: &[u8; 32],
     sender_public_hex: &str,
+    seq: u64,
+    correlation_id: Option<&str>,
     payload: &[u8],
 ) -> SignedPayload {
     let signing_key = SigningKey::from_bytes(sender_secret);
     let timestamp = rekindle_utils::timestamp_ms();
 
-    let mut signed_data = Vec::with_capacity(8 + payload.len());
-    signed_data.extend_from_slice(&timestamp.to_le_bytes());
-    signed_data.extend_from_slice(payload);
-
+    let signed_data = build_signed_data(timestamp, seq, correlation_id, payload);
     let signature = signing_key.sign(&signed_data);
 
     SignedPayload {
         sender_key_hex: sender_public_hex.to_string(),
         timestamp,
+        seq,
+        correlation_id: correlation_id.map(str::to_string),
         payload: payload.to_vec(),
         signature: signature.to_bytes().to_vec(),
     }
+}
+
+/// Build the byte sequence that the Ed25519 signature covers.
+///
+/// Layout: `timestamp(8 LE) || seq(8 LE) || correlation_id_len(4 LE) ||
+/// correlation_id_bytes || payload`.
+///
+/// `correlation_id_len` is `0` when `correlation_id` is `None`, otherwise
+/// the UTF-8 byte length. This makes the absence of a correlation_id
+/// distinguishable from an empty-string correlation_id (both serialize
+/// as zero bytes but with different lengths) — well, `None` serializes
+/// to `0` and `Some("")` serializes to `0` followed by zero bytes; they
+/// produce identical signed_data. That's intentional: an empty-string
+/// correlation_id is equivalent to None for dedup purposes.
+fn build_signed_data(
+    timestamp: u64,
+    seq: u64,
+    correlation_id: Option<&str>,
+    payload: &[u8],
+) -> Vec<u8> {
+    let correlation_bytes = correlation_id.map_or(&[][..], str::as_bytes);
+    let correlation_len = u32::try_from(correlation_bytes.len()).unwrap_or(u32::MAX);
+
+    let mut signed_data = Vec::with_capacity(8 + 8 + 4 + correlation_bytes.len() + payload.len());
+    signed_data.extend_from_slice(&timestamp.to_le_bytes());
+    signed_data.extend_from_slice(&seq.to_le_bytes());
+    signed_data.extend_from_slice(&correlation_len.to_le_bytes());
+    signed_data.extend_from_slice(correlation_bytes);
+    signed_data.extend_from_slice(payload);
+    signed_data
 }
 
 /// Default replay protection window: 5 minutes (300 seconds).
@@ -72,9 +117,12 @@ pub fn verify_signed_payload_with_window(signed: &SignedPayload, freshness_windo
     // Signature verification first
     let verifying_key = parse_verifying_key(&signed.sender_key_hex)?;
 
-    let mut signed_data = Vec::with_capacity(8 + signed.payload.len());
-    signed_data.extend_from_slice(&signed.timestamp.to_le_bytes());
-    signed_data.extend_from_slice(&signed.payload);
+    let signed_data = build_signed_data(
+        signed.timestamp,
+        signed.seq,
+        signed.correlation_id.as_deref(),
+        &signed.payload,
+    );
 
     let signature = parse_signature(&signed.signature)?;
 
@@ -186,7 +234,7 @@ mod tests {
         let signing_key = SigningKey::from_bytes(&secret);
         let public_hex = hex::encode(signing_key.verifying_key().to_bytes());
 
-        let signed = sign_payload(&secret, &public_hex, b"test payload");
+        let signed = sign_payload(&secret, &public_hex, 1, None, b"test payload");
         assert!(verify_signed_payload(&signed).is_ok());
     }
 
@@ -196,7 +244,7 @@ mod tests {
         let signing_key = SigningKey::from_bytes(&secret);
         let public_hex = hex::encode(signing_key.verifying_key().to_bytes());
 
-        let mut signed = sign_payload(&secret, &public_hex, b"original");
+        let mut signed = sign_payload(&secret, &public_hex, 1, None, b"original");
         signed.payload = b"tampered".to_vec();
         assert!(verify_signed_payload(&signed).is_err());
     }
@@ -209,9 +257,56 @@ mod tests {
         let key2 = SigningKey::from_bytes(&secret2);
         let public_hex2 = hex::encode(key2.verifying_key().to_bytes());
 
-        let mut signed = sign_payload(&secret1, &hex::encode(key1.verifying_key().to_bytes()), b"test");
+        let mut signed = sign_payload(
+            &secret1,
+            &hex::encode(key1.verifying_key().to_bytes()),
+            1,
+            None,
+            b"test",
+        );
         signed.sender_key_hex = public_hex2;
         assert!(verify_signed_payload(&signed).is_err());
+    }
+
+    #[test]
+    fn tampered_seq_rejected() {
+        let secret = [42u8; 32];
+        let key = SigningKey::from_bytes(&secret);
+        let public_hex = hex::encode(key.verifying_key().to_bytes());
+
+        let mut signed = sign_payload(&secret, &public_hex, 5, None, b"original");
+        signed.seq = 6; // forge a fresh seq to bypass dedup
+        assert!(
+            verify_signed_payload(&signed).is_err(),
+            "tampered seq must fail signature verify",
+        );
+    }
+
+    #[test]
+    fn tampered_correlation_id_rejected() {
+        let secret = [42u8; 32];
+        let key = SigningKey::from_bytes(&secret);
+        let public_hex = hex::encode(key.verifying_key().to_bytes());
+
+        let mut signed = sign_payload(&secret, &public_hex, 1, Some("call-a"), b"original");
+        signed.correlation_id = Some("call-b".into());
+        assert!(
+            verify_signed_payload(&signed).is_err(),
+            "tampered correlation_id must fail signature verify",
+        );
+    }
+
+    #[test]
+    fn correlation_id_round_trips() {
+        let secret = [42u8; 32];
+        let key = SigningKey::from_bytes(&secret);
+        let public_hex = hex::encode(key.verifying_key().to_bytes());
+
+        let cid = "call-abc-123";
+        let signed = sign_payload(&secret, &public_hex, 7, Some(cid), b"x");
+        assert!(verify_signed_payload(&signed).is_ok());
+        assert_eq!(signed.correlation_id.as_deref(), Some(cid));
+        assert_eq!(signed.seq, 7);
     }
 
     #[test]

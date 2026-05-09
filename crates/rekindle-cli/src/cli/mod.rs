@@ -252,7 +252,6 @@ mod tests {
             "rekindle",
             "community",
             "create",
-            "--name",
             "my community",
         ])
         .unwrap();
