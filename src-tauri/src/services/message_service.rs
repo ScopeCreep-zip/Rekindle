@@ -572,10 +572,11 @@ fn decrypt_payload(
         match handle.manager.decrypt(sender_hex, raw_payload) {
             Ok(pt) => Some(pt),
             Err(e) => {
-                tracing::warn!(
+                // W16.10d — was warn, now error so RUST_LOG=info catches it.
+                tracing::error!(
                     error = %e, from = %sender_hex,
                     payload_len = raw_payload.len(),
-                    "encrypted message could not be decrypted"
+                    "encrypted message could not be decrypted (Signal AEAD failure — most likely cause: responder-side respond_to_session failed during friend-add, see prior 'Couldn't establish secure session' alerts)"
                 );
                 let display_name = state_helpers::friend_display_name(state, sender_hex);
                 let from_label = display_name
@@ -585,8 +586,10 @@ fn decrypt_payload(
                     &crate::channels::NotificationEvent::SystemAlert {
                         title: "Message Decrypt Failed".to_string(),
                         body: format!(
-                            "A message from {from_label} could not be decrypted. \
-                             They may need to re-establish their session."
+                            "A message from {from_label} could not be decrypted. The secure \
+                             session is missing or corrupted on this side. Open their friend \
+                             menu and click 'Reset Secure Session' — verify their safety \
+                             number out-of-band before re-establishing."
                         ),
                     },
                 );
@@ -711,6 +714,7 @@ fn handle_friend_request(sender_hex: &str, prekey_bundle_bytes: &[u8]) {
 /// the responder. We use the ephemeral key they sent us to derive a matching
 /// shared secret via `respond_to_session()`.
 fn handle_friend_accept(
+    app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     sender_hex: &str,
     prekey_bundle_bytes: &[u8],
@@ -718,10 +722,31 @@ fn handle_friend_accept(
     signed_prekey_id: u32,
     one_time_prekey_id: Option<u32>,
 ) {
+    let peer_label = state_helpers::friend_display_name(state, sender_hex)
+        .unwrap_or_else(|| format!("{}…", &sender_hex[..16.min(sender_hex.len())]));
+
     if ephemeral_key.is_empty() {
-        tracing::warn!(
+        // W16.10d — was silent warn. Per Signal/SimpleX consensus on
+        // never-silent crypto failures, surface this as a typed event
+        // the user actually sees. Most likely cause: the accepter is
+        // running a pre-W16 build that doesn't include session-init
+        // material in FriendAccept; without ephemeral_key we cannot
+        // establish a Signal session and every subsequent encrypted
+        // message from that peer will fail AEAD on our side.
+        tracing::error!(
             from = %sender_hex,
-            "FriendAccept missing ephemeral key — no Signal session (legacy accept?)"
+            "FriendAccept missing ephemeral key — no Signal session (peer running incompatible build?)"
+        );
+        let _ = app_handle.emit(
+            "notification-event",
+            &crate::channels::NotificationEvent::SystemAlert {
+                title: "Couldn't establish secure session".into(),
+                body: format!(
+                    "Friend-accept from {peer_label} arrived without session-init data. \
+                     Their build may be incompatible. Open their friend menu and click \
+                     'Reset Secure Session' to retry — verify their safety number first."
+                ),
+            },
         );
         return;
     }
@@ -732,7 +757,21 @@ fn handle_friend_accept(
     ) {
         Ok(bundle) => bundle.identity_key,
         Err(e) => {
-            tracing::warn!(from = %sender_hex, error = %e, "failed to parse PreKeyBundle from FriendAccept");
+            // W16.10d — surface to user (was silent warn). Cause:
+            // PreKeyBundle bytes garbled in transit or wrong format.
+            tracing::error!(from = %sender_hex, error = %e,
+                "failed to parse PreKeyBundle from FriendAccept");
+            let _ = app_handle.emit(
+                "notification-event",
+                &crate::channels::NotificationEvent::SystemAlert {
+                    title: "Couldn't establish secure session".into(),
+                    body: format!(
+                        "Friend-accept from {peer_label} carried an unparseable prekey bundle. \
+                         Use 'Reset Secure Session' from their friend menu to retry. \
+                         Verify their safety number out-of-band first."
+                    ),
+                },
+            );
             return;
         }
     };
@@ -752,9 +791,33 @@ fn handle_friend_accept(
                 tracing::info!(from = %sender_hex, "established responder Signal session from FriendAccept");
             }
             Err(e) => {
-                tracing::warn!(from = %sender_hex, error = %e, "failed to establish responder Signal session");
+                // W16.10d — was silent warn. This is the most common
+                // path to "AEAD decrypt failures on every message from
+                // peer" — Alice never installed her responder session
+                // for Bob, so Bob's encrypted typing/presence/DM all
+                // fail AEAD. Surface explicitly so the user can act.
+                tracing::error!(from = %sender_hex, error = %e,
+                    "failed to establish responder Signal session — encrypted messages from peer will fail AEAD");
+                let _ = app_handle.emit(
+                    "notification-event",
+                    &crate::channels::NotificationEvent::SystemAlert {
+                        title: "Couldn't establish secure session".into(),
+                        body: format!(
+                            "Failed to establish encrypted session with {peer_label}: {e}. \
+                             Encrypted messages from them will fail until you re-handshake. \
+                             Click 'Reset Secure Session' from their friend menu after verifying \
+                             their safety number out-of-band."
+                        ),
+                    },
+                );
             }
         }
+    } else {
+        // Signal manager not yet initialized — log but don't surface
+        // (this only happens if FriendAccept arrives before login
+        // completes; rare edge case).
+        tracing::warn!(from = %sender_hex,
+            "FriendAccept arrived but Signal manager not yet initialized; session not established");
     }
 }
 
@@ -1288,6 +1351,7 @@ async fn handle_friend_accept_full(
     }
 
     handle_friend_accept(
+        app_handle,
         state,
         a.sender_hex,
         a.prekey_bundle,
@@ -1624,7 +1688,26 @@ async fn auto_accept_cross_request(
                         Some(info)
                     }
                     Err(e) => {
-                        tracing::warn!(peer = %req.sender_hex, error = %e, "failed to establish Signal session on cross-request");
+                        // W16.10d — was silent warn. Surface so user
+                        // can act if cross-request handshake fails.
+                        tracing::error!(peer = %req.sender_hex, error = %e,
+                            "failed to establish Signal session on cross-request — peer's encrypted DMs will fail AEAD on us");
+                        let peer_label = state_helpers::friend_display_name(state, req.sender_hex)
+                            .unwrap_or_else(|| {
+                                format!("{}…", &req.sender_hex[..16.min(req.sender_hex.len())])
+                            });
+                        let _ = app_handle.emit(
+                            "notification-event",
+                            &crate::channels::NotificationEvent::SystemAlert {
+                                title: "Couldn't establish secure session".into(),
+                                body: format!(
+                                    "Cross-request auto-accept with {peer_label} failed at the \
+                                     Signal handshake: {e}. Click 'Reset Secure Session' from \
+                                     their friend menu after verifying their safety number \
+                                     out-of-band."
+                                ),
+                            },
+                        );
                         None
                     }
                 }

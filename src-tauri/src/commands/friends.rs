@@ -371,12 +371,46 @@ pub async fn accept_request(
                         Some(info)
                     }
                     Err(e) => {
-                        tracing::warn!(peer = %public_key, error = %e, "failed to establish Signal session on accept");
+                        // W16.10d — was silent warn. Per Signal/SimpleX
+                        // consensus on never-silent crypto failures.
+                        tracing::error!(peer = %public_key, error = %e,
+                            "failed to establish Signal session on accept — recipient won't receive ephemeral_key, encrypted DMs to them will fail AEAD on their side");
+                        let peer_label = state_helpers::friend_display_name(state.inner(), &public_key)
+                            .unwrap_or_else(|| format!("{}…", &public_key[..16.min(public_key.len())]));
+                        let _ = app.emit(
+                            "notification-event",
+                            &crate::channels::NotificationEvent::SystemAlert {
+                                title: "Couldn't establish secure session".into(),
+                                body: format!(
+                                    "Failed to establish encrypted session with {peer_label}: {e}. \
+                                     Their side will not receive the session-init data; \
+                                     subsequent encrypted messages will fail. \
+                                     Tell them to re-send the friend request, then verify their \
+                                     safety number out-of-band before accepting again."
+                                ),
+                            },
+                        );
                         None
                     }
                 }
             } else {
-                tracing::warn!(peer = %public_key, "failed to deserialize stored prekey bundle");
+                // W16.10d — was silent warn. Surface the bundle-parse
+                // failure so the user can re-handshake.
+                tracing::error!(peer = %public_key,
+                    "failed to deserialize stored prekey bundle — cannot establish Signal session");
+                let peer_label = state_helpers::friend_display_name(state.inner(), &public_key)
+                    .unwrap_or_else(|| format!("{}…", &public_key[..16.min(public_key.len())]));
+                let _ = app.emit(
+                    "notification-event",
+                    &crate::channels::NotificationEvent::SystemAlert {
+                        title: "Couldn't establish secure session".into(),
+                        body: format!(
+                            "Stored prekey bundle for {peer_label} is unparseable. \
+                             Tell them to re-send the friend request, then verify their \
+                             safety number out-of-band before accepting again."
+                        ),
+                    },
+                );
                 None
             }
         } else {
