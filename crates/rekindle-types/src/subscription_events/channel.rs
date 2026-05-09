@@ -12,7 +12,10 @@ use serde::{Deserialize, Serialize};
 pub enum ChannelMessageEvent {
     /// A new message was posted to a community channel.
     ///
-    /// Triggered by: gossip `MessageNotification`, DHT `ValueChange` on channel log.
+    /// Triggered by:
+    /// - Remote: gossip `MessageNotification`, DHT `ValueChange` on channel log
+    /// - Local: `SubscriptionManager::emit_local()` after successful DHT write
+    ///
     /// Body is populated by the SubscriptionManager enrichment stage if the
     /// MEK for this channel is cached. If not, `body: None` and the TUI
     /// shows a placeholder until the MEK arrives.
@@ -27,6 +30,9 @@ pub enum ChannelMessageEvent {
         body: Option<String>,
         /// Parent message sequence for threaded replies.
         reply_to_sequence: Option<u64>,
+        /// True when this event was emitted by the local node after a
+        /// successful send — the message is from us, not from a peer.
+        is_self: bool,
     },
     /// A message was edited.
     /// Triggered by: gossip `ControlPayload::MessageEdited`.
@@ -45,17 +51,25 @@ pub enum ChannelMessageEvent {
         channel: String,
         message_id: String,
     },
-    /// A new DM was received from a peer.
+    /// A DM was sent or received in a peer conversation.
     ///
-    /// Triggered by: `DmPayload::DirectMessage` via `InboundHandler::on_dm`.
+    /// Triggered by:
+    /// - Remote: DhtLog watch on peer's outbound DM log (Signal-decrypted by enrichment spawn)
+    /// - Local: `SubscriptionManager::emit_local()` after successful DhtLog write
+    ///
     /// DM bodies are always available because DMs are decrypted at the
     /// Signal session layer before reaching SubscriptionManager.
     DirectMessageReceived {
+        /// The conversation partner's public key. For both self-sent and
+        /// peer-sent messages, this identifies the DM thread.
         peer_key: String,
         timestamp: u64,
-        /// Peer's display name if known from friend list.
+        /// Display name of the message author.
         sender_name: Option<String>,
         /// Decrypted plaintext body. Always Some for DMs (Signal decrypts inline).
         body: Option<String>,
+        /// True when this event was emitted by the local node after a
+        /// successful send — the message is from us, not from the peer.
+        is_self: bool,
     },
 }

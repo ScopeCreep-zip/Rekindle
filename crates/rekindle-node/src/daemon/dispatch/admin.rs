@@ -3,6 +3,7 @@
 //! Subscribe/Unsubscribe are handled server-side in the IPC bus router
 //! via EventRouter — they never reach daemon dispatch.
 
+use std::sync::Arc;
 use crate::daemon::DaemonState;
 use crate::ipc::protocol::IpcResponse;
 use crate::ipc::message::AgentType;
@@ -13,7 +14,7 @@ use super::{DaemonContext, PolicyConfig, state_error};
 // ── Network ─────────────────────────────────────────────────────────────
 
 /// Handle NetworkStatus — detailed transport node status.
-pub(crate) fn handle_network_status(ctx: &DaemonContext, state: DaemonState) -> IpcResponse {
+pub(crate) fn handle_network_status(ctx: &Arc<DaemonContext>, state: DaemonState) -> IpcResponse {
     if !state.can_query() { return state_error(state, "query"); }
     let transport_guard = ctx.transport.read();
     let Some(ref transport) = *transport_guard else {
@@ -43,7 +44,7 @@ pub(crate) fn handle_network_status(ctx: &DaemonContext, state: DaemonState) -> 
 }
 
 /// Handle NetworkPeers — peer snapshot for display.
-pub(crate) fn handle_network_peers(ctx: &DaemonContext, state: DaemonState) -> IpcResponse {
+pub(crate) fn handle_network_peers(ctx: &Arc<DaemonContext>, state: DaemonState) -> IpcResponse {
     if !state.can_query() { return state_error(state, "query"); }
     let transport_guard = ctx.transport.read();
     let Some(ref transport) = *transport_guard else {
@@ -69,7 +70,7 @@ pub(crate) fn handle_network_peers(ctx: &DaemonContext, state: DaemonState) -> I
 /// should call `registry.register()` with the real pubkey after dispatch
 /// returns success.
 pub(crate) fn handle_agent_register(
-    ctx: &DaemonContext, name: &str, agent_type: AgentType, capabilities: &[String],
+    ctx: &Arc<DaemonContext>, name: &str, agent_type: AgentType, capabilities: &[String],
 ) -> IpcResponse {
     if let Err(e) = validate_agent_name(name) {
         return IpcResponse::error(400, format!("invalid agent name: {e}"));
@@ -93,7 +94,7 @@ pub(crate) fn handle_agent_register(
 }
 
 /// Handle AgentRevoke — remove an agent from the ClearanceRegistry.
-pub(crate) fn handle_agent_revoke(ctx: &DaemonContext, name: &str) -> IpcResponse {
+pub(crate) fn handle_agent_revoke(ctx: &Arc<DaemonContext>, name: &str) -> IpcResponse {
     if let Err(e) = validate_agent_name(name) {
         return IpcResponse::error(400, format!("invalid agent name: {e}"));
     }
@@ -126,7 +127,7 @@ pub(crate) fn handle_agent_revoke(ctx: &DaemonContext, name: &str) -> IpcRespons
 ///
 /// System policy fields override user policy (admin constraints are
 /// additive and cannot be weakened by user config).
-pub(crate) fn handle_policy_reload(ctx: &DaemonContext) -> IpcResponse {
+pub(crate) fn handle_policy_reload(ctx: &Arc<DaemonContext>) -> IpcResponse {
     let system_path = std::path::Path::new("/etc/rekindle/policy.toml");
     let user_path = ctx.config_dir.join("policy.toml");
 

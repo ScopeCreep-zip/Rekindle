@@ -121,6 +121,7 @@ impl App {
                 let kind = ViewKind::ChannelWatch { community: community.clone(), channel: channel.clone() };
                 self.nav.navigate(kind, self.theme.use_unicode());
                 self.load_channel_history(&community, &channel);
+                self.load_community_info(&community);
                 // Narrow subscription + mark-read on the daemon
                 let client = std::sync::Arc::clone(&self.client);
                 let gov = community.clone();
@@ -142,6 +143,7 @@ impl App {
             }
             Action::ShowDmThread { peer_key } => {
                 self.nav.navigate(ViewKind::DmThread { peer_key: peer_key.clone() }, self.theme.use_unicode());
+                self.load_dm_thread(&peer_key);
                 // Mark DM as read on the daemon
                 let client = std::sync::Arc::clone(&self.client);
                 let pk = peer_key;
@@ -284,6 +286,10 @@ impl App {
                             name: c.name.clone(),
                         }).collect();
                     }
+                    super::super::action::CommandResult::StatusLoaded { snapshot } => {
+                        self.node_was_connected = snapshot.is_attached;
+                        self.cached_peer_count = snapshot.peer_count;
+                    }
                     _ => {}
                 }
                 self.nav.current_view_mut().on_command_result(*result)?;
@@ -297,9 +303,21 @@ impl App {
             Action::SendDm { peer_key, text } => {
                 self.spawn_send_dm(peer_key, text);
             }
+            Action::EditMessage { community, channel, message_id, new_body } => {
+                self.spawn_edit_message(community, channel, message_id, new_body);
+            }
+            Action::DeleteMessage { community, channel, message_id } => {
+                self.spawn_delete_message(community, channel, message_id);
+            }
 
             Action::SubscriptionEvent(ref event) => {
-                self.nav.current_view_mut().on_subscription_event(event)?;
+                // Update App-level cached state from specific events
+                if let rekindle_types::subscription_events::SubscriptionEvent::Network(
+                    rekindle_types::subscription_events::NetworkEvent::AttachmentChanged { is_attached, .. }
+                ) = event.as_ref() {
+                    self.node_was_connected = *is_attached;
+                }
+                self.nav.forward_event_to_all_views(event)?;
             }
 
             action => {

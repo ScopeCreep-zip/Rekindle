@@ -1,0 +1,77 @@
+syntax = "proto3";
+package rekindle.v1;
+
+// All bytes fields map to Vec<u8> (NOT bytes::Bytes) so they can be
+// zeroized after processing. Vec<u8>: Zeroize via the zeroize crate;
+// Bytes is reference-counted and does not implement Zeroize.
+
+enum ChunkKind {
+  CK_UNSPECIFIED = 0;
+  CK_HEADER      = 1;  // ML-KEM Braid header: ek_seed || hek (64 bytes)
+  CK_EK_VECTOR   = 2;  // ek_vector chunks (36 original + 9 recovery)
+  CK_CT1         = 3;  // RESERVED for future incremental-ML-KEM upgrade
+  CK_CT2         = 4;  // RESERVED for future incremental-ML-KEM upgrade
+  CK_CIPHERTEXT  = 5;  // One-shot bridge: full 1088-byte ML-KEM-768 ciphertext
+}
+
+message PreKeyBundleProto {
+  bytes  ik_ed25519          = 1;   // 32 bytes Ed25519 verification key
+  bytes  ik_x25519           = 2;   // 32 bytes X25519 DH identity key
+  uint64 spk_id              = 3;
+  bytes  spk                 = 4;   // 32 bytes X25519 signed prekey
+  bytes  spk_signature       = 5;   // 64 bytes Ed25519 sig over 0x01||spk
+  uint64 opk_id              = 6;   // 0 = none
+  bytes  opk                 = 7;   // 32 bytes optional one-time X25519 prekey
+  uint64 pqpk_ot_id          = 8;
+  bytes  pqpk_ot             = 9;   // 1184 bytes ML-KEM-768 one-time ek
+  bytes  pqpk_ot_signature   = 10;  // 64 bytes sig over 0x02||"OT"||pqpk_ot
+  bytes  pqpk_lr             = 11;  // 1184 bytes ML-KEM-768 last-resort ek
+  bytes  pqpk_lr_signature   = 12;  // 64 bytes sig over 0x02||"LR"||pqpk_lr
+  int64  published_at        = 13;
+
+  // Reserved for future upgrades
+  reserved 100 to 109;  // Ring-signature / DVS deniability upgrade
+  reserved 110 to 119;  // Key Transparency v2 epoch anchor
+}
+
+message InitMessageProto {
+  bytes  ik_a_ed25519        = 1;   // 32 bytes
+  bytes  ik_a_x25519         = 2;   // 32 bytes
+  bytes  ek_a                = 3;   // 32 bytes ephemeral X25519
+  uint64 spk_b_id            = 4;
+  uint64 pqpk_b_id           = 5;
+  bool   pqpk_is_last_resort = 6;   // F4 disambiguator
+  uint64 opk_b_id            = 7;   // 0 = not used
+  bytes  kem_ct              = 8;   // 1088 bytes ML-KEM-768 ciphertext
+  NormalMessageProto inner   = 9;   // First DR message (initial AEAD)
+}
+
+message NormalMessageProto {
+  bytes  encrypted_header    = 1;   // AES-256-GCM(hk, counter-nonce, header)
+  bytes  ciphertext          = 2;   // AES-256-GCM(mk, AD=enc_header, plaintext)
+  uint32 message_counter     = 3;   // n_send (doubles as nonce input)
+}
+
+message SpqrChunkProto {
+  ChunkKind kind             = 1;
+  uint32    epoch            = 2;
+  uint32    chunk_index      = 3;
+  bool      is_recovery      = 4;
+  bytes     shard            = 5;   // 64-byte Reed-Solomon shard
+  uint32    epoch_ack        = 6;   // Last fully-received epoch acknowledged
+
+  // Reserved for future DVS post-quantum-deniable handshake
+  reserved 100, 101;
+  reserved "dvs_signature", "dvs_ring";
+}
+
+message EnvelopeProto {
+  oneof payload {
+    PreKeyBundleProto   pre_key_bundle = 1;
+    InitMessageProto    init_message   = 2;
+    NormalMessageProto  normal_message = 3;
+    SpqrChunkProto      spqr_chunk     = 4;
+  }
+  bytes  session_id          = 10;  // BLAKE3(IK_A || IK_B || nonce)
+  uint32 wire_version        = 11;  // Currently 1
+}

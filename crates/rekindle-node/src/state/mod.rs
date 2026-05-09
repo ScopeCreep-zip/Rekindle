@@ -15,6 +15,8 @@
 
 pub mod audit;
 pub mod keystore;
+pub mod local_messages;
+pub mod signal_sessions;
 
 use std::path::{Path, PathBuf};
 

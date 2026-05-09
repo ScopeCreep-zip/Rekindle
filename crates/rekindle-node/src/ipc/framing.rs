@@ -59,6 +59,11 @@ pub async fn read_frame<R: tokio::io::AsyncRead + Unpin>(reader: &mut R) -> Resu
     }
 
     let len = u32::from_be_bytes(len_buf);
+    tracing::trace!(
+        frame_len = len,
+        len_hex = %format!("{:02x}{:02x}{:02x}{:02x}", len_buf[0], len_buf[1], len_buf[2], len_buf[3]),
+        "read_frame: length prefix read"
+    );
     if len > MAX_FRAME_SIZE {
         return Err(IpcError::FrameTooLarge {
             size: len,

@@ -67,10 +67,9 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
     };
     tracing::info!(state = %status["state"], "daemon connected");
 
-    // Subscribe to all events for real-time TUI rendering
-    if let Err(e) = client.subscribe_all().await {
-        tracing::warn!(error = %e, "event subscription failed — TUI will use polling only");
-    }
+    // Subscription happens inside App::run() after the select loop starts.
+    // Subscribing here AND in App::run() caused a Noise transport race that
+    // corrupted the IPC stream (FRM-1: two concurrent writes desync nonces).
 
     // Take the event receiver before wrapping in Arc
     let event_rx = client.take_event_receiver();

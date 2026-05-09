@@ -63,6 +63,7 @@ pub struct App {
     pub(crate) clipboard: Option<arboard::Clipboard>,
     pub(crate) clipboard_clear_at: Option<std::time::Instant>,
     pub(crate) idle_frames: u32,
+    pub(crate) cached_peer_count: usize,
 
     /// Cached community data from the last CommunityList response.
     /// Used for breadcrumbs and tab labels without IPC round-trips.
@@ -122,6 +123,7 @@ impl App {
             clipboard: None,
             clipboard_clear_at: None,
             idle_frames: 0,
+            cached_peer_count: 0,
             cached_communities: Vec::new(),
             cached_identity: None,
         }

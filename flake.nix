@@ -14,6 +14,7 @@
 
         rekindlePackages = with pkgs; [
           capnproto
+          protobuf
           cmake
           libsodium.dev
         ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [

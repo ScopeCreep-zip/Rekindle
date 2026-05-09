@@ -98,6 +98,14 @@ impl Navigator {
         self.views.dashboard_mut()
     }
 
+    /// Forward a subscription event to all instantiated views.
+    pub fn forward_event_to_all_views(
+        &mut self,
+        event: &rekindle_types::subscription_events::SubscriptionEvent,
+    ) -> anyhow::Result<()> {
+        self.views.forward_event_to_all(event)
+    }
+
     // ── Navigation ──────────────────────────────────────────────────
 
     /// Navigate to a view. Pushes to the view stack, transitions the registry,

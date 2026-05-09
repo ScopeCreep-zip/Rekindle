@@ -333,6 +333,7 @@ impl GossipPayload {
                     sender_pseudonym: s(), sequence, timestamp,
                     body: None,              // populated by enrichment stage
                     reply_to_sequence: None, // populated by enrichment stage
+                    is_self: false,
                 })
             }
             Self::TypingIndicator { channel_id, pseudonym_key } => {

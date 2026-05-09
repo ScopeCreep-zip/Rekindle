@@ -1,0 +1,31 @@
+[package]
+name = "rekindle-storage"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.87"
+description = "Encrypted persistent storage for the Rekindle messaging daemon"
+license = "MIT"
+
+[lints]
+workspace = true
+
+[features]
+default = []
+regulatory-fips = ["aws-lc-rs/fips"]
+
+[dependencies]
+aws-lc-rs = { version = "1.16", features = ["aws-lc-sys"] }
+blake3 = "1"
+zeroize = { version = "1", features = ["derive", "alloc", "serde"] }
+rusqlite = { version = "0.37", features = ["bundled-sqlcipher"] }
+argon2 = "0.5"
+serde = { workspace = true }
+serde_json = { workspace = true }
+hex = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+keyring = "3"
+rustix = { version = "1", features = ["process"], default-features = false }
+
+[dev-dependencies]
+tempfile = "3"

@@ -276,6 +276,11 @@ impl ChannelTree {
         }
     }
 
+    /// Mark a node as expanded. Call before set_communities to include children.
+    pub fn expand(&mut self, id: &TreeNodeId) {
+        self.expanded.insert(id.clone());
+    }
+
     /// Collapse the selected node, or move to its parent.
     fn collapse_or_parent(&mut self) {
         let Some(idx) = self.list_state.selected() else { return };

@@ -206,14 +206,16 @@ pub async fn setup_identity_watches(
         ).await;
     }
 
-    // Watch each peer's DM log spine
-    for (peer_key, dm_log_key) in &session.dm_log_keys {
-        establish_watch(
-            node, registry,
-            dm_log_key,
-            &[0], // spine subkey
-            WatchKind::DmLog { peer_key: peer_key.clone() },
-        ).await;
+    // Watch each peer's DM logs (inbound for receiving, outbound for self-send confirmation)
+    for (peer_key, peer_log) in &session.dm_peers {
+        if !peer_log.inbound_log_key.is_empty() {
+            establish_watch(
+                node, registry,
+                &peer_log.inbound_log_key,
+                &[0], // spine subkey
+                WatchKind::DmLog { peer_key: peer_key.clone() },
+            ).await;
+        }
     }
 }
 
@@ -287,6 +289,85 @@ pub async fn setup_dm_watch(
         &[0], // DhtLog spine subkey
         WatchKind::DmLog { peer_key: peer_key.to_string() },
     ).await;
+}
+
+/// Establish per-member channel log watches for all channels in a community.
+///
+/// Reads the registry member index to discover all members' DhtLog spine keys.
+/// Each spine gets a watch on subkey 0 (the spine metadata subkey that changes
+/// on every append). When a member sends a message, their spine subkey 0 changes,
+/// the watch fires, and `on_value_change` emits a `ChannelMessage::New` event.
+///
+/// Called from `setup_community` (on join/resume) and from `on_value_change` when
+/// `REGISTRY_MEMBER_INDEX` changes (new member registered their channel log).
+///
+/// Idempotent — skips records that already have a watch registered.
+pub async fn setup_channel_watches<S: ::std::hash::BuildHasher>(
+    node: &TransportNode,
+    watch_registry: &RwLock<WatchRegistry>,
+    community: &str,
+    registry_key: &str,
+    local_channel_record_keys: &std::collections::HashMap<String, String, S>,
+) {
+    // Read registry member index with force_refresh to see latest members.
+    // Non-operator members' local cache may be stale — the operator may have
+    // registered new members' channel logs that haven't propagated via poll.
+    let members: Vec<crate::payload::dht_types::MemberSummary> =
+        match crate::broadcast::dht_writes::get(
+            node, registry_key,
+            crate::payload::dht_types::REGISTRY_MEMBER_INDEX, true,
+        ).await {
+            Ok(Some(data)) => {
+                match serde_json::from_slice(&data) {
+                    Ok(m) => m,
+                    Err(e) => {
+                        warn!(community, error = %e, bytes = data.len(),
+                            "channel watches: registry member index parse failed");
+                        return;
+                    }
+                }
+            }
+            Ok(None) => {
+                debug!(community, "channel watches: registry member index empty");
+                return;
+            }
+            Err(e) => {
+                warn!(community, error = %e, "channel watches: registry read failed");
+                return;
+            }
+        };
+
+    let mut new_watches = 0u32;
+    for member in &members {
+        for (channel_id, log_key) in &member.channel_records {
+            // Skip our OWN channel log — opening it read-only would downgrade
+            // the writable DHT handle and cause "value is not writable" on next send.
+            if local_channel_record_keys.values().any(|k| k == log_key) {
+                continue;
+            }
+            // Skip if we already have a watch on this log key (idempotent)
+            if watch_registry.read().get(log_key).is_some() {
+                continue;
+            }
+            establish_watch(
+                node, watch_registry, log_key,
+                &[0], // DhtLog spine subkey — changes on every append
+                WatchKind::ChannelLog {
+                    community: community.to_string(),
+                    channel_id: channel_id.clone(),
+                    member_pseudonym: member.pseudonym_key.clone(),
+                },
+            ).await;
+            new_watches += 1;
+        }
+    }
+
+    if new_watches > 0 {
+        info!(
+            community, members = members.len(), new_watches,
+            "channel log watches established"
+        );
+    }
 }
 
 // ── Renewal loop ───────────────────────────────────────────────────────

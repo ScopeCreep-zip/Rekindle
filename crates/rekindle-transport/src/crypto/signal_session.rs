@@ -309,6 +309,20 @@ impl SignalSessionManager {
         self.sessions.delete_session(peer_address)
     }
 
+    /// Inject a signed prekey into the internal store.
+    ///
+    /// Used during acceptance discovery: the sender loads their prekey
+    /// private material from the OS keyring and injects it into the
+    /// manager so `respond_to_session` can find it.
+    pub fn inject_signed_prekey(&self, id: u32, key_data: &[u8]) -> Result<()> {
+        self.prekeys.store_signed_prekey(id, key_data)
+    }
+
+    /// Inject a one-time prekey into the internal store.
+    pub fn inject_prekey(&self, id: u32, key_data: &[u8]) -> Result<()> {
+        self.prekeys.store_prekey(id, key_data)
+    }
+
     /// Load a signed prekey's private key bytes from the store.
     ///
     /// Used by the identity ceremony to extract prekey material for
@@ -360,6 +374,42 @@ impl SignalSessionManager {
             registration_id,
         })
     }
+}
+
+/// Create a SignalSessionManager from an Ed25519 signing key.
+///
+/// Handles Ed25519→X25519 key conversion internally so callers in the
+/// node crate don't need a direct x25519_dalek dependency. The signing
+/// key bytes are the Ed25519 secret key (32 bytes).
+pub fn create_signal_manager(
+    signing_key_bytes: &[u8; 32],
+    session_store: Box<dyn crate::crypto::signal_store::SessionStore>,
+) -> SignalSessionManager {
+    let x25519_secret = crate::crypto::pseudonym::pseudonym_to_x25519(
+        &ed25519_dalek::SigningKey::from_bytes(signing_key_bytes),
+    );
+    let x25519_public = X25519Public::from(&x25519_secret);
+    SignalSessionManager::new(
+        Box::new(crate::crypto::signal_store::MemoryIdentityStore::new(
+            x25519_secret.to_bytes().to_vec(),
+            x25519_public.as_bytes().to_vec(),
+            1,
+        )),
+        Box::new(crate::crypto::signal_store::MemoryPreKeyStore::new()),
+        session_store,
+    )
+}
+
+/// Derive the X25519 identity public key bytes from an Ed25519 signing key.
+///
+/// Used by the node crate to include the identity public key in the
+/// Accepted entry without depending on x25519_dalek directly.
+pub fn identity_public_key_bytes(signing_key_bytes: &[u8; 32]) -> Vec<u8> {
+    let x25519_secret = crate::crypto::pseudonym::pseudonym_to_x25519(
+        &ed25519_dalek::SigningKey::from_bytes(signing_key_bytes),
+    );
+    let x25519_public = x25519_dalek::PublicKey::from(&x25519_secret);
+    x25519_public.as_bytes().to_vec()
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────

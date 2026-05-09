@@ -16,7 +16,7 @@ use super::DaemonContext;
 ///
 /// Returns the complete `StatusSnapshot` — compact status, subscription system
 /// health, and full diagnostic checks. Renderers (CLI/TUI) decide display depth.
-pub(crate) fn handle_status(ctx: &DaemonContext, state: DaemonState) -> IpcResponse {
+pub(crate) fn handle_status(ctx: &Arc<DaemonContext>, state: DaemonState) -> IpcResponse {
     use rekindle_types::display::{StatusSnapshot, CircuitSummary};
 
     let session_guard = ctx.session.read();
@@ -30,10 +30,11 @@ pub(crate) fn handle_status(ctx: &DaemonContext, state: DaemonState) -> IpcRespo
     let sub_guard = ctx.subscriptions.read();
     let (active_watches, gossip_meshes, gossip_mesh_peers,
          unread_channels, unread_dms, unread_friend_requests,
-         poll_loop_active, renewal_loop_active) =
+         poll_loop_active, renewal_loop_active, dedup_entries, dedup_suppressed) =
         if let Some(ref sub_mgr) = *sub_guard {
             let meshes = sub_mgr.meshes().read();
             let mesh_peers: usize = meshes.values().map(|m| m.peers.len()).sum();
+            let dedup = sub_mgr.dedup().read();
             (
                 sub_mgr.watch_count(),
                 meshes.len(),
@@ -42,9 +43,11 @@ pub(crate) fn handle_status(ctx: &DaemonContext, state: DaemonState) -> IpcRespo
                 sub_mgr.unread_dms().len(),
                 sub_mgr.unread_friend_requests(),
                 true, true,
+                dedup.len(),
+                dedup.suppressed_count(),
             )
         } else {
-            (0, 0, 0, 0, 0, 0, false, false)
+            (0, 0, 0, 0, 0, 0, false, false, 0, 0)
         };
     drop(sub_guard);
 
@@ -79,8 +82,8 @@ pub(crate) fn handle_status(ctx: &DaemonContext, state: DaemonState) -> IpcRespo
         unread_channels,
         unread_dms,
         unread_friend_requests,
-        dedup_entries: 0,    // TODO: expose from SubscriptionManager
-        dedup_suppressed: 0, // TODO: expose from SubscriptionManager
+        dedup_entries,
+        dedup_suppressed,
         poll_loop_active,
         renewal_loop_active,
         community_count: session.map_or(0, |s| s.communities.len()),
@@ -98,7 +101,7 @@ pub(crate) fn handle_status(ctx: &DaemonContext, state: DaemonState) -> IpcRespo
 /// No category filtering — the daemon always produces the full set.
 /// Filtering is a client-side rendering concern.
 fn build_checks(
-    ctx: &DaemonContext,
+    ctx: &Arc<DaemonContext>,
     state: DaemonState,
     transport: Option<&Arc<rekindle_transport::TransportNode>>,
     session: Option<&rekindle_transport::Session>,
@@ -294,7 +297,7 @@ fn fmt_uptime(secs: u64) -> String {
 
 /// Handle Unlock — transition from Locked → Resuming → Operational.
 pub(crate) async fn handle_unlock(
-    ctx: &DaemonContext,
+    ctx: &Arc<DaemonContext>,
     state: DaemonState,
     _passphrase: &str,
 ) -> IpcResponse {
@@ -347,26 +350,49 @@ pub(crate) async fn handle_unlock(
         }
     }
 
+    // Initialize local message store for sent DM plaintext
+    {
+        let state_dir = ctx.session_path.parent().unwrap_or(std::path::Path::new("."));
+        let store = crate::state::local_messages::LocalMessageStore::new(&signing_bytes, state_dir);
+        *ctx.local_messages.lock() = Some(store);
+        tracing::info!("local message store initialized");
+    }
+
+    // Initialize Signal Protocol session manager with persisted sessions from keyring
+    if let Some(ref session) = session_clone {
+        let dm_peer_keys: Vec<String> = session.dm_peers.keys().cloned().collect();
+        let session_store = crate::state::signal_sessions::KeyringSessionStore::load_all(&dm_peer_keys).await;
+        let signal_mgr = rekindle_transport::crypto::signal_session::create_signal_manager(
+            &signing_bytes,
+            Box::new(session_store),
+        );
+        *ctx.signal.write() = Some(signal_mgr);
+        tracing::info!(dm_peers = dm_peer_keys.len(), "Signal session manager initialized");
+    }
+
     // Initialize subscription manager (three-tier inbound: watch + gossip + poll)
     if let (Some(transport), Some(session)) = (&transport_clone, &session_clone) {
         let mut sub_mgr = rekindle_transport::SubscriptionManager::new(
             Arc::clone(transport),
             Arc::clone(&ctx.session),
             Arc::clone(&ctx.mek_cache),
+            Arc::clone(&ctx.signal),
         );
         sub_mgr.setup_identity(session).await;
         for membership in session.communities.values() {
             sub_mgr.setup_community(membership).await;
         }
-        for (peer_key, dm_log_key) in &session.dm_log_keys {
-            sub_mgr.setup_dm_peer(peer_key, dm_log_key).await;
+        for (peer_key, peer_log) in &session.dm_peers {
+            if !peer_log.inbound_log_key.is_empty() {
+                sub_mgr.setup_dm_peer(peer_key, &peer_log.inbound_log_key).await;
+            }
         }
         sub_mgr.start_renewal_loop();
         sub_mgr.start_poll_loop(60);
         tracing::info!(
             watches = sub_mgr.watch_count(),
             communities = session.communities.len(),
-            dm_peers = session.dm_log_keys.len(),
+            dm_peers = session.dm_peers.len(),
             "subscription manager initialized"
         );
         // Notify the IPC server that events are available for delivery.
@@ -375,6 +401,18 @@ pub(crate) async fn handle_unlock(
         let event_sender = sub_mgr.event_sender().clone();
         *ctx.subscriptions.write() = Some(sub_mgr);
         let _ = ctx.event_watch_tx.send(Some(event_sender));
+
+        // Initialize friend inbox scan coordinator (non-blocking, coalesced).
+        // Passes the subscriptions Arc so discovered acceptances trigger setup_dm_peer.
+        *ctx.inbox_scan.write() = Some(
+            crate::daemon::friend_inbox::InboxScanCoordinator::spawn(
+                Arc::clone(&ctx.session),
+                Arc::clone(transport),
+                ctx.session_path.clone(),
+                Arc::clone(&ctx.subscriptions),
+                Arc::clone(&ctx.signal),
+            ),
+        );
 
         // Initialize broadcast manager (outbound gossip mesh)
         let bcast_mgr = rekindle_transport::BroadcastManager::new(
@@ -401,7 +439,7 @@ pub(crate) async fn handle_unlock(
 /// Responds with Ok *before* the process exits so the client gets confirmation.
 /// The actual shutdown is triggered by transitioning to ShuttingDown, which
 /// notifies the main event loop via `DaemonLifecycle::shutdown_requested()`.
-pub(crate) fn handle_shutdown(ctx: &DaemonContext) -> IpcResponse {
+pub(crate) fn handle_shutdown(ctx: &Arc<DaemonContext>) -> IpcResponse {
     let state = ctx.lifecycle.state();
     if state == DaemonState::ShuttingDown {
         return IpcResponse::ok(&serde_json::json!({ "state": "already_shutting_down" }));
@@ -422,7 +460,7 @@ pub(crate) fn handle_shutdown(ctx: &DaemonContext) -> IpcResponse {
 }
 
 /// Handle Lock — transition to Locked, zeroize signing key.
-pub(crate) fn handle_lock(ctx: &DaemonContext) -> IpcResponse {
+pub(crate) fn handle_lock(ctx: &Arc<DaemonContext>) -> IpcResponse {
     ctx.lifecycle.transition(DaemonState::Locking);
     // Drop the signing key — ZeroizeOnDrop zeroizes the bytes.
     *ctx.signing_key.write() = None;

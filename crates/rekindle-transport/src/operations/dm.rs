@@ -7,16 +7,17 @@ use crate::error::Result;
 use crate::broadcast::node::TransportNode;
 use crate::session::Session;
 
-/// Send a direct message to a peer via their shared DhtLog or app_message fallback.
+/// Send a direct message to a peer via their outbound DhtLog.
 ///
-/// `dm_log_keypair_bytes`: optional 64-byte serialized keypair for the shared DhtLog.
-/// Pass None to force app_message fallback.
+/// `body` is Signal-encrypted ciphertext bytes. The caller (handle_dm_send
+/// in the node crate) performs Signal encrypt before calling this.
+///
+/// `dm_log_keypair_bytes`: 64-byte serialized keypair for the outbound DhtLog.
 pub async fn send_dm(
     node: &TransportNode,
     session: &Session,
     peer_key: &str,
-    _peer_mailbox_key: &str,
-    body: &str,
+    body: &[u8],
     signing_key_bytes: &[u8; 32],
     dm_log_keypair_bytes: Option<&[u8]>,
 ) -> Result<()> {
@@ -24,7 +25,7 @@ pub async fn send_dm(
         .map(crate::broadcast::node::deserialize_keypair)
         .transpose()?;
     crate::broadcast::dm::direct_message(
-        node, session, peer_key, body.as_bytes(), None,
+        node, session, peer_key, body, None,
         signing_key_bytes, dm_log_keypair,
     ).await
 }

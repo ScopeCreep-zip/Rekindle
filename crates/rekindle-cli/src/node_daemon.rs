@@ -79,6 +79,10 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
 
     let pending_joins = Arc::new(parking_lot::Mutex::new(std::collections::HashMap::new()));
 
+    // Inbox scan coordinator starts as None — created during unlock/resume.
+    let inbox_scan: Arc<parking_lot::RwLock<Option<rekindle_node::daemon::friend_inbox::InboxScanCoordinator>>> =
+        Arc::new(parking_lot::RwLock::new(None));
+
     let handler = Arc::new(DaemonHandler::new(
         Arc::clone(&transport_subscriptions),
         Arc::clone(&session_arc),
@@ -86,6 +90,7 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
         Arc::clone(&mek_cache),
         Arc::clone(&signing_key_arc),
         Arc::clone(&transport_for_handler),
+        Arc::clone(&inbox_scan),
         Arc::clone(&pending_joins),
     ));
 
@@ -135,10 +140,13 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
         policy: RwLock::new(PolicyConfig::default()),
         config_dir: paths.config_dir.clone(),
         audit: parking_lot::Mutex::new(audit_logger),
-        subscriptions: RwLock::new(None),
+        subscriptions: Arc::clone(&transport_subscriptions),
         broadcast_mgr: RwLock::new(None),
         event_watch_tx,
+        inbox_scan: Arc::clone(&inbox_scan),
         pending_joins: Arc::clone(&pending_joins),
+        signal: Arc::new(parking_lot::RwLock::new(None)),
+        local_messages: Arc::new(parking_lot::Mutex::new(None)),
     });
 
     // ── 7. Bind IPC socket and create bus server ──────────────────
@@ -273,7 +281,7 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
                         ).await;
                     }
 
-                    // Check if this is our friend inbox
+                    // Check if this is our friend inbox — trigger coalesced scan
                     let friend_inbox_key = {
                         let guard = daemon_ctx_consumer.session.read();
                         guard.as_ref().and_then(|s| {
@@ -285,13 +293,10 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
                         })
                     };
                     if let Some(inbox_key) = friend_inbox_key {
-                        tracing::info!("tier 3 poll triggered friend inbox scan");
-                        rekindle_node::daemon::friend_inbox::scan_friend_inbox(
-                            &daemon_ctx_consumer.session,
-                            &daemon_ctx_consumer.transport,
-                            &daemon_ctx_consumer.session_path,
-                            &inbox_key,
-                        ).await;
+                        tracing::info!("tier 3 poll triggered inbox scan (via coordinator)");
+                        if let Some(ref coordinator) = *daemon_ctx_consumer.inbox_scan.read() {
+                            coordinator.trigger(&inbox_key);
+                        }
                     }
                 }
                 Ok(_) => {} // Other events — not our concern

@@ -1,12 +1,13 @@
 //! Key management dispatch handlers: MekList, MekRotate, MekRequest, PrekeyReplenish.
 
+use std::sync::Arc;
 use crate::daemon::DaemonState;
 use crate::ipc::protocol::IpcResponse;
 
 use super::{DaemonContext, state_error};
 
 pub(crate) fn handle_mek_list(
-    ctx: &DaemonContext, state: DaemonState, community: &str,
+    ctx: &Arc<DaemonContext>, state: DaemonState, community: &str,
 ) -> IpcResponse {
     if !state.can_query() { return state_error(state, "query"); }
     let snapshot = ctx.mek_cache.read().snapshot(community);
@@ -14,7 +15,7 @@ pub(crate) fn handle_mek_list(
 }
 
 pub(crate) async fn handle_mek_rotate(
-    ctx: &DaemonContext, state: DaemonState, community: &str, channel: &str,
+    ctx: &Arc<DaemonContext>, state: DaemonState, community: &str, channel: &str,
 ) -> IpcResponse {
     if !state.can_write() { return state_error(state, "write"); }
     let transport = match ctx.require_transport() { Ok(t) => t, Err(e) => return e };
@@ -36,7 +37,7 @@ pub(crate) async fn handle_mek_rotate(
 }
 
 pub(crate) fn handle_mek_request(
-    ctx: &DaemonContext, state: DaemonState,
+    ctx: &Arc<DaemonContext>, state: DaemonState,
     community: &str, channel: &str, generation: u64,
 ) -> IpcResponse {
     if !state.can_write() { return state_error(state, "write"); }
@@ -55,7 +56,7 @@ pub(crate) fn handle_mek_request(
 }
 
 pub(crate) async fn handle_prekey_replenish(
-    ctx: &DaemonContext, state: DaemonState,
+    ctx: &Arc<DaemonContext>, state: DaemonState,
 ) -> IpcResponse {
     if !state.can_write() { return state_error(state, "write"); }
     let transport = match ctx.require_transport() { Ok(t) => t, Err(e) => return e };

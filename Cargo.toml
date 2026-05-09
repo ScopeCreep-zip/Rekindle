@@ -24,6 +24,8 @@ members = [
     "crates/rekindle-transport",
     "crates/rekindle-cli",
     "crates/rekindle-node",
+    "crates/rekindle-storage",
+    "crates/rekindle-ratchet",
 ]
 
 [workspace.dependencies]

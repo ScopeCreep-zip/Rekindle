@@ -52,6 +52,7 @@ pub struct QueryEngine {
     dht: DhtStore,
     mek_cache: Arc<RwLock<MekCache>>,
     peer_registry: Arc<RwLock<PeerRegistry>>,
+    signal: Arc<RwLock<Option<crate::crypto::signal_session::SignalSessionManager>>>,
 }
 
 impl QueryEngine {
@@ -60,11 +61,13 @@ impl QueryEngine {
         dht: DhtStore,
         mek_cache: Arc<RwLock<MekCache>>,
         peer_registry: Arc<RwLock<PeerRegistry>>,
+        signal: Arc<RwLock<Option<crate::crypto::signal_session::SignalSessionManager>>>,
     ) -> Self {
         Self {
             dht,
             mek_cache,
             peer_registry,
+            signal,
         }
     }
 
@@ -165,6 +168,15 @@ impl QueryEngine {
             .read_member_index(&membership.registry_key)
             .await?;
 
+        let member_displays: Vec<rekindle_types::display::MemberPresence> = members.iter().map(|m| {
+            rekindle_types::display::MemberPresence {
+                pseudonym: m.pseudonym_key.clone(),
+                display_name: Some(m.display_name.clone()),
+                status: "offline".into(),
+                role_name: None,
+            }
+        }).collect();
+
         Ok(CommunityDetail {
             governance_key: membership.governance_key.clone(),
             name: metadata.name,
@@ -177,6 +189,7 @@ impl QueryEngine {
             roles: roles.iter().map(role_to_display).collect(),
             our_pseudonym: membership.pseudonym_key.clone(),
             our_roles: membership.role_ids.clone(),
+            members: member_displays,
         })
     }
 
@@ -208,8 +221,13 @@ impl QueryEngine {
         limit: usize,
         local_channel_record_keys: &std::collections::HashMap<String, String>,
     ) -> Result<Vec<DecryptedMessageDisplay>> {
-        // Read member index with force_refresh=true to get the latest
-        // channel_records entries (RegisterChannelRecord may have just completed).
+        // Read member index with force_refresh=true for correctness.
+        // Non-operator members' local DHT cache may be stale — the operator
+        // wrote new channel_record entries that haven't propagated via the
+        // tier 3 poll sweep yet. force_refresh ensures we see the latest
+        // registry state from the network, which is essential for discovering
+        // all members' DhtLog keys (without them, messages are invisible).
+        // The cost is one network round-trip per channel_history call.
         let members: Vec<crate::payload::dht_types::MemberSummary> = match crate::broadcast::dht::record::get(
             self.dht.routing_context(), registry_key,
             crate::payload::dht_types::REGISTRY_MEMBER_INDEX, true,
@@ -311,6 +329,7 @@ impl QueryEngine {
                     mek_generation: channel_msg.mek_generation,
                     is_encrypted,
                     needs_mek,
+                    delivery_status: rekindle_types::display::DeliveryStatus::Confirmed,
                 });
             }
         }
@@ -413,6 +432,7 @@ impl QueryEngine {
         friend_list_key: &str,
         limit_per_thread: usize,
         our_public_key: &str,
+        session_display_names: &std::collections::HashMap<String, String>,
     ) -> Result<Vec<DmThreadDisplay>> {
         // Read the DM log
         let dht_log = crate::broadcast::dht::channel_log::DhtLog::open_read(
@@ -429,7 +449,7 @@ impl QueryEngine {
         // Read friend list for name resolution
         let friends = self.dht.friend_list().read(friend_list_key).await?;
         // Build name lookup: public_key → display name (nickname if set, else abbreviated key)
-        let friend_display_names: std::collections::HashMap<String, String> = friends
+        let mut friend_display_names: std::collections::HashMap<String, String> = friends
             .friends
             .iter()
             .map(|f| {
@@ -437,6 +457,11 @@ impl QueryEngine {
                 (f.public_key.clone(), name)
             })
             .collect();
+        // Session-cached display names (populated on friend accept) take priority
+        // over DHT nicknames — they're the peer's self-reported name.
+        for (key, name) in session_display_names {
+            friend_display_names.insert(key.clone(), name.clone());
+        }
 
         // Parse and group by peer
         let mut threads: std::collections::HashMap<String, Vec<DmMessageDisplay>> =
@@ -458,12 +483,23 @@ impl QueryEngine {
                 .get("body")
                 .and_then(serde_json::Value::as_str)
                 .unwrap_or("[unreadable]");
-            // DM bodies are stored as hex-encoded bytes in the DhtLog.
-            // Decode hex → bytes → UTF-8. Fall back to raw string if decode fails.
+            // DM bodies are hex-encoded Signal ciphertext in the DhtLog.
+            // Decode hex → ciphertext bytes → Signal decrypt → UTF-8 plaintext.
             let body = hex::decode(body_raw)
                 .ok()
-                .and_then(|bytes| String::from_utf8(bytes).ok())
-                .unwrap_or_else(|| body_raw.to_string());
+                .and_then(|ciphertext| {
+                    let guard = self.signal.read();
+                    guard.as_ref().and_then(|mgr| {
+                        mgr.decrypt(&sender_key, &ciphertext)
+                            .map_err(|e| tracing::debug!(
+                                error = %e, peer = &sender_key[..12.min(sender_key.len())],
+                                "Signal DM decrypt failed in dm_inbox query"
+                            ))
+                            .ok()
+                    })
+                })
+                .and_then(|plaintext| String::from_utf8(plaintext).ok())
+                .unwrap_or_else(|| "[encrypted]".to_string());
             let timestamp = entry
                 .get("timestamp")
                 .and_then(serde_json::Value::as_u64)

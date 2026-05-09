@@ -55,6 +55,8 @@ pub struct SubscriptionManager {
     session: Arc<RwLock<Option<Session>>>,
     /// MEK cache for channel decryption context.
     mek_cache: Arc<RwLock<MekCache>>,
+    /// Signal Protocol session manager for DM decryption in enrichment spawns.
+    signal: Arc<RwLock<Option<crate::crypto::signal_session::SignalSessionManager>>>,
     /// Mutable state: unread counts, typing, presence, voice.
     state: Arc<RwLock<SubscriptionState>>,
     /// Active DHT watches registry.
@@ -84,12 +86,14 @@ impl SubscriptionManager {
         node: Arc<TransportNode>,
         session: Arc<RwLock<Option<Session>>>,
         mek_cache: Arc<RwLock<MekCache>>,
+        signal: Arc<RwLock<Option<crate::crypto::signal_session::SignalSessionManager>>>,
     ) -> Self {
         let (event_tx, _) = broadcast::channel(EVENT_CHANNEL_CAPACITY);
         Self {
             node,
             session,
             mek_cache,
+            signal,
             state: Arc::new(RwLock::new(SubscriptionState::default())),
             watches: Arc::new(RwLock::new(WatchRegistry::new())),
             dedup: Arc::new(RwLock::new(dedup::EventDedup::default())),
@@ -202,7 +206,7 @@ impl SubscriptionManager {
         watches::setup_identity_watches(&self.node, &self.watches, session).await;
         info!(
             friend_inbox = %session.identity.friend_inbox_key,
-            dm_peers = session.dm_log_keys.len(),
+            dm_peers = session.dm_peers.len(),
             "identity watches established"
         );
     }
@@ -213,6 +217,13 @@ impl SubscriptionManager {
     pub async fn setup_community(&self, membership: &CommunityMembership) {
         info!(community = %membership.community_name, governance = %membership.governance_key, "sub: setup_community");
         watches::setup_community_watches(&self.node, &self.watches, membership).await;
+        // Establish per-member channel log watches for real-time message delivery.
+        // Reads registry to discover all members' DhtLog spine keys.
+        watches::setup_channel_watches(
+            &self.node, &self.watches,
+            &membership.governance_key, &membership.registry_key,
+            &membership.channel_record_keys,
+        ).await;
         self.meshes.write().entry(membership.governance_key.clone())
             .or_insert_with(|| GossipMesh::new(membership.governance_key.clone()));
     }
@@ -277,9 +288,9 @@ impl SubscriptionManager {
     /// Route a DM payload. Called by the daemon's InboundHandler.
     ///
     /// Pipeline: payload.into_event() → state_effects → dedup → emit
-    pub fn on_dm(&self, sender_key: &str, payload: DmPayload, timestamp: u64) {
-        debug!(sender = &sender_key[..12.min(sender_key.len())], timestamp, "sub: on_dm");
-        let event = payload.into_event(sender_key, timestamp);
+    pub fn on_dm(&self, sender_key: &str, payload: DmPayload) {
+        debug!(sender = &sender_key[..12.min(sender_key.len())], "sub: on_dm");
+        let event = payload.into_event(sender_key);
         self.process_event(event);
     }
 
@@ -375,19 +386,109 @@ impl SubscriptionManager {
             }
             watches::WatchKind::DmLog { peer_key } => {
                 debug!(peer = %peer_key, "DM log changed");
-                let count = self.state.write().unread.increment_dm(&peer_key);
-                self.process_event(SubscriptionEvent::ChannelMessage(
-                    events::ChannelMessageEvent::DirectMessageReceived {
-                        peer_key: peer_key.clone(),
-                        timestamp: rekindle_utils::timestamp_ms(),
-                        sender_name: None, // enriched from friend list
-                        body: None,        // enriched by reading DhtLog
-                    },
-                ));
-                self.process_event(SubscriptionEvent::UnreadChanged {
-                    context: events::UnreadContext::Dm { peer_key },
-                    count,
-                });
+
+                // Don't emit body-less notification here — we can't know synchronously
+                // whether this change is from us or the peer (shared DhtLog).
+                // The enrichment spawn below reads the log entry, determines is_self,
+                // and emits the event with correct attribution + body content.
+                // Unread increment is also deferred to the spawn to avoid counting
+                // our own sent messages as unread.
+
+                // Spawn async DhtLog read to populate body and re-emit with content.
+                let dm_log_key = self.session.read().as_ref()
+                    .and_then(|s| s.dm_peers.get(&peer_key).map(|p| p.inbound_log_key.clone()))
+                    .filter(|k| !k.is_empty());
+                if let Some(log_key) = dm_log_key {
+                    let node = Arc::clone(&self.node);
+                    let event_tx = self.event_tx.clone();
+                    let session = Arc::clone(&self.session);
+                    let state = Arc::clone(&self.state);
+                    let signal = Arc::clone(&self.signal);
+                    let peer_key_owned = peer_key;
+                    tokio::spawn(async move {
+                        let Ok(dht) = node.dht() else { return };
+                        let log = match crate::broadcast::dht::channel_log::DhtLog::open_read(
+                            dht.routing_context(), &log_key,
+                        ).await {
+                            Ok(l) => l,
+                            Err(e) => {
+                                tracing::debug!(error = %e, "DM body enrich: DhtLog open failed");
+                                return;
+                            }
+                        };
+                        let entries = match log.tail(1).await {
+                            Ok(e) if !e.is_empty() => e,
+                            _ => return,
+                        };
+                        let entry: serde_json::Value = match serde_json::from_slice(&entries[0]) {
+                            Ok(v) => v,
+                            Err(_) => return,
+                        };
+                        let sender_key = entry.get("sender_key")
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or("")
+                            .to_string();
+                        let body_hex = entry.get("body")
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or("");
+                        let body = hex::decode(body_hex)
+                            .ok()
+                            .and_then(|ciphertext| {
+                                let guard = signal.read();
+                                guard.as_ref().and_then(|mgr| {
+                                    mgr.decrypt(&sender_key, &ciphertext)
+                                        .map_err(|e| tracing::debug!(
+                                            error = %e,
+                                            peer = &sender_key[..12.min(sender_key.len())],
+                                            "Signal DM decrypt failed in enrichment"
+                                        ))
+                                        .ok()
+                                })
+                            })
+                            .and_then(|plaintext| String::from_utf8(plaintext).ok())
+                            .unwrap_or_default();
+                        let timestamp = entry.get("timestamp")
+                            .and_then(serde_json::Value::as_u64)
+                            .unwrap_or(0);
+                        // Resolve sender display name from local session cache.
+                        // 1. friend_display_names (populated on accept — no network I/O)
+                        // 2. pending_friend_requests (pre-accept fallback)
+                        let sender_name = {
+                            let guard = session.read();
+                            guard.as_ref().and_then(|s| {
+                                s.friend_display_names.get(&sender_key).cloned()
+                                    .or_else(|| {
+                                        s.pending_friend_requests.iter()
+                                            .find(|r| r.public_key == sender_key)
+                                            .map(|r| r.display_name.clone())
+                                    })
+                            })
+                        };
+                        let is_self = {
+                            let guard = session.read();
+                            guard.as_ref().is_some_and(|s| s.identity.public_key_hex == sender_key)
+                        };
+                        if !body.is_empty() {
+                            // Increment unread only for peer-sent messages, not our own
+                            if !is_self {
+                                let count = state.write().unread.increment_dm(&peer_key_owned);
+                                let _ = event_tx.send(SubscriptionEvent::UnreadChanged {
+                                    context: events::UnreadContext::Dm { peer_key: peer_key_owned.clone() },
+                                    count,
+                                });
+                            }
+                            let _ = event_tx.send(SubscriptionEvent::ChannelMessage(
+                                events::ChannelMessageEvent::DirectMessageReceived {
+                                    peer_key: peer_key_owned,
+                                    timestamp,
+                                    sender_name,
+                                    body: Some(body),
+                                    is_self,
+                                },
+                            ));
+                        }
+                    });
+                }
             }
             watches::WatchKind::GovernanceManifest { community } => {
                 for subkey in &changed_subkeys {
@@ -413,8 +514,33 @@ impl SubscriptionManager {
                 for subkey in &changed_subkeys {
                     match *subkey {
                         crate::payload::dht_types::REGISTRY_MEMBER_INDEX => {
-                            debug!(community = %community, "member index changed");
-                            // The daemon re-reads the member list on this signal.
+                            debug!(community = %community, "member index changed — refreshing channel watches");
+                            // Look up registry_key from session for this community
+                            let registry_key = self.session.read().as_ref()
+                                .and_then(|s| s.communities.get(&community))
+                                .map(|m| m.registry_key.clone());
+                            if let Some(reg_key) = registry_key {
+                                // Spawn async watch setup — on_value_change is synchronous.
+                                // setup_channel_watches is idempotent (skips existing watches)
+                                // so repeated calls from rapid registry changes are safe.
+                                let node = Arc::clone(&self.node);
+                                let w = Arc::clone(&self.watches);
+                                let community_owned = community.clone();
+                                // Get our own channel record keys so the watch setup can
+                                // skip our writable log (opening it read-only would downgrade
+                                // the DHT handle and cause "value is not writable" on next send).
+                                let local_keys = self.session.read().as_ref()
+                                    .and_then(|s| s.communities.get(&community))
+                                    .map(|m| m.channel_record_keys.clone())
+                                    .unwrap_or_default();
+                                tokio::spawn(async move {
+                                    watches::setup_channel_watches(
+                                        &node, &w,
+                                        &community_owned, &reg_key,
+                                        &local_keys,
+                                    ).await;
+                                });
+                            }
                         }
                         crate::payload::dht_types::REGISTRY_MEK_VAULT => {
                             // Read the current max generation from the mek_cache
@@ -445,24 +571,95 @@ impl SubscriptionManager {
                 // The daemon's inbox processor is triggered by this signal.
             }
             watches::WatchKind::ChannelLog { community, channel_id, member_pseudonym } => {
+                // Skip own channel log changes — emit_local already handled it.
+                // Without this, self-sent messages produce duplicate "(decrypting...)" placeholders.
+                let is_own_log = self.session.read().as_ref()
+                    .and_then(|s| s.communities.get(&community))
+                    .is_some_and(|m| m.pseudonym_key == member_pseudonym);
+                if is_own_log {
+                    debug!(community = %community, "skipping own channel log watch notification");
+                    return;
+                }
+
                 let count = self.state.write().unread.increment_channel(&community, &channel_id);
+
+                // Emit immediate notification (body: None) for unread count
                 self.process_event(SubscriptionEvent::ChannelMessage(
                     events::ChannelMessageEvent::New {
                         community: community.clone(),
                         channel: channel_id.clone(),
-                        message_id: String::new(), // resolved by the reader
-                        sender_pseudonym: member_pseudonym,
+                        message_id: String::new(),
+                        sender_pseudonym: member_pseudonym.clone(),
                         sequence: 0,
                         timestamp: rekindle_utils::timestamp_ms(),
-                        body: None,              // enriched by decrypt stage
-                        reply_to_sequence: None, // enriched by decrypt stage
+                        body: None,
+                        reply_to_sequence: None,
+                        is_self: false,
                     },
                 ));
                 self.process_event(SubscriptionEvent::UnreadChanged {
                     context: events::UnreadContext::Channel {
-                        community, channel: channel_id,
+                        community: community.clone(), channel: channel_id.clone(),
                     },
                     count,
+                });
+
+                // Spawn async DhtLog read + MEK decrypt to populate body.
+                // record_key is the DhtLog spine key that triggered this watch.
+                let log_key = record_key.to_string();
+                let node = Arc::clone(&self.node);
+                let event_tx = self.event_tx.clone();
+                let mek_cache = Arc::clone(&self.mek_cache);
+                let community_owned = community;
+                let channel_owned = channel_id;
+                let pseudonym_owned = member_pseudonym;
+                tokio::spawn(async move {
+                    let Ok(dht) = node.dht() else { return };
+                    let log = match crate::broadcast::dht::channel_log::DhtLog::open_read(
+                        dht.routing_context(), &log_key,
+                    ).await {
+                        Ok(l) => l,
+                        Err(e) => {
+                            tracing::debug!(error = %e, "channel body enrich: DhtLog open failed");
+                            return;
+                        }
+                    };
+                    let entries = match log.tail(1).await {
+                        Ok(e) if !e.is_empty() => e,
+                        _ => return,
+                    };
+                    let msg: crate::payload::dht_types::ChannelMessage =
+                        match serde_json::from_slice(&entries[0]) {
+                            Ok(m) => m,
+                            Err(_) => return,
+                        };
+
+                    // MEK decrypt
+                    let body = {
+                        let cache = mek_cache.read();
+                        cache.get_generation(&community_owned, &channel_owned, msg.mek_generation)
+                            .and_then(|mek| mek.decrypt(&msg.ciphertext).ok())
+                            .map(|plaintext| String::from_utf8_lossy(&plaintext).into_owned())
+                    };
+
+                    let message_id = msg.message_id
+                        .unwrap_or_else(|| format!("seq:{}", msg.sequence));
+
+                    if let Some(body_text) = body {
+                        let _ = event_tx.send(SubscriptionEvent::ChannelMessage(
+                            events::ChannelMessageEvent::New {
+                                community: community_owned,
+                                channel: channel_owned,
+                                message_id,
+                                sender_pseudonym: pseudonym_owned,
+                                sequence: msg.sequence,
+                                timestamp: msg.timestamp,
+                                body: Some(body_text),
+                                reply_to_sequence: msg.reply_to,
+                                is_self: false,
+                            },
+                        ));
+                    }
                 });
             }
         }
@@ -474,11 +671,16 @@ impl SubscriptionManager {
             events::NetworkEvent::AttachmentChanged { is_attached, public_internet_ready },
         ));
 
-        // Re-establish all watches on re-attach
+        // Re-establish ALL watches on re-attach — not just stale ones.
+        // After a brief outage, no watches are past their renewal interval locally,
+        // but the remote storage nodes may have expired them during the outage.
         if is_attached && public_internet_ready {
-            info!("network re-attached — re-establishing all watches");
-            let stale = self.watches.read().needs_renewal();
-            for (record_key, entry) in stale {
+            let all_watches: Vec<(String, watches::WatchEntry)> = self.watches.read()
+                .entries.iter()
+                .map(|(k, e)| (k.clone(), e.clone()))
+                .collect();
+            info!(count = all_watches.len(), "network re-attached — re-establishing all watches");
+            for (record_key, entry) in all_watches {
                 if watches::renew_watch(&self.node, &record_key, &entry.subkeys).await {
                     if let Some(e) = self.watches.write().entries.get_mut(&record_key) {
                         e.established_at = std::time::Instant::now();
@@ -600,5 +802,35 @@ impl SubscriptionManager {
     /// Access the shared gossip meshes (for BroadcastManager).
     pub fn meshes(&self) -> &Arc<RwLock<HashMap<String, GossipMesh>>> {
         &self.meshes
+    }
+
+    /// Access the transport node Arc (for callers that need to set up watches
+    /// without holding the SubscriptionManager lock across an await point).
+    pub fn node(&self) -> &Arc<TransportNode> {
+        &self.node
+    }
+
+    /// Access the watch registry Arc (for callers that need to set up watches
+    /// without holding the SubscriptionManager lock across an await point).
+    pub fn watches(&self) -> &Arc<RwLock<WatchRegistry>> {
+        &self.watches
+    }
+
+    /// Access the dedup state (for diagnostics — dedup entry count and suppressed count).
+    pub fn dedup(&self) -> &Arc<RwLock<dedup::EventDedup>> {
+        &self.dedup
+    }
+
+    /// Emit a locally-originated event through the standard pipeline.
+    ///
+    /// Used by the daemon after a successful DHT write (channel send, DM send)
+    /// so the sender's own UI sees the message via the same subscription path
+    /// that peers use. The event goes through dedup + state_effects + broadcast,
+    /// so it behaves identically to a remotely-received event.
+    ///
+    /// If the write failed, the caller must NOT call this — the user should see
+    /// an error, not a phantom message that was never persisted.
+    pub fn emit_local(&self, event: SubscriptionEvent) {
+        self.process_event(event);
     }
 }

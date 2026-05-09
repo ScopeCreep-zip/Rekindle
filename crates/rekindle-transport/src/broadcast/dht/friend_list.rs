@@ -1,6 +1,6 @@
 //! Friend list DHT record operations (DFLT, 1 subkey).
 //!
-//! The entire friend list is stored as a single postcard-serialized blob
+//! The entire friend list is stored as a single JSON-serialized blob
 //! in subkey 0 of a DFLT(1) record.
 
 use veilid_core::{KeyPair, RoutingContext};
@@ -26,7 +26,7 @@ impl<'a> FriendListOps<'a> {
         let (key, keypair) = record::create_dflt(self.rc, 1, None).await?;
 
         let empty = FriendList::default();
-        let data = postcard::to_stdvec(&empty)
+        let data = serde_json::to_vec(&empty)
             .map_err(|e| crate::error::TransportError::SerializationFailed { reason: e.to_string() })?;
         record::set(self.rc, &key, 0, data, None).await?;
 
@@ -48,7 +48,7 @@ impl<'a> FriendListOps<'a> {
 
         if is_new {
             let empty = FriendList::default();
-            let data = postcard::to_stdvec(&empty)
+            let data = serde_json::to_vec(&empty)
                 .map_err(|e| crate::error::TransportError::SerializationFailed { reason: e.to_string() })?;
             record::set(self.rc, &key, 0, data, None).await?;
             tracing::info!(key = %key, "friend list record created");
@@ -60,7 +60,7 @@ impl<'a> FriendListOps<'a> {
     /// Read the full friend list.
     pub async fn read(&self, key: &str) -> Result<FriendList> {
         match record::get(self.rc, key, 0, false).await? {
-            Some(data) => postcard::from_bytes(&data)
+            Some(data) => serde_json::from_slice(&data)
                 .map_err(|e| crate::error::TransportError::DeserializationFailed {
                     type_id: 0,
                     reason: format!("friend list: {e}"),
@@ -92,7 +92,7 @@ impl<'a> FriendListOps<'a> {
     }
 
     async fn write(&self, key: &str, list: &FriendList) -> Result<()> {
-        let data = postcard::to_stdvec(list)
+        let data = serde_json::to_vec(list)
             .map_err(|e| crate::error::TransportError::SerializationFailed { reason: e.to_string() })?;
         record::set(self.rc, key, 0, data, None).await
     }

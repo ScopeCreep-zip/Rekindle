@@ -274,10 +274,59 @@ impl BusClient {
         Timestamp::now(self.epoch)
     }
 
+    /// Create a cheaply cloneable responder handle for concurrent dispatch.
+    ///
+    /// The daemon subscriber uses this to spawn concurrent dispatch tasks
+    /// that each need to send responses back through the bus. The responder
+    /// shares the outbound channel — `mpsc::Sender` is safe to clone.
+    pub fn responder(&self) -> BusResponder {
+        BusResponder {
+            outbound_tx: self.outbound_tx.clone(),
+            msg_ctx: self.msg_ctx.clone(),
+            epoch: self.epoch,
+        }
+    }
+
     /// Gracefully shut down the client, flushing pending frames.
     pub async fn shutdown(self) {
         drop(self.outbound_tx);
         let _ = self.io_handle.await;
+    }
+}
+
+/// Cheaply cloneable handle for sending responses back through the IPC bus.
+///
+/// Used by the daemon subscriber to allow concurrent dispatch tasks to
+/// each send their response independently. Shares the underlying
+/// `mpsc::Sender` which is safe for concurrent use.
+#[derive(Clone)]
+pub struct BusResponder {
+    outbound_tx: mpsc::Sender<Vec<u8>>,
+    msg_ctx: MessageContext,
+    epoch: Instant,
+}
+
+impl BusResponder {
+    /// Send a correlated IPC response back through the bus.
+    pub async fn respond(
+        &self,
+        response_json_bytes: Vec<u8>,
+        correlation_id: Uuid,
+        level: SecurityLevel,
+    ) -> Result<()> {
+        let msg = Message::new(
+            &self.msg_ctx,
+            BusPayload::Response(response_json_bytes),
+            level,
+            self.epoch,
+        )
+        .with_correlation(correlation_id);
+        let payload = encode_frame(&msg)?;
+        self.outbound_tx
+            .send(payload)
+            .await
+            .map_err(|_| IpcError::OutboundClosed)?;
+        Ok(())
     }
 }
 

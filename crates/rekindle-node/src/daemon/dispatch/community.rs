@@ -9,7 +9,7 @@ use crate::validation;
 use super::{DaemonContext, state_error};
 
 pub(crate) async fn handle_create(
-    ctx: &DaemonContext,
+    ctx: &Arc<DaemonContext>,
     state: DaemonState,
     name: &str,
     description: &str,
@@ -111,17 +111,33 @@ pub(crate) async fn handle_create(
                 }
             }
 
-            // Register gossip mesh for the new community (synchronous, no await needed).
-            // The join inbox Veilid-level watch was already established during create_community
-            // (transport layer). ValueChange events route through DaemonHandler::on_value_change
-            // which checks session.communities for join_inbox_key matches — no SubscriptionManager
-            // WatchRegistry registration needed.
+            // Establish subscription watches + gossip mesh for the new community.
+            // Without this, the creator is deaf to all community events (channel
+            // messages, member registry changes, join inbox) until daemon restart.
             {
-                let bcast_guard = ctx.broadcast_mgr.read();
-                if let Some(ref bcast_mgr) = *bcast_guard {
-                    bcast_mgr.register_mesh(&result.governance_key);
-                    tracing::info!(community = %name, "gossip mesh registered for new community");
-                }
+                let ctx_clone = Arc::clone(ctx);
+                let gov_key = result.governance_key.clone();
+                let name_clone = name.clone();
+                #[allow(clippy::await_holding_lock)]
+                tokio::spawn(async move {
+                    let membership = {
+                        let guard = ctx_clone.session.read();
+                        guard.as_ref().and_then(|s| s.communities.get(&gov_key).cloned())
+                    };
+                    if let Some(membership) = membership {
+                        let guard = ctx_clone.subscriptions.read();
+                        if let Some(ref mgr) = *guard {
+                            mgr.setup_community(&membership).await;
+                            tracing::info!(community = %name_clone, "subscription watches established for new community");
+                        }
+                        drop(guard);
+                        let bcast_guard = ctx_clone.broadcast_mgr.read();
+                        if let Some(ref bcast_mgr) = *bcast_guard {
+                            bcast_mgr.register_mesh(&gov_key);
+                            tracing::info!(community = %name_clone, "gossip mesh registered for new community");
+                        }
+                    }
+                });
             }
 
             IpcResponse::ok(&serde_json::json!({
@@ -136,7 +152,7 @@ pub(crate) async fn handle_create(
 }
 
 pub(crate) async fn handle_join(
-    ctx: &DaemonContext,
+    ctx: &Arc<DaemonContext>,
     state: DaemonState,
     invite: &str,
 ) -> IpcResponse {
@@ -216,6 +232,35 @@ pub(crate) async fn handle_join(
                 }
             }
             if let Err(e) = ctx.save_session() { return e; }
+
+            // Establish subscription watches + gossip mesh for the new community.
+            // Without this, communities joined after daemon startup are deaf.
+            {
+                let ctx_clone = Arc::clone(ctx);
+                let gov_key = result.governance_key.clone();
+                let name = result.community_name.clone();
+                #[allow(clippy::await_holding_lock)]
+                tokio::spawn(async move {
+                    let membership = {
+                        let guard = ctx_clone.session.read();
+                        guard.as_ref().and_then(|s| s.communities.get(&gov_key).cloned())
+                    };
+                    if let Some(membership) = membership {
+                        let guard = ctx_clone.subscriptions.read();
+                        if let Some(ref mgr) = *guard {
+                            mgr.setup_community(&membership).await;
+                            tracing::info!(community = %name, "subscription watches established post-join");
+                        }
+                        drop(guard);
+                        let bcast_guard = ctx_clone.broadcast_mgr.read();
+                        if let Some(ref bcast_mgr) = *bcast_guard {
+                            bcast_mgr.register_mesh(&gov_key);
+                            tracing::info!(community = %name, "gossip mesh registered post-join");
+                        }
+                    }
+                });
+            }
+
             IpcResponse::ok(&serde_json::json!({
                 "community_name": result.community_name,
                 "governance_key": result.governance_key,
@@ -228,7 +273,7 @@ pub(crate) async fn handle_join(
 }
 
 pub(crate) async fn handle_leave(
-    ctx: &DaemonContext,
+    ctx: &Arc<DaemonContext>,
     state: DaemonState,
     governance_key: &str,
 ) -> IpcResponse {
@@ -254,7 +299,7 @@ pub(crate) async fn handle_leave(
     }
 }
 
-pub(crate) fn handle_list(ctx: &DaemonContext, state: DaemonState) -> IpcResponse {
+pub(crate) fn handle_list(ctx: &Arc<DaemonContext>, state: DaemonState) -> IpcResponse {
     if !state.can_query() { return state_error(state, "query"); }
     ctx.require_session(|session| {
         let communities: Vec<serde_json::Value> = session.communities.values().map(|m| {
@@ -272,14 +317,14 @@ pub(crate) fn handle_list(ctx: &DaemonContext, state: DaemonState) -> IpcRespons
 }
 
 pub(crate) async fn handle_info(
-    ctx: &DaemonContext,
+    ctx: &Arc<DaemonContext>,
     state: DaemonState,
     governance_key: &str,
 ) -> IpcResponse {
     if !state.can_query() { return state_error(state, "query"); }
     let transport = match ctx.require_transport() { Ok(t) => t, Err(e) => return e };
     let membership = match ctx.resolve_community(governance_key) { Ok(m) => m, Err(e) => return e };
-    let query = match transport.query(Arc::clone(&ctx.mek_cache)) {
+    let query = match transport.query(Arc::clone(&ctx.mek_cache), Arc::clone(&ctx.signal)) {
         Ok(q) => q, Err(e) => return IpcResponse::error(500, format!("query engine: {e}")),
     };
     match query.community_detail(&membership).await {
@@ -289,7 +334,7 @@ pub(crate) async fn handle_info(
 }
 
 pub(crate) async fn handle_approve(
-    ctx: &DaemonContext,
+    ctx: &Arc<DaemonContext>,
     state: DaemonState,
     governance_key: &str,
     member_pseudonym: &str,
@@ -355,7 +400,7 @@ pub(crate) async fn handle_approve(
 }
 
 pub(crate) async fn handle_reject(
-    ctx: &DaemonContext,
+    ctx: &Arc<DaemonContext>,
     state: DaemonState,
     governance_key: &str,
     member_pseudonym: &str,
@@ -380,7 +425,7 @@ pub(crate) async fn handle_reject(
 }
 
 pub(crate) async fn handle_pending_members(
-    ctx: &DaemonContext,
+    ctx: &Arc<DaemonContext>,
     state: DaemonState,
     governance_key: &str,
 ) -> IpcResponse {
@@ -397,7 +442,7 @@ pub(crate) async fn handle_pending_members(
 }
 
 pub(crate) async fn handle_transfer_ownership(
-    ctx: &DaemonContext,
+    ctx: &Arc<DaemonContext>,
     state: DaemonState,
     governance_key: &str,
     new_owner_pseudonym: &str,

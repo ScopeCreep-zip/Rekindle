@@ -36,6 +36,9 @@ pub struct CommunityDetail {
     pub roles: Vec<RoleDisplay>,
     pub our_pseudonym: String,
     pub our_roles: Vec<u32>,
+    /// Community members for peer list display.
+    #[serde(default)]
+    pub members: Vec<MemberPresence>,
 }
 
 // ── Channel ─────────────────────────────────────────────────────────────
@@ -53,6 +56,22 @@ pub struct ChannelOverviewDisplay {
     pub sort_order: u16,
 }
 
+/// Delivery status for messages sent by the local user.
+///
+/// Messages from remote peers are always `Confirmed` (they arrived via
+/// the network, so durability is already proven). Self-sent messages
+/// transition: `Sending` → `Confirmed` (DHT write succeeded) or
+/// `Sending` → `Failed` (DHT write or gossip broadcast failed).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DeliveryStatus {
+    /// Message is being written to DHT / sent via app_message.
+    Sending,
+    /// Message is durably persisted on the network (DHT write confirmed).
+    Confirmed,
+    /// Send failed — the message was not delivered.
+    Failed,
+}
+
 /// Decrypted channel message for history display.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DecryptedMessageDisplay {
@@ -66,6 +85,8 @@ pub struct DecryptedMessageDisplay {
     pub mek_generation: u64,
     pub is_encrypted: bool,
     pub needs_mek: Option<u64>,
+    /// Delivery status for self-sent messages. Remote messages are always `Confirmed`.
+    pub delivery_status: DeliveryStatus,
 }
 
 // ── Friends / DMs ───────────────────────────────────────────────────────

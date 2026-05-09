@@ -120,12 +120,10 @@ impl PeerList {
                 .map(|r| format!(" [{r}]"))
                 .unwrap_or_default();
 
-            let key_short = helpers::abbreviate_key(&member.key);
             let line = Line::from(vec![
                 Span::styled(format!("  {glyph} "), Style::new().dim()),
                 Span::raw(name),
                 Span::styled(role_badge, Style::new().dim()),
-                Span::styled(format!(" {key_short}"), Style::new().dim()),
             ]);
             items.push(ListItem::new(line));
         }

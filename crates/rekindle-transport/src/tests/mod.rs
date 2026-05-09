@@ -14,41 +14,24 @@ use crate::payload::rpc::*;
 use crate::frame::TypeId;
 
 #[test]
-fn dm_roundtrip_direct_message() {
-    let payload = DmPayload::DirectMessage {
-        body: b"hello world".to_vec(),
-        reply_to: None,
-    };
-    assert_eq!(dm_type_id(&payload), TypeId::DmMessage);
+fn dm_roundtrip_typing() {
+    let payload = DmPayload::Typing { typing: true };
+    assert_eq!(dm_type_id(&payload), TypeId::DmTyping);
     let bytes = serialize_dm(&payload).unwrap();
-    let back = deserialize_dm(TypeId::DmMessage, &bytes).unwrap();
+    let back = deserialize_dm(TypeId::DmTyping, &bytes).unwrap();
     match back {
-        DmPayload::DirectMessage { body, .. } => assert_eq!(body, b"hello world"),
+        DmPayload::Typing { typing } => assert!(typing),
         _ => panic!("wrong variant"),
     }
 }
 
 #[test]
-fn dm_roundtrip_friend_request() {
-    let payload = DmPayload::FriendRequest {
-        display_name: "Alice".into(),
-        message: "Hi!".into(),
-        prekey_bundle: vec![1, 2, 3],
-        profile_dht_key: "VLD0:abc".into(),
-        route_blob: vec![4, 5, 6],
-        mailbox_dht_key: "VLD0:def".into(),
-        invite_id: Some("inv_01".into()),
-    };
-    assert_eq!(dm_type_id(&payload), TypeId::FriendRequest);
+fn dm_roundtrip_friend_request_ack() {
+    let payload = DmPayload::FriendRequestAck;
+    assert_eq!(dm_type_id(&payload), TypeId::FriendRequestAck);
     let bytes = serialize_dm(&payload).unwrap();
-    let back = deserialize_dm(TypeId::FriendRequest, &bytes).unwrap();
-    match back {
-        DmPayload::FriendRequest { display_name, invite_id, .. } => {
-            assert_eq!(display_name, "Alice");
-            assert_eq!(invite_id.as_deref(), Some("inv_01"));
-        }
-        _ => panic!("wrong variant"),
-    }
+    let back = deserialize_dm(TypeId::FriendRequestAck, &bytes).unwrap();
+    assert!(matches!(back, DmPayload::FriendRequestAck));
 }
 
 #[test]

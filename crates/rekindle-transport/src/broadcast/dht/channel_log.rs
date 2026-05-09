@@ -103,10 +103,17 @@ struct LogSpine {
 /// - **Spine record**: DFLT(1) holding metadata (total count + segment keys)
 /// - **Segments**: each segment is a [`ShortArray`] holding up to
 ///   `segment_capacity` entries. New segments allocated when full.
+///
+/// The `append_guard` mutex serializes spine read-modify-write to prevent
+/// lost updates when concurrent dispatch processes two messages for the
+/// same channel simultaneously.
 pub struct DhtLog {
     rc: RoutingContext,
     spine_key: veilid_core::RecordKey,
     owner_keypair: Option<KeyPair>,
+    /// Guards the append path's spine read-modify-write against concurrent calls.
+    /// None for read-only logs (no append possible, no mutex needed).
+    append_guard: Option<tokio::sync::Mutex<()>>,
 }
 
 impl DhtLog {
@@ -136,7 +143,7 @@ impl DhtLog {
             .await
             .map_err(|e| TransportError::DhtError { reason: format!("write spine: {e}") })?;
 
-        Ok((Self { rc: rc.clone(), spine_key: key, owner_keypair: Some(keypair.clone()) }, keypair))
+        Ok((Self { rc: rc.clone(), spine_key: key, owner_keypair: Some(keypair.clone()), append_guard: Some(tokio::sync::Mutex::new(())) }, keypair))
     }
 
     /// Open an existing log with write access.
@@ -145,7 +152,7 @@ impl DhtLog {
         let _ = rc.open_dht_record(spine_key.clone(), Some(writer.clone()))
             .await
             .map_err(|e| TransportError::DhtError { reason: format!("open log: {e}") })?;
-        Ok(Self { rc: rc.clone(), spine_key, owner_keypair: Some(writer) })
+        Ok(Self { rc: rc.clone(), spine_key, owner_keypair: Some(writer), append_guard: Some(tokio::sync::Mutex::new(())) })
     }
 
     /// Open an existing log for reading only.
@@ -154,15 +161,22 @@ impl DhtLog {
         let _ = rc.open_dht_record(spine_key.clone(), None)
             .await
             .map_err(|e| TransportError::DhtError { reason: format!("open log: {e}") })?;
-        Ok(Self { rc: rc.clone(), spine_key, owner_keypair: None })
+        Ok(Self { rc: rc.clone(), spine_key, owner_keypair: None, append_guard: None })
     }
 
     /// Append an entry to the log. Returns the absolute position.
+    ///
+    /// Serialized by `append_guard` to prevent lost updates when concurrent
+    /// dispatch processes two messages for the same channel simultaneously.
     pub async fn append(&self, data: &[u8]) -> Result<u64> {
         let writer = self.owner_keypair.as_ref().ok_or_else(|| {
             TransportError::DhtError { reason: "cannot append to read-only log".into() }
         })?;
 
+        let _guard = match &self.append_guard {
+            Some(m) => Some(m.lock().await),
+            None => None,
+        };
         let mut spine = self.read_spine().await?;
         let cap = spine.segment_capacity;
 
@@ -188,8 +202,11 @@ impl DhtLog {
     }
 
     /// Read the last N entries (oldest first).
+    ///
+    /// Uses force_refresh on spine read to ensure we see entries written
+    /// by other nodes (cross-node DhtLog reads bypass Veilid's local cache).
     pub async fn tail(&self, count: u32) -> Result<Vec<Vec<u8>>> {
-        let spine = self.read_spine().await?;
+        let spine = self.read_spine_fresh().await?;
         if spine.total_count == 0 || count == 0 {
             return Ok(Vec::new());
         }
@@ -218,7 +235,7 @@ impl DhtLog {
             }
 
             if let Some(ref seg) = current_seg {
-                if let Some(data) = seg.get(offset).await? {
+                if let Some(data) = seg.get_fresh(offset).await? {
                     results.push(data);
                 }
             }
@@ -257,7 +274,24 @@ impl DhtLog {
     pub fn spine_key(&self) -> String { self.spine_key.to_string() }
 
     async fn read_spine(&self) -> Result<LogSpine> {
-        let value = self.rc.get_dht_value(self.spine_key.clone(), 0, false)
+        if let Ok(spine) = self.read_spine_impl(false).await {
+            Ok(spine)
+        } else {
+            // Local cache may be empty on first access to a remote record.
+            // Retry with force_refresh to fetch from the network.
+            tracing::debug!(spine_key = %self.spine_key, "spine cache miss — retrying with force_refresh");
+            self.read_spine_impl(true).await
+        }
+    }
+
+    /// Read spine with force_refresh — bypasses Veilid's local DHT cache.
+    /// Used by tail() to ensure cross-node reads see the latest entries.
+    async fn read_spine_fresh(&self) -> Result<LogSpine> {
+        self.read_spine_impl(true).await
+    }
+
+    async fn read_spine_impl(&self, force_refresh: bool) -> Result<LogSpine> {
+        let value = self.rc.get_dht_value(self.spine_key.clone(), 0, force_refresh)
             .await
             .map_err(|e| TransportError::DhtError { reason: format!("read spine: {e}") })?;
         match value {

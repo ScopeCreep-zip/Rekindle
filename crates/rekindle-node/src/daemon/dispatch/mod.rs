@@ -108,7 +108,9 @@ pub struct DaemonContext {
     pub audit: parking_lot::Mutex<Option<crate::state::audit::AuditLogger>>,
     /// Consolidated inbound event manager (watch + gossip + poll → dedup → emit).
     /// None before unlock/resume. Created during Resuming transition.
-    pub subscriptions: RwLock<Option<rekindle_transport::SubscriptionManager>>,
+    /// Arc-wrapped for sharing with DaemonHandler (event forwarding) and
+    /// InboxScanCoordinator (setup_dm_peer on acceptance discovery).
+    pub subscriptions: Arc<RwLock<Option<rekindle_transport::SubscriptionManager>>>,
     /// Consolidated outbound broadcast manager (gossip mesh + rate limiting).
     /// None before unlock/resume. Created during Resuming transition.
     pub broadcast_mgr: RwLock<Option<rekindle_transport::BroadcastManager>>,
@@ -116,18 +118,34 @@ pub struct DaemonContext {
     /// event source becomes available (on unlock) or unavailable (on lock).
     /// The server awaits `.changed()` and starts/stops its delivery task.
     pub event_watch_tx: tokio::sync::watch::Sender<Option<tokio::sync::broadcast::Sender<rekindle_types::subscription_events::SubscriptionEvent>>>,
+    /// Friend inbox scan coordinator — coalesces multiple triggers into
+    /// single scans with cooldown. Non-blocking trigger via `trigger()`.
+    /// None before unlock (no inbox to scan). Created during Resuming.
+    /// Arc-wrapped for sharing with DaemonHandler.
+    pub inbox_scan: Arc<RwLock<Option<crate::daemon::friend_inbox::InboxScanCoordinator>>>,
     /// Pending community join completions. Keyed by governance_key.
     /// Shared between DaemonContext (writer: handle_join registers) and
     /// DaemonHandler (writer: on_gossip completes on JoinAccepted receipt).
     /// Tuple: (oneshot sender carrying slot_index, creation instant for cleanup).
     pub pending_joins: Arc<parking_lot::Mutex<std::collections::HashMap<String, (tokio::sync::oneshot::Sender<u32>, std::time::Instant)>>>,
+    /// Signal Protocol session manager for DM encryption/decryption.
+    /// None before unlock. Initialized during Resuming with persisted sessions
+    /// loaded from the OS keyring via KeyringSessionStore.
+    /// Arc-wrapped for sharing with SubscriptionManager (DM decryption in
+    /// enrichment spawns) and DaemonHandler (future use).
+    pub signal: Arc<RwLock<Option<rekindle_transport::crypto::signal_session::SignalSessionManager>>>,
+    /// Encrypted local store for sent DM plaintext.
+    /// Forward secrecy means outbound DhtLog ciphertext is undecryptable
+    /// by the sender — sent message plaintext must be stored locally.
+    /// None before unlock. Initialized during Resuming.
+    pub local_messages: Arc<parking_lot::Mutex<Option<crate::state::local_messages::LocalMessageStore>>>,
 }
 
 /// Dispatch an IPC request to the appropriate domain handler.
 ///
 /// Returns an `IpcResponse` for every request — no request goes unanswered.
 /// Every `IpcRequest` variant is explicitly matched; there is no catch-all arm.
-pub async fn dispatch(ctx: &DaemonContext, request: IpcRequest) -> IpcResponse {
+pub async fn dispatch(ctx: &Arc<DaemonContext>, request: IpcRequest) -> IpcResponse {
     let state = ctx.lifecycle.state();
 
     // Audit: log every request before dispatch (best-effort, non-blocking).
@@ -174,9 +192,13 @@ pub async fn dispatch(ctx: &DaemonContext, request: IpcRequest) -> IpcResponse {
             channel::handle_send(ctx, state, &community, &channel, &body, reply_to).await,
         IpcRequest::ChannelHistory { community, channel, limit } =>
             channel::handle_history(ctx, state, &community, &channel, limit).await,
+        IpcRequest::MessageEdit { community, channel, message_id, new_body } =>
+            channel::handle_message_edit(ctx, state, &community, &channel, &message_id, &new_body).await,
+        IpcRequest::MessageDelete { community, channel, message_id } =>
+            channel::handle_message_delete(ctx, state, &community, &channel, &message_id).await,
 
         // ── Social (friends + DMs) ───────────────────────────────
-        IpcRequest::FriendAdd { target, message } => social::handle_friend_add(ctx, state, &target, &message).await,
+        IpcRequest::FriendAdd { target_profile_key, message } => social::handle_friend_add(ctx, state, &target_profile_key, &message).await,
         IpcRequest::FriendAccept { public_key } => social::handle_friend_accept(ctx, state, &public_key).await,
         IpcRequest::FriendReject { public_key } => social::handle_friend_reject(ctx, state, &public_key).await,
         IpcRequest::FriendRemove { public_key } => social::handle_friend_remove(ctx, state, &public_key).await,
@@ -351,7 +373,7 @@ pub(crate) fn state_error(state: DaemonState, required: &str) -> IpcResponse {
 /// Best-effort: audit failures are logged but never block the request.
 /// The audit entry includes the request type and security-relevant context
 /// but never the payload body (no message content in the audit trail).
-fn audit_request(ctx: &DaemonContext, request: &IpcRequest) {
+fn audit_request(ctx: &Arc<DaemonContext>, request: &IpcRequest) {
     let event_type = format!("{request:?}");
     // Truncate to just the variant name for the audit log (no field data)
     let event_name = event_type.split_once(' ')
@@ -390,6 +412,10 @@ impl DaemonContext {
     ) {
         tracing::info!("daemon bus subscriber started");
 
+        // Create a cloneable responder handle for concurrent dispatch tasks.
+        // Each spawned dispatch gets its own clone — mpsc::Sender is safe to share.
+        let responder = client.responder();
+
         loop {
             let msg = match client.recv_bus_message().await {
                 Some(Ok(msg)) => msg,
@@ -413,21 +439,27 @@ impl DaemonContext {
 
             let correlation_id = msg.msg_id;
             let level = msg.security_level;
-            let response = dispatch(self, request).await;
 
-            // Serialize IpcResponse to JSON bytes for the bus wire format.
-            // IpcResponse contains serde_json::Value which postcard cannot handle.
-            let response_bytes = match serde_json::to_vec(&response) {
-                Ok(b) => b,
-                Err(e) => {
-                    tracing::error!(error = %e, "daemon subscriber: failed to serialize response");
-                    continue;
+            // Spawn dispatch concurrently — the recv loop immediately reads
+            // the next request. Multiple requests from multiple clients process
+            // in parallel. A 500ms ChannelSend doesn't block a 5ms Status.
+            let ctx = std::sync::Arc::clone(self);
+            let resp = responder.clone();
+            tokio::spawn(async move {
+                let response = dispatch(&ctx, request).await;
+
+                let response_bytes = match serde_json::to_vec(&response) {
+                    Ok(b) => b,
+                    Err(e) => {
+                        tracing::error!(error = %e, "daemon dispatch: failed to serialize response");
+                        return;
+                    }
+                };
+
+                if let Err(e) = resp.respond(response_bytes, correlation_id, level).await {
+                    tracing::error!(error = %e, "daemon dispatch: failed to send response");
                 }
-            };
-
-            if let Err(e) = client.respond(response_bytes, correlation_id, level).await {
-                tracing::error!(error = %e, "daemon subscriber: failed to send response");
-            }
+            });
         }
 
         tracing::info!("daemon bus subscriber stopped");

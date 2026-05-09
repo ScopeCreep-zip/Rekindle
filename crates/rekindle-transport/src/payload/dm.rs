@@ -10,39 +10,19 @@ use serde::{Deserialize, Serialize};
 use crate::error::{TransportError, Result};
 use crate::frame::TypeId;
 
-/// All DM-class payload variants.
+/// DM-class payload variants for ephemeral peer-to-peer signals.
+///
+/// DM message content is NOT carried here — it goes through Signal-encrypted
+/// DhtLog entries (see broadcast/dm.rs). This enum carries only ephemeral
+/// signals that don't need persistence or encryption (typing, presence,
+/// friend lifecycle notifications).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DmPayload {
-    /// Encrypted 1:1 chat message.
-    DirectMessage {
-        body: Vec<u8>,
-        reply_to: Option<Vec<u8>>,
-    },
-    /// Typing indicator (ephemeral).
+    /// Typing indicator (ephemeral, real-time only).
     Typing { typing: bool },
-    /// Friend request (plaintext, TOFU signed).
-    FriendRequest {
-        display_name: String,
-        message: String,
-        prekey_bundle: Vec<u8>,
-        profile_dht_key: String,
-        route_blob: Vec<u8>,
-        mailbox_dht_key: String,
-        invite_id: Option<String>,
-    },
-    /// Friend request accepted.
-    FriendAccept {
-        prekey_bundle: Vec<u8>,
-        profile_dht_key: String,
-        route_blob: Vec<u8>,
-        mailbox_dht_key: String,
-        ephemeral_key: Vec<u8>,
-        signed_prekey_id: u32,
-        one_time_prekey_id: Option<u32>,
-    },
-    /// Friend request rejected.
-    FriendReject,
-    /// Delivery confirmation for a FriendRequest.
+    /// Delivery confirmation for a friend request written to DHT inbox.
+    /// Triggers an immediate inbox scan on the recipient so they discover
+    /// the request without waiting for the 60s poll sweep.
     FriendRequestAck,
     /// Notification that we have removed the peer as a friend.
     Unfriend,
@@ -70,7 +50,7 @@ pub struct GamePresence {
 // ── SubscriptionEvent conversion ───────────────────────────────────────
 
 use rekindle_types::subscription_events::{
-    SubscriptionEvent, ChannelMessageEvent,
+    SubscriptionEvent,
     TypingEvent, TypingContext,
     FriendEvent, PresenceEvent,
 };
@@ -78,16 +58,10 @@ use rekindle_types::subscription_events::{
 impl DmPayload {
     /// Convert a DM payload into a `SubscriptionEvent` given sender context.
     ///
-    /// Pure data transformation — no state mutation, no I/O, no logging.
-    pub fn into_event(self, sender_key: &str, timestamp: u64) -> SubscriptionEvent {
+    /// Only ephemeral signals remain — DM message content goes through
+    /// Signal-encrypted DhtLog entries, not this conversion.
+    pub fn into_event(self, sender_key: &str) -> SubscriptionEvent {
         match self {
-            Self::DirectMessage { body, .. } =>
-                SubscriptionEvent::ChannelMessage(ChannelMessageEvent::DirectMessageReceived {
-                    peer_key: sender_key.into(),
-                    timestamp,
-                    sender_name: None, // enriched from friend list by SubscriptionManager
-                    body: Some(String::from_utf8_lossy(&body).to_string()),
-                }),
             Self::Typing { typing } => {
                 if typing {
                     SubscriptionEvent::Typing(TypingEvent::Started {
@@ -101,16 +75,6 @@ impl DmPayload {
                     })
                 }
             }
-            Self::FriendRequest { display_name, message, .. } =>
-                SubscriptionEvent::Friend(FriendEvent::RequestReceived {
-                    from_key: sender_key.into(), display_name, message,
-                }),
-            Self::FriendAccept { .. } =>
-                SubscriptionEvent::Friend(FriendEvent::Accepted {
-                    peer_key: sender_key.into(), dm_log_key: String::new(),
-                }),
-            Self::FriendReject =>
-                SubscriptionEvent::Friend(FriendEvent::Rejected { peer_key: sender_key.into() }),
             Self::FriendRequestAck =>
                 SubscriptionEvent::Friend(FriendEvent::RequestAcknowledged { peer_key: sender_key.into() }),
             Self::Unfriend =>
@@ -153,11 +117,7 @@ pub fn serialize_dm(payload: &DmPayload) -> Result<Vec<u8>> {
 /// Map a DmPayload variant to its frame TypeId.
 pub fn dm_type_id(payload: &DmPayload) -> TypeId {
     match payload {
-        DmPayload::DirectMessage { .. } => TypeId::DmMessage,
         DmPayload::Typing { .. } => TypeId::DmTyping,
-        DmPayload::FriendRequest { .. } => TypeId::FriendRequest,
-        DmPayload::FriendAccept { .. } => TypeId::FriendAccept,
-        DmPayload::FriendReject => TypeId::FriendReject,
         DmPayload::FriendRequestAck => TypeId::FriendRequestAck,
         DmPayload::Unfriend => TypeId::Unfriend,
         DmPayload::UnfriendAck => TypeId::UnfriendAck,

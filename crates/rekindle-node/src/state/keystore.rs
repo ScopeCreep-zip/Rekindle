@@ -162,6 +162,12 @@ pub async fn delete_governance_keypair(label: &str) -> anyhow::Result<()> {
     delete_keyring_entry(&key).await
 }
 
+/// Delete a single keypair from the OS keyring.
+pub async fn delete_keypair_bytes(label: &str) -> anyhow::Result<()> {
+    let key = format!("{KEY_PREFIX_KEYPAIR}{label}");
+    delete_keyring_entry(&key).await
+}
+
 /// Delete all rekindle keyring entries.
 ///
 /// Used by `IdentityDestroy` and `IdentityWipe`. Best-effort — continues

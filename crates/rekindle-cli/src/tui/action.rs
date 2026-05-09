@@ -65,6 +65,8 @@ pub enum Action {
         reply_to: Option<String>,
     },
     SendDm { peer_key: String, text: String },
+    EditMessage { community: String, channel: String, message_id: String, new_body: String },
+    DeleteMessage { community: String, channel: String, message_id: String },
 
     // ─── Voice ──────────────────────────────────────────────────
     JoinVoice { community: String, channel: String },
@@ -165,6 +167,10 @@ pub enum CommandResult {
     DmInboxLoaded {
         threads: Vec<rekindle_types::display::DmThreadDisplay>,
     },
+    DmThreadLoaded {
+        peer_key: String,
+        messages: Vec<rekindle_types::display::DmMessageDisplay>,
+    },
     StatusLoaded {
         snapshot: rekindle_types::display::StatusSnapshot,
     },
@@ -175,4 +181,8 @@ pub enum CommandResult {
         public_key: String,
         display_name: String,
     },
+    /// A message send (channel or DM) failed after the view already
+    /// inserted a pending message with `DeliveryStatus::Sending`.
+    /// The view flips the pending message to `DeliveryStatus::Failed` (✗).
+    SendFailed,
 }

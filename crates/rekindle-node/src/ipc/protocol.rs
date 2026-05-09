@@ -64,8 +64,8 @@ pub enum IpcRequest {
     IdentityWipe { confirmation: String },
 
     // ── Friends ───────────────────────────────────────────────────
-    /// Send a friend request to a target (mailbox DHT key).
-    FriendAdd { target: String, message: String },
+    /// Send a friend request to a target (profile DHT key).
+    FriendAdd { target_profile_key: String, message: String },
     /// Accept a pending friend request.
     FriendAccept { public_key: String },
     /// Reject a pending friend request.
@@ -131,6 +131,19 @@ pub enum IpcRequest {
         community: String,
         channel: String,
         limit: u32,
+    },
+    /// Edit a message in a channel (own messages only).
+    MessageEdit {
+        community: String,
+        channel: String,
+        message_id: String,
+        new_body: String,
+    },
+    /// Delete a message in a channel.
+    MessageDelete {
+        community: String,
+        channel: String,
+        message_id: String,
     },
 
     // ── DMs ───────────────────────────────────────────────────────
@@ -300,7 +313,7 @@ impl std::fmt::Debug for IpcRequest {
             Self::IdentityRotate => write!(f, "IdentityRotate"),
             Self::IdentityDestroy { confirmation } => f.debug_struct("IdentityDestroy").field("confirmation", confirmation).finish(),
             Self::IdentityWipe { confirmation } => f.debug_struct("IdentityWipe").field("confirmation", confirmation).finish(),
-            Self::FriendAdd { target, message } => f.debug_struct("FriendAdd").field("target", target).field("message", message).finish(),
+            Self::FriendAdd { target_profile_key, message } => f.debug_struct("FriendAdd").field("target_profile_key", target_profile_key).field("message", message).finish(),
             Self::FriendAccept { public_key } => f.debug_struct("FriendAccept").field("public_key", public_key).finish(),
             Self::FriendReject { public_key } => f.debug_struct("FriendReject").field("public_key", public_key).finish(),
             Self::FriendRemove { public_key } => f.debug_struct("FriendRemove").field("public_key", public_key).finish(),
@@ -327,6 +340,10 @@ impl std::fmt::Debug for IpcRequest {
                 .field("community", community).field("channel_id", channel_id)
                 .field("name", name).field("topic", topic).field("slowmode_seconds", slowmode_seconds).finish(),
             Self::ChannelHistory { community, channel, limit } => f.debug_struct("ChannelHistory").field("community", community).field("channel", channel).field("limit", limit).finish(),
+            Self::MessageEdit { community, channel, message_id, new_body } => f.debug_struct("MessageEdit")
+                .field("community", community).field("channel", channel).field("message_id", message_id).field("body_len", &new_body.len()).finish(),
+            Self::MessageDelete { community, channel, message_id } => f.debug_struct("MessageDelete")
+                .field("community", community).field("channel", channel).field("message_id", message_id).finish(),
             Self::DmTyping { peer_key, typing } => f.debug_struct("DmTyping").field("peer_key", peer_key).field("typing", typing).finish(),
             Self::DmInbox { limit } => f.debug_struct("DmInbox").field("limit", limit).finish(),
             Self::Subscribe { filters } => f.debug_struct("Subscribe").field("filter_count", &filters.len()).finish(),

@@ -1,5 +1,6 @@
 //! Presence and voice dispatch handlers.
 
+use std::sync::Arc;
 use crate::daemon::DaemonState;
 use crate::ipc::protocol::IpcResponse;
 use crate::validation;
@@ -7,7 +8,7 @@ use crate::validation;
 use super::{DaemonContext, state_error};
 
 pub(crate) async fn handle_set(
-    ctx: &DaemonContext, state: DaemonState, status: &str, message: Option<&str>,
+    ctx: &Arc<DaemonContext>, state: DaemonState, status: &str, message: Option<&str>,
 ) -> IpcResponse {
     if !state.can_write() { return state_error(state, "write"); }
     if let Err(e) = validation::validate_status(status) { return e; }
@@ -23,7 +24,7 @@ pub(crate) async fn handle_set(
 }
 
 pub(crate) async fn handle_game_set(
-    ctx: &DaemonContext, state: DaemonState,
+    ctx: &Arc<DaemonContext>, state: DaemonState,
     game_name: &str, game_id: Option<u32>, elapsed_seconds: u32, server_address: Option<&str>,
 ) -> IpcResponse {
     if !state.can_write() { return state_error(state, "write"); }
@@ -38,7 +39,7 @@ pub(crate) async fn handle_game_set(
     }
 }
 
-pub(crate) async fn handle_game_clear(ctx: &DaemonContext, state: DaemonState) -> IpcResponse {
+pub(crate) async fn handle_game_clear(ctx: &Arc<DaemonContext>, state: DaemonState) -> IpcResponse {
     if !state.can_write() { return state_error(state, "write"); }
     let transport = match ctx.require_transport() { Ok(t) => t, Err(e) => return e };
     let session = match ctx.require_session(Clone::clone) { Ok(s) => s, Err(e) => return e };
@@ -50,7 +51,7 @@ pub(crate) async fn handle_game_clear(ctx: &DaemonContext, state: DaemonState) -
 }
 
 pub(crate) async fn handle_voice_join(
-    ctx: &DaemonContext, state: DaemonState,
+    ctx: &Arc<DaemonContext>, state: DaemonState,
     community: &str, channel: &str, muted: bool, deafened: bool,
 ) -> IpcResponse {
     if !state.can_write() { return state_error(state, "write"); }
@@ -71,7 +72,7 @@ pub(crate) async fn handle_voice_join(
     }
 }
 
-pub(crate) fn handle_voice_leave(_ctx: &DaemonContext, state: DaemonState) -> IpcResponse {
+pub(crate) fn handle_voice_leave(_ctx: &Arc<DaemonContext>, state: DaemonState) -> IpcResponse {
     if !state.can_write() { return state_error(state, "write"); }
     // Voice leave is local state cleanup — the transport operation is sync
     // and the gossip broadcast is the caller's responsibility.

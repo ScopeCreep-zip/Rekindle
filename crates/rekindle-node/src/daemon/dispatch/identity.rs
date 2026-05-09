@@ -1,5 +1,6 @@
 //! Identity dispatch handlers: Create, Show, Export, Rotate, Destroy, Wipe.
 
+use std::sync::Arc;
 use zeroize::Zeroize;
 
 use rekindle_transport::operations::identity;
@@ -13,7 +14,7 @@ use super::{DaemonContext, state_error};
 
 /// Handle IdentityCreate — full ceremony, daemon-side.
 pub(crate) async fn handle_create(
-    ctx: &DaemonContext,
+    ctx: &Arc<DaemonContext>,
     state: DaemonState,
     display_name: &str,
 ) -> IpcResponse {
@@ -121,7 +122,7 @@ pub(crate) async fn handle_create(
 /// Available in ANY state where a session is loaded (including Locked).
 /// Identity metadata (public key, display name, DHT keys) is not protected
 /// by the signing key — it's safe to return without unlocking.
-pub(crate) fn handle_show(ctx: &DaemonContext, _state: DaemonState) -> IpcResponse {
+pub(crate) fn handle_show(ctx: &Arc<DaemonContext>, _state: DaemonState) -> IpcResponse {
     ctx.require_session(|session| {
         IpcResponse::ok(&serde_json::json!({
             "public_key": session.identity.public_key_hex,
@@ -135,7 +136,7 @@ pub(crate) fn handle_show(ctx: &DaemonContext, _state: DaemonState) -> IpcRespon
 }
 
 /// Handle IdentityExport — return identity metadata for client-side file write.
-pub(crate) fn handle_export(ctx: &DaemonContext, state: DaemonState) -> IpcResponse {
+pub(crate) fn handle_export(ctx: &Arc<DaemonContext>, state: DaemonState) -> IpcResponse {
     if !state.can_query() { return state_error(state, "query"); }
     ctx.require_session(|session| {
         IpcResponse::ok(&serde_json::json!({
@@ -149,7 +150,7 @@ pub(crate) fn handle_export(ctx: &DaemonContext, state: DaemonState) -> IpcRespo
 }
 
 /// Handle IdentityRotate — rotate keypair, notify friends.
-pub(crate) async fn handle_rotate(ctx: &DaemonContext, state: DaemonState) -> IpcResponse {
+pub(crate) async fn handle_rotate(ctx: &Arc<DaemonContext>, state: DaemonState) -> IpcResponse {
     if !state.can_write() { return state_error(state, "write"); }
     let transport = match ctx.require_transport() { Ok(t) => t, Err(e) => return e };
     let signing_key = match ctx.require_signing_key() { Ok(k) => k, Err(e) => return e };
@@ -183,7 +184,7 @@ pub(crate) async fn handle_rotate(ctx: &DaemonContext, state: DaemonState) -> Ip
 
 /// Handle IdentityDestroy — close DHT records, delete keyring, delete session.
 pub(crate) async fn handle_destroy(
-    ctx: &DaemonContext,
+    ctx: &Arc<DaemonContext>,
     state: DaemonState,
     confirmation: &str,
 ) -> IpcResponse {
@@ -220,7 +221,7 @@ pub(crate) async fn handle_destroy(
 
 /// Handle IdentityWipe — factory reset everything.
 pub(crate) async fn handle_wipe(
-    ctx: &DaemonContext,
+    ctx: &Arc<DaemonContext>,
     _state: DaemonState,
     confirmation: &str,
 ) -> IpcResponse {

@@ -76,7 +76,7 @@ impl ShortArray {
             })?;
 
         let head = ShortArrayHead { stride: capacity, slots: Vec::new() };
-        let head_bytes = postcard::to_stdvec(&head)
+        let head_bytes = serde_json::to_vec(&head)
             .map_err(|e| TransportError::SerializationFailed { reason: e.to_string() })?;
         rc.set_dht_value(key.clone(), 0, head_bytes, None)
             .await
@@ -116,14 +116,28 @@ impl ShortArray {
         Ok(index)
     }
 
-    /// Get element at logical index.
+    /// Get element at logical index (local cache).
     pub async fn get(&self, index: u32) -> Result<Option<Vec<u8>>> {
+        self.get_impl(index, false).await
+    }
+
+    /// Get element at logical index, bypassing Veilid's local DHT cache.
+    ///
+    /// Required for cross-node reads where the reading node has never seen
+    /// the segment data before. Without force_refresh, `get_dht_value`
+    /// returns None from the empty local cache even when the data exists
+    /// on the network.
+    pub async fn get_fresh(&self, index: u32) -> Result<Option<Vec<u8>>> {
+        self.get_impl(index, true).await
+    }
+
+    async fn get_impl(&self, index: u32, force_refresh: bool) -> Result<Option<Vec<u8>>> {
         let head = self.read_head().await?;
         let idx = index as usize;
         if idx >= head.slots.len() { return Ok(None); }
 
         let subkey = u32::from(head.slots[idx]) + 1;
-        let value = self.rc.get_dht_value(self.record_key.clone(), subkey, false)
+        let value = self.rc.get_dht_value(self.record_key.clone(), subkey, force_refresh)
             .await
             .map_err(|e| TransportError::DhtError { reason: format!("read slot: {e}") })?;
         Ok(value.map(|v| v.data().to_vec()))
@@ -177,7 +191,7 @@ impl ShortArray {
     }
 
     async fn write_head(&self, head: &ShortArrayHead) -> Result<()> {
-        let bytes = postcard::to_stdvec(head)
+        let bytes = serde_json::to_vec(head)
             .map_err(|e| TransportError::SerializationFailed { reason: e.to_string() })?;
         self.rc.set_dht_value(self.record_key.clone(), 0, bytes, None)
             .await
@@ -191,7 +205,7 @@ async fn read_head_raw(rc: &RoutingContext, key: &veilid_core::RecordKey) -> Res
         .await
         .map_err(|e| TransportError::DhtError { reason: format!("read head: {e}") })?;
     match value {
-        Some(v) => postcard::from_bytes(v.data()).map_err(|e| {
+        Some(v) => serde_json::from_slice(v.data()).map_err(|e| {
             TransportError::DeserializationFailed { type_id: 0, reason: format!("head: {e}") }
         }),
         None => Err(TransportError::DhtError { reason: "head subkey not set".into() }),

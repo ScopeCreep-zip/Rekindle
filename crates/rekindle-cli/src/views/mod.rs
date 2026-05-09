@@ -8,6 +8,7 @@ pub mod channel_watch;
 pub mod community_info;
 pub mod dashboard;
 pub mod dm_inbox;
+pub mod dm_thread;
 pub mod doctor;
 pub mod friend_list;
 pub mod identity_settings;
@@ -109,6 +110,7 @@ pub struct ViewRegistry {
     identity_settings: Option<identity_settings::IdentitySettingsView>,
     channel_watch: Option<channel_watch::ChannelWatchView>,
     dm_inbox: Option<dm_inbox::DmInboxView>,
+    dm_thread: Option<dm_thread::DmThreadView>,
     voice_session: Option<voice_session::VoiceSessionView>,
     friend_list: Option<friend_list::FriendListView>,
     doctor_view: Option<doctor::DoctorView>,
@@ -129,6 +131,7 @@ impl ViewRegistry {
             identity_settings: None,
             channel_watch: None,
             dm_inbox: None,
+            dm_thread: None,
             voice_session: None,
             friend_list: None,
             doctor_view: None,
@@ -174,9 +177,16 @@ impl ViewRegistry {
                     ));
                 }
             }
-            ViewKind::DmInbox | ViewKind::DmThread { .. } => {
+            ViewKind::DmInbox => {
                 if self.dm_inbox.is_none() {
                     self.dm_inbox = Some(dm_inbox::DmInboxView::new(use_unicode));
+                }
+            }
+            ViewKind::DmThread { ref peer_key } => {
+                let needs_create = self.dm_thread.as_ref()
+                    .is_none_or(|v| v.peer_key() != peer_key);
+                if needs_create {
+                    self.dm_thread = Some(dm_thread::DmThreadView::new(peer_key.clone(), use_unicode));
                 }
             }
             ViewKind::VoiceSession { community, channel } => {
@@ -215,6 +225,28 @@ impl ViewRegistry {
         &mut self.dashboard
     }
 
+    /// Forward a subscription event to ALL instantiated views.
+    ///
+    /// Each view's on_subscription_event has match guards that filter
+    /// by community/channel/peer_key — events for irrelevant views are no-ops.
+    /// This ensures messages arrive in background views so they're visible
+    /// immediately when the user navigates to them.
+    pub fn forward_event_to_all(
+        &mut self,
+        event: &rekindle_types::subscription_events::SubscriptionEvent,
+    ) -> anyhow::Result<()> {
+        self.dashboard.on_subscription_event(event)?;
+        if let Some(ref mut v) = self.identity_settings { v.on_subscription_event(event)?; }
+        if let Some(ref mut v) = self.channel_watch { v.on_subscription_event(event)?; }
+        if let Some(ref mut v) = self.dm_inbox { v.on_subscription_event(event)?; }
+        if let Some(ref mut v) = self.dm_thread { v.on_subscription_event(event)?; }
+        if let Some(ref mut v) = self.voice_session { v.on_subscription_event(event)?; }
+        if let Some(ref mut v) = self.friend_list { v.on_subscription_event(event)?; }
+        if let Some(ref mut v) = self.doctor_view { v.on_subscription_event(event)?; }
+        if let Some(ref mut v) = self.community_info { v.on_subscription_event(event)?; }
+        Ok(())
+    }
+
     /// Mutable reference to the current view.
     pub fn current_mut(&mut self) -> &mut dyn View {
         match &self.current {
@@ -227,10 +259,14 @@ impl ViewRegistry {
                 .channel_watch
                 .as_mut()
                 .expect("channel_watch view should exist after transition"),
-            ViewKind::DmInbox | ViewKind::DmThread { .. } => self
+            ViewKind::DmInbox => self
                 .dm_inbox
                 .as_mut()
                 .expect("dm_inbox view should exist after transition"),
+            ViewKind::DmThread { .. } => self
+                .dm_thread
+                .as_mut()
+                .expect("dm_thread view should exist after transition"),
             ViewKind::VoiceSession { .. } => self
                 .voice_session
                 .as_mut()

@@ -380,16 +380,19 @@ impl TransportNode {
     }
 
     /// Create a [`QueryEngine`](crate::query::QueryEngine) for high-level
-    /// read operations. Requires a shared `MekCache` for message decryption.
+    /// read operations. Requires shared `MekCache` and `SignalSessionManager`
+    /// for channel and DM message decryption respectively.
     pub fn query(
         &self,
         mek_cache: Arc<parking_lot::RwLock<crate::crypto::mek::MekCache>>,
+        signal: Arc<parking_lot::RwLock<Option<crate::crypto::signal_session::SignalSessionManager>>>,
     ) -> Result<crate::query::QueryEngine> {
         let dht = self.dht()?;
         Ok(crate::query::QueryEngine::new(
             dht,
             mek_cache,
             Arc::clone(&self.peer_registry),
+            signal,
         ))
     }
 

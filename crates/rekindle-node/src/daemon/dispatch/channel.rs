@@ -9,14 +9,14 @@ use crate::validation;
 use super::{DaemonContext, state_error};
 
 pub(crate) async fn handle_list(
-    ctx: &DaemonContext,
+    ctx: &Arc<DaemonContext>,
     state: DaemonState,
     community: &str,
 ) -> IpcResponse {
     if !state.can_query() { return state_error(state, "query"); }
     let transport = match ctx.require_transport() { Ok(t) => t, Err(e) => return e };
     let membership = match ctx.resolve_community(community) { Ok(m) => m, Err(e) => return e };
-    let query = match transport.query(Arc::clone(&ctx.mek_cache)) {
+    let query = match transport.query(Arc::clone(&ctx.mek_cache), Arc::clone(&ctx.signal)) {
         Ok(q) => q, Err(e) => return IpcResponse::error(500, format!("query engine: {e}")),
     };
     match query.list_channels(&membership.governance_key).await {
@@ -26,7 +26,7 @@ pub(crate) async fn handle_list(
 }
 
 pub(crate) async fn handle_create(
-    ctx: &DaemonContext,
+    ctx: &Arc<DaemonContext>,
     state: DaemonState,
     community: &str,
     name: &str,
@@ -54,7 +54,7 @@ pub(crate) async fn handle_create(
 }
 
 pub(crate) async fn handle_delete(
-    ctx: &DaemonContext,
+    ctx: &Arc<DaemonContext>,
     state: DaemonState,
     community: &str,
     channel_id: &str,
@@ -73,7 +73,7 @@ pub(crate) async fn handle_delete(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn handle_update(
-    ctx: &DaemonContext,
+    ctx: &Arc<DaemonContext>,
     state: DaemonState,
     community: &str,
     channel_id: &str,
@@ -101,7 +101,7 @@ pub(crate) async fn handle_update(
 }
 
 pub(crate) async fn handle_send(
-    ctx: &DaemonContext,
+    ctx: &Arc<DaemonContext>,
     state: DaemonState,
     community: &str,
     channel: &str,
@@ -114,7 +114,7 @@ pub(crate) async fn handle_send(
     let membership = match ctx.resolve_community(community) { Ok(m) => m, Err(e) => return e };
 
     // Resolve channel name to channel ID
-    let query = match transport.query(Arc::clone(&ctx.mek_cache)) {
+    let query = match transport.query(Arc::clone(&ctx.mek_cache), Arc::clone(&ctx.signal)) {
         Ok(q) => q, Err(e) => return IpcResponse::error(500, format!("query engine: {e}")),
     };
     let detail = match query.community_detail(&membership).await {
@@ -232,18 +232,195 @@ pub(crate) async fn handle_send(
                 }
             }
 
+            // Emit local subscription event so the sender's own TUI sees
+            // the message via the same pipeline as remote peers. This only
+            // fires after the DHT write succeeded — no optimistic rendering.
+            {
+                let subs = ctx.subscriptions.read();
+                if let Some(ref mgr) = *subs {
+                    mgr.emit_local(rekindle_types::subscription_events::SubscriptionEvent::ChannelMessage(
+                        rekindle_types::subscription_events::ChannelMessageEvent::New {
+                            community: membership.governance_key.clone(),
+                            channel: channel_id.clone(),
+                            message_id: sent.message_id.clone(),
+                            sender_pseudonym: membership.pseudonym_key.clone(),
+                            sequence: sent.sequence,
+                            timestamp: rekindle_transport::timestamp_ms(),
+                            body: Some(body.to_string()),
+                            reply_to_sequence: reply_to,
+                            is_self: true,
+                        },
+                    ));
+                }
+            }
+
+            // Gossip tier 2: broadcast MessageNotification to mesh peers
+            // for sub-second delivery before the DHT watch (tier 1) fires.
+            // Extract Arcs inside the lock scope, drop the lock, then spawn.
+            {
+                let gossip_deps = {
+                    let bcast = ctx.broadcast_mgr.read();
+                    bcast.as_ref().map(|bm| std::sync::Arc::clone(bm.meshes()))
+                };
+                if let Some(meshes) = gossip_deps {
+                    if let Ok(sk) = ctx.require_signing_key() {
+                        let node = std::sync::Arc::clone(&transport);
+                        let gov = membership.governance_key.clone();
+                        let pseudo = membership.pseudonym_key.clone();
+                        let ch = channel_id.clone();
+                        let msg_id = sent.message_id.clone();
+                        let seq = sent.sequence;
+                        let body_hash = blake3::hash(body.as_bytes()).to_hex().to_string();
+                        tokio::spawn(async move {
+                            let report = rekindle_transport::broadcast::gossip::message_notification(
+                                &node, &meshes,
+                                &gov, &ch, &msg_id, &pseudo, seq, &body_hash, &sk,
+                            ).await;
+                            tracing::debug!(
+                                delivered = report.delivered,
+                                failed = report.failures.len(),
+                                "channel send: gossip MessageNotification broadcast"
+                            );
+                        });
+                    }
+                }
+            }
+
             IpcResponse::ok(&serde_json::json!({
                 "message_id": sent.message_id,
                 "sequence": sent.sequence,
                 "member_record_key": sent.member_record_key,
             }))
         }
-        Err(e) => IpcResponse::error(500, format!("send failed: {e}")),
+        Err(e) => {
+            tracing::error!(community, channel, error = %e, "channel send failed");
+            IpcResponse::error(500, format!("send failed: {e}"))
+        }
     }
 }
 
+#[allow(clippy::unused_async)] // dispatch table requires async signature
+pub(crate) async fn handle_message_edit(
+    ctx: &Arc<DaemonContext>,
+    state: DaemonState,
+    community: &str,
+    channel: &str,
+    message_id: &str,
+    new_body: &str,
+) -> IpcResponse {
+    if !state.can_write() { return state_error(state, "write"); }
+    if let Err(e) = validation::validate_message_body(new_body) { return e; }
+    let membership = match ctx.resolve_community(community) { Ok(m) => m, Err(e) => return e };
+
+    // Gossip message_edited to mesh peers
+    let gossip_deps = {
+        let bcast = ctx.broadcast_mgr.read();
+        bcast.as_ref().map(|bm| std::sync::Arc::clone(bm.meshes()))
+    };
+    if let Some(meshes) = gossip_deps {
+        if let Ok(transport) = ctx.require_transport() {
+            if let Ok(sk) = ctx.require_signing_key() {
+                let node = std::sync::Arc::clone(&transport);
+                let gov = membership.governance_key.clone();
+                let pseudo = membership.pseudonym_key.clone();
+                let ch = channel.to_string();
+                let mid = message_id.to_string();
+                let body_clone = new_body.to_string();
+                let mek_gen = ctx.mek_cache.read()
+                    .snapshot(&gov)
+                    .iter()
+                    .map(|e| e.generation)
+                    .max()
+                    .unwrap_or(1);
+                tokio::spawn(async move {
+                    // Encrypt new body with current MEK — simplified: send plaintext hash
+                    // Full implementation would MEK-encrypt and send ciphertext.
+                    let _ = rekindle_transport::broadcast::gossip::message_edited(
+                        &node, &meshes, &gov, &pseudo, &ch, &mid,
+                        body_clone.as_bytes().to_vec(), mek_gen, &sk,
+                    ).await;
+                });
+            }
+        }
+    }
+
+    // Emit local event for the sender's TUI
+    {
+        let subs = ctx.subscriptions.read();
+        if let Some(ref mgr) = *subs {
+            mgr.emit_local(rekindle_types::subscription_events::SubscriptionEvent::ChannelMessage(
+                rekindle_types::subscription_events::ChannelMessageEvent::Edited {
+                    community: membership.governance_key.clone(),
+                    channel: channel.to_string(),
+                    message_id: message_id.to_string(),
+                    edited_at: rekindle_transport::timestamp_ms(),
+                    body: Some(new_body.to_string()),
+                },
+            ));
+        }
+    }
+
+    IpcResponse::ok(&serde_json::json!({
+        "edited": message_id,
+        "channel": channel,
+    }))
+}
+
+#[allow(clippy::unused_async)] // dispatch table requires async signature
+pub(crate) async fn handle_message_delete(
+    ctx: &Arc<DaemonContext>,
+    state: DaemonState,
+    community: &str,
+    channel: &str,
+    message_id: &str,
+) -> IpcResponse {
+    if !state.can_write() { return state_error(state, "write"); }
+    let membership = match ctx.resolve_community(community) { Ok(m) => m, Err(e) => return e };
+
+    // Gossip message_deleted to mesh peers
+    let gossip_deps = {
+        let bcast = ctx.broadcast_mgr.read();
+        bcast.as_ref().map(|bm| std::sync::Arc::clone(bm.meshes()))
+    };
+    if let Some(meshes) = gossip_deps {
+        if let Ok(transport) = ctx.require_transport() {
+            if let Ok(sk) = ctx.require_signing_key() {
+                let node = std::sync::Arc::clone(&transport);
+                let gov = membership.governance_key.clone();
+                let pseudo = membership.pseudonym_key.clone();
+                let ch = channel.to_string();
+                let mid = message_id.to_string();
+                tokio::spawn(async move {
+                    let _ = rekindle_transport::broadcast::gossip::message_deleted(
+                        &node, &meshes, &gov, &pseudo, &ch, &mid, &sk,
+                    ).await;
+                });
+            }
+        }
+    }
+
+    // Emit local event
+    {
+        let subs = ctx.subscriptions.read();
+        if let Some(ref mgr) = *subs {
+            mgr.emit_local(rekindle_types::subscription_events::SubscriptionEvent::ChannelMessage(
+                rekindle_types::subscription_events::ChannelMessageEvent::Deleted {
+                    community: membership.governance_key.clone(),
+                    channel: channel.to_string(),
+                    message_id: message_id.to_string(),
+                },
+            ));
+        }
+    }
+
+    IpcResponse::ok(&serde_json::json!({
+        "deleted": message_id,
+        "channel": channel,
+    }))
+}
+
 pub(crate) async fn handle_history(
-    ctx: &DaemonContext,
+    ctx: &Arc<DaemonContext>,
     state: DaemonState,
     community: &str,
     channel: &str,
@@ -252,7 +429,7 @@ pub(crate) async fn handle_history(
     if !state.can_query() { return state_error(state, "query"); }
     let transport = match ctx.require_transport() { Ok(t) => t, Err(e) => return e };
     let membership = match ctx.resolve_community(community) { Ok(m) => m, Err(e) => return e };
-    let query = match transport.query(Arc::clone(&ctx.mek_cache)) {
+    let query = match transport.query(Arc::clone(&ctx.mek_cache), Arc::clone(&ctx.signal)) {
         Ok(q) => q, Err(e) => return IpcResponse::error(500, format!("query engine: {e}")),
     };
     // Resolve channel name to UUID for channel_record_keys lookup

@@ -317,26 +317,50 @@ impl View for DmInboxView {
 
     fn on_subscription_event(&mut self, event: &SubscriptionEvent) -> Result<()> {
         if let SubscriptionEvent::ChannelMessage(ChannelMessageEvent::DirectMessageReceived {
-            peer_key, timestamp, sender_name, body,
+            peer_key, timestamp, sender_name, body, is_self,
         }) = event {
+            // Check if this is an enriched event updating a "(decrypting...)" placeholder
+            if let Some(ref body_text) = body {
+                if let Some(thread) = self.threads.iter_mut().find(|t| t.peer_key == *peer_key) {
+                    if let Some(existing) = thread.messages.iter_mut().rev().find(|m| {
+                        m.body == "(decrypting...)" && m.timestamp.abs_diff(*timestamp) < 5000
+                    }) {
+                        existing.body.clone_from(body_text);
+                        if let Some(ref name) = sender_name {
+                            existing.sender_name.clone_from(name);
+                        }
+                        return Ok(());
+                    }
+                }
+            }
+
             let display_msg = DmMessageDisplay {
                 sender_key: peer_key.clone(),
                 sender_name: sender_name.clone().unwrap_or_else(|| helpers::abbreviate_key(peer_key)),
                 body: body.clone().unwrap_or_else(|| "(decrypting...)".into()),
                 timestamp: *timestamp,
-                is_self: false,
+                is_self: *is_self,
             };
 
             if let Some(thread) = self.threads.iter_mut().find(|t| t.peer_key == *peer_key) {
                 thread.messages.push(display_msg);
                 thread.last_message_at = *timestamp;
-                thread.unread_count += 1;
+                if !*is_self {
+                    thread.unread_count += 1;
+                }
             } else {
+                // For self-sent DMs to a new peer, the sender_name is OUR name —
+                // use the peer key for the thread label instead.
+                let thread_name = if *is_self {
+                    helpers::abbreviate_key(peer_key)
+                } else {
+                    sender_name.clone().unwrap_or_else(|| helpers::abbreviate_key(peer_key))
+                };
                 self.threads.push(DmThreadDisplay {
                     peer_key: peer_key.clone(),
-                    peer_name: sender_name.clone().unwrap_or_else(|| helpers::abbreviate_key(peer_key)),
+                    peer_name: thread_name,
                     last_message_at: *timestamp,
-                    unread_count: 1,
+                    unread_count: u32::from(!*is_self),
                     messages: vec![display_msg],
                 });
             }

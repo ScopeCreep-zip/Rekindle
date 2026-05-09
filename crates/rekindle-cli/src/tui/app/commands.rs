@@ -210,6 +210,41 @@ impl App {
         });
     }
 
+    pub(crate) fn load_dm_thread(&self, peer_key: &str) {
+        let tx = self.action_tx.clone();
+        let client = Arc::clone(&self.client);
+        let peer_key = peer_key.to_string();
+        tokio::spawn(async move {
+            match client.request_ok(IpcRequest::DmInbox { limit: 50 }).await {
+                Ok(value) => {
+                    match serde_json::from_value::<Vec<dt::DmThreadDisplay>>(value) {
+                        Ok(threads) => {
+                            // Find the thread for this peer
+                            let messages = threads.iter()
+                                .find(|t| t.peer_key == peer_key)
+                                .map(|t| t.messages.clone())
+                                .unwrap_or_default();
+                            let _ = tx.send(Action::CommandComplete(Box::new(
+                                CommandResult::DmThreadLoaded { peer_key, messages },
+                            )));
+                        }
+                        Err(_) => {
+                            let _ = tx.send(Action::CommandComplete(Box::new(
+                                CommandResult::DmThreadLoaded { peer_key, messages: Vec::new() },
+                            )));
+                        }
+                    }
+                }
+                Err(e) => {
+                    let _ = tx.send(Action::CommandFailed {
+                        context: "dm thread".into(),
+                        error: e.to_string(),
+                    });
+                }
+            }
+        });
+    }
+
     pub(crate) fn load_community_info(&self, community: &str) {
         let tx = self.action_tx.clone();
         let client = Arc::clone(&self.client);
@@ -258,16 +293,16 @@ impl App {
                     let _ = tx.send(Action::CommandComplete(Box::new(
                         CommandResult::MessageSent { message_id: msg_id },
                     )));
-                    let _ = tx.send(Action::ShowToast {
-                        message: format!("Sent to #{channel_clone}"),
-                        level: ToastLevel::Success,
-                    });
+                    // No toast — the ○→● delivery indicator is the confirmation signal.
                 }
                 Err(e) => {
                     let _ = tx.send(Action::CommandFailed {
                         context: format!("send to #{channel_clone}"),
                         error: e.to_string(),
                     });
+                    let _ = tx.send(Action::CommandComplete(Box::new(
+                        CommandResult::SendFailed,
+                    )));
                 }
             }
         });
@@ -278,17 +313,51 @@ impl App {
         let client = Arc::clone(&self.client);
         tokio::spawn(async move {
             match client.request_ok(IpcRequest::DmSend { peer_key: peer_key.clone(), body: text }).await {
-                Ok(_) => {
-                    let _ = tx.send(Action::ShowToast {
-                        message: format!("DM sent to {}", crate::helpers::abbreviate_key(&peer_key)),
-                        level: ToastLevel::Success,
-                    });
+                Ok(value) => {
+                    let msg_id = value.get("message_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let _ = tx.send(Action::CommandComplete(Box::new(
+                        CommandResult::MessageSent { message_id: msg_id },
+                    )));
+                    // No toast — the ○→● delivery indicator is the confirmation signal.
                 }
                 Err(e) => {
                     let _ = tx.send(Action::CommandFailed {
                         context: "send DM".into(),
                         error: e.to_string(),
                     });
+                    let _ = tx.send(Action::CommandComplete(Box::new(
+                        CommandResult::SendFailed,
+                    )));
+                }
+            }
+        });
+    }
+
+    pub(crate) fn spawn_edit_message(&self, community: String, channel: String, message_id: String, new_body: String) {
+        let tx = self.action_tx.clone();
+        let client = Arc::clone(&self.client);
+        tokio::spawn(async move {
+            match client.request_ok(IpcRequest::MessageEdit { community, channel, message_id: message_id.clone(), new_body }).await {
+                Ok(_) => {
+                    let _ = tx.send(Action::ShowToast { message: "Message edited".into(), level: ToastLevel::Success });
+                }
+                Err(e) => {
+                    let _ = tx.send(Action::CommandFailed { context: "edit message".into(), error: e.to_string() });
+                }
+            }
+        });
+    }
+
+    pub(crate) fn spawn_delete_message(&self, community: String, channel: String, message_id: String) {
+        let tx = self.action_tx.clone();
+        let client = Arc::clone(&self.client);
+        tokio::spawn(async move {
+            match client.request_ok(IpcRequest::MessageDelete { community, channel, message_id: message_id.clone() }).await {
+                Ok(_) => {
+                    let _ = tx.send(Action::ShowToast { message: "Message deleted".into(), level: ToastLevel::Success });
+                }
+                Err(e) => {
+                    let _ = tx.send(Action::CommandFailed { context: "delete message".into(), error: e.to_string() });
                 }
             }
         });

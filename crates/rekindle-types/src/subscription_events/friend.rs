@@ -9,25 +9,25 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum FriendEvent {
     /// An inbound friend request was received.
-    /// Triggered by: `DmPayload::FriendRequest`, DHT watch on friend inbox.
+    /// Triggered by: DHT watch on friend inbox (signed FriendRequestEntry).
     RequestReceived {
         from_key: String,
         display_name: String,
         message: String,
     },
     /// A friend request we sent was acknowledged (delivery confirmed).
-    /// Triggered by: `DmPayload::FriendRequestAck`.
+    /// Triggered by: `DmPayload::FriendRequestAck` app_message.
     RequestAcknowledged {
         peer_key: String,
     },
     /// A friend request was accepted (friendship established).
-    /// Triggered by: `DmPayload::FriendAccept`, DHT watch on friend inbox (Accepted status).
+    /// Triggered by: DHT inbox scan discovering FriendRequestStatus::Accepted.
     Accepted {
         peer_key: String,
         dm_log_key: String,
     },
     /// A friend request was rejected.
-    /// Triggered by: `DmPayload::FriendReject`, DHT watch on friend inbox (Rejected status).
+    /// Triggered by: DHT inbox scan discovering FriendRequestStatus::Rejected.
     Rejected {
         peer_key: String,
     },

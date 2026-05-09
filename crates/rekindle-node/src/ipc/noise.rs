@@ -93,6 +93,12 @@ impl NoiseTransport {
             count: chunk_count,
             max: 256,
         })?;
+        tracing::trace!(
+            plaintext_len = payload.len(),
+            chunk_count,
+            send_nonce = self.state.sending_nonce(),
+            "write_encrypted_frame: writing chunk count frame (4 bytes)"
+        );
         write_frame(writer, &count_bytes.to_be_bytes()).await?;
 
         let mut enc_buf = vec![0u8; MAX_NOISE_PLAINTEXT + 16];
@@ -108,6 +114,10 @@ impl NoiseTransport {
                     reason: e.to_string(),
                 })?;
 
+            tracing::trace!(
+                chunk_idx, plaintext_len = chunk.len(), ciphertext_len = len,
+                "write_encrypted_frame: writing encrypted chunk"
+            );
             write_frame(writer, &enc_buf[..len]).await?;
         }
 
@@ -124,6 +134,21 @@ impl NoiseTransport {
     ) -> Result<Vec<u8>> {
         let count_frame = read_frame(reader).await?;
         if count_frame.len() != 4 {
+            // Diagnostic: log the first bytes of the misaligned frame to identify
+            // what data arrived where the 4-byte chunk count was expected.
+            // Known values: 65 bytes = encrypted IpcRequest::Status (49 postcard + 16 AEAD tag).
+            // 96 bytes = Noise IK msg1. 48 bytes = Noise IK msg2.
+            let preview: Vec<u8> = count_frame.iter().copied().take(32).collect();
+            tracing::error!(
+                got = count_frame.len(),
+                preview = %hex::encode(&preview),
+                nonce = self.state.sending_nonce(),
+                "read_encrypted_frame: chunk count header misaligned — \
+                 expected 4-byte frame, got {} bytes. \
+                 This indicates the stream contains data from a different protocol \
+                 stage (handshake bytes in transport mode, or vice versa).",
+                count_frame.len(),
+            );
             return Err(IpcError::InvalidChunkHeader {
                 got: count_frame.len(),
             });
@@ -223,6 +248,7 @@ where
     tokio::time::timeout(HANDSHAKE_TIMEOUT, async {
         // Read msg1 from initiator.
         let msg1 = read_frame(reader).await?;
+        tracing::debug!(msg1_len = msg1.len(), "server handshake: msg1 received");
         let mut payload_buf = vec![0u8; 65535];
         handshake
             .read_message(&msg1, &mut payload_buf)
@@ -237,6 +263,7 @@ where
             .map_err(|e| IpcError::HandshakeFailed {
                 reason: format!("msg2 write: {e}"),
             })?;
+        tracing::debug!(msg2_len, "server handshake: msg2 sending");
         write_frame(writer, &msg2_buf[..msg2_len]).await?;
 
         // Transition to transport mode.
@@ -246,7 +273,11 @@ where
                 reason: format!("transport mode: {e}"),
             })?;
 
-        tracing::debug!("Noise IK handshake completed (server)");
+        tracing::debug!(
+            send_nonce = transport.sending_nonce(),
+            recv_nonce = transport.receiving_nonce(),
+            "Noise IK handshake completed (server)"
+        );
         Ok(NoiseTransport { state: transport })
     })
     .await
@@ -305,10 +336,12 @@ where
             .map_err(|e| IpcError::HandshakeFailed {
                 reason: format!("msg1 write: {e}"),
             })?;
+        tracing::debug!(msg1_len, "client handshake: msg1 sending");
         write_frame(writer, &msg1_buf[..msg1_len]).await?;
 
         // Read msg2 from responder.
         let msg2 = read_frame(reader).await?;
+        tracing::debug!(msg2_len = msg2.len(), "client handshake: msg2 received");
         let mut payload_buf = vec![0u8; 65535];
         handshake
             .read_message(&msg2, &mut payload_buf)
@@ -323,7 +356,11 @@ where
                 reason: format!("transport mode: {e}"),
             })?;
 
-        tracing::debug!("Noise IK handshake completed (client)");
+        tracing::debug!(
+            send_nonce = transport.sending_nonce(),
+            recv_nonce = transport.receiving_nonce(),
+            "Noise IK handshake completed (client)"
+        );
         Ok(NoiseTransport { state: transport })
     })
     .await

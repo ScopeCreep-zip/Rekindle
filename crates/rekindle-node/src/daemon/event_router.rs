@@ -342,7 +342,7 @@ mod tests {
         let channel_event = SubscriptionEvent::ChannelMessage(ChannelMessageEvent::New {
             community: "gov1".into(), channel: "gen".into(), message_id: "m1".into(),
             sender_pseudonym: "s".into(), sequence: 0, timestamp: 0,
-            body: None, reply_to_sequence: None,
+            body: None, reply_to_sequence: None, is_self: false,
         });
         assert_eq!(router.deliver(&channel_event).0, 0);
         assert!(rx.try_recv().is_err());
@@ -358,7 +358,7 @@ mod tests {
         let e1 = SubscriptionEvent::ChannelMessage(ChannelMessageEvent::New {
             community: "gov1".into(), channel: "gen".into(), message_id: "m1".into(),
             sender_pseudonym: "s".into(), sequence: 0, timestamp: 0,
-            body: None, reply_to_sequence: None,
+            body: None, reply_to_sequence: None, is_self: false,
         });
         assert_eq!(router.deliver(&e1).0, 1);
         assert!(rx.try_recv().is_ok());
@@ -367,7 +367,7 @@ mod tests {
         let e2 = SubscriptionEvent::ChannelMessage(ChannelMessageEvent::New {
             community: "gov2".into(), channel: "gen".into(), message_id: "m2".into(),
             sender_pseudonym: "s".into(), sequence: 0, timestamp: 0,
-            body: None, reply_to_sequence: None,
+            body: None, reply_to_sequence: None, is_self: false,
         });
         assert_eq!(router.deliver(&e2).0, 0);
         assert!(rx.try_recv().is_err());

@@ -75,17 +75,87 @@ pub async fn dispatch(cmd: &ChannelCmd, client: &DaemonClient, mode: OutputMode)
             }).await?;
             format::print_structured(&value, mode)
         }
-        ChannelCmd::Watch { community, channel, .. } => {
-            #[allow(clippy::cast_possible_truncation)]
-            let value = client.request_ok(IpcRequest::ChannelHistory {
-                community: community.clone(),
-                channel: channel.clone(),
-                limit: 50,
-            }).await?;
-            format::print_structured(&value, mode)
+        ChannelCmd::Watch { .. } => {
+            // Streaming path is intercepted in main.rs before dispatch.
+            // This arm only fires if the event receiver was already taken.
+            anyhow::bail!("channel watch: event receiver unavailable — is another streaming command already running?")
         }
         ChannelCmd::Pin { .. } | ChannelCmd::Unpin { .. } => {
             format::print_text("Pin/unpin not yet implemented in daemon")
         }
     }
+}
+
+/// Streaming channel watch — subscribe to community events and print JSONL.
+#[allow(clippy::print_stdout)]
+pub async fn watch_streaming(
+    client: &DaemonClient,
+    event_rx: &mut tokio::sync::mpsc::UnboundedReceiver<rekindle_types::subscription_events::SubscriptionEvent>,
+    community: &str,
+    channel: &str,
+    mode: OutputMode,
+) -> anyhow::Result<()> {
+    use rekindle_types::subscription_events::{SubscriptionEvent, ChannelMessageEvent};
+
+    client.subscribe_scoped(community).await?;
+
+    if !mode.is_structured() {
+        format::print_text(&format!("Watching #{channel}  (Ctrl+C to stop)"))?;
+    }
+
+    loop {
+        match event_rx.recv().await {
+            Some(SubscriptionEvent::ChannelMessage(
+                ChannelMessageEvent::New {
+                    community: ref c, channel: ref ch, ref sender_pseudonym,
+                    timestamp, ref body, ref message_id, sequence, is_self, ..
+                }
+            )) if c == community && ch == channel => {
+                let obj = serde_json::json!({
+                    "type": "message",
+                    "community": c,
+                    "channel": ch,
+                    "message_id": message_id,
+                    "sender": sender_pseudonym,
+                    "sequence": sequence,
+                    "timestamp": timestamp,
+                    "body": body,
+                    "is_self": is_self,
+                });
+                format::print_structured(&obj, mode)?;
+            }
+            Some(SubscriptionEvent::ChannelMessage(
+                ChannelMessageEvent::Edited {
+                    community: ref c, channel: ref ch, ref message_id,
+                    edited_at, ref body,
+                }
+            )) if c == community && ch == channel => {
+                let obj = serde_json::json!({
+                    "type": "edited",
+                    "community": c,
+                    "channel": ch,
+                    "message_id": message_id,
+                    "edited_at": edited_at,
+                    "body": body,
+                });
+                format::print_structured(&obj, mode)?;
+            }
+            Some(SubscriptionEvent::ChannelMessage(
+                ChannelMessageEvent::Deleted {
+                    community: ref c, channel: ref ch, ref message_id,
+                }
+            )) if c == community && ch == channel => {
+                let obj = serde_json::json!({
+                    "type": "deleted",
+                    "community": c,
+                    "channel": ch,
+                    "message_id": message_id,
+                });
+                format::print_structured(&obj, mode)?;
+            }
+            None => break,
+            _ => {}
+        }
+    }
+    Ok(())
 }

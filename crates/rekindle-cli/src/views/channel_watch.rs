@@ -51,8 +51,11 @@ const PEER_LIST_WIDTH: u16 = 18;
 pub struct ChannelWatchView {
     /// The community governance key this view is watching.
     community: String,
-    /// The channel ID this view is watching.
+    /// The channel name or ID this view is watching (as passed to ShowChannel).
     channel: String,
+    /// Resolved channel UUID for subscription event matching.
+    /// Watches emit channel UUID, but ShowChannel may pass a name like "general".
+    channel_id: Option<String>,
 
     /// Sidebar channel tree.
     channel_tree: ChannelTree,
@@ -92,6 +95,7 @@ impl ChannelWatchView {
         Self {
             community: community.clone(),
             channel: channel.clone(),
+            channel_id: None,
             channel_tree: ChannelTree::new(use_unicode),
             message_list: MessageList::new(community, channel),
             input_box: InputBox::new(),
@@ -134,6 +138,13 @@ impl ChannelWatchView {
         let cutoff = std::time::Duration::from_secs(5);
         self.typing_indicators
             .retain(|_, instant| instant.elapsed() < cutoff);
+    }
+
+    /// Check if an event's channel field matches this view.
+    /// Handles both name ("general") and UUID ("1ae15de1-...") formats.
+    fn channel_matches(&self, event_channel: &str) -> bool {
+        event_channel == self.channel
+            || self.channel_id.as_deref() == Some(event_channel)
     }
 
     /// Build compact typing indicator text using the shared component.
@@ -258,17 +269,64 @@ impl View for ChannelWatchView {
             Action::InputSubmit => {
                 let text = self.input_box.content();
                 if !text.trim().is_empty() && !self.input_box.is_over_limit() {
-                    let reply_to = match self.input_box.mode() {
-                        crate::tui::components::input_box::InputMode::Reply { message_id, .. } => {
-                            Some(message_id.clone())
+                    let action = match self.input_box.mode() {
+                        crate::tui::components::input_box::InputMode::Edit { message_id } => {
+                            // Edit existing message — update in-place, fire IPC
+                            self.message_list.update_body(message_id, &text);
+                            Action::EditMessage {
+                                community: self.community.clone(),
+                                channel: self.channel.clone(),
+                                message_id: message_id.clone(),
+                                new_body: text,
+                            }
                         }
-                        _ => None,
-                    };
-                    let action = Action::SendChannelMessage {
-                        community: self.community.clone(),
-                        channel: self.channel.clone(),
-                        text,
-                        reply_to,
+                        crate::tui::components::input_box::InputMode::Reply { message_id, .. } => {
+                            let reply_to = Some(message_id.clone());
+                            let now = rekindle_utils::timestamp_ms();
+                            let nonce = format!("pending-{now}");
+                            self.message_list.push(DecryptedMessageDisplay {
+                                message_id: nonce,
+                                sequence: 0,
+                                author_pseudonym: String::new(),
+                                author_display_name: "you".to_string(),
+                                body: text.clone(),
+                                timestamp: now,
+                                reply_to_sequence: reply_to.as_ref().and_then(|r| r.parse().ok()),
+                                mek_generation: 0,
+                                is_encrypted: false,
+                                needs_mek: None,
+                                delivery_status: rekindle_types::display::DeliveryStatus::Sending,
+                            });
+                            Action::SendChannelMessage {
+                                community: self.community.clone(),
+                                channel: self.channel.clone(),
+                                text,
+                                reply_to,
+                            }
+                        }
+                        crate::tui::components::input_box::InputMode::Compose => {
+                            let now = rekindle_utils::timestamp_ms();
+                            let nonce = format!("pending-{now}");
+                            self.message_list.push(DecryptedMessageDisplay {
+                                message_id: nonce,
+                                sequence: 0,
+                                author_pseudonym: String::new(),
+                                author_display_name: "you".to_string(),
+                                body: text.clone(),
+                                timestamp: now,
+                                reply_to_sequence: None,
+                                mek_generation: 0,
+                                is_encrypted: false,
+                                needs_mek: None,
+                                delivery_status: rekindle_types::display::DeliveryStatus::Sending,
+                            });
+                            Action::SendChannelMessage {
+                                community: self.community.clone(),
+                                channel: self.channel.clone(),
+                                text,
+                                reply_to: None,
+                            }
+                        }
                     };
                     self.input_box.clear();
                     return Ok(Some(action));
@@ -368,8 +426,18 @@ impl View for ChannelWatchView {
             CommandResult::MessageSent { message_id } => {
                 tracing::debug!(msg = message_id, "message sent confirmation");
             }
+            CommandResult::SendFailed => {
+                self.message_list.fail_pending_message();
+            }
             CommandResult::CommunityInfoLoaded { detail } => {
                 if detail.governance_key == self.community {
+                    // Resolve channel_id from community detail for event matching
+                    if self.channel_id.is_none() {
+                        if let Some(ch) = detail.channels.iter().find(|c| c.name == self.channel || c.id == self.channel) {
+                            self.channel_id = Some(ch.id.clone());
+                        }
+                    }
+
                     use crate::tui::components::channel_tree::ChannelEntry;
                     let channels: Vec<ChannelEntry> = detail.channels.iter().map(|ch| {
                         ChannelEntry {
@@ -381,10 +449,27 @@ impl View for ChannelWatchView {
                             sort_order: ch.sort_order,
                         }
                     }).collect();
+                    // Auto-expand so channels are visible on entry
+                    self.channel_tree.expand(
+                        &crate::tui::components::channel_tree::TreeNodeId::Community(
+                            detail.governance_key.clone(),
+                        ),
+                    );
                     self.channel_tree.set_communities(
                         &[(detail.governance_key.clone(), detail.name.clone(), channels)],
                         &[],
                     );
+                    // Populate peer list from community members
+                    use crate::tui::components::peer_list::PeerEntry;
+                    let members: Vec<PeerEntry> = detail.members.iter().map(|m| {
+                        PeerEntry {
+                            key: m.pseudonym.clone(),
+                            display_name: m.display_name.clone().unwrap_or_else(|| helpers::abbreviate_key(&m.pseudonym)),
+                            status: m.status.clone(),
+                            role: m.role_name.clone(),
+                        }
+                    }).collect();
+                    self.peer_list.set_members(members);
                 }
             }
             CommandResult::PeerListLoaded { peers } => {
@@ -408,41 +493,71 @@ impl View for ChannelWatchView {
         match event {
             SubscriptionEvent::ChannelMessage(ChannelMessageEvent::New {
                 community, channel, message_id, sender_pseudonym,
-                sequence, timestamp, body, reply_to_sequence,
-            }) if *community == self.community && *channel == self.channel => {
-                let display_name = self.peer_list.resolve_name(sender_pseudonym)
-                    .unwrap_or_else(|| helpers::abbreviate_key(sender_pseudonym));
-                self.message_list.push(DecryptedMessageDisplay {
-                    message_id: message_id.clone(),
-                    sequence: *sequence,
-                    author_pseudonym: sender_pseudonym.clone(),
-                    author_display_name: display_name,
-                    body: body.clone().unwrap_or_else(|| "(decrypting...)".into()),
-                    timestamp: *timestamp,
-                    reply_to_sequence: *reply_to_sequence,
-                    mek_generation: 0,
-                    is_encrypted: body.is_none(),
-                    needs_mek: if body.is_none() { Some(0) } else { None },
-                });
+                sequence, timestamp, body, reply_to_sequence, is_self,
+            }) if *community == self.community && self.channel_matches(channel) => {
+                if *is_self {
+                    // DHT write confirmed — flip the pending message from ○ to ●
+                    self.message_list.confirm_message(message_id);
+                } else if let Some(ref body_text) = body {
+                    // Enriched event (body populated) — try to update existing placeholder
+                    if !self.message_list.try_enrich_placeholder(
+                        sender_pseudonym, *timestamp, message_id,
+                        body_text, *sequence, *reply_to_sequence,
+                    ) {
+                        // No placeholder found — push as new message
+                        let display_name = self.peer_list.resolve_name(sender_pseudonym)
+                            .unwrap_or_else(|| helpers::abbreviate_key(sender_pseudonym));
+                        self.message_list.push(DecryptedMessageDisplay {
+                            message_id: message_id.clone(),
+                            sequence: *sequence,
+                            author_pseudonym: sender_pseudonym.clone(),
+                            author_display_name: display_name,
+                            body: body_text.clone(),
+                            timestamp: *timestamp,
+                            reply_to_sequence: *reply_to_sequence,
+                            mek_generation: 0,
+                            is_encrypted: false,
+                            needs_mek: None,
+                            delivery_status: rekindle_types::display::DeliveryStatus::Confirmed,
+                        });
+                    }
+                } else {
+                    // Body-less notification — show placeholder
+                    let display_name = self.peer_list.resolve_name(sender_pseudonym)
+                        .unwrap_or_else(|| helpers::abbreviate_key(sender_pseudonym));
+                    self.message_list.push(DecryptedMessageDisplay {
+                        message_id: message_id.clone(),
+                        sequence: *sequence,
+                        author_pseudonym: sender_pseudonym.clone(),
+                        author_display_name: display_name,
+                        body: "(decrypting...)".into(),
+                        timestamp: *timestamp,
+                        reply_to_sequence: *reply_to_sequence,
+                        mek_generation: 0,
+                        is_encrypted: true,
+                        needs_mek: Some(0),
+                        delivery_status: rekindle_types::display::DeliveryStatus::Confirmed,
+                    });
+                }
             }
             SubscriptionEvent::ChannelMessage(ChannelMessageEvent::Edited {
                 community, channel, message_id, body: Some(ref body_text), ..
-            }) if *community == self.community && *channel == self.channel => {
+            }) if *community == self.community && self.channel_matches(channel) => {
                 self.message_list.update_body(message_id, body_text);
             }
             SubscriptionEvent::ChannelMessage(ChannelMessageEvent::Deleted {
                 community, channel, message_id,
-            }) if *community == self.community && *channel == self.channel => {
+            }) if *community == self.community && self.channel_matches(channel) => {
                 self.message_list.remove_by_id(message_id);
             }
             SubscriptionEvent::Typing(TypingEvent::Started {
                 context: TypingContext::Channel { community, channel }, who,
-            }) if *community == self.community && *channel == self.channel => {
+            }) if *community == self.community && self.channel_matches(channel) => {
                 self.typing_indicators.insert(who.clone(), std::time::Instant::now());
             }
             SubscriptionEvent::Typing(TypingEvent::Stopped {
                 context: TypingContext::Channel { community, channel }, who,
-            }) if *community == self.community && *channel == self.channel => {
+            }) if *community == self.community && self.channel_matches(channel) => {
                 self.typing_indicators.remove(who);
             }
             SubscriptionEvent::Presence(PresenceEvent::CommunityMemberChanged {

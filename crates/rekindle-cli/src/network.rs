@@ -72,7 +72,7 @@ pub async fn cmd_status(client: &DaemonClient, args: &crate::cli::StatusArgs, mo
 }
 
 /// Render compact status as key-value pairs.
-fn print_status_compact(snapshot: &rekindle_types::display::StatusSnapshot, mode: OutputMode) -> anyhow::Result<()> {
+pub fn print_status_compact(snapshot: &rekindle_types::display::StatusSnapshot, mode: OutputMode) -> anyhow::Result<()> {
     let route = if snapshot.route_allocated {
         format!("allocated ({}s)", snapshot.route_age_secs.unwrap_or(0))
     } else {

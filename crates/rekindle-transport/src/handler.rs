@@ -60,7 +60,9 @@ pub enum TransportEvent {
 /// that every call to these methods has passed full authentication.
 pub trait InboundHandler: Send + Sync + 'static {
     /// An authenticated DM payload arrived from a verified peer.
-    fn on_dm(&self, sender: &VerifiedSender, payload: DmPayload, timestamp: u64)
+    /// DM message content arrives via DhtLog (Signal-encrypted), not here.
+    /// This handler receives only ephemeral signals: typing, acks, unfriend.
+    fn on_dm(&self, sender: &VerifiedSender, payload: DmPayload)
         -> impl Future<Output = ()> + Send;
 
     /// An authenticated gossip broadcast arrived from a community member.

@@ -34,24 +34,52 @@ pub struct Session {
     #[serde(default)]
     pub communities: HashMap<String, CommunityMembership>,
 
-    /// Legacy single DM log key (deprecated — use per-peer dm_log_keys).
+    /// Per-peer DM channel state. Maps peer_public_key → DmPeerLog.
+    /// Each friendship has two DhtLogs: one owned by each peer.
+    /// The sender writes to their outbound log; the receiver reads the peer's outbound log.
     #[serde(default)]
-    pub dm_log_key: Option<String>,
-
-    /// Per-peer DM DhtLog spine keys. Maps peer_public_key → DhtLog spine key.
-    /// Created during friend accept. Both peers read/write their shared log.
-    #[serde(default)]
-    pub dm_log_keys: HashMap<String, String>,
+    pub dm_peers: HashMap<String, DmPeerLog>,
 
     /// Pending inbound friend requests awaiting user action.
-    /// Populated by the InboundHandler when a `DmPayload::FriendRequest`
-    /// arrives. Drained when the user accepts or rejects.
+    /// Populated by the friend inbox scan when a signed FriendRequestEntry
+    /// is discovered. Drained when the user accepts or rejects.
     #[serde(default)]
     pub pending_friend_requests: Vec<PendingFriendRequest>,
+
+    /// Display names of accepted friends, keyed by public key.
+    /// Populated during friend accept so DM sender names resolve
+    /// without a DHT round-trip to the friend list record.
+    #[serde(default)]
+    pub friend_display_names: HashMap<String, String>,
+
+    /// Pending outbound DhtLog keys for sent friend requests.
+    /// Maps target_profile_dht_key → outbound_log_key.
+    /// Populated at send time (when we only know the profile key).
+    /// Consumed at acceptance discovery (when we learn the Ed25519 key
+    /// and create the full dm_peers entry). Drained on accept/reject.
+    #[serde(default)]
+    pub pending_outbound_logs: HashMap<String, String>,
 
     /// Schema version for forward compatibility.
     #[serde(default = "default_session_version")]
     pub version: u32,
+}
+
+/// Per-peer DM channel state.
+///
+/// Each friendship has two DhtLogs — one owned by each peer.
+/// Each peer writes to their outbound log and reads the peer's outbound log
+/// (which is our inbound). Signal Protocol ratchet state is per-direction:
+/// the sending chain key encrypts outbound, the receiving chain key decrypts inbound.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DmPeerLog {
+    /// DhtLog spine key I created — I write my outbound messages here.
+    /// The peer reads this log to receive my messages.
+    pub outbound_log_key: String,
+    /// DhtLog spine key the peer created — they write their outbound messages here.
+    /// I read this log to receive their messages. Empty until the peer's request
+    /// is discovered or until the peer accepts and we discover their acceptance.
+    pub inbound_log_key: String,
 }
 
 fn default_session_version() -> u32 {
@@ -64,9 +92,10 @@ impl Session {
         Self {
             identity,
             communities: HashMap::new(),
-            dm_log_key: None,
-            dm_log_keys: HashMap::new(),
+            dm_peers: HashMap::new(),
             pending_friend_requests: Vec::new(),
+            friend_display_names: HashMap::new(),
+            pending_outbound_logs: HashMap::new(),
             version: default_session_version(),
         }
     }
@@ -272,9 +301,8 @@ pub struct CommunityMembership {
 
 /// An inbound friend request awaiting the user's accept/reject decision.
 ///
-/// Created when a `DmPayload::FriendRequest` is received via the
-/// InboundHandler. Stores all the data needed to call
-/// `operations::friend::accept_friend_request` when the user decides.
+/// Discovered via DHT friend inbox scan. Stores all the data needed to
+/// call `operations::friend::accept_friend_request` when the user decides.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PendingFriendRequest {
     /// Requester's Ed25519 public key (hex).
@@ -303,6 +331,14 @@ pub struct PendingFriendRequest {
 
     /// Epoch ms when the request was received.
     pub received_at: u64,
+
+    /// DhtLog spine key created by the sender at send time.
+    /// The responder adopts this log on accept — no second log created.
+    pub dm_log_key: String,
+
+    /// Hex-encoded keypair (64 bytes) for the shared DM DhtLog.
+    /// Both peers need this to write to the log.
+    pub dm_log_keypair_hex: String,
 }
 
 impl Session {

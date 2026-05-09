@@ -63,7 +63,7 @@ impl App {
                     &self.nav.current_view_mut().typing_names(),
                 ),
                 node_attached: self.node_was_connected,
-                peer_count: 0,
+                peer_count: self.cached_peer_count,
                 hints: hints_line,
             },
             &self.theme,

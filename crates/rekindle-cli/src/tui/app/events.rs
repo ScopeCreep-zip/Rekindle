@@ -99,7 +99,7 @@ impl App {
                 let _ = self.action_tx.send(Action::SubscriptionEvent(Box::new(event)));
                 Some(Action::Render)
             }
-            SubscriptionEvent::ChannelMessage(ChannelMessageEvent::DirectMessageReceived { ref peer_key, .. }) => {
+            SubscriptionEvent::ChannelMessage(ChannelMessageEvent::DirectMessageReceived { ref peer_key, is_self: false, .. }) => {
                 let short = crate::helpers::abbreviate_key(peer_key);
                 self.notifications.push(format!("New DM from {short}"), ToastLevel::Info);
                 if self.nav.tab_bar.selected_id() != Some("dms") {
@@ -108,11 +108,20 @@ impl App {
                 let _ = self.action_tx.send(Action::SubscriptionEvent(Box::new(event)));
                 Some(Action::Render)
             }
+            SubscriptionEvent::ChannelMessage(ChannelMessageEvent::DirectMessageReceived { .. }) => {
+                // Self-sent DM — no toast, no unread badge. The ○→● indicator is sufficient.
+                let _ = self.action_tx.send(Action::SubscriptionEvent(Box::new(event)));
+                Some(Action::Render)
+            }
             SubscriptionEvent::ChannelMessage(ChannelMessageEvent::Edited { .. } | ChannelMessageEvent::Deleted { .. })
             | SubscriptionEvent::Voice(
                 VoiceEvent::ModeChanged { .. } | VoiceEvent::MuteChanged { .. }
                 | VoiceEvent::DeafenChanged { .. } | VoiceEvent::RosterUpdated { .. }
-            ) => {
+            )
+            | SubscriptionEvent::Network(NetworkEvent::AttachmentChanged { .. })
+            | SubscriptionEvent::Presence(_)
+            | SubscriptionEvent::Typing(_)
+            | SubscriptionEvent::UnreadChanged { .. } => {
                 let _ = self.action_tx.send(Action::SubscriptionEvent(Box::new(event)));
                 Some(Action::Render)
             }
@@ -180,8 +189,14 @@ impl App {
                 self.notifications.push("Admin keypair granted".into(), ToastLevel::Success);
                 Some(Action::Render)
             }
-            SubscriptionEvent::Governance(GovernanceEvent::ChannelsChanged { .. }) => {
+            SubscriptionEvent::Governance(
+                GovernanceEvent::ChannelsChanged { ref community }
+                | GovernanceEvent::RolesChanged { ref community }
+                | GovernanceEvent::MetadataChanged { ref community }
+            ) => {
                 self.load_dashboard_data();
+                self.load_community_info(community);
+                let _ = self.action_tx.send(Action::SubscriptionEvent(Box::new(event)));
                 Some(Action::Render)
             }
             SubscriptionEvent::Social(SocialEvent::ThreadCreated { ref thread_name, .. }) => {

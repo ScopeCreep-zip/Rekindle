@@ -95,11 +95,19 @@ impl MessageList {
     /// Computes the grouping based on the previous message's author
     /// and timestamp. If auto_scroll is enabled, selects the new message.
     pub fn push(&mut self, msg: DecryptedMessageDisplay) {
+        // Self-sent messages should not trigger the "New" unread separator.
+        // Advance last_read to include this message.
+        let is_own = msg.delivery_status == rekindle_types::display::DeliveryStatus::Sending
+            || msg.author_pseudonym.is_empty(); // empty pseudonym = local "you" message
         let group = self.compute_group(&msg);
         self.messages.push_back(RenderedMessage {
             msg,
             group,
         });
+
+        if is_own {
+            self.last_read_index = Some(self.len().saturating_sub(1));
+        }
 
         if self.auto_scroll {
             self.list_state
@@ -166,12 +174,75 @@ impl MessageList {
         self.generation += 1;
     }
 
+    /// Try to update a "(decrypting...)" placeholder message from the same author
+    /// near the given timestamp. Returns true if an existing message was updated.
+    /// Used when the enriched body event arrives after the initial body-less notification.
+    pub fn try_enrich_placeholder(
+        &mut self, author_pseudonym: &str, timestamp: u64, message_id: &str,
+        body: &str, sequence: u64, reply_to: Option<u64>,
+    ) -> bool {
+        let found = self.messages.iter_mut().rev().find(|r| {
+            r.msg.author_pseudonym == author_pseudonym
+                && r.msg.body == "(decrypting...)"
+                && r.msg.timestamp.abs_diff(timestamp) < 5000
+        });
+        if let Some(r) = found {
+            r.msg.body = body.to_string();
+            r.msg.message_id = message_id.to_string();
+            r.msg.sequence = sequence;
+            r.msg.reply_to_sequence = reply_to;
+            r.msg.is_encrypted = false;
+            r.msg.needs_mek = None;
+            self.generation += 1;
+            true
+        } else {
+            false
+        }
+    }
+
     /// Update the body of a message in-place (for Edited events).
     pub fn update_body(&mut self, message_id: &str, new_body: &str) {
         if let Some(r) = self.messages.iter_mut().find(|r| r.msg.message_id == message_id) {
             r.msg.body = format!("{new_body} (edited)");
             r.msg.is_encrypted = false;
             r.msg.needs_mek = None;
+            self.generation += 1;
+        }
+    }
+
+    /// Confirm delivery of a self-sent message (DHT write succeeded).
+    ///
+    /// Finds a `Sending` message matching the given message_id and flips
+    /// its status to `Confirmed`. If no match by ID, falls back to matching
+    /// by body content + `Sending` status (for cases where the client-side
+    /// nonce differs from the daemon-assigned message_id).
+    pub fn confirm_message(&mut self, message_id: &str) {
+        let found = self.messages.iter_mut().find(|r| {
+            r.msg.message_id == message_id
+                && r.msg.delivery_status == rekindle_types::display::DeliveryStatus::Sending
+        });
+        if let Some(r) = found {
+            r.msg.delivery_status = rekindle_types::display::DeliveryStatus::Confirmed;
+            r.msg.message_id = message_id.to_string();
+            self.generation += 1;
+            return;
+        }
+        // Fallback: match by Sending status (only one pending at a time typically)
+        if let Some(r) = self.messages.iter_mut().rev().find(|r| {
+            r.msg.delivery_status == rekindle_types::display::DeliveryStatus::Sending
+        }) {
+            r.msg.delivery_status = rekindle_types::display::DeliveryStatus::Confirmed;
+            r.msg.message_id = message_id.to_string();
+            self.generation += 1;
+        }
+    }
+
+    /// Mark a self-sent message as failed.
+    pub fn fail_pending_message(&mut self) {
+        if let Some(r) = self.messages.iter_mut().rev().find(|r| {
+            r.msg.delivery_status == rekindle_types::display::DeliveryStatus::Sending
+        }) {
+            r.msg.delivery_status = rekindle_types::display::DeliveryStatus::Failed;
             self.generation += 1;
         }
     }
@@ -259,8 +330,19 @@ impl MessageList {
             if rendered.group == MessageGroup::Full {
                 let author = helpers::sanitize_for_display(&msg.author_display_name);
                 let time = helpers::format_time_short(msg.timestamp);
+                let delivery = match msg.delivery_status {
+                    rekindle_types::display::DeliveryStatus::Sending => " ○",
+                    rekindle_types::display::DeliveryStatus::Confirmed => " ●",
+                    rekindle_types::display::DeliveryStatus::Failed => " ✗",
+                };
+                let delivery_style = match msg.delivery_status {
+                    rekindle_types::display::DeliveryStatus::Sending
+                    | rekindle_types::display::DeliveryStatus::Confirmed => Style::new().dim(),
+                    rekindle_types::display::DeliveryStatus::Failed => Style::new().bold(),
+                };
                 lines.push(Line::from(vec![
                     Span::styled(author, Style::new().bold()),
+                    Span::styled(delivery, delivery_style),
                     Span::raw("  "),
                     Span::styled(format!("[{time}]"), Style::new().dim()),
                 ]));
@@ -340,6 +422,19 @@ impl Component for MessageList {
             KeyCode::Char('i') => Some(Action::EnterInputMode),
             KeyCode::Char('r') => Some(Action::ReplyToSelected),
             KeyCode::Char('e') => Some(Action::EditSelected),
+            KeyCode::Char('x') | KeyCode::Delete => {
+                // Delete selected message
+                if let Some(idx) = self.selected_index() {
+                    if let Some(msg) = self.message_at(idx) {
+                        return Some(Action::DeleteMessage {
+                            community: self.community.clone(),
+                            channel: self.channel.clone(),
+                            message_id: msg.message_id.clone(),
+                        });
+                    }
+                }
+                None
+            }
             KeyCode::Char('y') => {
                 // Yank focused message body to clipboard
                 if let Some(idx) = self.selected_index() {
@@ -432,6 +527,7 @@ mod tests {
             mek_generation: 1,
             is_encrypted: false,
             needs_mek: None,
+            delivery_status: rekindle_types::display::DeliveryStatus::Confirmed,
         }
     }
 

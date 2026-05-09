@@ -1,5 +1,6 @@
 //! Governance dispatch handlers: roles, moderation, invites.
 
+use std::sync::Arc;
 use crate::daemon::DaemonState;
 use crate::ipc::protocol::IpcResponse;
 use crate::validation;
@@ -9,7 +10,7 @@ use super::{DaemonContext, state_error};
 // ── Roles ───────────────────────────────────────────────────────────────
 
 pub(crate) async fn handle_role_list(
-    ctx: &DaemonContext, state: DaemonState, community: &str,
+    ctx: &Arc<DaemonContext>, state: DaemonState, community: &str,
 ) -> IpcResponse {
     if !state.can_query() { return state_error(state, "query"); }
     let transport = match ctx.require_transport() { Ok(t) => t, Err(e) => return e };
@@ -22,7 +23,7 @@ pub(crate) async fn handle_role_list(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn handle_role_create(
-    ctx: &DaemonContext, state: DaemonState, community: &str,
+    ctx: &Arc<DaemonContext>, state: DaemonState, community: &str,
     name: &str, permissions: u64, color: u32, position: i32,
 ) -> IpcResponse {
     if !state.can_write() { return state_error(state, "write"); }
@@ -40,7 +41,7 @@ pub(crate) async fn handle_role_create(
 }
 
 pub(crate) async fn handle_role_update(
-    ctx: &DaemonContext, state: DaemonState, community: &str,
+    ctx: &Arc<DaemonContext>, state: DaemonState, community: &str,
     role_id: u32, name: Option<&str>, permissions: Option<u64>, color: Option<u32>,
 ) -> IpcResponse {
     if !state.can_write() { return state_error(state, "write"); }
@@ -60,7 +61,7 @@ pub(crate) async fn handle_role_update(
 }
 
 pub(crate) async fn handle_role_delete(
-    ctx: &DaemonContext, state: DaemonState, community: &str, role_id: u32,
+    ctx: &Arc<DaemonContext>, state: DaemonState, community: &str, role_id: u32,
 ) -> IpcResponse {
     if !state.can_write() { return state_error(state, "write"); }
     let transport = match ctx.require_transport() { Ok(t) => t, Err(e) => return e };
@@ -74,7 +75,7 @@ pub(crate) async fn handle_role_delete(
 }
 
 pub(crate) async fn handle_role_assign(
-    ctx: &DaemonContext, state: DaemonState, community: &str,
+    ctx: &Arc<DaemonContext>, state: DaemonState, community: &str,
     member_pseudonym: &str, role_id: u32,
 ) -> IpcResponse {
     if !state.can_write() { return state_error(state, "write"); }
@@ -89,7 +90,7 @@ pub(crate) async fn handle_role_assign(
 }
 
 pub(crate) async fn handle_role_unassign(
-    ctx: &DaemonContext, state: DaemonState, community: &str,
+    ctx: &Arc<DaemonContext>, state: DaemonState, community: &str,
     member_pseudonym: &str, role_id: u32,
 ) -> IpcResponse {
     if !state.can_write() { return state_error(state, "write"); }
@@ -106,7 +107,7 @@ pub(crate) async fn handle_role_unassign(
 // ── Moderation ──────────────────────────────────────────────────────────
 
 pub(crate) fn handle_kick(
-    ctx: &DaemonContext, state: DaemonState, community: &str, target: &str,
+    ctx: &Arc<DaemonContext>, state: DaemonState, community: &str, target: &str,
 ) -> IpcResponse {
     if !state.can_write() { return state_error(state, "write"); }
     let _membership = match ctx.resolve_community(community) { Ok(m) => m, Err(e) => return e };
@@ -120,7 +121,7 @@ pub(crate) fn handle_kick(
 }
 
 pub(crate) async fn handle_ban(
-    ctx: &DaemonContext, state: DaemonState, community: &str,
+    ctx: &Arc<DaemonContext>, state: DaemonState, community: &str,
     target: &str, reason: Option<&str>,
 ) -> IpcResponse {
     if !state.can_write() { return state_error(state, "write"); }
@@ -138,7 +139,7 @@ pub(crate) async fn handle_ban(
 }
 
 pub(crate) async fn handle_unban(
-    ctx: &DaemonContext, state: DaemonState, community: &str, target: &str,
+    ctx: &Arc<DaemonContext>, state: DaemonState, community: &str, target: &str,
 ) -> IpcResponse {
     if !state.can_write() { return state_error(state, "write"); }
     let transport = match ctx.require_transport() { Ok(t) => t, Err(e) => return e };
@@ -152,7 +153,7 @@ pub(crate) async fn handle_unban(
 }
 
 pub(crate) fn handle_timeout(
-    ctx: &DaemonContext, state: DaemonState, community: &str,
+    ctx: &Arc<DaemonContext>, state: DaemonState, community: &str,
     target: &str, duration_seconds: u64, reason: Option<&str>,
 ) -> IpcResponse {
     if !state.can_write() { return state_error(state, "write"); }
@@ -170,7 +171,7 @@ pub(crate) fn handle_timeout(
 }
 
 pub(crate) async fn handle_ban_list(
-    ctx: &DaemonContext, state: DaemonState, community: &str,
+    ctx: &Arc<DaemonContext>, state: DaemonState, community: &str,
 ) -> IpcResponse {
     if !state.can_query() { return state_error(state, "query"); }
     let transport = match ctx.require_transport() { Ok(t) => t, Err(e) => return e };
@@ -184,7 +185,7 @@ pub(crate) async fn handle_ban_list(
 // ── Invites ─────────────────────────────────────────────────────────────
 
 pub(crate) async fn handle_invite_create(
-    ctx: &DaemonContext, state: DaemonState, community: &str,
+    ctx: &Arc<DaemonContext>, state: DaemonState, community: &str,
     max_uses: u32, expires_seconds: Option<u64>,
 ) -> IpcResponse {
     if !state.can_write() { return state_error(state, "write"); }
@@ -200,7 +201,7 @@ pub(crate) async fn handle_invite_create(
 }
 
 pub(crate) async fn handle_invite_list(
-    ctx: &DaemonContext, state: DaemonState, community: &str,
+    ctx: &Arc<DaemonContext>, state: DaemonState, community: &str,
 ) -> IpcResponse {
     if !state.can_query() { return state_error(state, "query"); }
     let transport = match ctx.require_transport() { Ok(t) => t, Err(e) => return e };
@@ -212,7 +213,7 @@ pub(crate) async fn handle_invite_list(
 }
 
 pub(crate) async fn handle_invite_revoke(
-    ctx: &DaemonContext, state: DaemonState, community: &str, invite_code: &str,
+    ctx: &Arc<DaemonContext>, state: DaemonState, community: &str, invite_code: &str,
 ) -> IpcResponse {
     if !state.can_write() { return state_error(state, "write"); }
     let transport = match ctx.require_transport() { Ok(t) => t, Err(e) => return e };

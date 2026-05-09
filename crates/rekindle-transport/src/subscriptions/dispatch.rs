@@ -277,7 +277,7 @@ async fn dispatch_dm<H: InboundHandler>(handler: &Arc<H>, type_id: TypeId, paylo
     };
 
     // Deliver to InboundHandler — the daemon forwards to SubscriptionManager
-    handler.on_dm(&sender, dm_payload, signed.timestamp).await;
+    handler.on_dm(&sender, dm_payload).await;
 }
 
 // ── Voice sequence window for replay protection ───────────────────────

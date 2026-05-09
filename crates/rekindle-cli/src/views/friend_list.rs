@@ -180,10 +180,10 @@ impl View for FriendListView {
     }
 
     fn update(&mut self, action: Action) -> Result<Option<Action>> {
+        let total_visual = self.build_items().len();
         match action {
             Action::ScrollDown(_) => {
-                let total_items = self.friends.len() + self.pending_requests.len();
-                let max = total_items.saturating_sub(1);
+                let max = total_visual.saturating_sub(1);
                 let i = self.list_state.selected().unwrap_or(0);
                 self.list_state.select(Some((i + 1).min(max)));
             }
@@ -192,14 +192,13 @@ impl View for FriendListView {
                 self.list_state.select(Some(i.saturating_sub(1)));
             }
             Action::ScrollToTop => {
-                if !self.friends.is_empty() {
+                if total_visual > 0 {
                     self.list_state.select(Some(0));
                 }
             }
             Action::ScrollToBottom => {
-                let total = self.friends.len() + self.pending_requests.len();
-                if total > 0 {
-                    self.list_state.select(Some(total - 1));
+                if total_visual > 0 {
+                    self.list_state.select(Some(total_visual - 1));
                 }
             }
             _ => {}
@@ -225,10 +224,15 @@ impl View for FriendListView {
 
     fn handle_focused_key(&mut self, key: crossterm::event::KeyEvent) -> Option<Action> {
         use crossterm::event::KeyCode;
+
+        // The visual list includes section headers interleaved with entries.
+        // build_items() produces: [header, friend, friend, ..., header, friend, ...].
+        // Map the visual selection index to the actual friend/request index.
+        let total_visual_items = self.build_items().len();
+
         match key.code {
             KeyCode::Char('j') | KeyCode::Down => {
-                let total = self.friends.len() + self.pending_requests.len();
-                let max = total.saturating_sub(1);
+                let max = total_visual_items.saturating_sub(1);
                 let i = self.list_state.selected().unwrap_or(0);
                 self.list_state.select(Some((i + 1).min(max)));
                 None
@@ -239,27 +243,22 @@ impl View for FriendListView {
                 None
             }
             KeyCode::Enter => {
-                let idx = self.list_state.selected()?;
-                // If selected index is within friends list → open DM
-                if idx < self.friends.len() {
-                    let friend = &self.friends[idx];
-                    Some(Action::ShowDmThread { peer_key: friend.public_key.clone() })
-                } else {
-                    // In pending requests section — Enter does nothing (use a/r)
-                    None
-                }
+                let visual_idx = self.list_state.selected()?;
+                // Count how many friend entries precede this visual index
+                // by walking the same logic as build_items: headers don't count.
+                let friend_idx = visual_to_friend_index(&self.friends, visual_idx)?;
+                let friend = self.friends.get(friend_idx)?;
+                Some(Action::ShowDmThread { peer_key: friend.public_key.clone() })
             }
             KeyCode::Char('a') => {
-                // Accept pending request at current selection
-                let idx = self.list_state.selected()?;
-                let pending_idx = idx.checked_sub(self.friends.len())?;
+                let visual_idx = self.list_state.selected()?;
+                let pending_idx = visual_to_pending_index(&self.friends, &self.pending_requests, visual_idx)?;
                 let request = self.pending_requests.get(pending_idx)?;
                 Some(Action::AcceptFriendRequest(request.public_key.clone()))
             }
             KeyCode::Char('r') => {
-                // Reject pending request at current selection
-                let idx = self.list_state.selected()?;
-                let pending_idx = idx.checked_sub(self.friends.len())?;
+                let visual_idx = self.list_state.selected()?;
+                let pending_idx = visual_to_pending_index(&self.friends, &self.pending_requests, visual_idx)?;
                 let request = self.pending_requests.get(pending_idx)?;
                 Some(Action::RejectFriendRequest(request.public_key.clone()))
             }
@@ -318,6 +317,55 @@ fn presence_rank(status: &str) -> u8 {
         "offline" => 3,
         _ => 4,
     }
+}
+
+/// Map a visual list index to a friend index, accounting for section headers.
+/// Returns None if the visual index points at a header or is out of range.
+fn visual_to_friend_index(friends: &[FriendDisplay], visual_idx: usize) -> Option<usize> {
+    let mut current_status: Option<&str> = None;
+    let mut visual = 0usize;
+
+    for (friend_count, friend) in friends.iter().enumerate() {
+        // Section header for new status group
+        if current_status != Some(friend.status.as_str()) {
+            current_status = Some(friend.status.as_str());
+            if visual == visual_idx { return None; } // selected a header
+            visual += 1;
+        }
+        if visual == visual_idx { return Some(friend_count); }
+        visual += 1;
+    }
+    None
+}
+
+/// Map a visual list index to a pending request index, accounting for headers + friends.
+/// Returns None if the visual index doesn't point at a pending request.
+fn visual_to_pending_index(
+    friends: &[FriendDisplay],
+    pending: &[PendingRequestDisplay],
+    visual_idx: usize,
+) -> Option<usize> {
+    // Count visual items for friends section
+    let mut visual = 0usize;
+    let mut current_status: Option<&str> = None;
+    for friend in friends {
+        if current_status != Some(friend.status.as_str()) {
+            current_status = Some(friend.status.as_str());
+            visual += 1; // header
+        }
+        visual += 1; // friend entry
+    }
+
+    if pending.is_empty() { return None; }
+
+    // Empty line + "Pending Requests (N)" header = 2 visual items
+    visual += 2;
+
+    for (i, _req) in pending.iter().enumerate() {
+        if visual == visual_idx { return Some(i); }
+        visual += 1;
+    }
+    None
 }
 
 fn capitalize_first(s: &str) -> String {

@@ -318,6 +318,25 @@ impl View for CommunityInfoView {
         Ok(())
     }
 
+    fn on_subscription_event(
+        &mut self,
+        event: &rekindle_types::subscription_events::SubscriptionEvent,
+    ) -> Result<()> {
+        use rekindle_types::subscription_events::{SubscriptionEvent, GovernanceEvent};
+        match event {
+            SubscriptionEvent::Governance(
+                GovernanceEvent::ChannelsChanged { community }
+                | GovernanceEvent::RolesChanged { community }
+                | GovernanceEvent::MetadataChanged { community }
+            ) if *community == self.community => {
+                self.loading = true;
+                self.detail = None;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
     fn focus_ring(&mut self) -> &mut FocusRing {
         &mut self.focus
     }

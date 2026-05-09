@@ -124,6 +124,11 @@ async fn cli_run(cli: Cli, mode: OutputMode) -> anyhow::Result<()> {
     if let Some(Command::Status(ref args)) = cli.command {
         match DaemonClient::connect().await {
             Ok(client) => {
+                if args.watch {
+                    let result = watch_status_loop(&client, mode).await;
+                    client.shutdown().await;
+                    return result;
+                }
                 let result = network::cmd_status(&client, args, mode).await;
                 client.shutdown().await;
                 return result;
@@ -134,17 +139,42 @@ async fn cli_run(cli: Cli, mode: OutputMode) -> anyhow::Result<()> {
         }
     }
 
-    let client = DaemonClient::connect().await?;
+    let mut client = DaemonClient::connect().await?;
 
-    let result = dispatch_command(
-        cli.command.expect("command required"),
-        &client,
-        &cfg,
-        mode,
-    ).await;
+    let command = cli.command.expect("command required");
+
+    // Streaming commands need the event receiver before dispatch.
+    let result = match &command {
+        Command::Dm(cli::DmCmd::Watch { friend }) if !matches!(mode, OutputMode::Tui) => {
+            let mut event_rx = client.take_event_receiver()
+                .ok_or_else(|| anyhow::anyhow!("event receiver unavailable"))?;
+            dm::watch_streaming(&client, &mut event_rx, friend.as_deref(), mode).await
+        }
+        Command::Channel(cli::ChannelCmd::Watch { community, channel, .. }) if !matches!(mode, OutputMode::Tui) => {
+            let mut event_rx = client.take_event_receiver()
+                .ok_or_else(|| anyhow::anyhow!("event receiver unavailable"))?;
+            channel::watch_streaming(&client, &mut event_rx, community, channel, mode).await
+        }
+        _ => dispatch_command(command, &client, &cfg, mode).await,
+    };
 
     client.shutdown().await;
     result
+}
+
+/// Continuous status refresh every 2 seconds until Ctrl+C.
+#[allow(clippy::print_stderr)]
+async fn watch_status_loop(client: &DaemonClient, mode: OutputMode) -> anyhow::Result<()> {
+    use rekindle_node::ipc::protocol::IpcRequest;
+    loop {
+        if !mode.is_structured() {
+            eprint!("\x1b[2J\x1b[H"); // clear screen + cursor home
+        }
+        let value = client.request_ok(IpcRequest::Status).await?;
+        let snapshot: rekindle_types::display::StatusSnapshot = serde_json::from_value(value)?;
+        network::print_status_compact(&snapshot, mode)?;
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    }
 }
 
 #[allow(clippy::too_many_lines)]

@@ -19,7 +19,7 @@ use rekindle_transport::{
     payload::gossip::{GossipPayload, SignedGossipEnvelope},
     payload::rpc::{CallResponse, InboundCall},
     payload::voice::VoicePayload,
-    Session, PendingFriendRequest,
+    Session,
 };
 
 /// The daemon's inbound handler — thin forwarder to SubscriptionManager.
@@ -37,6 +37,8 @@ pub struct DaemonHandler {
     pub(crate) signing_key: Arc<RwLock<Option<crate::state::keystore::SigningKeyHandle>>>,
     /// Transport node (shared with DaemonContext, passed to RPC handlers).
     pub(crate) transport: Arc<RwLock<Option<Arc<rekindle_transport::TransportNode>>>>,
+    /// Friend inbox scan coordinator — non-blocking trigger for coalesced scans.
+    pub(crate) inbox_scan: Arc<RwLock<Option<crate::daemon::friend_inbox::InboxScanCoordinator>>>,
     /// Pending community join completions (shared with DaemonContext).
     /// On JoinAccepted gossip, the handler completes the oneshot so the
     /// join handler unblocks immediately.
@@ -51,72 +53,35 @@ impl DaemonHandler {
         mek_cache: Arc<RwLock<rekindle_transport::crypto::mek::MekCache>>,
         signing_key: Arc<RwLock<Option<crate::state::keystore::SigningKeyHandle>>>,
         transport: Arc<RwLock<Option<Arc<rekindle_transport::TransportNode>>>>,
+        inbox_scan: Arc<RwLock<Option<crate::daemon::friend_inbox::InboxScanCoordinator>>>,
         pending_joins: Arc<parking_lot::Mutex<std::collections::HashMap<String, (tokio::sync::oneshot::Sender<u32>, std::time::Instant)>>>,
     ) -> Self {
-        Self { subscriptions, session, session_path, mek_cache, signing_key, transport, pending_joins }
+        Self { subscriptions, session, session_path, mek_cache, signing_key, transport, inbox_scan, pending_joins }
     }
 
-    /// Persist a friend request to session before forwarding to SubscriptionManager.
-    /// This must happen synchronously before the event pipeline because the session
-    /// state is read by the subscription manager's state_effects.
-    fn persist_friend_request(
-        &self, sender_key: &str, display_name: &str, message: &str,
-        profile_dht_key: &str, route_blob: &[u8], mailbox_dht_key: &str,
-        prekey_bundle: &[u8], invite_id: Option<&String>, timestamp: u64,
-    ) {
-        let pending = PendingFriendRequest {
-            public_key: sender_key.to_string(),
-            display_name: display_name.to_string(),
-            message: message.to_string(),
-            profile_dht_key: profile_dht_key.to_string(),
-            route_blob: route_blob.to_vec(),
-            mailbox_dht_key: mailbox_dht_key.to_string(),
-            prekey_bundle: prekey_bundle.to_vec(),
-            invite_id: invite_id.cloned(),
-            received_at: timestamp,
-        };
-        let mut guard = self.session.write();
-        if let Some(ref mut session) = *guard {
-            session.add_pending_friend_request(pending);
-            if let Err(e) = session.save(&self.session_path) {
-                warn!(error = %e, "failed to persist pending friend request");
-            } else {
-                info!(from = sender_key, name = display_name, "friend request persisted");
-            }
-        }
-    }
+    // persist_friend_request removed — friend requests are discovered
+    // exclusively via DHT inbox scan (friend_inbox.rs), not app_message.
 }
 
 #[allow(clippy::manual_async_fn)]
 impl InboundHandler for DaemonHandler {
     fn on_dm(
-        &self, sender: &VerifiedSender, payload: DmPayload, timestamp: u64,
+        &self, sender: &VerifiedSender, payload: DmPayload,
     ) -> impl std::future::Future<Output = ()> + Send {
         debug!(sender = &sender.public_key[..12.min(sender.public_key.len())], "handler: on_dm");
 
-        // Persist friend requests to session before event pipeline
-        if let DmPayload::FriendRequest {
-            ref display_name, ref message, ref prekey_bundle,
-            ref profile_dht_key, ref route_blob, ref mailbox_dht_key, ref invite_id,
-        } = payload {
-            self.persist_friend_request(
-                &sender.public_key, display_name, message, profile_dht_key,
-                route_blob, mailbox_dht_key, prekey_bundle, invite_id.as_ref(), timestamp,
-            );
-        }
-
-        // If we receive a FriendRequestAck, it means someone wrote to our friend
-        // inbox. Trigger an immediate inbox scan to discover the new request.
+        // FriendRequestAck = "check your inbox" tier 2 notification.
+        // Triggers an immediate inbox scan to discover the new request
+        // from the SSOT (DHT inbox entry with signature + DM log key).
         let should_scan_inbox = matches!(payload, DmPayload::FriendRequestAck);
 
         // Forward to SubscriptionManager: into_event → state_effects → dedup → emit
         if let Some(ref sub_mgr) = *self.subscriptions.read() {
-            sub_mgr.on_dm(&sender.public_key, payload, timestamp);
+            sub_mgr.on_dm(&sender.public_key, payload);
         }
 
+        let inbox_scan = Arc::clone(&self.inbox_scan);
         let session = Arc::clone(&self.session);
-        let transport = Arc::clone(&self.transport);
-        let session_path = self.session_path.clone();
 
         async move {
             if !should_scan_inbox { return; }
@@ -127,8 +92,10 @@ impl InboundHandler for DaemonHandler {
             };
             if inbox_key.is_empty() { return; }
 
-            debug!("FriendRequestAck received — scanning friend inbox");
-            super::friend_inbox::scan_friend_inbox(&session, &transport, &session_path, &inbox_key).await;
+            debug!("FriendRequestAck received — triggering inbox scan");
+            if let Some(ref coordinator) = *inbox_scan.read() {
+                coordinator.trigger(&inbox_key);
+            }
         }
     }
 
@@ -149,7 +116,7 @@ impl InboundHandler for DaemonHandler {
                     let transfer = rekindle_transport::payload::rpc::MekTransferPayload {
                         channel_id: String::new(), // first channel — will be resolved by community governance
                         generation: *mek_generation,
-                        rotator_pseudonym_hex: String::new(),
+                        rotator_pseudonym_hex: sender_pseudonym.to_string(),
                         wrapped_mek: mek_encrypted.clone(),
                     };
                     match rekindle_transport::operations::mek::receive_mek_transfer_payload(
@@ -244,6 +211,7 @@ impl InboundHandler for DaemonHandler {
         let transport = Arc::clone(&self.transport);
         let session_path = self.session_path.clone();
         let record_key_owned = record_key.to_string();
+        let inbox_scan = Arc::clone(&self.inbox_scan);
 
         async move {
             // Process community join inbox
@@ -254,35 +222,112 @@ impl InboundHandler for DaemonHandler {
                 ).await;
             }
 
-            // Process friend inbox — scan for new requests and persist to session
+            // Trigger friend inbox scan via coordinator (non-blocking, coalesced)
             if is_friend_inbox {
-                debug!("friend inbox changed — scanning for new requests");
-                super::friend_inbox::scan_friend_inbox(
-                    &session, &transport, &session_path, &record_key_owned,
-                ).await;
+                debug!("friend inbox changed — triggering scan via coordinator");
+                if let Some(ref coordinator) = *inbox_scan.read() {
+                    coordinator.trigger(&record_key_owned);
+                }
             }
         }
     }
 
     fn on_event(&self, event: TransportEvent) -> impl std::future::Future<Output = ()> + Send {
         debug!(event = ?std::mem::discriminant(&event), "handler: on_event");
-        if let Some(ref sub_mgr) = *self.subscriptions.read() {
+
+        // Extract what we need from behind the lock, then drop it before any await.
+        // Synchronous events (route deaths) are handled inline.
+        // Async events (attachment change, watch death) are handled after lock drop.
+        let async_work = {
+            let guard = self.subscriptions.read();
+            if let Some(ref sub_mgr) = *guard {
+                match &event {
+                    TransportEvent::LocalRoutesDied { count } => {
+                        sub_mgr.on_route_change(*count, vec![]);
+                        None
+                    }
+                    TransportEvent::RemoteRoutesDied { peer_keys } => {
+                        sub_mgr.on_route_change(0, peer_keys.clone());
+                        None
+                    }
+                    TransportEvent::AttachmentChanged { .. }
+                    | TransportEvent::WatchDied { .. } => {
+                        // Need async work — extract Arcs for post-lock operations
+                        Some((
+                            Arc::clone(sub_mgr.node()),
+                            Arc::clone(sub_mgr.watches()),
+                            sub_mgr.event_sender().clone(),
+                        ))
+                    }
+                }
+            } else {
+                None
+            }
+        };
+        // Guard dropped — safe to await
+
+        async move {
+            let Some((node, watches, event_tx)) = async_work else { return; };
+
             match event {
                 TransportEvent::AttachmentChanged { is_attached, public_internet_ready, .. } => {
-                    sub_mgr.on_route_change(0, vec![]); // triggers NetworkStateChanged render
-                    let _ = (is_attached, public_internet_ready); // used by attachment handler
+                    // Emit attachment change event
+                    let _ = event_tx.send(rekindle_types::subscription_events::SubscriptionEvent::Network(
+                        rekindle_types::subscription_events::NetworkEvent::AttachmentChanged {
+                            is_attached, public_internet_ready,
+                        },
+                    ));
+
+                    // Re-establish ALL watches on network re-attach — not just stale ones.
+                    // After a 30-second outage, no watches are past their 4-minute renewal
+                    // interval, so needs_renewal() would return empty. Every watch must be
+                    // renewed because the remote storage nodes may have expired them during
+                    // the outage regardless of our local renewal timestamp.
+                    if is_attached && public_internet_ready {
+                        let all_watches: Vec<(String, _)> = watches.read().entries.iter()
+                            .map(|(k, e)| (k.clone(), e.clone()))
+                            .collect();
+                        info!(count = all_watches.len(), "network re-attached — re-establishing all watches");
+                        for (record_key, entry) in all_watches {
+                            if rekindle_transport::subscriptions::watches::renew_watch(
+                                &node, &record_key, &entry.subkeys,
+                            ).await {
+                                if let Some(e) = watches.write().entries.get_mut(&record_key) {
+                                    e.established_at = std::time::Instant::now();
+                                }
+                            }
+                        }
+                    }
                 }
-                TransportEvent::LocalRoutesDied { count } => {
-                    sub_mgr.on_route_change(count, vec![]);
+                TransportEvent::WatchDied { record_key, .. } => {
+                    // Immediate re-establishment — don't wait for the 60s renewal tick
+                    let entry = watches.read().get(&record_key).cloned();
+                    if let Some(entry) = entry {
+                        info!(record_key = %record_key, "watch died — re-establishing immediately");
+                        if rekindle_transport::subscriptions::watches::renew_watch(
+                            &node, &record_key, &entry.subkeys,
+                        ).await {
+                            if let Some(e) = watches.write().entries.get_mut(&record_key) {
+                                e.established_at = std::time::Instant::now();
+                            }
+                            let _ = event_tx.send(rekindle_types::subscription_events::SubscriptionEvent::Network(
+                                rekindle_types::subscription_events::NetworkEvent::WatchReestablished {
+                                    record_key,
+                                },
+                            ));
+                        } else {
+                            warn!(record_key = %record_key, "watch re-establishment failed after death");
+                            let _ = event_tx.send(rekindle_types::subscription_events::SubscriptionEvent::Network(
+                                rekindle_types::subscription_events::NetworkEvent::WatchFailed {
+                                    record_key,
+                                    error: "re-establishment failed after watch death".into(),
+                                },
+                            ));
+                        }
+                    }
                 }
-                TransportEvent::RemoteRoutesDied { peer_keys } => {
-                    sub_mgr.on_route_change(0, peer_keys);
-                }
-                TransportEvent::WatchDied { .. } => {
-                    // Watch re-establishment handled by the renewal loop in SubscriptionManager
-                }
+                _ => {} // LocalRoutesDied and RemoteRoutesDied already handled synchronously above
             }
         }
-        async {}
     }
 }

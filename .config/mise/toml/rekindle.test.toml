@@ -6,8 +6,8 @@
 # Usage:
 #   mise run rekindle:test:setup    # Create community, join all, send friend requests
 #   mise run rekindle:test:chat     # Send messages in community channel
-#   mise run rekindle:test:dm       # Send DMs between all pairs
-#   mise run rekindle:test:all      # Full battery: setup + chat + dm
+#   mise run rekindle:test:dm       # Accept friends + multi-volley DM test
+#   mise run rekindle:test:all      # Full battery: setup + chat + dm + verify
 #   mise run rekindle:test:verify   # Verify state across all nodes
 
 ["rekindle:test:identities"]
@@ -27,11 +27,11 @@ for node in alice bob carol; do
   echo "── ${node} ──"
   identity=$(rk "${node}" identity show --format json || echo '{"error":"failed"}')
   pubkey=$(echo "${identity}" | jq -r '.public_key // "unknown"')
-  mailbox=$(echo "${identity}" | jq -r '.mailbox_dht_key // "unknown"')
+  profile=$(echo "${identity}" | jq -r '.profile_dht_key // "unknown"')
   display=$(echo "${identity}" | jq -r '.display_name // "unknown"')
   echo "   Display:  ${display}"
   echo "   PubKey:   ${pubkey}"
-  echo "   Mailbox:  ${mailbox}"
+  echo "   Profile:  ${profile}"
   echo ""
 done
 '''
@@ -49,18 +49,18 @@ echo "🔧 Rekindle Multi-Node Test Setup"
 echo "==================================="
 echo ""
 
-# Wait for all nodes to be FullyAttached to the Veilid network.
-# DHT operations fail if nodes haven't discovered peers and established routes.
+# Wait for all nodes to be attached to the Veilid network.
 echo "⏳ Waiting for Veilid network attachment..."
 for node in alice bob carol; do
-  for i in $(seq 1 60); do
+  for i in $(seq 1 90); do
     attachment=$(docker exec --user rekindle "rekindle-${node}" rekindle status --format json 2>/dev/null | jq -r '.attachment // "unknown"' 2>/dev/null || echo "unknown")
     if [[ "${attachment}" == "FullyAttached" || "${attachment}" == "AttachedGood" || "${attachment}" == "AttachedStrong" ]]; then
       echo "   ✅ ${node}: ${attachment}"
       break
     fi
-    if [[ ${i} -eq 60 ]]; then
-      echo "   ⚠️  ${node}: ${attachment} (proceeding anyway after 60s)"
+    if [[ ${i} -eq 90 ]]; then
+      echo "   ❌ ${node}: ${attachment} (timed out after 90s)"
+      exit 1
     fi
     sleep 1
   done
@@ -73,9 +73,6 @@ ALICE_JSON=$(rk alice identity show --format json)
 BOB_JSON=$(rk bob identity show --format json)
 CAROL_JSON=$(rk carol identity show --format json)
 
-ALICE_MAILBOX=$(echo "${ALICE_JSON}" | jq -r '.mailbox_dht_key')
-BOB_MAILBOX=$(echo "${BOB_JSON}" | jq -r '.mailbox_dht_key')
-CAROL_MAILBOX=$(echo "${CAROL_JSON}" | jq -r '.mailbox_dht_key')
 ALICE_PROFILE=$(echo "${ALICE_JSON}" | jq -r '.profile_dht_key')
 BOB_PROFILE=$(echo "${BOB_JSON}" | jq -r '.profile_dht_key')
 CAROL_PROFILE=$(echo "${CAROL_JSON}" | jq -r '.profile_dht_key')
@@ -85,19 +82,16 @@ echo "   bob profile:   ${BOB_PROFILE}"
 echo "   carol profile: ${CAROL_PROFILE}"
 echo ""
 
-# Step 1: Alice creates community (or reuses existing)
+# Step 1: Alice creates community
 echo "Step 1: Alice creates community 'dev-team'..."
 CREATE_JSON=$(rk alice community create dev-team --description "Development team coordination" --format json || true)
 GOV_KEY=$(echo "${CREATE_JSON}" | jq -r '.governance_key // empty' 2>/dev/null || echo "")
 
 if [[ -z "${GOV_KEY}" ]]; then
-  # Community may already exist — try to get governance key from community list
   LIST_JSON=$(rk alice community list --format json || true)
   GOV_KEY=$(echo "${LIST_JSON}" | jq -r '.[] | select(.name == "dev-team") | .governance_key // empty' 2>/dev/null || echo "")
   if [[ -z "${GOV_KEY}" ]]; then
-    echo "   ❌ Community creation failed and not found in list"
-    echo "   Create output: ${CREATE_JSON}"
-    echo "   List output: ${LIST_JSON}"
+    echo "   ❌ Community creation failed"
     exit 1
   fi
   echo "   ✅ Using existing community. Governance key: ${GOV_KEY}"
@@ -106,39 +100,48 @@ else
 fi
 echo ""
 
-# Step 2: Bob joins
+# Step 2: Bob joins — wait for approval
 echo "Step 2: Bob joins 'dev-team'..."
-rk bob community join -i "${GOV_KEY}" || echo "   (already a member or join in progress)"
+rk bob community join -i "${GOV_KEY}" || echo "   (already a member)"
 echo "   ✅ Bob joined"
 
-# Step 3: Carol joins
+# Step 3: Carol joins — wait for approval
 echo "Step 3: Carol joins 'dev-team'..."
-rk carol community join -i "${GOV_KEY}" || echo "   (already a member or join in progress)"
+rk carol community join -i "${GOV_KEY}" || echo "   (already a member)"
 echo "   ✅ Carol joined"
 echo ""
 
-# Step 4: Friend requests (full mesh)
-echo "Step 4: Sending friend requests (full mesh)..."
+# Wait for join inbox processing + registry propagation
+echo "⏳ Waiting 15s for community membership propagation..."
+sleep 15
+
+# Step 4: Friend requests — send one at a time with pauses for DHT propagation
+echo "Step 4: Sending friend requests (full mesh, paced)..."
 
 echo "   alice → bob..."
 rk alice friend add -t "${BOB_PROFILE}" -m "Hey bob from alice"
 echo "   ✅ sent"
+sleep 2
 
 echo "   alice → carol..."
 rk alice friend add -t "${CAROL_PROFILE}" -m "Hey carol from alice"
 echo "   ✅ sent"
+sleep 2
 
 echo "   bob → alice..."
 rk bob friend add -t "${ALICE_PROFILE}" -m "Hey alice from bob"
 echo "   ✅ sent"
+sleep 2
 
 echo "   bob → carol..."
 rk bob friend add -t "${CAROL_PROFILE}" -m "Hey carol from bob"
 echo "   ✅ sent"
+sleep 2
 
 echo "   carol → alice..."
 rk carol friend add -t "${ALICE_PROFILE}" -m "Hey alice from carol"
 echo "   ✅ sent"
+sleep 2
 
 echo "   carol → bob..."
 rk carol friend add -t "${BOB_PROFILE}" -m "Hey bob from carol"
@@ -151,14 +154,10 @@ echo "   Community: dev-team"
 echo "   Governance: ${GOV_KEY}"
 echo "   Members: alice (owner), bob, carol"
 echo "   Friend requests: 6 (full mesh)"
-echo ""
-echo "💡 Next:"
-echo "   mise run rekindle:test:chat     # Send channel messages"
-echo "   mise run rekindle:test:verify   # Verify state"
 '''
 
 ["rekindle:test:chat"]
-description = "💬 Send messages in community channel from all 3 nodes"
+description = "💬 Multi-volley channel messaging across all 3 nodes"
 alias = ["rktc"]
 run = '''
 #!/usr/bin/env bash
@@ -166,36 +165,103 @@ set -euo pipefail
 
 rk() { local n="$1"; shift; docker exec --user rekindle "rekindle-${n}" rekindle "$@" 2>&1; }
 
-echo "💬 Channel Message Test"
-echo "========================"
+echo "💬 Channel Message Test (Multi-Volley)"
+echo "========================================"
 echo ""
 
-echo "alice sends to #general..."
+# Volley 1: initial messages from all 3 nodes
+echo "── Volley 1: First messages ──"
+echo "alice sends..."
 rk alice channel send -c dev-team -C general -m "Hello from alice! Testing channel messaging."
 echo ""
-
-echo "bob sends to #general..."
+sleep 1
+echo "bob sends..."
 rk bob channel send -c dev-team -C general -m "Hey team, bob here. Channel works!"
 echo ""
-
-echo "carol sends to #general..."
+sleep 1
+echo "carol sends..."
 rk carol channel send -c dev-team -C general -m "Carol checking in. Three-way chat!"
 echo ""
 
-echo "📜 Reading channel history from alice perspective..."
-rk alice channel history -c dev-team -C general --format json
+# Wait for DHT propagation of channel logs + registry updates
+echo "⏳ Waiting 10s for channel log propagation..."
+sleep 10
+
+# Volley 2: replies
+echo "── Volley 2: Replies ──"
+echo "bob replies..."
+rk bob channel send -c dev-team -C general -m "Second message from bob — reply test"
+echo ""
+sleep 1
+echo "alice replies..."
+rk alice channel send -c dev-team -C general -m "Alice here again, volley 2"
+echo ""
+sleep 1
+echo "carol replies..."
+rk carol channel send -c dev-team -C general -m "Carol volley 2 — still working?"
+echo ""
+sleep 3
+
+# Volley 3: rapid fire
+echo "── Volley 3: Rapid fire ──"
+echo "alice rapid 1..."
+rk alice channel send -c dev-team -C general -m "rapid-1 from alice"
+echo ""
+sleep 1
+echo "alice rapid 2..."
+rk alice channel send -c dev-team -C general -m "rapid-2 from alice"
+echo ""
+sleep 1
+echo "bob rapid 1..."
+rk bob channel send -c dev-team -C general -m "rapid-1 from bob"
 echo ""
 
-echo "📜 Reading channel history from bob perspective..."
-rk bob channel history -c dev-team -C general --format json
+# Wait for propagation then verify with retries
+echo ""
+echo "⏳ Waiting 15s for full DHT propagation..."
+sleep 15
+
+echo "── Verification: all 9 messages visible ──"
 echo ""
 
-echo "📜 Reading channel history from carol perspective..."
-rk carol channel history -c dev-team -C general --format json
+PASS=true
+for node in alice bob carol; do
+  COUNT=$(rk "${node}" channel history -c dev-team -C general --format json | jq 'length')
+  echo "${node} sees: ${COUNT} messages"
+  if [[ "${COUNT}" -lt 9 ]]; then
+    PASS=false
+  fi
+done
+echo ""
+
+if [[ "${PASS}" == "true" ]]; then
+  echo "✅ All nodes see all 9 messages"
+else
+  echo "⚠️  Message count mismatch — retrying after 15s..."
+  sleep 15
+  echo ""
+  PASS=true
+  for node in alice bob carol; do
+    COUNT=$(rk "${node}" channel history -c dev-team -C general --format json | jq 'length')
+    echo "${node} sees: ${COUNT} messages (retry)"
+    if [[ "${COUNT}" -lt 9 ]]; then
+      PASS=false
+    fi
+  done
+  echo ""
+  if [[ "${PASS}" == "true" ]]; then
+    echo "✅ All nodes see all 9 messages (after retry)"
+  else
+    echo "❌ Channel message propagation incomplete"
+    echo ""
+    echo "📜 Full history from alice:"
+    rk alice channel history -c dev-team -C general --format json | jq '.[].body'
+  fi
+fi
 '''
 
 ["rekindle:test:dm"]
-description = "📨 Accept friends + send DMs between all pairs"
+description = "📨 Accept friends + multi-volley DM test with bidirectional verification"
 alias = ["rktd"]
 run = '''
 #!/usr/bin/env bash
@@ -203,65 +269,196 @@ set -euo pipefail
 
 rk() { local n="$1"; shift; docker exec --user rekindle "rekindle-${n}" rekindle "$@" 2>&1; }
 
-echo "📨 DM Message Test"
-echo "==================="
+echo "📨 DM Message Test (Bidirectional Multi-Volley)"
+echo "================================================="
 echo ""
 
 # Get public keys for DM addressing
-ALICE_JSON=$(rk alice identity show --format json)
-BOB_JSON=$(rk bob identity show --format json)
-CAROL_JSON=$(rk carol identity show --format json)
+ALICE_KEY=$(rk alice identity show --format json | jq -r '.public_key')
+BOB_KEY=$(rk bob identity show --format json | jq -r '.public_key')
+CAROL_KEY=$(rk carol identity show --format json | jq -r '.public_key')
 
-BOB_KEY=$(echo "${BOB_JSON}" | jq -r '.public_key')
-ALICE_KEY=$(echo "${ALICE_JSON}" | jq -r '.public_key')
-CAROL_KEY=$(echo "${CAROL_JSON}" | jq -r '.public_key')
+# ── Phase 1: Accept friend requests ──────────────────────────────────
+# Accept one pair at a time with pauses so each side's inbox scan
+# discovers the acceptance and establishes the Signal session before
+# the next accept fires.
+echo "Phase 1: Accepting friend requests (paced)..."
+echo ""
 
-# Step 1: Accept friend requests (required before DMs)
-# Friend requests were sent via DHT inbox in Phase 1 (using profile keys).
-# The handle_friend_accept does a one-shot inbox scan if the request
-# isn't in session yet — no sleep needed, the command handles propagation.
-echo "Accepting friend requests..."
 echo "   alice accepts bob..."
 rk alice friend accept --request-id "${BOB_KEY}"
-echo "   alice accepts carol..."
-rk alice friend accept --request-id "${CAROL_KEY}"
+sleep 3
 echo "   bob accepts alice..."
 rk bob friend accept --request-id "${ALICE_KEY}"
-echo "   bob accepts carol..."
-rk bob friend accept --request-id "${CAROL_KEY}"
+sleep 5
+echo "   ✅ alice ↔ bob friendship established"
+echo ""
+
+echo "   alice accepts carol..."
+rk alice friend accept --request-id "${CAROL_KEY}"
+sleep 3
 echo "   carol accepts alice..."
 rk carol friend accept --request-id "${ALICE_KEY}"
+sleep 5
+echo "   ✅ alice ↔ carol friendship established"
+echo ""
+
+echo "   bob accepts carol..."
+rk bob friend accept --request-id "${CAROL_KEY}"
+sleep 3
 echo "   carol accepts bob..."
 rk carol friend accept --request-id "${BOB_KEY}"
+sleep 5
+echo "   ✅ bob ↔ carol friendship established"
 echo ""
 
-# Step 2: Send DMs (requires friendship established above)
-echo "alice → bob DM..."
+# Wait for all inbox scans to complete and Signal sessions to establish
+echo "⏳ Waiting 30s for inbox scans + Signal session establishment..."
+sleep 30
+
+# ── Phase 2: DM Volley 1 — Initial messages ─────────────────────────
+echo "Phase 2: DM Volley 1 — Initial messages"
+echo "────────────────────────────────────────"
+
+echo "alice → bob: 'Private message from alice to bob'"
 rk alice dm send -f "${BOB_KEY}" -m "Private message from alice to bob"
 echo ""
+sleep 2
 
-echo "bob → alice DM..."
+echo "bob → alice: 'Private reply from bob to alice'"
 rk bob dm send -f "${ALICE_KEY}" -m "Private reply from bob to alice"
 echo ""
+sleep 2
 
-echo "alice → carol DM..."
+echo "alice → carol: 'Hey carol, private from alice'"
 rk alice dm send -f "${CAROL_KEY}" -m "Hey carol, private from alice"
 echo ""
+sleep 2
 
-echo "carol → bob DM..."
+echo "carol → bob: 'Secret message from carol to bob'"
 rk carol dm send -f "${BOB_KEY}" -m "Secret message from carol to bob"
 echo ""
+sleep 2
 
-echo "📬 Checking inboxes..."
+# ── Phase 3: DM Volley 2 — Replies ──────────────────────────────────
+echo "Phase 3: DM Volley 2 — Replies"
+echo "────────────────────────────────────────"
+
+echo "bob → alice: 'Bob replying again — volley 2'"
+rk bob dm send -f "${ALICE_KEY}" -m "Bob replying again — volley 2"
 echo ""
-echo "── alice inbox ──"
-rk alice dm inbox --format json
+sleep 2
+
+echo "alice → bob: 'Alice second DM to bob'"
+rk alice dm send -f "${BOB_KEY}" -m "Alice second DM to bob"
 echo ""
-echo "── bob inbox ──"
-rk bob dm inbox --format json
+sleep 2
+
+echo "carol → alice: 'Carol to alice — first DM this direction'"
+rk carol dm send -f "${ALICE_KEY}" -m "Carol to alice — first DM this direction"
 echo ""
-echo "── carol inbox ──"
-rk carol dm inbox --format json
+sleep 2
+
+echo "bob → carol: 'Bob to carol — testing all pairs'"
+rk bob dm send -f "${CAROL_KEY}" -m "Bob to carol — testing all pairs"
+echo ""
+
+# ── Phase 4: Wait for propagation ────────────────────────────────────
+echo ""
+echo "⏳ Waiting 15s for DM DhtLog propagation..."
+sleep 15
+
+# ── Phase 5: Verification — bidirectional message delivery ───────────
+echo "Phase 5: Verification — bidirectional DM delivery"
+echo "═══════════════════════════════════════════════════"
+echo ""
+
+PASS=0
+FAIL=0
+
+check_dm() {
+  local node="$1"
+  local peer_key="$2"
+  local expected_body="$3"
+  local direction="$4"  # "sent" or "received"
+
+  local inbox
+  inbox=$(rk "${node}" dm inbox --format json)
+
+  if [[ "${direction}" == "sent" ]]; then
+    local found
+    found=$(echo "${inbox}" | jq -r --arg body "${expected_body}" \
+      '[.[].messages[] | select(.is_self == true and .body == $body)] | length')
+    if [[ "${found}" -ge 1 ]]; then
+      echo "   ✅ ${node} sent: '${expected_body}'"
+      PASS=$((PASS + 1))
+    else
+      echo "   ❌ ${node} sent NOT FOUND: '${expected_body}'"
+      FAIL=$((FAIL + 1))
+    fi
+  else
+    local found
+    found=$(echo "${inbox}" | jq -r --arg body "${expected_body}" \
+      '[.[].messages[] | select(.is_self == false and .body == $body)] | length')
+    if [[ "${found}" -ge 1 ]]; then
+      echo "   ✅ ${node} received: '${expected_body}'"
+      PASS=$((PASS + 1))
+    else
+      # Check if it shows as [encrypted] (Signal decrypt failure)
+      local encrypted
+      encrypted=$(echo "${inbox}" | jq -r \
+        '[.[].messages[] | select(.is_self == false and .body == "[encrypted]")] | length')
+      if [[ "${encrypted}" -ge 1 ]]; then
+        echo "   ❌ ${node} received [encrypted] instead of: '${expected_body}'"
+      else
+        echo "   ❌ ${node} received NOT FOUND: '${expected_body}'"
+      fi
+      FAIL=$((FAIL + 1))
+    fi
+  fi
+}
+
+echo "── alice ↔ bob ──"
+check_dm alice "${BOB_KEY}" "Private message from alice to bob" "sent"
+check_dm alice "${BOB_KEY}" "Alice second DM to bob" "sent"
+check_dm bob "${ALICE_KEY}" "Private message from alice to bob" "received"
+check_dm bob "${ALICE_KEY}" "Alice second DM to bob" "received"
+check_dm bob "${ALICE_KEY}" "Private reply from bob to alice" "sent"
+check_dm bob "${ALICE_KEY}" "Bob replying again — volley 2" "sent"
+check_dm alice "${BOB_KEY}" "Private reply from bob to alice" "received"
+check_dm alice "${BOB_KEY}" "Bob replying again — volley 2" "received"
+echo ""
+
+echo "── alice ↔ carol ──"
+check_dm alice "${CAROL_KEY}" "Hey carol, private from alice" "sent"
+check_dm carol "${ALICE_KEY}" "Hey carol, private from alice" "received"
+check_dm carol "${ALICE_KEY}" "Carol to alice — first DM this direction" "sent"
+check_dm alice "${CAROL_KEY}" "Carol to alice — first DM this direction" "received"
+echo ""
+
+echo "── bob ↔ carol ──"
+check_dm carol "${BOB_KEY}" "Secret message from carol to bob" "sent"
+check_dm bob "${CAROL_KEY}" "Secret message from carol to bob" "received"
+check_dm bob "${CAROL_KEY}" "Bob to carol — testing all pairs" "sent"
+check_dm carol "${BOB_KEY}" "Bob to carol — testing all pairs" "received"
+echo ""
+
+echo "════════════════════════════════════════"
+echo "DM Results: ${PASS} passed, ${FAIL} failed"
+if [[ ${FAIL} -gt 0 ]]; then
+  echo ""
+  echo "📜 Raw inboxes for debugging:"
+  echo ""
+  echo "── alice inbox ──"
+  rk alice dm inbox --format json | jq '.[].messages[] | {sender_name, body, is_self}'
+  echo ""
+  echo "── bob inbox ──"
+  rk bob dm inbox --format json | jq '.[].messages[] | {sender_name, body, is_self}'
+  echo ""
+  echo "── carol inbox ──"
+  rk carol dm inbox --format json | jq '.[].messages[] | {sender_name, body, is_self}'
+  exit 1
+fi
 '''
 
 ["rekindle:test:verify"]
@@ -271,8 +468,6 @@ run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Run a rekindle CLI command on a node and capture output.
-# Usage: rk <node> <args...>
 rk() {
   local node="$1"; shift
   docker exec --user rekindle "rekindle-${node}" rekindle "$@" 2>&1
@@ -294,7 +489,7 @@ check() {
     PASS=$((PASS + 1))
   else
     echo "   ❌ ${label}"
-    echo "      expected: ${expected}"
+    echo "      expected to contain: ${expected}"
     echo "      got: ${result}"
     FAIL=$((FAIL + 1))
   fi
@@ -319,7 +514,6 @@ echo ""
 echo "── Doctor ──"
 for node in alice bob carol; do
   result=$(rk "${node}" doctor --format json || echo '[]')
-  # Check that checks array is non-empty
   check_count=$(echo "${result}" | jq 'length' 2>/dev/null || echo "0")
   check "${node} doctor returns checks" "${check_count}" ""
 done
@@ -360,12 +554,17 @@ echo "────────────────────────�
 mise run rekindle:test:setup
 echo ""
 
+# Wait for friend requests to propagate to all inbox scans
+echo "⏳ Waiting 30s for friend request DHT propagation..."
+sleep 30
+echo ""
+
 echo "Phase 2: Channel messaging..."
 echo "────────────────────────────────────────"
 mise run rekindle:test:chat
 echo ""
 
-echo "Phase 3: Direct messaging..."
+echo "Phase 3: Direct messaging (Signal encrypted, bidirectional)..."
 echo "────────────────────────────────────────"
 mise run rekindle:test:dm
 echo ""

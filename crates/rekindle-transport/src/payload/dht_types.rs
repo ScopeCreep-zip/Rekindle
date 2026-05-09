@@ -382,6 +382,14 @@ pub struct ChannelMessage {
 /// A friend request written to the target's friend inbox DHT record.
 /// The inbox is a DFLT(32) record with a published keypair — anyone
 /// can write. The target's daemon polls their inbox for new requests.
+///
+/// The sender creates the shared DM DhtLog at send time and includes
+/// the key + keypair in this entry. The responder adopts the sender's
+/// log on accept — no second DhtLog is ever created.
+///
+/// The entry is Ed25519-signed by the sender. The inbox scan verifies
+/// the signature before processing to prevent impersonation attacks
+/// on the world-writable inbox.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FriendRequestEntry {
@@ -400,16 +408,48 @@ pub struct FriendRequestEntry {
     /// Sender's friend inbox keypair hex (so the target can write responses).
     pub sender_friend_inbox_keypair_hex: String,
     /// Prekey bundle bytes for Signal session establishment.
+    /// The sender publishes their prekeys; the responder uses them
+    /// to initiate X3DH on accept.
     pub prekey_bundle: Vec<u8>,
     /// Epoch ms when the request was sent.
     pub sent_at: u64,
+    /// DhtLog spine key for the shared DM conversation.
+    /// Created by the sender at send time. The responder adopts it on accept.
+    /// Both peers read/write to this single shared log.
+    pub dm_log_key: String,
+    /// Hex-encoded keypair (64 bytes: 32 pub + 32 secret) for the shared DM DhtLog.
+    /// DFLT(1) records require the owner keypair to write. Both peers hold
+    /// this keypair so both can append to the shared log.
+    pub dm_log_keypair_hex: String,
+    /// Ed25519 signature (hex) over the canonical content bytes.
+    /// Verified by the inbox scan before processing. Prevents impersonation
+    /// on the world-writable friend inbox record.
+    pub signature_hex: String,
     /// Current status of this request.
-    #[serde(default = "default_friend_request_status")]
     pub status: FriendRequestStatus,
 }
 
-fn default_friend_request_status() -> FriendRequestStatus {
-    FriendRequestStatus::Pending
+impl FriendRequestEntry {
+    /// Parse friend inbox DHT data as a list of entries.
+    pub fn parse_inbox_data(data: &[u8]) -> std::result::Result<Vec<Self>, serde_json::Error> {
+        serde_json::from_slice::<Vec<Self>>(data)
+    }
+
+    /// Canonical bytes for signature computation and verification.
+    /// Covers identity-binding fields only — status changes don't
+    /// invalidate the signature.
+    pub fn signature_content(&self) -> Vec<u8> {
+        let mut content = Vec::new();
+        content.extend_from_slice(b"rekindle-friend-request:");
+        content.extend_from_slice(self.sender_public_key.as_bytes());
+        content.extend_from_slice(b":");
+        content.extend_from_slice(self.profile_dht_key.as_bytes());
+        content.extend_from_slice(b":");
+        content.extend_from_slice(self.dm_log_key.as_bytes());
+        content.extend_from_slice(b":");
+        content.extend_from_slice(&self.sent_at.to_le_bytes());
+        content
+    }
 }
 
 /// Status of a friend request in the DHT inbox.
@@ -418,12 +458,26 @@ fn default_friend_request_status() -> FriendRequestStatus {
 pub enum FriendRequestStatus {
     /// Awaiting target's decision.
     Pending,
-    /// Target accepted — includes their profile key and DM log key.
+    /// Target accepted. Contains the responder's outbound DhtLog info
+    /// so the sender can set up their inbound watch (to receive the
+    /// responder's messages). Also contains Signal X3DH handshake fields
+    /// so the sender can complete their side of the Signal session.
     Accepted {
         responder_profile_dht_key: String,
         responder_mailbox_dht_key: String,
-        dm_log_key: String,
-        dm_log_keypair_hex: String,
+        /// Responder's outbound DhtLog key (sender will read this as their inbound).
+        responder_outbound_log_key: String,
+        /// Keypair hex for the responder's outbound DhtLog.
+        responder_outbound_log_keypair_hex: String,
+        /// Responder's X25519 identity public key (32 bytes).
+        /// The sender needs this for respond_to_session (their_identity_key param).
+        responder_identity_key: Vec<u8>,
+        /// Responder's X3DH ephemeral public key (32 bytes).
+        ephemeral_public_key: Vec<u8>,
+        /// Which of the sender's signed prekeys the responder used.
+        signed_prekey_id: u32,
+        /// Which of the sender's one-time prekeys was consumed (if any).
+        one_time_prekey_id: Option<u32>,
         accepted_at: u64,
     },
     /// Target rejected.
