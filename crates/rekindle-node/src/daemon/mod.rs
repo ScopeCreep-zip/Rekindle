@@ -7,12 +7,8 @@
 //! The daemon state determines which IPC commands are available at any moment.
 
 
-pub mod community_rpc;
 pub mod dispatch;
-pub mod event_router;
-pub mod friend_inbox;
-pub mod governance_rpc;
-pub mod handler;
+pub mod run;
 
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::Instant;

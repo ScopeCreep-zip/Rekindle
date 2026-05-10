@@ -9,9 +9,9 @@ license = "MIT"
 workspace = true
 
 [dependencies]
-# Workspace crates — rekindle-transport is the SOLE Veilid boundary.
-# rekindle-node NEVER imports veilid-core directly.
+rekindle-chat = { path = "../rekindle-chat" }
 rekindle-transport = { path = "../rekindle-transport" }
+rekindle-storage = { path = "../rekindle-storage" }
 rekindle-types = { path = "../rekindle-types" }
 
 # Async runtime
@@ -38,12 +38,14 @@ subtle = "2"
 # Identifiers
 uuid = { version = "1", features = ["v4", "v7", "serde"] }
 
-# Safe syscalls (UCred extraction)
+# Safe syscalls (UCred extraction, prctl, setrlimit)
 rustix = { version = "1", features = ["process"] }
+libc = "0.2"
 
 # Logging and errors
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "ansi"] }
+atty = "0.2"
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 
@@ -52,6 +54,14 @@ parking_lot = { workspace = true }
 
 # systemd integration (sd_notify READY=1, watchdog keepalive)
 sd-notify = "0.4"
+
+# Filesystem config hot-reload
+notify = "7"
+
+# Sandbox (Linux only)
+[target.'cfg(target_os = "linux")'.dependencies]
+landlock = "0.4"
+libseccomp = "0.3"
 
 # OS keyring for signing key storage
 keyring = { version = "3", default-features = false, features = ["apple-native", "windows-native", "linux-native"] }

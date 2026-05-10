@@ -39,9 +39,17 @@
 //! All Veilid operations are accessed through `rekindle_transport::TransportNode`,
 //! `rekindle_transport::operations::*`, and `rekindle_transport::Session`.
 
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 
 pub mod ipc;
 pub mod daemon;
 pub mod state;
 pub mod validation;
+
+/// Run the rekindle daemon. Process entry point for `rekindle node start`.
+///
+/// Blocks until shutdown. The CLI calls this with no tracing initialization —
+/// the daemon initializes its own reload-capable tracing subscriber.
+pub async fn run_daemon() -> anyhow::Result<()> {
+    daemon::run::run_daemon().await
+}

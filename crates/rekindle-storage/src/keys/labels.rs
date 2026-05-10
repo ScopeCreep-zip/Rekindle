@@ -14,11 +14,11 @@ pub const IDENTITY_X25519_SEED: &str = "identity.x25519-seed";
 
 // ── Signal prekeys ──────────────────────────────────────────────────
 
-pub fn signed_prekey(id: u32) -> String {
+pub fn signed_prekey(id: u64) -> String {
     format!("signal.spk.{id}")
 }
 
-pub fn one_time_prekey(id: u32) -> String {
+pub fn one_time_prekey(id: u64) -> String {
     format!("signal.otpk.{id}")
 }
 

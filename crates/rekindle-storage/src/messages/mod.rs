@@ -15,7 +15,7 @@ pub struct DmRecord {
 }
 
 /// A single channel message record returned by queries.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct ChannelRecord {
     pub author_pseudonym: String,
     pub author_display_name: String,

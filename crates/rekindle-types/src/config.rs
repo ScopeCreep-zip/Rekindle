@@ -9,7 +9,6 @@ use serde::{Deserialize, Serialize};
 
 /// Top-level transport configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct TransportConfig {
     /// Base storage directory for Veilid persistent state.
     pub storage_dir: String,
@@ -65,7 +64,6 @@ pub struct TransportConfig {
 
 /// Per-data-class safety routing configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct SafetyConfig {
     /// Safety profile for text messages (DM + community gossip).
     #[serde(default = "SafetyProfile::default_text")]
@@ -86,7 +84,6 @@ pub struct SafetyConfig {
 
 /// Privacy/performance parameters for a single data class.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct SafetyProfile {
     /// Extra hops for sender privacy. 0 = no safety route (direct).
     /// 1 = one relay hop (default).

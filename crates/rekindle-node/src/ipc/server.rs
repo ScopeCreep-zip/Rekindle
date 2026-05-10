@@ -67,7 +67,7 @@ struct ServerState {
     /// Agent identity and clearance registry.
     registry: RwLock<ClearanceRegistry>,
     /// Inverted-index event router for O(1) per-event subscription delivery.
-    event_router: parking_lot::RwLock<crate::daemon::event_router::EventRouter>,
+    event_router: parking_lot::RwLock<crate::ipc::event_router::EventRouter>,
 }
 
 /// The IPC bus server.
@@ -148,7 +148,7 @@ impl BusServer {
                 next_conn_id: AtomicU64::new(1),
                 epoch: Instant::now(),
                 registry: RwLock::new(registry),
-                event_router: parking_lot::RwLock::new(crate::daemon::event_router::EventRouter::new()),
+                event_router: parking_lot::RwLock::new(crate::ipc::event_router::EventRouter::new()),
             }),
             keypair: Arc::new(keypair),
         })

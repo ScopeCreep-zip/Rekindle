@@ -256,6 +256,66 @@ pub enum IpcRequest {
     /// Revoke an invite by code.
     InviteRevoke { community: String, invite_code: String },
 
+    // ── Social ────────────────────────────────────────────────────
+    /// Add a reaction to a channel message.
+    ReactionAdd { community: String, channel: String, message_id: String, emoji: String },
+    /// Remove a reaction from a channel message.
+    ReactionRemove { community: String, channel: String, message_id: String, emoji: String },
+    /// Pin a message in a channel.
+    PinAdd { community: String, channel: String, message_id: String },
+    /// Unpin a message in a channel.
+    PinRemove { community: String, channel: String, message_id: String },
+    /// Create a community event.
+    EventCreate {
+        community: String, title: String, description: String,
+        start_time: u64, end_time: Option<u64>,
+        channel_id: Option<String>, max_attendees: Option<u32>,
+    },
+    /// Update a community event.
+    EventUpdate {
+        community: String, event_id: String, title: String, description: String,
+        start_time: u64, end_time: Option<u64>, max_attendees: Option<u32>,
+    },
+    /// Delete a community event.
+    EventDelete { community: String, event_id: String },
+    /// RSVP to a community event.
+    EventRsvp { community: String, event_id: String, status: String },
+    /// Broadcast an event reminder.
+    EventRemind { community: String, event_id: String, title: String, minutes_until: u32 },
+    /// Create a thread on a channel message.
+    ThreadCreate { community: String, channel: String, parent_message_id: String, title: String, auto_archive_seconds: u32 },
+    /// Post a message to a thread.
+    ThreadMessage { community: String, thread_id: String, ciphertext: Vec<u8>, mek_generation: u64, reply_to_id: Option<String> },
+    /// Archive or unarchive a thread.
+    ThreadArchive { community: String, thread_id: String, archived: bool },
+    /// Add a game server to the community.
+    GameServerAdd { community: String, game_id: String, label: String, address: String },
+    /// Remove a game server from the community.
+    GameServerRemove { community: String, server_id: String },
+
+    // ── System ───────────────────────────────────────────────────
+    /// Broadcast a system announcement to all community members.
+    SystemAnnounce { community: String, body: String },
+    /// Toggle raid alert mode.
+    RaidAlert { community: String, active: bool },
+    /// Toggle community lockdown (non-operator send block).
+    LockdownToggle { community: String, locked: bool },
+    /// Notify a kicked member (point-to-point).
+    KickNotify { community: String, target_pseudonym: String },
+    /// Request bootstrap data from operator.
+    BootstrapRequest { community: String },
+    /// Send bootstrap response to a joiner (operator only).
+    BootstrapRespond {
+        community: String, target_pseudonym: String,
+        governance_entries: Vec<Vec<u8>>, member_list: Vec<Vec<u8>>,
+        channel_meks: Vec<Vec<u8>>, recent_messages: Vec<Vec<u8>>,
+        wrapped_owner_keypair: Vec<u8>,
+    },
+    /// Request channel history sync.
+    SyncRequest { community: String, channel_id: String, since_timestamp: u64 },
+    /// Respond to a sync request with message history.
+    SyncRespond { community: String, target_pseudonym: String, channel_id: String, messages: Vec<Vec<u8>> },
+
     // ── Voice ─────────────────────────────────────────────────────
     /// Join a voice channel.
     VoiceJoin {
@@ -385,6 +445,52 @@ impl std::fmt::Debug for IpcRequest {
             Self::VoiceJoin { community, channel, muted, deafened } => f.debug_struct("VoiceJoin")
                 .field("community", community).field("channel", channel).field("muted", muted).field("deafened", deafened).finish(),
             Self::VoiceLeave => write!(f, "VoiceLeave"),
+            // Social
+            Self::ReactionAdd { community, channel, message_id, emoji } => f.debug_struct("ReactionAdd")
+                .field("community", community).field("channel", channel).field("message_id", message_id).field("emoji", emoji).finish(),
+            Self::ReactionRemove { community, channel, message_id, emoji } => f.debug_struct("ReactionRemove")
+                .field("community", community).field("channel", channel).field("message_id", message_id).field("emoji", emoji).finish(),
+            Self::PinAdd { community, channel, message_id } => f.debug_struct("PinAdd")
+                .field("community", community).field("channel", channel).field("message_id", message_id).finish(),
+            Self::PinRemove { community, channel, message_id } => f.debug_struct("PinRemove")
+                .field("community", community).field("channel", channel).field("message_id", message_id).finish(),
+            Self::EventCreate { community, title, .. } => f.debug_struct("EventCreate")
+                .field("community", community).field("title", title).finish(),
+            Self::EventUpdate { community, event_id, title, .. } => f.debug_struct("EventUpdate")
+                .field("community", community).field("event_id", event_id).field("title", title).finish(),
+            Self::EventDelete { community, event_id } => f.debug_struct("EventDelete")
+                .field("community", community).field("event_id", event_id).finish(),
+            Self::EventRsvp { community, event_id, status } => f.debug_struct("EventRsvp")
+                .field("community", community).field("event_id", event_id).field("status", status).finish(),
+            Self::EventRemind { community, event_id, title, minutes_until } => f.debug_struct("EventRemind")
+                .field("community", community).field("event_id", event_id).field("title", title).field("minutes_until", minutes_until).finish(),
+            Self::ThreadCreate { community, channel, title, .. } => f.debug_struct("ThreadCreate")
+                .field("community", community).field("channel", channel).field("title", title).finish(),
+            Self::ThreadMessage { community, thread_id, mek_generation, .. } => f.debug_struct("ThreadMessage")
+                .field("community", community).field("thread_id", thread_id).field("mek_generation", mek_generation).finish(),
+            Self::ThreadArchive { community, thread_id, archived } => f.debug_struct("ThreadArchive")
+                .field("community", community).field("thread_id", thread_id).field("archived", archived).finish(),
+            Self::GameServerAdd { community, game_id, label, address } => f.debug_struct("GameServerAdd")
+                .field("community", community).field("game_id", game_id).field("label", label).field("address", address).finish(),
+            Self::GameServerRemove { community, server_id } => f.debug_struct("GameServerRemove")
+                .field("community", community).field("server_id", server_id).finish(),
+            // System
+            Self::SystemAnnounce { community, body } => f.debug_struct("SystemAnnounce")
+                .field("community", community).field("body_len", &body.len()).finish(),
+            Self::RaidAlert { community, active } => f.debug_struct("RaidAlert")
+                .field("community", community).field("active", active).finish(),
+            Self::LockdownToggle { community, locked } => f.debug_struct("LockdownToggle")
+                .field("community", community).field("locked", locked).finish(),
+            Self::KickNotify { community, target_pseudonym } => f.debug_struct("KickNotify")
+                .field("community", community).field("target_pseudonym", target_pseudonym).finish(),
+            Self::BootstrapRequest { community } => f.debug_struct("BootstrapRequest")
+                .field("community", community).finish(),
+            Self::BootstrapRespond { community, target_pseudonym, .. } => f.debug_struct("BootstrapRespond")
+                .field("community", community).field("target_pseudonym", target_pseudonym).finish(),
+            Self::SyncRequest { community, channel_id, since_timestamp } => f.debug_struct("SyncRequest")
+                .field("community", community).field("channel_id", channel_id).field("since_timestamp", since_timestamp).finish(),
+            Self::SyncRespond { community, target_pseudonym, channel_id, .. } => f.debug_struct("SyncRespond")
+                .field("community", community).field("target_pseudonym", target_pseudonym).field("channel_id", channel_id).finish(),
             Self::NetworkStatus => write!(f, "NetworkStatus"),
             Self::NetworkPeers => write!(f, "NetworkPeers"),
             Self::AgentRegister { name, agent_type, capabilities } => f.debug_struct("AgentRegister")

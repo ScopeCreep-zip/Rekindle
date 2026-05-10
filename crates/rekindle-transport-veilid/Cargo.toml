@@ -1,0 +1,50 @@
+[package]
+name = "rekindle-transport-veilid"
+version = "0.1.0"
+edition = "2021"
+description = "Veilid transport implementation for the Rekindle messaging platform"
+license = "MIT"
+
+[lints]
+workspace = true
+
+[dependencies]
+# Workspace — depends on rekindle-types for Transport trait, NOT rekindle-transport
+rekindle-types = { path = "../rekindle-types" }
+rekindle-utils = { path = "../rekindle-utils" }
+
+# Veilid — the ONLY crate in the workspace that imports this
+veilid-core = { version = "0.5.2", default-features = true }
+
+# Async
+tokio = { workspace = true }
+futures = { workspace = true }
+async-trait = "0.1"
+
+# Serialization — postcard for wire, serde for trait bounds
+serde = { workspace = true }
+serde_json = { workspace = true }
+postcard = { version = "1", features = ["use-std"] }
+
+# Hashing (BLAKE3 for gossip dedup, content addressing)
+blake3 = "1"
+# Randomness
+rand = { workspace = true }
+
+# Data structures
+parking_lot = { workspace = true }
+indexmap = "2"
+bitflags = { version = "2", features = ["serde"] }
+
+# Identity generation
+uuid = { version = "1", features = ["v4", "fast-rng"] }
+
+# Logging
+tracing = { workspace = true }
+thiserror = { workspace = true }
+hex = "0.4"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "macros"] }
+tempfile = "3"
+proptest = "1"

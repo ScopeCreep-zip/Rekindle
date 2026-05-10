@@ -42,6 +42,7 @@ pub mod noise;
 pub mod registry;
 pub mod server;
 pub mod client;
+pub mod event_router;
 
 // Re-exports for convenience.
 pub use error::{IpcError, Result};

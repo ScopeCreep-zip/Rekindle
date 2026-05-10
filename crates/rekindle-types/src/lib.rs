@@ -29,3 +29,12 @@ pub mod presence;
 pub mod search;
 pub mod subscription_events;
 pub mod thread;
+
+// Wire payload types (moved from rekindle-transport)
+pub mod dht_types;
+pub mod dm_payload;
+pub mod gossip_payload;
+pub mod rpc_payload;
+pub mod voice_payload;
+pub mod session_types;
+pub mod transport;

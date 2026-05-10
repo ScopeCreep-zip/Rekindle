@@ -1,0 +1,34 @@
+[package]
+name = "rekindle-chat"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.87"
+description = "Chat application logic for the Rekindle encrypted messaging platform"
+license = "MIT"
+
+[lints]
+workspace = true
+
+[dependencies]
+rekindle-transport = { path = "../rekindle-transport" }
+rekindle-ratchet = { path = "../rekindle-ratchet" }
+rekindle-storage = { path = "../rekindle-storage" }
+rekindle-types = { path = "../rekindle-types" }
+
+tokio = { workspace = true }
+dashmap = "6.1"
+lru = "0.12"
+tracing = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+hex = { workspace = true }
+blake3 = "1"
+zeroize = { version = "1", features = ["derive", "alloc"] }
+parking_lot = { workspace = true }
+async-trait = "0.1"
+uuid = { version = "1", features = ["v4"] }
+cbor4ii = { version = "1.2.2", features = ["serde1", "use_std"] }
+postcard = { version = "1", features = ["use-std"] }
+subtle = "2.6"
+aws-lc-rs = { version = "1.16", features = ["aws-lc-sys"] }
