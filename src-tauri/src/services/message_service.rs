@@ -528,7 +528,11 @@ async fn prepare_incoming(
         }
     };
 
-    if !matches!(
+    // Phase 2 Track A — primary receive-path authorization gate consults
+    // SQLite via FriendStore (source of truth), not the in-memory
+    // state.friends map. Fixes the dispatch-before-hydration race that
+    // caused "not friends even though we are" AEAD failures.
+    let is_friend_payload = matches!(
         payload,
         MessagePayload::FriendRequest { .. }
             | MessagePayload::FriendRequestReceived
@@ -539,7 +543,9 @@ async fn prepare_incoming(
             | MessagePayload::DmInvite { .. }
             | MessagePayload::GroupDmInvite { .. }
             | MessagePayload::WakeNotify { .. }
-    ) && !state_helpers::is_friend(state, &sender_hex)
+    );
+    if !is_friend_payload
+        && !state_helpers::is_active_friend_authoritative(state, &sender_hex).await
     {
         tracing::debug!(from = %sender_hex, "dropping message from non-friend");
         return None;

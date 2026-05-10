@@ -7,6 +7,7 @@ pub mod db;
 pub mod db_helpers;
 mod deep_links;
 pub mod envelope_store_sqlite;
+pub mod friend_store_sqlite;
 pub mod friend_repo;
 pub mod invite_helpers;
 pub mod keystore;
@@ -417,6 +418,16 @@ pub fn run() {
             if schema_reset {
                 wipe_dependent_storage(&config_dir, app);
             }
+
+            // Phase 2 Track A — wire SqliteFriendStore into AppState BEFORE
+            // the Veilid dispatch loop spawns. This eliminates the
+            // dispatch-before-hydration race that caused
+            // "not friends even though we are" AEAD failures.
+            let pool_for_friend_store = Arc::new(pool.clone());
+            let friend_store: Arc<dyn rekindle_transport::FriendStore> = Arc::new(
+                friend_store_sqlite::SqliteFriendStore::new(pool_for_friend_store),
+            );
+            *state_for_setup.friend_store.write() = Some(friend_store);
 
             app.manage(pool);
 

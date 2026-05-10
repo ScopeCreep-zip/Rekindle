@@ -47,6 +47,12 @@ pub struct AppState {
     /// `EnvelopeQueue` for DM body sends + future expect-reply flows.
     /// `Some` after app startup wires `SqliteEnvelopeStore`.
     pub envelope_store: Arc<RwLock<Option<Arc<dyn rekindle_transport::EnvelopeStore>>>>,
+    /// Phase 2 Track A — Receive-path friend authority. SQLite-backed
+    /// (`SqliteFriendStore`) wired at app setup so the Veilid dispatch
+    /// loop can authorize inbound envelopes against the source-of-truth
+    /// friends table — no in-memory cache, no hydration race. `Some` for
+    /// the entire app lifetime once setup completes.
+    pub friend_store: Arc<RwLock<Option<Arc<dyn rekindle_transport::FriendStore>>>>,
     /// Signal session manager (set after identity unlock).
     pub signal_manager: Arc<Mutex<Option<SignalManagerHandle>>>,
     /// Game detector state.
@@ -251,6 +257,7 @@ impl Default for AppState {
             transport: Arc::new(RwLock::new(None)),
             transport_session: Arc::new(parking_lot::RwLock::new(None)),
             envelope_store: Arc::new(RwLock::new(None)),
+            friend_store: Arc::new(RwLock::new(None)),
             signal_manager: Arc::new(Mutex::new(None)),
             game_detector: Arc::new(Mutex::new(None)),
             voice_engine: Arc::new(Mutex::new(None)),

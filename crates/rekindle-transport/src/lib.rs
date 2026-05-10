@@ -34,6 +34,7 @@ pub mod operations;
 pub mod envelope_store;
 pub mod envelope_queue;
 pub mod seq_tracker;
+pub mod friend_store;
 
 #[cfg(test)]
 mod tests;
@@ -88,6 +89,9 @@ pub use envelope_queue::{
 
 // W16.3 — receiver-side dedup
 pub use seq_tracker::SeqTracker;
+
+// Track A.1 — Receive-path friend authority (Phase 2 DHT-Inbox Pivot)
+pub use friend_store::{FriendRecord, FriendStatus, FriendStore, MemoryFriendStore};
 
 // Query engine
 pub use query::{

@@ -46,6 +46,10 @@ CREATE TABLE IF NOT EXISTS friends (
     remote_conversation_key TEXT,
     mailbox_dht_key TEXT,
     friendship_state TEXT NOT NULL DEFAULT 'accepted',
+    -- Phase 2 Track A.2 — Friend's most-recently-seen DeviceId
+    -- (hex Ed25519 device pubkey). NULL until they advertise via the
+    -- DeviceList owner subkey on their per-pair inbox.
+    current_device_id TEXT,
     PRIMARY KEY (owner_key, public_key)
 );
 

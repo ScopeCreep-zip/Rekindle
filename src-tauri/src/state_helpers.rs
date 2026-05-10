@@ -348,6 +348,53 @@ pub fn is_friend(state: &Arc<AppState>, public_key: &str) -> bool {
     state.friends.read().contains_key(public_key)
 }
 
+/// Phase 2 Track A — SQLite-authoritative receive-path friend gate.
+///
+/// Replaces [`is_friend`] in the Veilid receive-dispatch path so the
+/// authorization decision reads the source-of-truth `friends` table rather
+/// than the in-memory `state.friends` map (which suffered a hydration race:
+/// the dispatch loop spawned at app boot, before login-time
+/// `load_friends_from_db`).
+///
+/// Returns `true` only for `FriendshipState::Accepted` (mapped to
+/// [`rekindle_transport::FriendStatus::Active`]). Fails closed on:
+/// - missing `friend_store` wire-up (defensive — should be wired at setup)
+/// - SQLite errors
+/// - unknown sender
+///
+/// Hot path: ~75-150 µs per call. See `.claude/plans/phase-2-dht-inbox-pivot.md`
+/// Track A for the latency analysis and the `feedback_backend_owns_policy.md`
+/// rationale (no in-memory cache, SQLite is authoritative).
+pub async fn is_active_friend_authoritative(
+    state: &Arc<AppState>,
+    public_key: &str,
+) -> bool {
+    let store = {
+        let guard = state.friend_store.read();
+        guard.as_ref().cloned()
+    };
+    let Some(store) = store else {
+        tracing::warn!(
+            target: "friend_store",
+            "is_active_friend_authoritative called before friend_store wire-up; failing closed"
+        );
+        return false;
+    };
+    let owner = owner_key_or_default(state);
+    match store.is_active_friend(&owner, public_key).await {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::warn!(
+                target: "friend_store",
+                error = %e,
+                pubkey = %public_key,
+                "is_active_friend_authoritative SQLite error; failing closed"
+            );
+            false
+        }
+    }
+}
+
 /// Generic friend field extractor.
 pub fn friend_field<T>(
     state: &Arc<AppState>,
