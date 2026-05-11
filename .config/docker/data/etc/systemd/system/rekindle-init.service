@@ -3,7 +3,13 @@ Description=Rekindle identity initialization (first boot only)
 After=network-online.target gnome-keyring.service rekindle-node.service
 Wants=network-online.target
 Requires=gnome-keyring.service rekindle-node.service
+# Only run if no session.json exists (identity not yet created).
+# systemd re-evaluates ConditionPathExists on each restart, so once
+# init succeeds and session.json is written, retries stop naturally.
 ConditionPathExists=!/home/rekindle/.local/state/rekindle/session.json
+# Cap retries: 5 attempts in 5 minutes, then give up.
+StartLimitBurst=5
+StartLimitIntervalSec=300
 
 [Service]
 Type=oneshot
@@ -16,6 +22,10 @@ Environment=XDG_RUNTIME_DIR=/run/user/1000
 ExecStart=/usr/local/bin/rekindle-init.sh
 RemainAfterExit=yes
 TimeoutStartSec=300
+# Retry on failure — daemon subscriber may not be connected yet,
+# or Veilid transport may need more time to bootstrap.
+Restart=on-failure
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target

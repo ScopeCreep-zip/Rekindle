@@ -20,6 +20,7 @@
         ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
           alsa-lib.dev
           libopus.dev
+          libseccomp.dev
           dbus.dev
         ];
 
@@ -28,6 +29,7 @@
           (pkgs.lib.makeLibraryPath (with pkgs; [
             libsodium
             libopus
+            libseccomp
             alsa-lib
             dbus
           ]));

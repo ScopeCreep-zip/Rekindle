@@ -44,6 +44,7 @@ parking_lot = "0.12"
 capnp = "0.20"
 capnpc = "0.20"
 hex = "0.4"
+base64 = "0.22"
 rand = "0.8"
 
 # Optimize crypto deps even in dev/test builds (debug-mode crypto is 100x slower).

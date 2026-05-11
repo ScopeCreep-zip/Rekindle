@@ -2,7 +2,7 @@
 Description=GNOME Keyring daemon (Secret Service provider)
 After=dbus-user-session.service
 Requires=dbus-user-session.service
-Before=rekindle-init.service
+Before=rekindle-node.service
 
 [Service]
 Type=forking
@@ -12,6 +12,8 @@ Environment=HOME=/home/rekindle
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
 ExecStart=/usr/bin/gnome-keyring-daemon --start --components=secrets
 RemainAfterExit=yes
+Restart=on-failure
+RestartSec=2
 
 [Install]
 WantedBy=multi-user.target

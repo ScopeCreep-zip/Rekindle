@@ -62,6 +62,13 @@ pub enum IpcRequest {
     IdentityDestroy { confirmation: String },
     /// Factory reset: delete identity, session, keyring, Veilid storage, config.
     IdentityWipe { confirmation: String },
+    /// Export identity with passphrase-based encryption (Argon2id + AES-256-GCM).
+    /// Daemon encrypts, returns base64-encoded ciphertext.
+    IdentityExportEncrypted { passphrase: String },
+    /// Import identity from encrypted bundle. Daemon decrypts with passphrase.
+    IdentityImportEncrypted { passphrase: String, data: String },
+    /// Import identity from plaintext JSON bundle.
+    IdentityImport { data: String },
 
     // ── Friends ───────────────────────────────────────────────────
     /// Send a friend request to a target (profile DHT key).
@@ -126,6 +133,8 @@ pub enum IpcRequest {
         body: String,
         reply_to: Option<u64>,
     },
+    /// Send a typing indicator to a community channel.
+    ChannelTyping { community: String, channel: String },
     /// Get channel message history.
     ChannelHistory {
         community: String,
@@ -153,6 +162,8 @@ pub enum IpcRequest {
     DmTyping { peer_key: String, typing: bool },
     /// List DM inbox.
     DmInbox { limit: u32 },
+    /// Load message history for a single DM conversation.
+    DmThread { peer_key: String, limit: u32 },
 
     // ── Subscriptions ─────────────────────────────────────────────
     /// Subscribe to events matching filters.
@@ -326,6 +337,10 @@ pub enum IpcRequest {
     },
     /// Leave the current voice session.
     VoiceLeave,
+    /// Toggle self-mute in the active voice session.
+    VoiceMute { muted: bool },
+    /// Toggle self-deafen in the active voice session.
+    VoiceDeafen { deafened: bool },
 
     // ── Network / Node ────────────────────────────────────────────
     /// Get detailed network status (peers, routes, circuits).
@@ -373,6 +388,12 @@ impl std::fmt::Debug for IpcRequest {
             Self::IdentityRotate => write!(f, "IdentityRotate"),
             Self::IdentityDestroy { confirmation } => f.debug_struct("IdentityDestroy").field("confirmation", confirmation).finish(),
             Self::IdentityWipe { confirmation } => f.debug_struct("IdentityWipe").field("confirmation", confirmation).finish(),
+            Self::IdentityExportEncrypted { .. } => f.debug_struct("IdentityExportEncrypted")
+                .field("passphrase", &"***REDACTED***").finish(),
+            Self::IdentityImportEncrypted { data, .. } => f.debug_struct("IdentityImportEncrypted")
+                .field("passphrase", &"***REDACTED***").field("data_len", &data.len()).finish(),
+            Self::IdentityImport { data } => f.debug_struct("IdentityImport")
+                .field("data_len", &data.len()).finish(),
             Self::FriendAdd { target_profile_key, message } => f.debug_struct("FriendAdd").field("target_profile_key", target_profile_key).field("message", message).finish(),
             Self::FriendAccept { public_key } => f.debug_struct("FriendAccept").field("public_key", public_key).finish(),
             Self::FriendReject { public_key } => f.debug_struct("FriendReject").field("public_key", public_key).finish(),
@@ -400,12 +421,14 @@ impl std::fmt::Debug for IpcRequest {
                 .field("community", community).field("channel_id", channel_id)
                 .field("name", name).field("topic", topic).field("slowmode_seconds", slowmode_seconds).finish(),
             Self::ChannelHistory { community, channel, limit } => f.debug_struct("ChannelHistory").field("community", community).field("channel", channel).field("limit", limit).finish(),
+            Self::ChannelTyping { community, channel } => f.debug_struct("ChannelTyping").field("community", community).field("channel", channel).finish(),
             Self::MessageEdit { community, channel, message_id, new_body } => f.debug_struct("MessageEdit")
                 .field("community", community).field("channel", channel).field("message_id", message_id).field("body_len", &new_body.len()).finish(),
             Self::MessageDelete { community, channel, message_id } => f.debug_struct("MessageDelete")
                 .field("community", community).field("channel", channel).field("message_id", message_id).finish(),
             Self::DmTyping { peer_key, typing } => f.debug_struct("DmTyping").field("peer_key", peer_key).field("typing", typing).finish(),
             Self::DmInbox { limit } => f.debug_struct("DmInbox").field("limit", limit).finish(),
+            Self::DmThread { peer_key, limit } => f.debug_struct("DmThread").field("peer_key", peer_key).field("limit", limit).finish(),
             Self::Subscribe { filters } => f.debug_struct("Subscribe").field("filter_count", &filters.len()).finish(),
             Self::Unsubscribe { filters } => f.debug_struct("Unsubscribe").field("filter_count", &filters.len()).finish(),
             Self::MarkRead { context } => f.debug_struct("MarkRead").field("context", context).finish(),
@@ -445,6 +468,8 @@ impl std::fmt::Debug for IpcRequest {
             Self::VoiceJoin { community, channel, muted, deafened } => f.debug_struct("VoiceJoin")
                 .field("community", community).field("channel", channel).field("muted", muted).field("deafened", deafened).finish(),
             Self::VoiceLeave => write!(f, "VoiceLeave"),
+            Self::VoiceMute { muted } => f.debug_struct("VoiceMute").field("muted", muted).finish(),
+            Self::VoiceDeafen { deafened } => f.debug_struct("VoiceDeafen").field("deafened", deafened).finish(),
             // Social
             Self::ReactionAdd { community, channel, message_id, emoji } => f.debug_struct("ReactionAdd")
                 .field("community", community).field("channel", channel).field("message_id", message_id).field("emoji", emoji).finish(),

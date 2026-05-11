@@ -55,6 +55,68 @@ pub fn decrypt(key: &Zeroizing<[u8; 32]>, wire: &[u8]) -> StorageResult<Vec<u8>>
     Ok(plaintext.to_vec())
 }
 
+// ── Passphrase-based encrypt/decrypt ─────────────────────────────────
+//
+// Composes Argon2id key derivation with AES-256-GCM AEAD.
+// Used for identity export/import — no vault or master key required.
+//
+// Wire format: [16-byte salt || 12-byte nonce || ciphertext || 16-byte GCM tag]
+
+const PASSPHRASE_SALT_LEN: usize = 16;
+const ARGON2_M_COST: u32 = 65536; // 64 MB
+const ARGON2_T_COST: u32 = 3;
+const ARGON2_P_COST: u32 = 4;
+
+/// Encrypt plaintext with a passphrase. Generates a random salt,
+/// derives a 256-bit key via Argon2id, encrypts with AES-256-GCM.
+/// Returns `[salt || nonce || ciphertext || tag]`.
+pub fn encrypt_with_passphrase(passphrase: &[u8], plaintext: &[u8]) -> StorageResult<Vec<u8>> {
+    use argon2::{Algorithm, Argon2, Params, Version};
+
+    let mut salt = [0u8; PASSPHRASE_SALT_LEN];
+    getrandom(&mut salt)?;
+
+    let params = Params::new(ARGON2_M_COST, ARGON2_T_COST, ARGON2_P_COST, Some(32))
+        .map_err(|e| StorageError::PassphraseDerivation(format!("params: {e}")))?;
+    let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
+    let mut key = Zeroizing::new([0u8; 32]);
+    argon2
+        .hash_password_into(passphrase, &salt, key.as_mut())
+        .map_err(|e| StorageError::PassphraseDerivation(format!("argon2: {e}")))?;
+
+    let encrypted = encrypt(&key, plaintext)?;
+
+    let mut wire = Vec::with_capacity(PASSPHRASE_SALT_LEN + encrypted.len());
+    wire.extend_from_slice(&salt);
+    wire.extend_from_slice(&encrypted);
+    Ok(wire)
+}
+
+/// Decrypt ciphertext that was encrypted with `encrypt_with_passphrase`.
+/// Expects wire format `[16-byte salt || 12-byte nonce || ciphertext || 16-byte tag]`.
+pub fn decrypt_with_passphrase(passphrase: &[u8], wire: &[u8]) -> StorageResult<Vec<u8>> {
+    use argon2::{Algorithm, Argon2, Params, Version};
+
+    const MIN_PASSPHRASE_WIRE: usize = PASSPHRASE_SALT_LEN + MIN_WIRE_LEN; // 16 + 28 = 44
+    if wire.len() < MIN_PASSPHRASE_WIRE {
+        return Err(StorageError::EntryTooShort { len: wire.len() });
+    }
+
+    let salt: [u8; PASSPHRASE_SALT_LEN] = wire[..PASSPHRASE_SALT_LEN]
+        .try_into()
+        .expect("slice len verified above");
+
+    let params = Params::new(ARGON2_M_COST, ARGON2_T_COST, ARGON2_P_COST, Some(32))
+        .map_err(|e| StorageError::PassphraseDerivation(format!("params: {e}")))?;
+    let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
+    let mut key = Zeroizing::new([0u8; 32]);
+    argon2
+        .hash_password_into(passphrase, &salt, key.as_mut())
+        .map_err(|e| StorageError::PassphraseDerivation(format!("argon2: {e}")))?;
+
+    decrypt(&key, &wire[PASSPHRASE_SALT_LEN..])
+}
+
 fn getrandom(buf: &mut [u8]) -> StorageResult<()> {
     aws_lc_rs::rand::SystemRandom::new()
         .fill(buf)

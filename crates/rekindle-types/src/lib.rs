@@ -24,6 +24,7 @@ pub mod mek;
 pub mod member;
 pub mod message;
 pub mod notification;
+pub mod patch;
 pub mod permissions;
 pub mod presence;
 pub mod search;

@@ -12,7 +12,7 @@ if [[ ! -f "${DISPLAY_NAME_FILE}" ]]; then
     exit 1
 fi
 
-DISPLAY_NAME=$(cat "${DISPLAY_NAME_FILE}" | tr -d '\n')
+DISPLAY_NAME=$(tr -d '\n' < "${DISPLAY_NAME_FILE}")
 
 if [[ -z "${DISPLAY_NAME}" ]]; then
     echo "ERROR: ${DISPLAY_NAME_FILE} is empty" >&2
@@ -21,15 +21,27 @@ fi
 
 echo "Initializing identity as '${DISPLAY_NAME}'..."
 
-# Wait for the daemon to be reachable via IPC.
-# The daemon starts the bus server, then connects its own subscriber ~100ms later.
-# Route allocation retry and network readiness are handled by the transport layer.
-for attempt in $(seq 1 15); do
+# Wait for the daemon to be fully reachable via IPC.
+# The daemon sends sd_notify(READY=1) in Locked state, but the bus
+# subscriber connects ~100ms later. Without the subscriber, requests
+# are dropped with "daemon not connected to bus". We verify by checking
+# that `rekindle status` returns a valid JSON response with a state field.
+MAX_WAIT=30
+for attempt in $(seq 1 "${MAX_WAIT}"); do
     if /usr/local/bin/rekindle status --format json 2>/dev/null | grep -q '"state"'; then
+        echo "  Daemon reachable (attempt ${attempt}/${MAX_WAIT})"
         break
     fi
-    echo "  Waiting for daemon (attempt ${attempt}/15)..."
+    if [[ "${attempt}" -eq "${MAX_WAIT}" ]]; then
+        echo "ERROR: daemon not reachable after ${MAX_WAIT}s" >&2
+        exit 1
+    fi
+    echo "  Waiting for daemon (attempt ${attempt}/${MAX_WAIT})..."
     sleep 1
 done
+
+# Allow an extra second for the subscriber to stabilize after the first
+# successful status response — avoids the "not connected to bus" race.
+sleep 2
 
 exec /usr/local/bin/rekindle init --display-name "${DISPLAY_NAME}" --non-interactive

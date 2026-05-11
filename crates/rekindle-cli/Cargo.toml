@@ -17,7 +17,6 @@ tui = [
     "dep:color-eyre",
     "dep:tokio-util",
     "dep:futures-util",
-    "dep:opaline",
     "dep:arboard",
 ]
 daemon = [
@@ -55,14 +54,23 @@ blake3 = "1"
 nucleo = "0.5"
 unicode-width = "0.2"
 hex = "0.4"
+base64 = { workspace = true }
 keyring = { version = "3", default-features = false, features = ["apple-native", "windows-native", "linux-native"] }
 clap_complete = "4"
 parking_lot = { workspace = true }
+
+# Git operations (patch generate/apply — no git CLI dependency)
+# Pinned to 0.20 to match fff-search's libgit2-sys version (links = "git2" conflict)
+git2 = "0.20"
 
 # Workspace crates
 rekindle-node = { path = "../rekindle-node" }
 rekindle-types = { path = "../rekindle-types" }
 rekindle-utils = { path = "../rekindle-utils" }
+
+# Project-wide search (fff — Fast File Finder)
+fff-search = { git = "https://github.com/dmtrKovalenko/fff.git", rev = "8cb1f476" }
+fff-query-parser = { git = "https://github.com/dmtrKovalenko/fff.git", rev = "8cb1f476" }
 
 # TUI (feature-gated)
 ratatui = { version = "0.30", optional = true, default-features = false, features = ["crossterm"] }
@@ -71,7 +79,6 @@ ratatui-textarea = { version = "0.9", optional = true, default-features = false,
 color-eyre = { version = "0.6", optional = true }
 tokio-util = { version = "0.7", optional = true }
 futures-util = { version = "0.3", optional = true, default-features = false, features = ["std"] }
-opaline = { version = "0.2", optional = true, features = ["ratatui", "builtin-themes", "gradients"] }
 arboard = { version = "3", optional = true, default-features = false, features = ["wayland-data-control"] }
 
 # Daemon (feature-gated — enables `rekindle node start`)

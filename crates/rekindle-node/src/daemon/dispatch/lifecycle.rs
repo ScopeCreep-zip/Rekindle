@@ -95,57 +95,111 @@ pub(crate) async fn handle_unlock(
     ctx.lifecycle.transition(DaemonState::Resuming);
 
     // Step 3: Derive master key from passphrase
-    let master_key = match PassphraseUnlock::new(&ctx.paths.state_dir, passphrase.as_bytes()).unlock() {
-        Ok(mk) => mk,
-        Err(e) => {
+    //
+    // Fresh node detection: if vault.salt doesn't exist, this is a first-time
+    // setup. Generate a random master key, enroll the passphrase (creates
+    // vault.salt + vault.wrapped), then proceed with the normal unlock flow.
+    // This allows `rekindle init` to call Unlock → IdentityCreate in sequence
+    // without requiring a separate "enroll" IPC command.
+    let passphrase_unlock = PassphraseUnlock::new(&ctx.paths.state_dir, passphrase.as_bytes());
+    // A node is "fresh" if vault.db doesn't exist. vault.db is the last artifact
+    // created during a successful first-time unlock (after enrollment + vault create).
+    // Checking vault.salt alone is insufficient: a crashed first enrollment may
+    // leave vault.salt + vault.wrapped without vault.db. Re-enrolling is safe —
+    // enroll() overwrites existing salt/wrapped atomically.
+    let is_fresh = !ctx.paths.vault_db.exists();
+
+    let master_key = if is_fresh {
+        // First-time enrollment: generate master key, wrap with passphrase
+        let mk = match rekindle_storage::unlock::MasterKey::generate() {
+            Ok(mk) => mk,
+            Err(e) => {
+                ctx.lifecycle.transition(DaemonState::Locked);
+                return IpcResponse::error(500, format!("master key generation failed: {e}"));
+            }
+        };
+        if let Err(e) = passphrase_unlock.enroll(&mk) {
             ctx.lifecycle.transition(DaemonState::Locked);
-            return IpcResponse::error_with_remediation(
-                401,
-                format!("unlock failed: {e}"),
-                "check passphrase, or if identity was never initialized: rekindle init",
-            );
+            return IpcResponse::error(500, format!("passphrase enrollment failed: {e}"));
+        }
+        tracing::info!("fresh node — vault credentials enrolled");
+        mk
+    } else {
+        match passphrase_unlock.unlock() {
+            Ok(mk) => mk,
+            Err(e) => {
+                ctx.lifecycle.transition(DaemonState::Locked);
+                return IpcResponse::error_with_remediation(
+                    401,
+                    format!("unlock failed: {e}"),
+                    "check passphrase, or if identity was never initialized: rekindle init",
+                );
+            }
         }
     };
 
-    // Step 4: Open vault
-    let vault = match VaultStore::open(&ctx.paths.vault_db, master_key.as_bytes()) {
-        Ok(v) => Arc::new(v),
-        Err(e) => {
-            ctx.lifecycle.transition(DaemonState::Locked);
-            return IpcResponse::error_with_remediation(
-                500,
-                format!("vault open failed: {e}"),
-                "vault may be corrupt — try: rekindle vault repair",
-            );
+    // Step 4: Open vault (create on fresh node)
+    let vault = if is_fresh {
+        match VaultStore::create(&ctx.paths.vault_db, master_key.as_bytes()) {
+            Ok(v) => Arc::new(v),
+            Err(e) => {
+                ctx.lifecycle.transition(DaemonState::Locked);
+                return IpcResponse::error(500, format!("vault creation failed: {e}"));
+            }
+        }
+    } else {
+        match VaultStore::open(&ctx.paths.vault_db, master_key.as_bytes()) {
+            Ok(v) => Arc::new(v),
+            Err(e) => {
+                ctx.lifecycle.transition(DaemonState::Locked);
+                return IpcResponse::error_with_remediation(
+                    500,
+                    format!("vault open failed: {e}"),
+                    "vault may be corrupt — try: rekindle vault repair",
+                );
+            }
         }
     };
 
     // Step 5: Derive session MAC key (for session.json integrity verification)
     let session_mac_key = rekindle_storage::session_meta::derive_mac_key(master_key.as_bytes());
 
-    // Step 6: Load session.json
-    let session_meta: SessionMeta = match rekindle_storage::session_meta::load(
-        &ctx.paths.session_file,
-        &session_mac_key,
-    ) {
-        Ok(json_bytes) => match serde_json::from_slice(&json_bytes) {
-            Ok(meta) => meta,
+    // Step 6: Load session.json (or create default on fresh node)
+    let session_meta: SessionMeta = if is_fresh {
+        // Fresh node — no session.json yet. Create empty SessionMeta.
+        // IdentityCreate will populate it after unlock completes.
+        let meta = SessionMeta::default();
+        let json = serde_json::to_vec_pretty(&meta).expect("default SessionMeta serializes");
+        if let Err(e) = rekindle_storage::session_meta::save(
+            &ctx.paths.session_file, &session_mac_key, &json,
+        ) {
+            tracing::warn!(error = %e, "failed to write initial session.json — will retry on flush");
+        }
+        meta
+    } else {
+        match rekindle_storage::session_meta::load(
+            &ctx.paths.session_file,
+            &session_mac_key,
+        ) {
+            Ok(json_bytes) => match serde_json::from_slice(&json_bytes) {
+                Ok(meta) => meta,
+                Err(e) => {
+                    ctx.lifecycle.transition(DaemonState::Locked);
+                    return IpcResponse::error_with_remediation(
+                        500,
+                        format!("session.json parse failed: {e}"),
+                        "session file may be corrupt — re-initialize: rekindle init",
+                    );
+                }
+            },
             Err(e) => {
                 ctx.lifecycle.transition(DaemonState::Locked);
                 return IpcResponse::error_with_remediation(
                     500,
-                    format!("session.json parse failed: {e}"),
-                    "session file may be corrupt — re-initialize: rekindle init",
+                    format!("session.json load failed: {e}"),
+                    "session file missing or MAC invalid — re-initialize: rekindle init",
                 );
             }
-        },
-        Err(e) => {
-            ctx.lifecycle.transition(DaemonState::Locked);
-            return IpcResponse::error_with_remediation(
-                500,
-                format!("session.json load failed: {e}"),
-                "session file missing or MAC invalid — re-initialize: rekindle init",
-            );
         }
     };
 
@@ -206,23 +260,32 @@ pub(crate) async fn handle_unlock(
     transport_node.set_callback(chat.callback());
 
     // Step 12: Resume (open DHT records, publish route, set up watches, join meshes)
+    //
+    // Fresh nodes have no identity, no signing key, no DHT records — resume()
+    // will fail with NotInitialized. This is expected: the node goes to
+    // Operational so `rekindle init` can call IdentityCreate to bootstrap.
+    // Existing nodes that fail resume enter Degraded for auto-recovery.
     if let Err(e) = chat.resume().await {
-        tracing::warn!(error = %e, "chat resume failed — entering degraded state");
-        // Don't fail completely — the daemon is partially functional.
-        // Transport is running, vault is open, but DHT records may not be open.
-        ctx.lifecycle.transition(DaemonState::Degraded);
+        if is_fresh {
+            tracing::info!("fresh node — skipping resume (no identity yet)");
+        } else {
+            tracing::warn!(error = %e, "chat resume failed — entering degraded state");
+            // Don't fail completely — the daemon is partially functional.
+            // Transport is running, vault is open, but DHT records may not be open.
+            ctx.lifecycle.transition(DaemonState::Degraded);
 
-        // Still store state so Lock/Shutdown can clean up.
-        let chat = Arc::new(chat);
-        *ctx.chat.write() = Some(Arc::clone(&chat));
-        *ctx.transport.write() = Some(Arc::clone(&transport_for_ctx));
-        *ctx.vault.write() = Some(Arc::clone(&vault));
-        guard.disarm();
+            // Still store state so Lock/Shutdown can clean up.
+            let chat = Arc::new(chat);
+            *ctx.chat.write() = Some(Arc::clone(&chat));
+            *ctx.transport.write() = Some(Arc::clone(&transport_for_ctx));
+            *ctx.vault.write() = Some(Arc::clone(&vault));
+            guard.disarm();
 
-        return IpcResponse::ok(&serde_json::json!({
-            "state": "degraded",
-            "warning": format!("resume incomplete: {e} — some features may be unavailable"),
-        }));
+            return IpcResponse::ok(&serde_json::json!({
+                "state": "degraded",
+                "warning": format!("resume incomplete: {e} — some features may be unavailable"),
+            }));
+        }
     }
 
     // Step 13: Wire IPC event delivery
@@ -565,9 +628,16 @@ pub(crate) async fn handle_shutdown(ctx: &Arc<DaemonContext>, state: DaemonState
 
 // ── Config loading ──────────────────────────────────────────────────────
 
-/// Load transport configuration from the config directory.
+/// Load transport configuration from all standard config paths.
 ///
-/// Falls back to defaults if no config file exists.
+/// Reads the same config files the CLI reads, in the same precedence order:
+/// 1. /etc/rekindle/config.toml (system-wide, lowest priority)
+/// 2. ~/.config/rekindle/config.toml (user)
+/// 3. ~/.config/rekindle/transport.toml (daemon-specific override)
+/// 4. REKINDLE_CONFIG env var
+///
+/// The `[network]` section maps directly to TransportConfig fields.
+/// Falls back to defaults if no config files exist.
 fn load_transport_config(
     paths: &crate::state::StatePaths,
 ) -> Result<rekindle_types::config::TransportConfig, String> {
@@ -577,16 +647,98 @@ fn load_transport_config(
         ..Default::default()
     };
 
-    // Load overrides from config file if it exists
-    let config_file = paths.config_dir.join("transport.toml");
-    if config_file.exists() {
-        let content = std::fs::read_to_string(&config_file)
-            .map_err(|e| format!("read {}: {e}", config_file.display()))?;
-        config = toml::from_str(&content)
-            .map_err(|e| format!("parse {}: {e}", config_file.display()))?;
-        // Re-apply storage dir (config file shouldn't override XDG paths)
-        config.storage_dir = paths.veilid_dir.display().to_string();
+    // Layer 1: system-wide config (/etc/rekindle/config.toml)
+    // Uses the CLI config format with [network] section — extract transport fields.
+    merge_from_cli_config(&mut config, &std::path::PathBuf::from("/etc/rekindle/config.toml"));
+
+    // Layer 2: user config (~/.config/rekindle/config.toml)
+    merge_from_cli_config(&mut config, &paths.config_dir.join("config.toml"));
+
+    // Layer 3: daemon-specific transport override (~/.config/rekindle/transport.toml)
+    // This file uses TransportConfig format directly (no [network] wrapper).
+    let transport_file = paths.config_dir.join("transport.toml");
+    if transport_file.exists() {
+        match std::fs::read_to_string(&transport_file) {
+            Ok(content) => match toml::from_str::<rekindle_types::config::TransportConfig>(&content) {
+                Ok(override_config) => {
+                    config = override_config;
+                    tracing::info!(path = %transport_file.display(), "loaded transport.toml override");
+                }
+                Err(e) => return Err(format!("parse {}: {e}", transport_file.display())),
+            },
+            Err(e) => return Err(format!("read {}: {e}", transport_file.display())),
+        }
     }
 
+    // Layer 4: env var override
+    if let Ok(env_path) = std::env::var("REKINDLE_CONFIG") {
+        merge_from_cli_config(&mut config, &std::path::PathBuf::from(env_path));
+    }
+
+    // Always enforce XDG storage dir — config files cannot override it.
+    config.storage_dir = paths.veilid_dir.display().to_string();
+
+    tracing::debug!(
+        allow_insecure_protected_store = config.allow_insecure_protected_store,
+        namespace = %config.namespace,
+        "transport config resolved"
+    );
+
     Ok(config)
+}
+
+/// Extract transport-relevant fields from a CLI-format config file.
+///
+/// The CLI config has `[network]` section with fields that map 1:1 to
+/// TransportConfig. This function reads the file, parses the [network]
+/// section, and merges non-default values into the transport config.
+fn merge_from_cli_config(
+    config: &mut rekindle_types::config::TransportConfig,
+    path: &std::path::Path,
+) {
+    /// Minimal CLI config shape — just enough to extract [network].
+    #[derive(serde::Deserialize, Default)]
+    struct CliConfig {
+        #[serde(default)]
+        network: NetworkSection,
+    }
+    #[derive(serde::Deserialize, Default)]
+    #[serde(default)]
+    struct NetworkSection {
+        rpc_timeout_ms: Option<u64>,
+        dht_write_retries: Option<u32>,
+        route_refresh_secs: Option<u64>,
+        route_cache_ttl_secs: Option<u64>,
+        circuit_breaker_threshold: Option<u32>,
+        circuit_breaker_cooldown_secs: Option<u64>,
+        dedup_cache_capacity: Option<usize>,
+        gossip_ttl: Option<u8>,
+        allow_insecure_protected_store: Option<bool>,
+    }
+
+    let content = match std::fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(_) => return, // File doesn't exist — skip silently
+    };
+
+    let cli_config: CliConfig = match toml::from_str(&content) {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!(path = %path.display(), error = %e, "failed to parse config — skipping");
+            return;
+        }
+    };
+
+    let n = &cli_config.network;
+    if let Some(v) = n.rpc_timeout_ms { config.rpc_timeout_ms = v; }
+    if let Some(v) = n.dht_write_retries { config.dht_write_retries = v; }
+    if let Some(v) = n.route_refresh_secs { config.route_refresh_secs = v; }
+    if let Some(v) = n.route_cache_ttl_secs { config.route_cache_ttl_secs = v; }
+    if let Some(v) = n.circuit_breaker_threshold { config.circuit_breaker_threshold = v; }
+    if let Some(v) = n.circuit_breaker_cooldown_secs { config.circuit_breaker_cooldown_secs = v; }
+    if let Some(v) = n.dedup_cache_capacity { config.dedup_cache_capacity = v; }
+    if let Some(v) = n.gossip_ttl { config.gossip_ttl = v; }
+    if let Some(v) = n.allow_insecure_protected_store { config.allow_insecure_protected_store = v; }
+
+    tracing::debug!(path = %path.display(), "merged config layer");
 }

@@ -5,7 +5,7 @@ pub mod dm_received;
 pub mod channel;
 
 /// A single DM message record returned by queries.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct DmRecord {
     pub sender_name: String,
     pub body: String,

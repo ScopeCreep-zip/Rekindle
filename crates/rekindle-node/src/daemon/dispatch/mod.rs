@@ -115,6 +115,12 @@ async fn dispatch_to_chat(
             map_result(chat.init_identity(&display_name).await),
         IpcRequest::IdentityDestroy { .. } =>
             map_result(chat.destroy_identity().await),
+        IpcRequest::IdentityExportEncrypted { passphrase } =>
+            map_result(chat.identity_export_encrypted(&passphrase)),
+        IpcRequest::IdentityImportEncrypted { passphrase, data } =>
+            map_result(chat.identity_import_encrypted(&passphrase, &data)),
+        IpcRequest::IdentityImport { data } =>
+            map_result(chat.identity_import(&data)),
 
         // ── Community ────────────────────────────────────────────
         IpcRequest::CommunityCreate { name, description } =>
@@ -127,6 +133,8 @@ async fn dispatch_to_chat(
         // ── Channel ──────────────────────────────────────────────
         IpcRequest::ChannelSend { community, channel, body, reply_to } =>
             map_result(chat.send_channel_message(&community, &channel, &body, reply_to).await),
+        IpcRequest::ChannelTyping { community, channel } =>
+            map_result(chat.send_channel_typing(&community, &channel).await),
 
         // ── Social (friends + DMs) ───────────────────────────────
         IpcRequest::FriendAdd { target_profile_key, message } =>
@@ -141,6 +149,8 @@ async fn dispatch_to_chat(
             IpcResponse::ok(&chat.list_pending_requests()),
         IpcRequest::DmSend { peer_key, body } =>
             map_result(chat.send_dm(&peer_key, &body).await),
+        IpcRequest::DmThread { peer_key, limit } =>
+            map_result(chat.dm_thread(&peer_key, limit)),
 
         // ── Presence ─────────────────────────────────────────────
         IpcRequest::PresenceSet { status, message } =>
@@ -317,6 +327,10 @@ async fn dispatch_to_chat(
             map_result(chat.voice_join(&community, &channel, muted, deafened).await),
         IpcRequest::VoiceLeave =>
             map_result(chat.voice_leave().await),
+        IpcRequest::VoiceMute { muted } =>
+            map_result(chat.voice_mute(muted).await),
+        IpcRequest::VoiceDeafen { deafened } =>
+            map_result(chat.voice_deafen(deafened).await),
 
         // ── Agent Management (daemon-level) ──────────────────────
         IpcRequest::AgentRegister { .. } | IpcRequest::AgentRevoke { .. } | IpcRequest::PolicyReload =>

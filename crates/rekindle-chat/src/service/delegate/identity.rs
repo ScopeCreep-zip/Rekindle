@@ -1,4 +1,6 @@
-//! Identity delegation — init, destroy, show, export, rotate, wipe.
+//! Identity delegation — init, destroy, show, export, rotate, wipe, import.
+
+use base64::Engine;
 
 use crate::ChatError;
 use super::super::ChatService;
@@ -96,6 +98,101 @@ impl ChatService {
         }
 
         tracing::info!("identity wipe complete — all local state deleted");
+        Ok(())
+    }
+
+    /// Export identity with passphrase-based encryption (Argon2id + AES-256-GCM).
+    ///
+    /// Serializes the identity bundle, encrypts it with a key derived from the
+    /// passphrase via Argon2id, and returns the ciphertext as a base64 string.
+    /// Wire format: [16-byte salt || 12-byte nonce || ciphertext || 16-byte tag]
+    ///
+    /// The CLI writes the raw bytes to disk with 0o600 permissions.
+    pub fn identity_export_encrypted(
+        &self, passphrase: &str,
+    ) -> Result<String, ChatError> {
+        let plaintext = self.identity_export()?;
+        let wire = rekindle_storage::vault::entry_crypto::encrypt_with_passphrase(
+            passphrase.as_bytes(), &plaintext,
+        ).map_err(|e| ChatError::Internal(format!("encrypted export failed: {e}")))?;
+        Ok(base64::engine::general_purpose::STANDARD.encode(&wire))
+    }
+
+    /// Import identity from a passphrase-encrypted bundle.
+    ///
+    /// Base64-decodes the wire data, derives the key via Argon2id, decrypts
+    /// with AES-256-GCM, deserializes the identity, and installs it into
+    /// the session.
+    pub fn identity_import_encrypted(
+        &self, passphrase: &str, data_b64: &str,
+    ) -> Result<(), ChatError> {
+        let wire = base64::engine::general_purpose::STANDARD.decode(data_b64)
+            .map_err(|e| ChatError::Internal(format!("invalid base64: {e}")))?;
+        let plaintext = rekindle_storage::vault::entry_crypto::decrypt_with_passphrase(
+            passphrase.as_bytes(), &wire,
+        ).map_err(|e| ChatError::Internal(format!("decryption failed (wrong passphrase?): {e}")))?;
+        self.identity_import_inner(&plaintext)
+    }
+
+    /// Import identity from a plaintext JSON bundle.
+    pub fn identity_import(
+        &self, data: &str,
+    ) -> Result<(), ChatError> {
+        self.identity_import_inner(data.as_bytes())
+    }
+
+    /// Common import path — deserialize, validate, and install identity from bytes.
+    fn identity_import_inner(&self, data: &[u8]) -> Result<(), ChatError> {
+        let identity: rekindle_types::session_types::SessionIdentity =
+            serde_json::from_slice(data)
+                .map_err(|e| ChatError::Internal(format!("invalid identity bundle: {e}")))?;
+
+        // Semantic validation — catch malformed bundles before they silently
+        // break the session on the next DM/community operation.
+        Self::validate_identity(&identity)?;
+
+        let mut meta = self.session_meta.write();
+        meta.identity = Some(identity);
+        tracing::info!("identity imported successfully");
+        Ok(())
+    }
+
+    /// Validate structural invariants of an imported identity bundle.
+    fn validate_identity(id: &rekindle_types::session_types::SessionIdentity) -> Result<(), ChatError> {
+        fn check_hex(field: &str, value: &str, expected_bytes: usize) -> Result<(), ChatError> {
+            if value.is_empty() {
+                return Err(ChatError::Internal(format!("identity import: {field} is empty")));
+            }
+            if value.len() != expected_bytes * 2 {
+                return Err(ChatError::Internal(format!(
+                    "identity import: {field} has wrong length ({} chars, expected {} for {expected_bytes} bytes)",
+                    value.len(), expected_bytes * 2,
+                )));
+            }
+            hex::decode(value).map_err(|e| ChatError::Internal(format!(
+                "identity import: {field} is not valid hex: {e}"
+            )))?;
+            Ok(())
+        }
+
+        fn check_non_empty(field: &str, value: &str) -> Result<(), ChatError> {
+            if value.trim().is_empty() {
+                return Err(ChatError::Internal(format!("identity import: {field} is empty")));
+            }
+            Ok(())
+        }
+
+        // Ed25519 public key = 32 bytes = 64 hex chars
+        check_hex("public_key_hex", &id.public_key_hex, 32)?;
+        check_non_empty("display_name", &id.display_name)?;
+        // DHT keys are Veilid TypedKey strings — not raw hex, but must be non-empty
+        check_non_empty("profile_dht_key", &id.profile_dht_key)?;
+        check_non_empty("mailbox_dht_key", &id.mailbox_dht_key)?;
+        check_non_empty("friend_list_dht_key", &id.friend_list_dht_key)?;
+        check_non_empty("friend_inbox_key", &id.friend_inbox_key)?;
+        // Friend inbox keypair = X25519 secret + public = 64 bytes = 128 hex chars
+        check_hex("friend_inbox_keypair_hex", &id.friend_inbox_keypair_hex, 64)?;
+
         Ok(())
     }
 }

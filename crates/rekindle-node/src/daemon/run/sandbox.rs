@@ -71,7 +71,8 @@ pub fn apply(paths: &crate::state::StatePaths, socket_path: &Path) {
         let mut r = vec![
             // State directory: vault.db, session.json, audit.jsonl, vault.salt, vault.wrapped
             (paths.state_dir.clone(), AccessFs::from_all(abi)),
-            // Config directory: config.toml, transport.toml, policy files
+            // Config directories: system (/etc/rekindle/) and user (~/.config/rekindle/)
+            (PathBuf::from("/etc/rekindle"), AccessFs::from_read(abi)),
             (paths.config_dir.clone(), AccessFs::from_read(abi)),
             // Veilid storage: DHT records, routing table, block store
             (paths.veilid_dir.clone(), AccessFs::from_all(abi)),
@@ -180,7 +181,13 @@ pub fn apply(paths: &crate::state::StatePaths, socket_path: &Path) {
 
     use libseccomp::{ScmpAction, ScmpFilterContext, ScmpSyscall};
 
-    let mut filter = ScmpFilterContext::new_filter(ScmpAction::KillThread)
+    // Default action: return EPERM instead of KillThread. This lets the
+    // application handle denied syscalls gracefully (Veilid logs errors,
+    // retries with fallback paths) instead of silently killing threads.
+    // KillThread causes zombie processes with no diagnostics. EPERM surfaces
+    // the failure in application logs where it can be diagnosed and the
+    // allowlist updated.
+    let mut filter = ScmpFilterContext::new_filter(ScmpAction::Errno(libc::EPERM))
         .expect("seccomp new_filter");
 
     for name in &allowed_syscalls {
@@ -315,11 +322,28 @@ fn rekindle_daemon_syscalls() -> Vec<&'static str> {
         "inotify_init1", "inotify_add_watch", "inotify_rm_watch",
         // Cryptographic random (aws-lc-rs + getrandom)
         "getrandom",
-        // Memory-mapped secrets (memfd_secret for mlock'd allocations)
-        "memfd_secret",
+        // Memory-mapped secrets and anonymous file descriptors
+        "memfd_secret", "memfd_create",
         // Process lifecycle
         "exit_group", "exit",
+        // Filesystem metadata (Veilid sets permissions on storage files)
+        "chmod", "fchmod", "fchmodat", "chown", "fchown", "fchownat",
+        "utimensat", "linkat", "symlinkat", "rmdir", "unlinkat",
+        "renameat", "renameat2",
+        // Veilid networking: additional socket/IO ops for UDP hole-punching,
+        // TCP relay, WS transport, and route allocation
+        "sendmmsg", "recvmmsg", "select", "pselect6",
+        // Thread synchronization (Veilid uses condvars, mutexes, barriers)
+        "futex_waitv", "sched_yield", "sched_setaffinity",
+        // Process introspection (Veilid + aws-lc-rs thread count detection)
+        "sysinfo", "getrlimit", "setrlimit",
         // Required by Rust stdlib / tokio / veilid
         "restart_syscall", "uname", "getcwd",
+        // mmap variants (Veilid LMDB-like storage, aws-lc-rs)
+        "mremap", "msync", "mincore",
+        // Filesystem info (Veilid checks disk space during bootstrap)
+        "statfs", "fstatfs",
+        // Modern kernel APIs (tokio 1.x + Veilid on Linux 5.10+)
+        "mlock2", "pkey_mprotect", "close_range", "openat2", "epoll_pwait2",
     ]
 }

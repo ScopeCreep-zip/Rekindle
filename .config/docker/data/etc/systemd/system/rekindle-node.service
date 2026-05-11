@@ -18,11 +18,15 @@ User=rekindle
 Group=rekindle
 
 # Startup: Veilid attach can take 30-60 seconds on slow networks.
+# The daemon sends READY=1 in Locked state BEFORE transport starts.
+# The unlock flow (triggered by init or user) handles transport start.
 TimeoutStartSec=90
 # Shutdown: graceful drain budget.
 TimeoutStopSec=15
-# Watchdog: daemon must ping every 30s or systemd kills it.
-WatchdogSec=30
+# Watchdog disabled: the unlock+Veilid attach flow can take 60+ seconds
+# which would trigger a watchdog kill. The daemon is healthy in Locked
+# state waiting for unlock — no watchdog needed.
+# WatchdogSec=30
 
 # Environment
 Environment=HOME=/home/rekindle
