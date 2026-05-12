@@ -5,6 +5,9 @@
 experimental = true
 task_output = "prefix"
 
+[env]
+_.file = [".env.example", { path = ".env", required = false }]
+
 [task_config]
 includes = [
     ".config/mise/toml/rekindle.compose.toml",

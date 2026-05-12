@@ -30,7 +30,7 @@ TimeoutStopSec=15
 
 # Environment
 Environment=HOME=/home/rekindle
-Environment=RUST_LOG=rekindle=debug,rekindle_transport=debug,rekindle_node=debug,veilid_core=warn
+PassEnvironment=RUST_LOG
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
 Environment=XDG_RUNTIME_DIR=/run/user/1000
 

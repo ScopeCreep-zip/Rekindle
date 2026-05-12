@@ -26,11 +26,15 @@ use std::path::Path;
 /// Panics if sandbox application fails on Linux. Non-Linux platforms log
 /// a warning and continue (no Landlock/seccomp equivalent available).
 #[cfg(target_os = "linux")]
-pub fn apply(paths: &crate::state::StatePaths, socket_path: &Path) {
+pub fn apply(
+    paths: &crate::state::StatePaths,
+    socket_path: &Path,
+    config: &rekindle_types::config::TransportConfig,
+) {
     use std::path::PathBuf;
 
     use landlock::{
-        ABI, Access, AccessFs, AccessNet, PathBeneath, PathFd, Ruleset, RulesetAttr,
+        ABI, Access, AccessFs, AccessNet, NetPort, PathBeneath, PathFd, Ruleset, RulesetAttr,
         RulesetCreatedAttr, RulesetStatus, Scope,
     };
 
@@ -149,6 +153,63 @@ pub fn apply(paths: &crate::state::StatePaths, socket_path: &Path) {
             });
     }
 
+    // ── Landlock network rules ──────────────────────────────────────
+    // Landlock NetPort rules are exact-port matches — port=0 is NOT a
+    // wildcard for either BindTcp or ConnectTcp. The kernel looks up rules
+    // by the actual port from the socket address (net.c:187).
+    // Every port the daemon binds or connects to must be listed explicitly.
+
+    // Parse the port from a Veilid listen_address string (e.g. ":40000",
+    // "0.0.0.0:40000"). Returns None if empty or unparseable.
+    fn parse_listen_port(addr: &str) -> Option<u16> {
+        if addr.is_empty() {
+            return None;
+        }
+        addr.rsplit(':').next()?.parse::<u16>().ok()
+    }
+
+    let veilid_tcp_port = parse_listen_port(&config.veilid.tcp_listen_address).unwrap_or(5150);
+
+    // ── BindTcp: ports the daemon listens on ───────────────────────
+    let mut bind_ports: Vec<u16> = Vec::new();
+
+    // Veilid TCP listener.
+    bind_ports.push(veilid_tcp_port);
+
+    // Veilid WebSocket listener (if distinct from TCP port).
+    if let Some(ws_port) = parse_listen_port(&config.veilid.ws_listen_address) {
+        if !bind_ports.contains(&ws_port) {
+            bind_ports.push(ws_port);
+        }
+    }
+
+    // Metrics and health endpoints.
+    for port in [config.metrics_port, config.health_port] {
+        if port > 0 && !bind_ports.contains(&port) {
+            bind_ports.push(port);
+        }
+    }
+
+    for port in &bind_ports {
+        ruleset = ruleset
+            .add_rule(NetPort::new(*port, AccessNet::BindTcp))
+            .unwrap_or_else(|e| panic!("landlock add_rule(BindTcp port={port}) failed: {e}"));
+    }
+
+    // ── ConnectTcp: ports the daemon connects to outbound ──────────
+    // Veilid bootstrap peers use 5150 (default), 80, and 443.
+    // The configured TCP port is included for peer-to-peer connections.
+    let mut connect_ports: Vec<u16> = vec![5150, 80, 443];
+    if !connect_ports.contains(&veilid_tcp_port) {
+        connect_ports.push(veilid_tcp_port);
+    }
+
+    for port in &connect_ports {
+        ruleset = ruleset
+            .add_rule(NetPort::new(*port, AccessNet::ConnectTcp))
+            .unwrap_or_else(|e| panic!("landlock add_rule(ConnectTcp port={port}) failed: {e}"));
+    }
+
     let status = ruleset
         .restrict_self()
         .unwrap_or_else(|e| panic!("landlock restrict_self failed: {e}"));
@@ -202,13 +263,17 @@ pub fn apply(paths: &crate::state::StatePaths, socket_path: &Path) {
 
     tracing::info!(
         allowed_syscalls = allowed_syscalls.len(),
-        default_action = "KillThread",
+        default_action = "Errno(EPERM)",
         "seccomp: filter loaded"
     );
 }
 
 #[cfg(not(target_os = "linux"))]
-pub fn apply(_paths: &crate::state::StatePaths, _socket_path: &Path) {
+pub fn apply(
+    _paths: &crate::state::StatePaths,
+    _socket_path: &Path,
+    _config: &rekindle_types::config::TransportConfig,
+) {
     tracing::warn!(
         "sandbox: not available on this platform. \
          Linux 5.13+ required for Landlock filesystem sandboxing. \

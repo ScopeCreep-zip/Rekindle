@@ -16,8 +16,14 @@ run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 
+echo "Stopping containers..."
+docker compose down 2>/dev/null || true
+echo ""
+
 echo "Building rekindle binary (release)..."
-cargo build -p rekindle-transport -p rekindle-cli --release
+rm -f target/release/rekindle
+cargo clean -p rekindle-cli -p rekindle-node -p rekindle-transport-veilid -p rekindle-transport -p rekindle-chat -p rekindle-types -p rekindle-storage -p rekindle-ratchet
+cargo build -p rekindle-cli -p rekindle-node -p rekindle-transport-veilid -p rekindle-transport -p rekindle-chat -p rekindle-types -p rekindle-storage -p rekindle-ratchet --release
 
 # Strip nix store paths from binaries so they run on stock Debian/Ubuntu.
 # Same pattern as open-sesame build:deb (patchelf --set-interpreter + --remove-rpath).
@@ -225,10 +231,16 @@ for node in alice bob carol; do
       if docker exec "${container}" test -f /home/rekindle/.local/state/rekindle/session.json 2>/dev/null; then
         echo "   ✅ Identity initialized"
         # Show public key
-        pubkey=$(docker exec --user rekindle "${container}" rekindle identity show --json 2>/dev/null | jq -r '.public_key // empty' 2>/dev/null || echo "")
+        pubkey=$(docker exec --user rekindle "${container}" rekindle identity show --format json 2>/dev/null | jq -r '.public_key_hex // empty' 2>/dev/null || echo "")
         if [[ -n "${pubkey}" ]]; then
           echo "   🔑 Public key: ${pubkey:0:16}..."
         fi
+        # Show Veilid attachment state
+        status_json=$(docker exec --user rekindle "${container}" rekindle status --format json 2>/dev/null || echo '{}')
+        attachment=$(echo "${status_json}" | jq -r '.attachment // "unknown"')
+        is_attached=$(echo "${status_json}" | jq -r '.is_attached // false')
+        route=$(echo "${status_json}" | jq -r '.route_allocated // false')
+        echo "   🌐 Veilid: ${attachment} (attached=${is_attached}, route=${route})"
       else
         echo "   ⏳ Init service completed but no session (may have failed)"
         echo "   📋 Check: docker exec ${container} journalctl -u rekindle-init.service --no-pager"

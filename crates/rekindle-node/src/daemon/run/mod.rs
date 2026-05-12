@@ -138,7 +138,9 @@ pub async fn run_daemon() -> anyhow::Result<()> {
     tracing::info!(path = %socket_path.display(), "IPC bus server bound");
 
     // ── 7. Sandbox ──────────────────────────────────────────────────
-    sandbox::apply(&paths, &socket_path);
+    // Load config early so sandbox gets the configured metrics/health ports.
+    let early_config = crate::daemon::dispatch::lifecycle::load_early_config(&paths);
+    sandbox::apply(&paths, &socket_path, &early_config);
 
     // ── 8. DaemonContext ────────────────────────────────────────────
     let (event_watch_tx, event_watch_rx) = tokio::sync::watch::channel(None);
@@ -211,12 +213,12 @@ pub async fn run_daemon() -> anyhow::Result<()> {
     let metrics_state = Arc::new(metrics::DaemonMetrics::new());
     let metrics_handle = tokio::spawn(metrics::serve_prometheus(
         Arc::clone(&metrics_state),
-        9191,
+        early_config.metrics_port,
     ));
 
     // ── 14. Health check endpoint ───────────────────────────────────
     let health_lifecycle = Arc::clone(&lifecycle);
-    let health_handle = tokio::spawn(health::serve_health(health_lifecycle, 9192));
+    let health_handle = tokio::spawn(health::serve_health(health_lifecycle, early_config.health_port));
 
     // ── 15. Signal handlers ─────────────────────────────────────────
     let signal_ctx = Arc::clone(&daemon_ctx);

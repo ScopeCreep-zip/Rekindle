@@ -10,7 +10,7 @@
 //! Lock discipline: `parking_lot::RwLock` guards are NEVER held across `.await`.
 //! Pattern: clone `Arc` from `RwLock`, drop guard, then `.await` on the clone.
 
-mod lifecycle;
+pub(crate) mod lifecycle;
 
 use std::sync::Arc;
 

@@ -66,6 +66,12 @@ pub struct NetworkConfig {
     pub gossip_ttl: u8,
     #[serde(default)]
     pub allow_insecure_protected_store: bool,
+    #[serde(default = "default_metrics_port")]
+    pub metrics_port: u16,
+    #[serde(default = "default_health_port")]
+    pub health_port: u16,
+    #[serde(default)]
+    pub veilid: rekindle_types::config::VeilidNetworkConfig,
 }
 
 impl Default for NetworkConfig {
@@ -81,6 +87,9 @@ impl Default for NetworkConfig {
             dedup_cache_capacity: default_dedup_cache_capacity(),
             gossip_ttl: default_gossip_ttl(),
             allow_insecure_protected_store: false,
+            metrics_port: default_metrics_port(),
+            health_port: default_health_port(),
+            veilid: rekindle_types::config::VeilidNetworkConfig::default(),
         }
     }
 }
@@ -180,6 +189,8 @@ fn default_circuit_breaker_threshold() -> u32 { 3 }
 fn default_circuit_breaker_cooldown_secs() -> u64 { 45 }
 fn default_dedup_cache_capacity() -> usize { 2048 }
 fn default_gossip_ttl() -> u8 { 5 }
+fn default_metrics_port() -> u16 { 9191 }
+fn default_health_port() -> u16 { 9192 }
 fn default_hop_count() -> u8 { 1 }
 fn default_stability() -> String { "reliable".into() }
 fn default_sequencing() -> String { "prefer_ordered".into() }

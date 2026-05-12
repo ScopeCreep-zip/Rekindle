@@ -628,6 +628,16 @@ pub(crate) async fn handle_shutdown(ctx: &Arc<DaemonContext>, state: DaemonState
 
 // ── Config loading ──────────────────────────────────────────────────────
 
+/// Load only the ports from config at daemon startup (before unlock).
+///
+/// Used by `run_daemon()` to bind metrics and health endpoints on the
+/// configured ports before the first unlock. Falls back to defaults.
+pub(crate) fn load_early_config(
+    paths: &crate::state::StatePaths,
+) -> rekindle_types::config::TransportConfig {
+    load_transport_config(paths).unwrap_or_default()
+}
+
 /// Load transport configuration from all standard config paths.
 ///
 /// Reads the same config files the CLI reads, in the same precedence order:
@@ -714,12 +724,12 @@ fn merge_from_cli_config(
         dedup_cache_capacity: Option<usize>,
         gossip_ttl: Option<u8>,
         allow_insecure_protected_store: Option<bool>,
+        metrics_port: Option<u16>,
+        health_port: Option<u16>,
+        veilid: Option<rekindle_types::config::VeilidNetworkConfig>,
     }
 
-    let content = match std::fs::read_to_string(path) {
-        Ok(c) => c,
-        Err(_) => return, // File doesn't exist — skip silently
-    };
+    let Ok(content) = std::fs::read_to_string(path) else { return };
 
     let cli_config: CliConfig = match toml::from_str(&content) {
         Ok(c) => c,
@@ -739,6 +749,9 @@ fn merge_from_cli_config(
     if let Some(v) = n.dedup_cache_capacity { config.dedup_cache_capacity = v; }
     if let Some(v) = n.gossip_ttl { config.gossip_ttl = v; }
     if let Some(v) = n.allow_insecure_protected_store { config.allow_insecure_protected_store = v; }
+    if let Some(v) = n.metrics_port { config.metrics_port = v; }
+    if let Some(v) = n.health_port { config.health_port = v; }
+    if let Some(v) = n.veilid.clone() { config.veilid = v; }
 
     tracing::debug!(path = %path.display(), "merged config layer");
 }

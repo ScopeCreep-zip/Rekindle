@@ -18,7 +18,7 @@ services:
     stop_grace_period: 15s
     privileged: true
     environment:
-      RUST_LOG: "info,rekindle=debug,veilid_core=warn"
+      RUST_LOG: "${RUST_LOG}"
       container: docker
     volumes:
       - ../../target/release/rekindle:/usr/local/bin/rekindle:ro

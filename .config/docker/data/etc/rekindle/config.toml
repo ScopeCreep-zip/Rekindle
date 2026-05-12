@@ -7,3 +7,46 @@
 # OS Secret Service (dbus org.freedesktop.secrets). Required in containers
 # where gnome-keyring/kwallet is unavailable or unreliable.
 allow_insecure_protected_store = true
+
+[network.veilid]
+# ── Protocol ports ────────────────────────────────────────────────────────
+# Bind in the kernel ephemeral range (32768-60999) so Landlock's
+# NetPort::new(0, ...) rule covers them. Veilid searches upward from
+# this port with search=true so any free port in the range will work.
+tcp_listen_address = ":40000"
+udp_listen_address = ":40000"
+
+# WebSocket is unnecessary for container-to-container communication.
+# Disabling it reduces attack surface and eliminates a listener.
+ws_listen = false
+ws_connect = false
+
+# ── NAT / address detection ───────────────────────────────────────────────
+# Docker bridge containers are behind NAT with no inbound reachability from
+# the public internet. Setting require_inbound_relay = true tells Veilid to
+# skip dial-info validation (which requires inbound connections from bootstrap
+# peers) and instead use relay nodes for inbound traffic. This is required for
+# containers to reach PublicInternet network class and allocate private routes.
+#
+# Without this, detect_address_changes = false + no public_address leaves
+# Veilid permanently detached: it never discovers a valid network class.
+#
+# UPnP is useless behind Docker bridge NAT — disable it to avoid spurious
+# port mapping attempts and log noise.
+require_inbound_relay = true
+upnp = false
+
+# ── Routing table attachment thresholds ───────────────────────────────────
+# Veilid defaults require 32 peers for FullyAttached. In a 3-node test
+# harness that threshold is never reachable. Tune thresholds down so the
+# nodes reach FullyAttached/AttachedGood with just a handful of peers.
+limit_over_attached = 12
+limit_fully_attached = 6
+limit_attached_strong = 4
+limit_attached_good = 2
+limit_attached_weak = 1
+
+# ── DHT storage limits ────────────────────────────────────────────────────
+# Containers have constrained volumes. Cap DHT storage to avoid filling them.
+dht_remote_max_storage_space_mb = 64
+dht_remote_max_subkey_cache_memory_mb = 64

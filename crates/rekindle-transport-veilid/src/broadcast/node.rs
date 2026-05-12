@@ -81,6 +81,148 @@ impl TransportNode {
         veilid_config.protected_store.allow_insecure_fallback =
             config.allow_insecure_protected_store;
 
+        // ── VeilidNetworkConfig mapping ─────────────────────────────
+        {
+            let v = &config.veilid;
+            let net = &mut veilid_config.network;
+
+            // Protocol: TCP
+            if !v.tcp_listen_address.is_empty() {
+                net.protocol.tcp.listen_address.clone_from(&v.tcp_listen_address);
+            }
+            net.protocol.tcp.listen = v.tcp_listen;
+            net.protocol.tcp.connect = v.tcp_connect;
+            net.protocol.tcp.max_connections = v.tcp_max_connections;
+
+            // Protocol: UDP
+            if !v.udp_listen_address.is_empty() {
+                net.protocol.udp.listen_address.clone_from(&v.udp_listen_address);
+            }
+            net.protocol.udp.enabled = v.udp_enabled;
+            net.protocol.udp.socket_pool_size = v.udp_socket_pool_size;
+
+            // Protocol: WebSocket
+            if !v.ws_listen_address.is_empty() {
+                net.protocol.ws.listen_address.clone_from(&v.ws_listen_address);
+            }
+            net.protocol.ws.listen = v.ws_listen;
+            net.protocol.ws.connect = v.ws_connect;
+            net.protocol.ws.max_connections = v.ws_max_connections;
+            net.protocol.ws.path.clone_from(&v.ws_path);
+
+            // Protocol: TCP — public address (None = auto-detect)
+            if v.tcp_public_address.is_some() {
+                net.protocol.tcp.public_address.clone_from(&v.tcp_public_address);
+            }
+
+            // Protocol: UDP — public address (None = auto-detect)
+            if v.udp_public_address.is_some() {
+                net.protocol.udp.public_address.clone_from(&v.udp_public_address);
+            }
+
+            // Connection limits
+            net.max_connections_per_ip4 = v.max_connections_per_ip4;
+            net.max_connections_per_ip6_prefix = v.max_connections_per_ip6_prefix;
+            net.max_connections_per_ip6_prefix_size = v.max_connections_per_ip6_prefix_size;
+            net.max_connection_frequency_per_min = v.max_connection_frequency_per_min;
+            net.client_allowlist_timeout_ms = v.client_allowlist_timeout_ms;
+            net.reverse_connection_receipt_time_ms = v.reverse_connection_receipt_time_ms;
+            net.hole_punch_receipt_time_ms = v.hole_punch_receipt_time_ms;
+
+            // Connection timeouts
+            net.connection_initial_timeout_ms = v.connection_initial_timeout_ms;
+            net.connection_inactivity_timeout_ms = v.connection_inactivity_timeout_ms;
+
+            // NAT / address detection
+            net.upnp = v.upnp;
+            net.detect_address_changes = v.detect_address_changes;
+            net.restricted_nat_retries = v.restricted_nat_retries;
+            net.privacy.require_inbound_relay = v.require_inbound_relay;
+            tracing::info!(
+                require_inbound_relay = v.require_inbound_relay,
+                upnp = v.upnp,
+                detect_address_changes = ?v.detect_address_changes,
+                "veilid NAT config applied"
+            );
+
+            // Private network key
+            net.network_key_password.clone_from(&v.network_key_password);
+
+            // Bootstrap — only override if non-empty
+            if !v.bootstrap.is_empty() {
+                net.routing_table.bootstrap.clone_from(&v.bootstrap);
+            }
+            if !v.bootstrap_keys.is_empty() {
+                net.routing_table.bootstrap_keys = v.bootstrap_keys
+                    .iter()
+                    .filter_map(|s| s.parse::<veilid_core::PublicKey>().ok())
+                    .collect();
+            }
+
+            // Routing table attachment thresholds
+            net.routing_table.limit_over_attached = v.limit_over_attached;
+            net.routing_table.limit_fully_attached = v.limit_fully_attached;
+            net.routing_table.limit_attached_strong = v.limit_attached_strong;
+            net.routing_table.limit_attached_good = v.limit_attached_good;
+            net.routing_table.limit_attached_weak = v.limit_attached_weak;
+
+            // RPC
+            net.rpc.concurrency = v.rpc_concurrency;
+            net.rpc.queue_size = v.rpc_queue_size;
+            net.rpc.timeout_ms = v.rpc_timeout_ms;
+            net.rpc.max_timestamp_behind_ms = v.rpc_max_timestamp_behind_ms;
+            net.rpc.max_timestamp_ahead_ms = v.rpc_max_timestamp_ahead_ms;
+            net.rpc.max_route_hop_count = v.rpc_max_route_hop_count;
+            net.rpc.default_route_hop_count = v.rpc_default_route_hop_count;
+
+            // DHT
+            net.dht.max_find_node_count = v.dht_max_find_node_count;
+            net.dht.resolve_node_timeout_ms = v.dht_resolve_node_timeout_ms;
+            net.dht.resolve_node_count = v.dht_resolve_node_count;
+            net.dht.resolve_node_fanout = v.dht_resolve_node_fanout;
+            net.dht.get_value_timeout_ms = v.dht_get_value_timeout_ms;
+            net.dht.set_value_timeout_ms = v.dht_set_value_timeout_ms;
+            net.dht.min_peer_count = v.dht_min_peer_count;
+            net.dht.min_peer_refresh_time_ms = v.dht_min_peer_refresh_time_ms;
+            net.dht.validate_dial_info_receipt_time_ms = v.dht_validate_dial_info_receipt_time_ms;
+            net.dht.local_subkey_cache_size = v.dht_local_subkey_cache_size;
+            net.dht.local_max_subkey_cache_memory_mb = v.dht_local_max_subkey_cache_memory_mb;
+            net.dht.remote_subkey_cache_size = v.dht_remote_subkey_cache_size;
+            net.dht.public_watch_limit = v.dht_public_watch_limit;
+            net.dht.member_watch_limit = v.dht_member_watch_limit;
+            net.dht.max_watch_expiration_ms = v.dht_max_watch_expiration_ms;
+            net.dht.public_transaction_limit = v.dht_public_transaction_limit;
+            net.dht.member_transaction_limit = v.dht_member_transaction_limit;
+            net.dht.remote_max_records = v.dht_remote_max_records;
+            net.dht.remote_max_subkey_cache_memory_mb = v.dht_remote_max_subkey_cache_memory_mb;
+            net.dht.remote_max_storage_space_mb = v.dht_remote_max_storage_space_mb;
+            net.dht.set_value_fanout = v.dht_set_value_fanout;
+            net.dht.get_value_fanout = v.dht_get_value_fanout;
+            net.dht.set_value_count = v.dht_set_value_count;
+            net.dht.get_value_count = v.dht_get_value_count;
+            net.dht.consensus_width = v.dht_consensus_width;
+
+            // Protected store
+            veilid_config.protected_store.always_use_insecure_storage = v.always_use_insecure_storage;
+            veilid_config.protected_store.delete = v.protected_store_delete;
+            veilid_config.protected_store.device_encryption_key_password
+                .clone_from(&v.protected_store_device_encryption_key_password);
+
+            // Table store
+            veilid_config.table_store.delete = v.table_store_delete;
+
+            // Block store
+            veilid_config.block_store.delete = v.block_store_delete;
+
+            // Capabilities
+            if !v.disable_capabilities.is_empty() {
+                veilid_config.capabilities.disable = v.disable_capabilities
+                    .iter()
+                    .filter_map(|s| s.parse().ok())
+                    .collect();
+            }
+        }
+
         let (update_tx, update_rx) = mpsc::channel::<VeilidUpdate>(4096);
         let update_callback: veilid_core::UpdateCallback = Arc::new(move |update| {
             if let Err(e) = update_tx.try_send(update) {
