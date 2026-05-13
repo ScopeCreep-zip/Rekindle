@@ -24,6 +24,7 @@ pub mod hardening;
 pub mod systemd;
 pub mod config_watch;
 pub mod metrics;
+#[allow(unsafe_code)] // prctl, getrlimit, uname for doctor diagnostic
 pub mod health;
 pub mod tracing_init;
 
@@ -88,6 +89,16 @@ pub async fn run_daemon() -> anyhow::Result<()> {
         nofile: 65536,
         memlock_bytes: 64 * 1024 * 1024, // 64 MB for mlock'd secrets
     });
+
+    // ── 2.5. THP hints for bulk transport buffer pools ────────────
+    crate::ipc::bulk::hugepage_pool::apply_thp_hints();
+
+    // ── 2.6. Crypto capability probe ────────────────────────────────
+    // Measures actual throughput of AES-GCM, AEGIS-128L, SHA-256,
+    // SHA-256 multi-buffer, and BLAKE3. Detects whether ISA-L's
+    // multibinary dispatcher selected SIMD or fell back to base C.
+    // Results are logged and stored for `rekindle status --doctor`.
+    let crypto_caps = crate::ipc::bulk::capability::probe();
 
     // ── 3. PID file ─────────────────────────────────────────────────
     let pid_guard = pid::PidFile::acquire(&paths.state_dir.join("rekindle.pid"))?;
@@ -173,6 +184,7 @@ pub async fn run_daemon() -> anyhow::Result<()> {
         ),
         event_journal,
         idempotency_cache: crate::ipc::idempotency::IdempotencyCache::new(),
+        crypto_caps,
         server_state: parking_lot::RwLock::new(Some(bus_server.state())),
     });
 

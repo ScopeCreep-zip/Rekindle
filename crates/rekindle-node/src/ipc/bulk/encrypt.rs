@@ -18,14 +18,75 @@
 use std::sync::Arc;
 use rayon::ThreadPool;
 
+/// Detect physical core IDs by parsing sysfs topology.
+///
+/// Returns CPU IDs that are the first thread of each physical core.
+/// On i5-9300H: typically `[0, 2, 4, 6]` (HT siblings are 1, 3, 5, 7).
+/// Falls back to sequential IDs if topology is unavailable.
+#[cfg(target_os = "linux")]
+fn detect_physical_cores() -> Vec<usize> {
+    let mut physical_cores = Vec::new();
+    let mut seen_cores = std::collections::HashSet::new();
+
+    for cpu_id in 0..1024 {
+        let path = format!(
+            "/sys/devices/system/cpu/cpu{cpu_id}/topology/thread_siblings_list"
+        );
+        let Ok(content) = std::fs::read_to_string(&path) else { break };
+        let first_sibling = content
+            .trim()
+            .split([',', '-'])
+            .next()
+            .and_then(|s| s.parse::<usize>().ok())
+            .unwrap_or(cpu_id);
+
+        if seen_cores.insert(first_sibling) {
+            physical_cores.push(first_sibling);
+        }
+    }
+
+    if physical_cores.is_empty() {
+        let n = std::thread::available_parallelism()
+            .map(|n| n.get().min(4))
+            .unwrap_or(2);
+        (0..n).collect()
+    } else {
+        physical_cores
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn detect_physical_cores() -> Vec<usize> {
+    let n = std::thread::available_parallelism()
+        .map(|n| n.get().min(4))
+        .unwrap_or(2);
+    (0..n).collect()
+}
+
+/// Cached physical core IDs. Computed once, reused by encrypt_workers()
+/// and build_encrypt_pool()'s start_handler.
+pub fn cached_physical_cores() -> &'static Vec<usize> {
+    use std::sync::OnceLock;
+    static CORES: OnceLock<Vec<usize>> = OnceLock::new();
+    CORES.get_or_init(detect_physical_cores)
+}
+
 /// Number of encryption worker threads.
 ///
-/// Capped at 4 to avoid oversubscribing on typical hardware. On a
-/// 2-core machine, uses 2. On 8+ cores, uses 4.
+/// Reserves 2 physical cores for the Tokio I/O runtime and uses the
+/// remainder for encryption, capped at 4. On a 4-core machine this
+/// means 2 encrypt workers; on 8-core, 4 workers.
+///
+/// Override with `REKINDLE_ENCRYPT_WORKERS=N` for explicit control.
 fn encrypt_workers() -> usize {
-    std::thread::available_parallelism()
-        .map(|n| n.get().min(4))
-        .unwrap_or(2)
+    if let Ok(val) = std::env::var("REKINDLE_ENCRYPT_WORKERS") {
+        if let Ok(n) = val.parse::<usize>() {
+            if n >= 1 {
+                return n.min(cached_physical_cores().len());
+            }
+        }
+    }
+    cached_physical_cores().len().saturating_sub(2).clamp(1, 4)
 }
 
 /// Build the dedicated encryption thread pool.
@@ -33,38 +94,42 @@ fn encrypt_workers() -> usize {
 /// Call once at daemon startup. Share the returned `Arc` across all
 /// connection handlers and bulk transfer sessions.
 ///
-/// ```ignore
-/// let encrypt_pool = build_encrypt_pool();
-/// // pass encrypt_pool to connection handlers via DaemonContext
-/// ```
+/// Workers are pinned to detected physical cores (not HT siblings)
+/// to avoid AES-NI port 0/5 contention between hyperthreads.
 pub fn build_encrypt_pool() -> Arc<ThreadPool> {
     let workers = encrypt_workers();
     Arc::new(
         rayon::ThreadPoolBuilder::new()
             .num_threads(workers)
             .thread_name(|i| format!("rekindle-encrypt-{i}"))
-            .start_handler(|idx| {
-                // Pin encrypt workers to cores starting at offset 2,
-                // leaving cores 0-1 for the Tokio I/O runtime.
-                // On machines with fewer than workers+2 cores, pinning
-                // is skipped (the OS scheduler handles placement).
-                #[cfg(target_os = "linux")]
-                {
-                    let target_cpu = idx + 2;
-                    // SAFETY: zeroed cpu_set_t is valid (all-zeros = no CPUs selected).
-                    // CPU_SET sets one bit. sched_setaffinity with a valid set and
-                    // pid=0 (current thread) cannot cause UB — returns -1 on failure.
-                    unsafe {
-                        let mut set = std::mem::zeroed::<libc::cpu_set_t>();
-                        libc::CPU_SET(target_cpu, &mut set);
-                        let result = libc::sched_setaffinity(0, std::mem::size_of::<libc::cpu_set_t>(), &raw const set);
-                        if result != 0 {
-                            // Pinning failed (core doesn't exist or no permission).
-                            // Non-fatal — the OS scheduler will place the thread.
+            .start_handler({
+                let cores = cached_physical_cores().clone();
+                move |idx| {
+                    #[cfg(target_os = "linux")]
+                    {
+                        if let Some(&target_cpu) = cores.get(idx) {
+                            // SAFETY: zeroed cpu_set_t is valid (all-zeros = no CPUs).
+                            // CPU_SET sets one bit. sched_setaffinity with pid=0
+                            // targets current thread. Returns -1 on failure (non-fatal).
+                            unsafe {
+                                let mut set = std::mem::zeroed::<libc::cpu_set_t>();
+                                libc::CPU_SET(target_cpu, &mut set);
+                                let result = libc::sched_setaffinity(
+                                    0,
+                                    std::mem::size_of::<libc::cpu_set_t>(),
+                                    &raw const set,
+                                );
+                                if result == 0 {
+                                    tracing::debug!(
+                                        worker = idx, cpu = target_cpu,
+                                        "encrypt worker pinned to physical core"
+                                    );
+                                }
+                            }
                         }
                     }
+                    let _ = idx;
                 }
-                let _ = idx;
             })
             .build()
             .expect("failed to build encryption thread pool"),
@@ -98,5 +163,11 @@ mod tests {
         });
 
         assert_eq!(counter.load(Ordering::Relaxed), n);
+    }
+
+    #[test]
+    fn detect_physical_cores_returns_nonempty() {
+        let cores = detect_physical_cores();
+        assert!(!cores.is_empty(), "must detect at least one physical core");
     }
 }

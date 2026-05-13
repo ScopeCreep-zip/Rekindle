@@ -44,6 +44,8 @@ pub fn create_sealed_memfd(name: &str, data: &[u8]) -> std::io::Result<std::os::
         std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid memfd name")
     })?;
 
+    // SAFETY: memfd_create with valid CString name. MFD_CLOEXEC ensures
+    // the fd is not leaked to child processes.
     let fd = unsafe {
         libc::memfd_create(
             c_name.as_ptr(),
@@ -56,14 +58,16 @@ pub fn create_sealed_memfd(name: &str, data: &[u8]) -> std::io::Result<std::os::
 
     let len = data.len();
 
-    // Size the memfd.
+    #[allow(clippy::cast_possible_wrap)] // len fits in off_t on 64-bit
+    // SAFETY: ftruncate on a valid memfd fd sets the size.
     if unsafe { libc::ftruncate(fd, len as libc::off_t) } < 0 {
+        // SAFETY: fd is valid, close releases it.
         unsafe { libc::close(fd) };
         return Err(std::io::Error::last_os_error());
     }
 
     if len > 0 {
-        // Map for writing.
+        // SAFETY: mmap with MAP_SHARED on the memfd. fd is valid, len > 0.
         let ptr = unsafe {
             libc::mmap(
                 std::ptr::null_mut(),
@@ -75,13 +79,15 @@ pub fn create_sealed_memfd(name: &str, data: &[u8]) -> std::io::Result<std::os::
             )
         };
         if ptr == libc::MAP_FAILED {
+            // SAFETY: fd is valid.
             unsafe { libc::close(fd) };
             return Err(std::io::Error::last_os_error());
         }
 
-        // Copy data into the memfd.
+        // SAFETY: ptr is a valid MAP_SHARED mapping of len bytes.
+        // data.as_ptr() is valid for len bytes. No overlap (different allocations).
         unsafe {
-            std::ptr::copy_nonoverlapping(data.as_ptr(), ptr as *mut u8, len);
+            std::ptr::copy_nonoverlapping(data.as_ptr(), ptr.cast::<u8>(), len);
             libc::madvise(ptr, len, libc::MADV_SEQUENTIAL);
             libc::munmap(ptr, len);
         }
@@ -96,13 +102,16 @@ pub fn create_sealed_memfd(name: &str, data: &[u8]) -> std::io::Result<std::os::
         | libc::F_SEAL_SEAL
         | F_SEAL_FUTURE_WRITE;
 
+    // SAFETY: fcntl F_ADD_SEALS on a valid memfd fd.
     let seal_result = unsafe { libc::fcntl(fd, libc::F_ADD_SEALS, full_seals) };
     if seal_result < 0 {
         let base_seals = libc::F_SEAL_WRITE
             | libc::F_SEAL_SHRINK
             | libc::F_SEAL_GROW
             | libc::F_SEAL_SEAL;
+        // SAFETY: fallback seals without F_SEAL_FUTURE_WRITE for older kernels.
         if unsafe { libc::fcntl(fd, libc::F_ADD_SEALS, base_seals) } < 0 {
+            // SAFETY: fd is valid.
             unsafe { libc::close(fd) };
             return Err(std::io::Error::last_os_error());
         }
@@ -127,10 +136,13 @@ pub struct MemfdMapping {
 impl MemfdMapping {
     /// Map a received memfd for reading.
     pub fn map_readonly(fd: std::os::unix::io::RawFd) -> std::io::Result<Self> {
+        // SAFETY: zeroed stat struct is valid. fstat on a valid fd fills it.
         let mut stat: libc::stat = unsafe { std::mem::zeroed() };
-        if unsafe { libc::fstat(fd, &mut stat) } < 0 {
+        // SAFETY: fd is valid, &raw mut stat points to stack-allocated struct.
+        if unsafe { libc::fstat(fd, &raw mut stat) } < 0 {
             return Err(std::io::Error::last_os_error());
         }
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let len = stat.st_size as usize;
 
         if len == 0 {
@@ -140,6 +152,7 @@ impl MemfdMapping {
             ));
         }
 
+        // SAFETY: mmap with MAP_PRIVATE + PROT_READ on valid fd, len > 0.
         let ptr = unsafe {
             libc::mmap(
                 std::ptr::null_mut(),
@@ -155,13 +168,15 @@ impl MemfdMapping {
         }
 
         Ok(Self {
-            ptr: ptr as *const u8,
+            ptr: ptr.cast::<u8>().cast_const(),
             len,
         })
     }
 
     /// Access the mapped data as a byte slice.
     pub fn as_slice(&self) -> &[u8] {
+        // SAFETY: ptr is valid for len bytes (from mmap), immutable
+        // (PROT_READ + sealed), and valid until Drop calls munmap.
         unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
     }
 
@@ -181,21 +196,23 @@ impl Drop for MemfdMapping {
     fn drop(&mut self) {
         // SAFETY: munmap takes *mut c_void by POSIX but only releases
         // page table entries. Casting *const → *mut is safe for this call.
+        // ptr and len are from a successful mmap in map_readonly.
         unsafe {
-            libc::munmap(self.ptr as *mut libc::c_void, self.len);
+            libc::munmap(self.ptr.cast_mut().cast::<libc::c_void>(), self.len);
         }
     }
 }
 
-// SAFETY: MemfdMapping is Send + Sync because:
-// 1. ptr is *const u8. No method exposes &mut or the raw pointer.
-// 2. memfd is sealed (F_SEAL_WRITE+SHRINK+GROW+SEAL+FUTURE_WRITE).
-// 3. MAP_PRIVATE creates an independent copy-on-write mapping.
-// 4. PROT_READ only. Concurrent reads of immutable pages are safe.
-// 5. Valid from construction until Drop calls munmap.
 #[cfg(all(target_os = "linux", feature = "bulk-memfd"))]
+// SAFETY: MemfdMapping is Send because ptr is derived from mmap (process-wide
+// address), the mapping is sealed (immutable), and PROT_READ only. No &mut
+// is ever exposed. The mapping is valid from construction until Drop.
 unsafe impl Send for MemfdMapping {}
+
 #[cfg(all(target_os = "linux", feature = "bulk-memfd"))]
+// SAFETY: MemfdMapping is Sync because all access is through as_slice()
+// which returns &[u8] (shared reference). The backing pages are immutable
+// (F_SEAL_WRITE + MAP_PRIVATE + PROT_READ). Concurrent reads are safe.
 unsafe impl Sync for MemfdMapping {}
 
 #[cfg(all(target_os = "linux", feature = "bulk-memfd"))]
@@ -213,6 +230,7 @@ mod tests {
         assert_eq!(mapping.as_slice(), &data);
 
         drop(mapping);
+        // SAFETY: fd is valid, close releases it.
         unsafe { libc::close(fd) };
     }
 
@@ -222,6 +240,7 @@ mod tests {
         let fd = create_sealed_memfd("test-sealed", &data).unwrap();
 
         // Attempt MAP_SHARED + PROT_WRITE should fail (F_SEAL_WRITE).
+        // SAFETY: mmap with invalid seal combination — expected to fail.
         let ptr = unsafe {
             libc::mmap(
                 std::ptr::null_mut(),
@@ -234,6 +253,7 @@ mod tests {
         };
         assert_eq!(ptr, libc::MAP_FAILED);
 
+        // SAFETY: fd is valid.
         unsafe { libc::close(fd) };
     }
 
@@ -248,6 +268,7 @@ mod tests {
         assert!(!mapping.is_empty());
 
         drop(mapping);
+        // SAFETY: fd is valid.
         unsafe { libc::close(fd) };
     }
 
@@ -265,6 +286,7 @@ mod tests {
         );
 
         drop(mapping);
+        // SAFETY: fd is valid.
         unsafe { libc::close(fd) };
     }
 }

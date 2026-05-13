@@ -29,6 +29,15 @@ use super::transport::{extract_ucred, PeerCredentials};
 /// 4096 events × ~200 bytes avg = ~800KB buffer.
 const EVENT_CHANNEL_CAPACITY: usize = 4096;
 
+/// Client-side bulk receive state. Created once during `connect()` if
+/// a bulk cipher is available. Moved into the IO task.
+struct ClientBulkState {
+    dispatcher: super::bulk::BulkDispatcher,
+    reassembler: super::bulk::Reassembler,
+    reassembly_rx: crossbeam::channel::Receiver<super::bulk::dispatcher::DecryptedChunk>,
+    accumulator: super::bulk::BulkTransferAccumulator,
+}
+
 /// The IPC bus client used by frontends and agents.
 pub struct BusClient {
     sender_id: Uuid,
@@ -46,10 +55,13 @@ pub struct BusClient {
     epoch: Instant,
     /// Handle to the multiplexed I/O task.
     io_handle: tokio::task::JoinHandle<()>,
-    /// Bulk cipher derived from the Noise handshake hash.
-    /// `take_bulk_cipher()` returns `Some` exactly once. Enables
-    /// bidirectional bulk transfers from the client side.
-    bulk_cipher: Option<super::bulk::BulkCipher>,
+    /// Bulk cipher derived from the Noise handshake hash. Shared via Arc
+    /// for both send (caller creates BulkStream) and receive (client IO
+    /// loop runs dispatcher). Never consumed — always available.
+    bulk_cipher: Option<Arc<super::bulk::BulkCipher>>,
+    /// Receiver for completed bulk transfers from the server.
+    /// `take_bulk_receiver()` returns `Some` exactly once.
+    bulk_rx: Option<mpsc::Receiver<Vec<u8>>>,
 }
 
 impl BusClient {
@@ -88,9 +100,9 @@ impl BusClient {
         )
         .await?;
 
-        let bulk_cipher = handshake
+        let bulk_cipher: Option<Arc<super::bulk::BulkCipher>> = handshake
             .take_handshake_hash()
-            .map(|h| super::bulk::kdf::derive_bulk_cipher(&h));
+            .map(|h| Arc::new(super::bulk::kdf::derive_bulk_cipher(&h)));
 
         let mut noise_reader = handshake.reader;
         let mut noise_writer = handshake.writer;
@@ -98,37 +110,85 @@ impl BusClient {
         let (outbound_tx, mut outbound_rx) = mpsc::channel::<bytes::Bytes>(256);
         let (inbound_tx, inbound_rx) = mpsc::channel::<bytes::Bytes>(1024);
         let (event_tx, event_rx) = mpsc::channel::<rekindle_types::subscription_events::SubscriptionEvent>(EVENT_CHANNEL_CAPACITY);
+        let (bulk_complete_tx, bulk_rx) = mpsc::channel::<Vec<u8>>(64);
         let pending: Arc<parking_lot::Mutex<HashMap<Uuid, oneshot::Sender<IpcResponse>>>> =
             Arc::new(parking_lot::Mutex::new(HashMap::new()));
+
+        let client_bulk_state = bulk_cipher.as_ref().map(|cipher| {
+            let decrypt_pool = super::bulk::build_encrypt_pool();
+            let recv_pool = super::bulk::BufferPool::new();
+            let (reassembly_tx, reassembly_rx) =
+                crossbeam::channel::bounded::<super::bulk::dispatcher::DecryptedChunk>(256);
+            let dispatcher = super::bulk::BulkDispatcher::new(
+                Arc::clone(cipher), Arc::clone(&decrypt_pool),
+                reassembly_tx, Arc::clone(&recv_pool),
+            );
+            ClientBulkState {
+                dispatcher,
+                reassembler: super::bulk::Reassembler::new(1024),
+                reassembly_rx,
+                accumulator: super::bulk::BulkTransferAccumulator::new(0),
+            }
+        });
 
         let pending_clone = Arc::clone(&pending);
         let io_handle = tokio::spawn(async move {
             let mut reader = reader;
             let mut writer = writer;
+            let mut bulk_state = client_bulk_state;
+
             loop {
                 tokio::select! {
                     result = async {
                         let mut lane_buf = [0u8; 1];
                         tokio::io::AsyncReadExt::read_exact(&mut reader, &mut lane_buf).await?;
-                        if lane_buf[0] != 0x00 {
-                            tracing::debug!(lane = lane_buf[0], "non-control lane from server, skipping");
-                            let _ = super::framing::read_frame(&mut reader).await;
-                            return Ok(None) as std::io::Result<Option<bytes::Bytes>>;
-                        }
-                        let payload = noise_reader.read_encrypted_frame(&mut reader).await
-                            .map_err(|e| std::io::Error::other(e.to_string()))?;
-                        Ok(Some(payload))
+                        Ok(lane_buf[0]) as std::io::Result<u8>
                     } => {
                         match result {
-                            Ok(Some(payload)) => {
-                                route_inbound(
-                                    payload,
-                                    &pending_clone,
-                                    &inbound_tx,
-                                    &event_tx,
-                                );
+                            Ok(0x00) => {
+                                match noise_reader.read_encrypted_frame(&mut reader).await {
+                                    Ok(payload) => {
+                                        route_inbound(
+                                            payload,
+                                            &pending_clone,
+                                            &inbound_tx,
+                                            &event_tx,
+                                        );
+                                    }
+                                    Err(e) => {
+                                        tracing::info!(error = %e, "server read error (control)");
+                                        break;
+                                    }
+                                }
                             }
-                            Ok(None) => {}
+                            Ok(lane) if (0x01..=0x03).contains(&lane) => {
+                                match super::framing::read_frame(&mut reader).await {
+                                    Ok(frame_body) => {
+                                        if let Some(ref mut bs) = bulk_state {
+                                            if bs.dispatcher.dispatch(frame_body).is_ok() {
+                                                while let Ok(chunk) = bs.reassembly_rx.try_recv() {
+                                                    if let Ok(delivered) = bs.reassembler.process(chunk) {
+                                                        for r in &delivered {
+                                                            if let Some(complete) = bs.accumulator.push(r) {
+                                                                let _ = bulk_complete_tx.try_send(complete);
+                                                                bs.accumulator = super::bulk::BulkTransferAccumulator::new(0);
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        tracing::info!(error = %e, "server read error (bulk)");
+                                        break;
+                                    }
+                                }
+                            }
+                            Ok(lane) => {
+                                tracing::warn!(lane, "unknown lane byte from server");
+                                break;
+                            }
                             Err(e) => {
                                 if e.kind() == std::io::ErrorKind::UnexpectedEof {
                                     tracing::info!("server disconnected");
@@ -163,6 +223,7 @@ impl BusClient {
             epoch: Instant::now(),
             io_handle,
             bulk_cipher,
+            bulk_rx: Some(bulk_rx),
         })
     }
 
@@ -294,16 +355,21 @@ impl BusClient {
         self.event_rx.take()
     }
 
-    /// Take the bulk cipher for constructing `BulkStream` instances.
+    /// Get the bulk cipher for constructing `BulkStream` instances.
     ///
-    /// Returns `Some` exactly once. The cipher is derived from the Noise
-    /// handshake hash during `connect()`. Use it to create `BulkStream`s
-    /// for sending bulk data from the client to the server.
-    ///
-    /// Returns `None` on subsequent calls or if the handshake hash was
-    /// unavailable.
-    pub fn take_bulk_cipher(&mut self) -> Option<super::bulk::BulkCipher> {
-        self.bulk_cipher.take()
+    /// The cipher is derived from the Noise handshake hash during
+    /// `connect()`. Shared via `Arc` — the same cipher is used by the
+    /// client IO loop for receive-side decryption and by the caller
+    /// for send-side encryption. Returns `None` if the handshake hash
+    /// was unavailable.
+    pub fn bulk_cipher(&self) -> Option<&Arc<super::bulk::BulkCipher>> {
+        self.bulk_cipher.as_ref()
+    }
+
+    /// Take the receiver for completed bulk transfers from the server.
+    /// Returns `Some` exactly once.
+    pub fn take_bulk_receiver(&mut self) -> Option<mpsc::Receiver<Vec<u8>>> {
+        self.bulk_rx.take()
     }
 
     /// The client's monotonic epoch.

@@ -313,3 +313,215 @@ async fn handshake_hash_is_available() {
     let second = ct.take_handshake_hash();
     assert!(second.is_none());
 }
+
+// ── AWS-LC resolver tests ─────────────────────────────────────────
+
+#[tokio::test]
+async fn aws_lc_resolver_handshake_roundtrip() {
+    use crate::ipc::noise::aws_lc_resolver::noise_builder;
+    use crate::ipc::noise_keys::NOISE_PARAMS;
+
+    // Generate keypairs using the standard builder (key generation
+    // is algorithm-agnostic — only the cipher differs).
+    let server_kp = generate_keypair().unwrap();
+    let client_kp = generate_keypair().unwrap();
+    let server_pub: [u8; 32] = server_kp.public().try_into().unwrap();
+
+    let mut initiator = noise_builder(NOISE_PARAMS)
+        .local_private_key(&client_kp.as_inner().private).unwrap()
+        .remote_public_key(&server_pub).unwrap()
+        .prologue(b"AWSLC_TEST").unwrap()
+        .build_initiator().unwrap();
+    let mut responder = noise_builder(NOISE_PARAMS)
+        .local_private_key(&server_kp.as_inner().private).unwrap()
+        .prologue(b"AWSLC_TEST").unwrap()
+        .build_responder().unwrap();
+
+    let mut buf = [0u8; 256];
+    let mut payload = [0u8; 256];
+
+    let len = initiator.write_message(&[], &mut buf).unwrap();
+    responder.read_message(&buf[..len], &mut payload).unwrap();
+    let len = responder.write_message(&[], &mut buf).unwrap();
+    initiator.read_message(&buf[..len], &mut payload).unwrap();
+
+    let h_i = initiator.into_stateless_transport_mode().unwrap();
+    let h_r = responder.into_stateless_transport_mode().unwrap();
+
+    // Roundtrip: encrypt with initiator, decrypt with responder.
+    let msg = b"hello aws-lc resolver - zero alloc decrypt";
+    let mut enc = vec![0u8; msg.len() + 16];
+    let mut dec = vec![0u8; msg.len()];
+
+    let ct_len = h_i.write_message(0, msg, &mut enc).unwrap();
+    let pt_len = h_r.read_message(0, &enc[..ct_len], &mut dec).unwrap();
+    assert_eq!(&dec[..pt_len], msg);
+
+    // Reverse direction: encrypt with responder, decrypt with initiator.
+    let resp = b"acknowledged - symmetric performance";
+    let mut enc2 = vec![0u8; resp.len() + 16];
+    let mut dec2 = vec![0u8; resp.len()];
+
+    let ct_len2 = h_r.write_message(1, resp, &mut enc2).unwrap();
+    let pt_len2 = h_i.read_message(1, &enc2[..ct_len2], &mut dec2).unwrap();
+    assert_eq!(&dec2[..pt_len2], resp);
+}
+
+#[tokio::test]
+async fn aws_lc_resolver_max_noise_payload() {
+    use crate::ipc::noise::aws_lc_resolver::noise_builder;
+    use crate::ipc::noise_keys::NOISE_PARAMS;
+
+    let server_kp = generate_keypair().unwrap();
+    let client_kp = generate_keypair().unwrap();
+    let server_pub: [u8; 32] = server_kp.public().try_into().unwrap();
+
+    let mut initiator = noise_builder(NOISE_PARAMS)
+        .local_private_key(&client_kp.as_inner().private).unwrap()
+        .remote_public_key(&server_pub).unwrap()
+        .prologue(b"LARGE").unwrap()
+        .build_initiator().unwrap();
+    let mut responder = noise_builder(NOISE_PARAMS)
+        .local_private_key(&server_kp.as_inner().private).unwrap()
+        .prologue(b"LARGE").unwrap()
+        .build_responder().unwrap();
+
+    let mut buf = [0u8; 256];
+    let mut payload = [0u8; 256];
+    let len = initiator.write_message(&[], &mut buf).unwrap();
+    responder.read_message(&buf[..len], &mut payload).unwrap();
+    let len = responder.write_message(&[], &mut buf).unwrap();
+    initiator.read_message(&buf[..len], &mut payload).unwrap();
+
+    let h_i = initiator.into_stateless_transport_mode().unwrap();
+    let h_r = responder.into_stateless_transport_mode().unwrap();
+
+    // Max Noise payload: 65535 - 16 = 65519 bytes.
+    let msg = vec![0xABu8; MAX_NOISE_PLAINTEXT];
+    let mut enc = vec![0u8; msg.len() + 16];
+    let mut dec = vec![0u8; msg.len()];
+
+    let ct_len = h_i.write_message(0, &msg, &mut enc).unwrap();
+    let pt_len = h_r.read_message(0, &enc[..ct_len], &mut dec).unwrap();
+    assert_eq!(pt_len, msg.len());
+    assert_eq!(&dec[..pt_len], &msg[..]);
+}
+
+#[tokio::test]
+async fn aws_lc_resolver_nonce_sync_across_frames() {
+    // Verify that nonce counters stay synchronized when using
+    // the aws-lc resolver across multiple encrypt/decrypt calls.
+    use crate::ipc::noise::aws_lc_resolver::noise_builder;
+    use crate::ipc::noise_keys::NOISE_PARAMS;
+
+    let server_kp = generate_keypair().unwrap();
+    let client_kp = generate_keypair().unwrap();
+    let server_pub: [u8; 32] = server_kp.public().try_into().unwrap();
+
+    let mut initiator = noise_builder(NOISE_PARAMS)
+        .local_private_key(&client_kp.as_inner().private).unwrap()
+        .remote_public_key(&server_pub).unwrap()
+        .prologue(b"SYNC").unwrap()
+        .build_initiator().unwrap();
+    let mut responder = noise_builder(NOISE_PARAMS)
+        .local_private_key(&server_kp.as_inner().private).unwrap()
+        .prologue(b"SYNC").unwrap()
+        .build_responder().unwrap();
+
+    let mut buf = [0u8; 256];
+    let mut payload = [0u8; 256];
+    let len = initiator.write_message(&[], &mut buf).unwrap();
+    responder.read_message(&buf[..len], &mut payload).unwrap();
+    let len = responder.write_message(&[], &mut buf).unwrap();
+    initiator.read_message(&buf[..len], &mut payload).unwrap();
+
+    let h_i = initiator.into_stateless_transport_mode().unwrap();
+    let h_r = responder.into_stateless_transport_mode().unwrap();
+
+    // Send 20 frames with incrementing nonces.
+    for nonce in 0u64..20 {
+        let msg = format!("frame {nonce}").into_bytes();
+        let mut enc = vec![0u8; msg.len() + 16];
+        let mut dec = vec![0u8; msg.len()];
+
+        let ct_len = h_i.write_message(nonce, &msg, &mut enc).unwrap();
+        let pt_len = h_r.read_message(nonce, &enc[..ct_len], &mut dec).unwrap();
+        assert_eq!(&dec[..pt_len], &msg[..], "mismatch at nonce {nonce}");
+    }
+}
+
+#[tokio::test]
+async fn aws_lc_resolver_tampered_ciphertext_rejected() {
+    use crate::ipc::noise::aws_lc_resolver::noise_builder;
+    use crate::ipc::noise_keys::NOISE_PARAMS;
+
+    let server_kp = generate_keypair().unwrap();
+    let client_kp = generate_keypair().unwrap();
+    let server_pub: [u8; 32] = server_kp.public().try_into().unwrap();
+
+    let mut initiator = noise_builder(NOISE_PARAMS)
+        .local_private_key(&client_kp.as_inner().private).unwrap()
+        .remote_public_key(&server_pub).unwrap()
+        .prologue(b"TAMPER").unwrap()
+        .build_initiator().unwrap();
+    let mut responder = noise_builder(NOISE_PARAMS)
+        .local_private_key(&server_kp.as_inner().private).unwrap()
+        .prologue(b"TAMPER").unwrap()
+        .build_responder().unwrap();
+
+    let mut buf = [0u8; 256];
+    let mut payload = [0u8; 256];
+    let len = initiator.write_message(&[], &mut buf).unwrap();
+    responder.read_message(&buf[..len], &mut payload).unwrap();
+    let len = responder.write_message(&[], &mut buf).unwrap();
+    initiator.read_message(&buf[..len], &mut payload).unwrap();
+
+    let h_i = initiator.into_stateless_transport_mode().unwrap();
+    let h_r = responder.into_stateless_transport_mode().unwrap();
+
+    let msg = b"tamper test payload";
+    let mut enc = vec![0u8; msg.len() + 16];
+    let ct_len = h_i.write_message(0, msg, &mut enc).unwrap();
+
+    // Tamper with the ciphertext
+    enc[0] ^= 0xFF;
+
+    let mut dec = vec![0u8; msg.len()];
+    assert!(h_r.read_message(0, &enc[..ct_len], &mut dec).is_err(),
+        "tampered ciphertext must be rejected by aws-lc resolver");
+}
+
+#[tokio::test]
+async fn aws_lc_resolver_short_ciphertext_rejected() {
+    use crate::ipc::noise::aws_lc_resolver::noise_builder;
+    use crate::ipc::noise_keys::NOISE_PARAMS;
+
+    let server_kp = generate_keypair().unwrap();
+    let client_kp = generate_keypair().unwrap();
+    let server_pub: [u8; 32] = server_kp.public().try_into().unwrap();
+
+    let mut initiator = noise_builder(NOISE_PARAMS)
+        .local_private_key(&client_kp.as_inner().private).unwrap()
+        .remote_public_key(&server_pub).unwrap()
+        .prologue(b"SHORT").unwrap()
+        .build_initiator().unwrap();
+    let mut responder = noise_builder(NOISE_PARAMS)
+        .local_private_key(&server_kp.as_inner().private).unwrap()
+        .prologue(b"SHORT").unwrap()
+        .build_responder().unwrap();
+
+    let mut buf = [0u8; 256];
+    let mut payload = [0u8; 256];
+    let len = initiator.write_message(&[], &mut buf).unwrap();
+    responder.read_message(&buf[..len], &mut payload).unwrap();
+    let len = responder.write_message(&[], &mut buf).unwrap();
+    initiator.read_message(&buf[..len], &mut payload).unwrap();
+
+    let h_r = responder.into_stateless_transport_mode().unwrap();
+
+    // Ciphertext shorter than TAGLEN (16 bytes)
+    let short = vec![0u8; 10];
+    let mut dec = vec![0u8; 10];
+    assert!(h_r.read_message(0, &short, &mut dec).is_err(),
+        "ciphertext shorter than tag must be rejected");
+}

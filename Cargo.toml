@@ -28,6 +28,8 @@ members = [
     "crates/rekindle-storage",
     "crates/rekindle-ratchet",
     "crates/rekindle-chat",
+    "crates/rekindle-aead",
+    "crates/rekindle-hash",
 ]
 
 [workspace.dependencies]

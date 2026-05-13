@@ -11,7 +11,7 @@
 //! # Quick start
 //!
 //! ```ignore
-//! use std::sync::{Arc, atomic::AtomicU64};
+//! use std::sync::Arc;
 //! use rekindle_node::ipc::bulk::*;
 //!
 //! // 1. Build the encrypt pool (once at startup).
@@ -23,18 +23,18 @@
 //! // 3. Derive cipher from a Noise handshake hash.
 //! let cipher = Arc::new(kdf::derive_bulk_cipher(&handshake_hash));
 //!
-//! // 4. Create a bulk stream for sending.
+//! // 4. Create a zeroizing bulk stream for sending.
 //! let (tx, rx) = crossbeam::channel::bounded(64);
-//! let stream = BulkStream::new(
+//! let stream = ZeroizingStream::new(
 //!     0,
 //!     cipher,
-//!     Arc::new(AtomicU64::new(0)),
+//!     Arc::new(NonceCounter::new()),
 //!     buffer_pool,
 //!     tx,
 //! );
 //!
-//! // 5. Submit chunks for parallel encryption.
-//! stream.submit_chunk(&encrypt_pool, chunk_bytes, false);
+//! // 5. Submit chunks for parallel encryption (plaintext is zeroized after encrypt).
+//! stream.submit_chunk(&encrypt_pool, &chunk_bytes, false);
 //!
 //! // 6. Drain encrypted frames from rx and write to socket.
 //! ```
@@ -49,14 +49,15 @@
 //!   │
 //!   ├── chunk into ≤65,519-byte segments
 //!   │
-//!   ├── BulkStream::submit_chunk() [per chunk]
-//!   │   ├── AtomicU64::fetch_add(1) → nonce
+//!   ├── ZeroizingStream::submit_chunk() [per chunk]
+//!   │   ├── NonceCounter::next() → nonce (aborts process on exhaustion)
 //!   │   └── rayon::spawn(move || {
 //!   │       ├── BufferPool::acquire() → slab
 //!   │       ├── write header into slab
-//!   │       ├── copy plaintext into slab
+//!   │       ├── copy plaintext into slab (Zeroizing<Vec<u8>>)
 //!   │       ├── BulkCipher::seal_in_place() → tag
 //!   │       ├── append tag to slab
+//!   │       ├── drop(owned_plain) — zeroizes plaintext copy
 //!   │       └── crossbeam::Sender::send(slab)
 //!   │   })
 //!   └── [returns immediately; encryption is async]
@@ -76,12 +77,15 @@
 //!       ├── parse BulkFrameHeader
 //!       ├── ReplayFilter::check_and_accept(nonce)
 //!       └── rayon::spawn(move || {
-//!           ├── BulkCipher::open_in_place_combined()
+//!           ├── PooledBuf(ct_and_tag) — zeroized + returned to recv pool on drop
+//!           ├── BulkCipher::open_in_place(ct_and_tag)
+//!           ├── plaintext → PooledBuf in DecryptedChunk
 //!           └── crossbeam::Sender::send(DecryptedChunk)
 //!       })
 //!       → Reassembler (BTreeMap reorder)
-//!           ├── StreamingDigest::update(plaintext)
-//!           └── deliver in-order to application
+//!           ├── MerkleDigest::feed_chunk_digest(pre-computed)
+//!           ├── plaintext moved (PooledBuf) into ReassembledChunk
+//!           └── deliver in-order to application (zeroized + returned to pool on drop)
 //! ```
 
 pub mod cipher;
@@ -91,16 +95,30 @@ pub mod encrypt;
 pub mod frame;
 pub mod kdf;
 pub mod pool;
+pub mod pooled_buf;
 pub mod reader;
 pub mod reassembly;
 pub mod replay;
 pub mod session;
+pub mod capability;
+pub mod nonce;
 pub mod stream;
+pub mod transfer;
 pub mod verify;
 pub mod writer;
 
 #[cfg(feature = "bulk-uring")]
+#[allow(unsafe_code)]
 pub mod uring_writer;
+
+#[cfg(feature = "bulk-uring")]
+#[allow(unsafe_code)]
+pub mod uring_recv;
+
+pub mod lending;
+
+#[allow(unsafe_code)]
+pub mod hugepage_pool;
 
 /// memfd zero-copy path for 100Gbps same-host transfers.
 /// Uses libc FFI (memfd_create, mmap, munmap, ftruncate, fcntl)
@@ -115,11 +133,16 @@ pub use dispatcher::{BulkDispatcher, DecryptedChunk};
 pub use encrypt::build_encrypt_pool;
 pub use frame::{BulkFrameHeader, FrameKind, HEADER_LEN, MAX_CHUNK_PLAIN, TAG_LEN};
 pub use pool::BufferPool;
+pub use pooled_buf::PooledBuf;
 pub use reader::{read_lane_frame, write_lane_byte};
 pub use reassembly::{Reassembler, ReassembledChunk};
 pub use replay::ReplayFilter;
+pub use nonce::NonceCounter;
 pub use session::BulkSession;
-pub use stream::{BulkStream, BulkStreamId};
+pub use stream::BulkStream;
+pub use stream::BulkStreamId;
+pub use lending::ZeroizingStream;
+pub use transfer::{send_payload, BulkTransferAccumulator};
 pub use verify::{StreamingDigest, MerkleDigest, DigestAlgorithm, merkle_root, merkle_root_with_algorithm, digest_oneshot, blake3_oneshot};
 
 /// Shared atomic counters for bulk transfer observability.

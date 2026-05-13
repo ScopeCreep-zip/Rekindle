@@ -17,6 +17,7 @@
           protobuf
           cmake
           gnuplot
+          nasm
           libsodium.dev
         ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
           alsa-lib.dev

@@ -101,6 +101,11 @@ pub struct DaemonContext {
     /// a client_msg_id.
     pub idempotency_cache: crate::ipc::idempotency::IdempotencyCache,
 
+    /// Cached crypto capability probe results. Computed once at daemon
+    /// startup. Read by `build_checks()` for `status --doctor` without
+    /// re-running the ~200ms benchmark on every request.
+    pub crypto_caps: crate::ipc::bulk::capability::CryptoCapabilities,
+
     /// Reference to the IPC bus server's shared state.
     /// Used by bulk transfer cancel to signal the connection's reassembler.
     pub server_state: parking_lot::RwLock<Option<Arc<crate::ipc::server::state::ServerState>>>,
@@ -144,11 +149,11 @@ pub async fn dispatch(ctx: &Arc<DaemonContext>, request: IpcRequest, sender_name
             });
 
             let stream_id = ctx.bulk_transfers.lock().start(
-                transfer_id.clone(), total_size, media_type, digest, direction,
+                transfer_id.clone(), total_size, media_type, digest, direction.clone(),
                 conn_id, nonce_counter,
                 crate::ipc::bulk::verify::DigestAlgorithm::default(),
             );
-            tracing::info!(transfer_id, total_size, stream_id, conn_id, "bulk transfer started");
+            tracing::info!(transfer_id, total_size, stream_id, conn_id, direction, "bulk transfer started");
             IpcResponse::ok(&serde_json::json!({
                 "transfer_id": transfer_id,
                 "stream_id": stream_id,
@@ -156,12 +161,28 @@ pub async fn dispatch(ctx: &Arc<DaemonContext>, request: IpcRequest, sender_name
             }))
         }
         IpcRequest::BulkTransferComplete { transfer_id, digest, bytes_transferred } => {
+            // Read the completed payload from the connection's delivery channel.
+            let delivered_payload = {
+                let conn_id = ctx.bulk_transfers.lock().status(&transfer_id)
+                    .map_or(0, |s| s.conn_id);
+                ctx.server_state.read().as_ref().and_then(|ss| {
+                    ss.connections.get(&conn_id).and_then(|conn| {
+                        conn.bulk_deliver_rx.lock().try_recv().ok()
+                    })
+                })
+            };
+
             let found = ctx.bulk_transfers.lock().complete(&transfer_id, bytes_transferred);
             if found {
-                tracing::info!(transfer_id, digest, bytes_transferred, "bulk transfer completed");
+                let payload_size = delivered_payload.as_ref().map_or(0, |(_, p)| p.len());
+                tracing::info!(
+                    transfer_id, digest, bytes_transferred, payload_size,
+                    "bulk transfer completed"
+                );
                 IpcResponse::ok(&serde_json::json!({
                     "transfer_id": transfer_id,
                     "status": "completed",
+                    "payload_size": payload_size,
                 }))
             } else {
                 IpcResponse::error(404, format!("transfer {transfer_id} not found"))
@@ -172,7 +193,7 @@ pub async fn dispatch(ctx: &Arc<DaemonContext>, request: IpcRequest, sender_name
                 let mut reg = ctx.bulk_transfers.lock();
                 let info = reg.status(&transfer_id).map(|s| {
                     let nonce = s.nonce_counter.as_ref()
-                        .map_or(0, |n| n.load(std::sync::atomic::Ordering::Relaxed));
+                        .map_or(0, |n| n.current());
                     (s.conn_id, nonce)
                 });
                 reg.cancel(&transfer_id);

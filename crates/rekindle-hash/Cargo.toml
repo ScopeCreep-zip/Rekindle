@@ -1,0 +1,36 @@
+[package]
+name = "rekindle-hash"
+version = "0.1.0"
+edition = "2021"
+description = "Multi-buffer SHA-256 and BLAKE3 for parallel Merkle digest verification"
+license = "MIT"
+build = "build.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+# Single-buffer SHA-256 via hardware-accelerated aws-lc
+aws-lc-rs = { version = "1.16", features = ["aws-lc-sys"] }
+
+# BLAKE3 with AVX2 SIMD (8-way parallel internally)
+blake3 = "1"
+
+# Compile-time struct size assertions
+static_assertions = "1.1"
+
+[build-dependencies]
+cc = "1"
+nasm-rs = "0.3"
+
+[dev-dependencies]
+criterion = "0.5"
+
+[features]
+default = ["sha256-mb"]
+sha256-mb = []
+
+[[bench]]
+name = "hash_compare"
+path = "benches/hash_compare.rs"
+harness = false

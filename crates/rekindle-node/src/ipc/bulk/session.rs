@@ -4,26 +4,26 @@
 //! single connection's bulk plane. On drop, logs the session duration
 //! and nonce usage.
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
 use super::cipher::BulkCipher;
+use super::nonce::NonceCounter;
 use super::pool::BufferPool;
-use super::stream::BulkStream;
+use super::lending::ZeroizingStream;
 
 /// Bulk transfer session for a single IPC connection.
 pub struct BulkSession {
     conn_id: u64,
     cipher: Arc<BulkCipher>,
-    nonce_ctr: Arc<AtomicU64>,
+    nonce_ctr: Arc<NonceCounter>,
     pool: Arc<BufferPool>,
     created_at: Instant,
     digest_algorithm: super::verify::DigestAlgorithm,
 }
 
 impl BulkSession {
-    /// Create a new bulk session with default algorithm (BLAKE3).
+    /// Create a new bulk session with default algorithms (BLAKE3 + AES-256-GCM).
     pub fn new(
         conn_id: u64,
         cipher: BulkCipher,
@@ -42,20 +42,24 @@ impl BulkSession {
         Self {
             conn_id,
             cipher: Arc::new(cipher),
-            nonce_ctr: Arc::new(AtomicU64::new(0)),
+            nonce_ctr: Arc::new(NonceCounter::new()),
             pool,
             created_at: Instant::now(),
             digest_algorithm,
         }
     }
 
-    /// Create a BulkStream for sending data on a specific stream_id.
+    /// Create a ZeroizingStream for sending data on a specific stream_id.
+    ///
+    /// Returns `ZeroizingStream` which accepts `&[u8]` input. Both
+    /// `ZeroizingStream` and `BulkStream` zeroize all plaintext after
+    /// encryption — the distinction is input type only (`&[u8]` vs `Vec<u8>`).
     pub fn create_stream(
         &self,
         stream_id: u8,
         out_tx: crossbeam::channel::Sender<Vec<u8>>,
-    ) -> BulkStream {
-        BulkStream::new(
+    ) -> ZeroizingStream {
+        ZeroizingStream::new(
             stream_id,
             Arc::clone(&self.cipher),
             Arc::clone(&self.nonce_ctr),
@@ -70,7 +74,7 @@ impl BulkSession {
     }
 
     /// The session's nonce counter.
-    pub fn nonce_counter(&self) -> &Arc<AtomicU64> {
+    pub fn nonce_counter(&self) -> &Arc<NonceCounter> {
         &self.nonce_ctr
     }
 
@@ -103,7 +107,7 @@ mod tests {
         assert!(Arc::strong_count(cipher_ref) >= 1);
 
         // nonce_counter() starts at 0.
-        assert_eq!(session.nonce_counter().load(Ordering::Relaxed), 0);
+        assert_eq!(session.nonce_counter().current(), 0);
 
         // elapsed() returns a valid duration (session was just created).
         assert!(session.elapsed().as_secs() < 10);
@@ -124,19 +128,19 @@ mod tests {
         // The stream shares the session's nonce counter.
         // Submitting a chunk increments the counter.
         let encrypt_pool = super::super::encrypt::build_encrypt_pool();
-        stream.submit_chunk(&encrypt_pool, bytes::Bytes::from_static(b"test"), true);
+        stream.submit_chunk(&encrypt_pool, b"test", true);
 
         // Wait for the rayon task to complete.
         let _ = _rx.recv_timeout(std::time::Duration::from_secs(5));
 
-        assert_eq!(session.nonce_counter().load(Ordering::Relaxed), 1);
+        assert_eq!(session.nonce_counter().current(), 1);
     }
 }
 
 impl Drop for BulkSession {
     #[allow(clippy::cast_possible_truncation)] // session duration < 2^64 ms
     fn drop(&mut self) {
-        let nonces_used = self.nonce_ctr.load(Ordering::Relaxed);
+        let nonces_used = self.nonce_ctr.current();
         if nonces_used > 0 {
             tracing::info!(
                 conn_id = self.conn_id,

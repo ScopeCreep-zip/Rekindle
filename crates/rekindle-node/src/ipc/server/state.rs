@@ -100,9 +100,18 @@ pub struct ConnectionState {
     pub rate_limiter: TokenBucket,
     /// Nonce counter from the connection's BulkSession. Set after
     /// bulk session construction. Read by cancel handler.
-    pub bulk_nonce_counter: Option<Arc<std::sync::atomic::AtomicU64>>,
+    pub bulk_nonce_counter: Option<Arc<crate::ipc::bulk::nonce::NonceCounter>>,
     /// Cancel signal channel for reassembler reset.
     pub cancel_bulk_tx: mpsc::Sender<u64>,
+    /// Send command channel: dispatch tells the connection handler to send
+    /// a payload over the bulk lane. `(stream_id, payload)`.
+    pub bulk_send_tx: mpsc::Sender<(u8, Vec<u8>)>,
+    /// Delivery channel sender: connection handler sends completed bulk
+    /// transfers here. `(stream_id, payload)`.
+    pub bulk_deliver_tx: mpsc::Sender<(u8, Vec<u8>)>,
+    /// Delivery channel receiver: dispatch layer reads completed bulk
+    /// transfers from here. `(stream_id, payload)`.
+    pub bulk_deliver_rx: parking_lot::Mutex<mpsc::Receiver<(u8, Vec<u8>)>>,
 }
 
 // ── PendingRequests Dual Index ────────────────────────────────────────

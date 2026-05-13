@@ -8,6 +8,15 @@
 //! by `chunk_index` and aggregates their per-chunk digests into a Merkle
 //! root for verification.
 //!
+//! # Plaintext zeroization
+//!
+//! Both `DecryptedChunk::plaintext` and `ReassembledChunk::plaintext` are
+//! `PooledBuf`. Plaintext is zeroized and returned to the receive pool
+//! when the chunk is dropped — whether by the reassembler (buffered
+//! out-of-order chunk evicted), by the application (after consumption),
+//! or by panic unwind. Chunks held in the `BTreeMap` reorder buffer are
+//! zeroized and returned to the pool when `reset()` clears it.
+//!
 //! # Reorder buffer
 //!
 //! A `BTreeMap<u64, DecryptedChunk>` holds out-of-order chunks. The
@@ -36,13 +45,18 @@ use super::dispatcher::DecryptedChunk;
 use super::verify::MerkleDigest;
 
 /// A reassembled, verified chunk ready for delivery to the application.
+///
+/// `plaintext` is a `PooledBuf` — zeroized and returned to the receive
+/// pool on drop. The application receives plaintext that will be
+/// automatically zeroized when the `ReassembledChunk` is dropped, even
+/// if the application forgets to zeroize it explicitly.
 pub struct ReassembledChunk {
     /// Which bulk stream this chunk belongs to.
     pub stream_id: u8,
     /// Chunk ordering index (monotonically increasing, gap-free).
     pub chunk_index: u64,
-    /// Verified plaintext bytes.
-    pub plaintext: Vec<u8>,
+    /// Verified plaintext bytes. Zeroized and returned to receive pool on drop.
+    pub plaintext: super::pooled_buf::PooledBuf,
     /// True if this is the final chunk of the transfer.
     pub is_last: bool,
 }
@@ -168,7 +182,7 @@ impl Reassembler {
             output.push(ReassembledChunk {
                 stream_id: chunk.stream_id,
                 chunk_index: chunk.chunk_index,
-                plaintext: chunk.plaintext,
+                plaintext: chunk.plaintext, // PooledBuf moved, returned to recv pool on drop
                 is_last,
             });
 
@@ -218,12 +232,18 @@ impl Reassembler {
 mod tests {
     use super::*;
     use super::super::verify::{DigestAlgorithm, digest_oneshot, merkle_root_with_algorithm};
+    use super::super::pooled_buf::PooledBuf;
+    use super::super::pool::BufferPool;
+
+    fn test_pool() -> std::sync::Arc<BufferPool> {
+        BufferPool::new()
+    }
 
     fn make_chunk_with(algo: DigestAlgorithm, idx: u64, data: &[u8], is_last: bool) -> DecryptedChunk {
         DecryptedChunk {
             stream_id: 0,
             chunk_index: idx,
-            plaintext: data.to_vec(),
+            plaintext: PooledBuf::new(data.to_vec(), test_pool()),
             is_last,
             fin_digest: None,
             chunk_digest: digest_oneshot(algo, data),
@@ -235,7 +255,7 @@ mod tests {
         DecryptedChunk {
             stream_id: 0,
             chunk_index: idx,
-            plaintext: data.to_vec(),
+            plaintext: PooledBuf::new(data.to_vec(), test_pool()),
             is_last: true,
             fin_digest: Some(digest),
             chunk_digest: digest_oneshot(algo, data),
@@ -250,10 +270,10 @@ mod tests {
             let mut r = Reassembler::with_algorithm(1024, algo);
             let out = r.process(make_chunk_with(algo, 0, b"hello", false)).unwrap();
             assert_eq!(out.len(), 1);
-            assert_eq!(out[0].plaintext, b"hello");
+            assert_eq!(&*out[0].plaintext, b"hello");
             let out = r.process(make_chunk_with(algo, 1, b"world", false)).unwrap();
             assert_eq!(out.len(), 1);
-            assert_eq!(out[0].plaintext, b"world");
+            assert_eq!(&*out[0].plaintext, b"world");
         }
 
         // ── Out-of-order buffering and release ───────────────────
@@ -264,8 +284,8 @@ mod tests {
             assert_eq!(r.buffered_count(), 1);
             let out = r.process(make_chunk_with(algo, 0, b"hello", false)).unwrap();
             assert_eq!(out.len(), 2);
-            assert_eq!(out[0].plaintext, b"hello");
-            assert_eq!(out[1].plaintext, b"world");
+            assert_eq!(&*out[0].plaintext, b"hello");
+            assert_eq!(&*out[1].plaintext, b"world");
             assert_eq!(r.buffered_count(), 0);
         }
 
@@ -323,9 +343,9 @@ mod tests {
             assert_eq!(r.process(make_chunk_with(algo, 1, b"b", false)).unwrap().len(), 0);
             let out = r.process(make_chunk_with(algo, 0, b"a", false)).unwrap();
             assert_eq!(out.len(), 3);
-            assert_eq!(out[0].plaintext, b"a");
-            assert_eq!(out[1].plaintext, b"b");
-            assert_eq!(out[2].plaintext, b"c");
+            assert_eq!(&*out[0].plaintext, b"a");
+            assert_eq!(&*out[1].plaintext, b"b");
+            assert_eq!(&*out[2].plaintext, b"c");
         }
 
         // ── Reset clears state ───────────────────────────────────
@@ -340,7 +360,7 @@ mod tests {
             assert_eq!(out.len(), 0); // stale
             let out = r.process(make_chunk_with(algo, 100, b"new", false)).unwrap();
             assert_eq!(out.len(), 1);
-            assert_eq!(out[0].plaintext, b"new");
+            assert_eq!(&*out[0].plaintext, b"new");
         }
     }
 
@@ -360,7 +380,7 @@ mod tests {
         let failed = DecryptedChunk {
             stream_id: 0,
             chunk_index: 0,
-            plaintext: Vec::new(),
+            plaintext: PooledBuf::new(Vec::new(), test_pool()),
             is_last: false,
             fin_digest: None,
             chunk_digest: [0u8; 32],

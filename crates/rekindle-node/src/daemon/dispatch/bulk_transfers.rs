@@ -28,7 +28,7 @@ pub struct TransferState {
     pub conn_id: u64,
     /// Nonce counter from the connection's BulkSession.
     #[serde(skip)]
-    pub nonce_counter: Option<Arc<std::sync::atomic::AtomicU64>>,
+    pub nonce_counter: Option<Arc<crate::ipc::bulk::nonce::NonceCounter>>,
     /// Digest algorithm for this transfer.
     pub digest_algorithm: crate::ipc::bulk::verify::DigestAlgorithm,
 }
@@ -69,7 +69,7 @@ impl BulkTransferRegistry {
         digest: String,
         direction: String,
         conn_id: u64,
-        nonce_counter: Option<Arc<std::sync::atomic::AtomicU64>>,
+        nonce_counter: Option<Arc<crate::ipc::bulk::nonce::NonceCounter>>,
         digest_algorithm: crate::ipc::bulk::verify::DigestAlgorithm,
     ) -> u8 {
         self.next_stream_id = self.next_stream_id.wrapping_add(1);

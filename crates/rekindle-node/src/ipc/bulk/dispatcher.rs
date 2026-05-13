@@ -8,8 +8,14 @@
 //! sequentially from the socket read loop. The replay filter is NOT
 //! thread-safe and does not need to be — it is only accessed here.
 //!
-//! After decryption, each rayon worker sends the plaintext chunk
-//! through a crossbeam channel to the reassembly task.
+//! # Plaintext zeroization
+//!
+//! The `ct_and_tag` buffer is wrapped in `PooledBuf` inside the rayon
+//! closure. After decryption, the buffer becomes `DecryptedChunk::plaintext`.
+//! When the application drops `ReassembledChunk`, the `PooledBuf` drop
+//! impl calls `BufferPool::replenish()` which zeroizes via volatile
+//! writes and returns the slab to the receive pool. There is no code
+//! path where receive-side plaintext survives in freed memory.
 
 use std::sync::Arc;
 use rayon::ThreadPool;
@@ -20,13 +26,17 @@ use super::replay::ReplayFilter;
 
 /// Decrypted chunk metadata + plaintext, sent from rayon decrypt
 /// workers to the reassembly task.
+///
+/// `plaintext` is a `PooledBuf` — zeroized and returned to the
+/// receive pool on drop. There is no code path in the receive
+/// pipeline where decrypted plaintext survives in freed memory.
 pub struct DecryptedChunk {
     /// Which bulk stream this chunk belongs to.
     pub stream_id: u8,
     /// Chunk ordering index (the nonce from the wire header).
     pub chunk_index: u64,
-    /// Decrypted plaintext bytes.
-    pub plaintext: Vec<u8>,
+    /// Decrypted plaintext bytes. Returned to receive pool on drop.
+    pub plaintext: super::pooled_buf::PooledBuf,
     /// True if this is the final chunk of the transfer.
     pub is_last: bool,
     /// For BulkFin frames: the 32-byte sender-computed blob digest
@@ -76,6 +86,7 @@ pub struct BulkDispatcher {
     decrypt_pool: Arc<ThreadPool>,
     reassembly_tx: crossbeam::channel::Sender<DecryptedChunk>,
     digest_algorithm: super::verify::DigestAlgorithm,
+    recv_pool: Arc<super::pool::BufferPool>,
 }
 
 impl BulkDispatcher {
@@ -89,8 +100,9 @@ impl BulkDispatcher {
         cipher: Arc<BulkCipher>,
         decrypt_pool: Arc<ThreadPool>,
         reassembly_tx: crossbeam::channel::Sender<DecryptedChunk>,
+        recv_pool: Arc<super::pool::BufferPool>,
     ) -> Self {
-        Self::with_algorithm(cipher, decrypt_pool, reassembly_tx, super::verify::DigestAlgorithm::default())
+        Self::with_algorithm(cipher, decrypt_pool, reassembly_tx, super::verify::DigestAlgorithm::default(), recv_pool)
     }
 
     /// Create a dispatcher with a specific digest algorithm.
@@ -99,6 +111,7 @@ impl BulkDispatcher {
         decrypt_pool: Arc<ThreadPool>,
         reassembly_tx: crossbeam::channel::Sender<DecryptedChunk>,
         digest_algorithm: super::verify::DigestAlgorithm,
+        recv_pool: Arc<super::pool::BufferPool>,
     ) -> Self {
         Self {
             cipher,
@@ -106,6 +119,7 @@ impl BulkDispatcher {
             decrypt_pool,
             reassembly_tx,
             digest_algorithm,
+            recv_pool,
         }
     }
 
@@ -154,10 +168,23 @@ impl BulkDispatcher {
         let mut aad = [0u8; HEADER_LEN];
         aad.copy_from_slice(&frame_body[..HEADER_LEN]);
 
-        // The ciphertext + tag starts after the header.
-        let mut ct_and_tag = frame_body[HEADER_LEN..].to_vec();
+        // The ciphertext + tag starts after the header. We drain the
+        // 10-byte header from the owned Vec rather than copying 65 KiB
+        // into a new allocation. drain(..10) does a memmove of the
+        // remaining bytes, which is cheaper than alloc+copy+free.
+        let ct_and_tag = {
+            let mut v = frame_body;
+            v.drain(..HEADER_LEN);
+            v
+        };
+        let recv_pool = Arc::clone(&self.recv_pool);
 
         self.decrypt_pool.spawn(move || {
+            // Wrap ct_and_tag in PooledBuf so the buffer is zeroized
+            // and returned to the receive pool when this closure exits
+            // (success, error, or panic unwind).
+            let mut ct_and_tag = super::pooled_buf::PooledBuf::new(ct_and_tag, Arc::clone(&recv_pool));
+
             // Decrypt in place. On success, ct_and_tag[..pt_len] is plaintext.
             let result = cipher.open_in_place(nonce, &aad, &mut ct_and_tag);
 
@@ -182,10 +209,14 @@ impl BulkDispatcher {
                     // This runs on the rayon worker — parallelized across cores.
                     let chunk_digest = super::verify::digest_oneshot(digest_algorithm, &ct_and_tag);
 
+                    // ct_and_tag is already a PooledBuf containing only
+                    // plaintext after truncate+drain. Move it directly.
+                    let plaintext = ct_and_tag;
+
                     let chunk = DecryptedChunk {
                         stream_id,
                         chunk_index: nonce,
-                        plaintext: ct_and_tag,
+                        plaintext,
                         is_last,
                         fin_digest,
                         chunk_digest,
@@ -199,10 +230,11 @@ impl BulkDispatcher {
                         nonce, stream_id, error = %e,
                         "bulk AEAD decryption failed"
                     );
+                    // ct_and_tag is PooledBuf — zeroized and returned to pool on drop.
                     let _ = tx.send(DecryptedChunk {
                         stream_id,
                         chunk_index: nonce,
-                        plaintext: Vec::new(),
+                        plaintext: super::pooled_buf::PooledBuf::new(Vec::new(), recv_pool),
                         is_last: false,
                         fin_digest: None,
                         chunk_digest: [0u8; 32],
@@ -252,12 +284,14 @@ mod tests {
     fn dispatch_and_decrypt_roundtrip() {
         let cipher = Arc::new(BulkCipher::new(&[0x42; 32]));
         let pool = build_encrypt_pool();
+        let recv_pool = super::super::pool::BufferPool::new();
         let (tx, rx) = crossbeam::channel::bounded::<DecryptedChunk>(64);
 
         let mut dispatcher = BulkDispatcher::new(
             Arc::clone(&cipher),
             pool,
             tx,
+            recv_pool,
         );
 
         let plaintext = b"hello bulk transport";
@@ -266,7 +300,7 @@ mod tests {
         dispatcher.dispatch(frame).unwrap();
 
         let chunk = rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
-        assert_eq!(chunk.plaintext, plaintext);
+        assert_eq!(&*chunk.plaintext, plaintext);
         assert_eq!(chunk.stream_id, 0);
         assert_eq!(chunk.chunk_index, 0);
         assert!(!chunk.is_last);
@@ -277,9 +311,10 @@ mod tests {
     fn replay_rejected() {
         let cipher = Arc::new(BulkCipher::new(&[0x42; 32]));
         let pool = build_encrypt_pool();
+        let recv_pool = super::super::pool::BufferPool::new();
         let (tx, _rx) = crossbeam::channel::bounded::<DecryptedChunk>(64);
 
-        let mut dispatcher = BulkDispatcher::new(Arc::clone(&cipher), pool, tx);
+        let mut dispatcher = BulkDispatcher::new(Arc::clone(&cipher), pool, tx, recv_pool);
 
         let frame = make_encrypted_frame(&cipher, 0, FrameKind::BulkData, 42, b"data");
         dispatcher.dispatch(frame.clone()).unwrap();
@@ -293,9 +328,10 @@ mod tests {
     fn too_short_rejected() {
         let cipher = Arc::new(BulkCipher::new(&[0x42; 32]));
         let pool = build_encrypt_pool();
+        let recv_pool = super::super::pool::BufferPool::new();
         let (tx, _rx) = crossbeam::channel::bounded::<DecryptedChunk>(64);
 
-        let mut dispatcher = BulkDispatcher::new(Arc::clone(&cipher), pool, tx);
+        let mut dispatcher = BulkDispatcher::new(Arc::clone(&cipher), pool, tx, recv_pool);
         let result = dispatcher.dispatch(vec![0u8; 10]);
         assert!(matches!(result, Err(DispatchError::TooShort(10))));
     }
@@ -304,9 +340,10 @@ mod tests {
     fn fin_frame_extracts_digest() {
         let cipher = Arc::new(BulkCipher::new(&[0x42; 32]));
         let pool = build_encrypt_pool();
+        let recv_pool = super::super::pool::BufferPool::new();
         let (tx, rx) = crossbeam::channel::bounded::<DecryptedChunk>(64);
 
-        let mut dispatcher = BulkDispatcher::new(Arc::clone(&cipher), pool, tx);
+        let mut dispatcher = BulkDispatcher::new(Arc::clone(&cipher), pool, tx, recv_pool);
 
         // BulkFin plaintext: 32-byte digest followed by optional data.
         let mut fin_plaintext = vec![0xAA; 32]; // fake digest
@@ -320,16 +357,17 @@ mod tests {
         let chunk = rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
         assert!(chunk.is_last);
         assert_eq!(chunk.fin_digest, Some([0xAA; 32]));
-        assert_eq!(chunk.plaintext, b"trailing data");
+        assert_eq!(&*chunk.plaintext, b"trailing data");
     }
 
     #[test]
     fn tampered_frame_sends_decrypt_failed() {
         let cipher = Arc::new(BulkCipher::new(&[0x42; 32]));
         let pool = build_encrypt_pool();
+        let recv_pool = super::super::pool::BufferPool::new();
         let (tx, rx) = crossbeam::channel::bounded::<DecryptedChunk>(64);
 
-        let mut dispatcher = BulkDispatcher::new(Arc::clone(&cipher), pool, tx);
+        let mut dispatcher = BulkDispatcher::new(Arc::clone(&cipher), pool, tx, recv_pool);
 
         // Encrypt a valid frame, then tamper the ciphertext.
         let mut frame = make_encrypted_frame(&cipher, 0, FrameKind::BulkData, 0, b"secret data");

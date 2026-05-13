@@ -81,11 +81,13 @@ fn bench_receive(c: &mut Criterion, algo: DigestAlgorithm, name: &str) {
 
         b.iter(|| {
             let (tx, rx) = crossbeam::channel::bounded::<DecryptedChunk>(256);
+            let recv_pool = rekindle_node::ipc::bulk::pool::BufferPool::new();
             let mut dispatcher = BulkDispatcher::with_algorithm(
                 Arc::clone(&cipher),
                 Arc::clone(&decrypt_pool),
                 tx,
                 algo,
+                recv_pool,
             );
 
             let reassembly_handle = std::thread::spawn(move || {

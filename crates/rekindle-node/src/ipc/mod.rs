@@ -47,9 +47,14 @@ pub mod bulk;
 pub mod journal;
 pub mod idempotency;
 
-// Re-exports for convenience.
+// ── Public API re-exports ───────────────────────────────────────────
+//
+// Only types that external callers (CLI, TUI, agents) need are
+// re-exported here. Internal plumbing (BufferPool, PooledBuf,
+// NonceCounter, BulkFrameHeader, etc.) is accessed through the
+// module path: `ipc::bulk::pool::BufferPool`, `ipc::bulk::frame::HEADER_LEN`.
+
 pub use error::{IpcError, Result};
-pub use framing::{encode_frame, decode_frame, read_frame, write_frame, MAX_FRAME_SIZE};
 pub use message::{Message, MessageContext, SecurityLevel, AgentType, Timestamp, RoutingHeader, RoutedFrame, WIRE_VERSION};
 pub use protocol::{IpcRequest, IpcResponse, BusPayload, SubscriptionFilter};
 pub use noise_keys::{ZeroizingKeypair, generate_keypair, NOISE_PARAMS};
@@ -59,4 +64,7 @@ pub use server::BusServer;
 pub use client::BusClient;
 pub use transport::{PeerCredentials, extract_ucred, socket_path, runtime_dir};
 pub use event_router::ShardedEventRouter;
-pub use bulk::{BulkCipher, BulkFrameHeader, FrameKind, BufferPool, BulkStream, StreamingDigest, MerkleDigest, DigestAlgorithm, merkle_root, merkle_root_with_algorithm, digest_oneshot, blake3_oneshot};
+
+// Bulk transport public API — what callers use to send and receive.
+pub use bulk::{BulkCipher, BulkStream, ZeroizingStream, DigestAlgorithm};
+pub use bulk::transfer::{send_payload, BulkTransferAccumulator};

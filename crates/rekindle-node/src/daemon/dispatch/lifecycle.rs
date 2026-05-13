@@ -570,7 +570,102 @@ fn build_checks(
         ));
     }
 
+    // ── CRYPTO CAPABILITIES ────────────────────────────────────────
+    {
+        let caps = &ctx.crypto_caps;
+
+        checks.push(if caps.aes_gcm_seal_gibs >= 3.0 {
+            Check::pass("crypto.aes_gcm_seal", "crypto", format!("{:.2} GiB/s", caps.aes_gcm_seal_gibs))
+        } else {
+            Check::warn("crypto.aes_gcm_seal", "crypto", format!("{:.2} GiB/s", caps.aes_gcm_seal_gibs))
+                .with_description("below 3.0 GiB/s target — check AES-NI support")
+        });
+
+        checks.push(if caps.aes_gcm_open_gibs >= 1.5 {
+            Check::pass("crypto.aes_gcm_open", "crypto", format!("{:.2} GiB/s", caps.aes_gcm_open_gibs))
+        } else {
+            Check::warn("crypto.aes_gcm_open", "crypto", format!("{:.2} GiB/s", caps.aes_gcm_open_gibs))
+                .with_description("below 1.5 GiB/s target — check AES-NI support")
+        });
+
+        if caps.aegis_seal_gibs > 0.0 {
+            checks.push(Check::pass("crypto.aegis_seal", "crypto", format!("{:.2} GiB/s", caps.aegis_seal_gibs)));
+        }
+
+        checks.push(if caps.blake3_gibs >= 3.0 {
+            Check::pass("crypto.blake3", "crypto", format!("{:.2} GiB/s", caps.blake3_gibs))
+        } else {
+            Check::warn("crypto.blake3", "crypto", format!("{:.2} GiB/s", caps.blake3_gibs))
+                .with_description("below 3.0 GiB/s target")
+        });
+
+        checks.push(Check::pass("crypto.sha256_single", "crypto", format!("{:.0} MiB/s", caps.sha256_single_mibs)));
+
+        if caps.sha256_mb_simd_active {
+            checks.push(Check::pass(
+                "crypto.sha256_mb", "crypto",
+                format!("{:.0} MiB/s ({:.1}x SIMD)", caps.sha256_mb_mibs, caps.sha256_mb_speedup),
+            ));
+        } else if caps.sha256_mb_mibs > 0.0 {
+            checks.push(Check::warn(
+                "crypto.sha256_mb", "crypto",
+                format!("{:.0} MiB/s ({:.1}x — no SIMD)", caps.sha256_mb_mibs, caps.sha256_mb_speedup),
+            ).with_description("ISA-L multi-buffer fell back to sequential — BLAKE3 Merkle (default) unaffected"));
+        } else {
+            checks.push(Check::pass("crypto.sha256_mb", "crypto", "disabled (BLAKE3 Merkle active)"));
+        }
+
+        checks.push(Check::pass("crypto.bulk_aead", "crypto", &caps.bulk_aead_algorithm));
+    }
+
+    // ── BULK TRANSPORT ─────────────────────────────────────────────
+    {
+        use std::sync::atomic::Ordering;
+        let frames_sent = ctx.bulk_counters.frames_sent.load(Ordering::Relaxed);
+        let frames_recv = ctx.bulk_counters.frames_received.load(Ordering::Relaxed);
+        let bytes_sent = ctx.bulk_counters.bytes_sent.load(Ordering::Relaxed);
+        let bytes_recv = ctx.bulk_counters.bytes_received.load(Ordering::Relaxed);
+        let active = ctx.bulk_transfers.lock().active_count();
+
+        if frames_sent > 0 || frames_recv > 0 {
+            checks.push(Check::pass(
+                "bulk.frames", "bulk",
+                format!("{frames_sent} sent / {frames_recv} received"),
+            ));
+            checks.push(Check::pass(
+                "bulk.bytes", "bulk",
+                format!("{} sent / {} received", fmt_bytes(bytes_sent), fmt_bytes(bytes_recv)),
+            ));
+        } else {
+            checks.push(Check::pass("bulk.activity", "bulk", "no transfers since startup"));
+        }
+
+        if active > 0 {
+            checks.push(Check::pass("bulk.active", "bulk", format!("{active} in progress")));
+        }
+
+        // Feature flags
+        let mut features = Vec::new();
+        if cfg!(feature = "bulk-epoll") { features.push("epoll"); }
+        if cfg!(feature = "bulk-uring") { features.push("io_uring"); }
+        if cfg!(feature = "bulk-memfd") { features.push("memfd"); }
+        if cfg!(feature = "aegis") { features.push("AEGIS-128L"); }
+        if cfg!(feature = "sha256-mb") { features.push("SHA256-MB"); }
+        checks.push(Check::pass("bulk.features", "bulk", features.join(", ")));
+    }
+
     checks
+}
+
+#[allow(clippy::cast_precision_loss)] // display-only formatting, precision loss acceptable
+fn fmt_bytes(b: u64) -> String {
+    if b < 1024 { return format!("{b} B"); }
+    let kb = b as f64 / 1024.0;
+    if kb < 1024.0 { return format!("{kb:.1} KB"); }
+    let mb = kb / 1024.0;
+    if mb < 1024.0 { return format!("{mb:.1} MB"); }
+    let gb = mb / 1024.0;
+    format!("{gb:.2} GB")
 }
 
 /// Format seconds as human-readable uptime.

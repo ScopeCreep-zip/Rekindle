@@ -15,7 +15,8 @@
 //!   → writer task receives Vec<u8>
 //!   → writer task calls writev/write_all
 //!   → writer task calls Pool::replenish(Vec<u8>)
-//!   → Vec<u8> is cleared (len=0) and pushed back to the free list
+//!   → Vec<u8> is zeroized (volatile writes, entire capacity) then cleared (len=0)
+//!   → pushed back to the free list
 //! ```
 //!
 //! # Zero-allocation invariant
@@ -84,34 +85,62 @@ impl BufferPool {
         self.free.lock().pop()
     }
 
-    /// Acquire a slab, spinning until one is available.
+    /// Acquire a slab, spinning with exponential backoff until one is available.
     ///
     /// In steady state this never spins because the pool has 64×
     /// headroom over the in-flight slab count. Spinning only occurs
     /// under extreme burst load where all 256 slabs are simultaneously
-    /// in the encrypt→write pipeline.
+    /// in the encrypt→write pipeline. Backoff prevents CPU burn:
+    /// yield → 1µs → 10µs → 100µs → 1ms (capped).
     pub fn acquire(&self) -> Vec<u8> {
+        let mut backoff_us = 0u64;
         loop {
             if let Some(buf) = self.try_acquire() {
                 return buf;
             }
-            std::thread::yield_now();
+            if backoff_us == 0 {
+                std::thread::yield_now();
+                backoff_us = 1;
+            } else {
+                std::thread::sleep(std::time::Duration::from_micros(backoff_us));
+                backoff_us = (backoff_us * 10).min(1_000); // cap at 1ms
+            }
         }
     }
 
-    /// Return a slab to the pool.
+    /// Return a slab to the pool after zeroizing its content.
     ///
-    /// The slab's length is cleared to 0; capacity is preserved.
+    /// All bytes up to `capacity` are zeroed before the slab is returned.
+    /// This prevents plaintext remnants from persisting in freed slabs,
+    /// which a compromised agent could read via `/proc/self/mem` or
+    /// speculative execution side channels.
+    ///
     /// Slabs whose capacity has changed (e.g., due to an unexpected
     /// `extend` that triggered reallocation) are silently dropped
     /// to prevent pool pollution.
     pub fn replenish(&self, mut buf: Vec<u8>) {
+        // Zeroize the entire capacity using volatile writes that cannot
+        // be elided by the optimizer. The zeroize crate's Zeroize impl
+        // for &mut [u8] uses write_volatile + compiler fence — the
+        // compiler MUST emit the stores even though the buffer is never
+        // read afterward. Plain std::ptr::write_bytes is a regular memset
+        // that the optimizer can (and does) remove as a dead store.
+        let cap = buf.capacity();
+        if cap > 0 {
+            // SAFETY: Vec's allocation is valid and contiguous for
+            // `capacity` bytes. We construct a slice over the full
+            // capacity (not just len) to zero bytes beyond len that
+            // may contain plaintext remnants from truncate().
+            #[allow(unsafe_code)]
+            let full_slice = unsafe {
+                std::slice::from_raw_parts_mut(buf.as_mut_ptr(), cap)
+            };
+            zeroize::Zeroize::zeroize(full_slice);
+        }
         buf.clear();
         if buf.capacity() >= SLAB_SIZE {
             self.free.lock().push(buf);
         }
-        // else: capacity shrunk somehow — drop it. The pool will
-        // self-heal as other slabs are returned.
     }
 
     /// Current number of free slabs. For monitoring and diagnostics.

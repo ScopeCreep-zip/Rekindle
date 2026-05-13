@@ -37,16 +37,16 @@ pub enum DigestAlgorithm {
 // ── One-Shot Digests ────────────────────────────────────────────────
 
 /// Compute a one-shot SHA-256 digest.
+///
+/// Delegates to `rekindle_hash::single::sha256_oneshot` which uses
+/// aws-lc-rs `digest::digest(&SHA256, data)` internally.
 pub fn sha256_oneshot(data: &[u8]) -> [u8; 32] {
-    let d = digest::digest(&digest::SHA256, data);
-    let mut out = [0u8; 32];
-    out.copy_from_slice(d.as_ref());
-    out
+    rekindle_hash::single::sha256_oneshot(data)
 }
 
 /// Compute a one-shot BLAKE3 digest.
 pub fn blake3_oneshot(data: &[u8]) -> [u8; 32] {
-    *blake3::hash(data).as_bytes()
+    rekindle_hash::single::blake3_oneshot(data)
 }
 
 /// Compute a one-shot digest using the specified algorithm.
@@ -160,11 +160,34 @@ pub fn merkle_root(chunks: &[&[u8]]) -> [u8; 32] {
 }
 
 /// Compute Merkle root using a specific algorithm.
+///
+/// For SHA-256 with 4+ chunks, uses `rekindle_hash::sha256_parallel`
+/// which dispatches to ISA-L multi-buffer AVX2 (8-way) when the
+/// `sha256-mb` feature is enabled. Falls back to sequential oneshot
+/// otherwise. BLAKE3 is always sequential here (it has internal
+/// 8-way parallelism already).
 pub fn merkle_root_with_algorithm(chunks: &[&[u8]], algorithm: DigestAlgorithm) -> [u8; 32] {
     let mut merkle = MerkleDigest::with_algorithm(algorithm);
-    for chunk in chunks {
-        merkle.feed_chunk_digest(&digest_oneshot(algorithm, chunk));
+
+    match algorithm {
+        DigestAlgorithm::Sha256 => {
+            // Use rekindle_hash::sha256_parallel which automatically
+            // dispatches to ISA-L multi-buffer AVX2 when sha256-mb is
+            // enabled and chunk count >= 4. Falls back to sequential
+            // single-buffer SHA-256 otherwise.
+            let mut digests = vec![[0u8; 32]; chunks.len()];
+            rekindle_hash::sha256_parallel(chunks, &mut digests);
+            for d in &digests {
+                merkle.feed_chunk_digest(d);
+            }
+        }
+        DigestAlgorithm::Blake3 => {
+            for chunk in chunks {
+                merkle.feed_chunk_digest(&blake3_oneshot(chunk));
+            }
+        }
     }
+
     merkle.finalize()
 }
 

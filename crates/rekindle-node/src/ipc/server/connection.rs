@@ -61,6 +61,14 @@ pub async fn handle_connection(
     buffer_pool: Arc<BufferPool>,
     bulk_counters: Arc<BulkCounters>,
 ) {
+    // Tune socket buffer sizes for bulk throughput before splitting.
+    // Increases SO_SNDBUF/SO_RCVBUF to allow more in-flight chunks.
+    #[cfg(unix)]
+    {
+        use std::os::unix::io::AsRawFd;
+        crate::ipc::bulk::hugepage_pool::tune_socket_buffers(stream.as_raw_fd());
+    }
+
     let (reader, writer) = stream.into_split();
     let mut reader = tokio::io::BufReader::with_capacity(8192, reader);
     let mut handshake_writer = tokio::io::BufWriter::with_capacity(8192, writer);
@@ -118,6 +126,8 @@ pub async fn handle_connection(
 
     // ── Register connection ─────────────────────────────────────
     let (cancel_bulk_tx, mut cancel_bulk_rx) = mpsc::channel::<u64>(16);
+    let (bulk_send_tx, mut bulk_send_rx) = mpsc::channel::<(u8, Vec<u8>)>(16);
+    let (bulk_deliver_tx, bulk_deliver_rx) = mpsc::channel::<(u8, Vec<u8>)>(64);
     state.connections.insert(conn_id, ConnectionState {
         agent_id: std::sync::OnceLock::new(),
         verified_name: verified_name.clone(),
@@ -129,6 +139,9 @@ pub async fn handle_connection(
         rate_limiter: TokenBucket::new(),
         bulk_nonce_counter: None,
         cancel_bulk_tx,
+        bulk_send_tx,
+        bulk_deliver_tx: bulk_deliver_tx.clone(),
+        bulk_deliver_rx: parking_lot::Mutex::new(bulk_deliver_rx),
     });
     if let Some(ref name) = verified_name {
         state.name_to_conn.write().insert(name.to_string(), conn_id);
@@ -141,15 +154,18 @@ pub async fn handle_connection(
     let digest_algorithm = bulk_session.as_ref()
         .map(crate::ipc::bulk::session::BulkSession::digest_algorithm)
         .unwrap_or_default();
+    let recv_pool = bulk::pool::BufferPool::new();
     let mut bulk_dispatcher = bulk_session.as_ref().map(|session| {
         BulkDispatcher::with_algorithm(
             Arc::clone(session.cipher()),
             Arc::clone(&encrypt_pool),
             reassembly_tx,
             session.digest_algorithm(),
+            Arc::clone(&recv_pool),
         )
     });
     let mut reassembler = Reassembler::with_algorithm(1024, digest_algorithm);
+    let mut accumulator = bulk::transfer::BulkTransferAccumulator::new(0);
 
     // Store the bulk session's nonce counter on ConnectionState so the
     // cancel handler can read the current nonce position for reassembler reset.
@@ -239,7 +255,7 @@ pub async fn handle_connection(
                 }
             }
             Ok(bulk_lane) if lane::is_bulk_lane(bulk_lane) => {
-                match crate::ipc::framing::read_frame(&mut reader).await {
+                match read_bulk_frame_pooled(&mut reader, &recv_pool).await {
                     Ok(frame_body) => {
                         let frame_len = frame_body.len() as u64;
                         if let Some(ref mut dispatcher) = bulk_dispatcher {
@@ -267,22 +283,43 @@ pub async fn handle_connection(
             }
         }
 
+        // Drain reassembled chunks into the accumulator.
         while let Ok(chunk) = reassembly_rx.try_recv() {
             match reassembler.process(chunk) {
                 Ok(delivered) => {
                     for r in delivered {
-                        tracing::trace!(conn_id, stream_id = r.stream_id,
-                            chunk_index = r.chunk_index, bytes = r.plaintext.len(),
-                            is_last = r.is_last, "chunk reassembled");
+                        let stream_id = r.stream_id;
+                        let chunk_index = r.chunk_index;
+                        let is_last = r.is_last;
+                        let bytes = r.plaintext.len();
+                        tracing::trace!(conn_id, stream_id, chunk_index, bytes, is_last, "chunk reassembled");
+                        if let Some(complete) = accumulator.push(&r) {
+                            tracing::info!(conn_id, stream_id, bytes = complete.len(), "bulk transfer complete");
+                            let _ = bulk_deliver_tx.try_send((stream_id, complete));
+                            accumulator = bulk::transfer::BulkTransferAccumulator::new(0);
+                        }
                     }
                 }
                 Err(e) => tracing::warn!(conn_id, error = %e, "reassembly error"),
             }
         }
 
+        // Poll send command channel — dispatch requests us to send data.
+        while let Ok((stream_id, payload)) = bulk_send_rx.try_recv() {
+            if let Some(ref session) = bulk_session {
+                tracing::info!(conn_id, stream_id, bytes = payload.len(), "bulk send initiated");
+                bulk::transfer::send_payload(
+                    &encrypt_pool, session.cipher(), session.nonce_counter(),
+                    &buffer_pool, bulk_out_tx.clone(), stream_id,
+                    &payload, session.digest_algorithm(),
+                );
+            }
+        }
+
         // Poll cancel channel — reset reassembler if a transfer was cancelled.
         while let Ok(next_nonce) = cancel_bulk_rx.try_recv() {
             reassembler.reset(next_nonce);
+            accumulator = bulk::transfer::BulkTransferAccumulator::new(0);
             tracing::info!(conn_id, next_nonce, "reassembler reset after transfer cancel");
         }
     }
@@ -313,6 +350,38 @@ pub async fn handle_connection(
 
     // Step 5: Remove from routing tables + log.
     cleanup_connection(&state, conn_id, verified_name.as_ref());
+}
+
+/// Read a bulk frame directly into a pool slab.
+///
+/// Reads the 4-byte BE length prefix, acquires a slab from the receive
+/// pool, reads the frame body into the slab. The slab travels through
+/// the dispatcher → rayon decrypt → reassembly pipeline and returns
+/// to the pool when the application drops the `ReassembledChunk`.
+async fn read_bulk_frame_pooled<R: tokio::io::AsyncReadExt + Unpin>(
+    reader: &mut R,
+    pool: &Arc<bulk::pool::BufferPool>,
+) -> crate::ipc::error::Result<Vec<u8>> {
+    let mut len_buf = [0u8; 4];
+    match reader.read_exact(&mut len_buf).await {
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+            return Err(crate::ipc::error::IpcError::ConnectionClosed);
+        }
+        Err(e) => return Err(crate::ipc::error::IpcError::Io(e)),
+    }
+    let len = u32::from_be_bytes(len_buf) as usize;
+    if len > crate::ipc::framing::MAX_FRAME_SIZE as usize {
+        return Err(crate::ipc::error::IpcError::FrameTooLarge {
+            #[allow(clippy::cast_possible_truncation)]
+            size: len as u32,
+            max: crate::ipc::framing::MAX_FRAME_SIZE,
+        });
+    }
+    let mut slab = pool.acquire();
+    slab.resize(len, 0);
+    reader.read_exact(&mut slab[..len]).await?;
+    Ok(slab)
 }
 
 fn cleanup_connection(state: &ServerState, conn_id: u64, verified_name: Option<&Arc<str>>) {

@@ -84,8 +84,32 @@ pub fn apply(
             (paths.log_dir.clone(), AccessFs::from_all(abi)),
             // Runtime directory: IPC socket, bus keypair, per-agent keys
             (runtime_dir.clone(), AccessFs::from_all(abi)),
-            // /proc/self: resource limits, process info
-            (PathBuf::from("/proc/self"), AccessFs::from_read(abi)),
+            // /proc/self: specific files enumerated to DENY /proc/self/mem.
+            //
+            // /proc/self/mem allows arbitrary process memory reads, defeating
+            // all plaintext zeroization. By listing only the files our process
+            // and dependencies actually read, Landlock denies openat() on
+            // /proc/self/mem for any code running inside this process.
+            //
+            // Empirically verified against source of: tokio, veilid, aws-lc,
+            // aws-lc-rs, snow, rustix, rayon, crossbeam, rusqlite, io-uring,
+            // socket2, rust-landlock. None read /proc/self/mem.
+            //
+            // rustix linux_raw backend: /proc/self/auxv (kernel params),
+            //   /proc/self/fd/<N> (terminal ioctl)
+            // rekindle health.rs: /proc/self/status, /proc/self/stat,
+            //   /proc/self/statm
+            // tokio: /proc/self/cgroup (available_parallelism)
+            // container detection: /proc/self/mountinfo
+            // resource monitoring: /proc/self/limits
+            (PathBuf::from("/proc/self/status"), AccessFs::from_read(abi)),
+            (PathBuf::from("/proc/self/stat"), AccessFs::from_read(abi)),
+            (PathBuf::from("/proc/self/statm"), AccessFs::from_read(abi)),
+            (PathBuf::from("/proc/self/cgroup"), AccessFs::from_read(abi)),
+            (PathBuf::from("/proc/self/mountinfo"), AccessFs::from_read(abi)),
+            (PathBuf::from("/proc/self/limits"), AccessFs::from_read(abi)),
+            (PathBuf::from("/proc/self/auxv"), AccessFs::from_read(abi)),
+            (PathBuf::from("/proc/self/fd"), AccessFs::from_read(abi)),
             // DNS resolution (Veilid bootstrap)
             (PathBuf::from("/etc/resolv.conf"), AccessFs::from_read(abi)),
             // SSL/TLS certificates (Veilid HTTPS bootstrap)

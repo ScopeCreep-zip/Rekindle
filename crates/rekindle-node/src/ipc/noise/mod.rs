@@ -20,6 +20,7 @@
 mod handshake;
 pub mod reader;
 pub mod writer;
+pub mod aws_lc_resolver;
 
 #[cfg(test)]
 mod tests;

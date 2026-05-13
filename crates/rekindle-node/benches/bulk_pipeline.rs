@@ -15,15 +15,26 @@ use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use rekindle_node::ipc::bulk::{
     cipher::BulkCipher,
     pool::BufferPool,
+    nonce::NonceCounter,
     stream::BulkStream,
     encrypt::build_encrypt_pool,
     frame::MAX_CHUNK_PLAIN,
 };
-use bytes::Bytes;
 use std::sync::Arc;
-use std::sync::atomic::AtomicU64;
+
+fn print_capabilities() {
+    use std::sync::Once;
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| {
+        let caps = rekindle_node::ipc::bulk::capability::probe();
+        eprintln!("\n[bench] AES-GCM: {:.2}/{:.2} GiB/s seal/open | AEGIS: {:.2} GiB/s | SHA256-mb: {:.0} MiB/s (SIMD: {}) | BLAKE3: {:.2} GiB/s",
+            caps.aes_gcm_seal_gibs, caps.aes_gcm_open_gibs, caps.aegis_seal_gibs,
+            caps.sha256_mb_mibs, caps.sha256_mb_simd_active, caps.blake3_gibs);
+    });
+}
 
 fn bench_pipeline(c: &mut Criterion) {
+    print_capabilities();
     let encrypt_pool = build_encrypt_pool();
     let buf_pool = BufferPool::new();
     let cipher = Arc::new(BulkCipher::new(&[0x42; 32]));
@@ -36,7 +47,7 @@ fn bench_pipeline(c: &mut Criterion) {
     let num_chunks = total_bytes / chunk_size;
 
     group.throughput(Throughput::Bytes(total_bytes as u64));
-    group.measurement_time(std::time::Duration::from_secs(10));
+    group.measurement_time(std::time::Duration::from_secs(15));
     group.bench_function("encrypt_4cores_64KiB", |b| {
         b.iter(|| {
             let (tx, rx) = crossbeam::channel::bounded::<Vec<u8>>(64);
@@ -57,13 +68,13 @@ fn bench_pipeline(c: &mut Criterion) {
             let stream = BulkStream::new(
                 0,
                 Arc::clone(&cipher),
-                Arc::new(AtomicU64::new(0)),
+                Arc::new(NonceCounter::new()),
                 Arc::clone(&buf_pool),
                 tx,
             );
-            let plain = Bytes::from(vec![0xCDu8; chunk_size]);
             for i in 0..num_chunks {
-                stream.submit_chunk(&encrypt_pool, plain.clone(), i == num_chunks - 1);
+                let plain = vec![0xCDu8; chunk_size];
+                stream.submit_chunk(&encrypt_pool, plain, i == num_chunks - 1);
             }
 
             // Drop the stream (and its Sender clone). Rayon tasks still hold

@@ -1,39 +1,26 @@
-//! AES-256-GCM bulk cipher backed by aws-lc-rs.
+//! Bulk cipher: algorithm-polymorphic AEAD for the transport pipeline.
 //!
-//! The cipher wraps `aws_lc_rs::aead::LessSafeKey` with explicit
-//! caller-managed nonces. `LessSafeKey` is the aws-lc-rs API
-//! that accepts caller-managed nonces (the "safe" `SealingKey` enforces
-//! monotonic nonces internally, which prevents parallel encryption).
+//! Wraps `rekindle_aead::BulkAead` (trait object) with a u64-nonce
+//! convenience API. The underlying algorithm is selected at construction
+//! time — `AesGcmKey` (default) or `Aegis128LKey` (feature `aegis`).
+//!
+//! Callers pass `u64` nonce counters from `NonceCounter::next()`. The
+//! cipher builds the algorithm-specific nonce bytes internally.
 //!
 //! # Thread safety
 //!
-//! `LessSafeKey` is `Send + Sync` (verified by compile-time trait
-//! assertions and a 100-thread concurrent sealing test in aws-lc-rs).
-//! Each `seal_in_place_separate_tag` call makes exactly one FFI call to
-//! `EVP_AEAD_CTX_seal_scatter`, which allocates a stack-local
-//! `GCM128_CONTEXT` per call with zero shared mutable state.
-//!
-//! Share via `Arc<BulkCipher>` across rayon workers.
-//!
-//! # Nonce construction
-//!
-//! The 12-byte AEAD nonce is: `[0x00; 4][8-byte counter BE]`.
-//! The high 4 bytes are zero. The counter occupies the low 8 bytes
-//! and is managed by the caller via `AtomicU64`. Nonce uniqueness
-//! is guaranteed by the monotonic counter which never resets.
-//! A new key requires a new Noise handshake.
+//! `BulkAead` requires `Send + Sync`. Both `AesGcmKey` and `Aegis128LKey`
+//! are stateless after construction (key schedule in CPU registers or
+//! pre-expanded tables). Share via `Arc<BulkCipher>` across rayon workers.
 //!
 //! # Performance
 //!
 //! On Coffee Lake (AES-NI + AVX, no AVX-512):
-//!   seal 64 KiB: ~16 µs, ~3.74 GiB/s
-//!
-//! On AVX-512 hardware (Ice Lake, Zen 4):
-//!   seal 64 KiB: ~8 µs, ~7+ GiB/s (Intel IPsec-MB 48-block pipeline)
+//!   AES-256-GCM seal 64 KiB: ~16 µs, ~3.74 GiB/s
+//!   AEGIS-128L seal 64 KiB: ~8 µs, ~6–8 GiB/s (feature `aegis`)
 
-use aws_lc_rs::aead::{
-    Aad, LessSafeKey, Nonce, UnboundKey, AES_256_GCM, NONCE_LEN,
-};
+use rekindle_aead::{AeadAlgorithm, AeadError, BulkAead};
+use rekindle_aead::aes_gcm::AesGcmKey;
 
 /// AES-256-GCM authentication tag length.
 pub const TAG_LEN: usize = 16;
@@ -46,6 +33,8 @@ pub enum CipherError {
     Aead,
     /// Output buffer is too small.
     BufferTooSmall { need: usize, have: usize },
+    /// Requested AEAD algorithm is not available (feature not compiled).
+    UnsupportedAlgorithm(AeadAlgorithm),
 }
 
 impl std::fmt::Display for CipherError {
@@ -55,35 +44,73 @@ impl std::fmt::Display for CipherError {
             Self::BufferTooSmall { need, have } => {
                 write!(f, "buffer too small: need {need}, have {have}")
             }
+            Self::UnsupportedAlgorithm(algo) => {
+                write!(f, "unsupported AEAD algorithm: {algo:?} (feature not compiled)")
+            }
         }
     }
 }
 
 impl std::error::Error for CipherError {}
 
-/// AES-256-GCM bulk cipher.
+impl From<AeadError> for CipherError {
+    fn from(e: AeadError) -> Self {
+        match e {
+            AeadError::AuthFailed | AeadError::Init => Self::Aead,
+            AeadError::BufferSize { need, have } => Self::BufferTooSmall { need, have },
+        }
+    }
+}
+
+/// Algorithm-polymorphic bulk cipher.
 ///
 /// Does NOT implement `Clone`. Share via `Arc<BulkCipher>` at the
 /// call site. This avoids a redundant `Arc` layer inside the struct.
 pub struct BulkCipher {
-    key: LessSafeKey,
+    inner: Box<dyn BulkAead>,
 }
 
 impl BulkCipher {
-    /// Construct from a 32-byte AES-256 key.
+    /// Construct AES-256-GCM from a 32-byte key (default algorithm).
     ///
     /// The caller should zeroize `key_bytes` after this call.
     pub fn new(key_bytes: &[u8; 32]) -> Self {
-        let unbound = UnboundKey::new(&AES_256_GCM, key_bytes)
+        let key = AesGcmKey::new(key_bytes)
             .expect("32-byte key is always valid for AES-256-GCM");
-        Self {
-            key: LessSafeKey::new(unbound),
+        Self { inner: Box::new(key) }
+    }
+
+    /// Construct with a specific algorithm.
+    ///
+    /// Returns `Err(CipherError::UnsupportedAlgorithm)` if the requested
+    /// algorithm requires a feature flag that is not compiled in.
+    ///
+    /// `key_bytes` is 32 bytes for AES-256-GCM. For AEGIS-128L with
+    /// 32-byte HKDF output, the first 16 bytes are used via `from_32`.
+    #[allow(clippy::unnecessary_wraps)] // Returns Err when aegis feature is disabled
+    pub fn with_algorithm(algorithm: AeadAlgorithm, key_bytes: &[u8; 32]) -> Result<Self, CipherError> {
+        match algorithm {
+            AeadAlgorithm::Aes256Gcm => Ok(Self::new(key_bytes)),
+            #[cfg(feature = "aegis")]
+            AeadAlgorithm::Aegis128L => {
+                let key = rekindle_aead::aegis128l::Aegis128LKey::from_32(key_bytes);
+                Ok(Self { inner: Box::new(key) })
+            }
+            #[cfg(not(feature = "aegis"))]
+            AeadAlgorithm::Aegis128L => {
+                Err(CipherError::UnsupportedAlgorithm(algorithm))
+            }
         }
+    }
+
+    /// The algorithm this cipher uses.
+    pub fn algorithm(&self) -> AeadAlgorithm {
+        self.inner.algorithm()
     }
 
     /// Encrypt in-place with separate tag.
     ///
-    /// - `nonce_ctr`: caller-managed counter (`AtomicU64::fetch_add` result)
+    /// - `nonce_ctr`: caller-managed counter (`NonceCounter::next()` result)
     /// - `aad`: authenticated associated data (typically the 10-byte wire header)
     /// - `in_out`: plaintext on input, ciphertext on output (same length)
     ///
@@ -94,15 +121,8 @@ impl BulkCipher {
         aad: &[u8],
         in_out: &mut [u8],
     ) -> Result<[u8; TAG_LEN], CipherError> {
-        let nonce = self.build_nonce(nonce_ctr);
-        let tag = self
-            .key
-            .seal_in_place_separate_tag(nonce, Aad::from(aad), in_out)
-            .map_err(|_| CipherError::Aead)?;
-
-        let mut tag_bytes = [0u8; TAG_LEN];
-        tag_bytes.copy_from_slice(tag.as_ref());
-        Ok(tag_bytes)
+        let nonce = self.inner.build_nonce(nonce_ctr);
+        Ok(self.inner.seal_in_place(&nonce, aad, in_out)?)
     }
 
     /// Decrypt in-place from a contiguous `[ciphertext || 16-byte tag]` buffer.
@@ -121,30 +141,43 @@ impl BulkCipher {
                 have: ct_and_tag.len(),
             });
         }
-        let nonce = self.build_nonce(nonce_ctr);
-        let plaintext = self
-            .key
-            .open_in_place(nonce, Aad::from(aad), ct_and_tag)
-            .map_err(|_| CipherError::Aead)?;
-        Ok(plaintext.len())
+        let nonce = self.inner.build_nonce(nonce_ctr);
+        Ok(self.inner.open_in_place(&nonce, aad, ct_and_tag)?)
     }
 
-    /// Construct the 12-byte AEAD nonce from a counter.
+    /// Decrypt with detached tag — zero allocation, zero memmove.
     ///
-    /// Layout: `[0:4][counter:8 BE]`. The first 4 bytes are reserved
-    /// zero. If a new key is needed, perform a new Noise handshake —
-    /// do not attempt epoch rotation within the same session.
-    #[allow(clippy::unused_self)]
-    fn build_nonce(&self, counter: u64) -> Nonce {
-        let mut nonce_bytes = [0u8; NONCE_LEN]; // 12 bytes
-        nonce_bytes[4..].copy_from_slice(&counter.to_be_bytes());
-        Nonce::assume_unique_for_key(nonce_bytes)
+    /// `ciphertext.len()` must equal `plaintext_out.len()`.
+    /// `tag` must be at least `TAG_LEN` (16) bytes.
+    pub fn open_separate(
+        &self,
+        nonce_ctr: u64,
+        aad: &[u8],
+        ciphertext: &[u8],
+        tag: &[u8],
+        plaintext_out: &mut [u8],
+    ) -> Result<(), CipherError> {
+        if ciphertext.len() != plaintext_out.len() {
+            return Err(CipherError::BufferTooSmall {
+                need: ciphertext.len(),
+                have: plaintext_out.len(),
+            });
+        }
+        if tag.len() < TAG_LEN {
+            return Err(CipherError::BufferTooSmall {
+                need: TAG_LEN,
+                have: tag.len(),
+            });
+        }
+        let nonce = self.inner.build_nonce(nonce_ctr);
+        self.inner
+            .open_detached(&nonce, aad, ciphertext, tag, plaintext_out)
+            .map_err(CipherError::from)
     }
 }
 
-// Compile-time trait assertions — these fail at compile time if
-// LessSafeKey is not Send+Sync, which would make BulkCipher unsafe
-// to share via Arc.
+// Compile-time trait assertions — BulkAead requires Send + Sync,
+// and Box<dyn BulkAead> inherits that.
 static_assertions::assert_impl_all!(BulkCipher: Send, Sync);
 
 #[cfg(test)]
@@ -263,5 +296,44 @@ mod tests {
         let cipher = BulkCipher::new(&[0x42; 32]);
         let mut tiny = [0u8; 15]; // less than TAG_LEN
         assert!(cipher.open_in_place(0, b"", &mut tiny).is_err());
+    }
+
+    #[test]
+    fn open_separate_roundtrip() {
+        let cipher = BulkCipher::new(&[0x42; 32]);
+        let original = vec![0xAB; super::super::frame::MAX_CHUNK_PLAIN];
+        let mut ct = original.clone();
+        let tag = cipher.seal_in_place(0, b"aad", &mut ct).unwrap();
+        let mut pt = vec![0u8; original.len()];
+        cipher.open_separate(0, b"aad", &ct, &tag, &mut pt).unwrap();
+        assert_eq!(pt, original);
+    }
+
+    #[test]
+    fn open_separate_wrong_tag_rejected() {
+        let cipher = BulkCipher::new(&[0x42; 32]);
+        let mut ct = vec![0xAB; 1024];
+        let tag = cipher.seal_in_place(0, b"", &mut ct).unwrap();
+        ct[0] ^= 0xFF;
+        let mut pt = vec![0u8; 1024];
+        assert!(cipher.open_separate(0, b"", &ct, &tag, &mut pt).is_err());
+    }
+
+    #[test]
+    fn open_separate_wrong_nonce_rejected() {
+        let cipher = BulkCipher::new(&[0x42; 32]);
+        let mut ct = vec![0xAB; 1024];
+        let tag = cipher.seal_in_place(0, b"", &mut ct).unwrap();
+        let mut pt = vec![0u8; 1024];
+        assert!(cipher.open_separate(1, b"", &ct, &tag, &mut pt).is_err());
+    }
+
+    #[test]
+    fn open_separate_size_mismatch_rejected() {
+        let cipher = BulkCipher::new(&[0x42; 32]);
+        let ct = vec![0xAB; 1024];
+        let tag = [0u8; TAG_LEN];
+        let mut pt = vec![0u8; 512]; // wrong size
+        assert!(cipher.open_separate(0, b"", &ct, &tag, &mut pt).is_err());
     }
 }

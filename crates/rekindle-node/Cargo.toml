@@ -13,6 +13,8 @@ rekindle-chat = { path = "../rekindle-chat" }
 rekindle-transport = { path = "../rekindle-transport" }
 rekindle-storage = { path = "../rekindle-storage" }
 rekindle-types = { path = "../rekindle-types" }
+rekindle-aead = { path = "../rekindle-aead" }
+rekindle-hash = { path = "../rekindle-hash" }
 
 # Async runtime
 tokio = { workspace = true }
@@ -88,10 +90,16 @@ tokio-uring = { version = "0.5", optional = true }
 io-uring = { version = "0.7", optional = true }
 
 [features]
-default = ["bulk-epoll"]
+# Cross-platform defaults: aegis and sha256-mb use portable C with
+# optional SIMD — they compile everywhere. bulk-epoll is the portable
+# I/O backend. bulk-uring and bulk-memfd are Linux-only and must be
+# enabled explicitly (e.g., via workspace Cargo.toml or CI flags).
+default = ["bulk-epoll", "aegis", "sha256-mb"]
 bulk-epoll = []
 bulk-uring = ["dep:tokio-uring", "dep:io-uring"]
 bulk-memfd = []
+aegis = ["rekindle-aead/aegis"]
+sha256-mb = ["rekindle-hash/sha256-mb"]
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros"] }
@@ -132,4 +140,14 @@ harness = false
 [[bench]]
 name = "bulk_receive"
 path = "benches/bulk_receive.rs"
+harness = false
+
+[[bench]]
+name = "bulk_e2e"
+path = "benches/bulk_e2e.rs"
+harness = false
+
+[[bench]]
+name = "bulk_socket"
+path = "benches/bulk_socket.rs"
 harness = false

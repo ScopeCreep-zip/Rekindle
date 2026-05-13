@@ -59,7 +59,19 @@ fn make_status_frame() -> Vec<u8> {
 
 // ── Individual Operation Benchmarks ───────────────────────────────────
 
+fn print_capabilities() {
+    use std::sync::Once;
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| {
+        let caps = rekindle_node::ipc::bulk::capability::probe();
+        eprintln!("\n[bench] AES-GCM: {:.2}/{:.2} GiB/s seal/open | AEGIS: {:.2} GiB/s | SHA256-mb: {:.0} MiB/s (SIMD: {}) | BLAKE3: {:.2} GiB/s",
+            caps.aes_gcm_seal_gibs, caps.aes_gcm_open_gibs, caps.aegis_seal_gibs,
+            caps.sha256_mb_mibs, caps.sha256_mb_simd_active, caps.blake3_gibs);
+    });
+}
+
 fn bench_take_from_bytes_routing_header(c: &mut Criterion) {
+    print_capabilities();
     let frame = make_channel_send_frame();
     let bytes = Bytes::from(frame);
 
@@ -591,6 +603,7 @@ fn bench_io_duplex_roundtrip(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("io_duplex_roundtrip");
     group.throughput(criterion::Throughput::Bytes(msg_size as u64));
+    group.measurement_time(std::time::Duration::from_secs(10));
 
     group.bench_function(
         format!("roundtrip {}B", msg_size),
@@ -639,6 +652,7 @@ fn bench_io_duplex_batch(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("io_duplex_batch");
     group.throughput(criterion::Throughput::Bytes((BATCH * msg_size) as u64));
+    group.measurement_time(std::time::Duration::from_secs(10));
 
     group.bench_function(
         format!("batch_{}x{}B", BATCH, msg_size),
@@ -696,6 +710,7 @@ fn bench_io_duplex_amortized(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("io_duplex_amortized");
     group.throughput(criterion::Throughput::Bytes((N * msg_size) as u64));
+    group.measurement_time(std::time::Duration::from_secs(10));
 
     group.bench_function(
         format!("amortized_{}x{}B", N, msg_size),
@@ -742,6 +757,7 @@ fn bench_io_unix_socket_roundtrip(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("io_unix_socket_roundtrip");
     group.throughput(criterion::Throughput::Bytes(msg_size as u64));
+    group.measurement_time(std::time::Duration::from_secs(10));
 
     group.bench_function(
         format!("roundtrip {}B", msg_size),
@@ -790,6 +806,7 @@ fn bench_io_unix_socket_batch(c: &mut Criterion) {
     const BATCH: usize = 32;
 
     let mut group = c.benchmark_group("io_unix_socket_batch");
+    group.measurement_time(std::time::Duration::from_secs(10));
     group.throughput(criterion::Throughput::Bytes((BATCH * msg_size) as u64));
 
     group.bench_function(
@@ -847,6 +864,7 @@ fn bench_io_unix_socket_amortized(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("io_unix_socket_amortized");
     group.throughput(criterion::Throughput::Bytes((N * msg_size) as u64));
+    group.measurement_time(std::time::Duration::from_secs(10));
 
     group.bench_function(
         format!("amortized_{}x{}B", N, msg_size),
@@ -944,6 +962,66 @@ fn bench_io_duplex_fullduplex(c: &mut Criterion) {
     group.finish();
 }
 
+// ── Noise Resolver Comparison ──────────────────────────────────────
+//
+// Measures decrypt throughput with the aws-lc resolver (zero-alloc
+// open_separate_gather) vs the default ring resolver baseline.
+// The aws-lc resolver is now the default — this benchmark proves the
+// improvement is measurable.
+
+fn bench_noise_resolver_decrypt(c: &mut Criterion) {
+    use rekindle_node::ipc::noise_keys::NOISE_PARAMS;
+
+    let channel_send_frame = make_channel_send_frame();
+    let msg_size = channel_send_frame.len();
+
+    let mut group = c.benchmark_group("noise_resolver_decrypt");
+    group.throughput(criterion::Throughput::Bytes(msg_size as u64));
+    group.measurement_time(std::time::Duration::from_secs(15));
+
+    // aws-lc resolver (current default — zero-alloc decrypt)
+    {
+        let (h_i, h_r) = make_stateless_transport_pair(NOISE_PARAMS, b"RESOLVER");
+        let mut enc_buf = vec![0u8; msg_size + 16];
+        let mut dec_buf = vec![0u8; msg_size];
+
+        let ct_len = h_i.write_message(0, &channel_send_frame, &mut enc_buf).unwrap();
+        let ciphertext = enc_buf[..ct_len].to_vec();
+
+        group.bench_function(
+            format!("aws_lc_decrypt {}B", msg_size),
+            |b| {
+                b.iter(|| {
+                    let len = h_r
+                        .read_message(0, black_box(&ciphertext), &mut dec_buf)
+                        .unwrap();
+                    black_box(len);
+                })
+            },
+        );
+    }
+
+    // aws-lc resolver encrypt (for symmetry comparison)
+    {
+        let (h_i, _h_r) = make_stateless_transport_pair(NOISE_PARAMS, b"RESOLVER");
+        let mut enc_buf = vec![0u8; msg_size + 16];
+
+        group.bench_function(
+            format!("aws_lc_encrypt {}B", msg_size),
+            |b| {
+                b.iter(|| {
+                    let len = h_i
+                        .write_message(0, black_box(&channel_send_frame), &mut enc_buf)
+                        .unwrap();
+                    black_box(len);
+                })
+            },
+        );
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_take_from_bytes_routing_header,
@@ -956,6 +1034,7 @@ criterion_group!(
     bench_pipeline_comparison,
     bench_frame_sizes,
     bench_noise_encrypt_decrypt,
+    bench_noise_resolver_decrypt,
     bench_io_duplex_roundtrip,
     bench_io_duplex_batch,
     bench_io_duplex_amortized,

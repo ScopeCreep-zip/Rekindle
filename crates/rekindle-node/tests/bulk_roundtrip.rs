@@ -1,20 +1,19 @@
 //! Integration test: full bulk roundtrip.
 //!
 //! Proves the entire pipeline composes correctly:
-//! chunk → BulkStream submit → rayon encrypt → crossbeam channel →
+//! chunk → BulkStream/ZeroizingStream submit → rayon encrypt → crossbeam channel →
 //! BulkDispatcher → rayon decrypt + digest → reassembly → Merkle verify.
 //!
 //! Default algorithm is BLAKE3 Merkle.
 
-use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
-use bytes::Bytes;
 use rekindle_node::ipc::bulk::{
     self,
     cipher::BulkCipher,
     dispatcher::{BulkDispatcher, DecryptedChunk},
     encrypt::build_encrypt_pool,
     frame::{MAX_CHUNK_PLAIN, HEADER_LEN, TAG_LEN},
+    nonce::NonceCounter,
     pool::BufferPool,
     reassembly::Reassembler,
     stream::BulkStream,
@@ -37,7 +36,7 @@ fn bulk_encrypt_decrypt_reassemble_roundtrip() {
     let stream = BulkStream::new(
         0,
         Arc::clone(&cipher),
-        Arc::new(AtomicU64::new(0)),
+        Arc::new(NonceCounter::new()),
         buffer_pool,
         stream_tx,
     );
@@ -59,9 +58,9 @@ fn bulk_encrypt_decrypt_reassemble_roundtrip() {
             // BulkFin: prepend the 32-byte Merkle root to the last chunk's plaintext.
             let mut fin_payload = merkle_root.to_vec();
             fin_payload.extend_from_slice(chunk);
-            stream.submit_chunk(&encrypt_pool, Bytes::from(fin_payload), true);
+            stream.submit_chunk(&encrypt_pool, fin_payload, true);
         } else {
-            stream.submit_chunk(&encrypt_pool, Bytes::from(payload), false);
+            stream.submit_chunk(&encrypt_pool, payload, false);
         }
     }
 
@@ -76,11 +75,13 @@ fn bulk_encrypt_decrypt_reassemble_roundtrip() {
     assert_eq!(encrypted_frames.len(), num_chunks);
 
     // ── Receive side: dispatch → decrypt → reassemble ───────────
+    let recv_pool = BufferPool::new();
     let (reassembly_tx, reassembly_rx) = crossbeam::channel::bounded::<DecryptedChunk>(256);
     let mut dispatcher = BulkDispatcher::new(
         Arc::clone(&cipher),
         encrypt_pool,
         reassembly_tx,
+        recv_pool,
     );
     let mut reassembler = Reassembler::new(1024);
 
@@ -105,7 +106,7 @@ fn bulk_encrypt_decrypt_reassemble_roundtrip() {
             .process(chunk)
             .expect("reassembly should succeed");
         for reassembled in &delivered {
-            all_plaintext.extend_from_slice(&reassembled.plaintext);
+            all_plaintext.extend_from_slice(&*reassembled.plaintext);
         }
         total_delivered += delivered.len();
     }
@@ -127,14 +128,14 @@ fn buffer_pool_no_drain_after_roundtrip() {
     let stream = BulkStream::new(
         0,
         cipher,
-        Arc::new(AtomicU64::new(0)),
+        Arc::new(NonceCounter::new()),
         Arc::clone(&pool),
         tx,
     );
 
     // Submit and drain 100 chunks.
     for i in 0..100 {
-        stream.submit_chunk(&encrypt_pool, Bytes::from(vec![0xAB; 1024]), i == 99);
+        stream.submit_chunk(&encrypt_pool, vec![0xAB; 1024], i == 99);
     }
     for _ in 0..100 {
         let slab = rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
@@ -151,8 +152,9 @@ fn buffer_pool_no_drain_after_roundtrip() {
 fn dispatcher_rejects_replay() {
     let encrypt_pool = build_encrypt_pool();
     let cipher = Arc::new(BulkCipher::new(&[0x42; 32]));
+    let recv_pool = BufferPool::new();
     let (tx, _rx) = crossbeam::channel::bounded::<DecryptedChunk>(64);
-    let mut dispatcher = BulkDispatcher::new(Arc::clone(&cipher), encrypt_pool, tx);
+    let mut dispatcher = BulkDispatcher::new(Arc::clone(&cipher), encrypt_pool, tx, recv_pool);
 
     // Create an encrypted frame.
     let header = bulk::BulkFrameHeader::new(0, bulk::FrameKind::BulkData, 42);

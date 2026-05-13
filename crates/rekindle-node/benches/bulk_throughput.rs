@@ -133,6 +133,7 @@ fn bench_writev_uds(c: &mut Criterion) {
     let chunk = vec![0u8; 65_536];
 
     let mut group = c.benchmark_group("writev_uds");
+    group.measurement_time(std::time::Duration::from_secs(10));
 
     for &batch in &[1usize, 4, 8, 16, 32] {
         group.throughput(Throughput::Bytes((batch * 65_536) as u64));

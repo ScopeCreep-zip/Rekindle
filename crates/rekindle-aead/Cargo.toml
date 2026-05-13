@@ -1,0 +1,38 @@
+[package]
+name = "rekindle-aead"
+version = "0.1.0"
+edition = "2021"
+description = "Unified AEAD interface for Rekindle bulk transport: AES-256-GCM + AEGIS-128L"
+license = "MIT"
+build = "build.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+# AES-256-GCM via hardware-accelerated aws-lc (AES-NI + CLMUL)
+aws-lc-rs = { version = "1.16", features = ["aws-lc-sys"] }
+
+# Zeroize key material on drop
+zeroize = { version = "1", features = ["derive"] }
+
+# Compile-time trait assertions
+static_assertions = "1.1"
+
+# Serialization for AeadAlgorithm enum
+serde = { workspace = true }
+
+[build-dependencies]
+cc = "1"
+
+[dev-dependencies]
+criterion = "0.5"
+
+[features]
+default = []
+aegis = []
+
+[[bench]]
+name = "aead_compare"
+path = "benches/aead_compare.rs"
+harness = false

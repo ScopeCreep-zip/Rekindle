@@ -1,0 +1,6 @@
+[submodule "crates/rekindle-aead/vendored/libaegis"]
+	path = crates/rekindle-aead/vendored/libaegis
+	url = https://github.com/aegis-aead/libaegis.git
+[submodule "crates/rekindle-hash/vendored/isa-l_crypto"]
+	path = crates/rekindle-hash/vendored/isa-l_crypto
+	url = https://github.com/intel/isa-l_crypto.git

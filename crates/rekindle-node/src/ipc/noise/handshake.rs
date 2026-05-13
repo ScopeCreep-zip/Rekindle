@@ -35,25 +35,19 @@ where
 {
     let prologue = build_prologue(local_creds, remote_creds);
 
-    let mut handshake = snow::Builder::new(
-        NOISE_PARAMS
-            .parse()
-            .map_err(|e| IpcError::HandshakeFailed {
-                reason: format!("invalid Noise params: {e}"),
-            })?,
-    )
-    .local_private_key(&server_keypair.private)
-    .map_err(|e| IpcError::HandshakeFailed {
-        reason: format!("Noise builder: {e}"),
-    })?
-    .prologue(&prologue)
-    .map_err(|e| IpcError::HandshakeFailed {
-        reason: format!("Noise prologue: {e}"),
-    })?
-    .build_responder()
-    .map_err(|e| IpcError::HandshakeFailed {
-        reason: format!("Noise responder build: {e}"),
-    })?;
+    let mut handshake = super::aws_lc_resolver::noise_builder(NOISE_PARAMS)
+        .local_private_key(&server_keypair.private)
+        .map_err(|e| IpcError::HandshakeFailed {
+            reason: format!("Noise builder: {e}"),
+        })?
+        .prologue(&prologue)
+        .map_err(|e| IpcError::HandshakeFailed {
+            reason: format!("Noise prologue: {e}"),
+        })?
+        .build_responder()
+        .map_err(|e| IpcError::HandshakeFailed {
+            reason: format!("Noise responder build: {e}"),
+        })?;
 
     tokio::time::timeout(HANDSHAKE_TIMEOUT, async {
         let msg1 = read_frame(reader).await?;
@@ -133,29 +127,23 @@ where
 {
     let prologue = build_prologue(local_creds, remote_creds);
 
-    let mut handshake = snow::Builder::new(
-        NOISE_PARAMS
-            .parse()
-            .map_err(|e| IpcError::HandshakeFailed {
-                reason: format!("invalid Noise params: {e}"),
-            })?,
-    )
-    .local_private_key(&client_keypair.private)
-    .map_err(|e| IpcError::HandshakeFailed {
-        reason: format!("Noise builder: {e}"),
-    })?
-    .remote_public_key(server_public_key)
-    .map_err(|e| IpcError::HandshakeFailed {
-        reason: format!("Noise remote key: {e}"),
-    })?
-    .prologue(&prologue)
-    .map_err(|e| IpcError::HandshakeFailed {
-        reason: format!("Noise prologue: {e}"),
-    })?
-    .build_initiator()
-    .map_err(|e| IpcError::HandshakeFailed {
-        reason: format!("Noise initiator build: {e}"),
-    })?;
+    let mut handshake = super::aws_lc_resolver::noise_builder(NOISE_PARAMS)
+        .local_private_key(&client_keypair.private)
+        .map_err(|e| IpcError::HandshakeFailed {
+            reason: format!("Noise builder: {e}"),
+        })?
+        .remote_public_key(server_public_key)
+        .map_err(|e| IpcError::HandshakeFailed {
+            reason: format!("Noise remote key: {e}"),
+        })?
+        .prologue(&prologue)
+        .map_err(|e| IpcError::HandshakeFailed {
+            reason: format!("Noise prologue: {e}"),
+        })?
+        .build_initiator()
+        .map_err(|e| IpcError::HandshakeFailed {
+            reason: format!("Noise initiator build: {e}"),
+        })?;
 
     tokio::time::timeout(HANDSHAKE_TIMEOUT, async {
         let mut msg1_buf = [0u8; 256];
