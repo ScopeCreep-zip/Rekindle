@@ -43,16 +43,20 @@ pub mod registry;
 pub mod server;
 pub mod client;
 pub mod event_router;
+pub mod bulk;
+pub mod journal;
+pub mod idempotency;
 
 // Re-exports for convenience.
 pub use error::{IpcError, Result};
 pub use framing::{encode_frame, decode_frame, read_frame, write_frame, MAX_FRAME_SIZE};
-pub use message::{Message, MessageContext, SecurityLevel, AgentType, Timestamp, WIRE_VERSION};
+pub use message::{Message, MessageContext, SecurityLevel, AgentType, Timestamp, RoutingHeader, RoutedFrame, WIRE_VERSION};
 pub use protocol::{IpcRequest, IpcResponse, BusPayload, SubscriptionFilter};
 pub use noise_keys::{ZeroizingKeypair, generate_keypair, NOISE_PARAMS};
-pub use noise::NoiseTransport;
+pub use noise::{NoiseTransport, NoiseReader, NoiseWriter};
 pub use registry::ClearanceRegistry;
 pub use server::BusServer;
 pub use client::BusClient;
 pub use transport::{PeerCredentials, extract_ucred, socket_path, runtime_dir};
-
+pub use event_router::ShardedEventRouter;
+pub use bulk::{BulkCipher, BulkFrameHeader, FrameKind, BufferPool, BulkStream, StreamingDigest, MerkleDigest, DigestAlgorithm, merkle_root, merkle_root_with_algorithm, digest_oneshot, blake3_oneshot};

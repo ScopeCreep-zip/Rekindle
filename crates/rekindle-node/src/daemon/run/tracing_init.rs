@@ -37,7 +37,7 @@ pub fn init_tracing() {
         .with_thread_names(false)
         .with_file(false)
         .with_line_number(false)
-        .with_ansi(atty::is(atty::Stream::Stderr));
+        .with_ansi(std::io::IsTerminal::is_terminal(&std::io::stderr()));
 
     let subscriber = tracing_subscriber::registry()
         .with(filter_layer)

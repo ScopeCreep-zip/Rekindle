@@ -131,7 +131,7 @@ impl App {
         let channel = channel.to_string();
         tokio::spawn(async move {
             let reply = reply_to.and_then(|r| r.parse::<u64>().ok());
-            match client.request_ok(IpcRequest::ChannelSend { community, channel, body: text, reply_to: reply }).await {
+            match client.request_ok(IpcRequest::ChannelSend { community, channel, body: text, reply_to: reply, client_msg_id: None }).await {
                 Ok(value) => {
                     let msg_id = value.get("message_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
                     let _ = tx.send(Action::CommandComplete(Box::new(CommandResult::MessageSent { message_id: msg_id })));

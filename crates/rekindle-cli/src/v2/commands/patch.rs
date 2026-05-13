@@ -59,6 +59,7 @@ pub async fn cmd_patch(
                 channel: channel.to_string(),
                 body,
                 reply_to: None,
+                client_msg_id: None,
             }).await?;
             if mode.is_structured() {
                 return format::print_structured(&value, mode);

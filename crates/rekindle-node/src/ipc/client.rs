@@ -14,7 +14,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use tokio::net::UnixStream;
-use tokio::sync::{Mutex, mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
 use super::error::{IpcError, Result};
@@ -24,23 +24,32 @@ use super::noise;
 use super::protocol::{BusPayload, IpcRequest, IpcResponse};
 use super::transport::{extract_ucred, PeerCredentials};
 
+/// Event channel capacity. If the consumer falls behind by this many events,
+/// new events are dropped rather than accumulating unboundedly.
+/// 4096 events × ~200 bytes avg = ~800KB buffer.
+const EVENT_CHANNEL_CAPACITY: usize = 4096;
+
 /// The IPC bus client used by frontends and agents.
 pub struct BusClient {
     sender_id: Uuid,
     msg_ctx: MessageContext,
     /// Outbound frames to send to the server.
-    outbound_tx: mpsc::Sender<Vec<u8>>,
+    outbound_tx: mpsc::Sender<bytes::Bytes>,
     /// Inbound frames received from the server (forwarded requests for daemon subscriber).
-    inbound_rx: mpsc::Receiver<Vec<u8>>,
+    inbound_rx: mpsc::Receiver<bytes::Bytes>,
     /// Typed subscription events from the server's EventRouter.
     /// Taken once by the consumer via `take_event_receiver()`.
-    event_rx: Option<mpsc::UnboundedReceiver<rekindle_types::subscription_events::SubscriptionEvent>>,
+    event_rx: Option<mpsc::Receiver<rekindle_types::subscription_events::SubscriptionEvent>>,
     /// Pending request-response waiters, keyed by msg_id.
-    pending: Arc<Mutex<HashMap<Uuid, oneshot::Sender<IpcResponse>>>>,
+    pending: Arc<parking_lot::Mutex<HashMap<Uuid, oneshot::Sender<IpcResponse>>>>,
     /// Monotonic epoch for timestamp generation.
     epoch: Instant,
     /// Handle to the multiplexed I/O task.
     io_handle: tokio::task::JoinHandle<()>,
+    /// Bulk cipher derived from the Noise handshake hash.
+    /// `take_bulk_cipher()` returns `Some` exactly once. Enables
+    /// bidirectional bulk transfers from the client side.
+    bulk_cipher: Option<super::bulk::BulkCipher>,
 }
 
 impl BusClient {
@@ -69,7 +78,7 @@ impl BusClient {
         let mut reader = tokio::io::BufReader::new(reader);
         let mut writer = tokio::io::BufWriter::new(writer);
 
-        let transport = noise::client_handshake(
+        let mut handshake = noise::client_handshake(
             &mut reader,
             &mut writer,
             server_public_key,
@@ -79,42 +88,62 @@ impl BusClient {
         )
         .await?;
 
-        let (outbound_tx, mut outbound_rx) = mpsc::channel::<Vec<u8>>(256);
-        let (inbound_tx, inbound_rx) = mpsc::channel::<Vec<u8>>(1024);
-        let (event_tx, event_rx) = mpsc::unbounded_channel::<rekindle_types::subscription_events::SubscriptionEvent>();
-        let pending: Arc<Mutex<HashMap<Uuid, oneshot::Sender<IpcResponse>>>> =
-            Arc::new(Mutex::new(HashMap::new()));
+        let bulk_cipher = handshake
+            .take_handshake_hash()
+            .map(|h| super::bulk::kdf::derive_bulk_cipher(&h));
+
+        let mut noise_reader = handshake.reader;
+        let mut noise_writer = handshake.writer;
+
+        let (outbound_tx, mut outbound_rx) = mpsc::channel::<bytes::Bytes>(256);
+        let (inbound_tx, inbound_rx) = mpsc::channel::<bytes::Bytes>(1024);
+        let (event_tx, event_rx) = mpsc::channel::<rekindle_types::subscription_events::SubscriptionEvent>(EVENT_CHANNEL_CAPACITY);
+        let pending: Arc<parking_lot::Mutex<HashMap<Uuid, oneshot::Sender<IpcResponse>>>> =
+            Arc::new(parking_lot::Mutex::new(HashMap::new()));
 
         let pending_clone = Arc::clone(&pending);
         let io_handle = tokio::spawn(async move {
-            let mut transport = transport;
             let mut reader = reader;
             let mut writer = writer;
             loop {
                 tokio::select! {
-                    result = transport.read_encrypted_frame(&mut reader) => {
-                        if let Ok(payload) = result {
-                            route_inbound(
-                                payload,
-                                &pending_clone,
-                                &inbound_tx,
-                                &event_tx,
-                            ).await;
-                        } else {
-                            tracing::info!("server disconnected");
-                            break;
+                    result = async {
+                        let mut lane_buf = [0u8; 1];
+                        tokio::io::AsyncReadExt::read_exact(&mut reader, &mut lane_buf).await?;
+                        if lane_buf[0] != 0x00 {
+                            tracing::debug!(lane = lane_buf[0], "non-control lane from server, skipping");
+                            let _ = super::framing::read_frame(&mut reader).await;
+                            return Ok(None) as std::io::Result<Option<bytes::Bytes>>;
+                        }
+                        let payload = noise_reader.read_encrypted_frame(&mut reader).await
+                            .map_err(|e| std::io::Error::other(e.to_string()))?;
+                        Ok(Some(payload))
+                    } => {
+                        match result {
+                            Ok(Some(payload)) => {
+                                route_inbound(
+                                    payload,
+                                    &pending_clone,
+                                    &inbound_tx,
+                                    &event_tx,
+                                );
+                            }
+                            Ok(None) => {}
+                            Err(e) => {
+                                if e.kind() == std::io::ErrorKind::UnexpectedEof {
+                                    tracing::info!("server disconnected");
+                                } else {
+                                    tracing::info!(error = %e, "server read error");
+                                }
+                                break;
+                            }
                         }
                     }
                     msg = outbound_rx.recv() => {
-                        if let Some(mut payload) = msg {
-                            let result = transport
-                                .write_encrypted_frame(&mut writer, &payload)
-                                .await;
-                            zeroize::Zeroize::zeroize(&mut payload);
-                            if let Err(e) = result {
-                                tracing::debug!(error = %e, "write failed, closing");
-                                break;
-                            }
+                        if let Some(payload) = msg {
+                            if tokio::io::AsyncWriteExt::write_all(&mut writer, &[0x00]).await.is_err() { break; }
+                            if noise_writer.write_encrypted_frame(&mut writer, &payload).await.is_err() { break; }
+                            if tokio::io::AsyncWriteExt::flush(&mut writer).await.is_err() { break; }
                         } else {
                             tracing::debug!("outbound channel closed");
                             break;
@@ -133,6 +162,7 @@ impl BusClient {
             pending,
             epoch: Instant::now(),
             io_handle,
+            bulk_cipher,
         })
     }
 
@@ -165,7 +195,7 @@ impl BusClient {
     pub async fn send(&self, msg: &Message<BusPayload>) -> Result<()> {
         let payload = encode_frame(msg)?;
         self.outbound_tx
-            .send(payload)
+            .send(bytes::Bytes::from(payload))
             .await
             .map_err(|_| IpcError::OutboundClosed)?;
         Ok(())
@@ -193,7 +223,7 @@ impl BusClient {
         let msg_id = msg.msg_id;
 
         let (tx, rx) = oneshot::channel();
-        self.pending.lock().await.insert(msg_id, tx);
+        self.pending.lock().insert(msg_id, tx);
 
         self.send(&msg).await?;
 
@@ -201,11 +231,11 @@ impl BusClient {
         match tokio::time::timeout(timeout, rx).await {
             Ok(Ok(response)) => Ok(response),
             Ok(Err(_)) => {
-                self.pending.lock().await.remove(&msg_id);
+                self.pending.lock().remove(&msg_id);
                 Err(IpcError::ConnectionClosed)
             }
             Err(_) => {
-                self.pending.lock().await.remove(&msg_id);
+                self.pending.lock().remove(&msg_id);
                 Err(IpcError::RequestTimeout {
                     timeout_ms: timeout.as_secs() * 1000,
                 })
@@ -217,7 +247,7 @@ impl BusClient {
     ///
     /// Returns `None` if the server disconnected. The raw bytes can be
     /// decoded as `Message<BusPayload>` by the caller.
-    pub async fn recv(&mut self) -> Option<Vec<u8>> {
+    pub async fn recv(&mut self) -> Option<bytes::Bytes> {
         self.inbound_rx.recv().await
     }
 
@@ -225,7 +255,7 @@ impl BusClient {
     ///
     /// Used by the daemon subscriber to receive requests routed by the server.
     pub async fn recv_bus_message(&mut self) -> Option<Result<Message<BusPayload>>> {
-        let payload = self.inbound_rx.recv().await?;
+        let payload: bytes::Bytes = self.inbound_rx.recv().await?;
         Some(decode_frame(&payload))
     }
 
@@ -260,8 +290,20 @@ impl BusClient {
     ///
     /// The TUI calls this at startup to get the event stream. The receiver
     /// is moved out — subsequent calls return `None`.
-    pub fn take_event_receiver(&mut self) -> Option<mpsc::UnboundedReceiver<rekindle_types::subscription_events::SubscriptionEvent>> {
+    pub fn take_event_receiver(&mut self) -> Option<mpsc::Receiver<rekindle_types::subscription_events::SubscriptionEvent>> {
         self.event_rx.take()
+    }
+
+    /// Take the bulk cipher for constructing `BulkStream` instances.
+    ///
+    /// Returns `Some` exactly once. The cipher is derived from the Noise
+    /// handshake hash during `connect()`. Use it to create `BulkStream`s
+    /// for sending bulk data from the client to the server.
+    ///
+    /// Returns `None` on subsequent calls or if the handshake hash was
+    /// unavailable.
+    pub fn take_bulk_cipher(&mut self) -> Option<super::bulk::BulkCipher> {
+        self.bulk_cipher.take()
     }
 
     /// The client's monotonic epoch.
@@ -301,7 +343,7 @@ impl BusClient {
 /// `mpsc::Sender` which is safe for concurrent use.
 #[derive(Clone)]
 pub struct BusResponder {
-    outbound_tx: mpsc::Sender<Vec<u8>>,
+    outbound_tx: mpsc::Sender<bytes::Bytes>,
     msg_ctx: MessageContext,
     epoch: Instant,
 }
@@ -323,7 +365,7 @@ impl BusResponder {
         .with_correlation(correlation_id);
         let payload = encode_frame(&msg)?;
         self.outbound_tx
-            .send(payload)
+            .send(bytes::Bytes::from(payload))
             .await
             .map_err(|_| IpcError::OutboundClosed)?;
         Ok(())
@@ -336,11 +378,11 @@ impl BusResponder {
 /// - `BusPayload::Response` → pending oneshot waiter (request-response correlation)
 /// - `BusPayload::Event(SubscriptionEvent)` → typed event channel (TUI consumes)
 /// - `BusPayload::Request` → inbound channel (daemon subscriber consumes)
-async fn route_inbound(
-    payload: Vec<u8>,
-    pending: &Mutex<HashMap<Uuid, oneshot::Sender<IpcResponse>>>,
-    inbound_tx: &mpsc::Sender<Vec<u8>>,
-    event_tx: &mpsc::UnboundedSender<rekindle_types::subscription_events::SubscriptionEvent>,
+fn route_inbound(
+    payload: bytes::Bytes,
+    pending: &parking_lot::Mutex<HashMap<Uuid, oneshot::Sender<IpcResponse>>>,
+    inbound_tx: &mpsc::Sender<bytes::Bytes>,
+    event_tx: &mpsc::Sender<rekindle_types::subscription_events::SubscriptionEvent>,
 ) {
     let msg: Message<BusPayload> = match decode_frame(&payload) {
         Ok(m) => m,
@@ -363,7 +405,7 @@ async fn route_inbound(
                     return;
                 }
             };
-            let waiter = pending.lock().await.remove(&corr_id);
+            let waiter = pending.lock().remove(&corr_id);
             if let Some(tx) = waiter {
                 let _ = tx.send(response);
             } else {
@@ -373,8 +415,8 @@ async fn route_inbound(
         BusPayload::Event(event) => {
             // Typed subscription event — send to the dedicated event channel.
             // The TUI reads from this via DaemonClient::take_event_receiver().
-            if event_tx.send(event).is_err() {
-                tracing::debug!("event channel closed, event dropped");
+            if event_tx.try_send(event).is_err() {
+                tracing::debug!("event channel full or closed, event dropped");
             }
         }
         BusPayload::Request(_) => {

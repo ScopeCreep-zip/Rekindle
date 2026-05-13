@@ -28,6 +28,9 @@ pub struct DashboardView {
     pub(super) friends: Vec<FriendDisplay>,
     pub(super) loaded: bool,
     pub(super) use_unicode: bool,
+    pub(super) active_transfers: usize,
+    pub(super) bytes_sent: u64,
+    pub(super) bytes_received: u64,
 }
 
 impl DashboardView {
@@ -53,6 +56,9 @@ impl DashboardView {
             friends: Vec::new(),
             loaded: false,
             use_unicode,
+            active_transfers: 0,
+            bytes_sent: 0,
+            bytes_received: 0,
         }
     }
 

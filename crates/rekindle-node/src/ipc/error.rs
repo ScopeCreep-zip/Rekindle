@@ -105,6 +105,14 @@ pub enum IpcError {
     /// Key file tamper detection failed.
     #[error("TAMPER DETECTED: {agent} keypair checksum mismatch — delete {path} and restart")]
     KeyTamperDetected { agent: String, path: String },
+
+    /// Frame too short to contain required header fields.
+    #[error("frame too short: {len} bytes (minimum {min} required)")]
+    FrameTooShort { len: usize, min: usize },
+
+    /// Unknown lane byte received on the wire.
+    #[error("unknown lane byte 0x{lane:02x} — peer may be running an incompatible protocol version")]
+    UnknownLaneByte { lane: u8 },
 }
 
 /// Convenience type alias.

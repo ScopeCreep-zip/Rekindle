@@ -116,6 +116,9 @@ pub enum Command {
     /// System/operator commands (announcements, lockdown, raid alerts).
     #[command(subcommand)]
     System(SystemCmd),
+    /// Bulk transfer management (send, receive, status, cancel).
+    #[command(subcommand)]
+    Transfer(crate::v2::commands::transfer::TransferCmd),
     /// Configuration inspection.
     #[command(subcommand)]
     Config(ConfigCmd),

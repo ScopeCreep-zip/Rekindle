@@ -79,6 +79,15 @@ pub async fn read_frame<R: tokio::io::AsyncRead + Unpin>(reader: &mut R) -> Resu
 }
 
 /// Write a single length-prefixed frame to an async writer.
+///
+/// Writes the 4-byte BE length prefix and payload into the writer's buffer.
+/// Does NOT flush — the caller is responsible for flushing after a batch of
+/// frames. When the writer is a `BufWriter`, `write_all` accumulates into
+/// its internal buffer with no syscall (unless the buffer is full, in which
+/// case `BufWriter` auto-flushes before accepting more data).
+///
+/// Callers that need immediate delivery must call `writer.flush().await`
+/// after calling this function.
 pub async fn write_frame<W: tokio::io::AsyncWrite + Unpin>(
     writer: &mut W,
     payload: &[u8],
@@ -90,7 +99,6 @@ pub async fn write_frame<W: tokio::io::AsyncWrite + Unpin>(
     })?;
     writer.write_all(&len.to_be_bytes()).await?;
     writer.write_all(payload).await?;
-    writer.flush().await?;
     Ok(())
 }
 

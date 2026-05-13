@@ -65,6 +65,15 @@ pub enum SubscriptionEvent {
         context: UnreadContext,
         count: u32,
     },
+    /// Bulk transfer progress update.
+    BulkTransferProgress {
+        transfer_id: String,
+        stream_id: u8,
+        direction: String,
+        bytes_transferred: u64,
+        total_size: u64,
+        status: String,
+    },
 }
 
 /// Context for unread count changes.
@@ -112,6 +121,7 @@ impl SubscriptionEvent {
             Self::Network(_) => EventCategory::Network,
             Self::System(_) => EventCategory::System,
             Self::UnreadChanged { .. } => EventCategory::UnreadChanged,
+            Self::BulkTransferProgress { .. } => EventCategory::System,
         }
     }
 
@@ -204,6 +214,7 @@ impl SubscriptionEvent {
             },
             Self::Network(_) => None,
             Self::UnreadChanged { .. } => None,
+            Self::BulkTransferProgress { .. } => None,
             Self::Friend(_) => None,
         }
     }

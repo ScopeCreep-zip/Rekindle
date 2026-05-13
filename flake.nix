@@ -16,6 +16,7 @@
           capnproto
           protobuf
           cmake
+          gnuplot
           libsodium.dev
         ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
           alsa-lib.dev

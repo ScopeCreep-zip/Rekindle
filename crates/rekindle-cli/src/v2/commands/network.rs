@@ -83,6 +83,9 @@ pub fn print_status_compact(snapshot: &rekindle_types::display::StatusSnapshot, 
         ("Unread Channels", snapshot.unread_channels.to_string()),
         ("Unread DMs", snapshot.unread_dms.to_string()),
         ("Dedup", format!("{} entries, {} suppressed", snapshot.dedup_entries, snapshot.dedup_suppressed)),
+        ("Data Sent", helpers::format_bytes(snapshot.bulk_bytes_sent)),
+        ("Data Received", helpers::format_bytes(snapshot.bulk_bytes_received)),
+        ("Active Transfers", snapshot.bulk_transfers_active.to_string()),
     ];
     format::print_kv(&pairs, mode)
 }

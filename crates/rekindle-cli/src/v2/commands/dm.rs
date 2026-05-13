@@ -72,7 +72,7 @@ fn filter_dm_threads_since(value: &serde_json::Value, since_ms: u64) -> serde_js
 #[allow(clippy::print_stdout)]
 pub async fn watch_streaming(
     client: &DaemonClient,
-    event_rx: &mut tokio::sync::mpsc::UnboundedReceiver<rekindle_types::subscription_events::SubscriptionEvent>,
+    event_rx: &mut tokio::sync::mpsc::Receiver<rekindle_types::subscription_events::SubscriptionEvent>,
     friend_filter: Option<&str>,
     mode: OutputMode,
 ) -> anyhow::Result<()> {

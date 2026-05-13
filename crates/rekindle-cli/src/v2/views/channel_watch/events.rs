@@ -81,7 +81,7 @@ pub fn handle_subscription_event(view: &mut ChannelWatchView, event: &Subscripti
     match event {
         SubscriptionEvent::ChannelMessage(ChannelMessageEvent::New {
             community, channel, message_id, sender_pseudonym,
-            sequence, timestamp, body, reply_to_sequence, is_self,
+            sequence, timestamp, body, reply_to_sequence, is_self, ..
         }) if *community == view.community && view.channel_matches(channel) => {
             if *is_self {
                 view.message_list.confirm_message(message_id);

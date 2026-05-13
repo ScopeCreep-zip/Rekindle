@@ -136,22 +136,16 @@ fn reload_config_inner(ctx: &DaemonContext) {
         return;
     }
 
-    // Apply policy config reload.
-    let policy_file = ctx.paths.config_dir.join("policy.toml");
-    if policy_file.exists() {
-        if let Ok(policy_content) = std::fs::read_to_string(&policy_file) {
-            match toml::from_str(&policy_content) {
-                Ok(new_policy) => {
-                    *ctx.policy.write() = new_policy;
-                    tracing::info!("policy.toml reloaded");
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        error = %e,
-                        "policy.toml parse failed — retaining current policy"
-                    );
-                }
-            }
+    // Apply policy config reload with system+user merge.
+    // Uses the same merge logic as handle_policy_reload (IPC command):
+    // system policy sets the floor, user policy can only tighten.
+    match crate::daemon::dispatch::admin::load_merged_policy(&ctx.paths.config_dir) {
+        Ok(new_policy) => {
+            *ctx.policy.write() = new_policy;
+            tracing::info!("policy reloaded (system + user merge)");
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "policy reload failed — retaining current");
         }
     }
 

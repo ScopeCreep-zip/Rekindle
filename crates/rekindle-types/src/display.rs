@@ -234,6 +234,18 @@ pub struct StatusSnapshot {
     // ── Network detail ──────────────────────────────────────
     pub circuit_summary: CircuitSummary,
 
+    // ── Bulk transfer plane ────────────────────────────────
+    #[serde(default)]
+    pub bulk_frames_sent: u64,
+    #[serde(default)]
+    pub bulk_frames_received: u64,
+    #[serde(default)]
+    pub bulk_bytes_sent: u64,
+    #[serde(default)]
+    pub bulk_bytes_received: u64,
+    #[serde(default)]
+    pub bulk_transfers_active: usize,
+
     // ── Diagnostic checks ───────────────────────────────────
     /// Full check list. CLI `--doctor` and TUI doctor view render these.
     /// Compact mode ignores this field during rendering.

@@ -33,6 +33,14 @@ pub enum ChannelMessageEvent {
         /// True when this event was emitted by the local node after a
         /// successful send — the message is from us, not from a peer.
         is_self: bool,
+        /// Client-generated idempotency key propagated from the
+        /// `IpcRequest::ChannelSend` that originated this message.
+        /// Enables optimistic display deduplication: the sending client
+        /// matches this against its pending-send list to transition
+        /// from "Sending" to "Confirmed" without appending a duplicate.
+        /// None for messages received from remote peers via gossip.
+        #[serde(default)]
+        client_msg_id: Option<String>,
     },
     /// A message was edited.
     /// Triggered by: gossip `ControlPayload::MessageEdited`.

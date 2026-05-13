@@ -238,6 +238,7 @@ async fn dispatch_command(
             ).await
         }
         // PatchApply and Search/Grep are handled before daemon connect — never reach here.
+        Command::Transfer(cmd) => crate::v2::commands::transfer::dispatch(&cmd, client, mode).await,
         Command::PatchApply { .. } | Command::Search { .. } | Command::Grep { .. } => {
             unreachable!("handled before daemon connect")
         }

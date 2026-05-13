@@ -12,7 +12,9 @@ pub fn handle_command_result(view: &mut DashboardView, result: CommandResult) {
             view.node_uptime_secs = snapshot.uptime_secs;
             view.node_peer_count = snapshot.peer_count;
             view.node_route_allocated = snapshot.route_allocated;
-            // Track peer count history for sparkline
+            view.active_transfers = snapshot.bulk_transfers_active;
+            view.bytes_sent = snapshot.bulk_bytes_sent;
+            view.bytes_received = snapshot.bulk_bytes_received;
             if view.peer_history.len() >= 60 { view.peer_history.pop_front(); }
             view.peer_history.push_back(snapshot.peer_count as f64);
             view.loaded = true;

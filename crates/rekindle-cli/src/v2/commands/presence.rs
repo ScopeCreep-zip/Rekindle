@@ -38,7 +38,7 @@ pub async fn dispatch(cmd: &PresenceCmd, client: &DaemonClient, mode: OutputMode
 /// Streaming presence watch — subscribe to events and print JSONL.
 pub async fn watch_streaming(
     client: &DaemonClient,
-    event_rx: &mut tokio::sync::mpsc::UnboundedReceiver<rekindle_types::subscription_events::SubscriptionEvent>,
+    event_rx: &mut tokio::sync::mpsc::Receiver<rekindle_types::subscription_events::SubscriptionEvent>,
     community_filter: Option<&str>,
     mode: OutputMode,
 ) -> anyhow::Result<()> {

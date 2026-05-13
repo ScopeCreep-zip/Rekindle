@@ -95,7 +95,7 @@ pub async fn run_daemon() -> anyhow::Result<()> {
 
     // ── 4. Lifecycle state machine ──────────────────────────────────
     let lifecycle = Arc::new(DaemonLifecycle::new());
-    lifecycle.transition(DaemonState::Starting);
+    assert!(lifecycle.transition(DaemonState::Starting), "initial Stopped→Starting must succeed");
 
     // ── 5. IPC bus keypair ──────────────────────────────────────────
     let runtime_dir = ipc::runtime_dir()?;
@@ -130,10 +130,19 @@ pub async fn run_daemon() -> anyhow::Result<()> {
         vec!["dispatch".into()],
     );
 
+    let encrypt_pool = crate::ipc::bulk::build_encrypt_pool();
+    let bulk_buffer_pool = crate::ipc::bulk::BufferPool::new();
+    let bulk_counters = crate::ipc::bulk::BulkCounters::new();
+    let event_journal = crate::ipc::journal::EventJournal::new();
+
     let bus_server = ipc::BusServer::bind(
         &socket_path,
         bus_keypair.into_inner(),
         clearance_registry,
+        Arc::clone(&encrypt_pool),
+        bulk_buffer_pool,
+        Arc::clone(&bulk_counters),
+        Arc::clone(&event_journal),
     )?;
     tracing::info!(path = %socket_path.display(), "IPC bus server bound");
 
@@ -156,18 +165,36 @@ pub async fn run_daemon() -> anyhow::Result<()> {
             crate::daemon::dispatch::PolicyConfig::default(),
         ),
         event_watch_tx,
+        status_cache: parking_lot::Mutex::new(None),
+        encrypt_pool,
+        bulk_counters,
+        bulk_transfers: parking_lot::Mutex::new(
+            crate::daemon::dispatch::bulk_transfers::BulkTransferRegistry::new(),
+        ),
+        event_journal,
+        idempotency_cache: crate::ipc::idempotency::IdempotencyCache::new(),
+        server_state: parking_lot::RwLock::new(Some(bus_server.state())),
     });
 
     // ── 9. Event delivery ───────────────────────────────────────────
     bus_server.start_event_delivery(event_watch_rx);
 
     // ── 10. Transition to LOCKED ────────────────────────────────────
-    lifecycle.transition(DaemonState::Locked);
+    assert!(lifecycle.transition(DaemonState::Locked), "Starting→Locked must succeed");
     systemd::notify_ready();
     systemd::notify_status("locked — awaiting unlock");
     tracing::info!(state = "locked", "daemon accepting connections");
 
     // ── 11. Daemon bus subscriber ───────────────────────────────────
+    //
+    // Two channels:
+    // - RoutedFrame channel (server → daemon subscriber): structured request
+    //   forwarding with routing header + raw bytes. No decode+re-encode.
+    // - BusClient connection (daemon subscriber → server): response path.
+    //   The subscriber sends correlated responses back through the bus.
+    let (routed_tx, routed_rx) = tokio::sync::mpsc::channel::<ipc::RoutedFrame>(1024);
+    bus_server.register_daemon_channel(routed_tx);
+
     let daemon_ctx_subscriber = Arc::clone(&daemon_ctx);
     let subscriber_socket = socket_path.clone();
     let subscriber_handle = tokio::spawn(async move {
@@ -200,7 +227,8 @@ pub async fn run_daemon() -> anyhow::Result<()> {
         };
 
         tracing::info!("daemon bus subscriber connected");
-        daemon_ctx_subscriber.run_subscriber(client).await;
+        let responder = client.responder();
+        daemon_ctx_subscriber.run_subscriber(routed_rx, responder).await;
     });
 
     // ── 12. Config watcher ──────────────────────────────────────────
@@ -225,60 +253,81 @@ pub async fn run_daemon() -> anyhow::Result<()> {
     let signal_lifecycle = Arc::clone(&lifecycle);
 
     // ── 16. Main loop ───────────────────────────────────────────────
+    //
+    // Wrapped in a loop so non-terminal signals (SIGHUP, SIGUSR1, SIGUSR2)
+    // are handled without exiting the select!. Only terminal signals
+    // (SIGTERM, SIGINT) and IPC shutdown break the loop.
+    //
+    // Signal coalescing: tokio signals are coalesced — if SIGHUP fires
+    // twice while the watchdog branch is being processed, only one
+    // SIGHUP notification is delivered. This is acceptable for config
+    // reload (idempotent operation).
     let mut watchdog_interval = tokio::time::interval(Duration::from_secs(15));
+    watchdog_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut signal_stream = signals::SignalStream::new()?;
 
-    tokio::select! {
-        result = bus_server.run() => {
-            if let Err(e) = result {
-                tracing::error!(error = %e, "bus server fatal error");
+    let shutdown_reason: &str;
+
+    loop {
+        tokio::select! {
+            result = bus_server.run() => {
+                if let Err(e) = result {
+                    tracing::error!(error = %e, "bus server fatal error");
+                }
+                shutdown_reason = "bus server exited";
+                break;
             }
-        }
-        () = lifecycle.shutdown_requested() => {
-            tracing::info!("shutdown requested via IPC");
-        }
-        signal = signal_stream.next() => {
-            match signal {
-                Some(signals::Signal::Terminate) => {
-                    tracing::info!("SIGTERM received — initiating shutdown");
-                }
-                Some(signals::Signal::Interrupt) => {
-                    tracing::info!("SIGINT received — initiating shutdown");
-                }
-                Some(signals::Signal::HangUp) => {
-                    tracing::info!("SIGHUP received — reloading config");
-                    config_watch::reload_config(&signal_ctx);
-                    // Don't shutdown — SIGHUP is reload, not terminate.
-                    // Re-enter the select loop... but select! consumed the branch.
-                    // This is handled by the signal stream being in a loop.
-                }
-                Some(signals::Signal::User1) => {
-                    tracing::info!("SIGUSR1 received — writing diagnostic dump");
-                    health::write_diagnostic_dump(&signal_ctx, &paths).await;
-                }
-                Some(signals::Signal::User2) => {
-                    tracing::info!("SIGUSR2 received — rotating log level");
-                    signals::rotate_log_level();
-                }
-                None => {
-                    tracing::error!("signal stream closed unexpectedly");
+            () = lifecycle.shutdown_requested() => {
+                shutdown_reason = "IPC shutdown request";
+                break;
+            }
+            signal = signal_stream.next() => {
+                match signal {
+                    Some(signals::Signal::Terminate) => {
+                        tracing::info!("SIGTERM received");
+                        shutdown_reason = "SIGTERM";
+                        break;
+                    }
+                    Some(signals::Signal::Interrupt) => {
+                        tracing::info!("SIGINT received");
+                        shutdown_reason = "SIGINT";
+                        break;
+                    }
+                    Some(signals::Signal::HangUp) => {
+                        tracing::info!("SIGHUP received — reloading config");
+                        config_watch::reload_config(&signal_ctx);
+                        // Continue the loop — SIGHUP is non-terminal.
+                    }
+                    Some(signals::Signal::User1) => {
+                        tracing::info!("SIGUSR1 — writing diagnostic dump");
+                        health::write_diagnostic_dump(&signal_ctx, &paths).await;
+                        // Continue the loop — SIGUSR1 is non-terminal.
+                    }
+                    Some(signals::Signal::User2) => {
+                        tracing::info!("SIGUSR2 — rotating log level");
+                        signals::rotate_log_level();
+                        // Continue the loop — SIGUSR2 is non-terminal.
+                    }
+                    None => {
+                        tracing::error!("signal stream closed unexpectedly");
+                        shutdown_reason = "signal stream closed";
+                        break;
+                    }
                 }
             }
-        }
-        () = async {
-            loop {
-                watchdog_interval.tick().await;
+            _ = watchdog_interval.tick() => {
                 systemd::notify_watchdog();
                 systemd::notify_status(signal_lifecycle.state().as_str());
                 metrics_state.update_from_context(&signal_ctx);
+                // Continue the loop — watchdog is periodic.
             }
-        } => {
-            unreachable!("watchdog loop does not terminate");
         }
     }
 
+    tracing::info!(reason = shutdown_reason, "initiating shutdown");
+
     // ── Shutdown ────────────────────────────────────────────────────
-    lifecycle.transition(DaemonState::ShuttingDown);
+    let _ = lifecycle.transition(DaemonState::ShuttingDown);
     systemd::notify_status("shutting down");
     tracing::info!("draining connections...");
 
@@ -290,7 +339,7 @@ pub async fn run_daemon() -> anyhow::Result<()> {
         }
         () = async {
             loop {
-                if bus_server.connection_count().await == 0 { break; }
+                if bus_server.connection_count() == 0 { break; }
                 tokio::time::sleep(Duration::from_millis(100)).await;
             }
         } => {
@@ -312,7 +361,7 @@ pub async fn run_daemon() -> anyhow::Result<()> {
     // Remove PID file.
     drop(pid_guard);
 
-    lifecycle.transition(DaemonState::Stopped);
+    let _ = lifecycle.transition(DaemonState::Stopped);
     tracing::info!("rekindle daemon stopped");
 
     Ok(())

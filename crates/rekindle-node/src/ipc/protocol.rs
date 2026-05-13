@@ -132,6 +132,13 @@ pub enum IpcRequest {
         channel: String,
         body: String,
         reply_to: Option<u64>,
+        /// Client-generated idempotency key (UUID v7). Enables:
+        /// - Optimistic display with echo deduplication
+        /// - Exactly-once semantics on retry after disconnect
+        /// - Cross-client echo identification
+        /// Clients that don't need these features can set this to None.
+        #[serde(default)]
+        client_msg_id: Option<String>,
     },
     /// Send a typing indicator to a community channel.
     ChannelTyping { community: String, channel: String },
@@ -342,6 +349,33 @@ pub enum IpcRequest {
     /// Toggle self-deafen in the active voice session.
     VoiceDeafen { deafened: bool },
 
+    // ── Bulk Transfer ─────────────────────────────────────────────
+    /// Initiate a bulk transfer (OCI blob push/pull, file transfer).
+    /// Returns a transfer_id for tracking. Actual data flows through
+    /// the bulk lane (0x01–0x02), not the control-plane request path.
+    BulkTransferStart {
+        transfer_id: String,
+        total_size: u64,
+        media_type: String,
+        digest: String,
+        direction: String,
+    },
+    /// Signal completion of a bulk transfer.
+    BulkTransferComplete {
+        transfer_id: String,
+        digest: String,
+        bytes_transferred: u64,
+    },
+    /// Cancel an in-progress bulk transfer.
+    BulkTransferCancel {
+        transfer_id: String,
+        reason: String,
+    },
+    /// Query transfer progress.
+    BulkTransferStatus {
+        transfer_id: String,
+    },
+
     // ── Network / Node ────────────────────────────────────────────
     /// Get detailed network status (peers, routes, circuits).
     NetworkStatus,
@@ -359,6 +393,12 @@ pub enum IpcRequest {
     AgentRevoke { name: String },
     /// Reload authorization policy from disk.
     PolicyReload,
+
+    /// Resume event delivery from a cursor position.
+    /// The server replays events from `last_seen_seq + 1` through
+    /// the current journal head. If the cursor is too old (journal
+    /// truncated), returns an error and the client must re-fetch state.
+    EventResume { last_seen_seq: Option<u64> },
 }
 
 /// [RC-16] Custom Debug that redacts secrets in Unlock and IdentityCreate.
@@ -373,9 +413,10 @@ impl std::fmt::Debug for IpcRequest {
                 .finish(),
 
             // Variants with message bodies — show length only
-            Self::ChannelSend { community, channel, body, reply_to } => f.debug_struct("ChannelSend")
+            Self::ChannelSend { community, channel, body, reply_to, client_msg_id } => f.debug_struct("ChannelSend")
                 .field("community", community).field("channel", channel)
-                .field("body_len", &body.len()).field("reply_to", reply_to).finish(),
+                .field("body_len", &body.len()).field("reply_to", reply_to)
+                .field("client_msg_id", client_msg_id).finish(),
             Self::DmSend { peer_key, body } => f.debug_struct("DmSend")
                 .field("peer_key", peer_key).field("body_len", &body.len()).finish(),
 
@@ -516,12 +557,23 @@ impl std::fmt::Debug for IpcRequest {
                 .field("community", community).field("channel_id", channel_id).field("since_timestamp", since_timestamp).finish(),
             Self::SyncRespond { community, target_pseudonym, channel_id, .. } => f.debug_struct("SyncRespond")
                 .field("community", community).field("target_pseudonym", target_pseudonym).field("channel_id", channel_id).finish(),
+            Self::BulkTransferStart { transfer_id, total_size, media_type, digest, direction } => f.debug_struct("BulkTransferStart")
+                .field("transfer_id", transfer_id).field("total_size", total_size)
+                .field("media_type", media_type).field("digest", digest).field("direction", direction).finish(),
+            Self::BulkTransferComplete { transfer_id, digest, bytes_transferred } => f.debug_struct("BulkTransferComplete")
+                .field("transfer_id", transfer_id).field("digest", digest).field("bytes_transferred", bytes_transferred).finish(),
+            Self::BulkTransferCancel { transfer_id, reason } => f.debug_struct("BulkTransferCancel")
+                .field("transfer_id", transfer_id).field("reason", reason).finish(),
+            Self::BulkTransferStatus { transfer_id } => f.debug_struct("BulkTransferStatus")
+                .field("transfer_id", transfer_id).finish(),
             Self::NetworkStatus => write!(f, "NetworkStatus"),
             Self::NetworkPeers => write!(f, "NetworkPeers"),
             Self::AgentRegister { name, agent_type, capabilities } => f.debug_struct("AgentRegister")
                 .field("name", name).field("agent_type", agent_type).field("capabilities", capabilities).finish(),
             Self::AgentRevoke { name } => f.debug_struct("AgentRevoke").field("name", name).finish(),
             Self::PolicyReload => write!(f, "PolicyReload"),
+            Self::EventResume { last_seen_seq } => f.debug_struct("EventResume")
+                .field("last_seen_seq", last_seen_seq).finish(),
             Self::Shutdown => write!(f, "Shutdown"),
         }
     }

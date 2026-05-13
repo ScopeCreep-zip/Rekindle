@@ -33,7 +33,7 @@ const LONG_TIMEOUT: Duration = Duration::from_secs(180);
 ///   receives typed `SubscriptionEvent`s in real-time.
 pub struct DaemonClient {
     client: Arc<BusClient>,
-    event_rx: Option<mpsc::UnboundedReceiver<SubscriptionEvent>>,
+    event_rx: Option<mpsc::Receiver<SubscriptionEvent>>,
 }
 
 impl DaemonClient {
@@ -81,7 +81,7 @@ impl DaemonClient {
     }
 
     /// Take the subscription event receiver. Can only be called once.
-    pub fn take_event_receiver(&mut self) -> Option<mpsc::UnboundedReceiver<SubscriptionEvent>> {
+    pub fn take_event_receiver(&mut self) -> Option<mpsc::Receiver<SubscriptionEvent>> {
         self.event_rx.take()
     }
 

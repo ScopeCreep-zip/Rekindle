@@ -138,7 +138,7 @@ impl App {
     pub async fn run(
         &mut self,
         tui: &mut Tui,
-        mut event_rx: Option<tokio::sync::mpsc::UnboundedReceiver<rekindle_types::subscription_events::SubscriptionEvent>>,
+        mut event_rx: Option<tokio::sync::mpsc::Receiver<rekindle_types::subscription_events::SubscriptionEvent>>,
     ) -> anyhow::Result<()> {
         // Set identity from daemon if available
         if let Some(ref id) = self.cached_identity {

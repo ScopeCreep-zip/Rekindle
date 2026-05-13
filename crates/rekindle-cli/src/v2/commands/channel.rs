@@ -67,6 +67,7 @@ pub async fn dispatch(cmd: &ChannelCmd, client: &DaemonClient, mode: OutputMode)
                 channel: channel.clone(),
                 body: message.clone(),
                 reply_to: reply,
+                client_msg_id: None,
             }).await?;
             format::print_structured(&value, mode)
         }
@@ -128,7 +129,7 @@ pub async fn dispatch(cmd: &ChannelCmd, client: &DaemonClient, mode: OutputMode)
 /// Streaming channel watch — subscribe to community events and print JSONL.
 pub async fn watch_streaming(
     client: &DaemonClient,
-    event_rx: &mut tokio::sync::mpsc::UnboundedReceiver<rekindle_types::subscription_events::SubscriptionEvent>,
+    event_rx: &mut tokio::sync::mpsc::Receiver<rekindle_types::subscription_events::SubscriptionEvent>,
     community: &str,
     channel: &str,
     mode: OutputMode,

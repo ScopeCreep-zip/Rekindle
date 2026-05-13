@@ -120,7 +120,15 @@ impl From<snow::Keypair> for ZeroizingKeypair {
 // ── Key generation ─────────────────────────────────────────────────────
 
 /// Noise IK protocol parameter string.
-pub const NOISE_PARAMS: &str = "Noise_IK_25519_ChaChaPoly_BLAKE2s";
+///
+/// AES-256-GCM with SHA-256: uses AES-NI + CLMUL hardware acceleration
+/// on x86-64 via the `ring` crate (`ring-accelerated` snow feature).
+/// On platforms without AES-NI, ring falls back to a constant-time
+/// software implementation (slower than ChaCha20, but still correct).
+///
+/// Previous: `Noise_IK_25519_ChaChaPoly_BLAKE2s` (pure-Rust, ~1.5μs/frame)
+/// Current:  `Noise_IK_25519_AESGCM_SHA256` (AES-NI hardware, expected ~300-500ns/frame)
+pub const NOISE_PARAMS: &str = "Noise_IK_25519_AESGCM_SHA256";
 
 /// Generate a new X25519 static keypair for Noise IK.
 pub fn generate_keypair() -> Result<ZeroizingKeypair> {

@@ -92,7 +92,9 @@ pub(crate) async fn handle_unlock(
     }
 
     // Step 2: Transition
-    ctx.lifecycle.transition(DaemonState::Resuming);
+    if !ctx.lifecycle.transition(DaemonState::Resuming) {
+        return IpcResponse::error(409, "state transition to Resuming rejected — concurrent state change");
+    }
 
     // Step 3: Derive master key from passphrase
     //
@@ -310,11 +312,17 @@ pub(crate) async fn handle_unlock(
 ///
 /// Each task clones the Arc<ChatService> and loops until
 /// `chat.is_operational()` returns false (signing key cleared during lock).
+///
+/// All intervals use `MissedTickBehavior::Skip` to prevent thundering herd
+/// after load spikes. If the system is loaded and ticks are missed, they
+/// are simply dropped — running inbox scan 3 times in succession after a
+/// load spike accomplishes the same as running it once (idempotent).
 fn spawn_background_tasks(chat: &Arc<ChatService>) {
     // Inbox scan (30s) — discovers friend requests and acceptances
     let c = Arc::clone(chat);
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(30));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             interval.tick().await;
             if !c.is_operational() { break; }
@@ -326,6 +334,7 @@ fn spawn_background_tasks(chat: &Arc<ChatService>) {
     let c = Arc::clone(chat);
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(60));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             interval.tick().await;
             if !c.is_operational() { break; }
@@ -337,6 +346,7 @@ fn spawn_background_tasks(chat: &Arc<ChatService>) {
     let c = Arc::clone(chat);
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(2));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             interval.tick().await;
             if !c.is_operational() { break; }
@@ -348,6 +358,7 @@ fn spawn_background_tasks(chat: &Arc<ChatService>) {
     let c = Arc::clone(chat);
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(300));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             interval.tick().await;
             if !c.is_operational() { break; }
@@ -359,6 +370,7 @@ fn spawn_background_tasks(chat: &Arc<ChatService>) {
     let c = Arc::clone(chat);
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(3600));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             interval.tick().await;
             if !c.is_operational() { break; }
@@ -370,6 +382,7 @@ fn spawn_background_tasks(chat: &Arc<ChatService>) {
     let c = Arc::clone(chat);
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(5));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             interval.tick().await;
             if !c.is_operational() { break; }
@@ -380,11 +393,27 @@ fn spawn_background_tasks(chat: &Arc<ChatService>) {
 
 // ── Status ─────────────────────────────────────────────────────────────
 
+/// Status cache TTL. Status data is inherently stale — values change on a
+/// seconds timescale, but consumers tolerate up to 1s staleness. At 1000
+/// agents polling simultaneously, only the first computes the snapshot;
+/// the other 999 get the cached version with zero ChatService lock contention.
+const STATUS_CACHE_TTL: Duration = Duration::from_secs(1);
+
 /// Handle Status — always available, any state.
 ///
-/// Queries ChatService for application-level health when available.
-/// Queries DaemonContext for daemon-level health always.
+/// Uses a TTL cache to prevent lock contention on ChatService internals
+/// when many agents poll status simultaneously.
 pub(crate) fn handle_status(ctx: &Arc<DaemonContext>, state: DaemonState) -> IpcResponse {
+    // Fast path: return cached snapshot if fresh.
+    {
+        let cache = ctx.status_cache.lock();
+        if let Some((computed_at, ref snapshot)) = *cache {
+            if computed_at.elapsed() < STATUS_CACHE_TTL {
+                return IpcResponse::ok(snapshot);
+            }
+        }
+    } // Mutex released before computing new snapshot.
+
     let chat = ctx.chat.read().clone();
 
     let snapshot = StatusSnapshot {
@@ -423,8 +452,19 @@ pub(crate) fn handle_status(ctx: &Arc<DaemonContext>, state: DaemonState) -> Ipc
         circuit_summary: CircuitSummary {
             total: 0, healthy: 0, degraded: 0, circuit_open: 0,
         },
+        bulk_frames_sent: ctx.bulk_counters.frames_sent.load(std::sync::atomic::Ordering::Relaxed),
+        bulk_frames_received: ctx.bulk_counters.frames_received.load(std::sync::atomic::Ordering::Relaxed),
+        bulk_bytes_sent: ctx.bulk_counters.bytes_sent.load(std::sync::atomic::Ordering::Relaxed),
+        bulk_bytes_received: ctx.bulk_counters.bytes_received.load(std::sync::atomic::Ordering::Relaxed),
+        bulk_transfers_active: ctx.bulk_transfers.lock().active_count(),
         checks: build_checks(ctx, state, chat.as_ref().map(AsRef::as_ref)),
     };
+
+    // Store in cache for subsequent requests within TTL.
+    {
+        let mut cache = ctx.status_cache.lock();
+        *cache = Some((std::time::Instant::now(), snapshot.clone()));
+    }
 
     IpcResponse::ok(&snapshot)
 }

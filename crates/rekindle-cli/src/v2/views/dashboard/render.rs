@@ -62,7 +62,7 @@ impl DashboardView {
         let internet = if self.node_public_internet { theme.status_glyph(true) } else { theme.status_glyph(false) };
         let route = if self.node_route_allocated { theme.status_glyph(true) } else { theme.status_glyph(false) };
 
-        let lines = vec![
+        let mut lines = vec![
             Line::from(vec![
                 Span::styled("  Status: ", theme.style("dim")),
                 Span::raw(format!("{status_glyph} {status_label}")),
@@ -77,6 +77,20 @@ impl DashboardView {
                 Span::raw(helpers::format_uptime(self.node_uptime_secs)),
             ]),
         ];
+
+        if self.active_transfers > 0 {
+            lines.push(Line::from(vec![
+                Span::styled("  Transfers: ", theme.style("dim")),
+                Span::styled(format!("{} active", self.active_transfers), Style::new().bold()),
+            ]));
+        } else if self.bytes_sent > 0 || self.bytes_received > 0 {
+            let sent = helpers::format_bytes(self.bytes_sent);
+            let recv = helpers::format_bytes(self.bytes_received);
+            lines.push(Line::from(vec![
+                Span::styled("  Data: ", theme.style("dim")),
+                Span::raw(format!("↑{sent} ↓{recv}")),
+            ]));
+        }
         frame.render_widget(Paragraph::new(lines), text_area);
 
         // Right side: peer count visualization (history over time)

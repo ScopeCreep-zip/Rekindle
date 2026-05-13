@@ -14,6 +14,8 @@ use super::{DaemonContext, PolicyConfig, state_error};
 // ── Network ─────────────────────────────────────────────────────────────
 
 /// Handle NetworkStatus — detailed transport node status.
+///
+/// Uses Transport trait methods available on `Arc<dyn Transport>`.
 pub(crate) fn handle_network_status(ctx: &Arc<DaemonContext>, state: DaemonState) -> IpcResponse {
     if !state.can_query() { return state_error(state, "query"); }
     let transport_guard = ctx.transport.read();
@@ -21,29 +23,18 @@ pub(crate) fn handle_network_status(ctx: &Arc<DaemonContext>, state: DaemonState
         return IpcResponse::error(503, "transport not started");
     };
 
-    let snap = transport.status_snapshot();
-    let peer_reg = transport.peers();
-    let peers = peer_reg.read();
-    let circuit = peers.circuit_summary();
-
     IpcResponse::ok(&serde_json::json!({
-        "attachment": snap.attachment,
-        "is_attached": snap.is_attached,
-        "public_internet_ready": snap.public_internet_ready,
-        "uptime_secs": snap.uptime_secs,
-        "peer_count": snap.peer_count,
-        "route_allocated": snap.route_allocated,
-        "route_age_secs": snap.route_age_secs,
-        "circuit_summary": {
-            "total": circuit.total,
-            "healthy": circuit.healthy,
-            "degraded": circuit.degraded,
-            "circuit_open": circuit.circuit_open,
-        },
+        "attachment": transport.attachment_state(),
+        "is_attached": transport.is_attached(),
+        "uptime_secs": transport.uptime_secs(),
+        "peer_count": transport.peer_count(),
     }))
 }
 
 /// Handle NetworkPeers — peer snapshot for display.
+///
+/// Uses Transport trait methods. Detailed peer breakdown is available
+/// via ChatService diagnostics in the status endpoint.
 pub(crate) fn handle_network_peers(ctx: &Arc<DaemonContext>, state: DaemonState) -> IpcResponse {
     if !state.can_query() { return state_error(state, "query"); }
     let transport_guard = ctx.transport.read();
@@ -51,9 +42,11 @@ pub(crate) fn handle_network_peers(ctx: &Arc<DaemonContext>, state: DaemonState)
         return IpcResponse::error(503, "transport not started");
     };
 
-    let peers = transport.peers();
-    let snapshot = peers.read().snapshot();
-    IpcResponse::ok(&snapshot)
+    IpcResponse::ok(&serde_json::json!({
+        "peer_count": transport.peer_count(),
+        "is_attached": transport.is_attached(),
+        "attachment": transport.attachment_state(),
+    }))
 }
 
 // ── Agent Management ────────────────────────────────────────────────────
@@ -129,7 +122,7 @@ pub(crate) fn handle_agent_revoke(ctx: &Arc<DaemonContext>, name: &str) -> IpcRe
 /// additive and cannot be weakened by user config).
 pub(crate) fn handle_policy_reload(ctx: &Arc<DaemonContext>) -> IpcResponse {
     let system_path = std::path::Path::new("/etc/rekindle/policy.toml");
-    let user_path = ctx.config_dir.join("policy.toml");
+    let user_path = ctx.paths.config_dir.join("policy.toml");
 
     let mut policy = PolicyConfig::default();
 
@@ -173,6 +166,29 @@ pub(crate) fn handle_policy_reload(ctx: &Arc<DaemonContext>) -> IpcResponse {
         "require_signature_verification": policy.require_signature_verification,
         "max_gossip_ttl": policy.max_gossip_ttl,
     }))
+}
+
+/// Load and merge policy from system + user config files.
+///
+/// System policy (admin) sets the floor. User policy can only tighten
+/// constraints, never relax them. Used by both `handle_policy_reload`
+/// (IPC command) and `config_watch::reload_config_inner` (hot-reload).
+pub(crate) fn load_merged_policy(config_dir: &std::path::Path) -> Result<PolicyConfig, String> {
+    let mut policy = PolicyConfig::default();
+
+    let system_path = std::path::Path::new("/etc/rekindle/policy.toml");
+    if system_path.exists() {
+        let sys = load_policy_file(system_path)?;
+        merge_policy(&mut policy, &sys);
+    }
+
+    let user_path = config_dir.join("policy.toml");
+    if user_path.exists() {
+        let usr = load_policy_file(&user_path)?;
+        merge_policy(&mut policy, &usr);
+    }
+
+    Ok(policy)
 }
 
 fn load_policy_file(path: &std::path::Path) -> Result<PolicyConfig, String> {

@@ -141,6 +141,9 @@ fn hash_event(event: &SubscriptionEvent) -> [u8; 32] {
         SubscriptionEvent::Network(n) => hash_network(&mut h, n),
         SubscriptionEvent::System(s) => hash_system(&mut h, s),
         SubscriptionEvent::UnreadChanged { .. } => { h.update(b"unread"); }
+        SubscriptionEvent::BulkTransferProgress { transfer_id, bytes_transferred, .. } => {
+            hash_fields!(&mut h, "bulk_prog", transfer_id, *bytes_transferred);
+        }
     }
     *h.finalize().as_bytes()
 }
@@ -159,6 +162,7 @@ fn event_tag(event: &SubscriptionEvent) -> &'static str {
         SubscriptionEvent::Network(_) => "ne",
         SubscriptionEvent::System(_) => "sy",
         SubscriptionEvent::UnreadChanged { .. } => "ur",
+        SubscriptionEvent::BulkTransferProgress { .. } => "bt",
     }
 }
 

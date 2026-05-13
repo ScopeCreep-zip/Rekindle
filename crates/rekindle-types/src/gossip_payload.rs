@@ -147,7 +147,7 @@ impl GossipPayload {
                 SubscriptionEvent::ChannelMessage(ChannelMessageEvent::New {
                     community: c(), channel: channel_id, message_id,
                     sender_pseudonym: s(), sequence, timestamp,
-                    body: None, reply_to_sequence: None, is_self: false,
+                    body: None, reply_to_sequence: None, is_self: false, client_msg_id: None,
                 }),
             Self::TypingIndicator { channel_id, pseudonym_key } =>
                 SubscriptionEvent::Typing(TypingEvent::Started {

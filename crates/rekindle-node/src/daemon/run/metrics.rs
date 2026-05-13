@@ -54,6 +54,20 @@ pub struct DaemonMetrics {
     pub session_flushes_total: AtomicU64,
     /// Process start time (unix epoch seconds).
     pub start_time_secs: AtomicU64,
+    /// Bulk frames sent.
+    pub bulk_frames_sent: AtomicU64,
+    /// Bulk frames received.
+    pub bulk_frames_received: AtomicU64,
+    /// Bulk bytes sent.
+    pub bulk_bytes_sent: AtomicU64,
+    /// Bulk bytes received.
+    pub bulk_bytes_received: AtomicU64,
+    /// Active bulk transfers.
+    pub bulk_transfers_active: AtomicU64,
+    /// Bulk buffer pool slabs available.
+    pub bulk_pool_available: AtomicU64,
+    /// Bulk buffer pool slabs in flight.
+    pub bulk_pool_in_flight: AtomicU64,
 }
 
 impl DaemonMetrics {
@@ -84,6 +98,13 @@ impl DaemonMetrics {
             skipped_keys_swept: AtomicU64::new(0),
             session_flushes_total: AtomicU64::new(0),
             start_time_secs: AtomicU64::new(now),
+            bulk_frames_sent: AtomicU64::new(0),
+            bulk_frames_received: AtomicU64::new(0),
+            bulk_bytes_sent: AtomicU64::new(0),
+            bulk_bytes_received: AtomicU64::new(0),
+            bulk_transfers_active: AtomicU64::new(0),
+            bulk_pool_available: AtomicU64::new(0),
+            bulk_pool_in_flight: AtomicU64::new(0),
         }
     }
 
@@ -109,6 +130,12 @@ impl DaemonMetrics {
                 Ordering::Relaxed,
             );
         }
+
+        self.bulk_frames_sent.store(ctx.bulk_counters.frames_sent.load(Ordering::Relaxed), Ordering::Relaxed);
+        self.bulk_frames_received.store(ctx.bulk_counters.frames_received.load(Ordering::Relaxed), Ordering::Relaxed);
+        self.bulk_bytes_sent.store(ctx.bulk_counters.bytes_sent.load(Ordering::Relaxed), Ordering::Relaxed);
+        self.bulk_bytes_received.store(ctx.bulk_counters.bytes_received.load(Ordering::Relaxed), Ordering::Relaxed);
+        self.bulk_transfers_active.store(ctx.bulk_transfers.lock().active_count() as u64, Ordering::Relaxed);
     }
 }
 
@@ -150,6 +177,13 @@ fn render_prometheus(m: &DaemonMetrics) -> String {
     counter(&mut out, "rekindle_daemon_skipped_keys_swept", "Skipped keys swept (last hour)", m.skipped_keys_swept.load(Ordering::Relaxed));
     counter(&mut out, "rekindle_daemon_session_flushes_total", "Session.json flush count", m.session_flushes_total.load(Ordering::Relaxed));
     gauge(&mut out, "rekindle_daemon_start_time_seconds", "Process start time (unix epoch)", m.start_time_secs.load(Ordering::Relaxed));
+    counter(&mut out, "rekindle_bulk_frames_sent_total", "Bulk frames sent", m.bulk_frames_sent.load(Ordering::Relaxed));
+    counter(&mut out, "rekindle_bulk_frames_received_total", "Bulk frames received", m.bulk_frames_received.load(Ordering::Relaxed));
+    counter(&mut out, "rekindle_bulk_bytes_sent_total", "Bulk bytes sent", m.bulk_bytes_sent.load(Ordering::Relaxed));
+    counter(&mut out, "rekindle_bulk_bytes_received_total", "Bulk bytes received", m.bulk_bytes_received.load(Ordering::Relaxed));
+    gauge(&mut out, "rekindle_bulk_transfers_active", "Active bulk transfers", m.bulk_transfers_active.load(Ordering::Relaxed));
+    gauge(&mut out, "rekindle_bulk_pool_available", "Bulk buffer pool slabs available", m.bulk_pool_available.load(Ordering::Relaxed));
+    gauge(&mut out, "rekindle_bulk_pool_in_flight", "Bulk buffer pool slabs in flight", m.bulk_pool_in_flight.load(Ordering::Relaxed));
 
     out
 }

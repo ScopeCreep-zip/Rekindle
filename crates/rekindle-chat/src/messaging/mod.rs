@@ -282,6 +282,7 @@ impl MessagingService {
                 body: Some(body),
                 reply_to_sequence: None,
                 is_self: false,
+                client_msg_id: None,
             },
         ));
 

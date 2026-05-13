@@ -155,42 +155,52 @@ impl DaemonLifecycle {
 
     /// Transition to a new state if the transition is valid.
     ///
-    /// Valid transitions form a directed graph:
-    /// - Stopped → Starting
-    /// - Starting → Locked, Stopped (startup failure)
-    /// - Locked → Resuming, ShuttingDown
-    /// - Resuming → Operational, Degraded, Locked (resume failure)
-    /// - Operational → Degraded, Detached, Locking, ShuttingDown
-    /// - Degraded → Operational, Detached, Locking, ShuttingDown
-    /// - Detached → Operational, Degraded, Locking, ShuttingDown
-    /// - Locking → Locked
-    /// - ShuttingDown → Stopped
+    /// Uses `compare_exchange_weak` in a loop to prevent TOCTOU races
+    /// between concurrent transition attempts (e.g., SIGHUP handler +
+    /// IPC Shutdown arriving simultaneously). Without CAS, both threads
+    /// read the old state, both validate, both store — one overwrites
+    /// the other, potentially skipping cleanup steps.
     ///
-    /// Invalid transitions are logged as errors and ignored.
-    pub fn transition(&self, new_state: DaemonState) {
-        let old = DaemonState::from_u8(self.state.load(Ordering::Acquire));
-        if old == new_state {
-            return;
-        }
+    /// Returns `true` if the transition succeeded, `false` if rejected
+    /// (invalid edge or concurrent state change made the transition
+    /// no longer valid).
+    pub fn transition(&self, new_state: DaemonState) -> bool {
+        loop {
+            let old_u8 = self.state.load(Ordering::Acquire);
+            let old = DaemonState::from_u8(old_u8);
 
-        if !old.can_transition_to(new_state) {
-            tracing::error!(
-                from = old.as_str(),
-                to = new_state.as_str(),
-                "INVALID state transition — rejected"
-            );
-            return;
-        }
+            if old == new_state {
+                return true; // Already in target state
+            }
 
-        self.state.store(new_state as u8, Ordering::Release);
-        tracing::info!(
-            from = old.as_str(),
-            to = new_state.as_str(),
-            "daemon state transition"
-        );
+            if !old.can_transition_to(new_state) {
+                tracing::error!(
+                    from = old.as_str(),
+                    to = new_state.as_str(),
+                    "INVALID state transition — rejected"
+                );
+                return false;
+            }
 
-        if new_state == DaemonState::ShuttingDown {
-            self.shutdown_notify.notify_waiters();
+            if self.state.compare_exchange_weak(
+                old_u8,
+                new_state as u8,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ).is_ok() {
+                tracing::info!(
+                    from = old.as_str(),
+                    to = new_state.as_str(),
+                    "daemon state transition"
+                );
+
+                if new_state == DaemonState::ShuttingDown {
+                    self.shutdown_notify.notify_waiters();
+                }
+
+                return true;
+            }
+            // CAS failed — another thread changed state. Loop re-reads.
         }
     }
 

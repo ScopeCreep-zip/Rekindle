@@ -493,7 +493,7 @@ impl View for ChannelWatchView {
         match event {
             SubscriptionEvent::ChannelMessage(ChannelMessageEvent::New {
                 community, channel, message_id, sender_pseudonym,
-                sequence, timestamp, body, reply_to_sequence, is_self,
+                sequence, timestamp, body, reply_to_sequence, is_self, ..
             }) if *community == self.community && self.channel_matches(channel) => {
                 if *is_self {
                     // DHT write confirmed — flip the pending message from ○ to ●

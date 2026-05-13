@@ -8,17 +8,23 @@
 
 
 use std::fmt;
+use std::ops::Deref;
+use std::sync::Arc;
 use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// Current wire format version. Increment on field addition.
+/// Current wire format version. Increment on breaking layout changes.
 ///
-/// Postcard positional encoding: new fields appended to the struct are
-/// invisible to old receivers (they stop reading at their known field count).
-/// Receivers check `wire_version` before interpreting trailing fields.
-pub const WIRE_VERSION: u8 = 1;
+/// Postcard positional encoding: fields are serialized in struct declaration
+/// order. Changing field order is a breaking change requiring a version bump.
+///
+/// Version history:
+/// - v1: original field order (security_level after payload)
+/// - v2: security_level moved before timestamp+payload for partial deser
+/// - v3: lane byte protocol — 1-byte prefix multiplexes control + bulk
+pub const WIRE_VERSION: u8 = 3;
 
 /// Security level classification for IPC messages.
 ///
@@ -88,28 +94,118 @@ impl Timestamp {
 }
 
 /// The IPC bus message envelope wrapping any payload type.
+///
+/// Field order is significant — postcard serializes positionally.
+/// Fields 0-4 (wire_version through security_level) form the "routing
+/// header" that the server can parse via `postcard::take_from_bytes`
+/// without deserializing the payload. Do not reorder without bumping
+/// `WIRE_VERSION`.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Message<T> {
-    /// Wire format version. Always serialized first.
+    /// Wire format version. Always serialized first. Position 0.
     pub wire_version: u8,
-    /// Unique message identifier (UUID v7 for time-ordering).
+    /// Unique message identifier (UUID v7 for time-ordering). Position 1.
     pub msg_id: Uuid,
-    /// Correlation ID for request-response patterns.
+    /// Correlation ID for request-response patterns. Position 2.
     pub correlation_id: Option<Uuid>,
-    /// Sender's agent identity.
+    /// Sender's agent identity. Position 3.
     pub sender: Uuid,
-    /// Dual-clock timestamp.
-    pub timestamp: Timestamp,
-    /// The application payload.
-    pub payload: T,
-    /// Access control classification.
+    /// Access control classification. Position 4.
+    /// Placed before timestamp+payload so routing headers can be parsed
+    /// without deserializing the payload (postcard positional encoding).
     pub security_level: SecurityLevel,
-    /// Server-stamped verified sender name. NEVER set by clients.
-    pub verified_sender_name: Option<String>,
-    /// Agent type classification.
+    /// Dual-clock timestamp. Position 5.
+    pub timestamp: Timestamp,
+    /// The application payload. Position 6.
+    pub payload: T,
+    /// Server-stamped verified sender name. NEVER set by clients. Position 7.
+    /// `Arc<str>` for zero-cost clone during fan-out — the server stamps
+    /// the same name on every frame from a connection.
+    pub verified_sender_name: Option<Arc<str>>,
+    /// Agent type classification. Position 8.
     pub agent_type: Option<AgentType>,
-    /// Community scope for event routing (governance key, or None for global).
+    /// Community scope for event routing (governance key, or None for global). Position 9.
     pub community_scope: Option<String>,
+}
+
+/// Routing header — prefix of `Message<T>` for partial deserialization.
+///
+/// Contains only fields 0-4 of `Message`. `postcard::take_from_bytes`
+/// can deserialize this from a `Message` byte stream without parsing
+/// the timestamp, payload, or trailing fields. Used by the server to
+/// extract routing metadata for daemon-bound request forwarding without
+/// full frame decode+re-encode.
+/// Fields 0-5 of `Message`. After `postcard::take_from_bytes::<RoutingHeader>`,
+/// the remaining bytes start with the `BusPayload` discriminant — enabling
+/// discriminant-only routing without full payload deserialization.
+#[derive(Debug, Clone, Deserialize)]
+pub struct RoutingHeader {
+    pub wire_version: u8,
+    pub msg_id: Uuid,
+    pub correlation_id: Option<Uuid>,
+    pub sender: Uuid,
+    pub security_level: SecurityLevel,
+    /// Included so `take_from_bytes` consumes through the timestamp,
+    /// leaving the remaining bytes starting at the `BusPayload` discriminant.
+    pub timestamp: Timestamp,
+}
+
+/// Frame forwarded from server to daemon subscriber.
+///
+/// Separates routing metadata (cheap to extract via `take_from_bytes`)
+/// from the raw payload (forwarded without re-serialization). The daemon
+/// subscriber only calls `postcard::from_bytes::<Message<BusPayload>>`
+/// on `raw` when it needs to dispatch on the payload variant.
+///
+/// This eliminates the full decode+re-encode that `route_frame` previously
+/// did for every daemon-bound request frame.
+#[derive(Debug, Clone)]
+pub struct RoutedFrame {
+    /// Routing metadata parsed from the first 5 fields of the message.
+    pub header: RoutingHeader,
+    /// Verified sender name stamped by the server from connection state.
+    /// Not in the raw bytes — passed out-of-band.
+    pub verified_sender_name: Option<Arc<str>>,
+    /// The raw postcard bytes of the full `Message<BusPayload>`.
+    /// Forwarded without re-encoding. The daemon deserializes only when
+    /// it needs to inspect the payload.
+    pub raw: bytes::Bytes,
+}
+
+/// Zero-vtable shared frame for event fan-out.
+///
+/// `Bytes::clone()` is 14.5ns (vtable dispatch + atomic refcount).
+/// `SharedFrame::clone()` is ~5ns (direct `Arc::clone` — single `fetch_add`,
+/// no vtable, compiler can inline).
+///
+/// At 50K subscribers, this saves 475μs per event (50K × 9.5ns).
+///
+/// Use `SharedFrame` for the event delivery channel (hot fan-out path).
+/// Use `Bytes` for the read/write I/O path (NoiseTransport, client channels).
+#[derive(Clone)]
+pub struct SharedFrame(Arc<[u8]>);
+
+impl SharedFrame {
+    /// Create from `Bytes`. Copies the bytes into a new `Arc<[u8]>` allocation.
+    /// This copy happens once per event (in `serialize_event`). All subsequent
+    /// clones during fan-out are zero-cost (`Arc::clone` = atomic increment).
+    pub fn from_bytes(b: &[u8]) -> Self {
+        Self(Arc::from(b))
+    }
+}
+
+impl Deref for SharedFrame {
+    type Target = [u8];
+
+    fn deref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl fmt::Debug for SharedFrame {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("SharedFrame").field(&self.0.len()).finish()
+    }
 }
 
 /// Context for constructing outbound messages.
@@ -148,9 +244,9 @@ impl<T: Serialize> Message<T> {
             msg_id: Uuid::now_v7(),
             correlation_id: None,
             sender: ctx.sender,
+            security_level: level,
             timestamp: Timestamp::now(epoch),
             payload,
-            security_level: level,
             verified_sender_name: None, // Server fills this
             agent_type: ctx.agent_type,
             community_scope: None,
@@ -182,7 +278,7 @@ impl<T: fmt::Debug> fmt::Debug for Message<T> {
             .field("correlation_id", &self.correlation_id)
             .field("sender", &self.sender)
             .field("security_level", &self.security_level)
-            .field("verified_sender_name", &self.verified_sender_name)
+            .field("verified_sender_name", &self.verified_sender_name.as_deref())
             .field("agent_type", &self.agent_type)
             .field("community_scope", &self.community_scope)
             .field("payload", &self.payload)
@@ -236,5 +332,36 @@ mod tests {
         assert!(SecurityLevel::Authenticated < SecurityLevel::Agent);
         assert!(SecurityLevel::Agent < SecurityLevel::Internal);
         assert!(SecurityLevel::Internal < SecurityLevel::Admin);
+    }
+
+    #[test]
+    fn routing_header_matches_message_field_order() {
+        // RoutingHeader must deserialize from the first N fields of
+        // Message<BusPayload> via postcard::take_from_bytes. If the
+        // field order diverges, this test fails.
+        use crate::ipc::protocol::{BusPayload, IpcRequest};
+
+        let corr = Uuid::now_v7();
+        let sender = Uuid::now_v7();
+        let ctx = MessageContext::new(sender);
+        let msg = Message::new(
+            &ctx,
+            BusPayload::Request(IpcRequest::Status),
+            SecurityLevel::Authenticated,
+            Instant::now(),
+        ).with_correlation(corr);
+
+        let bytes = crate::ipc::framing::encode_frame(&msg).unwrap();
+        let (header, _remaining) =
+            postcard::take_from_bytes::<RoutingHeader>(&bytes).unwrap();
+
+        assert_eq!(header.wire_version, WIRE_VERSION);
+        assert_eq!(header.msg_id, msg.msg_id);
+        assert_eq!(header.correlation_id, Some(corr));
+        assert_eq!(header.sender, sender);
+        assert_eq!(header.security_level, SecurityLevel::Authenticated);
+        // Timestamp monotonic_ms should be within a reasonable range
+        // (not zero, not garbage from misaligned fields).
+        assert!(header.timestamp.monotonic_ms < 10_000);
     }
 }

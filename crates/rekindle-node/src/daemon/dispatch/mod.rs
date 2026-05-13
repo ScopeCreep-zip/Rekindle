@@ -10,10 +10,14 @@
 //! Lock discipline: `parking_lot::RwLock` guards are NEVER held across `.await`.
 //! Pattern: clone `Arc` from `RwLock`, drop guard, then `.await` on the clone.
 
+pub(crate) mod admin;
+pub(crate) mod bulk_transfers;
 pub(crate) mod lifecycle;
 
 use std::sync::Arc;
+use std::time::Instant;
 
+use rekindle_types::display::StatusSnapshot;
 use rekindle_types::transport::Transport;
 
 use crate::daemon::DaemonState;
@@ -71,33 +75,185 @@ pub struct DaemonContext {
     pub event_watch_tx: tokio::sync::watch::Sender<
         Option<tokio::sync::broadcast::Sender<rekindle_types::subscription_events::SubscriptionEvent>>,
     >,
+
+    /// Cached status snapshot with TTL. Refreshed at most once per second.
+    /// Prevents lock contention on ChatService internals when many agents
+    /// poll status simultaneously (monitoring fleet).
+    pub status_cache: parking_lot::Mutex<Option<(Instant, StatusSnapshot)>>,
+
+    /// Dedicated rayon thread pool for CPU-bound bulk encryption/decryption.
+    pub encrypt_pool: Arc<rayon::ThreadPool>,
+
+    /// Shared atomic counters for bulk transfer observability.
+    /// One Arc cloned into both ServerState and DaemonContext.
+    pub bulk_counters: Arc<crate::ipc::bulk::BulkCounters>,
+
+    /// Registry of active and recent bulk transfers for observability.
+    pub bulk_transfers: parking_lot::Mutex<bulk_transfers::BulkTransferRegistry>,
+
+    /// Shared event journal for cursor-based resumption.
+    /// Events are appended here by the event delivery task.
+    /// Clients replay from here on reconnect via EventResume.
+    pub event_journal: Arc<crate::ipc::journal::EventJournal>,
+
+    /// Idempotency cache for exactly-once request processing.
+    /// Checked before dispatching mutating requests that carry
+    /// a client_msg_id.
+    pub idempotency_cache: crate::ipc::idempotency::IdempotencyCache,
+
+    /// Reference to the IPC bus server's shared state.
+    /// Used by bulk transfer cancel to signal the connection's reassembler.
+    pub server_state: parking_lot::RwLock<Option<Arc<crate::ipc::server::state::ServerState>>>,
 }
 
 /// Dispatch an IPC request to the appropriate handler.
-pub async fn dispatch(ctx: &Arc<DaemonContext>, request: IpcRequest) -> IpcResponse {
+pub async fn dispatch(ctx: &Arc<DaemonContext>, request: IpcRequest, sender_name: Option<Arc<str>>) -> IpcResponse {
     let state = ctx.lifecycle.state();
 
     match request {
         // ── Lifecycle (any state) ────────────────────────────────
-        IpcRequest::Status | IpcRequest::NetworkStatus | IpcRequest::NetworkPeers =>
-            lifecycle::handle_status(ctx, state),
+        IpcRequest::Status => lifecycle::handle_status(ctx, state),
+        IpcRequest::NetworkStatus => admin::handle_network_status(ctx, state),
+        IpcRequest::NetworkPeers => admin::handle_network_peers(ctx, state),
         IpcRequest::Unlock { passphrase } => {
             lifecycle::handle_unlock(ctx, state, &passphrase).await
         }
         IpcRequest::Lock => lifecycle::handle_lock(ctx, state).await,
         IpcRequest::Shutdown => lifecycle::handle_shutdown(ctx, state).await,
+        IpcRequest::AgentRegister { name, agent_type, capabilities } =>
+            admin::handle_agent_register(ctx, &name, agent_type, &capabilities),
+        IpcRequest::AgentRevoke { name } =>
+            admin::handle_agent_revoke(ctx, &name),
+        IpcRequest::PolicyReload => admin::handle_policy_reload(ctx),
+
+        // ── Bulk Transfer (control-plane signaling) ──────────────
+        // Actual bulk data flows through the bulk lane (0x01–0x02),
+        // not through IpcRequest. These control messages coordinate
+        // transfer lifecycle (start, complete, cancel, status).
+        IpcRequest::BulkTransferStart { transfer_id, total_size, media_type, digest, direction } => {
+            let conn_id = sender_name.as_deref().and_then(|name| {
+                ctx.server_state.read().as_ref().and_then(|ss| {
+                    ss.name_to_conn.read().get(name).copied()
+                })
+            }).unwrap_or(0);
+
+            let nonce_counter = ctx.server_state.read().as_ref().and_then(|ss| {
+                ss.connections.get(&conn_id).and_then(|conn| {
+                    conn.bulk_nonce_counter.clone()
+                })
+            });
+
+            let stream_id = ctx.bulk_transfers.lock().start(
+                transfer_id.clone(), total_size, media_type, digest, direction,
+                conn_id, nonce_counter,
+                crate::ipc::bulk::verify::DigestAlgorithm::default(),
+            );
+            tracing::info!(transfer_id, total_size, stream_id, conn_id, "bulk transfer started");
+            IpcResponse::ok(&serde_json::json!({
+                "transfer_id": transfer_id,
+                "stream_id": stream_id,
+                "status": "active",
+            }))
+        }
+        IpcRequest::BulkTransferComplete { transfer_id, digest, bytes_transferred } => {
+            let found = ctx.bulk_transfers.lock().complete(&transfer_id, bytes_transferred);
+            if found {
+                tracing::info!(transfer_id, digest, bytes_transferred, "bulk transfer completed");
+                IpcResponse::ok(&serde_json::json!({
+                    "transfer_id": transfer_id,
+                    "status": "completed",
+                }))
+            } else {
+                IpcResponse::error(404, format!("transfer {transfer_id} not found"))
+            }
+        }
+        IpcRequest::BulkTransferCancel { transfer_id, reason } => {
+            let cancel_info = {
+                let mut reg = ctx.bulk_transfers.lock();
+                let info = reg.status(&transfer_id).map(|s| {
+                    let nonce = s.nonce_counter.as_ref()
+                        .map_or(0, |n| n.load(std::sync::atomic::Ordering::Relaxed));
+                    (s.conn_id, nonce)
+                });
+                reg.cancel(&transfer_id);
+                info
+            };
+
+            if let Some((conn_id, next_nonce)) = cancel_info {
+                if let Some(ss) = ctx.server_state.read().as_ref() {
+                    ss.cancel_bulk_stream(conn_id, next_nonce);
+                }
+                tracing::info!(transfer_id, reason, conn_id, next_nonce, "bulk transfer cancelled");
+                IpcResponse::ok(&serde_json::json!({
+                    "transfer_id": transfer_id,
+                    "status": "cancelled",
+                }))
+            } else {
+                IpcResponse::error(404, format!("transfer {transfer_id} not found"))
+            }
+        }
+        IpcRequest::BulkTransferStatus { transfer_id } => {
+            match ctx.bulk_transfers.lock().status(&transfer_id) {
+                Some(state) => IpcResponse::ok(&state),
+                None => IpcResponse::error(404, format!("transfer {transfer_id} not found")),
+            }
+        }
+
+        // ── Event Journal Resume ─────────────────────────────────
+        IpcRequest::EventResume { last_seen_seq } => {
+            match ctx.event_journal.replay_from(last_seen_seq) {
+                Ok(events) => {
+                    let event_data: Vec<serde_json::Value> = events
+                        .iter()
+                        .map(|e| serde_json::json!({
+                            "seq": e.seq,
+                            "event": *e.event,
+                        }))
+                        .collect();
+                    IpcResponse::ok(&serde_json::json!({
+                        "replayed": events.len(),
+                        "current_head": ctx.event_journal.head_seq(),
+                        "events": event_data,
+                    }))
+                }
+                Err(e) => IpcResponse::error_with_remediation(
+                    410,
+                    format!("{e}"),
+                    "re-fetch full state with Status + CommunityList + FriendList",
+                ),
+            }
+        }
 
         // ── Everything else requires OPERATIONAL state + ChatService ──
         _ => {
             if !state.can_query() {
                 return state_error(state, "query");
             }
-            // Clone Arc from RwLock, drop guard immediately.
             let chat = ctx.chat.read().clone();
             let Some(chat) = chat else {
                 return IpcResponse::error(503, "chat service not initialized — unlock first");
             };
-            dispatch_to_chat(&chat, request, state).await
+
+            // Extract client_msg_id before moving request into dispatch.
+            // This avoids cloning the entire IpcRequest on every dispatch.
+            let client_msg_id = match &request {
+                IpcRequest::ChannelSend { client_msg_id: Some(id), .. } => {
+                    if let Some(cached) = ctx.idempotency_cache.check(id) {
+                        return cached;
+                    }
+                    Some(id.clone())
+                }
+                _ => None,
+            };
+
+            let response = dispatch_to_chat(&chat, request, state).await;
+
+            // Cache the response for idempotent requests.
+            if let Some(id) = client_msg_id {
+                ctx.idempotency_cache.store(id, response.clone());
+            }
+
+            response
         }
     }
 }
@@ -131,7 +287,7 @@ async fn dispatch_to_chat(
             map_result(chat.leave_community(&governance_key).await),
 
         // ── Channel ──────────────────────────────────────────────
-        IpcRequest::ChannelSend { community, channel, body, reply_to } =>
+        IpcRequest::ChannelSend { community, channel, body, reply_to, .. } =>
             map_result(chat.send_channel_message(&community, &channel, &body, reply_to).await),
         IpcRequest::ChannelTyping { community, channel } =>
             map_result(chat.send_channel_typing(&community, &channel).await),
@@ -332,12 +488,12 @@ async fn dispatch_to_chat(
         IpcRequest::VoiceDeafen { deafened } =>
             map_result(chat.voice_deafen(deafened).await),
 
-        // ── Agent Management (daemon-level) ──────────────────────
-        IpcRequest::AgentRegister { .. } | IpcRequest::AgentRevoke { .. } | IpcRequest::PolicyReload =>
-            IpcResponse::error(400, "agent/policy commands handled by admin dispatch"),
-
         // ── Handled in outer dispatch() ──────────────────────────
         IpcRequest::NetworkStatus | IpcRequest::NetworkPeers |
+        IpcRequest::AgentRegister { .. } | IpcRequest::AgentRevoke { .. } | IpcRequest::PolicyReload |
+        IpcRequest::BulkTransferStart { .. } | IpcRequest::BulkTransferComplete { .. } |
+        IpcRequest::BulkTransferCancel { .. } | IpcRequest::BulkTransferStatus { .. } |
+        IpcRequest::EventResume { .. } |
         IpcRequest::Status | IpcRequest::Unlock { .. } |
         IpcRequest::Lock | IpcRequest::Shutdown => unreachable!(),
     }
@@ -364,36 +520,46 @@ fn state_error(state: DaemonState, required: &str) -> IpcResponse {
 }
 
 impl DaemonContext {
-    /// Run the daemon as a bus subscriber.
+    /// Run the daemon subscriber consuming `RoutedFrame`s from the server.
+    ///
+    /// The server sends `RoutedFrame` (routing header + raw bytes) via
+    /// `daemon_tx`. The subscriber deserializes the raw bytes only when
+    /// it needs to dispatch on the payload variant. The response is sent
+    /// back through the `BusClient`'s `BusResponder` (which writes through
+    /// the bus connection to the server, which routes it back to the
+    /// originating client via correlation ID).
     pub async fn run_subscriber(
         self: &Arc<Self>,
-        mut client: crate::ipc::client::BusClient,
+        mut routed_rx: tokio::sync::mpsc::Receiver<crate::ipc::message::RoutedFrame>,
+        responder: crate::ipc::client::BusResponder,
     ) {
-        tracing::info!("daemon bus subscriber started");
-        let responder = client.responder();
+        tracing::info!("daemon bus subscriber started (RoutedFrame path)");
 
         loop {
-            let msg = match client.recv_bus_message().await {
-                Some(Ok(msg)) => msg,
-                Some(Err(e)) => {
-                    tracing::warn!(error = %e, "subscriber: decode failed");
-                    continue;
-                }
-                None => {
-                    tracing::info!("subscriber: bus connection closed");
-                    break;
-                }
+            let Some(routed) = routed_rx.recv().await else {
+                tracing::info!("subscriber: routed channel closed");
+                break;
             };
+
+            // Deserialize the full message only now — at the dispatch boundary.
+            let msg: crate::ipc::message::Message<crate::ipc::protocol::BusPayload> =
+                match crate::ipc::framing::decode_frame(&routed.raw) {
+                    Ok(m) => m,
+                    Err(e) => {
+                        tracing::warn!(error = %e, "subscriber: decode failed");
+                        continue;
+                    }
+                };
 
             let crate::ipc::protocol::BusPayload::Request(request) = msg.payload else { continue };
 
-            let correlation_id = msg.msg_id;
-            let level = msg.security_level;
+            let correlation_id = routed.header.msg_id;
+            let level = routed.header.security_level;
             let ctx = Arc::clone(self);
             let resp = responder.clone();
 
             tokio::spawn(async move {
-                let response = dispatch(&ctx, request).await;
+                let response = dispatch(&ctx, request, routed.verified_sender_name.clone()).await;
                 let response_bytes = match serde_json::to_vec(&response) {
                     Ok(b) => b,
                     Err(e) => {

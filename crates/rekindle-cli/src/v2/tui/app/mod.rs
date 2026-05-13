@@ -118,7 +118,7 @@ impl App {
     pub async fn run(
         &mut self,
         tui: &mut Tui,
-        mut event_rx: Option<mpsc::UnboundedReceiver<rekindle_types::subscription_events::SubscriptionEvent>>,
+        mut event_rx: Option<mpsc::Receiver<rekindle_types::subscription_events::SubscriptionEvent>>,
     ) -> anyhow::Result<()> {
         if let Some(ref id) = self.cached_identity {
             self.nav.dashboard_mut().set_identity(&id.public_key, &id.display_name);
