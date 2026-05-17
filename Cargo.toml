@@ -30,10 +30,11 @@ members = [
     "crates/rekindle-chat",
     "crates/rekindle-aead",
     "crates/rekindle-hash",
+    "crates/rekindle-transport-ipc",
 ]
 
 [workspace.dependencies]
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1"

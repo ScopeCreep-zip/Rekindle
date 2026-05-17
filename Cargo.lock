@@ -8240,8 +8240,43 @@ dependencies = [
 name = "rekindle-transport"
 version = "0.2.0"
 dependencies = [
+ "rekindle-transport-ipc",
  "rekindle-transport-veilid",
  "rekindle-types",
+]
+
+[[package]]
+name = "rekindle-transport-ipc"
+version = "0.1.0"
+dependencies = [
+ "aws-lc-rs",
+ "blake3",
+ "bytes 1.11.1",
+ "criterion",
+ "dashmap",
+ "hex",
+ "io-uring 0.7.12",
+ "libc",
+ "parking_lot 0.12.5",
+ "postcard",
+ "rayon",
+ "rekindle-aead",
+ "rekindle-hash",
+ "rekindle-types",
+ "rustix 1.1.4",
+ "serde",
+ "serde_json",
+ "smallvec",
+ "snow",
+ "static_assertions",
+ "subtle",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+ "zeroize",
 ]
 
 [[package]]

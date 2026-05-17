@@ -1,0 +1,72 @@
+[package]
+name = "rekindle-transport-ipc"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.87"
+description = "Encrypted IPC bus transport for the Rekindle messaging platform"
+license = "MIT"
+
+[lints]
+workspace = true
+
+[features]
+default = ["aegis", "sha256-mb"]
+aegis      = ["rekindle-aead/aegis"]
+sha256-mb  = ["rekindle-hash/sha256-mb"]
+bulk-uring = ["dep:io-uring"]
+bulk-memfd = []
+
+[dependencies]
+rekindle-types = { path = "../rekindle-types" }
+rekindle-aead  = { path = "../rekindle-aead" }
+rekindle-hash  = { path = "../rekindle-hash" }
+
+tokio       = { workspace = true, features = ["net", "io-util", "sync", "rt", "macros", "time"] }
+tokio-util  = "0.7"
+bytes       = "1"
+postcard    = { version = "1", features = ["use-std"] }
+serde       = { workspace = true }
+serde_json  = { workspace = true }
+snow        = { git = "https://github.com/mcginty/snow", rev = "295dc7b" }
+aws-lc-rs   = { version = "1.16", features = ["alloc"] }
+rayon       = "1"
+parking_lot = { workspace = true }
+dashmap     = "6"
+smallvec    = "1"
+zeroize     = { version = "1", features = ["zeroize_derive"] }
+blake3      = "1"
+rustix      = { version = "1", features = ["net", "fs", "process"] }
+hex         = "0.4"
+uuid        = { version = "1", features = ["v7", "serde"] }
+tracing     = { workspace = true }
+thiserror   = { workspace = true }
+subtle      = "2"
+static_assertions = "1"
+libc        = "0.2"
+
+io-uring = { version = "0.7", optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "macros", "rt-multi-thread"] }
+criterion = "0.5"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+[[bench]]
+name = "throughput"
+harness = false
+
+[[bench]]
+name = "socket_bulk"
+harness = false
+
+[[bench]]
+name = "socket_control"
+harness = false
+
+[[bench]]
+name = "socket_concurrency"
+harness = false
+
+[[bench]]
+name = "minimal_repro"
+harness = false

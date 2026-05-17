@@ -12,7 +12,9 @@ workspace = true
 [features]
 default = ["veilid"]
 veilid = ["dep:rekindle-transport-veilid"]
+ipc = ["dep:rekindle-transport-ipc"]
 
 [dependencies]
 rekindle-types = { path = "../rekindle-types" }
 rekindle-transport-veilid = { path = "../rekindle-transport-veilid", optional = true }
+rekindle-transport-ipc = { path = "../rekindle-transport-ipc", optional = true }

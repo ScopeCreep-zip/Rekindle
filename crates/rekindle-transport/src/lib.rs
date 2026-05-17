@@ -8,7 +8,7 @@
 //! ```toml
 //! # Enable specific backends:
 //! rekindle-transport = { features = ["veilid"] }       # default
-//! rekindle-transport = { features = ["veilid", "matrix"] }
+//! rekindle-transport = { features = ["veilid", "ipc"] }
 //! ```
 
 // Re-export the trait ecosystem from rekindle-types
@@ -22,4 +22,9 @@ pub use rekindle_types::transport::{
 #[cfg(feature = "veilid")]
 pub mod veilid {
     pub use rekindle_transport_veilid::*;
+}
+
+#[cfg(feature = "ipc")]
+pub mod ipc {
+    pub use rekindle_transport_ipc::*;
 }
