@@ -1,0 +1,17 @@
+[package]
+name = "rekindle-lifecycle"
+version = "0.1.0"
+edition = "2021"
+description = "9-state application lifecycle FSM + TransportGuard RAII for Rekindle"
+
+[lints]
+workspace = true
+
+[dependencies]
+tokio = { workspace = true, features = ["sync"] }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["sync", "rt", "macros"] }
