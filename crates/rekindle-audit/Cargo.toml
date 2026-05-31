@@ -1,0 +1,20 @@
+[package]
+name = "rekindle-audit"
+version = "0.1.0"
+edition = "2021"
+description = "BLAKE3 keyed hash chain for tamper-evident audit logging in Rekindle"
+
+[lints]
+workspace = true
+
+[dependencies]
+blake3 = "1"
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+zeroize = { version = "1", features = ["derive"] }
+hex = "0.4"
+
+[dev-dependencies]
+serde_json = { workspace = true }
