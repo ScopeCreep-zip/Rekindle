@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::db::DbPool;
 use crate::db_helpers::db_fire;
 use crate::state::AppState;
-use tauri::{Emitter, Manager};
+use tauri::Manager;
 
 pub(crate) fn check_gossip_moderation_permission(
     state: &Arc<AppState>,
@@ -185,9 +185,10 @@ pub(crate) fn handle_sync_response(
         });
     }
 
-    let _ = app_handle.emit(
+    crate::event_dispatch::emit_live(
+        app_handle,
         "community-event",
-        crate::channels::CommunityEvent::SyncComplete {
+        &crate::channels::CommunityEvent::SyncComplete {
             community_id: community_id.to_string(),
             channel_id: channel_id.to_string(),
             message_count: messages.len(),

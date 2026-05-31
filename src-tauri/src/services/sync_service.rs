@@ -1,15 +1,10 @@
 use std::sync::Arc;
-use std::{
-    collections::hash_map::DefaultHasher,
-    hash::{Hash, Hasher},
-};
 
-use rekindle_protocol::messaging::envelope::MessageEnvelope;
 use tokio::sync::mpsc;
 
 use crate::db::DbPool;
-use crate::db_helpers::{db_call, db_call_or_default, db_fire};
-use crate::state::{AppState, FriendshipState};
+use crate::db_helpers::db_call;
+use crate::state::AppState;
 use crate::state_helpers;
 
 /// Start the periodic sync service.
@@ -39,7 +34,7 @@ pub async fn start_sync_loop(
             _ = interval.tick() => {
                 tick_count += 1;
                 let force_all = tick_count.is_multiple_of(10);
-                if let Err(e) = sync_friends(&state, &app_handle, &mut watched_keys, first_tick, force_all).await {
+                if let Err(e) = sync_friends(&state, &mut watched_keys, first_tick, force_all).await {
                     tracing::warn!(error = %e, "friend sync failed");
                 }
                 first_tick = false;
@@ -50,7 +45,7 @@ pub async fn start_sync_loop(
                 if let Err(e) = sync_conversations(&state).await {
                     tracing::warn!(error = %e, "conversation sync failed");
                 }
-                if let Err(e) = sync_communities(&state, &pool).await {
+                if let Err(e) = crate::services::sync_communities::sync_communities(&state, &pool).await {
                     tracing::warn!(error = %e, "community sync failed");
                 }
                 if let Err(e) = retry_pending_messages(&state, &pool).await {
@@ -74,149 +69,50 @@ pub async fn start_sync_loop(
 }
 
 /// Run a single friend sync immediately (called from auth on login).
+/// Avoids waiting 30 seconds for the first periodic tick.
 ///
-/// This avoids waiting 30 seconds for the first periodic tick.
+/// Phase 22.c-REDO — the orchestrator (iterate friends + register
+/// + watch + force-poll subkeys + check stale) lives in
+/// `rekindle_presence::sync_friends`. This facade builds the
+/// adapter and delegates.
 pub async fn sync_friends_now(
     state: &Arc<AppState>,
-    app_handle: &tauri::AppHandle,
+    _app_handle: &tauri::AppHandle,
 ) -> Result<(), String> {
     let mut watched_keys = std::collections::HashSet::new();
-    sync_friends(state, app_handle, &mut watched_keys, true, true).await
+    sync_friends(state, &mut watched_keys, true, true).await
 }
 
-/// Sync friend list: read friend profile DHT records and update local state.
-///
-/// Reads subkeys 2 (status), 4 (game info), 5 (prekey bundle), and 6 (route blob)
-/// for each friend with a DHT record key. Also sets up DHT watches on first encounter.
+/// Friend-sync tick. Delegates to the crate orchestrator after
+/// constructing the presence adapter.
 async fn sync_friends(
     state: &Arc<AppState>,
-    app_handle: &tauri::AppHandle,
     watched_keys: &mut std::collections::HashSet<String>,
     first_tick: bool,
     force_all: bool,
 ) -> Result<(), String> {
-    let Some(routing_context) = state_helpers::safe_routing_context(state) else {
-        return Ok(()); // Not connected yet
+    let Some(adapter) = crate::services::presence_adapter::build_adapter(state) else {
+        return Ok(());
     };
-
-    // Collect friends that have DHT record keys
-    let friends_with_dht = state_helpers::friends_with_dht_keys(state);
-
-    // Collect unwatched friend keys for force_refresh polling (per Veilid GitLab #377)
-    let unwatched: std::collections::HashSet<String> = state.unwatched_friends.read().clone();
-
-    // Clear watched_keys for friends whose watches died, so they get re-watched
-    {
-        let friends = state.friends.read();
-        for fk in &unwatched {
-            if let Some(f) = friends.get(fk.as_str()) {
-                if let Some(ref dk) = f.dht_record_key {
-                    watched_keys.remove(dk);
-                }
-            }
-        }
-    }
-
-    for (friend_key, dht_key) in &friends_with_dht {
-        let record_key: veilid_core::RecordKey = match dht_key.parse() {
-            Ok(k) => k,
-            Err(_) => continue,
-        };
-
-        // Register DHT key mapping (idempotent, no network call)
-        {
-            let mut dht_mgr = state.dht_manager.write();
-            if let Some(mgr) = dht_mgr.as_mut() {
-                mgr.register_friend_dht_key(dht_key.clone(), friend_key.clone());
-            }
-        }
-
-        // Watch once per session; retry on next tick if failed
-        if !watched_keys.contains(dht_key)
-            && super::presence_service::watch_friend(state, friend_key, dht_key)
-                .await
-                .is_ok()
-        {
-            watched_keys.insert(dht_key.clone());
-        }
-
-        // Force refresh for unwatched friends (watch failed — must poll from network)
-        let force_refresh = first_tick || force_all || unwatched.contains(friend_key.as_str());
-        sync_friend_dht_subkeys(
-            state,
-            &routing_context,
-            friend_key,
-            record_key,
-            app_handle,
-            force_refresh,
-        )
-        .await;
-    }
-
-    // Check for stale presences (friends whose heartbeat is expired)
-    check_stale_presences(state, app_handle);
-
-    tracing::debug!(friends = friends_with_dht.len(), "friend sync complete");
+    rekindle_presence::sync_friends(Arc::new(adapter), watched_keys, first_tick, force_all).await;
     Ok(())
-}
-
-/// Scan friends for stale heartbeats and mark them offline.
-///
-/// Called at the end of each `sync_friends()` tick. If a friend's
-/// `last_heartbeat_at` is older than `STALE_PRESENCE_THRESHOLD_MS`,
-/// they're treated as offline (crash without clean shutdown).
-fn check_stale_presences(state: &Arc<AppState>, app_handle: &tauri::AppHandle) {
-    use tauri::Emitter;
-    let now = crate::db::timestamp_now();
-    let threshold = super::presence_service::STALE_PRESENCE_THRESHOLD_MS;
-
-    // Collect stale friends while holding the read lock
-    let stale_friends: Vec<String> = {
-        let friends = state.friends.read();
-        friends
-            .values()
-            .filter(|f| {
-                f.status != crate::state::UserStatus::Offline
-                    && f.last_heartbeat_at.is_some_and(|ts| now - ts > threshold)
-            })
-            .map(|f| f.public_key.clone())
-            .collect()
-    };
-
-    // Mark stale friends offline and emit events (no lock held during emit)
-    for pk in stale_friends {
-        let is_accepted = {
-            let mut friends = state.friends.write();
-            if let Some(friend) = friends.get_mut(&pk) {
-                tracing::info!(friend = %pk, "stale heartbeat — marking offline");
-                friend.status = crate::state::UserStatus::Offline;
-                friend.last_seen_at = Some(now);
-                friend.friendship_state == FriendshipState::Accepted
-            } else {
-                false
-            }
-        };
-        // Only emit for accepted friends (privacy: hide status from pending)
-        if is_accepted {
-            let _ = app_handle.emit(
-                "presence-event",
-                &crate::channels::PresenceEvent::FriendOffline { public_key: pk },
-            );
-        }
-    }
 }
 
 /// Expire stale pending friend requests and pending-out friends.
 ///
-/// - Pending incoming requests older than 30 days are deleted from `pending_friend_requests`.
-/// - Pending-out friends older than 30 days are removed from `friends` and the frontend is notified.
+/// - Pending incoming requests older than 30 days are deleted from
+///   `pending_friend_requests`.
+/// - Pending-out friends older than 30 days are removed from
+///   `friends` and the frontend is notified.
+///
+/// src-tauri-side cleanup: this isn't friend-sync (which lives in
+/// `rekindle_presence::sync_friends`) — it's pure SQLite + state
+/// pruning the periodic sync loop fires every 6th tick.
 async fn expire_stale_requests(
     state: &Arc<AppState>,
     pool: &DbPool,
     app_handle: &tauri::AppHandle,
 ) {
-    use tauri::Emitter;
-
     let owner_key = state_helpers::owner_key_or_default(state);
     if owner_key.is_empty() {
         return;
@@ -225,9 +121,9 @@ async fn expire_stale_requests(
     let thirty_days_ms: i64 = 30 * 24 * 60 * 60 * 1000;
     let cutoff = crate::db::timestamp_now() - thirty_days_ms;
 
-    // 1. Delete expired pending_friend_requests (fire-and-forget)
+    // 1. Delete expired pending_friend_requests (fire-and-forget).
     let ok = owner_key.clone();
-    db_fire(pool, "expire stale incoming requests", move |conn| {
+    crate::db_helpers::db_fire(pool, "expire stale incoming requests", move |conn| {
         let deleted = conn.execute(
             "DELETE FROM pending_friend_requests WHERE owner_key = ?1 AND received_at < ?2",
             rusqlite::params![ok, cutoff],
@@ -238,30 +134,29 @@ async fn expire_stale_requests(
         Ok(())
     });
 
-    // 2. Find and remove expired pending_out friends
+    // 2. Find and remove expired pending_out friends.
     let ok = owner_key;
-    let expired_pending: Vec<String> = db_call_or_default(pool, move |conn| {
-        let mut stmt = conn.prepare(
-            "SELECT public_key FROM friends \
-             WHERE owner_key = ?1 AND friendship_state = 'pending_out' AND added_at < ?2",
-        )?;
-        let rows = stmt
-            .query_map(rusqlite::params![ok, cutoff], |row| row.get::<_, String>(0))?
-            .filter_map(std::result::Result::ok)
-            .collect::<Vec<_>>();
-
-        // Delete them
-        for pk in &rows {
-            crate::friend_repo::delete_friend(conn, &ok, pk)?;
-        }
-
-        Ok(rows)
-    })
-    .await;
+    let expired_pending: Vec<String> =
+        crate::db_helpers::db_call_or_default(pool, move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT public_key FROM friends \
+                 WHERE owner_key = ?1 AND friendship_state = 'pending_out' AND added_at < ?2",
+            )?;
+            let rows = stmt
+                .query_map(rusqlite::params![ok, cutoff], |row| row.get::<_, String>(0))?
+                .filter_map(std::result::Result::ok)
+                .collect::<Vec<_>>();
+            for pk in &rows {
+                crate::friend_repo::delete_friend(conn, &ok, pk)?;
+            }
+            Ok(rows)
+        })
+        .await;
 
     for pk in &expired_pending {
         state.friends.write().remove(pk);
-        let _ = app_handle.emit(
+        crate::event_dispatch::emit_live(
+            app_handle,
             "chat-event",
             &crate::channels::ChatEvent::FriendRemoved {
                 public_key: pk.clone(),
@@ -271,253 +166,8 @@ async fn expire_stale_requests(
     if !expired_pending.is_empty() {
         tracing::info!(
             count = expired_pending.len(),
-            "expired stale pending-out friends"
+            "expired stale pending-out friends",
         );
-    }
-}
-
-/// Read DHT subkeys for a single friend and update local state.
-///
-/// Reads subkeys 2 (status), 4 (game info), 5 (prekey bundle), and 6 (route blob)
-/// from the friend's DHT profile record.
-async fn sync_friend_dht_subkeys(
-    state: &Arc<AppState>,
-    routing_context: &veilid_core::RoutingContext,
-    friend_key: &str,
-    record_key: veilid_core::RecordKey,
-    app_handle: &tauri::AppHandle,
-    force_refresh: bool,
-) {
-    // Ensure the record is open before reading (re-opening is a no-op if already open).
-    if let Err(e) = routing_context
-        .open_dht_record(record_key.clone(), None)
-        .await
-    {
-        tracing::debug!(
-            friend = %friend_key, error = %e,
-            "failed to open friend DHT record — will retry next tick"
-        );
-        return;
-    }
-
-    sync_friend_status(
-        state,
-        routing_context,
-        friend_key,
-        &record_key,
-        app_handle,
-        force_refresh,
-    )
-    .await;
-    sync_friend_game_info(
-        state,
-        routing_context,
-        friend_key,
-        &record_key,
-        app_handle,
-        force_refresh,
-    )
-    .await;
-    sync_friend_prekey(
-        state,
-        routing_context,
-        friend_key,
-        &record_key,
-        force_refresh,
-    )
-    .await;
-    sync_friend_route_blob(
-        state,
-        routing_context,
-        friend_key,
-        record_key,
-        force_refresh,
-    )
-    .await;
-}
-
-/// Read status (subkey 2) from DHT and emit presence events on change.
-///
-/// Uses the 9-byte format `[status_byte, timestamp_be(8)]` with stale detection.
-async fn sync_friend_status(
-    state: &Arc<AppState>,
-    routing_context: &veilid_core::RoutingContext,
-    friend_key: &str,
-    record_key: &veilid_core::RecordKey,
-    app_handle: &tauri::AppHandle,
-    force_refresh: bool,
-) {
-    use super::presence_service::{
-        parse_status, parse_status_timestamp, STALE_PRESENCE_THRESHOLD_MS,
-    };
-    use tauri::Emitter;
-
-    let Some(value_data) = routing_context
-        .get_dht_value(record_key.clone(), 2, force_refresh)
-        .await
-        .ok()
-        .flatten()
-    else {
-        return;
-    };
-
-    let data = value_data.data();
-    let Some(mut status) = parse_status(data) else {
-        return;
-    };
-
-    // Store heartbeat timestamp
-    let heartbeat_ts = parse_status_timestamp(data);
-    if let Some(ts) = heartbeat_ts {
-        let mut friends = state.friends.write();
-        if let Some(friend) = friends.get_mut(friend_key) {
-            friend.last_heartbeat_at = Some(ts);
-        }
-    }
-
-    // Stale override: if timestamp > 5 min old, treat as offline
-    if status != crate::state::UserStatus::Offline {
-        if let Some(ts) = heartbeat_ts {
-            let now = crate::db::timestamp_now();
-            if now - ts > STALE_PRESENCE_THRESHOLD_MS {
-                tracing::info!(friend = %friend_key, age_ms = now - ts, "stale heartbeat — treating as offline");
-                status = crate::state::UserStatus::Offline;
-            }
-        }
-    }
-
-    // Compare with old status and emit events
-    let old_status = state_helpers::friend_field(state, friend_key, |f| Some(f.status));
-    {
-        let mut friends = state.friends.write();
-        if let Some(friend) = friends.get_mut(friend_key) {
-            friend.status = status;
-        }
-    }
-
-    // Only emit presence events for accepted friends (privacy: hide status from pending)
-    let is_accepted = state_helpers::is_friend_accepted(state, friend_key);
-    if old_status != Some(status) && is_accepted {
-        if status == crate::state::UserStatus::Offline {
-            let _ = app_handle.emit(
-                "presence-event",
-                &crate::channels::PresenceEvent::FriendOffline {
-                    public_key: friend_key.to_string(),
-                },
-            );
-        } else {
-            if old_status == Some(crate::state::UserStatus::Offline) {
-                let _ = app_handle.emit(
-                    "presence-event",
-                    &crate::channels::PresenceEvent::FriendOnline {
-                        public_key: friend_key.to_string(),
-                    },
-                );
-            }
-            let _ = app_handle.emit(
-                "presence-event",
-                &crate::channels::PresenceEvent::StatusChanged {
-                    public_key: friend_key.to_string(),
-                    status: format!("{status:?}").to_lowercase(),
-                    status_message: None,
-                },
-            );
-        }
-    }
-}
-
-/// Read game info (subkey 4) from DHT and emit `GameChanged` on change.
-async fn sync_friend_game_info(
-    state: &Arc<AppState>,
-    routing_context: &veilid_core::RoutingContext,
-    friend_key: &str,
-    record_key: &veilid_core::RecordKey,
-    app_handle: &tauri::AppHandle,
-    force_refresh: bool,
-) {
-    use tauri::Emitter;
-
-    if let Ok(Some(value_data)) = routing_context
-        .get_dht_value(record_key.clone(), 4, force_refresh)
-        .await
-    {
-        let data = value_data.data();
-        if !data.is_empty() {
-            let game_info: Option<crate::state::GameInfoState> = serde_json::from_slice(data).ok();
-            let old_game_name = state_helpers::friend_field(state, friend_key, |f| {
-                f.game_info.as_ref().map(|g| g.game_name.clone())
-            });
-            let new_game_name = game_info.as_ref().map(|g| g.game_name.clone());
-            {
-                let mut friends = state.friends.write();
-                if let Some(friend) = friends.get_mut(friend_key) {
-                    friend.game_info.clone_from(&game_info);
-                }
-            }
-            // Only emit game events for accepted friends (privacy)
-            let is_accepted = state_helpers::is_friend_accepted(state, friend_key);
-            if old_game_name != new_game_name && is_accepted {
-                let _ = app_handle.emit(
-                    "presence-event",
-                    &crate::channels::PresenceEvent::GameChanged {
-                        public_key: friend_key.to_string(),
-                        game_name: game_info.as_ref().map(|g| g.game_name.clone()),
-                        game_id: game_info.as_ref().map(|g| g.game_id),
-                        elapsed_seconds: None,
-                        server_address: game_info.as_ref().and_then(|g| g.server_address.clone()),
-                    },
-                );
-            }
-        }
-    }
-}
-
-/// Read prekey bundle (subkey 5) from DHT.
-///
-/// We no longer establish Signal sessions from DHT prekey bundles during sync.
-/// Sessions are established during the friend request accept flow:
-/// - Acceptor calls `establish_session()` (initiator) and sends ephemeral key
-/// - Requester calls `respond_to_session()` (responder) with that ephemeral key
-///
-/// This function still reads the subkey (useful for future prekey rotation).
-async fn sync_friend_prekey(
-    _state: &Arc<AppState>,
-    routing_context: &veilid_core::RoutingContext,
-    friend_key: &str,
-    record_key: &veilid_core::RecordKey,
-    force_refresh: bool,
-) {
-    if let Ok(Some(value_data)) = routing_context
-        .get_dht_value(record_key.clone(), 5, force_refresh)
-        .await
-    {
-        let data = value_data.data();
-        if !data.is_empty() {
-            tracing::trace!(
-                friend = %friend_key,
-                prekey_len = data.len(),
-                "read prekey bundle from DHT (session established via friend accept flow)"
-            );
-        }
-    }
-}
-
-/// Read route blob (subkey 6) from DHT and cache it.
-async fn sync_friend_route_blob(
-    state: &Arc<AppState>,
-    routing_context: &veilid_core::RoutingContext,
-    friend_key: &str,
-    record_key: veilid_core::RecordKey,
-    force_refresh: bool,
-) {
-    if let Ok(Some(value_data)) = routing_context
-        .get_dht_value(record_key, 6, force_refresh)
-        .await
-    {
-        let route_blob = value_data.data().to_vec();
-        if !route_blob.is_empty() {
-            state_helpers::cache_peer_route(state, friend_key, route_blob);
-        }
     }
 }
 
@@ -653,268 +303,7 @@ async fn sync_single_conversation(
     // Best-effort close
     let _ = record.close().await;
 }
-
-/// Sync communities by re-announcing our mesh presence.
-async fn sync_communities(state: &Arc<AppState>, pool: &DbPool) -> Result<(), String> {
-    if state_helpers::safe_routing_context(state).is_none() {
-        return Ok(()); // Not connected yet
-    }
-
-    let communities_with_governance = state_helpers::communities_with_governance_keys(state);
-    for (community_id, governance_key) in &communities_with_governance {
-        sync_community_governance(state, community_id, governance_key).await;
-        sync_community_channels(state, pool, community_id).await;
-        if let Err(e) = crate::services::community::rejoin_community(state, community_id).await {
-            tracing::trace!(community = %community_id, error = %e, "community rejoin failed");
-        }
-    }
-
-    tracing::debug!(
-        communities = communities_with_governance.len(),
-        "community sync complete"
-    );
-    Ok(())
-}
-
-pub(crate) async fn handle_community_record_change(
-    state: &Arc<AppState>,
-    pool: &DbPool,
-    dht_key: &str,
-) -> bool {
-    enum ChangedRecord {
-        Governance {
-            community_id: String,
-            governance_key: String,
-        },
-        Registry {
-            community_id: String,
-        },
-        Channel {
-            community_id: String,
-            channel_id: String,
-        },
-    }
-
-    let changed = {
-        let communities = state.communities.read();
-        communities.values().find_map(|community| {
-            if community.governance_key.as_deref() == Some(dht_key) {
-                return community.governance_key.as_ref().map(|governance_key| {
-                    ChangedRecord::Governance {
-                        community_id: community.id.clone(),
-                        governance_key: governance_key.clone(),
-                    }
-                });
-            }
-            if community.member_registry_key.as_deref() == Some(dht_key) {
-                return Some(ChangedRecord::Registry {
-                    community_id: community.id.clone(),
-                });
-            }
-            community
-                .channel_log_keys
-                .iter()
-                .find_map(|(channel_id, record_key)| {
-                    (record_key == dht_key).then(|| ChangedRecord::Channel {
-                        community_id: community.id.clone(),
-                        channel_id: channel_id.clone(),
-                    })
-                })
-        })
-    };
-
-    match changed {
-        Some(ChangedRecord::Governance {
-            community_id,
-            governance_key,
-        }) => {
-            sync_community_governance(state, &community_id, &governance_key).await;
-            true
-        }
-        Some(ChangedRecord::Registry { community_id }) => {
-            let _ =
-                crate::services::community::presence_poll_tick_public(state, &community_id).await;
-            true
-        }
-        Some(ChangedRecord::Channel {
-            community_id,
-            channel_id,
-        }) => {
-            request_channel_sync(state, pool, &community_id, &channel_id).await;
-            true
-        }
-        None => false,
-    }
-}
-
-fn report_fingerprint(seqs: &[veilid_core::ValueSeqNum]) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    seqs.len().hash(&mut hasher);
-    for seq in seqs {
-        format!("{seq:?}").hash(&mut hasher);
-    }
-    hasher.finish()
-}
-
-async fn sync_community_governance(
-    state: &Arc<AppState>,
-    community_id: &str,
-    governance_key: &str,
-) {
-    let Some(rc) = state_helpers::safe_routing_context(state) else {
-        return;
-    };
-    let Ok(record_key) = governance_key.parse::<veilid_core::RecordKey>() else {
-        return;
-    };
-    let report = match rc
-        .inspect_dht_record(
-            record_key,
-            Some(veilid_core::ValueSubkeyRangeSet::full()),
-            veilid_core::DHTReportScope::UpdateGet,
-        )
-        .await
-    {
-        Ok(report) => report,
-        Err(e) => {
-            tracing::trace!(community = %community_id, error = %e, "governance inspect failed");
-            return;
-        }
-    };
-    let fingerprint = report_fingerprint(report.network_seqs());
-    let needs_rebuild = {
-        let mut communities = state.communities.write();
-        let Some(cs) = communities.get_mut(community_id) else {
-            return;
-        };
-        let previous = cs
-            .open_community_records
-            .governance_report_fingerprint
-            .replace(fingerprint);
-        previous.is_some_and(|prev| prev != fingerprint) || cs.governance_state.is_none()
-    };
-    if needs_rebuild {
-        tracing::info!(community = %community_id, "governance inspect changed — rebuilding merged state");
-        crate::commands::auth::rebuild_governance_from_dht_public(state).await;
-        open_new_channel_records(state, community_id).await;
-    }
-}
-
-async fn open_new_channel_records(state: &Arc<AppState>, community_id: &str) {
-    let Some(rc) = state_helpers::safe_routing_context(state) else {
-        return;
-    };
-    let (channel_pairs, opened_keys) = {
-        let communities = state.communities.read();
-        let Some(cs) = communities.get(community_id) else {
-            return;
-        };
-        (
-            cs.channel_log_keys
-                .iter()
-                .map(|(channel_id, record_key)| (channel_id.clone(), record_key.clone()))
-                .collect::<Vec<_>>(),
-            cs.open_community_records
-                .channel_keys
-                .iter()
-                .cloned()
-                .collect::<std::collections::HashSet<_>>(),
-        )
-    };
-
-    let mut newly_opened = Vec::new();
-    for (_channel_id, record_key) in channel_pairs {
-        if opened_keys.contains(&record_key) {
-            continue;
-        }
-        let Ok(parsed_key) = record_key.parse::<veilid_core::RecordKey>() else {
-            continue;
-        };
-        match rc.open_dht_record(parsed_key, None).await {
-            Ok(_) => {
-                newly_opened.push(record_key.clone());
-                state_helpers::track_open_records(state, std::slice::from_ref(&record_key));
-            }
-            Err(e) => {
-                tracing::trace!(
-                    community = %community_id,
-                    channel_record = %record_key,
-                    error = %e,
-                    "failed to open newly discovered channel record"
-                );
-            }
-        }
-    }
-
-    if !newly_opened.is_empty() {
-        let mut communities = state.communities.write();
-        if let Some(cs) = communities.get_mut(community_id) {
-            for record_key in newly_opened {
-                if !cs.open_community_records.channel_keys.contains(&record_key) {
-                    cs.open_community_records.channel_keys.push(record_key);
-                }
-            }
-        }
-    }
-}
-
-async fn sync_community_channels(state: &Arc<AppState>, pool: &DbPool, community_id: &str) {
-    let Some(rc) = state_helpers::safe_routing_context(state) else {
-        return;
-    };
-    let channel_pairs = {
-        let communities = state.communities.read();
-        let Some(cs) = communities.get(community_id) else {
-            return;
-        };
-        cs.channel_log_keys
-            .iter()
-            .map(|(channel_id, record_key)| (channel_id.clone(), record_key.clone()))
-            .collect::<Vec<_>>()
-    };
-
-    for (channel_id, record_key) in channel_pairs {
-        let Ok(parsed_key) = record_key.parse::<veilid_core::RecordKey>() else {
-            continue;
-        };
-        let report = match rc
-            .inspect_dht_record(
-                parsed_key,
-                Some(veilid_core::ValueSubkeyRangeSet::full()),
-                veilid_core::DHTReportScope::UpdateGet,
-            )
-            .await
-        {
-            Ok(report) => report,
-            Err(e) => {
-                tracing::trace!(
-                    community = %community_id,
-                    channel = %channel_id,
-                    error = %e,
-                    "channel record inspect failed"
-                );
-                continue;
-            }
-        };
-        let fingerprint = report_fingerprint(report.network_seqs());
-        let should_request_sync = {
-            let mut communities = state.communities.write();
-            let Some(cs) = communities.get_mut(community_id) else {
-                return;
-            };
-            let previous = cs
-                .open_community_records
-                .channel_report_fingerprints
-                .insert(channel_id.clone(), fingerprint);
-            previous.is_some_and(|prev| prev != fingerprint)
-        };
-        if should_request_sync {
-            request_channel_sync(state, pool, community_id, &channel_id).await;
-        }
-    }
-}
-
-async fn request_channel_sync(
+pub(super) async fn request_channel_sync(
     state: &Arc<AppState>,
     pool: &DbPool,
     community_id: &str,
@@ -952,282 +341,13 @@ async fn request_channel_sync(
 
 /// Retry sending queued pending messages.
 ///
-/// Reads all rows from `pending_messages`, attempts to deliver each envelope
-/// directly via Veilid (the body is a JSON-serialized `MessageEnvelope`).
-/// Deletes on success, increments `retry_count` on failure.
-/// Messages exceeding 20 retries (~10 minutes at 30 s intervals) are dropped.
+/// Phase 22 REDO — the orchestrator (loop + retry-budget decision)
+/// lives in `rekindle_sync::process_pending_retry_queue`. The
+/// adapter parses the body, dispatches via the appropriate
+/// transport, and reports per-row outcomes. This facade just
+/// builds the adapter + delegates.
 async fn retry_pending_messages(state: &Arc<AppState>, pool: &DbPool) -> Result<(), String> {
-    const MAX_RETRIES: i64 = 20;
-
-    // Step 1: Read all pending messages from DB (scoped to current identity)
-    let owner_key = state_helpers::owner_key_or_default(state);
-    let pending: Vec<(i64, String, String, i64)> = db_call(pool, move |conn| {
-        let mut stmt = conn
-            .prepare("SELECT id, recipient_key, body, retry_count FROM pending_messages WHERE owner_key = ?1 ORDER BY id")?;
-        let rows = stmt
-            .query_map(rusqlite::params![owner_key], |row| {
-                Ok((
-                    row.get::<_, i64>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, i64>(3)?,
-                ))
-            })?;
-        let mut results = Vec::new();
-        for row in rows {
-            results.push(row?);
-        }
-        Ok(results)
-    })
-    .await?;
-
-    if pending.is_empty() {
-        return Ok(());
-    }
-
-    tracing::debug!(count = pending.len(), "retrying pending messages");
-
-    for (id, recipient_key, body, retry_count) in pending {
-        retry_single_pending(
-            state,
-            pool,
-            id,
-            &recipient_key,
-            &body,
-            retry_count,
-            MAX_RETRIES,
-        )
-        .await?;
-    }
-
+    crate::services::sync_adapter::run_pending_retry_tick(state, pool).await;
     Ok(())
 }
 
-/// Attempt to deliver a single pending message, dropping or incrementing on failure.
-async fn retry_single_pending(
-    state: &Arc<AppState>,
-    pool: &DbPool,
-    id: i64,
-    recipient_key: &str,
-    body: &str,
-    retry_count: i64,
-    max_retries: i64,
-) -> Result<(), String> {
-    if retry_count >= max_retries {
-        tracing::warn!(
-            id,
-            to = %recipient_key,
-            retries = retry_count,
-            "pending message exceeded max retries — dropping"
-        );
-        delete_pending_message(pool, id).await?;
-        return Ok(());
-    }
-
-    // Try DM envelope first (existing logic), then channel message retry
-    if let Ok(envelope) = serde_json::from_str::<MessageEnvelope>(body) {
-        retry_pending_dm(state, pool, id, recipient_key, &envelope).await?;
-    } else if let Ok(channel_msg) =
-        serde_json::from_str::<crate::services::community::PendingChannelMessage>(body)
-    {
-        let result = retry_pending_channel_message(state, &channel_msg).await;
-
-        match result {
-            Ok(()) => {
-                tracing::debug!(id, "pending channel message delivered");
-                delete_pending_message(pool, id).await?;
-            }
-            Err(e) => {
-                tracing::debug!(id, error = %e, "pending channel message retry failed");
-                increment_retry_count(pool, id).await?;
-            }
-        }
-    } else {
-        tracing::warn!(id, "unrecognized pending message format — dropping");
-        delete_pending_message(pool, id).await?;
-    }
-
-    Ok(())
-}
-
-async fn retry_pending_channel_message(
-    state: &Arc<AppState>,
-    channel_msg: &crate::services::community::PendingChannelMessage,
-) -> Result<(), String> {
-    let (channel_key, slot_keypair_str, slot_index) = {
-        let communities = state.communities.read();
-        let community = communities
-            .get(&channel_msg.community_id)
-            .ok_or("community not found for pending channel retry")?;
-        (
-            community
-                .channel_log_keys
-                .get(&channel_msg.channel_id)
-                .cloned()
-                .ok_or("channel record key missing for pending retry")?,
-            community
-                .slot_keypair
-                .clone()
-                .ok_or("slot keypair missing for pending retry")?,
-            community
-                .my_subkey_index
-                .ok_or("subkey index missing for pending retry")?,
-        )
-    };
-    let rc = state_helpers::safe_routing_context(state).ok_or("not attached")?;
-    let writer = slot_keypair_str
-        .parse::<veilid_core::KeyPair>()
-        .map_err(|e| format!("invalid slot keypair for pending retry: {e}"))?;
-    let mgr = rekindle_protocol::dht::DHTManager::new(rc);
-    let channel_record_message =
-        rekindle_protocol::dht::community::channel_record::ChannelMessage {
-            sequence: channel_msg.sequence,
-            sender_pseudonym: channel_msg.author_pseudonym.clone(),
-            ciphertext: channel_msg.ciphertext.clone(),
-            mek_generation: channel_msg.mek_generation,
-            timestamp: channel_msg.timestamp.cast_unsigned(),
-            reply_to: None,
-            lamport_ts: channel_msg.lamport_ts,
-            message_id: Some(channel_msg.message_id.clone()),
-            attachment: None,
-            flags: channel_msg.mention_flag_bits,
-            mentioned_pseudonyms: channel_msg.mentioned_pseudonyms.clone(),
-            mentioned_roles: channel_msg.mentioned_roles.clone(),
-        };
-    let (author_pseudo, signing_key) =
-        state_helpers::pseudonym_credentials(state, &channel_msg.community_id)?;
-    rekindle_protocol::dht::community::channel_record::write_member_message(
-        &mgr,
-        &channel_key,
-        slot_index,
-        writer,
-        author_pseudo,
-        &signing_key,
-        &channel_record_message,
-    )
-    .await
-    .map_err(|e| format!("pending SMPL channel retry failed: {e}"))?;
-
-    crate::services::community::send_to_mesh(
-        state,
-        &channel_msg.community_id,
-        &rekindle_protocol::dht::community::envelope::CommunityEnvelope::MessageNotification {
-            channel_id: channel_msg.channel_id.clone(),
-            message_id: channel_msg.message_id.clone(),
-            author_pseudonym: channel_msg.author_pseudonym.clone(),
-            subkey_index: channel_msg.subkey_index,
-            lamport_ts: channel_msg.lamport_ts,
-            sequence: channel_msg.sequence,
-            content_hash: channel_msg.content_hash.clone(),
-            timestamp: channel_msg.timestamp.cast_unsigned(),
-        },
-    )
-}
-
-/// Retry delivering a single pending DM envelope via cached route or mailbox fallback.
-async fn retry_pending_dm(
-    state: &Arc<AppState>,
-    pool: &DbPool,
-    id: i64,
-    recipient_key: &str,
-    envelope: &MessageEnvelope,
-) -> Result<(), String> {
-    // Look up route and import RouteId via cache.
-    let route_id_and_rc = state_helpers::try_import_peer_route(state, recipient_key);
-    if route_id_and_rc.is_none() && state_helpers::safe_api_and_routing_context(state).is_none() {
-        increment_retry_count(pool, id).await?;
-        return Ok(());
-    }
-
-    // If no cached route, try mailbox fallback
-    let route_id_and_rc = if route_id_and_rc.is_some() {
-        route_id_and_rc
-    } else {
-        try_mailbox_route_fallback(state, recipient_key).await
-    };
-
-    let Some((route_id, routing_context)) = route_id_and_rc else {
-        increment_retry_count(pool, id).await?;
-        return Ok(());
-    };
-
-    match rekindle_protocol::messaging::sender::send_envelope(&routing_context, route_id, envelope)
-        .await
-    {
-        Ok(()) => {
-            tracing::debug!(id, to = %recipient_key, "pending DM delivered successfully");
-            delete_pending_message(pool, id).await?;
-        }
-        Err(e) => {
-            tracing::debug!(id, to = %recipient_key, error = %e, "pending DM retry failed");
-            increment_retry_count(pool, id).await?;
-        }
-    }
-
-    Ok(())
-}
-
-/// Delete a single pending message by ID.
-async fn delete_pending_message(pool: &DbPool, id: i64) -> Result<(), String> {
-    db_call(pool, move |conn| {
-        conn.execute(
-            "DELETE FROM pending_messages WHERE id = ?1",
-            rusqlite::params![id],
-        )?;
-        Ok(())
-    })
-    .await
-}
-
-/// Try to discover a peer's route via their mailbox DHT record.
-///
-/// If the friend has a `mailbox_dht_key`, read subkey 0 (route blob), cache it,
-/// and import it. Returns `Some((RouteId, RoutingContext))` on success.
-async fn try_mailbox_route_fallback(
-    state: &Arc<AppState>,
-    recipient_key: &str,
-) -> Option<(veilid_core::RouteId, veilid_core::RoutingContext)> {
-    // Look up the friend's mailbox key
-    let mailbox_key = state_helpers::friend_mailbox_key(state, recipient_key)?;
-
-    let rc = state_helpers::safe_routing_context(state)?;
-
-    // Read fresh route blob from mailbox
-    let route_blob =
-        match rekindle_protocol::dht::mailbox::read_peer_mailbox_route(&rc, &mailbox_key).await {
-            Ok(Some(blob)) if !blob.is_empty() => blob,
-            Ok(_) => {
-                tracing::trace!(to = %recipient_key, "mailbox route blob empty or missing");
-                return None;
-            }
-            Err(e) => {
-                tracing::trace!(to = %recipient_key, error = %e, "failed to read mailbox");
-                return None;
-            }
-        };
-
-    // Cache and import
-    state_helpers::cache_peer_route(state, recipient_key, route_blob.clone());
-    match state_helpers::import_route_blob(state, &route_blob) {
-        Ok(route_id) => {
-            tracing::debug!(to = %recipient_key, "discovered route via mailbox fallback");
-            Some((route_id, rc))
-        }
-        Err(e) => {
-            tracing::trace!(to = %recipient_key, error = %e, "failed to import mailbox route");
-            None
-        }
-    }
-}
-
-/// Increment the `retry_count` for a pending message.
-async fn increment_retry_count(pool: &DbPool, id: i64) -> Result<(), String> {
-    db_call(pool, move |conn| {
-        conn.execute(
-            "UPDATE pending_messages SET retry_count = retry_count + 1 WHERE id = ?1",
-            rusqlite::params![id],
-        )?;
-        Ok(())
-    })
-    .await
-}

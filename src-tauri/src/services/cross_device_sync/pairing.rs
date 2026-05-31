@@ -215,9 +215,7 @@ async fn persist_paired_device(
     .await
 }
 
-fn generate_device_id() -> String {
-    use rand::RngCore;
-    let mut bytes = [0u8; 16];
-    rand::rngs::OsRng.fill_bytes(&mut bytes);
-    hex::encode(bytes)
-}
+// `generate_device_id` lives in `rekindle_sync::cross_device::util`
+// (centralised so `pairing.rs` + `record.rs` share one source of
+// truth — pre-port these files each had a private copy).
+use rekindle_sync::generate_device_id;

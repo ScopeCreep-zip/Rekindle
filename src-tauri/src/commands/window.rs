@@ -93,23 +93,5 @@ pub async fn open_call_window(
 /// Get the current Veilid network status.
 #[tauri::command]
 pub async fn get_network_status(state: State<'_, SharedState>) -> Result<NetworkStatus, String> {
-    let node = state.node.read();
-    match node.as_ref() {
-        Some(handle) => Ok(NetworkStatus {
-            attachment_state: handle.attachment_state.clone(),
-            is_attached: handle.is_attached,
-            public_internet_ready: handle.public_internet_ready,
-            has_route: handle.route_blob.is_some(),
-            profile_dht_key: handle.profile_dht_key.clone(),
-            friend_list_dht_key: handle.friend_list_dht_key.clone(),
-        }),
-        None => Ok(NetworkStatus {
-            attachment_state: "detached".to_string(),
-            is_attached: false,
-            public_internet_ready: false,
-            has_route: false,
-            profile_dht_key: None,
-            friend_list_dht_key: None,
-        }),
-    }
+    Ok(crate::services::window_runtime::get_network_status_inner(state.inner()))
 }

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tauri::{AppHandle, Manager};
 
 use crate::db::DbPool;
-use crate::services::{presence_service, sync_service};
+use crate::services::presence_service;
 use crate::state::AppState;
 
 async fn try_rewatch_friend(state: &Arc<AppState>, dht_key: &str) {
@@ -78,6 +78,21 @@ pub async fn handle_value_change(
 ) {
     let key = change.key.to_string();
 
+    // Phase 7 — watch-tier trigger. If the ValueChange is on the
+    // local user's mailbox key (where peers write friend requests),
+    // wake the friendship coordinator so it scans within ~500 ms
+    // instead of waiting for the 30 s poll backstop. The helper
+    // honours the watch trigger's dev-disable deadline (kill-switch)
+    // and is a no-op when no coordinator is running.
+    let own_mailbox_key = state
+        .node
+        .read()
+        .as_ref()
+        .and_then(|nh| nh.mailbox_dht_key.clone());
+    if own_mailbox_key.as_deref() == Some(key.as_str()) {
+        state.friendship_handle.fire_watch_trigger();
+    }
+
     if change.subkeys.is_empty() {
         crate::services::community::mark_watch_inactive(state, &key);
         tracing::warn!(key = %key, count = change.count, "DHT watch died; attempting immediate re-watch");
@@ -109,7 +124,7 @@ pub async fn handle_value_change(
         node.as_ref().map(|nh| nh.routing_context.clone())
     };
 
-    if sync_service::handle_community_record_change(state, pool.inner(), &key).await {
+    if crate::services::sync_communities::handle_community_record_change(state, pool.inner(), &key).await {
         tracing::debug!(key = %key, "handled community DHT change via sync service");
         return;
     }

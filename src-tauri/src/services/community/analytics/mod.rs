@@ -1,19 +1,9 @@
-//! Architecture §24.1 — local-only community analytics.
+//! Architecture §24.1 — local-only community analytics facade.
 //!
-//! All metrics are pure SQL aggregations against tables this device
-//! already owns; nothing leaves the device. Permission gate
-//! [`rekindle_types::permissions::VIEW_INSIGHTS`] is enforced at the
-//! command layer (`commands/community/analytics.rs`).
-
-mod activity_by_hour;
-mod buckets;
-mod channel_metrics;
-mod growth;
-mod member_metrics;
-mod storage;
-
-#[cfg(test)]
-mod tests;
+//! Pure SQL aggregations now live in the `rekindle-analytics` crate.
+//! This module wraps the crate's `&Connection`-taking compute fns with
+//! `DbPool` + AppState/owner-key resolution + voice/member event
+//! loggers (db_fire fire-and-forget inserts).
 
 use rekindle_types::analytics::CommunityAnalytics;
 
@@ -21,14 +11,6 @@ use crate::db::DbPool;
 use crate::db_helpers::db_call;
 use crate::state::SharedState;
 use crate::state_helpers;
-
-const SEVEN_DAYS_MS: i64 = 7 * 24 * 60 * 60 * 1000;
-const THIRTY_DAYS_MS: i64 = 30 * 24 * 60 * 60 * 1000;
-pub(crate) const ONE_DAY_MS: i64 = 24 * 60 * 60 * 1000;
-/// Number of daily buckets shipped in every timeseries — matches the
-/// 30-day growth sample window so the UI can render all metrics on
-/// the same x-axis.
-pub(crate) const DAILY_TIMESERIES_DAYS: u32 = 30;
 
 pub async fn compute_community_analytics(
     state: &SharedState,
@@ -43,12 +25,13 @@ pub async fn compute_community_analytics(
     let owner_for_db = owner_key.clone();
     let cid_for_db = community_id.clone();
     let analytics = db_call(pool, move |conn| {
-        let members = member_metrics::compute(conn, &owner_for_db, &cid_for_db, now);
-        let channels = channel_metrics::compute(conn, &owner_for_db, &cid_for_db, now)?;
-        let growth = growth::compute(conn, &owner_for_db, &cid_for_db, now);
+        let members = rekindle_analytics::member_metrics::compute(conn, &owner_for_db, &cid_for_db, now);
+        let channels =
+            rekindle_analytics::channel_metrics::compute(conn, &owner_for_db, &cid_for_db, now)?;
+        let growth = rekindle_analytics::growth::compute(conn, &owner_for_db, &cid_for_db, now);
         let activity_by_hour =
-            activity_by_hour::compute(conn, &owner_for_db, &cid_for_db, now);
-        let storage_usage = storage::compute(conn, &owner_for_db, &cid_for_db);
+            rekindle_analytics::activity_by_hour::compute(conn, &owner_for_db, &cid_for_db, now);
+        let storage_usage = rekindle_analytics::storage::compute(conn, &owner_for_db, &cid_for_db);
         Ok(CommunityAnalytics {
             community_id: cid_for_db.clone(),
             members,

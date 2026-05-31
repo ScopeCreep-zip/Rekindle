@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use tauri::Emitter as _;
 
 use crate::channels::CommunityEvent;
 use crate::db::DbPool;
@@ -61,9 +60,10 @@ pub(crate) fn handle_peer_assisted_join(
                         |row| row.get(0),
                     )
                     .unwrap_or(0);
-                let _ = app_for_emit.emit(
+                crate::event_dispatch::emit_live(
+                    &app_for_emit,
                     "community-event",
-                    CommunityEvent::InviteUsed {
+                    &CommunityEvent::InviteUsed {
                         community_id: cid_for_emit.clone(),
                         code_hash: code_hash_for_emit.clone(),
                         new_use_count: u32::try_from(new_use_count).unwrap_or(u32::MAX),
@@ -85,7 +85,7 @@ pub(crate) async fn handle_onboarding_answers(
     answers: &[rekindle_protocol::dht::community::envelope::OnboardingAnswer],
 ) {
     use std::collections::{HashMap, HashSet};
-    use tauri::{Emitter, Manager};
+    use tauri::Manager;
 
     fn role_id_to_legacy(role_id: &rekindle_types::id::RoleId) -> u32 {
         u32::from_le_bytes([role_id.0[0], role_id.0[1], role_id.0[2], role_id.0[3]])
@@ -307,9 +307,10 @@ pub(crate) async fn handle_onboarding_answers(
         );
     }
 
-    let _ = app_handle.emit(
+    crate::event_dispatch::emit_live(
+        app_handle,
         "community-event",
-        crate::channels::CommunityEvent::OnboardingComplete {
+        &crate::channels::CommunityEvent::OnboardingComplete {
             community_id: community_id.to_string(),
             pseudonym_key: sender_pseudonym.to_string(),
             role_ids: final_role_ids,

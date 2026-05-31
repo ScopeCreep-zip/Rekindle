@@ -1,27 +1,24 @@
-use std::convert::TryFrom;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use iota_stronghold::{KeyProvider, SnapshotPath, Stronghold};
 use parking_lot::Mutex;
-use zeroize::Zeroizing;
 
 use rekindle_crypto::{CryptoError, Keychain};
+use rekindle_vault::VaultStore;
 
-/// A Stronghold-backed keystore for securely persisting key material.
+/// VaultStore-backed keystore (Phase 2 of the decomposed-harvest plan
+/// replaced the prior `iota_stronghold` backend). The type name is kept
+/// as `StrongholdKeystore` so the 30+ persist/load/delete helpers below
+/// and the 13 consumer files across src-tauri don't need a rename pass.
 ///
-/// Uses `iota_stronghold` directly: secrets are stored in the client `Store`
-/// (key-value pairs encrypted at rest in the snapshot file). The snapshot
-/// is encrypted with an `Argon2id`-derived key from the user passphrase.
+/// On disk: each identity has `{vault_dir}/{public_key_hex}.vault`
+/// (SQLCipher AES-256-CBC at page level) plus a sidecar
+/// `{public_key_hex}.vault.salt` (32-byte plaintext random salt — needs
+/// to be readable before SQLCipher decryption). Each row in the entries
+/// table is additionally sealed with AES-256-GCM under a per-entry key
+/// derived from the same passphrase.
 pub struct StrongholdKeystore {
-    /// The underlying Stronghold instance.
-    stronghold: Stronghold,
-    /// Path to the snapshot file on disk.
-    snapshot_path: SnapshotPath,
-    /// Key provider derived from passphrase (for snapshot encryption).
-    keyprovider: KeyProvider,
-    /// Client name used for all operations.
-    client_name: Vec<u8>,
+    vault: VaultStore,
 }
 
 /// Thread-safe handle to the keystore, stored in Tauri managed state.
@@ -33,145 +30,132 @@ pub fn new_handle() -> KeystoreHandle {
 }
 
 impl StrongholdKeystore {
-    /// Initialize a keystore for a specific identity, loading any existing snapshot.
-    ///
-    /// Each identity gets its own Stronghold file named `{public_key_hex}.stronghold`.
-    /// This is necessary because each identity has its own passphrase — you can't
-    /// store multiple passphrases' keys in a single encrypted snapshot.
+    /// Initialize a keystore for a specific identity, opening or creating
+    /// the per-identity vault file `{vault_dir}/{public_key_hex}.vault`.
     pub fn initialize_for_identity(
-        snapshot_dir: &Path,
+        vault_dir: &Path,
         public_key_hex: &str,
         passphrase: &str,
     ) -> Result<Self, CryptoError> {
-        let filename = format!("{public_key_hex}.stronghold");
-        let snapshot_file = snapshot_dir.join(filename);
-        Self::initialize_from_file(&snapshot_file, passphrase)
+        let path = vault_dir.join(format!("{public_key_hex}.vault"));
+        Self::initialize_from_file(&path, passphrase)
     }
 
-    /// Delete the Stronghold snapshot file for a specific identity.
+    /// Delete the on-disk vault for a specific identity. Removes both
+    /// `{pk}.vault` and `{pk}.vault.salt` (sidecar). Missing files are
+    /// silently tolerated; only I/O errors propagate.
     pub fn delete_snapshot(
-        snapshot_dir: &Path,
+        vault_dir: &Path,
         public_key_hex: &str,
     ) -> Result<(), std::io::Error> {
-        let filename = format!("{public_key_hex}.stronghold");
-        let snapshot_file = snapshot_dir.join(filename);
-        if snapshot_file.exists() {
-            std::fs::remove_file(snapshot_file)?;
+        let path = vault_dir.join(format!("{public_key_hex}.vault"));
+        let salt_path = {
+            let mut p = path.as_os_str().to_owned();
+            p.push(".salt");
+            PathBuf::from(p)
+        };
+        for p in [&path, &salt_path] {
+            if p.exists() {
+                std::fs::remove_file(p)?;
+            }
         }
         Ok(())
     }
 
-    /// Initialize a keystore using the legacy global snapshot file.
+    /// Initialize a keystore at the legacy unit-test path
+    /// `{vault_dir}/rekindle.vault`. Kept so existing tests compile.
+    pub fn initialize(vault_dir: &Path, passphrase: &str) -> Result<Self, CryptoError> {
+        let path = vault_dir.join("rekindle.vault");
+        Self::initialize_from_file(&path, passphrase)
+    }
+
+    /// Common initialization: open-or-create a vault at `path` with the
+    /// given passphrase. Wrong passphrase fails here (SQLCipher key
+    /// validation).
+    fn initialize_from_file(path: &Path, passphrase: &str) -> Result<Self, CryptoError> {
+        let vault = VaultStore::open(path, passphrase)
+            .map_err(|e| CryptoError::StorageError(format!("vault open: {e}")))?;
+        Ok(Self { vault })
+    }
+
+    /// No-op for the vault-backed keystore.
     ///
-    /// Kept for backward compatibility with unit tests.
-    pub fn initialize(snapshot_dir: &Path, passphrase: &str) -> Result<Self, CryptoError> {
-        let snapshot_file = snapshot_dir.join("rekindle.stronghold");
-        Self::initialize_from_file(&snapshot_file, passphrase)
-    }
-
-    /// Common initialization logic for any snapshot file path.
-    fn initialize_from_file(snapshot_file: &Path, passphrase: &str) -> Result<Self, CryptoError> {
-        let password_hash = derive_key(passphrase);
-        let keyprovider = KeyProvider::try_from(Zeroizing::new(password_hash))
-            .map_err(|e| CryptoError::StorageError(format!("key provider init: {e:?}")))?;
-        let snapshot_path = SnapshotPath::from_path(snapshot_file);
-
-        let stronghold = Stronghold::default();
-
-        // Load existing snapshot if present
-        if snapshot_file.exists() {
-            stronghold
-                .load_snapshot(&keyprovider, &snapshot_path)
-                .map_err(|e| CryptoError::StorageError(format!("load snapshot: {e}")))?;
-        }
-
-        let client_name = b"rekindle".to_vec();
-
-        // Try to load the client from the snapshot, or create a new one
-        let _client = stronghold
-            .load_client(&client_name)
-            .or_else(|_| stronghold.create_client(&client_name))
-            .map_err(|e| CryptoError::StorageError(format!("client init: {e}")))?;
-
-        Ok(Self {
-            stronghold,
-            snapshot_path,
-            keyprovider,
-            client_name,
-        })
-    }
-
-    /// Persist the current state to the snapshot file on disk.
+    /// Stronghold required an explicit `commit_with_keyprovider` after
+    /// every mutation; SQLCipher writes are immediate (autocommit). The
+    /// function is retained because the 30+ persist/delete helpers below
+    /// call `keystore.save()` after every Keychain operation and we don't
+    /// want to touch those call sites in Phase 2.
+    #[allow(
+        clippy::unused_self,
+        reason = "API parity with the Stronghold-era keystore — 30+ persist_X helpers in this file call keystore.save() after each Keychain op"
+    )]
+    #[allow(
+        clippy::unnecessary_wraps,
+        reason = "API parity with the Stronghold-era keystore — call sites use .map_err(...) for error propagation"
+    )]
     pub fn save(&self) -> Result<(), CryptoError> {
-        self.stronghold
-            .write_client(&self.client_name)
-            .map_err(|e| CryptoError::StorageError(format!("write client: {e}")))?;
-        self.stronghold
-            .commit_with_keyprovider(&self.snapshot_path, &self.keyprovider)
-            .map_err(|e| CryptoError::StorageError(format!("commit snapshot: {e}")))?;
         Ok(())
+    }
+
+    /// Number of entries in the vault — exposed for the dev-only
+    /// `vault_diagnostics` Tauri command.
+    pub fn entry_count(&self) -> Result<usize, CryptoError> {
+        self.vault
+            .entry_count()
+            .map_err(|e| CryptoError::StorageError(format!("vault count: {e}")))
+    }
+
+    /// On-disk path of this vault — exposed for diagnostics. Used to read
+    /// the file's mtime for the `last_write_ms` field of vault_diagnostics.
+    pub fn vault_path(&self) -> &std::path::Path {
+        self.vault.path()
     }
 }
 
 impl Keychain for StrongholdKeystore {
     fn store_key(&self, vault: &str, key: &str, data: &[u8]) -> Result<(), CryptoError> {
-        let client = self
-            .stronghold
-            .get_client(&self.client_name)
-            .map_err(|e| CryptoError::StorageError(format!("get client: {e}")))?;
-        let store = client.store();
-        let store_key = format!("{vault}/{key}");
-        store
-            .insert(store_key.into_bytes(), data.to_vec(), None)
-            .map_err(|e| CryptoError::StorageError(format!("store insert: {e}")))?;
-        Ok(())
+        self.vault
+            .put(vault, key, data)
+            .map_err(|e| CryptoError::StorageError(format!("vault put: {e}")))
     }
 
     fn load_key(&self, vault: &str, key: &str) -> Result<Option<Vec<u8>>, CryptoError> {
-        let client = self
-            .stronghold
-            .get_client(&self.client_name)
-            .map_err(|e| CryptoError::StorageError(format!("get client: {e}")))?;
-        let store = client.store();
-        let store_key = format!("{vault}/{key}");
-        store
-            .get(store_key.as_bytes())
-            .map_err(|e| CryptoError::StorageError(format!("store get: {e}")))
+        self.vault
+            .get(vault, key)
+            .map(|opt| opt.map(|z| z.to_vec()))
+            .map_err(|e| CryptoError::StorageError(format!("vault get: {e}")))
     }
 
     fn delete_key(&self, vault: &str, key: &str) -> Result<(), CryptoError> {
-        let client = self
-            .stronghold
-            .get_client(&self.client_name)
-            .map_err(|e| CryptoError::StorageError(format!("get client: {e}")))?;
-        let store = client.store();
-        let store_key = format!("{vault}/{key}");
-        store
-            .delete(store_key.as_bytes())
-            .map_err(|e| CryptoError::StorageError(format!("store delete: {e}")))?;
-        Ok(())
+        self.vault
+            .delete(vault, key)
+            .map_err(|e| CryptoError::StorageError(format!("vault delete: {e}")))
     }
 
     fn key_exists(&self, vault: &str, key: &str) -> Result<bool, CryptoError> {
-        let client = self
-            .stronghold
-            .get_client(&self.client_name)
-            .map_err(|e| CryptoError::StorageError(format!("get client: {e}")))?;
-        let store = client.store();
-        let store_key = format!("{vault}/{key}");
-        store
-            .contains_key(store_key.as_bytes())
-            .map_err(|e| CryptoError::StorageError(format!("store contains: {e}")))
+        self.vault
+            .key_exists(vault, key)
+            .map_err(|e| CryptoError::StorageError(format!("vault contains: {e}")))
     }
 }
 
-/// Map a Stronghold initialization error to a user-friendly string.
+/// Map a keystore initialization / unlock error to a user-friendly string.
 ///
-/// If the error message mentions "snapshot" or "decrypt", the passphrase
-/// was wrong; otherwise, surface the original error text.
+/// Detects the SQLCipher "wrong key" failure pattern (surfaced as
+/// `vault open: ...` containing the SQLCipher key validation message)
+/// and returns the "Wrong passphrase" prompt; otherwise passes the
+/// original error text through.
+///
+/// Function name is unchanged (`map_stronghold_error`) so the 13 consumer
+/// sites and CLAUDE.md references don't break.
 pub fn map_stronghold_error(e: &rekindle_crypto::CryptoError) -> String {
     let msg = e.to_string();
-    if msg.contains("snapshot") || msg.contains("decrypt") {
+    if msg.contains("wrong passphrase")
+        || msg.contains("corrupt vault")
+        || msg.contains("not a database")
+        || msg.contains("SQLCipher")
+        || msg.contains("vault open:")
+    {
         "Wrong passphrase — unable to unlock keystore".to_string()
     } else {
         msg
@@ -650,29 +634,10 @@ fn load_generations_index(
     }
 }
 
-/// Derive a 32-byte encryption key from a passphrase using `Argon2id`.
-///
-/// Production: `m=65536, t=3, p=4` (standard security).
-/// Test builds: `m=256, t=1, p=1` (fast iteration).
-fn derive_key(passphrase: &str) -> Vec<u8> {
-    use argon2::{Algorithm, Argon2, Params, Version};
+// `derive_key` removed in Phase 2 — VaultStore handles Argon2id passphrase
+// derivation internally (see `rekindle-vault::store::derive_two_keys`).
 
-    let salt = b"rekindle-stronghold-salt";
-
-    #[cfg(debug_assertions)]
-    let params = Params::new(256, 1, 1, Some(32)).expect("invalid argon2 params");
-    #[cfg(not(debug_assertions))]
-    let params = Params::new(65536, 3, 4, Some(32)).expect("invalid argon2 params");
-
-    let hasher = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
-    let mut key = vec![0u8; 32];
-    hasher
-        .hash_password_into(passphrase.as_bytes(), salt, &mut key)
-        .expect("argon2 hash failed");
-    key
-}
-
-// ─── B7/D4 (P0.5): Stronghold delegate helpers for Signal stores ────────────
+// ─── B7/D4 (P0.5): Vault delegate helpers for Signal stores ────────────────
 //
 // Architecture §11 — Signal sessions/prekeys/identity must persist across
 // restart so a corrupted-on-disk session is recoverable, not the default
@@ -699,6 +664,8 @@ const SIGNAL_TRUSTED_PREFIX: &str = "trusted:";
 const SIGNAL_REGISTRATION_KEY: &str = "registration_id";
 const SIGNAL_SESSION_INDEX: &str = "session_index";
 const SIGNAL_PREKEY_INDEX: &str = "prekey_index";
+const SIGNAL_PQ_LR_PREFIX: &str = "pq_lr:";
+const SIGNAL_PQ_OT_PREFIX: &str = "pq_ot:";
 
 /// Persist Signal identity key pair + registration ID. Loaded once at login;
 /// the in-memory store mirrors it for fast access.
@@ -891,6 +858,169 @@ pub fn list_signal_prekey_ids(keystore: &StrongholdKeystore) -> Vec<u32> {
         .into_iter()
         .filter_map(|s| s.parse::<u32>().ok())
         .collect()
+}
+
+fn pq_key_name(prekey_id: u32, last_resort: bool) -> String {
+    let prefix = if last_resort { SIGNAL_PQ_LR_PREFIX } else { SIGNAL_PQ_OT_PREFIX };
+    format!("{prefix}{prekey_id}")
+}
+
+/// Persist an ML-KEM-768 secret (PQXDH last-resort or one-time).
+pub fn persist_signal_pq_secret(
+    keystore: &StrongholdKeystore,
+    prekey_id: u32,
+    last_resort: bool,
+    key_data: &[u8],
+) -> Result<(), String> {
+    use rekindle_crypto::keychain::VAULT_SIGNAL;
+    use rekindle_crypto::Keychain as _;
+
+    let key_name = pq_key_name(prekey_id, last_resort);
+    keystore
+        .store_key(VAULT_SIGNAL, &key_name, key_data)
+        .map_err(|e| format!("persist pq secret: {e}"))?;
+    keystore
+        .save()
+        .map_err(|e| format!("save snapshot after pq secret: {e}"))
+}
+
+/// Load an ML-KEM-768 secret by id and kind.
+pub fn load_signal_pq_secret(
+    keystore: &StrongholdKeystore,
+    prekey_id: u32,
+    last_resort: bool,
+) -> Option<Vec<u8>> {
+    use rekindle_crypto::keychain::VAULT_SIGNAL;
+    use rekindle_crypto::Keychain as _;
+
+    let key_name = pq_key_name(prekey_id, last_resort);
+    keystore.load_key(VAULT_SIGNAL, &key_name).ok()?
+}
+
+/// Delete a consumed ML-KEM-768 secret.
+pub fn delete_signal_pq_secret(
+    keystore: &StrongholdKeystore,
+    prekey_id: u32,
+    last_resort: bool,
+) {
+    use rekindle_crypto::keychain::VAULT_SIGNAL;
+    use rekindle_crypto::Keychain as _;
+
+    let key_name = pq_key_name(prekey_id, last_resort);
+    if let Err(e) = keystore.delete_key(VAULT_SIGNAL, &key_name) {
+        tracing::warn!(prekey_id, last_resort, error = %e, "delete pq secret failed");
+    }
+    if let Err(e) = keystore.save() {
+        tracing::warn!(error = %e, "save snapshot after pq secret delete failed");
+    }
+}
+
+// Phase 4 — audit MAC key persistence. Stored under a dedicated `"audit"`
+// namespace so it can't collide with Signal entries. Generated on first
+// `load_or_create_audit_mac_key` call; reused on every subsequent unlock.
+const AUDIT_NAMESPACE: &str = "audit";
+const AUDIT_MAC_KEY_NAME: &str = "mac_key";
+
+/// Load the audit MAC key, generating + persisting a fresh one on first call.
+/// Returns 32 bytes suitable for `AuditChain::open`.
+///
+/// # Errors
+/// Returns `String` on vault I/O failure or RNG failure.
+pub fn load_or_create_audit_mac_key(
+    keystore: &StrongholdKeystore,
+) -> Result<[u8; 32], String> {
+    use rand::RngCore;
+    use rekindle_crypto::Keychain as _;
+
+    // Distinguish three states explicitly:
+    //   Ok(Some(32B)) → reuse existing key (idempotent).
+    //   Ok(Some(wrong-length)) → corrupt; regenerate (existing chain becomes
+    //                            unverifiable — that's the tamper signal).
+    //   Ok(None) → no key yet; generate one.
+    //   Err(_) → transient I/O failure; refuse to overwrite a potentially
+    //            recoverable key, propagate the error so the caller can
+    //            either retry or leave the chain disabled.
+    match keystore.load_key(AUDIT_NAMESPACE, AUDIT_MAC_KEY_NAME) {
+        Ok(Some(existing)) => {
+            if existing.len() == 32 {
+                let mut out = [0u8; 32];
+                out.copy_from_slice(&existing);
+                return Ok(out);
+            }
+            tracing::warn!(
+                len = existing.len(),
+                "audit MAC key has wrong length — regenerating (existing chain will fail verify)",
+            );
+        }
+        Ok(None) => {} // fall through to generate
+        Err(e) => {
+            return Err(format!(
+                "load audit mac key failed (refusing to overwrite — chain stays disabled until \
+                 the vault is readable): {e}"
+            ));
+        }
+    }
+    let mut key_bytes = [0u8; 32];
+    rand::rngs::OsRng.fill_bytes(&mut key_bytes);
+    keystore
+        .store_key(AUDIT_NAMESPACE, AUDIT_MAC_KEY_NAME, &key_bytes)
+        .map_err(|e| format!("persist audit mac key: {e}"))?;
+    keystore
+        .save()
+        .map_err(|e| format!("save snapshot after audit mac key: {e}"))?;
+    Ok(key_bytes)
+}
+
+const AUDIT_TAIL_KEY_NAME: &str = "tail";
+
+/// Persist the current chain tail (cursor + mac) to the vault. Used as an
+/// out-of-band anchor for detecting SQLite-side tail truncation: an attacker
+/// can drop trailing `audit_entries` rows, but they cannot forge a matching
+/// vault update without the vault passphrase.
+///
+/// Wire format: 8 bytes LE cursor || 32 bytes mac = 40 bytes total.
+///
+/// # Errors
+/// Returns `String` on vault I/O failure.
+pub fn persist_audit_tail(
+    keystore: &StrongholdKeystore,
+    cursor: u64,
+    mac: &[u8; 32],
+) -> Result<(), String> {
+    use rekindle_crypto::Keychain as _;
+
+    let mut payload = Vec::with_capacity(40);
+    payload.extend_from_slice(&cursor.to_le_bytes());
+    payload.extend_from_slice(mac);
+    keystore
+        .store_key(AUDIT_NAMESPACE, AUDIT_TAIL_KEY_NAME, &payload)
+        .map_err(|e| format!("persist audit tail: {e}"))?;
+    keystore
+        .save()
+        .map_err(|e| format!("save snapshot after audit tail: {e}"))?;
+    Ok(())
+}
+
+/// Load the persisted tail anchor written by `persist_audit_tail`, or
+/// `None` if no anchor has been written yet (fresh identity).
+#[must_use]
+pub fn load_audit_tail(keystore: &StrongholdKeystore) -> Option<(u64, [u8; 32])> {
+    use rekindle_crypto::Keychain as _;
+
+    let bytes = keystore.load_key(AUDIT_NAMESPACE, AUDIT_TAIL_KEY_NAME).ok()??;
+    if bytes.len() != 40 {
+        tracing::warn!(
+            len = bytes.len(),
+            "audit tail anchor has wrong length — ignoring (chain will be treated as fresh)",
+        );
+        return None;
+    }
+    let mut cursor_bytes = [0u8; 8];
+    cursor_bytes.copy_from_slice(&bytes[..8]);
+    let cursor = u64::from_le_bytes(cursor_bytes);
+    let mut mac = [0u8; 32];
+    mac.copy_from_slice(&bytes[8..40]);
+    Some((cursor, mac))
 }
 
 /// Persist a signed prekey by id.
@@ -1176,5 +1306,85 @@ mod tests {
         assert_eq!(channel_all.len(), 2);
         assert_eq!(channel_all[0].generation(), 1);
         assert_eq!(channel_all[1].generation(), 2);
+    }
+
+    // ── Phase 4 — audit MAC key + tail anchor tests ──────────────────────
+
+    #[test]
+    fn audit_mac_key_is_idempotent_across_calls() {
+        // Calling load_or_create_audit_mac_key twice must return the SAME
+        // bytes — chain.verify() needs key stability across sessions.
+        let dir = TempDir::new().unwrap();
+        let ks = StrongholdKeystore::initialize(dir.path(), "pp").unwrap();
+
+        let k1 = load_or_create_audit_mac_key(&ks).unwrap();
+        let k2 = load_or_create_audit_mac_key(&ks).unwrap();
+        assert_eq!(k1, k2, "mac key must be stable across calls");
+    }
+
+    #[test]
+    fn audit_mac_key_persists_across_keystore_reopen() {
+        // Reopening the vault (simulating restart) must yield the same key.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("rekindle.vault");
+        let k_first = {
+            let ks = StrongholdKeystore::initialize(dir.path(), "pp").unwrap();
+            load_or_create_audit_mac_key(&ks).unwrap()
+        };
+        let k_second = {
+            let ks = StrongholdKeystore::initialize(dir.path(), "pp").unwrap();
+            load_or_create_audit_mac_key(&ks).unwrap()
+        };
+        assert_eq!(k_first, k_second, "mac key must survive vault reopen");
+        let _ = path; // suppress unused warning
+    }
+
+    #[test]
+    fn audit_mac_key_regenerates_on_corrupt_length() {
+        // If a wrong-length entry exists at ("audit", "mac_key") — a corruption
+        // signal — load_or_create_audit_mac_key must regenerate. Existing
+        // chain entries become unverifiable; that mismatch IS the tamper signal.
+        use rekindle_crypto::Keychain as _;
+        let dir = TempDir::new().unwrap();
+        let ks = StrongholdKeystore::initialize(dir.path(), "pp").unwrap();
+
+        // Inject a wrong-length key.
+        ks.store_key("audit", "mac_key", b"too-short").unwrap();
+        ks.save().unwrap();
+        let regenerated = load_or_create_audit_mac_key(&ks).unwrap();
+        assert_eq!(regenerated.len(), 32);
+        // Subsequent calls now stable on the new key.
+        assert_eq!(load_or_create_audit_mac_key(&ks).unwrap(), regenerated);
+    }
+
+    #[test]
+    fn audit_tail_anchor_roundtrip() {
+        let dir = TempDir::new().unwrap();
+        let ks = StrongholdKeystore::initialize(dir.path(), "pp").unwrap();
+        let mac = [9u8; 32];
+        persist_audit_tail(&ks, 42, &mac).unwrap();
+        let loaded = load_audit_tail(&ks).expect("anchor should exist");
+        assert_eq!(loaded, (42, mac));
+    }
+
+    #[test]
+    fn audit_tail_anchor_corrupt_length_returns_none() {
+        // If something corrupts the tail entry length, load_audit_tail
+        // must NOT panic — it must return None so restore_chain treats
+        // the chain as fresh (no false-positive tamper).
+        use rekindle_crypto::Keychain as _;
+        let dir = TempDir::new().unwrap();
+        let ks = StrongholdKeystore::initialize(dir.path(), "pp").unwrap();
+        ks.store_key("audit", "tail", b"only-twelve-").unwrap();
+        ks.save().unwrap();
+        assert!(load_audit_tail(&ks).is_none());
+    }
+
+    #[test]
+    fn audit_tail_anchor_missing_returns_none() {
+        // Fresh vault has no tail anchor → None (not Err).
+        let dir = TempDir::new().unwrap();
+        let ks = StrongholdKeystore::initialize(dir.path(), "pp").unwrap();
+        assert!(load_audit_tail(&ks).is_none());
     }
 }

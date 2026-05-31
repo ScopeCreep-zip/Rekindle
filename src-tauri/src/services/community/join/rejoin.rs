@@ -44,5 +44,15 @@ pub async fn rejoin_community(state: &Arc<AppState>, community_id: &str) -> Resu
             state_helpers::trip_circuit_breaker(state, community_id);
         }
     }
+
+    // Architecture §14.2 — returning members request missing message
+    // ranges from peers who advertise them. Firing one initial-sync
+    // round on rejoin gives faster catch-up than waiting for the next
+    // presence-poll cadence tick (5–60 s). Uses gossip degree 1 as
+    // the floor — a returning member is connected to at least one
+    // peer (the one that triggered the rejoin); the orchestrator's
+    // own checks handle the no-peers / no-route cases gracefully.
+    crate::services::community::run_initial_sync(state, community_id, 1).await;
+
     Ok(())
 }

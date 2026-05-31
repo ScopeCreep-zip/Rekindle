@@ -1,8 +1,6 @@
 use std::sync::Arc;
 
 use rekindle_secrets::derive;
-use rekindle_types::governance::GovernanceEntry;
-use rekindle_types::id::PseudonymKey;
 
 use crate::state::AppState;
 
@@ -16,49 +14,6 @@ pub(crate) fn role_id_to_legacy_u32(role_id: &rekindle_types::id::RoleId) -> u32
 ///
 /// M10.3 — the inviter pseudonym is propagated to `claim_registry_slot`
 /// so the joiner-side quota check (`invite_quota::check_active_invites_cap`)
-/// can run before any slot write, in addition to the reader-validates
-/// merge filter at `validate.rs::InviteCreated`.
-pub(super) fn find_invite_in_governance(
-    subkeys: &[(PseudonymKey, Vec<GovernanceEntry>)],
-    code_hash: &str,
-) -> Result<(String, PseudonymKey), String> {
-    let mut revoked_ids: std::collections::HashSet<[u8; 16]> = std::collections::HashSet::new();
-    for (_, entries) in subkeys {
-        for entry in entries {
-            if let GovernanceEntry::InviteRevoked { invite_id, .. } = entry {
-                revoked_ids.insert(*invite_id);
-            }
-        }
-    }
-
-    for (author, entries) in subkeys {
-        for entry in entries {
-            if let GovernanceEntry::InviteCreated {
-                invite_id,
-                code_hash: ref ch,
-                encrypted_secrets,
-                expires_at,
-                lamport: _,
-                ..
-            } = entry
-            {
-                if ch == code_hash {
-                    if revoked_ids.contains(invite_id) {
-                        return Err("invite has been revoked".into());
-                    }
-                    if let Some(exp) = expires_at {
-                        if rekindle_utils::timestamp_secs() > *exp {
-                            return Err("invite has expired".into());
-                        }
-                    }
-                    return Ok((encrypted_secrets.clone(), author.clone()));
-                }
-            }
-        }
-    }
-    Err("invalid invite code — no matching invite found in governance".into())
-}
-
 pub(super) async fn open_channel_records(
     rc: &veilid_core::RoutingContext,
     state: &Arc<AppState>,
@@ -120,13 +75,6 @@ pub(super) fn spawn_join_announcements(
             "broadcasted MemberJoined via gossip"
         );
     });
-}
-
-pub(super) fn default_community_name(governance_key: &str) -> String {
-    format!(
-        "Community {}",
-        &governance_key[..8.min(governance_key.len())]
-    )
 }
 
 pub(crate) fn try_derive_slot_keypair(

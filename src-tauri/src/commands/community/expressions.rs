@@ -1,30 +1,7 @@
 use tauri::State;
 
+use crate::services::community_views_runtime::ExpressionInfoDto;
 use crate::state::SharedState;
-
-#[derive(Debug, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ExpressionInfoDto {
-    pub expression_id: String,
-    pub name: String,
-    pub kind: String,
-    pub content_hash: String,
-    pub inline_data_base64: Option<String>,
-    pub media_type: Option<String>,
-    pub animated: bool,
-    pub tags: Vec<String>,
-    /// Architecture §18.3 — present only on `kind == "soundboard"`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sound_meta: Option<rekindle_types::expression::SoundboardMeta>,
-    /// Architecture §18.1 line 2455 — uploader's per-community pseudonym (hex).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub creator_pseudonym: Option<String>,
-    /// Architecture §18.1 line 2456 — wall-clock seconds at upload.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub created_at: Option<u64>,
-    /// Architecture §18.1 line 2459 — gates `USE_EXTERNAL_EMOJIS`.
-    pub available_to_peers: bool,
-}
 
 #[tauri::command]
 pub async fn upload_emoji(
@@ -112,22 +89,8 @@ pub async fn list_expressions(
     state: State<'_, SharedState>,
     community_id: String,
 ) -> Result<Vec<ExpressionInfoDto>, String> {
-    let expressions = crate::services::community::list_expressions(state.inner(), &community_id)?;
-    Ok(expressions
-        .into_iter()
-        .map(|expression| ExpressionInfoDto {
-            expression_id: expression.expression_id,
-            name: expression.name,
-            kind: expression.kind,
-            content_hash: expression.content_hash,
-            inline_data_base64: expression.inline_data_base64,
-            media_type: expression.media_type,
-            animated: expression.animated,
-            tags: expression.tags,
-            sound_meta: expression.sound_meta,
-            creator_pseudonym: expression.creator_pseudonym,
-            created_at: expression.created_at,
-            available_to_peers: expression.available_to_peers,
-        })
-        .collect())
+    crate::services::community_views_runtime::list_expressions_inner(
+        state.inner(),
+        &community_id,
+    )
 }

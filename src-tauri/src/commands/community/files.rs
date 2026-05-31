@@ -1,14 +1,17 @@
 //! Lost Cargo IPC commands.
 //!
-//! Thin wrappers — all logic lives in `services::community::files`.
+//! Thin wrappers — all logic lives in `services::community::files` /
+//! `services::community_files_runtime`.
 
 use std::path::PathBuf;
 
 use tauri::State;
 
 use crate::db::DbPool;
+use crate::services::community_files_runtime::{
+    download_attachment_inner, send_voice_message_inner,
+};
 use crate::state::SharedState;
-use crate::state_helpers;
 
 /// Upload a file as an attachment in a channel. Returns the new
 /// attachment_id (16-byte UUID, hex-encoded). The file is chunked,
@@ -34,10 +37,7 @@ pub async fn upload_attachment(
     .await
 }
 
-/// Download an attachment by hex id to `save_path`. Walks SMPL subkeys
-/// to find sources, requests missing chunks via `app_call`, verifies
-/// + reassembles, advertises full possession back to the swarm. Emits
-/// a `community-event` `AttachmentDownloaded` on success.
+/// Download an attachment by hex id to `save_path`.
 #[tauri::command]
 pub async fn download_attachment(
     community_id: String,
@@ -48,32 +48,19 @@ pub async fn download_attachment(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let save_path = PathBuf::from(save_path);
-    crate::services::community::files::download_attachment(
+    download_attachment_inner(
         state.inner(),
         pool.inner(),
-        &community_id,
-        &channel_id,
-        &attachment_id,
-        &save_path,
-    )
-    .await?;
-    crate::services::community::files::emit_attachment_complete(
         &app,
         &community_id,
         &channel_id,
         &attachment_id,
-        &save_path,
-    );
-    Ok(())
+        save_path,
+    )
+    .await
 }
 
-/// Send a voice message (architecture §16.4) — a `ChannelEntry::Message`
-/// with `flags |= VOICE_MESSAGE` carrying an `audio/ogg` Lost Cargo
-/// attachment plus waveform + duration metadata in the body.
-///
-/// The frontend records via MediaRecorder, base64-encodes the bytes, and
-/// passes them along with the duration and waveform peaks (≤256 u8s).
+/// Send a voice message (architecture §16.4).
 #[tauri::command]
 pub async fn send_voice_message(
     community_id: String,
@@ -84,29 +71,19 @@ pub async fn send_voice_message(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<String, String> {
-    use base64::Engine as _;
-    let opus_bytes = base64::engine::general_purpose::STANDARD
-        .decode(&opus_bytes_b64)
-        .map_err(|e| format!("invalid opus_bytes base64: {e}"))?;
-    let waveform = base64::engine::general_purpose::STANDARD
-        .decode(&waveform_b64)
-        .map_err(|e| format!("invalid waveform base64: {e}"))?;
-    crate::services::community::files::send_voice_message_bytes(
+    send_voice_message_inner(
         state.inner(),
         pool.inner(),
         &community_id,
         &channel_id,
-        opus_bytes,
+        &opus_bytes_b64,
         duration_ms,
-        waveform,
+        &waveform_b64,
     )
     .await
 }
 
-/// Pin or unpin an attachment (admin-only). Pinned attachments are
-/// exempt from local LRU eviction in every member's cache. Writes a
-/// `GovernanceEntry::AttachmentPinned` — the merged state propagates
-/// to all peers via the existing governance sync paths.
+/// Pin or unpin an attachment (admin-only).
 #[tauri::command]
 pub async fn pin_attachment(
     community_id: String,
@@ -114,7 +91,6 @@ pub async fn pin_attachment(
     pinned: bool,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
-    let _ = state_helpers::current_owner_key(state.inner())?;
     crate::services::community::files::set_attachment_pinned(
         state.inner(),
         &community_id,

@@ -1,8 +1,16 @@
 use crate::channels::NetworkStatusEvent;
 use crate::state::AppState;
-use tauri::Emitter;
+use rekindle_lifecycle::LifecycleState;
 
 /// Build and emit a `NetworkStatusEvent` from current `NodeHandle` state.
+///
+/// Phase 5 — also drives lifecycle transitions reactive to attachment:
+///   - first attach: `Starting → Locked` (so login becomes available)
+///   - lose network mid-session: `Operational/Degraded → Detached`
+///   - recover network: `Detached → Operational`
+///
+/// The FSM rejects same-state and invalid-edge calls internally, so we
+/// can fire transitions on every status update without churn or noise.
 pub fn emit_network_status(app_handle: &tauri::AppHandle, state: &AppState) {
     let event = {
         let node = state.node.read();
@@ -21,5 +29,21 @@ pub fn emit_network_status(app_handle: &tauri::AppHandle, state: &AppState) {
             },
         }
     };
-    let _ = app_handle.emit("network-status", &event);
+
+    // Phase 5 — reactive lifecycle transitions.
+    let cur = state.lifecycle.state();
+    match (event.is_attached, cur) {
+        (true, LifecycleState::Starting) => {
+            let _ = state.lifecycle.transition(LifecycleState::Locked);
+        }
+        (false, LifecycleState::Operational | LifecycleState::Degraded) => {
+            let _ = state.lifecycle.transition(LifecycleState::Detached);
+        }
+        (true, LifecycleState::Detached) => {
+            let _ = state.lifecycle.transition(LifecycleState::Operational);
+        }
+        _ => {} // No transition needed for this (attach, state) combination.
+    }
+
+    crate::event_dispatch::emit_live(app_handle, "network-status", &event);
 }

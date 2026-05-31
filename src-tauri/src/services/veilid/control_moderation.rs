@@ -2,9 +2,10 @@ use std::sync::Arc;
 
 use crate::db::DbPool;
 use crate::db_helpers::db_fire;
-use crate::services::voice::signaling;
+// Voice signaling dispatch now goes through
+// `crate::services::voice_signaling_adapter::handle_voice_signaling`.
 use crate::state::AppState;
-use tauri::{Emitter, Manager};
+use tauri::Manager;
 
 use super::control_sync::{
     check_gossip_moderation_permission, handle_sync_request, handle_sync_response,
@@ -84,7 +85,7 @@ pub(crate) fn handle_gossip_control_payloads(
             let db_pool = pool.inner().clone();
             let state = Arc::clone(state);
             tokio::spawn(async move {
-                let _ = crate::services::sync_service::handle_community_record_change(
+                let _ = crate::services::sync_communities::handle_community_record_change(
                     &state,
                     &db_pool,
                     &governance_key,
@@ -102,7 +103,9 @@ pub(crate) fn handle_gossip_control_payloads(
         | ControlPayload::VoiceDeafen { .. }
         | ControlPayload::VoiceRoster { .. }
         | ControlPayload::SoundboardPlay { .. } => {
-            signaling::handle_voice_signaling(
+            // Voice signaling adapter handles the spawn-and-forget
+            // dispatch internally — the gossip dispatcher stays sync.
+            crate::services::voice_signaling_adapter::handle_voice_signaling(
                 app_handle,
                 state,
                 community_id,
@@ -239,9 +242,10 @@ fn handle_gossip_moderation(
                 )?;
                 Ok(())
             });
-            let _ = app_handle.emit(
+            crate::event_dispatch::emit_live(
+                app_handle,
                 "community-event",
-                CommunityEvent::MemberTimedOut {
+                &CommunityEvent::MemberTimedOut {
                     community_id: community_id.to_string(),
                     pseudonym_key: target_pseudonym,
                     timeout_until: Some(timeout_until),
@@ -260,9 +264,10 @@ fn handle_gossip_moderation(
                 )?;
                 Ok(())
             });
-            let _ = app_handle.emit(
+            crate::event_dispatch::emit_live(
+                app_handle,
                 "community-event",
-                CommunityEvent::MemberTimedOut {
+                &CommunityEvent::MemberTimedOut {
                     community_id: community_id.to_string(),
                     pseudonym_key: target_pseudonym,
                     timeout_until: None,
@@ -289,7 +294,6 @@ fn remove_member_from_local_state(
     label: &'static str,
 ) {
     use crate::channels::CommunityEvent;
-    use tauri::Emitter;
 
     let my_pseudonym = {
         let communities = state.communities.read();
@@ -299,9 +303,10 @@ fn remove_member_from_local_state(
     };
 
     if my_pseudonym.as_deref() == Some(&target_pseudonym) {
-        let _ = app_handle.emit(
+        crate::event_dispatch::emit_live(
+            app_handle,
             "community-event",
-            CommunityEvent::Kicked {
+            &CommunityEvent::Kicked {
                 community_id: community_id.to_string(),
             },
         );
@@ -333,9 +338,10 @@ fn remove_member_from_local_state(
         )?;
         Ok(())
     });
-    let _ = app_handle.emit(
+    crate::event_dispatch::emit_live(
+        app_handle,
         "community-event",
-        CommunityEvent::MemberRemoved {
+        &CommunityEvent::MemberRemoved {
             community_id: community_id.to_string(),
             pseudonym_key: target_pseudonym,
         },

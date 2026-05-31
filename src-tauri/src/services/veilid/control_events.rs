@@ -3,7 +3,6 @@ use std::sync::Arc;
 use crate::db::DbPool;
 use crate::state::AppState;
 use crate::state_helpers;
-use tauri::Emitter;
 
 use super::control_event_records::{handle_event_payload, handle_game_server_payload};
 use super::control_moderation::handle_gossip_control_payloads;
@@ -25,9 +24,10 @@ pub(crate) async fn handle_control_events_and_threads(
 
     match payload {
         ControlPayload::ChannelOverwriteChanged { channel_id } => {
-            let _ = app_handle.emit(
+            crate::event_dispatch::emit_live(
+                app_handle,
                 "community-event",
-                CommunityEvent::ChannelOverwriteChanged {
+                &CommunityEvent::ChannelOverwriteChanged {
                     community_id: community_id.to_string(),
                     channel_id,
                 },
@@ -61,9 +61,10 @@ pub(crate) async fn handle_control_events_and_threads(
             let state_clone = state.clone();
             let cid = community_id.to_string();
             fetch_mek_from_dht(&app, &state_clone, &cid);
-            let _ = app_handle.emit(
+            crate::event_dispatch::emit_live(
+                app_handle,
                 "community-event",
-                CommunityEvent::MekRotated {
+                &CommunityEvent::MekRotated {
                     community_id: community_id.to_string(),
                     channel_id,
                     new_generation,
@@ -71,9 +72,10 @@ pub(crate) async fn handle_control_events_and_threads(
             );
         }
         ControlPayload::KickedNotification => {
-            let _ = app_handle.emit(
+            crate::event_dispatch::emit_live(
+                app_handle,
                 "community-event",
-                CommunityEvent::Kicked {
+                &CommunityEvent::Kicked {
                     community_id: community_id.to_string(),
                 },
             );
@@ -86,9 +88,10 @@ pub(crate) async fn handle_control_events_and_threads(
             ref pseudonym_key,
             ref role_ids,
         } => {
-            let _ = app_handle.emit(
+            crate::event_dispatch::emit_live(
+                app_handle,
                 "community-event",
-                CommunityEvent::OnboardingComplete {
+                &CommunityEvent::OnboardingComplete {
                     community_id: community_id.to_string(),
                     pseudonym_key: pseudonym_key.clone(),
                     role_ids: role_ids.clone(),
@@ -100,9 +103,10 @@ pub(crate) async fn handle_control_events_and_threads(
             title,
             minutes_until_start,
         } => {
-            let _ = app_handle.emit(
+            crate::event_dispatch::emit_live(
+                app_handle,
                 "community-event",
-                CommunityEvent::EventReminder {
+                &CommunityEvent::EventReminder {
                     community_id: community_id.to_string(),
                     event_id,
                     title,
@@ -111,9 +115,10 @@ pub(crate) async fn handle_control_events_and_threads(
             );
         }
         ControlPayload::SystemMessage { body, timestamp } => {
-            let _ = app_handle.emit(
+            crate::event_dispatch::emit_live(
+                app_handle,
                 "community-event",
-                CommunityEvent::SystemMessage {
+                &CommunityEvent::SystemMessage {
                     community_id: community_id.to_string(),
                     body,
                     timestamp,
@@ -121,18 +126,20 @@ pub(crate) async fn handle_control_events_and_threads(
             );
         }
         ControlPayload::RaidAlert { active } => {
-            let _ = app_handle.emit(
+            crate::event_dispatch::emit_live(
+                app_handle,
                 "community-event",
-                CommunityEvent::RaidAlert {
+                &CommunityEvent::RaidAlert {
                     community_id: community_id.to_string(),
                     active,
                 },
             );
         }
         ControlPayload::ChannelLockdown { locked } => {
-            let _ = app_handle.emit(
+            crate::event_dispatch::emit_live(
+                app_handle,
                 "community-event",
-                CommunityEvent::ChannelLockdown {
+                &CommunityEvent::ChannelLockdown {
                     community_id: community_id.to_string(),
                     locked,
                 },
@@ -180,9 +187,10 @@ fn handle_pin_payload(
                 )?;
                 Ok(())
             });
-            let _ = app_handle.emit(
+            crate::event_dispatch::emit_live(
+                app_handle,
                 "community-event",
-                CommunityEvent::MessagePinned {
+                &CommunityEvent::MessagePinned {
                     community_id: community_id.to_string(),
                     channel_id,
                     message_id,
@@ -206,9 +214,10 @@ fn handle_pin_payload(
                 )?;
                 Ok(())
             });
-            let _ = app_handle.emit(
+            crate::event_dispatch::emit_live(
+                app_handle,
                 "community-event",
-                CommunityEvent::MessageUnpinned {
+                &CommunityEvent::MessageUnpinned {
                     community_id: community_id.to_string(),
                     channel_id,
                     message_id,
@@ -258,9 +267,10 @@ fn handle_thread_payload(
                 )?;
                 Ok(())
             });
-            let _ = app_handle.emit(
+            crate::event_dispatch::emit_live(
+                app_handle,
                 "community-event",
-                CommunityEvent::ThreadCreated {
+                &CommunityEvent::ThreadCreated {
                     community_id: community_id.to_string(),
                     thread,
                 },
@@ -282,9 +292,10 @@ fn handle_thread_payload(
                 )?;
                 Ok(())
             });
-            let _ = app_handle.emit(
+            crate::event_dispatch::emit_live(
+                app_handle,
                 "community-event",
-                CommunityEvent::ThreadArchived {
+                &CommunityEvent::ThreadArchived {
                     community_id: community_id.to_string(),
                     thread_id,
                     archived,
@@ -330,9 +341,10 @@ fn handle_thread_payload(
                 )?;
                 Ok(())
             });
-            let _ = app_handle.emit(
+            crate::event_dispatch::emit_live(
+                app_handle,
                 "community-event",
-                CommunityEvent::ThreadMessageReceived {
+                &CommunityEvent::ThreadMessageReceived {
                     community_id: community_id.to_string(),
                     thread_id,
                     message_id,

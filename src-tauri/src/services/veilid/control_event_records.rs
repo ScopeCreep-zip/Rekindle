@@ -3,7 +3,6 @@ use std::sync::Arc;
 use crate::db::DbPool;
 use crate::state::AppState;
 use crate::state_helpers;
-use tauri::Emitter;
 
 pub(super) fn handle_event_payload(
     app_handle: &tauri::AppHandle,
@@ -39,9 +38,10 @@ pub(super) fn handle_event_payload(
                 )?;
                 Ok(())
             });
-            let _ = app_handle.emit(
+            crate::event_dispatch::emit_live(
+                app_handle,
                 "community-event",
-                CommunityEvent::EventDeleted {
+                &CommunityEvent::EventDeleted {
                     community_id: community_id.to_string(),
                     event_id,
                 },
@@ -67,9 +67,10 @@ pub(super) fn handle_event_payload(
                 )?;
                 Ok(())
             });
-            let _ = app_handle.emit(
+            crate::event_dispatch::emit_live(
+                app_handle,
                 "community-event",
-                CommunityEvent::EventRsvpChanged {
+                &CommunityEvent::EventRsvpChanged {
                     community_id: community_id.to_string(),
                     event_id,
                     pseudonym_key,
@@ -114,9 +115,10 @@ pub(super) fn handle_game_server_payload(
                 )?;
                 Ok(())
             });
-            let _ = app_handle.emit(
+            crate::event_dispatch::emit_live(
+                app_handle,
                 "community-event",
-                CommunityEvent::GameServerAdded {
+                &CommunityEvent::GameServerAdded {
                     community_id: community_id.to_string(),
                     server,
                 },
@@ -133,9 +135,10 @@ pub(super) fn handle_game_server_payload(
                 )?;
                 Ok(())
             });
-            let _ = app_handle.emit(
+            crate::event_dispatch::emit_live(
+                app_handle,
                 "community-event",
-                CommunityEvent::GameServerRemoved {
+                &CommunityEvent::GameServerRemoved {
                     community_id: community_id.to_string(),
                     server_id,
                 },
@@ -205,5 +208,5 @@ fn handle_event_upsert(
             event,
         }
     };
-    let _ = app_handle.emit("community-event", event_kind);
+    crate::event_dispatch::emit_live(app_handle, "community-event", &event_kind);
 }

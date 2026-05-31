@@ -18,17 +18,18 @@ pub mod join;
 pub mod link_previews;
 pub mod keepalive;
 pub mod mek_rotation;
-mod mek_rotation_support;
+pub mod mek_rotation_orchestrators;
+pub(crate) mod mek_rotation_support;
 pub mod mentions;
 pub mod message_notifications;
+pub mod message_notifications_handle;
 pub mod notifications;
 pub mod presence;
-pub mod raid_detection;
 pub mod receiver_limits;
 pub mod segments;
 pub mod stage;
 pub mod threads;
-mod threads_store;
+pub mod threads_store;
 pub mod video;
 pub mod watch;
 
@@ -46,18 +47,22 @@ pub use expressions::{
     upload_sticker,
 };
 pub use gossip::{
-    flush_peer_reliability, hydrate_peer_reliability, send_to_mesh, start_peer_reliability_flush,
+    flush_peer_reliability, hydrate_peer_reliability, record_peer_reliability, send_to_mesh,
+    start_peer_reliability_flush,
 };
 pub use governance::write_entry;
 pub(crate) use join::try_derive_slot_keypair;
 pub use join::{join_community, rejoin_community};
 pub use keepalive::start_dht_keepalive;
-pub use mek_rotation::{
-    handle_incoming_mek_transfer, handle_request_mek, rotate_text_mek_for_departure,
-    rotate_voice_mek_for_membership, spawn_mek_request_with_retry,
+pub use mek_rotation::{handle_incoming_mek_transfer, spawn_mek_request_with_retry};
+pub use mek_rotation_orchestrators::{
+    handle_request_mek, rotate_text_mek_for_departure, rotate_voice_mek_for_membership,
 };
-pub use message_notifications::{channel_message_subkey, handle_message_notification};
+pub use message_notifications_handle::handle_message_notification;
 pub use notifications::{emit_message_notification, should_emit_message_notification};
-pub use presence::{presence_poll_tick_public, start_presence_poll};
+pub use presence::{
+    current_presence_status, presence_poll_tick_public, run_initial_sync, start_presence_poll,
+    write_our_presence,
+};
 pub use stage::{list_hand_raises, persist_hand_raise};
 pub use watch::{mark_watch_inactive, watch_community_records};

@@ -120,10 +120,7 @@ async fn setup(
     Ok((handle, SyncKey::from_master_secret(&secret)))
 }
 
-/// Architecture §28.4 line 3088 — new device side. Builds a
-/// `PairingPayload` with the master secret wrapped under the pairing
-/// key derived from `(code, salt)`, then dials the existing device
-/// over `app_call` using the route blob shipped in the QR code.
+/// Architecture §28.4 line 3088 — new device side.
 #[tauri::command]
 pub async fn accept_pairing_code(
     pairing_code: String,
@@ -132,32 +129,14 @@ pub async fn accept_pairing_code(
     display_name: String,
     state: State<'_, SharedState>,
 ) -> Result<rekindle_types::cross_device_sync::PairingAccept, String> {
-    let salt = hex::decode(&pairing_salt_hex)
-        .map_err(|e| format!("invalid pairing salt hex: {e}"))?;
-    let route_blob = hex::decode(&existing_device_route_blob_hex)
-        .map_err(|e| format!("invalid route blob hex: {e}"))?;
-    let payload = cross_device_sync::build_pairing_payload(
+    crate::services::sync_runtime::accept_pairing_code_inner(
         state.inner(),
-        &pairing_code,
-        &salt,
-        &display_name,
-    )?;
-    let envelope = rekindle_types::cross_device_sync::SyncEnvelope::PairingRequest(payload);
-    let bytes = serde_json::to_vec(&envelope).map_err(|e| format!("encode: {e}"))?;
-    let api = crate::state_helpers::veilid_api(state.inner())
-        .ok_or("veilid not attached")?;
-    let route_id = api
-        .import_remote_private_route(route_blob)
-        .map_err(|e| format!("import existing device route: {e}"))?;
-    let rc = crate::state_helpers::safe_routing_context(state.inner())
-        .ok_or("no routing context")?;
-    let reply = rc
-        .app_call(veilid_core::Target::RouteId(route_id), bytes)
-        .await
-        .map_err(|e| format!("pairing app_call failed: {e}"))?;
-    let accept: rekindle_types::cross_device_sync::PairingAccept =
-        serde_json::from_slice(&reply).map_err(|e| format!("pairing reply decode: {e}"))?;
-    Ok(accept)
+        pairing_code,
+        pairing_salt_hex,
+        existing_device_route_blob_hex,
+        display_name,
+    )
+    .await
 }
 
 /// Architecture §28.4 / Phase 7 W24 line 4122 — render the current
@@ -178,27 +157,7 @@ pub async fn generate_pairing_qr_svg(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<PairingQrPayload, String> {
-    let session = cross_device_sync::generate_pairing_session(state.inner(), pool.inner()).await?;
-    // The pairing code is base32 (URL-safe alphabet) and the other two
-    // fields are hex; none need percent-encoding.
-    let uri = format!(
-        "rekindle://pair?code={}&salt={}&route={}",
-        session.pairing_code,
-        session.pairing_salt_hex,
-        session.existing_device_route_blob_hex,
-    );
-    let svg = qrcode::QrCode::with_error_correction_level(uri.as_bytes(), qrcode::EcLevel::M)
-        .map_err(|e| format!("qrcode build: {e}"))?
-        .render::<qrcode::render::svg::Color<'_>>()
-        .min_dimensions(256, 256)
-        .dark_color(qrcode::render::svg::Color("#101727"))
-        .light_color(qrcode::render::svg::Color("#f8fafc"))
-        .build();
-    Ok(PairingQrPayload {
-        svg,
-        uri,
-        session,
-    })
+    crate::services::sync_runtime::generate_pairing_qr_svg_inner(state.inner(), pool.inner()).await
 }
 
 /// What the frontend needs in one round trip: the SVG string for

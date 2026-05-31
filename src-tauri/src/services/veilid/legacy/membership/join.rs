@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::db::DbPool;
 use crate::state::AppState;
 use crate::state_helpers;
-use tauri::{Emitter, Manager};
+use tauri::Manager;
 
 pub(crate) struct JoinAcceptedData<'a> {
     mek_wire_bytes: &'a [u8],
@@ -363,9 +363,10 @@ pub(crate) async fn handle_join_accepted(
         );
     }
 
-    let _ = app_handle.emit(
+    crate::event_dispatch::emit_live(
+        app_handle,
         "community-event",
-        CommunityEvent::JoinAccepted {
+        &CommunityEvent::JoinAccepted {
             community_id: community_id.to_string(),
         },
     );

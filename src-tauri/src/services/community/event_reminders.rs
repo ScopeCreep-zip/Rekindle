@@ -2,7 +2,6 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
-use tauri::Emitter;
 
 use crate::channels::CommunityEvent;
 use crate::db::DbPool;
@@ -157,9 +156,10 @@ fn emit_reminder(state: &Arc<AppState>, reminder: &PendingReminder) {
         return;
     };
 
-    let _ = app_handle.emit(
+    crate::event_dispatch::emit_live(
+        &app_handle,
         "community-event",
-        CommunityEvent::EventReminder {
+        &CommunityEvent::EventReminder {
             community_id: reminder.community_id.clone(),
             event_id: reminder.event_id.clone(),
             title: reminder.title.clone(),

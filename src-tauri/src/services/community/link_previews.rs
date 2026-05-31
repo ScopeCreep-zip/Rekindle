@@ -10,7 +10,7 @@ use std::sync::Arc;
 use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_protocol::dht::community::permissions_v2::Permissions;
 use rekindle_types::link_preview::LinkPreview;
-use tauri::{Emitter as _, Manager};
+use tauri::Manager;
 
 use crate::channels::CommunityEvent;
 use crate::commands::community::require_permission;
@@ -75,9 +75,10 @@ pub fn handle_incoming_link_preview(
         );
         return;
     }
-    let _ = app_handle.emit(
+    crate::event_dispatch::emit_live(
+        app_handle,
         "community-event",
-        CommunityEvent::LinkPreviewReceived {
+        &CommunityEvent::LinkPreviewReceived {
             community_id: community_id.to_string(),
             sender_pseudonym: sender_pseudonym.to_string(),
             channel_id,

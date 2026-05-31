@@ -3,7 +3,7 @@ use tauri::State;
 use crate::db::DbPool;
 use crate::state::SharedState;
 
-use super::types::UnreadCountEntry;
+use crate::services::community_unread_runtime::UnreadCountEntry;
 
 #[tauri::command]
 pub async fn mark_channel_read(
@@ -14,13 +14,11 @@ pub async fn mark_channel_read(
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
     let _ = (pool, last_message_id);
-
-    let mut communities = state.communities.write();
-    if let Some(community) = communities.get_mut(&community_id) {
-        if let Some(ch) = community.channels.iter_mut().find(|c| c.id == channel_id) {
-            ch.unread_count = 0;
-        }
-    }
+    crate::services::community_unread_runtime::mark_channel_read_inner(
+        state.inner(),
+        &community_id,
+        &channel_id,
+    );
     Ok(())
 }
 
@@ -30,16 +28,5 @@ pub async fn get_unread_counts(
     state: State<'_, SharedState>,
     _pool: State<'_, DbPool>,
 ) -> Result<Vec<UnreadCountEntry>, String> {
-    let communities = state.communities.read();
-    let community = communities
-        .get(&community_id)
-        .ok_or("community not found")?;
-    Ok(community
-        .channels
-        .iter()
-        .map(|ch| UnreadCountEntry {
-            channel_id: ch.id.clone(),
-            unread_count: ch.unread_count,
-        })
-        .collect())
+    crate::services::community_unread_runtime::get_unread_counts_inner(state.inner(), &community_id)
 }

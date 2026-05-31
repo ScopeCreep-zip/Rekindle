@@ -1,4 +1,4 @@
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 
 use crate::state::SharedState;
 
@@ -40,7 +40,7 @@ pub fn handle_deep_link_url(app: &AppHandle, url: &str) {
                     .is_some_and(|state| state.identity.read().is_some());
 
                 if is_authed {
-                    let _ = app.emit("deep-link-action", action);
+                    crate::event_dispatch::emit_live(app, "deep-link-action", &action);
                 } else {
                     // Queue for replay after login
                     if let Some(state) = app.try_state::<SharedState>() {
@@ -67,7 +67,7 @@ pub fn emit_pending_deep_link(app: &AppHandle) {
                 community = %action.community_id,
                 "replaying queued deep link after login"
             );
-            let _ = app.emit("deep-link-action", action);
+            crate::event_dispatch::emit_live(app, "deep-link-action", &action);
         }
     }
 }

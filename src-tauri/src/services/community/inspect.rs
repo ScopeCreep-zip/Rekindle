@@ -88,7 +88,7 @@ pub(crate) async fn inspect_record(
         rc.get_dht_value(parsed_key.clone(), subkey, true)
             .await
             .map_err(|e| format!("get_dht_value failed during inspect sync: {e}"))?;
-        if !crate::services::sync_service::handle_community_record_change(state, &pool, record_key)
+        if !crate::services::sync_communities::handle_community_record_change(state, &pool, record_key)
             .await
         {
             continue;

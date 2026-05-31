@@ -1,44 +1,30 @@
+//! Phase 18.h.2 — chiral-split join orchestrator.
+//!
+//! Protocol primitives (identity, governance snapshot, slot claim,
+//! presence collection) live in `rekindle_governance_runtime::join` +
+//! `join_stages`. This module is the Tauri-side orchestrator that
+//! sequences them, decodes the invite payload (Stronghold + MEK cache),
+//! builds the src-tauri `CommunityState`, and spawns the background
+//! services.
+
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use rekindle_governance::merge;
-use rekindle_secrets::derive;
-use rekindle_types::governance::{GovernanceEntry, GovernanceSubkeyPayload};
+use rekindle_governance_runtime as gov_rt;
 use rekindle_types::id::PseudonymKey;
-use rekindle_types::presence::MemberPresence;
-use veilid_core::{RecordKey, SetDHTValueOptions};
+use tauri::Manager;
 
 use crate::state::{AppState, CommunityState, GossipOverlay, OnlineMember};
-use crate::state_helpers;
 
 use super::bootstrap::{fetch_bootstrap_bundle, BootstrapBundle};
-use super::helpers::{
-    default_community_name, find_invite_in_governance, open_channel_records, role_id_to_legacy_u32,
-    spawn_join_announcements,
-};
+use super::helpers::{open_channel_records, role_id_to_legacy_u32, spawn_join_announcements};
 use super::state::{build_channel_log_keys, build_channels, build_roles, join_status_label};
-
-struct GovernanceSnapshot {
-    all_entries: Vec<(PseudonymKey, Vec<GovernanceEntry>)>,
-    gov_state: rekindle_governance::state::GovernanceState,
-    name: String,
-    description: Option<String>,
-}
-
-struct JoinIdentity {
-    pseudo_hex: String,
-    pseudo: PseudonymKey,
-    pseudonym_signing: ed25519_dalek::SigningKey,
-}
 
 struct InviteContext {
     registry_key: String,
     slot_seed_hex: String,
     bootstrap_bundle: Option<BootstrapBundle>,
     mek_generation: u64,
-    /// M10.3 — pseudonym of the member who wrote the `InviteCreated`
-    /// governance entry. Used by `claim_registry_slot` to enforce the
-    /// per-inviter active-invite quota before any registry slot write.
     inviter_pseudonym: PseudonymKey,
 }
 
@@ -49,47 +35,82 @@ pub async fn join_community(
 ) -> Result<(), String> {
     let invite_code =
         invite_code.ok_or("invite code required — community join requires a valid invite link")?;
-    let rc = state_helpers::safe_routing_context(state)
-        .ok_or("Veilid node not attached — cannot join community")?;
 
-    let governance = load_governance_snapshot(&rc, governance_key_str).await?;
-    let identity = derive_join_identity(state, governance_key_str)?;
-    if governance.gov_state.bans.contains(&identity.pseudo) {
+    let app_handle = state
+        .app_handle
+        .read()
+        .clone()
+        .ok_or_else(|| "app handle unavailable".to_string())?;
+    let pool = app_handle
+        .try_state::<crate::db::DbPool>()
+        .ok_or_else(|| "DbPool state missing".to_string())?
+        .inner()
+        .clone();
+    let adapter = crate::services::governance_adapter::GovernanceAdapter::new(
+        Arc::clone(state),
+        app_handle,
+        pool,
+    );
+
+    // 1. Multi-segment governance snapshot via crate primitive (DHT scan +
+    //    W26 signature verify + multi-segment re-merge).
+    let snapshot = gov_rt::load_governance_snapshot(&adapter, governance_key_str)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // 2. Joiner identity derived from master secret + community key.
+    let identity_secret = state
+        .identity_secret
+        .lock()
+        .as_ref()
+        .copied()
+        .ok_or("identity secret not available")?;
+    let identity = gov_rt::derive_join_identity(&identity_secret, governance_key_str);
+
+    if snapshot.gov_state.bans.contains(&identity.pseudo) {
         return Err("You are banned from this community".into());
     }
 
+    // 3. Decode the invite payload + optionally fetch bootstrap bundle.
     let invite = decode_invite_context(
         state,
         governance_key_str,
         invite_code,
-        &governance.all_entries,
+        &snapshot.all_entries,
         &identity.pseudo_hex,
     )
     .await?;
-    let (registry_typed_key, claimed_segment, my_slot, slot_veilid) = claim_registry_slot(
-        state,
-        &rc,
+
+    // 4. Claim a registry slot (with auto-expand fallback).
+    let display_name = Some(crate::state_helpers::identity_display_name(state));
+    let claimed = gov_rt::claim_registry_slot(
+        &adapter,
         governance_key_str,
         &invite.registry_key,
         &invite.slot_seed_hex,
         &invite.inviter_pseudonym,
         &identity.pseudo,
         &identity.pseudonym_signing,
-        &governance.gov_state,
+        &snapshot.gov_state,
+        join_status_label(state),
+        display_name,
     )
-    .await?;
-    let (initial_peers, initial_online, known_members) = collect_initial_presence_state(
-        &rc,
-        &registry_typed_key,
-        my_slot,
-        invite.bootstrap_bundle.as_ref(),
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // 5. Initial presence state from a DHT registry scan.
+    let initial_presence = gov_rt::collect_initial_presence_state(
+        &adapter,
+        &claimed.registry_key,
+        claimed.local_subkey,
         &identity.pseudo_hex,
     )
     .await;
 
-    let channels = build_channels(&governance.gov_state);
-    let roles = build_roles(&governance.gov_state);
-    let my_role_ids = governance
+    // 6. Build the src-tauri CommunityState from all the gathered pieces.
+    let channels = build_channels(&snapshot.gov_state);
+    let roles = build_roles(&snapshot.gov_state);
+    let my_role_ids = snapshot
         .gov_state
         .role_assignments
         .get(&identity.pseudo)
@@ -97,24 +118,54 @@ pub async fn join_community(
             || vec![0],
             |rids| rids.iter().map(role_id_to_legacy_u32).collect(),
         );
-    let channel_log_keys = build_channel_log_keys(&governance.gov_state);
+    let channel_log_keys = build_channel_log_keys(&snapshot.gov_state);
+
+    let initial_peers: HashMap<String, OnlineMember> = initial_presence
+        .peers
+        .iter()
+        .map(|(pseudo_hex, m)| {
+            (
+                pseudo_hex.clone(),
+                OnlineMember {
+                    route_blob: m.route_blob.clone(),
+                    status: m.status.clone(),
+                    last_seen: m.last_seen,
+                },
+            )
+        })
+        .collect();
+    let initial_online: HashMap<String, OnlineMember> = initial_presence
+        .online
+        .iter()
+        .map(|(pseudo_hex, m)| {
+            (
+                pseudo_hex.clone(),
+                OnlineMember {
+                    route_blob: m.route_blob.clone(),
+                    status: m.status.clone(),
+                    last_seen: m.last_seen,
+                },
+            )
+        })
+        .collect();
+    let known_members: HashSet<String> = initial_presence.known_members.iter().cloned().collect();
 
     let community = CommunityState {
         id: governance_key_str.to_string(),
-        name: governance.name,
-        description: governance.description,
-        icon_hash: governance
+        name: snapshot.name,
+        description: snapshot.description,
+        icon_hash: snapshot
             .gov_state
             .metadata
             .as_ref()
             .and_then(|m| m.icon_hash.clone()),
-        banner_hash: governance
+        banner_hash: snapshot
             .gov_state
             .metadata
             .as_ref()
             .and_then(|m| m.banner_hash.clone()),
         channels,
-        categories: governance
+        categories: snapshot
             .gov_state
             .categories
             .iter()
@@ -130,10 +181,10 @@ pub async fn join_community(
         my_pseudonym_key: Some(identity.pseudo_hex.clone()),
         mek_generation: invite.mek_generation,
         member_registry_key: Some(invite.registry_key.clone()),
-        my_subkey_index: Some(my_slot),
-        my_segment_index: Some(claimed_segment),
+        my_subkey_index: Some(claimed.local_subkey),
+        my_segment_index: Some(claimed.segment_index),
         governance_key: Some(governance_key_str.to_string()),
-        governance_state: Some(governance.gov_state),
+        governance_state: Some(snapshot.gov_state),
         lamport_counter: 0,
         gossip: Some(GossipOverlay {
             peers: initial_peers,
@@ -142,7 +193,7 @@ pub async fn join_community(
             needs_initial_sync: true,
             pending_mesh_broadcasts: std::collections::VecDeque::with_capacity(16),
         }),
-        slot_keypair: Some(slot_veilid.to_string()),
+        slot_keypair: Some(claimed.slot_keypair_str),
         channel_log_keys,
         channel_sequences: HashMap::new(),
         pending_syncs: HashMap::new(),
@@ -188,6 +239,7 @@ pub async fn join_community(
         }
     }
 
+    let rc = crate::state_helpers::safe_routing_context(state).ok_or("not attached")?;
     open_channel_records(&rc, state, governance_key_str).await;
     if let Err(e) = super::super::files::ensure_cache_open(state, governance_key_str) {
         tracing::warn!(community = %governance_key_str, error = %e, "Lost Cargo cache unavailable on join");
@@ -201,159 +253,42 @@ pub async fn join_community(
         let poll_cid = governance_key_str.to_string();
         tokio::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-            super::super::presence::start_presence_poll(poll_state, poll_cid);
+            super::super::presence::start_presence_poll(&poll_state, poll_cid);
         });
     }
     super::super::keepalive::start_dht_keepalive(state.clone(), governance_key_str.to_string());
     super::history::schedule_history_catchup(state.clone(), governance_key_str.to_string());
-    // Architecture §14.4: persist the bundle's recent_messages once
-    // MEKs have been distributed (the JoinAccepted handler delivers
-    // them into channel_mek_cache earlier in this same flow), so the
-    // joiner sees scrollback immediately.
+
     if let Some(ref bundle) = invite.bootstrap_bundle {
-        super::bootstrap::persist_bootstrap_recent_messages(
-            state,
-            governance_key_str,
-            bundle,
-        )
-        .await;
+        super::bootstrap::persist_bootstrap_recent_messages(state, governance_key_str, bundle).await;
     }
 
     spawn_join_announcements(
         state.clone(),
         governance_key_str.to_string(),
         identity.pseudo_hex,
-        my_slot,
+        claimed.local_subkey,
     );
 
     tracing::info!(
         community = %governance_key_str,
-        slot = my_slot,
+        slot = claimed.local_subkey,
         "self-sovereign join complete — SMPL slot claimed, gossip peers bootstrapped"
     );
 
     Ok(())
 }
 
-async fn load_governance_snapshot(
-    rc: &veilid_core::RoutingContext,
-    governance_key_str: &str,
-) -> Result<GovernanceSnapshot, String> {
-    // First-pass: fetch + merge from the primary (segment 0) governance.
-    let mut all_entries = fetch_governance_record_entries(rc, governance_key_str).await?;
-    let gov_state_v1 = merge::merge(&all_entries);
-
-    // Second-pass: any segments announced in v1's merged state get
-    // fetched + their entries appended. CRDT idempotence + commutativity
-    // (Almeida 2016 §3) guarantees the re-merge is canonical regardless
-    // of fetch order.
-    for segment in &gov_state_v1.segments {
-        if segment.segment_index == 0 {
-            continue;
-        }
-        match fetch_governance_record_entries(rc, &segment.governance_key).await {
-            Ok(mut extra) => all_entries.append(&mut extra),
-            Err(e) => tracing::warn!(
-                segment = segment.segment_index,
-                governance_key = %segment.governance_key,
-                error = %e,
-                "load_governance_snapshot: skipping unreachable segment governance record"
-            ),
-        }
-    }
-    let gov_state = if gov_state_v1.segments.iter().any(|s| s.segment_index > 0) {
-        merge::merge(&all_entries)
-    } else {
-        gov_state_v1
-    };
-
-    let name = gov_state.metadata.as_ref().map_or_else(
-        || default_community_name(governance_key_str),
-        |metadata| metadata.name.clone(),
-    );
-    let description = gov_state
-        .metadata
-        .as_ref()
-        .and_then(|metadata| metadata.description.clone());
-
-    Ok(GovernanceSnapshot {
-        all_entries,
-        gov_state,
-        name,
-        description,
-    })
-}
-
-async fn fetch_governance_record_entries(
-    rc: &veilid_core::RoutingContext,
-    governance_key_str: &str,
-) -> Result<Vec<(PseudonymKey, Vec<rekindle_types::governance::GovernanceEntry>)>, String> {
-    let gov_typed_key = governance_key_str
-        .parse::<RecordKey>()
-        .map_err(|e| format!("invalid governance key: {e}"))?;
-    let _gov_desc = rc
-        .open_dht_record(gov_typed_key.clone(), None)
-        .await
-        .map_err(|e| format!("failed to open governance record: {e}"))?;
-    let mut all_entries = Vec::new();
-    for subkey in 0..255u32 {
-        match rc.get_dht_value(gov_typed_key.clone(), subkey, false).await {
-            Ok(Some(value)) if !value.data().is_empty() => {
-                if let Ok(payload) = serde_json::from_slice::<GovernanceSubkeyPayload>(value.data())
-                {
-                    // Architecture §26 W26 — verify the author signature
-                    // before trusting the payload. The slot keypair on the
-                    // SMPL write is community-shared, so any member could
-                    // otherwise impersonate any other.
-                    let Ok(sig_arr): Result<[u8; 64], _> =
-                        payload.signature.as_slice().try_into()
-                    else {
-                        continue;
-                    };
-                    if rekindle_secrets::derive::verify_pseudonym_signature(
-                        &payload.author_pseudonym.0,
-                        &payload.signing_bytes(),
-                        &sig_arr,
-                    )
-                    .is_err()
-                    {
-                        continue;
-                    }
-                    all_entries.push((payload.author_pseudonym, payload.entries));
-                }
-            }
-            _ => {}
-        }
-    }
-    Ok(all_entries)
-}
-
-fn derive_join_identity(
-    state: &Arc<AppState>,
-    governance_key_str: &str,
-) -> Result<JoinIdentity, String> {
-    let master_secret = {
-        let guard = state.identity_secret.lock();
-        *guard.as_ref().ok_or("identity secret not available")?
-    };
-    let pseudonym_signing = derive::derive_community_pseudonym(&master_secret, governance_key_str);
-    let pseudo_bytes = pseudonym_signing.verifying_key().to_bytes();
-    Ok(JoinIdentity {
-        pseudo_hex: hex::encode(pseudo_bytes),
-        pseudo: PseudonymKey(pseudo_bytes),
-        pseudonym_signing,
-    })
-}
-
 async fn decode_invite_context(
     state: &Arc<AppState>,
     governance_key_str: &str,
     invite_code: &str,
-    all_entries: &[(PseudonymKey, Vec<GovernanceEntry>)],
+    all_entries: &[(PseudonymKey, Vec<rekindle_types::governance::GovernanceEntry>)],
     pseudo_hex: &str,
 ) -> Result<InviteContext, String> {
     let code_hash = rekindle_secrets::invite::hash_invite_code(invite_code);
-    let (encrypted_b64, inviter_pseudonym) = find_invite_in_governance(all_entries, &code_hash)?;
+    let (encrypted_b64, inviter_pseudonym) =
+        gov_rt::find_invite_in_entries(all_entries, &code_hash).map_err(|e| e.to_string())?;
     let encrypted = {
         use base64::Engine;
         base64::engine::general_purpose::STANDARD
@@ -410,463 +345,4 @@ async fn decode_invite_context(
         mek_generation,
         inviter_pseudonym,
     })
-}
-
-/// (segment_index, registry_key, slot_range_start) for each segment to try
-/// in claim order. Segment 0 is the inviter's registry (`invite.registry_key`);
-/// later segments come from the merged governance state's `SegmentAdded`
-/// entries (architecture §15.2).
-struct SegmentClaimCandidate {
-    segment_index: u32,
-    registry_key: String,
-    slot_range_start: u32,
-}
-
-async fn claim_registry_slot(
-    state: &Arc<AppState>,
-    rc: &veilid_core::RoutingContext,
-    community_id: &str,
-    invite_registry_key: &str,
-    slot_seed_hex: &str,
-    inviter_pseudonym: &PseudonymKey,
-    my_pseudo: &PseudonymKey,
-    pseudonym_signing: &ed25519_dalek::SigningKey,
-    gov_state: &rekindle_governance::state::GovernanceState,
-) -> Result<(RecordKey, u32, u32, veilid_core::KeyPair), String> {
-    // M10.3 — joiner-side quota check (architecture §20.6 line 2607).
-    // Reader-validates also drops over-quota InviteCreated entries at
-    // merge time (`validate.rs::InviteCreated`), but the joiner enforces
-    // explicitly here as defense-in-depth: if the joiner's local merge
-    // accepted the invite (e.g. quota was reached just after this
-    // invite's lamport), the slot claim is still refused so the joiner
-    // doesn't write a slot the rest of the community will reject.
-    if !rekindle_governance::invite_quota::check_active_invites_cap(gov_state, inviter_pseudonym) {
-        return Err("invite quota exceeded for inviter — community is rate-limiting joins".into());
-    }
-
-    let slot_seed_bytes: [u8; 32] = hex::decode(slot_seed_hex)
-        .map_err(|e| format!("invalid slot seed hex: {e}"))?
-        .try_into()
-        .map_err(|_| "slot seed must be 32 bytes")?;
-
-    // First attempt with the merged-state segment list at join time.
-    let outcome = try_claim_in_candidates(
-        rc,
-        invite_registry_key,
-        &slot_seed_bytes,
-        &gov_state.segments,
-        my_pseudo,
-        pseudonym_signing,
-        state,
-    )
-    .await?;
-    if let Some(claimed) = outcome.claimed {
-        return Ok(claimed);
-    }
-
-    // P4.3 — Plate Gate auto-expand. All candidate segments are full
-    // (last_full_segment is `Some`). If our local pseudonym holds
-    // MANAGE_COMMUNITY we expand inline and retry against the new
-    // segment; otherwise we gossip a RequestSegmentExpansion and poll
-    // governance for up to 30s waiting for any admin's SegmentAdded.
-    if let Some(full_seg) = outcome.last_full_segment {
-        return auto_expand_and_retry(
-            state,
-            rc,
-            community_id,
-            invite_registry_key,
-            &slot_seed_bytes,
-            my_pseudo,
-            pseudonym_signing,
-            full_seg,
-        )
-        .await;
-    }
-    Err("No reachable segment registry — Veilid attach may have failed".to_string())
-}
-
-struct ClaimAttemptOutcome {
-    claimed: Option<(RecordKey, u32, u32, veilid_core::KeyPair)>,
-    last_full_segment: Option<u32>,
-}
-
-async fn try_claim_in_candidates(
-    rc: &veilid_core::RoutingContext,
-    invite_registry_key: &str,
-    slot_seed_bytes: &[u8; 32],
-    governance_segments: &[rekindle_governance::state::SegmentState],
-    my_pseudo: &PseudonymKey,
-    pseudonym_signing: &ed25519_dalek::SigningKey,
-    state: &Arc<AppState>,
-) -> Result<ClaimAttemptOutcome, String> {
-    // Build the candidate list: segment 0 from the invite, plus every
-    // additional segment merged from governance. Sort ascending so we
-    // prefer the lowest-indexed segment with space (deterministic +
-    // backward-compatible with single-segment communities).
-    let mut candidates: Vec<SegmentClaimCandidate> = Vec::new();
-    candidates.push(SegmentClaimCandidate {
-        segment_index: 0,
-        registry_key: invite_registry_key.to_string(),
-        slot_range_start: 0,
-    });
-    for seg in governance_segments {
-        if seg.segment_index == 0 {
-            continue; // segment 0 is implicit
-        }
-        candidates.push(SegmentClaimCandidate {
-            segment_index: seg.segment_index,
-            registry_key: seg.registry_key.clone(),
-            slot_range_start: seg.slot_range_start,
-        });
-    }
-    candidates.sort_by_key(|c| c.segment_index);
-
-    let mut last_full_segment: Option<u32> = None;
-    for candidate in &candidates {
-        let registry_typed_key = match candidate.registry_key.parse::<RecordKey>() {
-            Ok(k) => k,
-            Err(e) => {
-                tracing::warn!(
-                    segment = candidate.segment_index,
-                    error = %e,
-                    "claim_registry_slot: invalid registry key — skipping segment"
-                );
-                continue;
-            }
-        };
-
-        let _reg_desc = match rc.open_dht_record(registry_typed_key.clone(), None).await {
-            Ok(d) => d,
-            Err(e) => {
-                tracing::warn!(
-                    segment = candidate.segment_index,
-                    error = %e,
-                    "claim_registry_slot: failed to open segment registry — skipping"
-                );
-                continue;
-            }
-        };
-        let report = rc
-            .inspect_dht_record(
-                registry_typed_key.clone(),
-                Some(veilid_core::ValueSubkeyRangeSet::full()),
-                veilid_core::DHTReportScope::UpdateGet,
-            )
-            .await
-            .map_err(|e| format!("registry inspect failed (segment {}): {e}", candidate.segment_index))?;
-
-        let Some(local_subkey) = (0..255u32).find(|subkey| {
-            report
-                .network_seqs()
-                .get(*subkey as usize)
-                .is_some_and(|seq| *seq == veilid_core::ValueSeqNum::default())
-        }) else {
-            last_full_segment = Some(candidate.segment_index);
-            continue;
-        };
-
-        // Slot keypair derivation uses the GLOBAL slot index (architecture
-        // §8.3 + §15.2 — slot 255 = local subkey 0 of segment 1, etc.).
-        let global_slot = candidate.slot_range_start + local_subkey;
-        let slot_kp = derive::derive_slot_keypair(slot_seed_bytes, global_slot)
-            .map_err(|e| format!("slot keypair derivation failed: {e}"))?;
-        let slot_veilid = super::super::create::slot_signing_to_veilid(&slot_kp);
-        let mut presence = MemberPresence {
-            pseudonym_key: my_pseudo.clone(),
-            display_name: Some(state_helpers::identity_display_name(state)),
-            status: join_status_label(state).into(),
-            route_blob: vec![],
-            last_heartbeat: rekindle_utils::timestamp_secs(),
-            ..Default::default()
-        };
-        let presence_sig =
-            derive::sign_with_pseudonym(pseudonym_signing, &presence.signing_bytes());
-        presence.signature = presence_sig.to_vec();
-        let presence_bytes = serde_json::to_vec(&presence)
-            .map_err(|e| format!("presence serialization failed: {e}"))?;
-        rc.set_dht_value(
-            registry_typed_key.clone(),
-            local_subkey,
-            presence_bytes,
-            Some(SetDHTValueOptions {
-                writer: Some(slot_veilid.clone()),
-                ..Default::default()
-            }),
-        )
-        .await
-        .map_err(|e| format!("slot claim write failed: {e}"))?;
-
-        let verify = rc
-            .get_dht_value(registry_typed_key.clone(), local_subkey, true)
-            .await
-            .map_err(|e| format!("slot verification read failed: {e}"))?
-            .ok_or("slot read-back returned empty after write")?;
-        let written: MemberPresence = serde_json::from_slice(verify.data())
-            .map_err(|e| format!("slot read-back deserialization failed: {e}"))?;
-        if written.pseudonym_key != *my_pseudo {
-            // Slot collision (architecture §6.4) — another joiner won
-            // this slot. Try the next subkey in this same segment by
-            // continuing the outer loop with a slot_range bump? Simpler:
-            // surface the error so the caller can retry the join.
-            return Err(format!(
-                "Slot collision in segment {} — another member claimed this slot. Please retry.",
-                candidate.segment_index
-            ));
-        }
-
-        return Ok(ClaimAttemptOutcome {
-            claimed: Some((registry_typed_key, candidate.segment_index, local_subkey, slot_veilid)),
-            last_full_segment,
-        });
-    }
-
-    Ok(ClaimAttemptOutcome {
-        claimed: None,
-        last_full_segment,
-    })
-}
-
-/// P4.3 — handle the "all segments full" path: trigger an expansion
-/// (inline if we have `MANAGE_COMMUNITY`, otherwise gossip-request and
-/// wait for an admin), then retry slot claim once.
-async fn auto_expand_and_retry(
-    state: &Arc<AppState>,
-    rc: &veilid_core::RoutingContext,
-    community_id: &str,
-    invite_registry_key: &str,
-    slot_seed_bytes: &[u8; 32],
-    my_pseudo: &PseudonymKey,
-    pseudonym_signing: &ed25519_dalek::SigningKey,
-    full_segment_index: u32,
-) -> Result<(RecordKey, u32, u32, veilid_core::KeyPair), String> {
-    use rekindle_governance::permissions::compute_permissions;
-    use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
-    use rekindle_types::permissions::MANAGE_COMMUNITY;
-
-    let (have_manage_community, requester_pseudonym) = {
-        let communities = state.communities.read();
-        let cs = communities.get(community_id);
-        let pseudo_hex = cs.and_then(|c| c.my_pseudonym_key.clone()).unwrap_or_default();
-        let perms = cs.and_then(|c| c.governance_state.as_ref()).map_or(0, |gov| {
-            compute_permissions(my_pseudo, None, gov, rekindle_utils::time::timestamp_secs())
-        });
-        ((perms & MANAGE_COMMUNITY) != 0, pseudo_hex)
-    };
-
-    // Surface the wait state to the user via a SystemAlert
-    // notification BEFORE either expansion path runs — the inline
-    // admin path still takes seconds for the SegmentAdded write +
-    // merge, and the gossip path needs the user to understand the 30s
-    // delay isn't a hung join. The frontend's NotificationPanel
-    // displays this immediately; success or failure is reported by
-    // the join command's own Result via the existing
-    // `Failed to join community: ${e}` toast template (P4.4).
-    emit_join_pending_alert(state, have_manage_community);
-
-    if have_manage_community {
-        // Inline path — we are an admin; call expand_community_segment
-        // ourselves. After the SegmentAdded entry is written and merged
-        // into our local state, retry slot claim once against the new
-        // segment list.
-        tracing::info!(
-            community = %community_id,
-            full_segment_index,
-            "Plate Gate: joiner has MANAGE_COMMUNITY — expanding inline"
-        );
-        super::super::segments::expand_community_segment(state, community_id)
-            .await
-            .map_err(|e| format!("inline segment expansion failed: {e}"))?;
-    } else {
-        // Gossip path — request expansion from any online admin and
-        // poll governance for the new segment. Inviter's responder
-        // election (`select_request_responder` analog) isn't necessary
-        // here because we want any admin to act; first to expand wins
-        // via CRDT (later admins' attempts no-op when they see the
-        // segment already exists in their merged state).
-        tracing::info!(
-            community = %community_id,
-            full_segment_index,
-            "Plate Gate: joiner lacks MANAGE_COMMUNITY — gossiping RequestSegmentExpansion"
-        );
-        let envelope =
-            CommunityEnvelope::Control(ControlPayload::RequestSegmentExpansion {
-                community_id: community_id.to_string(),
-                requester_pseudonym,
-                full_segment_index,
-            });
-        super::super::send_to_mesh(state, community_id, &envelope)
-            .map_err(|e| format!("RequestSegmentExpansion broadcast failed: {e}"))?;
-    }
-
-    // Wait up to 30s for the new segment to land in our merged
-    // governance state. Poll every 500ms — quicker than a watch-driven
-    // notify, simpler than a Notify channel, and bounded.
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
-    let mut new_segments: Vec<rekindle_governance::state::SegmentState>;
-    loop {
-        new_segments = state_helpers::governance_state(state, community_id)
-            .map(|gov| gov.segments)
-            .unwrap_or_default();
-        let max_seg = new_segments.iter().map(|s| s.segment_index).max().unwrap_or(0);
-        if max_seg > full_segment_index {
-            break;
-        }
-        if std::time::Instant::now() >= deadline {
-            return Err(format!(
-                "Community is full and no admin expanded within 30s. The community has {} active segment(s); admins must run expand_community_segment to grow it.",
-                new_segments.len() + 1 // +1 because segment 0 is implicit
-            ));
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-    }
-
-    // Retry once with the post-expansion segment list.
-    let outcome = try_claim_in_candidates(
-        rc,
-        invite_registry_key,
-        slot_seed_bytes,
-        &new_segments,
-        my_pseudo,
-        pseudonym_signing,
-        state,
-    )
-    .await?;
-    if let Some(claimed) = outcome.claimed {
-        return Ok(claimed);
-    }
-    // Brand-new segment shouldn't already be full (255 slots, single
-    // joiner). If we hit this it's a race against many concurrent
-    // joiners; surface so the caller can retry the entire join.
-    Err("Community segment expanded but still full — concurrent joiner race; please retry".into())
-}
-
-/// W11.x completeness — emit a `SystemAlert` notification so the user
-/// understands the 30-second wait during Plate Gate auto-expand isn't
-/// a hung join. The body diverges by path:
-/// - Admin joiner: "expanding the community" (sub-second to seconds)
-/// - Non-admin joiner: "waiting for an admin to expand" (up to 30s)
-fn emit_join_pending_alert(state: &Arc<AppState>, have_manage_community: bool) {
-    use crate::channels::NotificationEvent;
-    use tauri::Emitter;
-    let Some(app) = state.app_handle.read().clone() else {
-        return;
-    };
-    let body = if have_manage_community {
-        "Community is full — expanding capacity. This will take a few seconds.".to_string()
-    } else {
-        "Community is full — waiting for an admin to expand it. Up to 30 seconds.".to_string()
-    };
-    let _ = app.emit(
-        "notification-event",
-        &NotificationEvent::SystemAlert {
-            title: "Joining community…".to_string(),
-            body,
-        },
-    );
-}
-
-async fn collect_initial_presence_state(
-    rc: &veilid_core::RoutingContext,
-    registry_typed_key: &RecordKey,
-    my_slot: u32,
-    bootstrap_bundle: Option<&BootstrapBundle>,
-    my_pseudo_hex: &str,
-) -> (
-    HashMap<String, OnlineMember>,
-    HashMap<String, OnlineMember>,
-    HashSet<String>,
-) {
-    let mut initial_peers = HashMap::new();
-    let mut initial_online = HashMap::new();
-    let mut known_members = HashSet::new();
-    known_members.insert(my_pseudo_hex.to_string());
-
-    if let Some(bundle) = bootstrap_bundle {
-        tracing::info!(
-            governance_entries = bundle.governance_entry_count,
-            member_list = bundle.member_list.len(),
-            channel_meks = bundle.channel_mek_count,
-            recent_messages = bundle.recent_messages.len(),
-            has_wrapped_owner_keypair = bundle.has_wrapped_owner_keypair,
-            "bootstrap bundle received; warming peer state before DHT verification"
-        );
-        // Architecture §26 W26 — the bundle comes from the inviter and
-        // the per-member entries are NOT individually signed (they're
-        // the inviter's local view, not signed presence rows). A
-        // malicious inviter could otherwise inject a bogus route_blob
-        // for a real pseudonym and cause our outbound traffic to that
-        // peer to land at attacker-controlled infrastructure. So we
-        // accept the bundle's pseudonyms as `known_members` (display
-        // hints only) but DO NOT promote them into `initial_online` —
-        // the next-step DHT registry scan reads the actual signed
-        // presence rows and is the only source for routing data.
-        for member in &bundle.member_list {
-            known_members.insert(member.pseudonym_key.clone());
-        }
-    }
-
-    for subkey in 0..255u32 {
-        if subkey == my_slot {
-            continue;
-        }
-        if let Ok(Some(val)) = rc
-            .get_dht_value(registry_typed_key.clone(), subkey, false)
-            .await
-        {
-            if val.data().is_empty() {
-                continue;
-            }
-            if let Ok(presence) = serde_json::from_slice::<MemberPresence>(val.data()) {
-                // Architecture §26 W26 — verify before merging.
-                let Ok(sig_arr): Result<[u8; 64], _> =
-                    presence.signature.as_slice().try_into()
-                else {
-                    continue;
-                };
-                if rekindle_secrets::derive::verify_pseudonym_signature(
-                    &presence.pseudonym_key.0,
-                    &presence.signing_bytes(),
-                    &sig_arr,
-                )
-                .is_err()
-                {
-                    continue;
-                }
-                let pseudo_hex = hex::encode(presence.pseudonym_key.0);
-                merge_presence_entry(
-                    &mut initial_peers,
-                    &mut initial_online,
-                    &mut known_members,
-                    &pseudo_hex,
-                    &presence.status,
-                    &presence.route_blob,
-                    presence.last_heartbeat,
-                );
-            }
-        }
-    }
-
-    (initial_peers, initial_online, known_members)
-}
-
-fn merge_presence_entry(
-    initial_peers: &mut HashMap<String, OnlineMember>,
-    initial_online: &mut HashMap<String, OnlineMember>,
-    known_members: &mut HashSet<String>,
-    pseudonym_key: &str,
-    status: &str,
-    route_blob: &[u8],
-    last_seen: u64,
-) {
-    known_members.insert(pseudonym_key.to_string());
-    if status == "offline" || route_blob.is_empty() {
-        return;
-    }
-    let member = OnlineMember {
-        route_blob: route_blob.to_vec(),
-        status: status.to_string(),
-        last_seen,
-    };
-    initial_peers.insert(pseudonym_key.to_string(), member.clone());
-    initial_online.insert(pseudonym_key.to_string(), member);
 }

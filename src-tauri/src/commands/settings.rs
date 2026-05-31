@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use tauri::Emitter;
 use tauri_plugin_store::StoreExt;
 
 use crate::channels::NotificationEvent;
@@ -137,7 +136,7 @@ pub async fn check_for_updates(app: tauri::AppHandle) -> Result<bool, String> {
         let event = NotificationEvent::UpdateAvailable {
             version: "0.2.0".to_string(),
         };
-        let _ = app.emit("notification-event", &event);
+        crate::event_dispatch::emit_live(&app, "notification-event", &event);
     }
 
     Ok(has_update)

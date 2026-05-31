@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 
 use crate::channels::NotificationEvent;
 use crate::db::DbPool;
@@ -249,7 +249,7 @@ pub fn handle_attachment(
         title: "Network".to_string(),
         body: format!("Veilid network {status}"),
     };
-    let _ = app_handle.emit("notification-event", &notification);
+    crate::event_dispatch::emit_live(app_handle, "notification-event", &notification);
 
     if reconnected && public_internet_ready && state.identity.read().is_some() {
         tracing::info!(
@@ -259,8 +259,8 @@ pub fn handle_attachment(
         let state = state.clone();
         let app_handle = app_handle.clone();
         tokio::spawn(async move {
-            crate::commands::auth::open_community_dht_records_public(&state).await;
-            crate::commands::auth::rebuild_governance_from_dht_public(&state).await;
+            crate::services::governance_adapter::open_community_dht_records(&state).await;
+            crate::services::governance_adapter::rebuild_governance_from_dht(&state).await;
             let _ = sync_service::sync_friends_now(&state, &app_handle).await;
         });
     }

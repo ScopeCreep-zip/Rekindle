@@ -56,10 +56,22 @@ pub async fn decline_dm_invite(
 pub async fn send_dm_message(
     record_key: String,
     body: String,
+    idempotency_key: uuid::Uuid,
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    dm::send_dm_message(state.inner(), pool.inner(), &record_key, &body).await
+    // Phase 5 — gate writes on lifecycle.
+    let _g = rekindle_lifecycle::TransportGuard::write(&state.lifecycle)
+        .map_err(|e| e.to_string())?;
+    // Phase 8 — idempotency dedupes click-spam.
+    let state_for_cache = state.inner().clone();
+    let pool_for_cache = pool.inner().clone();
+    state
+        .idempotency
+        .wrap(idempotency_key, || async move {
+            dm::send_dm_message(&state_for_cache, &pool_for_cache, &record_key, &body).await
+        })
+        .await
 }
 
 #[tauri::command]
@@ -91,25 +103,11 @@ pub async fn send_dm_video_frame(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<u32, String> {
-    use base64::Engine as _;
-    let stream_id_bytes =
-        hex::decode(&request.stream_id_hex).map_err(|e| format!("invalid stream_id hex: {e}"))?;
-    let stream_id: [u8; 16] = stream_id_bytes
-        .as_slice()
-        .try_into()
-        .map_err(|_| "stream_id must be 16 bytes".to_string())?;
-    let payload = base64::engine::general_purpose::STANDARD
-        .decode(request.encoded_payload_b64.as_bytes())
-        .map_err(|e| format!("invalid base64 payload: {e}"))?;
-    dm::video::send_dm_video_frame(
+    crate::services::dm_runtime::send_dm_video_frame_inner(
         state.inner(),
         pool.inner(),
-        &peer_pubkey,
-        stream_id,
-        request.frame_seq,
-        request.keyframe,
-        request.timestamp,
-        &payload,
+        peer_pubkey,
+        request,
     )
     .await
 }

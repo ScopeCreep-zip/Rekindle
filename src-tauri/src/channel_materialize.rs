@@ -1,7 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use crate::commands::chat::{MessagePoll, MessagePollAnswer, ReactionGroup};
+use crate::commands::chat::{Message, MessagePoll, MessagePollAnswer, ReactionGroup};
+use crate::db::DbPool;
+use crate::db_helpers::db_call;
 use crate::state::SharedState;
+use crate::state_helpers;
 use rekindle_protocol::dht::community::channel_record::{ChannelRecordEntry, ChannelRecordItem};
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -319,6 +322,201 @@ fn sanitize_selected_answers(
     } else {
         answers.into_iter().take(1).collect()
     }
+}
+
+pub(crate) async fn load_channel_messages_from_smpl(
+    state: &SharedState,
+    pool: &DbPool,
+    community_id: &str,
+    channel_id: &str,
+    before_timestamp: Option<u64>,
+    limit: u32,
+) -> Result<Vec<Message>, String> {
+    use rekindle_protocol::dht::community::channel_record::read_all_channel_entries;
+
+    let (channel_key, my_pseudonym) = {
+        let communities = state.communities.read();
+        let community = communities.get(community_id).ok_or("community not found")?;
+        (
+            community.channel_log_keys.get(channel_id).cloned(),
+            community.my_pseudonym_key.clone().unwrap_or_default(),
+        )
+    };
+    let Some(channel_key) = channel_key else {
+        return Ok(Vec::new());
+    };
+    let Some(rc) = state_helpers::routing_context(state) else {
+        return Ok(Vec::new());
+    };
+
+    let channel_entries = read_all_channel_entries(&rc, &channel_key, 255)
+        .await
+        .map_err(|e| format!("read SMPL channel history: {e}"))?;
+
+    let subkey_pseudonyms = load_channel_subkey_pseudonyms(state, pool, community_id)
+        .await
+        .unwrap_or_default();
+    let reaction_groups = build_reaction_groups(&channel_entries, &subkey_pseudonyms);
+    let poll_states = build_poll_states(&channel_entries, &subkey_pseudonyms, &my_pseudonym);
+    let mut filtered: Vec<(
+        u32,
+        rekindle_protocol::dht::community::channel_record::ChannelMessage,
+    )> = channel_entries
+        .iter()
+        .filter_map(|item| match &item.entry {
+            ChannelRecordEntry::Message(message)
+                if before_timestamp.is_none_or(|before| message.timestamp < before) =>
+            {
+                Some((item.subkey_index, message.clone()))
+            }
+            _ => None,
+        })
+        .collect();
+    if filtered.len() > usize::try_from(limit).unwrap_or(usize::MAX) {
+        let start = filtered.len() - usize::try_from(limit).unwrap_or(filtered.len());
+        filtered = filtered.split_off(start);
+    }
+
+    if filtered.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let channel_record_key_owned = {
+        let communities = state.communities.read();
+        communities
+            .get(community_id)
+            .and_then(|c| {
+                c.channels
+                    .iter()
+                    .find(|ch| ch.id == channel_id)
+                    .and_then(|ch| ch.message_record_key.clone())
+            })
+    };
+    let hydrated_messages: Vec<Message> = filtered
+        .iter()
+        .map(|(subkey_index, message)| {
+            let decrypted = decrypt_channel_record_message(
+                state,
+                community_id,
+                channel_id,
+                message.mek_generation,
+                &message.ciphertext,
+                ChannelDecryptContext {
+                    channel_record_key: channel_record_key_owned.as_deref(),
+                    subkey_index: *subkey_index,
+                    lamport_ts: message.lamport_ts,
+                },
+            );
+            Message {
+                id: 0,
+                is_own: message.sender_pseudonym == my_pseudonym,
+                sender_id: message.sender_pseudonym.clone(),
+                body: decrypted.body,
+                decryption_failed: decrypted.decryption_failed,
+                automod_blurred: false,
+                timestamp: i64::try_from(message.timestamp).unwrap_or(i64::MAX),
+                server_message_id: message.message_id.clone(),
+                reactions: message
+                    .message_id
+                    .as_ref()
+                    .and_then(|message_id| reaction_groups.get(message_id).cloned()),
+                pinned: None,
+                poll: message
+                    .message_id
+                    .as_ref()
+                    .and_then(|message_id| poll_states.get(message_id).cloned()),
+                forwarded_from_author: None,
+                attachment: None,
+                flags: 0,
+            }
+        })
+        .collect();
+
+    if let Ok(owner_key) = state_helpers::current_owner_key(state) {
+        let chid = channel_id.to_string();
+        let messages_for_db = filtered.clone();
+        let owner_key_for_db = owner_key.clone();
+        let state_for_db = state.clone();
+        let community_id_for_db = community_id.to_string();
+        let channel_id_for_db = channel_id.to_string();
+        let channel_record_key_for_db = channel_record_key_owned.clone();
+        let _ = db_call(pool, move |conn| {
+            for (subkey_index, message) in &messages_for_db {
+                let Some(message_id) = message.message_id.as_deref() else {
+                    continue;
+                };
+                let decrypted = decrypt_channel_record_message(
+                    &state_for_db,
+                    &community_id_for_db,
+                    &channel_id_for_db,
+                    message.mek_generation,
+                    &message.ciphertext,
+                    ChannelDecryptContext {
+                        channel_record_key: channel_record_key_for_db.as_deref(),
+                        subkey_index: *subkey_index,
+                        lamport_ts: message.lamport_ts,
+                    },
+                );
+                let _ = crate::message_repo::insert_channel_message_with_protocol_metadata(
+                    conn,
+                    &owner_key_for_db,
+                    &chid,
+                    &message.sender_pseudonym,
+                    &decrypted.body,
+                    i64::try_from(message.timestamp).unwrap_or(i64::MAX),
+                    true,
+                    Some(i64::try_from(message.mek_generation).unwrap_or(i64::MAX)),
+                    message_id,
+                    message.lamport_ts,
+                    false,
+                );
+            }
+            Ok(())
+        })
+        .await;
+    }
+
+    Ok(hydrated_messages)
+}
+
+async fn load_channel_subkey_pseudonyms(
+    state: &SharedState,
+    pool: &DbPool,
+    community_id: &str,
+) -> Result<HashMap<u32, String>, String> {
+    let mut subkeys = {
+        let communities = state.communities.read();
+        let mut subkeys = HashMap::new();
+        if let Some(community) = communities.get(community_id) {
+            if let (Some(my_subkey_index), Some(my_pseudonym_key)) = (
+                community.my_subkey_index,
+                community.my_pseudonym_key.clone(),
+            ) {
+                subkeys.insert(my_subkey_index, my_pseudonym_key);
+            }
+        }
+        subkeys
+    };
+    let owner_key = state_helpers::current_owner_key(state)?;
+    let community_id = community_id.to_string();
+    let db_subkeys = db_call(pool, move |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT pseudonym_key, subkey_index FROM community_members \
+             WHERE owner_key = ?1 AND community_id = ?2 AND subkey_index IS NOT NULL",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![owner_key, community_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                u32::try_from(row.get::<_, i64>(1)?).unwrap_or_default(),
+            ))
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()
+    })
+    .await?;
+    for (pseudonym_key, subkey_index) in db_subkeys {
+        subkeys.insert(subkey_index, pseudonym_key);
+    }
+    Ok(subkeys)
 }
 
 #[cfg(test)]

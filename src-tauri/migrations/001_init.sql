@@ -241,6 +241,21 @@ CREATE TABLE IF NOT EXISTS pending_messages (
 
 CREATE INDEX IF NOT EXISTS idx_pending_recipient ON pending_messages (owner_key, recipient_key);
 
+-- Phase 4 — tamper-evident audit chain. One row per audit-worthy action
+-- (friend add/remove, channel join/leave, identity rotate, vault unlock).
+-- `mac = BLAKE3-keyed(audit_mac_key, prev_mac || cursor_le || payload_json)`.
+-- Verified by the `audit_verify` Tauri command and on vault unlock; a
+-- broken chain emits `SystemEvent::AuditChainBroken` and a typed
+-- `notification-event` toast.
+CREATE TABLE IF NOT EXISTS audit_entries (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    cursor INTEGER NOT NULL,
+    prev_mac BLOB NOT NULL,
+    mac BLOB NOT NULL,
+    payload_json TEXT NOT NULL,
+    PRIMARY KEY (owner_key, cursor)
+);
+
 -- W16.1 / W16.9 — unified envelope retry queue (the rekindle-transport
 -- `EnvelopeStore` trait persisted via SQLite for the Tauri shell).
 -- Replaces the legacy `pending_messages` use for envelope retries

@@ -1,22 +1,18 @@
-//! Inbound DM dispatch: persist invite, surface notification.
+//! Phase 13 — thin facade for inbound DM dispatch.
 //!
-//! Per architecture §27.1, a `DmInvite` arrives via `app_message`/`app_call`
-//! after the friend has already created the SMPL record. Bob's job here
-//! is to (1) persist the row in `dms` so the UI can render the invite,
-//! (2) emit a `DirectMessageInvite` chat event so the frontend can
-//! prompt accept/decline. Acceptance opens the SMPL record writable;
-//! decline sends `DmDecline` and deletes the row.
+//! All business logic moved to `rekindle_dm::ingest::*`. This file
+//! preserves the existing function signatures used by
+//! `message_service::handle_incoming_message` so the dispatcher arms
+//! don't need to change shape. Each function builds a `DmAdapter` and
+//! delegates.
 
 use std::sync::Arc;
 
-use rekindle_dm::GroupDmParticipant;
-use tauri::Emitter;
-
-use crate::channels::ChatEvent;
 use crate::db::DbPool;
+use crate::services::dm_adapter::DmAdapter;
 use crate::state::AppState;
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "thin facade preserving message_service dispatcher arm signature")]
 pub async fn handle_incoming_dm_invite(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
@@ -28,43 +24,18 @@ pub async fn handle_incoming_dm_invite(
     alice_subkey: u32,
     bob_subkey: u32,
 ) -> Result<(), String> {
-    let participants = vec![
-        GroupDmParticipant {
-            pseudonym: alice_pseudonym.to_string(),
-            subkey: alice_subkey,
-            public_key: sender_hex.to_string(),
-        },
-        // Our slot — public_key filled in when we accept and derive.
-        GroupDmParticipant {
-            pseudonym: String::new(),
-            subkey: bob_subkey,
-            public_key: String::new(),
-        },
-    ];
-    super::store::persist_dm_invite_pending(
-        state,
-        pool,
-        record_key,
-        false,
+    let adapter = DmAdapter::new(Arc::clone(state), app_handle.clone(), pool.clone());
+    rekindle_dm::handle_incoming_dm_invite(
+        &*adapter,
         sender_hex,
+        record_key,
+        slot_seed,
         alice_pseudonym,
+        alice_subkey,
         bob_subkey,
-        &participants,
-        0,
-        &hex::encode(slot_seed),
-        None,
     )
-    .await?;
-    let _ = app_handle.emit(
-        "chat-event",
-        &ChatEvent::DirectMessageInvite {
-            from: sender_hex.to_string(),
-            record_key: record_key.to_string(),
-            initiator_pseudonym: alice_pseudonym.to_string(),
-            is_group: false,
-        },
-    );
-    Ok(())
+    .await
+    .map_err(|e| e.to_string())
 }
 
 pub async fn handle_incoming_dm_decline(
@@ -72,10 +43,15 @@ pub async fn handle_incoming_dm_decline(
     pool: &DbPool,
     record_key: &str,
 ) -> Result<(), String> {
-    super::store::decline_dm_invite(state, pool, record_key).await
+    let app_handle = crate::state_helpers::app_handle(state)
+        .ok_or_else(|| "app handle unavailable".to_string())?;
+    let adapter = DmAdapter::new(Arc::clone(state), app_handle, pool.clone());
+    rekindle_dm::handle_incoming_dm_decline(&*adapter, record_key)
+        .await
+        .map_err(|e| e.to_string())
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "thin facade preserving message_service dispatcher arm signature")]
 pub async fn handle_incoming_group_dm_invite(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
@@ -88,56 +64,31 @@ pub async fn handle_incoming_group_dm_invite(
     wrapped_mek: &[u8],
     mek_generation: u32,
 ) -> Result<(), String> {
-    let participants: Vec<GroupDmParticipant> = serde_json::from_str(participants_json)
-        .map_err(|e| format!("invalid participants_json: {e}"))?;
-    // Architecture §27.2: each `GroupDmParticipant` carries a `public_key`
-    // for verification. Bob finds *his* slot by matching against his own
-    // identity public key — not against the sender, which is the
-    // initiator and lives in their own slot.
-    let my_pubkey_hex = {
-        let secret = state.identity_secret.lock();
-        let secret_bytes = (*secret).ok_or_else(|| "identity not unlocked".to_string())?;
-        let identity = rekindle_crypto::Identity::from_secret_bytes(&secret_bytes);
-        identity.public_key_hex()
-    };
-    let my_subkey = participants
-        .iter()
-        .find(|p| p.public_key.eq_ignore_ascii_case(&my_pubkey_hex))
-        .ok_or_else(|| {
-            "my pubkey not in group dm participants — invite not addressed to us".to_string()
-        })?
-        .subkey;
-    super::store::persist_dm_invite_pending(
-        state,
-        pool,
-        record_key,
-        true,
+    let adapter = DmAdapter::new(Arc::clone(state), app_handle.clone(), pool.clone());
+    rekindle_dm::handle_incoming_group_dm_invite(
+        &*adapter,
         sender_hex,
+        record_key,
+        slot_seed,
         initiator_pseudonym,
-        my_subkey,
-        &participants,
+        participants_json,
+        wrapped_mek,
         mek_generation,
-        &hex::encode(slot_seed),
-        Some(wrapped_mek),
     )
-    .await?;
-    let _ = app_handle.emit(
-        "chat-event",
-        &ChatEvent::DirectMessageInvite {
-            from: sender_hex.to_string(),
-            record_key: record_key.to_string(),
-            initiator_pseudonym: initiator_pseudonym.to_string(),
-            is_group: true,
-        },
-    );
-    Ok(())
+    .await
+    .map_err(|e| e.to_string())
 }
 
 pub async fn handle_incoming_dm_leave(
     state: &Arc<AppState>,
     pool: &DbPool,
-    _sender_hex: &str,
+    sender_hex: &str,
     record_key: &str,
 ) -> Result<(), String> {
-    super::store::decline_dm_invite(state, pool, record_key).await
+    let app_handle = crate::state_helpers::app_handle(state)
+        .ok_or_else(|| "app handle unavailable".to_string())?;
+    let adapter = DmAdapter::new(Arc::clone(state), app_handle, pool.clone());
+    rekindle_dm::handle_incoming_dm_leave(&*adapter, sender_hex, record_key)
+        .await
+        .map_err(|e| e.to_string())
 }

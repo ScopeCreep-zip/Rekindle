@@ -18,14 +18,25 @@ tauri-build = { version = "2", features = [] }
 # v2.0 crates (flat governance)
 rekindle-types = { path = "../crates/rekindle-types" }
 rekindle-secrets = { path = "../crates/rekindle-secrets" }
+rekindle-events = { path = "../crates/rekindle-events" }
+rekindle-vault = { path = "../crates/rekindle-vault" }
+rekindle-audit = { path = "../crates/rekindle-audit" }
+rekindle-lifecycle = { path = "../crates/rekindle-lifecycle" }
+rekindle-friendship = { path = "../crates/rekindle-friendship" }
+rekindle-idempotency = { path = "../crates/rekindle-idempotency" }
 rekindle-governance = { path = "../crates/rekindle-governance" }
 rekindle-codec = { path = "../crates/rekindle-codec" }
 rekindle-gossip = { path = "../crates/rekindle-gossip" }
+rekindle-presence = { path = "../crates/rekindle-presence" }
 rekindle-records = { path = "../crates/rekindle-records" }
 rekindle-files = { path = "../crates/rekindle-files" }
 rekindle-dm = { path = "../crates/rekindle-dm" }
 rekindle-calls = { path = "../crates/rekindle-calls" }
 rekindle-video = { path = "../crates/rekindle-video" }
+rekindle-mek-rotation = { path = "../crates/rekindle-mek-rotation" }
+rekindle-governance-runtime = { path = "../crates/rekindle-governance-runtime" }
+rekindle-channel = { path = "../crates/rekindle-channel" }
+rekindle-analytics = { path = "../crates/rekindle-analytics" }
 rekindle-link-preview = { path = "../crates/rekindle-link-preview" }
 rekindle-route = { path = "../crates/rekindle-route" }
 rekindle-sync = { path = "../crates/rekindle-sync" }
@@ -70,7 +81,6 @@ parking_lot = { workspace = true }
 rusqlite = { version = "0.37", features = ["bundled"] }
 tokio-rusqlite = "0.7"
 argon2 = "0.5"
-iota_stronghold = "2.1"
 zeroize = "1"
 hex = "0.4"
 blake3 = "1"

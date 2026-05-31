@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use tauri::Emitter;
 use tauri_plugin_store::StoreExt;
 use tokio::sync::mpsc;
 
@@ -381,7 +380,8 @@ fn emit_status_change(app_handle: &tauri::AppHandle, state: &Arc<AppState>, stat
         UserStatus::Busy => "busy",
         UserStatus::Offline | UserStatus::Invisible => "offline",
     };
-    let _ = app_handle.emit(
+    crate::event_dispatch::emit_live(
+        app_handle,
         "presence-event",
         &crate::channels::PresenceEvent::StatusChanged {
             public_key: pk,

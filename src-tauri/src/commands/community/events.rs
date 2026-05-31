@@ -1,108 +1,36 @@
-use tauri::{Emitter, State};
+use tauri::State;
 
-use super::helpers::{random_nonce, require_permission};
 use crate::db::DbPool;
-use crate::db_helpers::db_call;
+use crate::services::community_event_runtime::{
+    cancel_event_inner, delete_event_inner, edit_event_inner, get_events_inner,
+    set_event_rsvp_inner,
+};
 use crate::state::SharedState;
-use crate::state_helpers;
-use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
-use rekindle_protocol::dht::community::permissions_v2::Permissions;
 
 pub use crate::channels::community_channel::EventInfoDto;
 pub use crate::channels::community_channel::EventRsvpInfoDto;
 
-fn normalize_rsvp_status(status: &str) -> String {
-    match status {
-        "maybe" => "interested".to_string(),
-        "going" | "interested" | "declined" => status.to_string(),
-        _ => "declined".to_string(),
-    }
-}
-
 #[tauri::command]
 pub async fn create_event(
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
+    _pool: State<'_, DbPool>,
     community_id: String,
     request: CreateEventRequest,
 ) -> Result<String, String> {
-    require_permission(state.inner(), &community_id, Permissions::MANAGE_EVENTS)?;
-    let _ = pool;
-    let title = request.title;
-    let description = request.description;
-    if title.chars().count() > rekindle_types::event::MAX_EVENT_NAME_CHARS {
-        return Err(format!(
-            "event name exceeds {} characters (architecture §21)",
-            rekindle_types::event::MAX_EVENT_NAME_CHARS
-        ));
-    }
-    if description.chars().count() > rekindle_types::event::MAX_EVENT_DESCRIPTION_CHARS {
-        return Err(format!(
-            "event description exceeds {} characters (architecture §21)",
-            rekindle_types::event::MAX_EVENT_DESCRIPTION_CHARS
-        ));
-    }
-    let event_id = format!("evt_{}", hex::encode(random_nonce(8)));
-
-    let creator_pseudonym = {
-        let communities = state.communities.read();
-        communities
-            .get(&community_id)
-            .and_then(|c| c.my_pseudonym_key.clone())
-            .unwrap_or_default()
-    };
-    let event = EventInfoDto {
-        id: event_id.clone(),
-        title: title.clone(),
-        description: description.clone(),
-        creator_pseudonym: creator_pseudonym.clone(),
-        start_time: request.start_time,
-        end_time: request.end_time,
-        channel_id: request.channel_id.clone(),
-        max_attendees: request.max_attendees,
-        created_at: rekindle_utils::timestamp_secs(),
-        status: "scheduled".to_string(),
-        rsvps: Vec::new(),
-        cover_image_ref: request.cover_image_ref.clone(),
-        recurrence: request.recurrence.clone(),
-        location: request.location.clone(),
-    };
-
-    // Architecture §21 line 2642 — events persist as governance entries
-    // so they survive across restarts and replay deterministically on
-    // every peer. The control-payload broadcast below is the fast UX
-    // path (immediate frontend update); governance is the durable one.
-    let lamport = state_helpers::increment_lamport(state.inner(), &community_id);
-    let governance_event_id = parse_event_id(&event_id);
-    crate::services::community::write_entry(
+    crate::services::community_event_runtime::create_event_inner(
         state.inner(),
         &community_id,
-        rekindle_types::governance::GovernanceEntry::EventCreated {
-            event_id: governance_event_id,
-            name: title,
-            description: Some(description),
-            start_time: request.start_time,
-            end_time: request.end_time,
-            channel_id: request.channel_id.as_deref().map(parse_channel_id),
-            cover_image_ref: request.cover_image_ref,
-            creator_pseudonym: parse_pseudonym(&creator_pseudonym),
-            recurrence: request.recurrence,
-            location: request.location,
-            status: Some(rekindle_types::event::EventStatus::Scheduled),
-            lamport,
-        },
+        request.title,
+        request.description,
+        request.start_time,
+        request.end_time,
+        request.channel_id,
+        request.max_attendees,
+        request.cover_image_ref,
+        request.recurrence,
+        request.location,
     )
-    .await?;
-
-    crate::services::community::send_to_mesh(
-        state.inner(),
-        &community_id,
-        &CommunityEnvelope::Control(ControlPayload::EventCreated {
-            event: event.clone(),
-        }),
-    )?;
-
-    Ok(event_id)
+    .await
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -122,37 +50,9 @@ pub struct CreateEventRequest {
     pub location: Option<rekindle_types::event::EventLocation>,
 }
 
-/// Parse the legacy `evt_{16hex}` event_id into the 16-byte EventId
-/// the governance entry expects. Returns zero-bytes on parse failure
-/// — the entry would still write but be rejected by the CRDT validate
-/// pass; callers should ensure the random_nonce flow generates valid
-/// hex.
-fn parse_event_id(id: &str) -> rekindle_types::id::EventId {
-    let stripped = id.strip_prefix("evt_").unwrap_or(id);
-    let mut buf = [0u8; 16];
-    if let Ok(decoded) = hex::decode(stripped) {
-        let len = decoded.len().min(16);
-        buf[..len].copy_from_slice(&decoded[..len]);
-    }
-    rekindle_types::id::EventId(buf)
-}
-
-fn parse_channel_id(id: &str) -> rekindle_types::id::ChannelId {
-    let mut buf = [0u8; 16];
-    if let Ok(decoded) = hex::decode(id) {
-        let len = decoded.len().min(16);
-        buf[..len].copy_from_slice(&decoded[..len]);
-    }
-    rekindle_types::id::ChannelId(buf)
-}
-
-fn parse_pseudonym(hex_str: &str) -> Option<rekindle_types::id::PseudonymKey> {
-    let bytes = hex::decode(hex_str).ok()?;
-    let arr: [u8; 32] = bytes.as_slice().try_into().ok()?;
-    Some(rekindle_types::id::PseudonymKey(arr))
-}
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments, reason = "Tauri command surface — matches edit_event partial-update payload")]
 pub async fn edit_event(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
@@ -165,50 +65,28 @@ pub async fn edit_event(
     channel_id: Option<String>,
     max_attendees: Option<u32>,
 ) -> Result<(), String> {
-    require_permission(state.inner(), &community_id, Permissions::MANAGE_EVENTS)?;
-    let events = get_events(state.clone(), pool.clone(), community_id.clone()).await?;
-    let Some(existing) = events.into_iter().find(|event| event.id == event_id) else {
-        return Err("event not found".into());
-    };
-    let event = EventInfoDto {
-        id: existing.id,
-        title: title.unwrap_or(existing.title),
-        description: description.unwrap_or(existing.description),
-        creator_pseudonym: existing.creator_pseudonym,
-        start_time: start_time.unwrap_or(existing.start_time),
-        end_time: end_time.or(existing.end_time),
-        channel_id: channel_id.or(existing.channel_id),
-        max_attendees: max_attendees.or(existing.max_attendees),
-        created_at: existing.created_at,
-        status: existing.status,
-        rsvps: existing.rsvps,
-        cover_image_ref: existing.cover_image_ref,
-        recurrence: existing.recurrence,
-        location: existing.location,
-    };
-    crate::services::community::send_to_mesh(
+    edit_event_inner(
         state.inner(),
-        &community_id,
-        &CommunityEnvelope::Control(ControlPayload::EventUpdated {
-            event: event.clone(),
-        }),
+        pool.inner(),
+        community_id,
+        event_id,
+        title,
+        description,
+        start_time,
+        end_time,
+        channel_id,
+        max_attendees,
     )
+    .await
 }
 
 #[tauri::command]
 pub async fn delete_event(
     state: State<'_, SharedState>,
-    pool: State<'_, DbPool>,
     community_id: String,
     event_id: String,
 ) -> Result<(), String> {
-    require_permission(state.inner(), &community_id, Permissions::MANAGE_EVENTS)?;
-    let _ = pool;
-    crate::services::community::send_to_mesh(
-        state.inner(),
-        &community_id,
-        &CommunityEnvelope::Control(ControlPayload::EventDeleted { event_id }),
-    )
+    delete_event_inner(state.inner(), &community_id, event_id)
 }
 
 #[tauri::command]
@@ -218,22 +96,7 @@ pub async fn cancel_event(
     community_id: String,
     event_id: String,
 ) -> Result<(), String> {
-    require_permission(state.inner(), &community_id, Permissions::MANAGE_EVENTS)?;
-    let events = get_events(state.clone(), pool.clone(), community_id.clone()).await?;
-    let Some(existing) = events.into_iter().find(|event| event.id == event_id) else {
-        return Err("event not found".into());
-    };
-    let event = EventInfoDto {
-        status: "cancelled".to_string(),
-        ..existing
-    };
-    crate::services::community::send_to_mesh(
-        state.inner(),
-        &community_id,
-        &CommunityEnvelope::Control(ControlPayload::EventUpdated {
-            event: event.clone(),
-        }),
-    )
+    cancel_event_inner(state.inner(), pool.inner(), community_id, event_id).await
 }
 
 #[tauri::command]
@@ -255,86 +118,7 @@ pub async fn set_event_rsvp(
     event_id: String,
     status: String,
 ) -> Result<(), String> {
-    require_permission(state.inner(), &community_id, Permissions::VIEW_CHANNEL)?;
-    let normalized_status = normalize_rsvp_status(&status);
-    let pseudonym_key = {
-        let communities = state.communities.read();
-        communities
-            .get(&community_id)
-            .and_then(|c| c.my_pseudonym_key.clone())
-            .unwrap_or_default()
-    };
-    let owner_key = state_helpers::current_owner_key(state.inner())?;
-    let community_id_for_db = community_id.clone();
-    let event_id_for_db = event_id.clone();
-    let status_for_db = normalized_status.clone();
-    db_call(pool.inner(), move |conn| {
-        conn.execute(
-            "INSERT OR REPLACE INTO community_event_rsvps \
-             (owner_key, community_id, event_id, status) VALUES (?1, ?2, ?3, ?4)",
-            rusqlite::params![
-                owner_key,
-                community_id_for_db,
-                event_id_for_db,
-                status_for_db
-            ],
-        )?;
-        Ok(())
-    })
-    .await?;
-    {
-        let mut communities = state.communities.write();
-        if let Some(community) = communities.get_mut(&community_id) {
-            community
-                .my_event_rsvps
-                .insert(event_id.clone(), normalized_status.clone());
-            let rsvps = community
-                .event_rsvps_by_event
-                .entry(event_id.clone())
-                .or_default();
-            if let Some(existing) = rsvps
-                .iter_mut()
-                .find(|entry| entry.pseudonym_key == pseudonym_key)
-            {
-                existing.status.clone_from(&normalized_status);
-            } else {
-                rsvps.push(crate::state::EventRsvpEntry {
-                    pseudonym_key: pseudonym_key.clone(),
-                    status: normalized_status.clone(),
-                });
-            }
-        }
-    }
-    crate::services::community::send_to_mesh(
-        state.inner(),
-        &community_id,
-        &CommunityEnvelope::Control(ControlPayload::EventRsvpChanged {
-            event_id: event_id.clone(),
-            pseudonym_key: pseudonym_key.clone(),
-            status: normalized_status.clone(),
-        }),
-    )?;
-    if let Some(app_handle) = state_helpers::app_handle(state.inner()) {
-        let _ = app_handle.emit(
-            "community-event",
-            crate::channels::CommunityEvent::EventRsvpChanged {
-                community_id: community_id.clone(),
-                event_id: event_id.clone(),
-                pseudonym_key,
-                status: normalized_status,
-            },
-        );
-    }
-    let state_clone = state.inner().clone();
-    let community_id_clone = community_id.clone();
-    tauri::async_runtime::spawn(async move {
-        let _ = crate::services::community::presence_poll_tick_public(
-            &state_clone,
-            &community_id_clone,
-        )
-        .await;
-    });
-    Ok(())
+    set_event_rsvp_inner(state.inner(), pool.inner(), community_id, event_id, status).await
 }
 
 #[tauri::command]
@@ -343,21 +127,11 @@ pub async fn list_event_attendees(
     community_id: String,
     event_id: String,
 ) -> Result<Vec<EventRsvpInfoDto>, String> {
-    require_permission(state.inner(), &community_id, Permissions::VIEW_CHANNEL)?;
-    let attendees = {
-        let communities = state.communities.read();
-        communities
-            .get(&community_id)
-            .and_then(|community| community.event_rsvps_by_event.get(&event_id).cloned())
-            .unwrap_or_default()
-    };
-    Ok(attendees
-        .into_iter()
-        .map(|entry| EventRsvpInfoDto {
-            pseudonym_key: entry.pseudonym_key,
-            status: entry.status,
-        })
-        .collect())
+    crate::services::community_event_runtime::list_event_attendees_inner(
+        state.inner(),
+        &community_id,
+        &event_id,
+    )
 }
 
 #[tauri::command]
@@ -366,82 +140,5 @@ pub async fn get_events(
     pool: State<'_, DbPool>,
     community_id: String,
 ) -> Result<Vec<EventInfoDto>, String> {
-    require_permission(state.inner(), &community_id, Permissions::VIEW_CHANNEL)?;
-    let owner_key = state_helpers::current_owner_key(state.inner())?;
-    let community_id_for_db = community_id.clone();
-    let mut events: Vec<EventInfoDto> = db_call(pool.inner(), move |conn| {
-        let mut stmt = conn.prepare(
-            "SELECT id, title, description, creator_pseudonym, start_time, end_time, \
-                    channel_id, max_attendees, created_at, status, \
-                    cover_image_ref, recurrence_json, location_json \
-             FROM community_events \
-             WHERE owner_key = ?1 AND community_id = ?2 \
-             ORDER BY start_time ASC",
-        )?;
-        let events: Vec<EventInfoDto> = stmt
-            .query_map(rusqlite::params![owner_key, community_id_for_db], |row| {
-                let recurrence_json: Option<String> = row.get(11).ok();
-                let location_json: Option<String> = row.get(12).ok();
-                Ok(EventInfoDto {
-                    id: row.get(0)?,
-                    title: row.get(1)?,
-                    description: row.get(2)?,
-                    creator_pseudonym: row.get(3)?,
-                    start_time: row.get::<_, i64>(4).unwrap_or(0).cast_unsigned(),
-                    end_time: row.get::<_, Option<i64>>(5)?.map(i64::cast_unsigned),
-                    channel_id: row.get(6)?,
-                    max_attendees: row.get::<_, Option<i32>>(7)?.map(i32::cast_unsigned),
-                    created_at: row.get::<_, i64>(8).unwrap_or(0).cast_unsigned(),
-                    status: row.get(9)?,
-                    rsvps: Vec::new(),
-                    cover_image_ref: row.get(10).ok(),
-                    recurrence: recurrence_json
-                        .as_deref()
-                        .and_then(|s| serde_json::from_str(s).ok()),
-                    location: location_json
-                        .as_deref()
-                        .and_then(|s| serde_json::from_str(s).ok()),
-                })
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(events)
-    })
-    .await?;
-
-    let (aggregated_rsvps, my_event_rsvps, my_pseudonym_key) = {
-        let communities = state.communities.read();
-        let community = communities.get(&community_id);
-        (
-            community
-                .map(|community| community.event_rsvps_by_event.clone())
-                .unwrap_or_default(),
-            community
-                .map(|community| community.my_event_rsvps.clone())
-                .unwrap_or_default(),
-            community.and_then(|community| community.my_pseudonym_key.clone()),
-        )
-    };
-
-    for event in &mut events {
-        if let Some(entries) = aggregated_rsvps.get(&event.id) {
-            event.rsvps = entries
-                .iter()
-                .cloned()
-                .map(|entry| EventRsvpInfoDto {
-                    pseudonym_key: entry.pseudonym_key,
-                    status: entry.status,
-                })
-                .collect();
-        } else if let (Some(status), Some(pseudonym_key)) = (
-            my_event_rsvps.get(&event.id).cloned(),
-            my_pseudonym_key.clone(),
-        ) {
-            event.rsvps = vec![EventRsvpInfoDto {
-                pseudonym_key,
-                status,
-            }];
-        }
-    }
-
-    Ok(events)
+    get_events_inner(state.inner(), pool.inner(), community_id).await
 }

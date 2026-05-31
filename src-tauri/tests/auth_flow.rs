@@ -32,6 +32,7 @@ async fn create_identity_persists_to_db_and_stronghold() {
         &state,
         &pool,
         &ks_handle,
+        None,
     )
     .await
     .expect("create_identity_core should succeed");
@@ -83,6 +84,7 @@ async fn create_identity_uses_fallback_display_name() {
         &state,
         &pool,
         &ks_handle,
+        None,
     )
     .await
     .expect("create_identity_core should succeed");
@@ -111,6 +113,7 @@ async fn login_succeeds_with_correct_passphrase() {
         &state,
         &pool,
         &ks_handle,
+        None,
     )
     .await
     .unwrap();
@@ -127,6 +130,7 @@ async fn login_succeeds_with_correct_passphrase() {
         &state,
         &pool,
         &ks_handle,
+        None,
     )
     .await
     .expect("login should succeed with correct passphrase");
@@ -161,6 +165,7 @@ async fn login_restores_same_keypair() {
         &state,
         &pool,
         &ks_handle,
+        None,
     )
     .await
     .unwrap();
@@ -177,6 +182,7 @@ async fn login_restores_same_keypair() {
         &state,
         &pool,
         &ks_handle,
+        None,
     )
     .await
     .unwrap();
@@ -201,6 +207,7 @@ async fn login_fails_with_wrong_passphrase() {
         &state,
         &pool,
         &ks_handle,
+        None,
     )
     .await
     .unwrap();
@@ -217,6 +224,7 @@ async fn login_fails_with_wrong_passphrase() {
         &state,
         &pool,
         &ks_handle,
+        None,
     )
     .await
     .expect_err("login with wrong passphrase should fail");
@@ -243,6 +251,7 @@ async fn login_fails_with_no_identity() {
         &state,
         &pool,
         &ks_handle,
+        None,
     )
     .await
     .expect_err("login with no identity should fail");
@@ -267,6 +276,7 @@ async fn create_identity_with_empty_display_name_uses_fallback() {
         &state,
         &pool,
         &ks_handle,
+        None,
     )
     .await
     .unwrap();
@@ -287,6 +297,7 @@ async fn multiple_create_login_cycles_work() {
         &state,
         &pool,
         &ks_handle,
+        None,
     )
     .await
     .unwrap();
@@ -303,6 +314,7 @@ async fn multiple_create_login_cycles_work() {
         &state,
         &pool,
         &ks_handle,
+        None,
     )
     .await
     .unwrap();

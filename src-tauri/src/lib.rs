@@ -1,17 +1,23 @@
 #![recursion_limit = "512"]
 
+pub mod channel_materialize;
 pub mod channel_repo;
+pub mod community_loader;
 mod channels;
 pub mod commands;
 pub mod db;
 pub mod db_helpers;
 mod deep_links;
 pub mod envelope_store_sqlite;
+pub mod event_dispatch;
 pub mod friend_store_sqlite;
 pub mod friend_repo;
+pub mod audit_repo;
+pub mod audit_view;
 pub mod invite_helpers;
 pub mod keystore;
 pub mod message_repo;
+pub mod message_view;
 pub mod serde_helpers;
 mod services;
 pub mod signal_stores;
@@ -38,6 +44,14 @@ fn app_invoke_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Sen
         commands::auth::logout,
         commands::auth::list_identities,
         commands::auth::delete_identity,
+        #[cfg(debug_assertions)]
+        commands::auth::pqxdh_bundle_info,
+        commands::auth::audit_verify,
+        commands::auth::audit_export,
+        commands::auth::lifecycle_current,
+        commands::auth::friendship_scan_now,
+        commands::auth::dev_disable_watch,
+        commands::event::event_resume,
         // chat
         commands::chat::prepare_chat_session,
         commands::chat::send_message,
@@ -279,6 +293,9 @@ fn app_invoke_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Sen
         commands::window::open_profile_window,
         commands::window::open_call_window,
         commands::window::get_network_status,
+        // Phase 2 — dev-only vault diagnostics (compiled out of release).
+        #[cfg(debug_assertions)]
+        commands::vault::vault_diagnostics,
     ]
 }
 
@@ -394,6 +411,48 @@ pub fn run() {
             std::fs::create_dir_all(&config_dir)
                 .map_err(|e| format!("failed to create config dir: {e}"))?;
 
+            // Phase 2 — detect leftover Stronghold-era identity files. We DO
+            // NOT auto-delete (the user can remove them manually once they've
+            // confirmed nothing else needs them); we just surface a one-shot
+            // toast on this boot so the user knows their old identities are
+            // gone and must be recreated. Plan reference:
+            // `/Users/kali/.claude/plans/memoized-dazzling-torvalds.md` § Phase 2.
+            let legacy_strongholds: Vec<std::path::PathBuf> = std::fs::read_dir(&config_dir)
+                .ok()
+                .map(|entries| {
+                    entries
+                        .flatten()
+                        .map(|e| e.path())
+                        .filter(|p| {
+                            p.file_name()
+                                .and_then(|n| n.to_str())
+                                .is_some_and(|n| n.ends_with(".stronghold"))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            if !legacy_strongholds.is_empty() {
+                tracing::warn!(
+                    count = legacy_strongholds.len(),
+                    "legacy .stronghold files detected — identity format upgraded in Phase 2"
+                );
+                let body = format!(
+                    "Found {} identity file{} from a previous Rekindle version. \
+                     Please recreate your identity. Old files were not deleted — \
+                     you can remove them manually from {}.",
+                    legacy_strongholds.len(),
+                    if legacy_strongholds.len() == 1 { "" } else { "s" },
+                    config_dir.display(),
+                );
+                let _ = app.handle().emit(
+                    "notification-event",
+                    &crate::channels::NotificationEvent::SystemAlert {
+                        title: "Identity format upgraded".to_string(),
+                        body,
+                    },
+                );
+            }
+
             // Resolve the Lost Cargo cache root (per-community sub-dirs are
             // created on first use). Stays None if the platform doesn't expose
             // an app data dir — file uploads will fail clearly in that case.
@@ -431,8 +490,63 @@ pub fn run() {
 
             app.manage(pool);
 
-            // Manage the Stronghold keystore handle (unlocked on login/create_identity)
-            app.manage(keystore::new_handle());
+            // Manage the Stronghold keystore handle (unlocked on login/create_identity).
+            // AppState owns the same `Arc<Mutex<Option<StrongholdKeystore>>>` so
+            // services with `&AppState` (audit tail-anchor persistence in
+            // particular) can reach the vault without threading Tauri State
+            // through every callsite.
+            app.manage(state_for_setup.keystore.clone());
+
+            // Phase 5 — drive the lifecycle FSM through boot. Stopped → Starting
+            // marks "Veilid attach beginning"; the dispatch loop transitions to
+            // Locked once attach completes (see services/veilid/lifecycle/status.rs).
+            let _ = state_for_setup
+                .lifecycle
+                .transition(rekindle_lifecycle::LifecycleState::Starting);
+
+            // Phase 5 — forward lifecycle transitions to the frontend so the UI
+            // can render state badges ("Reconnecting…", "Locked", etc.) live
+            // instead of polling lifecycle_current. One spawned task per
+            // process lifetime; ends when the broadcast sender drops.
+            {
+                let mut rx = state_for_setup.lifecycle.subscribe();
+                let app_for_lifecycle = app.handle().clone();
+                tokio::spawn(async move {
+                    loop {
+                        match rx.recv().await {
+                            Ok(next) => {
+                                // Phase 5 — payload shape per plan: { state, at_ms }.
+                                // Frontend renders state badges live + timestamps for
+                                // diagnostic "last transition" displays.
+                                let payload = serde_json::json!({
+                                    "state": next,
+                                    "at_ms": rekindle_utils::timestamp_ms_i64(),
+                                });
+                                crate::event_dispatch::emit_live(
+                                    &app_for_lifecycle,
+                                    "lifecycle-event",
+                                    &payload,
+                                );
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                                // Buffer overflowed (>64 queued transitions). Log
+                                // and continue; the FSM state is still authoritative
+                                // via lifecycle_current() and the next live
+                                // transition will resync the frontend.
+                                tracing::warn!(
+                                    missed = n,
+                                    "lifecycle-event forwarder lagged; missed {n} transitions",
+                                );
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                                // Sender dropped → app shutting down. Exit cleanly.
+                                tracing::debug!("lifecycle-event forwarder exiting (channel closed)");
+                                break;
+                            }
+                        }
+                    }
+                });
+            }
 
             // Note: game detection starts after login (in start_background_services)
             // to avoid burning CPU before user is authenticated.
@@ -465,12 +579,25 @@ pub fn run() {
                 }
             });
 
+            // Phase 23.A — spawn the single event-dispatch loop. Every
+            // subsequent `emit_live` / `emit_journaled` call pushes
+            // through this loop's mpsc; this is the only place
+            // `app.emit()` runs inside the app.
+            crate::event_dispatch::spawn_dispatch_loop(
+                app.handle().clone(),
+                &state_for_setup.event_dispatch,
+            );
+
             // Emit startup notification
             let notification = channels::NotificationEvent::SystemAlert {
                 title: "Rekindle".to_string(),
                 body: "Application started successfully".to_string(),
             };
-            let _ = app.emit("notification-event", &notification);
+            crate::event_dispatch::emit_now(
+                &state_for_setup,
+                "notification-event",
+                &notification,
+            );
 
             tracing::info!("Rekindle started");
             Ok(())
@@ -686,19 +813,12 @@ fn toggle_mute(app_handle: &tauri::AppHandle, state: &SharedState) {
     // Read identity key first to avoid holding two locks simultaneously
     let public_key = state_helpers::owner_key_or_default(state);
 
-    let mut ve = state.voice_engine.lock();
-    if let Some(ref mut handle) = *ve {
-        let new_muted = !handle.engine.is_muted;
-        handle.engine.set_muted(new_muted);
-        handle
-            .muted_flag
-            .store(new_muted, std::sync::atomic::Ordering::Relaxed);
-
+    if let Some(new_muted) = state.toggle_voice_mute() {
         let event = channels::VoiceEvent::UserMuted {
             public_key,
             muted: new_muted,
         };
-        let _ = app_handle.emit("voice-event", &event);
+        crate::event_dispatch::emit_live(app_handle, "voice-event", &event);
 
         tracing::debug!(muted = new_muted, "voice mute toggled via global shortcut");
     }

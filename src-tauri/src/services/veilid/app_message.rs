@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 
 use crate::channels::CommunityEvent;
 use crate::db::DbPool;
@@ -311,9 +311,10 @@ async fn handle_relayed_envelope(
             channel_id,
             pseudonym_key,
         } => {
-            let _ = app_handle.emit(
+            crate::event_dispatch::emit_live(
+                app_handle,
                 "community-event",
-                CommunityEvent::ChannelTyping {
+                &CommunityEvent::ChannelTyping {
                     community_id,
                     channel_id,
                     pseudonym_key,
@@ -363,9 +364,10 @@ async fn handle_relayed_envelope(
                 (None, None, None, None)
             };
 
-            let _ = app_handle.emit(
+            crate::event_dispatch::emit_live(
+                app_handle,
                 "community-event",
-                CommunityEvent::MemberPresenceChanged {
+                &CommunityEvent::MemberPresenceChanged {
                     community_id,
                     pseudonym_key,
                     status,

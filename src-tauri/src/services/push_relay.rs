@@ -142,7 +142,7 @@ pub async fn list_registrations(
 /// background sync sweep of all active community records and friend
 /// presence so the user sees up-to-date state. Throttled to one sweep
 /// per `WAKE_NOTIFY_DEBOUNCE_SECS` because each call kicks off
-/// `open_community_dht_records_public` + `rebuild_governance_from_dht_public`,
+/// `governance_adapter::open_community_dht_records` + `governance_adapter::rebuild_governance_from_dht`,
 /// both of which spawn 30+ second DHT-bound work; back-to-back wakes
 /// without throttling would saturate the network and burn battery.
 pub fn handle_wake_notify(state: &Arc<AppState>, _ts: u64) {
@@ -157,8 +157,8 @@ pub fn handle_wake_notify(state: &Arc<AppState>, _ts: u64) {
     }
     let state = state.clone();
     tokio::spawn(async move {
-        crate::commands::auth::open_community_dht_records_public(&state).await;
-        crate::commands::auth::rebuild_governance_from_dht_public(&state).await;
+        crate::services::governance_adapter::open_community_dht_records(&state).await;
+        crate::services::governance_adapter::rebuild_governance_from_dht(&state).await;
     });
 }
 

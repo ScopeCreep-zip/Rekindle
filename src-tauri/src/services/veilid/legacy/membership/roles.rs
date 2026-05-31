@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::db::DbPool;
 use crate::state::AppState;
-use tauri::{Emitter, Manager};
+use tauri::Manager;
 
 pub(crate) fn handle_member_roles_changed(
     app_handle: &tauri::AppHandle,
@@ -47,9 +47,10 @@ pub(crate) fn handle_member_roles_changed(
             Ok(())
         });
     }
-    let _ = app_handle.emit(
+    crate::event_dispatch::emit_live(
+        app_handle,
         "community-event",
-        CommunityEvent::MemberRolesChanged {
+        &CommunityEvent::MemberRolesChanged {
             community_id: community_id.to_string(),
             pseudonym_key: pseudonym_key.to_string(),
             role_ids: role_ids.to_vec(),

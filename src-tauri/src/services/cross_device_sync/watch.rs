@@ -12,9 +12,8 @@ use std::sync::Arc;
 use rekindle_secrets::sync_key::{decrypt_subkey, SyncKey};
 use rekindle_types::cross_device_sync::{
     DeviceList, ReadState, SyncManifest, SyncPreferences, SUBKEY_DEVICE_LIST, SUBKEY_MANIFEST,
-    SUBKEY_PREFERENCES, SUBKEY_READ_STATE,
 };
-use tauri::{AppHandle, Emitter as _};
+use tauri::AppHandle;
 use veilid_core::{RecordKey, ValueSubkey, ValueSubkeyRangeSet};
 
 use super::merge::{merge_device_list, merge_manifest, merge_preferences};
@@ -116,37 +115,38 @@ fn apply_remote_subkey(
     subkey: ValueSubkey,
     plaintext: &[u8],
 ) {
-    match subkey {
-        SUBKEY_READ_STATE => {
-            if let Ok(remote) = serde_json::from_slice::<ReadState>(plaintext) {
-                merge_read_state_into_db(pool, &handle.device_id, remote);
-            }
+    // Pure decode via the crate; this function owns the per-variant
+    // side effect (DB upsert for ReadState, event emit for the
+    // rest). Unknown subkeys + JSON-decode failures yield `None`
+    // and are silently skipped — matches pre-port behaviour.
+    let Some(decoded) = rekindle_sync::classify_remote_subkey(subkey, plaintext) else {
+        return;
+    };
+    match decoded {
+        rekindle_sync::RemoteSubkeyDecoded::ReadState(remote) => {
+            merge_read_state_into_db(pool, &handle.device_id, remote);
         }
-        SUBKEY_PREFERENCES => {
-            if let Ok(remote) = serde_json::from_slice::<SyncPreferences>(plaintext) {
-                let _ = app_handle.emit(
-                    "cross-device-sync",
-                    SyncEvent::Preferences(merge_preferences(SyncPreferences::default(), remote)),
-                );
-            }
+        rekindle_sync::RemoteSubkeyDecoded::Preferences(remote) => {
+            crate::event_dispatch::emit_live(
+                app_handle,
+                "cross-device-sync",
+                &SyncEvent::Preferences(merge_preferences(SyncPreferences::default(), remote)),
+            );
         }
-        SUBKEY_MANIFEST => {
-            if let Ok(remote) = serde_json::from_slice::<SyncManifest>(plaintext) {
-                let _ = app_handle.emit(
-                    "cross-device-sync",
-                    SyncEvent::Manifest(merge_manifest(SyncManifest::default(), remote)),
-                );
-            }
+        rekindle_sync::RemoteSubkeyDecoded::Manifest(remote) => {
+            crate::event_dispatch::emit_live(
+                app_handle,
+                "cross-device-sync",
+                &SyncEvent::Manifest(merge_manifest(SyncManifest::default(), remote)),
+            );
         }
-        SUBKEY_DEVICE_LIST => {
-            if let Ok(remote) = serde_json::from_slice::<DeviceList>(plaintext) {
-                let _ = app_handle.emit(
-                    "cross-device-sync",
-                    SyncEvent::DeviceList(merge_device_list(DeviceList::default(), remote)),
-                );
-            }
+        rekindle_sync::RemoteSubkeyDecoded::DeviceList(remote) => {
+            crate::event_dispatch::emit_live(
+                app_handle,
+                "cross-device-sync",
+                &SyncEvent::DeviceList(merge_device_list(DeviceList::default(), remote)),
+            );
         }
-        _ => {}
     }
 }
 

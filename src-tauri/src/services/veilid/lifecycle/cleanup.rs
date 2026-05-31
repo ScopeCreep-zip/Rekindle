@@ -27,9 +27,9 @@ async fn close_tracked_records(state: &AppState, reason: &str) {
 
 /// Clean up user-specific state on logout without shutting down the Veilid node.
 pub async fn logout_cleanup(app_handle: Option<&tauri::AppHandle>, state: &AppState) {
-    crate::services::voice::shutdown::shutdown_voice(
+    crate::services::voice_adapter::shutdown_voice(
         state,
-        &crate::services::voice::shutdown::VoiceShutdownOpts::FULL,
+        &rekindle_voice::VoiceShutdownOpts::FULL,
     )
     .await;
 
@@ -109,8 +109,28 @@ pub async fn logout_cleanup(app_handle: Option<&tauri::AppHandle>, state: &AppSt
     *state.identity.write() = None;
     state.friends.write().clear();
     state.communities.write().clear();
-    *state.signal_manager.lock() = None;
+    *state.signal_manager.write() = None;
     *state.identity_secret.lock() = None;
+    // Phase 4 — drop the audit chain so a subsequent login under a
+    // different identity doesn't append against the prior chain's MAC.
+    *state.audit_chain.lock() = None;
+    // Phase 7 (consolidated Phase 12) — tear down the friendship
+    // inbox-scan coordinator. `FriendshipHandle::shutdown` signals the
+    // spawned task to return cleanly and clears the watch trigger's
+    // sender; the next login installs a fresh coordinator.
+    state.friendship_handle.shutdown();
+    // Phase 10 — privacy: drop journaled events from the previous user
+    // so a re-login (same or different identity) can't replay them via
+    // `event_resume`. Resets the cursor counter to 1 too; the
+    // frontend's persisted cursor becomes meaningless against the new
+    // journal generation, which is correct — cross-session resume is
+    // not a feature.
+    state.event_journal.clear();
+    // Pair the journal clear with a watermark reset so the next session
+    // can replay its own events from cursor 0 — leaving the watermark
+    // at its previous-session value would gate every new resume call
+    // and silently swallow the next user's backlog.
+    *state.event_replay_watermark.lock() = 0;
     state.mek_cache.lock().clear();
     state.channel_mek_cache.lock().clear();
     state.dm_mek_cache.lock().clear();
