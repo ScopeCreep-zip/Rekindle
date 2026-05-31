@@ -24,6 +24,18 @@ members = [
     "crates/rekindle-transport",
     "crates/rekindle-cli",
     "crates/rekindle-node",
+    # Decomposed-harvest crates (added per `.claude/plans/memoized-dazzling-torvalds.md`).
+    "crates/rekindle-audit",
+    "crates/rekindle-events",
+    "crates/rekindle-friendship",
+    "crates/rekindle-idempotency",
+    "crates/rekindle-lifecycle",
+    "crates/rekindle-mek-rotation",
+    "crates/rekindle-governance-runtime",
+    "crates/rekindle-channel",
+    "crates/rekindle-presence",
+    "crates/rekindle-vault",
+    "crates/rekindle-analytics",
     "xtask",
 ]
 # W-1 #12 — `rekindle-cli` and `rekindle-node` are sister artifacts
@@ -57,6 +69,18 @@ default-members = [
     "crates/rekindle-e2e-server",
     "crates/rekindle-utils",
     "crates/rekindle-transport",
+    # Decomposed-harvest crates (shipped with the Tauri app).
+    "crates/rekindle-audit",
+    "crates/rekindle-events",
+    "crates/rekindle-friendship",
+    "crates/rekindle-idempotency",
+    "crates/rekindle-lifecycle",
+    "crates/rekindle-mek-rotation",
+    "crates/rekindle-governance-runtime",
+    "crates/rekindle-channel",
+    "crates/rekindle-presence",
+    "crates/rekindle-vault",
+    "crates/rekindle-analytics",
 ]
 
 [workspace.dependencies]
@@ -74,18 +98,14 @@ capnp = "0.20"
 capnpc = "0.20"
 hex = "0.4"
 rand = "0.8"
+# Formally-verified ML-KEM-768 (HACL*/libcrux line, AVX2/Neon SIMD).
+# Exact pin — 0.0.x semver makes no stability promise; audit on bump.
+libcrux-ml-kem = "=0.0.9"
 
-# Optimize crypto deps even in dev/test builds (debug-mode crypto is 100x slower).
-# iota_stronghold internally uses rust-argon2 for snapshot KDF — the main bottleneck.
+# Optimize Argon2 even in dev builds — rekindle-vault's KDF is the main
+# bottleneck on first login / unlock. Other crypto crates use aws-lc-rs or
+# pure-Rust impls that are fast enough in dev.
 [profile.dev.package.argon2]
-opt-level = 3
-[profile.dev.package.rust-argon2]
-opt-level = 3
-[profile.dev.package.iota_stronghold]
-opt-level = 2
-[profile.dev.package.iota-crypto]
-opt-level = 3
-[profile.dev.package.scrypt]
 opt-level = 3
 
 [workspace.lints.rust]

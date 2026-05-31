@@ -158,6 +158,23 @@ const CRYPTO_ALLOWED: &[&str] = &[
     "rekindle-route",
     "rekindle-sync",
     "rekindle-protocol",
+    // ── Decomposed-harvest plan (memoized-dazzling-torvalds.md) ──
+    // Phase 2: SQLCipher + per-entry AES-256-GCM vault layer.
+    "rekindle-vault",
+    // Phase 4: BLAKE3 keyed hash chain. (BLAKE3 is not in CRYPTO_CRATES,
+    // but listing here keeps the intent explicit if future deps grow.)
+    "rekindle-audit",
+    // Phase 17: cascade MEK rotation — wraps MEKs via rekindle-crypto's
+    // mek_distribution helpers.
+    "rekindle-mek-rotation",
+    // Phase 18: community lifecycle orchestration (origin / bootstrap /
+    // join / segments / apply) — uses rekindle-crypto for pseudonym
+    // derivation + governance entry signing.
+    "rekindle-governance-runtime",
+    // Phase 19: community channel messaging (send / receive / threads /
+    // reactions / expressions / mentions) — uses rekindle-crypto for
+    // MEK encrypt/decrypt + signed-envelope auth.
+    "rekindle-channel",
 ];
 
 fn check_boundaries(root: &Path) -> Result<()> {

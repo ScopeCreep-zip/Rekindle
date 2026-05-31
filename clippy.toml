@@ -23,6 +23,11 @@ disallowed-methods = [
     # rekindle-utils::time provides monotonic + clock helpers that
     # respect the project's testing seam.
     { path = "std::time::SystemTime::now", reason = "Use rekindle_utils::time::now_ms / now_secs for testability." },
+
+    # ── Tokio footguns (Phase 0, decomposed-harvest plan) ────────
+    # block_in_place silently deadlocks the current_thread runtime
+    # (Tauri's default). Use spawn_blocking + .await instead.
+    { path = "tokio::task::block_in_place", reason = "Use spawn_blocking + .await — block_in_place deadlocks current_thread runtime." },
 ]
 
 # ─── Disallowed types ──────────────────────────────────────────────────
@@ -32,7 +37,10 @@ disallowed-methods = [
 # `cargo xtask check-boundaries`.
 
 disallowed-types = [
-    # No entries today. When a "do not import this type from outside
-    # crate X" rule is needed, cargo-deny `wrappers` is usually the
-    # cleaner enforcement point — see deny.toml `[bans]`.
+    # ── Sync primitives (Phase 0, decomposed-harvest plan) ───────
+    # We pick the lock library at the call site: parking_lot for sync,
+    # tokio::sync for async-aware. std::sync::* mixes poorly with both
+    # (poisoning, no Send across .await) and is banned at the type level.
+    { path = "std::sync::Mutex", reason = "Use parking_lot::Mutex (sync) or tokio::sync::Mutex (async-aware)." },
+    { path = "std::sync::RwLock", reason = "Use parking_lot::RwLock (sync) or tokio::sync::RwLock (async-aware)." },
 ]
