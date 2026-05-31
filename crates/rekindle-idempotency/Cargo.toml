@@ -1,0 +1,17 @@
+[package]
+name = "rekindle-idempotency"
+version = "0.1.0"
+edition = "2021"
+description = "LRU + TTL idempotency cache wrapping mutating Tauri commands in Rekindle"
+
+[lints]
+workspace = true
+
+[dependencies]
+moka = { version = "0.12", features = ["future"] }
+uuid = { version = "1", features = ["v7", "serde"] }
+serde = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["sync", "macros", "time", "rt", "rt-multi-thread"] }
