@@ -1,0 +1,16 @@
+[package]
+name = "rekindle-analytics"
+version = "0.1.0"
+edition = "2021"
+description = "Local-only community analytics — pure SQL aggregations against the device-local SQLite schema. Architecture §24.1."
+license = "MIT"
+
+[lints]
+workspace = true
+
+[dependencies]
+rekindle-types = { path = "../rekindle-types" }
+rusqlite = { version = "0.37", features = ["bundled"] }
+
+[dev-dependencies]
+rusqlite = { version = "0.37", features = ["bundled"] }
