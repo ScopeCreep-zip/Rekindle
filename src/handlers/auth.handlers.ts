@@ -53,6 +53,19 @@ export async function handleLogout(): Promise<void> {
     // instead of clicking through the picker again.
     const activeKey = authState.publicKey;
     await commands.logout();
+    // Phase 10 — pair the backend `event_journal.clear()` with a
+    // frontend cursor reset so a re-login (same machine, possibly
+    // different identity) doesn't carry the previous session's cursor.
+    // The backend's journal counter restarts at 1 on logout; an old
+    // cursor like "200" left in localStorage would block every future
+    // `advanceCursor(n)` from updating (because n<200) until the new
+    // session's events catch up — a UX dead-zone where resume can't
+    // observe progress.
+    try {
+      localStorage.removeItem("rekindle.lastEventCursor");
+    } catch {
+      // localStorage unavailable (private mode) — already a no-op.
+    }
     setAuthState({
       isLoggedIn: false,
       publicKey: null,

@@ -264,8 +264,15 @@ export const commands = {
   // Chat
   prepareChatSession: (peerId: string) =>
     invoke<void>("prepare_chat_session", { peerId }),
-  sendMessage: (to: string, body: string) =>
-    invoke<void>("send_message", { to, body }),
+  sendMessage: (to: string, body: string, idempotencyKey?: string) =>
+    invoke<void>("send_message", {
+      to,
+      body,
+      // Phase 8 — idempotency key dedupes click-spam. Caller may pass
+      // their own (e.g. a retry uses the SAME key to short-circuit);
+      // default is a fresh UUID per call.
+      idempotencyKey: idempotencyKey ?? crypto.randomUUID(),
+    }),
   sendTyping: (peerId: string, typing: boolean) =>
     invoke<void>("send_typing", { peerId, typing }),
   getMessageHistory: (peerId: string, limit: number) =>
@@ -273,8 +280,21 @@ export const commands = {
   markRead: (peerId: string) => invoke<void>("mark_read", { peerId }),
 
   // Friends
-  addFriend: (publicKey: string, displayName: string, message: string) =>
-    invoke<void>("add_friend", { publicKey, displayName, message }),
+  addFriend: (
+    publicKey: string,
+    displayName: string,
+    message: string,
+    idempotencyKey?: string,
+  ) =>
+    invoke<void>("add_friend", {
+      publicKey,
+      displayName,
+      message,
+      // Phase 8 — idempotency key dedupes click-spam. Default is a
+      // fresh UUID per call; retries should pass the SAME key to
+      // short-circuit to the cached result.
+      idempotencyKey: idempotencyKey ?? crypto.randomUUID(),
+    }),
   removeFriend: (publicKey: string) =>
     invoke<void>("remove_friend", { publicKey }),
   acceptRequest: (publicKey: string, displayName: string) =>
@@ -397,6 +417,7 @@ export const commands = {
     channelType: string,
     categoryId?: string,
     parentVoiceChannelId?: string,
+    idempotencyKey?: string,
   ) =>
     invoke<string>("create_channel", {
       communityId,
@@ -404,6 +425,10 @@ export const commands = {
       channelType,
       categoryId: categoryId ?? null,
       parentVoiceChannelId: parentVoiceChannelId ?? null,
+      // Phase 8 — idempotency key dedupes click-spam. Channel creation
+      // allocates a fresh DHT record + writes a unique ChannelCreated
+      // entry, so double-click without idempotency creates duplicates.
+      idempotencyKey: idempotencyKey ?? crypto.randomUUID(),
     }),
   sendChannelMessage: (channelId: string, body: string, replyToId?: string) =>
     invoke<SendChannelMessageResult>("send_channel_message", { channelId, body, replyToId: replyToId ?? null }),
@@ -597,12 +622,26 @@ export const commands = {
   }),
   deleteAutoModRule: (communityId: string, ruleId: string) =>
     invoke<void>("delete_automod_rule", { communityId, ruleId }),
-  removeCommunityMember: (communityId: string, pseudonymKey: string) =>
-    invoke<void>("remove_community_member", { communityId, pseudonymKey }),
+  removeCommunityMember: (
+    communityId: string,
+    pseudonymKey: string,
+    idempotencyKey?: string,
+  ) =>
+    invoke<void>("remove_community_member", {
+      communityId,
+      pseudonymKey,
+      // Phase 8 — idempotency key dedupes click-spam.
+      idempotencyKey: idempotencyKey ?? crypto.randomUUID(),
+    }),
   leaveCommunity: (communityId: string) =>
     invoke<void>("leave_community", { communityId }),
-  deleteChannel: (communityId: string, channelId: string) =>
-    invoke<void>("delete_channel", { communityId, channelId }),
+  deleteChannel: (communityId: string, channelId: string, idempotencyKey?: string) =>
+    invoke<void>("delete_channel", {
+      communityId,
+      channelId,
+      // Phase 8 — idempotency key dedupes click-spam.
+      idempotencyKey: idempotencyKey ?? crypto.randomUUID(),
+    }),
   renameChannel: (communityId: string, channelId: string, newName: string) =>
     invoke<void>("rename_channel", { communityId, channelId, newName }),
   /**
@@ -636,8 +675,13 @@ export const commands = {
     invoke<{ pseudonymKey: string; displayName: string; bannedAt: number }[]>(
       "get_ban_list", { communityId },
     ),
-  rotateMek: (communityId: string) =>
-    invoke<void>("rotate_mek", { communityId }),
+  rotateMek: (communityId: string, idempotencyKey?: string) =>
+    invoke<void>("rotate_mek", {
+      communityId,
+      // Phase 8 — idempotency key dedupes click-spam. Without it, a
+      // double-rotate desyncs MEK generations across mesh peers.
+      idempotencyKey: idempotencyKey ?? crypto.randomUUID(),
+    }),
   setChannelNotificationLevel: (
     communityId: string,
     channelId: string,
@@ -1116,8 +1160,13 @@ export const commands = {
     invoke<void>("accept_dm_invite", { recordKey }),
   declineDmInvite: (recordKey: string) =>
     invoke<void>("decline_dm_invite", { recordKey }),
-  sendDmMessage: (recordKey: string, body: string) =>
-    invoke<void>("send_dm_message", { recordKey, body }),
+  sendDmMessage: (recordKey: string, body: string, idempotencyKey?: string) =>
+    invoke<void>("send_dm_message", {
+      recordKey,
+      body,
+      // Phase 8 — idempotency key dedupes click-spam.
+      idempotencyKey: idempotencyKey ?? crypto.randomUUID(),
+    }),
   getDmMessages: (recordKey: string, limit: number) =>
     invoke<DmMessageRecord[]>("get_dm_messages", { recordKey, limit }),
   openDmWindow: (recordKey: string, titleHint: string) =>
@@ -1325,6 +1374,17 @@ export const commands = {
       relayHostPseudonym,
       reason,
     }),
+
+  // Phase 10 — replay events newer than `lastCursor` (the last cursor
+  // this window persisted to localStorage). The backend re-emits each
+  // entry **scoped to the calling webview** on its original channel
+  // (and a `cursor-tick` per entry to advance localStorage), so
+  // multiple windows mounting concurrently never duplicate-process the
+  // same backlog. Returns the count of entries replayed — useful for
+  // dev-mode diagnostics; the actual events arrive through the live
+  // `safeListen` handlers.
+  eventResume: (lastCursor: number): Promise<number> =>
+    invoke<number>("event_resume", { lastCursor }),
 };
 
 export type VideoTrackLabel = "camera" | "screen" | (string & {});
