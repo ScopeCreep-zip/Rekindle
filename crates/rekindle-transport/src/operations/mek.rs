@@ -125,16 +125,15 @@ pub async fn replenish_prekeys(
     node: &TransportNode, profile_dht_key: &str, signing_key_bytes: &[u8; 32],
 ) -> Result<u32> {
     let signing_key = ed25519_dalek::SigningKey::from_bytes(signing_key_bytes);
-    let x25519_secret = crate::crypto::pseudonym::pseudonym_to_x25519(&signing_key);
-    let x25519_public = x25519_dalek::PublicKey::from(&x25519_secret);
+    let verifying_key = signing_key.verifying_key();
     let signal = crate::crypto::signal_session::SignalSessionManager::new(
         Box::new(crate::crypto::signal_store::MemoryIdentityStore::new(
-            x25519_secret.to_bytes().to_vec(), x25519_public.as_bytes().to_vec(), 1,
+            signing_key.to_bytes().to_vec(), verifying_key.as_bytes().to_vec(), 1,
         )),
         Box::new(crate::crypto::signal_store::MemoryPreKeyStore::new()),
         Box::new(crate::crypto::signal_store::MemorySessionStore::new()),
     );
-    let bundle = signal.generate_prekey_bundle(1, Some(1))
+    let bundle = signal.generate_prekey_bundle(1, Some(1), Some(1))
         .map_err(|e| TransportError::IdentityCreationFailed { step: "prekey replenish".into(), reason: e.to_string() })?;
     let bundle_bytes = bundle.to_bytes()
         .map_err(|e| TransportError::SerializationFailed { reason: format!("prekey bundle: {e}") })?;
@@ -144,6 +143,10 @@ pub async fn replenish_prekeys(
     ).await?;
     #[allow(clippy::cast_possible_truncation)]
     let count = byte_count as u32;
-    info!(bytes = byte_count, "prekeys replenished");
+    info!(
+        bytes = byte_count,
+        subkey = crate::payload::dht_types::PROFILE_SUBKEY_PREKEY_BUNDLE,
+        "pqxdh_bundle_published kind=LastResort+OneTimeBatch (replenish)",
+    );
     Ok(count)
 }

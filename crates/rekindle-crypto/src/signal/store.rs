@@ -18,28 +18,64 @@ pub trait IdentityKeyStore: Send + Sync {
     fn save_identity(&self, address: &str, identity_key: &[u8]) -> Result<(), CryptoError>;
 }
 
+/// Classifier for PQXDH ML-KEM prekeys — distinguishes the long-rotation
+/// last-resort key from one-time keys that are consumed on first use.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PqKeyKind {
+    /// Long-rotation ML-KEM-768 key. One per identity at a time. Never
+    /// consumed; rotates rarely.
+    LastResort,
+    /// One-time ML-KEM-768 key. Consumed by the responder when the
+    /// initiator's encapsulation targeted it.
+    OneTime,
+}
+
 /// Storage trait for Signal Protocol prekeys.
 ///
-/// One-time prekeys are consumed after first use.
+/// Classical X3DH one-time prekeys are consumed after first use.
+/// Phase 3b of the decomposed-harvest plan added PQXDH ML-KEM-768
+/// prekeys via the `store_pq_secret` / `load_pq_secret` / `remove_pq_secret`
+/// methods.
 pub trait PreKeyStore: Send + Sync {
-    /// Load a prekey by ID.
+    /// Load a classical one-time prekey by ID.
     fn load_prekey(&self, prekey_id: u32) -> Result<Option<Vec<u8>>, CryptoError>;
 
-    /// Store a prekey.
+    /// Store a classical one-time prekey.
     fn store_prekey(&self, prekey_id: u32, key_data: &[u8]) -> Result<(), CryptoError>;
 
-    /// Remove a consumed prekey.
+    /// Remove a consumed classical one-time prekey.
     fn remove_prekey(&self, prekey_id: u32) -> Result<(), CryptoError>;
 
-    /// Load the current signed prekey.
+    /// Load the current classical signed prekey.
     fn load_signed_prekey(&self, signed_prekey_id: u32) -> Result<Option<Vec<u8>>, CryptoError>;
 
-    /// Store a signed prekey.
+    /// Store a classical signed prekey.
     fn store_signed_prekey(
         &self,
         signed_prekey_id: u32,
         key_data: &[u8],
     ) -> Result<(), CryptoError>;
+
+    /// Phase 3b — load an ML-KEM-768 secret by `(id, kind)`. Returns
+    /// `Ok(None)` if the key isn't in the store (e.g. consumed one-time).
+    fn load_pq_secret(
+        &self,
+        prekey_id: u32,
+        kind: PqKeyKind,
+    ) -> Result<Option<Vec<u8>>, CryptoError>;
+
+    /// Phase 3b — store an ML-KEM-768 secret under `(id, kind)`. The
+    /// `key_data` is the 2400-byte FIPS-203 secret blob.
+    fn store_pq_secret(
+        &self,
+        prekey_id: u32,
+        kind: PqKeyKind,
+        key_data: &[u8],
+    ) -> Result<(), CryptoError>;
+
+    /// Phase 3b — remove a consumed PQ one-time prekey. No-op for
+    /// `LastResort` (which is rotated, not consumed).
+    fn remove_pq_secret(&self, prekey_id: u32, kind: PqKeyKind) -> Result<(), CryptoError>;
 }
 
 /// Storage trait for Signal Protocol sessions.

@@ -46,6 +46,11 @@ pub async fn create_profile(
     dht.set_value(&key, SUBKEY_STATUS, status_payload).await?; // 0 = online
     dht.set_value(&key, SUBKEY_PREKEY_BUNDLE, prekey_bundle.to_vec())
         .await?;
+    tracing::info!(
+        subkey = SUBKEY_PREKEY_BUNDLE,
+        bytes = prekey_bundle.len(),
+        "pqxdh_bundle_published kind=LastResort+OneTimeBatch (profile create)",
+    );
     dht.set_value(&key, SUBKEY_ROUTE_BLOB, route_blob.to_vec())
         .await?;
 
@@ -198,6 +203,11 @@ async fn try_reopen_and_update(
     status_payload.extend_from_slice(&ts.to_be_bytes());
     update_subkey(dht, key, SUBKEY_STATUS, status_payload).await?;
     update_subkey(dht, key, SUBKEY_PREKEY_BUNDLE, prekey_bundle.to_vec()).await?;
+    tracing::info!(
+        subkey = SUBKEY_PREKEY_BUNDLE,
+        bytes = prekey_bundle.len(),
+        "pqxdh_bundle_published kind=LastResort+OneTimeBatch (profile update)",
+    );
     update_subkey(dht, key, SUBKEY_ROUTE_BLOB, route_blob.to_vec()).await?;
 
     Ok(())

@@ -10,6 +10,7 @@ pub mod derive;
 pub mod invite;
 pub mod keys;
 pub mod mek;
+pub mod pq_keys;
 pub mod rotator;
 pub mod sign;
 pub mod sync_key;

@@ -9,8 +9,15 @@ license = "MIT"
 workspace = true
 
 [dependencies]
+rekindle-crypto = { path = "../rekindle-crypto" }
+rekindle-protocol = { path = "../rekindle-protocol" }
+rekindle-secrets = { path = "../rekindle-secrets" }
 serde = { workspace = true }
 thiserror = { workspace = true }
+tracing = { workspace = true }
+parking_lot = { workspace = true }
+hex = { workspace = true }
+blake3 = "1"
 # Architecture §10.6 line 4080 — FEC data on VideoFragment so a small
 # number of dropped fragments doesn't force a keyframe re-request.
 reed-solomon-erasure = "6"

@@ -214,7 +214,7 @@ pub(crate) async fn handle_destroy(
         let _ = std::fs::remove_file(&ctx.session_path);
     }
 
-    ctx.lifecycle.transition(DaemonState::Locked);
+    let _ = ctx.lifecycle.transition(DaemonState::Locked);
     IpcResponse::ok(&serde_json::json!({ "destroyed": true }))
 }
 
@@ -249,6 +249,6 @@ pub(crate) async fn handle_wipe(
         let _ = std::fs::remove_dir_all(&state_paths.veilid_dir);
     }
 
-    ctx.lifecycle.transition(DaemonState::Locked);
+    let _ = ctx.lifecycle.transition(DaemonState::Locked);
     IpcResponse::ok(&serde_json::json!({ "wiped": true }))
 }

@@ -112,3 +112,53 @@ mod tests {
         assert!(!json.contains("lamport_ts"));
     }
 }
+
+// ── Phase 9 — Per-class message taxonomy for SafetyProfile selection ──
+
+/// Per-class message taxonomy. Carried alongside the payload through
+/// `Sender::send_dm(class, …)` so the transport layer can pick the
+/// appropriate `SafetyProfile` without reaching back into the call site.
+///
+/// Different message categories want different privacy/latency trade-offs
+/// at the Veilid routing layer:
+/// - **Text** DMs prioritize anonymity over latency (2-hop relay).
+/// - **Voice** frames must be low-latency (0 hops, direct route).
+/// - **Rpc** invites need reliability but not strict order.
+/// - **DhtRead/DhtWrite** are infrastructure operations.
+///
+/// [`crate::config::SafetyProfile`] holds the actual parameters;
+/// `rekindle-route::profile::profile_for_class` is the lookup function.
+///
+/// Plan reference: `/Users/kali/.claude/plans/memoized-dazzling-torvalds.md` § Phase 9.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MessageClass {
+    /// 1:1 text DMs and friend-graph control messages. 2-hop relay
+    /// for sender anonymity; ordered + reliable.
+    Text,
+    /// Voice frames inside an active audio call. 0-hop direct route
+    /// for minimum latency; unordered (jitter buffer reorders).
+    Voice,
+    /// RPC invites and other one-shot reply-required messages.
+    /// 1-hop relay; reliable; no ordering requirement.
+    Rpc,
+    /// DHT subkey reads (profile, prekey, route). 1-hop relay.
+    DhtRead,
+    /// DHT subkey writes (publish profile, rotate prekey).
+    /// 2-hop relay for write anonymity; ordered + reliable.
+    DhtWrite,
+}
+
+impl MessageClass {
+    /// Human-readable label for tracing.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Text => "text",
+            Self::Voice => "voice",
+            Self::Rpc => "rpc",
+            Self::DhtRead => "dht_read",
+            Self::DhtWrite => "dht_write",
+        }
+    }
+}

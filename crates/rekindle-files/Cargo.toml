@@ -7,15 +7,23 @@ license = "MIT"
 
 [dependencies]
 rekindle-types = { path = "../rekindle-types" }
+rekindle-crypto = { path = "../rekindle-crypto" }
+rekindle-protocol = { path = "../rekindle-protocol" }
+rekindle-utils = { path = "../rekindle-utils" }
 sha2 = "0.10"
+blake3 = "1"
 uuid = { version = "1", features = ["v4", "serde"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+async-trait = "0.1"
+base64 = "0.22"
 lru = "0.12"
 hex = { workspace = true }
 
 [dev-dependencies]
 proptest = "1"
 tempfile = "3"
+parking_lot = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

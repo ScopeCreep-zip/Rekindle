@@ -70,19 +70,17 @@ pub async fn send_friend_request(
             target: target_mailbox_key.to_string(), reason: format!("cannot open inbox: {e}"),
         })?;
 
-    // Generate prekey bundle
-    let x25519_secret = crate::crypto::pseudonym::pseudonym_to_x25519(
-        &ed25519_dalek::SigningKey::from_bytes(signing_key_bytes),
-    );
-    let x25519_public = x25519_dalek::PublicKey::from(&x25519_secret);
+    // Generate prekey bundle — Ed25519 identity layout for PQXDH.
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(signing_key_bytes);
+    let verifying_key = signing_key.verifying_key();
     let signal = crate::crypto::signal_session::SignalSessionManager::new(
         Box::new(crate::crypto::signal_store::MemoryIdentityStore::new(
-            x25519_secret.to_bytes().to_vec(), x25519_public.as_bytes().to_vec(), 1,
+            signing_key.to_bytes().to_vec(), verifying_key.as_bytes().to_vec(), 1,
         )),
         Box::new(crate::crypto::signal_store::MemoryPreKeyStore::new()),
         Box::new(crate::crypto::signal_store::MemorySessionStore::new()),
     );
-    let prekey_bundle = signal.generate_prekey_bundle(1, Some(1))
+    let prekey_bundle = signal.generate_prekey_bundle(1, Some(1), Some(1))
         .map_err(|e| TransportError::FriendRequestFailed {
             target: target_mailbox_key.to_string(), reason: format!("prekey: {e}"),
         })?;
@@ -151,6 +149,7 @@ pub async fn send_friend_request(
                 if !notify_bytes.is_empty() {
                     let _ = node.sender().send_dm(
                         &target,
+                        crate::frame::TypeId::FriendRequestAck.class(),
                         crate::frame::TypeId::FriendRequestAck,
                         signing_key_bytes,
                         &session.identity.public_key_hex,

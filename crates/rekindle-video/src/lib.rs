@@ -5,15 +5,30 @@
 //! (≤28 KB payload chunks, FEC-friendly indexing, per-stream
 //! reassembly buffer with bounded memory).
 
+pub mod deps;
+pub mod error;
 pub mod fragment;
 pub mod reassembler;
+pub mod reassembly_state;
+pub mod receive;
+pub mod send;
+pub mod stream_id;
 
+#[cfg(test)]
+mod test_mock;
+
+pub use deps::{VideoDeps, VideoEvent};
+pub use error::VideoError;
 pub use fragment::{
     fragment_frame, fragment_frame_with_fec, fragment_signing_bytes, parity_signing_bytes,
     reconstruct_frame, FecFragments, FragmentError, VideoFragment, VideoParityFragment,
     FRAGMENT_PAYLOAD_LIMIT, MAX_FRAGMENTS_PER_FRAME, STREAM_ID_LEN,
 };
 pub use reassembler::{ReassembledFrame, Reassembler, ReassemblerError};
+pub use reassembly_state::VideoReassemblyState;
+pub use receive::handle_video_payload;
+pub use send::{send_video_frame, VideoFrameSend};
+pub use stream_id::derive_stream_id;
 
 /// Media capabilities a peer advertises in `MediaCapabilities` when
 /// they join a video-bearing channel. Used by the sender to pick a

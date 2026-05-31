@@ -32,6 +32,44 @@ pub enum FilesError {
 
     #[error("invalid attachment id hex: {0}")]
     InvalidAttachmentId(String),
+
+    // ── Phase 15 — surface variants for FilesDeps-parameterised flows ──
+
+    #[error("permission denied: {0}")]
+    PermissionDenied(String),
+
+    #[error("not found: {0}")]
+    NotFound(String),
+
+    #[error("transport: {0}")]
+    Transport(String),
+
+    #[error("database: {0}")]
+    Db(String),
+
+    #[error("MEK unavailable for generation {generation} (community {community})")]
+    MekUnavailable { community: String, generation: u64 },
+
+    #[error("identity not loaded")]
+    IdentityNotLoaded,
+
+    #[error("encrypt failed: {0}")]
+    Encrypt(String),
+
+    #[error("decrypt failed: {0}")]
+    Decrypt(String),
+
+    #[error("invalid input: {0}")]
+    InvalidInput(String),
+
+    #[error("slowmode: {0}")]
+    Slowmode(String),
+
+    #[error("attachment offer invalid: {0}")]
+    OfferInvalid(String),
+
+    #[error("download incomplete: have {have}/{total} chunks")]
+    DownloadIncomplete { have: u32, total: u32 },
 }
 
 impl FilesError {

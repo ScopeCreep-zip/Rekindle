@@ -117,6 +117,62 @@ pub enum TypeId {
 }
 
 impl TypeId {
+    /// Phase 9 — map this `TypeId` to the [`rekindle_types::message::MessageClass`] that selects
+    /// the appropriate Veilid `SafetyProfile`. Used by the envelope
+    /// queue + any other generic sender that doesn't have a static
+    /// per-call class context.
+    ///
+    /// Mapping rationale:
+    /// - **VoicePacket** is the only audio-frame class (latency-critical,
+    ///   participants mutually known) → `Voice` (Unsafe routing).
+    /// - **Call signaling** (CallInvite/Accept/Decline/End/MediaState/
+    ///   Reaction + GroupCall* + DmInviteRequest/Reply) is RPC-shaped
+    ///   short-lived control — `Rpc` (1-hop safety route, anonymous).
+    /// - **Everything else** (text DMs, friend requests, gossip, sync,
+    ///   community ops) carries user-attributable content → `Text`
+    ///   (2-hop safety route, anonymous).
+    ///
+    /// No `DhtRead` / `DhtWrite` mapping here because those paths
+    /// don't go through `Sender::send_dm` (they use the DHT API
+    /// directly via `routing_context_for_profile`).
+    #[must_use]
+    pub fn class(self) -> rekindle_types::message::MessageClass {
+        use rekindle_types::message::MessageClass;
+        match self {
+            Self::VoicePacket => MessageClass::Voice,
+            Self::CallInvite
+            | Self::CallAccept
+            | Self::CallDecline
+            | Self::CallEnd
+            | Self::CallMediaState
+            | Self::CallReaction
+            | Self::GroupCallOffer
+            | Self::GroupCallAccept
+            | Self::GroupCallDecline
+            | Self::DmInviteRequest
+            | Self::DmInviteReply
+            | Self::GroupDmInviteRequest
+            | Self::GroupDmInviteReply
+            | Self::SyncRequest
+            | Self::SyncResponse
+            | Self::DmCall => MessageClass::Rpc,
+            // DM payloads + friend graph + gossip + community ops + everything else
+            Self::DmMessage
+            | Self::DmTyping
+            | Self::FriendRequest
+            | Self::FriendAccept
+            | Self::FriendReject
+            | Self::FriendRequestAck
+            | Self::Unfriend
+            | Self::UnfriendAck
+            | Self::ProfileKeyRotated
+            | Self::DmPresenceUpdate
+            | Self::GossipBroadcast
+            | Self::CommunityLeave
+            | Self::CommunityGovOp => MessageClass::Text,
+        }
+    }
+
     /// Parse a raw byte into a TypeId, returning None for unknown values.
     pub fn from_byte(b: u8) -> Option<Self> {
         match b {

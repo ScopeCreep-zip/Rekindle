@@ -10,11 +10,21 @@ workspace = true
 [dependencies]
 rekindle-types = { path = "../rekindle-types" }
 rekindle-codec = { path = "../rekindle-codec" }
+rekindle-protocol = { path = "../rekindle-protocol" }
+rekindle-crypto = { path = "../rekindle-crypto" }
+rekindle-utils = { path = "../rekindle-utils" }
+async-trait = "0.1"
+blake2 = "0.10"
 blake3 = "1"
+hex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["rt", "macros", "sync"] }
 tracing = { workspace = true }
 
 [dev-dependencies]
+parking_lot = { workspace = true }
 proptest = "1"
 rand = { workspace = true }
+tokio = { workspace = true, features = ["rt", "macros", "sync", "time", "test-util"] }

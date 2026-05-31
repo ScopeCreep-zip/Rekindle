@@ -45,4 +45,24 @@ pub enum CryptoEvent {
         slot_index: u32,
         segment_index: u32,
     },
+    /// Phase 3a — a PQXDH bundle component was published to our profile
+    /// record. Emitted by the subkey-5 write path (Phase 3b wires this).
+    /// Phase 3a declares the variant so the cross-tier `EventDedup` hash
+    /// already knows the shape when 3b starts firing it.
+    PqBundlePublished {
+        /// DHT subkey number written (5 = canonical PqPreKeyBundle).
+        subkey: u16,
+        /// Which component of the bundle was rotated.
+        kind: PqBundleKind,
+    },
+}
+
+/// Identifies which PQ bundle component was rotated in a
+/// [`CryptoEvent::PqBundlePublished`] event.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PqBundleKind {
+    /// Long-rotation last-resort ML-KEM key.
+    LastResort,
+    /// Batch of one-time ML-KEM keys (consumed individually by initiators).
+    OneTimeBatch,
 }

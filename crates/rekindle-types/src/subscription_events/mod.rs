@@ -20,7 +20,7 @@ mod typing;
 mod voice;
 
 pub use channel::ChannelMessageEvent;
-pub use crypto::CryptoEvent;
+pub use crypto::{CryptoEvent, PqBundleKind};
 pub use friend::FriendEvent;
 pub use governance::GovernanceEvent;
 pub use membership::MembershipEvent;
@@ -152,13 +152,16 @@ impl SubscriptionEvent {
                 | MembershipEvent::OnboardingCompleted { community, .. }
                 | MembershipEvent::OnboardingAnswersSubmitted { community, .. } => community,
             }),
-            Self::Crypto(e) => Some(match e {
+            Self::Crypto(e) => match e {
                 CryptoEvent::MekRotated { community, .. }
                 | CryptoEvent::MekRequested { community, .. }
                 | CryptoEvent::MekTransferred { community, .. }
                 | CryptoEvent::AdminKeypairGranted { community }
-                | CryptoEvent::SlotKeypairGranted { community, .. } => community,
-            }),
+                | CryptoEvent::SlotKeypairGranted { community, .. } => Some(community),
+                // PqBundlePublished is a profile-level event (subkey 5 of
+                // the user's identity record), not community-scoped.
+                CryptoEvent::PqBundlePublished { .. } => None,
+            },
             Self::Voice(e) => Some(match e {
                 VoiceEvent::Joined { community, .. }
                 | VoiceEvent::Left { community, .. }
@@ -201,6 +204,8 @@ impl SubscriptionEvent {
                 | SystemEvent::BootstrapReceived { community }
                 | SystemEvent::SyncRequested { community, .. }
                 | SystemEvent::SyncReceived { community, .. } => Some(community),
+                // Audit chain breakage is a local-device event, not community-scoped.
+                SystemEvent::AuditChainBroken { .. } => None,
             },
             Self::Network(_) => None,
             Self::UnreadChanged { .. } => None,

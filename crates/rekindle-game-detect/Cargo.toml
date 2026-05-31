@@ -14,5 +14,10 @@ serde_json = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+async-trait = "0.1"
 rekindle-utils = { path = "../rekindle-utils" }
 open = "5"
+
+[dev-dependencies]
+parking_lot = { workspace = true }
+tokio = { workspace = true, features = ["test-util", "macros", "rt-multi-thread"] }

@@ -60,12 +60,18 @@ pub enum MessagePayload {
         route_blob: Vec<u8>,
         /// Acceptor's mailbox DHT key.
         mailbox_dht_key: String,
-        /// Initiator's X25519 ephemeral public key (for responder-side X3DH).
+        /// Initiator's X25519 ephemeral public key (for responder-side PQXDH).
         ephemeral_key: Vec<u8>,
         /// Which of the responder's signed prekeys was used by the initiator.
         signed_prekey_id: u32,
         /// Which of the responder's one-time prekeys was consumed (if any).
         one_time_prekey_id: Option<u32>,
+        /// ML-KEM-768 ciphertext (Phase 3b PQXDH — encapsulated to the
+        /// responder's PQ prekey; empty in the unlikely degenerate path).
+        ml_kem_ciphertext: Vec<u8>,
+        /// Which of the responder's one-time ML-KEM prekeys was consumed,
+        /// or `None` if the last-resort PQ prekey was used instead.
+        used_ot_pqpk_id: Option<u32>,
     },
     /// Friend request rejection.
     FriendReject,
@@ -389,6 +395,14 @@ pub enum MessagePayload {
         /// Bob's identity key (X25519 form, 32 bytes). Alice verifies
         /// this matches her stored trusted-identity for Bob.
         our_identity_key: Vec<u8>,
+        /// ML-KEM-768 ciphertext (Phase 3b PQXDH — encapsulated to one of
+        /// Alice's PQ prekeys during Bob's `establish_session`).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        ml_kem_ciphertext: Vec<u8>,
+        /// Which of Alice's one-time ML-KEM prekeys Bob consumed, or
+        /// `None` if the last-resort PQ prekey was used.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        used_ot_pqpk_id: Option<u32>,
     },
     /// P3.3 session renewal — Bob → Alice: "I declined the reset
     /// request." Alice's UI surfaces the decline; her existing local

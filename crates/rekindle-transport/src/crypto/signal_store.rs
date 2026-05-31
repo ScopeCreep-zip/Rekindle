@@ -16,6 +16,15 @@ pub trait IdentityKeyStore: Send + Sync {
     fn save_identity(&self, address: &str, identity_key: &[u8]) -> Result<()>;
 }
 
+/// Classifier for PQXDH ML-KEM prekeys. Parallel to
+/// `rekindle_crypto::signal::store::PqKeyKind` — defined here to keep
+/// rekindle-transport's Signal Protocol implementation self-contained.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PqKeyKind {
+    LastResort,
+    OneTime,
+}
+
 /// Storage for Signal Protocol prekeys.
 pub trait PreKeyStore: Send + Sync {
     fn load_prekey(&self, prekey_id: u32) -> Result<Option<Vec<u8>>>;
@@ -23,6 +32,12 @@ pub trait PreKeyStore: Send + Sync {
     fn remove_prekey(&self, prekey_id: u32) -> Result<()>;
     fn load_signed_prekey(&self, signed_prekey_id: u32) -> Result<Option<Vec<u8>>>;
     fn store_signed_prekey(&self, signed_prekey_id: u32, key_data: &[u8]) -> Result<()>;
+    /// Phase 3b — load an ML-KEM-768 secret by `(id, kind)`.
+    fn load_pq_secret(&self, prekey_id: u32, kind: PqKeyKind) -> Result<Option<Vec<u8>>>;
+    /// Phase 3b — store an ML-KEM-768 secret (2400-byte FIPS-203 blob).
+    fn store_pq_secret(&self, prekey_id: u32, kind: PqKeyKind, key_data: &[u8]) -> Result<()>;
+    /// Phase 3b — remove a consumed PQ one-time prekey. No-op for LastResort.
+    fn remove_pq_secret(&self, prekey_id: u32, kind: PqKeyKind) -> Result<()>;
 }
 
 /// Storage for Signal Protocol sessions.
@@ -84,6 +99,7 @@ impl IdentityKeyStore for MemoryIdentityStore {
 pub struct MemoryPreKeyStore {
     prekeys: Mutex<HashMap<u32, Vec<u8>>>,
     signed_prekeys: Mutex<HashMap<u32, Vec<u8>>>,
+    pq_secrets: Mutex<HashMap<(u32, PqKeyKind), Vec<u8>>>,
 }
 
 impl MemoryPreKeyStore {
@@ -91,6 +107,7 @@ impl MemoryPreKeyStore {
         Self {
             prekeys: Mutex::new(HashMap::new()),
             signed_prekeys: Mutex::new(HashMap::new()),
+            pq_secrets: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -130,6 +147,24 @@ impl PreKeyStore for MemoryPreKeyStore {
         self.signed_prekeys
             .lock()
             .insert(signed_prekey_id, key_data.to_vec());
+        Ok(())
+    }
+
+    fn load_pq_secret(&self, prekey_id: u32, kind: PqKeyKind) -> Result<Option<Vec<u8>>> {
+        Ok(self.pq_secrets.lock().get(&(prekey_id, kind)).cloned())
+    }
+
+    fn store_pq_secret(&self, prekey_id: u32, kind: PqKeyKind, key_data: &[u8]) -> Result<()> {
+        self.pq_secrets
+            .lock()
+            .insert((prekey_id, kind), key_data.to_vec());
+        Ok(())
+    }
+
+    fn remove_pq_secret(&self, prekey_id: u32, kind: PqKeyKind) -> Result<()> {
+        if kind == PqKeyKind::OneTime {
+            self.pq_secrets.lock().remove(&(prekey_id, kind));
+        }
         Ok(())
     }
 }

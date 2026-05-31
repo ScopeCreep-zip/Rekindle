@@ -12,7 +12,11 @@ workspace = true
 # Workspace
 rekindle-types = { path = "../rekindle-types" }
 rekindle-utils = { path = "../rekindle-utils" }
+rekindle-events = { path = "../rekindle-events" }
+rekindle-secrets = { path = "../rekindle-secrets" }
+rekindle-crypto = { path = "../rekindle-crypto" }
 rekindle-calls = { path = "../rekindle-calls" }
+rekindle-route = { path = "../rekindle-route" }
 
 # Veilid — the ONLY crate in the workspace that imports this
 veilid-core = { version = "0.5.2", default-features = true }

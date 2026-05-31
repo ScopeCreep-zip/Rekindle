@@ -320,13 +320,25 @@ pub mod identity {
     }
 
     /// Domain struct for a Signal Protocol pre-key bundle.
+    ///
+    /// Phase 3b of the decomposed-harvest plan augments this with PQXDH
+    /// fields. Old peers reading subkey 5 will fail to deserialize — that
+    /// is the intended hard break (pre-ship, no installed users).
     #[derive(Debug, Clone)]
     pub struct PreKeyBundle {
+        // Classical X3DH layer.
         pub identity_key: Vec<u8>,
         pub signed_pre_key: Vec<u8>,
         pub signed_pre_key_sig: Vec<u8>,
         pub one_time_pre_key: Vec<u8>,
+        pub one_time_pre_key_id: u32,
         pub registration_id: u32,
+        // PQXDH layer.
+        pub pqpk_lr: Vec<u8>,
+        pub pqpk_lr_sig: Vec<u8>,
+        pub pqpk_ot: Vec<u8>,
+        pub pqpk_ot_sig: Vec<u8>,
+        pub pqpk_ot_id: u32,
     }
 
     pub fn encode_profile(profile: &UserProfile) -> Vec<u8> {
@@ -355,6 +367,12 @@ pub mod identity {
             root.set_signed_pre_key_sig(&bundle.signed_pre_key_sig);
             root.set_one_time_pre_key(&bundle.one_time_pre_key);
             root.set_registration_id(bundle.registration_id);
+            root.set_pqpk_lr(&bundle.pqpk_lr);
+            root.set_pqpk_lr_sig(&bundle.pqpk_lr_sig);
+            root.set_pqpk_ot(&bundle.pqpk_ot);
+            root.set_pqpk_ot_sig(&bundle.pqpk_ot_sig);
+            root.set_pqpk_ot_id(bundle.pqpk_ot_id);
+            root.set_one_time_pre_key_id(bundle.one_time_pre_key_id);
         }
         pack(&builder)
     }
@@ -379,7 +397,13 @@ pub mod identity {
                 root.has_one_time_pre_key(),
                 root.get_one_time_pre_key(),
             )?,
+            one_time_pre_key_id: root.get_one_time_pre_key_id(),
             registration_id: root.get_registration_id(),
+            pqpk_lr: root.get_pqpk_lr().map_err(|e| capnp_err(&e))?.to_vec(),
+            pqpk_lr_sig: root.get_pqpk_lr_sig().map_err(|e| capnp_err(&e))?.to_vec(),
+            pqpk_ot: bytes_or_empty(root.has_pqpk_ot(), root.get_pqpk_ot())?,
+            pqpk_ot_sig: bytes_or_empty(root.has_pqpk_ot_sig(), root.get_pqpk_ot_sig())?,
+            pqpk_ot_id: root.get_pqpk_ot_id(),
         })
     }
 }
@@ -824,7 +848,13 @@ pub mod conversation {
                 pkb_reader.has_one_time_pre_key(),
                 pkb_reader.get_one_time_pre_key(),
             )?,
+            one_time_pre_key_id: pkb_reader.get_one_time_pre_key_id(),
             registration_id: pkb_reader.get_registration_id(),
+            pqpk_lr: pkb_reader.get_pqpk_lr().map_err(|e| capnp_err(&e))?.to_vec(),
+            pqpk_lr_sig: pkb_reader.get_pqpk_lr_sig().map_err(|e| capnp_err(&e))?.to_vec(),
+            pqpk_ot: bytes_or_empty(pkb_reader.has_pqpk_ot(), pkb_reader.get_pqpk_ot())?,
+            pqpk_ot_sig: bytes_or_empty(pkb_reader.has_pqpk_ot_sig(), pkb_reader.get_pqpk_ot_sig())?,
+            pqpk_ot_id: pkb_reader.get_pqpk_ot_id(),
         };
 
         Ok(ConversationHeader {
@@ -958,7 +988,13 @@ mod tests {
             signed_pre_key: vec![2u8; 32],
             signed_pre_key_sig: vec![3u8; 64],
             one_time_pre_key: vec![4u8; 32],
+            one_time_pre_key_id: 7,
             registration_id: 12345,
+            pqpk_lr: vec![5u8; 1184],
+            pqpk_lr_sig: vec![6u8; 64],
+            pqpk_ot: vec![8u8; 1184],
+            pqpk_ot_sig: vec![9u8; 64],
+            pqpk_ot_id: 99,
         };
 
         let encoded = identity::encode_prekey_bundle(&bundle);
@@ -968,7 +1004,13 @@ mod tests {
         assert_eq!(decoded.signed_pre_key, bundle.signed_pre_key);
         assert_eq!(decoded.signed_pre_key_sig, bundle.signed_pre_key_sig);
         assert_eq!(decoded.one_time_pre_key, bundle.one_time_pre_key);
+        assert_eq!(decoded.one_time_pre_key_id, 7);
         assert_eq!(decoded.registration_id, 12345);
+        assert_eq!(decoded.pqpk_lr, bundle.pqpk_lr);
+        assert_eq!(decoded.pqpk_lr_sig, bundle.pqpk_lr_sig);
+        assert_eq!(decoded.pqpk_ot, bundle.pqpk_ot);
+        assert_eq!(decoded.pqpk_ot_sig, bundle.pqpk_ot_sig);
+        assert_eq!(decoded.pqpk_ot_id, 99);
     }
 
     #[test]
@@ -1178,7 +1220,13 @@ mod tests {
                 signed_pre_key: vec![2u8; 32],
                 signed_pre_key_sig: vec![3u8; 64],
                 one_time_pre_key: vec![4u8; 32],
+                one_time_pre_key_id: 3,
                 registration_id: 42,
+                pqpk_lr: vec![5u8; 1184],
+                pqpk_lr_sig: vec![6u8; 64],
+                pqpk_ot: vec![7u8; 1184],
+                pqpk_ot_sig: vec![8u8; 64],
+                pqpk_ot_id: 11,
             },
             created_at: 5000,
             updated_at: 6000,

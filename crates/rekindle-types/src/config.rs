@@ -99,7 +99,24 @@ pub struct SafetyProfile {
     /// Message ordering preference.
     #[serde(default)]
     pub sequencing: SequencingPreference,
+
+    /// **Phase 9** — whether to wrap the sender in a Veilid safety route
+    /// (anonymous) or send directly from the personal private route
+    /// (identified). Independent of `hop_count`: safety routes still
+    /// need hops, direct routes never do.
+    ///
+    /// `true` for most user-facing actions (DM text, DHT writes, RPC) —
+    /// even a 1-hop safety route hides "who sent this" from the
+    /// destination's incoming relay.
+    ///
+    /// `false` for voice calls (the recipient already knows we're
+    /// calling them; latency is paramount) and other contexts where
+    /// the user has explicitly opted out of anonymity.
+    #[serde(default = "default_true")]
+    pub sender_anonymous: bool,
 }
+
+fn default_true() -> bool { true }
 
 /// Stability preference -- maps to Veilid's `Stability` enum internally.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -131,6 +148,7 @@ impl SafetyProfile {
             hop_count: 1,
             stability: StabilityPreference::Reliable,
             sequencing: SequencingPreference::PreferOrdered,
+            sender_anonymous: true,
         }
     }
 
@@ -139,6 +157,8 @@ impl SafetyProfile {
             hop_count: 1,
             stability: StabilityPreference::LowLatency,
             sequencing: SequencingPreference::NoPreference,
+            // Voice: latency over anonymity. Sender is direct.
+            sender_anonymous: false,
         }
     }
 
@@ -147,6 +167,7 @@ impl SafetyProfile {
             hop_count: 1,
             stability: StabilityPreference::Reliable,
             sequencing: SequencingPreference::PreferOrdered,
+            sender_anonymous: true,
         }
     }
 
@@ -155,6 +176,7 @@ impl SafetyProfile {
             hop_count: 1,
             stability: StabilityPreference::Reliable,
             sequencing: SequencingPreference::EnsureOrdered,
+            sender_anonymous: true,
         }
     }
 }

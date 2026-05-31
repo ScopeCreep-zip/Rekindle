@@ -13,4 +13,11 @@ pub enum VoiceError {
 
     #[error("not connected to voice channel")]
     NotConnected,
+
+    // Phase 14 additions for the deps trait surface.
+    #[error("identity not loaded")]
+    IdentityNotLoaded,
+
+    #[error("session: {0}")]
+    Session(String),
 }

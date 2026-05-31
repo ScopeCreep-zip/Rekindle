@@ -1,17 +1,26 @@
-//! Signal Protocol session management — X3DH + simplified Double Ratchet.
+//! Signal Protocol session management — PQXDH + simplified Double Ratchet.
 //!
-//! Provides forward-secret 1:1 encrypted messaging. Sessions are established
-//! via X3DH key agreement using prekey bundles published to DHT.
+//! Phase 3b of the decomposed-harvest plan replaced classical X3DH with
+//! PQXDH for the daemon-track Signal subsystem. Shares the same PQXDH
+//! handshake primitives as `rekindle-crypto::signal::pqxdh` via a direct
+//! crate dependency.
 
 use aes_gcm::{aead::{Aead, KeyInit}, Aes256Gcm, Nonce};
-use ed25519_dalek::{Signer, SigningKey};
+use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
 use hkdf::Hkdf;
+use rekindle_crypto::signal::pqxdh::{
+    self, verify::pq_signing_payload, verify::spk_signing_payload,
+};
+use rekindle_secrets::pq_keys::MlKemSecret;
 use sha2::Sha256;
 use x25519_dalek::{PublicKey as X25519Public, StaticSecret};
 
 use crate::crypto::prekeys::PreKeyBundle;
-use crate::crypto::signal_store::{IdentityKeyStore, PreKeyStore, SessionStore};
+use crate::crypto::signal_store::{IdentityKeyStore, PqKeyKind, PreKeyStore, SessionStore};
 use crate::error::{TransportError, Result};
+
+/// Fixed identifier for the per-identity ML-KEM-768 last-resort key.
+pub const PQ_LR_ID: u32 = 0;
 
 /// Metadata produced by initiator-side session establishment.
 pub struct SessionInitInfo {
@@ -21,6 +30,10 @@ pub struct SessionInitInfo {
     pub signed_prekey_id: u32,
     /// Which one-time prekey was consumed (if any).
     pub one_time_prekey_id: Option<u32>,
+    /// PQXDH ML-KEM-768 ciphertext (1088 bytes).
+    pub ml_kem_ciphertext: Vec<u8>,
+    /// Which one-time PQ prekey was consumed (None = LastResort at PQ_LR_ID).
+    pub used_ot_pqpk_id: Option<u32>,
 }
 
 /// Manages Signal Protocol sessions for 1:1 encrypted messaging.
@@ -57,44 +70,35 @@ impl SignalSessionManager {
         peer_address: &str,
         bundle: &PreKeyBundle,
     ) -> Result<SessionInitInfo> {
-        let ephemeral_secret = StaticSecret::random_from_rng(rand::rngs::OsRng);
-        let ephemeral_public = X25519Public::from(&ephemeral_secret);
-        let ephemeral_bytes = ephemeral_secret.to_bytes();
-
+        // PQXDH initiator (Phase 3b) — daemon-track mirror of
+        // `rekindle_crypto::signal::session::SignalSessionManager::establish_session`.
         let (identity_private, _) = self.identity.get_identity_key_pair()?;
-        let our_identity_x25519 = StaticSecret::from(
-            to_32(&identity_private, "identity key")?,
-        );
+        let identity_signing = SigningKey::from_bytes(&to_32(&identity_private, "identity key")?);
+        let our_ik_x25519 = StaticSecret::from(identity_signing.to_scalar_bytes());
 
-        let their_signed_prekey = X25519Public::from(
-            to_32(&bundle.signed_prekey, "signed prekey")?,
-        );
-        let their_identity_x25519 = X25519Public::from(
-            to_32(&bundle.identity_key, "identity key")?,
-        );
+        let their_ik_ed = VerifyingKey::from_bytes(&to_32(&bundle.identity_key, "their identity")?)
+            .map_err(|e| TransportError::Internal(format!("their identity not on curve: {e}")))?;
 
-        let dh1 = our_identity_x25519.diffie_hellman(&their_signed_prekey);
-        let dh2 = StaticSecret::from(ephemeral_bytes).diffie_hellman(&their_identity_x25519);
-        let dh3 = StaticSecret::from(ephemeral_bytes).diffie_hellman(&their_signed_prekey);
+        let hs = pqxdh::pqxdh_initiator(&our_ik_x25519, bundle, &their_ik_ed)
+            .map_err(|e| TransportError::Internal(format!("PQXDH initiator: {e}")))?;
 
-        let mut ikm = Vec::with_capacity(128);
-        ikm.extend_from_slice(dh1.as_bytes());
-        ikm.extend_from_slice(dh2.as_bytes());
-        ikm.extend_from_slice(dh3.as_bytes());
-
-        if let Some(ref otpk) = bundle.one_time_prekey {
-            let their_otpk = X25519Public::from(to_32(otpk, "one-time prekey")?);
-            let dh4 = StaticSecret::from(ephemeral_bytes).diffie_hellman(&their_otpk);
-            ikm.extend_from_slice(dh4.as_bytes());
-        }
-
-        let (root_key, sending_chain_key, receiving_chain_key) = derive_x3dh_keys(&ikm)?;
+        // Expand root_key into chain keys (mirror of rekindle-crypto).
+        let hk = Hkdf::<Sha256>::new(None, &*hs.root_key);
+        let mut okm = [0u8; 96];
+        hk.expand(b"ReKindlePQXDH", &mut okm)
+            .map_err(|e| TransportError::Internal(format!("HKDF expand: {e}")))?;
+        let mut root_key = [0u8; 32];
+        let mut sending_chain_key = [0u8; 32];
+        let mut receiving_chain_key = [0u8; 32];
+        root_key.copy_from_slice(&okm[..32]);
+        sending_chain_key.copy_from_slice(&okm[32..64]);
+        receiving_chain_key.copy_from_slice(&okm[64..96]);
 
         let ratchet = RatchetState {
             root_key,
             sending_chain_key,
             receiving_chain_key,
-            our_ratchet_secret: ephemeral_bytes.to_vec(),
+            our_ratchet_secret: hs.ek_public.to_vec(),
             their_ratchet_public: bundle.signed_prekey.clone(),
             send_counter: 0,
             recv_counter: 0,
@@ -104,13 +108,15 @@ impl SignalSessionManager {
         self.identity.save_identity(peer_address, &bundle.identity_key)?;
 
         Ok(SessionInitInfo {
-            ephemeral_public_key: ephemeral_public.as_bytes().to_vec(),
+            ephemeral_public_key: hs.ek_public.to_vec(),
             signed_prekey_id: 1,
-            one_time_prekey_id: bundle.one_time_prekey.as_ref().map(|_| 1),
+            one_time_prekey_id: hs.used_ot_opk_id,
+            ml_kem_ciphertext: hs.ml_kem_ct,
+            used_ot_pqpk_id: hs.used_ot_pqpk_id,
         })
     }
 
-    /// Respond to a session initiated by a peer (responder X3DH).
+    /// Respond to a session initiated by a peer (PQXDH responder).
     pub fn respond_to_session(
         &self,
         peer_address: &str,
@@ -118,42 +124,73 @@ impl SignalSessionManager {
         their_ephemeral_key: &[u8],
         signed_prekey_id: u32,
         one_time_prekey_id: Option<u32>,
+        ml_kem_ciphertext: &[u8],
+        used_ot_pqpk_id: Option<u32>,
     ) -> Result<()> {
         let (identity_private, _) = self.identity.get_identity_key_pair()?;
-        let our_identity_x25519 = StaticSecret::from(to_32(&identity_private, "identity key")?);
+        let identity_signing = SigningKey::from_bytes(&to_32(&identity_private, "identity key")?);
+        let our_ik_x25519 = StaticSecret::from(identity_signing.to_scalar_bytes());
 
         let spk_data = self.prekeys.load_signed_prekey(signed_prekey_id)?
             .ok_or_else(|| TransportError::Internal("signed prekey not found".into()))?;
-        let signed_prekey_secret = StaticSecret::from(to_32(&spk_data, "signed prekey")?);
+        let our_spk_secret = StaticSecret::from(to_32(&spk_data, "signed prekey")?);
 
-        let their_identity_x25519 = X25519Public::from(to_32(their_identity_key, "their identity")?);
-        let their_ephemeral = X25519Public::from(to_32(their_ephemeral_key, "their ephemeral")?);
-
-        let spk_bytes = signed_prekey_secret.to_bytes();
-        let dh1 = StaticSecret::from(spk_bytes).diffie_hellman(&their_identity_x25519);
-        let dh2 = our_identity_x25519.diffie_hellman(&their_ephemeral);
-        let dh3 = StaticSecret::from(spk_bytes).diffie_hellman(&their_ephemeral);
-
-        let mut ikm = Vec::with_capacity(128);
-        ikm.extend_from_slice(dh1.as_bytes());
-        ikm.extend_from_slice(dh2.as_bytes());
-        ikm.extend_from_slice(dh3.as_bytes());
-
-        if let Some(otpk_id) = one_time_prekey_id {
+        let our_opk_secret = if let Some(otpk_id) = one_time_prekey_id {
             let otpk_data = self.prekeys.load_prekey(otpk_id)?
                 .ok_or_else(|| TransportError::Internal("one-time prekey not found".into()))?;
-            let otpk_secret = StaticSecret::from(to_32(&otpk_data, "one-time prekey")?);
-            let dh4 = otpk_secret.diffie_hellman(&their_ephemeral);
-            ikm.extend_from_slice(dh4.as_bytes());
+            Some(StaticSecret::from(to_32(&otpk_data, "one-time prekey")?))
+        } else {
+            None
+        };
+
+        let (pq_kind, pq_id) = match used_ot_pqpk_id {
+            Some(id) => (PqKeyKind::OneTime, id),
+            None => (PqKeyKind::LastResort, PQ_LR_ID),
+        };
+        let pq_secret_bytes = self.prekeys.load_pq_secret(pq_id, pq_kind)?
+            .ok_or_else(|| TransportError::Internal(format!(
+                "ML-KEM secret not found for ({pq_id}, {pq_kind:?})"
+            )))?;
+        let our_ml_kem_secret = MlKemSecret::from_secret_bytes(&pq_secret_bytes)
+            .ok_or_else(|| TransportError::Internal("ML-KEM secret wrong length".into()))?;
+
+        let initiator_ik_ed = VerifyingKey::from_bytes(&to_32(their_identity_key, "their identity")?)
+            .map_err(|e| TransportError::Internal(format!("their identity not on curve: {e}")))?;
+
+        let root_key_z = pqxdh::pqxdh_responder(&pqxdh::ResponderInput {
+            our_ik_x25519_secret: &our_ik_x25519,
+            our_spk_secret: &our_spk_secret,
+            our_opk_secret: our_opk_secret.as_ref(),
+            our_ml_kem_secret: &our_ml_kem_secret,
+            initiator_ik_ed: &initiator_ik_ed,
+            initiator_ek_public: their_ephemeral_key,
+            ml_kem_ciphertext,
+        })
+        .map_err(|e| TransportError::Internal(format!("PQXDH responder: {e}")))?;
+
+        if pq_kind == PqKeyKind::OneTime {
+            self.prekeys.remove_pq_secret(pq_id, PqKeyKind::OneTime)?;
+        }
+        if let Some(otpk_id) = one_time_prekey_id {
             self.prekeys.remove_prekey(otpk_id)?;
         }
 
-        let (root_key, recv_chain, send_chain) = derive_x3dh_keys(&ikm)?;
+        let hk = Hkdf::<Sha256>::new(None, &*root_key_z);
+        let mut okm = [0u8; 96];
+        hk.expand(b"ReKindlePQXDH", &mut okm)
+            .map_err(|e| TransportError::Internal(format!("HKDF expand: {e}")))?;
+        let mut root_key = [0u8; 32];
+        let mut sending_chain_key = [0u8; 32];
+        let mut receiving_chain_key = [0u8; 32];
+        root_key.copy_from_slice(&okm[..32]);
+        receiving_chain_key.copy_from_slice(&okm[32..64]);
+        sending_chain_key.copy_from_slice(&okm[64..96]);
 
+        let spk_bytes = our_spk_secret.to_bytes();
         let ratchet = RatchetState {
             root_key,
-            sending_chain_key: send_chain,
-            receiving_chain_key: recv_chain,
+            sending_chain_key,
+            receiving_chain_key,
             our_ratchet_secret: spk_bytes.to_vec(),
             their_ratchet_public: their_ephemeral_key.to_vec(),
             send_counter: 0,
@@ -327,22 +364,27 @@ impl SignalSessionManager {
         self.prekeys.load_prekey(id)
     }
 
-    /// Generate a PreKeyBundle for publication to DHT.
+    /// Generate a PreKeyBundle for publication to DHT (PQXDH-augmented).
     pub fn generate_prekey_bundle(
         &self,
         signed_prekey_id: u32,
         one_time_prekey_id: Option<u32>,
+        pq_one_time_id: Option<u32>,
     ) -> Result<PreKeyBundle> {
         let (identity_private, identity_public) = self.identity.get_identity_key_pair()?;
         let registration_id = self.identity.get_local_registration_id()?;
+        let signing_key = SigningKey::from_bytes(&to_32(&identity_private, "identity for signing")?);
 
+        // X25519 signed prekey.
         let signed_prekey_secret = StaticSecret::random_from_rng(rand::rngs::OsRng);
         let signed_prekey_public = X25519Public::from(&signed_prekey_secret);
         self.prekeys.store_signed_prekey(signed_prekey_id, signed_prekey_secret.as_bytes())?;
+        let signed_prekey_signature = signing_key
+            .sign(&spk_signing_payload(signed_prekey_public.as_bytes()))
+            .to_bytes()
+            .to_vec();
 
-        let signing_key = SigningKey::from_bytes(&to_32(&identity_private, "identity for signing")?);
-        let signature = signing_key.sign(signed_prekey_public.as_bytes());
-
+        // Optional X25519 one-time prekey.
         let one_time_prekey = if let Some(otpk_id) = one_time_prekey_id {
             let otpk_secret = StaticSecret::random_from_rng(rand::rngs::OsRng);
             let otpk_public = X25519Public::from(&otpk_secret);
@@ -352,12 +394,43 @@ impl SignalSessionManager {
             None
         };
 
+        // ML-KEM-768 last-resort key (singleton, PQ_LR_ID).
+        let (pq_lr_secret, pq_lr_public) = MlKemSecret::generate();
+        self.prekeys.store_pq_secret(
+            PQ_LR_ID,
+            PqKeyKind::LastResort,
+            pq_lr_secret.as_secret_bytes(),
+        )?;
+        let pq_lr_signature = signing_key
+            .sign(&pq_signing_payload(b"LR", pq_lr_public.as_bytes()))
+            .to_bytes()
+            .to_vec();
+
+        // Optional ML-KEM-768 one-time key.
+        let (pq_ot, pq_ot_signature) = if let Some(id) = pq_one_time_id {
+            let (ot_secret, ot_public) = MlKemSecret::generate();
+            self.prekeys.store_pq_secret(id, PqKeyKind::OneTime, ot_secret.as_secret_bytes())?;
+            let sig = signing_key
+                .sign(&pq_signing_payload(b"OT", ot_public.as_bytes()))
+                .to_bytes()
+                .to_vec();
+            (Some(ot_public.as_bytes().to_vec()), Some(sig))
+        } else {
+            (None, None)
+        };
+
         Ok(PreKeyBundle {
             identity_key: identity_public,
             signed_prekey: signed_prekey_public.as_bytes().to_vec(),
-            signed_prekey_signature: signature.to_bytes().to_vec(),
+            signed_prekey_signature,
             one_time_prekey,
+            one_time_prekey_id,
             registration_id,
+            pqpk_lr: pq_lr_public.as_bytes().to_vec(),
+            pqpk_lr_signature: pq_lr_signature,
+            pqpk_ot: pq_ot,
+            pqpk_ot_signature: pq_ot_signature,
+            pqpk_ot_id: pq_one_time_id,
         })
     }
 }
@@ -368,20 +441,6 @@ fn to_32(data: &[u8], label: &str) -> Result<[u8; 32]> {
     data[..32].try_into().map_err(|_| TransportError::Internal(
         format!("{label}: expected 32 bytes, got {}", data.len()),
     ))
-}
-
-fn derive_x3dh_keys(ikm: &[u8]) -> Result<([u8; 32], [u8; 32], [u8; 32])> {
-    let hk = Hkdf::<Sha256>::new(None, ikm);
-    let mut okm = [0u8; 96];
-    hk.expand(b"ReKindleX3DH", &mut okm)
-        .map_err(|e| TransportError::Internal(format!("X3DH HKDF: {e}")))?;
-    let mut root = [0u8; 32];
-    let mut send = [0u8; 32];
-    let mut recv = [0u8; 32];
-    root.copy_from_slice(&okm[..32]);
-    send.copy_from_slice(&okm[32..64]);
-    recv.copy_from_slice(&okm[64..96]);
-    Ok((root, send, recv))
 }
 
 fn hkdf_expand(hk: &Hkdf<Sha256>, info: &[u8], out: &mut [u8; 32]) -> Result<()> {
@@ -489,22 +548,24 @@ mod tests {
         }
     }
 
-    fn make_keypair() -> (Vec<u8>, Vec<u8>) {
-        let secret = x25519_dalek::StaticSecret::random_from_rng(rand::rngs::OsRng);
-        let public = x25519_dalek::PublicKey::from(&secret);
-        (secret.to_bytes().to_vec(), public.as_bytes().to_vec())
+    /// Ed25519 identity keypair — bytes match production layout
+    /// (`MemoryIdentityStore` holds the Ed25519 32-byte secret + Ed25519
+    /// 32-byte public). PQXDH derives X25519 from Ed25519 internally via
+    /// `to_scalar_bytes()`, matching `Identity::to_x25519_secret`.
+    fn make_identity() -> (Vec<u8>, Vec<u8>) {
+        let signing = ed25519_dalek::SigningKey::generate(&mut rand::rngs::OsRng);
+        let verifying = signing.verifying_key();
+        (signing.to_bytes().to_vec(), verifying.to_bytes().to_vec())
     }
 
     fn establish_pair() -> (SignalSessionManager, SignalSessionManager, String, String) {
-        let (alice_priv, alice_pub) = make_keypair();
-        let (bob_priv, bob_pub) = make_keypair();
-
-        let alice_sessions: Arc<Mutex<HashMap<String, Vec<u8>>>> = Arc::new(Mutex::new(HashMap::new()));
+        let (alice_priv, alice_pub) = make_identity();
+        let (bob_priv, bob_pub) = make_identity();
 
         let alice = SignalSessionManager::new(
             Box::new(MemoryIdentityStore::new(alice_priv, alice_pub.clone(), 1)),
             Box::new(MemoryPreKeyStore::new()),
-            Box::new(SharedSessionStore(Arc::clone(&alice_sessions))),
+            Box::new(SharedSessionStore(Arc::new(Mutex::new(HashMap::new())))),
         );
         let bob = SignalSessionManager::new(
             Box::new(MemoryIdentityStore::new(bob_priv, bob_pub.clone(), 2)),
@@ -515,18 +576,19 @@ mod tests {
         let alice_addr = hex::encode(&alice_pub);
         let bob_addr = hex::encode(&bob_pub);
 
-        let bob_bundle = bob.generate_prekey_bundle(1, Some(100)).unwrap();
-        alice.establish_session(&bob_addr, &bob_bundle).unwrap();
+        let bob_bundle = bob.generate_prekey_bundle(1, Some(100), Some(100)).unwrap();
+        let init = alice.establish_session(&bob_addr, &bob_bundle).unwrap();
 
-        // Extract ephemeral private key from Alice's session, derive public for respond
-        let alice_data = alice_sessions.lock().get(&bob_addr).unwrap().clone();
-        let pos = 96;
-        let len = u32::from_le_bytes(alice_data[pos..pos + 4].try_into().unwrap()) as usize;
-        let ephemeral_secret_bytes: [u8; 32] = alice_data[pos + 4..pos + 4 + len].try_into().unwrap();
-        let ephemeral_secret = StaticSecret::from(ephemeral_secret_bytes);
-        let ephemeral_public = X25519Public::from(&ephemeral_secret);
-
-        bob.respond_to_session(&alice_addr, &alice_pub, ephemeral_public.as_bytes(), 1, Some(100)).unwrap();
+        bob.respond_to_session(
+            &alice_addr,
+            &alice_pub,
+            &init.ephemeral_public_key,
+            init.signed_prekey_id,
+            init.one_time_prekey_id,
+            &init.ml_kem_ciphertext,
+            init.used_ot_pqpk_id,
+        )
+        .unwrap();
 
         (alice, bob, alice_addr, bob_addr)
     }
@@ -558,23 +620,27 @@ mod tests {
 
     #[test]
     fn prekey_bundle_generation() {
-        let (priv_key, pub_key) = make_keypair();
+        let (priv_key, pub_key) = make_identity();
         let mgr = SignalSessionManager::new(
             Box::new(MemoryIdentityStore::new(priv_key, pub_key, 1)),
             Box::new(MemoryPreKeyStore::new()),
             Box::new(MemorySessionStore::new()),
         );
 
-        let bundle = mgr.generate_prekey_bundle(1, Some(100)).unwrap();
+        let bundle = mgr.generate_prekey_bundle(1, Some(100), Some(100)).unwrap();
         assert_eq!(bundle.signed_prekey.len(), 32);
         assert_eq!(bundle.signed_prekey_signature.len(), 64);
         assert!(bundle.one_time_prekey.is_some());
         assert_eq!(bundle.registration_id, 1);
+        // PQXDH additions: ML-KEM-768 last-resort bundle is always present.
+        assert_eq!(bundle.pqpk_lr.len(), 1184);
+        assert_eq!(bundle.pqpk_lr_signature.len(), 64);
+        assert!(bundle.pqpk_ot.is_some());
     }
 
     #[test]
     fn encrypt_without_session_fails() {
-        let (priv_key, pub_key) = make_keypair();
+        let (priv_key, pub_key) = make_identity();
         let mgr = SignalSessionManager::new(
             Box::new(MemoryIdentityStore::new(priv_key, pub_key, 1)),
             Box::new(MemoryPreKeyStore::new()),

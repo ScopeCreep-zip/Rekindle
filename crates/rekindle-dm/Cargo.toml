@@ -10,6 +10,11 @@ workspace = true
 
 [dependencies]
 rekindle-types = { path = "../rekindle-types" }
+rekindle-crypto = { path = "../rekindle-crypto" } # Phase 13 — MediaEncryptionKey for envelope crypto.
+rekindle-protocol = { path = "../rekindle-protocol" } # Phase 13 — MessagePayload for deps trait wire types.
+rekindle-records = { path = "../rekindle-records" } # Phase 13 — SMPL schema construction for new DM records.
+rekindle-secrets = { path = "../rekindle-secrets" } # Phase 13 — slot keypair derivation.
+rekindle-utils = { path = "../rekindle-utils" } # Phase 13 — timestamp_ms.
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -18,3 +23,14 @@ sha2 = "0.10"
 hkdf = "0.12"
 x25519-dalek = { version = "2", features = ["static_secrets"] }
 zeroize = { version = "1", features = ["derive"] }
+# Phase 13 additions: async runtime + storage + tracing + trait abstractions.
+async-trait = "0.1"
+tokio = { workspace = true, features = ["sync", "macros", "rt"] }
+tokio-rusqlite = "0.7"
+rusqlite = { version = "0.37", features = ["bundled"] }
+tracing = { workspace = true }
+parking_lot = { workspace = true }
+rand = "0.8" # Phase 13 — slot_seed random bytes for new DM records.
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["sync", "macros", "time", "rt", "rt-multi-thread", "test-util"] }

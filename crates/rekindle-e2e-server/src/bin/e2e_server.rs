@@ -162,6 +162,7 @@ async fn dispatch(server: &ServerState, cmd: &str, args: &Value) -> Result<Value
                 &server.state,
                 &server.pool,
                 &server.keystore_handle,
+                None,
             )
             .await?;
             Ok(serde_json::to_value(result).unwrap())
@@ -176,6 +177,7 @@ async fn dispatch(server: &ServerState, cmd: &str, args: &Value) -> Result<Value
                 &server.state,
                 &server.pool,
                 &server.keystore_handle,
+                None,
             )
             .await?;
             Ok(serde_json::to_value(result).unwrap())

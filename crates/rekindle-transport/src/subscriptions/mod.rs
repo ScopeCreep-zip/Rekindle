@@ -13,13 +13,18 @@
 //! - `gossip_handler` — inbound gossip processing (all 52 ControlPayload variants)
 //! - `dm_handler` — inbound DM processing (all 10 DmPayload variants)
 
+pub mod cold_start;
 pub mod events;
-pub mod state;
+// `state`, `state_effects`, and `dedup` were hoisted to `rekindle-events` in
+// Phase 1 of the decomposed-harvest plan. They are re-exported below so
+// internal callers (and historical `subscriptions::state::SubscriptionState`
+// paths from elsewhere in the workspace) keep working unchanged.
+pub use rekindle_events::{dedup, state, state_effects};
 pub mod watches;
-pub mod state_effects;
 pub mod dispatch;
-pub mod dedup;
 pub mod poll;
+
+pub use cold_start::ColdStartBuffer;
 
 use std::collections::HashMap;
 use std::sync::Arc;

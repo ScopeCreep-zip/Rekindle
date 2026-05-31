@@ -7,7 +7,10 @@
 
 #![forbid(unsafe_code)]
 
+pub mod error; // Phase 14 — unified CallError for signaling + state ops.
 pub mod group;
+pub mod group_state; // Phase 14 — GroupCallState + GroupCallStatus types.
+pub mod signaling; // Phase 14 — CallSignalingDeps + CallSignalEvent + registries.
 pub mod state;
 pub mod state_machine;
 
@@ -16,8 +19,25 @@ use sha2::Sha256;
 use thiserror::Error;
 use x25519_dalek::{PublicKey, StaticSecret};
 
+pub use error::CallError;
+pub use group_state::{GroupCallState, GroupCallStatus};
+pub use signaling::{CallRegistry, CallSignalEvent, CallSignalingDeps, GroupCallRegistry};
+pub use signaling::registry::GroupCallSnapshot;
 pub use state::{CallKind, CallState, CallStatus};
 pub use state_machine::{CallEvent, CallStateMachine, Effect};
+
+/// Truncate a hex pubkey to a short display form (16 chars + ellipsis).
+/// Used by signaling handlers as the fallback when a friend has no
+/// display_name set. Public so the src-tauri adapter's emit_event
+/// mappings can use the same truncation.
+#[must_use]
+pub fn short_pubkey_helper(pk: &str) -> String {
+    if pk.len() > 16 {
+        format!("{}…", &pk[..16])
+    } else {
+        pk.to_string()
+    }
+}
 
 // Wave 12 W12.9 — re-export the X25519 types so consumer crates
 // (src-tauri/services/group_calls.rs) don't have to depend on

@@ -11,7 +11,7 @@ use std::collections::HashMap;
 
 use parking_lot::Mutex;
 
-use crate::signal::store::{IdentityKeyStore, PreKeyStore, SessionStore};
+use crate::signal::store::{IdentityKeyStore, PqKeyKind, PreKeyStore, SessionStore};
 use crate::CryptoError;
 
 /// In-memory identity key store.
@@ -67,6 +67,8 @@ impl IdentityKeyStore for MemoryIdentityStore {
 pub struct MemoryPreKeyStore {
     prekeys: Mutex<HashMap<u32, Vec<u8>>>,
     signed_prekeys: Mutex<HashMap<u32, Vec<u8>>>,
+    /// Phase 3b — ML-KEM-768 PQ secrets keyed by (id, kind).
+    pq_secrets: Mutex<HashMap<(u32, PqKeyKind), Vec<u8>>>,
 }
 
 impl MemoryPreKeyStore {
@@ -74,6 +76,7 @@ impl MemoryPreKeyStore {
         Self {
             prekeys: Mutex::new(HashMap::new()),
             signed_prekeys: Mutex::new(HashMap::new()),
+            pq_secrets: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -117,6 +120,33 @@ impl PreKeyStore for MemoryPreKeyStore {
         self.signed_prekeys
             .lock()
             .insert(signed_prekey_id, key_data.to_vec());
+        Ok(())
+    }
+
+    fn load_pq_secret(
+        &self,
+        prekey_id: u32,
+        kind: PqKeyKind,
+    ) -> Result<Option<Vec<u8>>, CryptoError> {
+        Ok(self.pq_secrets.lock().get(&(prekey_id, kind)).cloned())
+    }
+
+    fn store_pq_secret(
+        &self,
+        prekey_id: u32,
+        kind: PqKeyKind,
+        key_data: &[u8],
+    ) -> Result<(), CryptoError> {
+        self.pq_secrets
+            .lock()
+            .insert((prekey_id, kind), key_data.to_vec());
+        Ok(())
+    }
+
+    fn remove_pq_secret(&self, prekey_id: u32, kind: PqKeyKind) -> Result<(), CryptoError> {
+        if kind == PqKeyKind::OneTime {
+            self.pq_secrets.lock().remove(&(prekey_id, kind));
+        }
         Ok(())
     }
 }

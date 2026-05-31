@@ -85,7 +85,7 @@ impl DhtRecordKey {
         Ok(output)
     }
 
-    /// Decrypt ciphertext produced by [`encrypt`].
+    /// Decrypt ciphertext produced by [`Self::encrypt`].
     ///
     /// Expects `[24-byte nonce || ciphertext || 16-byte tag]`.
     pub fn decrypt(&self, data: &[u8]) -> Result<Vec<u8>, CryptoError> {

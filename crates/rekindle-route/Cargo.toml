@@ -8,6 +8,7 @@ description = "Route lifecycle and cache primitives for Rekindle v2.0"
 workspace = true
 
 [dependencies]
+rekindle-types = { path = "../rekindle-types" }
 tokio = { workspace = true }
 tracing = { workspace = true }
 veilid-core = { version = "0.5.2", default-features = true }

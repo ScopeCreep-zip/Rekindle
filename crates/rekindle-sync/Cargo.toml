@@ -8,12 +8,18 @@ description = "Consistency and sync primitives for Rekindle v2.0"
 workspace = true
 
 [dependencies]
+async-trait = "0.1"
 blake3 = "1"
+hex = { workspace = true }
+rand = { workspace = true }
 rekindle-records = { path = "../rekindle-records" }
 rekindle-types = { path = "../rekindle-types" }
+serde_json = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 veilid-core = { version = "0.5.2", default-features = true }
 
 [dev-dependencies]
+parking_lot = { workspace = true }
 rekindle-protocol = { path = "../rekindle-protocol" }
+tokio = { workspace = true, features = ["rt", "macros", "sync", "time"] }

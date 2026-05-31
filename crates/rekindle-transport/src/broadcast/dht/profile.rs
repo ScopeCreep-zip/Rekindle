@@ -49,6 +49,11 @@ impl<'a> ProfileOps<'a> {
         record::set(self.rc, &key, PROFILE_SUBKEY_STATUS, status_payload, None).await?;
 
         record::set(self.rc, &key, PROFILE_SUBKEY_PREKEY_BUNDLE, prekey_bundle.to_vec(), None).await?;
+        tracing::info!(
+            subkey = PROFILE_SUBKEY_PREKEY_BUNDLE,
+            bytes = prekey_bundle.len(),
+            "pqxdh_bundle_published kind=LastResort+OneTimeBatch (profile create)",
+        );
         record::set(self.rc, &key, PROFILE_SUBKEY_ROUTE_BLOB, route_blob.to_vec(), None).await?;
 
         tracing::info!(key = %key, name = %display_name, "profile record created");
@@ -150,6 +155,11 @@ impl<'a> ProfileOps<'a> {
         record::set(self.rc, key, PROFILE_SUBKEY_STATUS, status_payload, None).await?;
 
         record::set(self.rc, key, PROFILE_SUBKEY_PREKEY_BUNDLE, prekey_bundle.to_vec(), None).await?;
+        tracing::info!(
+            subkey = PROFILE_SUBKEY_PREKEY_BUNDLE,
+            bytes = prekey_bundle.len(),
+            "pqxdh_bundle_published kind=LastResort+OneTimeBatch (profile reopen)",
+        );
         record::set(self.rc, key, PROFILE_SUBKEY_ROUTE_BLOB, route_blob.to_vec(), None).await?;
 
         Ok(())

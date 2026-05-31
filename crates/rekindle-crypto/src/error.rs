@@ -28,4 +28,14 @@ pub enum CryptoError {
 
     #[error("key storage error: {0}")]
     StorageError(String),
+
+    /// Phase 6 — no session exists for the requested peer (neither in
+    /// the in-memory cache nor in persistent storage).
+    #[error("no session for peer {0}")]
+    NoSession(String),
+
+    /// Phase 6 — vault is locked (passphrase not yet entered); persistent
+    /// load/store of session state is unavailable until unlock.
+    #[error("vault locked — session persistence unavailable")]
+    VaultLocked,
 }

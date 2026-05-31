@@ -1,19 +1,30 @@
+use std::sync::Arc;
+
 use crate::error::CryptoError;
 use crate::signal::prekeys::PreKeyBundle;
-use crate::signal::store::{IdentityKeyStore, PreKeyStore, SessionStore};
+use crate::signal::pqxdh::{self, verify::pq_signing_payload, verify::spk_signing_payload};
+use crate::signal::session_cache::{SessionCache, SessionPersistence};
+use crate::signal::store::{IdentityKeyStore, PqKeyKind, PreKeyStore, SessionStore};
 
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
-use ed25519_dalek::{Signer, SigningKey};
+use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
 use hkdf::Hkdf;
+use rekindle_secrets::pq_keys::MlKemSecret;
 use sha2::Sha256;
 use x25519_dalek::{PublicKey as X25519Public, StaticSecret};
 use zeroize::ZeroizeOnDrop;
 
+/// Fixed identifier for the per-identity ML-KEM-768 last-resort key.
+/// Singleton — one per identity at a time; rotates rarely.
+pub const PQ_LR_ID: u32 = 0;
+
 /// Metadata produced by initiator-side session establishment.
 ///
-/// The ephemeral key and prekey IDs must be sent to the peer so they
-/// can call `respond_to_session()` with matching parameters.
+/// The ephemeral key, prekey IDs, and PQXDH ML-KEM ciphertext must be
+/// sent to the peer so they can call `respond_to_session()` with
+/// matching parameters. Phase 3b of the decomposed-harvest plan added
+/// the PQXDH-specific fields (`ml_kem_ciphertext`, `used_ot_pqpk_id`).
 pub struct SessionInitInfo {
     /// The initiator's X25519 ephemeral public key.
     pub ephemeral_public_key: Vec<u8>,
@@ -21,6 +32,12 @@ pub struct SessionInitInfo {
     pub signed_prekey_id: u32,
     /// Which of the responder's one-time prekeys was consumed (if any).
     pub one_time_prekey_id: Option<u32>,
+    /// PQXDH ML-KEM-768 ciphertext (1088 bytes) — the encapsulation
+    /// targeted at the responder's chosen PQ key.
+    pub ml_kem_ciphertext: Vec<u8>,
+    /// Which of the responder's one-time PQ prekeys was consumed
+    /// (`None` means the last-resort key at `PQ_LR_ID` was used).
+    pub used_ot_pqpk_id: Option<u32>,
 }
 
 /// Manages Signal Protocol sessions for 1:1 encrypted messaging.
@@ -30,7 +47,33 @@ pub struct SessionInitInfo {
 pub struct SignalSessionManager {
     identity: Box<dyn IdentityKeyStore>,
     prekeys: Box<dyn PreKeyStore>,
-    sessions: Box<dyn SessionStore>,
+    /// `Arc` (not `Box`) so the underlying store can be shared with the
+    /// optional [`SessionCache`] adapter without breaking ownership.
+    sessions: Arc<dyn SessionStore>,
+    /// Phase 6 — per-peer atomicity cache. When `Some`, [`Self::encrypt`]
+    /// and [`Self::decrypt`] route load-mutate-store through the cache's
+    /// per-peer `tokio::sync::Mutex`, preventing ratchet desync under
+    /// concurrent sends to the same peer. When `None`, falls back to the
+    /// legacy unsynchronized path (test fixtures + the historical sync
+    /// API). Production callers must enable via [`Self::with_session_cache`].
+    cache: Option<Arc<SessionCache>>,
+}
+
+/// Adapter exposing a sync [`SessionStore`] as the async
+/// [`SessionPersistence`] trait the cache wants. Both store functions
+/// are sync and never block on I/O (the concrete impls write to
+/// in-memory parking_lot mutexes + the vault SQLite which is local),
+/// so calling them from an async fn without `spawn_blocking` is sound.
+struct SessionStoreAdapter(Arc<dyn SessionStore>);
+
+#[async_trait::async_trait]
+impl SessionPersistence for SessionStoreAdapter {
+    async fn load(&self, peer_hex: &str) -> Result<Option<Vec<u8>>, CryptoError> {
+        self.0.load_session(peer_hex)
+    }
+    async fn store(&self, peer_hex: &str, session: &[u8]) -> Result<(), CryptoError> {
+        self.0.store_session(peer_hex, session)
+    }
 }
 
 /// An established session's symmetric ratchet state. Architecture
@@ -67,11 +110,34 @@ impl SignalSessionManager {
         prekeys: Box<dyn PreKeyStore>,
         sessions: Box<dyn SessionStore>,
     ) -> Self {
+        // Convert Box→Arc so we can hand the same backing store to the
+        // optional cache adapter. Box→Arc::from preserves the trait
+        // object's vtable; no heap re-allocation.
+        let sessions: Arc<dyn SessionStore> = Arc::from(sessions);
         Self {
             identity,
             prekeys,
             sessions,
+            cache: None,
         }
+    }
+
+    /// Phase 6 — enable the per-peer session cache. Builds an in-memory
+    /// LRU of `peer → Arc<tokio::sync::Mutex<SessionBytes>>` backed by
+    /// the manager's existing [`SessionStore`]. Once enabled,
+    /// concurrent encrypts/decrypts to the SAME peer serialize on the
+    /// per-peer mutex (preventing ratchet desync); encrypts to
+    /// DIFFERENT peers run in parallel.
+    ///
+    /// `capacity` bounds the in-memory cache; evictions don't affect
+    /// persistence (the underlying SessionStore is the source of truth).
+    /// 256 is a reasonable default for a friend-list-scale chat client.
+    #[must_use]
+    pub fn with_session_cache(mut self, capacity: usize) -> Self {
+        let adapter: Arc<dyn SessionPersistence> =
+            Arc::new(SessionStoreAdapter(Arc::clone(&self.sessions)));
+        self.cache = Some(Arc::new(SessionCache::new(adapter, capacity)));
+        self
     }
 
     /// Establish a session with a peer using their `PreKeyBundle` (X3DH).
@@ -83,57 +149,42 @@ impl SignalSessionManager {
         peer_address: &str,
         bundle: &PreKeyBundle,
     ) -> Result<SessionInitInfo, CryptoError> {
-        // X3DH key agreement:
-        // 1. Generate ephemeral X25519 keypair
-        let ephemeral_secret = StaticSecret::random_from_rng(rand::rngs::OsRng);
-        let ephemeral_public = X25519Public::from(&ephemeral_secret);
-        let ephemeral_bytes = ephemeral_secret.to_bytes();
+        // PQXDH initiator (Phase 3b): replaces the classical X3DH body.
+        // The Ed25519 identity is converted to X25519 form via the
+        // standard scalar derivation; PQ keys are verified, ML-KEM
+        // ciphertext is encapsulated, root_key is derived via the
+        // PQXDH KDF (F || DH1 || DH2 || DH3 [|| DH4] || SS).
 
-        // 2. Our identity X25519 key
+        // 1. Our X25519 identity secret (Ed25519 → X25519 via scalar).
         let (identity_private, _identity_public) = self.identity.get_identity_key_pair()?;
-        let our_identity_x25519 = StaticSecret::from(
-            <[u8; 32]>::try_from(&identity_private[..32])
-                .map_err(|_| CryptoError::InvalidKey("identity key wrong length".into()))?,
+        let identity_signing = SigningKey::from_bytes(
+            &<[u8; 32]>::try_from(&identity_private[..32]).map_err(|_| {
+                CryptoError::InvalidKey("identity key wrong length".into())
+            })?,
         );
+        let our_ik_x25519 = StaticSecret::from(identity_signing.to_scalar_bytes());
 
-        // 3. Their signed prekey
-        let their_signed_prekey = X25519Public::from(
-            <[u8; 32]>::try_from(bundle.signed_prekey.as_slice())
-                .map_err(|_| CryptoError::InvalidKey("signed prekey wrong length".into()))?,
-        );
+        // 2. Their Ed25519 identity (verifying key) — used for signature
+        //    verification on SPK and PQ keys.
+        let their_ik_ed = VerifyingKey::from_bytes(
+            &<[u8; 32]>::try_from(bundle.identity_key.as_slice()).map_err(|_| {
+                CryptoError::InvalidKey("their identity key wrong length".into())
+            })?,
+        )
+        .map_err(|e| CryptoError::InvalidKey(format!("their identity key not on curve: {e}")))?;
 
-        // 4. Their identity key (for X25519)
-        let their_identity_x25519 = X25519Public::from(
-            <[u8; 32]>::try_from(bundle.identity_key.as_slice())
-                .map_err(|_| CryptoError::InvalidKey("identity key wrong length".into()))?,
-        );
+        // 3. Run the PQXDH initiator handshake against the bundle.
+        let hs = pqxdh::pqxdh_initiator(&our_ik_x25519, bundle, &their_ik_ed)
+            .map_err(|e| CryptoError::SessionError(format!("PQXDH initiator: {e}")))?;
 
-        // 5. Compute shared secrets: DH1 || DH2 || DH3
-        let dh1 = our_identity_x25519.diffie_hellman(&their_signed_prekey);
-        let dh2 = StaticSecret::from(ephemeral_bytes).diffie_hellman(&their_identity_x25519);
-        let dh3 = StaticSecret::from(ephemeral_bytes).diffie_hellman(&their_signed_prekey);
-
-        // 6. Concatenate and derive root key + chain keys via HKDF
-        let mut ikm = Vec::with_capacity(96);
-        ikm.extend_from_slice(dh1.as_bytes());
-        ikm.extend_from_slice(dh2.as_bytes());
-        ikm.extend_from_slice(dh3.as_bytes());
-
-        // Optional DH4 with one-time prekey
-        if let Some(ref otpk) = bundle.one_time_prekey {
-            let their_otpk = X25519Public::from(
-                <[u8; 32]>::try_from(otpk.as_slice())
-                    .map_err(|_| CryptoError::InvalidKey("one-time prekey wrong length".into()))?,
-            );
-            let dh4 = StaticSecret::from(ephemeral_bytes).diffie_hellman(&their_otpk);
-            ikm.extend_from_slice(dh4.as_bytes());
-        }
-
-        let hk = Hkdf::<Sha256>::new(None, &ikm);
+        // 4. Expand the PQXDH root_key into sending + receiving chain
+        //    keys for the Double Ratchet. The expansion mirrors the
+        //    legacy X3DH HKDF split, just with PQXDH's root_key as the
+        //    starting material.
+        let hk = Hkdf::<Sha256>::new(None, &*hs.root_key);
         let mut okm = [0u8; 96];
-        hk.expand(b"ReKindleX3DH", &mut okm)
+        hk.expand(b"ReKindlePQXDH", &mut okm)
             .map_err(|e| CryptoError::SessionError(format!("HKDF expand failed: {e}")))?;
-
         let mut root_key = [0u8; 32];
         let mut sending_chain_key = [0u8; 32];
         let mut receiving_chain_key = [0u8; 32];
@@ -141,17 +192,16 @@ impl SignalSessionManager {
         sending_chain_key.copy_from_slice(&okm[32..64]);
         receiving_chain_key.copy_from_slice(&okm[64..96]);
 
-        // 7. Serialize and store the initial ratchet state
+        // 5. Persist the initial ratchet state.
         let ratchet = RatchetState {
             root_key,
             sending_chain_key,
             receiving_chain_key,
-            our_ratchet_secret: ephemeral_public.as_bytes().to_vec(),
+            our_ratchet_secret: hs.ek_public.to_vec(),
             their_ratchet_public: bundle.signed_prekey.clone(),
             send_counter: 0,
             recv_counter: 0,
         };
-
         let session_data = serialize_ratchet(&ratchet);
         self.sessions.store_session(peer_address, &session_data)?;
 
@@ -160,13 +210,12 @@ impl SignalSessionManager {
             .save_identity(peer_address, &bundle.identity_key)?;
 
         Ok(SessionInitInfo {
-            ephemeral_public_key: ephemeral_public.as_bytes().to_vec(),
-            signed_prekey_id: 1, // matches generate_prekey_bundle(1, ...)
-            one_time_prekey_id: if bundle.one_time_prekey.is_some() {
-                Some(1)
-            } else {
-                None
-            },
+            ephemeral_public_key: hs.ek_public.to_vec(),
+            // SPK id 1 matches generate_prekey_bundle(1, ...) convention.
+            signed_prekey_id: 1,
+            one_time_prekey_id: hs.used_ot_opk_id,
+            ml_kem_ciphertext: hs.ml_kem_ct,
+            used_ot_pqpk_id: hs.used_ot_pqpk_id,
         })
     }
 
@@ -181,80 +230,105 @@ impl SignalSessionManager {
         their_ephemeral_key: &[u8],
         signed_prekey_id: u32,
         one_time_prekey_id: Option<u32>,
+        ml_kem_ciphertext: &[u8],
+        used_ot_pqpk_id: Option<u32>,
     ) -> Result<(), CryptoError> {
-        // Load our identity keypair
-        let (identity_private, _identity_public) = self.identity.get_identity_key_pair()?;
-        let our_identity_x25519 = StaticSecret::from(
-            <[u8; 32]>::try_from(&identity_private[..32])
-                .map_err(|_| CryptoError::InvalidKey("identity key wrong length".into()))?,
-        );
+        // PQXDH responder (Phase 3b): mirror of `establish_session`.
+        // Loads our X25519 identity, signed prekey, optional OPK, and
+        // the ML-KEM secret matching whichever PQ key the initiator
+        // encapsulated to. Reconstructs the same root_key.
 
-        // Load our signed prekey private key
+        // 1. Our X25519 identity (Ed25519 scalar form).
+        let (identity_private, _identity_public) = self.identity.get_identity_key_pair()?;
+        let identity_signing = SigningKey::from_bytes(
+            &<[u8; 32]>::try_from(&identity_private[..32]).map_err(|_| {
+                CryptoError::InvalidKey("identity key wrong length".into())
+            })?,
+        );
+        let our_ik_x25519 = StaticSecret::from(identity_signing.to_scalar_bytes());
+
+        // 2. Our signed prekey secret.
         let spk_data = self
             .prekeys
             .load_signed_prekey(signed_prekey_id)?
             .ok_or_else(|| CryptoError::InvalidKey("signed prekey not found".into()))?;
-        let signed_prekey_secret = StaticSecret::from(
+        let our_spk_secret = StaticSecret::from(
             <[u8; 32]>::try_from(spk_data.as_slice())
                 .map_err(|_| CryptoError::InvalidKey("signed prekey wrong length".into()))?,
         );
 
-        // Their identity key as X25519 public
-        let their_identity_x25519 = X25519Public::from(
-            <[u8; 32]>::try_from(their_identity_key)
-                .map_err(|_| CryptoError::InvalidKey("their identity key wrong length".into()))?,
-        );
-
-        // Their ephemeral key
-        let their_ephemeral = X25519Public::from(
-            <[u8; 32]>::try_from(their_ephemeral_key)
-                .map_err(|_| CryptoError::InvalidKey("their ephemeral key wrong length".into()))?,
-        );
-
-        // Compute shared secrets (mirror of initiator):
-        // DH1 = DH(our_signed_prekey, their_identity)
-        // DH2 = DH(our_identity, their_ephemeral)
-        // DH3 = DH(our_signed_prekey, their_ephemeral)
-        let spk_bytes = signed_prekey_secret.to_bytes();
-        let dh1 = StaticSecret::from(spk_bytes).diffie_hellman(&their_identity_x25519);
-        let dh2 = our_identity_x25519.diffie_hellman(&their_ephemeral);
-        let dh3 = StaticSecret::from(spk_bytes).diffie_hellman(&their_ephemeral);
-
-        let mut ikm = Vec::with_capacity(96);
-        ikm.extend_from_slice(dh1.as_bytes());
-        ikm.extend_from_slice(dh2.as_bytes());
-        ikm.extend_from_slice(dh3.as_bytes());
-
-        // Optional DH4 with one-time prekey
-        if let Some(otpk_id) = one_time_prekey_id {
+        // 3. Our optional one-time prekey secret.
+        let our_opk_secret = if let Some(otpk_id) = one_time_prekey_id {
             let otpk_data = self
                 .prekeys
                 .load_prekey(otpk_id)?
                 .ok_or_else(|| CryptoError::InvalidKey("one-time prekey not found".into()))?;
-            let otpk_secret = StaticSecret::from(
+            Some(StaticSecret::from(
                 <[u8; 32]>::try_from(otpk_data.as_slice())
                     .map_err(|_| CryptoError::InvalidKey("one-time prekey wrong length".into()))?,
-            );
-            let dh4 = otpk_secret.diffie_hellman(&their_ephemeral);
-            ikm.extend_from_slice(dh4.as_bytes());
+            ))
+        } else {
+            None
+        };
 
-            // Consume the one-time prekey
+        // 4. Our ML-KEM secret (one-time preferred; else last-resort).
+        let (pq_kind, pq_id) = match used_ot_pqpk_id {
+            Some(id) => (PqKeyKind::OneTime, id),
+            None => (PqKeyKind::LastResort, PQ_LR_ID),
+        };
+        let pq_secret_bytes = self
+            .prekeys
+            .load_pq_secret(pq_id, pq_kind)?
+            .ok_or_else(|| {
+                CryptoError::InvalidKey(format!(
+                    "ML-KEM secret not found for ({pq_id}, {pq_kind:?})"
+                ))
+            })?;
+        let our_ml_kem_secret = MlKemSecret::from_secret_bytes(&pq_secret_bytes)
+            .ok_or_else(|| CryptoError::InvalidKey("ML-KEM secret wrong length".into()))?;
+
+        // 5. Initiator's Ed25519 identity (for X25519 DH partner derivation).
+        let initiator_ik_ed = VerifyingKey::from_bytes(
+            &<[u8; 32]>::try_from(their_identity_key).map_err(|_| {
+                CryptoError::InvalidKey("their identity key wrong length".into())
+            })?,
+        )
+        .map_err(|e| CryptoError::InvalidKey(format!("their identity key not on curve: {e}")))?;
+
+        // 6. Run the PQXDH responder.
+        let root_key_z = pqxdh::pqxdh_responder(&pqxdh::ResponderInput {
+            our_ik_x25519_secret: &our_ik_x25519,
+            our_spk_secret: &our_spk_secret,
+            our_opk_secret: our_opk_secret.as_ref(),
+            our_ml_kem_secret: &our_ml_kem_secret,
+            initiator_ik_ed: &initiator_ik_ed,
+            initiator_ek_public: their_ephemeral_key,
+            ml_kem_ciphertext,
+        })
+        .map_err(|e| CryptoError::SessionError(format!("PQXDH responder: {e}")))?;
+
+        // 7. Consume one-time keys (PQ OT + X25519 OPK).
+        if pq_kind == PqKeyKind::OneTime {
+            self.prekeys.remove_pq_secret(pq_id, PqKeyKind::OneTime)?;
+        }
+        if let Some(otpk_id) = one_time_prekey_id {
             self.prekeys.remove_prekey(otpk_id)?;
         }
 
-        let hk = Hkdf::<Sha256>::new(None, &ikm);
+        // 8. Expand the root_key into chain keys.
+        let hk = Hkdf::<Sha256>::new(None, &*root_key_z);
         let mut okm = [0u8; 96];
-        hk.expand(b"ReKindleX3DH", &mut okm)
+        hk.expand(b"ReKindlePQXDH", &mut okm)
             .map_err(|e| CryptoError::SessionError(format!("HKDF expand failed: {e}")))?;
-
         let mut root_key = [0u8; 32];
         let mut sending_chain_key = [0u8; 32];
         let mut receiving_chain_key = [0u8; 32];
         root_key.copy_from_slice(&okm[..32]);
-        // Responder swaps sending/receiving relative to initiator
+        // Responder swaps sending/receiving relative to initiator.
         receiving_chain_key.copy_from_slice(&okm[32..64]);
         sending_chain_key.copy_from_slice(&okm[64..96]);
 
+        let spk_bytes = our_spk_secret.to_bytes();
         let ratchet = RatchetState {
             root_key,
             sending_chain_key,
@@ -278,14 +352,69 @@ impl SignalSessionManager {
     }
 
     /// Encrypt a plaintext message for a peer.
-    pub fn encrypt(&self, peer_address: &str, plaintext: &[u8]) -> Result<Vec<u8>, CryptoError> {
+    ///
+    /// Phase 6 — when a [`SessionCache`] is wired via
+    /// [`Self::with_session_cache`], this routes load-mutate-store
+    /// through the cache's per-peer `tokio::sync::Mutex`. Concurrent
+    /// encrypts to the SAME peer serialize on that mutex (ratchet
+    /// counters advance in order); encrypts to DIFFERENT peers run in
+    /// parallel. Without a cache, falls back to the legacy
+    /// unsynchronized path which races under contention.
+    pub async fn encrypt(
+        &self,
+        peer_address: &str,
+        plaintext: &[u8],
+    ) -> Result<Vec<u8>, CryptoError> {
+        if let Some(cache) = self.cache.as_ref() {
+            return self.encrypt_with_cache(cache, peer_address, plaintext).await;
+        }
+        // Legacy path — test fixtures + callers that haven't wired the cache.
+        self.encrypt_unsynchronized(peer_address, plaintext)
+    }
+
+    async fn encrypt_with_cache(
+        &self,
+        cache: &SessionCache,
+        peer_address: &str,
+        plaintext: &[u8],
+    ) -> Result<Vec<u8>, CryptoError> {
+        let arc = cache.get_or_load(peer_address).await?;
+        // Per-peer lock — held only across the in-process mutate. Other
+        // peers' encrypts proceed concurrently on independent shards.
+        let mut guard = arc.lock().await;
+        let mut ratchet = deserialize_ratchet(&guard)?;
+        let (output, new_data) = Self::encrypt_mutate(&mut ratchet, plaintext)?;
+        // Update cache snapshot AND persist to durable store. Persisting
+        // under the per-peer lock guarantees the durable store's view
+        // matches the in-memory snapshot once the lock is released.
+        guard.clone_from(&new_data);
+        self.sessions.store_session(peer_address, &new_data)?;
+        Ok(output)
+    }
+
+    fn encrypt_unsynchronized(
+        &self,
+        peer_address: &str,
+        plaintext: &[u8],
+    ) -> Result<Vec<u8>, CryptoError> {
         let session_data = self
             .sessions
             .load_session(peer_address)?
             .ok_or_else(|| CryptoError::SessionError("no session for peer".into()))?;
-
         let mut ratchet = deserialize_ratchet(&session_data)?;
+        let (output, new_data) = Self::encrypt_mutate(&mut ratchet, plaintext)?;
+        self.sessions.store_session(peer_address, &new_data)?;
+        Ok(output)
+    }
 
+    /// Pure mutate step shared by cache and non-cache paths. Returns
+    /// `(wire_output, new_session_bytes)`. Caller is responsible for
+    /// persisting `new_session_bytes` (under the per-peer lock when
+    /// the cache is in play).
+    fn encrypt_mutate(
+        ratchet: &mut RatchetState,
+        plaintext: &[u8],
+    ) -> Result<(Vec<u8>, Vec<u8>), CryptoError> {
         // Derive message key from sending chain key via HKDF
         let hk = Hkdf::<Sha256>::new(None, &ratchet.sending_chain_key);
         let mut message_key = [0u8; 32];
@@ -317,27 +446,61 @@ impl SignalSessionManager {
         output.extend_from_slice(&nonce_bytes);
         output.extend_from_slice(&ciphertext);
 
-        // Save updated ratchet state
-        let new_session_data = serialize_ratchet(&ratchet);
-        self.sessions
-            .store_session(peer_address, &new_session_data)?;
-
-        Ok(output)
+        let new_session_data = serialize_ratchet(ratchet);
+        Ok((output, new_session_data))
     }
 
     /// Decrypt a ciphertext message from a peer.
-    pub fn decrypt(&self, peer_address: &str, message: &[u8]) -> Result<Vec<u8>, CryptoError> {
+    ///
+    /// Phase 6 — see [`Self::encrypt`]. Same cache-vs-fallback semantics.
+    pub async fn decrypt(
+        &self,
+        peer_address: &str,
+        message: &[u8],
+    ) -> Result<Vec<u8>, CryptoError> {
         if message.len() < 20 {
             return Err(CryptoError::DecryptionError("message too short".into()));
         }
+        if let Some(cache) = self.cache.as_ref() {
+            return self.decrypt_with_cache(cache, peer_address, message).await;
+        }
+        self.decrypt_unsynchronized(peer_address, message)
+    }
 
+    async fn decrypt_with_cache(
+        &self,
+        cache: &SessionCache,
+        peer_address: &str,
+        message: &[u8],
+    ) -> Result<Vec<u8>, CryptoError> {
+        let arc = cache.get_or_load(peer_address).await?;
+        let mut guard = arc.lock().await;
+        let mut ratchet = deserialize_ratchet(&guard)?;
+        let (plaintext, new_data) = Self::decrypt_mutate(&mut ratchet, message)?;
+        guard.clone_from(&new_data);
+        self.sessions.store_session(peer_address, &new_data)?;
+        Ok(plaintext)
+    }
+
+    fn decrypt_unsynchronized(
+        &self,
+        peer_address: &str,
+        message: &[u8],
+    ) -> Result<Vec<u8>, CryptoError> {
         let session_data = self
             .sessions
             .load_session(peer_address)?
             .ok_or_else(|| CryptoError::SessionError("no session for peer".into()))?;
-
         let mut ratchet = deserialize_ratchet(&session_data)?;
+        let (plaintext, new_data) = Self::decrypt_mutate(&mut ratchet, message)?;
+        self.sessions.store_session(peer_address, &new_data)?;
+        Ok(plaintext)
+    }
 
+    fn decrypt_mutate(
+        ratchet: &mut RatchetState,
+        message: &[u8],
+    ) -> Result<(Vec<u8>, Vec<u8>), CryptoError> {
         // Parse counter + nonce + ciphertext
         let _counter = u64::from_le_bytes(
             message[..8]
@@ -371,12 +534,8 @@ impl SignalSessionManager {
             .decrypt(nonce, ciphertext)
             .map_err(|e| CryptoError::DecryptionError(e.to_string()))?;
 
-        // Save updated ratchet state
-        let new_session_data = serialize_ratchet(&ratchet);
-        self.sessions
-            .store_session(peer_address, &new_session_data)?;
-
-        Ok(plaintext)
+        let new_session_data = serialize_ratchet(ratchet);
+        Ok((plaintext, new_session_data))
     }
 
     /// Check if we have an established session with a peer.
@@ -432,6 +591,7 @@ impl SignalSessionManager {
         &self,
         signed_prekey_id: u32,
         one_time_prekey_id: Option<u32>,
+        pq_one_time_id: Option<u32>,
     ) -> Result<Option<PreKeyBundle>, CryptoError> {
         let Some(signed_prekey_secret_bytes) =
             self.prekeys.load_signed_prekey(signed_prekey_id)?
@@ -448,6 +608,29 @@ impl SignalSessionManager {
             None
         };
 
+        // Phase 3b — PQ last-resort key must exist; if missing, caller
+        // mints fresh.
+        let Some(pq_lr_bytes) = self.prekeys.load_pq_secret(PQ_LR_ID, PqKeyKind::LastResort)?
+        else {
+            return Ok(None);
+        };
+        let pq_lr_secret = MlKemSecret::from_secret_bytes(&pq_lr_bytes)
+            .ok_or_else(|| CryptoError::InvalidKey("PQ LR secret wrong length".into()))?;
+        let pq_lr_public = pq_lr_secret.public();
+
+        // Phase 3b — PQ one-time key (optional).
+        let pq_ot_secret_opt = if let Some(id) = pq_one_time_id {
+            match self.prekeys.load_pq_secret(id, PqKeyKind::OneTime)? {
+                Some(bytes) => Some(
+                    MlKemSecret::from_secret_bytes(&bytes)
+                        .ok_or_else(|| CryptoError::InvalidKey("PQ OT secret wrong length".into()))?,
+                ),
+                None => return Ok(None),
+            }
+        } else {
+            None
+        };
+
         let (identity_private, identity_public) = self.identity.get_identity_key_pair()?;
         let registration_id = self.identity.get_local_registration_id()?;
 
@@ -457,15 +640,14 @@ impl SignalSessionManager {
         let signed_prekey_secret = StaticSecret::from(secret_array);
         let signed_prekey_public = X25519Public::from(&signed_prekey_secret);
 
-        // Re-sign the public bytes with the identity key. The signature
-        // is deterministic over the same inputs, so peers verifying
-        // against the previously-published bundle still succeed.
+        // Re-sign the public bytes with the identity key, using the
+        // PQXDH domain-separated payload (0x01 || SPK).
         let signing_key =
             SigningKey::from_bytes(&<[u8; 32]>::try_from(&identity_private[..32]).map_err(
                 |_| CryptoError::InvalidKey("identity key wrong length for signing".into()),
             )?);
         let signed_prekey_signature = signing_key
-            .sign(signed_prekey_public.as_bytes())
+            .sign(&spk_signing_payload(signed_prekey_public.as_bytes()))
             .to_bytes()
             .to_vec();
 
@@ -479,42 +661,68 @@ impl SignalSessionManager {
             None
         };
 
+        // Re-sign PQ keys with the identity (domain-separated payloads).
+        let pq_lr_signature = signing_key
+            .sign(&pq_signing_payload(b"LR", pq_lr_public.as_bytes()))
+            .to_bytes()
+            .to_vec();
+        let (pq_ot, pq_ot_signature) = match pq_ot_secret_opt {
+            Some(ot_secret) => {
+                let ot_public = ot_secret.public();
+                let sig = signing_key
+                    .sign(&pq_signing_payload(b"OT", ot_public.as_bytes()))
+                    .to_bytes()
+                    .to_vec();
+                (Some(ot_public.as_bytes().to_vec()), Some(sig))
+            }
+            None => (None, None),
+        };
+
         Ok(Some(PreKeyBundle {
             identity_key: identity_public,
             signed_prekey: signed_prekey_public.as_bytes().to_vec(),
             signed_prekey_signature,
             one_time_prekey,
+            one_time_prekey_id,
             registration_id,
+            pqpk_lr: pq_lr_public.as_bytes().to_vec(),
+            pqpk_lr_signature: pq_lr_signature,
+            pqpk_ot: pq_ot,
+            pqpk_ot_signature: pq_ot_signature,
+            pqpk_ot_id: pq_one_time_id,
         }))
     }
 
     /// Generate a `PreKeyBundle` for publication to DHT.
     ///
-    /// Creates a signed prekey and optional one-time prekey, stores them
-    /// in the prekey store, and returns the bundle.
+    /// Creates a signed prekey, optional one-time prekey, mandatory PQ
+    /// last-resort prekey, and optional PQ one-time prekey. Stores all
+    /// secrets in the prekey store and returns the bundle.
     pub fn generate_prekey_bundle(
         &self,
         signed_prekey_id: u32,
         one_time_prekey_id: Option<u32>,
+        pq_one_time_id: Option<u32>,
     ) -> Result<PreKeyBundle, CryptoError> {
         let (identity_private, identity_public) = self.identity.get_identity_key_pair()?;
         let registration_id = self.identity.get_local_registration_id()?;
 
-        // Generate signed prekey (X25519)
-        let signed_prekey_secret = StaticSecret::random_from_rng(rand::rngs::OsRng);
-        let signed_prekey_public = X25519Public::from(&signed_prekey_secret);
-        self.prekeys
-            .store_signed_prekey(signed_prekey_id, signed_prekey_secret.as_bytes())?;
-
-        // Sign the prekey public key bytes with our Ed25519 identity key
         let signing_key =
             SigningKey::from_bytes(&<[u8; 32]>::try_from(&identity_private[..32]).map_err(
                 |_| CryptoError::InvalidKey("identity key wrong length for signing".into()),
             )?);
-        let signature = signing_key.sign(signed_prekey_public.as_bytes());
-        let signed_prekey_signature = signature.to_bytes().to_vec();
 
-        // Optionally generate a one-time prekey
+        // Generate signed prekey (X25519).
+        let signed_prekey_secret = StaticSecret::random_from_rng(rand::rngs::OsRng);
+        let signed_prekey_public = X25519Public::from(&signed_prekey_secret);
+        self.prekeys
+            .store_signed_prekey(signed_prekey_id, signed_prekey_secret.as_bytes())?;
+        let signed_prekey_signature = signing_key
+            .sign(&spk_signing_payload(signed_prekey_public.as_bytes()))
+            .to_bytes()
+            .to_vec();
+
+        // Optionally generate a one-time X25519 prekey.
         let one_time_prekey = if let Some(otpk_id) = one_time_prekey_id {
             let otpk_secret = StaticSecret::random_from_rng(rand::rngs::OsRng);
             let otpk_public = X25519Public::from(&otpk_secret);
@@ -524,12 +732,44 @@ impl SignalSessionManager {
             None
         };
 
+        // Generate ML-KEM-768 last-resort key (singleton, PQ_LR_ID = 0).
+        let (pq_lr_secret, pq_lr_public) = MlKemSecret::generate();
+        self.prekeys.store_pq_secret(
+            PQ_LR_ID,
+            PqKeyKind::LastResort,
+            pq_lr_secret.as_secret_bytes(),
+        )?;
+        let pq_lr_signature = signing_key
+            .sign(&pq_signing_payload(b"LR", pq_lr_public.as_bytes()))
+            .to_bytes()
+            .to_vec();
+
+        // Optionally generate a one-time ML-KEM-768 prekey.
+        let (pq_ot, pq_ot_signature) = if let Some(id) = pq_one_time_id {
+            let (ot_secret, ot_public) = MlKemSecret::generate();
+            self.prekeys
+                .store_pq_secret(id, PqKeyKind::OneTime, ot_secret.as_secret_bytes())?;
+            let sig = signing_key
+                .sign(&pq_signing_payload(b"OT", ot_public.as_bytes()))
+                .to_bytes()
+                .to_vec();
+            (Some(ot_public.as_bytes().to_vec()), Some(sig))
+        } else {
+            (None, None)
+        };
+
         Ok(PreKeyBundle {
             identity_key: identity_public,
             signed_prekey: signed_prekey_public.as_bytes().to_vec(),
             signed_prekey_signature,
             one_time_prekey,
+            one_time_prekey_id,
             registration_id,
+            pqpk_lr: pq_lr_public.as_bytes().to_vec(),
+            pqpk_lr_signature: pq_lr_signature,
+            pqpk_ot: pq_ot,
+            pqpk_ot_signature: pq_ot_signature,
+            pqpk_ot_id: pq_one_time_id,
         })
     }
 }

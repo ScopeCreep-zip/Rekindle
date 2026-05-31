@@ -38,10 +38,25 @@ impl Sender {
         Self { api, config }
     }
 
-    /// Send a DM-class message to a single peer.
+    /// Send a class-tagged message to a single peer.
+    ///
+    /// Phase 9 — `class` selects the [`rekindle_types::config::SafetyProfile`]
+    /// via [`rekindle_route::profile::profile_for_class`]. Voice frames
+    /// take the Unsafe/direct path (0-hop, sender visible — call
+    /// participants are mutually known by design). All other classes
+    /// take a Safe/anonymous safety route (1–2 hops, sender hidden via
+    /// route ID rather than node identity). Threat model: see
+    /// `docs/security/threat-model.md` Z12 (social graph leakage) and
+    /// `docs/security/privacy-properties.md` § 1.2 (sender anonymity).
+    ///
+    /// Prior to Phase 9 every DM used `self.config.safety.text`
+    /// unconditionally, which silently routed Voice through a 2-hop
+    /// safety route (latency disaster) and DHT writes through the same
+    /// path as plaintext DMs (acceptable but coincidental).
     pub async fn send_dm(
         &self,
         target: &PeerTarget,
+        class: rekindle_types::message::MessageClass,
         type_id: TypeId,
         sender_secret: &[u8; 32],
         sender_public_hex: &str,
@@ -60,7 +75,8 @@ impl Sender {
             .map_err(|e| TransportError::SerializationFailed { reason: e.to_string() })?;
         let frame_bytes = frame::encode(type_id, &signed_bytes)?;
 
-        let rc = build_routing_context(&self.api, &self.config.safety.text)?;
+        let profile = rekindle_route::profile::profile_for_class(class);
+        let rc = build_routing_context(&self.api, &profile)?;
         rc.app_message(Target::RouteId(target.route_id.clone()), frame_bytes)
             .await
             .map_err(|e| TransportError::SendFailed {
@@ -68,7 +84,13 @@ impl Sender {
                 reason: e.to_string(),
             })?;
 
-        debug!(type_id = type_id as u8, "DM sent");
+        debug!(
+            type_id = type_id as u8,
+            class = class.as_str(),
+            hop_count = profile.hop_count,
+            sender_anonymous = profile.sender_anonymous,
+            "DM sent",
+        );
         Ok(())
     }
 

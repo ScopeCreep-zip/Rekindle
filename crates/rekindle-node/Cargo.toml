@@ -14,6 +14,7 @@ workspace = true
 rekindle-transport = { path = "../rekindle-transport" }
 rekindle-types = { path = "../rekindle-types" }
 rekindle-utils = { path = "../rekindle-utils" }
+rekindle-lifecycle = { path = "../rekindle-lifecycle" }
 
 # Async runtime
 tokio = { workspace = true }

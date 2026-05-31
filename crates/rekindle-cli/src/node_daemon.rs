@@ -36,7 +36,7 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
 
     // ── 2. Initialize daemon lifecycle ────────────────────────────
     let lifecycle = Arc::new(DaemonLifecycle::new());
-    lifecycle.transition(DaemonState::Starting);
+    let _ = lifecycle.transition(DaemonState::Starting);
 
     // ── 3. Generate or load bus keypair ───────────────────────────
     let runtime_dir = ipc::runtime_dir()?;
@@ -175,7 +175,7 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
     bus_server.start_event_delivery(event_watch_rx);
 
     // ── 8. Transition to Locked ───────────────────────────────────
-    lifecycle.transition(DaemonState::Locked);
+    let _ = lifecycle.transition(DaemonState::Locked);
     tracing::info!(state = lifecycle.state().as_str(), "daemon accepting connections");
 
     // ── 9. Notify systemd READY=1 (Type=notify) ─────────────────
@@ -335,7 +335,7 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
     }
 
     // ── 11. Graceful shutdown ─────────────────────────────────────
-    lifecycle.transition(DaemonState::ShuttingDown);
+    let _ = lifecycle.transition(DaemonState::ShuttingDown);
     tracing::info!("draining connections...");
 
     // Drop the bus server first — closes the socket, disconnects all clients
@@ -369,7 +369,7 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
 
     *daemon_ctx.signing_key.write() = None;
 
-    lifecycle.transition(DaemonState::Stopped);
+    let _ = lifecycle.transition(DaemonState::Stopped);
     tracing::info!("rekindle daemon stopped");
 
     Ok(())

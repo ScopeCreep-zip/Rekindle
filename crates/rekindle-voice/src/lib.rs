@@ -1,16 +1,36 @@
+// Veilid + tokio + tracing nested-future Send bound evaluation can
+// overflow the default recursion limit (256 is the rustc default; the
+// MCU loop's tokio::spawn inside a transport.lock().await triggers
+// the chain). Bump high enough to clear the Send chain for the deepest
+// async future.
+#![recursion_limit = "512"]
+
 pub mod audio_processing;
 pub(crate) mod audio_thread;
 pub mod capture;
 pub mod codec;
 pub mod device;
+pub mod election; // Phase 14 — deterministic MCU host election (pure logic).
 pub mod error;
 pub mod jitter;
+pub mod mcu_loop; // Phase 14 — MCU mixing for groups (>4 participants or stage channels).
 pub mod mixer;
 pub mod playback;
+pub mod receive_loop; // Phase 14 — packet receive → decode → mix → playback pipeline.
 pub mod replay_window;
+pub mod send_loop; // Phase 14 — capture → process → encode → transport send pipeline.
+pub mod session; // Phase 14.l — voice session orchestrator (start_session port).
+pub mod session_deps; // Phase 14 — VoiceSessionDeps trait + VoiceSessionEvent.
+pub mod signaling; // Phase 14.k — community voice signaling handlers (VoiceSignalingDeps).
+pub mod topology; // Phase 14 — pure mode-decision + stage-host election math.
 pub mod transport;
 
+pub use election::{channel_target, elect_relay_host};
 pub use error::VoiceError;
+pub use session_deps::{
+    AudioPrefs, CallKeyInfo, VoiceIdentity, VoicePeer, VoiceSessionDeps, VoiceSessionEvent,
+    VoiceSessionStartup, VoiceShutdownHandles, VoiceShutdownOpts,
+};
 pub use transport::VoiceMode;
 
 use tokio::sync::mpsc;

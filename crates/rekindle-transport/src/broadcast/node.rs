@@ -677,7 +677,23 @@ pub(crate) fn build_routing_context(
 ) -> Result<RoutingContext> {
     let rc = api.routing_context().map_err(|_| TransportError::NotStarted)?;
 
-    if profile.hop_count == 0 {
+    // Phase 9 — `sender_anonymous` is the authoritative switch between
+    // SafetySelection::Safe (sender hidden via a safety route — at any
+    // hop count, even 0) and ::Unsafe (sender's node identity exposed).
+    // hop_count is treated as a hint that only applies to Safe routes;
+    // Unsafe ignores it. Previously this decision was driven by
+    // `hop_count == 0` alone, which conflated "0-hop safety route"
+    // with "no anonymity at all" — those are different security
+    // properties in Veilid:
+    //   - Unsafe(seq):                 sender = our node id, visible to relay
+    //   - Safe(0 hops):                sender = an ephemeral route id, anonymous
+    //   - Safe(N hops):                anonymous + N additional relays
+    //
+    // Voice is the only path that should run Unsafe (latency-critical,
+    // participants mutually known by design). Everything else — DM
+    // text, DHT reads, DHT writes, RPC invites — uses Safe so a
+    // compromised relay can't link a node identity to its traffic.
+    if !profile.sender_anonymous {
         return rc
             .with_safety(SafetySelection::Unsafe(map_sequencing(profile.sequencing)))
             .map_err(|e| TransportError::Internal(format!("safety: {e}")));

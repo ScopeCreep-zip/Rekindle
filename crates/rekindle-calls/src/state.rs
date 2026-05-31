@@ -63,6 +63,7 @@ pub enum CallStatus {
 /// `AppState.active_calls`, preventing the secret from outliving the
 /// call. `call_key` is computed once on accept and handed to the voice
 /// transport.
+#[derive(Clone)]
 pub struct CallState {
     pub call_id: String,
     /// Hex-encoded Ed25519 identity key of the remote peer.

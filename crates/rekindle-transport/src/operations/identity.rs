@@ -50,18 +50,19 @@ pub async fn create_identity(
         .map_err(|e| TransportError::IdentityCreationFailed { step: "route allocation".into(), reason: e.to_string() })?;
     info!(route_id, "private route allocated");
 
-    // Step 3: Generate prekey bundle
-    let x25519_secret = crate::crypto::pseudonym::pseudonym_to_x25519(&signing_key);
-    let x25519_public = x25519_dalek::PublicKey::from(&x25519_secret);
+    // Step 3: Generate prekey bundle. Signal identity store holds the
+    // Ed25519 keypair bytes — PQXDH derives X25519 internally via
+    // `to_scalar_bytes` and feeds the Ed25519 public to peers for SPK/PQ
+    // signature verification.
     let signal = crate::crypto::signal_session::SignalSessionManager::new(
         Box::new(crate::crypto::signal_store::MemoryIdentityStore::new(
-            x25519_secret.to_bytes().to_vec(), x25519_public.as_bytes().to_vec(), 1,
+            signing_key_bytes.to_vec(), public_key.as_bytes().to_vec(), 1,
         )),
         prekey_store, session_store,
     );
     let signed_prekey_id = 1u32;
     let one_time_prekey_id = Some(1u32);
-    let prekey_bundle = signal.generate_prekey_bundle(signed_prekey_id, one_time_prekey_id)
+    let prekey_bundle = signal.generate_prekey_bundle(signed_prekey_id, one_time_prekey_id, Some(1))
         .map_err(|e| TransportError::IdentityCreationFailed { step: "prekey generation".into(), reason: e.to_string() })?;
     let signed_prekey_private = signal.load_signed_prekey(signed_prekey_id).unwrap_or_default();
     let one_time_prekey_private = one_time_prekey_id.and_then(|id| signal.load_prekey(id).ok().flatten()).unwrap_or_default();

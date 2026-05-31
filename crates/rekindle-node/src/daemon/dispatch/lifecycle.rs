@@ -305,13 +305,13 @@ pub(crate) async fn handle_unlock(
         );
     }
 
-    ctx.lifecycle.transition(DaemonState::Resuming);
+    let _ = ctx.lifecycle.transition(DaemonState::Resuming);
 
     // Load signing key from OS keyring into memory.
     let signing_key = match crate::state::keystore::load_signing_key().await {
         Ok(handle) => handle,
         Err(e) => {
-            ctx.lifecycle.transition(DaemonState::Locked);
+            let _ = ctx.lifecycle.transition(DaemonState::Locked);
             return IpcResponse::error_with_remediation(
                 500,
                 format!("failed to load signing key: {e}"),
@@ -339,7 +339,7 @@ pub(crate) async fn handle_unlock(
     if let (Some(transport), Some(session)) = (&transport_clone, &session_clone) {
         if let Err(e) = transport.resume(session, &signing_bytes).await {
             tracing::warn!(error = %e, "session resume failed — entering degraded state");
-            ctx.lifecycle.transition(DaemonState::Degraded);
+            let _ = ctx.lifecycle.transition(DaemonState::Degraded);
             return IpcResponse::ok(&serde_json::json!({
                 "state": "degraded",
                 "warning": format!("resume failed: {e}"),
@@ -392,7 +392,7 @@ pub(crate) async fn handle_unlock(
         *ctx.broadcast_mgr.write() = Some(bcast_mgr);
     }
 
-    ctx.lifecycle.transition(DaemonState::Operational);
+    let _ = ctx.lifecycle.transition(DaemonState::Operational);
     IpcResponse::ok(&serde_json::json!({ "state": "operational" }))
 }
 
@@ -413,7 +413,7 @@ pub(crate) fn handle_shutdown(ctx: &DaemonContext) -> IpcResponse {
     *ctx.signing_key.write() = None;
 
     // Transition to ShuttingDown — this notifies the main event loop.
-    ctx.lifecycle.transition(DaemonState::ShuttingDown);
+    let _ = ctx.lifecycle.transition(DaemonState::ShuttingDown);
 
     IpcResponse::ok(&serde_json::json!({
         "state": "shutting_down",
@@ -423,9 +423,9 @@ pub(crate) fn handle_shutdown(ctx: &DaemonContext) -> IpcResponse {
 
 /// Handle Lock — transition to Locked, zeroize signing key.
 pub(crate) fn handle_lock(ctx: &DaemonContext) -> IpcResponse {
-    ctx.lifecycle.transition(DaemonState::Locking);
+    let _ = ctx.lifecycle.transition(DaemonState::Locking);
     // Drop the signing key — ZeroizeOnDrop zeroizes the bytes.
     *ctx.signing_key.write() = None;
-    ctx.lifecycle.transition(DaemonState::Locked);
+    let _ = ctx.lifecycle.transition(DaemonState::Locked);
     IpcResponse::ok(&serde_json::json!({ "state": "locked" }))
 }

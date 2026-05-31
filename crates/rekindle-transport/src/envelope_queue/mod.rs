@@ -134,7 +134,7 @@ impl EnvelopeQueue {
     ///
     /// `sender_secret` is the Ed25519 signing key. `sender_public_hex` is
     /// the matching public key as lowercase hex (matches what
-    /// [`Sender::send_dm`] expects). `owner_key` is the store scope —
+    /// [`crate::Sender::send_dm`] expects). `owner_key` is the store scope —
     /// same as `sender_public_hex` for single-identity hosts.
     pub fn new(
         transport: Arc<TransportNode>,
@@ -364,6 +364,7 @@ impl EnvelopeQueue {
             .sender()
             .send_dm(
                 &target,
+                type_id.class(),
                 type_id,
                 &self.inner.sender_secret,
                 &self.inner.sender_public_hex,

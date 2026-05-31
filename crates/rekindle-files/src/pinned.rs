@@ -45,6 +45,45 @@ impl PinnedSet {
     }
 }
 
+/// Architecture §28.9 — moderator-driven pin toggle.
+///
+/// Caller is gated on `MANAGE_COMMUNITY` via the deps trait; the
+/// orchestrator decodes the hex attachment id, bumps the community
+/// lamport, and writes a `GovernanceEntry::AttachmentPinned` so every
+/// peer's merged state agrees on what's eviction-exempt.
+pub async fn set_attachment_pinned<D: crate::deps::FilesDeps + ?Sized>(
+    deps: &D,
+    community_id: &str,
+    attachment_id_hex: &str,
+    pinned: bool,
+) -> Result<(), crate::error::FilesError> {
+    deps.require_permission(
+        community_id,
+        rekindle_protocol::dht::community::permissions_v2::Permissions::MANAGE_COMMUNITY,
+    )?;
+    let attachment_id: [u8; 16] = hex::decode(attachment_id_hex)
+        .ok()
+        .and_then(|b| b.try_into().ok())
+        .ok_or_else(|| {
+            crate::error::FilesError::InvalidAttachmentId(format!(
+                "invalid attachment id hex: {attachment_id_hex}"
+            ))
+        })?;
+    let lamport = deps.increment_lamport(community_id);
+    deps.write_attachment_pinned(community_id, attachment_id, pinned, lamport)
+        .await
+}
+
+/// Sync the in-memory pinned set for a community from the merged governance
+/// state's `pinned_attachments`. Run after every governance merge.
+pub fn sync_pinned_from_governance<D: crate::deps::FilesDeps + ?Sized>(
+    deps: &D,
+    community_id: &str,
+) {
+    let ids = deps.governance_pinned_attachments(community_id);
+    deps.set_community_pinned_set(community_id, ids);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

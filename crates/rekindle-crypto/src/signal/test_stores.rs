@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use parking_lot::Mutex;
 
-use crate::signal::store::{IdentityKeyStore, PreKeyStore, SessionStore};
+use crate::signal::store::{IdentityKeyStore, PqKeyKind, PreKeyStore, SessionStore};
 use crate::CryptoError;
 
 /// In-memory identity store for tests.
@@ -53,6 +53,7 @@ impl IdentityKeyStore for MemoryIdentityStore {
 pub struct MemoryPreKeyStore {
     prekeys: Mutex<HashMap<u32, Vec<u8>>>,
     signed_prekeys: Mutex<HashMap<u32, Vec<u8>>>,
+    pq_secrets: Mutex<HashMap<(u32, PqKeyKind), Vec<u8>>>,
 }
 
 impl MemoryPreKeyStore {
@@ -60,6 +61,7 @@ impl MemoryPreKeyStore {
         Self {
             prekeys: Mutex::new(HashMap::new()),
             signed_prekeys: Mutex::new(HashMap::new()),
+            pq_secrets: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -99,6 +101,33 @@ impl PreKeyStore for MemoryPreKeyStore {
             .insert(signed_prekey_id, key_data.to_vec());
         Ok(())
     }
+
+    fn load_pq_secret(
+        &self,
+        prekey_id: u32,
+        kind: PqKeyKind,
+    ) -> Result<Option<Vec<u8>>, CryptoError> {
+        Ok(self.pq_secrets.lock().get(&(prekey_id, kind)).cloned())
+    }
+
+    fn store_pq_secret(
+        &self,
+        prekey_id: u32,
+        kind: PqKeyKind,
+        key_data: &[u8],
+    ) -> Result<(), CryptoError> {
+        self.pq_secrets
+            .lock()
+            .insert((prekey_id, kind), key_data.to_vec());
+        Ok(())
+    }
+
+    fn remove_pq_secret(&self, prekey_id: u32, kind: PqKeyKind) -> Result<(), CryptoError> {
+        if kind == PqKeyKind::OneTime {
+            self.pq_secrets.lock().remove(&(prekey_id, kind));
+        }
+        Ok(())
+    }
 }
 
 /// A SessionStore backed by a shared HashMap, allowing test code to inspect stored data.
@@ -130,17 +159,6 @@ impl SessionStore for SharedSessionStore {
     }
 }
 
-/// Extract the ephemeral public key from a serialized ratchet state.
-///
-/// Ratchet layout: root_key(32) + sending_chain(32) + receiving_chain(32)
-///   + our_ratchet_secret_len(4) + our_ratchet_secret(N) + ...
-/// After `establish_session`, `our_ratchet_secret` stores the ephemeral *public* key.
-fn extract_ephemeral_from_session(session_data: &[u8]) -> Vec<u8> {
-    let pos = 96; // skip root_key + sending + receiving chain keys
-    let len = u32::from_le_bytes(session_data[pos..pos + 4].try_into().unwrap()) as usize;
-    session_data[pos + 4..pos + 4 + len].to_vec()
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -150,14 +168,15 @@ mod tests {
     use crate::Identity;
 
     /// Create a basic SignalSessionManager for a given identity (no shared store).
+    ///
+    /// PQXDH (Phase 3b) needs Ed25519 identity bytes in the store so the
+    /// session manager can re-derive X25519 via `to_scalar_bytes` internally.
+    /// Storing X25519 bytes here would double-derive and produce mismatched keys.
     fn make_manager(identity: &Identity) -> SignalSessionManager {
-        let x25519_secret = identity.to_x25519_secret();
-        let x25519_public = identity.to_x25519_public();
-
         SignalSessionManager::new(
             Box::new(MemoryIdentityStore::new(
-                x25519_secret.to_bytes().to_vec(),
-                x25519_public.as_bytes().to_vec(),
+                identity.secret_key_bytes().to_vec(),
+                identity.public_key_bytes().to_vec(),
                 1,
             )),
             Box::new(MemoryPreKeyStore::new()),
@@ -165,127 +184,101 @@ mod tests {
         )
     }
 
-    /// Create a proper X3DH session pair using initiator + responder flow.
+    /// PQXDH initiator + responder round-trip.
     ///
     /// Alice initiates, Bob responds. Returns (alice_mgr, bob_mgr, alice_addr, bob_addr).
     fn establish_session_pair() -> (SignalSessionManager, SignalSessionManager, String, String) {
         let alice_id = Identity::generate();
         let bob_id = Identity::generate();
 
-        let alice_x25519_pub = alice_id.to_x25519_public();
-
-        // Use shared session stores so we can inspect Alice's session data
-        let alice_sessions = Arc::new(Mutex::new(HashMap::<String, Vec<u8>>::new()));
-
-        let alice_mgr = SignalSessionManager::new(
-            Box::new(MemoryIdentityStore::new(
-                alice_id.to_x25519_secret().to_bytes().to_vec(),
-                alice_x25519_pub.as_bytes().to_vec(),
-                1,
-            )),
-            Box::new(MemoryPreKeyStore::new()),
-            Box::new(SharedSessionStore(Arc::clone(&alice_sessions))),
-        );
-
-        let bob_mgr = SignalSessionManager::new(
-            Box::new(MemoryIdentityStore::new(
-                bob_id.to_x25519_secret().to_bytes().to_vec(),
-                bob_id.to_x25519_public().as_bytes().to_vec(),
-                1,
-            )),
-            Box::new(MemoryPreKeyStore::new()),
-            Box::new(SharedSessionStore(Arc::new(Mutex::new(HashMap::new())))),
-        );
+        let alice_mgr = make_manager(&alice_id);
+        let bob_mgr = make_manager(&bob_id);
 
         let alice_addr = hex::encode(alice_id.public_key_bytes());
         let bob_addr = hex::encode(bob_id.public_key_bytes());
 
-        // Step 1: Bob publishes a prekey bundle
-        let bob_bundle = bob_mgr.generate_prekey_bundle(1, Some(100)).unwrap();
+        // Step 1: Bob publishes a PQXDH prekey bundle (classical + ML-KEM).
+        let bob_bundle = bob_mgr.generate_prekey_bundle(1, Some(100), Some(100)).unwrap();
 
-        // Step 2: Alice establishes session as initiator
-        alice_mgr.establish_session(&bob_addr, &bob_bundle).unwrap();
+        // Step 2: Alice establishes session as initiator — derives root key
+        // from PQXDH (DH1..DH4 + ML-KEM encapsulation).
+        let init = alice_mgr.establish_session(&bob_addr, &bob_bundle).unwrap();
 
-        // Step 3: Extract Alice's ephemeral key from her stored session
-        let alice_session_data = alice_sessions
-            .lock()
-            .get(&bob_addr)
-            .unwrap()
-            .clone();
-        let alice_ephemeral = extract_ephemeral_from_session(&alice_session_data);
-
-        // Step 4: Bob responds to session as responder
+        // Step 3: Bob responds with Alice's ephemeral + ML-KEM ciphertext.
         bob_mgr
             .respond_to_session(
                 &alice_addr,
-                alice_x25519_pub.as_bytes(),
-                &alice_ephemeral,
-                1,
-                Some(100),
+                &alice_id.public_key_bytes(),
+                &init.ephemeral_public_key,
+                init.signed_prekey_id,
+                init.one_time_prekey_id,
+                &init.ml_kem_ciphertext,
+                init.used_ot_pqpk_id,
             )
             .unwrap();
 
         (alice_mgr, bob_mgr, alice_addr, bob_addr)
     }
 
-    #[test]
-    fn x3dh_handshake_and_encrypt_decrypt() {
+    #[tokio::test]
+    async fn x3dh_handshake_and_encrypt_decrypt() {
         let (alice_mgr, bob_mgr, alice_addr, bob_addr) = establish_session_pair();
 
         // Alice encrypts for Bob
         let plaintext = b"Hello Bob, this is a secret message!";
-        let ciphertext = alice_mgr.encrypt(&bob_addr, plaintext).unwrap();
+        let ciphertext = alice_mgr.encrypt(&bob_addr, plaintext).await.unwrap();
 
         // Bob decrypts
-        let decrypted = bob_mgr.decrypt(&alice_addr, &ciphertext).unwrap();
+        let decrypted = bob_mgr.decrypt(&alice_addr, &ciphertext).await.unwrap();
         assert_eq!(decrypted, plaintext);
 
         // Bob replies
         let reply = b"Hi Alice, received your message!";
-        let reply_ct = bob_mgr.encrypt(&alice_addr, reply).unwrap();
-        let reply_pt = alice_mgr.decrypt(&bob_addr, &reply_ct).unwrap();
+        let reply_ct = bob_mgr.encrypt(&alice_addr, reply).await.unwrap();
+        let reply_pt = alice_mgr.decrypt(&bob_addr, &reply_ct).await.unwrap();
         assert_eq!(reply_pt, reply);
     }
 
-    #[test]
-    fn multiple_messages_advance_chain() {
+    #[tokio::test]
+    async fn multiple_messages_advance_chain() {
         let (alice_mgr, bob_mgr, alice_addr, bob_addr) = establish_session_pair();
 
-        let msg1 = alice_mgr.encrypt(&bob_addr, b"message 1").unwrap();
-        let msg2 = alice_mgr.encrypt(&bob_addr, b"message 2").unwrap();
-        let msg3 = alice_mgr.encrypt(&bob_addr, b"message 3").unwrap();
+        let msg1 = alice_mgr.encrypt(&bob_addr, b"message 1").await.unwrap();
+        let msg2 = alice_mgr.encrypt(&bob_addr, b"message 2").await.unwrap();
+        let msg3 = alice_mgr.encrypt(&bob_addr, b"message 3").await.unwrap();
 
         // Each ciphertext must differ (different chain keys per message)
         assert_ne!(msg1, msg2);
         assert_ne!(msg2, msg3);
 
         // Decrypt in order
-        assert_eq!(bob_mgr.decrypt(&alice_addr, &msg1).unwrap(), b"message 1");
-        assert_eq!(bob_mgr.decrypt(&alice_addr, &msg2).unwrap(), b"message 2");
-        assert_eq!(bob_mgr.decrypt(&alice_addr, &msg3).unwrap(), b"message 3");
+        assert_eq!(bob_mgr.decrypt(&alice_addr, &msg1).await.unwrap(), b"message 1");
+        assert_eq!(bob_mgr.decrypt(&alice_addr, &msg2).await.unwrap(), b"message 2");
+        assert_eq!(bob_mgr.decrypt(&alice_addr, &msg3).await.unwrap(), b"message 3");
     }
 
-    #[test]
-    fn wrong_key_decryption_fails() {
+    #[tokio::test]
+    async fn wrong_key_decryption_fails() {
         let (alice_mgr, _bob_mgr, alice_addr, bob_addr) = establish_session_pair();
 
         let eve_id = Identity::generate();
         let eve_mgr = make_manager(&eve_id);
 
         // Alice encrypts for Bob
-        let ciphertext = alice_mgr.encrypt(&bob_addr, b"secret for Bob").unwrap();
+        let ciphertext = alice_mgr.encrypt(&bob_addr, b"secret for Bob").await.unwrap();
 
         // Eve has no session with Alice — decryption fails
-        let result = eve_mgr.decrypt(&alice_addr, &ciphertext);
+        let result = eve_mgr.decrypt(&alice_addr, &ciphertext).await;
         assert!(result.is_err());
     }
 
-    #[test]
-    fn tampered_ciphertext_fails() {
+    #[tokio::test]
+    async fn tampered_ciphertext_fails() {
         let (alice_mgr, bob_mgr, alice_addr, bob_addr) = establish_session_pair();
 
         let ciphertext = alice_mgr
             .encrypt(&bob_addr, b"don't tamper with me")
+            .await
             .unwrap();
 
         // Flip a byte in the ciphertext portion (after 8-byte counter + 12-byte nonce)
@@ -294,7 +287,7 @@ mod tests {
             tampered[20] ^= 0xFF;
         }
 
-        let result = bob_mgr.decrypt(&alice_addr, &tampered);
+        let result = bob_mgr.decrypt(&alice_addr, &tampered).await;
         assert!(result.is_err());
     }
 
@@ -308,7 +301,7 @@ mod tests {
         let bob_addr = hex::encode(bob_id.public_key_bytes());
         assert!(!alice_mgr.has_session(&bob_addr).unwrap());
 
-        let bob_bundle = bob_mgr.generate_prekey_bundle(1, None).unwrap();
+        let bob_bundle = bob_mgr.generate_prekey_bundle(1, None, None).unwrap();
         alice_mgr.establish_session(&bob_addr, &bob_bundle).unwrap();
 
         assert!(alice_mgr.has_session(&bob_addr).unwrap());
@@ -319,7 +312,7 @@ mod tests {
         let identity = Identity::generate();
         let mgr = make_manager(&identity);
 
-        let bundle = mgr.generate_prekey_bundle(1, Some(100)).unwrap();
+        let bundle = mgr.generate_prekey_bundle(1, Some(100), Some(100)).unwrap();
         assert_eq!(bundle.identity_key.len(), 32);
         assert_eq!(bundle.signed_prekey.len(), 32);
         assert_eq!(bundle.signed_prekey_signature.len(), 64);
@@ -327,7 +320,7 @@ mod tests {
         assert_eq!(bundle.one_time_prekey.as_ref().unwrap().len(), 32);
         assert_eq!(bundle.registration_id, 1);
 
-        let bundle2 = mgr.generate_prekey_bundle(2, None).unwrap();
+        let bundle2 = mgr.generate_prekey_bundle(2, None, None).unwrap();
         assert!(bundle2.one_time_prekey.is_none());
         assert_ne!(bundle.signed_prekey, bundle2.signed_prekey);
     }
@@ -338,7 +331,7 @@ mod tests {
         // → load_existing_prekey_bundle returns None so caller mints fresh.
         let identity = Identity::generate();
         let mgr = make_manager(&identity);
-        let result = mgr.load_existing_prekey_bundle(1, Some(1)).unwrap();
+        let result = mgr.load_existing_prekey_bundle(1, Some(1), Some(1)).unwrap();
         assert!(result.is_none(), "empty store must return None");
     }
 
@@ -350,9 +343,9 @@ mod tests {
         let identity = Identity::generate();
         let mgr = make_manager(&identity);
 
-        let original = mgr.generate_prekey_bundle(1, Some(1)).unwrap();
+        let original = mgr.generate_prekey_bundle(1, Some(1), Some(1)).unwrap();
         let loaded = mgr
-            .load_existing_prekey_bundle(1, Some(1))
+            .load_existing_prekey_bundle(1, Some(1), Some(1))
             .unwrap()
             .expect("bundle must be loadable after generate");
 
@@ -380,38 +373,38 @@ mod tests {
         let mgr = make_manager(&identity);
 
         // Generate signed_prekey only (no OTPK).
-        let _ = mgr.generate_prekey_bundle(1, None).unwrap();
+        let _ = mgr.generate_prekey_bundle(1, None, None).unwrap();
         // Asking for OTPK #1 — not present.
-        let result = mgr.load_existing_prekey_bundle(1, Some(1)).unwrap();
+        let result = mgr.load_existing_prekey_bundle(1, Some(1), Some(1)).unwrap();
         assert!(
             result.is_none(),
             "missing one-time prekey must force regeneration"
         );
     }
 
-    #[test]
-    fn empty_message_encrypt_decrypt() {
+    #[tokio::test]
+    async fn empty_message_encrypt_decrypt() {
         let (alice_mgr, bob_mgr, alice_addr, bob_addr) = establish_session_pair();
 
-        let ct = alice_mgr.encrypt(&bob_addr, b"").unwrap();
-        let pt = bob_mgr.decrypt(&alice_addr, &ct).unwrap();
+        let ct = alice_mgr.encrypt(&bob_addr, b"").await.unwrap();
+        let pt = bob_mgr.decrypt(&alice_addr, &ct).await.unwrap();
         assert!(pt.is_empty());
     }
 
-    #[test]
-    fn decrypt_too_short_message_fails() {
+    #[tokio::test]
+    async fn decrypt_too_short_message_fails() {
         let (_, bob_mgr, alice_addr, _) = establish_session_pair();
 
-        let result = bob_mgr.decrypt(&alice_addr, &[0u8; 19]);
+        let result = bob_mgr.decrypt(&alice_addr, &[0u8; 19]).await;
         assert!(result.is_err());
     }
 
-    #[test]
-    fn encrypt_without_session_fails() {
+    #[tokio::test]
+    async fn encrypt_without_session_fails() {
         let alice_id = Identity::generate();
         let alice_mgr = make_manager(&alice_id);
 
-        let result = alice_mgr.encrypt("nonexistent_peer", b"hello");
+        let result = alice_mgr.encrypt("nonexistent_peer", b"hello").await;
         assert!(result.is_err());
     }
 }

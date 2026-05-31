@@ -16,5 +16,8 @@
 pub mod invite_quota;
 pub mod merge;
 pub mod permissions;
+pub mod raid_detection;
 pub mod state;
 pub mod validate;
+
+pub use raid_detection::{observe_join, resolve_thresholds, RaidAlert};

@@ -180,7 +180,10 @@ async fn send_dm_payload(
     let type_id = dm_type_id(dm);
 
     node.sender().send_dm(
-        &target, type_id, signing_key,
+        &target,
+        type_id.class(),
+        type_id,
+        signing_key,
         &session.identity.public_key_hex,
         0, None,
         &payload_bytes,
