@@ -1,0 +1,16 @@
+[package]
+name = "rekindle-events"
+version = "0.1.0"
+edition = "2021"
+description = "Reusable event primitives: BLAKE3 dedup, subscription state, state effects, monotonic journal — hoisted from rekindle-transport::subscriptions."
+
+[lints]
+workspace = true
+
+[dependencies]
+rekindle-types = { path = "../rekindle-types" }
+rekindle-utils = { path = "../rekindle-utils" }
+parking_lot = { workspace = true }
+blake3 = "1"
+serde = { workspace = true }
+tracing = { workspace = true }
