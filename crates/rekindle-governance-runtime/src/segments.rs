@@ -283,7 +283,9 @@ pub async fn ensure_channel_segment_record<D: GovernanceRuntimeDeps>(
         return Ok(record_key);
     }
     if membership.slot_seed_hex.is_none() {
-        return Err(GovernanceRuntimeError::SlotSeedMissing(community_id.to_string()));
+        return Err(GovernanceRuntimeError::SlotSeedMissing(
+            community_id.to_string(),
+        ));
     }
 
     // Lazy creation: derive 255 slot pubkeys for this segment using GLOBAL
@@ -372,9 +374,7 @@ fn slot_seed_from_membership(
     let seed_bytes: [u8; 32] = hex::decode(seed_hex)
         .map_err(|e| GovernanceRuntimeError::Crypto(format!("invalid slot_seed hex: {e}")))?
         .try_into()
-        .map_err(|_| {
-            GovernanceRuntimeError::Crypto("slot_seed must be 32 bytes".to_string())
-        })?;
+        .map_err(|_| GovernanceRuntimeError::Crypto("slot_seed must be 32 bytes".to_string()))?;
     Ok(SlotSeed(seed_bytes))
 }
 

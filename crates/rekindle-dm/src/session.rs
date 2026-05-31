@@ -68,8 +68,7 @@ pub async fn start_dm<D: DmDeps + ?Sized>(
         &alice_ed_pub,
         &bob_ed_pub_bytes,
     )?;
-    deps.mek_cache()
-        .insert(&record_key, DmMekChain::new(mek));
+    deps.mek_cache().insert(&record_key, DmMekChain::new(mek));
 
     // 5. Persist the conversation. Alice owns subkey 0, Bob owns subkey 1.
     let participants = vec![
@@ -123,13 +122,14 @@ pub async fn start_dm<D: DmDeps + ?Sized>(
     let reply = deps.send_app_call(bob_public_key_hex, invite).await?;
     match reply {
         MessagePayload::DmAccept { record_key: rk } if rk == record_key => Ok(record_key),
-        MessagePayload::DmDecline { record_key: rk, reason } if rk == record_key => {
-            Err(DmError::InvalidInput(if reason.is_empty() {
-                "DM invite declined".into()
-            } else {
-                format!("DM invite declined: {reason}")
-            }))
-        }
+        MessagePayload::DmDecline {
+            record_key: rk,
+            reason,
+        } if rk == record_key => Err(DmError::InvalidInput(if reason.is_empty() {
+            "DM invite declined".into()
+        } else {
+            format!("DM invite declined: {reason}")
+        })),
         other => Err(DmError::InvalidInput(format!(
             "unexpected DM invite reply: {other:?}"
         ))),
@@ -187,9 +187,8 @@ pub async fn accept_dm_invite<D: DmDeps + ?Sized>(
         key.copy_from_slice(&plain[8..]);
         DmMek(key)
     } else {
-        let initiator_x25519 =
-            rekindle_crypto::Identity::peer_ed25519_to_x25519(&initiator_ed_pub)
-                .map_err(|e| DmError::InvalidInput(format!("initiator ed25519→x25519: {e}")))?;
+        let initiator_x25519 = rekindle_crypto::Identity::peer_ed25519_to_x25519(&initiator_ed_pub)
+            .map_err(|e| DmError::InvalidInput(format!("initiator ed25519→x25519: {e}")))?;
         let bob_ed_pub = bob_identity.public_key_bytes();
         derive_dm_mek(
             bob_identity.to_x25519_secret().as_bytes(),
@@ -200,9 +199,8 @@ pub async fn accept_dm_invite<D: DmDeps + ?Sized>(
     };
 
     // 3. Restore the chain to the persisted generation and stash it.
-    let chain = DmMekChain::restore(mek, meta.mek_generation).map_err(|e| {
-        DmError::InvalidSessionState(format!("dm chain restore: {e}"))
-    })?;
+    let chain = DmMekChain::restore(mek, meta.mek_generation)
+        .map_err(|e| DmError::InvalidSessionState(format!("dm chain restore: {e}")))?;
     deps.mek_cache().insert(record_key, chain);
 
     // 4. Open read-only + watch all peer subkeys (everyone except us).

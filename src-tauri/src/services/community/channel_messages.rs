@@ -307,4 +307,3 @@ pub fn emit_local_chat_event(app: &tauri::AppHandle, sent: &SentChannelMessage, 
     };
     crate::event_dispatch::emit_live(app, "chat-event", &event);
 }
-

@@ -21,10 +21,7 @@ use std::sync::Arc;
 
 use crate::session_deps::{VoiceSessionDeps, VoiceShutdownOpts};
 
-pub async fn shutdown_voice<D: VoiceSessionDeps + ?Sized>(
-    deps: &Arc<D>,
-    opts: &VoiceShutdownOpts,
-) {
+pub async fn shutdown_voice<D: VoiceSessionDeps + ?Sized>(deps: &Arc<D>, opts: &VoiceShutdownOpts) {
     let handles = deps.take_shutdown_handles(*opts);
 
     // Signal every taken shutdown channel.

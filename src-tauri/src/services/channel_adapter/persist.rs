@@ -38,8 +38,8 @@ pub(super) async fn persist_sent_message_impl(
     outcome: &ChannelSendOutcome,
     body: &str,
 ) -> Result<(), ChannelError> {
-    let owner_key = state_helpers::current_owner_key(&adapter.state)
-        .map_err(ChannelError::Adapter)?;
+    let owner_key =
+        state_helpers::current_owner_key(&adapter.state).map_err(ChannelError::Adapter)?;
     let channel_id = channel_id.to_string();
     let sender_key = outcome.sender_pseudonym_hex.clone();
     let body = body.to_string();
@@ -73,8 +73,8 @@ pub(super) async fn persist_forwarded_message_impl(
     body: &str,
     original_author_pseudonym: &str,
 ) -> Result<(), ChannelError> {
-    let owner_key = state_helpers::current_owner_key(&adapter.state)
-        .map_err(ChannelError::Adapter)?;
+    let owner_key =
+        state_helpers::current_owner_key(&adapter.state).map_err(ChannelError::Adapter)?;
     let channel_id = channel_id.to_string();
     let sender_key = outcome.sender_pseudonym_hex.clone();
     let body = body.to_string();
@@ -109,8 +109,8 @@ pub(super) fn persist_channel_sequence_impl(
     channel_id: &str,
     sequence: u64,
 ) -> Result<(), ChannelError> {
-    let owner_key = state_helpers::current_owner_key(&adapter.state)
-        .map_err(ChannelError::Adapter)?;
+    let owner_key =
+        state_helpers::current_owner_key(&adapter.state).map_err(ChannelError::Adapter)?;
     let community_id = community_id.to_string();
     let channel_id = channel_id.to_string();
     let sequence_i64 = i64::try_from(sequence).unwrap_or(i64::MAX);
@@ -130,21 +130,25 @@ pub(super) fn persist_slowmode_state_impl(
     channel_id: &str,
     now_ms: i64,
 ) -> Result<(), ChannelError> {
-    let owner_key = state_helpers::current_owner_key(&adapter.state)
-        .map_err(ChannelError::Adapter)?;
+    let owner_key =
+        state_helpers::current_owner_key(&adapter.state).map_err(ChannelError::Adapter)?;
     let community_id = community_id.to_string();
     let channel_id = channel_id.to_string();
-    db_fire(&adapter.pool, "persist channel_slowmode_state", move |conn| {
-        conn.execute(
-            "INSERT INTO channel_slowmode_state \
+    db_fire(
+        &adapter.pool,
+        "persist channel_slowmode_state",
+        move |conn| {
+            conn.execute(
+                "INSERT INTO channel_slowmode_state \
              (owner_key, community_id, channel_id, last_send_ms) \
              VALUES (?1, ?2, ?3, ?4) \
              ON CONFLICT(owner_key, community_id, channel_id) DO UPDATE SET \
                last_send_ms = excluded.last_send_ms",
-            rusqlite::params![owner_key, community_id, channel_id, now_ms],
-        )?;
-        Ok(())
-    });
+                rusqlite::params![owner_key, community_id, channel_id, now_ms],
+            )?;
+            Ok(())
+        },
+    );
     Ok(())
 }
 
@@ -157,12 +161,7 @@ pub(super) async fn find_channel_message_by_id_impl(
     let channel_id = channel_id.to_string();
     let message_id = message_id.to_string();
     let row = db_call(&adapter.pool, move |conn| {
-        crate::message_repo::find_channel_message_by_id(
-            conn,
-            &owner_key,
-            &channel_id,
-            &message_id,
-        )
+        crate::message_repo::find_channel_message_by_id(conn, &owner_key, &channel_id, &message_id)
     })
     .await
     .ok()
@@ -250,8 +249,8 @@ pub(super) async fn stage_pseudonyms_by_subkey_impl(
         pseudonyms.insert(my_subkey_index, my_pseudonym);
     }
 
-    let owner_key = state_helpers::current_owner_key(&adapter.state)
-        .map_err(ChannelError::Adapter)?;
+    let owner_key =
+        state_helpers::current_owner_key(&adapter.state).map_err(ChannelError::Adapter)?;
     let cid = community_id.to_string();
     let rows = db_call(&adapter.pool, move |conn| {
         let mut stmt = conn.prepare(

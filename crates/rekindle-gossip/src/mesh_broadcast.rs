@@ -38,8 +38,10 @@ pub async fn send_to_mesh<D: GossipDeps>(
         .identity_secret()
         .ok_or(GossipError::IdentityNotLoaded)?;
 
-    let signing_key =
-        rekindle_crypto::group::pseudonym::derive_community_pseudonym(&identity_secret, community_id);
+    let signing_key = rekindle_crypto::group::pseudonym::derive_community_pseudonym(
+        &identity_secret,
+        community_id,
+    );
     let envelope_bytes = encode_community_envelope(envelope)
         .map_err(|e| GossipError::EncodeFailed(e.to_string()))?;
     let signed = envelope::sign_envelope(
@@ -64,11 +66,7 @@ pub async fn send_to_mesh<D: GossipDeps>(
 /// applies the architecture §3 fan-out degree + spawns a single
 /// supervising tokio task with a `JoinSet` so per-peer tasks are
 /// owned (M9.6, not orphaned).
-pub fn send_to_mesh_raw<D: GossipDeps>(
-    deps: Arc<D>,
-    community_id: &str,
-    signed: SignedEnvelope,
-) {
+pub fn send_to_mesh_raw<D: GossipDeps>(deps: Arc<D>, community_id: &str, signed: SignedEnvelope) {
     let signed_bytes = encode_signed_envelope(&signed);
 
     let Some(peers) = deps.current_peers(community_id) else {
@@ -252,7 +250,10 @@ mod tests {
                 .insert((c.to_string(), s.to_string(), k.to_string()));
         }
         fn increment_lamport(&self, community_id: &str) {
-            self.state.lock().lamport_bumps.push(community_id.to_string());
+            self.state
+                .lock()
+                .lamport_bumps
+                .push(community_id.to_string());
         }
         fn current_peers(&self, _c: &str) -> Option<Vec<PeerInfo>> {
             self.state.lock().peers.clone()
@@ -363,7 +364,10 @@ mod tests {
             pseudonym_key: "bob".to_string(),
             route_blob: vec![9, 9, 9],
         }]);
-        deps.state.lock().send_results.push_back(Err("stale".into()));
+        deps.state
+            .lock()
+            .send_results
+            .push_back(Err("stale".into()));
         deps.state.lock().send_results.push_back(Ok(()));
         deps.state
             .lock()

@@ -15,8 +15,8 @@ use uuid::Uuid;
 use rekindle_node::ipc::{
     self,
     client::BusClient,
-    protocol::{IpcRequest, IpcResponse},
     message::SecurityLevel,
+    protocol::{IpcRequest, IpcResponse},
 };
 use rekindle_types::subscription_events::SubscriptionEvent;
 
@@ -95,9 +95,11 @@ impl DaemonClient {
     /// EventRouter registers this connection for all event categories.
     pub async fn subscribe_all(&self) -> anyhow::Result<()> {
         use rekindle_types::subscription_events::SubscriptionFilter;
-        let response = self.request(IpcRequest::Subscribe {
-            filters: vec![SubscriptionFilter::all()],
-        }).await?;
+        let response = self
+            .request(IpcRequest::Subscribe {
+                filters: vec![SubscriptionFilter::all()],
+            })
+            .await?;
         match response {
             IpcResponse::Ok(_) => {
                 tracing::info!("subscribed to all daemon events");
@@ -123,9 +125,10 @@ impl DaemonClient {
             .map_err(|e| {
                 let msg = e.to_string();
                 if msg.contains("timed out") {
-                    anyhow::anyhow!(crate::error::CliError::Timeout(
-                        format!("no response within {}s", timeout.as_secs())
-                    ))
+                    anyhow::anyhow!(crate::error::CliError::Timeout(format!(
+                        "no response within {}s",
+                        timeout.as_secs()
+                    )))
                 } else if msg.contains("connection closed") || msg.contains("channel closed") {
                     anyhow::anyhow!(crate::error::CliError::Daemon {
                         code: 503,
@@ -141,7 +144,11 @@ impl DaemonClient {
     pub async fn request_ok(&self, request: IpcRequest) -> anyhow::Result<serde_json::Value> {
         match self.request(request).await? {
             IpcResponse::Ok(value) => Ok(value),
-            IpcResponse::Error { code, message, remediation } => {
+            IpcResponse::Error {
+                code,
+                message,
+                remediation,
+            } => {
                 let cli_err = match code {
                     403 => crate::error::CliError::Auth(message),
                     503 => crate::error::CliError::NotInitialized(message),

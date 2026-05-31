@@ -49,7 +49,10 @@ pub struct MockReplies {
     pub queue: std::collections::VecDeque<Result<Vec<u8>, FilesError>>,
 }
 
-#[allow(dead_code, reason = "kept for symmetry + future test cases needing per-mock identity assertions")]
+#[allow(
+    dead_code,
+    reason = "kept for symmetry + future test cases needing per-mock identity assertions"
+)]
 pub struct MockDeps {
     pub community_id: String,
     pub channel_id: String,
@@ -374,11 +377,7 @@ impl FilesDeps for MockDeps {
         Ok(())
     }
 
-    fn send_to_mesh(
-        &self,
-        _c: &str,
-        _envelope: &CommunityEnvelope,
-    ) -> Result<(), FilesError> {
+    fn send_to_mesh(&self, _c: &str, _envelope: &CommunityEnvelope) -> Result<(), FilesError> {
         Ok(())
     }
 

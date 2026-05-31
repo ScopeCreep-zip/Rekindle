@@ -92,11 +92,7 @@ pub fn open_chat_window(
 /// conversation (architecture §27). Each DM gets its own window, keyed
 /// by the truncated record key — distinct from `open_chat_window`,
 /// which is for legacy 1:1 friend chats over Signal Protocol.
-pub fn open_dm_window(
-    app: &AppHandle,
-    record_key: &str,
-    title_hint: &str,
-) -> Result<(), String> {
+pub fn open_dm_window(app: &AppHandle, record_key: &str, title_hint: &str) -> Result<(), String> {
     let suffix: String = record_key
         .chars()
         .filter(char::is_ascii_alphanumeric)

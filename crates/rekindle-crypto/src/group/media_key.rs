@@ -22,8 +22,7 @@ pub struct ChannelAad<'a> {
 impl ChannelAad<'_> {
     /// Encode to the canonical wire bytes consumed by AES-GCM.
     pub fn to_bytes(self) -> Vec<u8> {
-        let mut out =
-            Vec::with_capacity(self.channel_record_key.len() + 4 + 8);
+        let mut out = Vec::with_capacity(self.channel_record_key.len() + 4 + 8);
         out.extend_from_slice(self.channel_record_key);
         out.extend_from_slice(&self.subkey_index.to_le_bytes());
         out.extend_from_slice(&self.lamport_ts.to_le_bytes());

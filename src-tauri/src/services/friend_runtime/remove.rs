@@ -110,4 +110,3 @@ pub async fn remove_friend_inner(
 
     Ok(())
 }
-

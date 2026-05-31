@@ -7,7 +7,6 @@
 //! The router lives on the IPC bus server's `ServerState`, not on `DaemonContext`.
 //! The daemon sends events INTO the bus; the server routes them to subscribers.
 
-
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
@@ -16,8 +15,7 @@ use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use rekindle_types::subscription_events::{
-    EventCategory, SubscriptionEvent, SubscriptionFilter,
-    MAX_FILTERS_PER_CONNECTION,
+    EventCategory, SubscriptionEvent, SubscriptionFilter, MAX_FILTERS_PER_CONNECTION,
 };
 
 use crate::ipc::framing::encode_frame;
@@ -86,8 +84,14 @@ impl EventRouter {
         filters: &[SubscriptionFilter],
         tx: mpsc::Sender<Vec<u8>>,
     ) -> Result<usize, &'static str> {
-        if self.channels.len() >= MAX_SUBSCRIBED_CONNECTIONS && !self.channels.contains_key(&conn_id) {
-            warn!(conn_id, max = MAX_SUBSCRIBED_CONNECTIONS, "event_router: max connections exceeded");
+        if self.channels.len() >= MAX_SUBSCRIBED_CONNECTIONS
+            && !self.channels.contains_key(&conn_id)
+        {
+            warn!(
+                conn_id,
+                max = MAX_SUBSCRIBED_CONNECTIONS,
+                "event_router: max connections exceeded"
+            );
             return Err("maximum subscribed connections exceeded");
         }
 
@@ -106,7 +110,10 @@ impl EventRouter {
         }
 
         // Store original filters for unsubscribe matching
-        self.original_filters.entry(conn_id).or_default().extend_from_slice(filters);
+        self.original_filters
+            .entry(conn_id)
+            .or_default()
+            .extend_from_slice(filters);
         let total = existing_count + filters.len();
 
         info!(
@@ -144,7 +151,12 @@ impl EventRouter {
         }
 
         let count = remaining.len();
-        info!(conn_id, removed = filters.len(), remaining = count, "event_router: unsubscribed");
+        info!(
+            conn_id,
+            removed = filters.len(),
+            remaining = count,
+            "event_router: unsubscribed"
+        );
         count
     }
 
@@ -326,7 +338,9 @@ mod tests {
     fn wildcard_receives_all_events() {
         let mut router = EventRouter::new();
         let (tx, mut rx) = make_tx();
-        router.subscribe(1, &[SubscriptionFilter::all()], tx).unwrap();
+        router
+            .subscribe(1, &[SubscriptionFilter::all()], tx)
+            .unwrap();
 
         let event = SubscriptionEvent::Friend(FriendEvent::RequestReceived {
             from_key: "abc".into(),
@@ -342,18 +356,31 @@ mod tests {
     fn category_filter_matches_correct_events() {
         let mut router = EventRouter::new();
         let (tx, mut rx) = make_tx();
-        router.subscribe(1, &[SubscriptionFilter::categories(vec![EventCategory::Friend])], tx).unwrap();
+        router
+            .subscribe(
+                1,
+                &[SubscriptionFilter::categories(vec![EventCategory::Friend])],
+                tx,
+            )
+            .unwrap();
 
         // Friend event: should match
-        let friend_event = SubscriptionEvent::Friend(FriendEvent::Removed { peer_key: "x".into() });
+        let friend_event = SubscriptionEvent::Friend(FriendEvent::Removed {
+            peer_key: "x".into(),
+        });
         assert_eq!(router.deliver(&friend_event).0, 1);
         assert!(rx.try_recv().is_ok());
 
         // Channel event: should not match
         let channel_event = SubscriptionEvent::ChannelMessage(ChannelMessageEvent::New {
-            community: "gov1".into(), channel: "gen".into(), message_id: "m1".into(),
-            sender_pseudonym: "s".into(), sequence: 0, timestamp: 0,
-            body: None, reply_to_sequence: None,
+            community: "gov1".into(),
+            channel: "gen".into(),
+            message_id: "m1".into(),
+            sender_pseudonym: "s".into(),
+            sequence: 0,
+            timestamp: 0,
+            body: None,
+            reply_to_sequence: None,
         });
         assert_eq!(router.deliver(&channel_event).0, 0);
         assert!(rx.try_recv().is_err());
@@ -363,28 +390,42 @@ mod tests {
     fn community_scope_restricts_delivery() {
         let mut router = EventRouter::new();
         let (tx, mut rx) = make_tx();
-        router.subscribe(1, &[SubscriptionFilter::community("gov1".into())], tx).unwrap();
+        router
+            .subscribe(1, &[SubscriptionFilter::community("gov1".into())], tx)
+            .unwrap();
 
         // Event for gov1: should match
         let e1 = SubscriptionEvent::ChannelMessage(ChannelMessageEvent::New {
-            community: "gov1".into(), channel: "gen".into(), message_id: "m1".into(),
-            sender_pseudonym: "s".into(), sequence: 0, timestamp: 0,
-            body: None, reply_to_sequence: None,
+            community: "gov1".into(),
+            channel: "gen".into(),
+            message_id: "m1".into(),
+            sender_pseudonym: "s".into(),
+            sequence: 0,
+            timestamp: 0,
+            body: None,
+            reply_to_sequence: None,
         });
         assert_eq!(router.deliver(&e1).0, 1);
         assert!(rx.try_recv().is_ok());
 
         // Event for gov2: should not match
         let e2 = SubscriptionEvent::ChannelMessage(ChannelMessageEvent::New {
-            community: "gov2".into(), channel: "gen".into(), message_id: "m2".into(),
-            sender_pseudonym: "s".into(), sequence: 0, timestamp: 0,
-            body: None, reply_to_sequence: None,
+            community: "gov2".into(),
+            channel: "gen".into(),
+            message_id: "m2".into(),
+            sender_pseudonym: "s".into(),
+            sequence: 0,
+            timestamp: 0,
+            body: None,
+            reply_to_sequence: None,
         });
         assert_eq!(router.deliver(&e2).0, 0);
         assert!(rx.try_recv().is_err());
 
         // Global event (no community): should match (global events pass community filters)
-        let e3 = SubscriptionEvent::Friend(FriendEvent::Removed { peer_key: "x".into() });
+        let e3 = SubscriptionEvent::Friend(FriendEvent::Removed {
+            peer_key: "x".into(),
+        });
         assert_eq!(router.deliver(&e3).0, 1);
         assert!(rx.try_recv().is_ok());
     }
@@ -392,7 +433,9 @@ mod tests {
     #[test]
     fn no_subscription_receives_nothing() {
         let router = EventRouter::new();
-        let event = SubscriptionEvent::Friend(FriendEvent::Removed { peer_key: "x".into() });
+        let event = SubscriptionEvent::Friend(FriendEvent::Removed {
+            peer_key: "x".into(),
+        });
         assert_eq!(router.deliver(&event), (0, 0));
     }
 
@@ -401,9 +444,13 @@ mod tests {
         let mut router = EventRouter::new();
         let (tx, mut rx) = make_tx();
         let filter = SubscriptionFilter::all();
-        router.subscribe(1, std::slice::from_ref(&filter), tx).unwrap();
+        router
+            .subscribe(1, std::slice::from_ref(&filter), tx)
+            .unwrap();
 
-        let event = SubscriptionEvent::Friend(FriendEvent::Removed { peer_key: "x".into() });
+        let event = SubscriptionEvent::Friend(FriendEvent::Removed {
+            peer_key: "x".into(),
+        });
         assert_eq!(router.deliver(&event).0, 1);
         assert!(rx.try_recv().is_ok());
 
@@ -416,7 +463,9 @@ mod tests {
     fn remove_connection_cleans_everything() {
         let mut router = EventRouter::new();
         let (tx, _rx) = make_tx();
-        router.subscribe(1, &[SubscriptionFilter::all()], tx).unwrap();
+        router
+            .subscribe(1, &[SubscriptionFilter::all()], tx)
+            .unwrap();
         assert_eq!(router.connection_count(), 1);
 
         router.remove_connection(1);
@@ -429,12 +478,20 @@ mod tests {
         let mut router = EventRouter::new();
         let (tx, mut rx) = make_tx();
         // Subscribe with overlapping filters: wildcard + specific category
-        router.subscribe(1, &[
-            SubscriptionFilter::all(),
-            SubscriptionFilter::categories(vec![EventCategory::Friend]),
-        ], tx).unwrap();
+        router
+            .subscribe(
+                1,
+                &[
+                    SubscriptionFilter::all(),
+                    SubscriptionFilter::categories(vec![EventCategory::Friend]),
+                ],
+                tx,
+            )
+            .unwrap();
 
-        let event = SubscriptionEvent::Friend(FriendEvent::Removed { peer_key: "x".into() });
+        let event = SubscriptionEvent::Friend(FriendEvent::Removed {
+            peer_key: "x".into(),
+        });
         let (delivered, _) = router.deliver(&event);
         // conn_id 1 appears in both wildcard and by_category — should only deliver once
         assert_eq!(delivered, 1);

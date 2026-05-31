@@ -34,8 +34,8 @@ pub async fn create_channel(
     pool: State<'_, DbPool>,
 ) -> Result<String, String> {
     // Phase 5 — gate writes on lifecycle.
-    let _g = rekindle_lifecycle::TransportGuard::write(&state.lifecycle)
-        .map_err(|e| e.to_string())?;
+    let _g =
+        rekindle_lifecycle::TransportGuard::write(&state.lifecycle).map_err(|e| e.to_string())?;
     let state_clone = state.inner().clone();
     let pool_clone = pool.inner().clone();
     state
@@ -54,7 +54,6 @@ pub async fn create_channel(
         })
         .await
 }
-
 
 #[tauri::command]
 pub async fn create_category(

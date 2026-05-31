@@ -11,7 +11,6 @@ use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use rekindle_gossip::dedup::DedupCache;
 use tokio::sync::mpsc;
 
-use rekindle_channel::AutoModCompiledCache;
 use super::circuit::CircuitBreakerState;
 use super::community::CommunityState;
 use super::friend::{FriendState, IdentityState, UserStatus};
@@ -19,6 +18,7 @@ use super::runtime::{
     DHTManagerHandle, GameDetectorHandle, NodeHandle, RoutingManagerHandle, SignalManagerHandle,
     VoiceEngineHandle,
 };
+use rekindle_channel::AutoModCompiledCache;
 
 /// Central application state shared across all Tauri commands and services.
 pub struct AppState {
@@ -45,8 +45,7 @@ pub struct AppState {
     /// friend-inbox metadata. Populated at login. Shared with the
     /// transport's route_refresh_loop so community routes refresh
     /// alongside the personal route. `None` before login.
-    pub transport_session:
-        Arc<parking_lot::RwLock<Option<rekindle_transport::session::Session>>>,
+    pub transport_session: Arc<parking_lot::RwLock<Option<rekindle_transport::session::Session>>>,
     /// W16.9b — durable retry queue store. Used by `EnvelopeQueue` for
     /// DM body sends + future expect-reply flows. `Some` after app
     /// startup wires `SqliteEnvelopeStore`.
@@ -91,8 +90,7 @@ pub struct AppState {
     pub friendship_handle: std::sync::Arc<crate::services::friendship::FriendshipHandle>,
     /// Phase 8 — shared idempotency cache for mutating commands
     /// returning `Result<(), String>`.
-    pub idempotency:
-        std::sync::Arc<rekindle_idempotency::IdempotencyCache<Result<(), String>>>,
+    pub idempotency: std::sync::Arc<rekindle_idempotency::IdempotencyCache<Result<(), String>>>,
     /// Phase 8 — second cache for commands returning a string id
     /// (e.g. `create_channel`). Generics force one cache per `T`.
     pub idempotency_string:
@@ -153,8 +151,7 @@ pub struct AppState {
         >,
     >,
     /// Sender for queued SMPL channel-message writes.
-    pub channel_write_retry_tx:
-        Arc<RwLock<Option<rekindle_records::retry::WriteQueueHandle>>>,
+    pub channel_write_retry_tx: Arc<RwLock<Option<rekindle_records::retry::WriteQueueHandle>>>,
     /// Per-community compiled AutoMod cache.
     pub automod_cache: Arc<RwLock<HashMap<String, Arc<AutoModCompiledCache>>>>,
     /// Wake-up signal for the event reminder scheduler.
@@ -178,8 +175,7 @@ pub struct AppState {
     /// W11.4 — per-peer DM video reassembly state.
     pub dm_video_reassembly: crate::services::dm::video::DmVideoReassemblyState,
     /// Architecture §17.2 line 2402 — per-channel notification burst throttle.
-    pub notification_throttle:
-        crate::services::community::notifications::NotificationThrottle,
+    pub notification_throttle: crate::services::community::notifications::NotificationThrottle,
     /// Phase 14.q — 1:1 call registry, wrapped behind `CallRegistry` trait.
     pub active_calls: Arc<dyn rekindle_calls::signaling::CallRegistry>,
     /// Wave 12 W12.12 — temporarily muted peers (peer_pubkey_hex →
@@ -192,8 +188,7 @@ pub struct AppState {
         Option<tokio::sync::mpsc::Receiver<rekindle_voice::transport::VoicePacket>>,
     >,
     /// Wave 12 W12.9 — group call state (1:N).
-    pub group_calls:
-        Arc<Mutex<HashMap<String, rekindle_calls::group_state::GroupCallState>>>,
+    pub group_calls: Arc<Mutex<HashMap<String, rekindle_calls::group_state::GroupCallState>>>,
     /// P3.3 — incoming SessionResetRequest payloads awaiting user confirmation.
     /// Held in memory only — never persisted before user explicit consent.
     pub pending_session_resets: Arc<Mutex<HashMap<String, Vec<u8>>>>,
@@ -268,11 +263,9 @@ impl Default for AppState {
             dm_video_reassembly: crate::services::dm::video::DmVideoReassemblyState::new(),
             notification_throttle:
                 crate::services::community::notifications::NotificationThrottle::new(),
-            active_calls: Arc::new(
-                crate::services::calls_adapter::ActiveCallRegistry::new(Arc::new(Mutex::new(
-                    HashMap::new(),
-                ))),
-            ),
+            active_calls: Arc::new(crate::services::calls_adapter::ActiveCallRegistry::new(
+                Arc::new(Mutex::new(HashMap::new())),
+            )),
             temp_call_muted: Arc::new(Mutex::new(HashMap::new())),
             voice_pkt_drops: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             voice_packet_rx_staged: parking_lot::Mutex::new(None),
@@ -323,9 +316,7 @@ impl AppState {
         let Some(handle) = ve.as_ref() else {
             return Vec::new();
         };
-        if handle.community_id.as_deref() != Some(community_id)
-            || handle.channel_id != channel_id
-        {
+        if handle.community_id.as_deref() != Some(community_id) || handle.channel_id != channel_id {
             return Vec::new();
         }
         let transport = handle.transport.blocking_lock();

@@ -1,19 +1,19 @@
 #![recursion_limit = "512"]
 
+pub mod audit_repo;
+pub mod audit_view;
 pub mod channel_materialize;
 pub mod channel_repo;
-pub mod community_loader;
 mod channels;
 pub mod commands;
+pub mod community_loader;
 pub mod db;
 pub mod db_helpers;
 mod deep_links;
 pub mod envelope_store_sqlite;
 pub mod event_dispatch;
-pub mod friend_store_sqlite;
 pub mod friend_repo;
-pub mod audit_repo;
-pub mod audit_view;
+pub mod friend_store_sqlite;
 pub mod invite_helpers;
 pub mod keystore;
 pub mod message_repo;

@@ -100,11 +100,13 @@ pub async fn open_personal_sync_record(
         Ok(None)
     })
     .await;
-    row.map(|(record_key, owner_keypair_hex, device_id)| PersonalSyncRecordHandle {
-        record_key,
-        owner_keypair_hex,
-        device_id,
-    })
+    row.map(
+        |(record_key, owner_keypair_hex, device_id)| PersonalSyncRecordHandle {
+            record_key,
+            owner_keypair_hex,
+            device_id,
+        },
+    )
 }
 
 async fn persist_to_identity(
@@ -134,4 +136,3 @@ async fn persist_to_identity(
 // (centralised so `pairing.rs` + `record.rs` share one source of
 // truth — pre-port these files each had a private copy).
 use rekindle_sync::generate_device_id;
-

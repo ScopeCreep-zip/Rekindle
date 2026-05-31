@@ -5,11 +5,11 @@
 
 use tracing::{debug, warn};
 
-use crate::error::Result;
 use super::node::TransportNode;
-use crate::payload::voice::{VoiceAuthMode, VoicePayload};
 use super::peer_registry::PeerTarget;
 use super::send::BroadcastReport;
+use crate::error::Result;
+use crate::payload::voice::{VoiceAuthMode, VoicePayload};
 
 /// Send an encrypted voice packet to a single peer.
 pub async fn send_voice_packet(
@@ -23,10 +23,11 @@ pub async fn send_voice_packet(
         signed = !packet.signature.is_empty(),
         "voice: send_packet"
     );
-    let payload_bytes = postcard::to_stdvec(packet)
-        .map_err(|e| crate::error::TransportError::SerializationFailed {
+    let payload_bytes = postcard::to_stdvec(packet).map_err(|e| {
+        crate::error::TransportError::SerializationFailed {
             reason: format!("voice: {e}"),
-        })?;
+        }
+    })?;
     let result = node.sender().send_voice(target, &payload_bytes).await;
     if let Err(ref e) = result {
         warn!(sender = %packet.sender_key_hex, seq = packet.sequence, error = %e, "voice: send failed");
@@ -56,7 +57,8 @@ pub async fn broadcast_voice_packet(
     };
     let report = node.sender().broadcast_voice(targets, &payload_bytes).await;
     debug!(
-        delivered = report.delivered, failed = report.failures.len(),
+        delivered = report.delivered,
+        failed = report.failures.len(),
         "voice: broadcast complete"
     );
     report
@@ -79,7 +81,10 @@ pub fn build_voice_packet(
     );
     let mut packet = VoicePayload {
         sender_key_hex: sender_key_hex.into(),
-        sequence, timestamp, encrypted_audio, hmac,
+        sequence,
+        timestamp,
+        encrypted_audio,
+        hmac,
         signature: Vec::new(),
     };
 
@@ -90,7 +95,11 @@ pub fn build_voice_packet(
             use ed25519_dalek::Signer;
             let sig = signing_key.sign(&sig_data);
             packet.signature = sig.to_bytes().to_vec();
-            debug!(sender = sender_key_hex, seq = sequence, "voice: packet signed");
+            debug!(
+                sender = sender_key_hex,
+                seq = sequence,
+                "voice: packet signed"
+            );
         }
     }
 

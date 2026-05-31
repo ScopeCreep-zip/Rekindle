@@ -228,27 +228,26 @@ pub async fn handle_message_notification(
     );
 
     if automod_action == crate::services::community::automod::AutoModAction::AlertModerators {
-        let rule_name = crate::services::community::automod::list_rules(state, &pending.community_id)
-            .ok()
-            .and_then(|rules| {
-                rules
-                    .into_iter()
-                    .find(|rule| {
-                        rule.enabled
-                            && rule.action == "alert_moderators"
-                            && (rule
-                                .keywords
-                                .iter()
-                                .any(|keyword| body.to_lowercase().contains(&keyword.to_lowercase()))
-                                || rule.regex_patterns.iter().any(|pattern| {
+        let rule_name =
+            crate::services::community::automod::list_rules(state, &pending.community_id)
+                .ok()
+                .and_then(|rules| {
+                    rules
+                        .into_iter()
+                        .find(|rule| {
+                            rule.enabled
+                                && rule.action == "alert_moderators"
+                                && (rule.keywords.iter().any(|keyword| {
+                                    body.to_lowercase().contains(&keyword.to_lowercase())
+                                }) || rule.regex_patterns.iter().any(|pattern| {
                                     regex::Regex::new(pattern)
                                         .map(|compiled| compiled.is_match(&body))
                                         .unwrap_or(false)
                                 }))
-                    })
-                    .map(|rule| rule.name)
-            })
-            .unwrap_or_else(|| "AutoMod".to_string());
+                        })
+                        .map(|rule| rule.name)
+                })
+                .unwrap_or_else(|| "AutoMod".to_string());
         emit_automod_alert(
             app_handle,
             state,

@@ -6,7 +6,6 @@
 //!
 //! [RC-16] `Debug` impl redacts payload for messages that may contain secrets.
 
-
 use std::fmt;
 use std::time::Instant;
 
@@ -211,7 +210,12 @@ mod tests {
 
     #[test]
     fn message_roundtrip_preserves_wire_version() {
-        let msg = Message::new(&test_ctx(), "test", SecurityLevel::Authenticated, Instant::now());
+        let msg = Message::new(
+            &test_ctx(),
+            "test",
+            SecurityLevel::Authenticated,
+            Instant::now(),
+        );
         let bytes = super::super::framing::encode_frame(&msg).unwrap();
         let decoded: Message<String> = super::super::framing::decode_frame(&bytes).unwrap();
         assert_eq!(decoded.wire_version, WIRE_VERSION);

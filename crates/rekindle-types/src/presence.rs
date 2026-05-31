@@ -123,7 +123,6 @@ impl MemberPresence {
         out.extend_from_slice(&json);
         out
     }
-
 }
 
 /// Game currently being played (populated by rekindle-game-detect).

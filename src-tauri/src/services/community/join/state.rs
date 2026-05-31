@@ -37,9 +37,7 @@ pub(super) fn build_channels(
             mek_generation: 0,
             notification_level: "all".to_string(),
             notification_sound_ref: None,
-            parent_voice_channel_id: ch
-                .parent_voice_channel_id
-                .map(|pv| hex::encode(pv.0)),
+            parent_voice_channel_id: ch.parent_voice_channel_id.map(|pv| hex::encode(pv.0)),
         })
         .collect()
 }

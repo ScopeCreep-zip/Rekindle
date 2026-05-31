@@ -20,8 +20,17 @@ pub async fn handle_voice_signaling(
     payload: ControlPayload,
 ) {
     match payload {
-        ControlPayload::VoiceJoin { channel_id, route_blob } => {
-            presence::handle_voice_join(&deps, community_id, sender_pseudonym, channel_id, route_blob);
+        ControlPayload::VoiceJoin {
+            channel_id,
+            route_blob,
+        } => {
+            presence::handle_voice_join(
+                &deps,
+                community_id,
+                sender_pseudonym,
+                channel_id,
+                route_blob,
+            );
         }
         ControlPayload::VoiceLeave { channel_id } => {
             presence::handle_voice_leave(&deps, community_id, sender_pseudonym, channel_id);
@@ -59,7 +68,12 @@ pub async fn handle_voice_signaling(
             requester_pseudonym,
             lamport: _,
         } => {
-            stage::handle_speak_request(deps.as_ref(), community_id, channel_id, requester_pseudonym);
+            stage::handle_speak_request(
+                deps.as_ref(),
+                community_id,
+                channel_id,
+                requester_pseudonym,
+            );
         }
         ControlPayload::SpeakResponse {
             channel_id,

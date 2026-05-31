@@ -25,7 +25,8 @@ pub async fn compute_community_analytics(
     let owner_for_db = owner_key.clone();
     let cid_for_db = community_id.clone();
     let analytics = db_call(pool, move |conn| {
-        let members = rekindle_analytics::member_metrics::compute(conn, &owner_for_db, &cid_for_db, now);
+        let members =
+            rekindle_analytics::member_metrics::compute(conn, &owner_for_db, &cid_for_db, now);
         let channels =
             rekindle_analytics::channel_metrics::compute(conn, &owner_for_db, &cid_for_db, now)?;
         let growth = rekindle_analytics::growth::compute(conn, &owner_for_db, &cid_for_db, now);
@@ -70,7 +71,14 @@ pub fn log_voice_leave(
     channel_id: &str,
     pseudonym: &str,
 ) {
-    log_voice_event(pool, owner_key, community_id, channel_id, pseudonym, "leave");
+    log_voice_event(
+        pool,
+        owner_key,
+        community_id,
+        channel_id,
+        pseudonym,
+        "leave",
+    );
 }
 
 fn log_voice_event(
@@ -98,12 +106,7 @@ fn log_voice_event(
 }
 
 /// Append a member-leave event to the analytics log.
-pub fn log_member_leave(
-    pool: &DbPool,
-    owner_key: &str,
-    community_id: &str,
-    pseudonym: &str,
-) {
+pub fn log_member_leave(pool: &DbPool, owner_key: &str, community_id: &str, pseudonym: &str) {
     let owner = owner_key.to_string();
     let cid = community_id.to_string();
     let pse = pseudonym.to_string();

@@ -17,8 +17,8 @@ use rekindle_secrets::ed25519_dalek::SigningKey;
 use rekindle_secrets::keys::MediaEncryptionKey;
 use rekindle_secrets::mek::wrap_mek;
 use rekindle_types::governance::GovernanceEntry;
-use rekindle_types::member::MemberInfo;
 use rekindle_types::mek::ChannelMekDelivery;
+use rekindle_types::member::MemberInfo;
 use rekindle_types::message::{BootstrapChannelMessages, BootstrapMessage};
 
 use crate::deps::{GovernanceRuntimeDeps, MekSnapshot};
@@ -169,15 +169,14 @@ pub async fn build_bootstrap_response<D: GovernanceRuntimeDeps>(
         .map_err(|e| GovernanceRuntimeError::InvalidPseudonymHex(e.to_string()))?
         .try_into()
         .map_err(|_| {
-            GovernanceRuntimeError::InvalidPseudonymHex(
-                "joiner pseudonym must be 32 bytes".into(),
-            )
+            GovernanceRuntimeError::InvalidPseudonymHex("joiner pseudonym must be 32 bytes".into())
         })?;
 
     let identity_secret = deps
         .identity_secret()
         .ok_or(GovernanceRuntimeError::IdentitySecretUnavailable)?;
-    let bootstrap_signing_key = derive::derive_community_pseudonym(&identity_secret, governance_key);
+    let bootstrap_signing_key =
+        derive::derive_community_pseudonym(&identity_secret, governance_key);
 
     let gov_state = deps
         .governance_state(community_id)

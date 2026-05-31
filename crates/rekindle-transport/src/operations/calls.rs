@@ -24,9 +24,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use parking_lot::Mutex;
-use rekindle_calls::{
-    fresh_keypair, CallEvent, CallKind, CallStateMachine, CallStatus, Effect,
-};
+use rekindle_calls::{fresh_keypair, CallEvent, CallKind, CallStateMachine, CallStatus, Effect};
 use rekindle_types::notification::TransportNotification;
 use rekindle_utils::timestamp_ms;
 use tokio::task::JoinHandle;
@@ -84,12 +82,18 @@ impl VoiceSessionLauncher for NoopVoiceSessionLauncher {
         _kind: CallKind,
         _call_key: [u8; 32],
     ) -> Result<(), String> {
-        debug!(call_id, peer, "NoopVoiceSessionLauncher::start_voice_session (no audio)");
+        debug!(
+            call_id,
+            peer, "NoopVoiceSessionLauncher::start_voice_session (no audio)"
+        );
         Ok(())
     }
 
     async fn stop_voice_session(&self, call_id: &str, reason: &str) {
-        debug!(call_id, reason, "NoopVoiceSessionLauncher::stop_voice_session");
+        debug!(
+            call_id,
+            reason, "NoopVoiceSessionLauncher::stop_voice_session"
+        );
     }
 }
 
@@ -216,11 +220,7 @@ impl CallRuntime {
     }
 
     /// User clicked Decline on the IncomingCallModal.
-    pub async fn decline_dm_call(
-        &self,
-        call_id: &str,
-        reason: &str,
-    ) -> Result<(), CallError> {
+    pub async fn decline_dm_call(&self, call_id: &str, reason: &str) -> Result<(), CallError> {
         let event = CallEvent::LocalDecline {
             call_id: call_id.into(),
             reason: reason.into(),
@@ -236,11 +236,7 @@ impl CallRuntime {
     /// User clicked Hangup or Cancel. Works in any state — Outgoing
     /// (cancel before peer accepts), Connecting / Active (mid-call
     /// hangup).
-    pub async fn end_dm_call(
-        &self,
-        call_id: &str,
-        reason: &str,
-    ) -> Result<(), CallError> {
+    pub async fn end_dm_call(&self, call_id: &str, reason: &str) -> Result<(), CallError> {
         let event = CallEvent::LocalCancel {
             call_id: call_id.into(),
             reason: reason.into(),
@@ -286,11 +282,7 @@ impl CallRuntime {
 
     /// Mid-call: emoji reaction. Same direct-send shape as
     /// `send_call_media_state`.
-    pub async fn send_call_reaction(
-        &self,
-        call_id: &str,
-        emoji: &str,
-    ) -> Result<(), CallError> {
+    pub async fn send_call_reaction(&self, call_id: &str, emoji: &str) -> Result<(), CallError> {
         let peer = self
             .inner
             .state_machine
@@ -534,17 +526,14 @@ impl CallRuntime {
         // Spawn the matching ring timer for the remaining window.
         match status {
             CallStatus::Outgoing => {
-                self.spawn_timeout(
-                    call_id.clone(),
-                    persisted.expires_at_ms,
-                    TimerKind::Dialing,
-                );
+                self.spawn_timeout(call_id.clone(), persisted.expires_at_ms, TimerKind::Dialing);
                 // Re-emit CallStarted so the UI re-mounts the
                 // OutgoingCallPanel. Display name is unknown
                 // post-restart (the friend-list resolver runs
                 // shell-side; the runtime can't look it up here).
-                self.inner.notifications.notify(
-                    &TransportNotification::CallStarted {
+                self.inner
+                    .notifications
+                    .notify(&TransportNotification::CallStarted {
                         call_id,
                         kind: kind_str(kind).into(),
                         peer_key: persisted.peer_pubkey,
@@ -552,8 +541,7 @@ impl CallRuntime {
                         expires_at_ms: persisted.expires_at_ms,
                         started_at_ms: persisted.inserted_at_ms,
                         status: "calling".into(),
-                    },
-                );
+                    });
             }
             CallStatus::Incoming => {
                 self.spawn_timeout(
@@ -561,8 +549,9 @@ impl CallRuntime {
                     persisted.expires_at_ms,
                     TimerKind::Incoming,
                 );
-                self.inner.notifications.notify(
-                    &TransportNotification::IncomingCall {
+                self.inner
+                    .notifications
+                    .notify(&TransportNotification::IncomingCall {
                         call_id,
                         kind: kind_str(kind).into(),
                         from: persisted.peer_pubkey,
@@ -570,8 +559,7 @@ impl CallRuntime {
                         expires_at_ms: persisted.expires_at_ms,
                         received_at_ms: persisted.inserted_at_ms,
                         is_group: false,
-                    },
-                );
+                    });
             }
             _ => {}
         }
@@ -674,14 +662,14 @@ impl CallRuntime {
                     return true;
                 }
                 if self.inner.state_machine.lock().get(&call_id).is_some() {
-                    self.inner.notifications.notify(
-                        &TransportNotification::CallReactionReceived {
+                    self.inner
+                        .notifications
+                        .notify(&TransportNotification::CallReactionReceived {
                             call_id,
                             sender: sender.public_key.clone(),
                             emoji,
                             timestamp_ms,
-                        },
-                    );
+                        });
                 }
                 true
             }
@@ -748,13 +736,8 @@ impl CallRuntime {
                     call_id: call_id.clone(),
                     acceptor_x25519_pub: acceptor_x25519_pub.to_vec(),
                 };
-                self.queue_call_envelope(
-                    &recipient,
-                    &payload,
-                    EnvelopeKind::CallAccept,
-                    &call_id,
-                )
-                .await;
+                self.queue_call_envelope(&recipient, &payload, EnvelopeKind::CallAccept, &call_id)
+                    .await;
             }
             Effect::SendCallDecline {
                 recipient,
@@ -765,13 +748,8 @@ impl CallRuntime {
                     call_id: call_id.clone(),
                     reason,
                 };
-                self.queue_call_envelope(
-                    &recipient,
-                    &payload,
-                    EnvelopeKind::CallDecline,
-                    &call_id,
-                )
-                .await;
+                self.queue_call_envelope(&recipient, &payload, EnvelopeKind::CallDecline, &call_id)
+                    .await;
             }
             Effect::SendCallEnd {
                 recipient,
@@ -782,13 +760,8 @@ impl CallRuntime {
                     call_id: call_id.clone(),
                     reason,
                 };
-                self.queue_call_envelope(
-                    &recipient,
-                    &payload,
-                    EnvelopeKind::CallEnd,
-                    &call_id,
-                )
-                .await;
+                self.queue_call_envelope(&recipient, &payload, EnvelopeKind::CallEnd, &call_id)
+                    .await;
             }
             // W16.5b — Effect::SendCallRinging dropped: the CallRinging
             // reply is synthesized synchronously by `on_call` into the
@@ -807,7 +780,10 @@ impl CallRuntime {
                     .start_voice_session(&call_id, &peer, kind, call_key)
                     .await
                 {
-                    warn!(call_id, peer, reason, "voice session start failed; tearing down call");
+                    warn!(
+                        call_id,
+                        peer, reason, "voice session start failed; tearing down call"
+                    );
                     let event = CallEvent::VoiceTransportDown {
                         call_id: call_id.clone(),
                         reason,
@@ -983,8 +959,7 @@ impl CallRuntime {
                     Ok(other) => {
                         warn!(
                             ?other,
-                            call_id,
-                            "dispatch_call_invite: unexpected CallResponse variant"
+                            call_id, "dispatch_call_invite: unexpected CallResponse variant"
                         );
                         self.feed_unreachable(call_id, "send_failed").await;
                     }
@@ -1067,7 +1042,10 @@ impl CallRuntime {
             // Duplicate invite for an existing call_id, etc. The state
             // machine is idempotent — return the same CallRinging reply
             // so the caller's perception is consistent.
-            debug!(call_id = invite.call_id, "duplicate CallInvite — replying CallRinging");
+            debug!(
+                call_id = invite.call_id,
+                "duplicate CallInvite — replying CallRinging"
+            );
             return CallResponse::CallRinging(CallRingingPayload {
                 call_id: invite.call_id,
             });
@@ -1111,8 +1089,7 @@ enum TimerKind {
 /// recursive call (StartVoiceSession failure → VoiceTransportDown
 /// effects) can be awaited without blowing the stack via async fn
 /// monomorphization.
-type EffectsFuture =
-    std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>;
+type EffectsFuture = std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>;
 
 fn generate_call_id() -> String {
     uuid::Uuid::new_v4().simple().to_string()

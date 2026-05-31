@@ -183,19 +183,15 @@ impl Component for InputBox {
         };
 
         let title = self.title();
-        let block = Block::bordered()
-            .title(title)
-            .border_style(border_style);
+        let block = Block::bordered().title(title).border_style(border_style);
 
         let inner = block.inner(area);
         frame.render_widget(block, area);
 
         // Show placeholder when empty and not focused
         if self.textarea.lines().iter().all(String::is_empty) && !self.is_focused {
-            let placeholder = Paragraph::new(Span::styled(
-                self.placeholder,
-                Style::new().dim().italic(),
-            ));
+            let placeholder =
+                Paragraph::new(Span::styled(self.placeholder, Style::new().dim().italic()));
             frame.render_widget(placeholder, inner);
         } else {
             frame.render_widget(&self.textarea, inner);

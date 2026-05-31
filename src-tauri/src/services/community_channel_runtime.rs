@@ -146,7 +146,6 @@ pub async fn create_channel_inner(
     Ok(channel_id)
 }
 
-
 pub async fn create_category_inner(
     state: &SharedState,
     community_id: String,

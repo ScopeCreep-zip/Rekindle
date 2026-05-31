@@ -7,14 +7,12 @@
 //! (voice_join / voice_leave / stage_update / etc.) consume this trait
 //! via `Arc<dyn VoiceSignalingDeps>`.
 
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
-use rekindle_voice::signaling::{
-    CommunityVoiceEvent, StageChannelInfo, VoiceSignalingDeps,
-};
+use rekindle_voice::signaling::{CommunityVoiceEvent, StageChannelInfo, VoiceSignalingDeps};
 use rekindle_voice::transport::VoiceTransport;
 use tokio::sync::Mutex as AsyncMutex;
 
@@ -94,11 +92,7 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
     ) {
         let mut communities = self.state.communities.write();
         if let Some(community) = communities.get_mut(community_id) {
-            if let Some(channel) = community
-                .channels
-                .iter_mut()
-                .find(|ch| ch.id == channel_id)
-            {
+            if let Some(channel) = community.channels.iter_mut().find(|ch| ch.id == channel_id) {
                 if let Some(t) = topic {
                     channel.topic = t;
                 }
@@ -229,15 +223,21 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
     }
 
     fn send_to_mesh(&self, community_id: &str, envelope: &CommunityEnvelope) {
-        if let Err(e) = crate::services::community::send_to_mesh(&self.state, community_id, envelope) {
+        if let Err(e) =
+            crate::services::community::send_to_mesh(&self.state, community_id, envelope)
+        {
             tracing::debug!(community = %community_id, error = %e, "voice send_to_mesh failed");
         }
     }
 
     async fn persist_hand_raise(&self, community_id: String, channel_id: String, raised: bool) {
-        if let Err(error) =
-            crate::services::community::persist_hand_raise(&self.state, &community_id, &channel_id, raised)
-                .await
+        if let Err(error) = crate::services::community::persist_hand_raise(
+            &self.state,
+            &community_id,
+            &channel_id,
+            raised,
+        )
+        .await
         {
             tracing::debug!(
                 community = %community_id,
@@ -310,7 +310,8 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
                 pseudonym_key,
                 route_blob,
             } => {
-                crate::event_dispatch::dispatch(&self.app_handle, 
+                crate::event_dispatch::dispatch(
+                    &self.app_handle,
                     "community-event",
                     CommunityEvent::VoiceJoin {
                         community_id,
@@ -325,7 +326,8 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
                 channel_id,
                 pseudonym_key,
             } => {
-                crate::event_dispatch::dispatch(&self.app_handle, 
+                crate::event_dispatch::dispatch(
+                    &self.app_handle,
                     "community-event",
                     CommunityEvent::VoiceLeave {
                         community_id,
@@ -340,7 +342,8 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
                 mode,
                 host_pseudonym,
             } => {
-                crate::event_dispatch::dispatch(&self.app_handle, 
+                crate::event_dispatch::dispatch(
+                    &self.app_handle,
                     "community-event",
                     CommunityEvent::VoiceModeSwitch {
                         community_id,
@@ -357,7 +360,8 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
                 speakers,
                 moderator_pseudonym,
             } => {
-                crate::event_dispatch::dispatch(&self.app_handle, 
+                crate::event_dispatch::dispatch(
+                    &self.app_handle,
                     "community-event",
                     CommunityEvent::StageUpdate {
                         community_id,
@@ -373,7 +377,8 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
                 channel_id,
                 requester_pseudonym,
             } => {
-                crate::event_dispatch::dispatch(&self.app_handle, 
+                crate::event_dispatch::dispatch(
+                    &self.app_handle,
                     "community-event",
                     CommunityEvent::SpeakRequest {
                         community_id,
@@ -389,7 +394,8 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
                 granted,
                 moderator_pseudonym,
             } => {
-                crate::event_dispatch::dispatch(&self.app_handle, 
+                crate::event_dispatch::dispatch(
+                    &self.app_handle,
                     "community-event",
                     CommunityEvent::SpeakResponse {
                         community_id,
@@ -406,7 +412,8 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
                 expression_id,
                 actor_pseudonym,
             } => {
-                crate::event_dispatch::dispatch(&self.app_handle, 
+                crate::event_dispatch::dispatch(
+                    &self.app_handle,
                     "community-event",
                     CommunityEvent::SoundboardPlay {
                         community_id,
@@ -420,7 +427,8 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
                 target_pseudonym,
                 muted,
             } => {
-                crate::event_dispatch::dispatch(&self.app_handle, 
+                crate::event_dispatch::dispatch(
+                    &self.app_handle,
                     "voice-event",
                     VoiceEvent::UserMuted {
                         public_key: target_pseudonym,

@@ -230,26 +230,20 @@ mod tests {
         let store: Arc<dyn EnvelopeStore> = Arc::new(MemoryEnvelopeStore::new());
         let tracker = SeqTracker::new(store, "alice");
         // First call: fresh → returns true (caller should process)
-        assert!(
-            tracker
-                .check_and_record("bob", EnvelopeKind::CallAccept, Some("c1"), 1, 100)
-                .await
-                .unwrap()
-        );
+        assert!(tracker
+            .check_and_record("bob", EnvelopeKind::CallAccept, Some("c1"), 1, 100)
+            .await
+            .unwrap());
         // Same envelope replayed → false (caller should drop)
-        assert!(
-            !tracker
-                .check_and_record("bob", EnvelopeKind::CallAccept, Some("c1"), 1, 200)
-                .await
-                .unwrap()
-        );
+        assert!(!tracker
+            .check_and_record("bob", EnvelopeKind::CallAccept, Some("c1"), 1, 200)
+            .await
+            .unwrap());
         // Higher seq same stream → true
-        assert!(
-            tracker
-                .check_and_record("bob", EnvelopeKind::CallAccept, Some("c1"), 2, 300)
-                .await
-                .unwrap()
-        );
+        assert!(tracker
+            .check_and_record("bob", EnvelopeKind::CallAccept, Some("c1"), 2, 300)
+            .await
+            .unwrap());
     }
 
     #[tokio::test]
@@ -266,9 +260,6 @@ mod tests {
             .is_duplicate("bob", EnvelopeKind::DmMessage, None, 5)
             .await
             .unwrap();
-        assert!(
-            dup_none,
-            "Some(\"\") and None share the dedup slot",
-        );
+        assert!(dup_none, "Some(\"\") and None share the dedup slot",);
     }
 }

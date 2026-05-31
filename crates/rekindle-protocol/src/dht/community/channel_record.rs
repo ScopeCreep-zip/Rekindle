@@ -332,8 +332,10 @@ fn encode_page_entries(
         entries,
         signature: Vec::new(),
     };
-    let sig =
-        rekindle_secrets::derive::sign_with_pseudonym(pseudonym_signing_key, &payload.signing_bytes());
+    let sig = rekindle_secrets::derive::sign_with_pseudonym(
+        pseudonym_signing_key,
+        &payload.signing_bytes(),
+    );
     payload.signature = sig.to_vec();
     serde_json::to_vec(&payload)
         .map_err(|e| ProtocolError::Serialization(format!("channel subkey: {e}")))

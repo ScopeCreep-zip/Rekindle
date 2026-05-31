@@ -24,8 +24,8 @@ pub async fn remove_community_member(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let _g = rekindle_lifecycle::TransportGuard::write(&state.lifecycle)
-        .map_err(|e| e.to_string())?;
+    let _g =
+        rekindle_lifecycle::TransportGuard::write(&state.lifecycle).map_err(|e| e.to_string())?;
     let s = state.inner().clone();
     let p = pool.inner().clone();
     state
@@ -67,7 +67,10 @@ pub async fn remove_timeout(
 }
 
 #[tauri::command]
-#[allow(clippy::too_many_arguments, reason = "Tauri command surface — matches PermissionOverwrite shape")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Tauri command surface — matches PermissionOverwrite shape"
+)]
 pub async fn set_channel_overwrite(
     community_id: String,
     channel_id: String,

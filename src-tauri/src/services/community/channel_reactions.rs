@@ -31,7 +31,14 @@ pub async fn persist_reaction(
         .clone();
     let adapter =
         crate::services::channel_adapter::ChannelAdapter::new(Arc::clone(state), app_handle, pool);
-    rekindle_channel::persist_reaction(&adapter, community_id, channel_id, message_id, expression, added)
-        .await
-        .map_err(|e| e.to_string())
+    rekindle_channel::persist_reaction(
+        &adapter,
+        community_id,
+        channel_id,
+        message_id,
+        expression,
+        added,
+    )
+    .await
+    .map_err(|e| e.to_string())
 }

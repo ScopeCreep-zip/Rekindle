@@ -9,7 +9,7 @@ use crate::daemon::DaemonState;
 use crate::ipc::protocol::IpcResponse;
 use crate::validation;
 
-use super::{DaemonContext, state_error};
+use super::{state_error, DaemonContext};
 
 /// Handle IdentityCreate — full ceremony, daemon-side.
 pub(crate) async fn handle_create(
@@ -42,7 +42,8 @@ pub(crate) async fn handle_create(
 
     // In-memory Signal stores for the ceremony
     let prekey_store = Box::new(rekindle_transport::crypto::signal_store::MemoryPreKeyStore::new());
-    let session_store = Box::new(rekindle_transport::crypto::signal_store::MemorySessionStore::new());
+    let session_store =
+        Box::new(rekindle_transport::crypto::signal_store::MemorySessionStore::new());
 
     let mut created = match identity::create_identity(
         &transport,
@@ -50,7 +51,9 @@ pub(crate) async fn handle_create(
         "Hello from Rekindle!",
         prekey_store,
         session_store,
-    ).await {
+    )
+    .await
+    {
         Ok(c) => c,
         Err(e) => return IpcResponse::error(500, format!("identity creation failed: {e}")),
     };
@@ -61,26 +64,35 @@ pub(crate) async fn handle_create(
     }
 
     // Store keypair bytes
-    if let Err(e) = crate::state::keystore::store_keypair_bytes("profile", &created.profile_keypair_bytes).await {
+    if let Err(e) =
+        crate::state::keystore::store_keypair_bytes("profile", &created.profile_keypair_bytes).await
+    {
         return IpcResponse::error(500, format!("failed to store profile keypair: {e}"));
     }
-    if let Err(e) = crate::state::keystore::store_keypair_bytes("friend_list", &created.friend_list_keypair_bytes).await {
+    if let Err(e) = crate::state::keystore::store_keypair_bytes(
+        "friend_list",
+        &created.friend_list_keypair_bytes,
+    )
+    .await
+    {
         return IpcResponse::error(500, format!("failed to store friend list keypair: {e}"));
     }
 
     // Store prekey material
     let (spk_id, ref spk_bytes) = created.prekey_material.signed_prekey;
-    if let Err(e) = crate::state::keystore::store_keypair_bytes(
-        &format!("signed-prekey-{spk_id}"),
-        spk_bytes,
-    ).await {
+    if let Err(e) =
+        crate::state::keystore::store_keypair_bytes(&format!("signed-prekey-{spk_id}"), spk_bytes)
+            .await
+    {
         return IpcResponse::error(500, format!("failed to store signed prekey: {e}"));
     }
     for (otpk_id, ref otpk_bytes) in &created.prekey_material.one_time_prekeys {
         if let Err(e) = crate::state::keystore::store_keypair_bytes(
             &format!("one-time-prekey-{otpk_id}"),
             otpk_bytes,
-        ).await {
+        )
+        .await
+        {
             return IpcResponse::error(500, format!("failed to store one-time prekey: {e}"));
         }
     }
@@ -131,12 +143,15 @@ pub(crate) fn handle_show(ctx: &DaemonContext, _state: DaemonState) -> IpcRespon
             "friend_list_dht_key": session.identity.friend_list_dht_key,
             "communities": session.communities.len(),
         }))
-    }).unwrap_or_else(|e| e)
+    })
+    .unwrap_or_else(|e| e)
 }
 
 /// Handle IdentityExport — return identity metadata for client-side file write.
 pub(crate) fn handle_export(ctx: &DaemonContext, state: DaemonState) -> IpcResponse {
-    if !state.can_query() { return state_error(state, "query"); }
+    if !state.can_query() {
+        return state_error(state, "query");
+    }
     ctx.require_session(|session| {
         IpcResponse::ok(&serde_json::json!({
             "public_key": session.identity.public_key_hex,
@@ -145,15 +160,27 @@ pub(crate) fn handle_export(ctx: &DaemonContext, state: DaemonState) -> IpcRespo
             "mailbox_dht_key": session.identity.mailbox_dht_key,
             "friend_list_dht_key": session.identity.friend_list_dht_key,
         }))
-    }).unwrap_or_else(|e| e)
+    })
+    .unwrap_or_else(|e| e)
 }
 
 /// Handle IdentityRotate — rotate keypair, notify friends.
 pub(crate) async fn handle_rotate(ctx: &DaemonContext, state: DaemonState) -> IpcResponse {
-    if !state.can_write() { return state_error(state, "write"); }
-    let transport = match ctx.require_transport() { Ok(t) => t, Err(e) => return e };
-    let signing_key = match ctx.require_signing_key() { Ok(k) => k, Err(e) => return e };
-    let session = match ctx.require_session(Clone::clone) { Ok(s) => s, Err(e) => return e };
+    if !state.can_write() {
+        return state_error(state, "write");
+    }
+    let transport = match ctx.require_transport() {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    let signing_key = match ctx.require_signing_key() {
+        Ok(k) => k,
+        Err(e) => return e,
+    };
+    let session = match ctx.require_session(Clone::clone) {
+        Ok(s) => s,
+        Err(e) => return e,
+    };
 
     let result = match identity::rotate_identity(&transport, &session, &signing_key).await {
         Ok(r) => r,
@@ -169,10 +196,14 @@ pub(crate) async fn handle_rotate(ctx: &DaemonContext, state: DaemonState) -> Ip
     {
         let mut guard = ctx.session.write();
         if let Some(ref mut s) = *guard {
-            s.identity.public_key_hex.clone_from(&result.new_public_key_hex);
+            s.identity
+                .public_key_hex
+                .clone_from(&result.new_public_key_hex);
         }
     }
-    if let Err(e) = ctx.save_session() { return e; }
+    if let Err(e) = ctx.save_session() {
+        return e;
+    }
 
     IpcResponse::ok(&serde_json::json!({
         "status": "rotated",
@@ -190,10 +221,18 @@ pub(crate) async fn handle_destroy(
     if confirmation != "DESTROY MY IDENTITY" {
         return IpcResponse::error(400, "confirmation must be exactly 'DESTROY MY IDENTITY'");
     }
-    if !state.can_write() { return state_error(state, "write"); }
+    if !state.can_write() {
+        return state_error(state, "write");
+    }
 
-    let transport = match ctx.require_transport() { Ok(t) => t, Err(e) => return e };
-    let session = match ctx.require_session(Clone::clone) { Ok(s) => s, Err(e) => return e };
+    let transport = match ctx.require_transport() {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    let session = match ctx.require_session(Clone::clone) {
+        Ok(s) => s,
+        Err(e) => return e,
+    };
 
     // Close all DHT records via transport
     if let Err(e) = identity::destroy_identity(&transport, &session).await {

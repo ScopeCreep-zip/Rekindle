@@ -24,7 +24,9 @@ pub use level::{
     get_community_default_notification_level, parse_notification_level,
     set_channel_notification_level, set_community_default_notification_level,
 };
-pub use quiet_hours::{get_quiet_hours, is_do_not_disturb_active, set_do_not_disturb, set_quiet_hours};
+pub use quiet_hours::{
+    get_quiet_hours, is_do_not_disturb_active, set_do_not_disturb, set_quiet_hours,
+};
 pub use sound::{resolve_notification_sound, set_notification_sound};
 pub use types::{
     CleartextMentions, NotificationDecision, NotificationLevel, NotificationThrottle,

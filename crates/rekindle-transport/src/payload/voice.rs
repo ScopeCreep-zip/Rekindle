@@ -61,9 +61,8 @@ impl VoicePayload {
     ///
     /// Format: `sender_key_hex_bytes || sequence(4 LE) || timestamp(8 LE) || encrypted_audio`
     pub fn signature_data(&self) -> Vec<u8> {
-        let mut data = Vec::with_capacity(
-            self.sender_key_hex.len() + 4 + 8 + self.encrypted_audio.len(),
-        );
+        let mut data =
+            Vec::with_capacity(self.sender_key_hex.len() + 4 + 8 + self.encrypted_audio.len());
         data.extend_from_slice(self.sender_key_hex.as_bytes());
         data.extend_from_slice(&self.sequence.to_le_bytes());
         data.extend_from_slice(&self.timestamp.to_le_bytes());

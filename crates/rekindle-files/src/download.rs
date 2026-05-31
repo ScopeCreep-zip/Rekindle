@@ -73,8 +73,8 @@ pub async fn download_attachment<D: FilesDeps>(
         bitmap.ok_or_else(|| FilesError::NotFound(format!("cache for {community_id}")))?
     };
 
-    let sources = discover_sources(deps, community_id, channel_id, attachment_id, chunk_count)
-        .await?;
+    let sources =
+        discover_sources(deps, community_id, channel_id, attachment_id, chunk_count).await?;
     if sources.is_empty() {
         return Err(FilesError::NotFound(
             "no peers advertise this attachment — try again when at least one source is online"
@@ -90,8 +90,7 @@ pub async fn download_attachment<D: FilesDeps>(
             continue;
         }
         let response =
-            send_chunk_request(deps, community_id, channel_id, attachment_id, &needed, src)
-                .await?;
+            send_chunk_request(deps, community_id, channel_id, attachment_id, &needed, src).await?;
         for chunk in response {
             // Decrypt then verify against the offer's plaintext SHA-256.
             let plaintext = fek.decrypt(&chunk.data).map_err(|e| {
@@ -152,9 +151,9 @@ pub async fn download_attachment<D: FilesDeps>(
                     .ok_or_else(|| {
                         FilesError::NotFound(format!("chunk {idx} missing mid-reassembly"))
                     })?;
-                let plaintext = fek.decrypt(&ciphertext).map_err(|e| {
-                    FilesError::Decrypt(format!("reassembly {idx}: {e}"))
-                })?;
+                let plaintext = fek
+                    .decrypt(&ciphertext)
+                    .map_err(|e| FilesError::Decrypt(format!("reassembly {idx}: {e}")))?;
                 buf.extend_from_slice(&plaintext);
             }
             Ok(())
@@ -248,7 +247,11 @@ async fn discover_sources<D: FilesDeps>(
 ) -> Result<Vec<DiscoveredSource>, FilesError> {
     let channel_log_key = deps.channel_log_key(community_id, channel_id)?;
     let entries = deps.scan_channel_subkeys(&channel_log_key).await?;
-    Ok(discover_sources_in_entries(&entries, attachment_id, chunk_count))
+    Ok(discover_sources_in_entries(
+        &entries,
+        attachment_id,
+        chunk_count,
+    ))
 }
 
 /// Ask a single peer for a subset of chunks. Encodes the
@@ -342,9 +345,15 @@ mod tests {
     #[tokio::test]
     async fn invalid_attachment_id_hex_is_rejected() {
         let deps = MockDeps::new("c1", "ch1");
-        let err = download_attachment(&deps, "c1", "ch1", "not-hex", std::path::Path::new("/tmp/x"))
-            .await
-            .unwrap_err();
+        let err = download_attachment(
+            &deps,
+            "c1",
+            "ch1",
+            "not-hex",
+            std::path::Path::new("/tmp/x"),
+        )
+        .await
+        .unwrap_err();
         assert!(matches!(err, FilesError::InvalidAttachmentId(_)));
     }
 

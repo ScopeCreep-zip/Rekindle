@@ -20,9 +20,9 @@ pub mod events;
 // internal callers (and historical `subscriptions::state::SubscriptionState`
 // paths from elsewhere in the workspace) keep working unchanged.
 pub use rekindle_events::{dedup, state, state_effects};
-pub mod watches;
 pub mod dispatch;
 pub mod poll;
+pub mod watches;
 
 pub use cold_start::ColdStartBuffer;
 
@@ -34,9 +34,9 @@ use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
+use crate::broadcast::node::TransportNode;
 use crate::crypto::mek::MekCache;
 use crate::gossip::GossipMesh;
-use crate::broadcast::node::TransportNode;
 use crate::payload::dm::DmPayload;
 use crate::payload::gossip::GossipPayload;
 use crate::session::{CommunityMembership, Session};
@@ -161,12 +161,10 @@ impl SubscriptionManager {
         let dedup = Arc::clone(&self.dedup);
         tokio::spawn(async move {
             while let Some((record_key, changed_subkeys)) = change_rx.recv().await {
-                let event = SubscriptionEvent::Network(
-                    events::NetworkEvent::ValueChanged {
-                        record_key,
-                        changed_subkeys,
-                    },
-                );
+                let event = SubscriptionEvent::Network(events::NetworkEvent::ValueChanged {
+                    record_key,
+                    changed_subkeys,
+                });
                 // Dedup gate — suppresses if this change was already seen via watch
                 if dedup.write().check(&event) {
                     let _ = event_tx.send(event);
@@ -218,7 +216,9 @@ impl SubscriptionManager {
     pub async fn setup_community(&self, membership: &CommunityMembership) {
         info!(community = %membership.community_name, governance = %membership.governance_key, "sub: setup_community");
         watches::setup_community_watches(&self.node, &self.watches, membership).await;
-        self.meshes.write().entry(membership.governance_key.clone())
+        self.meshes
+            .write()
+            .entry(membership.governance_key.clone())
             .or_insert_with(|| GossipMesh::new(membership.governance_key.clone()));
     }
 
@@ -235,13 +235,19 @@ impl SubscriptionManager {
 
     /// Set up a DM peer watch.
     pub async fn setup_dm_peer(&self, peer_key: &str, dm_log_key: &str) {
-        debug!(peer = &peer_key[..12.min(peer_key.len())], dm_log_key, "sub: setup_dm_peer");
+        debug!(
+            peer = &peer_key[..12.min(peer_key.len())],
+            dm_log_key, "sub: setup_dm_peer"
+        );
         watches::setup_dm_watch(&self.node, &self.watches, peer_key, dm_log_key).await;
     }
 
     /// Remove DM watch and state for a peer.
     pub fn teardown_dm_peer(&self, peer_key: &str) {
-        debug!(peer = &peer_key[..12.min(peer_key.len())], "sub: teardown_dm_peer");
+        debug!(
+            peer = &peer_key[..12.min(peer_key.len())],
+            "sub: teardown_dm_peer"
+        );
         self.watches.write().remove_dm_peer(peer_key);
         self.state.write().unread.remove_dm_peer(peer_key);
         self.state.write().typing.remove_dm_peer(peer_key);
@@ -254,10 +260,18 @@ impl SubscriptionManager {
     ///
     /// Pipeline: payload.into_event() → state_effects → dedup → emit
     pub fn on_gossip(
-        &self, community_id: &str, sender_pseudonym: &str,
-        payload: GossipPayload, lamport_ts: u64,
+        &self,
+        community_id: &str,
+        sender_pseudonym: &str,
+        payload: GossipPayload,
+        lamport_ts: u64,
     ) {
-        debug!(community = community_id, sender = &sender_pseudonym[..12.min(sender_pseudonym.len())], lamport = lamport_ts, "sub: on_gossip");
+        debug!(
+            community = community_id,
+            sender = &sender_pseudonym[..12.min(sender_pseudonym.len())],
+            lamport = lamport_ts,
+            "sub: on_gossip"
+        );
         let event = payload.into_event(community_id, sender_pseudonym);
         self.process_event(event);
     }
@@ -266,7 +280,10 @@ impl SubscriptionManager {
     ///
     /// Pipeline: payload.into_event() → state_effects → dedup → emit
     pub fn on_dm(&self, sender_key: &str, payload: DmPayload, timestamp: u64) {
-        debug!(sender = &sender_key[..12.min(sender_key.len())], timestamp, "sub: on_dm");
+        debug!(
+            sender = &sender_key[..12.min(sender_key.len())],
+            timestamp, "sub: on_dm"
+        );
         // W16.4 — call signaling and DM invites return None (they
         // surface via TransportNotification, not SubscriptionEvent).
         // The receive dispatch (W16.7) routes them to the call state
@@ -305,9 +322,11 @@ impl SubscriptionManager {
     /// All other events: no-op.
     fn enrich(&self, event: &mut SubscriptionEvent) {
         match event {
-            SubscriptionEvent::ChannelMessage(
-                events::ChannelMessageEvent::New { community, body, .. }
-            ) if body.is_none() => {
+            SubscriptionEvent::ChannelMessage(events::ChannelMessageEvent::New {
+                community,
+                body,
+                ..
+            }) if body.is_none() => {
                 // Attempt decrypt from MEK cache.
                 // The full decrypt requires reading the ciphertext from DHT and
                 // decrypting with the cached MEK. For gossip-originated events,
@@ -321,12 +340,18 @@ impl SubscriptionManager {
                 let _ = community; // suppress unused warning until decrypt is wired
             }
             SubscriptionEvent::ChannelMessage(
-                events::ChannelMessageEvent::DirectMessageReceived { peer_key, sender_name, .. }
+                events::ChannelMessageEvent::DirectMessageReceived {
+                    peer_key,
+                    sender_name,
+                    ..
+                },
             ) if sender_name.is_none() => {
                 // Resolve display name from friend list in session
                 let guard = self.session.read();
                 if let Some(ref session) = *guard {
-                    if let Some(request) = session.pending_friend_requests.iter()
+                    if let Some(request) = session
+                        .pending_friend_requests
+                        .iter()
                         .find(|r| r.public_key == *peer_key)
                     {
                         *sender_name = Some(request.display_name.clone());
@@ -339,7 +364,9 @@ impl SubscriptionManager {
 
     /// Route a DHT ValueChange by record key.
     pub fn on_value_change(
-        &self, record_key: &str, changed_subkeys: Vec<u32>,
+        &self,
+        record_key: &str,
+        changed_subkeys: Vec<u32>,
         _first_value: Option<Vec<u8>>,
     ) {
         let watch_kind = self.watches.read().get(record_key).map(|e| e.kind.clone());
@@ -357,8 +384,9 @@ impl SubscriptionManager {
             watches::WatchKind::FriendInbox => {
                 debug!(record_key, subkeys = ?changed_subkeys, "friend inbox changed");
                 // Update pending count from session
-                let pending_count = self.session.read().as_ref()
-                    .map_or(0, |s| u32::try_from(s.pending_friend_requests.len()).unwrap_or(u32::MAX));
+                let pending_count = self.session.read().as_ref().map_or(0, |s| {
+                    u32::try_from(s.pending_friend_requests.len()).unwrap_or(u32::MAX)
+                });
                 self.state.write().unread.friend_requests = pending_count;
                 let count = pending_count;
                 self.process_event(SubscriptionEvent::UnreadChanged {
@@ -385,18 +413,35 @@ impl SubscriptionManager {
             watches::WatchKind::GovernanceManifest { community } => {
                 for subkey in &changed_subkeys {
                     let event = match *subkey {
-                        crate::payload::dht_types::MANIFEST_METADATA =>
-                            events::GovernanceEvent::MetadataChanged { community: community.clone() },
-                        crate::payload::dht_types::MANIFEST_CHANNELS =>
-                            events::GovernanceEvent::ChannelsChanged { community: community.clone() },
-                        crate::payload::dht_types::MANIFEST_ROLES =>
-                            events::GovernanceEvent::RolesChanged { community: community.clone() },
-                        crate::payload::dht_types::MANIFEST_BANS =>
-                            events::GovernanceEvent::BansChanged { community: community.clone() },
-                        crate::payload::dht_types::MANIFEST_INVITES =>
-                            events::GovernanceEvent::InvitesChanged { community: community.clone() },
+                        crate::payload::dht_types::MANIFEST_METADATA => {
+                            events::GovernanceEvent::MetadataChanged {
+                                community: community.clone(),
+                            }
+                        }
+                        crate::payload::dht_types::MANIFEST_CHANNELS => {
+                            events::GovernanceEvent::ChannelsChanged {
+                                community: community.clone(),
+                            }
+                        }
+                        crate::payload::dht_types::MANIFEST_ROLES => {
+                            events::GovernanceEvent::RolesChanged {
+                                community: community.clone(),
+                            }
+                        }
+                        crate::payload::dht_types::MANIFEST_BANS => {
+                            events::GovernanceEvent::BansChanged {
+                                community: community.clone(),
+                            }
+                        }
+                        crate::payload::dht_types::MANIFEST_INVITES => {
+                            events::GovernanceEvent::InvitesChanged {
+                                community: community.clone(),
+                            }
+                        }
                         other => events::GovernanceEvent::GovernanceSubkeyUpdated {
-                            community: community.clone(), subkey_index: other, lamport_ts: 0,
+                            community: community.clone(),
+                            subkey_index: other,
+                            lamport_ts: 0,
                         },
                     };
                     self.process_event(SubscriptionEvent::Governance(event));
@@ -411,7 +456,9 @@ impl SubscriptionManager {
                         }
                         crate::payload::dht_types::REGISTRY_MEK_VAULT => {
                             // Read the current max generation from the mek_cache
-                            let generation = self.mek_cache.read()
+                            let generation = self
+                                .mek_cache
+                                .read()
                                 .snapshot(&community)
                                 .iter()
                                 .map(|e| e.generation)
@@ -421,7 +468,8 @@ impl SubscriptionManager {
                             self.process_event(SubscriptionEvent::Crypto(
                                 events::CryptoEvent::MekRotated {
                                     community: community.clone(),
-                                    channel: None, generation,
+                                    channel: None,
+                                    generation,
                                     rotator_pseudonym: None,
                                 },
                             ));
@@ -437,8 +485,16 @@ impl SubscriptionManager {
                 debug!(community = %community, subkeys = ?changed_subkeys, "join inbox changed");
                 // The daemon's inbox processor is triggered by this signal.
             }
-            watches::WatchKind::ChannelLog { community, channel_id, member_pseudonym } => {
-                let count = self.state.write().unread.increment_channel(&community, &channel_id);
+            watches::WatchKind::ChannelLog {
+                community,
+                channel_id,
+                member_pseudonym,
+            } => {
+                let count = self
+                    .state
+                    .write()
+                    .unread
+                    .increment_channel(&community, &channel_id);
                 self.process_event(SubscriptionEvent::ChannelMessage(
                     events::ChannelMessageEvent::New {
                         community: community.clone(),
@@ -453,7 +509,8 @@ impl SubscriptionManager {
                 ));
                 self.process_event(SubscriptionEvent::UnreadChanged {
                     context: events::UnreadContext::Channel {
-                        community, channel: channel_id,
+                        community,
+                        channel: channel_id,
                     },
                     count,
                 });
@@ -464,7 +521,10 @@ impl SubscriptionManager {
     /// Handle attachment state change.
     pub async fn on_attachment_change(&self, is_attached: bool, public_internet_ready: bool) {
         self.process_event(SubscriptionEvent::Network(
-            events::NetworkEvent::AttachmentChanged { is_attached, public_internet_ready },
+            events::NetworkEvent::AttachmentChanged {
+                is_attached,
+                public_internet_ready,
+            },
         ));
 
         // Re-establish all watches on re-attach
@@ -490,7 +550,9 @@ impl SubscriptionManager {
         }
         if !remote_died.is_empty() {
             self.process_event(SubscriptionEvent::Network(
-                events::NetworkEvent::RemoteRoutesDied { peer_keys: remote_died },
+                events::NetworkEvent::RemoteRoutesDied {
+                    peer_keys: remote_died,
+                },
             ));
         }
     }
@@ -505,7 +567,9 @@ impl SubscriptionManager {
                     e.established_at = std::time::Instant::now();
                 }
                 self.process_event(SubscriptionEvent::Network(
-                    events::NetworkEvent::WatchReestablished { record_key: record_key.into() },
+                    events::NetworkEvent::WatchReestablished {
+                        record_key: record_key.into(),
+                    },
                 ));
             } else {
                 warn!(record_key, "watch re-establishment failed");
@@ -538,11 +602,16 @@ impl SubscriptionManager {
 
     /// Mark a channel as read.
     pub fn mark_channel_read(&self, community: &str, channel: &str) {
-        let prev = self.state.write().unread.mark_channel_read(community, channel);
+        let prev = self
+            .state
+            .write()
+            .unread
+            .mark_channel_read(community, channel);
         if prev > 0 {
             self.process_event(SubscriptionEvent::UnreadChanged {
                 context: events::UnreadContext::Channel {
-                    community: community.into(), channel: channel.into(),
+                    community: community.into(),
+                    channel: channel.into(),
                 },
                 count: 0,
             });
@@ -554,7 +623,9 @@ impl SubscriptionManager {
         let prev = self.state.write().unread.mark_dm_read(peer_key);
         if prev > 0 {
             self.process_event(SubscriptionEvent::UnreadChanged {
-                context: events::UnreadContext::Dm { peer_key: peer_key.into() },
+                context: events::UnreadContext::Dm {
+                    peer_key: peer_key.into(),
+                },
                 count: 0,
             });
         }
@@ -581,7 +652,11 @@ impl SubscriptionManager {
     }
 
     /// Voice channel participants.
-    pub fn voice_participants(&self, community: &str, channel: &str) -> Vec<state::VoiceParticipantInfo> {
+    pub fn voice_participants(
+        &self,
+        community: &str,
+        channel: &str,
+    ) -> Vec<state::VoiceParticipantInfo> {
         self.state.write().voice.participants(community, channel)
     }
 

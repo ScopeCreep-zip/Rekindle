@@ -60,11 +60,7 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
     /// Highest timestamp persisted locally for the given channel —
     /// the orchestrator uses this as the `since_timestamp` on
     /// `SyncRequest` envelopes.
-    async fn last_channel_message_timestamp(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-    ) -> i64;
+    async fn last_channel_message_timestamp(&self, community_id: &str, channel_id: &str) -> i64;
 
     /// Record that a `SyncRequest` was just fired for the channel
     /// (so the retry sweep in `presence_poll_tick` can detect stale
@@ -153,11 +149,7 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
     /// Update `community.known_members` with the freshly-scanned
     /// keys. Returns the subset that wasn't previously known (so
     /// the caller can fire `MemberDiscovered` events).
-    fn extend_known_members(
-        &self,
-        community_id: &str,
-        candidates: Vec<String>,
-    ) -> Vec<String>;
+    fn extend_known_members(&self, community_id: &str, candidates: Vec<String>) -> Vec<String>;
 
     /// Fire a `MemberDiscovered` community event for a freshly-seen
     /// pseudonym. The adapter renders the matching src-tauri event
@@ -200,10 +192,7 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
     /// write (best effort) and return its key. Adapter mutates
     /// `community.open_community_records` as a side effect. `Err`
     /// when the community isn't joined or DHT isn't attached.
-    async fn ensure_registry_open(
-        &self,
-        community_id: &str,
-    ) -> Result<Option<String>, String>;
+    async fn ensure_registry_open(&self, community_id: &str) -> Result<Option<String>, String>;
 
     /// Snapshot the local user's per-community presence credentials:
     /// pseudonym key (hex) + assigned subkey index + resolved slot
@@ -241,10 +230,7 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
     /// this with the governance assignments + local role-ids to
     /// produce the merged map via
     /// [`crate::community::role_merge::compute_merged_roles`].
-    fn read_existing_member_roles(
-        &self,
-        community_id: &str,
-    ) -> HashMap<String, Vec<u32>>;
+    fn read_existing_member_roles(&self, community_id: &str) -> HashMap<String, Vec<u32>>;
 
     /// Snapshot the merged-governance `role_assignments` map
     /// (keyed by pseudonym) for `community_id`. Returns empty when
@@ -339,10 +325,7 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
     /// this to
     /// [`crate::community::overlay_rebuild::compute_rebuild_plan`]
     /// to compute the new overlay state.
-    fn read_gossip_snapshot(
-        &self,
-        community_id: &str,
-    ) -> crate::community::GossipOverlaySnapshot;
+    fn read_gossip_snapshot(&self, community_id: &str) -> crate::community::GossipOverlaySnapshot;
 
     /// Atomically write the rebuilt overlay back into the
     /// community state. The orchestrator passes the plan returned

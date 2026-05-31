@@ -22,10 +22,7 @@ use crate::state_helpers;
 // Re-export the moved types so existing call sites keep their imports.
 pub use rekindle_dm::{DmConversation, DmMessageRecord};
 
-pub async fn list_dm_conversations(
-    state: &Arc<AppState>,
-    pool: &DbPool,
-) -> Vec<DmConversation> {
+pub async fn list_dm_conversations(state: &Arc<AppState>, pool: &DbPool) -> Vec<DmConversation> {
     let owner_key = state_helpers::owner_key_or_default(state);
     if owner_key.is_empty() {
         return Vec::new();

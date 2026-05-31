@@ -5,7 +5,10 @@
 //! handshake primitives as `rekindle-crypto::signal::pqxdh` via a direct
 //! crate dependency.
 
-use aes_gcm::{aead::{Aead, KeyInit}, Aes256Gcm, Nonce};
+use aes_gcm::{
+    aead::{Aead, KeyInit},
+    Aes256Gcm, Nonce,
+};
 use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
 use hkdf::Hkdf;
 use rekindle_crypto::signal::pqxdh::{
@@ -17,7 +20,7 @@ use x25519_dalek::{PublicKey as X25519Public, StaticSecret};
 
 use crate::crypto::prekeys::PreKeyBundle;
 use crate::crypto::signal_store::{IdentityKeyStore, PqKeyKind, PreKeyStore, SessionStore};
-use crate::error::{TransportError, Result};
+use crate::error::{Result, TransportError};
 
 /// Fixed identifier for the per-identity ML-KEM-768 last-resort key.
 pub const PQ_LR_ID: u32 = 0;
@@ -61,7 +64,11 @@ impl SignalSessionManager {
         prekeys: Box<dyn PreKeyStore>,
         sessions: Box<dyn SessionStore>,
     ) -> Self {
-        Self { identity, prekeys, sessions }
+        Self {
+            identity,
+            prekeys,
+            sessions,
+        }
     }
 
     /// Establish a session with a peer using their PreKeyBundle (initiator X3DH).
@@ -104,8 +111,10 @@ impl SignalSessionManager {
             recv_counter: 0,
         };
 
-        self.sessions.store_session(peer_address, &serialize_ratchet(&ratchet))?;
-        self.identity.save_identity(peer_address, &bundle.identity_key)?;
+        self.sessions
+            .store_session(peer_address, &serialize_ratchet(&ratchet))?;
+        self.identity
+            .save_identity(peer_address, &bundle.identity_key)?;
 
         Ok(SessionInitInfo {
             ephemeral_public_key: hs.ek_public.to_vec(),
@@ -131,12 +140,16 @@ impl SignalSessionManager {
         let identity_signing = SigningKey::from_bytes(&to_32(&identity_private, "identity key")?);
         let our_ik_x25519 = StaticSecret::from(identity_signing.to_scalar_bytes());
 
-        let spk_data = self.prekeys.load_signed_prekey(signed_prekey_id)?
+        let spk_data = self
+            .prekeys
+            .load_signed_prekey(signed_prekey_id)?
             .ok_or_else(|| TransportError::Internal("signed prekey not found".into()))?;
         let our_spk_secret = StaticSecret::from(to_32(&spk_data, "signed prekey")?);
 
         let our_opk_secret = if let Some(otpk_id) = one_time_prekey_id {
-            let otpk_data = self.prekeys.load_prekey(otpk_id)?
+            let otpk_data = self
+                .prekeys
+                .load_prekey(otpk_id)?
                 .ok_or_else(|| TransportError::Internal("one-time prekey not found".into()))?;
             Some(StaticSecret::from(to_32(&otpk_data, "one-time prekey")?))
         } else {
@@ -147,15 +160,21 @@ impl SignalSessionManager {
             Some(id) => (PqKeyKind::OneTime, id),
             None => (PqKeyKind::LastResort, PQ_LR_ID),
         };
-        let pq_secret_bytes = self.prekeys.load_pq_secret(pq_id, pq_kind)?
-            .ok_or_else(|| TransportError::Internal(format!(
-                "ML-KEM secret not found for ({pq_id}, {pq_kind:?})"
-            )))?;
+        let pq_secret_bytes = self
+            .prekeys
+            .load_pq_secret(pq_id, pq_kind)?
+            .ok_or_else(|| {
+                TransportError::Internal(format!(
+                    "ML-KEM secret not found for ({pq_id}, {pq_kind:?})"
+                ))
+            })?;
         let our_ml_kem_secret = MlKemSecret::from_secret_bytes(&pq_secret_bytes)
             .ok_or_else(|| TransportError::Internal("ML-KEM secret wrong length".into()))?;
 
-        let initiator_ik_ed = VerifyingKey::from_bytes(&to_32(their_identity_key, "their identity")?)
-            .map_err(|e| TransportError::Internal(format!("their identity not on curve: {e}")))?;
+        let initiator_ik_ed =
+            VerifyingKey::from_bytes(&to_32(their_identity_key, "their identity")?).map_err(
+                |e| TransportError::Internal(format!("their identity not on curve: {e}")),
+            )?;
 
         let root_key_z = pqxdh::pqxdh_responder(&pqxdh::ResponderInput {
             our_ik_x25519_secret: &our_ik_x25519,
@@ -197,8 +216,10 @@ impl SignalSessionManager {
             recv_counter: 0,
         };
 
-        self.sessions.store_session(peer_address, &serialize_ratchet(&ratchet))?;
-        self.identity.save_identity(peer_address, their_identity_key)?;
+        self.sessions
+            .store_session(peer_address, &serialize_ratchet(&ratchet))?;
+        self.identity
+            .save_identity(peer_address, their_identity_key)?;
         Ok(())
     }
 
@@ -211,8 +232,9 @@ impl SignalSessionManager {
     ///
     /// Wire format: `[ratchet_public(32) || counter(8 LE) || nonce(12) || ciphertext+tag]`
     pub fn encrypt(&self, peer_address: &str, plaintext: &[u8]) -> Result<Vec<u8>> {
-        let session_data = self.sessions.load_session(peer_address)?
-            .ok_or_else(|| TransportError::Internal(format!("no Signal session for {peer_address}")))?;
+        let session_data = self.sessions.load_session(peer_address)?.ok_or_else(|| {
+            TransportError::Internal(format!("no Signal session for {peer_address}"))
+        })?;
 
         let mut ratchet = deserialize_ratchet(&session_data)?;
 
@@ -220,9 +242,10 @@ impl SignalSessionManager {
         let new_ratchet_secret = StaticSecret::random_from_rng(rand::rngs::OsRng);
         let new_ratchet_public = X25519Public::from(&new_ratchet_secret);
 
-        let their_ratchet = X25519Public::from(
-            to_32(&ratchet.their_ratchet_public, "their ratchet public")?,
-        );
+        let their_ratchet = X25519Public::from(to_32(
+            &ratchet.their_ratchet_public,
+            "their ratchet public",
+        )?);
         let dh_output = new_ratchet_secret.diffie_hellman(&their_ratchet);
 
         // Derive new root key and sending chain key from DH output + old root key
@@ -257,7 +280,8 @@ impl SignalSessionManager {
         nonce_bytes[4..].copy_from_slice(&ratchet.send_counter.to_le_bytes());
         let nonce = Nonce::from_slice(&nonce_bytes);
 
-        let ciphertext = cipher.encrypt(nonce, plaintext)
+        let ciphertext = cipher
+            .encrypt(nonce, plaintext)
             .map_err(|e| TransportError::Internal(format!("AES encrypt: {e}")))?;
 
         // Wire format: ratchet_public(32) || counter(8) || nonce(12) || ciphertext
@@ -267,7 +291,8 @@ impl SignalSessionManager {
         output.extend_from_slice(&nonce_bytes);
         output.extend_from_slice(&ciphertext);
 
-        self.sessions.store_session(peer_address, &serialize_ratchet(&ratchet))?;
+        self.sessions
+            .store_session(peer_address, &serialize_ratchet(&ratchet))?;
         Ok(output)
     }
 
@@ -284,21 +309,22 @@ impl SignalSessionManager {
             return Err(TransportError::Internal("Signal message too short".into()));
         }
 
-        let session_data = self.sessions.load_session(peer_address)?
-            .ok_or_else(|| TransportError::Internal(format!("no Signal session for {peer_address}")))?;
+        let session_data = self.sessions.load_session(peer_address)?.ok_or_else(|| {
+            TransportError::Internal(format!("no Signal session for {peer_address}"))
+        })?;
 
         let mut ratchet = deserialize_ratchet(&session_data)?;
 
         // Extract sender's new ratchet public key
         let their_new_ratchet_pub = to_32(&message[..32], "sender ratchet public")?;
-        let nonce_bytes: [u8; 12] = message[40..52].try_into()
+        let nonce_bytes: [u8; 12] = message[40..52]
+            .try_into()
             .map_err(|_| TransportError::Internal("invalid nonce".into()))?;
         let ciphertext = &message[52..];
 
         // DH ratchet step: DH(our_ratchet_secret, their_new_ratchet_public) → new root + receiving chain
-        let our_ratchet_secret = StaticSecret::from(
-            to_32(&ratchet.our_ratchet_secret, "our ratchet secret")?,
-        );
+        let our_ratchet_secret =
+            StaticSecret::from(to_32(&ratchet.our_ratchet_secret, "our ratchet secret")?);
         let their_ratchet = X25519Public::from(their_new_ratchet_pub);
         let dh_output = our_ratchet_secret.diffie_hellman(&their_ratchet);
 
@@ -309,7 +335,11 @@ impl SignalSessionManager {
         let mut new_root = [0u8; 32];
         let mut new_receiving_chain = [0u8; 32];
         hkdf_expand(&hk_ratchet, b"ReKindleRootKey", &mut new_root)?;
-        hkdf_expand(&hk_ratchet, b"ReKindleChainRatchet", &mut new_receiving_chain)?;
+        hkdf_expand(
+            &hk_ratchet,
+            b"ReKindleChainRatchet",
+            &mut new_receiving_chain,
+        )?;
 
         ratchet.root_key = new_root;
         ratchet.receiving_chain_key = new_receiving_chain;
@@ -329,10 +359,12 @@ impl SignalSessionManager {
             .map_err(|e| TransportError::Internal(format!("AES init: {e}")))?;
         let nonce = Nonce::from_slice(&nonce_bytes);
 
-        let plaintext = cipher.decrypt(nonce, ciphertext)
+        let plaintext = cipher
+            .decrypt(nonce, ciphertext)
             .map_err(|e| TransportError::Internal(format!("AES decrypt: {e}")))?;
 
-        self.sessions.store_session(peer_address, &serialize_ratchet(&ratchet))?;
+        self.sessions
+            .store_session(peer_address, &serialize_ratchet(&ratchet))?;
         Ok(plaintext)
     }
 
@@ -373,12 +405,14 @@ impl SignalSessionManager {
     ) -> Result<PreKeyBundle> {
         let (identity_private, identity_public) = self.identity.get_identity_key_pair()?;
         let registration_id = self.identity.get_local_registration_id()?;
-        let signing_key = SigningKey::from_bytes(&to_32(&identity_private, "identity for signing")?);
+        let signing_key =
+            SigningKey::from_bytes(&to_32(&identity_private, "identity for signing")?);
 
         // X25519 signed prekey.
         let signed_prekey_secret = StaticSecret::random_from_rng(rand::rngs::OsRng);
         let signed_prekey_public = X25519Public::from(&signed_prekey_secret);
-        self.prekeys.store_signed_prekey(signed_prekey_id, signed_prekey_secret.as_bytes())?;
+        self.prekeys
+            .store_signed_prekey(signed_prekey_id, signed_prekey_secret.as_bytes())?;
         let signed_prekey_signature = signing_key
             .sign(&spk_signing_payload(signed_prekey_public.as_bytes()))
             .to_bytes()
@@ -409,7 +443,8 @@ impl SignalSessionManager {
         // Optional ML-KEM-768 one-time key.
         let (pq_ot, pq_ot_signature) = if let Some(id) = pq_one_time_id {
             let (ot_secret, ot_public) = MlKemSecret::generate();
-            self.prekeys.store_pq_secret(id, PqKeyKind::OneTime, ot_secret.as_secret_bytes())?;
+            self.prekeys
+                .store_pq_secret(id, PqKeyKind::OneTime, ot_secret.as_secret_bytes())?;
             let sig = signing_key
                 .sign(&pq_signing_payload(b"OT", ot_public.as_bytes()))
                 .to_bytes()
@@ -438,9 +473,9 @@ impl SignalSessionManager {
 // ── Helpers ─────────────────────────────────────────────────────────────
 
 fn to_32(data: &[u8], label: &str) -> Result<[u8; 32]> {
-    data[..32].try_into().map_err(|_| TransportError::Internal(
-        format!("{label}: expected 32 bytes, got {}", data.len()),
-    ))
+    data[..32].try_into().map_err(|_| {
+        TransportError::Internal(format!("{label}: expected 32 bytes, got {}", data.len()))
+    })
 }
 
 fn hkdf_expand(hk: &Hkdf<Sha256>, info: &[u8], out: &mut [u8; 32]) -> Result<()> {
@@ -468,7 +503,9 @@ fn serialize_ratchet(state: &RatchetState) -> Vec<u8> {
 
 fn deserialize_ratchet(data: &[u8]) -> Result<RatchetState> {
     if data.len() < 112 {
-        return Err(TransportError::Internal("invalid Signal session data".into()));
+        return Err(TransportError::Internal(
+            "invalid Signal session data".into(),
+        ));
     }
     let mut pos = 0;
 
@@ -485,7 +522,8 @@ fn deserialize_ratchet(data: &[u8]) -> Result<RatchetState> {
     pos += 32;
 
     let our_len = u32::from_le_bytes(
-        data[pos..pos + 4].try_into()
+        data[pos..pos + 4]
+            .try_into()
             .map_err(|_| TransportError::Internal("corrupt session".into()))?,
     ) as usize;
     pos += 4;
@@ -493,7 +531,8 @@ fn deserialize_ratchet(data: &[u8]) -> Result<RatchetState> {
     pos += our_len;
 
     let their_len = u32::from_le_bytes(
-        data[pos..pos + 4].try_into()
+        data[pos..pos + 4]
+            .try_into()
             .map_err(|_| TransportError::Internal("corrupt session".into()))?,
     ) as usize;
     pos += 4;
@@ -501,20 +540,26 @@ fn deserialize_ratchet(data: &[u8]) -> Result<RatchetState> {
     pos += their_len;
 
     let send_counter = u64::from_le_bytes(
-        data[pos..pos + 8].try_into()
+        data[pos..pos + 8]
+            .try_into()
             .map_err(|_| TransportError::Internal("corrupt session".into()))?,
     );
     pos += 8;
 
     let recv_counter = u64::from_le_bytes(
-        data[pos..pos + 8].try_into()
+        data[pos..pos + 8]
+            .try_into()
             .map_err(|_| TransportError::Internal("corrupt session".into()))?,
     );
 
     Ok(RatchetState {
-        root_key, sending_chain_key, receiving_chain_key,
-        our_ratchet_secret, their_ratchet_public,
-        send_counter, recv_counter,
+        root_key,
+        sending_chain_key,
+        receiving_chain_key,
+        our_ratchet_secret,
+        their_ratchet_public,
+        send_counter,
+        recv_counter,
     })
 }
 
@@ -522,9 +567,9 @@ fn deserialize_ratchet(data: &[u8]) -> Result<RatchetState> {
 mod tests {
     use super::*;
     use crate::crypto::signal_store::{MemoryIdentityStore, MemoryPreKeyStore, MemorySessionStore};
+    use parking_lot::Mutex;
     use std::collections::HashMap;
     use std::sync::Arc;
-    use parking_lot::Mutex;
 
     struct SharedSessionStore(Arc<Mutex<HashMap<String, Vec<u8>>>>);
 

@@ -102,7 +102,8 @@ pub async fn logout_inner(
     }
 
     if state_helpers::identity_status(&state) != Some(UserStatus::Offline) {
-        if let Err(e) = services::presence_service::publish_status(&state, UserStatus::Offline).await
+        if let Err(e) =
+            services::presence_service::publish_status(&state, UserStatus::Offline).await
         {
             tracing::warn!(error = %e, "failed to publish offline status on logout");
         }
@@ -371,10 +372,7 @@ pub async fn login_inner(
     Ok(result)
 }
 
-pub async fn list_identities_inner(
-    pool: &DbPool,
-) -> Result<Vec<IdentitySummary>, String> {
-
+pub async fn list_identities_inner(pool: &DbPool) -> Result<Vec<IdentitySummary>, String> {
     db_call(pool, move |conn| {
         let mut stmt = conn.prepare(
             "SELECT public_key, display_name, created_at, avatar_webp \
@@ -404,10 +402,7 @@ pub async fn list_identities_inner(
 }
 
 #[cfg(debug_assertions)]
-pub fn pqxdh_bundle_info_inner(
-    state: &Arc<AppState>,
-) -> Result<PqxdhBundleInfo, String> {
-
+pub fn pqxdh_bundle_info_inner(state: &Arc<AppState>) -> Result<PqxdhBundleInfo, String> {
     let handle = state
         .signal_manager
         .read()

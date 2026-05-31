@@ -125,7 +125,10 @@ mod tests {
         let dr = profile_for_class(MessageClass::DhtRead);
         let r = profile_for_class(MessageClass::Rpc);
         assert_eq!(dr.hop_count, 1);
-        assert!(dr.sender_anonymous, "DHT reads must hide which peers we query");
+        assert!(
+            dr.sender_anonymous,
+            "DHT reads must hide which peers we query"
+        );
         // Plan-stated: routing-equivalent to Rpc.
         assert_eq!(dr.hop_count, r.hop_count);
         assert_eq!(dr.stability, r.stability);

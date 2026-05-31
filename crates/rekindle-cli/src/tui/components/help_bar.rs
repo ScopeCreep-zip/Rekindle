@@ -21,12 +21,7 @@ use crate::tui::theme::ThemeManager;
 /// `hints` is a list of `(key_combo_display, description)` pairs from
 /// the keymap store. The bar renders as many as fit, with critical
 /// hints pinned to the right edge.
-pub fn render(
-    frame: &mut Frame,
-    area: Rect,
-    hints: &[(&str, &str)],
-    _theme: &ThemeManager,
-) {
+pub fn render(frame: &mut Frame, area: Rect, hints: &[(&str, &str)], _theme: &ThemeManager) {
     if area.width < 10 || hints.is_empty() {
         return;
     }

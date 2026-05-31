@@ -156,12 +156,7 @@ pub trait MekDistributeDeps: Send + Sync {
     /// UI-facing rotation event for an *incoming* MEK transfer (sender
     /// is a remote peer). Distinct from `emit_event` (used for
     /// rotator-initiated lifecycle states like `RotationStarted`).
-    fn emit_rotation_received(
-        &self,
-        community_id: &str,
-        channel_id: Option<&str>,
-        generation: u64,
-    );
+    fn emit_rotation_received(&self, community_id: &str, channel_id: Option<&str>, generation: u64);
 
     /// Write a governance entry to the merged CRDT state. Used by
     /// `rotate_text_mek_for_departure` to stamp the

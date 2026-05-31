@@ -453,14 +453,19 @@ mod tests {
         // stale_pending_syncs was called once.
         assert_eq!(st.calls_stale_syncs.len(), 1);
         // A new SyncRequest envelope was sent for the stale entry.
-        assert!(st
-            .sent_envelopes
-            .iter()
-            .any(|(_, env)| matches!(env, CommunityEnvelope::Control(ControlPayload::SyncRequest { .. }))));
+        assert!(st.sent_envelopes.iter().any(|(_, env)| matches!(
+            env,
+            CommunityEnvelope::Control(ControlPayload::SyncRequest { .. })
+        )));
         // update_pending_sync fired with attempt = original + 1 = 2.
         assert_eq!(
             st.calls_update_pending,
-            vec![("c1".to_string(), "ch1".to_string(), st.calls_update_pending[0].2, 2)]
+            vec![(
+                "c1".to_string(),
+                "ch1".to_string(),
+                st.calls_update_pending[0].2,
+                2
+            )]
         );
         // prune_pending_syncs was called with MAX_SYNC_ATTEMPTS.
         assert_eq!(

@@ -64,7 +64,10 @@ impl DmVideoReassemblyState {
     /// the last missing fragment for this `(peer, stream, frame)` lands;
     /// the frame is removed from state on return so the caller hands it
     /// off to the decoder exactly once.
-    #[allow(clippy::too_many_arguments, reason = "DmVideoFragment wire envelope unpacks to 8 fields; bundling would only move the args from dispatcher to constructor")]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "DmVideoFragment wire envelope unpacks to 8 fields; bundling would only move the args from dispatcher to constructor"
+    )]
     pub fn record_fragment(
         &self,
         peer_pubkey: &str,

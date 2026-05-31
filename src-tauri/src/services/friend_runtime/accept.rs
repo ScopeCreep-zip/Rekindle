@@ -104,42 +104,40 @@ pub async fn accept_request_inner(
     let session_init = if let Some(ref prekey_bytes) = pending_prekey_bundle {
         let signal = state.signal_manager.read();
         if let Some(handle) = signal.as_ref() {
-            let bundle =
-                match serde_json::from_slice::<rekindle_crypto::signal::PreKeyBundle>(prekey_bytes)
-                {
-                    Ok(b) => Some(b),
-                    Err(e) => {
-                        tracing::error!(peer = %public_key, error = %e,
+            let bundle = match serde_json::from_slice::<rekindle_crypto::signal::PreKeyBundle>(
+                prekey_bytes,
+            ) {
+                Ok(b) => Some(b),
+                Err(e) => {
+                    tracing::error!(peer = %public_key, error = %e,
                             "failed to deserialize stored prekey bundle — cannot establish Signal session");
-                        let peer_label = state_helpers::friend_display_name(&state, &public_key)
-                            .unwrap_or_else(|| format!("{}…", &public_key[..16.min(public_key.len())]));
-                        crate::event_dispatch::emit_live(
-                            &app,
-                            "notification-event",
-                            &crate::channels::NotificationEvent::SystemAlert {
-                                title: "Couldn't establish secure session".into(),
-                                body: format!(
-                                    "Stored prekey bundle for {peer_label} is unparseable. \
+                    let peer_label = state_helpers::friend_display_name(&state, &public_key)
+                        .unwrap_or_else(|| format!("{}…", &public_key[..16.min(public_key.len())]));
+                    crate::event_dispatch::emit_live(
+                        &app,
+                        "notification-event",
+                        &crate::channels::NotificationEvent::SystemAlert {
+                            title: "Couldn't establish secure session".into(),
+                            body: format!(
+                                "Stored prekey bundle for {peer_label} is unparseable. \
                                      Tell them to re-send the friend request, then verify their \
                                      safety number out-of-band before accepting again."
-                                ),
-                            },
-                        );
-                        None
-                    }
-                };
+                            ),
+                        },
+                    );
+                    None
+                }
+            };
 
             match bundle {
                 None => None,
                 Some(bundle) => {
-                    let already_established = handle
-                        .manager
-                        .has_session(&public_key)
-                        .unwrap_or(false)
-                        && handle
-                            .manager
-                            .is_trusted_identity(&public_key, &bundle.identity_key)
-                            .unwrap_or(false);
+                    let already_established =
+                        handle.manager.has_session(&public_key).unwrap_or(false)
+                            && handle
+                                .manager
+                                .is_trusted_identity(&public_key, &bundle.identity_key)
+                                .unwrap_or(false);
                     if already_established {
                         tracing::info!(peer = %public_key,
                             "session already established for peer — skipping establish_session \
@@ -155,8 +153,11 @@ pub async fn accept_request_inner(
                             Err(e) => {
                                 tracing::error!(peer = %public_key, error = %e,
                                     "failed to establish Signal session on accept — recipient won't receive ephemeral_key, encrypted DMs to them will fail AEAD on their side");
-                                let peer_label = state_helpers::friend_display_name(&state, &public_key)
-                                    .unwrap_or_else(|| format!("{}…", &public_key[..16.min(public_key.len())]));
+                                let peer_label =
+                                    state_helpers::friend_display_name(&state, &public_key)
+                                        .unwrap_or_else(|| {
+                                            format!("{}…", &public_key[..16.min(public_key.len())])
+                                        });
                                 crate::event_dispatch::emit_live(
                                     &app,
                                     "notification-event",
@@ -239,4 +240,3 @@ pub async fn accept_request_inner(
 
     Ok(())
 }
-

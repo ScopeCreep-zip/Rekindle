@@ -81,12 +81,7 @@ struct PartialFrame {
 }
 
 impl PartialFrame {
-    fn from_data(
-        frag_total: u8,
-        keyframe: bool,
-        timestamp: u32,
-        received_at_ms: u32,
-    ) -> Self {
+    fn from_data(frag_total: u8, keyframe: bool, timestamp: u32, received_at_ms: u32) -> Self {
         Self {
             frag_total,
             keyframe: Some(keyframe),
@@ -161,12 +156,9 @@ impl Reassembler {
         evict_stale(buffer, now_ms);
         cap_pending(buffer, fragment.frame_seq);
 
-        let partial = buffer
-            .frames
-            .entry(fragment.frame_seq)
-            .or_insert_with(|| {
-                PartialFrame::from_data(total, fragment.keyframe, fragment.timestamp, now_ms)
-            });
+        let partial = buffer.frames.entry(fragment.frame_seq).or_insert_with(|| {
+            PartialFrame::from_data(total, fragment.keyframe, fragment.timestamp, now_ms)
+        });
 
         if partial.frag_total != total {
             return Err(ReassemblerError::FragTotalMismatch {
@@ -225,12 +217,9 @@ impl Reassembler {
         evict_stale(buffer, now_ms);
         cap_pending(buffer, fragment.frame_seq);
 
-        let partial = buffer
-            .frames
-            .entry(fragment.frame_seq)
-            .or_insert_with(|| {
-                PartialFrame::from_parity(fragment.data_count, fragment.timestamp, now_ms)
-            });
+        let partial = buffer.frames.entry(fragment.frame_seq).or_insert_with(|| {
+            PartialFrame::from_parity(fragment.data_count, fragment.timestamp, now_ms)
+        });
 
         if partial.frag_total != fragment.data_count {
             return Err(ReassemblerError::ParityMetadataMismatch);
@@ -273,11 +262,7 @@ fn cap_pending(buffer: &mut StreamBuffer, frame_seq: u32) {
     if !buffer.frames.contains_key(&frame_seq)
         && buffer.frames.len() >= MAX_PENDING_FRAMES_PER_STREAM
     {
-        if let Some((&oldest_seq, _)) = buffer
-            .frames
-            .iter()
-            .min_by_key(|(_, p)| p.received_at_ms)
-        {
+        if let Some((&oldest_seq, _)) = buffer.frames.iter().min_by_key(|(_, p)| p.received_at_ms) {
             buffer.frames.remove(&oldest_seq);
         }
     }
@@ -338,12 +323,8 @@ fn try_complete(
         .iter()
         .enumerate()
         .filter_map(|(idx, slot)| {
-            slot.as_ref().map(|p| {
-                (
-                    u8::try_from(idx).expect("frag_total fits u8"),
-                    p.clone(),
-                )
-            })
+            slot.as_ref()
+                .map(|p| (u8::try_from(idx).expect("frag_total fits u8"), p.clone()))
         })
         .collect();
     let received_parity: Vec<(u8, Vec<u8>)> = partial
@@ -351,12 +332,8 @@ fn try_complete(
         .iter()
         .enumerate()
         .filter_map(|(idx, slot)| {
-            slot.as_ref().map(|p| {
-                (
-                    u8::try_from(idx).expect("parity_total fits u8"),
-                    p.clone(),
-                )
-            })
+            slot.as_ref()
+                .map(|p| (u8::try_from(idx).expect("parity_total fits u8"), p.clone()))
         })
         .collect();
     let payload = reconstruct_frame(
@@ -460,10 +437,11 @@ mod tests {
 
         assert!(r.ingest("alice", fec.data[0].clone(), 0).unwrap().is_none());
         assert!(r.ingest("alice", fec.data[2].clone(), 0).unwrap().is_none());
-        let done = r
-            .ingest_parity("alice", fec.parity[0].clone(), 0)
-            .unwrap();
-        assert!(done.is_some(), "FEC should reconstruct after 2 data + 1 parity");
+        let done = r.ingest_parity("alice", fec.parity[0].clone(), 0).unwrap();
+        assert!(
+            done.is_some(),
+            "FEC should reconstruct after 2 data + 1 parity"
+        );
         let frame_out = done.unwrap();
         assert!(frame_out.recovered_via_fec);
         assert_eq!(frame_out.payload, frame);
@@ -488,7 +466,10 @@ mod tests {
             .is_none());
         assert!(r.ingest("alice", fec.data[0].clone(), 0).unwrap().is_none());
         let done = r.ingest("alice", fec.data[1].clone(), 0).unwrap();
-        assert!(done.is_some(), "3 of 4 shards is enough — must not wait for data[2]");
+        assert!(
+            done.is_some(),
+            "3 of 4 shards is enough — must not wait for data[2]"
+        );
         let frame_out = done.unwrap();
         assert!(frame_out.recovered_via_fec);
         assert_eq!(

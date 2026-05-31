@@ -38,20 +38,19 @@ pub fn upload_expression_to_cache<D: FilesDeps + ?Sized>(
 ) -> Result<AttachmentOffer, FilesError> {
     let total_size = bytes.len() as u64;
 
-    let community_mek = deps.community_mek(community_id).ok_or_else(|| {
-        FilesError::MekUnavailable {
-            community: community_id.to_string(),
-            generation: 0,
-        }
-    })?;
+    let community_mek =
+        deps.community_mek(community_id)
+            .ok_or_else(|| FilesError::MekUnavailable {
+                community: community_id.to_string(),
+                generation: 0,
+            })?;
     let mek_generation = deps.mek_generation(community_id)?;
 
     let fek = MediaEncryptionKey::generate(0);
 
     deps.ensure_cache_open(community_id)?;
-    let chunked = Chunker::chunk(bytes).map_err(|e| {
-        FilesError::InvalidInput(format!("chunker failed: {e}"))
-    })?;
+    let chunked = Chunker::chunk(bytes)
+        .map_err(|e| FilesError::InvalidInput(format!("chunker failed: {e}")))?;
     let chunk_count = u32::try_from(chunked.chunks.len())
         .map_err(|_| FilesError::InvalidInput("chunk count exceeds u32::MAX".to_string()))?;
     let attachment_uuid = Uuid::from_bytes(expression_id);

@@ -54,8 +54,7 @@ pub fn build_envelope(
         timestamp_ms,
         mek_generation,
     };
-    serde_json::to_vec(&envelope)
-        .map_err(|e| DmError::Serialize(format!("dm envelope: {e}")))
+    serde_json::to_vec(&envelope).map_err(|e| DmError::Serialize(format!("dm envelope: {e}")))
 }
 
 /// Parse a serialized envelope. Callers typically then look up the

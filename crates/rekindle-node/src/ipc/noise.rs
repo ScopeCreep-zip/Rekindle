@@ -16,7 +16,6 @@
 //!
 //! Adapted from open-sesame `core-ipc/src/noise.rs`.
 
-
 use tokio::io::{AsyncRead, AsyncWrite};
 
 use super::error::{IpcError, Result};
@@ -101,12 +100,11 @@ impl NoiseTransport {
             let end = (start + MAX_NOISE_PLAINTEXT).min(payload.len());
             let chunk = &payload[start..end];
 
-            let len = self
-                .state
-                .write_message(chunk, &mut enc_buf)
-                .map_err(|e| IpcError::EncryptFailed {
+            let len = self.state.write_message(chunk, &mut enc_buf).map_err(|e| {
+                IpcError::EncryptFailed {
                     reason: e.to_string(),
-                })?;
+                }
+            })?;
 
             write_frame(writer, &enc_buf[..len]).await?;
         }
@@ -200,25 +198,26 @@ where
 {
     let prologue = build_prologue(local_creds, remote_creds);
 
-    let mut handshake = snow::Builder::new(
-        NOISE_PARAMS
-            .parse()
-            .map_err(|e| IpcError::HandshakeFailed {
-                reason: format!("invalid Noise params: {e}"),
-            })?,
-    )
-    .local_private_key(&server_keypair.private)
-    .map_err(|e| IpcError::HandshakeFailed {
-        reason: format!("Noise builder: {e}"),
-    })?
-    .prologue(&prologue)
-    .map_err(|e| IpcError::HandshakeFailed {
-        reason: format!("Noise prologue: {e}"),
-    })?
-    .build_responder()
-    .map_err(|e| IpcError::HandshakeFailed {
-        reason: format!("Noise responder build: {e}"),
-    })?;
+    let mut handshake =
+        snow::Builder::new(
+            NOISE_PARAMS
+                .parse()
+                .map_err(|e| IpcError::HandshakeFailed {
+                    reason: format!("invalid Noise params: {e}"),
+                })?,
+        )
+        .local_private_key(&server_keypair.private)
+        .map_err(|e| IpcError::HandshakeFailed {
+            reason: format!("Noise builder: {e}"),
+        })?
+        .prologue(&prologue)
+        .map_err(|e| IpcError::HandshakeFailed {
+            reason: format!("Noise prologue: {e}"),
+        })?
+        .build_responder()
+        .map_err(|e| IpcError::HandshakeFailed {
+            reason: format!("Noise responder build: {e}"),
+        })?;
 
     tokio::time::timeout(HANDSHAKE_TIMEOUT, async {
         // Read msg1 from initiator.
@@ -232,11 +231,12 @@ where
 
         // Write msg2 to initiator.
         let mut msg2_buf = vec![0u8; 65535];
-        let msg2_len = handshake
-            .write_message(&[], &mut msg2_buf)
-            .map_err(|e| IpcError::HandshakeFailed {
-                reason: format!("msg2 write: {e}"),
-            })?;
+        let msg2_len =
+            handshake
+                .write_message(&[], &mut msg2_buf)
+                .map_err(|e| IpcError::HandshakeFailed {
+                    reason: format!("msg2 write: {e}"),
+                })?;
         write_frame(writer, &msg2_buf[..msg2_len]).await?;
 
         // Transition to transport mode.
@@ -273,38 +273,40 @@ where
 {
     let prologue = build_prologue(local_creds, remote_creds);
 
-    let mut handshake = snow::Builder::new(
-        NOISE_PARAMS
-            .parse()
-            .map_err(|e| IpcError::HandshakeFailed {
-                reason: format!("invalid Noise params: {e}"),
-            })?,
-    )
-    .local_private_key(&client_keypair.private)
-    .map_err(|e| IpcError::HandshakeFailed {
-        reason: format!("Noise builder: {e}"),
-    })?
-    .remote_public_key(server_public_key)
-    .map_err(|e| IpcError::HandshakeFailed {
-        reason: format!("Noise remote key: {e}"),
-    })?
-    .prologue(&prologue)
-    .map_err(|e| IpcError::HandshakeFailed {
-        reason: format!("Noise prologue: {e}"),
-    })?
-    .build_initiator()
-    .map_err(|e| IpcError::HandshakeFailed {
-        reason: format!("Noise initiator build: {e}"),
-    })?;
+    let mut handshake =
+        snow::Builder::new(
+            NOISE_PARAMS
+                .parse()
+                .map_err(|e| IpcError::HandshakeFailed {
+                    reason: format!("invalid Noise params: {e}"),
+                })?,
+        )
+        .local_private_key(&client_keypair.private)
+        .map_err(|e| IpcError::HandshakeFailed {
+            reason: format!("Noise builder: {e}"),
+        })?
+        .remote_public_key(server_public_key)
+        .map_err(|e| IpcError::HandshakeFailed {
+            reason: format!("Noise remote key: {e}"),
+        })?
+        .prologue(&prologue)
+        .map_err(|e| IpcError::HandshakeFailed {
+            reason: format!("Noise prologue: {e}"),
+        })?
+        .build_initiator()
+        .map_err(|e| IpcError::HandshakeFailed {
+            reason: format!("Noise initiator build: {e}"),
+        })?;
 
     tokio::time::timeout(HANDSHAKE_TIMEOUT, async {
         // Write msg1 to responder.
         let mut msg1_buf = vec![0u8; 65535];
-        let msg1_len = handshake
-            .write_message(&[], &mut msg1_buf)
-            .map_err(|e| IpcError::HandshakeFailed {
-                reason: format!("msg1 write: {e}"),
-            })?;
+        let msg1_len =
+            handshake
+                .write_message(&[], &mut msg1_buf)
+                .map_err(|e| IpcError::HandshakeFailed {
+                    reason: format!("msg1 write: {e}"),
+                })?;
         write_frame(writer, &msg1_buf[..msg1_len]).await?;
 
         // Read msg2 from responder.
@@ -334,13 +336,19 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::noise_keys::generate_keypair;
+    use super::*;
 
     #[test]
     fn prologue_canonical_ordering() {
-        let a = PeerCredentials { pid: 100, uid: 1000 };
-        let b = PeerCredentials { pid: 200, uid: 1000 };
+        let a = PeerCredentials {
+            pid: 100,
+            uid: 1000,
+        };
+        let b = PeerCredentials {
+            pid: 200,
+            uid: 1000,
+        };
         assert_eq!(build_prologue(&a, &b), build_prologue(&b, &a));
         let p = String::from_utf8(build_prologue(&a, &b)).unwrap();
         assert_eq!(p, "REKINDLE-IPC-v1:100:1000:200:1000");
@@ -420,9 +428,16 @@ mod tests {
 
         let (mut ct, mut st) = tokio::join!(
             async {
-                client_handshake(&mut cr, &mut cw, &server_pub, client_kp.as_inner(), &cc, &sc)
-                    .await
-                    .unwrap()
+                client_handshake(
+                    &mut cr,
+                    &mut cw,
+                    &server_pub,
+                    client_kp.as_inner(),
+                    &cc,
+                    &sc,
+                )
+                .await
+                .unwrap()
             },
             async {
                 server_handshake(&mut sr, &mut sw, server_kp.as_inner(), &sc, &cc)
@@ -458,13 +473,20 @@ mod tests {
         let (client_result, server_result) = tokio::join!(
             // Client uses real creds.
             client_handshake(
-                &mut cr, &mut cw, &server_pub, client_kp.as_inner(),
-                &client_creds_real, &server_creds,
+                &mut cr,
+                &mut cw,
+                &server_pub,
+                client_kp.as_inner(),
+                &client_creds_real,
+                &server_creds,
             ),
             // Server uses WRONG creds (thinks client is PID 99, UID 9999).
             server_handshake(
-                &mut sr, &mut sw, server_kp.as_inner(),
-                &server_creds, &client_creds_fake,
+                &mut sr,
+                &mut sw,
+                server_kp.as_inner(),
+                &server_creds,
+                &client_creds_fake,
             ),
         );
 
@@ -490,9 +512,16 @@ mod tests {
 
         let (mut ct, mut st) = tokio::join!(
             async {
-                client_handshake(&mut cr, &mut cw, &server_pub, client_kp.as_inner(), &cc, &sc)
-                    .await
-                    .unwrap()
+                client_handshake(
+                    &mut cr,
+                    &mut cw,
+                    &server_pub,
+                    client_kp.as_inner(),
+                    &cc,
+                    &sc,
+                )
+                .await
+                .unwrap()
             },
             async {
                 server_handshake(&mut sr, &mut sw, server_kp.as_inner(), &sc, &cc)

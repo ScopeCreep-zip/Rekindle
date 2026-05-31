@@ -194,12 +194,7 @@ mod tests {
         let my_pk = hex::encode([1u8; 32]);
         let mut my_rsvps = HashMap::new();
         my_rsvps.insert("event-99".to_string(), "yes".to_string());
-        let agg = aggregate_event_rsvps(
-            &[],
-            &my_rsvps,
-            &["event-99".to_string()],
-            &my_pk,
-        );
+        let agg = aggregate_event_rsvps(&[], &my_rsvps, &["event-99".to_string()], &my_pk);
         let rsvps = agg.get("event-99").expect("entry");
         assert_eq!(rsvps.len(), 1);
         assert_eq!(rsvps[0].pseudonym_key, my_pk);

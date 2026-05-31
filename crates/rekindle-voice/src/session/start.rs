@@ -65,12 +65,8 @@ pub async fn start_session<D: VoiceSessionDeps + ?Sized>(
         None
     };
 
-    let startup = deps.init_voice_session(
-        &prefs,
-        channel_id,
-        community_id,
-        peer_route.as_deref(),
-    )?;
+    let startup =
+        deps.init_voice_session(&prefs, channel_id, community_id, peer_route.as_deref())?;
 
     let member_names = deps.load_member_names(community_id).await;
 

@@ -10,12 +10,12 @@ use std::time::Duration;
 use tracing::debug;
 use veilid_core::{Target, VeilidAPI};
 
-use crate::config::TransportConfig;
-use crate::crypto::envelope::sign_payload;
-use crate::error::{TransportError, Result};
-use crate::frame::{self, TypeId};
 use super::node::build_routing_context;
 use super::peer_registry::PeerTarget;
+use crate::config::TransportConfig;
+use crate::crypto::envelope::sign_payload;
+use crate::error::{Result, TransportError};
+use crate::frame::{self, TypeId};
 use crate::payload::gossip::SignedGossipEnvelope;
 
 /// Report of a broadcast operation.
@@ -71,8 +71,10 @@ impl Sender {
             correlation_id,
             payload,
         );
-        let signed_bytes = postcard::to_stdvec(&signed)
-            .map_err(|e| TransportError::SerializationFailed { reason: e.to_string() })?;
+        let signed_bytes =
+            postcard::to_stdvec(&signed).map_err(|e| TransportError::SerializationFailed {
+                reason: e.to_string(),
+            })?;
         let frame_bytes = frame::encode(type_id, &signed_bytes)?;
 
         let profile = rekindle_route::profile::profile_for_class(class);
@@ -102,37 +104,53 @@ impl Sender {
     ) -> BroadcastReport {
         let envelope_bytes = match postcard::to_stdvec(envelope) {
             Ok(b) => b,
-            Err(e) => return BroadcastReport {
-                delivered: 0,
-                failures: vec![("*".into(), format!("serialization: {e}"))],
-            },
+            Err(e) => {
+                return BroadcastReport {
+                    delivered: 0,
+                    failures: vec![("*".into(), format!("serialization: {e}"))],
+                }
+            }
         };
 
         let frame_bytes = match frame::encode(TypeId::GossipBroadcast, &envelope_bytes) {
             Ok(f) => f,
-            Err(e) => return BroadcastReport {
-                delivered: 0,
-                failures: vec![("*".into(), format!("frame: {e}"))],
-            },
+            Err(e) => {
+                return BroadcastReport {
+                    delivered: 0,
+                    failures: vec![("*".into(), format!("frame: {e}"))],
+                }
+            }
         };
 
         let rc = match build_routing_context(&self.api, &self.config.safety.text) {
             Ok(rc) => rc,
-            Err(e) => return BroadcastReport {
-                delivered: 0,
-                failures: vec![("*".into(), format!("routing: {e}"))],
-            },
+            Err(e) => {
+                return BroadcastReport {
+                    delivered: 0,
+                    failures: vec![("*".into(), format!("routing: {e}"))],
+                }
+            }
         };
 
         let mut report = BroadcastReport::default();
         for (peer_key, target) in targets {
-            match rc.app_message(Target::RouteId(target.route_id.clone()), frame_bytes.clone()).await {
+            match rc
+                .app_message(
+                    Target::RouteId(target.route_id.clone()),
+                    frame_bytes.clone(),
+                )
+                .await
+            {
                 Ok(()) => report.delivered += 1,
                 Err(e) => report.failures.push((peer_key.clone(), e.to_string())),
             }
         }
 
-        debug!(delivered = report.delivered, failed = report.failures.len(), "gossip broadcast");
+        debug!(
+            delivered = report.delivered,
+            failed = report.failures.len(),
+            "gossip broadcast"
+        );
         report
     }
 
@@ -155,21 +173,33 @@ impl Sender {
     pub async fn broadcast_voice(&self, targets: &[PeerTarget], payload: &[u8]) -> BroadcastReport {
         let frame_bytes = match frame::encode(TypeId::VoicePacket, payload) {
             Ok(f) => f,
-            Err(e) => return BroadcastReport {
-                delivered: 0, failures: vec![("*".into(), format!("{e}"))],
-            },
+            Err(e) => {
+                return BroadcastReport {
+                    delivered: 0,
+                    failures: vec![("*".into(), format!("{e}"))],
+                }
+            }
         };
 
         let rc = match build_routing_context(&self.api, &self.config.safety.voice) {
             Ok(rc) => rc,
-            Err(e) => return BroadcastReport {
-                delivered: 0, failures: vec![("*".into(), format!("{e}"))],
-            },
+            Err(e) => {
+                return BroadcastReport {
+                    delivered: 0,
+                    failures: vec![("*".into(), format!("{e}"))],
+                }
+            }
         };
 
         let mut report = BroadcastReport::default();
         for target in targets {
-            match rc.app_message(Target::RouteId(target.route_id.clone()), frame_bytes.clone()).await {
+            match rc
+                .app_message(
+                    Target::RouteId(target.route_id.clone()),
+                    frame_bytes.clone(),
+                )
+                .await
+            {
                 Ok(()) => report.delivered += 1,
                 Err(e) => report.failures.push((String::new(), e.to_string())),
             }
@@ -203,7 +233,15 @@ impl Caller {
         request_payload: &[u8],
     ) -> Result<Vec<u8>> {
         let timeout = Duration::from_millis(self.config.rpc_timeout_ms);
-        self.call_with_timeout(target, type_id, sender_secret, sender_public_hex, request_payload, timeout).await
+        self.call_with_timeout(
+            target,
+            type_id,
+            sender_secret,
+            sender_public_hex,
+            request_payload,
+            timeout,
+        )
+        .await
     }
 
     /// Send a signed RPC request with a caller-specified timeout.
@@ -224,15 +262,11 @@ impl Caller {
         // synchronous one-shots, not retry-driven). seq=0 / correlation=None
         // is the convention for non-queued sends — receiver's
         // SeqTracker only applies on the app_message dispatch path.
-        let signed = sign_payload(
-            sender_secret,
-            sender_public_hex,
-            0,
-            None,
-            request_payload,
-        );
-        let signed_bytes = postcard::to_stdvec(&signed)
-            .map_err(|e| TransportError::SerializationFailed { reason: e.to_string() })?;
+        let signed = sign_payload(sender_secret, sender_public_hex, 0, None, request_payload);
+        let signed_bytes =
+            postcard::to_stdvec(&signed).map_err(|e| TransportError::SerializationFailed {
+                reason: e.to_string(),
+            })?;
         let frame_bytes = frame::encode(type_id, &signed_bytes)?;
 
         let rc = build_routing_context(&self.api, &self.config.safety.rpc)?;
@@ -254,7 +288,11 @@ impl Caller {
             reason: e.to_string(),
         })?;
 
-        debug!(type_id = type_id as u8, response_len = response.len(), "RPC complete");
+        debug!(
+            type_id = type_id as u8,
+            response_len = response.len(),
+            "RPC complete"
+        );
         Ok(response)
     }
 }

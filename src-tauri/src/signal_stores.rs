@@ -21,8 +21,8 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 
-use rekindle_crypto::signal::{MemoryIdentityStore, MemoryPreKeyStore, MemorySessionStore};
 use rekindle_crypto::signal::store::{IdentityKeyStore, PqKeyKind, PreKeyStore, SessionStore};
+use rekindle_crypto::signal::{MemoryIdentityStore, MemoryPreKeyStore, MemorySessionStore};
 use rekindle_crypto::CryptoError;
 
 use crate::keystore::{
@@ -72,11 +72,7 @@ impl IdentityKeyStore for StrongholdIdentityStore {
         self.cache.get_local_registration_id()
     }
 
-    fn is_trusted_identity(
-        &self,
-        address: &str,
-        identity_key: &[u8],
-    ) -> Result<bool, CryptoError> {
+    fn is_trusted_identity(&self, address: &str, identity_key: &[u8]) -> Result<bool, CryptoError> {
         // Cache hit: defer to TOFU check on the in-memory copy.
         if let Ok(true) = self.cache.is_trusted_identity(address, identity_key) {
             // Either matches the cached entry, or no cached entry exists yet.
@@ -205,7 +201,9 @@ impl PreKeyStore for StrongholdPreKeyStore {
         }
         let ks = self.keystore.lock();
         let last_resort = matches!(kind, PqKeyKind::LastResort);
-        let Some(keystore) = ks.as_ref() else { return Ok(None) };
+        let Some(keystore) = ks.as_ref() else {
+            return Ok(None);
+        };
         let from_disk = load_signal_pq_secret(keystore, prekey_id, last_resort);
         drop(ks);
         if let Some(ref bytes) = from_disk {
@@ -362,8 +360,9 @@ impl rekindle_crypto::signal::SessionPersistence for VaultSessionStore {
         tokio::task::spawn_blocking(move || {
             let ks = keystore.lock();
             match ks.as_ref() {
-                Some(k) => persist_signal_session(k, &peer, &bytes)
-                    .map_err(CryptoError::StorageError),
+                Some(k) => {
+                    persist_signal_session(k, &peer, &bytes).map_err(CryptoError::StorageError)
+                }
                 None => Err(CryptoError::VaultLocked),
             }
         })
@@ -472,7 +471,11 @@ mod tests {
         }
         // Final load — vault must have some valid 8-byte payload.
         let final_bytes = store.load("alice").await.unwrap().unwrap();
-        assert_eq!(final_bytes.len(), 8, "vault state is exactly one write's bytes");
+        assert_eq!(
+            final_bytes.len(),
+            8,
+            "vault state is exactly one write's bytes"
+        );
     }
 
     #[tokio::test]

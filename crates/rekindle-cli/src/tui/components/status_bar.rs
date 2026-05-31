@@ -43,12 +43,7 @@ pub struct StatusBarState {
 }
 
 /// Render the status bar into a single-line area.
-pub fn render(
-    frame: &mut Frame,
-    area: Rect,
-    state: &StatusBarState,
-    theme: &ThemeManager,
-) {
+pub fn render(frame: &mut Frame, area: Rect, state: &StatusBarState, theme: &ThemeManager) {
     let mode_badge = match state.mode {
         Mode::Normal => Span::styled(
             " [NORMAL] ",
@@ -76,10 +71,7 @@ pub fn render(
     let breadcrumb = if state.breadcrumb.is_empty() {
         Span::raw("")
     } else {
-        Span::styled(
-            format!(" {} ", state.breadcrumb),
-            Style::new().dim(),
-        )
+        Span::styled(format!(" {} ", state.breadcrumb), Style::new().dim())
     };
 
     let node_glyph = theme.status_glyph(state.node_attached);
@@ -92,10 +84,7 @@ pub fn render(
 
     let separator = Span::raw(" │ ");
 
-    let hints = Span::styled(
-        format!(" {} ", state.hints),
-        Style::new().dim(),
-    );
+    let hints = Span::styled(format!(" {} ", state.hints), Style::new().dim());
 
     let line = Line::from(vec![
         mode_badge,

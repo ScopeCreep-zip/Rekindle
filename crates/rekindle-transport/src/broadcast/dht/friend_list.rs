@@ -26,8 +26,11 @@ impl<'a> FriendListOps<'a> {
         let (key, keypair) = record::create_dflt(self.rc, 1, None).await?;
 
         let empty = FriendList::default();
-        let data = postcard::to_stdvec(&empty)
-            .map_err(|e| crate::error::TransportError::SerializationFailed { reason: e.to_string() })?;
+        let data = postcard::to_stdvec(&empty).map_err(|e| {
+            crate::error::TransportError::SerializationFailed {
+                reason: e.to_string(),
+            }
+        })?;
         record::set(self.rc, &key, 0, data, None).await?;
 
         tracing::info!(key = %key, "friend list record created");
@@ -42,14 +45,16 @@ impl<'a> FriendListOps<'a> {
         existing_key: Option<&str>,
         existing_keypair: Option<KeyPair>,
     ) -> Result<(String, Option<KeyPair>, bool)> {
-        let (key, keypair, is_new) = record::open_or_create(
-            self.rc, existing_key, existing_keypair, 1,
-        ).await?;
+        let (key, keypair, is_new) =
+            record::open_or_create(self.rc, existing_key, existing_keypair, 1).await?;
 
         if is_new {
             let empty = FriendList::default();
-            let data = postcard::to_stdvec(&empty)
-                .map_err(|e| crate::error::TransportError::SerializationFailed { reason: e.to_string() })?;
+            let data = postcard::to_stdvec(&empty).map_err(|e| {
+                crate::error::TransportError::SerializationFailed {
+                    reason: e.to_string(),
+                }
+            })?;
             record::set(self.rc, &key, 0, data, None).await?;
             tracing::info!(key = %key, "friend list record created");
         }
@@ -60,11 +65,12 @@ impl<'a> FriendListOps<'a> {
     /// Read the full friend list.
     pub async fn read(&self, key: &str) -> Result<FriendList> {
         match record::get(self.rc, key, 0, false).await? {
-            Some(data) => postcard::from_bytes(&data)
-                .map_err(|e| crate::error::TransportError::DeserializationFailed {
+            Some(data) => postcard::from_bytes(&data).map_err(|e| {
+                crate::error::TransportError::DeserializationFailed {
                     type_id: 0,
                     reason: format!("friend list: {e}"),
-                }),
+                }
+            }),
             None => Ok(FriendList::default()),
         }
     }
@@ -72,7 +78,11 @@ impl<'a> FriendListOps<'a> {
     /// Add a friend to the list (deduplicates by public_key).
     pub async fn add(&self, key: &str, entry: FriendEntry) -> Result<()> {
         let mut list = self.read(key).await?;
-        if list.friends.iter().any(|f| f.public_key == entry.public_key) {
+        if list
+            .friends
+            .iter()
+            .any(|f| f.public_key == entry.public_key)
+        {
             return Ok(());
         }
         list.friends.push(entry);
@@ -92,8 +102,11 @@ impl<'a> FriendListOps<'a> {
     }
 
     async fn write(&self, key: &str, list: &FriendList) -> Result<()> {
-        let data = postcard::to_stdvec(list)
-            .map_err(|e| crate::error::TransportError::SerializationFailed { reason: e.to_string() })?;
+        let data = postcard::to_stdvec(list).map_err(|e| {
+            crate::error::TransportError::SerializationFailed {
+                reason: e.to_string(),
+            }
+        })?;
         record::set(self.rc, key, 0, data, None).await
     }
 }

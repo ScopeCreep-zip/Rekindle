@@ -76,9 +76,7 @@ impl FriendStore for MemoryFriendStore {
         let map = self.inner.read().await;
         Ok(pubkey_hexes
             .iter()
-            .filter_map(|pubkey| {
-                map.get(&(owner_key.to_string(), pubkey.clone())).cloned()
-            })
+            .filter_map(|pubkey| map.get(&(owner_key.to_string(), pubkey.clone())).cloned())
             .collect())
     }
 

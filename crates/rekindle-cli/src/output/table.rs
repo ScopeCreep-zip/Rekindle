@@ -7,18 +7,14 @@
 
 use std::io::Write;
 
-use super::OutputMode;
 use super::color::ColorSupport;
+use super::OutputMode;
 
 /// Print a table with headers and rows.
 ///
 /// In structured modes: serializes as an array of objects.
 /// In text mode: renders a bordered table.
-pub fn print_table(
-    headers: &[&str],
-    rows: &[Vec<String>],
-    mode: OutputMode,
-) -> anyhow::Result<()> {
+pub fn print_table(headers: &[&str], rows: &[Vec<String>], mode: OutputMode) -> anyhow::Result<()> {
     match mode {
         OutputMode::Json => {
             let objects: Vec<serde_json::Value> = rows
@@ -82,10 +78,7 @@ pub fn print_table(
 /// Print a simple two-column table (key-value style).
 ///
 /// Uses minimal borders — just column separation, no outer borders.
-pub fn print_kv_table(
-    pairs: &[(&str, String)],
-    mode: OutputMode,
-) -> anyhow::Result<()> {
+pub fn print_kv_table(pairs: &[(&str, String)], mode: OutputMode) -> anyhow::Result<()> {
     if mode.is_structured() {
         let obj: serde_json::Map<String, serde_json::Value> = pairs
             .iter()

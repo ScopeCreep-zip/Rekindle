@@ -14,16 +14,14 @@ use crate::session_deps::VoiceSessionDeps;
 /// Re-open cpal capture+playback on the existing engine, then
 /// respawn the three voice loops against the unchanged shared
 /// transport.
-pub async fn restart_loops<D: VoiceSessionDeps + ?Sized>(
-    deps: &Arc<D>,
-) -> Result<(), VoiceError> {
+pub async fn restart_loops<D: VoiceSessionDeps + ?Sized>(deps: &Arc<D>) -> Result<(), VoiceError> {
     let identity = deps.current_identity()?;
 
     deps.restart_audio_devices()?;
 
-    let shared_transport = deps.current_shared_transport().ok_or_else(|| {
-        VoiceError::Session("restart_loops: no active voice engine".into())
-    })?;
+    let shared_transport = deps
+        .current_shared_transport()
+        .ok_or_else(|| VoiceError::Session("restart_loops: no active voice engine".into()))?;
     let (muted_flag, deafened_flag) = deps.current_voice_flags()?;
 
     let community_id = deps.active_community_id();

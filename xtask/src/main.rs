@@ -208,9 +208,7 @@ fn check_boundaries(root: &Path) -> Result<()> {
                 ));
             }
         }
-        if dep_present(&toml, "veilid-core")
-            && !VEILID_ALLOWED.contains(&crate_name.as_str())
-        {
+        if dep_present(&toml, "veilid-core") && !VEILID_ALLOWED.contains(&crate_name.as_str()) {
             violations.push(format!(
                 "{crate_name}: imports `veilid-core` (Veilid boundary — only via rekindle-transport / rekindle-protocol)"
             ));
@@ -266,9 +264,7 @@ fn check_file_sizes(root: &Path) -> Result<()> {
         if !dir.exists() {
             continue;
         }
-        let walker = WalkBuilder::new(&dir)
-            .standard_filters(true)
-            .build();
+        let walker = WalkBuilder::new(&dir).standard_filters(true).build();
         for entry in walker {
             let entry = entry?;
             if !entry.file_type().is_some_and(|t| t.is_file()) {
@@ -321,12 +317,7 @@ fn check_allow_reasons(root: &Path) -> Result<()> {
     eprintln!("Bare `#[allow(...)]` directives without `reason = \"…\"`:");
     let mut by_lint: BTreeMap<String, usize> = BTreeMap::new();
     for (path, lineno, lints) in &bare_allow {
-        eprintln!(
-            "  • {}:{}  → {}",
-            path.display(),
-            lineno,
-            lints.join(", ")
-        );
+        eprintln!("  • {}:{}  → {}", path.display(), lineno, lints.join(", "));
         for l in lints {
             *by_lint.entry(l.clone()).or_default() += 1;
         }
@@ -460,7 +451,11 @@ fn retrofit_allow_reasons(root: &Path, dry_run: bool) -> Result<()> {
         }
     }
 
-    println!("\nTotal {} bare allow(s) {}.", total, if dry_run { "would be" } else { "were" });
+    println!(
+        "\nTotal {} bare allow(s) {}.",
+        total,
+        if dry_run { "would be" } else { "were" }
+    );
     println!(
         "Now open each modified file and replace `TODO: justify` with a real\n\
          justification, or refactor to remove the need for the allow."

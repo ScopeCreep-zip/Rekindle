@@ -456,10 +456,7 @@ pub enum VoiceSessionEvent {
     /// A participant left.
     UserLeft { peer_pubkey: String },
     /// A participant started/stopped speaking (VAD edge).
-    UserSpeaking {
-        peer_pubkey: String,
-        speaking: bool,
-    },
+    UserSpeaking { peer_pubkey: String, speaking: bool },
     /// A participant muted/unmuted themselves.
     UserMuted { peer_pubkey: String, muted: bool },
     /// Audio device changed (hot-swap).

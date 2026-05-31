@@ -36,9 +36,8 @@ pub async fn rotate_text_mek_for_departure<D: MekDistributeDeps>(
     community_id: &str,
     departed_pseudonym: &str,
 ) -> Result<(), MekRotationError> {
-    let departed = pseudonym_from_hex(departed_pseudonym).ok_or_else(|| {
-        MekRotationError::InvalidInput("invalid departed pseudonym".to_string())
-    })?;
+    let departed = pseudonym_from_hex(departed_pseudonym)
+        .ok_or_else(|| MekRotationError::InvalidInput("invalid departed pseudonym".to_string()))?;
     let recipients = deps.online_recipients(community_id, Some(departed_pseudonym));
     let candidate_keys = recipients
         .iter()
@@ -48,14 +47,8 @@ pub async fn rotate_text_mek_for_departure<D: MekDistributeDeps>(
 
     let cache = deps.cache();
     let initial_generation = cache.current_generation(community_id, "");
-    let Some(cascade_skipped) = wait_for_rotation_slot(
-        deps,
-        community_id,
-        None,
-        &candidates,
-        initial_generation,
-    )
-    .await
+    let Some(cascade_skipped) =
+        wait_for_rotation_slot(deps, community_id, None, &candidates, initial_generation).await
     else {
         return Ok(());
     };
@@ -112,9 +105,8 @@ pub async fn rotate_voice_mek_for_membership<D: MekDistributeDeps>(
     trigger_pseudonym: &str,
     include_trigger_in_recipients: bool,
 ) -> Result<(), MekRotationError> {
-    let trigger = pseudonym_from_hex(trigger_pseudonym).ok_or_else(|| {
-        MekRotationError::InvalidInput("invalid trigger pseudonym".to_string())
-    })?;
+    let trigger = pseudonym_from_hex(trigger_pseudonym)
+        .ok_or_else(|| MekRotationError::InvalidInput("invalid trigger pseudonym".to_string()))?;
     let recipients = deps.voice_recipients(
         community_id,
         channel_id,

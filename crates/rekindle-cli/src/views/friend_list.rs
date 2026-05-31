@@ -24,11 +24,11 @@ use ratatui::Frame;
 
 use rekindle_types::display::FriendDisplay;
 
+use super::View;
 use crate::helpers;
 use crate::tui::action::{Action, CommandResult};
 use crate::tui::focus::{FocusId, FocusRing};
 use crate::tui::theme::ThemeManager;
-use super::View;
 
 /// Friend list view state.
 pub struct FriendListView {
@@ -77,12 +77,10 @@ impl FriendListView {
                 current_status = Some(status);
                 let count = self.friends.iter().filter(|f| f.status == status).count();
                 let label = capitalize_first(status);
-                items.push(ListItem::new(Line::from(
-                    Span::styled(
-                        format!(" {label} ({count})"),
-                        Style::new().bold().dim(),
-                    ),
-                )));
+                items.push(ListItem::new(Line::from(Span::styled(
+                    format!(" {label} ({count})"),
+                    Style::new().bold().dim(),
+                ))));
             }
 
             let (glyph, text_label) = presence_indicator(status, self.use_unicode);
@@ -94,11 +92,14 @@ impl FriendListView {
                 .unwrap_or_default();
 
             // Format last seen from epoch ms
-            let last_seen = friend.last_seen_ms.map(|ms| {
-                let now_ms = rekindle_utils::timestamp_ms();
-                let elapsed = std::time::Duration::from_millis(now_ms.saturating_sub(ms));
-                format!("  {}", helpers::format_duration_ago(elapsed))
-            }).unwrap_or_default();
+            let last_seen = friend
+                .last_seen_ms
+                .map(|ms| {
+                    let now_ms = rekindle_utils::timestamp_ms();
+                    let elapsed = std::time::Duration::from_millis(now_ms.saturating_sub(ms));
+                    format!("  {}", helpers::format_duration_ago(elapsed))
+                })
+                .unwrap_or_default();
 
             let route_indicator = if friend.has_route { "" } else { " [no route]" };
 
@@ -112,27 +113,24 @@ impl FriendListView {
 
         if !self.pending_requests.is_empty() {
             items.push(ListItem::new(Line::from("")));
-            items.push(ListItem::new(Line::from(
-                Span::styled(
-                    format!(" Pending Requests ({})", self.pending_requests.len()),
-                    Style::new().bold().dim(),
-                ),
-            )));
+            items.push(ListItem::new(Line::from(Span::styled(
+                format!(" Pending Requests ({})", self.pending_requests.len()),
+                Style::new().bold().dim(),
+            ))));
             for req in &self.pending_requests {
                 let name = helpers::sanitize_for_display(&req.display_name);
                 let key_short = helpers::abbreviate_key(&req.public_key);
                 let msg = helpers::sanitize_for_display(&req.message);
-                let mut lines = vec![
-                    Line::from(vec![
-                        Span::raw("   ← "),
-                        Span::styled(name, Style::new().bold()),
-                        Span::styled(format!(" ({key_short})"), Style::new().dim()),
-                    ]),
-                ];
+                let mut lines = vec![Line::from(vec![
+                    Span::raw("   ← "),
+                    Span::styled(name, Style::new().bold()),
+                    Span::styled(format!(" ({key_short})"), Style::new().dim()),
+                ])];
                 if !msg.is_empty() {
-                    lines.push(Line::from(
-                        Span::styled(format!("     \"{msg}\""), Style::new().dim().italic()),
-                    ));
+                    lines.push(Line::from(Span::styled(
+                        format!("     \"{msg}\""),
+                        Style::new().dim().italic(),
+                    )));
                 }
                 items.push(ListItem::new(lines));
             }
@@ -158,11 +156,10 @@ impl View for FriendListView {
         }
 
         if self.friends.is_empty() && self.pending_requests.is_empty() {
-            let para = Paragraph::new(
-                "  No friends yet.\n  Add one: rekindle friend add --target <key>",
-            )
-            .style(Style::new().dim())
-            .block(block);
+            let para =
+                Paragraph::new("  No friends yet.\n  Add one: rekindle friend add --target <key>")
+                    .style(Style::new().dim())
+                    .block(block);
             frame.render_widget(para, area);
             return Ok(());
         }
@@ -239,7 +236,9 @@ impl View for FriendListView {
                 // If selected index is within friends list → open DM
                 if idx < self.friends.len() {
                     let friend = &self.friends[idx];
-                    Some(Action::ShowDmThread { peer_key: friend.public_key.clone() })
+                    Some(Action::ShowDmThread {
+                        peer_key: friend.public_key.clone(),
+                    })
                 } else {
                     // In pending requests section — Enter does nothing (use a/r)
                     None

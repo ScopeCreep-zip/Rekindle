@@ -12,16 +12,22 @@ use tracing::{debug, info, warn};
 
 use super::dht;
 use super::dht::channel_log::DhtLog;
-use crate::error::Result;
 use super::node::TransportNode;
+use crate::error::Result;
 
 // ── Record lifecycle ───────────────────────────────────────────────────
 
 /// Create a DFLT DHT record (single owner, N subkeys).
 pub async fn create_dflt(
-    node: &TransportNode, subkey_count: u16, owner: Option<veilid_core::KeyPair>,
+    node: &TransportNode,
+    subkey_count: u16,
+    owner: Option<veilid_core::KeyPair>,
 ) -> Result<(String, Option<veilid_core::KeyPair>)> {
-    debug!(subkey_count, has_owner = owner.is_some(), "dht: create_dflt");
+    debug!(
+        subkey_count,
+        has_owner = owner.is_some(),
+        "dht: create_dflt"
+    );
     let dht = node.dht()?;
     let result = dht::record::create_dflt(dht.routing_context(), subkey_count, owner).await;
     match &result {
@@ -33,10 +39,15 @@ pub async fn create_dflt(
 
 /// Create a SMPL DHT record (multi-writer with member slots).
 pub async fn create_smpl(
-    node: &TransportNode, owner_subkey_count: u16,
+    node: &TransportNode,
+    owner_subkey_count: u16,
     members: Vec<veilid_core::DHTSchemaSMPLMember>,
 ) -> Result<(String, Option<veilid_core::KeyPair>)> {
-    debug!(owner_subkey_count, member_count = members.len(), "dht: create_smpl");
+    debug!(
+        owner_subkey_count,
+        member_count = members.len(),
+        "dht: create_smpl"
+    );
     let dht = node.dht()?;
     let result = dht::record::create_smpl(dht.routing_context(), owner_subkey_count, members).await;
     match &result {
@@ -59,7 +70,9 @@ pub async fn open_readonly(node: &TransportNode, record_key: &str) -> Result<()>
 
 /// Open a DHT record with write access.
 pub async fn open_writable(
-    node: &TransportNode, record_key: &str, writer: veilid_core::KeyPair,
+    node: &TransportNode,
+    record_key: &str,
+    writer: veilid_core::KeyPair,
 ) -> Result<()> {
     debug!(record_key, "dht: open_writable");
     let dht = node.dht()?;
@@ -85,13 +98,21 @@ pub async fn close(node: &TransportNode, record_key: &str) -> Result<()> {
 
 /// Read a subkey value. Returns `None` if not yet set.
 pub async fn get(
-    node: &TransportNode, record_key: &str, subkey: u32, force_refresh: bool,
+    node: &TransportNode,
+    record_key: &str,
+    subkey: u32,
+    force_refresh: bool,
 ) -> Result<Option<Vec<u8>>> {
     debug!(record_key, subkey, force_refresh, "dht: get");
     let dht = node.dht()?;
     let result = dht::record::get(dht.routing_context(), record_key, subkey, force_refresh).await;
     match &result {
-        Ok(Some(data)) => debug!(record_key, subkey, bytes = data.len(), "dht: get returned data"),
+        Ok(Some(data)) => debug!(
+            record_key,
+            subkey,
+            bytes = data.len(),
+            "dht: get returned data"
+        ),
         Ok(None) => debug!(record_key, subkey, "dht: get returned None"),
         Err(e) => warn!(record_key, subkey, error = %e, "dht: get failed"),
     }
@@ -100,11 +121,20 @@ pub async fn get(
 
 /// Write raw bytes to a specific subkey.
 pub async fn set(
-    node: &TransportNode, record_key: &str, subkey: u32,
-    data: Vec<u8>, writer: Option<veilid_core::KeyPair>,
+    node: &TransportNode,
+    record_key: &str,
+    subkey: u32,
+    data: Vec<u8>,
+    writer: Option<veilid_core::KeyPair>,
 ) -> Result<()> {
     let data_len = data.len();
-    debug!(record_key, subkey, bytes = data_len, has_writer = writer.is_some(), "dht: set");
+    debug!(
+        record_key,
+        subkey,
+        bytes = data_len,
+        has_writer = writer.is_some(),
+        "dht: set"
+    );
     let dht = node.dht()?;
     let result = dht::record::set(dht.routing_context(), record_key, subkey, data, writer).await;
     match &result {
@@ -117,14 +147,16 @@ pub async fn set(
 // ── Watch ──────────────────────────────────────────────────────────────
 
 /// Set a DHT watch on specific subkeys of a record.
-pub async fn watch(
-    node: &TransportNode, record_key: &str, subkeys: &[u32],
-) -> Result<bool> {
+pub async fn watch(node: &TransportNode, record_key: &str, subkeys: &[u32]) -> Result<bool> {
     debug!(record_key, subkey_count = subkeys.len(), "dht: watch");
     let dht = node.dht()?;
     let result = dht::record::watch(dht.routing_context(), record_key, subkeys).await;
     match &result {
-        Ok(true) => info!(record_key, subkey_count = subkeys.len(), "dht: watch active"),
+        Ok(true) => info!(
+            record_key,
+            subkey_count = subkeys.len(),
+            "dht: watch active"
+        ),
         Ok(false) => warn!(record_key, "dht: watch declined by Veilid"),
         Err(e) => warn!(record_key, error = %e, "dht: watch failed"),
     }
@@ -135,7 +167,9 @@ pub async fn watch(
 
 /// Inspect a record to get sequence numbers without fetching data.
 pub async fn inspect(
-    node: &TransportNode, record_key: &str, subkeys: Option<&[u32]>,
+    node: &TransportNode,
+    record_key: &str,
+    subkeys: Option<&[u32]>,
 ) -> Result<veilid_core::DHTRecordReport> {
     debug!(record_key, "dht: inspect");
     let dht = node.dht()?;
@@ -149,9 +183,7 @@ pub async fn inspect(
 // ── DhtLog (append-only log built on DHT records) ──────────────────────
 
 /// Create a new DhtLog. Returns `(DhtLog, owner_keypair)`.
-pub async fn create_dht_log(
-    node: &TransportNode,
-) -> Result<(DhtLog, veilid_core::KeyPair)> {
+pub async fn create_dht_log(node: &TransportNode) -> Result<(DhtLog, veilid_core::KeyPair)> {
     debug!("dht: create_dht_log");
     let dht = node.dht()?;
     let result = DhtLog::create(dht.routing_context()).await;
@@ -164,7 +196,9 @@ pub async fn create_dht_log(
 
 /// Open a DhtLog for writing with the owner keypair.
 pub async fn open_dht_log_write(
-    node: &TransportNode, spine_key: &str, keypair: veilid_core::KeyPair,
+    node: &TransportNode,
+    spine_key: &str,
+    keypair: veilid_core::KeyPair,
 ) -> Result<DhtLog> {
     debug!(spine_key, "dht: open_dht_log_write");
     let dht = node.dht()?;
@@ -176,9 +210,7 @@ pub async fn open_dht_log_write(
 }
 
 /// Open a DhtLog for reading only.
-pub async fn open_dht_log_read(
-    node: &TransportNode, spine_key: &str,
-) -> Result<DhtLog> {
+pub async fn open_dht_log_read(node: &TransportNode, spine_key: &str) -> Result<DhtLog> {
     debug!(spine_key, "dht: open_dht_log_read");
     let dht = node.dht()?;
     let result = DhtLog::open_read(dht.routing_context(), spine_key).await;

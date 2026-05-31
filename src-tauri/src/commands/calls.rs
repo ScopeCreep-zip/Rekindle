@@ -64,7 +64,11 @@ pub async fn start_dm_call(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<String, String> {
-    let kind = if video { CallKind::Video } else { CallKind::Audio };
+    let kind = if video {
+        CallKind::Video
+    } else {
+        CallKind::Audio
+    };
     let adapter = build_adapter(app, &state, &pool);
     rekindle_calls::signaling::start_dm_call(adapter.as_ref(), &peer_public_key, kind)
         .await
@@ -181,13 +185,16 @@ pub async fn start_group_call(
     if participant_pubkeys.is_empty() {
         return Err("group call requires at least one invitee".into());
     }
-    let kind = if video { CallKind::Video } else { CallKind::Audio };
+    let kind = if video {
+        CallKind::Video
+    } else {
+        CallKind::Audio
+    };
     let adapter = build_adapter(app, &state, &pool);
     rekindle_calls::signaling::start_group_call(adapter.as_ref(), participant_pubkeys, kind)
         .await
         .map_err(|e| e.to_string())
 }
-
 
 /// W13.13 — receiver accepts a group call. Fires GroupCallAccept
 /// envelope to the initiator (and to other already-accepted peers via

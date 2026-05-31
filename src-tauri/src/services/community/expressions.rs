@@ -144,7 +144,7 @@ pub fn list_expressions(
     community_id: &str,
 ) -> Result<Vec<ExpressionInfo>, String> {
     let adapter = build_adapter(state)?;
-    let views = rekindle_channel::list_expressions(&adapter, community_id)
-        .map_err(|e| e.to_string())?;
+    let views =
+        rekindle_channel::list_expressions(&adapter, community_id).map_err(|e| e.to_string())?;
     Ok(views.into_iter().map(view_to_info).collect())
 }

@@ -22,14 +22,16 @@ pub fn get_community_policy_inner(
         .and_then(|gs| gs.community_policy.clone());
     Ok(CommunityPolicyDto {
         policy_text: policy.as_ref().and_then(|p| p.policy_text.clone()),
-        max_joins_per_interval: policy.as_ref().map_or(
-            CommunityPolicyState::DEFAULT_MAX_JOINS_PER_INTERVAL,
-            |p| p.max_joins_per_interval,
-        ),
-        join_interval_seconds: policy.as_ref().map_or(
-            CommunityPolicyState::DEFAULT_JOIN_INTERVAL_SECONDS,
-            |p| p.join_interval_seconds,
-        ),
+        max_joins_per_interval: policy
+            .as_ref()
+            .map_or(CommunityPolicyState::DEFAULT_MAX_JOINS_PER_INTERVAL, |p| {
+                p.max_joins_per_interval
+            }),
+        join_interval_seconds: policy
+            .as_ref()
+            .map_or(CommunityPolicyState::DEFAULT_JOIN_INTERVAL_SECONDS, |p| {
+                p.join_interval_seconds
+            }),
     })
 }
 

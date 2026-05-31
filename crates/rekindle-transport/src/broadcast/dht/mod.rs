@@ -4,14 +4,14 @@
 //! It wraps a Veilid `RoutingContext` and provides typed accessors for each
 //! record type used by Rekindle.
 
-pub mod record;
-pub mod profile;
-pub mod friend_list;
-pub mod mailbox;
 pub mod account;
-pub mod governance;
-pub mod registry;
 pub mod channel_log;
+pub mod friend_list;
+pub mod governance;
+pub mod mailbox;
+pub mod profile;
+pub mod record;
+pub mod registry;
 
 use veilid_core::RoutingContext;
 

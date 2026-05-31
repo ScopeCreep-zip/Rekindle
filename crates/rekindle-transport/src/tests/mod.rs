@@ -7,11 +7,11 @@
 
 pub mod mock_node;
 
-use crate::payload::dm::{DmPayload, serialize_dm, deserialize_dm, dm_type_id};
-use crate::payload::gossip::{GossipPayload, ControlPayload, SignedGossipEnvelope};
-use crate::payload::voice::VoicePayload;
-use crate::payload::rpc::*;
 use crate::frame::TypeId;
+use crate::payload::dm::{deserialize_dm, dm_type_id, serialize_dm, DmPayload};
+use crate::payload::gossip::{ControlPayload, GossipPayload, SignedGossipEnvelope};
+use crate::payload::rpc::*;
+use crate::payload::voice::VoicePayload;
 
 #[test]
 fn dm_roundtrip_direct_message() {
@@ -43,7 +43,11 @@ fn dm_roundtrip_friend_request() {
     let bytes = serialize_dm(&payload).unwrap();
     let back = deserialize_dm(TypeId::FriendRequest, &bytes).unwrap();
     match back {
-        DmPayload::FriendRequest { display_name, invite_id, .. } => {
+        DmPayload::FriendRequest {
+            display_name,
+            invite_id,
+            ..
+        } => {
             assert_eq!(display_name, "Alice");
             assert_eq!(invite_id.as_deref(), Some("inv_01"));
         }
@@ -66,7 +70,11 @@ fn gossip_payload_roundtrip() {
     let bytes = postcard::to_stdvec(&payload).unwrap();
     let back: GossipPayload = postcard::from_bytes(&bytes).unwrap();
     match back {
-        GossipPayload::MessageNotification { channel_id, message_id, .. } => {
+        GossipPayload::MessageNotification {
+            channel_id,
+            message_id,
+            ..
+        } => {
             assert_eq!(channel_id, "ch_01");
             assert_eq!(message_id, "msg_abc");
         }
@@ -76,7 +84,9 @@ fn gossip_payload_roundtrip() {
 
 #[test]
 fn control_payload_roundtrip() {
-    let payload = ControlPayload::MemberLeave { pseudonym_key: "abc123".into() };
+    let payload = ControlPayload::MemberLeave {
+        pseudonym_key: "abc123".into(),
+    };
     let bytes = postcard::to_stdvec(&payload).unwrap();
     let back: ControlPayload = postcard::from_bytes(&bytes).unwrap();
     match back {

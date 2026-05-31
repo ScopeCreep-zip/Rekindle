@@ -98,10 +98,26 @@ impl App {
         let animations = config.tui.animations;
 
         let tabs = vec![
-            Tab { label: "Dashboard".into(), id: "dashboard".into(), unread: 0 },
-            Tab { label: "Communities".into(), id: "communities".into(), unread: 0 },
-            Tab { label: "DMs".into(), id: "dms".into(), unread: 0 },
-            Tab { label: "Friends".into(), id: "friends".into(), unread: 0 },
+            Tab {
+                label: "Dashboard".into(),
+                id: "dashboard".into(),
+                unread: 0,
+            },
+            Tab {
+                label: "Communities".into(),
+                id: "communities".into(),
+                unread: 0,
+            },
+            Tab {
+                label: "DMs".into(),
+                id: "dms".into(),
+                unread: 0,
+            },
+            Tab {
+                label: "Friends".into(),
+                id: "friends".into(),
+                unread: 0,
+            },
         ];
 
         Self {
@@ -136,11 +152,17 @@ impl App {
     pub async fn run(
         &mut self,
         tui: &mut Tui,
-        mut event_rx: Option<tokio::sync::mpsc::UnboundedReceiver<rekindle_types::subscription_events::SubscriptionEvent>>,
+        mut event_rx: Option<
+            tokio::sync::mpsc::UnboundedReceiver<
+                rekindle_types::subscription_events::SubscriptionEvent,
+            >,
+        >,
     ) -> anyhow::Result<()> {
         // Set identity from daemon if available
         if let Some(ref id) = self.cached_identity {
-            self.nav.dashboard_mut().set_identity(&id.public_key, &id.display_name);
+            self.nav
+                .dashboard_mut()
+                .set_identity(&id.public_key, &id.display_name);
         }
         self.loading_spinner.set_label("Loading dashboard...");
         self.loading_spinner.start();

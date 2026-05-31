@@ -4,9 +4,7 @@
 //! `bm25(messages_fts)` returns the BM25 rank where lower is better; we
 //! flip the sign so callers see "higher = better".
 
-use rekindle_types::search::{
-    HasFilter, MessageSearch, SearchHit, SearchScope, SearchSort,
-};
+use rekindle_types::search::{HasFilter, MessageSearch, SearchHit, SearchScope, SearchSort};
 use rusqlite::Connection;
 
 use super::context::fetch_adjacent_context;
@@ -22,11 +20,7 @@ pub fn search_messages_table(
 ) -> Result<Vec<SearchHit>, rusqlite::Error> {
     let order = order_clause(req.sort);
     let has_filter = req.filters.has.first().copied().map(has_to_pattern);
-    let mention_pattern = req
-        .filters
-        .mentions
-        .as_ref()
-        .map(|pk| format!("%<@{pk}>%"));
+    let mention_pattern = req.filters.mentions.as_ref().map(|pk| format!("%<@{pk}>%"));
 
     // Architecture §32 Phase 7 W23 line 4111 — community-scoped search.
     // The `messages` table stores `conversation_id` (channel UUID) but

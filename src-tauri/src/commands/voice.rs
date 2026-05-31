@@ -2,8 +2,7 @@ use tauri::State;
 
 use crate::services::voice_runtime::{
     build_voice_session_deps, build_voice_signaling_deps, join_voice_channel_inner,
-    list_audio_devices_inner, persist_audio_device_prefs, server_mute_member_inner,
-    AudioDevices,
+    list_audio_devices_inner, persist_audio_device_prefs, server_mute_member_inner, AudioDevices,
 };
 use crate::state::SharedState;
 
@@ -147,7 +146,13 @@ pub async fn server_deafen_member(
         rekindle_protocol::dht::community::permissions_v2::Permissions::DEAFEN_MEMBERS,
     )?;
     let deps = build_voice_signaling_deps(&app, state.inner())?;
-    rekindle_voice::signaling::server_deafen_member(&deps, &community_id, &channel_id, &target_pseudonym, deafened);
+    rekindle_voice::signaling::server_deafen_member(
+        &deps,
+        &community_id,
+        &channel_id,
+        &target_pseudonym,
+        deafened,
+    );
     Ok(())
 }
 
@@ -213,5 +218,3 @@ pub async fn respond_to_speak_request(
 // helpers deleted in Phase 14.o — moved into
 // `VoiceAdapter::log_voice_membership` (called by the crate's
 // `leave_voice` / `join_voice_channel` orchestrators).
-
-

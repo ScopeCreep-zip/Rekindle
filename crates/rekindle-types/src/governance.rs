@@ -138,10 +138,7 @@ pub enum GovernanceEntry {
     /// three-tier cascade tier 1). The most-specific setting wins:
     /// per-channel local override > community default > implicit "all".
     /// `level` is one of "all" | "mentions" | "nothing". CRDT: LWW.
-    CommunityNotificationDefault {
-        level: String,
-        lamport: u64,
-    },
+    CommunityNotificationDefault { level: String, lamport: u64 },
 
     /// Bump MEK generation. CRDT: Max-Register (highest generation wins).
     /// Written by the deterministic rotator after peer-to-peer MEK distribution.
@@ -556,7 +553,6 @@ impl GovernanceEntry {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {

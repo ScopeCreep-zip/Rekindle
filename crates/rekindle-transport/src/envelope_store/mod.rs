@@ -296,10 +296,7 @@ pub trait EnvelopeStore: Send + Sync {
     /// Cancel all envelopes correlated to a given id (call hangup tears
     /// down pending envelopes for that `call_id`). Returns the number of
     /// rows deleted.
-    async fn cancel_by_correlation(
-        &self,
-        correlation_id: &str,
-    ) -> Result<usize, StoreError>;
+    async fn cancel_by_correlation(&self, correlation_id: &str) -> Result<usize, StoreError>;
 
     // ── Per-recipient seq tracking (W16.3) ───────────────────────────
 
@@ -343,11 +340,7 @@ pub trait EnvelopeStore: Send + Sync {
 
     /// Delete the persisted state for a given call (call ended, declined,
     /// timed out, etc.).
-    async fn delete_active_call(
-        &self,
-        owner_key: &str,
-        call_id: &str,
-    ) -> Result<(), StoreError>;
+    async fn delete_active_call(&self, owner_key: &str, call_id: &str) -> Result<(), StoreError>;
 
     /// Load all persisted active call states for an owner — used on
     /// startup to rehydrate Dialing/Incoming UI.

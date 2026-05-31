@@ -176,10 +176,7 @@ mod tests {
 
     #[test]
     fn focus_ring_set_unknown_id_is_noop() {
-        let mut ring = FocusRing::new(vec![
-            FocusId::ChannelTree,
-            FocusId::MessageList,
-        ]);
+        let mut ring = FocusRing::new(vec![FocusId::ChannelTree, FocusId::MessageList]);
         ring.set(FocusId::PeerList); // not in ring
         assert_eq!(ring.current(), FocusId::ChannelTree); // unchanged
     }

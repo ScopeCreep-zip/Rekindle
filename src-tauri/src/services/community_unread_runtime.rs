@@ -12,11 +12,7 @@ pub struct UnreadCountEntry {
     pub unread_count: u32,
 }
 
-pub fn mark_channel_read_inner(
-    state: &SharedState,
-    community_id: &str,
-    channel_id: &str,
-) {
+pub fn mark_channel_read_inner(state: &SharedState, community_id: &str, channel_id: &str) {
     let mut communities = state.communities.write();
     if let Some(community) = communities.get_mut(community_id) {
         if let Some(ch) = community.channels.iter_mut().find(|c| c.id == channel_id) {
@@ -29,12 +25,10 @@ pub fn get_unread_counts_inner(
     state: &SharedState,
     community_id: &str,
 ) -> Result<Vec<UnreadCountEntry>, String> {
-    let _g = rekindle_lifecycle::TransportGuard::read(&state.lifecycle)
-        .map_err(|e| e.to_string())?;
+    let _g =
+        rekindle_lifecycle::TransportGuard::read(&state.lifecycle).map_err(|e| e.to_string())?;
     let communities = state.communities.read();
-    let community = communities
-        .get(community_id)
-        .ok_or("community not found")?;
+    let community = communities.get(community_id).ok_or("community not found")?;
     Ok(community
         .channels
         .iter()

@@ -33,7 +33,9 @@ impl<'a> TransportGuard<'a> {
         if !s.can_write() {
             return Err(LifecycleError::CannotWrite { state: s });
         }
-        Ok(Self { _lifecycle: lifecycle })
+        Ok(Self {
+            _lifecycle: lifecycle,
+        })
     }
 
     /// Acquire a read guard.
@@ -47,7 +49,9 @@ impl<'a> TransportGuard<'a> {
         if !s.can_query() {
             return Err(LifecycleError::CannotQuery { state: s });
         }
-        Ok(Self { _lifecycle: lifecycle })
+        Ok(Self {
+            _lifecycle: lifecycle,
+        })
     }
 }
 
@@ -181,16 +185,28 @@ mod tests {
 
         // Boot: Stopped → Starting (pre-Veilid init).
         lc.transition(LifecycleState::Starting).unwrap();
-        assert!(TransportGuard::write(&lc).is_err(), "write must fail in Starting");
+        assert!(
+            TransportGuard::write(&lc).is_err(),
+            "write must fail in Starting"
+        );
 
         // Network attaches: Starting → Locked.
         lc.transition(LifecycleState::Locked).unwrap();
-        assert!(TransportGuard::write(&lc).is_err(), "write must fail in Locked");
-        assert!(TransportGuard::read(&lc).is_err(), "read must fail in Locked");
+        assert!(
+            TransportGuard::write(&lc).is_err(),
+            "write must fail in Locked"
+        );
+        assert!(
+            TransportGuard::read(&lc).is_err(),
+            "read must fail in Locked"
+        );
 
         // Login begins: Locked → Resuming.
         lc.transition(LifecycleState::Resuming).unwrap();
-        assert!(TransportGuard::write(&lc).is_err(), "write must fail in Resuming");
+        assert!(
+            TransportGuard::write(&lc).is_err(),
+            "write must fail in Resuming"
+        );
 
         // Login completes: Resuming → Operational.
         lc.transition(LifecycleState::Operational).unwrap();

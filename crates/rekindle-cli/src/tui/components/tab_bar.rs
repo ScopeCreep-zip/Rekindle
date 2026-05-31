@@ -151,12 +151,7 @@ impl TabBarState {
 }
 
 /// Render the tab bar.
-pub fn render(
-    frame: &mut Frame,
-    area: Rect,
-    state: &mut TabBarState,
-    theme: &ThemeManager,
-) {
+pub fn render(frame: &mut Frame, area: Rect, state: &mut TabBarState, theme: &ThemeManager) {
     state.click_regions.clear();
     if state.tabs.is_empty() {
         frame.render_widget(
@@ -199,7 +194,9 @@ pub fn render(
 
         // Record click region: x start (relative to area.x) to x end
         let tab_start_x = area.x + used_width;
-        state.click_regions.push((tab_start_x, tab_start_x + label_width, i));
+        state
+            .click_regions
+            .push((tab_start_x, tab_start_x + label_width, i));
 
         let style = if is_selected {
             Style::default()
@@ -230,10 +227,26 @@ mod tests {
 
     fn test_tabs() -> Vec<Tab> {
         vec![
-            Tab { label: "Dashboard".into(), id: "dash".into(), unread: 0 },
-            Tab { label: "dev-team".into(), id: "com1".into(), unread: 2 },
-            Tab { label: "gaming".into(), id: "com2".into(), unread: 0 },
-            Tab { label: "DMs".into(), id: "dms".into(), unread: 5 },
+            Tab {
+                label: "Dashboard".into(),
+                id: "dash".into(),
+                unread: 0,
+            },
+            Tab {
+                label: "dev-team".into(),
+                id: "com1".into(),
+                unread: 2,
+            },
+            Tab {
+                label: "gaming".into(),
+                id: "com2".into(),
+                unread: 0,
+            },
+            Tab {
+                label: "DMs".into(),
+                id: "dms".into(),
+                unread: 5,
+            },
         ]
     }
 

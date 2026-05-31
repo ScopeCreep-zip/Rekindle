@@ -105,8 +105,7 @@ pub enum FragmentError {
 /// in `src-tauri` (which holds the signing key) can sign before
 /// dispatch without re-implementing the byte layout.
 pub fn fragment_signing_bytes(fragment: &VideoFragment) -> Vec<u8> {
-    let mut buf =
-        Vec::with_capacity(STREAM_ID_LEN + 4 + 1 + 1 + 1 + 4 + fragment.payload.len());
+    let mut buf = Vec::with_capacity(STREAM_ID_LEN + 4 + 1 + 1 + 1 + 4 + fragment.payload.len());
     buf.extend_from_slice(&fragment.stream_id);
     buf.extend_from_slice(&fragment.frame_seq.to_le_bytes());
     buf.push(fragment.frag_index);
@@ -360,15 +359,8 @@ mod tests {
     #[test]
     fn fec_encode_then_reconstruct_when_no_drops() {
         let frame = vec![0xAAu8; FRAGMENT_PAYLOAD_LIMIT * 3 + 100];
-        let frags = fragment_frame_with_fec(
-            [9u8; STREAM_ID_LEN],
-            42,
-            true,
-            500,
-            &frame,
-            2,
-        )
-        .unwrap();
+        let frags =
+            fragment_frame_with_fec([9u8; STREAM_ID_LEN], 42, true, 500, &frame, 2).unwrap();
         assert_eq!(frags.data.len(), 4);
         assert_eq!(frags.parity.len(), 2);
 
@@ -400,15 +392,7 @@ mod tests {
         let frame: Vec<u8> = (0..FRAGMENT_PAYLOAD_LIMIT * 3 + 7)
             .map(|i| u8::try_from(i & 0xff).unwrap())
             .collect();
-        let frags = fragment_frame_with_fec(
-            [3u8; STREAM_ID_LEN],
-            7,
-            true,
-            100,
-            &frame,
-            2,
-        )
-        .unwrap();
+        let frags = fragment_frame_with_fec([3u8; STREAM_ID_LEN], 7, true, 100, &frame, 2).unwrap();
 
         // Drop frag_index 1 and 3.
         let received_data: Vec<(u8, Vec<u8>)> = frags
@@ -438,15 +422,7 @@ mod tests {
         // 4 data + 2 parity. Drop 3 data + 1 parity. Only 2 shards
         // remain — below the 4-shard threshold for reconstruction.
         let frame = vec![0x77u8; FRAGMENT_PAYLOAD_LIMIT * 3 + 50];
-        let frags = fragment_frame_with_fec(
-            [4u8; STREAM_ID_LEN],
-            8,
-            true,
-            200,
-            &frame,
-            2,
-        )
-        .unwrap();
+        let frags = fragment_frame_with_fec([4u8; STREAM_ID_LEN], 8, true, 200, &frame, 2).unwrap();
         let received_data: Vec<(u8, Vec<u8>)> = frags
             .data
             .iter()
@@ -476,8 +452,7 @@ mod tests {
     #[test]
     fn fec_zero_parity_rejected() {
         let frame = vec![0u8; 100];
-        let err =
-            fragment_frame_with_fec([0u8; STREAM_ID_LEN], 1, true, 0, &frame, 0).unwrap_err();
+        let err = fragment_frame_with_fec([0u8; STREAM_ID_LEN], 1, true, 0, &frame, 0).unwrap_err();
         assert_eq!(err, FragmentError::ZeroParity);
     }
 
@@ -496,11 +471,17 @@ mod tests {
         };
         let bytes = parity_signing_bytes(&p);
         assert_eq!(&bytes[..STREAM_ID_LEN], &[0xCDu8; STREAM_ID_LEN]);
-        assert_eq!(&bytes[STREAM_ID_LEN..STREAM_ID_LEN + 4], &0x0102_0304u32.to_le_bytes());
+        assert_eq!(
+            &bytes[STREAM_ID_LEN..STREAM_ID_LEN + 4],
+            &0x0102_0304u32.to_le_bytes()
+        );
         assert_eq!(bytes[STREAM_ID_LEN + 4], 1);
         assert_eq!(bytes[STREAM_ID_LEN + 5], 2);
         assert_eq!(bytes[STREAM_ID_LEN + 6], 4);
-        assert_eq!(&bytes[STREAM_ID_LEN + 7..STREAM_ID_LEN + 11], &1234u32.to_le_bytes());
+        assert_eq!(
+            &bytes[STREAM_ID_LEN + 7..STREAM_ID_LEN + 11],
+            &1234u32.to_le_bytes()
+        );
         assert_eq!(
             &bytes[STREAM_ID_LEN + 11..STREAM_ID_LEN + 15],
             &0xCAFE_BABEu32.to_le_bytes()
@@ -525,7 +506,10 @@ mod tests {
         };
         let bytes = fragment_signing_bytes(&frag);
         assert_eq!(&bytes[..STREAM_ID_LEN], &[0xABu8; STREAM_ID_LEN]);
-        assert_eq!(&bytes[STREAM_ID_LEN..STREAM_ID_LEN + 4], &0x1122_3344u32.to_le_bytes());
+        assert_eq!(
+            &bytes[STREAM_ID_LEN..STREAM_ID_LEN + 4],
+            &0x1122_3344u32.to_le_bytes()
+        );
         assert_eq!(bytes[STREAM_ID_LEN + 4], 2);
         assert_eq!(bytes[STREAM_ID_LEN + 5], 5);
         assert_eq!(bytes[STREAM_ID_LEN + 6], 1);

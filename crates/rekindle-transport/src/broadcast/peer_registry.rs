@@ -87,7 +87,9 @@ impl PeerRegistry {
         let stale_keys: Vec<String> = self
             .routes
             .iter()
-            .filter(|(_, cached)| now.duration_since(cached.imported_at).as_secs() > self.route_ttl_secs)
+            .filter(|(_, cached)| {
+                now.duration_since(cached.imported_at).as_secs() > self.route_ttl_secs
+            })
             .map(|(key, _)| key.clone())
             .collect();
 
@@ -121,7 +123,8 @@ impl PeerRegistry {
     /// memory growth from attackers using many pseudonyms.
     pub fn record_failure(&mut self, peer_key: &str) {
         // Evict oldest if at capacity and this is a new key
-        if self.circuits.len() >= Self::MAX_CIRCUIT_ENTRIES && !self.circuits.contains_key(peer_key) {
+        if self.circuits.len() >= Self::MAX_CIRCUIT_ENTRIES && !self.circuits.contains_key(peer_key)
+        {
             if let Some(oldest_key) = self
                 .circuits
                 .iter()

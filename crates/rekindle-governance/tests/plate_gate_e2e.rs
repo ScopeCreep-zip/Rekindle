@@ -145,7 +145,9 @@ fn segment1_record_appears_in_state_and_validates() {
     // Segment-0 channel record stays in `channels`, not in
     // `channel_segment_records` — segment 0 is the genesis path.
     assert!(state.channels.contains_key(&channel_id()));
-    assert!(!state.channel_segment_records.contains_key(&(channel_id(), 0)));
+    assert!(!state
+        .channel_segment_records
+        .contains_key(&(channel_id(), 0)));
 
     // Reader-validate: both writers should validate against the merged
     // state. Admin (creator) always passes; joiner has SEND_MESSAGES

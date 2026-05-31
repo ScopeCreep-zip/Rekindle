@@ -77,7 +77,9 @@ pub async fn distribute_mek<D: MekDistributeDeps>(
     new_mek: &MediaEncryptionKey,
     recipients: &[RotationRecipient],
 ) -> Result<(), MekRotationError> {
-    let secret = deps.identity_secret().ok_or(MekRotationError::IdentityNotLoaded)?;
+    let secret = deps
+        .identity_secret()
+        .ok_or(MekRotationError::IdentityNotLoaded)?;
     let my_signing_key =
         rekindle_crypto::group::pseudonym::derive_community_pseudonym(&secret, community_id);
     let my_pseudonym = deps
@@ -99,13 +101,18 @@ pub async fn distribute_mek<D: MekDistributeDeps>(
             // Defensive: should already have been excluded.
             continue;
         }
-        let recipient_pseudo = pseudonym_from_hex(&recipient.pseudonym_hex)
-            .ok_or_else(|| MekRotationError::InvalidInput(format!(
+        let recipient_pseudo = pseudonym_from_hex(&recipient.pseudonym_hex).ok_or_else(|| {
+            MekRotationError::InvalidInput(format!(
                 "invalid recipient pseudonym: {}",
                 recipient.pseudonym_hex
-            )))?;
-        let wrapped = wrap_mek(&my_signing_key, &recipient_pseudo.0, &new_mek.to_wire_bytes())
-            .map_err(|e| MekRotationError::Crypto(format!("wrap MEK: {e}")))?;
+            ))
+        })?;
+        let wrapped = wrap_mek(
+            &my_signing_key,
+            &recipient_pseudo.0,
+            &new_mek.to_wire_bytes(),
+        )
+        .map_err(|e| MekRotationError::Crypto(format!("wrap MEK: {e}")))?;
         let payload = CommunityEnvelope::Control(ControlPayload::MekTransfer {
             community_id: community_id.to_string(),
             channel_id: channel_id.map(ToOwned::to_owned),
@@ -117,10 +124,21 @@ pub async fn distribute_mek<D: MekDistributeDeps>(
             .map_err(|e| MekRotationError::Transport(format!("encode MEK transfer: {e}")))?;
 
         let reply = deps
-            .broadcast_to_peer(community_id, &recipient.pseudonym_hex, &recipient.route_blob, bytes)
+            .broadcast_to_peer(
+                community_id,
+                &recipient.pseudonym_hex,
+                &recipient.route_blob,
+                bytes,
+            )
             .await?;
 
-        inspect_reply(community_id, &recipient.pseudonym_hex, channel_id, generation, &reply);
+        inspect_reply(
+            community_id,
+            &recipient.pseudonym_hex,
+            channel_id,
+            generation,
+            &reply,
+        );
     }
 
     deps.emit_event(MekRotationEvent::RotationComplete {

@@ -7,7 +7,7 @@
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
 
-use crate::error::{TransportError, Result};
+use crate::error::{Result, TransportError};
 use crate::payload::gossip::SignedGossipEnvelope;
 
 /// A signed payload wrapper for DM and RPC messages.
@@ -113,7 +113,10 @@ pub fn verify_signed_payload(signed: &SignedPayload) -> Result<()> {
 }
 
 /// Verify with a custom freshness window. Pass 0 to skip freshness check.
-pub fn verify_signed_payload_with_window(signed: &SignedPayload, freshness_window_ms: u64) -> Result<()> {
+pub fn verify_signed_payload_with_window(
+    signed: &SignedPayload,
+    freshness_window_ms: u64,
+) -> Result<()> {
     // Signature verification first
     let verifying_key = parse_verifying_key(&signed.sender_key_hex)?;
 
@@ -126,11 +129,11 @@ pub fn verify_signed_payload_with_window(signed: &SignedPayload, freshness_windo
 
     let signature = parse_signature(&signed.signature)?;
 
-    verifying_key.verify(&signed_data, &signature).map_err(|_| {
-        TransportError::SignatureVerificationFailed {
+    verifying_key
+        .verify(&signed_data, &signature)
+        .map_err(|_| TransportError::SignatureVerificationFailed {
             sender: signed.sender_key_hex.clone(),
-        }
-    })?;
+        })?;
 
     // Freshness check — reject replayed messages
     if freshness_window_ms > 0 {
@@ -205,22 +208,24 @@ fn parse_verifying_key(hex_str: &str) -> Result<VerifyingKey> {
     let bytes = hex::decode(hex_str).map_err(|e| TransportError::SignatureVerificationFailed {
         sender: format!("invalid hex: {e}"),
     })?;
-    let arr: [u8; 32] = bytes.try_into().map_err(|_| {
-        TransportError::SignatureVerificationFailed {
-            sender: "public key must be 32 bytes".into(),
-        }
-    })?;
+    let arr: [u8; 32] =
+        bytes
+            .try_into()
+            .map_err(|_| TransportError::SignatureVerificationFailed {
+                sender: "public key must be 32 bytes".into(),
+            })?;
     VerifyingKey::from_bytes(&arr).map_err(|e| TransportError::SignatureVerificationFailed {
         sender: format!("invalid Ed25519 key: {e}"),
     })
 }
 
 fn parse_signature(sig_bytes: &[u8]) -> Result<Signature> {
-    let arr: [u8; 64] = sig_bytes.try_into().map_err(|_| {
-        TransportError::SignatureVerificationFailed {
-            sender: "signature must be 64 bytes".into(),
-        }
-    })?;
+    let arr: [u8; 64] =
+        sig_bytes
+            .try_into()
+            .map_err(|_| TransportError::SignatureVerificationFailed {
+                sender: "signature must be 64 bytes".into(),
+            })?;
     Ok(Signature::from_bytes(&arr))
 }
 
@@ -315,14 +320,8 @@ mod tests {
         let key = SigningKey::from_bytes(&secret);
         let pseudo_hex = hex::encode(key.verifying_key().to_bytes());
 
-        let envelope = sign_gossip_envelope(
-            &key,
-            "community_abc",
-            &pseudo_hex,
-            b"gossip payload",
-            5,
-            42,
-        );
+        let envelope =
+            sign_gossip_envelope(&key, "community_abc", &pseudo_hex, b"gossip payload", 5, 42);
 
         assert!(verify_gossip_envelope(&envelope).is_ok());
     }

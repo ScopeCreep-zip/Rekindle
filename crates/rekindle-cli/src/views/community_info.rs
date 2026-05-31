@@ -24,11 +24,11 @@ use ratatui::Frame;
 
 use rekindle_types::display::CommunityDetail;
 
+use super::View;
 use crate::helpers;
 use crate::tui::action::{Action, CommandResult};
 use crate::tui::focus::{FocusId, FocusRing};
 use crate::tui::theme::ThemeManager;
-use super::View;
 
 /// Community info view state.
 pub struct CommunityInfoView {
@@ -128,17 +128,19 @@ impl CommunityInfoView {
     }
 
     /// Render the channels section with selection highlight.
-    fn render_channels(
-        &self,
-        frame: &mut Frame,
-        area: Rect,
-        detail: &CommunityDetail,
-    ) {
-        let title = format!(" Channels ({}) — j/k navigate, Enter to open ", detail.channels.len());
-        let block = Block::bordered().title(title).border_style(Style::new().dim());
+    fn render_channels(&self, frame: &mut Frame, area: Rect, detail: &CommunityDetail) {
+        let title = format!(
+            " Channels ({}) — j/k navigate, Enter to open ",
+            detail.channels.len()
+        );
+        let block = Block::bordered()
+            .title(title)
+            .border_style(Style::new().dim());
 
         if detail.channels.is_empty() {
-            let para = Paragraph::new("  No channels.").style(Style::new().dim()).block(block);
+            let para = Paragraph::new("  No channels.")
+                .style(Style::new().dim())
+                .block(block);
             frame.render_widget(para, area);
             return;
         }
@@ -153,7 +155,11 @@ impl CommunityInfoView {
                 } else {
                     format!("  — {}", ch.topic)
                 };
-                let prefix = if i == self.selected_channel { "▸ " } else { "  " };
+                let prefix = if i == self.selected_channel {
+                    "▸ "
+                } else {
+                    "  "
+                };
                 let line = Line::from(vec![
                     Span::raw(format!("{prefix}#{:<20} ", ch.name)),
                     Span::styled(&ch.kind, Style::new().dim()),
@@ -173,14 +179,11 @@ impl CommunityInfoView {
 
     /// Render the roles section.
     #[allow(clippy::unused_self)]
-    fn render_roles(
-        &self,
-        frame: &mut Frame,
-        area: Rect,
-        detail: &CommunityDetail,
-    ) {
+    fn render_roles(&self, frame: &mut Frame, area: Rect, detail: &CommunityDetail) {
         let title = format!(" Roles ({}) ", detail.roles.len());
-        let block = Block::bordered().title(title).border_style(Style::new().dim());
+        let block = Block::bordered()
+            .title(title)
+            .border_style(Style::new().dim());
 
         if detail.roles.is_empty() {
             let para = Paragraph::new("  No roles defined.")
@@ -197,7 +200,10 @@ impl CommunityInfoView {
                 Line::from(vec![
                     Span::raw(format!("  {} ", r.name)),
                     Span::styled(
-                        format!("(id: {}, pos: {}, perms: 0x{:X})", r.id, r.position, r.permissions),
+                        format!(
+                            "(id: {}, pos: {}, perms: 0x{:X})",
+                            r.id, r.position, r.permissions
+                        ),
                         Style::new().dim(),
                     ),
                 ])
@@ -212,7 +218,10 @@ impl View for CommunityInfoView {
     fn draw(&mut self, frame: &mut Frame, area: Rect, theme: &ThemeManager) -> Result<()> {
         if self.loading || self.detail.is_none() {
             let block = Block::bordered()
-                .title(format!(" Community: {} ", helpers::abbreviate_key(&self.community)))
+                .title(format!(
+                    " Community: {} ",
+                    helpers::abbreviate_key(&self.community)
+                ))
                 .border_style(theme.focused_border());
             let para = Paragraph::new("  Loading community details...")
                 .style(Style::new().dim())

@@ -14,7 +14,6 @@
 //! [RC-2] No `.unwrap()` on any decode of untrusted data.
 //! [RC-3] Frame length validated before allocation (OOM protection).
 
-
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};

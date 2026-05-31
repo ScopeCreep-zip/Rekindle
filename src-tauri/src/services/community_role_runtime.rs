@@ -22,9 +22,7 @@ pub fn get_roles_inner(
     community_id: &str,
 ) -> Result<Vec<CommunityRoleDto>, String> {
     let communities = state.communities.read();
-    let community = communities
-        .get(community_id)
-        .ok_or("community not found")?;
+    let community = communities.get(community_id).ok_or("community not found")?;
     Ok(community.roles.iter().map(CommunityRoleDto::from).collect())
 }
 
@@ -115,12 +113,20 @@ pub async fn unassign_role_inner(
     role_id: u32,
 ) -> Result<(), String> {
     let adapter = build_adapter(state, pool)?;
-    rekindle_governance_runtime::roles::unassign_role(&adapter, community_id, pseudonym_key, role_id)
-        .await
-        .map_err(|e| e.to_string())
+    rekindle_governance_runtime::roles::unassign_role(
+        &adapter,
+        community_id,
+        pseudonym_key,
+        role_id,
+    )
+    .await
+    .map_err(|e| e.to_string())
 }
 
-#[allow(clippy::too_many_arguments, reason = "Tauri command surface — matches RoleDefinition shape")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Tauri command surface — matches RoleDefinition shape"
+)]
 pub async fn create_role_inner(
     state: &SharedState,
     pool: &DbPool,
@@ -149,7 +155,10 @@ pub async fn create_role_inner(
     .map_err(|e| e.to_string())
 }
 
-#[allow(clippy::too_many_arguments, reason = "Tauri command surface — matches edit_role partial-update payload")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Tauri command surface — matches edit_role partial-update payload"
+)]
 pub async fn edit_role_inner(
     state: &SharedState,
     pool: &DbPool,
@@ -203,11 +212,8 @@ pub fn resolve_self_assignable_pseudonym(
         .clone()
         .ok_or_else(|| "app handle not initialized".to_string())?;
     let pool: tauri::State<'_, DbPool> = app_handle.state();
-    let adapter = GovernanceAdapter::new(
-        Arc::clone(state),
-        app_handle.clone(),
-        pool.inner().clone(),
-    );
+    let adapter =
+        GovernanceAdapter::new(Arc::clone(state), app_handle.clone(), pool.inner().clone());
     rekindle_governance_runtime::roles::resolve_self_assignable_pseudonym(
         &adapter,
         community_id,

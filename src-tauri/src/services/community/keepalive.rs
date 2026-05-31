@@ -24,8 +24,8 @@ fn next_warming_delay() -> Duration {
     // to `BASE_INTERVAL`. `saturating_add_signed` keeps the result
     // non-negative even when offset is at the negative extreme.
     let base_secs = BASE_INTERVAL.as_secs();
-    let offset_signed: i64 = rand::thread_rng()
-        .gen_range(-INTERVAL_JITTER_SECS..=INTERVAL_JITTER_SECS);
+    let offset_signed: i64 =
+        rand::thread_rng().gen_range(-INTERVAL_JITTER_SECS..=INTERVAL_JITTER_SECS);
     let secs = base_secs.saturating_add_signed(offset_signed);
     Duration::from_secs(secs)
 }

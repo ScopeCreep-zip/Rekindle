@@ -117,10 +117,8 @@ fn latency_budget_holds() {
 /// (encode → packetize → jitter push+pop → decode → mix), then return
 /// the P95 as a `Duration`.
 fn measure_pipeline_compute_p95() -> Duration {
-    let mut encoder =
-        OpusCodec::new(SAMPLE_RATE, CHANNELS, FRAME_SAMPLES).expect("encoder init");
-    let mut decoder =
-        OpusCodec::new(SAMPLE_RATE, CHANNELS, FRAME_SAMPLES).expect("decoder init");
+    let mut encoder = OpusCodec::new(SAMPLE_RATE, CHANNELS, FRAME_SAMPLES).expect("encoder init");
+    let mut decoder = OpusCodec::new(SAMPLE_RATE, CHANNELS, FRAME_SAMPLES).expect("decoder init");
     let mut jb = JitterBuffer::new(60);
     let mixer = AudioMixer::new(CHANNELS);
     let frame = synth_frame();

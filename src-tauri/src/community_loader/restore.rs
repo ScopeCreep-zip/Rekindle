@@ -73,16 +73,11 @@ pub fn restore_community_pseudonyms_and_meks(
         if let Some(ref ks) = *keystore {
             for community in communities.values() {
                 for channel in &community.channels {
-                    let all =
-                        crate::keystore::load_all_meks(ks, &community.id, Some(&channel.id));
+                    let all = crate::keystore::load_all_meks(ks, &community.id, Some(&channel.id));
                     if let Some(mek) = all.into_iter().max_by_key(
                         rekindle_crypto::group::media_key::MediaEncryptionKey::generation,
                     ) {
-                        channel_mek_updates.push((
-                            community.id.clone(),
-                            channel.id.clone(),
-                            mek,
-                        ));
+                        channel_mek_updates.push((community.id.clone(), channel.id.clone(), mek));
                     }
                 }
             }
@@ -103,9 +98,7 @@ pub fn restore_community_pseudonyms_and_meks(
                 if let Some(seed) = crate::keystore::load_slot_seed(ks, community_id) {
                     slot_seed_updates.push((community_id.clone(), seed));
                 }
-                if let Some(rkp) =
-                    crate::keystore::load_registry_keypair(ks, community_id)
-                {
+                if let Some(rkp) = crate::keystore::load_registry_keypair(ks, community_id) {
                     registry_keypair_updates.push((community_id.clone(), rkp));
                 }
             }

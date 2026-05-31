@@ -110,7 +110,11 @@ pub async fn write_entry<D: GovernanceRuntimeDeps>(
             derive::verify_pseudonym_signature(
                 &payload.author_pseudonym.0,
                 &payload.signing_bytes(),
-                payload.signature.as_slice().try_into().unwrap_or(&[0u8; 64]),
+                payload
+                    .signature
+                    .as_slice()
+                    .try_into()
+                    .unwrap_or(&[0u8; 64]),
             )
             .is_ok()
         })
@@ -131,8 +135,9 @@ pub async fn write_entry<D: GovernanceRuntimeDeps>(
     let signature =
         derive::sign_with_pseudonym(&pseudonym_signing_key, &payload_struct.signing_bytes());
     payload_struct.signature = signature.to_vec();
-    let payload = serde_json::to_vec(&payload_struct)
-        .map_err(|e| GovernanceRuntimeError::Encoding(format!("serialize governance entries: {e}")))?;
+    let payload = serde_json::to_vec(&payload_struct).map_err(|e| {
+        GovernanceRuntimeError::Encoding(format!("serialize governance entries: {e}"))
+    })?;
 
     // M9.5 — set_dht_value returns Some(stale) when our write was NOT
     // accepted by the network. Surface as WriteConflict so the caller

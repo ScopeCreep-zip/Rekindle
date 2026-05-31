@@ -81,9 +81,14 @@ pub fn start_background_services(
 
     // The Veilid node is already running (started at app startup).
     // Just spawn sync + DHT publish as background tasks.
-    super::login_spawn::spawn_login_services(app, state, pool.clone(), prekey_bundle_bytes, dht_keys);
+    super::login_spawn::spawn_login_services(
+        app,
+        state,
+        pool.clone(),
+        prekey_bundle_bytes,
+        dht_keys,
+    );
 }
-
 
 /// Allocate a Veilid private route with retry.
 ///
@@ -344,9 +349,7 @@ fn initialize_signal_manager(
             Ok(bundle)
         }
         Ok(None) => {
-            tracing::info!(
-                "No existing PreKeyBundle in Stronghold — generating fresh bundle"
-            );
+            tracing::info!("No existing PreKeyBundle in Stronghold — generating fresh bundle");
             manager.generate_prekey_bundle(1, Some(1), Some(1))
         }
         Err(e) => {

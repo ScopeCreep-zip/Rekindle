@@ -70,9 +70,7 @@ fn build_message_notification(
         subkey_index: channel_message_subkey(slot_index),
         lamport_ts: channel_msg.lamport_ts,
         sequence: channel_msg.sequence,
-        content_hash: blake3::hash(&channel_msg.ciphertext)
-            .to_hex()
-            .to_string(),
+        content_hash: blake3::hash(&channel_msg.ciphertext).to_hex().to_string(),
         timestamp: channel_msg.timestamp,
     })
 }
@@ -219,9 +217,8 @@ pub async fn send_channel_message<D: ChannelMessagingDeps>(
         }
         Err(error) => {
             tracing::warn!(error = %error, "channel delivery failed; queueing retry");
-            let bytes = serde_json::to_vec(&channel_msg).map_err(|e| {
-                ChannelError::Encoding(format!("serialize retry write: {e}"))
-            })?;
+            let bytes = serde_json::to_vec(&channel_msg)
+                .map_err(|e| ChannelError::Encoding(format!("serialize retry write: {e}")))?;
             deps.enqueue_channel_retry(PendingChannelWrite {
                 record_key: context.channel_key.clone(),
                 subkey: channel_message_subkey(context.slot_index),
@@ -256,7 +253,10 @@ pub async fn send_channel_message<D: ChannelMessagingDeps>(
 /// Forwards a previously-cached source message into a destination
 /// channel. Cross-community-safe because pseudonyms aren't linkable
 /// across community-scoped derivations (architecture §6.5).
-#[allow(clippy::too_many_arguments, reason = "Mirrors src-tauri forward_message signature; src vs dest community/channel/message ids are all required for cache lookup + dest write.")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Mirrors src-tauri forward_message signature; src vs dest community/channel/message ids are all required for cache lookup + dest write."
+)]
 pub async fn forward_channel_message<D: ChannelMessagingDeps>(
     deps: &D,
     _source_community_id: &str,
@@ -348,8 +348,11 @@ pub async fn forward_channel_message<D: ChannelMessagingDeps>(
         .await
     {
         Ok(()) => {
-            let notification =
-                build_forward_notification(dest_channel_id, &forward_payload, dest_context.slot_index)?;
+            let notification = build_forward_notification(
+                dest_channel_id,
+                &forward_payload,
+                dest_context.slot_index,
+            )?;
             let _ = deps.send_to_mesh(dest_community_id, &notification);
             deps.mark_last_send_at(dest_community_id, dest_channel_id, timestamp_ms);
             let _ = deps
@@ -383,11 +386,11 @@ pub async fn process_retry_write<D: ChannelMessagingDeps>(
     pending: &PendingChannelWrite,
     context: &ChannelWriteContext,
 ) -> Result<(), ChannelError> {
-    let message: ChannelMessage = serde_json::from_slice(&pending.data).map_err(|e| {
-        ChannelError::Encoding(format!("deserialize queued channel message: {e}"))
-    })?;
+    let message: ChannelMessage = serde_json::from_slice(&pending.data)
+        .map_err(|e| ChannelError::Encoding(format!("deserialize queued channel message: {e}")))?;
     deps.write_channel_message_smpl(context, &message).await?;
-    let notification = build_message_notification(&context.channel_id, &message, context.slot_index)?;
+    let notification =
+        build_message_notification(&context.channel_id, &message, context.slot_index)?;
     let _ = deps.send_to_mesh(&context.community_id, &notification);
     if let Some(msg_id) = message.message_id {
         deps.emit_delivery_succeeded(&context.community_id, &context.channel_id, &msg_id);

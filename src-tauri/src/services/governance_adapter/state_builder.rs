@@ -101,9 +101,7 @@ pub(super) fn insert_community_into_state(state: &Arc<AppState>, community: Comm
         lamport_counter,
         gossip: Some(GossipOverlay::default()),
         slot_keypair: Some(slot_keypair),
-        channel_log_keys: [(channel_id_hex, channel_record_key)]
-            .into_iter()
-            .collect(),
+        channel_log_keys: [(channel_id_hex, channel_record_key)].into_iter().collect(),
         channel_sequences: HashMap::new(),
         pending_syncs: HashMap::new(),
         watched_records: std::collections::HashSet::new(),
@@ -131,9 +129,9 @@ pub(super) fn insert_community_into_state(state: &Arc<AppState>, community: Comm
         recent_member_joins: std::collections::VecDeque::new(),
     };
 
-    state
-        .mek_cache
-        .lock()
-        .insert(id.clone(), CryptoMek::from_bytes(mek.key_bytes, mek.generation));
+    state.mek_cache.lock().insert(
+        id.clone(),
+        CryptoMek::from_bytes(mek.key_bytes, mek.generation),
+    );
     state.communities.write().insert(id, cs);
 }

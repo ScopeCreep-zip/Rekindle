@@ -20,7 +20,6 @@ pub mod gossip;
 pub mod runtime;
 
 pub use app_state::AppState;
-pub use rekindle_channel::{AutoModCompiledCache, CompiledAutoModRule};
 pub use circuit::CircuitBreakerState;
 pub use community::{
     display_role_name, CategoryInfo, ChannelInfo, ChannelType, CommunityRecords, CommunityState,
@@ -28,6 +27,7 @@ pub use community::{
 };
 pub use friend::{FriendState, FriendshipState, GameInfoState, IdentityState, UserStatus};
 pub use gossip::{GossipOverlay, OnlineMember};
+pub use rekindle_channel::{AutoModCompiledCache, CompiledAutoModRule};
 pub use runtime::{
     DHTManagerHandle, GameDetectorHandle, NodeHandle, RoutingManagerHandle, SignalManagerHandle,
     VoiceEngineHandle,

@@ -18,8 +18,8 @@ pub async fn accept_dm_invite(
     pool: &DbPool,
     record_key: &str,
 ) -> Result<(), String> {
-    let app_handle = state_helpers::app_handle(state)
-        .ok_or_else(|| "app handle unavailable".to_string())?;
+    let app_handle =
+        state_helpers::app_handle(state).ok_or_else(|| "app handle unavailable".to_string())?;
     let adapter = DmAdapter::new(Arc::clone(state), app_handle, pool.clone());
     rekindle_dm::accept_dm_invite(&*adapter, record_key)
         .await

@@ -19,8 +19,8 @@
 //! * [`io_helpers`] — audio device restart, peer-route lookup,
 //!   media-capabilities broadcast, member-name DB query.
 
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
 use rekindle_voice::{VoiceSessionDeps, VoiceShutdownOpts};
 
@@ -91,8 +91,8 @@ pub async fn shutdown_voice(state: &AppState, opts: &VoiceShutdownOpts) {
         return;
     };
     let pool = pool.inner().clone();
-    let Some(state_arc) = tauri::Manager::try_state::<Arc<AppState>>(&app_handle)
-        .map(|s| Arc::clone(s.inner()))
+    let Some(state_arc) =
+        tauri::Manager::try_state::<Arc<AppState>>(&app_handle).map(|s| Arc::clone(s.inner()))
     else {
         return;
     };
@@ -117,7 +117,8 @@ pub fn spawn_drop_telemetry(state: &Arc<AppState>, app: &tauri::AppHandle) {
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             let count = task_state.voice_pkt_drops.swap(0, Ordering::Relaxed);
             if count > 0 {
-                crate::event_dispatch::dispatch(&task_app, 
+                crate::event_dispatch::dispatch(
+                    &task_app,
                     "voice-event",
                     &VoiceEvent::PacketsDropped {
                         reason: "voice_pkt_drops".into(),

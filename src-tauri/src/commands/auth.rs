@@ -41,7 +41,6 @@ pub async fn create_identity(
     .await
 }
 
-
 /// Unlock existing identity with passphrase.
 ///
 /// Opens the per-identity Stronghold snapshot with the passphrase, loads the
@@ -87,8 +86,12 @@ pub async fn logout(
     state: State<'_, SharedState>,
     keystore_handle: State<'_, KeystoreHandle>,
 ) -> Result<(), String> {
-    services::auth_runtime::logout_inner(app, state.inner().clone(), keystore_handle.inner().clone())
-        .await
+    services::auth_runtime::logout_inner(
+        app,
+        state.inner().clone(),
+        keystore_handle.inner().clone(),
+    )
+    .await
 }
 
 /// List all persisted identities (for the account picker).
@@ -126,8 +129,6 @@ pub async fn delete_identity(
     )
     .await
 }
-
-
 
 /// Phase 3b debug diagnostic — inspect the local PQXDH PreKeyBundle.
 ///

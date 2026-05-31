@@ -8,15 +8,14 @@
 //!   `IpcResponse` to the originating connection (request-response pattern)
 //! - Routes non-IpcRequest frames between connected agents (pub-sub pattern)
 
-
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::Instant;
 
 use tokio::net::{UnixListener, UnixStream};
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::{mpsc, RwLock};
 use uuid::Uuid;
 
 use super::error::{IpcError, Result};
@@ -84,11 +83,7 @@ impl BusServer {
     ///
     /// Creates parent directory if needed. Removes stale socket before binding.
     /// Sets directory permissions to 0700 and socket to 0600. [RC-4][RC-6]
-    pub fn bind(
-        path: &Path,
-        keypair: snow::Keypair,
-        registry: ClearanceRegistry,
-    ) -> Result<Self> {
+    pub fn bind(path: &Path, keypair: snow::Keypair, registry: ClearanceRegistry) -> Result<Self> {
         // Create parent directory.
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| IpcError::DirectoryCreate {
@@ -100,11 +95,12 @@ impl BusServer {
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
-                std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))
-                    .map_err(|e| IpcError::DirectoryCreate {
+                std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700)).map_err(
+                    |e| IpcError::DirectoryCreate {
                         path: parent.display().to_string(),
                         source: e,
-                    })?;
+                    },
+                )?;
             }
         }
 
@@ -129,11 +125,12 @@ impl BusServer {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
-                .map_err(|e| IpcError::SocketBind {
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).map_err(
+                |e| IpcError::SocketBind {
                     path: path.display().to_string(),
                     source: e,
-                })?;
+                },
+            )?;
         }
 
         tracing::info!(path = %path.display(), "IPC bus server bound");
@@ -148,7 +145,9 @@ impl BusServer {
                 next_conn_id: AtomicU64::new(1),
                 epoch: Instant::now(),
                 registry: RwLock::new(registry),
-                event_router: parking_lot::RwLock::new(crate::daemon::event_router::EventRouter::new()),
+                event_router: parking_lot::RwLock::new(
+                    crate::daemon::event_router::EventRouter::new(),
+                ),
             }),
             keypair: Arc::new(keypair),
         })
@@ -173,11 +172,7 @@ impl BusServer {
                     // [RC-6] Same-UID enforcement.
                     let my_uid = PeerCredentials::local().uid;
                     if peer.uid != my_uid {
-                        tracing::error!(
-                            peer_uid = peer.uid,
-                            my_uid,
-                            "rejecting: UID mismatch"
-                        );
+                        tracing::error!(peer_uid = peer.uid, my_uid, "rejecting: UID mismatch");
                         continue;
                     }
 
@@ -232,7 +227,13 @@ impl BusServer {
     /// the delivery loop breaks, and the task re-awaits the next `.changed()`.
     pub fn start_event_delivery(
         &self,
-        mut event_watch_rx: tokio::sync::watch::Receiver<Option<tokio::sync::broadcast::Sender<rekindle_types::subscription_events::SubscriptionEvent>>>,
+        mut event_watch_rx: tokio::sync::watch::Receiver<
+            Option<
+                tokio::sync::broadcast::Sender<
+                    rekindle_types::subscription_events::SubscriptionEvent,
+                >,
+            >,
+        >,
     ) {
         let state = Arc::clone(&self.state);
         tokio::spawn(async move {
@@ -263,7 +264,11 @@ impl BusServer {
                         Ok(event) => {
                             let (delivered, dropped) = state.event_router.read().deliver(&event);
                             if dropped > 0 {
-                                tracing::debug!(delivered, dropped, "event delivery: some recipients dropped");
+                                tracing::debug!(
+                                    delivered,
+                                    dropped,
+                                    "event delivery: some recipients dropped"
+                                );
                             }
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
@@ -488,10 +493,14 @@ async fn route_frame(state: &ServerState, sender_conn_id: u64, payload: &[u8]) {
         let conns = state.connections.read().await;
         if let Some(conn) = conns.get(&sender_conn_id) {
             let now_ms = rekindle_utils::timestamp_ms();
-            let last = conn.last_token_refill.load(std::sync::atomic::Ordering::Relaxed);
+            let last = conn
+                .last_token_refill
+                .load(std::sync::atomic::Ordering::Relaxed);
             if now_ms.saturating_sub(last) >= RATE_LIMIT_REFILL_MS {
-                conn.rate_tokens.store(RATE_LIMIT_MAX_TOKENS, std::sync::atomic::Ordering::Relaxed);
-                conn.last_token_refill.store(now_ms, std::sync::atomic::Ordering::Relaxed);
+                conn.rate_tokens
+                    .store(RATE_LIMIT_MAX_TOKENS, std::sync::atomic::Ordering::Relaxed);
+                conn.last_token_refill
+                    .store(now_ms, std::sync::atomic::Ordering::Relaxed);
             }
             let prev = conn.rate_tokens.fetch_update(
                 std::sync::atomic::Ordering::Relaxed,
@@ -499,7 +508,10 @@ async fn route_frame(state: &ServerState, sender_conn_id: u64, payload: &[u8]) {
                 |t| if t > 0 { Some(t - 1) } else { None },
             );
             if prev.is_err() {
-                tracing::warn!(conn_id = sender_conn_id, "rate limit exceeded, dropping frame");
+                tracing::warn!(
+                    conn_id = sender_conn_id,
+                    "rate limit exceeded, dropping frame"
+                );
                 return;
             }
         }
@@ -589,7 +601,11 @@ async fn route_frame(state: &ServerState, sender_conn_id: u64, payload: &[u8]) {
                         conns.get(&sender_conn_id).map(|c| c.tx.clone())
                     };
                     let response = if let Some(tx) = sender_tx {
-                        match state.event_router.write().subscribe(sender_conn_id, filters, tx) {
+                        match state
+                            .event_router
+                            .write()
+                            .subscribe(sender_conn_id, filters, tx)
+                        {
                             Ok(count) => super::protocol::IpcResponse::ok(&serde_json::json!({
                                 "subscribed": true, "filter_count": count,
                             })),
@@ -610,7 +626,7 @@ async fn route_frame(state: &ServerState, sender_conn_id: u64, payload: &[u8]) {
                         agent_type: None,
                         community_scope: None,
                         payload: BusPayload::Response(
-                            serde_json::to_vec(&response).unwrap_or_else(|_| b"{}".to_vec())
+                            serde_json::to_vec(&response).unwrap_or_else(|_| b"{}".to_vec()),
                         ),
                     };
                     if let Ok(bytes) = encode_frame(&resp_msg) {
@@ -621,7 +637,10 @@ async fn route_frame(state: &ServerState, sender_conn_id: u64, payload: &[u8]) {
                     }
                 }
                 super::protocol::IpcRequest::Unsubscribe { filters } => {
-                    let remaining = state.event_router.write().unsubscribe(sender_conn_id, filters);
+                    let remaining = state
+                        .event_router
+                        .write()
+                        .unsubscribe(sender_conn_id, filters);
                     let response = super::protocol::IpcResponse::ok(&serde_json::json!({
                         "unsubscribed": true, "remaining": remaining,
                     }));
@@ -636,7 +655,7 @@ async fn route_frame(state: &ServerState, sender_conn_id: u64, payload: &[u8]) {
                         agent_type: None,
                         community_scope: None,
                         payload: BusPayload::Response(
-                            serde_json::to_vec(&response).unwrap_or_else(|_| b"{}".to_vec())
+                            serde_json::to_vec(&response).unwrap_or_else(|_| b"{}".to_vec()),
                         ),
                     };
                     if let Ok(bytes) = encode_frame(&resp_msg) {
@@ -648,8 +667,17 @@ async fn route_frame(state: &ServerState, sender_conn_id: u64, payload: &[u8]) {
                 }
                 _ => {
                     // All other requests: record for response routing, forward to daemon.
-                    state.pending_requests.write().await.insert(msg.msg_id, sender_conn_id);
-                    let daemon_conn = state.name_to_conn.read().await.get(DAEMON_AGENT_NAME).copied();
+                    state
+                        .pending_requests
+                        .write()
+                        .await
+                        .insert(msg.msg_id, sender_conn_id);
+                    let daemon_conn = state
+                        .name_to_conn
+                        .read()
+                        .await
+                        .get(DAEMON_AGENT_NAME)
+                        .copied();
                     if let Some(daemon_id) = daemon_conn {
                         let conns = state.connections.read().await;
                         if let Some(daemon) = conns.get(&daemon_id) {
@@ -664,17 +692,26 @@ async fn route_frame(state: &ServerState, sender_conn_id: u64, payload: &[u8]) {
             }
         }
         BusPayload::Response(_) => {
-            tracing::warn!(conn_id = sender_conn_id, "uncorrelated response without correlation_id, dropping");
+            tracing::warn!(
+                conn_id = sender_conn_id,
+                "uncorrelated response without correlation_id, dropping"
+            );
         }
         BusPayload::Event(ref event) => {
             // Events from the daemon's bridge task: route via EventRouter.
             // Only the daemon agent may send events. Other sources are rejected.
             let is_daemon = {
                 let conns = state.connections.read().await;
-                conns.get(&sender_conn_id).and_then(|c| c.verified_name.as_deref()) == Some(DAEMON_AGENT_NAME)
+                conns
+                    .get(&sender_conn_id)
+                    .and_then(|c| c.verified_name.as_deref())
+                    == Some(DAEMON_AGENT_NAME)
             };
             if !is_daemon {
-                tracing::warn!(conn_id = sender_conn_id, "event from non-daemon source — rejected");
+                tracing::warn!(
+                    conn_id = sender_conn_id,
+                    "event from non-daemon source — rejected"
+                );
                 return;
             }
             let (delivered, dropped) = state.event_router.read().deliver(event);

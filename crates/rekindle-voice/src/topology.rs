@@ -118,7 +118,9 @@ pub fn stage_host_score(channel_id: &str, speaker_hex: &str) -> Option<[u8; 32]>
 pub fn select_stage_host(channel_id: &str, candidates: &[String]) -> Option<String> {
     candidates
         .iter()
-        .filter_map(|candidate| stage_host_score(channel_id, candidate).map(|score| (candidate, score)))
+        .filter_map(|candidate| {
+            stage_host_score(channel_id, candidate).map(|score| (candidate, score))
+        })
         .min_by(|(_, left), (_, right)| left.cmp(right))
         .map(|(candidate, _)| candidate.clone())
 }
@@ -202,9 +204,7 @@ mod tests {
     fn leave_mcu_host_left_with_reelection() {
         assert_eq!(
             decide_mode_after_leave(4, &mcu("alice"), false, true, Some("bob")),
-            ModeDecision::SwitchToMcu {
-                host: "bob".into()
-            },
+            ModeDecision::SwitchToMcu { host: "bob".into() },
         );
     }
 

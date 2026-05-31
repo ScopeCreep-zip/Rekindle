@@ -124,9 +124,8 @@ impl MlKemSecret {
         let secret_bytes = self.as_secret_bytes();
         const PUBLIC_OFFSET: usize = 1152;
         let mut public_value = [0u8; ML_KEM_PUBLIC_KEY_BYTES];
-        public_value.copy_from_slice(
-            &secret_bytes[PUBLIC_OFFSET..PUBLIC_OFFSET + ML_KEM_PUBLIC_KEY_BYTES],
-        );
+        public_value
+            .copy_from_slice(&secret_bytes[PUBLIC_OFFSET..PUBLIC_OFFSET + ML_KEM_PUBLIC_KEY_BYTES]);
         MlKemPublic {
             inner: Box::new(MlKem768PublicKey::from(public_value)),
         }

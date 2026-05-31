@@ -195,9 +195,7 @@ impl Navigator {
         _use_unicode: bool,
     ) -> KeyResolution {
         // Priority 1: Ctrl+C always force-quits
-        if key.modifiers.contains(KeyModifiers::CONTROL)
-            && key.code == KeyCode::Char('c')
-        {
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
             return KeyResolution::ForceQuit;
         }
 
@@ -252,19 +250,17 @@ impl Navigator {
                 self.overlay = None;
                 KeyResolution::Consumed
             }
-            OverlayKind::ConfirmAction { action, .. } => {
-                match key.code {
-                    KeyCode::Char('y') | KeyCode::Enter => {
-                        self.overlay = None;
-                        KeyResolution::Action(*action)
-                    }
-                    KeyCode::Char('n') | KeyCode::Esc => {
-                        self.overlay = None;
-                        KeyResolution::Consumed
-                    }
-                    _ => KeyResolution::Consumed,
+            OverlayKind::ConfirmAction { action, .. } => match key.code {
+                KeyCode::Char('y') | KeyCode::Enter => {
+                    self.overlay = None;
+                    KeyResolution::Action(*action)
                 }
-            }
+                KeyCode::Char('n') | KeyCode::Esc => {
+                    self.overlay = None;
+                    KeyResolution::Consumed
+                }
+                _ => KeyResolution::Consumed,
+            },
             OverlayKind::Search(_) => {
                 // Search overlay handles its own keys in the App layer
                 KeyResolution::Consumed
@@ -333,14 +329,13 @@ impl Navigator {
                 Some(KeyResolution::Consumed)
             }
             // Enter = navigate into the focused panel
-            KeyCode::Enter => {
-                Some(match current {
-                    FocusId::FriendList => KeyResolution::Action(Action::ShowFriendList),
-                    FocusId::DoctorList | FocusId::ChannelTree =>
-                        KeyResolution::Action(Action::ShowDoctor),
-                    _ => KeyResolution::Consumed,
-                })
-            }
+            KeyCode::Enter => Some(match current {
+                FocusId::FriendList => KeyResolution::Action(Action::ShowFriendList),
+                FocusId::DoctorList | FocusId::ChannelTree => {
+                    KeyResolution::Action(Action::ShowDoctor)
+                }
+                _ => KeyResolution::Consumed,
+            }),
             // Dashboard quick shortcuts: d=DMs, f=Friends
             KeyCode::Char('d') => Some(KeyResolution::Action(Action::ShowDmInbox)),
             KeyCode::Char('f') => Some(KeyResolution::Action(Action::ShowFriendList)),

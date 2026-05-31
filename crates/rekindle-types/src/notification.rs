@@ -223,7 +223,6 @@ pub enum TransportNotification {
     // W16.7 (receive dispatch + ring timer). Each frontend (Tauri,
     // CLI, daemon) maps these to its own UI surface — Tauri emits
     // chat-events; CLI prints typed lines; daemon forwards via IPC.
-
     /// Caller-side: `start_dm_call` enqueued the CallInvite. UI seeds
     /// the OutgoingCallPanel from this payload.
     CallStarted {
@@ -264,9 +263,7 @@ pub enum TransportNotification {
     /// Caller-side alerting hint: receiver got the invite and is
     /// ringing the user. Optional UI surface — flips
     /// "Calling…" → "Ringing…" without waiting for accept/decline.
-    CallRinging {
-        call_id: String,
-    },
+    CallRinging { call_id: String },
 
     /// Voice transport up on both sides. Frontends transition from
     /// OutgoingCallPanel / IncomingCallModal to ActiveCallPanel.
@@ -293,17 +290,12 @@ pub enum TransportNotification {
 
     /// Active call ended (hangup, peer hung up, network drop with
     /// retry-cap-hit, etc.). Frontend clears `activeCall`.
-    CallEnded {
-        call_id: String,
-        reason: String,
-    },
+    CallEnded { call_id: String, reason: String },
 
     /// Caller-side timeout: 30 s ring expired with no accept.
     /// Distinct from `CallMissed` (receiver-side) so the UI can show
     /// "no answer" vs. "you missed a call".
-    CallTimedOut {
-        call_id: String,
-    },
+    CallTimedOut { call_id: String },
 
     /// W16.5b — Caller-side: the wire-level invite (`app_call`) failed
     /// inside Veilid's 5–10 s RPC budget. The receiver is unreachable
@@ -329,10 +321,7 @@ pub enum TransportNotification {
 
     /// Receiver-side timeout: 30 s ring expired without the user
     /// answering. Persists a `missed_calls` row.
-    CallMissed {
-        call_id: String,
-        from: String,
-    },
+    CallMissed { call_id: String, from: String },
 
     /// State transition not covered by the dedicated variants above
     /// (e.g. Outgoing → Connecting before Connected fires). UI uses
@@ -381,7 +370,6 @@ pub enum TransportNotification {
     },
 
     // ── W16.4: Group call lifecycle ─────────────────────────────────
-
     /// Caller-side: `start_group_call` fanned out invites. Mirror of
     /// [`CallStarted`] for groups.
     GroupCallStarted {
@@ -408,9 +396,7 @@ pub enum TransportNotification {
 
     /// Group call has at least one acceptor; frontend transitions to
     /// the GroupCallPanel grid.
-    GroupCallConnected {
-        call_id: String,
-    },
+    GroupCallConnected { call_id: String },
 
     /// A new participant joined an in-progress group call. Frontend
     /// adds their tile to the grid.
@@ -435,16 +421,10 @@ pub enum TransportNotification {
 
     /// Entire group call has ended (last participant left, or
     /// initiator hung up).
-    GroupCallEnded {
-        call_id: String,
-        reason: String,
-    },
+    GroupCallEnded { call_id: String, reason: String },
 
     /// Group call invitation expired without acceptance. Receiver-side.
-    GroupCallMissed {
-        call_id: String,
-        from: String,
-    },
+    GroupCallMissed { call_id: String, from: String },
 
     // ── W16.4: Voice control (mute / deafen / voice-mode) ───────────
     //
@@ -452,7 +432,6 @@ pub enum TransportNotification {
     // `source: "local" | "remote"` so the frontend can distinguish
     // its own toggle (already optimistically reflected in UI) from a
     // peer's mute that needs to update a participant tile.
-
     MuteChanged {
         /// Sender's mic state: `true` = mic active (NOT muted).
         audio: bool,
@@ -477,7 +456,6 @@ pub enum TransportNotification {
     },
 
     // ── W16.4: Voice transport telemetry ────────────────────────────
-
     /// Audio packets dropped on receive (bad MEK decrypt, missing
     /// signing key, AEAD failure, replay-window-drop, etc.). Coalesced
     /// per-reason at ~1 Hz so the UI sees one event per reason per
@@ -502,7 +480,6 @@ pub enum TransportNotification {
     },
 
     // ── W16.4: Device hot-swap ──────────────────────────────────────
-
     /// Audio device changed (Bluetooth headset connect/disconnect, USB
     /// audio interface, default-device change in OS).
     DeviceChanged {
@@ -515,7 +492,6 @@ pub enum TransportNotification {
     },
 
     // ── W16.4: DM invite reply (W16.10b) ────────────────────────────
-
     /// Initiator-side: a `DmInviteReply` arrived for a request matched
     /// by `correlation_id`. The expect-reply path in `EnvelopeQueue`
     /// already wakes the awaiting future via `deliver_reply`; this

@@ -98,6 +98,9 @@ mod tests {
         let now = 1_700_000_000_000_i64;
         let start = window_start_ms(now);
         let today = day_floor_ms(now);
-        assert_eq!(today - start, i64::from(DAILY_TIMESERIES_DAYS - 1) * ONE_DAY_MS);
+        assert_eq!(
+            today - start,
+            i64::from(DAILY_TIMESERIES_DAYS - 1) * ONE_DAY_MS
+        );
     }
 }

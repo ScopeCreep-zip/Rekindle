@@ -308,16 +308,12 @@ fn apply(author: &PseudonymKey, entry: &GovernanceEntry, state: &mut GovernanceS
 
         // ── Notification default (architecture §17.1 tier 1): LWW ──
         GovernanceEntry::CommunityNotificationDefault { level, lamport } => {
-            let existing_lamport = state
-                .notification_default
-                .as_ref()
-                .map_or(0, |d| d.lamport);
+            let existing_lamport = state.notification_default.as_ref().map_or(0, |d| d.lamport);
             if *lamport > existing_lamport {
-                state.notification_default =
-                    Some(crate::state::NotificationDefaultState {
-                        level: level.clone(),
-                        lamport: *lamport,
-                    });
+                state.notification_default = Some(crate::state::NotificationDefaultState {
+                    level: level.clone(),
+                    lamport: *lamport,
+                });
             }
         }
 
@@ -432,7 +428,9 @@ fn apply(author: &PseudonymKey, entry: &GovernanceEntry, state: &mut GovernanceS
         GovernanceEntry::ThreadArchived { thread_id, lamport } => {
             if let Some(thread) = state.threads.get_mut(thread_id) {
                 if *lamport > thread.created_lamport
-                    && thread.archived_lamport.is_none_or(|current| *lamport > current)
+                    && thread
+                        .archived_lamport
+                        .is_none_or(|current| *lamport > current)
                 {
                     thread.archived_lamport = Some(*lamport);
                 }
@@ -996,7 +994,10 @@ mod tests {
         ];
 
         let state = merge(&[(creator, entries)]);
-        let thread = state.threads.get(&thread_id).expect("thread should remain materialized");
+        let thread = state
+            .threads
+            .get(&thread_id)
+            .expect("thread should remain materialized");
         assert_eq!(thread.archived_lamport, Some(5));
     }
 
@@ -1031,7 +1032,10 @@ mod tests {
         ];
 
         let state = merge(&[(creator, entries)]);
-        let thread = state.threads.get(&thread_id).expect("thread should remain materialized");
+        let thread = state
+            .threads
+            .get(&thread_id)
+            .expect("thread should remain materialized");
         assert_eq!(thread.archived_lamport, None);
     }
 

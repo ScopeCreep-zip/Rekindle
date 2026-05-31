@@ -54,7 +54,10 @@ pub fn send_channel_typing_inner(
     crate::services::community::send_to_mesh(state, community_id, &envelope)
 }
 
-#[allow(clippy::too_many_arguments, reason = "Tauri command surface — matches PresenceUpdate envelope shape")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Tauri command surface — matches PresenceUpdate envelope shape"
+)]
 pub async fn update_community_presence_inner(
     state: &SharedState,
     community_id: String,
@@ -142,7 +145,12 @@ pub async fn get_community_members_inner(
                     avatar_ref: c.my_avatar_ref.clone(),
                     banner_ref: c.my_banner_ref.clone(),
                 };
-                (c.roles.clone(), online, c.member_profiles.clone(), Some(mine))
+                (
+                    c.roles.clone(),
+                    online,
+                    c.member_profiles.clone(),
+                    Some(mine),
+                )
             },
         )
     };
@@ -216,7 +224,10 @@ pub async fn get_community_members_inner(
     Ok(members)
 }
 
-#[allow(clippy::too_many_arguments, reason = "Tauri command surface — matches per-community profile fields")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Tauri command surface — matches per-community profile fields"
+)]
 pub async fn update_community_profile_inner(
     state: &SharedState,
     community_id: String,

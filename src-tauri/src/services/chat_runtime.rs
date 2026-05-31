@@ -117,7 +117,9 @@ pub async fn prepare_chat_session_inner(
         return Ok(());
     };
 
-    let _ = routing_context.open_dht_record(record_key.clone(), None).await;
+    let _ = routing_context
+        .open_dht_record(record_key.clone(), None)
+        .await;
     if let Ok(Some(value_data)) = routing_context.get_dht_value(record_key, 6, true).await {
         let route_blob = value_data.data().to_vec();
         if !route_blob.is_empty() {

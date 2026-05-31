@@ -5,11 +5,11 @@
 
 use tracing::info;
 
-use crate::error::{TransportError, Result};
 use crate::broadcast::node::TransportNode;
+use crate::error::{Result, TransportError};
 use crate::payload::dht_types::{
-    FriendEntry, FriendRequestEntry, FriendRequestStatus,
-    PROFILE_SUBKEY_FRIEND_INBOX_KEY, PROFILE_SUBKEY_FRIEND_INBOX_KEYPAIR,
+    FriendEntry, FriendRequestEntry, FriendRequestStatus, PROFILE_SUBKEY_FRIEND_INBOX_KEY,
+    PROFILE_SUBKEY_FRIEND_INBOX_KEYPAIR,
 };
 use crate::session::Session;
 
@@ -24,50 +24,81 @@ pub struct FriendRequestSent {
 
 /// Send a friend request via DHT inbox write.
 pub async fn send_friend_request(
-    node: &TransportNode, session: &Session,
-    target_mailbox_key: &str, message: &str, signing_key_bytes: &[u8; 32],
+    node: &TransportNode,
+    session: &Session,
+    target_mailbox_key: &str,
+    message: &str,
+    signing_key_bytes: &[u8; 32],
 ) -> Result<FriendRequestSent> {
-    info!(target = &target_mailbox_key[..16.min(target_mailbox_key.len())], "sending friend request via DHT");
+    info!(
+        target = &target_mailbox_key[..16.min(target_mailbox_key.len())],
+        "sending friend request via DHT"
+    );
 
     // Open target's profile to read friend inbox info
-    crate::broadcast::dht_writes::open_readonly(node, target_mailbox_key).await
+    crate::broadcast::dht_writes::open_readonly(node, target_mailbox_key)
+        .await
         .map_err(|e| TransportError::FriendRequestFailed {
-            target: target_mailbox_key.to_string(), reason: format!("cannot open target profile: {e}"),
+            target: target_mailbox_key.to_string(),
+            reason: format!("cannot open target profile: {e}"),
         })?;
 
     let dht = node.dht()?;
-    let inbox_key_data = dht.profile().get_subkey_fresh(target_mailbox_key, PROFILE_SUBKEY_FRIEND_INBOX_KEY).await.unwrap_or(None);
-    let inbox_keypair_data = dht.profile().get_subkey_fresh(target_mailbox_key, PROFILE_SUBKEY_FRIEND_INBOX_KEYPAIR).await.unwrap_or(None);
+    let inbox_key_data = dht
+        .profile()
+        .get_subkey_fresh(target_mailbox_key, PROFILE_SUBKEY_FRIEND_INBOX_KEY)
+        .await
+        .unwrap_or(None);
+    let inbox_keypair_data = dht
+        .profile()
+        .get_subkey_fresh(target_mailbox_key, PROFILE_SUBKEY_FRIEND_INBOX_KEYPAIR)
+        .await
+        .unwrap_or(None);
 
     let (inbox_key, inbox_keypair_hex) = match (inbox_key_data, inbox_keypair_data) {
-        (Some(key_bytes), Some(kp_bytes)) if !key_bytes.is_empty() && !kp_bytes.is_empty() => {
-            (String::from_utf8_lossy(&key_bytes).to_string(), String::from_utf8_lossy(&kp_bytes).to_string())
-        }
+        (Some(key_bytes), Some(kp_bytes)) if !key_bytes.is_empty() && !kp_bytes.is_empty() => (
+            String::from_utf8_lossy(&key_bytes).to_string(),
+            String::from_utf8_lossy(&kp_bytes).to_string(),
+        ),
         _ => {
             info!("friend inbox not in cached profile, fetching fresh from network");
-            let fresh_key = dht.profile().get_subkey_fresh(target_mailbox_key, PROFILE_SUBKEY_FRIEND_INBOX_KEY).await.unwrap_or(None);
-            let fresh_kp = dht.profile().get_subkey_fresh(target_mailbox_key, PROFILE_SUBKEY_FRIEND_INBOX_KEYPAIR).await.unwrap_or(None);
+            let fresh_key = dht
+                .profile()
+                .get_subkey_fresh(target_mailbox_key, PROFILE_SUBKEY_FRIEND_INBOX_KEY)
+                .await
+                .unwrap_or(None);
+            let fresh_kp = dht
+                .profile()
+                .get_subkey_fresh(target_mailbox_key, PROFILE_SUBKEY_FRIEND_INBOX_KEYPAIR)
+                .await
+                .unwrap_or(None);
             match (fresh_key, fresh_kp) {
-                (Some(k), Some(kp)) if !k.is_empty() && !kp.is_empty() => {
-                    (String::from_utf8_lossy(&k).to_string(), String::from_utf8_lossy(&kp).to_string())
+                (Some(k), Some(kp)) if !k.is_empty() && !kp.is_empty() => (
+                    String::from_utf8_lossy(&k).to_string(),
+                    String::from_utf8_lossy(&kp).to_string(),
+                ),
+                _ => {
+                    return Err(TransportError::FriendRequestFailed {
+                        target: target_mailbox_key.to_string(),
+                        reason: "target's friend inbox not available yet".into(),
+                    })
                 }
-                _ => return Err(TransportError::FriendRequestFailed {
-                    target: target_mailbox_key.to_string(),
-                    reason: "target's friend inbox not available yet".into(),
-                }),
             }
         }
     };
 
     // Open inbox with published keypair
-    let inbox_kp_bytes = hex::decode(&inbox_keypair_hex)
-        .map_err(|e| TransportError::FriendRequestFailed {
-            target: target_mailbox_key.to_string(), reason: format!("invalid inbox keypair: {e}"),
+    let inbox_kp_bytes =
+        hex::decode(&inbox_keypair_hex).map_err(|e| TransportError::FriendRequestFailed {
+            target: target_mailbox_key.to_string(),
+            reason: format!("invalid inbox keypair: {e}"),
         })?;
     let inbox_kp = crate::broadcast::node::deserialize_keypair(&inbox_kp_bytes)?;
-    crate::broadcast::dht_writes::open_writable(node, &inbox_key, inbox_kp).await
+    crate::broadcast::dht_writes::open_writable(node, &inbox_key, inbox_kp)
+        .await
         .map_err(|e| TransportError::FriendRequestFailed {
-            target: target_mailbox_key.to_string(), reason: format!("cannot open inbox: {e}"),
+            target: target_mailbox_key.to_string(),
+            reason: format!("cannot open inbox: {e}"),
         })?;
 
     // Generate prekey bundle — Ed25519 identity layout for PQXDH.
@@ -75,22 +106,29 @@ pub async fn send_friend_request(
     let verifying_key = signing_key.verifying_key();
     let signal = crate::crypto::signal_session::SignalSessionManager::new(
         Box::new(crate::crypto::signal_store::MemoryIdentityStore::new(
-            signing_key.to_bytes().to_vec(), verifying_key.as_bytes().to_vec(), 1,
+            signing_key.to_bytes().to_vec(),
+            verifying_key.as_bytes().to_vec(),
+            1,
         )),
         Box::new(crate::crypto::signal_store::MemoryPreKeyStore::new()),
         Box::new(crate::crypto::signal_store::MemorySessionStore::new()),
     );
-    let prekey_bundle = signal.generate_prekey_bundle(1, Some(1), Some(1))
+    let prekey_bundle = signal
+        .generate_prekey_bundle(1, Some(1), Some(1))
         .map_err(|e| TransportError::FriendRequestFailed {
-            target: target_mailbox_key.to_string(), reason: format!("prekey: {e}"),
+            target: target_mailbox_key.to_string(),
+            reason: format!("prekey: {e}"),
         })?;
     // Extract prekey private material for persistence across restarts
     let signed_prekey_private = signal.load_signed_prekey(1).unwrap_or_default();
     let one_time_prekey_private = signal.load_prekey(1).ok().flatten();
-    let prekey_bytes = prekey_bundle.to_bytes()
-        .map_err(|e| TransportError::FriendRequestFailed {
-            target: target_mailbox_key.to_string(), reason: format!("prekey serialize: {e}"),
-        })?;
+    let prekey_bytes =
+        prekey_bundle
+            .to_bytes()
+            .map_err(|e| TransportError::FriendRequestFailed {
+                target: target_mailbox_key.to_string(),
+                reason: format!("prekey serialize: {e}"),
+            })?;
 
     let request = FriendRequestEntry {
         sender_public_key: session.identity.public_key_hex.clone(),
@@ -109,9 +147,11 @@ pub async fn send_friend_request(
     let subkey = blake3_hash_mod(&session.identity.public_key_hex, target_mailbox_key, 32);
 
     // Read-append-write: read existing entries, append ours, write back
-    read_append_write(node, &inbox_key, subkey, &request).await
+    read_append_write(node, &inbox_key, subkey, &request)
+        .await
         .map_err(|e| TransportError::FriendRequestFailed {
-            target: target_mailbox_key.to_string(), reason: format!("inbox write: {e}"),
+            target: target_mailbox_key.to_string(),
+            reason: format!("inbox write: {e}"),
         })?;
 
     info!("friend request written to DHT inbox — verifying propagation");
@@ -122,9 +162,11 @@ pub async fn send_friend_request(
     } else {
         // Retry: re-read, re-append, re-write
         tracing::warn!("friend request not found after write — retrying (concurrent writer race)");
-        read_append_write(node, &inbox_key, subkey, &request).await
+        read_append_write(node, &inbox_key, subkey, &request)
+            .await
             .map_err(|e| TransportError::FriendRequestFailed {
-                target: target_mailbox_key.to_string(), reason: format!("inbox retry write: {e}"),
+                target: target_mailbox_key.to_string(),
+                reason: format!("inbox retry write: {e}"),
             })?;
         if verify_entry_present(node, &inbox_key, subkey, &request).await {
             info!("friend request verified on retry — propagated to network");
@@ -144,26 +186,32 @@ pub async fn send_friend_request(
         if !route_blob.is_empty() {
             if let Ok(target) = node.import_route(&route_blob) {
                 let notify_payload = crate::payload::dm::DmPayload::FriendRequestAck;
-                let notify_bytes = crate::payload::dm::serialize_dm(&notify_payload)
-                    .unwrap_or_default();
+                let notify_bytes =
+                    crate::payload::dm::serialize_dm(&notify_payload).unwrap_or_default();
                 if !notify_bytes.is_empty() {
-                    let _ = node.sender().send_dm(
-                        &target,
-                        crate::frame::TypeId::FriendRequestAck.class(),
-                        crate::frame::TypeId::FriendRequestAck,
-                        signing_key_bytes,
-                        &session.identity.public_key_hex,
-                        0,
-                        None,
-                        &notify_bytes,
-                    ).await;
+                    let _ = node
+                        .sender()
+                        .send_dm(
+                            &target,
+                            crate::frame::TypeId::FriendRequestAck.class(),
+                            crate::frame::TypeId::FriendRequestAck,
+                            signing_key_bytes,
+                            &session.identity.public_key_hex,
+                            0,
+                            None,
+                            &notify_bytes,
+                        )
+                        .await;
                     info!("direct notification sent to target via route");
                 }
             }
         }
     }
 
-    Ok(FriendRequestSent { signed_prekey_private, one_time_prekey_private })
+    Ok(FriendRequestSent {
+        signed_prekey_private,
+        one_time_prekey_private,
+    })
 }
 
 pub struct FriendAccepted {
@@ -173,11 +221,17 @@ pub struct FriendAccepted {
 
 /// Accept a pending friend request.
 pub async fn accept_friend_request(
-    node: &TransportNode, session: &Session,
-    requester_public_key: &str, requester_route_blob: &[u8],
-    requester_profile_dht_key: &str, requester_display_name: &str,
+    node: &TransportNode,
+    session: &Session,
+    requester_public_key: &str,
+    requester_route_blob: &[u8],
+    requester_profile_dht_key: &str,
+    requester_display_name: &str,
 ) -> Result<FriendAccepted> {
-    info!(requester = &requester_public_key[..12], "accepting friend request");
+    info!(
+        requester = &requester_public_key[..12],
+        "accepting friend request"
+    );
 
     // Create shared DM DhtLog
     let (dm_log, dm_log_kp) = crate::broadcast::dht_writes::create_dht_log(node).await?;
@@ -186,23 +240,45 @@ pub async fn accept_friend_request(
     let dm_log_keypair_hex = hex::encode(&dm_log_keypair_bytes);
 
     // Add to friend list DHT
-    let nickname = if requester_display_name.is_empty() { None } else { Some(requester_display_name.to_string()) };
+    let nickname = if requester_display_name.is_empty() {
+        None
+    } else {
+        Some(requester_display_name.to_string())
+    };
     let friend_entry = FriendEntry {
-        public_key: requester_public_key.to_string(), nickname, group: None,
+        public_key: requester_public_key.to_string(),
+        nickname,
+        group: None,
         added_at: rekindle_utils::timestamp_ms(),
         profile_dht_key: Some(requester_profile_dht_key.to_string()),
         dm_log_key: Some(dm_log_key.clone()),
     };
-    node.dht()?.friend_list().add(&session.identity.friend_list_dht_key, friend_entry).await?;
+    node.dht()?
+        .friend_list()
+        .add(&session.identity.friend_list_dht_key, friend_entry)
+        .await?;
 
     if !requester_route_blob.is_empty() {
-        node.peers().write().cache_route(requester_public_key, requester_route_blob.to_vec());
+        node.peers()
+            .write()
+            .cache_route(requester_public_key, requester_route_blob.to_vec());
     }
 
     // Write Accepted response to requester's friend inbox
     let dht = node.dht()?;
-    let req_inbox_key = dht.profile().get_subkey_fresh(requester_profile_dht_key, PROFILE_SUBKEY_FRIEND_INBOX_KEY).await.unwrap_or(None);
-    let req_inbox_kp = dht.profile().get_subkey_fresh(requester_profile_dht_key, PROFILE_SUBKEY_FRIEND_INBOX_KEYPAIR).await.unwrap_or(None);
+    let req_inbox_key = dht
+        .profile()
+        .get_subkey_fresh(requester_profile_dht_key, PROFILE_SUBKEY_FRIEND_INBOX_KEY)
+        .await
+        .unwrap_or(None);
+    let req_inbox_kp = dht
+        .profile()
+        .get_subkey_fresh(
+            requester_profile_dht_key,
+            PROFILE_SUBKEY_FRIEND_INBOX_KEYPAIR,
+        )
+        .await
+        .unwrap_or(None);
 
     if let (Some(key_bytes), Some(kp_bytes)) = (req_inbox_key, req_inbox_kp) {
         let inbox_key = String::from_utf8_lossy(&key_bytes).to_string();
@@ -217,7 +293,10 @@ pub async fn accept_friend_request(
                     profile_dht_key: session.identity.profile_dht_key.clone(),
                     mailbox_dht_key: session.identity.mailbox_dht_key.clone(),
                     sender_friend_inbox_key: session.identity.friend_inbox_key.clone(),
-                    sender_friend_inbox_keypair_hex: session.identity.friend_inbox_keypair_hex.clone(),
+                    sender_friend_inbox_keypair_hex: session
+                        .identity
+                        .friend_inbox_keypair_hex
+                        .clone(),
                     prekey_bundle: Vec::new(),
                     sent_at: rekindle_utils::timestamp_ms(),
                     status: FriendRequestStatus::Accepted {
@@ -228,7 +307,11 @@ pub async fn accept_friend_request(
                         accepted_at: rekindle_utils::timestamp_ms(),
                     },
                 };
-                let subkey = blake3_hash_mod(&session.identity.public_key_hex, requester_profile_dht_key, 32);
+                let subkey = blake3_hash_mod(
+                    &session.identity.public_key_hex,
+                    requester_profile_dht_key,
+                    32,
+                );
                 let _ = read_append_write(node, &inbox_key, subkey, &response).await;
                 info!("acceptance written to requester's friend inbox");
             }
@@ -237,20 +320,36 @@ pub async fn accept_friend_request(
 
     let dm_log_keypair_bytes = super::identity::serialize_keypair(&dm_log_kp);
     info!(requester = &requester_public_key[..12], dm_log = %dm_log_key, "friend request accepted");
-    Ok(FriendAccepted { dm_log_key, dm_log_keypair_bytes })
+    Ok(FriendAccepted {
+        dm_log_key,
+        dm_log_keypair_bytes,
+    })
 }
 
 /// Reject a pending friend request.
 pub async fn reject_friend_request(
-    node: &TransportNode, session: &Session, requester_public_key: &str,
+    node: &TransportNode,
+    session: &Session,
+    requester_public_key: &str,
 ) -> Result<()> {
-    info!(requester = &requester_public_key[..12.min(requester_public_key.len())], "rejecting friend request");
+    info!(
+        requester = &requester_public_key[..12.min(requester_public_key.len())],
+        "rejecting friend request"
+    );
 
     let pending = session.pending_request_by_key(requester_public_key);
     if let Some(req) = pending {
         let dht = node.dht()?;
-        let inbox_key_data = dht.profile().get_subkey_fresh(&req.profile_dht_key, PROFILE_SUBKEY_FRIEND_INBOX_KEY).await.unwrap_or(None);
-        let inbox_kp_data = dht.profile().get_subkey_fresh(&req.profile_dht_key, PROFILE_SUBKEY_FRIEND_INBOX_KEYPAIR).await.unwrap_or(None);
+        let inbox_key_data = dht
+            .profile()
+            .get_subkey_fresh(&req.profile_dht_key, PROFILE_SUBKEY_FRIEND_INBOX_KEY)
+            .await
+            .unwrap_or(None);
+        let inbox_kp_data = dht
+            .profile()
+            .get_subkey_fresh(&req.profile_dht_key, PROFILE_SUBKEY_FRIEND_INBOX_KEYPAIR)
+            .await
+            .unwrap_or(None);
 
         if let (Some(key_bytes), Some(kp_bytes)) = (inbox_key_data, inbox_kp_data) {
             let inbox_key = String::from_utf8_lossy(&key_bytes).to_string();
@@ -268,9 +367,12 @@ pub async fn reject_friend_request(
                         sender_friend_inbox_keypair_hex: String::new(),
                         prekey_bundle: Vec::new(),
                         sent_at: rekindle_utils::timestamp_ms(),
-                        status: FriendRequestStatus::Rejected { rejected_at: rekindle_utils::timestamp_ms() },
+                        status: FriendRequestStatus::Rejected {
+                            rejected_at: rekindle_utils::timestamp_ms(),
+                        },
                     };
-                    let subkey = blake3_hash_mod(&session.identity.public_key_hex, &req.profile_dht_key, 32);
+                    let subkey =
+                        blake3_hash_mod(&session.identity.public_key_hex, &req.profile_dht_key, 32);
                     let _ = read_append_write(node, &inbox_key, subkey, &response).await;
                     info!("rejection written to requester's friend inbox");
                 }
@@ -281,11 +383,12 @@ pub async fn reject_friend_request(
 }
 
 /// Remove a friend.
-pub async fn remove_friend(
-    node: &TransportNode, session: &Session, peer_key: &str,
-) -> Result<()> {
+pub async fn remove_friend(node: &TransportNode, session: &Session, peer_key: &str) -> Result<()> {
     info!(peer = &peer_key[..12], "removing friend");
-    node.dht()?.friend_list().remove(&session.identity.friend_list_dht_key, peer_key).await?;
+    node.dht()?
+        .friend_list()
+        .remove(&session.identity.friend_list_dht_key, peer_key)
+        .await?;
     node.peers().write().invalidate_route(peer_key);
     info!(peer = &peer_key[..12], "friend removed");
     Ok(())
@@ -308,7 +411,10 @@ fn blake3_hash_mod(sender: &str, recipient: &str, n: u32) -> u32 {
 /// Returns error only on write failure — empty/unparseable subkeys are
 /// treated as empty arrays (safe to overwrite).
 async fn read_append_write(
-    node: &TransportNode, inbox_key: &str, subkey: u32, entry: &FriendRequestEntry,
+    node: &TransportNode,
+    inbox_key: &str,
+    subkey: u32,
+    entry: &FriendRequestEntry,
 ) -> Result<()> {
     // Read current state
     let existing = match crate::broadcast::dht_writes::get(node, inbox_key, subkey, true).await {
@@ -330,15 +436,19 @@ async fn read_append_write(
     entries.retain(|e| e.sender_public_key != entry.sender_public_key);
     entries.push(entry.clone());
 
-    let bytes = serde_json::to_vec(&entries)
-        .map_err(|e| TransportError::SerializationFailed { reason: e.to_string() })?;
+    let bytes = serde_json::to_vec(&entries).map_err(|e| TransportError::SerializationFailed {
+        reason: e.to_string(),
+    })?;
     crate::broadcast::dht_writes::set(node, inbox_key, subkey, bytes, None).await
 }
 
 /// Verify our entry is present in the subkey after writing.
 /// Retries with exponential backoff on failure (concurrent writer race).
 async fn verify_entry_present(
-    node: &TransportNode, inbox_key: &str, subkey: u32, entry: &FriendRequestEntry,
+    node: &TransportNode,
+    inbox_key: &str,
+    subkey: u32,
+    entry: &FriendRequestEntry,
 ) -> bool {
     let deadline = std::time::Duration::from_secs(15);
     let start = std::time::Instant::now();
@@ -348,10 +458,15 @@ async fn verify_entry_present(
     loop {
         match crate::broadcast::dht_writes::get(node, inbox_key, subkey, true).await {
             Ok(Some(data)) if !data.is_empty() && data != b"[]" => {
-                let entries: Vec<FriendRequestEntry> = serde_json::from_slice::<Vec<FriendRequestEntry>>(&data)
-                    .or_else(|_| serde_json::from_slice::<FriendRequestEntry>(&data).map(|e| vec![e]))
-                    .unwrap_or_default();
-                if entries.iter().any(|e| e.sender_public_key == entry.sender_public_key) {
+                let entries: Vec<FriendRequestEntry> = serde_json::from_slice::<
+                    Vec<FriendRequestEntry>,
+                >(&data)
+                .or_else(|_| serde_json::from_slice::<FriendRequestEntry>(&data).map(|e| vec![e]))
+                .unwrap_or_default();
+                if entries
+                    .iter()
+                    .any(|e| e.sender_public_key == entry.sender_public_key)
+                {
                     return true;
                 }
             }

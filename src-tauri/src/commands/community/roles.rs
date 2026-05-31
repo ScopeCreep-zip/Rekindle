@@ -29,7 +29,10 @@ pub async fn get_roles(
 /// `permissions` is accepted as a string to avoid JavaScript `Number` precision loss
 /// on u64 values above `2^53 - 1`.
 #[tauri::command]
-#[allow(clippy::too_many_arguments, reason = "Tauri command surface — matches RoleDefinition shape")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Tauri command surface — matches RoleDefinition shape"
+)]
 pub async fn create_role(
     community_id: String,
     name: String,
@@ -62,7 +65,10 @@ pub async fn create_role(
 /// `permissions` is accepted as a string to avoid JavaScript `Number` precision loss
 /// on u64 values above `2^53 - 1`.
 #[tauri::command]
-#[allow(clippy::too_many_arguments, reason = "Tauri command surface — matches edit_role partial-update payload")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Tauri command surface — matches edit_role partial-update payload"
+)]
 pub async fn edit_role(
     community_id: String,
     role_id: u32,
@@ -114,8 +120,14 @@ pub async fn assign_role(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    assign_role_with_check_inner(state.inner(), pool.inner(), community_id, pseudonym_key, role_id)
-        .await
+    assign_role_with_check_inner(
+        state.inner(),
+        pool.inner(),
+        community_id,
+        pseudonym_key,
+        role_id,
+    )
+    .await
 }
 
 /// Remove a role from a member.

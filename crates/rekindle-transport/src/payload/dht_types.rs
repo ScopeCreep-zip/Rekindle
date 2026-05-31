@@ -170,15 +170,27 @@ pub struct CommunityMetadata {
     pub join_inbox_keypair_hex: String,
 }
 
-fn default_max_members() -> u32 { 245 }
-fn default_mek_rotation_hours() -> u32 { 168 }
+fn default_max_members() -> u32 {
+    245
+}
+fn default_mek_rotation_hours() -> u32 {
+    168
+}
 
 // ── Channel types ───────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ChannelKind {
-    Text, Voice, Announcement, Forum, Stage, Directory, Media, Events, Dm,
+    Text,
+    Voice,
+    Announcement,
+    Forum,
+    Stage,
+    Directory,
+    Media,
+    Events,
+    Dm,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -320,11 +332,20 @@ impl PendingJoinEntry {
 #[serde(rename_all = "lowercase")]
 pub enum PendingJoinStatus {
     Pending,
-    Approved { approved_by: String, approved_at: u64 },
-    Rejected { rejected_by: String, reason: String, rejected_at: u64 },
+    Approved {
+        approved_by: String,
+        approved_at: u64,
+    },
+    Rejected {
+        rejected_by: String,
+        reason: String,
+        rejected_at: u64,
+    },
     /// Member is leaving the community. Written to the join inbox by the
     /// leaving member so the owner can process cleanup + rekey.
-    Left { left_at: u64 },
+    Left {
+        left_at: u64,
+    },
 }
 
 // ── Invite types ────────────────────────────────────────────────────

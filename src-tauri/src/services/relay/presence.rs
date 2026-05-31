@@ -30,11 +30,7 @@ const MAX_PROBE_FANOUT: usize = 8;
 /// snapshot for `target_pubkey`). Suppressed if a probe for the same
 /// target fired within `PROBE_COOLDOWN_SECS` (architecture §13.5 is
 /// silent on rate limiting, so we adopt BEP-11's 60s bound).
-pub async fn probe_friends_for_status(
-    state: &Arc<AppState>,
-    pool: &DbPool,
-    target_pubkey: &str,
-) {
+pub async fn probe_friends_for_status(state: &Arc<AppState>, pool: &DbPool, target_pubkey: &str) {
     if !try_acquire_probe_slot(state, target_pubkey) {
         tracing::trace!(target = %target_pubkey, "dropping status probe — within cooldown");
         return;

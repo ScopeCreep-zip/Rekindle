@@ -21,8 +21,8 @@ use x25519_dalek::{PublicKey, StaticSecret};
 
 pub use error::CallError;
 pub use group_state::{GroupCallState, GroupCallStatus};
-pub use signaling::{CallRegistry, CallSignalEvent, CallSignalingDeps, GroupCallRegistry};
 pub use signaling::registry::GroupCallSnapshot;
+pub use signaling::{CallRegistry, CallSignalEvent, CallSignalingDeps, GroupCallRegistry};
 pub use state::{CallKind, CallState, CallStatus};
 pub use state_machine::{CallEvent, CallStateMachine, Effect};
 

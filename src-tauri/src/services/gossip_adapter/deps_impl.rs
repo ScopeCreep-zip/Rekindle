@@ -214,9 +214,6 @@ impl GossipDeps for GossipAdapter {
 /// just clones two Arcs) and hands it to the crate's orchestrators.
 pub fn build_adapter(state: &std::sync::Arc<crate::state::AppState>) -> Option<GossipAdapter> {
     let app_handle = state.app_handle.read().clone()?;
-    let pool = app_handle
-        .try_state::<crate::db::DbPool>()?
-        .inner()
-        .clone();
+    let pool = app_handle.try_state::<crate::db::DbPool>()?.inner().clone();
     Some(GossipAdapter::new(std::sync::Arc::clone(state), pool))
 }

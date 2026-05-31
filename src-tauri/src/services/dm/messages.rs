@@ -22,8 +22,8 @@ pub async fn send_dm_message(
     record_key: &str,
     body: &str,
 ) -> Result<(), String> {
-    let app_handle = state_helpers::app_handle(state)
-        .ok_or_else(|| "app handle unavailable".to_string())?;
+    let app_handle =
+        state_helpers::app_handle(state).ok_or_else(|| "app handle unavailable".to_string())?;
     let adapter = DmAdapter::new(Arc::clone(state), app_handle, pool.clone());
     rekindle_dm::send_dm_message(&*adapter, record_key, body)
         .await
@@ -40,8 +40,8 @@ pub async fn handle_dm_subkey_change(
     subkey: u32,
     raw_value: &[u8],
 ) -> Result<(), String> {
-    let app_handle = state_helpers::app_handle(state)
-        .ok_or_else(|| "app handle unavailable".to_string())?;
+    let app_handle =
+        state_helpers::app_handle(state).ok_or_else(|| "app handle unavailable".to_string())?;
     let adapter = DmAdapter::new(Arc::clone(state), app_handle, pool.clone());
     rekindle_dm::handle_dm_subkey_change(&*adapter, record_key, subkey, raw_value)
         .await

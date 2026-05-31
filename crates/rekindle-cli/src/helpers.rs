@@ -109,8 +109,8 @@ pub fn sanitize_for_display(input: &str) -> String {
                 Some('[') => {
                     // CSI sequence: ESC [ <params> <final byte>
                     chars.next(); // consume '['
-                    // Consume parameter bytes (0x30-0x3F) and intermediate bytes (0x20-0x2F)
-                    // until we hit a final byte (0x40-0x7E) or run out of input
+                                  // Consume parameter bytes (0x30-0x3F) and intermediate bytes (0x20-0x2F)
+                                  // until we hit a final byte (0x40-0x7E) or run out of input
                     loop {
                         match chars.peek() {
                             Some(&fc) if ('\x40'..='\x7e').contains(&fc) => {
@@ -129,14 +129,15 @@ pub fn sanitize_for_display(input: &str) -> String {
                     chars.next(); // consume ']'
                     loop {
                         match chars.next() {
-                            Some('\x07') | None => break,  // BEL or EOF terminates OSC
-                            Some('\x1b') => {             // ESC \ terminates OSC
+                            Some('\x07') | None => break, // BEL or EOF terminates OSC
+                            Some('\x1b') => {
+                                // ESC \ terminates OSC
                                 if chars.peek() == Some(&'\\') {
                                     chars.next();
                                 }
                                 break;
                             }
-                            _ => {}                       // consume OSC content
+                            _ => {} // consume OSC content
                         }
                     }
                 }
@@ -448,18 +449,13 @@ fn audit_log_inner(action: &str, target: &str, outcome: &str) -> anyhow::Result<
 
     // Read last line to compute hash chain
     let prev_hash = match std::fs::read_to_string(&path) {
-        Ok(content) => {
-            content
-                .lines()
-                .last()
-                .map_or_else(
-                    || "genesis".to_string(),
-                    |line| {
-                        let hash = blake3::hash(line.as_bytes());
-                        hex::encode(&hash.as_bytes()[..16])
-                    },
-                )
-        }
+        Ok(content) => content.lines().last().map_or_else(
+            || "genesis".to_string(),
+            |line| {
+                let hash = blake3::hash(line.as_bytes());
+                hex::encode(&hash.as_bytes()[..16])
+            },
+        ),
         Err(_) => "genesis".to_string(),
     };
 
@@ -522,19 +518,13 @@ mod tests {
     #[test]
     fn sanitize_strips_osc_with_st_terminator() {
         // OSC terminated by ESC \ instead of BEL
-        assert_eq!(
-            sanitize_for_display("a\x1b]0;payload\x1b\\b"),
-            "ab"
-        );
+        assert_eq!(sanitize_for_display("a\x1b]0;payload\x1b\\b"), "ab");
     }
 
     #[test]
     fn sanitize_strips_nested_escape() {
         // Nested: ESC [ ESC [ 31m → both ESC sequences consumed
-        assert_eq!(
-            sanitize_for_display("x\x1b[\x1b[31my"),
-            "xy"
-        );
+        assert_eq!(sanitize_for_display("x\x1b[\x1b[31my"), "xy");
     }
 
     #[test]
@@ -704,18 +694,12 @@ mod tests {
 
     #[test]
     fn format_duration_ago_hours() {
-        assert_eq!(
-            format_duration_ago(Duration::from_secs(7380)),
-            "2h 3m ago"
-        );
+        assert_eq!(format_duration_ago(Duration::from_secs(7380)), "2h 3m ago");
     }
 
     #[test]
     fn format_duration_ago_days() {
-        assert_eq!(
-            format_duration_ago(Duration::from_secs(90000)),
-            "1d 1h ago"
-        );
+        assert_eq!(format_duration_ago(Duration::from_secs(90000)), "1d 1h ago");
     }
 
     #[test]

@@ -109,14 +109,11 @@ pub fn extract_mention_signals(
         .mentioned_pseudonyms
         .iter()
         .any(|p| p.eq_ignore_ascii_case(my_pseudonym_hex));
-    let mentioned_local_role = message
-        .mentioned_roles
-        .iter()
-        .any(|role_hex| {
-            my_role_ids_hex
-                .iter()
-                .any(|mine| mine.eq_ignore_ascii_case(role_hex))
-        });
+    let mentioned_local_role = message.mentioned_roles.iter().any(|role_hex| {
+        my_role_ids_hex
+            .iter()
+            .any(|mine| mine.eq_ignore_ascii_case(role_hex))
+    });
     MentionSignals {
         mentioned_local_pseudonym,
         mention_everyone,
@@ -173,11 +170,7 @@ mod tests {
         assert_eq!(pt, b"new body");
     }
 
-    fn sample_message_with(
-        flags: u32,
-        pseudos: Vec<String>,
-        roles: Vec<String>,
-    ) -> ChannelMessage {
+    fn sample_message_with(flags: u32, pseudos: Vec<String>, roles: Vec<String>) -> ChannelMessage {
         build_channel_message(
             1,
             "sender".into(),

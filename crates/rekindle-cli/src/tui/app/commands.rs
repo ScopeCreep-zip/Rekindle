@@ -20,21 +20,19 @@ impl App {
         tokio::spawn(async move {
             // Status snapshot (compact + checks + subscription health)
             match client.request_ok(IpcRequest::Status).await {
-                Ok(value) => {
-                    match serde_json::from_value::<dt::StatusSnapshot>(value.clone()) {
-                        Ok(snapshot) => {
-                            let _ = tx.send(Action::CommandComplete(Box::new(
-                                CommandResult::StatusLoaded { snapshot },
-                            )));
-                        }
-                        Err(e) => {
-                            let _ = tx.send(Action::CommandFailed {
-                                context: "status parse".into(),
-                                error: format!("{e}: {value}"),
-                            });
-                        }
+                Ok(value) => match serde_json::from_value::<dt::StatusSnapshot>(value.clone()) {
+                    Ok(snapshot) => {
+                        let _ = tx.send(Action::CommandComplete(Box::new(
+                            CommandResult::StatusLoaded { snapshot },
+                        )));
                     }
-                }
+                    Err(e) => {
+                        let _ = tx.send(Action::CommandFailed {
+                            context: "status parse".into(),
+                            error: format!("{e}: {value}"),
+                        });
+                    }
+                },
                 Err(e) => {
                     let _ = tx.send(Action::CommandFailed {
                         context: "status".into(),
@@ -45,21 +43,19 @@ impl App {
 
             // Peer list
             match client.request_ok(IpcRequest::NetworkPeers).await {
-                Ok(value) => {
-                    match serde_json::from_value::<Vec<dt::PeerSnapshot>>(value.clone()) {
-                        Ok(peers) => {
-                            let _ = tx.send(Action::CommandComplete(Box::new(
-                                CommandResult::PeerListLoaded { peers },
-                            )));
-                        }
-                        Err(e) => {
-                            let _ = tx.send(Action::CommandFailed {
-                                context: "peers parse".into(),
-                                error: format!("{e}: {value}"),
-                            });
-                        }
+                Ok(value) => match serde_json::from_value::<Vec<dt::PeerSnapshot>>(value.clone()) {
+                    Ok(peers) => {
+                        let _ = tx.send(Action::CommandComplete(Box::new(
+                            CommandResult::PeerListLoaded { peers },
+                        )));
                     }
-                }
+                    Err(e) => {
+                        let _ = tx.send(Action::CommandFailed {
+                            context: "peers parse".into(),
+                            error: format!("{e}: {value}"),
+                        });
+                    }
+                },
                 Err(e) => {
                     let _ = tx.send(Action::CommandFailed {
                         context: "peers".into(),
@@ -95,17 +91,30 @@ impl App {
 
             // Identity (for dashboard identity panel)
             if let Ok(value) = client.request_ok(IpcRequest::IdentityShow).await {
-                let public_key = value.get("public_key").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let display_name = value.get("display_name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let public_key = value
+                    .get("public_key")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let display_name = value
+                    .get("display_name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 if !public_key.is_empty() {
                     let _ = tx.send(Action::CommandComplete(Box::new(
-                        CommandResult::IdentityLoaded { public_key, display_name },
+                        CommandResult::IdentityLoaded {
+                            public_key,
+                            display_name,
+                        },
                     )));
                 }
             }
 
             // Friend list (for dashboard friends panel)
-            if let Ok(Ok(friends)) = client.request_ok(IpcRequest::FriendList).await
+            if let Ok(Ok(friends)) = client
+                .request_ok(IpcRequest::FriendList)
+                .await
                 .map(serde_json::from_value::<Vec<dt::FriendDisplay>>)
             {
                 let _ = tx.send(Action::CommandComplete(Box::new(
@@ -121,16 +130,23 @@ impl App {
         let community = community.to_string();
         let channel = channel.to_string();
         tokio::spawn(async move {
-            match client.request_ok(IpcRequest::ChannelHistory {
-                community: community.clone(),
-                channel: channel.clone(),
-                limit: 50,
-            }).await {
+            match client
+                .request_ok(IpcRequest::ChannelHistory {
+                    community: community.clone(),
+                    channel: channel.clone(),
+                    limit: 50,
+                })
+                .await
+            {
                 Ok(value) => {
                     match serde_json::from_value::<Vec<dt::DecryptedMessageDisplay>>(value) {
                         Ok(messages) => {
                             let _ = tx.send(Action::CommandComplete(Box::new(
-                                CommandResult::ChannelHistoryLoaded { community, channel, messages },
+                                CommandResult::ChannelHistoryLoaded {
+                                    community,
+                                    channel,
+                                    messages,
+                                },
                             )));
                         }
                         Err(e) => {
@@ -156,20 +172,20 @@ impl App {
         let client = Arc::clone(&self.client);
         tokio::spawn(async move {
             match client.request_ok(IpcRequest::DmInbox { limit: 50 }).await {
-                Ok(value) => {
-                    match serde_json::from_value::<Vec<dt::DmThreadDisplay>>(value) {
-                        Ok(threads) => {
-                            let _ = tx.send(Action::CommandComplete(Box::new(
-                                CommandResult::DmInboxLoaded { threads },
-                            )));
-                        }
-                        Err(_) => {
-                            let _ = tx.send(Action::CommandComplete(Box::new(
-                                CommandResult::DmInboxLoaded { threads: Vec::new() },
-                            )));
-                        }
+                Ok(value) => match serde_json::from_value::<Vec<dt::DmThreadDisplay>>(value) {
+                    Ok(threads) => {
+                        let _ = tx.send(Action::CommandComplete(Box::new(
+                            CommandResult::DmInboxLoaded { threads },
+                        )));
                     }
-                }
+                    Err(_) => {
+                        let _ = tx.send(Action::CommandComplete(Box::new(
+                            CommandResult::DmInboxLoaded {
+                                threads: Vec::new(),
+                            },
+                        )));
+                    }
+                },
                 Err(e) => {
                     let _ = tx.send(Action::CommandFailed {
                         context: "dm inbox".into(),
@@ -185,21 +201,19 @@ impl App {
         let client = Arc::clone(&self.client);
         tokio::spawn(async move {
             match client.request_ok(IpcRequest::FriendList).await {
-                Ok(value) => {
-                    match serde_json::from_value::<Vec<dt::FriendDisplay>>(value) {
-                        Ok(friends) => {
-                            let _ = tx.send(Action::CommandComplete(Box::new(
-                                CommandResult::FriendListLoaded { friends },
-                            )));
-                        }
-                        Err(e) => {
-                            let _ = tx.send(Action::CommandFailed {
-                                context: "friend list parse".into(),
-                                error: e.to_string(),
-                            });
-                        }
+                Ok(value) => match serde_json::from_value::<Vec<dt::FriendDisplay>>(value) {
+                    Ok(friends) => {
+                        let _ = tx.send(Action::CommandComplete(Box::new(
+                            CommandResult::FriendListLoaded { friends },
+                        )));
                     }
-                }
+                    Err(e) => {
+                        let _ = tx.send(Action::CommandFailed {
+                            context: "friend list parse".into(),
+                            error: e.to_string(),
+                        });
+                    }
+                },
                 Err(e) => {
                     let _ = tx.send(Action::CommandFailed {
                         context: "friend list".into(),
@@ -215,22 +229,25 @@ impl App {
         let client = Arc::clone(&self.client);
         let community = community.to_string();
         tokio::spawn(async move {
-            match client.request_ok(IpcRequest::CommunityInfo { governance_key: community }).await {
-                Ok(value) => {
-                    match serde_json::from_value::<dt::CommunityDetail>(value) {
-                        Ok(detail) => {
-                            let _ = tx.send(Action::CommandComplete(Box::new(
-                                CommandResult::CommunityInfoLoaded { detail },
-                            )));
-                        }
-                        Err(e) => {
-                            let _ = tx.send(Action::CommandFailed {
-                                context: "community info parse".into(),
-                                error: e.to_string(),
-                            });
-                        }
+            match client
+                .request_ok(IpcRequest::CommunityInfo {
+                    governance_key: community,
+                })
+                .await
+            {
+                Ok(value) => match serde_json::from_value::<dt::CommunityDetail>(value) {
+                    Ok(detail) => {
+                        let _ = tx.send(Action::CommandComplete(Box::new(
+                            CommandResult::CommunityInfoLoaded { detail },
+                        )));
                     }
-                }
+                    Err(e) => {
+                        let _ = tx.send(Action::CommandFailed {
+                            context: "community info parse".into(),
+                            error: e.to_string(),
+                        });
+                    }
+                },
                 Err(e) => {
                     let _ = tx.send(Action::CommandFailed {
                         context: "community info".into(),
@@ -242,7 +259,11 @@ impl App {
     }
 
     pub(crate) fn spawn_send_channel_message(
-        &self, community: &str, channel: &str, text: String, reply_to: Option<String>,
+        &self,
+        community: &str,
+        channel: &str,
+        text: String,
+        reply_to: Option<String>,
     ) {
         let tx = self.action_tx.clone();
         let client = Arc::clone(&self.client);
@@ -250,11 +271,21 @@ impl App {
         let channel_clone = channel.to_string();
         tokio::spawn(async move {
             let reply = reply_to.and_then(|r| r.parse::<u64>().ok());
-            match client.request_ok(IpcRequest::ChannelSend {
-                community, channel: channel_clone.clone(), body: text, reply_to: reply,
-            }).await {
+            match client
+                .request_ok(IpcRequest::ChannelSend {
+                    community,
+                    channel: channel_clone.clone(),
+                    body: text,
+                    reply_to: reply,
+                })
+                .await
+            {
                 Ok(value) => {
-                    let msg_id = value.get("message_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let msg_id = value
+                        .get("message_id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
                     let _ = tx.send(Action::CommandComplete(Box::new(
                         CommandResult::MessageSent { message_id: msg_id },
                     )));
@@ -277,10 +308,19 @@ impl App {
         let tx = self.action_tx.clone();
         let client = Arc::clone(&self.client);
         tokio::spawn(async move {
-            match client.request_ok(IpcRequest::DmSend { peer_key: peer_key.clone(), body: text }).await {
+            match client
+                .request_ok(IpcRequest::DmSend {
+                    peer_key: peer_key.clone(),
+                    body: text,
+                })
+                .await
+            {
                 Ok(_) => {
                     let _ = tx.send(Action::ShowToast {
-                        message: format!("DM sent to {}", crate::helpers::abbreviate_key(&peer_key)),
+                        message: format!(
+                            "DM sent to {}",
+                            crate::helpers::abbreviate_key(&peer_key)
+                        ),
                         level: ToastLevel::Success,
                     });
                 }
@@ -298,10 +338,18 @@ impl App {
         let tx = self.action_tx.clone();
         let client = Arc::clone(&self.client);
         tokio::spawn(async move {
-            match client.request_ok(IpcRequest::FriendAccept { public_key: request_id.clone() }).await {
+            match client
+                .request_ok(IpcRequest::FriendAccept {
+                    public_key: request_id.clone(),
+                })
+                .await
+            {
                 Ok(_) => {
                     let _ = tx.send(Action::ShowToast {
-                        message: format!("Accepted {}", crate::helpers::abbreviate_key(&request_id)),
+                        message: format!(
+                            "Accepted {}",
+                            crate::helpers::abbreviate_key(&request_id)
+                        ),
                         level: ToastLevel::Success,
                     });
                 }
@@ -319,10 +367,18 @@ impl App {
         let tx = self.action_tx.clone();
         let client = Arc::clone(&self.client);
         tokio::spawn(async move {
-            match client.request_ok(IpcRequest::FriendReject { public_key: request_id.clone() }).await {
+            match client
+                .request_ok(IpcRequest::FriendReject {
+                    public_key: request_id.clone(),
+                })
+                .await
+            {
                 Ok(_) => {
                     let _ = tx.send(Action::ShowToast {
-                        message: format!("Rejected {}", crate::helpers::abbreviate_key(&request_id)),
+                        message: format!(
+                            "Rejected {}",
+                            crate::helpers::abbreviate_key(&request_id)
+                        ),
                         level: ToastLevel::Info,
                     });
                 }

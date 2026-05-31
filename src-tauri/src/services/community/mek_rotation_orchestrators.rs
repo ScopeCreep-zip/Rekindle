@@ -23,11 +23,7 @@ fn build_adapter(
         .ok_or_else(|| "DbPool state missing".to_string())?
         .inner()
         .clone();
-    Ok(MekAdapter::new(
-        Arc::clone(state),
-        app_handle.clone(),
-        pool,
-    ))
+    Ok(MekAdapter::new(Arc::clone(state), app_handle.clone(), pool))
 }
 
 pub(super) fn selected_request_responder(
@@ -156,7 +152,11 @@ pub async fn handle_request_mek(
     rekindle_mek_rotation::distribute_mek(
         adapter.as_ref(),
         community_id,
-        if channel_id.is_empty() { None } else { Some(channel_id) },
+        if channel_id.is_empty() {
+            None
+        } else {
+            Some(channel_id)
+        },
         &mek,
         &[rekindle_mek_rotation::RotationRecipient {
             pseudonym_hex: requester_pseudonym.to_string(),

@@ -32,8 +32,8 @@ pub async fn register_with_push_relay(
         return Err("no identity".into());
     }
     validate_push_relay_inputs(relay_pseudonym, device_push_token, platform, record_keys)?;
-    let json = serde_json::to_string(record_keys)
-        .map_err(|e| format!("serialize record_keys: {e}"))?;
+    let json =
+        serde_json::to_string(record_keys).map_err(|e| format!("serialize record_keys: {e}"))?;
     let pseudonym = relay_pseudonym.to_string();
     let token = device_push_token.to_string();
     let plat = platform.to_string();
@@ -218,9 +218,7 @@ mod tests {
 
     #[test]
     fn validate_rejects_short_pseudonym() {
-        assert!(
-            validate_push_relay_inputs("abc", "token", "self", &["VLD0:foo".into()]).is_err()
-        );
+        assert!(validate_push_relay_inputs("abc", "token", "self", &["VLD0:foo".into()]).is_err());
     }
 
     #[test]
@@ -241,8 +239,6 @@ mod tests {
     #[test]
     fn validate_rejects_empty_token() {
         let pseudonym = "a".repeat(64);
-        assert!(
-            validate_push_relay_inputs(&pseudonym, "", "self", &["VLD0:foo".into()]).is_err()
-        );
+        assert!(validate_push_relay_inputs(&pseudonym, "", "self", &["VLD0:foo".into()]).is_err());
     }
 }

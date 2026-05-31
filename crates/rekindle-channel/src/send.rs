@@ -73,7 +73,10 @@ pub fn encrypt_channel_body(
 /// already-computed by the orchestrator (lamport_ts, sequence, sender
 /// pseudonym, encrypted body, mention metadata). Returns the struct
 /// ready for capnp encoding + DHT subkey write.
-#[allow(clippy::too_many_arguments, reason = "Mirrors wire-shape constructor; passing a context struct would just re-shape the args without semantic clarity.")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Mirrors wire-shape constructor; passing a context struct would just re-shape the args without semantic clarity."
+)]
 pub fn build_channel_message(
     sequence: u64,
     sender_pseudonym: String,

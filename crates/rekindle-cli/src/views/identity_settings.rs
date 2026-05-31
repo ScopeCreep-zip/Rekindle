@@ -35,11 +35,11 @@ use ratatui::Frame;
 use rekindle_types::display::StatusSnapshot;
 use rekindle_types::subscription_events::SubscriptionEvent;
 
+use super::View;
 use crate::helpers;
 use crate::tui::action::{Action, CommandResult};
 use crate::tui::focus::{FocusId, FocusRing};
 use crate::tui::theme::ThemeManager;
-use super::View;
 
 /// Identity & settings view state.
 pub struct IdentitySettingsView {
@@ -124,7 +124,10 @@ impl IdentitySettingsView {
         let arrow_down = if self.use_unicode { "▾" } else { "v" };
 
         // ── Top-level summary ────────────────────────────────
-        items.push(Self::kv_item("  Public Key", &helpers::abbreviate_key(&self.public_key)));
+        items.push(Self::kv_item(
+            "  Public Key",
+            &helpers::abbreviate_key(&self.public_key),
+        ));
         items.push(Self::kv_item("  Display Name", &self.display_name));
         items.push(Self::kv_item("  Attachment", &self.attachment));
         let route_str = if self.route_allocated {
@@ -137,7 +140,11 @@ impl IdentitySettingsView {
         items.push(ListItem::new(Line::raw("")));
 
         // ── DHT Records section ──────────────────────────────
-        let dht_arrow = if self.expanded[0] { arrow_down } else { arrow_right };
+        let dht_arrow = if self.expanded[0] {
+            arrow_down
+        } else {
+            arrow_right
+        };
         items.push(ListItem::new(Line::from(vec![
             Span::styled(format!("  {dht_arrow} "), Style::new().bold()),
             Span::styled("DHT Records", Style::new().bold()),
@@ -150,31 +157,53 @@ impl IdentitySettingsView {
         }
 
         // ── Security section ─────────────────────────────────
-        let sec_arrow = if self.expanded[1] { arrow_down } else { arrow_right };
+        let sec_arrow = if self.expanded[1] {
+            arrow_down
+        } else {
+            arrow_right
+        };
         items.push(ListItem::new(Line::from(vec![
             Span::styled(format!("  {sec_arrow} "), Style::new().bold()),
             Span::styled("Security", Style::new().bold()),
         ])));
         if self.expanded[1] {
-            let key_status = if self.signing_key_loaded { "loaded (unlocked)" } else { "not loaded (locked)" };
+            let key_status = if self.signing_key_loaded {
+                "loaded (unlocked)"
+            } else {
+                "not loaded (locked)"
+            };
             items.push(Self::kv_item("    Signing Key", key_status));
             items.push(Self::kv_item("    Keyring", "OS keyring + disk fallback"));
         }
 
         // ── Network section ──────────────────────────────────
-        let net_arrow = if self.expanded[2] { arrow_down } else { arrow_right };
+        let net_arrow = if self.expanded[2] {
+            arrow_down
+        } else {
+            arrow_right
+        };
         items.push(ListItem::new(Line::from(vec![
             Span::styled(format!("  {net_arrow} "), Style::new().bold()),
             Span::styled("Network", Style::new().bold()),
         ])));
         if self.expanded[2] {
-            items.push(Self::kv_item("    Communities", &self.community_count.to_string()));
+            items.push(Self::kv_item(
+                "    Communities",
+                &self.community_count.to_string(),
+            ));
             items.push(Self::kv_item("    Friends", &self.friend_count.to_string()));
-            items.push(Self::kv_item("    Active Watches", &self.active_watches.to_string()));
+            items.push(Self::kv_item(
+                "    Active Watches",
+                &self.active_watches.to_string(),
+            ));
         }
 
         // ── Actions section ──────────────────────────────────
-        let act_arrow = if self.expanded[3] { arrow_down } else { arrow_right };
+        let act_arrow = if self.expanded[3] {
+            arrow_down
+        } else {
+            arrow_right
+        };
         items.push(ListItem::new(Line::from(vec![
             Span::styled(format!("  {act_arrow} "), Style::new().bold()),
             Span::styled("Actions", Style::new().bold()),
@@ -213,7 +242,10 @@ impl IdentitySettingsView {
         let items = self.build_items();
         let item_text = format!("{:?}", items.get(sel)?);
         // Section headers contain the arrow + section name
-        for (i, name) in ["DHT Records", "Security", "Network", "Actions"].iter().enumerate() {
+        for (i, name) in ["DHT Records", "Security", "Network", "Actions"]
+            .iter()
+            .enumerate()
+        {
             if item_text.contains(name) {
                 return Some(i);
             }
@@ -224,13 +256,17 @@ impl IdentitySettingsView {
 
 impl View for IdentitySettingsView {
     fn draw(&mut self, frame: &mut Frame, area: Rect, theme: &ThemeManager) -> Result<()> {
-        let [list_area, help_area] = Layout::vertical([
-            Constraint::Fill(1),
-            Constraint::Length(1),
-        ])
-        .areas(area);
+        let [list_area, help_area] =
+            Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(area);
 
-        let title = format!(" Identity — {} ", if self.display_name.is_empty() { "loading..." } else { &self.display_name });
+        let title = format!(
+            " Identity — {} ",
+            if self.display_name.is_empty() {
+                "loading..."
+            } else {
+                &self.display_name
+            }
+        );
         let block = Block::bordered()
             .title(title)
             .border_style(theme.focused_border());
@@ -249,9 +285,10 @@ impl View for IdentitySettingsView {
         }
 
         // Help bar
-        let help = Line::from(vec![
-            Span::styled("  [y] yank key  [Enter] expand  [q] back  [?] help", Style::new().dim()),
-        ]);
+        let help = Line::from(vec![Span::styled(
+            "  [y] yank key  [Enter] expand  [q] back  [?] help",
+            Style::new().dim(),
+        )]);
         frame.render_widget(Paragraph::new(help), help_area);
 
         Ok(())
@@ -303,7 +340,9 @@ impl View for IdentitySettingsView {
                 if self.public_key.is_empty() {
                     None
                 } else {
-                    Some(Action::YankToClipboard { text: self.public_key.clone() })
+                    Some(Action::YankToClipboard {
+                        text: self.public_key.clone(),
+                    })
                 }
             }
             _ => None,
@@ -315,7 +354,11 @@ impl View for IdentitySettingsView {
             self.load_from_snapshot(snapshot);
         }
         // Also populate DHT keys from IdentityLoaded
-        if let CommandResult::IdentityLoaded { ref public_key, ref display_name } = result {
+        if let CommandResult::IdentityLoaded {
+            ref public_key,
+            ref display_name,
+        } = result
+        {
             if !public_key.is_empty() {
                 self.public_key.clone_from(public_key);
                 self.display_name.clone_from(display_name);
@@ -326,10 +369,18 @@ impl View for IdentitySettingsView {
 
     fn on_subscription_event(&mut self, event: &SubscriptionEvent) -> Result<()> {
         // Update route/attachment on network events
-        if let SubscriptionEvent::Network(rekindle_types::subscription_events::NetworkEvent::AttachmentChanged {
-            is_attached, ..
-        }) = event {
-            self.attachment = if *is_attached { "attached".into() } else { "detached".into() };
+        if let SubscriptionEvent::Network(
+            rekindle_types::subscription_events::NetworkEvent::AttachmentChanged {
+                is_attached,
+                ..
+            },
+        ) = event
+        {
+            self.attachment = if *is_attached {
+                "attached".into()
+            } else {
+                "detached".into()
+            };
         }
         Ok(())
     }

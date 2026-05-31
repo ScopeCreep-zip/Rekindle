@@ -238,7 +238,11 @@ mod tests {
         h.direct_tx.send(()).await.unwrap();
         let scanner_for_wait = Arc::clone(&scanner);
         assert!(
-            wait_until(|| scanner_for_wait.scan_count() == 1, Duration::from_secs(2)).await,
+            wait_until(
+                || scanner_for_wait.scan_count() == 1,
+                Duration::from_secs(2)
+            )
+            .await,
             "direct trigger must invoke scan within 2s; got {}",
             scanner.scan_count(),
         );
@@ -254,7 +258,11 @@ mod tests {
         h.watch_tx.send(1).unwrap();
         let scanner_for_wait = Arc::clone(&scanner);
         assert!(
-            wait_until(|| scanner_for_wait.scan_count() == 1, Duration::from_secs(2)).await,
+            wait_until(
+                || scanner_for_wait.scan_count() == 1,
+                Duration::from_secs(2)
+            )
+            .await,
             "watch trigger must invoke scan",
         );
         h.shutdown().await;
@@ -299,7 +307,11 @@ mod tests {
         h.direct_tx.send(()).await.unwrap();
         let scanner_for_wait = Arc::clone(&scanner);
         assert!(
-            wait_until(|| scanner_for_wait.scan_count() == 2, Duration::from_secs(2)).await,
+            wait_until(
+                || scanner_for_wait.scan_count() == 2,
+                Duration::from_secs(2)
+            )
+            .await,
             "second trigger after coalesce window must fire fresh scan; count={}",
             scanner.scan_count(),
         );
@@ -394,12 +406,20 @@ mod tests {
         let join = tokio::spawn(coord.run(shutdown_rx));
         direct_tx.send(()).await.unwrap();
         let s1 = Arc::clone(&scanner);
-        wait_until(|| s1.count.load(Ordering::Relaxed) == 1, Duration::from_secs(2)).await;
+        wait_until(
+            || s1.count.load(Ordering::Relaxed) == 1,
+            Duration::from_secs(2),
+        )
+        .await;
         tokio::time::sleep(COALESCE + Duration::from_millis(200)).await;
         direct_tx.send(()).await.unwrap();
         let s2 = Arc::clone(&scanner);
         assert!(
-            wait_until(|| s2.count.load(Ordering::Relaxed) == 2, Duration::from_secs(2)).await,
+            wait_until(
+                || s2.count.load(Ordering::Relaxed) == 2,
+                Duration::from_secs(2)
+            )
+            .await,
             "coordinator must survive scanner error and continue",
         );
         let _ = shutdown_tx.send(());

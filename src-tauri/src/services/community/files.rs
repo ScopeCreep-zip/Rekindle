@@ -179,7 +179,6 @@ pub async fn send_voice_message_bytes(
 // is deleted below this anchor; logic is in `rekindle_files::upload`.
 // The thin facades earlier in this file delegate via FilesAdapter.]
 
-
 // ─── Phase 4: serve chunks (responder side of app_call) ────────────────
 
 /// Handle an incoming `RequestAttachment` control payload — a peer wants

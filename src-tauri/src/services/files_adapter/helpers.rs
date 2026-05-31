@@ -40,8 +40,8 @@ pub(super) fn build_dht_writer_context(
     let rc = state_helpers::safe_routing_context(state)
         .ok_or_else(|| FilesError::Transport("not attached".into()))?;
     let mgr = DHTManager::new(rc);
-    let (author_pseudo, signing_key) = state_helpers::pseudonym_credentials(state, community_id)
-        .map_err(FilesError::Transport)?;
+    let (author_pseudo, signing_key) =
+        state_helpers::pseudonym_credentials(state, community_id).map_err(FilesError::Transport)?;
     Ok(DhtWriterContext {
         writer,
         mgr,
@@ -131,7 +131,10 @@ pub(super) fn historical_channel_mek_impl(
         .cloned()
 }
 
-#[allow(clippy::too_many_arguments, reason = "mirrors message_repo::insert_channel_message_full's SQL column shape — see deps.rs for the rationale")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "mirrors message_repo::insert_channel_message_full's SQL column shape — see deps.rs for the rationale"
+)]
 pub(super) async fn insert_channel_message_full_impl(
     pool: &DbPool,
     owner_key: &str,

@@ -133,7 +133,6 @@ pub async fn create_event_inner(
     Ok(event_id)
 }
 
-
 pub async fn edit_event_inner(
     state: &SharedState,
     pool: &DbPool,

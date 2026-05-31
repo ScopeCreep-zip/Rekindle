@@ -43,7 +43,8 @@ pub use governance::{decode_governance_entry, encode_governance_entry};
 /// Encode a `CommunityEnvelope` into packed Cap'n Proto bytes.
 pub fn encode_community_envelope(env: &CommunityEnvelope) -> Result<Vec<u8>, ProtocolError> {
     let mut builder = capnp::message::Builder::new_default();
-    let root = builder.init_root::<crate::community_envelope_capnp::community_envelope::Builder<'_>>();
+    let root =
+        builder.init_root::<crate::community_envelope_capnp::community_envelope::Builder<'_>>();
     write_community_envelope(root, env)?;
     Ok(pack(&builder))
 }
@@ -98,9 +99,7 @@ pub fn decode_signed_envelope(bytes: &[u8]) -> Result<SignedEnvelope, ProtocolEr
         .map_err(|e| capnp_err(&e))?;
     Ok(SignedEnvelope {
         community_id: text_to_string(root.get_community_id().map_err(|e| capnp_err(&e))?)?,
-        sender_pseudonym: text_to_string(
-            root.get_sender_pseudonym().map_err(|e| capnp_err(&e))?,
-        )?,
+        sender_pseudonym: text_to_string(root.get_sender_pseudonym().map_err(|e| capnp_err(&e))?)?,
         envelope_bytes: root.get_payload().map_err(|e| capnp_err(&e))?.to_vec(),
         signature: root.get_signature().map_err(|e| capnp_err(&e))?.to_vec(),
         ttl: root.get_ttl(),
@@ -219,9 +218,7 @@ fn read_community_envelope(
                 None
             };
             Ok(CommunityEnvelope::PresenceUpdate {
-                pseudonym_key: text_to_string(
-                    p.get_pseudonym_key().map_err(|e| capnp_err(&e))?,
-                )?,
+                pseudonym_key: text_to_string(p.get_pseudonym_key().map_err(|e| capnp_err(&e))?)?,
                 status: text_to_string(p.get_status().map_err(|e| capnp_err(&e))?)?,
                 game_info,
                 route_blob,
@@ -231,9 +228,7 @@ fn read_community_envelope(
             let t = t.map_err(|e| capnp_err(&e))?;
             Ok(CommunityEnvelope::TypingIndicator {
                 channel_id: text_to_string(t.get_channel_id().map_err(|e| capnp_err(&e))?)?,
-                pseudonym_key: text_to_string(
-                    t.get_pseudonym_key().map_err(|e| capnp_err(&e))?,
-                )?,
+                pseudonym_key: text_to_string(t.get_pseudonym_key().map_err(|e| capnp_err(&e))?)?,
             })
         }
         Which::WatchRelay(w) => {

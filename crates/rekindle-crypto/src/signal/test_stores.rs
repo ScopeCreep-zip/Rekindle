@@ -72,9 +72,7 @@ impl PreKeyStore for MemoryPreKeyStore {
     }
 
     fn store_prekey(&self, prekey_id: u32, key_data: &[u8]) -> Result<(), CryptoError> {
-        self.prekeys
-            .lock()
-            .insert(prekey_id, key_data.to_vec());
+        self.prekeys.lock().insert(prekey_id, key_data.to_vec());
         Ok(())
     }
 
@@ -84,11 +82,7 @@ impl PreKeyStore for MemoryPreKeyStore {
     }
 
     fn load_signed_prekey(&self, signed_prekey_id: u32) -> Result<Option<Vec<u8>>, CryptoError> {
-        Ok(self
-            .signed_prekeys
-            .lock()
-            .get(&signed_prekey_id)
-            .cloned())
+        Ok(self.signed_prekeys.lock().get(&signed_prekey_id).cloned())
     }
 
     fn store_signed_prekey(
@@ -198,7 +192,9 @@ mod tests {
         let bob_addr = hex::encode(bob_id.public_key_bytes());
 
         // Step 1: Bob publishes a PQXDH prekey bundle (classical + ML-KEM).
-        let bob_bundle = bob_mgr.generate_prekey_bundle(1, Some(100), Some(100)).unwrap();
+        let bob_bundle = bob_mgr
+            .generate_prekey_bundle(1, Some(100), Some(100))
+            .unwrap();
 
         // Step 2: Alice establishes session as initiator — derives root key
         // from PQXDH (DH1..DH4 + ML-KEM encapsulation).
@@ -252,9 +248,18 @@ mod tests {
         assert_ne!(msg2, msg3);
 
         // Decrypt in order
-        assert_eq!(bob_mgr.decrypt(&alice_addr, &msg1).await.unwrap(), b"message 1");
-        assert_eq!(bob_mgr.decrypt(&alice_addr, &msg2).await.unwrap(), b"message 2");
-        assert_eq!(bob_mgr.decrypt(&alice_addr, &msg3).await.unwrap(), b"message 3");
+        assert_eq!(
+            bob_mgr.decrypt(&alice_addr, &msg1).await.unwrap(),
+            b"message 1"
+        );
+        assert_eq!(
+            bob_mgr.decrypt(&alice_addr, &msg2).await.unwrap(),
+            b"message 2"
+        );
+        assert_eq!(
+            bob_mgr.decrypt(&alice_addr, &msg3).await.unwrap(),
+            b"message 3"
+        );
     }
 
     #[tokio::test]
@@ -265,7 +270,10 @@ mod tests {
         let eve_mgr = make_manager(&eve_id);
 
         // Alice encrypts for Bob
-        let ciphertext = alice_mgr.encrypt(&bob_addr, b"secret for Bob").await.unwrap();
+        let ciphertext = alice_mgr
+            .encrypt(&bob_addr, b"secret for Bob")
+            .await
+            .unwrap();
 
         // Eve has no session with Alice — decryption fails
         let result = eve_mgr.decrypt(&alice_addr, &ciphertext).await;
@@ -331,7 +339,9 @@ mod tests {
         // → load_existing_prekey_bundle returns None so caller mints fresh.
         let identity = Identity::generate();
         let mgr = make_manager(&identity);
-        let result = mgr.load_existing_prekey_bundle(1, Some(1), Some(1)).unwrap();
+        let result = mgr
+            .load_existing_prekey_bundle(1, Some(1), Some(1))
+            .unwrap();
         assert!(result.is_none(), "empty store must return None");
     }
 
@@ -375,7 +385,9 @@ mod tests {
         // Generate signed_prekey only (no OTPK).
         let _ = mgr.generate_prekey_bundle(1, None, None).unwrap();
         // Asking for OTPK #1 — not present.
-        let result = mgr.load_existing_prekey_bundle(1, Some(1), Some(1)).unwrap();
+        let result = mgr
+            .load_existing_prekey_bundle(1, Some(1), Some(1))
+            .unwrap();
         assert!(
             result.is_none(),
             "missing one-time prekey must force regeneration"

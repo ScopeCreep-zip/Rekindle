@@ -43,12 +43,10 @@ mod tests {
 
     #[test]
     fn online_stays_online_when_under_threshold() {
-        assert!(decide_status_after_idle(
-            UserStatusKind::Online,
-            5 * 60 * 1000,
-            IDLE_THRESHOLD_MS
-        )
-        .is_none());
+        assert!(
+            decide_status_after_idle(UserStatusKind::Online, 5 * 60 * 1000, IDLE_THRESHOLD_MS)
+                .is_none()
+        );
     }
 
     #[test]

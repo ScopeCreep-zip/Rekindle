@@ -58,7 +58,6 @@ use crate::state::{CallKind, CallState, CallStatus};
 /// constructed once and consumed by `apply`.
 pub enum CallEvent {
     // ── Caller-side ─────────────────────────────────────────────────
-
     /// User clicked Voice/Video Call. `my_x25519_secret` is the
     /// freshly-generated keypair the caller will use for ECDH; the
     /// matching `my_x25519_pub` ships in the CallInvite envelope.
@@ -74,15 +73,10 @@ pub enum CallEvent {
     },
 
     /// User clicked Cancel on the OutgoingCallPanel.
-    LocalCancel {
-        call_id: String,
-        reason: String,
-    },
+    LocalCancel { call_id: String, reason: String },
 
     /// Caller's 30 s dialing timer fired without an accept.
-    LocalDialingTimeout {
-        call_id: String,
-    },
+    LocalDialingTimeout { call_id: String },
 
     /// W16.5b — Caller-side: the `app_call`-based CallInvite handshake
     /// failed within Veilid's 5–10 s RPC budget (Timeout, NoConnection,
@@ -104,19 +98,13 @@ pub enum CallEvent {
     },
 
     /// Inbound CallDecline (caller-side: peer rejected our outgoing).
-    DeclineReceived {
-        call_id: String,
-        reason: String,
-    },
+    DeclineReceived { call_id: String, reason: String },
 
     /// Inbound CallRinging (caller-side: alerting ack — peer is
     /// ringing the user).
-    RingingReceived {
-        call_id: String,
-    },
+    RingingReceived { call_id: String },
 
     // ── Receiver-side ───────────────────────────────────────────────
-
     /// Inbound CallInvite. Receiver decides whether to accept/decline.
     InviteReceived {
         call_id: String,
@@ -136,39 +124,25 @@ pub enum CallEvent {
     },
 
     /// User clicked Decline on the IncomingCallModal.
-    LocalDecline {
-        call_id: String,
-        reason: String,
-    },
+    LocalDecline { call_id: String, reason: String },
 
     /// Receiver's 30 s incoming timer fired without the user
     /// answering.
-    LocalIncomingTimeout {
-        call_id: String,
-    },
+    LocalIncomingTimeout { call_id: String },
 
     // ── Either side ─────────────────────────────────────────────────
-
     /// Inbound CallEnd. Works in any state (Outgoing/Incoming/
     /// Connecting/Active) so cancel-while-ringing or
     /// hangup-mid-call cleans up cleanly.
-    EndReceived {
-        call_id: String,
-        reason: String,
-    },
+    EndReceived { call_id: String, reason: String },
 
     /// Voice transport finished bringing up audio + signalling key
     /// + jitter buffer. Transitions Connecting → Active.
-    VoiceTransportUp {
-        call_id: String,
-    },
+    VoiceTransportUp { call_id: String },
 
     /// Voice transport failed or dropped after Active. Treated as a
     /// hangup with a reason.
-    VoiceTransportDown {
-        call_id: String,
-        reason: String,
-    },
+    VoiceTransportDown { call_id: String, reason: String },
 }
 
 /// Side-effects produced by [`CallStateMachine::apply`]. The runtime
@@ -180,7 +154,6 @@ pub enum Effect {
     //
     // The runtime serializes the matching `DmPayload` variant and
     // calls `EnvelopeQueue::send` with the right `EnvelopeKind`.
-
     SendCallInvite {
         recipient: String,
         call_id: String,
@@ -209,7 +182,6 @@ pub enum Effect {
     //  not produced as an outbound envelope.)
 
     // ── Voice session ───────────────────────────────────────────────
-
     /// Bring up audio + jitter buffer for this call. The `call_key` is
     /// the X25519-ECDH-derived shared secret, used by the voice
     /// transport for AEAD on every frame (W13.14).
@@ -221,34 +193,21 @@ pub enum Effect {
     },
 
     /// Tear down the voice session for this call.
-    StopVoiceSession {
-        call_id: String,
-        reason: String,
-    },
+    StopVoiceSession { call_id: String, reason: String },
 
     // ── Ring timers ─────────────────────────────────────────────────
-
     /// Spawn a 30 s dialing-side timeout. On fire, the timer task
     /// invokes `apply(LocalDialingTimeout)`.
-    SpawnDialingTimer {
-        call_id: String,
-        expires_at_ms: u64,
-    },
+    SpawnDialingTimer { call_id: String, expires_at_ms: u64 },
 
     /// Spawn a 30 s incoming-side timeout.
-    SpawnIncomingTimer {
-        call_id: String,
-        expires_at_ms: u64,
-    },
+    SpawnIncomingTimer { call_id: String, expires_at_ms: u64 },
 
     /// Cancel any spawned timer for this call (call accepted, declined,
     /// ended, etc.).
-    CancelTimer {
-        call_id: String,
-    },
+    CancelTimer { call_id: String },
 
     // ── Persistence ─────────────────────────────────────────────────
-
     /// Persist Outgoing/Incoming state for crash recovery (W16.8).
     /// Active state intentionally NOT persisted — voice transport
     /// can't meaningfully resume across crash.
@@ -266,9 +225,7 @@ pub enum Effect {
     },
 
     /// Delete persisted call state (call ended, declined, etc.).
-    DeletePersistedCall {
-        call_id: String,
-    },
+    DeletePersistedCall { call_id: String },
 
     /// Persist a missed_calls row (timeout fired, no accept).
     PersistMissedCall {
@@ -279,7 +236,6 @@ pub enum Effect {
     },
 
     // ── Notifications ───────────────────────────────────────────────
-
     /// Emit a [`TransportNotification`] via [`SharedState::notify`].
     /// Each frontend (Tauri / CLI / daemon) bridges to its own surface.
     Notify(TransportNotification),
@@ -365,14 +321,20 @@ impl CallStateMachine {
                 started_at_ms,
             ),
             CallEvent::LocalCancel { call_id, reason } => self.apply_local_cancel(&call_id, reason),
-            CallEvent::LocalDialingTimeout { call_id } => self.apply_local_dialing_timeout(&call_id),
-            CallEvent::LocalUnreachable { call_id, reason } => self.apply_local_unreachable(&call_id, reason),
+            CallEvent::LocalDialingTimeout { call_id } => {
+                self.apply_local_dialing_timeout(&call_id)
+            }
+            CallEvent::LocalUnreachable { call_id, reason } => {
+                self.apply_local_unreachable(&call_id, reason)
+            }
             CallEvent::AcceptReceived {
                 call_id,
                 from,
                 peer_x25519_pub,
             } => self.apply_accept_received(&call_id, &from, peer_x25519_pub),
-            CallEvent::DeclineReceived { call_id, reason } => self.apply_decline_received(&call_id, reason),
+            CallEvent::DeclineReceived { call_id, reason } => {
+                self.apply_decline_received(&call_id, reason)
+            }
             CallEvent::RingingReceived { call_id } => self.apply_ringing_received(&call_id),
             CallEvent::InviteReceived {
                 call_id,
@@ -396,8 +358,12 @@ impl CallStateMachine {
                 my_x25519_secret,
                 my_x25519_pub,
             } => self.apply_local_accept(&call_id, my_x25519_secret, my_x25519_pub),
-            CallEvent::LocalDecline { call_id, reason } => self.apply_local_decline(&call_id, reason),
-            CallEvent::LocalIncomingTimeout { call_id } => self.apply_local_incoming_timeout(&call_id),
+            CallEvent::LocalDecline { call_id, reason } => {
+                self.apply_local_decline(&call_id, reason)
+            }
+            CallEvent::LocalIncomingTimeout { call_id } => {
+                self.apply_local_incoming_timeout(&call_id)
+            }
             CallEvent::EndReceived { call_id, reason } => self.apply_end_received(&call_id, reason),
             CallEvent::VoiceTransportUp { call_id } => self.apply_voice_transport_up(&call_id),
             CallEvent::VoiceTransportDown { call_id, reason } => {
@@ -585,13 +551,17 @@ impl CallStateMachine {
             let peer = state.peer_pubkey.clone();
             self.active.remove(call_id);
             return vec![
-                Effect::CancelTimer { call_id: cid.clone() },
+                Effect::CancelTimer {
+                    call_id: cid.clone(),
+                },
                 Effect::SendCallEnd {
                     recipient: peer,
                     call_id: cid.clone(),
                     reason: "missing local x25519 secret".into(),
                 },
-                Effect::DeletePersistedCall { call_id: cid.clone() },
+                Effect::DeletePersistedCall {
+                    call_id: cid.clone(),
+                },
                 Effect::Notify(TransportNotification::CallEnded {
                     call_id: cid,
                     reason: "internal: missing x25519 secret".into(),
@@ -605,13 +575,17 @@ impl CallStateMachine {
                 let peer = state.peer_pubkey.clone();
                 self.active.remove(call_id);
                 return vec![
-                    Effect::CancelTimer { call_id: cid.clone() },
+                    Effect::CancelTimer {
+                        call_id: cid.clone(),
+                    },
                     Effect::SendCallEnd {
                         recipient: peer,
                         call_id: cid.clone(),
                         reason: format!("call_key derive failed: {e}"),
                     },
-                    Effect::DeletePersistedCall { call_id: cid.clone() },
+                    Effect::DeletePersistedCall {
+                        call_id: cid.clone(),
+                    },
                     Effect::Notify(TransportNotification::CallEnded {
                         call_id: cid,
                         reason: format!("call_key derive failed: {e}"),
@@ -781,13 +755,17 @@ impl CallStateMachine {
                 let peer = state.peer_pubkey.clone();
                 self.active.remove(call_id);
                 return vec![
-                    Effect::CancelTimer { call_id: cid.clone() },
+                    Effect::CancelTimer {
+                        call_id: cid.clone(),
+                    },
                     Effect::SendCallDecline {
                         recipient: peer,
                         call_id: cid.clone(),
                         reason: format!("call_key derive failed: {e}"),
                     },
-                    Effect::DeletePersistedCall { call_id: cid.clone() },
+                    Effect::DeletePersistedCall {
+                        call_id: cid.clone(),
+                    },
                     Effect::Notify(TransportNotification::CallEnded {
                         call_id: cid,
                         reason: format!("call_key derive failed: {e}"),
@@ -1032,9 +1010,19 @@ mod tests {
     fn local_start_emits_invite_timer_persist_notify() {
         let mut sm = CallStateMachine::new();
         let effects = sm.apply(fresh_event_local_start("c1", "bob", CallKind::Audio));
-        assert!(effects.iter().any(|e| matches!(e, Effect::SendCallInvite { .. })));
-        assert!(effects.iter().any(|e| matches!(e, Effect::SpawnDialingTimer { .. })));
-        assert!(effects.iter().any(|e| matches!(e, Effect::PersistCallState { status: CallStatus::Outgoing, .. })));
+        assert!(effects
+            .iter()
+            .any(|e| matches!(e, Effect::SendCallInvite { .. })));
+        assert!(effects
+            .iter()
+            .any(|e| matches!(e, Effect::SpawnDialingTimer { .. })));
+        assert!(effects.iter().any(|e| matches!(
+            e,
+            Effect::PersistCallState {
+                status: CallStatus::Outgoing,
+                ..
+            }
+        )));
         assert!(matches!(sm.get("c1"), Some(s) if matches!(s.status, CallStatus::Outgoing)));
     }
 
@@ -1045,9 +1033,20 @@ mod tests {
         // synchronously inside `app_call_reply`.
         let mut sm = CallStateMachine::new();
         let effects = sm.apply(fresh_event_invite_received("c1", "alice", CallKind::Video));
-        assert!(effects.iter().any(|e| matches!(e, Effect::SpawnIncomingTimer { .. })));
-        assert!(effects.iter().any(|e| matches!(e, Effect::PersistCallState { status: CallStatus::Incoming, .. })));
-        assert!(effects.iter().any(|e| matches!(e, Effect::Notify(TransportNotification::IncomingCall { .. }))));
+        assert!(effects
+            .iter()
+            .any(|e| matches!(e, Effect::SpawnIncomingTimer { .. })));
+        assert!(effects.iter().any(|e| matches!(
+            e,
+            Effect::PersistCallState {
+                status: CallStatus::Incoming,
+                ..
+            }
+        )));
+        assert!(effects.iter().any(|e| matches!(
+            e,
+            Effect::Notify(TransportNotification::IncomingCall { .. })
+        )));
         assert!(matches!(sm.get("c1"), Some(s) if matches!(s.status, CallStatus::Incoming)));
     }
 
@@ -1062,13 +1061,19 @@ mod tests {
             call_id: "c1".into(),
             reason: "timeout".into(),
         });
-        assert!(effects.iter().any(|e| matches!(e, Effect::CancelTimer { .. })));
-        assert!(effects.iter().any(|e| matches!(e, Effect::DeletePersistedCall { .. })));
+        assert!(effects
+            .iter()
+            .any(|e| matches!(e, Effect::CancelTimer { .. })));
+        assert!(effects
+            .iter()
+            .any(|e| matches!(e, Effect::DeletePersistedCall { .. })));
         assert!(effects.iter().any(|e| matches!(e,
             Effect::Notify(TransportNotification::CallUnreachable { reason, .. }) if reason == "timeout"
         )));
         // No PersistMissedCall — receiver never knew about the call.
-        assert!(!effects.iter().any(|e| matches!(e, Effect::PersistMissedCall { .. })));
+        assert!(!effects
+            .iter()
+            .any(|e| matches!(e, Effect::PersistMissedCall { .. })));
         assert!(sm.get("c1").is_none());
     }
 
@@ -1108,13 +1113,16 @@ mod tests {
             call_id: "c1".into(),
             reason: "busy".into(),
         });
-        assert!(effects.iter().any(|e| matches!(e, Effect::CancelTimer { .. })));
-        assert!(effects.iter().any(|e| matches!(e, Effect::DeletePersistedCall { .. })));
-        assert!(
-            effects
-                .iter()
-                .any(|e| matches!(e, Effect::Notify(TransportNotification::CallDeclined { .. })))
-        );
+        assert!(effects
+            .iter()
+            .any(|e| matches!(e, Effect::CancelTimer { .. })));
+        assert!(effects
+            .iter()
+            .any(|e| matches!(e, Effect::DeletePersistedCall { .. })));
+        assert!(effects.iter().any(|e| matches!(
+            e,
+            Effect::Notify(TransportNotification::CallDeclined { .. })
+        )));
         assert!(sm.get("c1").is_none(), "call removed after decline");
     }
 
@@ -1125,12 +1133,13 @@ mod tests {
         let effects = sm.apply(CallEvent::LocalDialingTimeout {
             call_id: "c1".into(),
         });
-        assert!(effects.iter().any(|e| matches!(e, Effect::PersistMissedCall { .. })));
-        assert!(
-            effects
-                .iter()
-                .any(|e| matches!(e, Effect::Notify(TransportNotification::CallTimedOut { .. })))
-        );
+        assert!(effects
+            .iter()
+            .any(|e| matches!(e, Effect::PersistMissedCall { .. })));
+        assert!(effects.iter().any(|e| matches!(
+            e,
+            Effect::Notify(TransportNotification::CallTimedOut { .. })
+        )));
         assert!(sm.get("c1").is_none());
     }
 
@@ -1161,11 +1170,9 @@ mod tests {
             call_id: "c1".into(),
             reason: "cancelled".into(),
         });
-        assert!(
-            effects
-                .iter()
-                .any(|e| matches!(e, Effect::Notify(TransportNotification::CallEnded { .. })))
-        );
+        assert!(effects
+            .iter()
+            .any(|e| matches!(e, Effect::Notify(TransportNotification::CallEnded { .. }))));
         assert!(sm.get("c1").is_none());
 
         // Incoming case
@@ -1175,11 +1182,9 @@ mod tests {
             call_id: "c2".into(),
             reason: "caller hung up".into(),
         });
-        assert!(
-            effects
-                .iter()
-                .any(|e| matches!(e, Effect::Notify(TransportNotification::CallEnded { .. })))
-        );
+        assert!(effects
+            .iter()
+            .any(|e| matches!(e, Effect::Notify(TransportNotification::CallEnded { .. }))));
         assert!(sm2.get("c2").is_none());
     }
 
@@ -1196,11 +1201,10 @@ mod tests {
         let effects = sm.apply(CallEvent::VoiceTransportUp {
             call_id: "c1".into(),
         });
-        assert!(
-            effects
-                .iter()
-                .any(|e| matches!(e, Effect::Notify(TransportNotification::CallConnected { .. })))
-        );
+        assert!(effects.iter().any(|e| matches!(
+            e,
+            Effect::Notify(TransportNotification::CallConnected { .. })
+        )));
         assert!(matches!(sm.get("c1"), Some(s) if matches!(s.status, CallStatus::Active)));
     }
 
@@ -1214,13 +1218,19 @@ mod tests {
             my_x25519_secret: sk,
             my_x25519_pub: pk,
         });
-        let _ = sm.apply(CallEvent::VoiceTransportUp { call_id: "c1".into() });
+        let _ = sm.apply(CallEvent::VoiceTransportUp {
+            call_id: "c1".into(),
+        });
         let effects = sm.apply(CallEvent::VoiceTransportDown {
             call_id: "c1".into(),
             reason: "network drop".into(),
         });
-        assert!(effects.iter().any(|e| matches!(e, Effect::StopVoiceSession { .. })));
-        assert!(effects.iter().any(|e| matches!(e, Effect::SendCallEnd { .. })));
+        assert!(effects
+            .iter()
+            .any(|e| matches!(e, Effect::StopVoiceSession { .. })));
+        assert!(effects
+            .iter()
+            .any(|e| matches!(e, Effect::SendCallEnd { .. })));
         assert!(sm.get("c1").is_none());
     }
 
@@ -1238,11 +1248,9 @@ mod tests {
         let effects = sm.apply(CallEvent::RingingReceived {
             call_id: "c1".into(),
         });
-        assert!(
-            effects
-                .iter()
-                .any(|e| matches!(e, Effect::Notify(TransportNotification::CallRinging { .. })))
-        );
+        assert!(effects
+            .iter()
+            .any(|e| matches!(e, Effect::Notify(TransportNotification::CallRinging { .. }))));
     }
 
     #[test]
@@ -1291,7 +1299,9 @@ mod tests {
             from: "bob".into(),
             peer_x25519_pub: bob_pub,
         });
-        let effects = sm.apply(CallEvent::LocalDialingTimeout { call_id: "c1".into() });
+        let effects = sm.apply(CallEvent::LocalDialingTimeout {
+            call_id: "c1".into(),
+        });
         assert!(effects.is_empty());
     }
 
@@ -1301,7 +1311,9 @@ mod tests {
         let _ = sm.apply(fresh_event_local_start("c1", "bob", CallKind::Audio));
         assert!(matches!(sm.get("c1"), Some(s) if matches!(s.status, CallStatus::Outgoing)));
 
-        let _ = sm.apply(CallEvent::RingingReceived { call_id: "c1".into() });
+        let _ = sm.apply(CallEvent::RingingReceived {
+            call_id: "c1".into(),
+        });
         assert!(matches!(sm.get("c1"), Some(s) if matches!(s.status, CallStatus::Outgoing)));
 
         let (_, bob_pub) = fresh_keypair();
@@ -1312,7 +1324,9 @@ mod tests {
         });
         assert!(matches!(sm.get("c1"), Some(s) if matches!(s.status, CallStatus::Connecting)));
 
-        let _ = sm.apply(CallEvent::VoiceTransportUp { call_id: "c1".into() });
+        let _ = sm.apply(CallEvent::VoiceTransportUp {
+            call_id: "c1".into(),
+        });
         assert!(matches!(sm.get("c1"), Some(s) if matches!(s.status, CallStatus::Active)));
 
         let _ = sm.apply(CallEvent::EndReceived {

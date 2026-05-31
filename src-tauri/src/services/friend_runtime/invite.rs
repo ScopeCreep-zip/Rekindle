@@ -76,4 +76,3 @@ pub async fn setup_invite_contact(
         }
     }
 }
-

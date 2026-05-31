@@ -38,10 +38,7 @@ impl VideoDeps for VideoAdapter {
 
     fn community_signing_key(&self, community_id: &str) -> Option<SigningKey> {
         let secret = (*self.state.identity_secret.lock())?;
-        Some(rekindle_crypto::group::pseudonym::derive_community_pseudonym(
-            &secret,
-            community_id,
-        ))
+        Some(rekindle_crypto::group::pseudonym::derive_community_pseudonym(&secret, community_id))
     }
 
     fn send_to_mesh(

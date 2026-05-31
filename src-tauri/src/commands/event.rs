@@ -12,10 +12,7 @@ use tauri::State;
 use crate::state::SharedState;
 
 #[tauri::command]
-pub async fn event_resume(
-    state: State<'_, SharedState>,
-    last_cursor: u64,
-) -> Result<u64, String> {
+pub async fn event_resume(state: State<'_, SharedState>, last_cursor: u64) -> Result<u64, String> {
     Ok(crate::services::event_resume_runtime::event_resume_inner(
         state.inner(),
         last_cursor,

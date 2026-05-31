@@ -120,10 +120,7 @@ pub trait DmStore: Send + Sync {
         invite: DmInvitePending,
     ) -> Result<(), DmError>;
 
-    async fn list_conversations(
-        &self,
-        owner_key: &str,
-    ) -> Result<Vec<DmConversation>, DmError>;
+    async fn list_conversations(&self, owner_key: &str) -> Result<Vec<DmConversation>, DmError>;
 
     async fn load_messages(
         &self,
@@ -132,11 +129,7 @@ pub trait DmStore: Send + Sync {
         limit: i64,
     ) -> Result<Vec<DmMessageRecord>, DmError>;
 
-    async fn decline_invite(
-        &self,
-        owner_key: &str,
-        record_key: &str,
-    ) -> Result<(), DmError>;
+    async fn decline_invite(&self, owner_key: &str, record_key: &str) -> Result<(), DmError>;
 
     /// Read per-session metadata (my_subkey + pseudonym + slot_seed +
     /// is_group). Returns `None` if the conversation row is missing.
@@ -159,11 +152,7 @@ pub trait DmStore: Send + Sync {
     /// Insert a single message into `dm_messages` and bump the parent
     /// `dms.last_message_at`. Used by both outbound (own send) and
     /// inbound (received + decrypted) paths.
-    async fn persist_message(
-        &self,
-        owner_key: &str,
-        msg: DmMessageInsert,
-    ) -> Result<(), DmError>;
+    async fn persist_message(&self, owner_key: &str, msg: DmMessageInsert) -> Result<(), DmError>;
 
     /// Oldest message timestamp (seconds) within the last `lookback`
     /// sequences for a conversation. Used by the ratchet trigger to

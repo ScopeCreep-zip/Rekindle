@@ -101,10 +101,7 @@ pub(super) fn spawn_login_services(
             // ranges from peers who advertise them. The 15-second delay
             // inside the helper lets the presence poll populate
             // `history_ranges` first.
-            services::community::join::schedule_history_catchup(
-                Arc::clone(state),
-                community_id,
-            );
+            services::community::join::schedule_history_catchup(Arc::clone(state), community_id);
         }
     }
 

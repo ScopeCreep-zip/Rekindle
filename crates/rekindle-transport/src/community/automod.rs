@@ -32,10 +32,20 @@ pub struct AutoModRule {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "config")]
 pub enum AutoModTrigger {
-    MentionSpam { limit: u8 },
-    MessageSpam { per_interval: u8, interval_secs: u16 },
-    JoinFlood { per_interval: u8, interval_secs: u16 },
-    MessageSizeLimit { max_bytes: u32 },
+    MentionSpam {
+        limit: u8,
+    },
+    MessageSpam {
+        per_interval: u8,
+        interval_secs: u16,
+    },
+    JoinFlood {
+        per_interval: u8,
+        interval_secs: u16,
+    },
+    MessageSizeLimit {
+        max_bytes: u32,
+    },
 }
 
 /// What action to take when a rule triggers.
@@ -73,5 +83,9 @@ pub enum RaidAction {
     KickRecent,
 }
 
-fn default_join_threshold() -> u8 { 10 }
-fn default_join_window_secs() -> u16 { 60 }
+fn default_join_threshold() -> u8 {
+    10
+}
+fn default_join_window_secs() -> u16 {
+    60
+}

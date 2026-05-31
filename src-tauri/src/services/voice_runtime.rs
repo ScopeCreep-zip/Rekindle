@@ -76,7 +76,10 @@ pub fn apply_stage_audience_gate(state: &SharedState, community_id: &str, channe
         let Some(community) = communities.get(community_id) else {
             return;
         };
-        let Some(channel) = community.channels.iter().find(|channel| channel.id == channel_id)
+        let Some(channel) = community
+            .channels
+            .iter()
+            .find(|channel| channel.id == channel_id)
         else {
             return;
         };
@@ -176,4 +179,3 @@ pub fn server_mute_member_inner(
     );
     Ok(())
 }
-

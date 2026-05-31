@@ -73,7 +73,8 @@ pub(super) fn load_historical_channel_mek_impl(
     let keystore: tauri::State<'_, crate::keystore::KeystoreHandle> = adapter.app_handle.state();
     let guard = keystore.lock();
     let ks = guard.as_ref()?;
-    let mek = crate::keystore::load_channel_mek_generation(ks, community_id, channel_id, generation)?;
+    let mek =
+        crate::keystore::load_channel_mek_generation(ks, community_id, channel_id, generation)?;
     Some(MekSnapshot {
         generation: mek.generation(),
         key_bytes: *mek.as_bytes(),

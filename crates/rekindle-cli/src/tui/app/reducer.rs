@@ -36,7 +36,8 @@ impl App {
                             let _ = cb.set_text("");
                         }
                         self.clipboard_clear_at = None;
-                        self.notifications.push("Clipboard auto-cleared".into(), ToastLevel::Info);
+                        self.notifications
+                            .push("Clipboard auto-cleared".into(), ToastLevel::Info);
                     }
                 }
             }
@@ -64,7 +65,9 @@ impl App {
             }
             Action::ExitInputMode => {
                 self.nav.exit_input_mode();
-                self.nav.current_view_mut().focus_ring()
+                self.nav
+                    .current_view_mut()
+                    .focus_ring()
                     .set(crate::tui::focus::FocusId::MessageList);
             }
             Action::Cancel => {
@@ -77,7 +80,9 @@ impl App {
                 }
             }
             Action::ToggleHelp => self.nav.toggle_help(),
-            Action::Refresh => { let _ = self.nav.current_view_mut().update(Action::Refresh); }
+            Action::Refresh => {
+                let _ = self.nav.current_view_mut().update(Action::Refresh);
+            }
             Action::ToggleSidebar => {
                 self.nav.toggle_sidebar();
                 let _ = self.nav.current_view_mut().update(Action::ToggleSidebar);
@@ -101,46 +106,63 @@ impl App {
 
             // View transitions
             Action::ShowDashboard => {
-                self.nav.navigate(ViewKind::Dashboard, self.theme.use_unicode());
+                self.nav
+                    .navigate(ViewKind::Dashboard, self.theme.use_unicode());
                 self.load_dashboard_data();
             }
             Action::ShowIdentitySettings => {
-                self.nav.navigate(ViewKind::IdentitySettings, self.theme.use_unicode());
+                self.nav
+                    .navigate(ViewKind::IdentitySettings, self.theme.use_unicode());
                 self.load_dashboard_data(); // StatusSnapshot has identity + route data
             }
             Action::ShowChannel { community, channel } => {
-                let kind = ViewKind::ChannelWatch { community: community.clone(), channel: channel.clone() };
+                let kind = ViewKind::ChannelWatch {
+                    community: community.clone(),
+                    channel: channel.clone(),
+                };
                 self.nav.navigate(kind, self.theme.use_unicode());
                 self.load_channel_history(&community, &channel);
             }
             Action::ShowDmInbox => {
-                self.nav.navigate(ViewKind::DmInbox, self.theme.use_unicode());
+                self.nav
+                    .navigate(ViewKind::DmInbox, self.theme.use_unicode());
                 self.load_dm_inbox();
             }
             Action::ShowDmThread { peer_key } => {
-                self.nav.navigate(ViewKind::DmThread { peer_key }, self.theme.use_unicode());
+                self.nav
+                    .navigate(ViewKind::DmThread { peer_key }, self.theme.use_unicode());
             }
             Action::ShowFriendList => {
-                self.nav.navigate(ViewKind::FriendList, self.theme.use_unicode());
+                self.nav
+                    .navigate(ViewKind::FriendList, self.theme.use_unicode());
                 self.load_friend_list();
             }
             Action::ShowVoiceSession { community, channel }
             | Action::JoinVoice { community, channel } => {
-                self.nav.navigate(ViewKind::VoiceSession { community, channel }, self.theme.use_unicode());
+                self.nav.navigate(
+                    ViewKind::VoiceSession { community, channel },
+                    self.theme.use_unicode(),
+                );
             }
             Action::ShowDoctor => {
-                self.nav.navigate(ViewKind::Doctor, self.theme.use_unicode());
+                self.nav
+                    .navigate(ViewKind::Doctor, self.theme.use_unicode());
                 self.load_dashboard_data(); // StatusSnapshot includes checks
             }
             Action::ShowCommunityInfo { community } => {
-                let kind = ViewKind::CommunityInfo { community: community.clone() };
+                let kind = ViewKind::CommunityInfo {
+                    community: community.clone(),
+                };
                 self.nav.navigate(kind, self.theme.use_unicode());
                 self.load_community_info(&community);
             }
 
             // Overlays
             Action::OpenOverlay(kind) => self.nav.open_overlay(kind),
-            Action::CloseOverlay => { self.nav.close_overlay(); self.search.close(); }
+            Action::CloseOverlay => {
+                self.nav.close_overlay();
+                self.search.close();
+            }
             Action::ConfirmOverlay => {
                 if self.confirm.is_confirmed() {
                     if let Some(deferred) = self.pending_confirm_action.take() {
@@ -156,16 +178,23 @@ impl App {
             }
             Action::LeaveVoice => {
                 if self.pending_confirm_action.is_some() {
-                    self.nav.navigate(ViewKind::Dashboard, self.theme.use_unicode());
-                    self.notifications.push("Left voice channel".into(), ToastLevel::Info);
+                    self.nav
+                        .navigate(ViewKind::Dashboard, self.theme.use_unicode());
+                    self.notifications
+                        .push("Left voice channel".into(), ToastLevel::Info);
                     self.pending_confirm_action = None;
                 } else {
                     self.pending_confirm_action = Some(Action::LeaveVoice);
-                    self.confirm.show("Leave voice channel?", "You will be disconnected.");
+                    self.confirm
+                        .show("Leave voice channel?", "You will be disconnected.");
                 }
             }
-            Action::ToggleMute => { let _ = self.nav.current_view_mut().update(Action::ToggleMute); }
-            Action::ToggleDeafen => { let _ = self.nav.current_view_mut().update(Action::ToggleDeafen); }
+            Action::ToggleMute => {
+                let _ = self.nav.current_view_mut().update(Action::ToggleMute);
+            }
+            Action::ToggleDeafen => {
+                let _ = self.nav.current_view_mut().update(Action::ToggleDeafen);
+            }
 
             // Friend operations
             Action::AcceptFriendRequest(id) => self.spawn_accept_friend(id),
@@ -173,12 +202,17 @@ impl App {
             Action::RemoveFriend { ref peer_key } => {
                 if self.pending_confirm_action.is_some() {
                     self.notifications.push(
-                        format!("Removed friend {}", crate::helpers::abbreviate_key(peer_key)),
+                        format!(
+                            "Removed friend {}",
+                            crate::helpers::abbreviate_key(peer_key)
+                        ),
                         ToastLevel::Info,
                     );
                     self.pending_confirm_action = None;
                 } else {
-                    self.pending_confirm_action = Some(Action::RemoveFriend { peer_key: peer_key.clone() });
+                    self.pending_confirm_action = Some(Action::RemoveFriend {
+                        peer_key: peer_key.clone(),
+                    });
                     self.confirm.show(
                         format!("Remove {}?", crate::helpers::abbreviate_key(peer_key)),
                         "They will no longer see your messages or presence.",
@@ -188,18 +222,28 @@ impl App {
             Action::LeaveCommunity { ref community } => {
                 if self.pending_confirm_action.is_some() {
                     let name = self.community_name(community).to_string();
-                    self.notifications.push(format!("Left '{name}'"), ToastLevel::Info);
+                    self.notifications
+                        .push(format!("Left '{name}'"), ToastLevel::Info);
                     self.pending_confirm_action = None;
-                    self.nav.navigate(ViewKind::Dashboard, self.theme.use_unicode());
+                    self.nav
+                        .navigate(ViewKind::Dashboard, self.theme.use_unicode());
                 } else {
                     let name = self.community_name(community).to_string();
-                    self.pending_confirm_action = Some(Action::LeaveCommunity { community: community.clone() });
-                    self.confirm.show(format!("Leave '{name}'?"), "You will lose access to all channels.");
+                    self.pending_confirm_action = Some(Action::LeaveCommunity {
+                        community: community.clone(),
+                    });
+                    self.confirm.show(
+                        format!("Leave '{name}'?"),
+                        "You will lose access to all channels.",
+                    );
                 }
             }
             Action::RequestMek { community, channel } => {
                 self.notifications.push(
-                    format!("MEK requested for #{channel} in {}", crate::helpers::abbreviate_key(&community)),
+                    format!(
+                        "MEK requested for #{channel} in {}",
+                        crate::helpers::abbreviate_key(&community)
+                    ),
                     ToastLevel::Info,
                 );
             }
@@ -210,7 +254,8 @@ impl App {
                     match arboard::Clipboard::new() {
                         Ok(cb) => self.clipboard = Some(cb),
                         Err(e) => {
-                            self.notifications.push(format!("Clipboard unavailable: {e}"), ToastLevel::Warning);
+                            self.notifications
+                                .push(format!("Clipboard unavailable: {e}"), ToastLevel::Warning);
                             return Ok(());
                         }
                     }
@@ -218,17 +263,30 @@ impl App {
                 let cb = self.clipboard.as_mut().expect("initialized above");
                 match cb.set_text(text) {
                     Ok(()) => {
-                        self.notifications.push("Copied to clipboard (auto-clear in 30s)".into(), ToastLevel::Info);
-                        self.clipboard_clear_at = Some(std::time::Instant::now() + std::time::Duration::from_secs(30));
+                        self.notifications.push(
+                            "Copied to clipboard (auto-clear in 30s)".into(),
+                            ToastLevel::Info,
+                        );
+                        self.clipboard_clear_at =
+                            Some(std::time::Instant::now() + std::time::Duration::from_secs(30));
                     }
-                    Err(e) => self.notifications.push(format!("Clipboard write failed: {e}"), ToastLevel::Warning),
+                    Err(e) => self
+                        .notifications
+                        .push(format!("Clipboard write failed: {e}"), ToastLevel::Warning),
                 }
             }
 
             Action::SetPresence { status, message } => {
                 let msg = message.as_deref().unwrap_or("");
                 self.notifications.push(
-                    format!("Status set to {status}{}", if msg.is_empty() { String::new() } else { format!(" — {msg}") }),
+                    format!(
+                        "Status set to {status}{}",
+                        if msg.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" — {msg}")
+                        }
+                    ),
                     ToastLevel::Success,
                 );
             }
@@ -238,27 +296,41 @@ impl App {
                 self.loading_spinner.stop();
                 // Extract identity and community caches before forwarding to view
                 match &*result {
-                    super::super::action::CommandResult::IdentityLoaded { public_key, display_name } => {
+                    super::super::action::CommandResult::IdentityLoaded {
+                        public_key,
+                        display_name,
+                    } => {
                         self.cached_identity = Some(super::CachedIdentity {
                             public_key: public_key.clone(),
                             display_name: display_name.clone(),
                         });
-                        self.nav.dashboard_mut().set_identity(public_key, display_name);
+                        self.nav
+                            .dashboard_mut()
+                            .set_identity(public_key, display_name);
                     }
                     super::super::action::CommandResult::CommunityListLoaded { communities } => {
-                        self.cached_communities = communities.iter().map(|c| super::CachedCommunity {
-                            governance_key: c.governance_key.clone(),
-                            name: c.name.clone(),
-                        }).collect();
+                        self.cached_communities = communities
+                            .iter()
+                            .map(|c| super::CachedCommunity {
+                                governance_key: c.governance_key.clone(),
+                                name: c.name.clone(),
+                            })
+                            .collect();
                     }
                     _ => {}
                 }
                 self.nav.current_view_mut().on_command_result(*result)?;
             }
             Action::CommandFailed { context, error } => {
-                self.notifications.push(format!("{context}: {error}"), ToastLevel::Error);
+                self.notifications
+                    .push(format!("{context}: {error}"), ToastLevel::Error);
             }
-            Action::SendChannelMessage { community, channel, text, reply_to } => {
+            Action::SendChannelMessage {
+                community,
+                channel,
+                text,
+                reply_to,
+            } => {
                 self.spawn_send_channel_message(&community, &channel, text, reply_to);
             }
             Action::SendDm { peer_key, text } => {

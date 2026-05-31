@@ -87,10 +87,7 @@ pub enum SocialEvent {
     },
     /// A community event was deleted.
     /// Triggered by: gossip `ControlPayload::EventDeleted`.
-    EventDeleted {
-        community: String,
-        event_id: String,
-    },
+    EventDeleted { community: String, event_id: String },
     /// Someone RSVP'd to a community event.
     /// Triggered by: gossip `ControlPayload::EventRsvpChanged`.
     EventRsvpChanged {

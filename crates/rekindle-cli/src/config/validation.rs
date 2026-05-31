@@ -316,7 +316,10 @@ mod tests {
         for stability in ["low_latency", "reliable"] {
             let mut cfg = Config::default();
             cfg.network.safety.text.stability = stability.into();
-            assert!(validate(&cfg).is_ok(), "stability '{stability}' should be valid");
+            assert!(
+                validate(&cfg).is_ok(),
+                "stability '{stability}' should be valid"
+            );
         }
     }
 

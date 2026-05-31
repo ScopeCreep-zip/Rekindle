@@ -23,22 +23,22 @@ pub mod store; // Phase 13 — DmStore trait + SqliteDmStore impl.
 pub mod video; // Phase 13 — DmVideoReassemblyState (pure buffer ops).
 
 pub use deps::{DmDeps, DmEvent, DmMekCache};
-pub use ingest::{
-    handle_incoming_dm_decline, handle_incoming_dm_invite, handle_incoming_dm_leave,
-    handle_incoming_group_dm_invite,
-};
-pub use receiver::handle_dm_subkey_change;
-pub use sender::send_dm_message;
-pub use session::{accept_dm_invite, start_dm};
 pub use envelope::{
     build_envelope, decrypt_body, parse_envelope, DmCiphertext, DM_RATCHET_MESSAGE_INTERVAL,
     DM_RATCHET_TIME_INTERVAL_SECS,
 };
 pub use error::DmError;
+pub use ingest::{
+    handle_incoming_dm_decline, handle_incoming_dm_invite, handle_incoming_dm_leave,
+    handle_incoming_group_dm_invite,
+};
 pub use invite::{DmInvite, GroupDmInvite, GroupDmParticipant};
 pub use mek::{derive_dm_mek, ratchet_dm_mek, DmMek, DmMekChain, MEK_LEN};
+pub use receiver::handle_dm_subkey_change;
+pub use sender::send_dm_message;
+pub use session::{accept_dm_invite, start_dm};
 pub use store::{
-    DmConversation, DmInviteMeta, DmInvitePending, DmMessageInsert, DmMessageRecord,
-    DmSessionMeta, DmStore, SqliteDmStore,
+    DmConversation, DmInviteMeta, DmInvitePending, DmMessageInsert, DmMessageRecord, DmSessionMeta,
+    DmStore, SqliteDmStore,
 };
 pub use video::{AssembledFrame, DmVideoReassemblyState, FRAGMENT_PAYLOAD_LIMIT};

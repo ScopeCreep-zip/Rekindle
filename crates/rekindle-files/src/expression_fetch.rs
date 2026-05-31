@@ -183,12 +183,12 @@ async fn fetch_and_cache_chunks<D: FilesDeps>(
     // `historical_channel_mek(generation)` — for expressions, the
     // governance state holds the current-generation offer and we
     // assume the community MEK matches.
-    let community_mek = deps.community_mek(community_id).ok_or_else(|| {
-        FilesError::MekUnavailable {
-            community: community_id.to_string(),
-            generation: 0,
-        }
-    })?;
+    let community_mek =
+        deps.community_mek(community_id)
+            .ok_or_else(|| FilesError::MekUnavailable {
+                community: community_id.to_string(),
+                generation: 0,
+            })?;
     let raw_fek = community_mek
         .decrypt(&offer.wrapped_fek)
         .map_err(|e| FilesError::Decrypt(format!("unwrap expression FEK: {e}")))?;

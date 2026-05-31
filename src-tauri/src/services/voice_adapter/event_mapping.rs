@@ -62,7 +62,8 @@ pub(super) fn emit_local_joined_impl(
     public_key: &str,
     display_name: &str,
 ) {
-    crate::event_dispatch::dispatch(app, 
+    crate::event_dispatch::dispatch(
+        app,
         "voice-event",
         &VoiceEvent::LocalJoined {
             channel_id: channel_id.to_string(),
@@ -74,20 +75,23 @@ pub(super) fn emit_local_joined_impl(
             .to_string(),
         },
     );
-    crate::event_dispatch::dispatch(app, 
+    crate::event_dispatch::dispatch(
+        app,
         "voice-event",
         &VoiceEvent::UserJoined {
             public_key: public_key.to_string(),
             display_name: display_name.to_string(),
         },
     );
-    crate::event_dispatch::dispatch(app, 
+    crate::event_dispatch::dispatch(
+        app,
         "voice-event",
         &VoiceEvent::ConnectionQuality {
             quality: "good".to_string(),
         },
     );
-    crate::event_dispatch::dispatch(app, 
+    crate::event_dispatch::dispatch(
+        app,
         "voice-event",
         &VoiceEvent::UserSpeaking {
             public_key: public_key.to_string(),

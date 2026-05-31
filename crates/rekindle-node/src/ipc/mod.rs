@@ -32,26 +32,25 @@
 // [RC-2] Deny unwrap in this module tree for IPC safety.
 // Note: this is enforced by workspace clippy config (clippy::unwrap_used = deny).
 
+pub mod client;
 pub mod error;
 pub mod framing;
-pub mod transport;
 pub mod message;
-pub mod protocol;
-pub mod noise_keys;
 pub mod noise;
+pub mod noise_keys;
+pub mod protocol;
 pub mod registry;
 pub mod server;
-pub mod client;
+pub mod transport;
 
 // Re-exports for convenience.
+pub use client::BusClient;
 pub use error::{IpcError, Result};
-pub use framing::{encode_frame, decode_frame, read_frame, write_frame, MAX_FRAME_SIZE};
-pub use message::{Message, MessageContext, SecurityLevel, AgentType, Timestamp, WIRE_VERSION};
-pub use protocol::{IpcRequest, IpcResponse, BusPayload, SubscriptionFilter};
-pub use noise_keys::{ZeroizingKeypair, generate_keypair, NOISE_PARAMS};
+pub use framing::{decode_frame, encode_frame, read_frame, write_frame, MAX_FRAME_SIZE};
+pub use message::{AgentType, Message, MessageContext, SecurityLevel, Timestamp, WIRE_VERSION};
 pub use noise::NoiseTransport;
+pub use noise_keys::{generate_keypair, ZeroizingKeypair, NOISE_PARAMS};
+pub use protocol::{BusPayload, IpcRequest, IpcResponse, SubscriptionFilter};
 pub use registry::ClearanceRegistry;
 pub use server::BusServer;
-pub use client::BusClient;
-pub use transport::{PeerCredentials, extract_ucred, socket_path, runtime_dir};
-
+pub use transport::{extract_ucred, runtime_dir, socket_path, PeerCredentials};

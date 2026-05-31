@@ -56,8 +56,7 @@ fn synth_frame() -> Vec<f32> {
 }
 
 fn bench_opus_encode_20ms(c: &mut Criterion) {
-    let mut codec =
-        OpusCodec::new(SAMPLE_RATE, CHANNELS, FRAME_SAMPLES).expect("opus init");
+    let mut codec = OpusCodec::new(SAMPLE_RATE, CHANNELS, FRAME_SAMPLES).expect("opus init");
     let frame = synth_frame();
     c.benchmark_group("opus_encode_20ms")
         .throughput(Throughput::Elements(1))
@@ -69,8 +68,7 @@ fn bench_opus_encode_20ms(c: &mut Criterion) {
 }
 
 fn bench_opus_decode_20ms(c: &mut Criterion) {
-    let mut codec =
-        OpusCodec::new(SAMPLE_RATE, CHANNELS, FRAME_SAMPLES).expect("opus init");
+    let mut codec = OpusCodec::new(SAMPLE_RATE, CHANNELS, FRAME_SAMPLES).expect("opus init");
     let frame = synth_frame();
     let encoded = codec.encode(&frame).expect("encode");
     c.benchmark_group("opus_decode_20ms")
@@ -110,23 +108,19 @@ fn bench_mixer(c: &mut Criterion) {
     let frame = synth_frame();
     for sources in [1, 2, 4, 8usize] {
         group.throughput(Throughput::Elements(sources as u64));
-        group.bench_with_input(
-            BenchmarkId::from_parameter(sources),
-            &sources,
-            |b, &n| {
-                let mixer = AudioMixer::new(CHANNELS);
-                let frames: Vec<Vec<f32>> = (0..n).map(|_| frame.clone()).collect();
-                let pseudonyms: Vec<String> = (0..n).map(|i| format!("p{i}")).collect();
-                b.iter(|| {
-                    let streams: Vec<(&str, &[f32])> = pseudonyms
-                        .iter()
-                        .zip(frames.iter())
-                        .map(|(p, f)| (p.as_str(), f.as_slice()))
-                        .collect();
-                    let _ = mixer.mix(&streams);
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::from_parameter(sources), &sources, |b, &n| {
+            let mixer = AudioMixer::new(CHANNELS);
+            let frames: Vec<Vec<f32>> = (0..n).map(|_| frame.clone()).collect();
+            let pseudonyms: Vec<String> = (0..n).map(|i| format!("p{i}")).collect();
+            b.iter(|| {
+                let streams: Vec<(&str, &[f32])> = pseudonyms
+                    .iter()
+                    .zip(frames.iter())
+                    .map(|(p, f)| (p.as_str(), f.as_slice()))
+                    .collect();
+                let _ = mixer.mix(&streams);
+            });
+        });
     }
 }
 
@@ -138,10 +132,8 @@ fn bench_mixer(c: &mut Criterion) {
 /// decode lookahead) plus jitter target depth plus capture/playback
 /// buffers plus network RTT.
 fn bench_e2e_loopback(c: &mut Criterion) {
-    let mut encoder =
-        OpusCodec::new(SAMPLE_RATE, CHANNELS, FRAME_SAMPLES).expect("encoder init");
-    let mut decoder =
-        OpusCodec::new(SAMPLE_RATE, CHANNELS, FRAME_SAMPLES).expect("decoder init");
+    let mut encoder = OpusCodec::new(SAMPLE_RATE, CHANNELS, FRAME_SAMPLES).expect("encoder init");
+    let mut decoder = OpusCodec::new(SAMPLE_RATE, CHANNELS, FRAME_SAMPLES).expect("decoder init");
     let mut jb = JitterBuffer::new(60);
     let mixer = AudioMixer::new(CHANNELS);
     let frame = synth_frame();

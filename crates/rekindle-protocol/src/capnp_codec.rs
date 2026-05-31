@@ -850,10 +850,19 @@ pub mod conversation {
             )?,
             one_time_pre_key_id: pkb_reader.get_one_time_pre_key_id(),
             registration_id: pkb_reader.get_registration_id(),
-            pqpk_lr: pkb_reader.get_pqpk_lr().map_err(|e| capnp_err(&e))?.to_vec(),
-            pqpk_lr_sig: pkb_reader.get_pqpk_lr_sig().map_err(|e| capnp_err(&e))?.to_vec(),
+            pqpk_lr: pkb_reader
+                .get_pqpk_lr()
+                .map_err(|e| capnp_err(&e))?
+                .to_vec(),
+            pqpk_lr_sig: pkb_reader
+                .get_pqpk_lr_sig()
+                .map_err(|e| capnp_err(&e))?
+                .to_vec(),
             pqpk_ot: bytes_or_empty(pkb_reader.has_pqpk_ot(), pkb_reader.get_pqpk_ot())?,
-            pqpk_ot_sig: bytes_or_empty(pkb_reader.has_pqpk_ot_sig(), pkb_reader.get_pqpk_ot_sig())?,
+            pqpk_ot_sig: bytes_or_empty(
+                pkb_reader.has_pqpk_ot_sig(),
+                pkb_reader.get_pqpk_ot_sig(),
+            )?,
             pqpk_ot_id: pkb_reader.get_pqpk_ot_id(),
         };
 

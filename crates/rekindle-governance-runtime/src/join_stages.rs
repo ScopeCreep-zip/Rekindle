@@ -154,7 +154,10 @@ struct ClaimAttemptOutcome {
 /// M10.3 — joiner-side invite quota check runs before any slot write as
 /// defense-in-depth (reader-validates also drops over-quota
 /// `InviteCreated` entries at merge time).
-#[allow(clippy::too_many_arguments, reason = "Mirrors src-tauri signature; refactor into a context struct would propagate to every Phase 18 callsite without simplifying.")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Mirrors src-tauri signature; refactor into a context struct would propagate to every Phase 18 callsite without simplifying."
+)]
 pub async fn claim_registry_slot<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
@@ -213,7 +216,10 @@ pub async fn claim_registry_slot<D: GovernanceRuntimeDeps>(
     ))
 }
 
-#[allow(clippy::too_many_arguments, reason = "Mirrors src-tauri inner-loop signature; passing a context struct would still need every field at the call site.")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Mirrors src-tauri inner-loop signature; passing a context struct would still need every field at the call site."
+)]
 async fn try_claim_in_candidates<D: GovernanceRuntimeDeps>(
     deps: &D,
     invite_registry_key: &str,
@@ -263,12 +269,11 @@ async fn try_claim_in_candidates<D: GovernanceRuntimeDeps>(
         };
 
         let global_slot = candidate.slot_range_start + local_subkey;
-        let slot_kp = derive::derive_slot_keypair(slot_seed_bytes, global_slot)
-            .map_err(|e| GovernanceRuntimeError::Crypto(format!("slot keypair derivation failed: {e}")))?;
-        let slot_kp_str = deps.format_writer_keypair(
-            slot_kp.verifying_key().to_bytes(),
-            slot_kp.to_bytes(),
-        );
+        let slot_kp = derive::derive_slot_keypair(slot_seed_bytes, global_slot).map_err(|e| {
+            GovernanceRuntimeError::Crypto(format!("slot keypair derivation failed: {e}"))
+        })?;
+        let slot_kp_str =
+            deps.format_writer_keypair(slot_kp.verifying_key().to_bytes(), slot_kp.to_bytes());
 
         let mut presence = MemberPresence {
             pseudonym_key: my_pseudo.clone(),
@@ -327,7 +332,10 @@ async fn try_claim_in_candidates<D: GovernanceRuntimeDeps>(
     })
 }
 
-#[allow(clippy::too_many_arguments, reason = "Mirrors src-tauri inner-loop signature; the underlying state is the join cursor itself.")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Mirrors src-tauri inner-loop signature; the underlying state is the join cursor itself."
+)]
 async fn auto_expand_and_retry<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
@@ -447,12 +455,8 @@ pub async fn collect_initial_presence_state<D: GovernanceRuntimeDeps>(
         let Ok(sig_arr): Result<[u8; 64], _> = row.signature.as_slice().try_into() else {
             continue;
         };
-        if derive::verify_pseudonym_signature(
-            &row.pseudonym_key.0,
-            &row.signing_bytes(),
-            &sig_arr,
-        )
-        .is_err()
+        if derive::verify_pseudonym_signature(&row.pseudonym_key.0, &row.signing_bytes(), &sig_arr)
+            .is_err()
         {
             continue;
         }

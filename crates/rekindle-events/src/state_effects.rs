@@ -7,10 +7,8 @@
 //! Pure state mutation — no I/O, no logging, no event emission.
 
 use rekindle_types::subscription_events::{
-    SubscriptionEvent, UnreadContext,
-    ChannelMessageEvent, FriendEvent,
-    TypingEvent, TypingContext,
-    PresenceEvent, VoiceEvent, MembershipEvent,
+    ChannelMessageEvent, FriendEvent, MembershipEvent, PresenceEvent, SubscriptionEvent,
+    TypingContext, TypingEvent, UnreadContext, VoiceEvent,
 };
 
 use crate::state::SubscriptionState;
@@ -22,19 +20,29 @@ pub fn apply(state: &mut SubscriptionState, event: &SubscriptionEvent) -> Vec<Su
 
     match event {
         // ── Unread: channel messages ────────────────────────────
-        SubscriptionEvent::ChannelMessage(ChannelMessageEvent::New { community, channel, .. }) => {
+        SubscriptionEvent::ChannelMessage(ChannelMessageEvent::New {
+            community, channel, ..
+        }) => {
             let count = state.unread.increment_channel(community, channel);
             extra.push(SubscriptionEvent::UnreadChanged {
-                context: UnreadContext::Channel { community: community.clone(), channel: channel.clone() },
+                context: UnreadContext::Channel {
+                    community: community.clone(),
+                    channel: channel.clone(),
+                },
                 count,
             });
         }
 
         // ── Unread: DMs ─────────────────────────────────────────
-        SubscriptionEvent::ChannelMessage(ChannelMessageEvent::DirectMessageReceived { peer_key, .. }) => {
+        SubscriptionEvent::ChannelMessage(ChannelMessageEvent::DirectMessageReceived {
+            peer_key,
+            ..
+        }) => {
             let count = state.unread.increment_dm(peer_key);
             extra.push(SubscriptionEvent::UnreadChanged {
-                context: UnreadContext::Dm { peer_key: peer_key.clone() },
+                context: UnreadContext::Dm {
+                    peer_key: peer_key.clone(),
+                },
                 count,
             });
         }
@@ -50,67 +58,133 @@ pub fn apply(state: &mut SubscriptionState, event: &SubscriptionEvent) -> Vec<Su
 
         // ── Typing: channel ─────────────────────────────────────
         SubscriptionEvent::Typing(TypingEvent::Started {
-            context: TypingContext::Channel { community, channel }, who,
+            context: TypingContext::Channel { community, channel },
+            who,
         }) => {
             state.typing.set_channel_typing(community, channel, who);
         }
 
         // ── Typing: DM ──────────────────────────────────────────
         SubscriptionEvent::Typing(TypingEvent::Started {
-            context: TypingContext::Dm { .. }, who,
+            context: TypingContext::Dm { .. },
+            who,
         }) => {
             state.typing.set_dm_typing(who);
         }
         SubscriptionEvent::Typing(TypingEvent::Stopped {
-            context: TypingContext::Dm { .. }, who,
+            context: TypingContext::Dm { .. },
+            who,
         }) => {
             state.typing.remove_dm_peer(who);
         }
 
         // ── Presence: community member ──────────────────────────
         SubscriptionEvent::Presence(PresenceEvent::CommunityMemberChanged {
-            community, pseudonym, status, game_name, game_id,
+            community,
+            pseudonym,
+            status,
+            game_name,
+            game_id,
         }) => {
-            state.presence.set_member(community, pseudonym, status, game_name.as_deref(), *game_id);
+            state
+                .presence
+                .set_member(community, pseudonym, status, game_name.as_deref(), *game_id);
         }
 
         // ── Presence: friend/DM peer ────────────────────────────
         SubscriptionEvent::Presence(PresenceEvent::FriendChanged {
-            peer_key, status, game_name,
+            peer_key,
+            status,
+            game_name,
         }) => {
-            state.presence.set_friend(peer_key, status, game_name.as_deref());
+            state
+                .presence
+                .set_friend(peer_key, status, game_name.as_deref());
         }
 
         // ── Voice: join ─────────────────────────────────────────
-        SubscriptionEvent::Voice(VoiceEvent::Joined { community, channel, pseudonym }) => {
-            state.voice.join(community, channel, pseudonym, rekindle_utils::timestamp_ms());
+        SubscriptionEvent::Voice(VoiceEvent::Joined {
+            community,
+            channel,
+            pseudonym,
+        }) => {
+            state.voice.join(
+                community,
+                channel,
+                pseudonym,
+                rekindle_utils::timestamp_ms(),
+            );
         }
 
         // ── Voice: leave ────────────────────────────────────────
-        SubscriptionEvent::Voice(VoiceEvent::Left { community, channel, pseudonym }) => {
+        SubscriptionEvent::Voice(VoiceEvent::Left {
+            community,
+            channel,
+            pseudonym,
+        }) => {
             state.voice.leave(community, channel, pseudonym);
         }
 
         // ── Voice: mute/deafen ──────────────────────────────────
-        SubscriptionEvent::Voice(VoiceEvent::MuteChanged { community, channel, target_pseudonym, muted }) => {
-            state.voice.update_mute_deafen(community, channel, target_pseudonym, Some(*muted), None);
+        SubscriptionEvent::Voice(VoiceEvent::MuteChanged {
+            community,
+            channel,
+            target_pseudonym,
+            muted,
+        }) => {
+            state.voice.update_mute_deafen(
+                community,
+                channel,
+                target_pseudonym,
+                Some(*muted),
+                None,
+            );
         }
-        SubscriptionEvent::Voice(VoiceEvent::DeafenChanged { community, channel, target_pseudonym, deafened }) => {
-            state.voice.update_mute_deafen(community, channel, target_pseudonym, None, Some(*deafened));
+        SubscriptionEvent::Voice(VoiceEvent::DeafenChanged {
+            community,
+            channel,
+            target_pseudonym,
+            deafened,
+        }) => {
+            state.voice.update_mute_deafen(
+                community,
+                channel,
+                target_pseudonym,
+                None,
+                Some(*deafened),
+            );
         }
 
         // ── Membership: remove presence on leave/kick/ban ───────
         SubscriptionEvent::Membership(
-            MembershipEvent::Left { community, pseudonym }
-            | MembershipEvent::Removed { community, pseudonym }
+            MembershipEvent::Left {
+                community,
+                pseudonym,
+            }
+            | MembershipEvent::Removed {
+                community,
+                pseudonym,
+            },
         ) => {
-            state.presence.members.remove(&(community.clone(), pseudonym.clone()));
+            state
+                .presence
+                .members
+                .remove(&(community.clone(), pseudonym.clone()));
         }
         SubscriptionEvent::Membership(
-            MembershipEvent::Kicked { community, target_pseudonym }
-            | MembershipEvent::Banned { community, target_pseudonym }
+            MembershipEvent::Kicked {
+                community,
+                target_pseudonym,
+            }
+            | MembershipEvent::Banned {
+                community,
+                target_pseudonym,
+            },
         ) => {
-            state.presence.members.remove(&(community.clone(), target_pseudonym.clone()));
+            state
+                .presence
+                .members
+                .remove(&(community.clone(), target_pseudonym.clone()));
         }
 
         // ── Friend: cleanup on unfriend ─────────────────────────

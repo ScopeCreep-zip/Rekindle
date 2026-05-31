@@ -170,7 +170,9 @@ pub fn print_doctor_checks(
 
         writeln!(stdout, "  {icon} {:<35} {}", check.id, check.value)?;
 
-        if check.status != rekindle_types::display::CheckStatus::Pass && !check.description.is_empty() {
+        if check.status != rekindle_types::display::CheckStatus::Pass
+            && !check.description.is_empty()
+        {
             writeln!(stdout, "    {}", check.description)?;
         }
     }
@@ -197,7 +199,9 @@ pub fn print_doctor_checks(
 ///
 /// Format: `[N/M] Label`
 pub fn step_header(step: u32, total: u32, label: &str) -> anyhow::Result<()> {
-    if is_quiet() { return Ok(()); }
+    if is_quiet() {
+        return Ok(());
+    }
     let mut stdout = std::io::stdout().lock();
     writeln!(stdout, "\n  [{step}/{total}] {label}")?;
     Ok(())
@@ -205,7 +209,9 @@ pub fn step_header(step: u32, total: u32, label: &str) -> anyhow::Result<()> {
 
 /// Print a step completion message.
 pub fn step_done(msg: &str) -> anyhow::Result<()> {
-    if is_quiet() { return Ok(()); }
+    if is_quiet() {
+        return Ok(());
+    }
     let mut stdout = std::io::stdout().lock();
     writeln!(stdout, "        {msg} ... done")?;
     Ok(())
@@ -213,7 +219,9 @@ pub fn step_done(msg: &str) -> anyhow::Result<()> {
 
 /// Print a step skip message.
 pub fn step_skip(msg: &str) -> anyhow::Result<()> {
-    if is_quiet() { return Ok(()); }
+    if is_quiet() {
+        return Ok(());
+    }
     let mut stdout = std::io::stdout().lock();
     writeln!(stdout, "        {msg} ... (already done)")?;
     Ok(())

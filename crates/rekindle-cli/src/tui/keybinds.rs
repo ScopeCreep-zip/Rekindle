@@ -296,7 +296,9 @@ fn map_action(action: &str) -> Option<Action> {
         "EnterInputMode" => Some(Action::EnterInputMode),
         "ExitInputMode" => Some(Action::ExitInputMode),
         "InputSubmit" => Some(Action::InputSubmit),
-        "OpenCommandPalette" => Some(Action::OpenSearch(super::action::SearchMode::CommandPalette)),
+        "OpenCommandPalette" => Some(Action::OpenSearch(
+            super::action::SearchMode::CommandPalette,
+        )),
         "ShowDashboard" => Some(Action::ShowDashboard),
         "ShowFriendList" => Some(Action::ShowFriendList),
         "ShowDmInbox" => Some(Action::ShowDmInbox),
@@ -330,7 +332,10 @@ mod tests {
     #[test]
     fn classify_q_quits() {
         let store = KeymapStore::load().unwrap();
-        let action = store.classify(key(KeyCode::Char('q'), KeyModifiers::NONE), KeymapContext::Default);
+        let action = store.classify(
+            key(KeyCode::Char('q'), KeyModifiers::NONE),
+            KeymapContext::Default,
+        );
         assert!(matches!(action, Some(Action::Quit)));
     }
 
@@ -349,11 +354,17 @@ mod tests {
         let store = KeymapStore::load().unwrap();
 
         // 'q' in Default context → Quit
-        let quit = store.classify(key(KeyCode::Char('q'), KeyModifiers::NONE), KeymapContext::Default);
+        let quit = store.classify(
+            key(KeyCode::Char('q'), KeyModifiers::NONE),
+            KeymapContext::Default,
+        );
         assert!(matches!(quit, Some(Action::Quit)));
 
         // 'q' in Input context → None (not bound in Input)
-        let none = store.classify(key(KeyCode::Char('q'), KeyModifiers::NONE), KeymapContext::Input);
+        let none = store.classify(
+            key(KeyCode::Char('q'), KeyModifiers::NONE),
+            KeymapContext::Input,
+        );
         assert!(none.is_none());
     }
 
@@ -362,7 +373,11 @@ mod tests {
         let store = KeymapStore::load().unwrap();
 
         // Esc maps to Cancel in Default, Overlay, and Search contexts
-        for ctx in [KeymapContext::Default, KeymapContext::Overlay, KeymapContext::Search] {
+        for ctx in [
+            KeymapContext::Default,
+            KeymapContext::Overlay,
+            KeymapContext::Search,
+        ] {
             let action = store.classify(key(KeyCode::Esc, KeyModifiers::NONE), ctx);
             assert!(
                 matches!(action, Some(Action::Cancel)),
@@ -382,28 +397,40 @@ mod tests {
     #[test]
     fn classify_tab_focuses_next() {
         let store = KeymapStore::load().unwrap();
-        let action = store.classify(key(KeyCode::Tab, KeyModifiers::NONE), KeymapContext::Default);
+        let action = store.classify(
+            key(KeyCode::Tab, KeyModifiers::NONE),
+            KeymapContext::Default,
+        );
         assert!(matches!(action, Some(Action::FocusNext)));
     }
 
     #[test]
     fn classify_shift_tab_focuses_prev() {
         let store = KeymapStore::load().unwrap();
-        let action = store.classify(key(KeyCode::BackTab, KeyModifiers::NONE), KeymapContext::Default);
+        let action = store.classify(
+            key(KeyCode::BackTab, KeyModifiers::NONE),
+            KeymapContext::Default,
+        );
         assert!(matches!(action, Some(Action::FocusPrev)));
     }
 
     #[test]
     fn classify_enter_in_input_submits() {
         let store = KeymapStore::load().unwrap();
-        let action = store.classify(key(KeyCode::Enter, KeyModifiers::NONE), KeymapContext::Input);
+        let action = store.classify(
+            key(KeyCode::Enter, KeyModifiers::NONE),
+            KeymapContext::Input,
+        );
         assert!(matches!(action, Some(Action::InputSubmit)));
     }
 
     #[test]
     fn classify_unknown_key_returns_none() {
         let store = KeymapStore::load().unwrap();
-        let action = store.classify(key(KeyCode::F(12), KeyModifiers::NONE), KeymapContext::Default);
+        let action = store.classify(
+            key(KeyCode::F(12), KeyModifiers::NONE),
+            KeymapContext::Default,
+        );
         assert!(action.is_none());
     }
 
@@ -415,8 +442,14 @@ mod tests {
 
         // Verify at least quit and help are present
         let descriptions: Vec<&str> = help.iter().map(|(_, d)| *d).collect();
-        assert!(descriptions.contains(&"Quit"), "should contain Quit binding");
-        assert!(descriptions.contains(&"Toggle help"), "should contain help binding");
+        assert!(
+            descriptions.contains(&"Quit"),
+            "should contain Quit binding"
+        );
+        assert!(
+            descriptions.contains(&"Toggle help"),
+            "should contain help binding"
+        );
     }
 
     #[test]
@@ -494,7 +527,8 @@ mod tests {
     #[test]
     fn no_duplicate_bindings_in_same_context() {
         let store = KeymapStore::load().unwrap();
-        let mut seen: std::collections::HashMap<(String, String), String> = std::collections::HashMap::new();
+        let mut seen: std::collections::HashMap<(String, String), String> =
+            std::collections::HashMap::new();
 
         for binding in &store.bindings {
             if !binding.dispatch {
@@ -523,6 +557,9 @@ mod tests {
             key(KeyCode::Enter, KeyModifiers::SHIFT),
             KeymapContext::Input,
         );
-        assert!(result.is_none(), "dispatch:false binding should not classify");
+        assert!(
+            result.is_none(),
+            "dispatch:false binding should not classify"
+        );
     }
 }

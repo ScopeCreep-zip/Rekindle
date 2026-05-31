@@ -38,9 +38,12 @@ pub fn verify_pq(
     payload.push(PQ_DOMAIN_TAG);
     payload.extend_from_slice(domain_subtag);
     payload.extend_from_slice(pqpk_bytes);
-    identity_key
-        .verify(&payload, &sig)
-        .map_err(|e| PqxdhError::SignatureVerify(format!("PQ {}: {e}", String::from_utf8_lossy(domain_subtag))))
+    identity_key.verify(&payload, &sig).map_err(|e| {
+        PqxdhError::SignatureVerify(format!(
+            "PQ {}: {e}",
+            String::from_utf8_lossy(domain_subtag)
+        ))
+    })
 }
 
 /// Produce the bytes that `verify_spk` checks against — used by the

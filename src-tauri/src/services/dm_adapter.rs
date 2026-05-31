@@ -14,9 +14,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use rekindle_dm::{
-    DmDeps, DmError, DmEvent, DmMekCache, DmMekChain, DmStore, SqliteDmStore,
-};
+use rekindle_dm::{DmDeps, DmError, DmEvent, DmMekCache, DmMekChain, DmStore, SqliteDmStore};
 use rekindle_protocol::messaging::envelope::MessagePayload;
 use rekindle_records::schema;
 use veilid_core::{
@@ -163,8 +161,7 @@ impl DmDeps for DmAdapter {
             .parse::<RecordKey>()
             .map_err(|e| DmError::transport(format!("invalid record key: {e}")))?;
         let veilid_keypair = writer_keypair.map(|(secret, public)| {
-            let veilid_pub =
-                PublicKey::new(CRYPTO_KIND_VLD0, BarePublicKey::new(&public));
+            let veilid_pub = PublicKey::new(CRYPTO_KIND_VLD0, BarePublicKey::new(&public));
             let veilid_secret = BareSecretKey::new(&secret);
             KeyPair::new_from_parts(veilid_pub, veilid_secret)
         });
@@ -197,11 +194,7 @@ impl DmDeps for DmAdapter {
         Ok(())
     }
 
-    async fn dht_watch_subkeys(
-        &self,
-        record_key: &str,
-        subkeys: Vec<u32>,
-    ) -> Result<(), DmError> {
+    async fn dht_watch_subkeys(&self, record_key: &str, subkeys: Vec<u32>) -> Result<(), DmError> {
         let rc = state_helpers::safe_routing_context(&self.state)
             .ok_or(DmError::RoutingContextUnavailable)?;
         let record_key_typed = record_key
@@ -234,14 +227,9 @@ impl DmDeps for DmAdapter {
         peer_pubkey_hex: &str,
         payload: MessagePayload,
     ) -> Result<(), DmError> {
-        message_service::send_to_peer_encrypted(
-            &self.state,
-            &self.pool,
-            peer_pubkey_hex,
-            &payload,
-        )
-        .await
-        .map_err(DmError::transport)
+        message_service::send_to_peer_encrypted(&self.state, &self.pool, peer_pubkey_hex, &payload)
+            .await
+            .map_err(DmError::transport)
     }
 
     fn emit_event(&self, event: DmEvent) {
@@ -325,4 +313,3 @@ impl DmDeps for DmAdapter {
         }
     }
 }
-

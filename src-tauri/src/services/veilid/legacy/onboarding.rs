@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-
 use crate::channels::CommunityEvent;
 use crate::db::DbPool;
 use crate::services::cross_device_sync::{
@@ -276,8 +275,7 @@ pub(crate) async fn handle_onboarding_answers(
         let community_id_owned = community_id.to_string();
         tokio::spawn(async move {
             if let Err(e) =
-                push_onboarding_complete_to_sync(&state_arc, &pool_arc, &community_id_owned)
-                    .await
+                push_onboarding_complete_to_sync(&state_arc, &pool_arc, &community_id_owned).await
             {
                 tracing::warn!(community = %community_id_owned, error = %e, "failed to push onboarding completion to personal sync");
             }

@@ -104,7 +104,10 @@ pub async fn handle_group_call_payload<D: CallSignalingDeps + ?Sized>(
 /// Receiver-side entry into a group call. Mirrors the 1:1
 /// `handle_incoming_invite` shape but with the per-recipient X25519
 /// unwrap.
-#[allow(clippy::too_many_arguments, reason = "GroupCallOffer envelope has 8 distinct wire fields; bundling adds indirection without arg-count win")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GroupCallOffer envelope has 8 distinct wire fields; bundling adds indirection without arg-count win"
+)]
 pub fn handle_incoming_group_invite<D: CallSignalingDeps + ?Sized>(
     deps: &D,
     sender_hex: &str,

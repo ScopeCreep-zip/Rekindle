@@ -24,8 +24,7 @@ pub fn compute(
         )
         .unwrap_or(0);
 
-    let active_7d =
-        active_distinct_senders(conn, owner_key, community_id, now_ms - SEVEN_DAYS_MS);
+    let active_7d = active_distinct_senders(conn, owner_key, community_id, now_ms - SEVEN_DAYS_MS);
     let active_30d =
         active_distinct_senders(conn, owner_key, community_id, now_ms - THIRTY_DAYS_MS);
 
@@ -82,11 +81,10 @@ fn active_per_day_series(
     ) else {
         return DailyTimeseries::default();
     };
-    let rows = stmt
-        .query_map(
-            rusqlite::params![ONE_DAY_MS, owner_key, community_id, window_start],
-            |r| Ok((r.get::<_, i64>(0)?, r.get::<_, u32>(1)?)),
-        );
+    let rows = stmt.query_map(
+        rusqlite::params![ONE_DAY_MS, owner_key, community_id, window_start],
+        |r| Ok((r.get::<_, i64>(0)?, r.get::<_, u32>(1)?)),
+    );
     let Ok(rows) = rows else {
         return DailyTimeseries::default();
     };
@@ -112,11 +110,10 @@ fn joins_per_day_series(
     ) else {
         return DailyTimeseries::default();
     };
-    let rows = stmt
-        .query_map(
-            rusqlite::params![ONE_DAY_MS, owner_key, community_id, window_start],
-            |r| Ok((r.get::<_, i64>(0)?, r.get::<_, u32>(1)?)),
-        );
+    let rows = stmt.query_map(
+        rusqlite::params![ONE_DAY_MS, owner_key, community_id, window_start],
+        |r| Ok((r.get::<_, i64>(0)?, r.get::<_, u32>(1)?)),
+    );
     let Ok(rows) = rows else {
         return DailyTimeseries::default();
     };
@@ -142,11 +139,10 @@ fn leaves_per_day_series(
     ) else {
         return DailyTimeseries::default();
     };
-    let rows = stmt
-        .query_map(
-            rusqlite::params![ONE_DAY_MS, owner_key, community_id, window_start],
-            |r| Ok((r.get::<_, i64>(0)?, r.get::<_, u32>(1)?)),
-        );
+    let rows = stmt.query_map(
+        rusqlite::params![ONE_DAY_MS, owner_key, community_id, window_start],
+        |r| Ok((r.get::<_, i64>(0)?, r.get::<_, u32>(1)?)),
+    );
     let Ok(rows) = rows else {
         return DailyTimeseries::default();
     };
@@ -176,12 +172,7 @@ fn active_distinct_senders(
 
 /// Members who joined ≥30 days ago AND posted within the last 7 days,
 /// divided by the count who joined ≥30 days ago.
-fn compute_retention(
-    conn: &Connection,
-    owner_key: &str,
-    community_id: &str,
-    now_ms: i64,
-) -> f64 {
+fn compute_retention(conn: &Connection, owner_key: &str, community_id: &str, now_ms: i64) -> f64 {
     let joined_30d_cutoff = now_ms - THIRTY_DAYS_MS;
     let active_7d_cutoff = now_ms - SEVEN_DAYS_MS;
 

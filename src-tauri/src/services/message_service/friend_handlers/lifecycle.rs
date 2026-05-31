@@ -44,7 +44,8 @@ pub(crate) async fn handle_profile_key_rotated(
     crate::friend_repo::fire_update_dht_record_key(state, pool, sender_hex, new_profile_dht_key);
     // Re-watch the new profile DHT record for presence updates
     if let Err(e) =
-        crate::services::presence_service::watch_friend(state, sender_hex, new_profile_dht_key).await
+        crate::services::presence_service::watch_friend(state, sender_hex, new_profile_dht_key)
+            .await
     {
         tracing::warn!(from = %sender_hex, error = %e, "failed to watch new profile key");
     }
@@ -263,50 +264,52 @@ pub(super) async fn auto_accept_cross_request(
             if let Ok(bundle) =
                 serde_json::from_slice::<rekindle_crypto::signal::PreKeyBundle>(req.prekey_bundle)
             {
-                let already_established = handle
-                    .manager
-                    .has_session(req.sender_hex)
-                    .unwrap_or(false)
-                    && handle
-                        .manager
-                        .is_trusted_identity(req.sender_hex, &bundle.identity_key)
-                        .unwrap_or(false);
+                let already_established =
+                    handle.manager.has_session(req.sender_hex).unwrap_or(false)
+                        && handle
+                            .manager
+                            .is_trusted_identity(req.sender_hex, &bundle.identity_key)
+                            .unwrap_or(false);
                 if already_established {
                     tracing::info!(peer = %req.sender_hex,
                         "session already established for peer — skipping establish_session \
                          on cross-request (W16.10e idempotency)");
                     None
                 } else {
-                match handle.manager.establish_session(req.sender_hex, &bundle) {
-                    Ok(info) => {
-                        tracing::info!(peer = %req.sender_hex, "established Signal session on cross-request auto-accept");
-                        Some(info)
-                    }
-                    Err(e) => {
-                        // W16.10d — was silent warn. Surface so user
-                        // can act if cross-request handshake fails.
-                        tracing::error!(peer = %req.sender_hex, error = %e,
+                    match handle.manager.establish_session(req.sender_hex, &bundle) {
+                        Ok(info) => {
+                            tracing::info!(peer = %req.sender_hex, "established Signal session on cross-request auto-accept");
+                            Some(info)
+                        }
+                        Err(e) => {
+                            // W16.10d — was silent warn. Surface so user
+                            // can act if cross-request handshake fails.
+                            tracing::error!(peer = %req.sender_hex, error = %e,
                             "failed to establish Signal session on cross-request — peer's encrypted DMs will fail AEAD on us");
-                        let peer_label = state_helpers::friend_display_name(state, req.sender_hex)
-                            .unwrap_or_else(|| {
-                                format!("{}…", &req.sender_hex[..16.min(req.sender_hex.len())])
-                            });
-                        crate::event_dispatch::emit_live(
-                            app_handle,
-                            "notification-event",
-                            &crate::channels::NotificationEvent::SystemAlert {
-                                title: "Couldn't establish secure session".into(),
-                                body: format!(
+                            let peer_label =
+                                state_helpers::friend_display_name(state, req.sender_hex)
+                                    .unwrap_or_else(|| {
+                                        format!(
+                                            "{}…",
+                                            &req.sender_hex[..16.min(req.sender_hex.len())]
+                                        )
+                                    });
+                            crate::event_dispatch::emit_live(
+                                app_handle,
+                                "notification-event",
+                                &crate::channels::NotificationEvent::SystemAlert {
+                                    title: "Couldn't establish secure session".into(),
+                                    body: format!(
                                     "Cross-request auto-accept with {peer_label} failed at the \
                                      Signal handshake: {e}. Click 'Reset Secure Session' from \
                                      their friend menu after verifying their safety number \
                                      out-of-band."
                                 ),
-                            },
-                        );
-                        None
+                                },
+                            );
+                            None
+                        }
                     }
-                }
                 }
             } else {
                 None
@@ -325,8 +328,12 @@ pub(super) async fn auto_accept_cross_request(
 
     // 4. Watch their DHT profile for presence
     if !req.profile_dht_key.is_empty() {
-        if let Err(e) =
-            crate::services::presence_service::watch_friend(state, req.sender_hex, req.profile_dht_key).await
+        if let Err(e) = crate::services::presence_service::watch_friend(
+            state,
+            req.sender_hex,
+            req.profile_dht_key,
+        )
+        .await
         {
             tracing::trace!(error = %e, "failed to watch friend DHT after cross-request accept");
         }

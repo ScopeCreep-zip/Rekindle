@@ -145,7 +145,10 @@ mod tests {
             results.push(t.await.expect("task panicked"));
         }
         assert_eq!(results.len(), 10);
-        assert!(results.iter().all(|&r| r == 42), "all callers see the same value");
+        assert!(
+            results.iter().all(|&r| r == 42),
+            "all callers see the same value"
+        );
         assert_eq!(
             invocations.load(Ordering::Relaxed),
             1,
@@ -159,15 +162,19 @@ mod tests {
         let cache: IdempotencyCache<u32> = IdempotencyCache::with_defaults();
         let counter = Arc::new(AtomicU32::new(0));
         let c1 = Arc::clone(&counter);
-        let v1 = cache.wrap(Uuid::now_v7(), || async move {
-            c1.fetch_add(1, Ordering::Relaxed);
-            1
-        }).await;
+        let v1 = cache
+            .wrap(Uuid::now_v7(), || async move {
+                c1.fetch_add(1, Ordering::Relaxed);
+                1
+            })
+            .await;
         let c2 = Arc::clone(&counter);
-        let v2 = cache.wrap(Uuid::now_v7(), || async move {
-            c2.fetch_add(1, Ordering::Relaxed);
-            2
-        }).await;
+        let v2 = cache
+            .wrap(Uuid::now_v7(), || async move {
+                c2.fetch_add(1, Ordering::Relaxed);
+                2
+            })
+            .await;
         assert_eq!(v1, 1);
         assert_eq!(v2, 2);
         assert_eq!(counter.load(Ordering::Relaxed), 2);
@@ -182,15 +189,19 @@ mod tests {
         let counter = Arc::new(AtomicU32::new(0));
 
         let c1 = Arc::clone(&counter);
-        let v1 = cache.wrap(key, || async move {
-            c1.fetch_add(1, Ordering::Relaxed);
-            100
-        }).await;
+        let v1 = cache
+            .wrap(key, || async move {
+                c1.fetch_add(1, Ordering::Relaxed);
+                100
+            })
+            .await;
         let c2 = Arc::clone(&counter);
-        let v2 = cache.wrap(key, || async move {
-            c2.fetch_add(1, Ordering::Relaxed);
-            200 // would-be different value if it ran
-        }).await;
+        let v2 = cache
+            .wrap(key, || async move {
+                c2.fetch_add(1, Ordering::Relaxed);
+                200 // would-be different value if it ran
+            })
+            .await;
         assert_eq!(v1, 100);
         assert_eq!(v2, 100, "second call must return cached value, not 200");
         assert_eq!(counter.load(Ordering::Relaxed), 1, "closure must run once");
@@ -205,16 +216,20 @@ mod tests {
         let counter = Arc::new(AtomicU32::new(0));
 
         let c1 = Arc::clone(&counter);
-        let _ = cache.wrap(key, || async move {
-            c1.fetch_add(1, Ordering::Relaxed);
-            1
-        }).await;
+        let _ = cache
+            .wrap(key, || async move {
+                c1.fetch_add(1, Ordering::Relaxed);
+                1
+            })
+            .await;
         tokio::time::sleep(Duration::from_millis(200)).await;
         let c2 = Arc::clone(&counter);
-        let _ = cache.wrap(key, || async move {
-            c2.fetch_add(1, Ordering::Relaxed);
-            2
-        }).await;
+        let _ = cache
+            .wrap(key, || async move {
+                c2.fetch_add(1, Ordering::Relaxed);
+                2
+            })
+            .await;
         assert_eq!(
             counter.load(Ordering::Relaxed),
             2,
@@ -231,15 +246,19 @@ mod tests {
         let counter = Arc::new(AtomicU32::new(0));
 
         let c1 = Arc::clone(&counter);
-        let r1 = cache.wrap(key, || async move {
-            c1.fetch_add(1, Ordering::Relaxed);
-            Err::<u32, _>("oops".to_string())
-        }).await;
+        let r1 = cache
+            .wrap(key, || async move {
+                c1.fetch_add(1, Ordering::Relaxed);
+                Err::<u32, _>("oops".to_string())
+            })
+            .await;
         let c2 = Arc::clone(&counter);
-        let r2 = cache.wrap(key, || async move {
-            c2.fetch_add(1, Ordering::Relaxed);
-            Ok::<u32, String>(42)
-        }).await;
+        let r2 = cache
+            .wrap(key, || async move {
+                c2.fetch_add(1, Ordering::Relaxed);
+                Ok::<u32, String>(42)
+            })
+            .await;
         assert_eq!(r1.as_ref().err(), Some(&"oops".to_string()));
         assert_eq!(
             r2.as_ref().err(),
@@ -257,16 +276,20 @@ mod tests {
         let counter = Arc::new(AtomicU32::new(0));
 
         let c1 = Arc::clone(&counter);
-        let _ = cache.wrap(key, || async move {
-            c1.fetch_add(1, Ordering::Relaxed);
-            1
-        }).await;
+        let _ = cache
+            .wrap(key, || async move {
+                c1.fetch_add(1, Ordering::Relaxed);
+                1
+            })
+            .await;
         cache.invalidate(key).await;
         let c2 = Arc::clone(&counter);
-        let _ = cache.wrap(key, || async move {
-            c2.fetch_add(1, Ordering::Relaxed);
-            2
-        }).await;
+        let _ = cache
+            .wrap(key, || async move {
+                c2.fetch_add(1, Ordering::Relaxed);
+                2
+            })
+            .await;
         assert_eq!(counter.load(Ordering::Relaxed), 2);
     }
 

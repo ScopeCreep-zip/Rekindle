@@ -49,20 +49,23 @@ pub async fn search_messages(
         // search messages + dm + threads and merge.
         if req_clone.filters.in_thread.is_some() {
             let h = threads::search_thread_messages_table(
-                conn, &owner_key_owned, &match_owned, &req_clone,
+                conn,
+                &owner_key_owned,
+                &match_owned,
+                &req_clone,
             )?;
             combined.extend(h);
         } else {
-            let m = messages::search_messages_table(
-                conn, &owner_key_owned, &match_owned, &req_clone,
-            )?;
+            let m =
+                messages::search_messages_table(conn, &owner_key_owned, &match_owned, &req_clone)?;
             combined.extend(m);
-            let d = dm::search_dm_messages_table(
-                conn, &owner_key_owned, &match_owned, &req_clone,
-            )?;
+            let d = dm::search_dm_messages_table(conn, &owner_key_owned, &match_owned, &req_clone)?;
             combined.extend(d);
             let t = threads::search_thread_messages_table(
-                conn, &owner_key_owned, &match_owned, &req_clone,
+                conn,
+                &owner_key_owned,
+                &match_owned,
+                &req_clone,
             )?;
             combined.extend(t);
         }

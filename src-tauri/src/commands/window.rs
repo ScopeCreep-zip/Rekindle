@@ -83,15 +83,14 @@ pub async fn open_profile_window(
 
 /// Wave 12 W12.7 — pop the active call into its own webview window.
 #[tauri::command]
-pub async fn open_call_window(
-    call_id: String,
-    app: tauri::AppHandle,
-) -> Result<(), String> {
+pub async fn open_call_window(call_id: String, app: tauri::AppHandle) -> Result<(), String> {
     windows::open_call_window(&app, &call_id)
 }
 
 /// Get the current Veilid network status.
 #[tauri::command]
 pub async fn get_network_status(state: State<'_, SharedState>) -> Result<NetworkStatus, String> {
-    Ok(crate::services::window_runtime::get_network_status_inner(state.inner()))
+    Ok(crate::services::window_runtime::get_network_status_inner(
+        state.inner(),
+    ))
 }

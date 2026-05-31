@@ -35,9 +35,7 @@ pub enum CryptoEvent {
     },
     /// An admin keypair was granted to us (operator delegation).
     /// Triggered by: gossip `ControlPayload::AdminKeypairGrant`.
-    AdminKeypairGranted {
-        community: String,
-    },
+    AdminKeypairGranted { community: String },
     /// A slot keypair was granted to us (per-channel write access).
     /// Triggered by: gossip `ControlPayload::SlotKeypairGrant`.
     SlotKeypairGranted {

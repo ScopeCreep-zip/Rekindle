@@ -12,7 +12,10 @@ use crate::state::SharedState;
 /// Re-encrypts content with the destination MEK and writes a
 /// `ChannelEntry::Forward` entry plus a gossip notification.
 #[tauri::command]
-#[allow(clippy::too_many_arguments, reason = "Tauri command surface — matches forward_channel_message args")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Tauri command surface — matches forward_channel_message args"
+)]
 pub async fn forward_channel_message(
     source_community_id: String,
     source_channel_id: String,

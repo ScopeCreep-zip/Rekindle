@@ -155,9 +155,8 @@ fn compile_rules(
         if !rule.enabled {
             continue;
         }
-        let trigger: TriggerConfig = serde_json::from_str(&rule.trigger_json).map_err(|e| {
-            ChannelError::Adapter(format!("invalid automod rule trigger: {e}"))
-        })?;
+        let trigger: TriggerConfig = serde_json::from_str(&rule.trigger_json)
+            .map_err(|e| ChannelError::Adapter(format!("invalid automod rule trigger: {e}")))?;
         // Architecture §20.4 + §26 W26 — bound the compiled NFA so an
         // adversarial admin can't ship a regex that DoSes every other
         // peer's first-message-receive. validate_automod_rule already

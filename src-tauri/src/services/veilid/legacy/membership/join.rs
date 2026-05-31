@@ -428,8 +428,7 @@ fn spawn_peer_bootstrap(
                     // Architecture §26 W26 — verify the presence row was
                     // signed by the claimed pseudonym before treating it
                     // as authoritative routing info.
-                    let Ok(sig_arr): Result<[u8; 64], _> =
-                        presence.signature.as_slice().try_into()
+                    let Ok(sig_arr): Result<[u8; 64], _> = presence.signature.as_slice().try_into()
                     else {
                         continue;
                     };

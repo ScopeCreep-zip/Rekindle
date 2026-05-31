@@ -19,7 +19,11 @@ impl ThemeManager {
         let theme = opaline::load_by_name(name)
             .ok_or_else(|| anyhow::anyhow!("theme '{name}' not found"))?;
         let use_unicode = crate::output::color::ColorSupport::use_unicode();
-        Ok(Self { theme, name: name.to_string(), use_unicode })
+        Ok(Self {
+            theme,
+            name: name.to_string(),
+            use_unicode,
+        })
     }
 
     /// Semantic color accessor — returns ratatui Color.
@@ -55,8 +59,16 @@ impl ThemeManager {
     /// Status glyph — uses text labels for accessibility.
     pub fn status_glyph(&self, pass: bool) -> &'static str {
         if pass {
-            if self.use_unicode { "●" } else { "[OK]" }
-        } else if self.use_unicode { "○" } else { "[--]" }
+            if self.use_unicode {
+                "●"
+            } else {
+                "[OK]"
+            }
+        } else if self.use_unicode {
+            "○"
+        } else {
+            "[--]"
+        }
     }
 
     /// Focused border style.

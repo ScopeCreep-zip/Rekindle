@@ -24,14 +24,10 @@ pub fn presence_event_id_bytes(event_id: &str) -> [u8; 16] {
 /// `Vec<u32>` shape the in-memory member roles map uses. Stable
 /// ordering keeps SQLite role_ids_json deterministic.
 #[must_use]
-pub fn role_ids_from_governance<S: BuildHasher>(
-    assigned: &HashSet<RoleId, S>,
-) -> Vec<u32> {
+pub fn role_ids_from_governance<S: BuildHasher>(assigned: &HashSet<RoleId, S>) -> Vec<u32> {
     let mut ids: Vec<u32> = assigned
         .iter()
-        .map(|role_id| {
-            u32::from_le_bytes([role_id.0[0], role_id.0[1], role_id.0[2], role_id.0[3]])
-        })
+        .map(|role_id| u32::from_le_bytes([role_id.0[0], role_id.0[1], role_id.0[2], role_id.0[3]]))
         .collect();
     ids.sort_unstable();
     ids

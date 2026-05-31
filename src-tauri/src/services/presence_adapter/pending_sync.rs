@@ -39,11 +39,7 @@ pub(super) fn update_pending_sync(
     }
 }
 
-pub(super) fn prune_pending_syncs(
-    state: &Arc<AppState>,
-    community_id: &str,
-    max_attempts: u32,
-) {
+pub(super) fn prune_pending_syncs(state: &Arc<AppState>, community_id: &str, max_attempts: u32) {
     let mut communities = state.communities.write();
     if let Some(cs) = communities.get_mut(community_id) {
         cs.pending_syncs

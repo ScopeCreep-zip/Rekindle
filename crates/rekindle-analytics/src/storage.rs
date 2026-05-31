@@ -18,11 +18,7 @@ use rusqlite::Connection;
 /// `dbstat`-measured rows in the SQLite shell.
 const ROW_OVERHEAD_BYTES: u64 = 48;
 
-pub fn compute(
-    conn: &Connection,
-    owner_key: &str,
-    community_id: &str,
-) -> StorageUsage {
+pub fn compute(conn: &Connection, owner_key: &str, community_id: &str) -> StorageUsage {
     let message_bytes = sum_table_bytes(
         conn,
         "messages",
@@ -154,6 +150,10 @@ fn community_metadata_bytes(conn: &Connection, owner_key: &str, community_id: &s
             |r| r.get(0),
         )
         .unwrap_or(0);
-    u64::try_from(community_row.saturating_add(channels_row).saturating_add(roles_row))
-        .unwrap_or(0)
+    u64::try_from(
+        community_row
+            .saturating_add(channels_row)
+            .saturating_add(roles_row),
+    )
+    .unwrap_or(0)
 }

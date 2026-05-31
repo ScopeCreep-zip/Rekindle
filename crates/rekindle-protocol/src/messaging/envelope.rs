@@ -101,9 +101,7 @@ pub enum MessagePayload {
         relay_pseudonym: String,
     },
     /// Strand Relay revocation: the relay friend withdraws her offer.
-    RelayWithdraw {
-        relay_pseudonym: String,
-    },
+    RelayWithdraw { relay_pseudonym: String },
     /// Bob's `app_call` reply to Carol confirming her `RelayOffer` was
     /// persisted into his relay pool (architecture §13.2 step 3).
     RelayOfferAck {
@@ -136,9 +134,7 @@ pub enum MessagePayload {
     /// Bob accepts a DM invite (architecture §27.1 line 2917).
     /// Returned as the `app_call` reply to a `DmInvite` so Alice's
     /// `start_dm` future resolves with confirmation.
-    DmAccept {
-        record_key: String,
-    },
+    DmAccept { record_key: String },
     /// Bob declines a DM invite (architecture §27.1).
     DmDecline {
         record_key: String,
@@ -158,9 +154,7 @@ pub enum MessagePayload {
         mek_generation: u32,
     },
     /// One side leaving a DM (graceful close).
-    DmLeave {
-        record_key: String,
-    },
+    DmLeave { record_key: String },
     /// Mobile Push Relay registration (architecture §17.3 Tier 3).
     /// A mobile client asks a headless `veilid-server` push relay to
     /// watch a list of DHT record keys on its behalf and forward
@@ -178,9 +172,7 @@ pub enum MessagePayload {
     },
     /// Mobile Push Relay revoke. Sent on logout or when the device
     /// invalidates its push token.
-    UnregisterPushRelay {
-        device_push_token: String,
-    },
+    UnregisterPushRelay { device_push_token: String },
     /// Wake signal — relay → mobile via FCM/APNs (out-of-band) or
     /// directly via Veilid `app_message` for desktop testing. The
     /// payload is intentionally empty of metadata: the client
@@ -195,9 +187,7 @@ pub enum MessagePayload {
     /// from our own friend-presence state if `target_pubkey` is a
     /// friend we relay for; otherwise we drop. Faster than a DHT
     /// lookup (the social CDN pattern).
-    StatusRequest {
-        target_pubkey: String,
-    },
+    StatusRequest { target_pubkey: String },
     /// Wave 13 — direct call invitation. Travels as fire-and-forget
     /// `app_message`, mirroring the FriendRequest handshake that already
     /// works in this codebase. Replaces the old `CallOffer` (which was
@@ -234,9 +224,7 @@ pub enum MessagePayload {
     /// the user now." Lets the caller's UI distinguish "in transit"
     /// from "ringing" (Discord/Signal don't bother but it's cheap and
     /// informative). Best-effort; loss is acceptable.
-    CallRinging {
-        call_id: String,
-    },
+    CallRinging { call_id: String },
     /// Wave 13 — receiver's accept (was an inline RPC reply in the old
     /// CallOffer/app_call design; now its own fire-and-forget envelope
     /// over `app_message`). Carries the responder's X25519 public key
@@ -689,10 +677,7 @@ mod invite_blob_tests {
         let err = verify_invite_blob(&blob).expect_err("pre-B11 blob must be rejected");
         // The error message hints at the version mismatch instead of
         // showing the raw cryptographic error.
-        assert!(
-            err.contains("older app version"),
-            "got: {err}",
-        );
+        assert!(err.contains("older app version"), "got: {err}",);
     }
 
     #[test]
@@ -733,10 +718,7 @@ mod invite_blob_tests {
         blob.issued_at = 0;
         let err = check_invite_recency(&blob, 1_715_000_000_000, 7 * 24 * 3600)
             .expect_err("issued_at=0 must be rejected");
-        assert!(
-            err.contains("missing issued_at"),
-            "got: {err}",
-        );
+        assert!(err.contains("missing issued_at"), "got: {err}",);
     }
 }
 

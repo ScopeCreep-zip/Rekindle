@@ -44,10 +44,7 @@ impl StrongholdKeystore {
     /// Delete the on-disk vault for a specific identity. Removes both
     /// `{pk}.vault` and `{pk}.vault.salt` (sidecar). Missing files are
     /// silently tolerated; only I/O errors propagate.
-    pub fn delete_snapshot(
-        vault_dir: &Path,
-        public_key_hex: &str,
-    ) -> Result<(), std::io::Error> {
+    pub fn delete_snapshot(vault_dir: &Path, public_key_hex: &str) -> Result<(), std::io::Error> {
         let path = vault_dir.join(format!("{public_key_hex}.vault"));
         let salt_path = {
             let mut p = path.as_os_str().to_owned();
@@ -213,11 +210,11 @@ pub fn persist_mek_strict(
         .map_err(|e| {
             format!("Stronghold locked or busy — MEK not persisted (will be lost on restart): {e}")
         })?;
-    keystore
-        .save()
-        .map_err(|e| {
-            format!("Stronghold snapshot save failed — MEK in memory only (will be lost on restart): {e}")
-        })?;
+    keystore.save().map_err(|e| {
+        format!(
+            "Stronghold snapshot save failed — MEK in memory only (will be lost on restart): {e}"
+        )
+    })?;
     tracing::debug!(community = %community_id, "MEK persisted to Stronghold (strict)");
     Ok(())
 }
@@ -679,9 +676,17 @@ pub fn persist_signal_identity(
     use rekindle_crypto::Keychain as _;
 
     let mut blob = Vec::with_capacity(identity_private.len() + identity_public.len() + 8);
-    blob.extend_from_slice(&u32::try_from(identity_private.len()).unwrap_or(0).to_le_bytes());
+    blob.extend_from_slice(
+        &u32::try_from(identity_private.len())
+            .unwrap_or(0)
+            .to_le_bytes(),
+    );
     blob.extend_from_slice(identity_private);
-    blob.extend_from_slice(&u32::try_from(identity_public.len()).unwrap_or(0).to_le_bytes());
+    blob.extend_from_slice(
+        &u32::try_from(identity_public.len())
+            .unwrap_or(0)
+            .to_le_bytes(),
+    );
     blob.extend_from_slice(identity_public);
     keystore
         .store_key(VAULT_SIGNAL, KEY_SIGNAL_IDENTITY, &blob)
@@ -699,13 +704,13 @@ pub fn persist_signal_identity(
 }
 
 /// Load the persisted Signal identity. Returns None if never persisted.
-pub fn load_signal_identity(
-    keystore: &StrongholdKeystore,
-) -> Option<(Vec<u8>, Vec<u8>, u32)> {
+pub fn load_signal_identity(keystore: &StrongholdKeystore) -> Option<(Vec<u8>, Vec<u8>, u32)> {
     use rekindle_crypto::keychain::{KEY_SIGNAL_IDENTITY, VAULT_SIGNAL};
     use rekindle_crypto::Keychain as _;
 
-    let blob = keystore.load_key(VAULT_SIGNAL, KEY_SIGNAL_IDENTITY).ok()??;
+    let blob = keystore
+        .load_key(VAULT_SIGNAL, KEY_SIGNAL_IDENTITY)
+        .ok()??;
     if blob.len() < 8 {
         return None;
     }
@@ -721,7 +726,9 @@ pub fn load_signal_identity(
         return None;
     }
     let public = blob[pub_len_offset + 4..pub_len_offset + 4 + pub_len].to_vec();
-    let reg_bytes = keystore.load_key(VAULT_SIGNAL, SIGNAL_REGISTRATION_KEY).ok()??;
+    let reg_bytes = keystore
+        .load_key(VAULT_SIGNAL, SIGNAL_REGISTRATION_KEY)
+        .ok()??;
     let registration_id = u32::from_le_bytes(reg_bytes.as_slice().try_into().ok()?);
     Some((private, public, registration_id))
 }
@@ -745,10 +752,7 @@ pub fn persist_trusted_identity(
 }
 
 /// Load the trusted identity for a peer (None if no prior interaction).
-pub fn load_trusted_identity(
-    keystore: &StrongholdKeystore,
-    peer_address: &str,
-) -> Option<Vec<u8>> {
+pub fn load_trusted_identity(keystore: &StrongholdKeystore, peer_address: &str) -> Option<Vec<u8>> {
     use rekindle_crypto::keychain::VAULT_SIGNAL;
     use rekindle_crypto::Keychain as _;
 
@@ -777,10 +781,7 @@ pub fn persist_signal_session(
 }
 
 /// Load a Signal session for a peer (None if no prior session).
-pub fn load_signal_session(
-    keystore: &StrongholdKeystore,
-    peer_address: &str,
-) -> Option<Vec<u8>> {
+pub fn load_signal_session(keystore: &StrongholdKeystore, peer_address: &str) -> Option<Vec<u8>> {
     use rekindle_crypto::keychain::VAULT_SIGNAL;
     use rekindle_crypto::Keychain as _;
 
@@ -861,7 +862,11 @@ pub fn list_signal_prekey_ids(keystore: &StrongholdKeystore) -> Vec<u32> {
 }
 
 fn pq_key_name(prekey_id: u32, last_resort: bool) -> String {
-    let prefix = if last_resort { SIGNAL_PQ_LR_PREFIX } else { SIGNAL_PQ_OT_PREFIX };
+    let prefix = if last_resort {
+        SIGNAL_PQ_LR_PREFIX
+    } else {
+        SIGNAL_PQ_OT_PREFIX
+    };
     format!("{prefix}{prekey_id}")
 }
 
@@ -898,11 +903,7 @@ pub fn load_signal_pq_secret(
 }
 
 /// Delete a consumed ML-KEM-768 secret.
-pub fn delete_signal_pq_secret(
-    keystore: &StrongholdKeystore,
-    prekey_id: u32,
-    last_resort: bool,
-) {
+pub fn delete_signal_pq_secret(keystore: &StrongholdKeystore, prekey_id: u32, last_resort: bool) {
     use rekindle_crypto::keychain::VAULT_SIGNAL;
     use rekindle_crypto::Keychain as _;
 
@@ -926,9 +927,7 @@ const AUDIT_MAC_KEY_NAME: &str = "mac_key";
 ///
 /// # Errors
 /// Returns `String` on vault I/O failure or RNG failure.
-pub fn load_or_create_audit_mac_key(
-    keystore: &StrongholdKeystore,
-) -> Result<[u8; 32], String> {
+pub fn load_or_create_audit_mac_key(keystore: &StrongholdKeystore) -> Result<[u8; 32], String> {
     use rand::RngCore;
     use rekindle_crypto::Keychain as _;
 
@@ -1007,7 +1006,9 @@ pub fn persist_audit_tail(
 pub fn load_audit_tail(keystore: &StrongholdKeystore) -> Option<(u64, [u8; 32])> {
     use rekindle_crypto::Keychain as _;
 
-    let bytes = keystore.load_key(AUDIT_NAMESPACE, AUDIT_TAIL_KEY_NAME).ok()??;
+    let bytes = keystore
+        .load_key(AUDIT_NAMESPACE, AUDIT_TAIL_KEY_NAME)
+        .ok()??;
     if bytes.len() != 40 {
         tracing::warn!(
             len = bytes.len(),

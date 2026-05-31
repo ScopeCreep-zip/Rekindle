@@ -136,22 +136,21 @@ async fn expire_stale_requests(
 
     // 2. Find and remove expired pending_out friends.
     let ok = owner_key;
-    let expired_pending: Vec<String> =
-        crate::db_helpers::db_call_or_default(pool, move |conn| {
-            let mut stmt = conn.prepare(
-                "SELECT public_key FROM friends \
+    let expired_pending: Vec<String> = crate::db_helpers::db_call_or_default(pool, move |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT public_key FROM friends \
                  WHERE owner_key = ?1 AND friendship_state = 'pending_out' AND added_at < ?2",
-            )?;
-            let rows = stmt
-                .query_map(rusqlite::params![ok, cutoff], |row| row.get::<_, String>(0))?
-                .filter_map(std::result::Result::ok)
-                .collect::<Vec<_>>();
-            for pk in &rows {
-                crate::friend_repo::delete_friend(conn, &ok, pk)?;
-            }
-            Ok(rows)
-        })
-        .await;
+        )?;
+        let rows = stmt
+            .query_map(rusqlite::params![ok, cutoff], |row| row.get::<_, String>(0))?
+            .filter_map(std::result::Result::ok)
+            .collect::<Vec<_>>();
+        for pk in &rows {
+            crate::friend_repo::delete_friend(conn, &ok, pk)?;
+        }
+        Ok(rows)
+    })
+    .await;
 
     for pk in &expired_pending {
         state.friends.write().remove(pk);
@@ -350,4 +349,3 @@ async fn retry_pending_messages(state: &Arc<AppState>, pool: &DbPool) -> Result<
     crate::services::sync_adapter::run_pending_retry_tick(state, pool).await;
     Ok(())
 }
-

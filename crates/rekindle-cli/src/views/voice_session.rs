@@ -25,11 +25,11 @@ use ratatui::Frame;
 
 use rekindle_types::subscription_events::{SubscriptionEvent, VoiceEvent};
 
+use super::View;
 use crate::helpers;
 use crate::tui::action::{Action, CommandResult};
 use crate::tui::focus::{FocusId, FocusRing};
 use crate::tui::theme::ThemeManager;
-use super::View;
 
 /// A voice channel participant.
 #[derive(Debug, Clone)]
@@ -83,8 +83,16 @@ impl VoiceSessionView {
             .map(|p| {
                 let name = helpers::sanitize_for_display(&p.display_name);
                 let glyph = if p.muted {
-                    if self.use_unicode { "○" } else { "." }
-                } else if self.use_unicode { "●" } else { "o" };
+                    if self.use_unicode {
+                        "○"
+                    } else {
+                        "."
+                    }
+                } else if self.use_unicode {
+                    "●"
+                } else {
+                    "o"
+                };
 
                 let mut status_parts = Vec::new();
                 if p.muted {
@@ -112,11 +120,8 @@ impl VoiceSessionView {
 
 impl View for VoiceSessionView {
     fn draw(&mut self, frame: &mut Frame, area: Rect, theme: &ThemeManager) -> Result<()> {
-        let [participant_area, controls_area] = Layout::vertical([
-            Constraint::Fill(1),
-            Constraint::Length(3),
-        ])
-        .areas(area);
+        let [participant_area, controls_area] =
+            Layout::vertical([Constraint::Fill(1), Constraint::Length(3)]).areas(area);
 
         // Participant list
         let community_short = helpers::abbreviate_key(&self.community);
@@ -141,7 +146,11 @@ impl View for VoiceSessionView {
         }
 
         // Controls bar
-        let mute_label = if self.self_muted { "[m] unmute" } else { "[m] mute" };
+        let mute_label = if self.self_muted {
+            "[m] unmute"
+        } else {
+            "[m] mute"
+        };
         let deafen_label = if self.self_deafened {
             "[d] undeafen"
         } else {
@@ -191,10 +200,16 @@ impl View for VoiceSessionView {
 
     fn on_subscription_event(&mut self, event: &SubscriptionEvent) -> Result<()> {
         match event {
-            SubscriptionEvent::Voice(VoiceEvent::Joined { community, channel, pseudonym })
-                if *community == self.community && *channel == self.channel =>
-            {
-                if !self.participants.iter().any(|p| p.pseudonym_key == *pseudonym) {
+            SubscriptionEvent::Voice(VoiceEvent::Joined {
+                community,
+                channel,
+                pseudonym,
+            }) if *community == self.community && *channel == self.channel => {
+                if !self
+                    .participants
+                    .iter()
+                    .any(|p| p.pseudonym_key == *pseudonym)
+                {
                     self.participants.push(VoiceParticipant {
                         pseudonym_key: pseudonym.clone(),
                         display_name: helpers::abbreviate_key(pseudonym),
@@ -203,22 +218,38 @@ impl View for VoiceSessionView {
                     });
                 }
             }
-            SubscriptionEvent::Voice(VoiceEvent::Left { community, channel, pseudonym })
-                if *community == self.community && *channel == self.channel =>
-            {
+            SubscriptionEvent::Voice(VoiceEvent::Left {
+                community,
+                channel,
+                pseudonym,
+            }) if *community == self.community && *channel == self.channel => {
                 self.participants.retain(|p| p.pseudonym_key != *pseudonym);
             }
-            SubscriptionEvent::Voice(VoiceEvent::MuteChanged { community, channel, target_pseudonym, muted })
-                if *community == self.community && *channel == self.channel =>
-            {
-                if let Some(p) = self.participants.iter_mut().find(|p| p.pseudonym_key == *target_pseudonym) {
+            SubscriptionEvent::Voice(VoiceEvent::MuteChanged {
+                community,
+                channel,
+                target_pseudonym,
+                muted,
+            }) if *community == self.community && *channel == self.channel => {
+                if let Some(p) = self
+                    .participants
+                    .iter_mut()
+                    .find(|p| p.pseudonym_key == *target_pseudonym)
+                {
                     p.muted = *muted;
                 }
             }
-            SubscriptionEvent::Voice(VoiceEvent::DeafenChanged { community, channel, target_pseudonym, deafened })
-                if *community == self.community && *channel == self.channel =>
-            {
-                if let Some(p) = self.participants.iter_mut().find(|p| p.pseudonym_key == *target_pseudonym) {
+            SubscriptionEvent::Voice(VoiceEvent::DeafenChanged {
+                community,
+                channel,
+                target_pseudonym,
+                deafened,
+            }) if *community == self.community && *channel == self.channel => {
+                if let Some(p) = self
+                    .participants
+                    .iter_mut()
+                    .find(|p| p.pseudonym_key == *target_pseudonym)
+                {
                     p.deafened = *deafened;
                 }
             }

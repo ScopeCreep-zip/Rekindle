@@ -23,10 +23,7 @@ fn needs_app_state(update: &VeilidUpdate) -> bool {
 /// Called once on the first lifecycle Operational transition. After the
 /// drain, subsequent identity-dependent events bypass the buffer
 /// (`try_record` returns `Err`) and dispatch directly in the main loop.
-async fn drain_cold_start(
-    app_handle: &tauri::AppHandle,
-    state: &Arc<AppState>,
-) {
+async fn drain_cold_start(app_handle: &tauri::AppHandle, state: &Arc<AppState>) {
     let mut drained: Vec<VeilidUpdate> = Vec::new();
     state.cold_start.install_callback(|ev| drained.push(ev));
     if drained.is_empty() {

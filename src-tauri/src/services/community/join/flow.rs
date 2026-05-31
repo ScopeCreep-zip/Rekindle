@@ -260,7 +260,8 @@ pub async fn join_community(
     super::history::schedule_history_catchup(state.clone(), governance_key_str.to_string());
 
     if let Some(ref bundle) = invite.bootstrap_bundle {
-        super::bootstrap::persist_bootstrap_recent_messages(state, governance_key_str, bundle).await;
+        super::bootstrap::persist_bootstrap_recent_messages(state, governance_key_str, bundle)
+            .await;
     }
 
     spawn_join_announcements(
@@ -283,7 +284,10 @@ async fn decode_invite_context(
     state: &Arc<AppState>,
     governance_key_str: &str,
     invite_code: &str,
-    all_entries: &[(PseudonymKey, Vec<rekindle_types::governance::GovernanceEntry>)],
+    all_entries: &[(
+        PseudonymKey,
+        Vec<rekindle_types::governance::GovernanceEntry>,
+    )],
     pseudo_hex: &str,
 ) -> Result<InviteContext, String> {
     let code_hash = rekindle_secrets::invite::hash_invite_code(invite_code);

@@ -154,8 +154,12 @@ mod tests {
         cache.insert("c2", "ch3", mek(8));
         let snap = cache.snapshot_generations();
         assert_eq!(snap.len(), 2);
-        assert!(snap.iter().any(|(k, g)| k == &("c1".into(), "ch1".into()) && *g == 5));
-        assert!(snap.iter().any(|(k, g)| k == &("c2".into(), "ch3".into()) && *g == 8));
+        assert!(snap
+            .iter()
+            .any(|(k, g)| k == &("c1".into(), "ch1".into()) && *g == 5));
+        assert!(snap
+            .iter()
+            .any(|(k, g)| k == &("c2".into(), "ch3".into()) && *g == 8));
     }
 
     #[test]

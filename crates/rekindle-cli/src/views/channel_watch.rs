@@ -28,18 +28,20 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::Frame;
 
 use rekindle_types::display::DecryptedMessageDisplay;
-use rekindle_types::subscription_events::{SubscriptionEvent, ChannelMessageEvent, TypingEvent, TypingContext};
+use rekindle_types::subscription_events::{
+    ChannelMessageEvent, SubscriptionEvent, TypingContext, TypingEvent,
+};
 
+use super::View;
 use crate::helpers;
 use crate::tui::action::{Action, CommandResult};
-use crate::tui::components::Component;
 use crate::tui::components::channel_tree::ChannelTree;
 use crate::tui::components::input_box::InputBox;
 use crate::tui::components::message_list::MessageList;
 use crate::tui::components::peer_list::PeerList;
+use crate::tui::components::Component;
 use crate::tui::focus::{FocusId, FocusRing};
 use crate::tui::theme::ThemeManager;
-use super::View;
 
 /// Responsive layout breakpoints.
 const SIDEBAR_COLLAPSE_WIDTH: u16 = 60;
@@ -154,7 +156,10 @@ impl ChannelWatchView {
         };
         match names.len() {
             1 => Some(format!("{}{suffix} is typing...", names[0])),
-            2 => Some(format!("{} and {}{suffix} are typing...", names[0], names[1])),
+            2 => Some(format!(
+                "{} and {}{suffix} are typing...",
+                names[0], names[1]
+            )),
             _ => Some(format!(
                 "{}, {}, and {}{suffix} are typing...",
                 names[0], names[1], names[2]
@@ -249,7 +254,8 @@ impl View for ChannelWatchView {
             }
             Action::ExitInputMode => {
                 self.focus.set(FocusId::MessageList);
-                self.input_box.set_mode(crate::tui::components::input_box::InputMode::Compose);
+                self.input_box
+                    .set_mode(crate::tui::components::input_box::InputMode::Compose);
             }
             Action::ReplyToSelected => {
                 if let Some(idx) = self.message_list.selected_index() {
@@ -278,9 +284,9 @@ impl View for ChannelWatchView {
                 let text = self.input_box.content();
                 if !text.trim().is_empty() && !self.input_box.is_over_limit() {
                     let reply_to = match self.input_box.mode() {
-                        crate::tui::components::input_box::InputMode::Reply { message_id, .. } => {
-                            Some(message_id.clone())
-                        }
+                        crate::tui::components::input_box::InputMode::Reply {
+                            message_id, ..
+                        } => Some(message_id.clone()),
                         _ => None,
                     };
                     let action = Action::SendChannelMessage {
@@ -363,10 +369,8 @@ impl View for ChannelWatchView {
                     // Check for encrypted messages that need MEK and auto-request.
                     // This fires Action::RequestMek for each unique missing generation,
                     // so the user doesn't have to manually run `rekindle key mek request`.
-                    let missing_generations: std::collections::HashSet<u64> = messages
-                        .iter()
-                        .filter_map(|m| m.needs_mek)
-                        .collect();
+                    let missing_generations: std::collections::HashSet<u64> =
+                        messages.iter().filter_map(|m| m.needs_mek).collect();
                     for gen in &missing_generations {
                         tracing::info!(
                             community = self.community.as_str(),
@@ -390,16 +394,18 @@ impl View for ChannelWatchView {
             CommandResult::CommunityInfoLoaded { detail } => {
                 if detail.governance_key == self.community {
                     use crate::tui::components::channel_tree::ChannelEntry;
-                    let channels: Vec<ChannelEntry> = detail.channels.iter().map(|ch| {
-                        ChannelEntry {
+                    let channels: Vec<ChannelEntry> = detail
+                        .channels
+                        .iter()
+                        .map(|ch| ChannelEntry {
                             id: ch.id.clone(),
                             name: ch.name.clone(),
                             kind: ch.kind.clone(),
                             category: ch.category_id.clone(),
                             unread: 0,
                             sort_order: ch.sort_order,
-                        }
-                    }).collect();
+                        })
+                        .collect();
                     self.channel_tree.set_communities(
                         &[(detail.governance_key.clone(), detail.name.clone(), channels)],
                         &[],
@@ -408,14 +414,15 @@ impl View for ChannelWatchView {
             }
             CommandResult::PeerListLoaded { peers } => {
                 use crate::tui::components::peer_list::PeerEntry;
-                let members: Vec<PeerEntry> = peers.iter().map(|p| {
-                    PeerEntry {
+                let members: Vec<PeerEntry> = peers
+                    .iter()
+                    .map(|p| PeerEntry {
                         key: p.key.clone(),
                         display_name: p.key_short.clone(),
                         status: if p.has_route { "online" } else { "offline" }.into(),
                         role: None,
-                    }
-                }).collect();
+                    })
+                    .collect();
                 self.peer_list.set_members(members);
             }
             _ => {}
@@ -426,8 +433,14 @@ impl View for ChannelWatchView {
     fn on_subscription_event(&mut self, event: &SubscriptionEvent) -> Result<()> {
         match event {
             SubscriptionEvent::ChannelMessage(ChannelMessageEvent::New {
-                community, channel, message_id, sender_pseudonym,
-                sequence, timestamp, body, reply_to_sequence,
+                community,
+                channel,
+                message_id,
+                sender_pseudonym,
+                sequence,
+                timestamp,
+                body,
+                reply_to_sequence,
             }) if *community == self.community && *channel == self.channel => {
                 self.message_list.push(DecryptedMessageDisplay {
                     message_id: message_id.clone(),
@@ -443,17 +456,22 @@ impl View for ChannelWatchView {
                 });
             }
             SubscriptionEvent::ChannelMessage(ChannelMessageEvent::Deleted {
-                community, channel, message_id,
+                community,
+                channel,
+                message_id,
             }) if *community == self.community && *channel == self.channel => {
                 self.message_list.remove_by_id(message_id);
             }
             SubscriptionEvent::Typing(TypingEvent::Started {
-                context: TypingContext::Channel { community, channel }, who,
+                context: TypingContext::Channel { community, channel },
+                who,
             }) if *community == self.community && *channel == self.channel => {
-                self.typing_indicators.insert(who.clone(), std::time::Instant::now());
+                self.typing_indicators
+                    .insert(who.clone(), std::time::Instant::now());
             }
             SubscriptionEvent::Typing(TypingEvent::Stopped {
-                context: TypingContext::Channel { community, channel }, who,
+                context: TypingContext::Channel { community, channel },
+                who,
             }) if *community == self.community && *channel == self.channel => {
                 self.typing_indicators.remove(who);
             }

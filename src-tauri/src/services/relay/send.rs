@@ -103,7 +103,10 @@ pub async fn send_via_relay(
             continue;
         };
         match routing_context
-            .app_message(veilid_core::Target::RouteId(route_id), payload_bytes.clone())
+            .app_message(
+                veilid_core::Target::RouteId(route_id),
+                payload_bytes.clone(),
+            )
             .await
         {
             Ok(()) => {

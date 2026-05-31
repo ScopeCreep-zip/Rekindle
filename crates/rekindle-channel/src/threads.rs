@@ -5,9 +5,7 @@
 //! src-tauri facade (after 19.h-REDO) is a thin delegate that
 //! constructs the adapter and calls into this module.
 
-use rekindle_protocol::dht::community::channel_record::{
-    ChannelMessage, ChannelRecordEntry,
-};
+use rekindle_protocol::dht::community::channel_record::{ChannelMessage, ChannelRecordEntry};
 use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_records::schema::MAX_MEMBERS_PER_SEGMENT;
 use rekindle_types::governance::GovernanceEntry;
@@ -204,8 +202,7 @@ pub async fn list_threads<D: ChannelMessagingDeps>(
         dto.name = thread.name.clone();
         dto.creator_pseudonym = hex::encode(thread.creator.0);
         dto.forum_tag = thread.forum_tag.clone();
-        dto.auto_archive_seconds =
-            u32::try_from(thread.auto_archive_seconds).unwrap_or(u32::MAX);
+        dto.auto_archive_seconds = u32::try_from(thread.auto_archive_seconds).unwrap_or(u32::MAX);
 
         let (last_lamport, last_activity, message_count) =
             thread_activity(deps, thread.record_key.as_deref()).await?;
@@ -424,7 +421,8 @@ fn build_thread_message<D: ChannelMessagingDeps>(
             community: community_id.into(),
             channel: "__thread__".into(),
         })?;
-    let ciphertext = encrypt_channel_body(&mek, record_key, slot_index, lamport_ts, body.as_bytes())?;
+    let ciphertext =
+        encrypt_channel_body(&mek, record_key, slot_index, lamport_ts, body.as_bytes())?;
 
     let sender_hex = deps
         .my_pseudonym_hex(community_id)
@@ -487,11 +485,7 @@ async fn thread_activity<D: ChannelMessagingDeps>(
     let messages = deps
         .read_all_channel_messages(record_key, thread_member_count())
         .await?;
-    let last_lamport = messages
-        .iter()
-        .map(|m| m.lamport_ts)
-        .max()
-        .unwrap_or(0);
+    let last_lamport = messages.iter().map(|m| m.lamport_ts).max().unwrap_or(0);
     let last_activity = messages
         .iter()
         .map(|m| m.timestamp / 1000)
@@ -519,7 +513,12 @@ fn thread_write_context<D: ChannelMessagingDeps>(
         .pseudonym_credentials(community_id)
         .map(|_| ())
         .ok()
-        .and(deps.member_profile(community_id, "").role_ids.first().copied());
+        .and(
+            deps.member_profile(community_id, "")
+                .role_ids
+                .first()
+                .copied(),
+        );
     let _ = creds_ctx; // not actually needed — we only use the channel_key override
 
     // The adapter's channel_write_context impl returns slot fields keyed

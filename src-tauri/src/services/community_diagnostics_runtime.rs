@@ -37,8 +37,7 @@ pub fn debug_gossip_state_inner(
         .get(&community_id)
         .ok_or("community not found")?;
 
-    let has_route_blob =
-        state_helpers::our_route_blob(state).is_some_and(|b| !b.is_empty());
+    let has_route_blob = state_helpers::our_route_blob(state).is_some_and(|b| !b.is_empty());
     let has_mek = state.mek_cache.lock().contains_key(&community_id);
 
     let (has_gossip, peer_count, online_count, needs_sync, lamport, peer_keys, online_keys) =

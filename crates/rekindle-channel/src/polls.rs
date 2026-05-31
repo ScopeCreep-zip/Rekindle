@@ -95,7 +95,8 @@ pub async fn persist_poll_create<D: ChannelMessagingDeps>(
             .map(|seconds| rekindle_utils::timestamp_secs().saturating_add(seconds)),
         lamport: deps.increment_lamport(community_id),
     };
-    deps.write_channel_poll_create_smpl(&context, &entry).await?;
+    deps.write_channel_poll_create_smpl(&context, &entry)
+        .await?;
     Ok(hex::encode(poll_id))
 }
 

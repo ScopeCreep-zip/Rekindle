@@ -16,7 +16,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{TransportError, Result};
+use crate::error::{Result, TransportError};
 
 // ── Session ─────────────────────────────────────────────────────────────
 
@@ -141,7 +141,7 @@ impl Session {
                         (json_part.to_string(), true)
                     } else {
                         return Err(TransportError::Internal(
-                            "session.json integrity check FAILED — file may be tampered".into()
+                            "session.json integrity check FAILED — file may be tampered".into(),
                         ));
                     }
                 } else {
@@ -339,9 +339,7 @@ impl Session {
 /// we'd need to verify after unlock — which changes the startup flow.
 fn session_mac_key() -> &'static [u8; 32] {
     static KEY: std::sync::OnceLock<[u8; 32]> = std::sync::OnceLock::new();
-    KEY.get_or_init(|| {
-        *blake3::hash(b"rekindle-session-integrity-v1").as_bytes()
-    })
+    KEY.get_or_init(|| *blake3::hash(b"rekindle-session-integrity-v1").as_bytes())
 }
 
 // ── Atomic file write ───────────────────────────────────────────────────
@@ -419,7 +417,10 @@ mod tests {
         let json = serde_json::to_string_pretty(&session).unwrap();
         let restored: Session = serde_json::from_str(&json).unwrap();
 
-        assert_eq!(restored.identity.public_key_hex, session.identity.public_key_hex);
+        assert_eq!(
+            restored.identity.public_key_hex,
+            session.identity.public_key_hex
+        );
         assert_eq!(restored.identity.display_name, "alice");
         assert_eq!(restored.communities.len(), 1);
         assert!(restored.communities.contains_key("VLD0:gov:key"));

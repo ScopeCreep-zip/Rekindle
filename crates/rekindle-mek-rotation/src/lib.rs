@@ -35,7 +35,9 @@ pub mod rotate;
 pub use cache::InMemoryMekCache;
 pub use deps::{ChannelMekCache, MekDistributeDeps, MekPersist, RotationRecipient};
 pub use distribute::{distribute_mek, wait_for_rotation_slot};
-pub use election::{cascade_candidates, cascade_delay, select_mek_responder, CASCADE_TIMEOUT_SECS, MAX_CASCADES};
+pub use election::{
+    cascade_candidates, cascade_delay, select_mek_responder, CASCADE_TIMEOUT_SECS, MAX_CASCADES,
+};
 pub use error::MekRotationError;
 pub use event::MekRotationEvent;
 pub use receive::{handle_incoming_mek_transfer, mek_cache_has_generation, unwrap_received_mek};

@@ -20,12 +20,8 @@
 
 use std::sync::Arc;
 
-use rekindle_secrets::sync_key::{
-    generate_pairing_code, random_pairing_salt, PairingKey,
-};
-use rekindle_types::cross_device_sync::{
-    DeviceListEntry, PairingAccept, PairingPayload,
-};
+use rekindle_secrets::sync_key::{generate_pairing_code, random_pairing_salt, PairingKey};
+use rekindle_types::cross_device_sync::{DeviceListEntry, PairingAccept, PairingPayload};
 
 use crate::db::DbPool;
 use crate::db_helpers::{db_call, db_call_or_default};
@@ -134,9 +130,7 @@ pub async fn handle_pairing_app_call(
     if master_secret.len() != our_secret.len()
         || master_secret.iter().zip(&our_secret).any(|(a, b)| a != b)
     {
-        return Err(
-            "pairing payload master secret does not match this identity".to_string(),
-        );
+        return Err("pairing payload master secret does not match this identity".to_string());
     }
 
     let handle = super::record::open_personal_sync_record(state, pool)
@@ -208,7 +202,13 @@ async fn persist_paired_device(
             "INSERT OR REPLACE INTO paired_devices \
              (owner_key, device_id, device_public_key, display_name, paired_at, unpaired_at) \
              VALUES (?1, ?2, ?3, ?4, ?5, NULL)",
-            rusqlite::params![owner_owned, did, pk, dn, i64::try_from(pa).unwrap_or(i64::MAX)],
+            rusqlite::params![
+                owner_owned,
+                did,
+                pk,
+                dn,
+                i64::try_from(pa).unwrap_or(i64::MAX)
+            ],
         )?;
         Ok(())
     })

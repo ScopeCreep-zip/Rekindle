@@ -59,9 +59,7 @@ impl std::fmt::Debug for SigningKeyHandle {
 pub async fn load_signing_key() -> anyhow::Result<SigningKeyHandle> {
     let hex_str = load_keyring_entry(KEY_SIGNING)
         .await?
-        .ok_or_else(|| anyhow::anyhow!(
-            "signing key not found in keyring — run: rekindle init"
-        ))?;
+        .ok_or_else(|| anyhow::anyhow!("signing key not found in keyring — run: rekindle init"))?;
 
     let raw = hex::decode(&hex_str)
         .map_err(|e| anyhow::anyhow!("signing key in keyring is not valid hex: {e}"))?;
@@ -196,17 +194,25 @@ pub async fn delete_all_keys() -> anyhow::Result<()> {
 
 /// Directory for disk-based key fallback.
 fn fallback_keys_dir() -> std::path::PathBuf {
-    let state = std::env::var("XDG_STATE_HOME")
-        .unwrap_or_else(|_| {
-            let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
-            format!("{home}/.local/state")
-        });
+    let state = std::env::var("XDG_STATE_HOME").unwrap_or_else(|_| {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
+        format!("{home}/.local/state")
+    });
     std::path::PathBuf::from(state).join("rekindle/keys")
 }
 
 fn fallback_key_path(key: &str) -> std::path::PathBuf {
     // Sanitize the key name for filesystem safety
-    let safe_name: String = key.chars().map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' }).collect();
+    let safe_name: String = key
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
     fallback_keys_dir().join(safe_name)
 }
 
@@ -248,7 +254,10 @@ async fn store_keyring_entry(key: &str, value: &str) -> anyhow::Result<()> {
         use std::os::unix::fs::PermissionsExt;
         let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
     }
-    tracing::warn!(key, "stored to ENCRYPTED disk fallback (keyring unavailable — OS keyring preferred)");
+    tracing::warn!(
+        key,
+        "stored to ENCRYPTED disk fallback (keyring unavailable — OS keyring preferred)"
+    );
     Ok(())
 }
 
@@ -302,7 +311,10 @@ async fn load_keyring_entry(key: &str) -> anyhow::Result<Option<String>> {
                 .map_err(|e| anyhow::anyhow!("disk fallback decrypt failed for '{key}': {e}"))?;
             let value = String::from_utf8(plaintext)
                 .map_err(|e| anyhow::anyhow!("disk fallback not valid UTF-8: {e}"))?;
-            tracing::warn!(key, "loaded from encrypted disk fallback (keyring unavailable)");
+            tracing::warn!(
+                key,
+                "loaded from encrypted disk fallback (keyring unavailable)"
+            );
             Ok(Some(value))
         }
         _ => Ok(None),
@@ -339,13 +351,17 @@ fn derive_machine_key() -> [u8; 32] {
 }
 
 fn encrypt_fallback(plaintext: &[u8], key: &[u8; 32]) -> anyhow::Result<Vec<u8>> {
-    use aes_gcm::{Aes256Gcm, aead::{Aead, KeyInit}, Nonce};
-    let cipher = Aes256Gcm::new_from_slice(key)
-        .map_err(|e| anyhow::anyhow!("AES key init: {e}"))?;
+    use aes_gcm::{
+        aead::{Aead, KeyInit},
+        Aes256Gcm, Nonce,
+    };
+    let cipher =
+        Aes256Gcm::new_from_slice(key).map_err(|e| anyhow::anyhow!("AES key init: {e}"))?;
     let mut nonce_bytes = [0u8; 12];
     rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut nonce_bytes);
     let nonce = Nonce::from_slice(&nonce_bytes);
-    let ciphertext = cipher.encrypt(nonce, plaintext)
+    let ciphertext = cipher
+        .encrypt(nonce, plaintext)
         .map_err(|e| anyhow::anyhow!("encrypt: {e}"))?;
     let mut output = Vec::with_capacity(12 + ciphertext.len());
     output.extend_from_slice(&nonce_bytes);
@@ -354,14 +370,21 @@ fn encrypt_fallback(plaintext: &[u8], key: &[u8; 32]) -> anyhow::Result<Vec<u8>>
 }
 
 fn decrypt_fallback(encrypted: &[u8], key: &[u8; 32]) -> anyhow::Result<Vec<u8>> {
-    use aes_gcm::{Aes256Gcm, aead::{Aead, KeyInit}, Nonce};
+    use aes_gcm::{
+        aead::{Aead, KeyInit},
+        Aes256Gcm, Nonce,
+    };
     if encrypted.len() < 12 + 16 {
-        anyhow::bail!("encrypted data too short ({} bytes, min 28)", encrypted.len());
+        anyhow::bail!(
+            "encrypted data too short ({} bytes, min 28)",
+            encrypted.len()
+        );
     }
-    let cipher = Aes256Gcm::new_from_slice(key)
-        .map_err(|e| anyhow::anyhow!("AES key init: {e}"))?;
+    let cipher =
+        Aes256Gcm::new_from_slice(key).map_err(|e| anyhow::anyhow!("AES key init: {e}"))?;
     let nonce = Nonce::from_slice(&encrypted[..12]);
-    let plaintext = cipher.decrypt(nonce, &encrypted[12..])
+    let plaintext = cipher
+        .decrypt(nonce, &encrypted[12..])
         .map_err(|e| anyhow::anyhow!("decrypt: {e}"))?;
     Ok(plaintext)
 }

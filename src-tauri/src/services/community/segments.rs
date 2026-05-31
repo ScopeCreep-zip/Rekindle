@@ -11,7 +11,10 @@ use tauri::Manager;
 
 use crate::state::SharedState;
 
-#[allow(unused_imports, reason = "MAX_SEGMENTS re-exported for any external admin tooling")]
+#[allow(
+    unused_imports,
+    reason = "MAX_SEGMENTS re-exported for any external admin tooling"
+)]
 pub use gov_rt::{SegmentDescriptor, MAX_SEGMENTS};
 
 fn build_adapter(
@@ -41,10 +44,7 @@ pub fn segment_descriptors(state: &SharedState, community_id: &str) -> Vec<Segme
     gov_rt::segment_descriptors(&adapter, community_id)
 }
 
-pub async fn highest_segment_full(
-    state: &SharedState,
-    community_id: &str,
-) -> Result<bool, String> {
+pub async fn highest_segment_full(state: &SharedState, community_id: &str) -> Result<bool, String> {
     let adapter = build_adapter(state)?;
     gov_rt::highest_segment_full(&adapter, community_id)
         .await

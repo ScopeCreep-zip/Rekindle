@@ -26,10 +26,7 @@ pub enum MembershipEvent {
     },
     /// Our own join request was rejected (we see this).
     /// Triggered by: gossip `ControlPayload::JoinRejected`.
-    JoinRejected {
-        community: String,
-        reason: String,
-    },
+    JoinRejected { community: String, reason: String },
     /// A new member joined the community (everyone sees this).
     /// Triggered by: gossip `ControlPayload::MemberJoined`.
     Joined {

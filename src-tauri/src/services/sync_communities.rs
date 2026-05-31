@@ -13,7 +13,6 @@ use crate::state_helpers;
 
 use super::sync_service::request_channel_sync;
 
-
 /// Sync communities by re-announcing our mesh presence.
 pub(super) async fn sync_communities(state: &Arc<AppState>, pool: &DbPool) -> Result<(), String> {
     if state_helpers::safe_routing_context(state).is_none() {
@@ -273,4 +272,3 @@ async fn sync_community_channels(state: &Arc<AppState>, pool: &DbPool, community
         }
     }
 }
-

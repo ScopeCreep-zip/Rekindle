@@ -71,7 +71,9 @@ pub struct WatchRegistry {
 
 impl WatchRegistry {
     pub fn new() -> Self {
-        Self { entries: HashMap::new() }
+        Self {
+            entries: HashMap::new(),
+        }
     }
 
     /// Register a watch. Overwrites any existing watch for this key.
@@ -91,7 +93,8 @@ impl WatchRegistry {
 
     /// Collect all entries that need renewal.
     pub fn needs_renewal(&self) -> Vec<(String, WatchEntry)> {
-        self.entries.iter()
+        self.entries
+            .iter()
             .filter(|(_, e)| e.needs_renewal())
             .map(|(k, e)| (k.clone(), e.clone()))
             .collect()
@@ -112,9 +115,8 @@ impl WatchRegistry {
 
     /// Remove all watches for a DM peer.
     pub fn remove_dm_peer(&mut self, peer_key: &str) {
-        self.entries.retain(|_, e| {
-            !matches!(&e.kind, WatchKind::DmLog { peer_key: pk } if pk == peer_key)
-        });
+        self.entries
+            .retain(|_, e| !matches!(&e.kind, WatchKind::DmLog { peer_key: pk } if pk == peer_key));
     }
 
     /// Total number of active watches.
@@ -152,12 +154,15 @@ pub async fn establish_watch(
 
     if active {
         debug!(record_key, subkeys = ?subkeys, "watch established");
-        registry.write().insert(record_key.to_string(), WatchEntry {
-            kind,
-            subkeys: subkeys.to_vec(),
-            established_at: Instant::now(),
-            renewal_interval: WATCH_RENEWAL_INTERVAL,
-        });
+        registry.write().insert(
+            record_key.to_string(),
+            WatchEntry {
+                kind,
+                subkeys: subkeys.to_vec(),
+                established_at: Instant::now(),
+                renewal_interval: WATCH_RENEWAL_INTERVAL,
+            },
+        );
     } else {
         warn!(record_key, "watch: Veilid declined the watch");
     }
@@ -166,11 +171,7 @@ pub async fn establish_watch(
 }
 
 /// Renew a watch (re-call watch_dht_values with same parameters).
-pub async fn renew_watch(
-    node: &TransportNode,
-    record_key: &str,
-    subkeys: &[u32],
-) -> bool {
+pub async fn renew_watch(node: &TransportNode, record_key: &str, subkeys: &[u32]) -> bool {
     match crate::broadcast::dht_writes::watch(node, record_key, subkeys).await {
         Ok(active) => {
             if active {
@@ -199,21 +200,27 @@ pub async fn setup_identity_watches(
     if !session.identity.friend_inbox_key.is_empty() {
         let subkeys: Vec<u32> = (0..crate::payload::dht_types::FRIEND_INBOX_SUBKEY_COUNT).collect();
         establish_watch(
-            node, registry,
+            node,
+            registry,
             &session.identity.friend_inbox_key,
             &subkeys,
             WatchKind::FriendInbox,
-        ).await;
+        )
+        .await;
     }
 
     // Watch each peer's DM log spine
     for (peer_key, dm_log_key) in &session.dm_log_keys {
         establish_watch(
-            node, registry,
+            node,
+            registry,
             dm_log_key,
             &[0], // spine subkey
-            WatchKind::DmLog { peer_key: peer_key.clone() },
-        ).await;
+            WatchKind::DmLog {
+                peer_key: peer_key.clone(),
+            },
+        )
+        .await;
     }
 }
 
@@ -234,11 +241,15 @@ pub async fn setup_community_watches(
         dht_types::MANIFEST_INVITES,
     ];
     establish_watch(
-        node, registry,
+        node,
+        registry,
         &membership.governance_key,
         &gov_subkeys,
-        WatchKind::GovernanceManifest { community: community.clone() },
-    ).await;
+        WatchKind::GovernanceManifest {
+            community: community.clone(),
+        },
+    )
+    .await;
 
     // Watch member registry (member index, MEK vault, moderation queue)
     let reg_subkeys = vec![
@@ -247,21 +258,29 @@ pub async fn setup_community_watches(
         dht_types::REGISTRY_MODERATION_QUEUE,
     ];
     establish_watch(
-        node, registry,
+        node,
+        registry,
         &membership.registry_key,
         &reg_subkeys,
-        WatchKind::MemberRegistry { community: community.clone() },
-    ).await;
+        WatchKind::MemberRegistry {
+            community: community.clone(),
+        },
+    )
+    .await;
 
     // Watch join inbox (operators only — they process incoming join requests)
     if membership.is_operator && !membership.join_inbox_key.is_empty() {
         let inbox_subkeys: Vec<u32> = (0..dht_types::JOIN_INBOX_SUBKEY_COUNT).collect();
         establish_watch(
-            node, registry,
+            node,
+            registry,
             &membership.join_inbox_key,
             &inbox_subkeys,
-            WatchKind::JoinInbox { community: community.clone() },
-        ).await;
+            WatchKind::JoinInbox {
+                community: community.clone(),
+            },
+        )
+        .await;
     }
 
     info!(
@@ -282,11 +301,15 @@ pub async fn setup_dm_watch(
     dm_log_key: &str,
 ) {
     establish_watch(
-        node, registry,
+        node,
+        registry,
         dm_log_key,
         &[0], // DhtLog spine subkey
-        WatchKind::DmLog { peer_key: peer_key.to_string() },
-    ).await;
+        WatchKind::DmLog {
+            peer_key: peer_key.to_string(),
+        },
+    )
+    .await;
 }
 
 // ── Renewal loop ───────────────────────────────────────────────────────
@@ -301,7 +324,7 @@ pub async fn run_renewal_loop(
     event_tx: tokio::sync::broadcast::Sender<super::events::SubscriptionEvent>,
     mut shutdown_rx: tokio::sync::mpsc::Receiver<()>,
 ) {
-    use super::events::{SubscriptionEvent, NetworkEvent};
+    use super::events::{NetworkEvent, SubscriptionEvent};
 
     let mut interval = tokio::time::interval(Duration::from_secs(60));
     interval.tick().await; // skip immediate first tick

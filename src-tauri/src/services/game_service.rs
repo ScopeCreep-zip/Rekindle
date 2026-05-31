@@ -11,7 +11,7 @@
 
 use std::sync::Arc;
 
-use rekindle_game_detect::{DEFAULT_POLL_INTERVAL, GameDatabase, GameDetector};
+use rekindle_game_detect::{GameDatabase, GameDetector, DEFAULT_POLL_INTERVAL};
 use tokio::sync::mpsc;
 
 use crate::db::DbPool;
@@ -39,5 +39,6 @@ pub async fn start_game_detection(
     // flow through gossip mesh, not SQLite.
     let publisher = Arc::new(super::game_publisher::GamePublisher { app_handle, state });
     let detector = GameDetector::new(GameDatabase::bundled(), DEFAULT_POLL_INTERVAL);
-    rekindle_game_detect::run_runtime(detector, publisher, shutdown_rx, DEFAULT_POLL_INTERVAL).await;
+    rekindle_game_detect::run_runtime(detector, publisher, shutdown_rx, DEFAULT_POLL_INTERVAL)
+        .await;
 }

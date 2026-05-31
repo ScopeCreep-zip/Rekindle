@@ -20,5 +20,5 @@ pub use outgoing::{
     send_friend_accept, send_friend_reject, send_friend_request, send_message, send_to_peer_call,
     send_to_peer_encrypted, send_to_peer_raw, send_typing,
 };
-pub(crate) use transport::try_fetch_route_from_dht;
 pub use profile_push::{push_friend_list_update, push_profile_update};
+pub(crate) use transport::try_fetch_route_from_dht;

@@ -2,28 +2,37 @@
 
 use rekindle_node::ipc::protocol::IpcRequest;
 
-use crate::cli::{IdentityCmd, InitArgs, ExportCmd};
+use crate::cli::{ExportCmd, IdentityCmd, InitArgs};
 use crate::helpers;
 use crate::output::format;
 use crate::output::OutputMode;
 use crate::transport::DaemonClient;
 
-pub async fn cmd_init(args: &InitArgs, client: &DaemonClient, mode: OutputMode) -> anyhow::Result<()> {
+pub async fn cmd_init(
+    args: &InitArgs,
+    client: &DaemonClient,
+    mode: OutputMode,
+) -> anyhow::Result<()> {
     if args.wipe_all_data {
         let confirmed = helpers::confirm_destructive(
             "This will delete ALL local Rekindle data.",
             "wipe all data",
         )?;
-        if !confirmed { return format::print_text("Cancelled."); }
-        let value = client.request_ok(IpcRequest::IdentityWipe {
-            confirmation: "WIPE ALL DATA".into(),
-        }).await?;
+        if !confirmed {
+            return format::print_text("Cancelled.");
+        }
+        let value = client
+            .request_ok(IpcRequest::IdentityWipe {
+                confirmation: "WIPE ALL DATA".into(),
+            })
+            .await?;
         helpers::audit_log("identity_wipe", "all_data", "ok");
         return format::print_structured(&value, mode);
     }
 
     let display_name = if args.non_interactive {
-        args.display_name.as_deref()
+        args.display_name
+            .as_deref()
             .ok_or_else(|| anyhow::anyhow!("--display-name is required in non-interactive mode"))?
             .to_string()
     } else {
@@ -35,7 +44,11 @@ pub async fn cmd_init(args: &InitArgs, client: &DaemonClient, mode: OutputMode) 
     if existing.is_ok() {
         format::step_skip("Identity already exists")?;
         format::step_header(1, 2, "Unlocking daemon")?;
-        let _ = client.request_ok(IpcRequest::Unlock { passphrase: String::new() }).await?;
+        let _ = client
+            .request_ok(IpcRequest::Unlock {
+                passphrase: String::new(),
+            })
+            .await?;
         format::step_done("daemon operational")?;
         let session_file = helpers::session_path()?;
         tracing::info!(path = %session_file.display(), "session state path");
@@ -43,11 +56,19 @@ pub async fn cmd_init(args: &InitArgs, client: &DaemonClient, mode: OutputMode) 
     }
 
     format::step_header(1, 2, "Creating identity via daemon")?;
-    let value = client.request_ok(IpcRequest::IdentityCreate { display_name: display_name.clone() }).await?;
+    let value = client
+        .request_ok(IpcRequest::IdentityCreate {
+            display_name: display_name.clone(),
+        })
+        .await?;
     format::step_done("identity created")?;
 
     format::step_header(2, 2, "Unlocking daemon")?;
-    let _ = client.request_ok(IpcRequest::Unlock { passphrase: String::new() }).await?;
+    let _ = client
+        .request_ok(IpcRequest::Unlock {
+            passphrase: String::new(),
+        })
+        .await?;
     format::step_done("daemon operational")?;
 
     if mode.is_structured() {
@@ -65,7 +86,11 @@ pub async fn cmd_init(args: &InitArgs, client: &DaemonClient, mode: OutputMode) 
     }
 }
 
-pub async fn dispatch(cmd: &IdentityCmd, client: &DaemonClient, mode: OutputMode) -> anyhow::Result<()> {
+pub async fn dispatch(
+    cmd: &IdentityCmd,
+    client: &DaemonClient,
+    mode: OutputMode,
+) -> anyhow::Result<()> {
     match cmd {
         IdentityCmd::Show { .. } => {
             let value = client.request_ok(IpcRequest::IdentityShow).await?;
@@ -73,8 +98,11 @@ pub async fn dispatch(cmd: &IdentityCmd, client: &DaemonClient, mode: OutputMode
         }
         IdentityCmd::Rotate { force } => {
             if !force {
-                let confirmed = helpers::confirm("Rotate identity keypair? All peers will need to re-verify.")?;
-                if !confirmed { return format::print_text("Cancelled."); }
+                let confirmed =
+                    helpers::confirm("Rotate identity keypair? All peers will need to re-verify.")?;
+                if !confirmed {
+                    return format::print_text("Cancelled.");
+                }
             }
             let value = client.request_ok(IpcRequest::IdentityRotate).await?;
             helpers::audit_log("identity_rotate", "keypair", "ok");
@@ -85,10 +113,14 @@ pub async fn dispatch(cmd: &IdentityCmd, client: &DaemonClient, mode: OutputMode
                 "This will permanently destroy your identity.",
                 "destroy my identity",
             )?;
-            if !confirmed { return format::print_text("Cancelled."); }
-            let value = client.request_ok(IpcRequest::IdentityDestroy {
-                confirmation: "DESTROY MY IDENTITY".into(),
-            }).await?;
+            if !confirmed {
+                return format::print_text("Cancelled.");
+            }
+            let value = client
+                .request_ok(IpcRequest::IdentityDestroy {
+                    confirmation: "DESTROY MY IDENTITY".into(),
+                })
+                .await?;
             helpers::audit_log("identity_destroy", "identity", "ok");
             format::print_structured(&value, mode)
         }
@@ -115,12 +147,19 @@ pub async fn dispatch(cmd: &IdentityCmd, client: &DaemonClient, mode: OutputMode
             if *passphrase {
                 let _pass = helpers::prompt_password("Passphrase to decrypt the import")?;
             }
-            format::print_text(&format!("Import from {} — not yet wired to daemon", path.display()))
+            format::print_text(&format!(
+                "Import from {} — not yet wired to daemon",
+                path.display()
+            ))
         }
     }
 }
 
-pub async fn dispatch_export(cmd: &ExportCmd, client: &DaemonClient, _mode: OutputMode) -> anyhow::Result<()> {
+pub async fn dispatch_export(
+    cmd: &ExportCmd,
+    client: &DaemonClient,
+    _mode: OutputMode,
+) -> anyhow::Result<()> {
     match cmd {
         ExportCmd::Identity { path } => {
             let value = client.request_ok(IpcRequest::IdentityExport).await?;
@@ -128,8 +167,8 @@ pub async fn dispatch_export(cmd: &ExportCmd, client: &DaemonClient, _mode: Outp
             std::fs::write(path, &json)?;
             format::print_text(&format!("Exported to {}", path.display()))
         }
-        ExportCmd::Friends { path } | ExportCmd::Communities { path } => {
-            format::print_text(&format!("Export to {} — not yet wired to daemon", path.display()))
-        }
+        ExportCmd::Friends { path } | ExportCmd::Communities { path } => format::print_text(
+            &format!("Export to {} — not yet wired to daemon", path.display()),
+        ),
     }
 }

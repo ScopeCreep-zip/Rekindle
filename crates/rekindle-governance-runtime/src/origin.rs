@@ -152,8 +152,9 @@ pub async fn create_community<D: GovernanceRuntimeDeps>(
     let genesis_sig =
         derive::sign_with_pseudonym(&pseudonym_signing, &genesis_payload.signing_bytes());
     genesis_payload.signature = genesis_sig.to_vec();
-    let gov_payload = serde_json::to_vec(&genesis_payload)
-        .map_err(|e| GovernanceRuntimeError::Encoding(format!("genesis serialization failed: {e}")))?;
+    let gov_payload = serde_json::to_vec(&genesis_payload).map_err(|e| {
+        GovernanceRuntimeError::Encoding(format!("genesis serialization failed: {e}"))
+    })?;
     let write_outcome = deps
         .set_dht_value(
             &gov_key,
@@ -176,11 +177,11 @@ pub async fn create_community<D: GovernanceRuntimeDeps>(
         last_heartbeat: rekindle_utils::timestamp_secs(),
         ..Default::default()
     };
-    let presence_sig =
-        derive::sign_with_pseudonym(&pseudonym_signing, &presence.signing_bytes());
+    let presence_sig = derive::sign_with_pseudonym(&pseudonym_signing, &presence.signing_bytes());
     presence.signature = presence_sig.to_vec();
-    let presence_bytes = serde_json::to_vec(&presence)
-        .map_err(|e| GovernanceRuntimeError::Encoding(format!("presence serialization failed: {e}")))?;
+    let presence_bytes = serde_json::to_vec(&presence).map_err(|e| {
+        GovernanceRuntimeError::Encoding(format!("presence serialization failed: {e}"))
+    })?;
     let reg_outcome = deps
         .set_dht_value(
             &reg_key,

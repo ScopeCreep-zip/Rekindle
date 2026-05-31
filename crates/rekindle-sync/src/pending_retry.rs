@@ -79,7 +79,10 @@ pub async fn process_pending_retry_queue<D: SyncDeps>(deps: &D) {
                 deps.increment_pending_retry(row.id).await;
             }
             PendingRetryOutcome::Unrecognized => {
-                tracing::warn!(id = row.id, "unrecognized pending message format — dropping");
+                tracing::warn!(
+                    id = row.id,
+                    "unrecognized pending message format — dropping"
+                );
                 deps.delete_pending_message(row.id).await;
             }
         }
@@ -195,7 +198,11 @@ mod tests {
             owner_key: "me".into(),
             pending: Mutex::new(vec![row(1, 0), row(2, 5)]),
             outcomes: Mutex::new(
-                [PendingRetryOutcome::Delivered, PendingRetryOutcome::Delivered].into(),
+                [
+                    PendingRetryOutcome::Delivered,
+                    PendingRetryOutcome::Delivered,
+                ]
+                .into(),
             ),
             ..Default::default()
         };

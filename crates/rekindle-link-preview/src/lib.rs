@@ -237,7 +237,10 @@ mod tests {
         let m = extract_open_graph(html);
         assert_eq!(m.title.as_deref(), Some("OG Title"));
         assert_eq!(m.description.as_deref(), Some("OG Description"));
-        assert_eq!(m.image_url.as_deref(), Some("https://example.com/image.png"));
+        assert_eq!(
+            m.image_url.as_deref(),
+            Some("https://example.com/image.png")
+        );
         assert_eq!(m.site_name.as_deref(), Some("Example Site"));
     }
 
@@ -270,8 +273,7 @@ mod tests {
 
     #[test]
     fn decodes_basic_html_entities() {
-        let html = r#"<meta property="og:title" content="Tom &amp; Jerry"#.to_owned()
-            + r#"">"#;
+        let html = r#"<meta property="og:title" content="Tom &amp; Jerry"#.to_owned() + r#"">"#;
         let m = extract_open_graph(&html);
         assert_eq!(m.title.as_deref(), Some("Tom & Jerry"));
     }

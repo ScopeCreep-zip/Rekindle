@@ -7,7 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{TransportError, Result};
+use crate::error::{Result, TransportError};
 use crate::frame::TypeId;
 
 /// All DM-class payload variants.
@@ -73,7 +73,6 @@ pub enum DmPayload {
     //  feedback_no_legacy_compat.md — pre-release; CallInvite is now
     //  in `payload::rpc::InboundCall::CallInvite`; CallRinging is now
     //  the synchronous reply payload `CallResponse::CallRinging`.)
-
     /// Receiver → caller: accepted. Carries the responder's X25519
     /// pub so the caller can derive the same call_key.
     CallAccept {
@@ -81,16 +80,10 @@ pub enum DmPayload {
         acceptor_x25519_pub: Vec<u8>,
     },
     /// Receiver → caller: declined.
-    CallDecline {
-        call_id: String,
-        reason: String,
-    },
+    CallDecline { call_id: String, reason: String },
     /// Hangup. Either party can send. Works for any state (Outgoing /
     /// Incoming / Connecting / Active).
-    CallEnd {
-        call_id: String,
-        reason: String,
-    },
+    CallEnd { call_id: String, reason: String },
     /// Mid-call: peer toggled mic / camera / screen-share.
     CallMediaState {
         call_id: String,
@@ -111,7 +104,6 @@ pub enum DmPayload {
     // The initiator fans out one envelope PER invitee, each with that
     // invitee's per-recipient `wrapped_call_key`. See
     // `rekindle-calls::group` for the X25519 wrap logic.
-
     /// Caller → invitee: group call invite (per-invitee fan-out).
     GroupCallOffer {
         call_id: String,
@@ -129,13 +121,9 @@ pub enum DmPayload {
     /// Invitee → caller: group call accept.
     GroupCallAccept { call_id: String },
     /// Invitee → caller: group call decline.
-    GroupCallDecline {
-        call_id: String,
-        reason: String,
-    },
+    GroupCallDecline { call_id: String, reason: String },
 
     // ── W16.4: DM invite (request/reply via expect-reply primitive) ─
-
     /// DM invite request — initiator awaits a reply with the new DM
     /// record key. Routed through `EnvelopeQueue::send_expect_reply`
     /// with a fresh `correlation_id`.
@@ -199,9 +187,7 @@ pub struct GamePresence {
 // ── SubscriptionEvent conversion ───────────────────────────────────────
 
 use rekindle_types::subscription_events::{
-    SubscriptionEvent, ChannelMessageEvent,
-    TypingEvent, TypingContext,
-    FriendEvent, PresenceEvent,
+    ChannelMessageEvent, FriendEvent, PresenceEvent, SubscriptionEvent, TypingContext, TypingEvent,
 };
 
 impl DmPayload {
@@ -217,46 +203,62 @@ impl DmPayload {
     /// variants (`CallStarted`, `IncomingCall`, etc.) instead.
     pub fn into_event(self, sender_key: &str, timestamp: u64) -> Option<SubscriptionEvent> {
         Some(match self {
-            Self::DirectMessage { body, .. } =>
+            Self::DirectMessage { body, .. } => {
                 SubscriptionEvent::ChannelMessage(ChannelMessageEvent::DirectMessageReceived {
                     peer_key: sender_key.into(),
                     timestamp,
                     sender_name: None, // enriched from friend list by SubscriptionManager
                     body: Some(String::from_utf8_lossy(&body).to_string()),
-                }),
+                })
+            }
             Self::Typing { typing } => {
                 if typing {
                     SubscriptionEvent::Typing(TypingEvent::Started {
-                        context: TypingContext::Dm { peer_key: sender_key.into() },
+                        context: TypingContext::Dm {
+                            peer_key: sender_key.into(),
+                        },
                         who: sender_key.into(),
                     })
                 } else {
                     SubscriptionEvent::Typing(TypingEvent::Stopped {
-                        context: TypingContext::Dm { peer_key: sender_key.into() },
+                        context: TypingContext::Dm {
+                            peer_key: sender_key.into(),
+                        },
                         who: sender_key.into(),
                     })
                 }
             }
-            Self::FriendRequest { display_name, message, .. } =>
-                SubscriptionEvent::Friend(FriendEvent::RequestReceived {
-                    from_key: sender_key.into(), display_name, message,
-                }),
-            Self::FriendAccept { .. } =>
-                SubscriptionEvent::Friend(FriendEvent::Accepted {
-                    peer_key: sender_key.into(), dm_log_key: String::new(),
-                }),
-            Self::FriendReject =>
-                SubscriptionEvent::Friend(FriendEvent::Rejected { peer_key: sender_key.into() }),
-            Self::FriendRequestAck =>
-                SubscriptionEvent::Friend(FriendEvent::RequestAcknowledged { peer_key: sender_key.into() }),
-            Self::Unfriend =>
-                SubscriptionEvent::Friend(FriendEvent::Removed { peer_key: sender_key.into() }),
-            Self::UnfriendAck =>
-                SubscriptionEvent::Friend(FriendEvent::RemoveAcknowledged { peer_key: sender_key.into() }),
-            Self::ProfileKeyRotated { new_profile_dht_key } =>
-                SubscriptionEvent::Friend(FriendEvent::ProfileKeyRotated {
-                    peer_key: sender_key.into(), new_profile_dht_key,
-                }),
+            Self::FriendRequest {
+                display_name,
+                message,
+                ..
+            } => SubscriptionEvent::Friend(FriendEvent::RequestReceived {
+                from_key: sender_key.into(),
+                display_name,
+                message,
+            }),
+            Self::FriendAccept { .. } => SubscriptionEvent::Friend(FriendEvent::Accepted {
+                peer_key: sender_key.into(),
+                dm_log_key: String::new(),
+            }),
+            Self::FriendReject => SubscriptionEvent::Friend(FriendEvent::Rejected {
+                peer_key: sender_key.into(),
+            }),
+            Self::FriendRequestAck => SubscriptionEvent::Friend(FriendEvent::RequestAcknowledged {
+                peer_key: sender_key.into(),
+            }),
+            Self::Unfriend => SubscriptionEvent::Friend(FriendEvent::Removed {
+                peer_key: sender_key.into(),
+            }),
+            Self::UnfriendAck => SubscriptionEvent::Friend(FriendEvent::RemoveAcknowledged {
+                peer_key: sender_key.into(),
+            }),
+            Self::ProfileKeyRotated {
+                new_profile_dht_key,
+            } => SubscriptionEvent::Friend(FriendEvent::ProfileKeyRotated {
+                peer_key: sender_key.into(),
+                new_profile_dht_key,
+            }),
             // W16.4 + W16.5b — call signaling and DM invites surface
             // via TransportNotification, not SubscriptionEvent. Caller
             // routes these elsewhere; into_event returns None.
@@ -275,8 +277,12 @@ impl DmPayload {
             | Self::GroupDmInviteReply { .. } => return None,
             Self::PresenceUpdate { status, game_info } => {
                 let status_str = match status {
-                    0 => "online", 1 => "away", 2 => "busy",
-                    3 => "offline", 4 => "invisible", _ => "unknown",
+                    0 => "online",
+                    1 => "away",
+                    2 => "busy",
+                    3 => "offline",
+                    4 => "invisible",
+                    _ => "unknown",
                 };
                 SubscriptionEvent::Presence(PresenceEvent::FriendChanged {
                     peer_key: sender_key.into(),
@@ -298,8 +304,9 @@ pub fn deserialize_dm(type_id: TypeId, bytes: &[u8]) -> Result<DmPayload> {
 
 /// Serialize a DM payload to bytes.
 pub fn serialize_dm(payload: &DmPayload) -> Result<Vec<u8>> {
-    postcard::to_stdvec(payload)
-        .map_err(|e| TransportError::SerializationFailed { reason: e.to_string() })
+    postcard::to_stdvec(payload).map_err(|e| TransportError::SerializationFailed {
+        reason: e.to_string(),
+    })
 }
 
 /// Map a DmPayload variant to its frame TypeId.

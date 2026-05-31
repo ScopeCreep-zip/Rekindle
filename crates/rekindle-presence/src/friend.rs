@@ -7,9 +7,7 @@
 
 use std::sync::Arc;
 
-use crate::deps::{
-    FriendPresenceDeps, FriendPresenceEvent, GameInfoSnapshot, PresenceError,
-};
+use crate::deps::{FriendPresenceDeps, FriendPresenceEvent, GameInfoSnapshot, PresenceError};
 use crate::status::UserStatusKind;
 
 /// 2.5× the 60 s heartbeat — allows one missed heartbeat + jitter
@@ -86,11 +84,7 @@ pub fn handle_value_change<D: FriendPresenceDeps>(
     }
 }
 
-fn handle_status_change<D: FriendPresenceDeps>(
-    deps: &D,
-    friend_key: &str,
-    value: &[u8],
-) {
+fn handle_status_change<D: FriendPresenceDeps>(deps: &D, friend_key: &str, value: &[u8]) {
     let Some(mut status) = parse_status(value) else {
         return;
     };
@@ -271,7 +265,8 @@ pub async fn publish_status<D: FriendPresenceDeps>(
     payload.push(status_to_wire_byte(status));
     payload.extend_from_slice(&timestamp.to_be_bytes());
 
-    deps.write_profile_status_subkey(&profile_key, payload).await?;
+    deps.write_profile_status_subkey(&profile_key, payload)
+        .await?;
     tracing::info!(?status, "published status to DHT");
     Ok(())
 }

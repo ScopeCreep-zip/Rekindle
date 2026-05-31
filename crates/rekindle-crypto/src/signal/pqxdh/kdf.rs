@@ -52,7 +52,13 @@ mod tests {
 
     /// Build a deterministic-feeling test fixture (still random per run —
     /// fixture is built once and reused across all asserts in one test).
-    fn fixture() -> (SharedSecret, SharedSecret, SharedSecret, SharedSecret, [u8; 32]) {
+    fn fixture() -> (
+        SharedSecret,
+        SharedSecret,
+        SharedSecret,
+        SharedSecret,
+        [u8; 32],
+    ) {
         let sk = || StaticSecret::random_from_rng(OsRng);
         let (sk_a, sk_b) = (sk(), sk());
         let (sk_c, sk_d) = (sk(), sk());
@@ -79,7 +85,10 @@ mod tests {
         let (dh1, dh2, dh3, dh4, ss) = fixture();
         let with_dh4 = derive_root_key(&dh1, &dh2, &dh3, Some(&dh4), &ss).unwrap();
         let without_dh4 = derive_root_key(&dh1, &dh2, &dh3, None, &ss).unwrap();
-        assert_ne!(*with_dh4, *without_dh4, "presence of DH4 must affect root_key");
+        assert_ne!(
+            *with_dh4, *without_dh4,
+            "presence of DH4 must affect root_key"
+        );
     }
 
     #[test]
@@ -89,7 +98,10 @@ mod tests {
         ss2[0] ^= 0xFF;
         let r1 = derive_root_key(&dh1, &dh2, &dh3, Some(&dh4), &ss).unwrap();
         let r2 = derive_root_key(&dh1, &dh2, &dh3, Some(&dh4), &ss2).unwrap();
-        assert_ne!(*r1, *r2, "different ML-KEM shared secret must change root_key");
+        assert_ne!(
+            *r1, *r2,
+            "different ML-KEM shared secret must change root_key"
+        );
     }
 
     #[test]

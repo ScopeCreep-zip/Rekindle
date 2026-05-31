@@ -39,9 +39,11 @@ async fn try_rewatch_community(state: &Arc<AppState>, dht_key: &str) {
                 // Plate Gate (architecture §15.4): also match segment-N
                 // governance / registry / channel records.
                 if let Some(gov) = community.governance_state.as_ref() {
-                    if gov.segments.iter().any(|s| {
-                        s.governance_key == dht_key || s.registry_key == dht_key
-                    }) {
+                    if gov
+                        .segments
+                        .iter()
+                        .any(|s| s.governance_key == dht_key || s.registry_key == dht_key)
+                    {
                         return true;
                     }
                     if gov
@@ -124,7 +126,9 @@ pub async fn handle_value_change(
         node.as_ref().map(|nh| nh.routing_context.clone())
     };
 
-    if crate::services::sync_communities::handle_community_record_change(state, pool.inner(), &key).await {
+    if crate::services::sync_communities::handle_community_record_change(state, pool.inner(), &key)
+        .await
+    {
         tracing::debug!(key = %key, "handled community DHT change via sync service");
         return;
     }
@@ -147,8 +151,14 @@ pub async fn handle_value_change(
     // key matches a row in `dms`. (Architecture §27 — DMs reuse the SMPL
     // schema universally; the watch goes through the same plumbing as
     // community records.)
-    if try_handle_dm_change(state, pool.inner(), &key, &subkeys, routing_context.as_ref())
-        .await
+    if try_handle_dm_change(
+        state,
+        pool.inner(),
+        &key,
+        &subkeys,
+        routing_context.as_ref(),
+    )
+    .await
     {
         return;
     }
@@ -254,7 +264,12 @@ fn relay_watch_change(state: &Arc<AppState>, record_key: &str, subkey: u32, valu
                             .values()
                             .any(|csr| csr.record_key == record_key)
                 });
-            matched.then(|| (cs.id.clone(), cs.my_pseudonym_key.clone().unwrap_or_default()))
+            matched.then(|| {
+                (
+                    cs.id.clone(),
+                    cs.my_pseudonym_key.clone().unwrap_or_default(),
+                )
+            })
         })
     };
     let Some((community_id, observer)) = community_id_and_pseudonym else {
@@ -269,7 +284,9 @@ fn relay_watch_change(state: &Arc<AppState>, record_key: &str, subkey: u32, valu
         content_hash: blake3::hash(value).to_hex().to_string(),
         observer_pseudonym: observer,
     };
-    if let Err(e) = crate::services::community::gossip::send_to_mesh(state, &community_id, &envelope) {
+    if let Err(e) =
+        crate::services::community::gossip::send_to_mesh(state, &community_id, &envelope)
+    {
         tracing::debug!(community = %community_id, error = %e, "watch relay gossip failed");
     }
 }

@@ -12,7 +12,10 @@ use crate::db::DbPool;
 use crate::services::dm_adapter::DmAdapter;
 use crate::state::AppState;
 
-#[allow(clippy::too_many_arguments, reason = "thin facade preserving message_service dispatcher arm signature")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "thin facade preserving message_service dispatcher arm signature"
+)]
 pub async fn handle_incoming_dm_invite(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
@@ -51,7 +54,10 @@ pub async fn handle_incoming_dm_decline(
         .map_err(|e| e.to_string())
 }
 
-#[allow(clippy::too_many_arguments, reason = "thin facade preserving message_service dispatcher arm signature")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "thin facade preserving message_service dispatcher arm signature"
+)]
 pub async fn handle_incoming_group_dm_invite(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,

@@ -15,10 +15,10 @@ mod lifecycle;
 mod session;
 
 pub(super) use incoming::{handle_friend_accept_full, handle_friend_request_full};
+pub(crate) use lifecycle::delete_pending_messages_to_recipient;
 pub(super) use lifecycle::{
     handle_friend_reject, handle_profile_key_rotated, handle_unfriended, handle_unfriended_ack,
 };
-pub(crate) use lifecycle::delete_pending_messages_to_recipient;
 
 /// Consolidated parameters for an incoming friend request.
 pub(super) struct IncomingFriendRequest<'a> {

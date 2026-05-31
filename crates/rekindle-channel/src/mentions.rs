@@ -171,12 +171,7 @@ pub fn local_member_is_mentioned<D: ChannelMessagingDeps>(
         let any_role = my_roles
             .iter()
             .filter_map(|id| roles.iter().find(|r| r.id == *id))
-            .any(|role| {
-                matches
-                    .roles
-                    .iter()
-                    .any(|m| m == &role.name.to_lowercase())
-            });
+            .any(|role| matches.roles.iter().any(|m| m == &role.name.to_lowercase()));
         if any_role {
             return true;
         }
@@ -194,12 +189,10 @@ pub fn local_member_is_mentioned<D: ChannelMessagingDeps>(
     // A member-token match wins only if it isn't already a role token
     // — roles took precedence in the parser.
     let roles = deps.community_roles(community_id);
-    matches.members.iter().any(|name| {
-        roles
-            .iter()
-            .all(|r| r.name.to_lowercase() != *name)
-            && my_display == *name
-    })
+    matches
+        .members
+        .iter()
+        .any(|name| roles.iter().all(|r| r.name.to_lowercase() != *name) && my_display == *name)
 }
 
 /// Inverse of `resolve_to_wire`: rebuild a `MentionMatches` from the
@@ -226,10 +219,7 @@ pub fn matches_from_cleartext<D: ChannelMessagingDeps>(
         let display = profiles
             .get(pseudonym_hex)
             .and_then(|p| p.display_name.as_deref())
-            .map_or_else(
-                || pseudonym_hex.to_lowercase(),
-                str::to_lowercase,
-            );
+            .map_or_else(|| pseudonym_hex.to_lowercase(), str::to_lowercase);
         if !matches.members.contains(&display) {
             matches.members.push(display);
         }

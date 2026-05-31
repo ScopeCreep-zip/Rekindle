@@ -11,8 +11,6 @@
 //! `rekindle_transport::TransportConfig`. All network operations are
 //! delegated to rekindle-transport's broadcast/ and subscriptions/ modules.
 
-
-
 pub mod audit;
 pub mod keystore;
 
@@ -53,8 +51,8 @@ impl StatePaths {
         let data_home = std::env::var("XDG_DATA_HOME")
             .map_or_else(|_| home.join(".local/share"), PathBuf::from);
 
-        let config_home = std::env::var("XDG_CONFIG_HOME")
-            .map_or_else(|_| home.join(".config"), PathBuf::from);
+        let config_home =
+            std::env::var("XDG_CONFIG_HOME").map_or_else(|_| home.join(".config"), PathBuf::from);
 
         let state_dir = state_home.join("rekindle");
         let session_file = state_dir.join("session.json");
@@ -73,7 +71,12 @@ impl StatePaths {
 
     /// Ensure all required directories exist with correct permissions.
     pub async fn ensure_directories(&self) -> anyhow::Result<()> {
-        for dir in [&self.state_dir, &self.log_dir, &self.veilid_dir, &self.config_dir] {
+        for dir in [
+            &self.state_dir,
+            &self.log_dir,
+            &self.veilid_dir,
+            &self.config_dir,
+        ] {
             tokio::fs::create_dir_all(dir).await?;
 
             // [RC-6] State and veilid dirs: owner-only (0700).

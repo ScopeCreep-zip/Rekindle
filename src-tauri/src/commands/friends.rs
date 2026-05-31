@@ -41,14 +41,22 @@ pub async fn add_friend(
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
     // Phase 5 — gate writes on lifecycle.
-    let _g = rekindle_lifecycle::TransportGuard::write(&state.lifecycle)
-        .map_err(|e| e.to_string())?;
+    let _g =
+        rekindle_lifecycle::TransportGuard::write(&state.lifecycle).map_err(|e| e.to_string())?;
     let state_clone = state.inner().clone();
     let pool_clone = pool.inner().clone();
     state
         .idempotency
         .wrap(idempotency_key, || async move {
-            add_friend_inner(state_clone, pool_clone, app, public_key, display_name, message).await
+            add_friend_inner(
+                state_clone,
+                pool_clone,
+                app,
+                public_key,
+                display_name,
+                message,
+            )
+            .await
         })
         .await
 }
@@ -86,8 +94,8 @@ pub async fn accept_request(
 /// Get the full friends list.
 #[tauri::command]
 pub async fn get_friends(state: State<'_, SharedState>) -> Result<Vec<FriendResponse>, String> {
-    let _g = rekindle_lifecycle::TransportGuard::read(&state.lifecycle)
-        .map_err(|e| e.to_string())?;
+    let _g =
+        rekindle_lifecycle::TransportGuard::read(&state.lifecycle).map_err(|e| e.to_string())?;
     Ok(list_friends_inner(state.inner()))
 }
 
@@ -217,8 +225,13 @@ pub async fn move_friend_to_group(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    move_friend_to_group_inner(state.inner().clone(), pool.inner().clone(), public_key, group_id)
-        .await
+    move_friend_to_group_inner(
+        state.inner().clone(),
+        pool.inner().clone(),
+        public_key,
+        group_id,
+    )
+    .await
 }
 
 /// Generate an invite link containing everything needed for a peer to add us.
@@ -238,8 +251,13 @@ pub async fn add_friend_from_invite(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    add_friend_from_invite_inner(state.inner().clone(), pool.inner().clone(), app, invite_string)
-        .await
+    add_friend_from_invite_inner(
+        state.inner().clone(),
+        pool.inner().clone(),
+        app,
+        invite_string,
+    )
+    .await
 }
 
 /// Block a user — works for any public key (friend, pending, invite, or raw key).

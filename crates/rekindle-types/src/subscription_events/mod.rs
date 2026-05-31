@@ -28,7 +28,7 @@ pub use network::NetworkEvent;
 pub use presence::PresenceEvent;
 pub use social::SocialEvent;
 pub use system::SystemEvent;
-pub use typing::{TypingEvent, TypingContext};
+pub use typing::{TypingContext, TypingEvent};
 pub use voice::VoiceEvent;
 
 use serde::{Deserialize, Serialize};
@@ -61,10 +61,7 @@ pub enum SubscriptionEvent {
     /// System-level signals (announcements, raid alerts, kicked, sync, bootstrap).
     System(SystemEvent),
     /// Unread count changed for a specific context.
-    UnreadChanged {
-        context: UnreadContext,
-        count: u32,
-    },
+    UnreadChanged { context: UnreadContext, count: u32 },
 }
 
 /// Context for unread count changes.
@@ -126,10 +123,12 @@ impl SubscriptionEvent {
                 ChannelMessageEvent::DirectMessageReceived { .. } => None,
             },
             Self::Typing(e) => match e {
-                TypingEvent::Started { context, .. } | TypingEvent::Stopped { context, .. } => match context {
-                    TypingContext::Channel { community, .. } => Some(community),
-                    TypingContext::Dm { .. } => None,
-                },
+                TypingEvent::Started { context, .. } | TypingEvent::Stopped { context, .. } => {
+                    match context {
+                        TypingContext::Channel { community, .. } => Some(community),
+                        TypingContext::Dm { .. } => None,
+                    }
+                }
             },
             Self::Presence(e) => match e {
                 PresenceEvent::CommunityMemberChanged { community, .. } => Some(community),
@@ -234,17 +233,26 @@ pub const MAX_FILTERS_PER_CONNECTION: usize = 64;
 impl SubscriptionFilter {
     /// Match all events.
     pub fn all() -> Self {
-        Self { categories: None, community_scope: None }
+        Self {
+            categories: None,
+            community_scope: None,
+        }
     }
 
     /// Match all events for a specific community (plus global events).
     pub fn community(gov_key: String) -> Self {
-        Self { categories: None, community_scope: Some(gov_key) }
+        Self {
+            categories: None,
+            community_scope: Some(gov_key),
+        }
     }
 
     /// Match specific event categories across all communities.
     pub fn categories(cats: Vec<EventCategory>) -> Self {
-        Self { categories: Some(cats), community_scope: None }
+        Self {
+            categories: Some(cats),
+            community_scope: None,
+        }
     }
 
     /// Check if this filter matches an event.

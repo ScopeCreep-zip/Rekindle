@@ -23,7 +23,6 @@ pub struct PendingMessageFetch {
     pub attempt: u32,
 }
 
-
 pub(super) fn verify_notification_message(
     pending: &PendingMessageFetch,
     message: &ChannelMessage,
@@ -63,7 +62,11 @@ pub(super) fn emit_message_received(
 /// from governance yet — callers fall back to the no-AAD path below
 /// for backward-compat with messages written before §8 line 1626 was
 /// implemented.
-fn channel_record_key_for(state: &Arc<AppState>, community_id: &str, channel_id: &str) -> Option<String> {
+fn channel_record_key_for(
+    state: &Arc<AppState>,
+    community_id: &str,
+    channel_id: &str,
+) -> Option<String> {
     let communities = state.communities.read();
     communities
         .get(community_id)?
@@ -86,13 +89,13 @@ pub(super) fn decrypt_message_body(
     // bound. If the SMPL record key isn't known yet, fall back to the
     // no-AAD path below for legacy messages written before AAD landed.
     let record_key = channel_record_key_for(state, community_id, channel_id);
-    let aad_owned = record_key.as_ref().map(|key| {
-        rekindle_crypto::group::media_key::ChannelAad {
+    let aad_owned = record_key
+        .as_ref()
+        .map(|key| rekindle_crypto::group::media_key::ChannelAad {
             channel_record_key: key.as_bytes(),
             subkey_index: pending.subkey_index,
             lamport_ts: message.lamport_ts,
-        }
-    });
+        });
 
     {
         let channel_mek_cache = state.channel_mek_cache.lock();
@@ -200,12 +203,11 @@ pub(super) async fn fetch_channel_message(
     // the given subkey looking for the message_id. Genesis segment 0 is
     // always present; segment-N records are populated lazily via
     // `ChannelSegmentLinked` governance entries.
-    let segment_records =
-        crate::services::community::segments::channel_record_keys_per_segment(
-            state,
-            community_id,
-            channel_id,
-        );
+    let segment_records = crate::services::community::segments::channel_record_keys_per_segment(
+        state,
+        community_id,
+        channel_id,
+    );
     if segment_records.is_empty() {
         return Err("channel record key not found".into());
     }
@@ -371,4 +373,3 @@ pub fn queue_message_fetch_retry(state: Arc<AppState>, pending: PendingMessageFe
         }
     });
 }
-

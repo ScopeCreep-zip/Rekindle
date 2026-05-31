@@ -63,7 +63,10 @@ pub async fn run_initial_sync<D: CommunityPresenceDeps>(
 
     if !channel_entries.is_empty() && member_count > 0 {
         for (channel_id, record_key) in &channel_entries {
-            match deps.read_all_channel_messages(record_key, member_count).await {
+            match deps
+                .read_all_channel_messages(record_key, member_count)
+                .await
+            {
                 Ok(messages) if !messages.is_empty() => {
                     tracing::debug!(
                         community = %community_id,

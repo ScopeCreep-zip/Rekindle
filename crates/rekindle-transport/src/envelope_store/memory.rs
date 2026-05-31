@@ -123,10 +123,7 @@ impl EnvelopeStore for MemoryEnvelopeStore {
         self.mark_delivered(id).await
     }
 
-    async fn cancel_by_correlation(
-        &self,
-        correlation_id: &str,
-    ) -> Result<usize, StoreError> {
+    async fn cancel_by_correlation(&self, correlation_id: &str) -> Result<usize, StoreError> {
         let mut inner = self.inner.lock().await;
         let mut removed = 0usize;
         for rows in inner.envelopes.values_mut() {
@@ -192,11 +189,7 @@ impl EnvelopeStore for MemoryEnvelopeStore {
         Ok(())
     }
 
-    async fn delete_active_call(
-        &self,
-        owner_key: &str,
-        call_id: &str,
-    ) -> Result<(), StoreError> {
+    async fn delete_active_call(&self, owner_key: &str, call_id: &str) -> Result<(), StoreError> {
         let mut inner = self.inner.lock().await;
         if let Some(rows) = inner.calls.get_mut(owner_key) {
             rows.remove(call_id);

@@ -49,7 +49,8 @@ pub(super) fn handle_stage_update(
     {
         let deps_task = Arc::clone(deps);
         let handle = tokio::spawn(async move {
-            reconcile_stage_transport(&*deps_task, &cid, &channel_id, &transport, &my_pseudonym).await;
+            reconcile_stage_transport(&*deps_task, &cid, &channel_id, &transport, &my_pseudonym)
+                .await;
         });
         deps.register_background_handle(handle);
     }

@@ -243,13 +243,13 @@ pub(crate) fn decrypt_channel_record_message(
     ciphertext: &[u8],
     ctx: ChannelDecryptContext<'_>,
 ) -> DecryptedMessageBody {
-    let aad = ctx.channel_record_key.map(|key| {
-        rekindle_crypto::group::media_key::ChannelAad {
+    let aad = ctx
+        .channel_record_key
+        .map(|key| rekindle_crypto::group::media_key::ChannelAad {
             channel_record_key: key.as_bytes(),
             subkey_index: ctx.subkey_index,
             lamport_ts: ctx.lamport_ts,
-        }
-    });
+        });
     let try_decrypt = |mek: &rekindle_crypto::group::media_key::MediaEncryptionKey| {
         if let Some(aad) = aad {
             if let Ok(bytes) = mek.decrypt_with_aad(ciphertext, aad) {
@@ -383,14 +383,12 @@ pub(crate) async fn load_channel_messages_from_smpl(
 
     let channel_record_key_owned = {
         let communities = state.communities.read();
-        communities
-            .get(community_id)
-            .and_then(|c| {
-                c.channels
-                    .iter()
-                    .find(|ch| ch.id == channel_id)
-                    .and_then(|ch| ch.message_record_key.clone())
-            })
+        communities.get(community_id).and_then(|c| {
+            c.channels
+                .iter()
+                .find(|ch| ch.id == channel_id)
+                .and_then(|ch| ch.message_record_key.clone())
+        })
     };
     let hydrated_messages: Vec<Message> = filtered
         .iter()

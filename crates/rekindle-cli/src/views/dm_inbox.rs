@@ -22,16 +22,16 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph};
 use ratatui::Frame;
 
-use rekindle_types::display::{DmThreadDisplay, DmMessageDisplay};
-use rekindle_types::subscription_events::{SubscriptionEvent, ChannelMessageEvent};
+use rekindle_types::display::{DmMessageDisplay, DmThreadDisplay};
+use rekindle_types::subscription_events::{ChannelMessageEvent, SubscriptionEvent};
 
+use super::View;
 use crate::helpers;
 use crate::tui::action::{Action, CommandResult};
-use crate::tui::components::Component;
 use crate::tui::components::input_box::InputBox;
+use crate::tui::components::Component;
 use crate::tui::focus::{FocusId, FocusRing};
 use crate::tui::theme::ThemeManager;
-use super::View;
 
 /// DM inbox view state.
 pub struct DmInboxView {
@@ -119,7 +119,11 @@ impl DmInboxView {
                 };
 
                 let glyph = if unread > 0 {
-                    if self.use_unicode { "● " } else { "* " }
+                    if self.use_unicode {
+                        "● "
+                    } else {
+                        "* "
+                    }
                 } else {
                     "  "
                 };
@@ -138,7 +142,10 @@ impl DmInboxView {
     /// Render the message thread for the selected conversation.
     fn render_thread(&self, frame: &mut Frame, area: Rect, thread: &DmThreadDisplay) {
         let block = Block::bordered()
-            .title(format!(" {} ", helpers::sanitize_for_display(&thread.peer_name)))
+            .title(format!(
+                " {} ",
+                helpers::sanitize_for_display(&thread.peer_name)
+            ))
             .border_style(if self.focus.is_focused(FocusId::MessageList) {
                 Style::new()
             } else {
@@ -161,7 +168,10 @@ impl DmInboxView {
                 let sender = helpers::sanitize_for_display(sender);
                 let body = helpers::sanitize_for_display(&msg.body);
                 Line::from(vec![
-                    Span::styled(format!("  [{}] ", helpers::format_time_short(msg.timestamp)), Style::new().dim()),
+                    Span::styled(
+                        format!("  [{}] ", helpers::format_time_short(msg.timestamp)),
+                        Style::new().dim(),
+                    ),
                     Span::styled(format!("{sender}: "), Style::new().bold()),
                     Span::raw(body),
                 ])
@@ -176,11 +186,8 @@ impl DmInboxView {
 impl View for DmInboxView {
     fn draw(&mut self, frame: &mut Frame, area: Rect, _theme: &ThemeManager) -> Result<()> {
         // Two-pane layout: conversation list | thread + input
-        let [list_area, thread_area] = Layout::horizontal([
-            Constraint::Length(28),
-            Constraint::Fill(1),
-        ])
-        .areas(area);
+        let [list_area, thread_area] =
+            Layout::horizontal([Constraint::Length(28), Constraint::Fill(1)]).areas(area);
 
         self.click_rects.clear();
         self.click_rects.insert(FocusId::DmList, list_area);
@@ -208,11 +215,8 @@ impl View for DmInboxView {
         }
 
         // Thread + input
-        let [msg_area, input_area] = Layout::vertical([
-            Constraint::Fill(1),
-            Constraint::Length(3),
-        ])
-        .areas(thread_area);
+        let [msg_area, input_area] =
+            Layout::vertical([Constraint::Fill(1), Constraint::Length(3)]).areas(thread_area);
 
         // Render selected thread
         if let Some(idx) = self.thread_list_state.selected() {
@@ -313,11 +317,17 @@ impl View for DmInboxView {
 
     fn on_subscription_event(&mut self, event: &SubscriptionEvent) -> Result<()> {
         if let SubscriptionEvent::ChannelMessage(ChannelMessageEvent::DirectMessageReceived {
-            peer_key, timestamp, sender_name, body,
-        }) = event {
+            peer_key,
+            timestamp,
+            sender_name,
+            body,
+        }) = event
+        {
             let display_msg = DmMessageDisplay {
                 sender_key: peer_key.clone(),
-                sender_name: sender_name.clone().unwrap_or_else(|| helpers::abbreviate_key(peer_key)),
+                sender_name: sender_name
+                    .clone()
+                    .unwrap_or_else(|| helpers::abbreviate_key(peer_key)),
                 body: body.clone().unwrap_or_else(|| "(decrypting...)".into()),
                 timestamp: *timestamp,
                 is_self: false,
@@ -330,14 +340,17 @@ impl View for DmInboxView {
             } else {
                 self.threads.push(DmThreadDisplay {
                     peer_key: peer_key.clone(),
-                    peer_name: sender_name.clone().unwrap_or_else(|| helpers::abbreviate_key(peer_key)),
+                    peer_name: sender_name
+                        .clone()
+                        .unwrap_or_else(|| helpers::abbreviate_key(peer_key)),
                     last_message_at: *timestamp,
                     unread_count: 1,
                     messages: vec![display_msg],
                 });
             }
 
-            self.threads.sort_by(|a, b| b.last_message_at.cmp(&a.last_message_at));
+            self.threads
+                .sort_by(|a, b| b.last_message_at.cmp(&a.last_message_at));
         }
         Ok(())
     }

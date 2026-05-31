@@ -113,8 +113,12 @@ mod tests {
         let aid = [9u8; 16];
         let attachment_uuid = Uuid::from_bytes(aid);
         let pinned = PinnedSet::new();
-        cache.insert(attachment_uuid, 0, b"chunk0", &pinned).unwrap();
-        cache.insert(attachment_uuid, 2, b"chunk2", &pinned).unwrap();
+        cache
+            .insert(attachment_uuid, 0, b"chunk0", &pinned)
+            .unwrap();
+        cache
+            .insert(attachment_uuid, 2, b"chunk2", &pinned)
+            .unwrap();
 
         let reply = serve_attachment_request(&mut cache, aid, &[0, 1, 2, 3])
             .expect("should reply with held chunks");

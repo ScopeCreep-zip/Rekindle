@@ -139,7 +139,6 @@ pub async fn admin_delete_one_message(
     Ok(())
 }
 
-
 pub async fn remove_community_member_inner(
     state: std::sync::Arc<crate::state::AppState>,
     pool: crate::db::DbPool,
@@ -147,8 +146,8 @@ pub async fn remove_community_member_inner(
     pseudonym_key: String,
 ) -> Result<(), String> {
     use crate::commands::community::helpers::require_permission;
-    use crate::services::community_registry_slot::clear_registry_presence_slot;
     use crate::db_helpers::db_call;
+    use crate::services::community_registry_slot::clear_registry_presence_slot;
     use crate::state_helpers;
     use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
     use rekindle_protocol::dht::community::permissions_v2::Permissions;
@@ -164,8 +163,7 @@ pub async fn remove_community_member_inner(
         }),
     )?;
 
-    if let Err(e) =
-        clear_registry_presence_slot(&state, &pool, &community_id, &pseudonym_key).await
+    if let Err(e) = clear_registry_presence_slot(&state, &pool, &community_id, &pseudonym_key).await
     {
         tracing::debug!(
             community = %community_id,
@@ -281,7 +279,10 @@ pub async fn remove_timeout_inner(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments, reason = "Tauri command surface — matches PermissionOverwrite shape")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Tauri command surface — matches PermissionOverwrite shape"
+)]
 pub async fn set_channel_overwrite_inner(
     state: &crate::state::SharedState,
     pool: &crate::db::DbPool,
@@ -478,4 +479,3 @@ pub async fn unban_member_inner(
     tracing::info!(community = %community_id, member = %pseudonym_key, "member unbanned");
     Ok(())
 }
-

@@ -21,19 +21,19 @@
 //! - `route` — route lifecycle convenience (allocate, refresh, publish)
 
 // Veilid infrastructure (imports veilid_core)
-pub mod node;
-pub mod send;
-pub mod peer_route;
-pub mod peer_registry;
 pub mod dht;
+pub mod node;
+pub mod peer_registry;
+pub mod peer_route;
+pub mod send;
 
 // Application-level broadcast (calls through infrastructure above)
 pub mod dht_writes;
-pub mod gossip;
 pub mod dm;
+pub mod gossip;
+pub mod route;
 pub mod rpc;
 pub mod voice;
-pub mod route;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -85,7 +85,9 @@ impl BroadcastManager {
         mek_cache: Arc<RwLock<MekCache>>,
     ) -> Self {
         Self {
-            node, session, mek_cache,
+            node,
+            session,
+            mek_cache,
             meshes: Arc::new(RwLock::new(HashMap::new())),
             rate_limiter: RwLock::new(OutboundRateLimiter::default()),
         }
@@ -93,7 +95,9 @@ impl BroadcastManager {
 
     pub fn register_mesh(&self, community_id: &str) {
         tracing::info!(community_id, "broadcast: registering gossip mesh");
-        self.meshes.write().entry(community_id.to_string())
+        self.meshes
+            .write()
+            .entry(community_id.to_string())
             .or_insert_with(|| GossipMesh::new(community_id.to_string()));
     }
 
@@ -103,8 +107,16 @@ impl BroadcastManager {
         self.rate_limiter.write().remove_community(community_id);
     }
 
-    pub fn node(&self) -> &TransportNode { &self.node }
-    pub fn session(&self) -> &Arc<RwLock<Option<Session>>> { &self.session }
-    pub fn mek_cache(&self) -> &Arc<RwLock<MekCache>> { &self.mek_cache }
-    pub fn meshes(&self) -> &Arc<RwLock<HashMap<String, GossipMesh>>> { &self.meshes }
+    pub fn node(&self) -> &TransportNode {
+        &self.node
+    }
+    pub fn session(&self) -> &Arc<RwLock<Option<Session>>> {
+        &self.session
+    }
+    pub fn mek_cache(&self) -> &Arc<RwLock<MekCache>> {
+        &self.mek_cache
+    }
+    pub fn meshes(&self) -> &Arc<RwLock<HashMap<String, GossipMesh>>> {
+        &self.meshes
+    }
 }

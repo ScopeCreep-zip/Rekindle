@@ -87,8 +87,7 @@ pub async fn get_audit_log_inner(
                 rekindle_types::governance::GovernanceSubkeyPayload,
             >(val.data())
             {
-                let Ok(sig_arr): Result<[u8; 64], _> =
-                    payload.signature.as_slice().try_into()
+                let Ok(sig_arr): Result<[u8; 64], _> = payload.signature.as_slice().try_into()
                 else {
                     continue;
                 };
@@ -103,7 +102,9 @@ pub async fn get_audit_log_inner(
                 }
                 let actor = hex::encode(payload.author_pseudonym.0);
                 for entry in payload.entries {
-                    rows.push(crate::audit_view::governance_entry_to_audit_row(&actor, entry));
+                    rows.push(crate::audit_view::governance_entry_to_audit_row(
+                        &actor, entry,
+                    ));
                 }
             }
         }
@@ -128,9 +129,7 @@ pub fn get_ban_list_inner(
     community_id: &str,
 ) -> Result<Vec<BannedMemberInfo>, String> {
     let communities = state.communities.read();
-    let community = communities
-        .get(community_id)
-        .ok_or("community not found")?;
+    let community = communities.get(community_id).ok_or("community not found")?;
     let mut bans: Vec<_> = community
         .governance_state
         .as_ref()

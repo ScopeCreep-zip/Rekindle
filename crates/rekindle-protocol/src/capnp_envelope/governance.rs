@@ -20,9 +20,10 @@ use rekindle_types::id::{CategoryId, ChannelId, EventId, PseudonymKey, RoleId, T
 use super::len_u32;
 use super::sub_types::{
     category_id_from_capnp, channel_id_from_capnp, event_id_from_capnp, pseudonym_key_from_capnp,
-    pseudonym_key_to_capnp, read_event_location_via_event_capnp, read_recurrence_rule_via_event_capnp,
-    role_id_from_capnp, thread_id_from_capnp, uuid16_from_capnp, uuid16_to_capnp,
-    write_event_location_via_event_capnp, write_recurrence_rule_via_event_capnp,
+    pseudonym_key_to_capnp, read_event_location_via_event_capnp,
+    read_recurrence_rule_via_event_capnp, role_id_from_capnp, thread_id_from_capnp,
+    uuid16_from_capnp, uuid16_to_capnp, write_event_location_via_event_capnp,
+    write_recurrence_rule_via_event_capnp,
 };
 
 /// Tri-state for `ChannelUpdated.category_id`. The Rust enum variant
@@ -344,11 +345,9 @@ fn write_governance_entry_second_half(b: schema::Builder<'_>, e: &GovernanceEntr
             *deny,
             *lamport,
         ),
-        GovernanceEntry::RemoveTimeoutEntry { target, lamport } => write_remove_timeout_entry(
-            b.reborrow().init_remove_timeout_entry(),
-            target,
-            *lamport,
-        ),
+        GovernanceEntry::RemoveTimeoutEntry { target, lamport } => {
+            write_remove_timeout_entry(b.reborrow().init_remove_timeout_entry(), target, *lamport)
+        }
         GovernanceEntry::RoleArchived { role_id, lamport } => {
             write_role_archived(b.reborrow().init_role_archived(), *role_id, *lamport);
         }
@@ -823,10 +822,7 @@ fn write_thread_created(
     lamport: u64,
 ) {
     uuid16_to_capnp(p.reborrow().init_thread_id(), &thread_id.0);
-    uuid16_to_capnp(
-        p.reborrow().init_parent_channel_id(),
-        &parent_channel_id.0,
-    );
+    uuid16_to_capnp(p.reborrow().init_parent_channel_id(), &parent_channel_id.0);
     p.set_name(name);
     p.set_thread_type(thread_type);
     p.set_has_record_key(record_key.is_some());
@@ -858,10 +854,7 @@ fn write_thread_archived(
 // fields via `let ... else { unreachable!() }` so the helper signature
 // stays under the `too_many_arguments` threshold without needing
 // `#[allow]`. Matches the per-variant pattern in `control.rs`.
-fn write_event_created(
-    mut p: schema_pkg::event_created_entry::Builder<'_>,
-    e: &GovernanceEntry,
-) {
+fn write_event_created(mut p: schema_pkg::event_created_entry::Builder<'_>, e: &GovernanceEntry) {
     let GovernanceEntry::EventCreated {
         event_id,
         name,
@@ -984,7 +977,9 @@ fn write_attachment_offer(
     p.set_chunk_count(offer.chunk_count);
     p.set_chunk_size(offer.chunk_size);
     p.set_merkle_root(&offer.merkle_root);
-    let mut hashes = p.reborrow().init_chunk_hashes(len_u32(offer.chunk_hashes.len()));
+    let mut hashes = p
+        .reborrow()
+        .init_chunk_hashes(len_u32(offer.chunk_hashes.len()));
     for (i, h) in offer.chunk_hashes.iter().enumerate() {
         hashes.set(len_u32(i), h);
     }
@@ -1400,12 +1395,16 @@ fn read_community_meta(
             None
         },
         description: if p.get_has_description() {
-            Some(text_to_string(p.get_description().map_err(|e| capnp_err(&e))?)?)
+            Some(text_to_string(
+                p.get_description().map_err(|e| capnp_err(&e))?,
+            )?)
         } else {
             None
         },
         icon_hash: if p.get_has_icon_hash() {
-            Some(text_to_string(p.get_icon_hash().map_err(|e| capnp_err(&e))?)?)
+            Some(text_to_string(
+                p.get_icon_hash().map_err(|e| capnp_err(&e))?,
+            )?)
         } else {
             None
         },
@@ -1498,13 +1497,17 @@ fn read_thread_created(
         name: text_to_string(p.get_name().map_err(|e| capnp_err(&e))?)?,
         thread_type: text_to_string(p.get_thread_type().map_err(|e| capnp_err(&e))?)?,
         record_key: if p.get_has_record_key() {
-            Some(text_to_string(p.get_record_key().map_err(|e| capnp_err(&e))?)?)
+            Some(text_to_string(
+                p.get_record_key().map_err(|e| capnp_err(&e))?,
+            )?)
         } else {
             None
         },
         invited: invited?,
         forum_tag: if p.get_has_forum_tag() {
-            Some(text_to_string(p.get_forum_tag().map_err(|e| capnp_err(&e))?)?)
+            Some(text_to_string(
+                p.get_forum_tag().map_err(|e| capnp_err(&e))?,
+            )?)
         } else {
             None
         },
@@ -1529,7 +1532,9 @@ fn read_event_created(
         event_id: event_id_from_capnp(p.get_event_id().map_err(|e| capnp_err(&e))?)?,
         name: text_to_string(p.get_name().map_err(|e| capnp_err(&e))?)?,
         description: if p.get_has_description() {
-            Some(text_to_string(p.get_description().map_err(|e| capnp_err(&e))?)?)
+            Some(text_to_string(
+                p.get_description().map_err(|e| capnp_err(&e))?,
+            )?)
         } else {
             None
         },
@@ -1659,7 +1664,9 @@ fn read_attachment_offer(
         .get_merkle_root()
         .map_err(|e| capnp_err(&e))?
         .try_into()
-        .map_err(|_| ProtocolError::Deserialization("attachment merkle_root not 32 bytes".into()))?;
+        .map_err(|_| {
+            ProtocolError::Deserialization("attachment merkle_root not 32 bytes".into())
+        })?;
     Ok(rekindle_types::attachment::AttachmentOffer {
         attachment_id: uuid16_from_capnp(p.get_attachment_id().map_err(|e| capnp_err(&e))?)?,
         filename: text_to_string(p.get_filename().map_err(|e| capnp_err(&e))?)?,
@@ -1838,9 +1845,7 @@ fn read_invite_created(
         } else {
             None
         },
-        encrypted_secrets: text_to_string(
-            p.get_encrypted_secrets().map_err(|e| capnp_err(&e))?,
-        )?,
+        encrypted_secrets: text_to_string(p.get_encrypted_secrets().map_err(|e| capnp_err(&e))?)?,
         lamport: p.get_lamport(),
     })
 }
@@ -1883,7 +1888,9 @@ fn read_community_policy(
 
 // ── Sub-type helpers ─────────────────────────────────────────────────
 
-fn event_status_to_capnp(s: rekindle_types::event::EventStatus) -> community_event_capnp::EventStatus {
+fn event_status_to_capnp(
+    s: rekindle_types::event::EventStatus,
+) -> community_event_capnp::EventStatus {
     use community_event_capnp::EventStatus as Cap;
     use rekindle_types::event::EventStatus;
     match s {
@@ -1894,7 +1901,9 @@ fn event_status_to_capnp(s: rekindle_types::event::EventStatus) -> community_eve
     }
 }
 
-fn event_status_from_capnp(s: community_event_capnp::EventStatus) -> rekindle_types::event::EventStatus {
+fn event_status_from_capnp(
+    s: community_event_capnp::EventStatus,
+) -> rekindle_types::event::EventStatus {
     use community_event_capnp::EventStatus as Cap;
     use rekindle_types::event::EventStatus;
     match s {
@@ -1959,7 +1968,9 @@ fn read_onboarding_question(
         question_id: text_to_string(r.get_question_id().map_err(|e| capnp_err(&e))?)?,
         title: text_to_string(r.get_title().map_err(|e| capnp_err(&e))?)?,
         description: if r.get_has_description() {
-            Some(text_to_string(r.get_description().map_err(|e| capnp_err(&e))?)?)
+            Some(text_to_string(
+                r.get_description().map_err(|e| capnp_err(&e))?,
+            )?)
         } else {
             None
         },
@@ -1983,11 +1994,15 @@ fn write_onboarding_option(
     if let Some(ref e) = o.emoji {
         b.set_emoji(e);
     }
-    let mut roles = b.reborrow().init_roles_to_assign(len_u32(o.roles_to_assign.len()));
+    let mut roles = b
+        .reborrow()
+        .init_roles_to_assign(len_u32(o.roles_to_assign.len()));
     for (i, r) in o.roles_to_assign.iter().enumerate() {
         uuid16_to_capnp(roles.reborrow().get(len_u32(i)), &r.0);
     }
-    let mut chans = b.reborrow().init_channels_to_show(len_u32(o.channels_to_show.len()));
+    let mut chans = b
+        .reborrow()
+        .init_channels_to_show(len_u32(o.channels_to_show.len()));
     for (i, c) in o.channels_to_show.iter().enumerate() {
         uuid16_to_capnp(chans.reborrow().get(len_u32(i)), &c.0);
     }
@@ -2012,7 +2027,9 @@ fn read_onboarding_option(
         option_id: text_to_string(r.get_option_id().map_err(|e| capnp_err(&e))?)?,
         title: text_to_string(r.get_title().map_err(|e| capnp_err(&e))?)?,
         description: if r.get_has_description() {
-            Some(text_to_string(r.get_description().map_err(|e| capnp_err(&e))?)?)
+            Some(text_to_string(
+                r.get_description().map_err(|e| capnp_err(&e))?,
+            )?)
         } else {
             None
         },
@@ -2058,10 +2075,7 @@ fn read_guide_step(r: schema_pkg::guide_step::Reader<'_>) -> Result<GuideStep, P
     })
 }
 
-fn write_welcome_channel(
-    mut b: schema_pkg::welcome_channel::Builder<'_>,
-    w: &WelcomeChannel,
-) {
+fn write_welcome_channel(mut b: schema_pkg::welcome_channel::Builder<'_>, w: &WelcomeChannel) {
     uuid16_to_capnp(b.reborrow().init_channel_id(), &w.channel_id.0);
     b.set_description(&w.description);
     b.set_has_emoji(w.emoji.is_some());

@@ -63,8 +63,7 @@ pub fn encrypt_subkey(
     subkey_index: u32,
     plaintext: &[u8],
 ) -> Result<Vec<u8>, String> {
-    let cipher =
-        Aes256Gcm::new_from_slice(&sync_key.0).map_err(|e| format!("aes init: {e}"))?;
+    let cipher = Aes256Gcm::new_from_slice(&sync_key.0).map_err(|e| format!("aes init: {e}"))?;
     let mut nonce_bytes = [0u8; NONCE_LEN];
     rand::rngs::OsRng.fill_bytes(&mut nonce_bytes);
     let nonce = Nonce::from_slice(&nonce_bytes);
@@ -93,8 +92,7 @@ pub fn decrypt_subkey(
         return Err("subkey blob too short for nonce".to_string());
     }
     let (nonce_bytes, ciphertext) = blob.split_at(NONCE_LEN);
-    let cipher =
-        Aes256Gcm::new_from_slice(&sync_key.0).map_err(|e| format!("aes init: {e}"))?;
+    let cipher = Aes256Gcm::new_from_slice(&sync_key.0).map_err(|e| format!("aes init: {e}"))?;
     let nonce = Nonce::from_slice(nonce_bytes);
     let aad = subkey_aad(subkey_index);
     cipher
@@ -135,8 +133,7 @@ impl PairingKey {
         &self,
         master_secret: &[u8],
     ) -> Result<(Vec<u8>, [u8; NONCE_LEN]), String> {
-        let cipher =
-            Aes256Gcm::new_from_slice(&self.0).map_err(|e| format!("aes init: {e}"))?;
+        let cipher = Aes256Gcm::new_from_slice(&self.0).map_err(|e| format!("aes init: {e}"))?;
         let mut nonce_bytes = [0u8; NONCE_LEN];
         rand::rngs::OsRng.fill_bytes(&mut nonce_bytes);
         let nonce = Nonce::from_slice(&nonce_bytes);
@@ -154,8 +151,7 @@ impl PairingKey {
         if nonce_bytes.len() != NONCE_LEN {
             return Err(format!("expected {NONCE_LEN}-byte nonce"));
         }
-        let cipher =
-            Aes256Gcm::new_from_slice(&self.0).map_err(|e| format!("aes init: {e}"))?;
+        let cipher = Aes256Gcm::new_from_slice(&self.0).map_err(|e| format!("aes init: {e}"))?;
         let nonce = Nonce::from_slice(nonce_bytes);
         cipher
             .decrypt(nonce, ciphertext)
@@ -204,7 +200,10 @@ mod tests {
         let blob = encrypt_subkey(&sync_key, 1, b"plaintext").unwrap();
         // Decrypting with the wrong subkey index must fail (AAD mismatch).
         let result = decrypt_subkey(&sync_key, 2, &blob);
-        assert!(result.is_err(), "subkey AAD must reject cross-subkey replay");
+        assert!(
+            result.is_err(),
+            "subkey AAD must reject cross-subkey replay"
+        );
     }
 
     #[test]

@@ -41,7 +41,7 @@
 
 #![forbid(unsafe_code)]
 
-pub mod ipc;
 pub mod daemon;
+pub mod ipc;
 pub mod state;
 pub mod validation;

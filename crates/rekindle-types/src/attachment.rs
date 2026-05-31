@@ -136,7 +136,9 @@ impl AttachmentBitmap {
     /// the requester is missing AND the responder holds.
     pub fn intersect(&self, other: &Self) -> Vec<u32> {
         let limit = self.chunk_count.min(other.chunk_count);
-        (0..limit).filter(|i| self.has(*i) && other.has(*i)).collect()
+        (0..limit)
+            .filter(|i| self.has(*i) && other.has(*i))
+            .collect()
     }
 }
 

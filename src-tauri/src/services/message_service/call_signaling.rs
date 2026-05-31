@@ -66,17 +66,12 @@ pub(super) async fn handle_call_signaling_payload(
         }
         MessagePayload::CallDecline { call_id, reason } => {
             rekindle_calls::signaling::handlers::handle_decline_received(
-                deps,
-                sender_hex,
-                &call_id,
-                reason,
+                deps, sender_hex, &call_id, reason,
             );
         }
         MessagePayload::CallRinging { call_id } => {
             rekindle_calls::signaling::handlers::handle_ringing_received(
-                deps,
-                sender_hex,
-                &call_id,
+                deps, sender_hex, &call_id,
             );
         }
         // Wave 13 W13.9 — hangup / cancel. Works for any state
@@ -86,17 +81,18 @@ pub(super) async fn handle_call_signaling_payload(
         MessagePayload::CallEnd { call_id, reason } => {
             // W15.2 — capture status before remove so we know
             // whether voice was actually running. Tear it down if so.
-            let (removed, was_voice_up) = state.active_calls.remove(&call_id).map_or(
-                (false, false),
-                |c| {
-                    let voice_up = matches!(
-                        c.status,
-                        rekindle_calls::CallStatus::Active
-                            | rekindle_calls::CallStatus::Connecting
-                    );
-                    (true, voice_up)
-                },
-            );
+            let (removed, was_voice_up) =
+                state
+                    .active_calls
+                    .remove(&call_id)
+                    .map_or((false, false), |c| {
+                        let voice_up = matches!(
+                            c.status,
+                            rekindle_calls::CallStatus::Active
+                                | rekindle_calls::CallStatus::Connecting
+                        );
+                        (true, voice_up)
+                    });
             if removed {
                 if was_voice_up {
                     crate::services::voice_adapter::shutdown_voice(

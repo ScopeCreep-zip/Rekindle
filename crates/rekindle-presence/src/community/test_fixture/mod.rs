@@ -67,11 +67,7 @@ impl CommunityPresenceDeps for MockCommunityDeps {
             .sent_envelopes
             .push((community_id.to_string(), envelope));
     }
-    async fn last_channel_message_timestamp(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-    ) -> i64 {
+    async fn last_channel_message_timestamp(&self, community_id: &str, channel_id: &str) -> i64 {
         let mut st = self.state.lock();
         st.calls_last_ts
             .push((community_id.to_string(), channel_id.to_string()));
@@ -111,7 +107,10 @@ impl CommunityPresenceDeps for MockCommunityDeps {
         ));
     }
     fn mark_initial_sync_done(&self, community_id: &str) {
-        self.state.lock().initial_done.push(community_id.to_string());
+        self.state
+            .lock()
+            .initial_done
+            .push(community_id.to_string());
     }
     fn identity_display_name(&self) -> String {
         "mock-user".to_string()
@@ -180,11 +179,7 @@ impl CommunityPresenceDeps for MockCommunityDeps {
             joined_at,
         ));
     }
-    fn extend_known_members(
-        &self,
-        community_id: &str,
-        candidates: Vec<String>,
-    ) -> Vec<String> {
+    fn extend_known_members(&self, community_id: &str, candidates: Vec<String>) -> Vec<String> {
         self.state
             .lock()
             .calls_extend_known
@@ -206,7 +201,10 @@ impl CommunityPresenceDeps for MockCommunityDeps {
         ));
     }
     async fn run_presence_poll_tick(&self, community_id: &str) -> Result<(), String> {
-        self.state.lock().calls_run_tick.push(community_id.to_string());
+        self.state
+            .lock()
+            .calls_run_tick
+            .push(community_id.to_string());
         Ok(())
     }
     fn install_presence_poll_shutdown(
@@ -220,10 +218,7 @@ impl CommunityPresenceDeps for MockCommunityDeps {
             .calls_install_shutdown
             .push(community_id.to_string());
     }
-    async fn ensure_registry_open(
-        &self,
-        community_id: &str,
-    ) -> Result<Option<String>, String> {
+    async fn ensure_registry_open(&self, community_id: &str) -> Result<Option<String>, String> {
         let mut st = self.state.lock();
         st.calls_ensure_registry.push(community_id.to_string());
         Ok(st.registry_open_result.clone())

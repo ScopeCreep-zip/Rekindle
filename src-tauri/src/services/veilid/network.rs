@@ -56,8 +56,9 @@ pub async fn handle_app_call(
         return;
     }
 
-    let reply_bytes = match rekindle_protocol::capnp_envelope::try_decode_community_envelope(&message)
-    {
+    let reply_bytes = match rekindle_protocol::capnp_envelope::try_decode_community_envelope(
+        &message,
+    ) {
         Ok(Some(CommunityEnvelope::Control(ControlPayload::BootstrapRequest {
             joiner_pseudonym,
             governance_key,
@@ -157,14 +158,12 @@ pub async fn handle_app_call(
             let attachment_uuid = uuid::Uuid::from_bytes(attachment_id);
             let owning_community = {
                 let caches = state.file_caches.read();
-                caches
-                    .iter()
-                    .find_map(|(cid, cache)| {
-                        cache
-                            .stats_per_attachment()
-                            .contains_key(&attachment_uuid)
-                            .then(|| cid.clone())
-                    })
+                caches.iter().find_map(|(cid, cache)| {
+                    cache
+                        .stats_per_attachment()
+                        .contains_key(&attachment_uuid)
+                        .then(|| cid.clone())
+                })
             };
             match owning_community {
                 Some(cid) => crate::services::community::files::serve_attachment_request(
@@ -193,13 +192,8 @@ pub async fn handle_app_call(
             {
                 reply
             } else {
-                message_service::handle_incoming_message(
-                    app_handle,
-                    state,
-                    pool.inner(),
-                    &message,
-                )
-                .await;
+                message_service::handle_incoming_message(app_handle, state, pool.inner(), &message)
+                    .await;
                 b"ACK".to_vec()
             }
         }

@@ -11,7 +11,6 @@
 //! Public surface unchanged: callers still
 //! `crate::services::friend_runtime::accept_request_inner` etc.
 
-
 use rusqlite::OptionalExtension;
 
 use crate::db::DbPool;

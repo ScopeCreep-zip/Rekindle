@@ -33,14 +33,19 @@ impl App {
             Constraint::Fill(1),
             Constraint::Length(1),
             Constraint::Length(1),
-        ]).areas(area);
+        ])
+        .areas(area);
 
         self.nav.tab_bar_row = header.y;
         tab_bar::render(frame, header, &mut self.nav.tab_bar, &self.theme);
 
         if self.loading_spinner.is_active() {
             self.loading_spinner.render(frame, content);
-        } else if let Err(e) = self.nav.current_view_mut().draw(frame, content, &self.theme) {
+        } else if let Err(e) = self
+            .nav
+            .current_view_mut()
+            .draw(frame, content, &self.theme)
+        {
             tracing::error!(error = %e, "view draw failed");
         }
 
@@ -83,11 +88,19 @@ impl App {
     fn render_overlay(&self, frame: &mut Frame, area: Rect, overlay: &OverlayKind) {
         match overlay {
             OverlayKind::Help => {
-                let context = if self.nav.input_mode() { KeymapContext::Input } else { KeymapContext::Default };
+                let context = if self.nav.input_mode() {
+                    KeymapContext::Input
+                } else {
+                    KeymapContext::Default
+                };
                 let bindings = self.keymap.help_text(context);
                 let keyword_style = self.theme.style("keyword");
                 let dimmed_style = self.theme.style("dimmed");
-                let theme_info = if self.theme.is_light() { "light" } else { "dark" };
+                let theme_info = if self.theme.is_light() {
+                    "light"
+                } else {
+                    "dark"
+                };
                 let mut lines = vec![
                     Line::from(Span::styled("  Keybindings:", Style::new().bold())),
                     Line::from(""),
@@ -100,17 +113,26 @@ impl App {
                 }
                 lines.push(Line::from(""));
                 lines.push(Line::from(Span::styled(
-                    format!("  Theme: {} ({theme_info})  Press any key to close.", self.theme.name()),
+                    format!(
+                        "  Theme: {} ({theme_info})  Press any key to close.",
+                        self.theme.name()
+                    ),
                     dimmed_style,
                 )));
                 #[allow(clippy::cast_possible_truncation)]
                 let height = (lines.len() as u16 + 2).min(area.height);
                 let popup = centered_rect(area, 50, height);
                 frame.render_widget(Clear, popup);
-                let block = Block::bordered().title(" Help ").border_style(self.theme.focused_border());
+                let block = Block::bordered()
+                    .title(" Help ")
+                    .border_style(self.theme.focused_border());
                 frame.render_widget(Paragraph::new(lines).block(block), popup);
             }
-            OverlayKind::ConfirmAction { ref prompt, ref consequence, .. } => {
+            OverlayKind::ConfirmAction {
+                ref prompt,
+                ref consequence,
+                ..
+            } => {
                 let lines = vec![
                     Line::from(""),
                     Line::from(format!("  {prompt}")),
@@ -131,31 +153,42 @@ impl App {
     }
 
     pub(crate) fn transition_to_selected_tab(&mut self) {
-        let Some(tab_id) = self.nav.tab_bar.selected_id().map(str::to_string) else { return };
+        let Some(tab_id) = self.nav.tab_bar.selected_id().map(str::to_string) else {
+            return;
+        };
         self.nav.tab_bar.clear_unread(&tab_id);
         match tab_id.as_str() {
             "dashboard" => {
-                self.nav.navigate(ViewKind::Dashboard, self.theme.use_unicode());
+                self.nav
+                    .navigate(ViewKind::Dashboard, self.theme.use_unicode());
                 self.load_dashboard_data();
             }
             "communities" => {
                 if let Some(first) = self.cached_communities.first() {
                     let gov = first.governance_key.clone();
-                    self.nav.navigate(ViewKind::CommunityInfo { community: gov.clone() }, self.theme.use_unicode());
+                    self.nav.navigate(
+                        ViewKind::CommunityInfo {
+                            community: gov.clone(),
+                        },
+                        self.theme.use_unicode(),
+                    );
                     self.load_community_info(&gov);
                 } else {
                     self.notifications.push(
-                        "No communities joined yet.\n  rekindle community join --invite <code>".into(),
+                        "No communities joined yet.\n  rekindle community join --invite <code>"
+                            .into(),
                         ToastLevel::Info,
                     );
                 }
             }
             "dms" => {
-                self.nav.navigate(ViewKind::DmInbox, self.theme.use_unicode());
+                self.nav
+                    .navigate(ViewKind::DmInbox, self.theme.use_unicode());
                 self.load_dm_inbox();
             }
             "friends" => {
-                self.nav.navigate(ViewKind::FriendList, self.theme.use_unicode());
+                self.nav
+                    .navigate(ViewKind::FriendList, self.theme.use_unicode());
                 self.load_friend_list();
             }
             _ => {}
@@ -187,28 +220,86 @@ impl App {
     pub(crate) fn build_search_items(&self, mode: SearchMode) -> Vec<SearchItem> {
         match mode {
             SearchMode::QuickSwitch => {
-                let mut items: Vec<SearchItem> = self.cached_communities.iter().map(|c| SearchItem {
-                    label: c.name.clone(),
-                    detail: "community".into(),
-                    action: Action::ShowCommunityInfo { community: c.governance_key.clone() },
-                }).collect();
-                items.push(SearchItem { label: "Dashboard".into(), detail: "view".into(), action: Action::ShowDashboard });
-                items.push(SearchItem { label: "Identity".into(), detail: "settings".into(), action: Action::ShowIdentitySettings });
-                items.push(SearchItem { label: "Friends".into(), detail: "view".into(), action: Action::ShowFriendList });
-                items.push(SearchItem { label: "DMs".into(), detail: "view".into(), action: Action::ShowDmInbox });
-                items.push(SearchItem { label: "Doctor".into(), detail: "diagnostics".into(), action: Action::ShowDoctor });
+                let mut items: Vec<SearchItem> = self
+                    .cached_communities
+                    .iter()
+                    .map(|c| SearchItem {
+                        label: c.name.clone(),
+                        detail: "community".into(),
+                        action: Action::ShowCommunityInfo {
+                            community: c.governance_key.clone(),
+                        },
+                    })
+                    .collect();
+                items.push(SearchItem {
+                    label: "Dashboard".into(),
+                    detail: "view".into(),
+                    action: Action::ShowDashboard,
+                });
+                items.push(SearchItem {
+                    label: "Identity".into(),
+                    detail: "settings".into(),
+                    action: Action::ShowIdentitySettings,
+                });
+                items.push(SearchItem {
+                    label: "Friends".into(),
+                    detail: "view".into(),
+                    action: Action::ShowFriendList,
+                });
+                items.push(SearchItem {
+                    label: "DMs".into(),
+                    detail: "view".into(),
+                    action: Action::ShowDmInbox,
+                });
+                items.push(SearchItem {
+                    label: "Doctor".into(),
+                    detail: "diagnostics".into(),
+                    action: Action::ShowDoctor,
+                });
                 items
             }
             SearchMode::MessageSearch => Vec::new(),
             SearchMode::CommandPalette => vec![
-                SearchItem { label: "Quit".into(), detail: String::new(), action: Action::Quit },
-                SearchItem { label: "Toggle Help".into(), detail: String::new(), action: Action::ToggleHelp },
-                SearchItem { label: "Refresh".into(), detail: String::new(), action: Action::Refresh },
-                SearchItem { label: "Toggle Sidebar".into(), detail: String::new(), action: Action::ToggleSidebar },
-                SearchItem { label: "Dashboard".into(), detail: String::new(), action: Action::ShowDashboard },
-                SearchItem { label: "Friends".into(), detail: String::new(), action: Action::ShowFriendList },
-                SearchItem { label: "DMs".into(), detail: String::new(), action: Action::ShowDmInbox },
-                SearchItem { label: "Doctor".into(), detail: String::new(), action: Action::ShowDoctor },
+                SearchItem {
+                    label: "Quit".into(),
+                    detail: String::new(),
+                    action: Action::Quit,
+                },
+                SearchItem {
+                    label: "Toggle Help".into(),
+                    detail: String::new(),
+                    action: Action::ToggleHelp,
+                },
+                SearchItem {
+                    label: "Refresh".into(),
+                    detail: String::new(),
+                    action: Action::Refresh,
+                },
+                SearchItem {
+                    label: "Toggle Sidebar".into(),
+                    detail: String::new(),
+                    action: Action::ToggleSidebar,
+                },
+                SearchItem {
+                    label: "Dashboard".into(),
+                    detail: String::new(),
+                    action: Action::ShowDashboard,
+                },
+                SearchItem {
+                    label: "Friends".into(),
+                    detail: String::new(),
+                    action: Action::ShowFriendList,
+                },
+                SearchItem {
+                    label: "DMs".into(),
+                    detail: String::new(),
+                    action: Action::ShowDmInbox,
+                },
+                SearchItem {
+                    label: "Doctor".into(),
+                    detail: String::new(),
+                    action: Action::ShowDoctor,
+                },
             ],
         }
     }
@@ -220,5 +311,10 @@ pub(crate) fn centered_rect(area: Rect, width: u16, height: u16) -> Rect {
     let height = height.min(area.height);
     let x = area.x + (area.width.saturating_sub(width)) / 2;
     let y = area.y + (area.height.saturating_sub(height)) / 2;
-    Rect { x, y, width, height }
+    Rect {
+        x,
+        y,
+        width,
+        height,
+    }
 }

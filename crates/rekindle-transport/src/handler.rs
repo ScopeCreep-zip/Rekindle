@@ -112,8 +112,7 @@ pub trait InboundHandler: Send + Sync + 'static {
         -> impl Future<Output = ()> + Send;
 
     /// An authenticated, encrypted voice packet arrived.
-    fn on_voice(&self, sender_key: &str, packet: VoicePayload)
-        -> impl Future<Output = ()> + Send;
+    fn on_voice(&self, sender_key: &str, packet: VoicePayload) -> impl Future<Output = ()> + Send;
 
     /// An authenticated RPC request arrived, expecting a response.
     fn on_call(
@@ -131,6 +130,5 @@ pub trait InboundHandler: Send + Sync + 'static {
     ) -> impl Future<Output = ()> + Send;
 
     /// A transport-level event occurred (network state, route death).
-    fn on_event(&self, event: TransportEvent)
-        -> impl Future<Output = ()> + Send;
+    fn on_event(&self, event: TransportEvent) -> impl Future<Output = ()> + Send;
 }

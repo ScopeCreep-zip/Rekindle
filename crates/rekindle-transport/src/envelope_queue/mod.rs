@@ -434,12 +434,12 @@ impl EnvelopeQueue {
         if let Err(e) = self.inner.store.mark_delivered(row.id).await {
             warn!(error = %e, id = row.id, "mark_delivered failed");
         }
-        self.inner.notifications.notify(
-            &TransportNotification::EnvelopeDelivered {
+        self.inner
+            .notifications
+            .notify(&TransportNotification::EnvelopeDelivered {
                 kind: row.kind.as_str().to_string(),
                 correlation_id: row.correlation_id.clone(),
-            },
-        );
+            });
         debug!(
             id = row.id,
             to = %row.recipient_key,
@@ -455,13 +455,13 @@ impl EnvelopeQueue {
             if let Err(e) = self.inner.store.mark_dead(row.id).await {
                 warn!(error = %e, id = row.id, "mark_dead failed");
             }
-            self.inner.notifications.notify(
-                &TransportNotification::EnvelopeDeliveryFailed {
+            self.inner
+                .notifications
+                .notify(&TransportNotification::EnvelopeDeliveryFailed {
                     kind: row.kind.as_str().to_string(),
                     correlation_id: row.correlation_id.clone(),
                     last_error: err.clone(),
-                },
-            );
+                });
             warn!(
                 id = row.id,
                 to = %row.recipient_key,
@@ -560,7 +560,10 @@ mod tests {
         for k in kinds {
             let cfg = RetryConfig::for_kind(k);
             assert!(cfg.max_retries > 0, "every kind has a retry budget: {k:?}");
-            assert!(cfg.base_backoff_ms > 0, "every kind has a backoff seed: {k:?}");
+            assert!(
+                cfg.base_backoff_ms > 0,
+                "every kind has a backoff seed: {k:?}"
+            );
         }
     }
 }

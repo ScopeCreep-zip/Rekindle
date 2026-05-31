@@ -24,10 +24,10 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
-use crate::crypto::mek::{Mek, MekCache, MekCacheEntrySnapshot};
-use crate::broadcast::peer_registry::{PeerRegistry, PeerSnapshot, CircuitSummary};
+use crate::broadcast::peer_registry::{CircuitSummary, PeerRegistry, PeerSnapshot};
 use crate::broadcast::peer_route::RouteManager;
-use crate::shared::{AttachmentState, TransportSnapshot, SharedState, TransportNotification};
+use crate::crypto::mek::{Mek, MekCache, MekCacheEntrySnapshot};
+use crate::shared::{AttachmentState, SharedState, TransportNotification, TransportSnapshot};
 
 /// Mock transport node for testing without Veilid.
 ///
@@ -53,9 +53,9 @@ impl MockNode {
         Self {
             shared,
             peer_registry: Arc::new(RwLock::new(PeerRegistry::new(
-                90,  // route_ttl_secs
-                3,   // circuit_breaker_threshold
-                45,  // circuit_breaker_cooldown_secs
+                90, // route_ttl_secs
+                3,  // circuit_breaker_threshold
+                45, // circuit_breaker_cooldown_secs
             ))),
             route_manager: Arc::new(RwLock::new(RouteManager::new())),
             mek_cache: Arc::new(RwLock::new(MekCache::new())),
@@ -90,7 +90,8 @@ impl MockNode {
         attached: bool,
         public_internet_ready: bool,
     ) {
-        self.shared.set_attachment(state, attached, public_internet_ready);
+        self.shared
+            .set_attachment(state, attached, public_internet_ready);
     }
 
     /// Add a peer with a synthetic route blob.
@@ -160,9 +161,7 @@ impl MockNode {
     }
 
     /// Subscribe to transport notifications.
-    pub fn subscribe(
-        &self,
-    ) -> tokio::sync::mpsc::UnboundedReceiver<TransportNotification> {
+    pub fn subscribe(&self) -> tokio::sync::mpsc::UnboundedReceiver<TransportNotification> {
         self.shared.subscribe()
     }
 

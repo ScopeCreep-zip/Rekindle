@@ -10,7 +10,6 @@ mod events;
 pub(crate) mod expressions;
 mod files;
 mod game_servers;
-mod segments;
 pub(crate) mod helpers;
 mod invites;
 mod link_previews;
@@ -25,18 +24,19 @@ mod presence;
 mod profile_blobs;
 mod reactions_pins;
 mod roles;
+mod segments;
 mod threads;
 pub(crate) mod types;
 mod unread;
 mod video;
 
 pub use analytics::{__cmd__get_community_analytics, get_community_analytics};
-pub use background_sync::{__cmd__run_background_sync, run_background_sync};
 pub use audit::{__cmd__get_audit_log, get_audit_log};
 pub use automod::{
     __cmd__delete_automod_rule, __cmd__list_automod_rules, __cmd__set_automod_rule,
     delete_automod_rule, list_automod_rules, set_automod_rule,
 };
+pub use background_sync::{__cmd__run_background_sync, run_background_sync};
 pub use channel_admin::{
     __cmd__delete_channel, __cmd__rename_channel, delete_channel, rename_channel,
 };
@@ -85,9 +85,8 @@ pub use invites::{
 };
 pub use invites::{create_community_invite, list_community_invites, revoke_community_invite};
 pub use link_previews::{
-    __cmd__fetch_link_preview, __cmd__get_link_previews_enabled,
-    __cmd__set_link_previews_enabled, fetch_link_preview, get_link_previews_enabled,
-    set_link_previews_enabled,
+    __cmd__fetch_link_preview, __cmd__get_link_previews_enabled, __cmd__set_link_previews_enabled,
+    fetch_link_preview, get_link_previews_enabled, set_link_previews_enabled,
 };
 pub use mek::{__cmd__rotate_mek, rotate_mek};
 pub use messaging::{
@@ -111,9 +110,9 @@ pub use moderation::{
 };
 pub use notifications::{
     __cmd__get_community_default_notification_level, __cmd__get_do_not_disturb,
-    __cmd__get_notification_sound, __cmd__get_quiet_hours,
-    __cmd__set_channel_notification_level, __cmd__set_community_default_notification_level,
-    __cmd__set_do_not_disturb, __cmd__set_notification_sound, __cmd__set_quiet_hours,
+    __cmd__get_notification_sound, __cmd__get_quiet_hours, __cmd__set_channel_notification_level,
+    __cmd__set_community_default_notification_level, __cmd__set_do_not_disturb,
+    __cmd__set_notification_sound, __cmd__set_quiet_hours,
     get_community_default_notification_level, get_do_not_disturb, get_notification_sound,
     get_quiet_hours, set_channel_notification_level, set_community_default_notification_level,
     set_do_not_disturb, set_notification_sound, set_quiet_hours,
@@ -130,11 +129,6 @@ pub use policy::{
     __cmd__get_community_policy, __cmd__set_community_policy, get_community_policy,
     set_community_policy,
 };
-pub use profile_blobs::{
-    __cmd__get_community_avatar_data_url, __cmd__set_community_avatar,
-    __cmd__set_community_banner, get_community_avatar_data_url, set_community_avatar,
-    set_community_banner,
-};
 pub use polls::{
     __cmd__close_poll, __cmd__create_poll, __cmd__get_poll_results, __cmd__vote_poll, close_poll,
     create_poll, get_poll_results, vote_poll,
@@ -146,6 +140,10 @@ pub use presence::{
 pub use presence::{
     get_community_members, send_channel_typing, update_community_presence, update_community_profile,
 };
+pub use profile_blobs::{
+    __cmd__get_community_avatar_data_url, __cmd__set_community_avatar, __cmd__set_community_banner,
+    get_community_avatar_data_url, set_community_avatar, set_community_banner,
+};
 pub use reactions_pins::{
     __cmd__add_reaction, __cmd__get_channel_pins, __cmd__pin_message, __cmd__remove_reaction,
     __cmd__unpin_message,
@@ -153,7 +151,6 @@ pub use reactions_pins::{
 pub use reactions_pins::{
     add_reaction, get_channel_pins, pin_message, remove_reaction, unpin_message,
 };
-pub use segments::{__cmd__expand_community_segment, expand_community_segment};
 pub use roles::{
     __cmd__assign_role, __cmd__create_role, __cmd__delete_role, __cmd__edit_role, __cmd__get_roles,
     __cmd__self_assign_role, __cmd__self_unassign_role, __cmd__unassign_role,
@@ -162,14 +159,15 @@ pub use roles::{
     assign_role, create_role, delete_role, edit_role, get_roles, self_assign_role,
     self_unassign_role, unassign_role,
 };
+pub use segments::{__cmd__expand_community_segment, expand_community_segment};
 pub use threads::{
     __cmd__archive_thread, __cmd__create_thread, __cmd__get_active_threads,
-    __cmd__get_channel_threads,
-    __cmd__get_thread_messages, __cmd__send_thread_message, __cmd__unarchive_thread,
+    __cmd__get_channel_threads, __cmd__get_thread_messages, __cmd__send_thread_message,
+    __cmd__unarchive_thread,
 };
 pub use threads::{
-    archive_thread, create_thread, get_active_threads, get_channel_threads,
-    get_thread_messages, send_thread_message, unarchive_thread,
+    archive_thread, create_thread, get_active_threads, get_channel_threads, get_thread_messages,
+    send_thread_message, unarchive_thread,
 };
 pub use types::*;
 pub use unread::{__cmd__get_unread_counts, __cmd__mark_channel_read};

@@ -100,14 +100,15 @@ fn fan_out_community_presence(state: &SharedState, game_info: Option<&GameInfoSt
     };
 
     for community_id in community_ids {
-        let game_info_for_envelope = game_info.map(|g| {
-            rekindle_protocol::dht::community::envelope::PresenceGameInfo {
-                game_name: g.game_name.clone(),
-                game_id: Some(g.game_id),
-                elapsed_seconds: Some(g.elapsed_seconds),
-                server_address: g.server_address.clone(),
-            }
-        });
+        let game_info_for_envelope =
+            game_info.map(
+                |g| rekindle_protocol::dht::community::envelope::PresenceGameInfo {
+                    game_name: g.game_name.clone(),
+                    game_id: Some(g.game_id),
+                    elapsed_seconds: Some(g.elapsed_seconds),
+                    server_address: g.server_address.clone(),
+                },
+            );
 
         let pseudonym_key = {
             let communities = state.communities.read();

@@ -39,16 +39,10 @@ impl Tui {
         let terminal = ratatui::init();
 
         if config.mouse {
-            crossterm::execute!(
-                std::io::stdout(),
-                crossterm::event::EnableMouseCapture
-            )?;
+            crossterm::execute!(std::io::stdout(), crossterm::event::EnableMouseCapture)?;
         }
 
-        crossterm::execute!(
-            std::io::stdout(),
-            crossterm::event::EnableBracketedPaste
-        )?;
+        crossterm::execute!(std::io::stdout(), crossterm::event::EnableBracketedPaste)?;
 
         let task = Self::spawn_event_task(
             event_tx.clone(),
@@ -82,8 +76,7 @@ impl Tui {
         frame_rate: f64,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
-            let mut tick_interval =
-                tokio::time::interval(Duration::from_secs_f64(1.0 / tick_rate));
+            let mut tick_interval = tokio::time::interval(Duration::from_secs_f64(1.0 / tick_rate));
             let mut render_interval =
                 tokio::time::interval(Duration::from_secs_f64(1.0 / frame_rate));
             let mut reader = EventStream::new();

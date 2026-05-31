@@ -14,21 +14,26 @@ pub fn list_automod_rules_inner(
     state: &SharedState,
     community_id: &str,
 ) -> Result<Vec<AutoModRuleDto>, String> {
-    Ok(crate::services::community::automod::list_rules(state, community_id)?
-        .into_iter()
-        .map(|rule| AutoModRuleDto {
-            rule_id: rule.rule_id,
-            name: rule.name,
-            enabled: rule.enabled,
-            keywords: rule.keywords,
-            regex_patterns: rule.regex_patterns,
-            action: rule.action,
-            lamport: rule.lamport,
-        })
-        .collect())
+    Ok(
+        crate::services::community::automod::list_rules(state, community_id)?
+            .into_iter()
+            .map(|rule| AutoModRuleDto {
+                rule_id: rule.rule_id,
+                name: rule.name,
+                enabled: rule.enabled,
+                keywords: rule.keywords,
+                regex_patterns: rule.regex_patterns,
+                action: rule.action,
+                lamport: rule.lamport,
+            })
+            .collect(),
+    )
 }
 
-#[allow(clippy::too_many_arguments, reason = "Tauri command surface — matches AutoModRule trigger payload")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Tauri command surface — matches AutoModRule trigger payload"
+)]
 pub async fn set_automod_rule_inner(
     state: &SharedState,
     community_id: String,

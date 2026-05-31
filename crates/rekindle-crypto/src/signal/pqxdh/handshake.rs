@@ -146,8 +146,8 @@ mod tests {
     //! determinism) plus Phase 3b's end-to-end parity tests at the
     //! primitive layer (no session machinery).
 
-    use super::*;
     use super::super::verify::{pq_signing_payload, spk_signing_payload};
+    use super::*;
     use ed25519_dalek::{Signer, SigningKey};
     use rekindle_secrets::pq_keys::MlKemSecret;
     use x25519_dalek::PublicKey as X25519Public;
@@ -281,7 +281,10 @@ mod tests {
         let initiator_ik_x = StaticSecret::random_from_rng(OsRng);
         let hs1 = pqxdh_initiator(&initiator_ik_x, &bundle, &ik_signing.verifying_key()).unwrap();
         let hs2 = pqxdh_initiator(&initiator_ik_x, &bundle, &ik_signing.verifying_key()).unwrap();
-        assert_ne!(*hs1.root_key, *hs2.root_key, "ephemeral material must differ per handshake");
+        assert_ne!(
+            *hs1.root_key, *hs2.root_key,
+            "ephemeral material must differ per handshake"
+        );
         assert_ne!(hs1.ek_public, hs2.ek_public);
         assert_ne!(hs1.ml_kem_ct, hs2.ml_kem_ct);
     }
@@ -304,8 +307,8 @@ mod tests {
     /// (`SigningKey::to_scalar_bytes`) that `SessionManager` invokes.
     #[test]
     fn initiator_and_responder_derive_identical_root_key() {
-        use ed25519_dalek::SigningKey;
         use crate::signal::pqxdh::verify::{pq_signing_payload, spk_signing_payload};
+        use ed25519_dalek::SigningKey;
 
         // ── Responder (Bob) — generates IK_B, SPK_B, OPK_B, PQ_LR, PQ_OT.
         let bob_ik_ed = SigningKey::generate(&mut OsRng);
@@ -314,7 +317,10 @@ mod tests {
 
         let bob_spk = StaticSecret::random_from_rng(OsRng);
         let bob_spk_pub = X25519Public::from(&bob_spk);
-        let spk_sig = bob_ik_ed.sign(&spk_signing_payload(bob_spk_pub.as_bytes())).to_bytes().to_vec();
+        let spk_sig = bob_ik_ed
+            .sign(&spk_signing_payload(bob_spk_pub.as_bytes()))
+            .to_bytes()
+            .to_vec();
 
         let bob_opk = StaticSecret::random_from_rng(OsRng);
         let bob_opk_pub = X25519Public::from(&bob_opk);
@@ -367,7 +373,10 @@ mod tests {
         })
         .unwrap();
 
-        assert_eq!(*hs.root_key, *recovered, "initiator and responder must agree on root_key");
+        assert_eq!(
+            *hs.root_key, *recovered,
+            "initiator and responder must agree on root_key"
+        );
         // Suppress unused warning on the LR secret (used in the last-resort path test).
         let _ = bob_pq_lr_sec;
     }
@@ -376,14 +385,17 @@ mod tests {
     /// initiator's bundle had no one-time PQ prekey.
     #[test]
     fn last_resort_path_derives_identical_root_key() {
-        use ed25519_dalek::SigningKey;
         use crate::signal::pqxdh::verify::{pq_signing_payload, spk_signing_payload};
+        use ed25519_dalek::SigningKey;
 
         let bob_ik_ed = SigningKey::generate(&mut OsRng);
         let bob_ik_x = StaticSecret::from(bob_ik_ed.to_scalar_bytes());
         let bob_spk = StaticSecret::random_from_rng(OsRng);
         let bob_spk_pub = X25519Public::from(&bob_spk);
-        let spk_sig = bob_ik_ed.sign(&spk_signing_payload(bob_spk_pub.as_bytes())).to_bytes().to_vec();
+        let spk_sig = bob_ik_ed
+            .sign(&spk_signing_payload(bob_spk_pub.as_bytes()))
+            .to_bytes()
+            .to_vec();
         let (bob_pq_lr_sec, bob_pq_lr_pub) = MlKemSecret::generate();
         let pq_lr_sig = bob_ik_ed
             .sign(&pq_signing_payload(b"LR", bob_pq_lr_pub.as_bytes()))
@@ -407,7 +419,10 @@ mod tests {
         let alice_ik_ed = SigningKey::generate(&mut OsRng);
         let alice_ik_x = StaticSecret::from(alice_ik_ed.to_scalar_bytes());
         let hs = pqxdh_initiator(&alice_ik_x, &bundle, &bob_ik_ed.verifying_key()).unwrap();
-        assert!(hs.used_ot_pqpk_id.is_none(), "must consume last-resort, not OT");
+        assert!(
+            hs.used_ot_pqpk_id.is_none(),
+            "must consume last-resort, not OT"
+        );
         assert!(hs.used_ot_opk_id.is_none(), "no OPK in bundle");
 
         let recovered = pqxdh_responder(&ResponderInput {
@@ -421,6 +436,9 @@ mod tests {
         })
         .unwrap();
 
-        assert_eq!(*hs.root_key, *recovered, "LR-only path must agree on root_key");
+        assert_eq!(
+            *hs.root_key, *recovered,
+            "LR-only path must agree on root_key"
+        );
     }
 }

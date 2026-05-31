@@ -18,8 +18,8 @@ pub async fn delete_channel(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    let _g = rekindle_lifecycle::TransportGuard::write(&state.lifecycle)
-        .map_err(|e| e.to_string())?;
+    let _g =
+        rekindle_lifecycle::TransportGuard::write(&state.lifecycle).map_err(|e| e.to_string())?;
     let s = state.inner().clone();
     let p = pool.inner().clone();
     state
@@ -38,5 +38,12 @@ pub async fn rename_channel(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
-    rename_channel_inner(state.inner(), pool.inner(), community_id, channel_id, new_name).await
+    rename_channel_inner(
+        state.inner(),
+        pool.inner(),
+        community_id,
+        channel_id,
+        new_name,
+    )
+    .await
 }

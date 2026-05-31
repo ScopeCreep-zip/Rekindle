@@ -68,12 +68,7 @@ impl ConfirmDialogState {
 }
 
 /// Render the confirmation dialog as a centered overlay.
-pub fn render(
-    frame: &mut Frame,
-    area: Rect,
-    state: &ConfirmDialogState,
-    theme: &ThemeManager,
-) {
+pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmDialogState, theme: &ThemeManager) {
     if !state.visible {
         return;
     }
@@ -151,7 +146,12 @@ fn centered_rect(area: Rect, width: u16, height: u16) -> Rect {
     let height = height.min(area.height);
     let x = area.x + (area.width.saturating_sub(width)) / 2;
     let y = area.y + (area.height.saturating_sub(height)) / 2;
-    Rect { x, y, width, height }
+    Rect {
+        x,
+        y,
+        width,
+        height,
+    }
 }
 
 #[cfg(test)]

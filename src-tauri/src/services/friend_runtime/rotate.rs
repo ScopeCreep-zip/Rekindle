@@ -98,8 +98,7 @@ pub async fn rotate_profile_key(state: &Arc<AppState>, pool: &DbPool) -> Result<
         new_profile_dht_key: new_key.clone(),
     };
     for fk in &friend_keys {
-        if let Err(e) =
-            services::message_service::send_to_peer_raw(state, pool, fk, &payload).await
+        if let Err(e) = services::message_service::send_to_peer_raw(state, pool, fk, &payload).await
         {
             tracing::warn!(to = %fk, error = %e, "failed to send ProfileKeyRotated");
         }

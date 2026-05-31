@@ -39,12 +39,16 @@ pub fn validate_profile(
     }
     if let Some(a) = avatar_ref {
         if a.chars().count() > MAX_CONTENT_REF_LEN {
-            return Err(format!("avatar_ref exceeds {MAX_CONTENT_REF_LEN} characters"));
+            return Err(format!(
+                "avatar_ref exceeds {MAX_CONTENT_REF_LEN} characters"
+            ));
         }
     }
     if let Some(b) = banner_ref {
         if b.chars().count() > MAX_CONTENT_REF_LEN {
-            return Err(format!("banner_ref exceeds {MAX_CONTENT_REF_LEN} characters"));
+            return Err(format!(
+                "banner_ref exceeds {MAX_CONTENT_REF_LEN} characters"
+            ));
         }
     }
     Ok(())
@@ -63,9 +67,7 @@ mod tests {
     fn validate_profile_accepts_boundary_inputs() {
         let bio = "x".repeat(MAX_BIO_LEN);
         let pronouns = "y".repeat(MAX_PRONOUNS_LEN);
-        let badges: Vec<String> = (0..MAX_BADGES)
-            .map(|_| "z".repeat(MAX_BADGE_LEN))
-            .collect();
+        let badges: Vec<String> = (0..MAX_BADGES).map(|_| "z".repeat(MAX_BADGE_LEN)).collect();
         let avatar = "a".repeat(MAX_CONTENT_REF_LEN);
         let banner = "b".repeat(MAX_CONTENT_REF_LEN);
         assert!(validate_profile(

@@ -66,7 +66,8 @@ fn synthetic_state() -> GovernanceState {
 fn estimate_bytes(state: &GovernanceState) -> usize {
     let mut total = std::mem::size_of::<GovernanceState>();
     total += state.role_assignments.capacity()
-        * (std::mem::size_of::<PseudonymKey>() + std::mem::size_of::<std::collections::HashSet<RoleId>>());
+        * (std::mem::size_of::<PseudonymKey>()
+            + std::mem::size_of::<std::collections::HashSet<RoleId>>());
     for assignments in state.role_assignments.values() {
         total += assignments.capacity() * std::mem::size_of::<RoleId>();
     }
@@ -74,11 +75,13 @@ fn estimate_bytes(state: &GovernanceState) -> usize {
     for role in state.roles.values() {
         total += role.name.capacity();
     }
-    total += state.channels.capacity() * std::mem::size_of::<rekindle_governance::state::ChannelState>();
+    total +=
+        state.channels.capacity() * std::mem::size_of::<rekindle_governance::state::ChannelState>();
     for channel in state.channels.values() {
         total += channel.name.capacity() + channel.record_key.capacity();
     }
-    total += state.expressions.capacity() * std::mem::size_of::<rekindle_governance::state::ExpressionState>();
+    total += state.expressions.capacity()
+        * std::mem::size_of::<rekindle_governance::state::ExpressionState>();
     for expr in state.expressions.values() {
         total += expr.name.capacity() + expr.content_hash.capacity();
         if let Some(offer) = &expr.attachment {

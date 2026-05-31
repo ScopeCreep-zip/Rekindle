@@ -26,9 +26,7 @@ use rekindle_types::governance::GovernanceEntry;
 
 use crate::state_helpers;
 
-use super::{
-    dht, events, misc, persist, state_mutations, state_reads, ChannelAdapter,
-};
+use super::{dht, events, misc, persist, state_mutations, state_reads, ChannelAdapter};
 
 #[async_trait]
 impl ChannelMessagingDeps for ChannelAdapter {
@@ -74,11 +72,7 @@ impl ChannelMessagingDeps for ChannelAdapter {
 
     // ---------- Community / channel state (read) ----------
 
-    fn channel_info(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-    ) -> Option<ChannelInfoSnapshot> {
+    fn channel_info(&self, community_id: &str, channel_id: &str) -> Option<ChannelInfoSnapshot> {
         state_reads::channel_info_impl(self, community_id, channel_id)
     }
 
@@ -104,11 +98,7 @@ impl ChannelMessagingDeps for ChannelAdapter {
         state_mutations::community_mek_impl(self, community_id)
     }
 
-    fn channel_or_community_mek(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-    ) -> Option<ChannelMek> {
+    fn channel_or_community_mek(&self, community_id: &str, channel_id: &str) -> Option<ChannelMek> {
         state_mutations::channel_or_community_mek_impl(self, community_id, channel_id)
     }
 
@@ -138,11 +128,7 @@ impl ChannelMessagingDeps for ChannelAdapter {
             .insert(community_id.to_string(), cache);
     }
 
-    fn thread_state(
-        &self,
-        community_id: &str,
-        thread_id: &str,
-    ) -> Option<ThreadStateSnapshot> {
+    fn thread_state(&self, community_id: &str, thread_id: &str) -> Option<ThreadStateSnapshot> {
         state_reads::thread_state_impl(self, community_id, thread_id)
     }
 
@@ -157,18 +143,11 @@ impl ChannelMessagingDeps for ChannelAdapter {
         hex::decode(seed_hex).ok().and_then(|b| b.try_into().ok())
     }
 
-    fn member_profile(
-        &self,
-        community_id: &str,
-        pseudonym_hex: &str,
-    ) -> MemberProfileSnapshot {
+    fn member_profile(&self, community_id: &str, pseudonym_hex: &str) -> MemberProfileSnapshot {
         state_reads::member_profile_impl(self, community_id, pseudonym_hex)
     }
 
-    fn list_member_profiles(
-        &self,
-        community_id: &str,
-    ) -> HashMap<String, MemberProfileSnapshot> {
+    fn list_member_profiles(&self, community_id: &str) -> HashMap<String, MemberProfileSnapshot> {
         state_reads::list_member_profiles_impl(self, community_id)
     }
 
@@ -290,10 +269,7 @@ impl ChannelMessagingDeps for ChannelAdapter {
         dht::read_all_channel_messages_impl(self, record_key, member_count).await
     }
 
-    async fn watch_community_records(
-        &self,
-        community_id: &str,
-    ) -> Result<(), ChannelError> {
+    async fn watch_community_records(&self, community_id: &str) -> Result<(), ChannelError> {
         crate::services::community::watch::watch_community_records(&self.state, community_id)
             .await
             .map_err(ChannelError::Adapter)
@@ -459,21 +435,11 @@ impl ChannelMessagingDeps for ChannelAdapter {
         events::emit_chat_event_local_impl(self, echo);
     }
 
-    fn emit_delivery_succeeded(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-        message_id: &str,
-    ) {
+    fn emit_delivery_succeeded(&self, community_id: &str, channel_id: &str, message_id: &str) {
         events::emit_delivery_succeeded_impl(self, community_id, channel_id, message_id);
     }
 
-    fn emit_delivery_failed(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-        message_id: &str,
-    ) {
+    fn emit_delivery_failed(&self, community_id: &str, channel_id: &str, message_id: &str) {
         events::emit_delivery_failed_impl(self, community_id, channel_id, message_id);
     }
 }

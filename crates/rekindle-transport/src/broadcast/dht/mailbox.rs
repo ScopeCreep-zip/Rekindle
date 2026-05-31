@@ -52,29 +52,19 @@ impl<'a> MailboxOps<'a> {
     // ── Community mailbox ───────────────────────────────────────────
 
     /// Create a community mailbox owned by the governance keypair.
-    pub async fn create_community_mailbox(
-        &self,
-        governance_keypair: KeyPair,
-    ) -> Result<String> {
+    pub async fn create_community_mailbox(&self, governance_keypair: KeyPair) -> Result<String> {
         let (key, _) = record::create_dflt(self.rc, 1, Some(governance_keypair)).await?;
         tracing::info!(key = %key, "community mailbox created");
         Ok(key)
     }
 
     /// Update the community mailbox with a fresh route blob.
-    pub async fn update_community_route(
-        &self,
-        mailbox_key: &str,
-        route_blob: &[u8],
-    ) -> Result<()> {
+    pub async fn update_community_route(&self, mailbox_key: &str, route_blob: &[u8]) -> Result<()> {
         record::set(self.rc, mailbox_key, 0, route_blob.to_vec(), None).await
     }
 
     /// Read the community route blob (for joiners sending RPC).
-    pub async fn read_community_route(
-        &self,
-        mailbox_key: &str,
-    ) -> Result<Option<Vec<u8>>> {
+    pub async fn read_community_route(&self, mailbox_key: &str) -> Result<Option<Vec<u8>>> {
         record::open_readonly(self.rc, mailbox_key).await?;
         record::get(self.rc, mailbox_key, 0, true).await
     }

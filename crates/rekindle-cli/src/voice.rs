@@ -7,15 +7,26 @@ use crate::output::format;
 use crate::output::OutputMode;
 use crate::transport::DaemonClient;
 
-pub async fn dispatch(cmd: &VoiceCmd, client: &DaemonClient, mode: OutputMode) -> anyhow::Result<()> {
+pub async fn dispatch(
+    cmd: &VoiceCmd,
+    client: &DaemonClient,
+    mode: OutputMode,
+) -> anyhow::Result<()> {
     match cmd {
-        VoiceCmd::Join { community, channel, muted, deafened } => {
-            let value = client.request_ok(IpcRequest::VoiceJoin {
-                community: community.clone(),
-                channel: channel.clone(),
-                muted: *muted,
-                deafened: *deafened,
-            }).await?;
+        VoiceCmd::Join {
+            community,
+            channel,
+            muted,
+            deafened,
+        } => {
+            let value = client
+                .request_ok(IpcRequest::VoiceJoin {
+                    community: community.clone(),
+                    channel: channel.clone(),
+                    muted: *muted,
+                    deafened: *deafened,
+                })
+                .await?;
             format::print_structured(&value, mode)
         }
         VoiceCmd::Leave => {

@@ -257,8 +257,7 @@ impl VoiceReceiveLoop {
     }
 
     fn sender_allowed_for_stage(&self, sender_key: &[u8]) -> bool {
-        let (Some(ref community_id), Some(ref channel_id)) =
-            (&self.community_id, &self.channel_id)
+        let (Some(ref community_id), Some(ref channel_id)) = (&self.community_id, &self.channel_id)
         else {
             return true;
         };

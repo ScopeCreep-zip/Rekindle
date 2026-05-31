@@ -39,7 +39,13 @@ pub fn build_dm_envelope(
     correlation_id: Option<&str>,
     payload_bytes: &[u8],
 ) -> SignedPayload {
-    sign_payload(sender_secret, sender_public_hex, seq, correlation_id, payload_bytes)
+    sign_payload(
+        sender_secret,
+        sender_public_hex,
+        seq,
+        correlation_id,
+        payload_bytes,
+    )
 }
 
 /// Extract the inner payload bytes from a verified DM envelope.

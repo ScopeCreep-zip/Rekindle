@@ -4,7 +4,9 @@
 //! `rekindle_governance_runtime::roles` orchestrator delegates to.
 
 use rekindle_governance_runtime::error::GovernanceRuntimeError;
-use rekindle_governance_runtime::roles::{ExclusionGroupEdit, RoleSnapshotInsert, RoleSnapshotPatch};
+use rekindle_governance_runtime::roles::{
+    ExclusionGroupEdit, RoleSnapshotInsert, RoleSnapshotPatch,
+};
 
 use crate::db_helpers::db_call;
 use crate::state::RoleDefinition;

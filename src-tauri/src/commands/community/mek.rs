@@ -21,8 +21,8 @@ pub async fn rotate_mek(
     keystore: State<'_, crate::keystore::KeystoreHandle>,
 ) -> Result<(), String> {
     // Phase 5 — gate writes on lifecycle.
-    let _g = rekindle_lifecycle::TransportGuard::write(&state.lifecycle)
-        .map_err(|e| e.to_string())?;
+    let _g =
+        rekindle_lifecycle::TransportGuard::write(&state.lifecycle).map_err(|e| e.to_string())?;
     let _ = pool;
     let state_clone = state.inner().clone();
     let keystore_clone = keystore.inner().clone();

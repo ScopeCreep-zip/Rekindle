@@ -44,11 +44,8 @@ pub trait DmMekCache: Send + Sync {
     /// Forward-lock our writer generation on inbound observation, then
     /// return the MEK bytes for the observed generation. Used by the
     /// receiver to decrypt envelopes at the sender's generation.
-    fn observed_and_lookup(
-        &self,
-        record_key: &str,
-        observed_gen: u64,
-    ) -> Result<[u8; 32], DmError>;
+    fn observed_and_lookup(&self, record_key: &str, observed_gen: u64)
+        -> Result<[u8; 32], DmError>;
 
     /// Advance the chain to the next generation (called on ratchet
     /// trigger). Returns the new generation number.
@@ -76,10 +73,7 @@ pub enum DmEvent {
         is_group: bool,
     },
     /// A peer declined our outbound invite.
-    InviteDeclined {
-        record_key: String,
-        reason: String,
-    },
+    InviteDeclined { record_key: String, reason: String },
     /// A peer left a group DM.
     GroupMemberLeft {
         record_key: String,
@@ -156,11 +150,7 @@ pub trait DmDeps: Send + Sync + 'static {
     /// Install a watch on the listed subkeys of `record_key`. The
     /// adapter routes resulting `ValueChange` events back into the DM
     /// dispatch path (`handle_dm_subkey_change`).
-    async fn dht_watch_subkeys(
-        &self,
-        record_key: &str,
-        subkeys: Vec<u32>,
-    ) -> Result<(), DmError>;
+    async fn dht_watch_subkeys(&self, record_key: &str, subkeys: Vec<u32>) -> Result<(), DmError>;
 
     // --- Transport ---
 

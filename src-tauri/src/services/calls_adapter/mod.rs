@@ -67,9 +67,8 @@ impl CallsAdapter {
         // on AppState; just clone the Arc rather than wrapping the
         // underlying HashMap a second time.
         let registry: Arc<dyn CallRegistry> = Arc::clone(&state.active_calls);
-        let group_registry: Arc<dyn GroupCallRegistry> = Arc::new(
-            ActiveGroupCallRegistry::new(Arc::clone(&state.group_calls)),
-        );
+        let group_registry: Arc<dyn GroupCallRegistry> =
+            Arc::new(ActiveGroupCallRegistry::new(Arc::clone(&state.group_calls)));
         Arc::new(Self {
             state,
             app_handle,

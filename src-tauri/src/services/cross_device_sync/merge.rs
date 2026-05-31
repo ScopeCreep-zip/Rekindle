@@ -9,6 +9,4 @@
 //! Re-exports preserve the `super::merge::*` import paths used by
 //! `cross_device_sync/watch.rs`.
 
-pub use rekindle_sync::{
-    merge_device_list, merge_manifest, merge_preferences, merge_read_state,
-};
+pub use rekindle_sync::{merge_device_list, merge_manifest, merge_preferences, merge_read_state};

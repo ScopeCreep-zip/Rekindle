@@ -41,7 +41,10 @@ pub async fn send_video_frame(
 }
 
 #[tauri::command]
-#[allow(clippy::too_many_arguments, reason = "Tauri command surface — matches FrameAck envelope shape")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Tauri command surface — matches FrameAck envelope shape"
+)]
 pub async fn send_video_frame_ack(
     community_id: String,
     channel_id: String,

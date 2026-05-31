@@ -295,7 +295,8 @@ impl CallSignalingDeps for CallsAdapter {
                 kind,
                 expires_at_ms,
             } => {
-                crate::event_dispatch::dispatch(&self.app_handle, 
+                crate::event_dispatch::dispatch(
+                    &self.app_handle,
                     "chat-event",
                     &ChatEvent::IncomingCall {
                         call_id: call_id.clone(),
@@ -305,7 +306,8 @@ impl CallSignalingDeps for CallsAdapter {
                         expires_at_ms,
                     },
                 );
-                crate::event_dispatch::dispatch(&self.app_handle, 
+                crate::event_dispatch::dispatch(
+                    &self.app_handle,
                     "notification-event",
                     &NotificationEvent::CallIncoming {
                         call_id,
@@ -330,7 +332,8 @@ impl CallSignalingDeps for CallsAdapter {
                 kind,
             } => {
                 let display_name = self.display_name_with_fallback(&peer_public_key);
-                crate::event_dispatch::dispatch(&self.app_handle, 
+                crate::event_dispatch::dispatch(
+                    &self.app_handle,
                     "chat-event",
                     &ChatEvent::CallConnected {
                         call_id,
@@ -341,14 +344,18 @@ impl CallSignalingDeps for CallsAdapter {
                     },
                 );
             }
-            CallSignalEvent::CallDeclined { call_id, reason, .. } => {
+            CallSignalEvent::CallDeclined {
+                call_id, reason, ..
+            } => {
                 crate::event_dispatch::dispatch(
                     &self.app_handle,
                     "chat-event",
                     ChatEvent::CallDeclined { call_id, reason },
                 );
             }
-            CallSignalEvent::CallEnded { call_id, reason, .. } => {
+            CallSignalEvent::CallEnded {
+                call_id, reason, ..
+            } => {
                 crate::event_dispatch::dispatch(
                     &self.app_handle,
                     "chat-event",
@@ -367,7 +374,8 @@ impl CallSignalingDeps for CallsAdapter {
                 peer_public_key,
                 ..
             } => {
-                crate::event_dispatch::dispatch(&self.app_handle, 
+                crate::event_dispatch::dispatch(
+                    &self.app_handle,
                     "chat-event",
                     &ChatEvent::CallMissed {
                         call_id,
@@ -380,7 +388,8 @@ impl CallSignalingDeps for CallsAdapter {
                 peer_display_name,
                 reason,
             } => {
-                crate::event_dispatch::dispatch(&self.app_handle, 
+                crate::event_dispatch::dispatch(
+                    &self.app_handle,
                     "chat-event",
                     &ChatEvent::ConversationFocusRequested {
                         peer_key: peer_public_key,
@@ -396,7 +405,8 @@ impl CallSignalingDeps for CallsAdapter {
                 kind,
                 expires_at_ms,
             } => {
-                crate::event_dispatch::dispatch(&self.app_handle, 
+                crate::event_dispatch::dispatch(
+                    &self.app_handle,
                     "chat-event",
                     &ChatEvent::CallStarted {
                         call_id,
@@ -415,7 +425,8 @@ impl CallSignalingDeps for CallsAdapter {
                 kind,
                 expires_at_ms,
             } => {
-                crate::event_dispatch::dispatch(&self.app_handle, 
+                crate::event_dispatch::dispatch(
+                    &self.app_handle,
                     "chat-event",
                     &ChatEvent::IncomingGroupCall {
                         call_id: call_id.clone(),
@@ -426,7 +437,8 @@ impl CallSignalingDeps for CallsAdapter {
                         expires_at_ms,
                     },
                 );
-                crate::event_dispatch::dispatch(&self.app_handle, 
+                crate::event_dispatch::dispatch(
+                    &self.app_handle,
                     "notification-event",
                     &NotificationEvent::CallIncoming {
                         call_id,
@@ -449,7 +461,8 @@ impl CallSignalingDeps for CallsAdapter {
                 call_id,
                 peer_public_key,
             } => {
-                crate::event_dispatch::dispatch(&self.app_handle, 
+                crate::event_dispatch::dispatch(
+                    &self.app_handle,
                     "chat-event",
                     &ChatEvent::GroupCallParticipantJoined {
                         call_id,
@@ -462,7 +475,8 @@ impl CallSignalingDeps for CallsAdapter {
                 peer_public_key,
                 reason,
             } => {
-                crate::event_dispatch::dispatch(&self.app_handle, 
+                crate::event_dispatch::dispatch(
+                    &self.app_handle,
                     "chat-event",
                     &ChatEvent::GroupCallParticipantLeft {
                         call_id,
@@ -472,7 +486,8 @@ impl CallSignalingDeps for CallsAdapter {
                 );
             }
             CallSignalEvent::GroupCallEnded { call_id, reason } => {
-                crate::event_dispatch::dispatch(&self.app_handle, 
+                crate::event_dispatch::dispatch(
+                    &self.app_handle,
                     "chat-event",
                     &ChatEvent::GroupCallEnded { call_id, reason },
                 );

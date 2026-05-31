@@ -76,10 +76,7 @@ pub async fn remove_received_offer(
 }
 
 /// List all currently held relay offers.
-pub async fn list_received_offers(
-    state: &Arc<AppState>,
-    pool: &DbPool,
-) -> Vec<(String, Vec<u8>)> {
+pub async fn list_received_offers(state: &Arc<AppState>, pool: &DbPool) -> Vec<(String, Vec<u8>)> {
     let owner_key = state_helpers::owner_key_or_default(state);
     if owner_key.is_empty() {
         return Vec::new();

@@ -8,10 +8,9 @@ use async_trait::async_trait;
 use rekindle_crypto::group::media_key::MediaEncryptionKey as CryptoMek;
 use rekindle_governance::state::GovernanceState;
 use rekindle_governance_runtime::{
-    ChannelMekSnapshot, CommunityDhtOpenSetup, CommunityInsert, CommunityMembership,
-    DhtRecordInfo, DiscoveredMember, GovernanceRuntimeDeps, GovernanceRuntimeError,
-    GovernanceRuntimeEvent, MekSnapshot, MemberIndexRow, OnlineMemberSnapshot, RecentMessageRow,
-    UserStatusKind,
+    ChannelMekSnapshot, CommunityDhtOpenSetup, CommunityInsert, CommunityMembership, DhtRecordInfo,
+    DiscoveredMember, GovernanceRuntimeDeps, GovernanceRuntimeError, GovernanceRuntimeEvent,
+    MekSnapshot, MemberIndexRow, OnlineMemberSnapshot, RecentMessageRow, UserStatusKind,
 };
 use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
 use rekindle_protocol::dht::community::permissions_v2::Permissions;
@@ -163,10 +162,14 @@ impl GovernanceRuntimeDeps for GovernanceAdapter {
     // ---------- MEK cache ----------
 
     fn community_mek(&self, community_id: &str) -> Option<MekSnapshot> {
-        self.state.mek_cache.lock().get(community_id).map(|mek| MekSnapshot {
-            generation: mek.generation(),
-            key_bytes: *mek.as_bytes(),
-        })
+        self.state
+            .mek_cache
+            .lock()
+            .get(community_id)
+            .map(|mek| MekSnapshot {
+                generation: mek.generation(),
+                key_bytes: *mek.as_bytes(),
+            })
     }
 
     fn channel_mek(&self, community_id: &str, channel_id: &str) -> Option<MekSnapshot> {
@@ -197,10 +200,10 @@ impl GovernanceRuntimeDeps for GovernanceAdapter {
     }
 
     fn insert_community_mek(&self, community_id: &str, mek: MekSnapshot) {
-        self.state
-            .mek_cache
-            .lock()
-            .insert(community_id.to_string(), CryptoMek::from_bytes(mek.key_bytes, mek.generation));
+        self.state.mek_cache.lock().insert(
+            community_id.to_string(),
+            CryptoMek::from_bytes(mek.key_bytes, mek.generation),
+        );
     }
 
     fn insert_channel_mek(&self, community_id: &str, channel_id: &str, mek: MekSnapshot) {
@@ -299,7 +302,9 @@ impl GovernanceRuntimeDeps for GovernanceAdapter {
     }
 
     fn ensure_files_cache_open(&self, community_id: &str) {
-        if let Err(e) = crate::services::community::files::ensure_cache_open(&self.state, community_id) {
+        if let Err(e) =
+            crate::services::community::files::ensure_cache_open(&self.state, community_id)
+        {
             tracing::warn!(community = %community_id, error = %e, "Lost Cargo cache unavailable");
         }
     }
@@ -334,7 +339,11 @@ impl GovernanceRuntimeDeps for GovernanceAdapter {
     fn list_community_governance_targets(&self) -> Vec<(String, String)> {
         let cs = self.state.communities.read();
         cs.values()
-            .filter_map(|c| c.governance_key.as_ref().map(|gk| (c.id.clone(), gk.clone())))
+            .filter_map(|c| {
+                c.governance_key
+                    .as_ref()
+                    .map(|gk| (c.id.clone(), gk.clone()))
+            })
             .collect()
     }
 
@@ -499,7 +508,8 @@ impl GovernanceRuntimeDeps for GovernanceAdapter {
         role_id: u32,
         is_self: bool,
     ) -> Result<(), GovernanceRuntimeError> {
-        roles::apply_role_unassignment_impl(self, community_id, pseudonym_key, role_id, is_self).await
+        roles::apply_role_unassignment_impl(self, community_id, pseudonym_key, role_id, is_self)
+            .await
     }
 
     async fn apply_role_create(

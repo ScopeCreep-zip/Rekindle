@@ -7,7 +7,7 @@ use rekindle_governance_runtime::{
     DhtRecordInfo, GovernanceRuntimeError, MemberIndexRow, RecentMessageRow,
 };
 use rekindle_records::schema;
-use veilid_core::{CRYPTO_KIND_VLD0, SetDHTValueOptions};
+use veilid_core::{SetDHTValueOptions, CRYPTO_KIND_VLD0};
 
 use crate::db_helpers::db_call_or_default;
 use crate::state_helpers;
@@ -29,7 +29,10 @@ pub(super) async fn create_smpl_record_impl(
     let owner_keypair = desc
         .owner_secret()
         .map(|s| veilid_core::KeyPair::new_from_parts(desc.owner().clone(), s.value()).to_string());
-    Ok(DhtRecordInfo { record_key, owner_keypair })
+    Ok(DhtRecordInfo {
+        record_key,
+        owner_keypair,
+    })
 }
 
 pub(super) async fn get_dht_value_impl(
@@ -169,8 +172,8 @@ pub(super) async fn app_call_peer_impl(
     target_route_blob: &[u8],
     payload: Vec<u8>,
 ) -> Result<Vec<u8>, GovernanceRuntimeError> {
-    let api = state_helpers::veilid_api(&adapter.state)
-        .ok_or(GovernanceRuntimeError::NotAttached)?;
+    let api =
+        state_helpers::veilid_api(&adapter.state).ok_or(GovernanceRuntimeError::NotAttached)?;
     let route_id = api
         .import_remote_private_route(target_route_blob.to_vec())
         .map_err(|e| GovernanceRuntimeError::Adapter(format!("import route: {e}")))?;

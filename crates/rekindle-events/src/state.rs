@@ -96,7 +96,9 @@ impl TypingState {
         let entries = self.channels.entry(key).or_default();
 
         // Prune expired entries first
-        let cutoff = Instant::now().checked_sub(std::time::Duration::from_secs(TYPING_EXPIRY_SECS)).expect("typing expiry within uptime");
+        let cutoff = Instant::now()
+            .checked_sub(std::time::Duration::from_secs(TYPING_EXPIRY_SECS))
+            .expect("typing expiry within uptime");
         entries.retain(|e| e.last_seen > cutoff);
 
         // Update or insert
@@ -115,7 +117,9 @@ impl TypingState {
     /// Get active typers in a channel (auto-prunes expired).
     pub fn channel_typers(&mut self, community: &str, channel: &str) -> Vec<String> {
         let key = (community.to_string(), channel.to_string());
-        let cutoff = Instant::now().checked_sub(std::time::Duration::from_secs(TYPING_EXPIRY_SECS)).expect("typing expiry within uptime");
+        let cutoff = Instant::now()
+            .checked_sub(std::time::Duration::from_secs(TYPING_EXPIRY_SECS))
+            .expect("typing expiry within uptime");
 
         if let Some(entries) = self.channels.get_mut(&key) {
             entries.retain(|e| e.last_seen > cutoff);
@@ -127,7 +131,9 @@ impl TypingState {
 
     /// Collect all expired typers across all channels (for emitting TypingStopped).
     pub fn collect_expired_channel_typers(&mut self) -> Vec<(String, String, String)> {
-        let cutoff = Instant::now().checked_sub(std::time::Duration::from_secs(TYPING_EXPIRY_SECS)).expect("typing expiry within uptime");
+        let cutoff = Instant::now()
+            .checked_sub(std::time::Duration::from_secs(TYPING_EXPIRY_SECS))
+            .expect("typing expiry within uptime");
         let mut expired = Vec::new();
 
         for ((community, channel), entries) in &mut self.channels {
@@ -152,13 +158,17 @@ impl TypingState {
 
     /// Check if a peer is typing in DM (auto-expires).
     pub fn is_dm_typing(&self, peer_key: &str) -> bool {
-        let cutoff = Instant::now().checked_sub(std::time::Duration::from_secs(TYPING_EXPIRY_SECS)).expect("typing expiry within uptime");
+        let cutoff = Instant::now()
+            .checked_sub(std::time::Duration::from_secs(TYPING_EXPIRY_SECS))
+            .expect("typing expiry within uptime");
         self.dms.get(peer_key).is_some_and(|ts| *ts > cutoff)
     }
 
     /// Collect expired DM typers (for emitting TypingStopped).
     pub fn collect_expired_dm_typers(&mut self) -> Vec<String> {
-        let cutoff = Instant::now().checked_sub(std::time::Duration::from_secs(TYPING_EXPIRY_SECS)).expect("typing expiry within uptime");
+        let cutoff = Instant::now()
+            .checked_sub(std::time::Duration::from_secs(TYPING_EXPIRY_SECS))
+            .expect("typing expiry within uptime");
         let mut expired = Vec::new();
         for (peer_key, ts) in &self.dms {
             if *ts <= cutoff {
@@ -204,7 +214,11 @@ impl PresenceInfo {
 
     /// Effective status — returns "offline" if expired.
     pub fn effective_status(&self) -> &str {
-        if self.is_expired() { "offline" } else { &self.status }
+        if self.is_expired() {
+            "offline"
+        } else {
+            &self.status
+        }
     }
 }
 
@@ -220,31 +234,42 @@ pub struct PresenceState {
 impl PresenceState {
     /// Update community member presence.
     pub fn set_member(
-        &mut self, community: &str, pseudonym: &str,
-        status: &str, game_name: Option<&str>, game_id: Option<u32>,
+        &mut self,
+        community: &str,
+        pseudonym: &str,
+        status: &str,
+        game_name: Option<&str>,
+        game_id: Option<u32>,
     ) {
         let key = (community.to_string(), pseudonym.to_string());
-        self.members.insert(key, PresenceInfo {
-            status: status.to_string(),
-            game_name: game_name.map(String::from),
-            game_id,
-            last_seen: Instant::now(),
-        });
+        self.members.insert(
+            key,
+            PresenceInfo {
+                status: status.to_string(),
+                game_name: game_name.map(String::from),
+                game_id,
+                last_seen: Instant::now(),
+            },
+        );
     }
 
     /// Update friend/DM peer presence.
     pub fn set_friend(&mut self, peer_key: &str, status: &str, game_name: Option<&str>) {
-        self.friends.insert(peer_key.to_string(), PresenceInfo {
-            status: status.to_string(),
-            game_name: game_name.map(String::from),
-            game_id: None,
-            last_seen: Instant::now(),
-        });
+        self.friends.insert(
+            peer_key.to_string(),
+            PresenceInfo {
+                status: status.to_string(),
+                game_name: game_name.map(String::from),
+                game_id: None,
+                last_seen: Instant::now(),
+            },
+        );
     }
 
     /// Get all active member presences for a community (auto-filters expired).
     pub fn community_members(&self, community: &str) -> Vec<(String, PresenceInfo)> {
-        self.members.iter()
+        self.members
+            .iter()
             .filter(|((c, _), _)| c == community)
             .map(|((_, p), info)| (p.clone(), info.clone()))
             .collect()
@@ -290,13 +315,13 @@ pub struct VoiceState {
 
 impl VoiceState {
     /// Add or update a voice participant.
-    pub fn join(
-        &mut self, community: &str, channel: &str,
-        pseudonym: &str, timestamp: u64,
-    ) {
+    pub fn join(&mut self, community: &str, channel: &str, pseudonym: &str, timestamp: u64) {
         let key = (community.to_string(), channel.to_string());
         let participants = self.channels.entry(key).or_default();
-        if let Some(p) = participants.iter_mut().find(|p| p.pseudonym_key == pseudonym) {
+        if let Some(p) = participants
+            .iter_mut()
+            .find(|p| p.pseudonym_key == pseudonym)
+        {
             p.last_heartbeat = Instant::now();
         } else {
             participants.push(VoiceParticipantInfo {
@@ -323,7 +348,9 @@ impl VoiceState {
     /// Get participants for a channel (auto-prunes expired).
     pub fn participants(&mut self, community: &str, channel: &str) -> Vec<VoiceParticipantInfo> {
         let key = (community.to_string(), channel.to_string());
-        let cutoff = Instant::now().checked_sub(std::time::Duration::from_secs(VOICE_EXPIRY_SECS)).expect("voice expiry within uptime");
+        let cutoff = Instant::now()
+            .checked_sub(std::time::Duration::from_secs(VOICE_EXPIRY_SECS))
+            .expect("voice expiry within uptime");
         if let Some(participants) = self.channels.get_mut(&key) {
             participants.retain(|p| p.last_heartbeat > cutoff);
             participants.clone()
@@ -334,14 +361,25 @@ impl VoiceState {
 
     /// Update mute/deafen state for a participant.
     pub fn update_mute_deafen(
-        &mut self, community: &str, channel: &str,
-        pseudonym: &str, muted: Option<bool>, deafened: Option<bool>,
+        &mut self,
+        community: &str,
+        channel: &str,
+        pseudonym: &str,
+        muted: Option<bool>,
+        deafened: Option<bool>,
     ) {
         let key = (community.to_string(), channel.to_string());
         if let Some(participants) = self.channels.get_mut(&key) {
-            if let Some(p) = participants.iter_mut().find(|p| p.pseudonym_key == pseudonym) {
-                if let Some(m) = muted { p.muted = m; }
-                if let Some(d) = deafened { p.deafened = d; }
+            if let Some(p) = participants
+                .iter_mut()
+                .find(|p| p.pseudonym_key == pseudonym)
+            {
+                if let Some(m) = muted {
+                    p.muted = m;
+                }
+                if let Some(d) = deafened {
+                    p.deafened = d;
+                }
                 p.last_heartbeat = Instant::now();
             }
         }

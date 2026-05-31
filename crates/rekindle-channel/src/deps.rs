@@ -200,16 +200,14 @@ pub trait ChannelMessagingDeps: Send + Sync {
     fn owner_key(&self) -> Option<String>;
     fn my_pseudonym_hex(&self, community_id: &str) -> Option<String>;
     fn my_role_ids(&self, community_id: &str) -> Vec<u32>;
-    fn pseudonym_credentials(&self, community_id: &str)
-        -> Result<PseudonymCredentials, ChannelError>;
+    fn pseudonym_credentials(
+        &self,
+        community_id: &str,
+    ) -> Result<PseudonymCredentials, ChannelError>;
 
     // ---------- Community / channel state (read) ----------
 
-    fn channel_info(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-    ) -> Option<ChannelInfoSnapshot>;
+    fn channel_info(&self, community_id: &str, channel_id: &str) -> Option<ChannelInfoSnapshot>;
 
     fn channel_write_context(
         &self,
@@ -220,11 +218,7 @@ pub trait ChannelMessagingDeps: Send + Sync {
     fn channel_record_key(&self, community_id: &str, channel_id: &str) -> Option<String>;
 
     fn community_mek(&self, community_id: &str) -> Option<ChannelMek>;
-    fn channel_or_community_mek(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-    ) -> Option<ChannelMek>;
+    fn channel_or_community_mek(&self, community_id: &str, channel_id: &str) -> Option<ChannelMek>;
     fn current_mek_generation(&self, community_id: &str) -> Option<u64>;
 
     fn governance_state(&self, community_id: &str) -> Option<GovernanceState>;
@@ -242,26 +236,15 @@ pub trait ChannelMessagingDeps: Send + Sync {
         community_id: &str,
         cache: std::sync::Arc<crate::automod::AutoModCompiledCache>,
     );
-    fn thread_state(
-        &self,
-        community_id: &str,
-        thread_id: &str,
-    ) -> Option<ThreadStateSnapshot>;
+    fn thread_state(&self, community_id: &str, thread_id: &str) -> Option<ThreadStateSnapshot>;
 
     fn slot_seed_bytes(&self, community_id: &str) -> Option<[u8; 32]>;
-    fn member_profile(
-        &self,
-        community_id: &str,
-        pseudonym_hex: &str,
-    ) -> MemberProfileSnapshot;
+    fn member_profile(&self, community_id: &str, pseudonym_hex: &str) -> MemberProfileSnapshot;
 
     /// All known member profiles for a community, keyed by pseudonym
     /// hex. Used by mention resolve_to_wire to map display names back
     /// to pseudonyms.
-    fn list_member_profiles(
-        &self,
-        community_id: &str,
-    ) -> HashMap<String, MemberProfileSnapshot>;
+    fn list_member_profiles(&self, community_id: &str) -> HashMap<String, MemberProfileSnapshot>;
     fn community_roles(&self, community_id: &str) -> Vec<RoleSnapshot>;
     fn compute_my_permissions(&self, community_id: &str) -> u64;
 
@@ -346,10 +329,7 @@ pub trait ChannelMessagingDeps: Send + Sync {
         member_count: u32,
     ) -> Result<Vec<ChannelMessage>, ChannelError>;
 
-    async fn watch_community_records(
-        &self,
-        community_id: &str,
-    ) -> Result<(), ChannelError>;
+    async fn watch_community_records(&self, community_id: &str) -> Result<(), ChannelError>;
 
     /// Plate Gate (architecture §15.4): ensure a per-segment channel
     /// SMPL record exists for the local writer before a send. Returns
@@ -364,10 +344,8 @@ pub trait ChannelMessagingDeps: Send + Sync {
 
     // ---------- Retry queue ----------
 
-    async fn enqueue_channel_retry(
-        &self,
-        pending: PendingChannelWrite,
-    ) -> Result<(), ChannelError>;
+    async fn enqueue_channel_retry(&self, pending: PendingChannelWrite)
+        -> Result<(), ChannelError>;
 
     // ---------- DB (channel messages) ----------
 
@@ -478,16 +456,6 @@ pub trait ChannelMessagingDeps: Send + Sync {
 
     fn emit_event(&self, event: ChannelEvent);
     fn emit_chat_event_local(&self, echo: &SentChannelMessageEcho);
-    fn emit_delivery_succeeded(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-        message_id: &str,
-    );
-    fn emit_delivery_failed(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-        message_id: &str,
-    );
+    fn emit_delivery_succeeded(&self, community_id: &str, channel_id: &str, message_id: &str);
+    fn emit_delivery_failed(&self, community_id: &str, channel_id: &str, message_id: &str);
 }

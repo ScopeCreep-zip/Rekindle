@@ -61,8 +61,8 @@ pub async fn send_dm_message(
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
     // Phase 5 — gate writes on lifecycle.
-    let _g = rekindle_lifecycle::TransportGuard::write(&state.lifecycle)
-        .map_err(|e| e.to_string())?;
+    let _g =
+        rekindle_lifecycle::TransportGuard::write(&state.lifecycle).map_err(|e| e.to_string())?;
     // Phase 8 — idempotency dedupes click-spam.
     let state_for_cache = state.inner().clone();
     let pool_for_cache = pool.inner().clone();

@@ -7,9 +7,7 @@
 //! update if a new sub-type is referenced.
 
 use crate::capnp_codec::{capnp_err, text_to_string};
-use crate::dht::community::envelope::{
-    OnboardingAnswer, PresenceGameInfo, VoiceRosterEntry,
-};
+use crate::dht::community::envelope::{OnboardingAnswer, PresenceGameInfo, VoiceRosterEntry};
 use crate::dht::community::types::MemberSummary;
 use crate::error::ProtocolError;
 use rekindle_types::event::{
@@ -17,8 +15,8 @@ use rekindle_types::event::{
 };
 use rekindle_types::game_server::GameServerInfo;
 use rekindle_types::id::{CategoryId, ChannelId, EventId, PseudonymKey, RoleId, ThreadId};
-use rekindle_types::member::MemberInfo;
 use rekindle_types::mek::ChannelMekDelivery;
+use rekindle_types::member::MemberInfo;
 use rekindle_types::message::{BootstrapChannelMessages, BootstrapMessage, SyncedMessage};
 use rekindle_types::thread::ThreadInfo;
 
@@ -176,9 +174,7 @@ pub(super) fn read_thread_info(
         id: text_to_string(r.get_id().map_err(|e| capnp_err(&e))?)?,
         channel_id: text_to_string(r.get_channel_id().map_err(|e| capnp_err(&e))?)?,
         name: text_to_string(r.get_name().map_err(|e| capnp_err(&e))?)?,
-        starter_message_id: text_to_string(
-            r.get_starter_message_id().map_err(|e| capnp_err(&e))?,
-        )?,
+        starter_message_id: text_to_string(r.get_starter_message_id().map_err(|e| capnp_err(&e))?)?,
         creator_pseudonym: text_to_string(r.get_creator_pseudonym().map_err(|e| capnp_err(&e))?)?,
         forum_tag: if forum_tag_text.is_empty() {
             None
@@ -266,9 +262,7 @@ fn read_bootstrap_message(
 ) -> Result<BootstrapMessage, ProtocolError> {
     Ok(BootstrapMessage {
         message_id: text_to_string(r.get_message_id().map_err(|e| capnp_err(&e))?)?,
-        sender_pseudonym: text_to_string(
-            r.get_sender_pseudonym().map_err(|e| capnp_err(&e))?,
-        )?,
+        sender_pseudonym: text_to_string(r.get_sender_pseudonym().map_err(|e| capnp_err(&e))?)?,
         ciphertext: r.get_ciphertext().map_err(|e| capnp_err(&e))?.to_vec(),
         mek_generation: r.get_mek_generation(),
         timestamp: r.get_timestamp(),
@@ -598,9 +592,7 @@ pub(super) fn read_event_info(
         id: text_to_string(r.get_id().map_err(|e| capnp_err(&e))?)?,
         title: text_to_string(r.get_title().map_err(|e| capnp_err(&e))?)?,
         description: text_to_string(r.get_description().map_err(|e| capnp_err(&e))?)?,
-        creator_pseudonym: text_to_string(
-            r.get_creator_pseudonym().map_err(|e| capnp_err(&e))?,
-        )?,
+        creator_pseudonym: text_to_string(r.get_creator_pseudonym().map_err(|e| capnp_err(&e))?)?,
         start_time: r.get_start_time(),
         end_time: if r.get_has_end_time() {
             Some(r.get_end_time())
@@ -704,7 +696,9 @@ pub(super) fn write_onboarding_answer(
     a: &OnboardingAnswer,
 ) {
     b.set_question_id(&a.question_id);
-    let mut opts = b.reborrow().init_selected_options(len_u32(a.selected_options.len()));
+    let mut opts = b
+        .reborrow()
+        .init_selected_options(len_u32(a.selected_options.len()));
     for (i, o) in a.selected_options.iter().enumerate() {
         opts.set(len_u32(i), o.as_str());
     }

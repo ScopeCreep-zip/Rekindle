@@ -48,7 +48,10 @@ struct SeqKey(String);
 
 impl SeqKey {
     fn new(peer: &str, kind: EnvelopeKind, correlation_id: &str) -> Self {
-        Self(format!("{peer}\u{1f}{}\u{1f}{correlation_id}", kind.as_str()))
+        Self(format!(
+            "{peer}\u{1f}{}\u{1f}{correlation_id}",
+            kind.as_str()
+        ))
     }
 }
 
@@ -84,10 +87,7 @@ impl JsonEnvelopeStore {
 
     /// Get or load the snapshot for an owner. Loaded once per process
     /// then mutated in place.
-    async fn snapshot_for(
-        &self,
-        owner_key: &str,
-    ) -> Result<Arc<Mutex<OwnerSnapshot>>, StoreError> {
+    async fn snapshot_for(&self, owner_key: &str) -> Result<Arc<Mutex<OwnerSnapshot>>, StoreError> {
         let mut cache = self.cache.lock().await;
         if let Some(existing) = cache.get(owner_key) {
             return Ok(existing.clone());
@@ -208,10 +208,7 @@ impl EnvelopeStore for JsonEnvelopeStore {
         self.mark_delivered(id).await
     }
 
-    async fn cancel_by_correlation(
-        &self,
-        correlation_id: &str,
-    ) -> Result<usize, StoreError> {
+    async fn cancel_by_correlation(&self, correlation_id: &str) -> Result<usize, StoreError> {
         let owners: Vec<String> = {
             let cache = self.cache.lock().await;
             cache.keys().cloned().collect()
@@ -296,11 +293,7 @@ impl EnvelopeStore for JsonEnvelopeStore {
         Ok(())
     }
 
-    async fn delete_active_call(
-        &self,
-        owner_key: &str,
-        call_id: &str,
-    ) -> Result<(), StoreError> {
+    async fn delete_active_call(&self, owner_key: &str, call_id: &str) -> Result<(), StoreError> {
         let snap_arc = self.snapshot_for(owner_key).await?;
         let path = self.path_for(owner_key);
         let mut snap = snap_arc.lock().await;

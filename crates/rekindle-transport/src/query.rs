@@ -13,13 +13,11 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
-use crate::crypto::mek::{MekCache, MekCacheEntrySnapshot};
 use crate::broadcast::dht::DhtStore;
-use crate::error::{TransportError, Result};
-use crate::payload::dht_types::{
-    ChannelEntry, ChannelKind, ChannelMessage, RoleEntry,
-};
 use crate::broadcast::peer_registry::PeerRegistry;
+use crate::crypto::mek::{MekCache, MekCacheEntrySnapshot};
+use crate::error::{Result, TransportError};
+use crate::payload::dht_types::{ChannelEntry, ChannelKind, ChannelMessage, RoleEntry};
 use crate::session::CommunityMembership;
 use crate::shared::SharedState;
 
@@ -30,15 +28,8 @@ use crate::shared::SharedState;
 // New code should import from `rekindle_types::display` directly.
 
 pub use rekindle_types::display::{
-    CommunityOverview,
-    CommunityDetail,
-    ChannelOverviewDisplay,
-    DecryptedMessageDisplay,
-    FriendDisplay,
-    DmThreadDisplay,
-    DmMessageDisplay,
-    RoleDisplay,
-    TransportSnapshot,
+    ChannelOverviewDisplay, CommunityDetail, CommunityOverview, DecryptedMessageDisplay,
+    DmMessageDisplay, DmThreadDisplay, FriendDisplay, RoleDisplay, TransportSnapshot,
 };
 
 // ── QueryEngine ─────────────────────────────────────────────────────────
@@ -129,11 +120,15 @@ impl QueryEngine {
         // Ensure governance and registry records are open for reading.
         // Records may have been closed since community creation/join.
         let _ = crate::broadcast::dht::record::open_readonly(
-            self.dht.routing_context(), &membership.governance_key,
-        ).await;
+            self.dht.routing_context(),
+            &membership.governance_key,
+        )
+        .await;
         let _ = crate::broadcast::dht::record::open_readonly(
-            self.dht.routing_context(), &membership.registry_key,
-        ).await;
+            self.dht.routing_context(),
+            &membership.registry_key,
+        )
+        .await;
 
         let metadata = self
             .dht
@@ -183,10 +178,7 @@ impl QueryEngine {
     // ── Channel queries ─────────────────────────────────────────────
 
     /// List channels in a community.
-    pub async fn list_channels(
-        &self,
-        governance_key: &str,
-    ) -> Result<Vec<ChannelOverviewDisplay>> {
+    pub async fn list_channels(&self, governance_key: &str) -> Result<Vec<ChannelOverviewDisplay>> {
         let channels = self.dht.governance().read_channels(governance_key).await?;
         Ok(channels.iter().map(channel_to_display).collect())
     }
@@ -210,13 +202,18 @@ impl QueryEngine {
     ) -> Result<Vec<DecryptedMessageDisplay>> {
         // Read member index with force_refresh=true to get the latest
         // channel_records entries (RegisterChannelRecord may have just completed).
-        let members: Vec<crate::payload::dht_types::MemberSummary> = match crate::broadcast::dht::record::get(
-            self.dht.routing_context(), registry_key,
-            crate::payload::dht_types::REGISTRY_MEMBER_INDEX, true,
-        ).await {
-            Ok(Some(data)) => serde_json::from_slice(&data).unwrap_or_default(),
-            _ => Vec::new(),
-        };
+        let members: Vec<crate::payload::dht_types::MemberSummary> =
+            match crate::broadcast::dht::record::get(
+                self.dht.routing_context(),
+                registry_key,
+                crate::payload::dht_types::REGISTRY_MEMBER_INDEX,
+                true,
+            )
+            .await
+            {
+                Ok(Some(data)) => serde_json::from_slice(&data).unwrap_or_default(),
+                _ => Vec::new(),
+            };
 
         // Collect all known DhtLog keys: from registry + from local session.
         // Local session has our own channel_record_keys that may not have
@@ -248,10 +245,12 @@ impl QueryEngine {
         let mut raw_messages: Vec<(String, ChannelMessage)> = Vec::new();
 
         for (display_name, log_key) in &log_keys_to_scan {
-
             let log = match crate::broadcast::dht::channel_log::DhtLog::open_read(
-                self.dht.routing_context(), log_key,
-            ).await {
+                self.dht.routing_context(),
+                log_key,
+            )
+            .await
+            {
                 Ok(l) => l,
                 Err(e) => {
                     tracing::warn!(
@@ -317,7 +316,8 @@ impl QueryEngine {
 
         // Deterministic total ordering: Lamport timestamp, then sender pseudonym
         messages.sort_by(|a, b| {
-            a.timestamp.cmp(&b.timestamp)
+            a.timestamp
+                .cmp(&b.timestamp)
                 .then_with(|| a.author_pseudonym.cmp(&b.author_pseudonym))
         });
 
@@ -336,10 +336,7 @@ impl QueryEngine {
     /// For each friend, reads their profile display name and status
     /// subkeys. Profile reads that fail (peer offline, record unavailable)
     /// fall back to the stored nickname or public key abbreviation.
-    pub async fn resolved_friends(
-        &self,
-        friend_list_key: &str,
-    ) -> Result<Vec<FriendDisplay>> {
+    pub async fn resolved_friends(&self, friend_list_key: &str) -> Result<Vec<FriendDisplay>> {
         let list = self.dht.friend_list().read(friend_list_key).await?;
 
         // Snapshot peer route state before the async loop to avoid holding
@@ -358,23 +355,29 @@ impl QueryEngine {
         let mut result = Vec::with_capacity(list.friends.len());
 
         for (i, friend) in list.friends.iter().enumerate() {
-            let has_route = route_snapshot
-                .get(i)
-                .is_some_and(|(_, has)| *has);
+            let has_route = route_snapshot.get(i).is_some_and(|(_, has)| *has);
 
             let (display_name, status, status_message, last_seen) =
                 if let Some(ref profile_key) = friend.profile_dht_key {
-                    self.read_profile_summary(profile_key).await.unwrap_or_else(|_| {
-                        (
-                            friend.nickname.clone().unwrap_or_else(|| abbreviate_key(&friend.public_key)),
-                            "unknown".to_string(),
-                            String::new(),
-                            None,
-                        )
-                    })
+                    self.read_profile_summary(profile_key)
+                        .await
+                        .unwrap_or_else(|_| {
+                            (
+                                friend
+                                    .nickname
+                                    .clone()
+                                    .unwrap_or_else(|| abbreviate_key(&friend.public_key)),
+                                "unknown".to_string(),
+                                String::new(),
+                                None,
+                            )
+                        })
                 } else {
                     (
-                        friend.nickname.clone().unwrap_or_else(|| abbreviate_key(&friend.public_key)),
+                        friend
+                            .nickname
+                            .clone()
+                            .unwrap_or_else(|| abbreviate_key(&friend.public_key)),
                         "unknown".to_string(),
                         String::new(),
                         None,
@@ -433,7 +436,10 @@ impl QueryEngine {
             .friends
             .iter()
             .map(|f| {
-                let name = f.nickname.clone().unwrap_or_else(|| abbreviate_key(&f.public_key));
+                let name = f
+                    .nickname
+                    .clone()
+                    .unwrap_or_else(|| abbreviate_key(&f.public_key));
                 (f.public_key.clone(), name)
             })
             .collect();
@@ -566,21 +572,24 @@ impl QueryEngine {
         profile_key: &str,
     ) -> Result<(String, String, String, Option<u64>)> {
         use crate::payload::dht_types::{
-            PROFILE_SUBKEY_DISPLAY_NAME, PROFILE_SUBKEY_STATUS,
-            PROFILE_SUBKEY_STATUS_MESSAGE, STATUS_AWAY, STATUS_BUSY,
-            STATUS_INVISIBLE, STATUS_OFFLINE, STATUS_ONLINE,
+            PROFILE_SUBKEY_DISPLAY_NAME, PROFILE_SUBKEY_STATUS, PROFILE_SUBKEY_STATUS_MESSAGE,
+            STATUS_AWAY, STATUS_BUSY, STATUS_INVISIBLE, STATUS_OFFLINE, STATUS_ONLINE,
         };
 
         let profile = self.dht.profile();
 
-        let display_name = match profile.get_subkey(profile_key, PROFILE_SUBKEY_DISPLAY_NAME).await? {
-            Some(data) if !data.is_empty() => {
-                String::from_utf8_lossy(&data).to_string()
-            }
+        let display_name = match profile
+            .get_subkey(profile_key, PROFILE_SUBKEY_DISPLAY_NAME)
+            .await?
+        {
+            Some(data) if !data.is_empty() => String::from_utf8_lossy(&data).to_string(),
             _ => abbreviate_key(profile_key),
         };
 
-        let (status, last_seen) = match profile.get_subkey(profile_key, PROFILE_SUBKEY_STATUS).await? {
+        let (status, last_seen) = match profile
+            .get_subkey(profile_key, PROFILE_SUBKEY_STATUS)
+            .await?
+        {
             Some(data) if !data.is_empty() => {
                 let status_byte = data[0];
                 let status_str = match status_byte {
@@ -592,9 +601,7 @@ impl QueryEngine {
                     _ => "unknown",
                 };
                 let last_seen_ms = if data.len() >= 9 {
-                    let raw = i64::from_be_bytes(
-                        data[1..9].try_into().unwrap_or([0; 8]),
-                    );
+                    let raw = i64::from_be_bytes(data[1..9].try_into().unwrap_or([0; 8]));
                     // Timestamps are always positive; clamp negative to 0
                     Some(u64::try_from(raw).unwrap_or(0))
                 } else {
@@ -605,10 +612,11 @@ impl QueryEngine {
             _ => ("unknown".to_string(), None),
         };
 
-        let status_message = match profile.get_subkey(profile_key, PROFILE_SUBKEY_STATUS_MESSAGE).await? {
-            Some(data) if !data.is_empty() => {
-                String::from_utf8_lossy(&data).to_string()
-            }
+        let status_message = match profile
+            .get_subkey(profile_key, PROFILE_SUBKEY_STATUS_MESSAGE)
+            .await?
+        {
+            Some(data) if !data.is_empty() => String::from_utf8_lossy(&data).to_string(),
             _ => String::new(),
         };
 

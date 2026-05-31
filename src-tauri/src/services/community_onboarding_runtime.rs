@@ -14,13 +14,13 @@ use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayl
 use rekindle_protocol::dht::community::permissions_v2::Permissions;
 
 use crate::commands::community::helpers::{hex_to_id_16, require_permission};
+use crate::db::DbPool;
+use crate::db_helpers::db_call;
 use crate::services::community_onboarding_mappers::{
     governance_onboarding_to_manifest_shape, governance_welcome_to_protocol,
     onboarding_mode_to_string, protocol_guide_step_to_governance, protocol_question_to_governance,
     protocol_welcome_channel_to_governance,
 };
-use crate::db::DbPool;
-use crate::db_helpers::db_call;
 use crate::services::community_onboarding_validation::{
     validate_onboarding_shape, MAX_WELCOME_SCREEN_CHANNELS,
 };
@@ -211,8 +211,7 @@ fn resolve_self_assignable_roles(
             continue;
         };
         for option_id in &answer.selected_options {
-            let Some(option) = question.options.iter().find(|o| &o.option_id == option_id)
-            else {
+            let Some(option) = question.options.iter().find(|o| &o.option_id == option_id) else {
                 continue;
             };
             for role_id in &option.roles_to_assign {

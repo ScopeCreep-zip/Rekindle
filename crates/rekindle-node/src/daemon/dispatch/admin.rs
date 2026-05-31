@@ -4,17 +4,19 @@
 //! via EventRouter — they never reach daemon dispatch.
 
 use crate::daemon::DaemonState;
-use crate::ipc::protocol::IpcResponse;
 use crate::ipc::message::AgentType;
 use crate::ipc::noise_keys::validate_agent_name;
+use crate::ipc::protocol::IpcResponse;
 
-use super::{DaemonContext, PolicyConfig, state_error};
+use super::{state_error, DaemonContext, PolicyConfig};
 
 // ── Network ─────────────────────────────────────────────────────────────
 
 /// Handle NetworkStatus — detailed transport node status.
 pub(crate) fn handle_network_status(ctx: &DaemonContext, state: DaemonState) -> IpcResponse {
-    if !state.can_query() { return state_error(state, "query"); }
+    if !state.can_query() {
+        return state_error(state, "query");
+    }
     let transport_guard = ctx.transport.read();
     let Some(ref transport) = *transport_guard else {
         return IpcResponse::error(503, "transport not started");
@@ -44,7 +46,9 @@ pub(crate) fn handle_network_status(ctx: &DaemonContext, state: DaemonState) -> 
 
 /// Handle NetworkPeers — peer snapshot for display.
 pub(crate) fn handle_network_peers(ctx: &DaemonContext, state: DaemonState) -> IpcResponse {
-    if !state.can_query() { return state_error(state, "query"); }
+    if !state.can_query() {
+        return state_error(state, "query");
+    }
     let transport_guard = ctx.transport.read();
     let Some(ref transport) = *transport_guard else {
         return IpcResponse::error(503, "transport not started");
@@ -69,7 +73,10 @@ pub(crate) fn handle_network_peers(ctx: &DaemonContext, state: DaemonState) -> I
 /// should call `registry.register()` with the real pubkey after dispatch
 /// returns success.
 pub(crate) fn handle_agent_register(
-    ctx: &DaemonContext, name: &str, agent_type: AgentType, capabilities: &[String],
+    ctx: &DaemonContext,
+    name: &str,
+    agent_type: AgentType,
+    capabilities: &[String],
 ) -> IpcResponse {
     if let Err(e) = validate_agent_name(name) {
         return IpcResponse::error(400, format!("invalid agent name: {e}"));
@@ -142,7 +149,10 @@ pub(crate) fn handle_policy_reload(ctx: &DaemonContext) -> IpcResponse {
             Err(e) => {
                 return IpcResponse::error(
                     500,
-                    format!("system policy parse failed ({}): {e}", system_path.display()),
+                    format!(
+                        "system policy parse failed ({}): {e}",
+                        system_path.display()
+                    ),
                 );
             }
         }
@@ -175,10 +185,8 @@ pub(crate) fn handle_policy_reload(ctx: &DaemonContext) -> IpcResponse {
 }
 
 fn load_policy_file(path: &std::path::Path) -> Result<PolicyConfig, String> {
-    let content = std::fs::read_to_string(path)
-        .map_err(|e| format!("read failed: {e}"))?;
-    toml::from_str(&content)
-        .map_err(|e| format!("parse failed: {e}"))
+    let content = std::fs::read_to_string(path).map_err(|e| format!("read failed: {e}"))?;
+    toml::from_str(&content).map_err(|e| format!("parse failed: {e}"))
 }
 
 /// Merge a loaded policy layer into the active policy.

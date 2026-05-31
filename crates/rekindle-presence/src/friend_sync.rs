@@ -59,10 +59,7 @@ pub async fn sync_friends<D, S>(
     for friend_key in &unwatched {
         // Re-derive the dht key for this friend by matching against
         // the friends_with_dht list (cheap — small N).
-        if let Some((_, dht_key)) = friends_with_dht
-            .iter()
-            .find(|(fk, _)| fk == friend_key)
-        {
+        if let Some((_, dht_key)) = friends_with_dht.iter().find(|(fk, _)| fk == friend_key) {
             watched_keys.remove(dht_key);
         }
     }
@@ -200,7 +197,10 @@ mod tests {
                 .map(|(fk, _)| fk.clone())
         }
         fn is_friend_accepted(&self, friend_key: &str) -> bool {
-            self.state.lock().calls_is_accepted.push(friend_key.to_string());
+            self.state
+                .lock()
+                .calls_is_accepted
+                .push(friend_key.to_string());
             self.accepted.contains(friend_key)
         }
         fn set_friend_status(&self, _: &str, _: UserStatusKind) -> SetFriendStatusOutcome {
@@ -210,20 +210,26 @@ mod tests {
             }
         }
         fn set_friend_offline(&self, friend_key: &str, ts: i64) {
-            self.state.lock().calls_set_offline.push((friend_key.to_string(), ts));
+            self.state
+                .lock()
+                .calls_set_offline
+                .push((friend_key.to_string(), ts));
         }
         fn set_friend_last_heartbeat(&self, _: &str, _: i64) {}
         fn set_friend_game_info(&self, _: &str, _: Option<GameInfoSnapshot>) {}
         fn set_friend_dht_record_key(&self, _: &str, _: &str) {}
         fn register_friend_dht_key(&self, dht_key: &str, friend_key: &str) {
-            self.state.lock().calls_register_dht.push((
-                dht_key.to_string(),
-                friend_key.to_string(),
-            ));
+            self.state
+                .lock()
+                .calls_register_dht
+                .push((dht_key.to_string(), friend_key.to_string()));
         }
         fn cache_route_blob(&self, _: &str, _: Vec<u8>) {}
         fn track_open_record(&self, dht_record_key: &str) {
-            self.state.lock().calls_track_open.push(dht_record_key.to_string());
+            self.state
+                .lock()
+                .calls_track_open
+                .push(dht_record_key.to_string());
         }
         fn set_unwatched_friend(&self, friend_key: &str, unwatched: bool) {
             self.state
@@ -232,7 +238,10 @@ mod tests {
                 .push((friend_key.to_string(), unwatched));
         }
         async fn open_friend_record(&self, dht_record_key: &str) -> Result<(), PresenceError> {
-            self.state.lock().calls_open_friend.push(dht_record_key.to_string());
+            self.state
+                .lock()
+                .calls_open_friend
+                .push(dht_record_key.to_string());
             Ok(())
         }
         async fn watch_friend_subkeys(
@@ -292,7 +301,9 @@ mod tests {
             let mut st = self.state.lock();
             st.calls_fetch_subkey
                 .push((dht_record_key.to_string(), subkey, force_refresh));
-            st.subkey_bytes.get(&(dht_record_key.to_string(), subkey)).cloned()
+            st.subkey_bytes
+                .get(&(dht_record_key.to_string(), subkey))
+                .cloned()
         }
         fn find_stale_friend_heartbeats(&self, threshold_ms: i64) -> Vec<String> {
             let mut st = self.state.lock();

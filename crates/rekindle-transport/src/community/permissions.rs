@@ -99,32 +99,55 @@ pub fn has_permission(member_permissions: u64, required: u64) -> bool {
 // ── Default permission presets ───────────────────────────────────────
 
 pub fn everyone_default() -> Permissions {
-    Permissions::VIEW_CHANNEL | Permissions::READ_MESSAGE_HISTORY | Permissions::CONNECT
-        | Permissions::SEND_MESSAGES | Permissions::SPEAK | Permissions::ADD_REACTIONS
-        | Permissions::EMBED_LINKS | Permissions::ATTACH_FILES | Permissions::USE_EXTERNAL_EMOJIS
-        | Permissions::USE_VAD | Permissions::CHANGE_NICKNAME | Permissions::SEND_VOICE_MESSAGES
+    Permissions::VIEW_CHANNEL
+        | Permissions::READ_MESSAGE_HISTORY
+        | Permissions::CONNECT
+        | Permissions::SEND_MESSAGES
+        | Permissions::SPEAK
+        | Permissions::ADD_REACTIONS
+        | Permissions::EMBED_LINKS
+        | Permissions::ATTACH_FILES
+        | Permissions::USE_EXTERNAL_EMOJIS
+        | Permissions::USE_VAD
+        | Permissions::CHANGE_NICKNAME
+        | Permissions::SEND_VOICE_MESSAGES
         | Permissions::SEND_POLLS
 }
 
 pub fn member_default() -> Permissions {
-    everyone_default() | Permissions::CREATE_INSTANT_INVITE
-        | Permissions::CREATE_PUBLIC_THREADS | Permissions::USE_APPLICATION_COMMANDS
+    everyone_default()
+        | Permissions::CREATE_INSTANT_INVITE
+        | Permissions::CREATE_PUBLIC_THREADS
+        | Permissions::USE_APPLICATION_COMMANDS
 }
 
 pub fn moderator_default() -> Permissions {
-    member_default() | Permissions::KICK_MEMBERS | Permissions::MANAGE_MESSAGES
-        | Permissions::MUTE_MEMBERS | Permissions::DEAFEN_MEMBERS
-        | Permissions::MODERATE_MEMBERS | Permissions::MANAGE_EVENTS | Permissions::MANAGE_THREADS
+    member_default()
+        | Permissions::KICK_MEMBERS
+        | Permissions::MANAGE_MESSAGES
+        | Permissions::MUTE_MEMBERS
+        | Permissions::DEAFEN_MEMBERS
+        | Permissions::MODERATE_MEMBERS
+        | Permissions::MANAGE_EVENTS
+        | Permissions::MANAGE_THREADS
 }
 
 pub fn admin_default() -> Permissions {
-    moderator_default() | Permissions::ADMINISTRATOR | Permissions::MANAGE_CHANNELS
-        | Permissions::MANAGE_ROLES | Permissions::BAN_MEMBERS | Permissions::VIEW_AUDIT_LOG
-        | Permissions::MANAGE_NICKNAMES | Permissions::MANAGE_COMMUNITY
-        | Permissions::MANAGE_GUILD_EXPRESSIONS | Permissions::MANAGE_WEBHOOKS
+    moderator_default()
+        | Permissions::ADMINISTRATOR
+        | Permissions::MANAGE_CHANNELS
+        | Permissions::MANAGE_ROLES
+        | Permissions::BAN_MEMBERS
+        | Permissions::VIEW_AUDIT_LOG
+        | Permissions::MANAGE_NICKNAMES
+        | Permissions::MANAGE_COMMUNITY
+        | Permissions::MANAGE_GUILD_EXPRESSIONS
+        | Permissions::MANAGE_WEBHOOKS
 }
 
-pub fn owner_default() -> Permissions { Permissions::all() }
+pub fn owner_default() -> Permissions {
+    Permissions::all()
+}
 
 /// Full 8-step Discord permission algorithm.
 pub fn calculate_permissions(
@@ -135,12 +158,17 @@ pub fn calculate_permissions(
     is_owner: bool,
     timeout_until: Option<u64>,
 ) -> Permissions {
-    if is_owner { return Permissions::all(); }
+    if is_owner {
+        return Permissions::all();
+    }
 
     // Step 1: @everyone base
-    let everyone_perms = all_roles.iter()
+    let everyone_perms = all_roles
+        .iter()
         .find(|r| r.id == ROLE_EVERYONE_ID)
-        .map_or(Permissions::empty(), |r| Permissions::from_bits_truncate(r.permissions));
+        .map_or(Permissions::empty(), |r| {
+            Permissions::from_bits_truncate(r.permissions)
+        });
 
     // Step 2: OR all assigned roles
     let mut base = everyone_perms;
@@ -153,7 +181,9 @@ pub fn calculate_permissions(
     }
 
     // Step 3: ADMINISTRATOR bypass
-    if base.contains(Permissions::ADMINISTRATOR) { return Permissions::all(); }
+    if base.contains(Permissions::ADMINISTRATOR) {
+        return Permissions::all();
+    }
 
     let mut perms = base;
 
@@ -192,15 +222,20 @@ pub fn calculate_permissions(
     // Step 7: Timeout strips write/voice
     if let Some(until) = timeout_until {
         if rekindle_utils::timestamp_secs() < until {
-            perms &= !(Permissions::SEND_MESSAGES | Permissions::ADD_REACTIONS
-                | Permissions::SPEAK | Permissions::STREAM
-                | Permissions::CREATE_INSTANT_INVITE | Permissions::SEND_VOICE_MESSAGES
+            perms &= !(Permissions::SEND_MESSAGES
+                | Permissions::ADD_REACTIONS
+                | Permissions::SPEAK
+                | Permissions::STREAM
+                | Permissions::CREATE_INSTANT_INVITE
+                | Permissions::SEND_VOICE_MESSAGES
                 | Permissions::SEND_POLLS);
         }
     }
 
     // Step 8: No VIEW_CHANNEL → deny all
-    if !perms.contains(Permissions::VIEW_CHANNEL) { return Permissions::empty(); }
+    if !perms.contains(Permissions::VIEW_CHANNEL) {
+        return Permissions::empty();
+    }
 
     perms
 }

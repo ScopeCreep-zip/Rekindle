@@ -93,9 +93,7 @@ impl PreKeyStore for MemoryPreKeyStore {
     }
 
     fn store_prekey(&self, prekey_id: u32, key_data: &[u8]) -> Result<(), CryptoError> {
-        self.prekeys
-            .lock()
-            .insert(prekey_id, key_data.to_vec());
+        self.prekeys.lock().insert(prekey_id, key_data.to_vec());
         Ok(())
     }
 
@@ -105,11 +103,7 @@ impl PreKeyStore for MemoryPreKeyStore {
     }
 
     fn load_signed_prekey(&self, signed_prekey_id: u32) -> Result<Option<Vec<u8>>, CryptoError> {
-        Ok(self
-            .signed_prekeys
-            .lock()
-            .get(&signed_prekey_id)
-            .cloned())
+        Ok(self.signed_prekeys.lock().get(&signed_prekey_id).cloned())
     }
 
     fn store_signed_prekey(

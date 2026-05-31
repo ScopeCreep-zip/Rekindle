@@ -22,9 +22,9 @@ pub fn unwrap_received_mek(
     let sender_bytes = hex::decode(sender_pseudonym).map_err(|e| {
         MekRotationError::InvalidInput(format!("invalid sender pseudonym hex: {e}"))
     })?;
-    let sender_pub: [u8; 32] = sender_bytes
-        .try_into()
-        .map_err(|_| MekRotationError::InvalidInput("sender pseudonym must be 32 bytes".to_string()))?;
+    let sender_pub: [u8; 32] = sender_bytes.try_into().map_err(|_| {
+        MekRotationError::InvalidInput("sender pseudonym must be 32 bytes".to_string())
+    })?;
     let mek_wire = unwrap_mek(&my_signing_key, &sender_pub, wrapped_mek)
         .map_err(|e| MekRotationError::InvalidInput(format!("unwrap MEK failed: {e}")))?;
     MediaEncryptionKey::from_wire_bytes(&mek_wire)

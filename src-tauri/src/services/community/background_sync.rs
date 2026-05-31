@@ -30,12 +30,7 @@ pub async fn run_background_sync_now(
     state: &Arc<AppState>,
 ) -> Result<BackgroundSyncReport, String> {
     let started = std::time::Instant::now();
-    let community_ids: Vec<String> = state
-        .communities
-        .read()
-        .keys()
-        .cloned()
-        .collect();
+    let community_ids: Vec<String> = state.communities.read().keys().cloned().collect();
     let mut report = BackgroundSyncReport::default();
     for community_id in community_ids {
         report.communities_checked = report.communities_checked.saturating_add(1);
@@ -55,7 +50,6 @@ pub async fn run_background_sync_now(
             }
         }
     }
-    report.elapsed_ms =
-        u32::try_from(started.elapsed().as_millis()).unwrap_or(u32::MAX);
+    report.elapsed_ms = u32::try_from(started.elapsed().as_millis()).unwrap_or(u32::MAX);
     Ok(report)
 }

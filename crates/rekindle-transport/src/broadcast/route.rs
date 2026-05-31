@@ -5,9 +5,9 @@
 
 use tracing::{debug, info, warn};
 
-use crate::error::Result;
 use super::node::TransportNode;
 use super::peer_registry::PeerTarget;
+use crate::error::Result;
 
 // ── Allocation ─────────────────────────────────────────────────────────
 
@@ -16,7 +16,9 @@ pub async fn allocate_personal(node: &TransportNode) -> Result<(String, Vec<u8>)
     debug!("route: allocating personal");
     let result = node.allocate_route().await;
     match &result {
-        Ok((id, blob)) => info!(route_id = %id, blob_bytes = blob.len(), "route: personal allocated"),
+        Ok((id, blob)) => {
+            info!(route_id = %id, blob_bytes = blob.len(), "route: personal allocated")
+        }
         Err(e) => warn!(error = %e, "route: personal allocation failed"),
     }
     result
@@ -24,7 +26,8 @@ pub async fn allocate_personal(node: &TransportNode) -> Result<(String, Vec<u8>)
 
 /// Allocate a personal private route with a custom deadline in seconds.
 pub async fn allocate_with_deadline(
-    node: &TransportNode, max_wait_secs: u64,
+    node: &TransportNode,
+    max_wait_secs: u64,
 ) -> Result<(String, Vec<u8>)> {
     debug!(max_wait_secs, "route: allocating with deadline");
     let result = node.allocate_route_with_deadline(max_wait_secs).await;
@@ -81,37 +84,66 @@ pub fn forget_personal_route(node: &TransportNode) {
 
 /// Publish a route blob to the personal profile DHT record.
 pub async fn publish_to_profile(
-    node: &TransportNode, profile_key: &str, route_blob: &[u8],
+    node: &TransportNode,
+    profile_key: &str,
+    route_blob: &[u8],
 ) -> Result<()> {
-    debug!(profile_key, blob_bytes = route_blob.len(), "route: publishing to profile");
+    debug!(
+        profile_key,
+        blob_bytes = route_blob.len(),
+        "route: publishing to profile"
+    );
     super::dht_writes::set(
-        node, profile_key,
+        node,
+        profile_key,
         crate::payload::dht_types::PROFILE_SUBKEY_ROUTE_BLOB,
-        route_blob.to_vec(), None,
-    ).await
+        route_blob.to_vec(),
+        None,
+    )
+    .await
 }
 
 /// Publish a route blob to the personal mailbox DHT record.
 pub async fn publish_to_mailbox(
-    node: &TransportNode, mailbox_key: &str, route_blob: &[u8],
+    node: &TransportNode,
+    mailbox_key: &str,
+    route_blob: &[u8],
 ) -> Result<()> {
-    debug!(mailbox_key, blob_bytes = route_blob.len(), "route: publishing to mailbox");
-    node.dht()?.mailbox().update_route(mailbox_key, route_blob).await
+    debug!(
+        mailbox_key,
+        blob_bytes = route_blob.len(),
+        "route: publishing to mailbox"
+    );
+    node.dht()?
+        .mailbox()
+        .update_route(mailbox_key, route_blob)
+        .await
 }
 
 /// Publish a community route blob to the community mailbox.
 pub async fn publish_to_community_mailbox(
-    node: &TransportNode, community_mailbox_key: &str, route_blob: &[u8],
+    node: &TransportNode,
+    community_mailbox_key: &str,
+    route_blob: &[u8],
 ) -> Result<()> {
-    debug!(community_mailbox_key, blob_bytes = route_blob.len(), "route: publishing to community mailbox");
-    node.dht()?.mailbox().update_community_route(community_mailbox_key, route_blob).await
+    debug!(
+        community_mailbox_key,
+        blob_bytes = route_blob.len(),
+        "route: publishing to community mailbox"
+    );
+    node.dht()?
+        .mailbox()
+        .update_community_route(community_mailbox_key, route_blob)
+        .await
 }
 
 // ── Refresh ────────────────────────────────────────────────────────────
 
 /// Refresh the personal route: forget old, allocate new, publish to profile + mailbox.
 pub async fn refresh_personal(
-    node: &TransportNode, profile_key: &str, mailbox_key: &str,
+    node: &TransportNode,
+    profile_key: &str,
+    mailbox_key: &str,
 ) -> Result<Vec<u8>> {
     info!("route: refreshing personal");
     forget_personal_route(node);
@@ -124,7 +156,8 @@ pub async fn refresh_personal(
 
 /// Refresh a community route: allocate new, publish to community mailbox.
 pub async fn refresh_community(
-    node: &TransportNode, community_mailbox_key: &str,
+    node: &TransportNode,
+    community_mailbox_key: &str,
 ) -> Result<Vec<u8>> {
     debug!(community_mailbox_key, "route: refreshing community");
     let (_route_id, route_blob) = node.allocate_route().await?;
@@ -135,14 +168,21 @@ pub async fn refresh_community(
 
 /// Refresh all routes: personal + all operator community routes.
 pub async fn refresh_all(
-    node: &TransportNode, profile_key: &str, mailbox_key: &str,
+    node: &TransportNode,
+    profile_key: &str,
+    mailbox_key: &str,
     operator_communities: &[(String, String)],
 ) -> usize {
-    info!(communities = operator_communities.len(), "route: refreshing all");
+    info!(
+        communities = operator_communities.len(),
+        "route: refreshing all"
+    );
     let mut refreshed = 0;
 
     match refresh_personal(node, profile_key, mailbox_key).await {
-        Ok(_) => { refreshed += 1; }
+        Ok(_) => {
+            refreshed += 1;
+        }
         Err(e) => warn!(error = %e, "route: personal refresh failed"),
     }
 
@@ -156,6 +196,10 @@ pub async fn refresh_all(
         }
     }
 
-    info!(refreshed, total = 1 + operator_communities.len(), "route: refresh_all complete");
+    info!(
+        refreshed,
+        total = 1 + operator_communities.len(),
+        "route: refresh_all complete"
+    );
     refreshed
 }

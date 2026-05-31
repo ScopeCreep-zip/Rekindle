@@ -106,8 +106,7 @@ fn stress_255_members_50_writers_merge_within_budget() {
 
     while started.elapsed() < duration {
         let subkeys = synth_round(&authors, &creator, base_lamport);
-        let entries_this_round: usize =
-            subkeys.iter().map(|(_, entries)| entries.len()).sum();
+        let entries_this_round: usize = subkeys.iter().map(|(_, entries)| entries.len()).sum();
         let merge_started = Instant::now();
         let state = merge(&subkeys);
         let round_ms = merge_started.elapsed().as_millis();

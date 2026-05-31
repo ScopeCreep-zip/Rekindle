@@ -39,16 +39,17 @@ pub fn normalize_exclusion_group(raw: Option<String>) -> Result<Option<String>, 
                 .chars()
                 .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
             {
-                return Err(
-                    "exclusion_group may only contain letters, numbers, '_' or '-'".into(),
-                );
+                return Err("exclusion_group may only contain letters, numbers, '_' or '-'".into());
             }
             Ok(Some(trimmed.to_ascii_lowercase()))
         }
     }
 }
 
-#[allow(clippy::too_many_arguments, reason = "Tauri command surface — matches RoleDefinition shape")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Tauri command surface — matches RoleDefinition shape"
+)]
 pub async fn create_role_handler_inner(
     state: &SharedState,
     pool: &DbPool,
@@ -81,7 +82,10 @@ pub async fn create_role_handler_inner(
     .await
 }
 
-#[allow(clippy::too_many_arguments, reason = "Tauri command surface — matches edit_role partial-update payload")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Tauri command surface — matches edit_role partial-update payload"
+)]
 pub async fn edit_role_handler_inner(
     state: &SharedState,
     pool: &DbPool,

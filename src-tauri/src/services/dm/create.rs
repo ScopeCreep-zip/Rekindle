@@ -21,8 +21,8 @@ pub async fn start_dm(
     bob_public_key_hex: &str,
     alice_pseudonym: &str,
 ) -> Result<String, String> {
-    let app_handle = state_helpers::app_handle(state)
-        .ok_or_else(|| "app handle unavailable".to_string())?;
+    let app_handle =
+        state_helpers::app_handle(state).ok_or_else(|| "app handle unavailable".to_string())?;
     let adapter = DmAdapter::new(Arc::clone(state), app_handle, pool.clone());
     rekindle_dm::start_dm(&*adapter, bob_public_key_hex, alice_pseudonym)
         .await

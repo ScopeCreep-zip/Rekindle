@@ -172,11 +172,7 @@ fn seal_aes_gcm(key: &[u8; 32], plaintext: &[u8]) -> Result<(Vec<u8>, Vec<u8>), 
     Ok((nonce.to_vec(), ct))
 }
 
-fn open_aes_gcm(
-    key: &[u8; 32],
-    nonce: &[u8],
-    ct: &[u8],
-) -> Result<Zeroizing<Vec<u8>>, VaultError> {
+fn open_aes_gcm(key: &[u8; 32], nonce: &[u8], ct: &[u8]) -> Result<Zeroizing<Vec<u8>>, VaultError> {
     if nonce.len() != 12 {
         return Err(VaultError::Aead(format!(
             "nonce length {} (expected 12)",

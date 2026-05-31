@@ -11,16 +11,10 @@ use serde::{Deserialize, Serialize};
 pub enum TypingEvent {
     /// Someone started typing.
     /// Triggered by: gossip `TypingIndicator`, `DmPayload::Typing { typing: true }`.
-    Started {
-        context: TypingContext,
-        who: String,
-    },
+    Started { context: TypingContext, who: String },
     /// Someone stopped typing (expired or explicit).
     /// Triggered by: expiry timer, `DmPayload::Typing { typing: false }`.
-    Stopped {
-        context: TypingContext,
-        who: String,
-    },
+    Stopped { context: TypingContext, who: String },
 }
 
 /// Where the typing is happening.

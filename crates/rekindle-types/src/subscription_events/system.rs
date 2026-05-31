@@ -14,21 +14,13 @@ pub enum SystemEvent {
     },
     /// A raid alert was activated or deactivated.
     /// Triggered by: gossip `ControlPayload::RaidAlert`.
-    RaidAlert {
-        community: String,
-        active: bool,
-    },
+    RaidAlert { community: String, active: bool },
     /// A channel was locked or unlocked (lockdown mode).
     /// Triggered by: gossip `ControlPayload::ChannelLockdown`.
-    ChannelLockdown {
-        community: String,
-        locked: bool,
-    },
+    ChannelLockdown { community: String, locked: bool },
     /// We were kicked from a community.
     /// Triggered by: gossip `ControlPayload::KickedNotification`.
-    Kicked {
-        community: String,
-    },
+    Kicked { community: String },
     /// A bootstrap request was received (operator processing a new joiner).
     /// Triggered by: gossip `ControlPayload::BootstrapRequest`.
     BootstrapRequested {
@@ -37,9 +29,7 @@ pub enum SystemEvent {
     },
     /// A bootstrap response was received (new joiner receiving initial state).
     /// Triggered by: gossip `ControlPayload::BootstrapResponse`.
-    BootstrapReceived {
-        community: String,
-    },
+    BootstrapReceived { community: String },
     /// A sync request was received for a channel.
     /// Triggered by: gossip `ControlPayload::SyncRequest`.
     SyncRequested {
@@ -60,7 +50,5 @@ pub enum SystemEvent {
     /// command or boot-time chain check. Frontend surfaces as a typed
     /// `notification-event` toast so the user knows their device's
     /// integrity guarantees were violated.
-    AuditChainBroken {
-        cursor: u64,
-    },
+    AuditChainBroken { cursor: u64 },
 }

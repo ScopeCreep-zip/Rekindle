@@ -185,7 +185,11 @@ mod tests {
 
         let event = rx.try_recv().expect("should receive notification");
         match event {
-            TransportNotification::AttachmentChanged { state, is_attached, public_internet_ready } => {
+            TransportNotification::AttachmentChanged {
+                state,
+                is_attached,
+                public_internet_ready,
+            } => {
                 assert_eq!(state, AttachmentState::FullyAttached);
                 assert!(is_attached);
                 assert!(public_internet_ready);

@@ -52,7 +52,10 @@ pub async fn handle_relay_envelope(
     };
 
     routing_context
-        .app_message(veilid_core::Target::RouteId(route_id), inner_payload.to_vec())
+        .app_message(
+            veilid_core::Target::RouteId(route_id),
+            inner_payload.to_vec(),
+        )
         .await
         .map_err(|e| format!("relay app_message failed: {e}"))?;
     Ok(())

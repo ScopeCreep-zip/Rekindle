@@ -47,8 +47,8 @@ pub async fn join_community(
     pool: State<'_, DbPool>,
     keystore_handle: State<'_, KeystoreHandle>,
 ) -> Result<(), String> {
-    let _g = rekindle_lifecycle::TransportGuard::write(&state.lifecycle)
-        .map_err(|e| e.to_string())?;
+    let _g =
+        rekindle_lifecycle::TransportGuard::write(&state.lifecycle).map_err(|e| e.to_string())?;
     crate::services::community_lifecycle_runtime::join_community_inner(
         state.inner(),
         pool.inner(),
@@ -67,8 +67,8 @@ pub async fn leave_community(
     keystore_handle: State<'_, KeystoreHandle>,
 ) -> Result<(), String> {
     // Phase 5 — gate writes on lifecycle.
-    let _g = rekindle_lifecycle::TransportGuard::write(&state.lifecycle)
-        .map_err(|e| e.to_string())?;
+    let _g =
+        rekindle_lifecycle::TransportGuard::write(&state.lifecycle).map_err(|e| e.to_string())?;
     crate::services::community_lifecycle_runtime::leave_community_inner(
         state.inner(),
         pool.inner(),

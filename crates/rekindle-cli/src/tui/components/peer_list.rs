@@ -59,7 +59,8 @@ impl PeerList {
         self.members = members;
         // Sort by presence: online first, then away, busy, offline, unknown
         self.members.sort_by(|a, b| {
-            presence_rank(&a.status).cmp(&presence_rank(&b.status))
+            presence_rank(&a.status)
+                .cmp(&presence_rank(&b.status))
                 .then(a.display_name.cmp(&b.display_name))
         });
     }
@@ -84,13 +85,11 @@ impl PeerList {
             if current_status != Some(status) {
                 current_status = Some(status);
                 let count = self.members.iter().filter(|m| m.status == status).count();
-                let header = format!(
-                    " {} ({count})",
-                    capitalize_status(status)
-                );
-                items.push(ListItem::new(Line::from(
-                    Span::styled(header, Style::new().bold().dim()),
-                )));
+                let header = format!(" {} ({count})", capitalize_status(status));
+                items.push(ListItem::new(Line::from(Span::styled(
+                    header,
+                    Style::new().bold().dim(),
+                ))));
             }
 
             let (glyph, _label) = presence_indicator(status, self.use_unicode);
@@ -168,19 +167,39 @@ impl Component for PeerList {
 fn presence_indicator(status: &str, unicode: bool) -> (&'static str, &'static str) {
     match status {
         "online" => {
-            if unicode { ("●", "[ONLINE]") } else { ("o", "[ONLINE]") }
+            if unicode {
+                ("●", "[ONLINE]")
+            } else {
+                ("o", "[ONLINE]")
+            }
         }
         "away" => {
-            if unicode { ("◐", "[AWAY]") } else { ("~", "[AWAY]") }
+            if unicode {
+                ("◐", "[AWAY]")
+            } else {
+                ("~", "[AWAY]")
+            }
         }
         "busy" => {
-            if unicode { ("●", "[BUSY]") } else { ("-", "[BUSY]") }
+            if unicode {
+                ("●", "[BUSY]")
+            } else {
+                ("-", "[BUSY]")
+            }
         }
         "offline" => {
-            if unicode { ("○", "[OFFLINE]") } else { (".", "[OFFLINE]") }
+            if unicode {
+                ("○", "[OFFLINE]")
+            } else {
+                (".", "[OFFLINE]")
+            }
         }
         _ => {
-            if unicode { ("◌", "[?]") } else { ("?", "[?]") }
+            if unicode {
+                ("◌", "[?]")
+            } else {
+                ("?", "[?]")
+            }
         }
     }
 }

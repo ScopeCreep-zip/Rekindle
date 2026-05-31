@@ -68,9 +68,13 @@ impl ChunkCache {
             Err(e) => return Err(FilesError::io(config.root_dir.display().to_string(), e)),
         };
         for fanout_entry in outer {
-            let fanout_entry =
-                fanout_entry.map_err(|e| FilesError::io(config.root_dir.display().to_string(), e))?;
-            if !fanout_entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            let fanout_entry = fanout_entry
+                .map_err(|e| FilesError::io(config.root_dir.display().to_string(), e))?;
+            if !fanout_entry
+                .file_type()
+                .map(|t| t.is_dir())
+                .unwrap_or(false)
+            {
                 continue;
             }
             let fanout_path = fanout_entry.path();
@@ -79,8 +83,8 @@ impl ChunkCache {
                 Err(_) => continue,
             };
             for attach_entry in inner {
-                let attach_entry =
-                    attach_entry.map_err(|e| FilesError::io(fanout_path.display().to_string(), e))?;
+                let attach_entry = attach_entry
+                    .map_err(|e| FilesError::io(fanout_path.display().to_string(), e))?;
                 let attach_path = attach_entry.path();
                 let Some(hex_name) = attach_path.file_name().and_then(|n| n.to_str()) else {
                     continue;
@@ -93,8 +97,8 @@ impl ChunkCache {
                     Err(_) => continue,
                 };
                 for chunk_entry in chunks {
-                    let chunk_entry =
-                        chunk_entry.map_err(|e| FilesError::io(attach_path.display().to_string(), e))?;
+                    let chunk_entry = chunk_entry
+                        .map_err(|e| FilesError::io(attach_path.display().to_string(), e))?;
                     let chunk_path = chunk_entry.path();
                     let Some(stem) = chunk_path
                         .file_stem()
@@ -106,10 +110,7 @@ impl ChunkCache {
                     let Ok(chunk_index) = stem.parse::<u32>() else {
                         continue;
                     };
-                    let len = chunk_entry
-                        .metadata()
-                        .map(|m| m.len())
-                        .unwrap_or(0);
+                    let len = chunk_entry.metadata().map(|m| m.len()).unwrap_or(0);
                     existing.push((attachment_id, chunk_index, len));
                     total_bytes = total_bytes.saturating_add(len);
                 }
@@ -294,8 +295,8 @@ fn uuid_to_hex(id: Uuid) -> String {
 }
 
 fn parse_attachment_id_hex(hex_str: &str) -> Result<Uuid, FilesError> {
-    let bytes = hex::decode(hex_str)
-        .map_err(|_| FilesError::InvalidAttachmentId(hex_str.to_string()))?;
+    let bytes =
+        hex::decode(hex_str).map_err(|_| FilesError::InvalidAttachmentId(hex_str.to_string()))?;
     let arr: [u8; 16] = bytes
         .as_slice()
         .try_into()

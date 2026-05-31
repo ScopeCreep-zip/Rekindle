@@ -3,14 +3,16 @@
 //! Every operation validates operator status for the target community,
 //! gets transport/DHT access, executes the governance write, and returns.
 
-
 use std::sync::Arc;
 
 use parking_lot::RwLock;
 
-use rekindle_transport::payload::rpc::{CallResponse, GovernanceRequest, GovernanceOp};
+use rekindle_transport::payload::rpc::{CallResponse, GovernanceOp, GovernanceRequest};
 
-use super::community_rpc::{require_operator_registry, get_signing_key, get_transport, open_registry_writable, HANDLER_DEADLINE};
+use super::community_rpc::{
+    get_signing_key, get_transport, open_registry_writable, require_operator_registry,
+    HANDLER_DEADLINE,
+};
 
 use rekindle_utils::timestamp_ms as now_ms;
 
@@ -37,11 +39,19 @@ async fn ensure_open(node: &rekindle_transport::TransportNode, gov: &str, reg: &
 
 fn save(session: &RwLock<Option<rekindle_transport::Session>>, path: &std::path::Path) {
     let guard = session.read();
-    if let Some(ref s) = *guard { let _ = s.save(path); }
+    if let Some(ref s) = *guard {
+        let _ = s.save(path);
+    }
 }
 
-fn ack() -> CallResponse { CallResponse::Ack }
-fn reject(reason: &str) -> CallResponse { CallResponse::Rejected { reason: reason.into() } }
+fn ack() -> CallResponse {
+    CallResponse::Ack
+}
+fn reject(reason: &str) -> CallResponse {
+    CallResponse::Rejected {
+        reason: reason.into(),
+    }
+}
 
 // ── Main dispatch ──────────────────────────────────────────────────────
 
@@ -54,9 +64,20 @@ pub(crate) async fn handle_op(
     transport: &RwLock<Option<Arc<rekindle_transport::TransportNode>>>,
     session_path: &std::path::Path,
 ) -> CallResponse {
-    if let Ok(response) = tokio::time::timeout(HANDLER_DEADLINE, handle_op_inner(
-        sender, req, session, signing_key, mek_cache, transport, session_path,
-    )).await {
+    if let Ok(response) = tokio::time::timeout(
+        HANDLER_DEADLINE,
+        handle_op_inner(
+            sender,
+            req,
+            session,
+            signing_key,
+            mek_cache,
+            transport,
+            session_path,
+        ),
+    )
+    .await
+    {
         response
     } else {
         tracing::error!("governance op handler exceeded deadline — returning Ack");
@@ -83,13 +104,34 @@ async fn handle_op_inner(
 
     match req.operation {
         // ── Channel record registration ─────────────────────────────
-        GovernanceOp::RegisterChannelRecord { member_pseudonym, channel_id, record_key } => {
-            let Some(registry_key) = require_operator_registry(session, gov_key) else { return ack() };
-            let Some(dht) = open_dht(transport) else { return ack() };
-            let mut members = dht.registry().read_member_index(&registry_key).await.unwrap_or_else(|e| { tracing::warn!(error = %e, "DHT read failed, using empty"); Vec::new() });
-            if let Some(m) = members.iter_mut().find(|m| m.pseudonym_key == member_pseudonym) {
+        GovernanceOp::RegisterChannelRecord {
+            member_pseudonym,
+            channel_id,
+            record_key,
+        } => {
+            let Some(registry_key) = require_operator_registry(session, gov_key) else {
+                return ack();
+            };
+            let Some(dht) = open_dht(transport) else {
+                return ack();
+            };
+            let mut members = dht
+                .registry()
+                .read_member_index(&registry_key)
+                .await
+                .unwrap_or_else(|e| {
+                    tracing::warn!(error = %e, "DHT read failed, using empty");
+                    Vec::new()
+                });
+            if let Some(m) = members
+                .iter_mut()
+                .find(|m| m.pseudonym_key == member_pseudonym)
+            {
                 m.channel_records.insert(channel_id.clone(), record_key);
-                let _ = dht.registry().write_member_index(&registry_key, &members).await;
+                let _ = dht
+                    .registry()
+                    .write_member_index(&registry_key, &members)
+                    .await;
                 tracing::info!(
                     member = %&member_pseudonym[..16.min(member_pseudonym.len())],
                     channel = %channel_id,
@@ -100,13 +142,29 @@ async fn handle_op_inner(
         }
 
         // ── Ban (remove + rekey for forward secrecy) ─────────────────
-        GovernanceOp::Ban { target_pseudonym, reason } => {
-            let Some(registry_key) = require_operator_registry(session, gov_key) else { return reject("not operator") };
-            let Some(node) = get_node(transport) else { return ack() };
-            let Some(dht) = open_dht(transport) else { return ack() };
+        GovernanceOp::Ban {
+            target_pseudonym,
+            reason,
+        } => {
+            let Some(registry_key) = require_operator_registry(session, gov_key) else {
+                return reject("not operator");
+            };
+            let Some(node) = get_node(transport) else {
+                return ack();
+            };
+            let Some(dht) = open_dht(transport) else {
+                return ack();
+            };
             ensure_open(&node, gov_key, &registry_key).await;
 
-            let mut bans = dht.governance().read_bans(gov_key).await.unwrap_or_else(|e| { tracing::warn!(error = %e, "DHT read failed, using empty"); Vec::new() });
+            let mut bans = dht
+                .governance()
+                .read_bans(gov_key)
+                .await
+                .unwrap_or_else(|e| {
+                    tracing::warn!(error = %e, "DHT read failed, using empty");
+                    Vec::new()
+                });
             if !bans.iter().any(|b| b.pseudonym_key == target_pseudonym) {
                 bans.push(rekindle_transport::payload::dht_types::BanEntry {
                     pseudonym_key: target_pseudonym.clone(),
@@ -117,11 +175,29 @@ async fn handle_op_inner(
                 let _ = dht.governance().write_bans(gov_key, &bans).await;
             }
 
-            let mut members = dht.registry().read_member_index(&registry_key).await.unwrap_or_else(|e| { tracing::warn!(error = %e, "DHT read failed, using empty"); Vec::new() });
+            let mut members = dht
+                .registry()
+                .read_member_index(&registry_key)
+                .await
+                .unwrap_or_else(|e| {
+                    tracing::warn!(error = %e, "DHT read failed, using empty");
+                    Vec::new()
+                });
             members.retain(|m| m.pseudonym_key != target_pseudonym);
-            let _ = dht.registry().write_member_index(&registry_key, &members).await;
+            let _ = dht
+                .registry()
+                .write_member_index(&registry_key, &members)
+                .await;
 
-            rekey_all_channels(&dht, gov_key, &registry_key, &members, signing_key, mek_cache).await;
+            rekey_all_channels(
+                &dht,
+                gov_key,
+                &registry_key,
+                &members,
+                signing_key,
+                mek_cache,
+            )
+            .await;
             save(session, session_path);
             tracing::info!(target = %&target_pseudonym[..16.min(target_pseudonym.len())], "banned + rekeyed");
             ack()
@@ -129,22 +205,49 @@ async fn handle_op_inner(
 
         // ── Kick (remove only, no rekey — can rejoin) ────────────────
         GovernanceOp::Kick { target_pseudonym } => {
-            let Some(registry_key) = require_operator_registry(session, gov_key) else { return reject("not operator") };
-            let Some(dht) = open_dht(transport) else { return ack() };
-            let mut members = dht.registry().read_member_index(&registry_key).await.unwrap_or_else(|e| { tracing::warn!(error = %e, "DHT read failed, using empty"); Vec::new() });
+            let Some(registry_key) = require_operator_registry(session, gov_key) else {
+                return reject("not operator");
+            };
+            let Some(dht) = open_dht(transport) else {
+                return ack();
+            };
+            let mut members = dht
+                .registry()
+                .read_member_index(&registry_key)
+                .await
+                .unwrap_or_else(|e| {
+                    tracing::warn!(error = %e, "DHT read failed, using empty");
+                    Vec::new()
+                });
             members.retain(|m| m.pseudonym_key != target_pseudonym);
-            let _ = dht.registry().write_member_index(&registry_key, &members).await;
+            let _ = dht
+                .registry()
+                .write_member_index(&registry_key, &members)
+                .await;
             tracing::info!(target = %&target_pseudonym[..16.min(target_pseudonym.len())], "kicked");
             ack()
         }
 
         // ── Unban ────────────────────────────────────────────────────
         GovernanceOp::Unban { target_pseudonym } => {
-            if require_operator_registry(session, gov_key).is_none() { return ack(); }
-            let Some(node) = get_node(transport) else { return ack() };
-            let Some(dht) = open_dht(transport) else { return ack() };
+            if require_operator_registry(session, gov_key).is_none() {
+                return ack();
+            }
+            let Some(node) = get_node(transport) else {
+                return ack();
+            };
+            let Some(dht) = open_dht(transport) else {
+                return ack();
+            };
             ensure_open(&node, gov_key, "").await;
-            let mut bans = dht.governance().read_bans(gov_key).await.unwrap_or_else(|e| { tracing::warn!(error = %e, "DHT read failed, using empty"); Vec::new() });
+            let mut bans = dht
+                .governance()
+                .read_bans(gov_key)
+                .await
+                .unwrap_or_else(|e| {
+                    tracing::warn!(error = %e, "DHT read failed, using empty");
+                    Vec::new()
+                });
             bans.retain(|b| b.pseudonym_key != target_pseudonym);
             let _ = dht.governance().write_bans(gov_key, &bans).await;
             tracing::info!(target = %&target_pseudonym[..16.min(target_pseudonym.len())], "unbanned");
@@ -152,32 +255,82 @@ async fn handle_op_inner(
         }
 
         // ── Timeout ──────────────────────────────────────────────────
-        GovernanceOp::Timeout { target_pseudonym, duration_seconds, .. } => {
-            let Some(registry_key) = require_operator_registry(session, gov_key) else { return ack() };
-            let Some(dht) = open_dht(transport) else { return ack() };
-            let mut members = dht.registry().read_member_index(&registry_key).await.unwrap_or_else(|e| { tracing::warn!(error = %e, "DHT read failed, using empty"); Vec::new() });
-            if let Some(m) = members.iter_mut().find(|m| m.pseudonym_key == target_pseudonym) {
+        GovernanceOp::Timeout {
+            target_pseudonym,
+            duration_seconds,
+            ..
+        } => {
+            let Some(registry_key) = require_operator_registry(session, gov_key) else {
+                return ack();
+            };
+            let Some(dht) = open_dht(transport) else {
+                return ack();
+            };
+            let mut members = dht
+                .registry()
+                .read_member_index(&registry_key)
+                .await
+                .unwrap_or_else(|e| {
+                    tracing::warn!(error = %e, "DHT read failed, using empty");
+                    Vec::new()
+                });
+            if let Some(m) = members
+                .iter_mut()
+                .find(|m| m.pseudonym_key == target_pseudonym)
+            {
                 m.timeout_until = Some(now_ms() + duration_seconds * 1000);
             }
-            let _ = dht.registry().write_member_index(&registry_key, &members).await;
+            let _ = dht
+                .registry()
+                .write_member_index(&registry_key, &members)
+                .await;
             tracing::info!(target = %&target_pseudonym[..16.min(target_pseudonym.len())], duration_seconds, "timed out");
             ack()
         }
 
         // ── Approve join from waiting room ───────────────────────────
         GovernanceOp::ApproveJoin { target_pseudonym } => {
-            let Some(registry_key) = require_operator_registry(session, gov_key) else { return ack() };
-            let Some(node) = get_node(transport) else { return ack() };
-            let Some(dht) = open_dht(transport) else { return ack() };
+            let Some(registry_key) = require_operator_registry(session, gov_key) else {
+                return ack();
+            };
+            let Some(node) = get_node(transport) else {
+                return ack();
+            };
+            let Some(dht) = open_dht(transport) else {
+                return ack();
+            };
             ensure_open(&node, gov_key, &registry_key).await;
 
-            let mut queue = dht.registry().read_moderation_queue(&registry_key).await.unwrap_or_else(|e| { tracing::warn!(error = %e, "DHT read failed, using empty"); Vec::new() });
-            let Some(pending) = queue.iter().find(|p| p.requester_pseudonym_hex == target_pseudonym).cloned() else {
+            let mut queue = dht
+                .registry()
+                .read_moderation_queue(&registry_key)
+                .await
+                .unwrap_or_else(|e| {
+                    tracing::warn!(error = %e, "DHT read failed, using empty");
+                    Vec::new()
+                });
+            let Some(pending) = queue
+                .iter()
+                .find(|p| p.requester_pseudonym_hex == target_pseudonym)
+                .cloned()
+            else {
                 return reject("not in moderation queue");
             };
 
-            let mut members = dht.registry().read_member_index(&registry_key).await.unwrap_or_else(|e| { tracing::warn!(error = %e, "DHT read failed, using empty"); Vec::new() });
-            let slot = members.iter().map(|m| m.subkey_index).max().map_or(1, |m| m + 1).max(1);
+            let mut members = dht
+                .registry()
+                .read_member_index(&registry_key)
+                .await
+                .unwrap_or_else(|e| {
+                    tracing::warn!(error = %e, "DHT read failed, using empty");
+                    Vec::new()
+                });
+            let slot = members
+                .iter()
+                .map(|m| m.subkey_index)
+                .max()
+                .map_or(1, |m| m + 1)
+                .max(1);
             members.push(rekindle_transport::payload::dht_types::MemberSummary {
                 pseudonym_key: target_pseudonym.clone(),
                 display_name: pending.display_name,
@@ -189,24 +342,50 @@ async fn handle_op_inner(
                 profile_dht_key: Some(pending.profile_dht_key),
                 channel_records: std::collections::HashMap::new(),
             });
-            let _ = dht.registry().write_member_index(&registry_key, &members).await;
+            let _ = dht
+                .registry()
+                .write_member_index(&registry_key, &members)
+                .await;
 
             queue.retain(|p| p.requester_pseudonym_hex != target_pseudonym);
-            let _ = dht.registry().write_moderation_queue(&registry_key, &queue).await;
+            let _ = dht
+                .registry()
+                .write_moderation_queue(&registry_key, &queue)
+                .await;
 
             // Wrap MEKs for the approved member
             if let Some(sk) = get_signing_key(signing_key) {
-                let channels = dht.governance().read_channels(gov_key).await.unwrap_or_else(|e| { tracing::warn!(error = %e, "DHT read failed, using empty"); Vec::new() });
+                let channels = dht
+                    .governance()
+                    .read_channels(gov_key)
+                    .await
+                    .unwrap_or_else(|e| {
+                        tracing::warn!(error = %e, "DHT read failed, using empty");
+                        Vec::new()
+                    });
                 if let Ok(transfers) = rekindle_transport::operations::mek::wrap_meks_for_member(
-                    &channels, &target_pseudonym, &sk, gov_key, mek_cache,
+                    &channels,
+                    &target_pseudonym,
+                    &sk,
+                    gov_key,
+                    mek_cache,
                 ) {
-                    let mut vault = dht.registry().read_mek_vault(&registry_key).await.unwrap_or_else(|e| { tracing::warn!(error = %e, "DHT read failed, using empty"); Vec::new() });
+                    let mut vault = dht
+                        .registry()
+                        .read_mek_vault(&registry_key)
+                        .await
+                        .unwrap_or_else(|e| {
+                            tracing::warn!(error = %e, "DHT read failed, using empty");
+                            Vec::new()
+                        });
                     for t in &transfers {
                         if let Some(e) = vault.iter_mut().find(|e| e.channel_id == t.channel_id) {
-                            e.copies.push(rekindle_transport::payload::dht_types::EncryptedMekCopy {
-                                target_pseudonym: target_pseudonym.clone(),
-                                encrypted_mek: t.wrapped_mek.clone(),
-                            });
+                            e.copies.push(
+                                rekindle_transport::payload::dht_types::EncryptedMekCopy {
+                                    target_pseudonym: target_pseudonym.clone(),
+                                    encrypted_mek: t.wrapped_mek.clone(),
+                                },
+                            );
                         }
                     }
                     let _ = dht.registry().write_mek_vault(&registry_key, &vault).await;
@@ -217,89 +396,214 @@ async fn handle_op_inner(
         }
 
         // ── Reject join ──────────────────────────────────────────────
-        GovernanceOp::RejectJoin { target_pseudonym, reason } => {
-            let Some(registry_key) = require_operator_registry(session, gov_key) else { return ack() };
-            let Some(dht) = open_dht(transport) else { return ack() };
-            let mut queue = dht.registry().read_moderation_queue(&registry_key).await.unwrap_or_else(|e| { tracing::warn!(error = %e, "DHT read failed, using empty"); Vec::new() });
+        GovernanceOp::RejectJoin {
+            target_pseudonym,
+            reason,
+        } => {
+            let Some(registry_key) = require_operator_registry(session, gov_key) else {
+                return ack();
+            };
+            let Some(dht) = open_dht(transport) else {
+                return ack();
+            };
+            let mut queue = dht
+                .registry()
+                .read_moderation_queue(&registry_key)
+                .await
+                .unwrap_or_else(|e| {
+                    tracing::warn!(error = %e, "DHT read failed, using empty");
+                    Vec::new()
+                });
             queue.retain(|p| p.requester_pseudonym_hex != target_pseudonym);
-            let _ = dht.registry().write_moderation_queue(&registry_key, &queue).await;
+            let _ = dht
+                .registry()
+                .write_moderation_queue(&registry_key, &queue)
+                .await;
             tracing::info!(target = %&target_pseudonym[..16.min(target_pseudonym.len())], reason, "rejected");
             ack()
         }
 
         // ── Channel management ───────────────────────────────────────
         GovernanceOp::CreateChannel { name, kind, topic } => {
-            if require_operator_registry(session, gov_key).is_none() { return ack(); }
-            let Some(tn) = get_transport(transport) else { return ack() };
+            if require_operator_registry(session, gov_key).is_none() {
+                return ack();
+            }
+            let Some(tn) = get_transport(transport) else {
+                return ack();
+            };
             match rekindle_transport::operations::channel_admin::create_channel(
-                &tn, gov_key, &name, &kind, None, topic.as_deref(), 0,
-            ).await {
-                Ok(e) => { tracing::info!(channel = %e.name, "channel created"); ack() }
+                &tn,
+                gov_key,
+                &name,
+                &kind,
+                None,
+                topic.as_deref(),
+                0,
+            )
+            .await
+            {
+                Ok(e) => {
+                    tracing::info!(channel = %e.name, "channel created");
+                    ack()
+                }
                 Err(e) => reject(&e.to_string()),
             }
         }
 
         GovernanceOp::DeleteChannel { channel_id } => {
-            if require_operator_registry(session, gov_key).is_none() { return ack(); }
-            let Some(tn) = get_transport(transport) else { return ack() };
-            match rekindle_transport::operations::channel_admin::delete_channel(&tn, gov_key, &channel_id).await {
+            if require_operator_registry(session, gov_key).is_none() {
+                return ack();
+            }
+            let Some(tn) = get_transport(transport) else {
+                return ack();
+            };
+            match rekindle_transport::operations::channel_admin::delete_channel(
+                &tn,
+                gov_key,
+                &channel_id,
+            )
+            .await
+            {
                 Ok(()) => ack(),
                 Err(e) => reject(&e.to_string()),
             }
         }
 
-        GovernanceOp::UpdateChannel { channel_id, name, topic } => {
-            if require_operator_registry(session, gov_key).is_none() { return ack(); }
-            let Some(tn) = get_transport(transport) else { return ack() };
+        GovernanceOp::UpdateChannel {
+            channel_id,
+            name,
+            topic,
+        } => {
+            if require_operator_registry(session, gov_key).is_none() {
+                return ack();
+            }
+            let Some(tn) = get_transport(transport) else {
+                return ack();
+            };
             match rekindle_transport::operations::channel_admin::update_channel(
-                &tn, gov_key, &channel_id, name.as_deref(), topic.as_deref(), None,
-            ).await {
+                &tn,
+                gov_key,
+                &channel_id,
+                name.as_deref(),
+                topic.as_deref(),
+                None,
+            )
+            .await
+            {
                 Ok(_) => ack(),
                 Err(e) => reject(&e.to_string()),
             }
         }
 
         // ── Role management ──────────────────────────────────────────
-        GovernanceOp::CreateRole { name, permissions, color, position } => {
-            if require_operator_registry(session, gov_key).is_none() { return ack(); }
-            let Some(tn) = get_transport(transport) else { return ack() };
-            match rekindle_transport::operations::roles::create_role(&tn, gov_key, &name, permissions, color, position).await {
+        GovernanceOp::CreateRole {
+            name,
+            permissions,
+            color,
+            position,
+        } => {
+            if require_operator_registry(session, gov_key).is_none() {
+                return ack();
+            }
+            let Some(tn) = get_transport(transport) else {
+                return ack();
+            };
+            match rekindle_transport::operations::roles::create_role(
+                &tn,
+                gov_key,
+                &name,
+                permissions,
+                color,
+                position,
+            )
+            .await
+            {
                 Ok(_) => ack(),
                 Err(e) => reject(&e.to_string()),
             }
         }
 
-        GovernanceOp::UpdateRole { role_id, name, permissions, color } => {
-            if require_operator_registry(session, gov_key).is_none() { return ack(); }
-            let Some(tn) = get_transport(transport) else { return ack() };
-            match rekindle_transport::operations::roles::update_role(&tn, gov_key, role_id, name.as_deref(), permissions, color).await {
+        GovernanceOp::UpdateRole {
+            role_id,
+            name,
+            permissions,
+            color,
+        } => {
+            if require_operator_registry(session, gov_key).is_none() {
+                return ack();
+            }
+            let Some(tn) = get_transport(transport) else {
+                return ack();
+            };
+            match rekindle_transport::operations::roles::update_role(
+                &tn,
+                gov_key,
+                role_id,
+                name.as_deref(),
+                permissions,
+                color,
+            )
+            .await
+            {
                 Ok(_) => ack(),
                 Err(e) => reject(&e.to_string()),
             }
         }
 
         GovernanceOp::DeleteRole { role_id } => {
-            if require_operator_registry(session, gov_key).is_none() { return ack(); }
-            let Some(tn) = get_transport(transport) else { return ack() };
+            if require_operator_registry(session, gov_key).is_none() {
+                return ack();
+            }
+            let Some(tn) = get_transport(transport) else {
+                return ack();
+            };
             match rekindle_transport::operations::roles::delete_role(&tn, gov_key, role_id).await {
                 Ok(()) => ack(),
                 Err(e) => reject(&e.to_string()),
             }
         }
 
-        GovernanceOp::AssignRole { member_pseudonym, role_id } => {
-            let Some(registry_key) = require_operator_registry(session, gov_key) else { return ack() };
-            let Some(tn) = get_transport(transport) else { return ack() };
-            match rekindle_transport::operations::roles::assign_role(&tn, &registry_key, &member_pseudonym, role_id).await {
+        GovernanceOp::AssignRole {
+            member_pseudonym,
+            role_id,
+        } => {
+            let Some(registry_key) = require_operator_registry(session, gov_key) else {
+                return ack();
+            };
+            let Some(tn) = get_transport(transport) else {
+                return ack();
+            };
+            match rekindle_transport::operations::roles::assign_role(
+                &tn,
+                &registry_key,
+                &member_pseudonym,
+                role_id,
+            )
+            .await
+            {
                 Ok(()) => ack(),
                 Err(e) => reject(&e.to_string()),
             }
         }
 
-        GovernanceOp::UnassignRole { member_pseudonym, role_id } => {
-            let Some(registry_key) = require_operator_registry(session, gov_key) else { return ack() };
-            let Some(tn) = get_transport(transport) else { return ack() };
-            match rekindle_transport::operations::roles::unassign_role(&tn, &registry_key, &member_pseudonym, role_id).await {
+        GovernanceOp::UnassignRole {
+            member_pseudonym,
+            role_id,
+        } => {
+            let Some(registry_key) = require_operator_registry(session, gov_key) else {
+                return ack();
+            };
+            let Some(tn) = get_transport(transport) else {
+                return ack();
+            };
+            match rekindle_transport::operations::roles::unassign_role(
+                &tn,
+                &registry_key,
+                &member_pseudonym,
+                role_id,
+            )
+            .await
+            {
                 Ok(()) => ack(),
                 Err(e) => reject(&e.to_string()),
             }
@@ -307,25 +611,55 @@ async fn handle_op_inner(
 
         // ── MEK rotation ────────────────────────────────��────────────
         GovernanceOp::RotateMek { channel_id } => {
-            let Some(registry_key) = require_operator_registry(session, gov_key) else { return ack() };
-            let Some(dht) = open_dht(transport) else { return ack() };
-            let members = dht.registry().read_member_index(&registry_key).await.unwrap_or_else(|e| { tracing::warn!(error = %e, "DHT read failed, using empty"); Vec::new() });
+            let Some(registry_key) = require_operator_registry(session, gov_key) else {
+                return ack();
+            };
+            let Some(dht) = open_dht(transport) else {
+                return ack();
+            };
+            let members = dht
+                .registry()
+                .read_member_index(&registry_key)
+                .await
+                .unwrap_or_else(|e| {
+                    tracing::warn!(error = %e, "DHT read failed, using empty");
+                    Vec::new()
+                });
             // Single-channel rekey: generate new MEK, wrap for all members, write vault
-            rekey_channels(&dht, gov_key, &registry_key, &[channel_id], &members, signing_key, mek_cache).await;
+            rekey_channels(
+                &dht,
+                gov_key,
+                &registry_key,
+                &[channel_id],
+                &members,
+                signing_key,
+                mek_cache,
+            )
+            .await;
             save(session, session_path);
             ack()
         }
 
         // ── Ownership transfer ───────────────────────────────────────
-        GovernanceOp::TransferOwnership { new_owner_pseudonym } => {
-            if require_operator_registry(session, gov_key).is_none() { return reject("not operator"); }
-            let Some(node) = get_node(transport) else { return reject("transport not started") };
-            let Some(dht) = open_dht(transport) else { return reject("transport not started") };
+        GovernanceOp::TransferOwnership {
+            new_owner_pseudonym,
+        } => {
+            if require_operator_registry(session, gov_key).is_none() {
+                return reject("not operator");
+            }
+            let Some(node) = get_node(transport) else {
+                return reject("transport not started");
+            };
+            let Some(dht) = open_dht(transport) else {
+                return reject("transport not started");
+            };
             ensure_open(&node, gov_key, "").await;
 
             // Read current metadata, update owner
             let metadata = dht.governance().read_metadata(gov_key).await.ok().flatten();
-            let Some(mut metadata) = metadata else { return reject("cannot read metadata") };
+            let Some(mut metadata) = metadata else {
+                return reject("cannot read metadata");
+            };
 
             let old_owner = metadata.owner_pseudonym.clone();
             metadata.owner_pseudonym.clone_from(&new_owner_pseudonym);
@@ -333,7 +667,9 @@ async fn handle_op_inner(
             // Update operator list: remove old owner, add new owner
             metadata.operator_pseudonyms.retain(|p| p != &old_owner);
             if !metadata.operator_pseudonyms.contains(&new_owner_pseudonym) {
-                metadata.operator_pseudonyms.push(new_owner_pseudonym.clone());
+                metadata
+                    .operator_pseudonyms
+                    .push(new_owner_pseudonym.clone());
             }
 
             let _ = dht.governance().write_metadata(gov_key, &metadata).await;
@@ -371,9 +707,25 @@ async fn rekey_all_channels(
     signing_key: &RwLock<Option<crate::state::keystore::SigningKeyHandle>>,
     mek_cache: &RwLock<rekindle_transport::crypto::mek::MekCache>,
 ) {
-    let channels = dht.governance().read_channels(gov_key).await.unwrap_or_else(|e| { tracing::warn!(error = %e, "DHT read failed, using empty"); Vec::new() });
+    let channels = dht
+        .governance()
+        .read_channels(gov_key)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "DHT read failed, using empty");
+            Vec::new()
+        });
     let channel_ids: Vec<String> = channels.iter().map(|ch| ch.id.clone()).collect();
-    rekey_channels(dht, gov_key, registry_key, &channel_ids, members, signing_key, mek_cache).await;
+    rekey_channels(
+        dht,
+        gov_key,
+        registry_key,
+        &channel_ids,
+        members,
+        signing_key,
+        mek_cache,
+    )
+    .await;
 }
 
 /// Rekey specific channels: generate new MEKs, wrap for all members, write vault.
@@ -396,7 +748,8 @@ async fn rekey_channels(
     let mut new_vault_entries = Vec::new();
 
     for channel_id in channel_ids {
-        let current_gen = mek_cache.read()
+        let current_gen = mek_cache
+            .read()
             .current(gov_key, channel_id)
             .map_or(0, rekindle_transport::crypto::mek::Mek::generation);
         let new_gen = current_gen + 1;
@@ -404,15 +757,20 @@ async fn rekey_channels(
         let mek_wire = new_mek.to_wire_bytes();
 
         // Wrap for each remaining member
-        let copies: Vec<rekindle_transport::payload::dht_types::EncryptedMekCopy> = members.iter().filter_map(|m| {
-            let pub_bytes: [u8; 32] = hex::decode(&m.pseudonym_key).ok()?.try_into().ok()?;
-            rekindle_transport::crypto::mek::wrap_mek(&ps, &pub_bytes, &mek_wire).ok().map(|wrapped| {
-                rekindle_transport::payload::dht_types::EncryptedMekCopy {
-                    target_pseudonym: m.pseudonym_key.clone(),
-                    encrypted_mek: wrapped,
-                }
+        let copies: Vec<rekindle_transport::payload::dht_types::EncryptedMekCopy> = members
+            .iter()
+            .filter_map(|m| {
+                let pub_bytes: [u8; 32] = hex::decode(&m.pseudonym_key).ok()?.try_into().ok()?;
+                rekindle_transport::crypto::mek::wrap_mek(&ps, &pub_bytes, &mek_wire)
+                    .ok()
+                    .map(
+                        |wrapped| rekindle_transport::payload::dht_types::EncryptedMekCopy {
+                            target_pseudonym: m.pseudonym_key.clone(),
+                            encrypted_mek: wrapped,
+                        },
+                    )
             })
-        }).collect();
+            .collect();
 
         new_vault_entries.push(rekindle_transport::payload::dht_types::MekVaultEntry {
             channel_id: channel_id.clone(),
@@ -427,6 +785,9 @@ async fn rekey_channels(
     }
 
     if !new_vault_entries.is_empty() {
-        let _ = dht.registry().write_mek_vault(registry_key, &new_vault_entries).await;
+        let _ = dht
+            .registry()
+            .write_mek_vault(registry_key, &new_vault_entries)
+            .await;
     }
 }

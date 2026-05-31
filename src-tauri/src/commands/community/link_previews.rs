@@ -21,14 +21,8 @@ pub async fn fetch_link_preview(
     url: String,
     state: State<'_, SharedState>,
 ) -> Result<LinkPreview, String> {
-    link_previews::fetch_and_broadcast(
-        state.inner(),
-        &community_id,
-        &channel_id,
-        &message_id,
-        &url,
-    )
-    .await
+    link_previews::fetch_and_broadcast(state.inner(), &community_id, &channel_id, &message_id, &url)
+        .await
 }
 
 /// Architecture §28.8 line 3220 — IP-privacy toggle for link preview

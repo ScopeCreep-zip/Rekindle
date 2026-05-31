@@ -10,7 +10,6 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum TransportError {
     // ── Node lifecycle ───────────────────────────────────────────────
-
     /// The transport node has not been started yet.
     #[error("transport node not started")]
     NotStarted,
@@ -32,7 +31,6 @@ pub enum TransportError {
     NetworkNotReady,
 
     // ── Routing ──────────────────────────────────────────────────────
-
     /// No route available for the target peer.
     #[error("no route for peer {peer}")]
     NoRoute { peer: String },
@@ -54,7 +52,6 @@ pub enum TransportError {
     RouteAllocationFailed { reason: String },
 
     // ── Send ─────────────────────────────────────────────────────────
-
     /// The serialized payload exceeds the Veilid maximum (32,764 bytes with frame header).
     #[error("payload too large: {size} bytes (max {max})")]
     PayloadTooLarge { size: usize, max: usize },
@@ -68,7 +65,6 @@ pub enum TransportError {
     Timeout { operation: String, duration_ms: u64 },
 
     // ── Receive ──────────────────────────────────────────────────────
-
     /// The inbound frame header is invalid (too short, corrupt).
     #[error("invalid frame: {reason}")]
     InvalidFrame { reason: String },
@@ -98,7 +94,6 @@ pub enum TransportError {
     DuplicateMessage { dedup_key: String },
 
     // ── DHT ──────────────────────────────────────────────────────────
-
     /// Attempted an operation on a DHT record that is not open.
     #[error("DHT record not open: {key}")]
     RecordNotOpen { key: String },
@@ -109,11 +104,19 @@ pub enum TransportError {
 
     /// The data being written to a subkey exceeds ValueData::MAX_LEN (32,768).
     #[error("subkey {subkey} data too large: {size} bytes (max {max})")]
-    SubkeyTooLarge { subkey: u32, size: usize, max: usize },
+    SubkeyTooLarge {
+        subkey: u32,
+        size: usize,
+        max: usize,
+    },
 
     /// A write was rejected because the network has a newer sequence number.
     #[error("stale write on subkey {subkey}: local seq {local_seq}, network seq {network_seq}")]
-    StaleWrite { subkey: u32, local_seq: u32, network_seq: u32 },
+    StaleWrite {
+        subkey: u32,
+        local_seq: u32,
+        network_seq: u32,
+    },
 
     /// A DHT watch died (count reached zero or empty subkeys reported).
     #[error("DHT watch died for record {key}")]
@@ -124,10 +127,12 @@ pub enum TransportError {
     DhtError { reason: String },
 
     // ── Crypto ────────────────────────────────────────────────────────
-
     /// No MEK available for encrypting/decrypting a channel message.
     #[error("no MEK for {community_id}/{channel_id}")]
-    NoMekForChannel { community_id: String, channel_id: String },
+    NoMekForChannel {
+        community_id: String,
+        channel_id: String,
+    },
 
     /// The MEK generation on a received message does not match any cached generation.
     #[error("MEK generation mismatch: expected {expected}, got {got}")]
@@ -146,13 +151,11 @@ pub enum TransportError {
     EncryptionFailed { reason: String },
 
     // ── Serialization ────────────────────────────────────────────────
-
     /// Serialization of an outbound payload failed.
     #[error("serialization failed: {reason}")]
     SerializationFailed { reason: String },
 
     // ── Operations (high-level orchestrators) ─────────────────────────
-
     /// Identity creation ceremony failed at a named step.
     #[error("identity creation failed at '{step}': {reason}")]
     IdentityCreationFailed { step: String, reason: String },
@@ -171,7 +174,11 @@ pub enum TransportError {
 
     /// MEK not available for the requested channel and generation.
     #[error("MEK generation {generation} not cached for {community}/{channel}")]
-    MekNotCached { community: String, channel: String, generation: u64 },
+    MekNotCached {
+        community: String,
+        channel: String,
+        generation: u64,
+    },
 
     /// Friend request could not be delivered.
     #[error("friend request to {target} failed: {reason}")]
@@ -182,7 +189,6 @@ pub enum TransportError {
     VoiceJoinFailed { channel: String, reason: String },
 
     // ── Internal ─────────────────────────────────────────────────────
-
     /// An internal invariant was violated. Should never happen in production.
     #[error("internal error: {0}")]
     Internal(String),

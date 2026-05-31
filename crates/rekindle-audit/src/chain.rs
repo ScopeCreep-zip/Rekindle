@@ -46,12 +46,18 @@ pub struct AuditEntry {
 
 #[derive(Debug, thiserror::Error)]
 pub enum VerifyError {
-    #[error("entry at cursor {cursor} (index {index}): prev_mac does not match preceding entry's mac")]
+    #[error(
+        "entry at cursor {cursor} (index {index}): prev_mac does not match preceding entry's mac"
+    )]
     PrevMacMismatch { cursor: u64, index: usize },
     #[error("entry at cursor {cursor} (index {index}): recomputed MAC does not match stored mac (tampered payload)")]
     MacMismatch { cursor: u64, index: usize },
     #[error("entry at cursor {cursor} (index {index}): cursor is not monotonic (expected > {expected_after})")]
-    NonMonotonicCursor { cursor: u64, index: usize, expected_after: u64 },
+    NonMonotonicCursor {
+        cursor: u64,
+        index: usize,
+        expected_after: u64,
+    },
     #[error("payload serialization failed during verify: {0}")]
     Serialize(#[from] serde_json::Error),
 }
@@ -192,7 +198,9 @@ mod tests {
         assert_eq!(e2.prev_mac, e1.mac);
         assert_eq!(e3.prev_mac, e2.mac);
         let verifier = AuditChain::open(key, [0u8; MAC_LEN], 0);
-        verifier.verify(&[e1, e2, e3]).expect("clean chain verifies");
+        verifier
+            .verify(&[e1, e2, e3])
+            .expect("clean chain verifies");
     }
 
     #[test]
@@ -245,7 +253,9 @@ mod tests {
         // PrevMacMismatch (forged.mac ≠ e3.prev_mac) — either is a
         // valid detection.
         let mut forged_chain = AuditChain::open(fixture_key(), e1.mac, 1);
-        let forged = forged_chain.append(rec(AuditKind::FriendAdded, 99)).unwrap();
+        let forged = forged_chain
+            .append(rec(AuditKind::FriendAdded, 99))
+            .unwrap();
         let verifier = AuditChain::open(key, [0u8; MAC_LEN], 0);
         let err = verifier.verify(&[e1, forged, e3]).unwrap_err();
         assert!(matches!(
@@ -263,7 +273,10 @@ mod tests {
         // Drop e1 — verifier sees e2.prev_mac != [0; 32].
         let verifier = AuditChain::open(key, [0u8; MAC_LEN], 0);
         let err = verifier.verify(&[e2]).unwrap_err();
-        assert!(matches!(err, VerifyError::PrevMacMismatch { cursor: 2, .. }));
+        assert!(matches!(
+            err,
+            VerifyError::PrevMacMismatch { cursor: 2, .. }
+        ));
     }
 
     #[test]
@@ -277,7 +290,13 @@ mod tests {
         let verifier = AuditChain::open(wrong_key, [0u8; MAC_LEN], 0);
         let err = verifier.verify(&entries).unwrap_err();
         // Wrong key invalidates the very first MAC.
-        assert!(matches!(err, VerifyError::MacMismatch { cursor: 1, index: 0 }));
+        assert!(matches!(
+            err,
+            VerifyError::MacMismatch {
+                cursor: 1,
+                index: 0
+            }
+        ));
     }
 
     #[test]

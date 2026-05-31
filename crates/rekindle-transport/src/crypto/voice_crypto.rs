@@ -7,13 +7,16 @@
 //! HKDF-SHA256 with a voice-specific info label. This ensures voice
 //! encryption keys rotate automatically when the channel MEK rotates.
 
-use aes_gcm::{aead::{Aead, KeyInit}, Aes256Gcm, Nonce};
+use aes_gcm::{
+    aead::{Aead, KeyInit},
+    Aes256Gcm, Nonce,
+};
 use hkdf::Hkdf;
 use rand::RngCore;
 use sha2::Sha256;
 use zeroize::ZeroizeOnDrop;
 
-use crate::error::{TransportError, Result};
+use crate::error::{Result, TransportError};
 
 /// HKDF info label for deriving voice session keys from channel MEK.
 const VOICE_HKDF_INFO: &[u8] = b"rekindle-voice-session-v1";
@@ -42,15 +45,21 @@ impl VoiceSessionKey {
     ///
     /// Returns `[12-byte nonce || ciphertext+tag]`.
     pub fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>> {
-        let cipher = Aes256Gcm::new_from_slice(&self.key)
-            .map_err(|e| TransportError::EncryptionFailed { reason: e.to_string() })?;
+        let cipher =
+            Aes256Gcm::new_from_slice(&self.key).map_err(|e| TransportError::EncryptionFailed {
+                reason: e.to_string(),
+            })?;
 
         let mut nonce_bytes = [0u8; 12];
         rand::rngs::OsRng.fill_bytes(&mut nonce_bytes);
         let nonce = Nonce::from_slice(&nonce_bytes);
 
-        let ciphertext = cipher.encrypt(nonce, plaintext)
-            .map_err(|e| TransportError::EncryptionFailed { reason: e.to_string() })?;
+        let ciphertext =
+            cipher
+                .encrypt(nonce, plaintext)
+                .map_err(|e| TransportError::EncryptionFailed {
+                    reason: e.to_string(),
+                })?;
 
         let mut output = Vec::with_capacity(12 + ciphertext.len());
         output.extend_from_slice(&nonce_bytes);
@@ -68,13 +77,16 @@ impl VoiceSessionKey {
             });
         }
 
-        let cipher = Aes256Gcm::new_from_slice(&self.key)
-            .map_err(|e| TransportError::DecryptionFailed { reason: e.to_string() })?;
+        let cipher =
+            Aes256Gcm::new_from_slice(&self.key).map_err(|e| TransportError::DecryptionFailed {
+                reason: e.to_string(),
+            })?;
 
         let nonce = Nonce::from_slice(&data[..12]);
         let ciphertext = &data[12..];
 
-        cipher.decrypt(nonce, ciphertext)
+        cipher
+            .decrypt(nonce, ciphertext)
             .map_err(|e| TransportError::DecryptionFailed {
                 reason: format!("voice AES-GCM decrypt: {e}"),
             })

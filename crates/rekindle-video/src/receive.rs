@@ -246,7 +246,12 @@ mod tests {
         );
         let calls = deps.calls.lock();
         assert_eq!(calls.events.len(), 1);
-        let VideoEvent::FrameAck { last_frame_seq, kbps, .. } = &calls.events[0] else {
+        let VideoEvent::FrameAck {
+            last_frame_seq,
+            kbps,
+            ..
+        } = &calls.events[0]
+        else {
             panic!("expected FrameAck variant");
         };
         assert_eq!(*last_frame_seq, 7);
@@ -269,7 +274,10 @@ mod tests {
             0,
         );
         let calls = deps.calls.lock();
-        assert!(matches!(calls.events[0], VideoEvent::KeyframeRequest { .. }));
+        assert!(matches!(
+            calls.events[0],
+            VideoEvent::KeyframeRequest { .. }
+        ));
     }
 
     #[test]
@@ -290,7 +298,10 @@ mod tests {
             0,
         );
         let calls = deps.calls.lock();
-        let VideoEvent::BandwidthEstimate { kbps, window_secs, .. } = &calls.events[0] else {
+        let VideoEvent::BandwidthEstimate {
+            kbps, window_secs, ..
+        } = &calls.events[0]
+        else {
             panic!("expected BandwidthEstimate variant");
         };
         assert_eq!(*kbps, 2500);
@@ -315,7 +326,10 @@ mod tests {
             0,
         );
         let calls = deps.calls.lock();
-        assert!(matches!(calls.events[0], VideoEvent::MediaCapabilities { .. }));
+        assert!(matches!(
+            calls.events[0],
+            VideoEvent::MediaCapabilities { .. }
+        ));
     }
 
     #[test]

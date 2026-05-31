@@ -25,12 +25,12 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
 use ratatui::Frame;
 
+use super::View;
 use crate::helpers;
 use crate::tui::action::{Action, CommandResult};
-use rekindle_types::display::{CommunityOverview, FriendDisplay};
 use crate::tui::focus::{FocusId, FocusRing};
 use crate::tui::theme::ThemeManager;
-use super::View;
+use rekindle_types::display::{CommunityOverview, FriendDisplay};
 
 /// Dashboard view state.
 pub struct DashboardView {
@@ -62,10 +62,10 @@ impl DashboardView {
     pub fn new(use_unicode: bool) -> Self {
         Self {
             focus: FocusRing::new(vec![
-                FocusId::CommunityInfoPanel,  // Identity
-                FocusId::DoctorList,           // Node status
-                FocusId::ChannelTree,          // Communities
-                FocusId::FriendList,           // Friends
+                FocusId::CommunityInfoPanel, // Identity
+                FocusId::DoctorList,         // Node status
+                FocusId::ChannelTree,        // Communities
+                FocusId::FriendList,         // Friends
             ]),
             panel_rects: [Rect::default(); 4],
             identity_public_key: String::new(),
@@ -107,21 +107,39 @@ impl DashboardView {
         } else {
             theme.unfocused_border()
         };
-        let block = Block::bordered()
-            .title(" Identity ")
-            .border_style(border);
+        let block = Block::bordered().title(" Identity ").border_style(border);
         frame.render_widget(Paragraph::new(lines).block(block), area);
     }
 
     /// Render the node status panel.
     fn render_node(&self, frame: &mut Frame, area: Rect, theme: &ThemeManager) {
         let attach_glyph = if self.use_unicode {
-            if self.node_attached { "●" } else { "○" }
-        } else if self.node_attached { "o" } else { "." };
+            if self.node_attached {
+                "●"
+            } else {
+                "○"
+            }
+        } else if self.node_attached {
+            "o"
+        } else {
+            "."
+        };
 
-        let attach_label = if self.node_attached { "[ONLINE]" } else { "[OFFLINE]" };
-        let internet = if self.node_public_internet { "[OK] ready" } else { "[--] not ready" };
-        let route = if self.node_route_allocated { "[OK] allocated" } else { "[--] none" };
+        let attach_label = if self.node_attached {
+            "[ONLINE]"
+        } else {
+            "[OFFLINE]"
+        };
+        let internet = if self.node_public_internet {
+            "[OK] ready"
+        } else {
+            "[--] not ready"
+        };
+        let route = if self.node_route_allocated {
+            "[OK] allocated"
+        } else {
+            "[--] none"
+        };
         let uptime = helpers::format_uptime(self.node_uptime_secs);
 
         let lines = vec![
@@ -146,9 +164,7 @@ impl DashboardView {
         } else {
             theme.unfocused_border()
         };
-        let block = Block::bordered()
-            .title(" Node ")
-            .border_style(border);
+        let block = Block::bordered().title(" Node ").border_style(border);
         frame.render_widget(Paragraph::new(lines).block(block), area);
     }
 
@@ -160,14 +176,14 @@ impl DashboardView {
         } else {
             theme.unfocused_border()
         };
-        let block = Block::bordered()
-            .title(title)
-            .border_style(border);
+        let block = Block::bordered().title(title).border_style(border);
 
         if self.communities.is_empty() {
-            let para = Paragraph::new("  No communities joined.\n  Join one: rekindle community join --invite <code>")
-                .style(Style::new().dim())
-                .block(block);
+            let para = Paragraph::new(
+                "  No communities joined.\n  Join one: rekindle community join --invite <code>",
+            )
+            .style(Style::new().dim())
+            .block(block);
             frame.render_widget(para, area);
             return;
         }
@@ -194,7 +210,11 @@ impl DashboardView {
     fn render_friends(&self, frame: &mut Frame, area: Rect, theme: &ThemeManager) {
         let online = self.friends.iter().filter(|f| f.status == "online").count();
         let away = self.friends.iter().filter(|f| f.status == "away").count();
-        let offline = self.friends.iter().filter(|f| f.status == "offline").count();
+        let offline = self
+            .friends
+            .iter()
+            .filter(|f| f.status == "offline")
+            .count();
         let total = self.friends.len();
 
         let title = format!(" Friends ({total}) ");
@@ -203,14 +223,13 @@ impl DashboardView {
         } else {
             theme.unfocused_border()
         };
-        let block = Block::bordered()
-            .title(title)
-            .border_style(border);
+        let block = Block::bordered().title(title).border_style(border);
 
         if self.friends.is_empty() {
-            let para = Paragraph::new("  No friends yet.\n  Add one: rekindle friend add --target <key>")
-                .style(Style::new().dim())
-                .block(block);
+            let para =
+                Paragraph::new("  No friends yet.\n  Add one: rekindle friend add --target <key>")
+                    .style(Style::new().dim())
+                    .block(block);
             frame.render_widget(para, area);
             return;
         }
@@ -218,7 +237,10 @@ impl DashboardView {
         let summary = Line::from(vec![
             Span::styled("  ", Style::new()),
             Span::styled(format!("{online} online"), Style::new().bold()),
-            Span::styled(format!("  {away} away  {offline} offline"), Style::new().dim()),
+            Span::styled(
+                format!("  {away} away  {offline} offline"),
+                Style::new().dim(),
+            ),
         ]);
 
         // Show first few friends inline
@@ -227,11 +249,32 @@ impl DashboardView {
         let mut previews: Vec<Span<'_>> = vec![Span::raw("  ")];
         for f in self.friends.iter().take(preview_count) {
             let glyph = match f.status.as_str() {
-                "online" => if self.use_unicode { "● " } else { "o " },
-                "away" => if self.use_unicode { "◐ " } else { "~ " },
-                _ => if self.use_unicode { "○ " } else { ". " },
+                "online" => {
+                    if self.use_unicode {
+                        "● "
+                    } else {
+                        "o "
+                    }
+                }
+                "away" => {
+                    if self.use_unicode {
+                        "◐ "
+                    } else {
+                        "~ "
+                    }
+                }
+                _ => {
+                    if self.use_unicode {
+                        "○ "
+                    } else {
+                        ". "
+                    }
+                }
             };
-            previews.push(Span::raw(format!("{glyph}{}", helpers::sanitize_for_display(&f.display_name))));
+            previews.push(Span::raw(format!(
+                "{glyph}{}",
+                helpers::sanitize_for_display(&f.display_name)
+            )));
             previews.push(Span::raw("  "));
         }
         if self.friends.len() > preview_count {
@@ -263,23 +306,16 @@ impl View for DashboardView {
         // ┌─ Identity ──────┬─ Node ────────────┐
         // ├─ Communities ───┼─ Friends ──────────┤
         // └─────────────────┴────────────────────┘
-        let [top_row, bottom_row] = Layout::vertical([
-            Constraint::Length(5),
-            Constraint::Fill(1),
-        ])
-        .areas(area);
+        let [top_row, bottom_row] =
+            Layout::vertical([Constraint::Length(5), Constraint::Fill(1)]).areas(area);
 
-        let [identity_area, node_area] = Layout::horizontal([
-            Constraint::Percentage(50),
-            Constraint::Percentage(50),
-        ])
-        .areas(top_row);
+        let [identity_area, node_area] =
+            Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .areas(top_row);
 
-        let [communities_area, friends_area] = Layout::horizontal([
-            Constraint::Percentage(50),
-            Constraint::Percentage(50),
-        ])
-        .areas(bottom_row);
+        let [communities_area, friends_area] =
+            Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .areas(bottom_row);
 
         // Store rects for click-to-focus hit testing
         self.panel_rects = [identity_area, node_area, communities_area, friends_area];
@@ -336,8 +372,8 @@ impl View for DashboardView {
                     }
                     FocusId::DoctorList => Some(Action::ShowDoctor),
                     FocusId::ChannelTree => {
-                        self.communities.first().map(|c| {
-                            Action::ShowCommunityInfo { community: c.governance_key.clone() }
+                        self.communities.first().map(|c| Action::ShowCommunityInfo {
+                            community: c.governance_key.clone(),
                         })
                     }
                     FocusId::FriendList => Some(Action::ShowFriendList),
@@ -365,7 +401,10 @@ impl View for DashboardView {
             CommandResult::FriendListLoaded { friends } => {
                 self.friends = friends;
             }
-            CommandResult::IdentityLoaded { public_key, display_name } => {
+            CommandResult::IdentityLoaded {
+                public_key,
+                display_name,
+            } => {
                 self.identity_public_key = public_key;
                 self.identity_display_name = display_name;
             }
@@ -380,11 +419,9 @@ impl View for DashboardView {
             // Dashboard-only quick navigation shortcuts
             KeyCode::Char('d') => Some(Action::ShowDmInbox),
             KeyCode::Char('f') => Some(Action::ShowFriendList),
-            KeyCode::Char('c') => {
-                self.communities.first().map(|c| {
-                    Action::ShowCommunityInfo { community: c.governance_key.clone() }
-                })
-            }
+            KeyCode::Char('c') => self.communities.first().map(|c| Action::ShowCommunityInfo {
+                community: c.governance_key.clone(),
+            }),
             // h/l for horizontal grid navigation — intercepted here as raw keys
             // because the global keymap maps h→Back and l→Select which get
             // consumed by App::process_action before reaching the view's update().
@@ -411,10 +448,14 @@ impl View for DashboardView {
                     FocusId::DoctorList => Some(Action::ShowDoctor),
                     FocusId::ChannelTree => {
                         if let Some(c) = self.communities.first() {
-                            Some(Action::ShowCommunityInfo { community: c.governance_key.clone() })
+                            Some(Action::ShowCommunityInfo {
+                                community: c.governance_key.clone(),
+                            })
                         } else {
                             // No communities yet — still navigate to show the empty state
-                            Some(Action::ShowCommunityInfo { community: String::new() })
+                            Some(Action::ShowCommunityInfo {
+                                community: String::new(),
+                            })
                         }
                     }
                     FocusId::FriendList => Some(Action::ShowFriendList),
@@ -444,8 +485,8 @@ impl View for DashboardView {
                     FocusId::CommunityInfoPanel => Some(Action::ShowIdentitySettings),
                     FocusId::DoctorList => Some(Action::ShowDoctor),
                     FocusId::ChannelTree => {
-                        self.communities.first().map(|c| {
-                            Action::ShowCommunityInfo { community: c.governance_key.clone() }
+                        self.communities.first().map(|c| Action::ShowCommunityInfo {
+                            community: c.governance_key.clone(),
                         })
                     }
                     FocusId::FriendList => Some(Action::ShowFriendList),

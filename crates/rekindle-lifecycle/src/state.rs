@@ -96,11 +96,20 @@ impl LifecycleState {
         matches!(
             (self, target),
             (Self::Stopped, Self::Starting)
-                | (Self::Starting | Self::Resuming | Self::Locking, Self::Locked)
+                | (
+                    Self::Starting | Self::Resuming | Self::Locking,
+                    Self::Locked
+                )
                 | (Self::Starting | Self::ShuttingDown, Self::Stopped)
                 | (Self::Locked, Self::Resuming | Self::ShuttingDown)
-                | (Self::Resuming | Self::Degraded | Self::Detached, Self::Operational)
-                | (Self::Resuming | Self::Operational | Self::Detached, Self::Degraded)
+                | (
+                    Self::Resuming | Self::Degraded | Self::Detached,
+                    Self::Operational
+                )
+                | (
+                    Self::Resuming | Self::Operational | Self::Detached,
+                    Self::Degraded
+                )
                 | (Self::Operational | Self::Degraded, Self::Detached)
                 | (
                     Self::Operational | Self::Degraded | Self::Detached,
@@ -179,7 +188,10 @@ impl AppLifecycle {
                 to = next.as_str(),
                 "INVALID lifecycle transition — rejected",
             );
-            return Err(LifecycleError::InvalidTransition { from: cur, to: next });
+            return Err(LifecycleError::InvalidTransition {
+                from: cur,
+                to: next,
+            });
         }
         self.inner.store(next as u8, Ordering::Release);
         tracing::info!(
@@ -298,14 +310,21 @@ mod tests {
         let lc = AppLifecycle::new();
         let res = lc.transition(LifecycleState::Operational);
         assert!(matches!(res, Err(LifecycleError::InvalidTransition { .. })));
-        assert_eq!(lc.state(), LifecycleState::Stopped, "rejected transition must not alter state");
+        assert_eq!(
+            lc.state(),
+            LifecycleState::Stopped,
+            "rejected transition must not alter state"
+        );
     }
 
     #[test]
     fn idempotent_self_transition_is_ok() {
         let lc = AppLifecycle::new();
         // Stopped → Stopped is a no-op, not an error.
-        assert_eq!(lc.transition(LifecycleState::Stopped).unwrap(), LifecycleState::Stopped);
+        assert_eq!(
+            lc.transition(LifecycleState::Stopped).unwrap(),
+            LifecycleState::Stopped
+        );
     }
 
     #[test]
@@ -355,7 +374,14 @@ mod tests {
             (ShuttingDown, Stopped),
         ];
         let all = [
-            Stopped, Starting, Locked, Resuming, Operational, Degraded, Detached, Locking,
+            Stopped,
+            Starting,
+            Locked,
+            Resuming,
+            Operational,
+            Degraded,
+            Detached,
+            Locking,
             ShuttingDown,
         ];
         for &from in &all {
@@ -430,7 +456,10 @@ mod tests {
         }
         let final_state = lc.state();
         assert!(
-            matches!(final_state, LifecycleState::Operational | LifecycleState::Degraded),
+            matches!(
+                final_state,
+                LifecycleState::Operational | LifecycleState::Degraded
+            ),
             "final state must be one of the racing targets, not torn — got {final_state:?}",
         );
     }

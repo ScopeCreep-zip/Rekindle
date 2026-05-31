@@ -62,9 +62,10 @@ impl NotificationStack {
     /// the stack exceeds `MAX_VISIBLE`.
     pub fn push(&mut self, message: String, level: ToastLevel) {
         // Dedup: skip if identical message exists within window
-        let dominated = self.toasts.iter().any(|t| {
-            t.message == message && t.created_at.elapsed() < DEDUP_WINDOW
-        });
+        let dominated = self
+            .toasts
+            .iter()
+            .any(|t| t.message == message && t.created_at.elapsed() < DEDUP_WINDOW);
         if dominated {
             return;
         }
@@ -112,7 +113,12 @@ impl NotificationStack {
             #[allow(clippy::cast_possible_truncation)]
             let y = area.y + 1 + (i as u16) * (height + 1);
 
-            let toast_area = Rect { x, y, width, height };
+            let toast_area = Rect {
+                x,
+                y,
+                width,
+                height,
+            };
             if y + height > area.bottom() {
                 break; // off screen
             }
@@ -183,7 +189,9 @@ mod tests {
         stack.toasts.push_front(Toast {
             message: "old".into(),
             level: ToastLevel::Info,
-            created_at: Instant::now().checked_sub(Duration::from_secs(10)).unwrap_or_else(Instant::now),
+            created_at: Instant::now()
+                .checked_sub(Duration::from_secs(10))
+                .unwrap_or_else(Instant::now),
         });
         stack.toasts.push_front(Toast {
             message: "new".into(),
@@ -201,7 +209,9 @@ mod tests {
         stack.toasts.push_front(Toast {
             message: "error".into(),
             level: ToastLevel::Error,
-            created_at: Instant::now().checked_sub(Duration::from_secs(60)).unwrap_or_else(Instant::now),
+            created_at: Instant::now()
+                .checked_sub(Duration::from_secs(60))
+                .unwrap_or_else(Instant::now),
         });
         stack.tick();
         assert_eq!(stack.toasts.len(), 1);
@@ -213,7 +223,9 @@ mod tests {
         stack.toasts.push_front(Toast {
             message: "warn".into(),
             level: ToastLevel::Warning,
-            created_at: Instant::now().checked_sub(Duration::from_secs(60)).unwrap_or_else(Instant::now),
+            created_at: Instant::now()
+                .checked_sub(Duration::from_secs(60))
+                .unwrap_or_else(Instant::now),
         });
         stack.tick();
         assert_eq!(stack.toasts.len(), 1);

@@ -20,10 +20,7 @@ fn build_adapter(
     state: &Arc<AppState>,
 ) -> Option<crate::services::channel_adapter::ChannelAdapter> {
     let app_handle = state.app_handle.read().clone()?;
-    let pool = app_handle
-        .try_state::<crate::db::DbPool>()?
-        .inner()
-        .clone();
+    let pool = app_handle.try_state::<crate::db::DbPool>()?.inner().clone();
     Some(crate::services::channel_adapter::ChannelAdapter::new(
         Arc::clone(state),
         app_handle,
@@ -84,4 +81,3 @@ pub fn matches_from_cleartext(
         mention_here,
     )
 }
-

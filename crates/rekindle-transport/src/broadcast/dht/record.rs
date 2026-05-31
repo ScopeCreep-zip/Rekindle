@@ -14,7 +14,7 @@ use veilid_core::{
     ValueSubkeyRangeSet, CRYPTO_KIND_VLD0,
 };
 
-use crate::error::{TransportError, Result};
+use crate::error::{Result, TransportError};
 
 /// Maximum retry attempts for opening a record that may not have propagated.
 const OPEN_MAX_ATTEMPTS: u32 = 8;
@@ -38,18 +38,21 @@ pub async fn create_dflt(
     subkey_count: u16,
     owner: Option<KeyPair>,
 ) -> Result<(String, Option<KeyPair>)> {
-    let schema = DHTSchema::dflt(subkey_count)
-        .map_err(|e| TransportError::RecordCreateFailed { reason: format!("schema: {e}") })?;
+    let schema = DHTSchema::dflt(subkey_count).map_err(|e| TransportError::RecordCreateFailed {
+        reason: format!("schema: {e}"),
+    })?;
 
     let desc = rc
         .create_dht_record(CRYPTO_KIND_VLD0, schema, owner)
         .await
-        .map_err(|e| TransportError::RecordCreateFailed { reason: format!("{e}") })?;
+        .map_err(|e| TransportError::RecordCreateFailed {
+            reason: format!("{e}"),
+        })?;
 
     let key = desc.key().to_string();
-    let keypair = desc.owner_secret().map(|s| {
-        KeyPair::new_from_parts(desc.owner().clone(), s.value())
-    });
+    let keypair = desc
+        .owner_secret()
+        .map(|s| KeyPair::new_from_parts(desc.owner().clone(), s.value()));
 
     Ok((key, keypair))
 }
@@ -62,18 +65,23 @@ pub async fn create_smpl(
     owner_subkey_count: u16,
     members: Vec<DHTSchemaSMPLMember>,
 ) -> Result<(String, Option<KeyPair>)> {
-    let schema = DHTSchema::smpl(owner_subkey_count, members)
-        .map_err(|e| TransportError::RecordCreateFailed { reason: format!("SMPL schema: {e}") })?;
+    let schema = DHTSchema::smpl(owner_subkey_count, members).map_err(|e| {
+        TransportError::RecordCreateFailed {
+            reason: format!("SMPL schema: {e}"),
+        }
+    })?;
 
     let desc = rc
         .create_dht_record(CRYPTO_KIND_VLD0, schema, None)
         .await
-        .map_err(|e| TransportError::RecordCreateFailed { reason: format!("{e}") })?;
+        .map_err(|e| TransportError::RecordCreateFailed {
+            reason: format!("{e}"),
+        })?;
 
     let key = desc.key().to_string();
-    let keypair = desc.owner_secret().map(|s| {
-        KeyPair::new_from_parts(desc.owner().clone(), s.value())
-    });
+    let keypair = desc
+        .owner_secret()
+        .map(|s| KeyPair::new_from_parts(desc.owner().clone(), s.value()));
 
     Ok((key, keypair))
 }
@@ -119,7 +127,8 @@ async fn open_with_retry(
                 let msg = e.to_string();
                 if msg.contains("Key not found") && attempt < OPEN_MAX_ATTEMPTS {
                     tracing::debug!(
-                        key = key_str, attempt,
+                        key = key_str,
+                        attempt,
                         backoff_ms = backoff.as_millis(),
                         "DHT record not yet propagated, retrying"
                     );
@@ -127,7 +136,11 @@ async fn open_with_retry(
                     backoff = (backoff * 2).min(ceiling);
                     continue;
                 }
-                let mode = if writer.is_some() { "writable" } else { "readonly" };
+                let mode = if writer.is_some() {
+                    "writable"
+                } else {
+                    "readonly"
+                };
                 return Err(TransportError::DhtError {
                     reason: format!("open {mode}: {e}"),
                 });
@@ -142,7 +155,9 @@ pub async fn close(rc: &RoutingContext, key: &str) -> Result<()> {
     let rk = parse_key(key)?;
     rc.close_dht_record(rk)
         .await
-        .map_err(|e| TransportError::DhtError { reason: format!("close: {e}") })?;
+        .map_err(|e| TransportError::DhtError {
+            reason: format!("close: {e}"),
+        })?;
     Ok(())
 }
 
@@ -157,7 +172,9 @@ pub async fn get(
     let value = rc
         .get_dht_value(rk, subkey, force_refresh)
         .await
-        .map_err(|e| TransportError::DhtError { reason: format!("get: {e}") })?;
+        .map_err(|e| TransportError::DhtError {
+            reason: format!("get: {e}"),
+        })?;
     Ok(value.map(|v| v.data().to_vec()))
 }
 
@@ -186,7 +203,9 @@ pub async fn set(
 
     rc.set_dht_value(rk, subkey, data, options)
         .await
-        .map_err(|e| TransportError::DhtError { reason: format!("set: {e}") })?;
+        .map_err(|e| TransportError::DhtError {
+            reason: format!("set: {e}"),
+        })?;
 
     Ok(())
 }
@@ -200,7 +219,9 @@ pub async fn watch(rc: &RoutingContext, key: &str, subkeys: &[u32]) -> Result<bo
 
     rc.watch_dht_values(rk, Some(range), None, None)
         .await
-        .map_err(|e| TransportError::DhtError { reason: format!("watch: {e}") })
+        .map_err(|e| TransportError::DhtError {
+            reason: format!("watch: {e}"),
+        })
 }
 
 /// Inspect a record to get sequence numbers without fetching data.
@@ -216,7 +237,9 @@ pub async fn inspect(
 
     rc.inspect_dht_record(rk, range, veilid_core::DHTReportScope::UpdateGet)
         .await
-        .map_err(|e| TransportError::DhtError { reason: format!("inspect: {e}") })
+        .map_err(|e| TransportError::DhtError {
+            reason: format!("inspect: {e}"),
+        })
 }
 
 /// Try to open an existing record writable, falling back to creating a new one.

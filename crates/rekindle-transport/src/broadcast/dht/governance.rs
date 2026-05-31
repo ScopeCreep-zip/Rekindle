@@ -8,22 +8,28 @@
 use veilid_core::{KeyPair, RoutingContext};
 
 use super::record;
-use crate::error::{TransportError, Result};
+use crate::error::{Result, TransportError};
 use crate::payload::dht_types::{
-    BanEntry, CategoryEntry, ChannelEntry, CommunityMetadata, InviteEntry,
+    BanEntry, CategoryEntry, ChannelEntry, CommunityMetadata, InviteEntry, RoleEntry,
     MANIFEST_AUDIT_LOG_KEY, MANIFEST_BANS, MANIFEST_CATEGORIES, MANIFEST_CHANNELS,
-    MANIFEST_INVITES, MANIFEST_METADATA, MANIFEST_ROLES, MANIFEST_SUBKEY_COUNT, RoleEntry,
+    MANIFEST_INVITES, MANIFEST_METADATA, MANIFEST_ROLES, MANIFEST_SUBKEY_COUNT,
 };
 
 // ── Generic typed subkey read/write ──────────────────────────────────
 
 async fn read_json_subkey<T: serde::de::DeserializeOwned>(
-    rc: &RoutingContext, key: &str, subkey: u32, label: &str,
+    rc: &RoutingContext,
+    key: &str,
+    subkey: u32,
+    label: &str,
 ) -> Result<Option<T>> {
     match record::get(rc, key, subkey, false).await? {
         Some(data) if !data.is_empty() => {
             let value: T = serde_json::from_slice(&data).map_err(|e| {
-                TransportError::DeserializationFailed { type_id: 0, reason: format!("{label}: {e}") }
+                TransportError::DeserializationFailed {
+                    type_id: 0,
+                    reason: format!("{label}: {e}"),
+                }
             })?;
             Ok(Some(value))
         }
@@ -32,7 +38,10 @@ async fn read_json_subkey<T: serde::de::DeserializeOwned>(
 }
 
 async fn read_json_subkey_vec<T: serde::de::DeserializeOwned>(
-    rc: &RoutingContext, key: &str, subkey: u32, label: &str,
+    rc: &RoutingContext,
+    key: &str,
+    subkey: u32,
+    label: &str,
 ) -> Result<Vec<T>> {
     read_json_subkey::<Vec<T>>(rc, key, subkey, label)
         .await
@@ -40,10 +49,15 @@ async fn read_json_subkey_vec<T: serde::de::DeserializeOwned>(
 }
 
 async fn write_json_subkey<T: serde::Serialize>(
-    rc: &RoutingContext, key: &str, subkey: u32, value: &T, label: &str,
+    rc: &RoutingContext,
+    key: &str,
+    subkey: u32,
+    value: &T,
+    label: &str,
 ) -> Result<()> {
-    let bytes = serde_json::to_vec(value)
-        .map_err(|e| TransportError::SerializationFailed { reason: format!("{label}: {e}") })?;
+    let bytes = serde_json::to_vec(value).map_err(|e| TransportError::SerializationFailed {
+        reason: format!("{label}: {e}"),
+    })?;
     record::set(rc, key, subkey, bytes, None).await
 }
 
@@ -60,14 +74,50 @@ impl<'a> GovernanceOps<'a> {
     /// Create a new manifest record and initialize subkeys.
     pub async fn create(&self, metadata: &CommunityMetadata) -> Result<(String, Option<KeyPair>)> {
         #[allow(clippy::cast_possible_truncation)]
-        let (key, keypair) = record::create_dflt(self.rc, MANIFEST_SUBKEY_COUNT as u16, None).await?;
+        let (key, keypair) =
+            record::create_dflt(self.rc, MANIFEST_SUBKEY_COUNT as u16, None).await?;
 
         write_json_subkey(self.rc, &key, MANIFEST_METADATA, metadata, "metadata").await?;
-        write_json_subkey(self.rc, &key, MANIFEST_CHANNELS, &Vec::<ChannelEntry>::new(), "channels").await?;
-        write_json_subkey(self.rc, &key, MANIFEST_CATEGORIES, &Vec::<CategoryEntry>::new(), "categories").await?;
-        write_json_subkey(self.rc, &key, MANIFEST_ROLES, &Vec::<RoleEntry>::new(), "roles").await?;
-        write_json_subkey(self.rc, &key, MANIFEST_BANS, &Vec::<BanEntry>::new(), "bans").await?;
-        write_json_subkey(self.rc, &key, MANIFEST_INVITES, &Vec::<InviteEntry>::new(), "invites").await?;
+        write_json_subkey(
+            self.rc,
+            &key,
+            MANIFEST_CHANNELS,
+            &Vec::<ChannelEntry>::new(),
+            "channels",
+        )
+        .await?;
+        write_json_subkey(
+            self.rc,
+            &key,
+            MANIFEST_CATEGORIES,
+            &Vec::<CategoryEntry>::new(),
+            "categories",
+        )
+        .await?;
+        write_json_subkey(
+            self.rc,
+            &key,
+            MANIFEST_ROLES,
+            &Vec::<RoleEntry>::new(),
+            "roles",
+        )
+        .await?;
+        write_json_subkey(
+            self.rc,
+            &key,
+            MANIFEST_BANS,
+            &Vec::<BanEntry>::new(),
+            "bans",
+        )
+        .await?;
+        write_json_subkey(
+            self.rc,
+            &key,
+            MANIFEST_INVITES,
+            &Vec::<InviteEntry>::new(),
+            "invites",
+        )
+        .await?;
 
         tracing::info!(key = %key, name = %metadata.name, "governance manifest created");
         Ok((key, keypair))
@@ -119,7 +169,14 @@ impl<'a> GovernanceOps<'a> {
         read_json_subkey(self.rc, key, MANIFEST_AUDIT_LOG_KEY, "audit_log_key").await
     }
     pub async fn write_audit_log_key(&self, key: &str, audit_key: &str) -> Result<()> {
-        write_json_subkey(self.rc, key, MANIFEST_AUDIT_LOG_KEY, &audit_key, "audit_log_key").await
+        write_json_subkey(
+            self.rc,
+            key,
+            MANIFEST_AUDIT_LOG_KEY,
+            &audit_key,
+            "audit_log_key",
+        )
+        .await
     }
 
     pub async fn watch_all(&self, key: &str) -> Result<bool> {

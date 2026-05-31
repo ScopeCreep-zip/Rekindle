@@ -9,7 +9,6 @@
 //!
 //! [RC-14] Every mutation method is tested for the consistency invariant.
 
-
 use std::collections::HashMap;
 
 use super::message::{AgentType, SecurityLevel};
@@ -138,8 +137,7 @@ impl ClearanceRegistry {
         }
 
         identity.pending_pubkey = Some(new_pubkey);
-        self.pubkey_index
-            .insert(new_pubkey, agent_name.to_owned());
+        self.pubkey_index.insert(new_pubkey, agent_name.to_owned());
         self.debug_assert_consistent();
         true
     }
@@ -231,7 +229,13 @@ mod tests {
     fn register_and_lookup() {
         let mut reg = ClearanceRegistry::new();
         let key = [0xAA; 32];
-        reg.register("agent-a".into(), key, SecurityLevel::Agent, AgentType::Bot, vec![]);
+        reg.register(
+            "agent-a".into(),
+            key,
+            SecurityLevel::Agent,
+            AgentType::Bot,
+            vec![],
+        );
         let id = reg.lookup(&key).unwrap();
         assert_eq!(id.current_pubkey, key);
         assert_eq!(id.security_level, SecurityLevel::Agent);
@@ -242,7 +246,13 @@ mod tests {
     fn lookup_name() {
         let mut reg = ClearanceRegistry::new();
         let key = [0xAA; 32];
-        reg.register("agent-a".into(), key, SecurityLevel::Internal, AgentType::System, vec![]);
+        reg.register(
+            "agent-a".into(),
+            key,
+            SecurityLevel::Internal,
+            AgentType::System,
+            vec![],
+        );
         assert_eq!(reg.lookup_name(&key), Some("agent-a"));
         assert_eq!(reg.lookup_name(&[0xBB; 32]), None);
     }
@@ -250,8 +260,20 @@ mod tests {
     #[test]
     fn register_overwrites() {
         let mut reg = ClearanceRegistry::new();
-        reg.register("a".into(), [0xAA; 32], SecurityLevel::Open, AgentType::Human, vec![]);
-        reg.register("a".into(), [0xBB; 32], SecurityLevel::Agent, AgentType::Bot, vec![]);
+        reg.register(
+            "a".into(),
+            [0xAA; 32],
+            SecurityLevel::Open,
+            AgentType::Human,
+            vec![],
+        );
+        reg.register(
+            "a".into(),
+            [0xBB; 32],
+            SecurityLevel::Agent,
+            AgentType::Bot,
+            vec![],
+        );
         assert!(reg.lookup(&[0xAA; 32]).is_none());
         assert!(reg.lookup(&[0xBB; 32]).is_some());
     }
@@ -259,7 +281,13 @@ mod tests {
     #[test]
     fn pending_allows_dual_key_lookup() {
         let mut reg = ClearanceRegistry::new();
-        reg.register("a".into(), [0xAA; 32], SecurityLevel::Agent, AgentType::Bot, vec![]);
+        reg.register(
+            "a".into(),
+            [0xAA; 32],
+            SecurityLevel::Agent,
+            AgentType::Bot,
+            vec![],
+        );
         assert!(reg.register_pending("a", [0xBB; 32]));
         assert!(reg.lookup(&[0xAA; 32]).is_some());
         assert!(reg.lookup(&[0xBB; 32]).is_some());
@@ -268,7 +296,13 @@ mod tests {
     #[test]
     fn finalize_rotation() {
         let mut reg = ClearanceRegistry::new();
-        reg.register("a".into(), [0xAA; 32], SecurityLevel::Agent, AgentType::Bot, vec![]);
+        reg.register(
+            "a".into(),
+            [0xAA; 32],
+            SecurityLevel::Agent,
+            AgentType::Bot,
+            vec![],
+        );
         reg.register_pending("a", [0xBB; 32]);
         assert!(reg.finalize_rotation("a"));
         assert!(reg.lookup(&[0xAA; 32]).is_none());
@@ -279,7 +313,13 @@ mod tests {
     #[test]
     fn revoke_removes_both_keys() {
         let mut reg = ClearanceRegistry::new();
-        reg.register("a".into(), [0xAA; 32], SecurityLevel::Agent, AgentType::Bot, vec![]);
+        reg.register(
+            "a".into(),
+            [0xAA; 32],
+            SecurityLevel::Agent,
+            AgentType::Bot,
+            vec![],
+        );
         reg.register_pending("a", [0xBB; 32]);
         let revoked = reg.revoke_by_name("a").unwrap();
         assert_eq!(revoked.generation, 0);
@@ -290,13 +330,23 @@ mod tests {
     #[test]
     fn revoke_then_reregister_preserves_generation() {
         let mut reg = ClearanceRegistry::new();
-        reg.register("a".into(), [0xAA; 32], SecurityLevel::Agent, AgentType::Bot, vec![]);
+        reg.register(
+            "a".into(),
+            [0xAA; 32],
+            SecurityLevel::Agent,
+            AgentType::Bot,
+            vec![],
+        );
         reg.register_pending("a", [0xBB; 32]);
         reg.finalize_rotation("a"); // gen = 1
         let revoked = reg.revoke_by_name("a").unwrap();
         assert_eq!(revoked.generation, 1);
         reg.register_with_generation(
-            "a".into(), [0xCC; 32], SecurityLevel::Agent, AgentType::Bot, revoked.generation + 1,
+            "a".into(),
+            [0xCC; 32],
+            SecurityLevel::Agent,
+            AgentType::Bot,
+            revoked.generation + 1,
         );
         assert_eq!(reg.find_by_name("a").unwrap().generation, 2);
     }

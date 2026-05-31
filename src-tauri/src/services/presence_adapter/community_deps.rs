@@ -64,11 +64,7 @@ impl CommunityPresenceDeps for PresenceAdapter {
         }
     }
 
-    async fn last_channel_message_timestamp(
-        &self,
-        _community_id: &str,
-        channel_id: &str,
-    ) -> i64 {
+    async fn last_channel_message_timestamp(&self, _community_id: &str, channel_id: &str) -> i64 {
         let owner_key = state_helpers::current_owner_key(&self.state).unwrap_or_default();
         let ch = channel_id.to_string();
         crate::db_helpers::db_call(&self.pool, move |conn| {
@@ -92,8 +88,8 @@ impl CommunityPresenceDeps for PresenceAdapter {
         record_key: &str,
         member_count: u32,
     ) -> Result<Vec<ChannelMessage>, PresenceError> {
-        let rc = state_helpers::safe_routing_context(&self.state)
-            .ok_or(PresenceError::NotAttached)?;
+        let rc =
+            state_helpers::safe_routing_context(&self.state).ok_or(PresenceError::NotAttached)?;
         channel_record::read_all_channel_messages(&rc, record_key, member_count)
             .await
             .map_err(|e| PresenceError::Dht(e.to_string()))
@@ -177,8 +173,7 @@ impl CommunityPresenceDeps for PresenceAdapter {
     fn sign_presence_row(&self, community_id: &str, signing_bytes: &[u8]) -> Option<Vec<u8>> {
         let (_, signing_key) =
             state_helpers::pseudonym_credentials(&self.state, community_id).ok()?;
-        let sig =
-            rekindle_secrets::derive::sign_with_pseudonym(&signing_key, signing_bytes);
+        let sig = rekindle_secrets::derive::sign_with_pseudonym(&signing_key, signing_bytes);
         Some(sig.to_vec())
     }
 
@@ -189,8 +184,8 @@ impl CommunityPresenceDeps for PresenceAdapter {
         presence_json: Vec<u8>,
         writer_keypair_str: &str,
     ) -> Result<(), PresenceError> {
-        let rc = state_helpers::safe_routing_context(&self.state)
-            .ok_or(PresenceError::NotAttached)?;
+        let rc =
+            state_helpers::safe_routing_context(&self.state).ok_or(PresenceError::NotAttached)?;
         let writer_kp = writer_keypair_str
             .parse::<veilid_core::KeyPair>()
             .map_err(|e| PresenceError::InvalidDhtKey(format!("writer keypair: {e}")))?;
@@ -224,11 +219,7 @@ impl CommunityPresenceDeps for PresenceAdapter {
         );
     }
 
-    fn extend_known_members(
-        &self,
-        community_id: &str,
-        candidates: Vec<String>,
-    ) -> Vec<String> {
+    fn extend_known_members(&self, community_id: &str, candidates: Vec<String>) -> Vec<String> {
         let mut communities = self.state.communities.write();
         let Some(cs) = communities.get_mut(community_id) else {
             return Vec::new();
@@ -263,9 +254,9 @@ impl CommunityPresenceDeps for PresenceAdapter {
         // (21.i-REDO landed). The cadence loop in `spawn.rs` invokes
         // this from each timer tick; the adapter wraps `self` in
         // an Arc so the trait's `<D: ?Sized>` bound is satisfied.
-        let adapter = std::sync::Arc::new(super::build_adapter(&self.state).ok_or_else(
-            || "adapter unavailable".to_string(),
-        )?);
+        let adapter = std::sync::Arc::new(
+            super::build_adapter(&self.state).ok_or_else(|| "adapter unavailable".to_string())?,
+        );
         rekindle_presence::presence_poll_tick(adapter, community_id).await
     }
 
@@ -282,10 +273,7 @@ impl CommunityPresenceDeps for PresenceAdapter {
 
     // -- presence_poll_tick surface (21.i-REDO) --
 
-    async fn ensure_registry_open(
-        &self,
-        community_id: &str,
-    ) -> Result<Option<String>, String> {
+    async fn ensure_registry_open(&self, community_id: &str) -> Result<Option<String>, String> {
         super::state_reads::ensure_registry_open(&self.state, community_id).await
     }
 
@@ -310,10 +298,7 @@ impl CommunityPresenceDeps for PresenceAdapter {
         super::scan::scan_segment_raw(&self.state, registry_key, max_subkey, skip_subkey).await
     }
 
-    fn read_existing_member_roles(
-        &self,
-        community_id: &str,
-    ) -> HashMap<String, Vec<u32>> {
+    fn read_existing_member_roles(&self, community_id: &str) -> HashMap<String, Vec<u32>> {
         super::member_state::read_existing_member_roles(&self.state, community_id)
     }
 
@@ -421,11 +406,7 @@ impl CommunityPresenceDeps for PresenceAdapter {
     }
 
     fn send_to_mesh_raw(&self, community_id: &str, envelope: SignedEnvelope) {
-        crate::services::community::gossip::send_to_mesh_raw(
-            &self.state,
-            community_id,
-            &envelope,
-        );
+        crate::services::community::gossip::send_to_mesh_raw(&self.state, community_id, &envelope);
     }
 
     fn emit_member_presence_offline(&self, community_id: &str, pseudonym_key: &str) {

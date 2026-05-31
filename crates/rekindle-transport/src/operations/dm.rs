@@ -3,8 +3,8 @@
 //! All sends route through `broadcast::dm` and `broadcast::dht_writes`.
 //! Keypair bytes are deserialized inside the broadcast boundary.
 
-use crate::error::Result;
 use crate::broadcast::node::TransportNode;
+use crate::error::Result;
 use crate::session::Session;
 
 /// Send a direct message to a peer via their shared DhtLog or app_message fallback.
@@ -24,9 +24,15 @@ pub async fn send_dm(
         .map(crate::broadcast::node::deserialize_keypair)
         .transpose()?;
     crate::broadcast::dm::direct_message(
-        node, session, peer_key, body.as_bytes(), None,
-        signing_key_bytes, dm_log_keypair,
-    ).await
+        node,
+        session,
+        peer_key,
+        body.as_bytes(),
+        None,
+        signing_key_bytes,
+        dm_log_keypair,
+    )
+    .await
 }
 
 /// Send a typing indicator to a peer (always app_message — ephemeral).

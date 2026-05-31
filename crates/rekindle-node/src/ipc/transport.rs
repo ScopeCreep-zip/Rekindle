@@ -4,7 +4,6 @@
 //! not `#[cfg(target_os = "linux")]`. The underlying `SO_PEERCRED` /
 //! `LOCAL_PEERCRED` syscalls are available on both platforms via tokio.
 
-
 use std::path::PathBuf;
 
 use super::error::{IpcError, Result};
@@ -36,17 +35,13 @@ impl PeerCredentials {
 /// MUST reject the connection. [RC-6]
 #[cfg(unix)]
 pub fn extract_ucred(stream: &tokio::net::UnixStream) -> Result<PeerCredentials> {
-    let cred = stream
-        .peer_cred()
-        .map_err(IpcError::UcredFailed)?;
+    let cred = stream.peer_cred().map_err(IpcError::UcredFailed)?;
 
     let pid = cred
         .pid()
         .and_then(|p| u32::try_from(p).ok())
         .ok_or_else(|| {
-            IpcError::UcredFailed(std::io::Error::other(
-                "PID unavailable from UCred",
-            ))
+            IpcError::UcredFailed(std::io::Error::other("PID unavailable from UCred"))
         })?;
 
     Ok(PeerCredentials {
@@ -75,14 +70,9 @@ fn current_uid() -> u32 {
 pub fn socket_path() -> Result<PathBuf> {
     #[cfg(target_os = "linux")]
     {
-        let runtime = std::env::var("XDG_RUNTIME_DIR").map_err(|_| {
-            IpcError::DirectoryCreate {
-                path: "$XDG_RUNTIME_DIR".into(),
-                source: std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    "XDG_RUNTIME_DIR is not set",
-                ),
-            }
+        let runtime = std::env::var("XDG_RUNTIME_DIR").map_err(|_| IpcError::DirectoryCreate {
+            path: "$XDG_RUNTIME_DIR".into(),
+            source: std::io::Error::new(std::io::ErrorKind::NotFound, "XDG_RUNTIME_DIR is not set"),
         })?;
         Ok(PathBuf::from(runtime).join("rekindle/daemon.sock"))
     }

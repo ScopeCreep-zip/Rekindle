@@ -5,9 +5,7 @@
 
 use tauri::State;
 
-use crate::services::community::background_sync::{
-    run_background_sync_now, BackgroundSyncReport,
-};
+use crate::services::community::background_sync::{run_background_sync_now, BackgroundSyncReport};
 use crate::state::SharedState;
 
 #[tauri::command]

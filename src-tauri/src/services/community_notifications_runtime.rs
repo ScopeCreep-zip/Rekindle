@@ -39,8 +39,7 @@ pub async fn get_quiet_hours_inner(
     state: &SharedState,
     pool: &DbPool,
 ) -> Result<QuietHoursSettingsDto, String> {
-    let settings =
-        crate::services::community::notifications::get_quiet_hours(state, pool).await?;
+    let settings = crate::services::community::notifications::get_quiet_hours(state, pool).await?;
     Ok(QuietHoursSettingsDto {
         enabled: settings.enabled,
         start_hour: settings.start_hour,
@@ -58,7 +57,11 @@ pub async fn set_channel_notification_level_inner(
 ) -> Result<(), String> {
     let parsed = crate::services::community::notifications::parse_notification_level(level)?;
     crate::services::community::notifications::set_channel_notification_level(
-        state, pool, community_id, channel_id, parsed,
+        state,
+        pool,
+        community_id,
+        channel_id,
+        parsed,
     )
     .await
 }

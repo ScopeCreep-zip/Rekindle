@@ -19,7 +19,10 @@ pub async fn send_channel_typing(
 }
 
 #[tauri::command]
-#[allow(clippy::too_many_arguments, reason = "Tauri command surface — matches PresenceUpdate envelope shape")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Tauri command surface — matches PresenceUpdate envelope shape"
+)]
 pub async fn update_community_presence(
     community_id: String,
     status: String,
@@ -51,7 +54,10 @@ pub async fn get_community_members(
 }
 
 #[tauri::command]
-#[allow(clippy::too_many_arguments, reason = "Tauri command surface — matches per-community profile fields")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Tauri command surface — matches per-community profile fields"
+)]
 pub async fn update_community_profile(
     community_id: String,
     bio: Option<String>,

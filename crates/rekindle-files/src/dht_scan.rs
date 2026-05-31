@@ -68,9 +68,7 @@ pub fn discover_sources_in_entries(
         else {
             continue;
         };
-        let prev = latest
-            .get(&cached.author_pseudonym)
-            .map_or(0, |(l, _)| *l);
+        let prev = latest.get(&cached.author_pseudonym).map_or(0, |(l, _)| *l);
         if cached.lamport_ts >= prev {
             latest.insert(cached.author_pseudonym.clone(), (cached.lamport_ts, bitmap));
         }
@@ -188,7 +186,8 @@ mod tests {
         ];
         let sources = discover_sources_in_entries(&entries, aid, 4);
         assert_eq!(sources.len(), 3);
-        let names: std::collections::HashSet<_> = sources.iter().map(|s| s.pseudonym.as_str()).collect();
+        let names: std::collections::HashSet<_> =
+            sources.iter().map(|s| s.pseudonym.as_str()).collect();
         assert!(names.contains("alice"));
         assert!(names.contains("bob"));
         assert!(names.contains("carol"));

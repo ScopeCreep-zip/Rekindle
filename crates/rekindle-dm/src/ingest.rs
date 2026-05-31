@@ -15,7 +15,10 @@ use crate::store::DmInvitePending;
 
 /// Handle a 1:1 DM invite from `sender_hex` for the SMPL record
 /// allocated at `record_key`. Persists locally; emits an invite event.
-#[allow(clippy::too_many_arguments, reason = "DmInvite wire envelope has 6 distinct fields; bundling would only move the args from call site to constructor")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "DmInvite wire envelope has 6 distinct fields; bundling would only move the args from call site to constructor"
+)]
 pub async fn handle_incoming_dm_invite<D: DmDeps + ?Sized>(
     deps: &D,
     sender_hex: &str,
@@ -69,7 +72,10 @@ pub async fn handle_incoming_dm_invite<D: DmDeps + ?Sized>(
 /// Handle a group DM invite. Architecture §27.2: each `GroupDmParticipant`
 /// carries a `public_key` for verification — we find OUR slot by
 /// matching against our own identity public key.
-#[allow(clippy::too_many_arguments, reason = "GroupDmInvite wire envelope has 8 distinct fields; bundling would only move the args from call site to constructor")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GroupDmInvite wire envelope has 8 distinct fields; bundling would only move the args from call site to constructor"
+)]
 pub async fn handle_incoming_group_dm_invite<D: DmDeps + ?Sized>(
     deps: &D,
     sender_hex: &str,
@@ -81,10 +87,8 @@ pub async fn handle_incoming_group_dm_invite<D: DmDeps + ?Sized>(
     mek_generation: u32,
 ) -> Result<(), DmError> {
     let owner_key = deps.owner_key()?;
-    let participants: Vec<GroupDmParticipant> =
-        serde_json::from_str(participants_json).map_err(|e| {
-            DmError::InvalidInput(format!("invalid participants_json: {e}"))
-        })?;
+    let participants: Vec<GroupDmParticipant> = serde_json::from_str(participants_json)
+        .map_err(|e| DmError::InvalidInput(format!("invalid participants_json: {e}")))?;
 
     let secret_bytes = deps.identity_secret()?;
     let identity = rekindle_crypto::Identity::from_secret_bytes(&secret_bytes);

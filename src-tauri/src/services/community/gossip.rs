@@ -104,9 +104,8 @@ pub async fn hydrate_peer_reliability(state: &SharedState, pool: &crate::db::DbP
         return;
     }
     let owner = owner_key;
-    let rows: Vec<(String, String, i64, i64)> = crate::db_helpers::db_call_or_default(
-        pool,
-        move |conn| {
+    let rows: Vec<(String, String, i64, i64)> =
+        crate::db_helpers::db_call_or_default(pool, move |conn| {
             let mut stmt = conn.prepare(
                 "SELECT community_id, peer_pseudonym, success_count, failure_count
                  FROM peer_reliability WHERE owner_key = ?1",
@@ -120,9 +119,8 @@ pub async fn hydrate_peer_reliability(state: &SharedState, pool: &crate::db::DbP
                 ))
             })?;
             rows.collect::<rusqlite::Result<Vec<_>>>()
-        },
-    )
-    .await;
+        })
+        .await;
     if rows.is_empty() {
         return;
     }

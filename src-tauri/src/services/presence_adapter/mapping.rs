@@ -50,13 +50,11 @@ pub(super) fn map_event(event: FriendPresenceEvent) -> PresenceEvent {
         FriendPresenceEvent::FriendOffline { friend_key } => PresenceEvent::FriendOffline {
             public_key: friend_key,
         },
-        FriendPresenceEvent::StatusChanged { friend_key, status } => {
-            PresenceEvent::StatusChanged {
-                public_key: friend_key,
-                status: status.as_wire_str().to_string(),
-                status_message: None,
-            }
-        }
+        FriendPresenceEvent::StatusChanged { friend_key, status } => PresenceEvent::StatusChanged {
+            public_key: friend_key,
+            status: status.as_wire_str().to_string(),
+            status_message: None,
+        },
         FriendPresenceEvent::GameChanged { friend_key, game } => PresenceEvent::GameChanged {
             public_key: friend_key,
             game_name: game.as_ref().map(|g| g.game_name.clone()),

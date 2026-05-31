@@ -114,7 +114,10 @@ pub async fn set_do_not_disturb(
     .await
 }
 
-pub(super) async fn is_quiet_hours_active(state: &Arc<AppState>, pool: &DbPool) -> Result<bool, String> {
+pub(super) async fn is_quiet_hours_active(
+    state: &Arc<AppState>,
+    pool: &DbPool,
+) -> Result<bool, String> {
     use chrono::{Timelike, Utc};
 
     let settings = get_quiet_hours(state, pool).await?;
@@ -138,11 +141,7 @@ pub(super) async fn is_quiet_hours_active(state: &Arc<AppState>, pool: &DbPool) 
 
     Ok(match start_minute.cmp(&end_minute) {
         std::cmp::Ordering::Equal => true,
-        std::cmp::Ordering::Less => {
-            local_minutes >= start_minute && local_minutes < end_minute
-        }
-        std::cmp::Ordering::Greater => {
-            local_minutes >= start_minute || local_minutes < end_minute
-        }
+        std::cmp::Ordering::Less => local_minutes >= start_minute && local_minutes < end_minute,
+        std::cmp::Ordering::Greater => local_minutes >= start_minute || local_minutes < end_minute,
     })
 }

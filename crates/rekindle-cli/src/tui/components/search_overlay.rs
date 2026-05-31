@@ -129,7 +129,11 @@ impl SearchOverlay {
         }
 
         // Overlay covers most of the screen
-        let popup = centered_rect(area, area.width.saturating_sub(8), area.height.saturating_sub(4));
+        let popup = centered_rect(
+            area,
+            area.width.saturating_sub(8),
+            area.height.saturating_sub(4),
+        );
         frame.render_widget(Clear, popup);
 
         let title = match self.mode {
@@ -145,19 +149,13 @@ impl SearchOverlay {
         frame.render_widget(block, popup);
 
         // Split inner: search input (1 line) + results (remaining)
-        let [input_area, results_area] = Layout::vertical([
-            Constraint::Length(1),
-            Constraint::Fill(1),
-        ])
-        .areas(inner);
+        let [input_area, results_area] =
+            Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).areas(inner);
 
         // Search input
         let input_text = format!(" > {}", self.query);
         let cursor = Span::styled("█", Style::new().dim());
-        let input_line = Line::from(vec![
-            Span::raw(input_text),
-            cursor,
-        ]);
+        let input_line = Line::from(vec![Span::raw(input_text), cursor]);
         frame.render_widget(Paragraph::new(input_line), input_area);
 
         // Results
@@ -268,7 +266,12 @@ fn centered_rect(area: Rect, width: u16, height: u16) -> Rect {
     let height = height.min(area.height);
     let x = area.x + (area.width.saturating_sub(width)) / 2;
     let y = area.y + (area.height.saturating_sub(height)) / 2;
-    Rect { x, y, width, height }
+    Rect {
+        x,
+        y,
+        width,
+        height,
+    }
 }
 
 #[cfg(test)]
@@ -280,7 +283,9 @@ mod tests {
             SearchItem {
                 label: "dev-team".into(),
                 detail: "community".into(),
-                action: Action::ShowCommunityInfo { community: "gov1".into() },
+                action: Action::ShowCommunityInfo {
+                    community: "gov1".into(),
+                },
             },
             SearchItem {
                 label: "#general".into(),
@@ -293,7 +298,9 @@ mod tests {
             SearchItem {
                 label: "alice".into(),
                 detail: "friend".into(),
-                action: Action::ShowDmThread { peer_key: "pk1".into() },
+                action: Action::ShowDmThread {
+                    peer_key: "pk1".into(),
+                },
             },
             SearchItem {
                 label: "#random".into(),

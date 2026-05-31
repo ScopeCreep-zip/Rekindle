@@ -8,7 +8,6 @@
 //! The daemon's versions return `IpcResponse::Error` directly so dispatch
 //! handlers can `?`-propagate validation failures.
 
-
 use crate::ipc::protocol::IpcResponse;
 
 /// Maximum message body length (channel messages and DMs).
@@ -34,11 +33,17 @@ pub fn validate_display_name(name: &str) -> Result<String, IpcResponse> {
     if trimmed.len() > MAX_DISPLAY_NAME {
         return Err(IpcResponse::error(
             400,
-            format!("display name too long ({} chars, max {MAX_DISPLAY_NAME})", trimmed.len()),
+            format!(
+                "display name too long ({} chars, max {MAX_DISPLAY_NAME})",
+                trimmed.len()
+            ),
         ));
     }
     if trimmed.chars().any(char::is_control) {
-        return Err(IpcResponse::error(400, "display name cannot contain control characters"));
+        return Err(IpcResponse::error(
+            400,
+            "display name cannot contain control characters",
+        ));
     }
     Ok(trimmed.to_string())
 }
@@ -51,12 +56,18 @@ pub fn validate_display_name(name: &str) -> Result<String, IpcResponse> {
 pub fn validate_name(name: &str, label: &str) -> Result<String, IpcResponse> {
     let trimmed = name.trim();
     if trimmed.is_empty() {
-        return Err(IpcResponse::error(400, format!("{label} name cannot be empty")));
+        return Err(IpcResponse::error(
+            400,
+            format!("{label} name cannot be empty"),
+        ));
     }
     if trimmed.len() > MAX_NAME {
         return Err(IpcResponse::error(
             400,
-            format!("{label} name too long ({} chars, max {MAX_NAME})", trimmed.len()),
+            format!(
+                "{label} name too long ({} chars, max {MAX_NAME})",
+                trimmed.len()
+            ),
         ));
     }
     if trimmed.chars().any(char::is_control) {
@@ -80,7 +91,10 @@ pub fn validate_message_body(body: &str) -> Result<(), IpcResponse> {
     if body.len() > MAX_MESSAGE_BODY {
         return Err(IpcResponse::error(
             400,
-            format!("message body too long ({} chars, max {MAX_MESSAGE_BODY})", body.len()),
+            format!(
+                "message body too long ({} chars, max {MAX_MESSAGE_BODY})",
+                body.len()
+            ),
         ));
     }
     Ok(())
@@ -135,8 +149,8 @@ pub fn validate_key(key: &str, label: &str) -> Result<(), IpcResponse> {
 /// Validate a channel kind string.
 pub fn validate_channel_kind(kind: &str) -> Result<(), IpcResponse> {
     match kind {
-        "text" | "voice" | "announcement" | "forum" | "stage"
-        | "directory" | "media" | "events" => Ok(()),
+        "text" | "voice" | "announcement" | "forum" | "stage" | "directory" | "media"
+        | "events" => Ok(()),
         other => Err(IpcResponse::error(
             400,
             format!(

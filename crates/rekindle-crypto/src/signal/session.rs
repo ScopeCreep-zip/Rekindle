@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use crate::error::CryptoError;
-use crate::signal::prekeys::PreKeyBundle;
 use crate::signal::pqxdh::{self, verify::pq_signing_payload, verify::spk_signing_payload};
+use crate::signal::prekeys::PreKeyBundle;
 use crate::signal::session_cache::{SessionCache, SessionPersistence};
 use crate::signal::store::{IdentityKeyStore, PqKeyKind, PreKeyStore, SessionStore};
 
@@ -158,18 +158,16 @@ impl SignalSessionManager {
         // 1. Our X25519 identity secret (Ed25519 → X25519 via scalar).
         let (identity_private, _identity_public) = self.identity.get_identity_key_pair()?;
         let identity_signing = SigningKey::from_bytes(
-            &<[u8; 32]>::try_from(&identity_private[..32]).map_err(|_| {
-                CryptoError::InvalidKey("identity key wrong length".into())
-            })?,
+            &<[u8; 32]>::try_from(&identity_private[..32])
+                .map_err(|_| CryptoError::InvalidKey("identity key wrong length".into()))?,
         );
         let our_ik_x25519 = StaticSecret::from(identity_signing.to_scalar_bytes());
 
         // 2. Their Ed25519 identity (verifying key) — used for signature
         //    verification on SPK and PQ keys.
         let their_ik_ed = VerifyingKey::from_bytes(
-            &<[u8; 32]>::try_from(bundle.identity_key.as_slice()).map_err(|_| {
-                CryptoError::InvalidKey("their identity key wrong length".into())
-            })?,
+            &<[u8; 32]>::try_from(bundle.identity_key.as_slice())
+                .map_err(|_| CryptoError::InvalidKey("their identity key wrong length".into()))?,
         )
         .map_err(|e| CryptoError::InvalidKey(format!("their identity key not on curve: {e}")))?;
 
@@ -241,9 +239,8 @@ impl SignalSessionManager {
         // 1. Our X25519 identity (Ed25519 scalar form).
         let (identity_private, _identity_public) = self.identity.get_identity_key_pair()?;
         let identity_signing = SigningKey::from_bytes(
-            &<[u8; 32]>::try_from(&identity_private[..32]).map_err(|_| {
-                CryptoError::InvalidKey("identity key wrong length".into())
-            })?,
+            &<[u8; 32]>::try_from(&identity_private[..32])
+                .map_err(|_| CryptoError::InvalidKey("identity key wrong length".into()))?,
         );
         let our_ik_x25519 = StaticSecret::from(identity_signing.to_scalar_bytes());
 
@@ -289,9 +286,8 @@ impl SignalSessionManager {
 
         // 5. Initiator's Ed25519 identity (for X25519 DH partner derivation).
         let initiator_ik_ed = VerifyingKey::from_bytes(
-            &<[u8; 32]>::try_from(their_identity_key).map_err(|_| {
-                CryptoError::InvalidKey("their identity key wrong length".into())
-            })?,
+            &<[u8; 32]>::try_from(their_identity_key)
+                .map_err(|_| CryptoError::InvalidKey("their identity key wrong length".into()))?,
         )
         .map_err(|e| CryptoError::InvalidKey(format!("their identity key not on curve: {e}")))?;
 
@@ -366,7 +362,9 @@ impl SignalSessionManager {
         plaintext: &[u8],
     ) -> Result<Vec<u8>, CryptoError> {
         if let Some(cache) = self.cache.as_ref() {
-            return self.encrypt_with_cache(cache, peer_address, plaintext).await;
+            return self
+                .encrypt_with_cache(cache, peer_address, plaintext)
+                .await;
         }
         // Legacy path — test fixtures + callers that haven't wired the cache.
         self.encrypt_unsynchronized(peer_address, plaintext)
@@ -559,7 +557,8 @@ impl SignalSessionManager {
         peer_address: &str,
         identity_key: &[u8],
     ) -> Result<bool, CryptoError> {
-        self.identity.is_trusted_identity(peer_address, identity_key)
+        self.identity
+            .is_trusted_identity(peer_address, identity_key)
     }
 
     /// Delete an existing session with a peer (e.g., on friend removal).
@@ -593,8 +592,7 @@ impl SignalSessionManager {
         one_time_prekey_id: Option<u32>,
         pq_one_time_id: Option<u32>,
     ) -> Result<Option<PreKeyBundle>, CryptoError> {
-        let Some(signed_prekey_secret_bytes) =
-            self.prekeys.load_signed_prekey(signed_prekey_id)?
+        let Some(signed_prekey_secret_bytes) = self.prekeys.load_signed_prekey(signed_prekey_id)?
         else {
             return Ok(None);
         };
@@ -610,7 +608,9 @@ impl SignalSessionManager {
 
         // Phase 3b — PQ last-resort key must exist; if missing, caller
         // mints fresh.
-        let Some(pq_lr_bytes) = self.prekeys.load_pq_secret(PQ_LR_ID, PqKeyKind::LastResort)?
+        let Some(pq_lr_bytes) = self
+            .prekeys
+            .load_pq_secret(PQ_LR_ID, PqKeyKind::LastResort)?
         else {
             return Ok(None);
         };
@@ -621,10 +621,11 @@ impl SignalSessionManager {
         // Phase 3b — PQ one-time key (optional).
         let pq_ot_secret_opt = if let Some(id) = pq_one_time_id {
             match self.prekeys.load_pq_secret(id, PqKeyKind::OneTime)? {
-                Some(bytes) => Some(
-                    MlKemSecret::from_secret_bytes(&bytes)
-                        .ok_or_else(|| CryptoError::InvalidKey("PQ OT secret wrong length".into()))?,
-                ),
+                Some(bytes) => {
+                    Some(MlKemSecret::from_secret_bytes(&bytes).ok_or_else(|| {
+                        CryptoError::InvalidKey("PQ OT secret wrong length".into())
+                    })?)
+                }
                 None => return Ok(None),
             }
         } else {

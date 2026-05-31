@@ -16,8 +16,8 @@ pub async fn accept_pairing_code_inner(
     existing_device_route_blob_hex: String,
     display_name: String,
 ) -> Result<rekindle_types::cross_device_sync::PairingAccept, String> {
-    let salt = hex::decode(&pairing_salt_hex)
-        .map_err(|e| format!("invalid pairing salt hex: {e}"))?;
+    let salt =
+        hex::decode(&pairing_salt_hex).map_err(|e| format!("invalid pairing salt hex: {e}"))?;
     let route_blob = hex::decode(&existing_device_route_blob_hex)
         .map_err(|e| format!("invalid route blob hex: {e}"))?;
     let payload =
@@ -45,9 +45,7 @@ pub async fn generate_pairing_qr_svg_inner(
     let session = cross_device_sync::generate_pairing_session(state, pool).await?;
     let uri = format!(
         "rekindle://pair?code={}&salt={}&route={}",
-        session.pairing_code,
-        session.pairing_salt_hex,
-        session.existing_device_route_blob_hex,
+        session.pairing_code, session.pairing_salt_hex, session.existing_device_route_blob_hex,
     );
     let svg = qrcode::QrCode::with_error_correction_level(uri.as_bytes(), qrcode::EcLevel::M)
         .map_err(|e| format!("qrcode build: {e}"))?
@@ -56,9 +54,5 @@ pub async fn generate_pairing_qr_svg_inner(
         .dark_color(qrcode::render::svg::Color("#101727"))
         .light_color(qrcode::render::svg::Color("#f8fafc"))
         .build();
-    Ok(crate::commands::sync::PairingQrPayload {
-        svg,
-        uri,
-        session,
-    })
+    Ok(crate::commands::sync::PairingQrPayload { svg, uri, session })
 }

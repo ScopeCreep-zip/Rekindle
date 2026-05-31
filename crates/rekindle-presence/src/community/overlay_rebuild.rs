@@ -100,7 +100,8 @@ where
     // site (orchestrator hands in standard `HashMap`s today, but
     // tests can use ahash etc).
     let peers: HashMap<String, OnlineMemberSnapshot> = selected.into_iter().collect();
-    let online_members: HashMap<String, OnlineMemberSnapshot> = online_members.into_iter().collect();
+    let online_members: HashMap<String, OnlineMemberSnapshot> =
+        online_members.into_iter().collect();
     let plan = GossipOverlayPlan {
         peers,
         online_members,

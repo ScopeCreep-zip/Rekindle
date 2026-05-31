@@ -50,10 +50,7 @@ pub struct InitialPresence {
 /// Derive the joiner's pseudonym + signing key for a specific community.
 /// Pure — takes the master `identity_secret` + the governance record key
 /// and produces the community-scoped pseudonym via `derive_community_pseudonym`.
-pub fn derive_join_identity(
-    identity_secret: &[u8; 32],
-    governance_key_str: &str,
-) -> JoinIdentity {
+pub fn derive_join_identity(identity_secret: &[u8; 32], governance_key_str: &str) -> JoinIdentity {
     let pseudonym_signing = derive::derive_community_pseudonym(identity_secret, governance_key_str);
     let pseudo_bytes = pseudonym_signing.verifying_key().to_bytes();
     JoinIdentity {

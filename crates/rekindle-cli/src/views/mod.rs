@@ -152,7 +152,8 @@ impl ViewRegistry {
             ViewKind::Dashboard => {}
             ViewKind::IdentitySettings => {
                 if self.identity_settings.is_none() {
-                    self.identity_settings = Some(identity_settings::IdentitySettingsView::new(use_unicode));
+                    self.identity_settings =
+                        Some(identity_settings::IdentitySettingsView::new(use_unicode));
                 }
             }
             ViewKind::ChannelWatch { community, channel } => {

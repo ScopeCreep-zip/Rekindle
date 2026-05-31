@@ -116,7 +116,9 @@ pub struct SafetyProfile {
     pub sender_anonymous: bool,
 }
 
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
 /// Stability preference -- maps to Veilid's `Stability` enum internally.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -211,15 +213,33 @@ impl Default for TransportConfig {
     }
 }
 
-fn default_namespace() -> String { "rekindle".into() }
-fn default_rpc_timeout_ms() -> u64 { 8_000 }
-fn default_dht_write_retries() -> u32 { 3 }
-fn default_route_refresh_secs() -> u64 { 60 }
-fn default_route_cache_ttl_secs() -> u64 { 90 }
-fn default_circuit_breaker_threshold() -> u32 { 3 }
-fn default_circuit_breaker_cooldown_secs() -> u64 { 45 }
-fn default_dedup_cache_capacity() -> usize { 2048 }
-fn default_gossip_ttl() -> u8 { 5 }
+fn default_namespace() -> String {
+    "rekindle".into()
+}
+fn default_rpc_timeout_ms() -> u64 {
+    8_000
+}
+fn default_dht_write_retries() -> u32 {
+    3
+}
+fn default_route_refresh_secs() -> u64 {
+    60
+}
+fn default_route_cache_ttl_secs() -> u64 {
+    90
+}
+fn default_circuit_breaker_threshold() -> u32 {
+    3
+}
+fn default_circuit_breaker_cooldown_secs() -> u64 {
+    45
+}
+fn default_dedup_cache_capacity() -> usize {
+    2048
+}
+fn default_gossip_ttl() -> u8 {
+    5
+}
 
 #[cfg(test)]
 mod tests {

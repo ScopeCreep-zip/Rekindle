@@ -216,7 +216,6 @@ impl SafetyProfileUser {
             sequencing: "ensure_ordered".into(),
         }
     }
-
 }
 
 // ── TUI config ──────────────────────────────────────────────────────────
@@ -286,23 +285,57 @@ pub struct PolicyConfig {
 
 // ── Default value functions ─────────────────────────────────────────────
 
-fn default_config_version() -> u32 { 1 }
-fn default_namespace() -> String { "rekindle".into() }
-fn default_theme() -> String { "catppuccin-latte".into() }
-fn default_true() -> bool { true }
-fn default_tick_rate() -> f64 { 4.0 }
-fn default_frame_rate() -> f64 { 30.0 }
-fn default_rpc_timeout_ms() -> u64 { 8_000 }
-fn default_dht_write_retries() -> u32 { 3 }
-fn default_route_refresh_secs() -> u64 { 60 }
-fn default_route_cache_ttl_secs() -> u64 { 90 }
-fn default_circuit_breaker_threshold() -> u32 { 3 }
-fn default_circuit_breaker_cooldown_secs() -> u64 { 45 }
-fn default_dedup_cache_capacity() -> usize { 2048 }
-fn default_gossip_ttl() -> u8 { 5 }
-fn default_hop_count() -> u8 { 1 }
-fn default_stability() -> String { "reliable".into() }
-fn default_sequencing() -> String { "prefer_ordered".into() }
+fn default_config_version() -> u32 {
+    1
+}
+fn default_namespace() -> String {
+    "rekindle".into()
+}
+fn default_theme() -> String {
+    "catppuccin-latte".into()
+}
+fn default_true() -> bool {
+    true
+}
+fn default_tick_rate() -> f64 {
+    4.0
+}
+fn default_frame_rate() -> f64 {
+    30.0
+}
+fn default_rpc_timeout_ms() -> u64 {
+    8_000
+}
+fn default_dht_write_retries() -> u32 {
+    3
+}
+fn default_route_refresh_secs() -> u64 {
+    60
+}
+fn default_route_cache_ttl_secs() -> u64 {
+    90
+}
+fn default_circuit_breaker_threshold() -> u32 {
+    3
+}
+fn default_circuit_breaker_cooldown_secs() -> u64 {
+    45
+}
+fn default_dedup_cache_capacity() -> usize {
+    2048
+}
+fn default_gossip_ttl() -> u8 {
+    5
+}
+fn default_hop_count() -> u8 {
+    1
+}
+fn default_stability() -> String {
+    "reliable".into()
+}
+fn default_sequencing() -> String {
+    "prefer_ordered".into()
+}
 
 #[cfg(test)]
 mod tests {
@@ -337,5 +370,4 @@ mod tests {
         let result: Result<Config, _> = toml::from_str(bad_toml);
         assert!(result.is_err());
     }
-
 }

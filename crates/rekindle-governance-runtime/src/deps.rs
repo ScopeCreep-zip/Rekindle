@@ -388,12 +388,7 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     /// view is richer, then persists both to SQLite so the next login
     /// can skip the recovery step. Matches the pre-Phase-23 semantics
     /// of the inline body.
-    fn apply_recovered_member_state(
-        &self,
-        community_id: &str,
-        subkey_index: u32,
-        role_ids: &[u32],
-    );
+    fn apply_recovered_member_state(&self, community_id: &str, subkey_index: u32, role_ids: &[u32]);
 
     /// If the community has a `slot_seed` + `my_subkey_index` but no
     /// `slot_keypair`, derive the keypair now via the existing

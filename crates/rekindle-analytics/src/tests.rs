@@ -244,12 +244,7 @@ fn storage_usage_grows_with_message_volume() {
     let baseline = storage::compute(&conn, "owner_pk", "c1");
 
     for i in 0..100 {
-        add_message(
-            &conn,
-            "ch1",
-            "p1",
-            NOW_MS + i64::from(i),
-        );
+        add_message(&conn, "ch1", "p1", NOW_MS + i64::from(i));
     }
     let after = storage::compute(&conn, "owner_pk", "c1");
 
@@ -296,4 +291,3 @@ fn activity_by_hour_buckets_by_utc_hour() {
     assert_eq!(abh.hour_counts[0], 0);
     assert_eq!(abh.hour_counts[23], 0);
 }
-

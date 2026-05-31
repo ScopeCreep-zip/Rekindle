@@ -8,7 +8,7 @@
 use rekindle_types::analytics::ChannelMetrics;
 use rusqlite::Connection;
 
-use super::buckets::{empty_skeleton, merge_into_skeleton, window_start_ms, day_floor_ms};
+use super::buckets::{day_floor_ms, empty_skeleton, merge_into_skeleton, window_start_ms};
 use super::{ONE_DAY_MS, SEVEN_DAYS_MS};
 
 pub fn compute(
@@ -50,12 +50,10 @@ pub fn compute(
             )
             .unwrap_or(0);
 
-        let messages_per_day = messages_per_day_series(
-            conn, owner_key, &channel_id, now_ms, window_start,
-        )?;
-        let unique_posters_per_day = unique_posters_per_day_series(
-            conn, owner_key, &channel_id, now_ms, window_start,
-        )?;
+        let messages_per_day =
+            messages_per_day_series(conn, owner_key, &channel_id, now_ms, window_start)?;
+        let unique_posters_per_day =
+            unique_posters_per_day_series(conn, owner_key, &channel_id, now_ms, window_start)?;
 
         let peak_concurrent_voice =
             peak_voice_concurrent(conn, owner_key, community_id, &channel_id)?;

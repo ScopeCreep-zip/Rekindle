@@ -237,7 +237,11 @@ pub struct Check {
 
 impl Check {
     /// Create a passing check.
-    pub fn pass(id: impl Into<String>, category: impl Into<String>, value: impl Into<String>) -> Self {
+    pub fn pass(
+        id: impl Into<String>,
+        category: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Self {
         Self {
             id: id.into(),
             category: category.into(),
@@ -248,7 +252,11 @@ impl Check {
     }
 
     /// Create a warning check.
-    pub fn warn(id: impl Into<String>, category: impl Into<String>, value: impl Into<String>) -> Self {
+    pub fn warn(
+        id: impl Into<String>,
+        category: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Self {
         Self {
             id: id.into(),
             category: category.into(),
@@ -259,7 +267,11 @@ impl Check {
     }
 
     /// Create a failing check.
-    pub fn fail(id: impl Into<String>, category: impl Into<String>, value: impl Into<String>) -> Self {
+    pub fn fail(
+        id: impl Into<String>,
+        category: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Self {
         Self {
             id: id.into(),
             category: category.into(),

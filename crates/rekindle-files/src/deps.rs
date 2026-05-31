@@ -151,11 +151,7 @@ pub trait FilesDeps: Send + Sync + 'static {
 
     // ── Online-peer routing (gossip overlay) ───────────────────────
 
-    fn peer_route_blob(
-        &self,
-        community_id: &str,
-        target_pseudonym: &str,
-    ) -> Option<Vec<u8>>;
+    fn peer_route_blob(&self, community_id: &str, target_pseudonym: &str) -> Option<Vec<u8>>;
 
     fn online_member_pseudonyms(&self, community_id: &str) -> Vec<String>;
 
@@ -215,7 +211,10 @@ pub trait FilesDeps: Send + Sync + 'static {
 
     // ── Persistence (async) ────────────────────────────────────────
 
-    #[allow(clippy::too_many_arguments, reason = "mirrors message_repo::insert_channel_message_full's SQL column shape; bundling into a struct adds construction overhead at every callsite")]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "mirrors message_repo::insert_channel_message_full's SQL column shape; bundling into a struct adds construction overhead at every callsite"
+    )]
     async fn insert_channel_message_full(
         &self,
         owner_key: &str,

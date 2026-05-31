@@ -9,9 +9,5 @@
 //! existing `rekindle_transport::config::*` paths continue to work.
 
 pub use rekindle_types::config::{
-    TransportConfig,
-    SafetyConfig,
-    SafetyProfile,
-    StabilityPreference,
-    SequencingPreference,
+    SafetyConfig, SafetyProfile, SequencingPreference, StabilityPreference, TransportConfig,
 };

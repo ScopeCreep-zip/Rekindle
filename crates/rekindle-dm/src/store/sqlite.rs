@@ -13,8 +13,8 @@ use crate::error::DmError;
 use crate::invite::GroupDmParticipant;
 
 use super::{
-    DmConversation, DmInviteMeta, DmInvitePending, DmMessageInsert, DmMessageRecord,
-    DmSessionMeta, DmStore,
+    DmConversation, DmInviteMeta, DmInvitePending, DmMessageInsert, DmMessageRecord, DmSessionMeta,
+    DmStore,
 };
 
 /// SQLite-backed `DmStore`. Wraps a shared `tokio_rusqlite::Connection`
@@ -77,10 +77,7 @@ impl DmStore for SqliteDmStore {
             .map_err(|e| DmError::Sqlite(e.to_string()))
     }
 
-    async fn list_conversations(
-        &self,
-        owner_key: &str,
-    ) -> Result<Vec<DmConversation>, DmError> {
+    async fn list_conversations(&self, owner_key: &str) -> Result<Vec<DmConversation>, DmError> {
         if owner_key.is_empty() {
             return Ok(Vec::new());
         }
@@ -163,11 +160,7 @@ impl DmStore for SqliteDmStore {
             .map_err(|e| DmError::Sqlite(e.to_string()))
     }
 
-    async fn decline_invite(
-        &self,
-        owner_key: &str,
-        record_key: &str,
-    ) -> Result<(), DmError> {
+    async fn decline_invite(&self, owner_key: &str, record_key: &str) -> Result<(), DmError> {
         if owner_key.is_empty() {
             return Err(DmError::InvalidInput("empty owner_key".into()));
         }
@@ -266,11 +259,7 @@ impl DmStore for SqliteDmStore {
         Ok(u64::try_from(prev_max.unwrap_or(0)).unwrap_or(0) + 1)
     }
 
-    async fn persist_message(
-        &self,
-        owner_key: &str,
-        msg: DmMessageInsert,
-    ) -> Result<(), DmError> {
+    async fn persist_message(&self, owner_key: &str, msg: DmMessageInsert) -> Result<(), DmError> {
         if owner_key.is_empty() {
             return Err(DmError::InvalidInput("empty owner_key".into()));
         }
@@ -374,7 +363,9 @@ impl DmStore for SqliteDmStore {
         let row: Option<(String, i64, i64, bool, Option<Vec<u8>>, String)> = self
             .conn
             .call(
-                move |conn| -> rusqlite::Result<Option<(String, i64, i64, bool, Option<Vec<u8>>, String)>> {
+                move |conn| -> rusqlite::Result<
+                    Option<(String, i64, i64, bool, Option<Vec<u8>>, String)>,
+                > {
                     let r = conn
                         .query_row(
                             "SELECT initiator_public_key, my_subkey, mek_generation, is_group,
@@ -467,9 +458,8 @@ mod tests {
             mek_generation: 0,
             // 32-byte slot seed as 64 hex chars; required by get_session_meta
             // and the production slot-keypair derivation path.
-            slot_seed_hex:
-                "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
-                    .into(),
+            slot_seed_hex: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+                .into(),
             wrapped_mek_blob: None,
             created_at: 100,
         }
@@ -612,8 +602,8 @@ mod tests {
                         wrapped_mek_blob, mek_generation, created_at, last_message_at)
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL, ?9, ?10, NULL)",
                     rusqlite::params![
-                        "owner1", "badrec", 0_i64, "pk", "alice", 1_i64, "[]",
-                        "tooshort", 0_i64, 100_i64,
+                        "owner1", "badrec", 0_i64, "pk", "alice", 1_i64, "[]", "tooshort", 0_i64,
+                        100_i64,
                     ],
                 )?;
                 Ok(())

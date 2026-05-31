@@ -163,8 +163,7 @@ pub fn validate_write(
         // Notification default (architecture §17.1 tier 1) is admin-only;
         // any member's local override still trumps it via the resolver.
         GovernanceEntry::CommunityNotificationDefault { level, .. } => {
-            matches!(level.as_str(), "all" | "mentions" | "nothing")
-                && has(perms, MANAGE_COMMUNITY)
+            matches!(level.as_str(), "all" | "mentions" | "nothing") && has(perms, MANAGE_COMMUNITY)
         }
 
         // MEK generation bumps use Max-Register (highest generation wins).
@@ -227,7 +226,12 @@ pub fn validate_write(
             ..
         } => {
             has(perms, MANAGE_COMMUNITY)
-                && onboarding_within_limits(mode, questions, welcome_message.as_deref(), guide_steps)
+                && onboarding_within_limits(
+                    mode,
+                    questions,
+                    welcome_message.as_deref(),
+                    guide_steps,
+                )
         }
 
         GovernanceEntry::WelcomeScreen { channels, .. } => {
@@ -418,7 +422,10 @@ fn validate_automod_rule(
         regex_patterns: Vec<String>,
     }
 
-    if !matches!(action, "block_locally" | "blur_content" | "alert_moderators") {
+    if !matches!(
+        action,
+        "block_locally" | "blur_content" | "alert_moderators"
+    ) {
         return false;
     }
 
@@ -464,7 +471,12 @@ fn validate_automod_rule(
         });
 
     let next_keywords = current_totals.0 + if enabled { trigger.keywords.len() } else { 0 };
-    let next_regexes = current_totals.1 + if enabled { trigger.regex_patterns.len() } else { 0 };
+    let next_regexes = current_totals.1
+        + if enabled {
+            trigger.regex_patterns.len()
+        } else {
+            0
+        };
     next_keywords <= MAX_AUTOMOD_KEYWORDS && next_regexes <= MAX_AUTOMOD_REGEX_PATTERNS
 }
 
@@ -491,15 +503,19 @@ fn validate_thread_create(
         }
         "announcement" => has(channel_perms, MANAGE_THREADS),
         "forum_post" => {
-            state.channels.get(&parent_channel_id).is_some_and(|channel| {
-                channel.channel_type == "forum"
-                    && forum_tag.is_none_or(|tag| {
-                        channel
-                            .forum_tags
-                            .as_ref()
-                            .is_some_and(|tags| tags.iter().any(|candidate| candidate == tag))
-                    })
-            }) && has(channel_perms, SEND_MESSAGES)
+            state
+                .channels
+                .get(&parent_channel_id)
+                .is_some_and(|channel| {
+                    channel.channel_type == "forum"
+                        && forum_tag.is_none_or(|tag| {
+                            channel
+                                .forum_tags
+                                .as_ref()
+                                .is_some_and(|tags| tags.iter().any(|candidate| candidate == tag))
+                        })
+                })
+                && has(channel_perms, SEND_MESSAGES)
         }
         _ => false,
     }

@@ -37,7 +37,10 @@ fn short_pubkey(pk: &str) -> String {
 ///
 /// Fire-and-forget — does not return a Result. All failures log and
 /// drop.
-#[allow(clippy::too_many_arguments, reason = "CallInvite envelope has 6 distinct fields; bundling adds indirection without arg-count win")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "CallInvite envelope has 6 distinct fields; bundling adds indirection without arg-count win"
+)]
 pub async fn handle_incoming_invite<D: CallSignalingDeps + ?Sized>(
     deps: &D,
     sender_hex: &str,
@@ -348,5 +351,8 @@ async fn cancel_outgoing_for_glare<D: CallSignalingDeps + ?Sized>(
 
 /// Suppresses unused-import lints for items only referenced via fully
 /// qualified paths in this module body.
-#[allow(dead_code, reason = "lints suppression marker; CallError surfaced through deps return types only")]
+#[allow(
+    dead_code,
+    reason = "lints suppression marker; CallError surfaced through deps return types only"
+)]
 fn _ensure_call_error_in_scope(_e: CallError) {}

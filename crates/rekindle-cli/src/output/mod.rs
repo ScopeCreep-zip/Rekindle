@@ -28,7 +28,12 @@ impl OutputMode {
     ///
     /// Called once in `main.rs`. The result is passed everywhere.
     /// Priority: --format flag > pipe detection > TUI command detection.
-    pub fn detect(format_flag: Option<&str>, is_tui_command: bool, no_color_flag: bool, script_flag: bool) -> Self {
+    pub fn detect(
+        format_flag: Option<&str>,
+        is_tui_command: bool,
+        no_color_flag: bool,
+        script_flag: bool,
+    ) -> Self {
         // --format always wins
         match format_flag {
             Some("json") => return Self::Json,
@@ -96,17 +101,26 @@ mod tests {
 
     #[test]
     fn detect_json_from_flag() {
-        assert_eq!(OutputMode::detect(Some("json"), false, false, false), OutputMode::Json);
+        assert_eq!(
+            OutputMode::detect(Some("json"), false, false, false),
+            OutputMode::Json
+        );
     }
 
     #[test]
     fn detect_jsonl_from_flag() {
-        assert_eq!(OutputMode::detect(Some("jsonl"), false, false, false), OutputMode::Jsonl);
+        assert_eq!(
+            OutputMode::detect(Some("jsonl"), false, false, false),
+            OutputMode::Jsonl
+        );
     }
 
     #[test]
     fn detect_text_from_flag() {
-        assert_eq!(OutputMode::detect(Some("text"), true, false, false), OutputMode::Text);
+        assert_eq!(
+            OutputMode::detect(Some("text"), true, false, false),
+            OutputMode::Text
+        );
     }
 
     #[test]
@@ -119,13 +133,19 @@ mod tests {
 
     #[test]
     fn detect_script_forces_jsonl() {
-        assert_eq!(OutputMode::detect(None, true, false, true), OutputMode::Jsonl);
+        assert_eq!(
+            OutputMode::detect(None, true, false, true),
+            OutputMode::Jsonl
+        );
     }
 
     #[test]
     fn format_flag_overrides_script() {
         // --format json wins over --script
-        assert_eq!(OutputMode::detect(Some("json"), false, false, true), OutputMode::Json);
+        assert_eq!(
+            OutputMode::detect(Some("json"), false, false, true),
+            OutputMode::Json
+        );
     }
 
     #[test]

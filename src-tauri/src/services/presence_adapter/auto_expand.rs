@@ -29,8 +29,11 @@ pub(super) fn maybe_auto_expand_segment(state: &Arc<AppState>, community_id: &st
                     community = %cid,
                     "highest segment is full — auto-expanding (admin trigger)",
                 );
-                if let Err(e) =
-                    crate::services::community::segments::expand_community_segment(&state_clone, &cid).await
+                if let Err(e) = crate::services::community::segments::expand_community_segment(
+                    &state_clone,
+                    &cid,
+                )
+                .await
                 {
                     tracing::warn!(
                         community = %cid,

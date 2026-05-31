@@ -7,10 +7,10 @@ use std::sync::Arc;
 use parking_lot::RwLock;
 use tracing::info;
 
+use crate::broadcast::node::TransportNode;
 use crate::crypto::mek::MekCache;
 use crate::crypto::voice_crypto::VoiceSessionKey;
-use crate::error::{TransportError, Result};
-use crate::broadcast::node::TransportNode;
+use crate::error::{Result, TransportError};
 use crate::session::CommunityMembership;
 
 /// Active voice session state.
@@ -36,15 +36,20 @@ pub async fn join_voice(
 
     let session_key = {
         let cache = mek_cache.read();
-        let mek = cache.current(&membership.governance_key, channel_id)
+        let mek = cache
+            .current(&membership.governance_key, channel_id)
             .ok_or_else(|| TransportError::VoiceJoinFailed {
                 channel: channel_id.to_string(),
-                reason: format!("no MEK cached for {}/{}", membership.community_name, channel_id),
+                reason: format!(
+                    "no MEK cached for {}/{}",
+                    membership.community_name, channel_id
+                ),
             })?;
         VoiceSessionKey::derive_from_mek(mek.as_bytes())
     };
 
-    let (_route_id, route_blob) = crate::broadcast::route::allocate_voice(node).await
+    let (_route_id, route_blob) = crate::broadcast::route::allocate_voice(node)
+        .await
         .map_err(|e| TransportError::VoiceJoinFailed {
             channel: channel_id.to_string(),
             reason: format!("route allocation: {e}"),
@@ -55,7 +60,10 @@ pub async fn join_voice(
     Ok(VoiceSession {
         community_id: membership.governance_key.clone(),
         channel_id: channel_id.to_string(),
-        session_key, our_route_blob: route_blob, muted, deafened,
+        session_key,
+        our_route_blob: route_blob,
+        muted,
+        deafened,
     })
 }
 

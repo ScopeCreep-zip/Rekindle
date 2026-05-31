@@ -21,7 +21,10 @@ pub(super) type BootstrapMemberEntry = MemberInfo;
 pub(super) type BootstrapRecentChannel = BootstrapChannelMessages;
 
 #[derive(Debug, Clone)]
-#[allow(dead_code, reason = "Phase 18 chiral split — non-`recent_messages` fields are kept for parity with the wire payload + future telemetry; only recent_messages is consumed by persist_bootstrap_recent_messages today")]
+#[allow(
+    dead_code,
+    reason = "Phase 18 chiral split — non-`recent_messages` fields are kept for parity with the wire payload + future telemetry; only recent_messages is consumed by persist_bootstrap_recent_messages today"
+)]
 pub(super) struct BootstrapBundle {
     pub member_list: Vec<BootstrapMemberEntry>,
     pub governance_entry_count: usize,

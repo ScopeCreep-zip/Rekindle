@@ -244,9 +244,7 @@ impl VoiceSendLoop {
             if transport.is_connected() {
                 let send_result = match transport.mode() {
                     VoiceMode::Mesh => transport.send(&encoded).await,
-                    VoiceMode::Mcu { ref host_pseudonym }
-                        if *host_pseudonym == self.public_key =>
-                    {
+                    VoiceMode::Mcu { ref host_pseudonym } if *host_pseudonym == self.public_key => {
                         // We are the MCU host — MCU loop handles mixing + distribution.
                         Ok(())
                     }
@@ -292,9 +290,10 @@ impl VoiceSendLoop {
             5..15 => "fair",
             _ => "poor",
         };
-        self.deps.emit_voice_event(VoiceSessionEvent::ConnectionQuality {
-            quality: quality.to_string(),
-        });
+        self.deps
+            .emit_voice_event(VoiceSessionEvent::ConnectionQuality {
+                quality: quality.to_string(),
+            });
 
         // Update Opus FEC based on measured loss.
         let loss_i32 = i32::try_from(loss_pct_u32.min(100)).unwrap_or(100);

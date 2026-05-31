@@ -129,7 +129,10 @@ fn handle_session_reset_request(
 /// session matching the peer's new initiator-side session.
 /// `delete_session` is idempotent on a missing peer, so repeated
 /// accepts (e.g., due to a retry) just overwrite cleanly.
-#[allow(clippy::too_many_arguments, reason = "matches MessagePayload::SessionResetAccept wire shape; collapsing into a struct would add boilerplate for a single call site")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "matches MessagePayload::SessionResetAccept wire shape; collapsing into a struct would add boilerplate for a single call site"
+)]
 fn handle_session_reset_accept(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,

@@ -21,11 +21,11 @@ use crate::services::presence_adapter::build_adapter;
 use crate::state::AppState;
 use crate::state_helpers;
 
+use rekindle_presence::CommunityPresenceDeps;
 /// Per-row tuple yielded by the per-segment registry scan. Re-exported
 /// from the crate so callers in the still-src-tauri-side
 /// `poll.rs::presence_poll_tick` keep compiling.
 pub(crate) use rekindle_presence::DiscoveredRow;
-use rekindle_presence::CommunityPresenceDeps;
 
 pub(crate) async fn ensure_registry_open(
     state: &Arc<AppState>,

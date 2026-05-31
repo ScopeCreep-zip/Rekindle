@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use parking_lot::RwLock;
-use tracing::{debug, info, warn, error};
+use tracing::{debug, error, info, warn};
 
 use rekindle_transport::broadcast::node::TransportNode;
 use rekindle_transport::payload::dht_types::{
@@ -35,7 +35,10 @@ pub async fn scan_friend_inbox(
     inbox_key: &str,
 ) {
     let start = Instant::now();
-    info!(inbox_key = &inbox_key[..20.min(inbox_key.len())], "friend inbox scan: starting");
+    info!(
+        inbox_key = &inbox_key[..20.min(inbox_key.len())],
+        "friend inbox scan: starting"
+    );
 
     let Some(transport_node) = transport.read().clone() else {
         error!("friend inbox scan: transport not available — cannot scan");
@@ -43,9 +46,9 @@ pub async fn scan_friend_inbox(
     };
 
     // Ensure record is open (idempotent for already-open records)
-    if let Err(e) = rekindle_transport::broadcast::dht_writes::open_readonly(
-        &transport_node, inbox_key,
-    ).await {
+    if let Err(e) =
+        rekindle_transport::broadcast::dht_writes::open_readonly(&transport_node, inbox_key).await
+    {
         warn!(error = %e, "friend inbox scan: open_readonly failed");
     }
 
@@ -53,10 +56,17 @@ pub async fn scan_friend_inbox(
     let all_subkeys: Vec<u32> = (0..FRIEND_INBOX_SUBKEY_COUNT).collect();
     let inspect_start = Instant::now();
     let report = match rekindle_transport::broadcast::dht_writes::inspect(
-        &transport_node, inbox_key, Some(&all_subkeys),
-    ).await {
+        &transport_node,
+        inbox_key,
+        Some(&all_subkeys),
+    )
+    .await
+    {
         Ok(r) => {
-            debug!(elapsed_ms = inspect_start.elapsed().as_millis(), "friend inbox scan: inspect complete");
+            debug!(
+                elapsed_ms = inspect_start.elapsed().as_millis(),
+                "friend inbox scan: inspect complete"
+            );
             r
         }
         Err(e) => {
@@ -65,13 +75,23 @@ pub async fn scan_friend_inbox(
                 elapsed_ms = inspect_start.elapsed().as_millis(),
                 "friend inbox scan: inspect failed, falling back to full scan (SLOW)"
             );
-            scan_subkeys_direct(&transport_node, session, session_path, inbox_key, &all_subkeys, start).await;
+            scan_subkeys_direct(
+                &transport_node,
+                session,
+                session_path,
+                inbox_key,
+                &all_subkeys,
+                start,
+            )
+            .await;
             return;
         }
     };
 
     // Step 2: Filter to populated subkeys only
-    let populated: Vec<u32> = report.subkeys().iter()
+    let populated: Vec<u32> = report
+        .subkeys()
+        .iter()
         .zip(report.local_seqs().iter())
         .filter(|(_, seq)| seq.is_some())
         .map(|(subkey, _)| subkey)
@@ -90,11 +110,20 @@ pub async fn scan_friend_inbox(
         total = FRIEND_INBOX_SUBKEY_COUNT,
         skipped = FRIEND_INBOX_SUBKEY_COUNT as usize - populated.len(),
         "friend inbox scan: inspect found {} populated subkeys, skipping {} empty",
-        populated.len(), FRIEND_INBOX_SUBKEY_COUNT as usize - populated.len()
+        populated.len(),
+        FRIEND_INBOX_SUBKEY_COUNT as usize - populated.len()
     );
 
     // Step 3: Read only populated subkeys
-    scan_subkeys_direct(&transport_node, session, session_path, inbox_key, &populated, start).await;
+    scan_subkeys_direct(
+        &transport_node,
+        session,
+        session_path,
+        inbox_key,
+        &populated,
+        start,
+    )
+    .await;
 }
 
 /// Read specific subkeys, parse friend requests, persist new ones.
@@ -114,8 +143,13 @@ async fn scan_subkeys_direct(
 
     for &subkey in subkeys {
         let data = match rekindle_transport::broadcast::dht_writes::get(
-            transport_node, inbox_key, subkey, true,
-        ).await {
+            transport_node,
+            inbox_key,
+            subkey,
+            true,
+        )
+        .await
+        {
             Ok(Some(d)) if !d.is_empty() && d != b"[]" => d,
             Ok(_) => continue,
             Err(e) => {
@@ -126,7 +160,9 @@ async fn scan_subkeys_direct(
         };
 
         // Parse as array first, fall back to single entry for backward compatibility
-        let entries: Vec<FriendRequestEntry> = match serde_json::from_slice::<Vec<FriendRequestEntry>>(&data) {
+        let entries: Vec<FriendRequestEntry> = match serde_json::from_slice::<Vec<FriendRequestEntry>>(
+            &data,
+        ) {
             Ok(arr) => arr,
             Err(_) => match serde_json::from_slice::<FriendRequestEntry>(&data) {
                 Ok(single) => vec![single],
@@ -139,50 +175,50 @@ async fn scan_subkeys_direct(
         };
 
         for entry in entries {
-
-        if !matches!(entry.status, FriendRequestStatus::Pending) {
-            debug!(subkey, from = %entry.display_name, status = ?entry.status, "friend inbox scan: skipping non-pending");
-            found_non_pending += 1;
-            continue;
-        }
-
-        let already_known = {
-            let guard = session.read();
-            guard.as_ref().is_some_and(|s| {
-                s.pending_friend_requests.iter().any(|r| r.public_key == entry.sender_public_key)
-            })
-        };
-        if already_known {
-            debug!(from = %entry.display_name, "friend inbox scan: already known, skipping");
-            found_known += 1;
-            continue;
-        }
-
-        let pending = PendingFriendRequest {
-            public_key: entry.sender_public_key.clone(),
-            display_name: entry.display_name.clone(),
-            message: entry.message.clone(),
-            profile_dht_key: entry.profile_dht_key.clone(),
-            route_blob: Vec::new(),
-            mailbox_dht_key: entry.mailbox_dht_key.clone(),
-            prekey_bundle: entry.prekey_bundle.clone(),
-            invite_id: None,
-            received_at: entry.sent_at,
-        };
-        {
-            let mut guard = session.write();
-            if let Some(ref mut s) = *guard {
-                s.add_pending_friend_request(pending);
+            if !matches!(entry.status, FriendRequestStatus::Pending) {
+                debug!(subkey, from = %entry.display_name, status = ?entry.status, "friend inbox scan: skipping non-pending");
+                found_non_pending += 1;
+                continue;
             }
-        }
-        found_new += 1;
-        info!(
-            from = %entry.display_name,
-            sender_key = &entry.sender_public_key[..16.min(entry.sender_public_key.len())],
-            subkey,
-            "friend inbox scan: NEW request discovered"
-        );
 
+            let already_known = {
+                let guard = session.read();
+                guard.as_ref().is_some_and(|s| {
+                    s.pending_friend_requests
+                        .iter()
+                        .any(|r| r.public_key == entry.sender_public_key)
+                })
+            };
+            if already_known {
+                debug!(from = %entry.display_name, "friend inbox scan: already known, skipping");
+                found_known += 1;
+                continue;
+            }
+
+            let pending = PendingFriendRequest {
+                public_key: entry.sender_public_key.clone(),
+                display_name: entry.display_name.clone(),
+                message: entry.message.clone(),
+                profile_dht_key: entry.profile_dht_key.clone(),
+                route_blob: Vec::new(),
+                mailbox_dht_key: entry.mailbox_dht_key.clone(),
+                prekey_bundle: entry.prekey_bundle.clone(),
+                invite_id: None,
+                received_at: entry.sent_at,
+            };
+            {
+                let mut guard = session.write();
+                if let Some(ref mut s) = *guard {
+                    s.add_pending_friend_request(pending);
+                }
+            }
+            found_new += 1;
+            info!(
+                from = %entry.display_name,
+                sender_key = &entry.sender_public_key[..16.min(entry.sender_public_key.len())],
+                subkey,
+                "friend inbox scan: NEW request discovered"
+            );
         } // end for entry in entries
     }
 

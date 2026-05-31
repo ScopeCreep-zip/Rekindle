@@ -110,10 +110,7 @@ pub(super) fn handle_friend_accept(
         // matches the trusted record. The `delete_session` call (was
         // unconditional) is dropped — it's the symptom, not the cure;
         // with the guard in place there's nothing stale to delete.
-        let already_established = handle
-            .manager
-            .has_session(sender_hex)
-            .unwrap_or(false)
+        let already_established = handle.manager.has_session(sender_hex).unwrap_or(false)
             && handle
                 .manager
                 .is_trusted_identity(sender_hex, &their_identity_key)

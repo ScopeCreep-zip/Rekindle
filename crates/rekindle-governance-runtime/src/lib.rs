@@ -37,9 +37,16 @@ pub mod segments;
 
 pub use apply::write_entry;
 pub use bootstrap::build_bootstrap_response;
+pub use deps::{
+    ChannelMekSnapshot, CommunityDhtOpenSetup, CommunityInsert, CommunityMembership, DhtRecordInfo,
+    DiscoveredMember, GovernanceRuntimeDeps, MekSnapshot, MemberIndexRow, OnlineMemberSnapshot,
+    RecentMessageRow, UserStatusKind,
+};
 pub use dht_hydration::{
     hydrate_community_state_from_dht, open_community_dht_records, rebuild_governance_from_dht,
 };
+pub use error::GovernanceRuntimeError;
+pub use event::GovernanceRuntimeEvent;
 pub use join::{
     default_community_name, derive_join_identity, find_invite_in_entries, merge_presence_entry,
     InitialPresence, JoinIdentity, JoinOnlineMember,
@@ -53,10 +60,3 @@ pub use segments::{
     channel_record_keys_per_segment, ensure_channel_segment_record, expand_community_segment,
     highest_segment_full, open_new_segments, segment_descriptors, SegmentDescriptor, MAX_SEGMENTS,
 };
-pub use deps::{
-    ChannelMekSnapshot, CommunityDhtOpenSetup, CommunityInsert, CommunityMembership,
-    DhtRecordInfo, DiscoveredMember, GovernanceRuntimeDeps, MekSnapshot, MemberIndexRow,
-    OnlineMemberSnapshot, RecentMessageRow, UserStatusKind,
-};
-pub use error::GovernanceRuntimeError;
-pub use event::GovernanceRuntimeEvent;

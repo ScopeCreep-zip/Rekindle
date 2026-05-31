@@ -26,20 +26,18 @@ pub(crate) mod test_fixture;
 mod time;
 pub mod util;
 
+pub use overlay_rebuild::{
+    compute_rebuild_plan, GossipOverlayPlan, GossipOverlaySnapshot, GossipRebuildOutcome,
+};
 pub use poll::{
     gossip_degree, presence_poll_tick, presence_poll_tick_public, steady_poll_duration,
     MAX_SYNC_ATTEMPTS, STALE_HEARTBEAT_SECS, STALE_SYNC_RETRY_SECS,
 };
-pub use scan_row::{parse_and_classify_row, AcceptedRow, ClassifiedRow, SUBKEYS_PER_SEGMENT};
-pub use registry::{
-    persist_discovered_registry_members, write_our_presence, DiscoveredRow,
-};
-pub use overlay_rebuild::{
-    compute_rebuild_plan, GossipOverlayPlan, GossipOverlaySnapshot, GossipRebuildOutcome,
-};
 pub use profile_diff::{compute_profile_diff, MemberProfileSnapshot, ProfileDiffOutcome};
+pub use registry::{persist_discovered_registry_members, write_our_presence, DiscoveredRow};
 pub use role_merge::compute_merged_roles;
 pub use rsvp_aggregate::{aggregate_event_rsvps, EventRsvpEntry};
+pub use scan_row::{parse_and_classify_row, AcceptedRow, ClassifiedRow, SUBKEYS_PER_SEGMENT};
 pub use spawn::{
     start_presence_poll, RAPID_TICKS, RAPID_TICK_INTERVAL_SECS, STEADY_TICK_INTERVAL_SECS,
 };

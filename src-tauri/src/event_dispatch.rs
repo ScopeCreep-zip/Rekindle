@@ -196,7 +196,9 @@ pub fn emit_journaled<P: Serialize + ?Sized>(
     let Ok(tick) = serde_json::to_value(CursorTick { cursor }) else {
         return;
     };
-    state.event_dispatch.enqueue("cursor-tick".to_string(), tick);
+    state
+        .event_dispatch
+        .enqueue("cursor-tick".to_string(), tick);
 }
 
 /// Phase 23 — by-value wrapper around `emit_live` for adapters that
@@ -215,7 +217,9 @@ pub fn dispatch<P: Serialize>(app: &AppHandle, channel: &str, payload: P) {
 /// same dispatch queue live emits use, so listeners cannot tell
 /// replay from live.
 pub fn emit_value(state: &AppState, channel: &str, payload: &serde_json::Value) {
-    state.event_dispatch.enqueue(channel.to_string(), payload.clone());
+    state
+        .event_dispatch
+        .enqueue(channel.to_string(), payload.clone());
 }
 
 /// Phase 23 — direct typed push for callers that already have an

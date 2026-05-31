@@ -28,10 +28,7 @@ pub enum GovernanceRuntimeEvent {
 
     /// A community has been created locally (origin flow). Adapter emits
     /// `CommunityEvent::CommunityCreated` and starts background services.
-    CommunityCreated {
-        community_id: String,
-        name: String,
-    },
+    CommunityCreated { community_id: String, name: String },
 
     /// A bootstrap response has been built for a joiner. Adapter logs
     /// this for telemetry (no user-visible event today).
@@ -50,10 +47,7 @@ pub enum GovernanceRuntimeEvent {
 
     /// A join has succeeded — adapter emits
     /// `CommunityEvent::CommunityJoined`.
-    CommunityJoined {
-        community_id: String,
-        name: String,
-    },
+    CommunityJoined { community_id: String, name: String },
 
     /// Plate Gate: a new segment has been added. Adapter logs.
     SegmentAdded {
@@ -65,9 +59,7 @@ pub enum GovernanceRuntimeEvent {
     /// expand, or actively expanding). Adapter emits a
     /// `NotificationEvent::SystemAlert` so the user sees the 30-second
     /// wait isn't a hung join.
-    JoinPendingAlert {
-        have_manage_community: bool,
-    },
+    JoinPendingAlert { have_manage_community: bool },
 
     /// A governance entry was just applied via `apply::write_entry` —
     /// adapter can use this to fan out auxiliary updates (e.g. lift the

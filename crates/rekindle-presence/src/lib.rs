@@ -33,9 +33,8 @@ pub use deps::{
     SelfPresenceSnapshot, SetFriendStatusOutcome,
 };
 pub use friend::{
-    handle_value_change, parse_status, parse_status_timestamp, publish_status,
-    status_to_wire_byte, watch_friend, FRIEND_WATCH_SUBKEYS, PROFILE_STATUS_SUBKEY,
-    STALE_PRESENCE_THRESHOLD_MS,
+    handle_value_change, parse_status, parse_status_timestamp, publish_status, status_to_wire_byte,
+    watch_friend, FRIEND_WATCH_SUBKEYS, PROFILE_STATUS_SUBKEY, STALE_PRESENCE_THRESHOLD_MS,
 };
 pub use friend_sync::{check_stale_friend_presences, sync_friends};
 pub use heartbeat::{start_heartbeat_loop, HEARTBEAT_INTERVAL_SECS};

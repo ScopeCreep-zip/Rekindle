@@ -174,19 +174,12 @@ pub fn owner_key_or_default(state: &Arc<AppState>) -> String {
 pub fn pseudonym_credentials(
     state: &Arc<AppState>,
     community_id: &str,
-) -> Result<
-    (
-        rekindle_types::id::PseudonymKey,
-        ed25519_dalek::SigningKey,
-    ),
-    String,
-> {
+) -> Result<(rekindle_types::id::PseudonymKey, ed25519_dalek::SigningKey), String> {
     let secret = {
         let guard = state.identity_secret.lock();
         *guard.as_ref().ok_or("identity secret not available")?
     };
-    let signing_key =
-        rekindle_secrets::derive::derive_community_pseudonym(&secret, community_id);
+    let signing_key = rekindle_secrets::derive::derive_community_pseudonym(&secret, community_id);
     let pseudo_bytes = signing_key.verifying_key().to_bytes();
     let pseudonym = rekindle_types::id::PseudonymKey(pseudo_bytes);
     let _ = state
@@ -365,10 +358,7 @@ pub fn is_friend(state: &Arc<AppState>, public_key: &str) -> bool {
 /// Hot path: ~75-150 µs per call. See `.claude/plans/phase-2-dht-inbox-pivot.md`
 /// Track A for the latency analysis and the `feedback_backend_owns_policy.md`
 /// rationale (no in-memory cache, SQLite is authoritative).
-pub async fn is_active_friend_authoritative(
-    state: &Arc<AppState>,
-    public_key: &str,
-) -> bool {
+pub async fn is_active_friend_authoritative(state: &Arc<AppState>, public_key: &str) -> bool {
     let store = {
         let guard = state.friend_store.read();
         guard.as_ref().cloned()
@@ -796,7 +786,7 @@ pub fn set_governance_state(
                         .get(&id_hex)
                         .cloned()
                         .unwrap_or(None),
-            parent_voice_channel_id: None,
+                    parent_voice_channel_id: None,
                 }
             })
             .collect();
@@ -885,13 +875,12 @@ pub fn set_governance_state(
         // separate state on CommunityState and need explicit pruning here —
         // otherwise send_to_mesh keeps fanning out to a banned ex-member.
         if !gov_state.bans.is_empty() {
-            let banned_hex: std::collections::HashSet<String> = gov_state
-                .bans
-                .iter()
-                .map(|p| hex::encode(p.0))
-                .collect();
+            let banned_hex: std::collections::HashSet<String> =
+                gov_state.bans.iter().map(|p| hex::encode(p.0)).collect();
             if let Some(gossip) = cs.gossip.as_mut() {
-                gossip.peers.retain(|hex_key, _| !banned_hex.contains(hex_key));
+                gossip
+                    .peers
+                    .retain(|hex_key, _| !banned_hex.contains(hex_key));
                 gossip
                     .online_members
                     .retain(|hex_key, _| !banned_hex.contains(hex_key));
@@ -931,7 +920,11 @@ pub fn set_governance_state(
     let state_for_open = state.clone();
     let community_id_owned = community_id.to_string();
     tokio::spawn(async move {
-        crate::services::community::segments::open_new_segments(&state_for_open, &community_id_owned).await;
+        crate::services::community::segments::open_new_segments(
+            &state_for_open,
+            &community_id_owned,
+        )
+        .await;
     });
 
     // A4/P0.4 — refresh watches whenever the merge added new watch targets

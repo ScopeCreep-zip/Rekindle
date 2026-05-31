@@ -27,11 +27,8 @@ async fn close_tracked_records(state: &AppState, reason: &str) {
 
 /// Clean up user-specific state on logout without shutting down the Veilid node.
 pub async fn logout_cleanup(app_handle: Option<&tauri::AppHandle>, state: &AppState) {
-    crate::services::voice_adapter::shutdown_voice(
-        state,
-        &rekindle_voice::VoiceShutdownOpts::FULL,
-    )
-    .await;
+    crate::services::voice_adapter::shutdown_voice(state, &rekindle_voice::VoiceShutdownOpts::FULL)
+        .await;
 
     {
         let tx = state.idle_shutdown_tx.write().take();

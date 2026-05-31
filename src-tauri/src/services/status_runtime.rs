@@ -168,10 +168,7 @@ pub async fn get_avatar_inner(
     .await
 }
 
-pub async fn set_status_message_inner(
-    state: &SharedState,
-    message: String,
-) -> Result<(), String> {
+pub async fn set_status_message_inner(state: &SharedState, message: String) -> Result<(), String> {
     if let Some(ref mut identity) = *state.identity.write() {
         identity.status_message.clone_from(&message);
     }

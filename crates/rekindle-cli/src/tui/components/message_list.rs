@@ -90,14 +90,10 @@ impl MessageList {
     /// and timestamp. If auto_scroll is enabled, selects the new message.
     pub fn push(&mut self, msg: DecryptedMessageDisplay) {
         let group = self.compute_group(&msg);
-        self.messages.push_back(RenderedMessage {
-            msg,
-            group,
-        });
+        self.messages.push_back(RenderedMessage { msg, group });
 
         if self.auto_scroll {
-            self.list_state
-                .select(Some(self.len().saturating_sub(1)));
+            self.list_state.select(Some(self.len().saturating_sub(1)));
         }
 
         self.generation += 1;
@@ -109,16 +105,12 @@ impl MessageList {
 
         for msg in messages {
             let group = self.compute_group(&msg);
-            self.messages.push_back(RenderedMessage {
-                msg,
-                group,
-                });
+            self.messages.push_back(RenderedMessage { msg, group });
         }
 
         // Auto-scroll to bottom after load
         if !self.is_empty() {
-            self.list_state
-                .select(Some(self.len().saturating_sub(1)));
+            self.list_state.select(Some(self.len().saturating_sub(1)));
         }
         self.auto_scroll = true;
         self.generation += 1;
@@ -175,7 +167,8 @@ impl MessageList {
     pub fn scroll_down(&mut self) {
         let i = self.list_state.selected().unwrap_or(0);
         let max = self.len().saturating_sub(1);
-        self.list_state.select(Some(i.min(max).saturating_add(1).min(max)));
+        self.list_state
+            .select(Some(i.min(max).saturating_add(1).min(max)));
 
         // Re-engage auto-scroll if we reached the bottom
         if self.list_state.selected() == Some(max) {
@@ -187,8 +180,7 @@ impl MessageList {
     pub fn scroll_to_bottom(&mut self) {
         self.auto_scroll = true;
         if !self.is_empty() {
-            self.list_state
-                .select(Some(self.len().saturating_sub(1)));
+            self.list_state.select(Some(self.len().saturating_sub(1)));
         }
     }
 
@@ -211,10 +203,7 @@ impl MessageList {
 
         let same_author = prev.msg.author_pseudonym == msg.author_pseudonym;
         // 7-minute grouping window (420,000 ms)
-        let close_in_time = msg
-            .timestamp
-            .saturating_sub(prev.msg.timestamp)
-            < 7 * 60 * 1000;
+        let close_in_time = msg.timestamp.saturating_sub(prev.msg.timestamp) < 7 * 60 * 1000;
 
         if same_author && close_in_time {
             MessageGroup::Compact
@@ -254,8 +243,12 @@ impl MessageList {
             if msg.is_encrypted {
                 let hint = msg
                     .needs_mek
-                    .map(|_gen| format!(" — request: rekindle key mek request -c \"{}\" -C \"{}\"",
-                        self.community, self.channel))
+                    .map(|_gen| {
+                        format!(
+                            " — request: rekindle key mek request -c \"{}\" -C \"{}\"",
+                            self.community, self.channel
+                        )
+                    })
                     .unwrap_or_default();
                 lines.push(Line::from(vec![
                     Span::styled(
@@ -274,10 +267,7 @@ impl MessageList {
             if let Some(reply_seq) = msg.reply_to_sequence {
                 lines.push(Line::from(vec![
                     Span::styled("  ↳ reply to ", Style::new().dim()),
-                    Span::styled(
-                        format!("#{reply_seq}"),
-                        Style::new().dim().italic(),
-                    ),
+                    Span::styled(format!("#{reply_seq}"), Style::new().dim().italic()),
                 ]));
             }
 
@@ -487,10 +477,7 @@ mod tests {
         let mut list = MessageList::new("com".into(), "gen".into());
         list.push(test_msg("alice", "old", 0));
 
-        let new_msgs = vec![
-            test_msg("bob", "new1", 1000),
-            test_msg("bob", "new2", 2000),
-        ];
+        let new_msgs = vec![test_msg("bob", "new1", 1000), test_msg("bob", "new2", 2000)];
         list.set_messages(new_msgs);
 
         assert_eq!(list.len(), 2);

@@ -360,7 +360,10 @@ pub async fn handle_incoming_message(
         MessagePayload::RelayOfferAck { ok: _, reason: _ } => {
             tracing::trace!("received RelayOfferAck via app_message; ignoring");
         }
-        MessagePayload::DmDecline { record_key, reason: _ } => {
+        MessagePayload::DmDecline {
+            record_key,
+            reason: _,
+        } => {
             if let Err(e) =
                 crate::services::dm::handle_incoming_dm_decline(state, pool, &record_key).await
             {
@@ -404,8 +407,7 @@ pub async fn handle_incoming_message(
                 tracing::debug!(error = %e, "DmLeave drop");
             }
         }
-        MessagePayload::RegisterPushRelay { .. }
-        | MessagePayload::UnregisterPushRelay { .. } => {
+        MessagePayload::RegisterPushRelay { .. } | MessagePayload::UnregisterPushRelay { .. } => {
             // The push-relay daemon is a separate binary
             // (`rekindle-push-relay`). Desktop clients don't *receive*
             // these — they only send. Drop silently if we somehow get
@@ -479,11 +481,7 @@ pub async fn handle_incoming_message(
                     app_handle.clone(),
                     pool.clone(),
                 );
-                rekindle_dm::video::dispatch_assembled_frame(
-                    &*adapter,
-                    &msg.sender_hex,
-                    frame,
-                );
+                rekindle_dm::video::dispatch_assembled_frame(&*adapter, &msg.sender_hex, frame);
             }
         }
     }

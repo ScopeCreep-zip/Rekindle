@@ -25,10 +25,7 @@ use crate::state_helpers;
 
 /// Open the personal sync record (if one exists) and request a watch
 /// over all 4 active subkeys. Idempotent.
-pub async fn start_personal_sync_watch(
-    state: &Arc<AppState>,
-    pool: &DbPool,
-) -> Result<(), String> {
+pub async fn start_personal_sync_watch(state: &Arc<AppState>, pool: &DbPool) -> Result<(), String> {
     let Some(handle) = open_personal_sync_record(state, pool).await else {
         return Ok(());
     };

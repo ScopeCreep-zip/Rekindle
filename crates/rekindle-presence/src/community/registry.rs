@@ -24,7 +24,10 @@ pub type DiscoveredRow = (u32, u32, MemberPresence);
 /// the registry record. Skips silently when credentials / writer
 /// keypair / subkey index are missing — same semantics as the
 /// pre-port `write_our_presence`.
-#[allow(clippy::too_many_arguments, reason = "matches pre-port helper signature; argument count is intentionally explicit so each caller-side lookup is auditable")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "matches pre-port helper signature; argument count is intentionally explicit so each caller-side lookup is auditable"
+)]
 pub async fn write_our_presence<D: CommunityPresenceDeps>(
     deps: &D,
     community_id: &str,
@@ -182,8 +185,7 @@ fn build_member_row<S: BuildHasher>(
             .as_slice(),
     )
     .unwrap_or_else(|_| "[0]".to_string());
-    let badges_json =
-        serde_json::to_string(&presence.badges).unwrap_or_else(|_| "[]".to_string());
+    let badges_json = serde_json::to_string(&presence.badges).unwrap_or_else(|_| "[]".to_string());
     DiscoveredMemberRow {
         pseudonym_key: pseudonym_hex,
         display_name: presence.display_name.clone(),

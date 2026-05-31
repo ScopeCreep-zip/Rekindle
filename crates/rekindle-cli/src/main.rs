@@ -58,15 +58,19 @@ async fn main() {
 
     let is_tui_command = matches!(
         &cli.command,
-        None
-            | Some(
-                Command::Channel(cli::ChannelCmd::Watch { .. })
-                    | Command::Dm(cli::DmCmd::Watch { .. })
-                    | Command::Voice(cli::VoiceCmd::Join { .. })
-            )
+        None | Some(
+            Command::Channel(cli::ChannelCmd::Watch { .. })
+                | Command::Dm(cli::DmCmd::Watch { .. })
+                | Command::Voice(cli::VoiceCmd::Join { .. })
+        )
     );
 
-    let mode = OutputMode::detect(cli.format.as_deref(), is_tui_command, cli.no_color, cli.script);
+    let mode = OutputMode::detect(
+        cli.format.as_deref(),
+        is_tui_command,
+        cli.no_color,
+        cli.script,
+    );
 
     let result = match mode {
         #[cfg(feature = "tui")]
@@ -101,7 +105,10 @@ async fn cli_run(cli: Cli, mode: OutputMode) -> anyhow::Result<()> {
 
     match &cli.command {
         Some(Command::Config(cmd)) => return config::dispatch(cmd, &cfg, mode),
-        None => { Cli::parse_from(["rekindle", "--help"]); unreachable!() }
+        None => {
+            Cli::parse_from(["rekindle", "--help"]);
+            unreachable!()
+        }
         _ => {}
     }
 
@@ -136,12 +143,8 @@ async fn cli_run(cli: Cli, mode: OutputMode) -> anyhow::Result<()> {
 
     let client = DaemonClient::connect().await?;
 
-    let result = dispatch_command(
-        cli.command.expect("command required"),
-        &client,
-        &cfg,
-        mode,
-    ).await;
+    let result =
+        dispatch_command(cli.command.expect("command required"), &client, &cfg, mode).await;
 
     client.shutdown().await;
     result
@@ -155,24 +158,30 @@ async fn dispatch_command(
     mode: OutputMode,
 ) -> anyhow::Result<()> {
     match command {
-        Command::Completions { .. } | Command::Config(_) | Command::Status(_) => unreachable!("handled before dispatch"),
+        Command::Completions { .. } | Command::Config(_) | Command::Status(_) => {
+            unreachable!("handled before dispatch")
+        }
         Command::Init(args) => identity::cmd_init(&args, client, mode).await,
         Command::Identity(cmd) => identity::dispatch(&cmd, client, mode).await,
         Command::Node(cmd) => match cmd {
             cli::NodeCmd::Start { .. } => unreachable!("handled before daemon connect"),
             cli::NodeCmd::Stop => {
-                let value = client.request_ok(rekindle_node::ipc::protocol::IpcRequest::Shutdown).await?;
+                let value = client
+                    .request_ok(rekindle_node::ipc::protocol::IpcRequest::Shutdown)
+                    .await?;
                 if mode.is_structured() {
                     output::format::print_structured(&value, mode)
                 } else {
                     output::format::print_text("Daemon shutdown initiated.")
                 }
             }
-            cli::NodeCmd::Restart => {
-                output::format::print_text("Restart: use 'rekindle node stop && rekindle node start'")
-            }
+            cli::NodeCmd::Restart => output::format::print_text(
+                "Restart: use 'rekindle node stop && rekindle node start'",
+            ),
             cli::NodeCmd::Attach | cli::NodeCmd::Detach => {
-                let value = client.request_ok(rekindle_node::ipc::protocol::IpcRequest::NetworkStatus).await?;
+                let value = client
+                    .request_ok(rekindle_node::ipc::protocol::IpcRequest::NetworkStatus)
+                    .await?;
                 output::format::print_structured(&value, mode)
             }
         },

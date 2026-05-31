@@ -31,12 +31,7 @@ impl DedupCache {
     ///
     /// Returns `true` if the message is a **duplicate** (already seen).
     /// Returns `false` if the message is **new** (just inserted).
-    pub fn check_and_insert(
-        &mut self,
-        community_id: &str,
-        sender: &str,
-        dedup_key: &str,
-    ) -> bool {
+    pub fn check_and_insert(&mut self, community_id: &str, sender: &str, dedup_key: &str) -> bool {
         let entry = (
             community_id.to_string(),
             sender.to_string(),
@@ -137,10 +132,7 @@ impl RateLimiter {
     /// Check if a sender is within their rate limit. If allowed, records
     /// the event and returns `true`. If rate-limited, returns `false`.
     pub fn check_and_record(&mut self, sender: &str, now_secs: u64) -> bool {
-        let window = self
-            .windows
-            .entry(sender.to_string())
-            .or_default();
+        let window = self.windows.entry(sender.to_string()).or_default();
 
         // Evict entries outside the window
         let cutoff = now_secs.saturating_sub(self.window_secs);

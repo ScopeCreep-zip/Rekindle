@@ -150,8 +150,7 @@ impl SessionCache {
     /// the cache size stays bounded.
     pub fn install(&self, peer_hex: &str, bytes: SessionBytes) -> Arc<AsyncMutex<SessionBytes>> {
         let arc = Arc::new(AsyncMutex::new(bytes));
-        self.sessions
-            .insert(peer_hex.to_string(), Arc::clone(&arc));
+        self.sessions.insert(peer_hex.to_string(), Arc::clone(&arc));
         let evicted = {
             let mut lru = self.lru.lock();
             lru.push(peer_hex.to_string(), ())
@@ -298,13 +297,7 @@ mod tests {
         cache.persist_one("alice").await.unwrap();
         assert_eq!(persist.store_count.load(Ordering::Relaxed), 1);
         // Persistence has the updated bytes.
-        let stored = persist
-            .sessions
-            .lock()
-            .await
-            .get("alice")
-            .cloned()
-            .unwrap();
+        let stored = persist.sessions.lock().await.get("alice").cloned().unwrap();
         assert_eq!(stored, b"updated");
     }
 
@@ -438,7 +431,14 @@ mod tests {
             "final cache state must reference one of the two contended Arcs",
         );
         // Cache map holds exactly one entry for alice.
-        assert_eq!(cache.sessions.iter().filter(|kv| kv.key() == "alice").count(), 1);
+        assert_eq!(
+            cache
+                .sessions
+                .iter()
+                .filter(|kv| kv.key() == "alice")
+                .count(),
+            1
+        );
     }
 
     #[tokio::test]

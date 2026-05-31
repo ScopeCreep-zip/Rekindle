@@ -92,7 +92,7 @@ impl ChannelTree {
     pub fn set_communities(
         &mut self,
         communities: &[(String, String, Vec<ChannelEntry>)], // (gov_key, name, channels)
-        dm_peers: &[(String, String, u32)], // (peer_key, display_name, unread)
+        dm_peers: &[(String, String, u32)],                  // (peer_key, display_name, unread)
     ) {
         self.nodes.clear();
 
@@ -112,7 +112,9 @@ impl ChannelTree {
                 // Sort channels by category then sort_order for consistent display
                 let mut sorted_channels = channels.clone();
                 sorted_channels.sort_by(|a, b| {
-                    a.category.cmp(&b.category).then(a.sort_order.cmp(&b.sort_order))
+                    a.category
+                        .cmp(&b.category)
+                        .then(a.sort_order.cmp(&b.sort_order))
                 });
 
                 // Group channels by category
@@ -194,8 +196,12 @@ impl ChannelTree {
 
     /// Toggle expand/collapse of the selected node.
     fn toggle_expand(&mut self) {
-        let Some(idx) = self.list_state.selected() else { return };
-        let Some(node) = self.nodes.get(idx) else { return };
+        let Some(idx) = self.list_state.selected() else {
+            return;
+        };
+        let Some(node) = self.nodes.get(idx) else {
+            return;
+        };
         if !node.has_children {
             return;
         }
@@ -209,8 +215,12 @@ impl ChannelTree {
 
     /// Collapse the selected node, or move to its parent.
     fn collapse_or_parent(&mut self) {
-        let Some(idx) = self.list_state.selected() else { return };
-        let Some(node) = self.nodes.get(idx) else { return };
+        let Some(idx) = self.list_state.selected() else {
+            return;
+        };
+        let Some(node) = self.nodes.get(idx) else {
+            return;
+        };
 
         // If expanded, collapse
         if node.has_children && self.expanded.contains(&node.id) {
@@ -252,8 +262,16 @@ impl ChannelTree {
             .all(|n| n.depth > node.depth);
 
         if is_last {
-            if self.use_unicode { "└── " } else { "`-- " }
-        } else if self.use_unicode { "├── " } else { "|-- " }
+            if self.use_unicode {
+                "└── "
+            } else {
+                "`-- "
+            }
+        } else if self.use_unicode {
+            "├── "
+        } else {
+            "|-- "
+        }
     }
 
     /// Build list items for rendering.
@@ -270,8 +288,16 @@ impl ChannelTree {
 
                 let expand_marker = if node.has_children {
                     if self.expanded.contains(&node.id) {
-                        if self.use_unicode { "▾ " } else { "v " }
-                    } else if self.use_unicode { "▸ " } else { "> " }
+                        if self.use_unicode {
+                            "▾ "
+                        } else {
+                            "v "
+                        }
+                    } else if self.use_unicode {
+                        "▸ "
+                    } else {
+                        "> "
+                    }
                 } else {
                     "  "
                 };
@@ -280,12 +306,48 @@ impl ChannelTree {
                     ""
                 } else {
                     match node.kind.as_str() {
-                        "voice" => if self.use_unicode { "🔊 " } else { "[V] " },
-                        "announcement" => if self.use_unicode { "📢 " } else { "[A] " },
-                        "forum" => if self.use_unicode { "📋 " } else { "[F] " },
-                        "stage" => if self.use_unicode { "🎙 " } else { "[S] " },
-                        "media" => if self.use_unicode { "🖼 " } else { "[M] " },
-                        "events" => if self.use_unicode { "📅 " } else { "[E] " },
+                        "voice" => {
+                            if self.use_unicode {
+                                "🔊 "
+                            } else {
+                                "[V] "
+                            }
+                        }
+                        "announcement" => {
+                            if self.use_unicode {
+                                "📢 "
+                            } else {
+                                "[A] "
+                            }
+                        }
+                        "forum" => {
+                            if self.use_unicode {
+                                "📋 "
+                            } else {
+                                "[F] "
+                            }
+                        }
+                        "stage" => {
+                            if self.use_unicode {
+                                "🎙 "
+                            } else {
+                                "[S] "
+                            }
+                        }
+                        "media" => {
+                            if self.use_unicode {
+                                "🖼 "
+                            } else {
+                                "[M] "
+                            }
+                        }
+                        "events" => {
+                            if self.use_unicode {
+                                "📅 "
+                            } else {
+                                "[E] "
+                            }
+                        }
                         _ => "# ",
                     }
                 };
@@ -299,7 +361,9 @@ impl ChannelTree {
                 };
 
                 let mut spans = vec![
-                    Span::raw(format!("{indent}{connector}{expand_marker}{channel_prefix}")),
+                    Span::raw(format!(
+                        "{indent}{connector}{expand_marker}{channel_prefix}"
+                    )),
                     Span::raw(label),
                 ];
 
@@ -344,9 +408,7 @@ impl Component for ChannelTree {
                     Some(TreeNodeId::Channel { community, channel }) => {
                         Some(Action::ShowChannel { community, channel })
                     }
-                    Some(TreeNodeId::DmUser(peer_key)) => {
-                        Some(Action::ShowDmThread { peer_key })
-                    }
+                    Some(TreeNodeId::DmUser(peer_key)) => Some(Action::ShowDmThread { peer_key }),
                     Some(id) if self.nodes.iter().any(|n| n.id == id && n.has_children) => {
                         self.toggle_expand();
                         None
@@ -426,10 +488,7 @@ mod tests {
     #[test]
     fn set_communities_builds_nodes() {
         let mut tree = ChannelTree::new(true);
-        tree.set_communities(
-            &[("gov1".into(), "dev-team".into(), test_channels())],
-            &[],
-        );
+        tree.set_communities(&[("gov1".into(), "dev-team".into(), test_channels())], &[]);
         // Should have just the community header (collapsed by default)
         assert_eq!(tree.nodes.len(), 1);
         assert_eq!(tree.nodes[0].label, "dev-team");
@@ -440,10 +499,7 @@ mod tests {
     fn expand_shows_children() {
         let mut tree = ChannelTree::new(true);
         tree.expanded.insert(TreeNodeId::Community("gov1".into()));
-        tree.set_communities(
-            &[("gov1".into(), "dev-team".into(), test_channels())],
-            &[],
-        );
+        tree.set_communities(&[("gov1".into(), "dev-team".into(), test_channels())], &[]);
         // Community header + 2 channels + 1 category = 4 nodes
         assert!(tree.nodes.len() > 1);
     }
@@ -454,7 +510,10 @@ mod tests {
         tree.expanded.insert(TreeNodeId::DirectMessages);
         tree.set_communities(
             &[],
-            &[("pk1".into(), "alice".into(), 2), ("pk2".into(), "bob".into(), 0)],
+            &[
+                ("pk1".into(), "alice".into(), 2),
+                ("pk2".into(), "bob".into(), 0),
+            ],
         );
         // DM header + 2 peers = 3 nodes
         assert_eq!(tree.nodes.len(), 3);
@@ -463,10 +522,7 @@ mod tests {
     #[test]
     fn selected_id_returns_current() {
         let mut tree = ChannelTree::new(true);
-        tree.set_communities(
-            &[("gov1".into(), "dev-team".into(), Vec::new())],
-            &[],
-        );
+        tree.set_communities(&[("gov1".into(), "dev-team".into(), Vec::new())], &[]);
         assert_eq!(
             tree.selected_id(),
             Some(&TreeNodeId::Community("gov1".into()))
@@ -476,27 +532,27 @@ mod tests {
     #[test]
     fn toggle_expand_collapse() {
         let mut tree = ChannelTree::new(true);
-        tree.set_communities(
-            &[("gov1".into(), "dev-team".into(), test_channels())],
-            &[],
-        );
+        tree.set_communities(&[("gov1".into(), "dev-team".into(), test_channels())], &[]);
         // Initially collapsed
-        assert!(!tree.expanded.contains(&TreeNodeId::Community("gov1".into())));
+        assert!(!tree
+            .expanded
+            .contains(&TreeNodeId::Community("gov1".into())));
         tree.list_state.select(Some(0));
         tree.toggle_expand();
-        assert!(tree.expanded.contains(&TreeNodeId::Community("gov1".into())));
+        assert!(tree
+            .expanded
+            .contains(&TreeNodeId::Community("gov1".into())));
         tree.toggle_expand();
-        assert!(!tree.expanded.contains(&TreeNodeId::Community("gov1".into())));
+        assert!(!tree
+            .expanded
+            .contains(&TreeNodeId::Community("gov1".into())));
     }
 
     #[test]
     fn collapse_or_parent_moves_up() {
         let mut tree = ChannelTree::new(true);
         tree.expanded.insert(TreeNodeId::Community("gov1".into()));
-        tree.set_communities(
-            &[("gov1".into(), "dev-team".into(), test_channels())],
-            &[],
-        );
+        tree.set_communities(&[("gov1".into(), "dev-team".into(), test_channels())], &[]);
         // Select a child channel
         tree.list_state.select(Some(1));
         tree.collapse_or_parent();

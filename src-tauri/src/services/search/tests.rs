@@ -7,9 +7,7 @@
 //! the bm25() ranking all work together against the real schema —
 //! mocking the schema would defeat the point.
 
-use rekindle_types::search::{
-    HasFilter, MessageSearch, SearchFilters, SearchSort,
-};
+use rekindle_types::search::{HasFilter, MessageSearch, SearchFilters, SearchSort};
 use rusqlite::Connection;
 
 use super::messages::search_messages_table;
@@ -42,7 +40,14 @@ fn insert_message(
          (owner_key, conversation_id, conversation_type, sender_key, body, \
           automod_blurred, timestamp, is_read, mek_generation, message_id, attachment_json) \
          VALUES ('owner_pk', ?1, 'channel', ?2, ?3, 0, ?4, 0, 0, ?5, ?6)",
-        rusqlite::params![conversation_id, sender, body, timestamp, message_id, attachment_json],
+        rusqlite::params![
+            conversation_id,
+            sender,
+            body,
+            timestamp,
+            message_id,
+            attachment_json
+        ],
     )
     .expect("insert message");
 }
@@ -60,8 +65,24 @@ fn default_search(query: &str) -> MessageSearch {
 #[test]
 fn fts5_finds_simple_word_match() {
     let conn = open_test_db();
-    insert_message(&conn, "ch1", "alice", "the lost cargo arrived", 100, None, Some("m1"));
-    insert_message(&conn, "ch1", "bob", "no relevant text here", 200, None, Some("m2"));
+    insert_message(
+        &conn,
+        "ch1",
+        "alice",
+        "the lost cargo arrived",
+        100,
+        None,
+        Some("m1"),
+    );
+    insert_message(
+        &conn,
+        "ch1",
+        "bob",
+        "no relevant text here",
+        200,
+        None,
+        Some("m2"),
+    );
 
     let req = default_search("cargo");
     let match_expr = build_match_expr(&req.query).expect("build match");
@@ -75,9 +96,33 @@ fn fts5_finds_simple_word_match() {
 #[test]
 fn fts5_returns_adjacent_context() {
     let conn = open_test_db();
-    insert_message(&conn, "ch1", "alice", "before the hit", 100, None, Some("m1"));
-    insert_message(&conn, "ch1", "alice", "match here cargo", 200, None, Some("m2"));
-    insert_message(&conn, "ch1", "alice", "after the hit", 300, None, Some("m3"));
+    insert_message(
+        &conn,
+        "ch1",
+        "alice",
+        "before the hit",
+        100,
+        None,
+        Some("m1"),
+    );
+    insert_message(
+        &conn,
+        "ch1",
+        "alice",
+        "match here cargo",
+        200,
+        None,
+        Some("m2"),
+    );
+    insert_message(
+        &conn,
+        "ch1",
+        "alice",
+        "after the hit",
+        300,
+        None,
+        Some("m3"),
+    );
 
     let req = default_search("cargo");
     let match_expr = build_match_expr(&req.query).unwrap();
@@ -91,8 +136,24 @@ fn fts5_returns_adjacent_context() {
 #[test]
 fn channel_filter_restricts_results() {
     let conn = open_test_db();
-    insert_message(&conn, "ch1", "alice", "shared keyword here", 100, None, Some("m1"));
-    insert_message(&conn, "ch2", "bob", "shared keyword again", 200, None, Some("m2"));
+    insert_message(
+        &conn,
+        "ch1",
+        "alice",
+        "shared keyword here",
+        100,
+        None,
+        Some("m1"),
+    );
+    insert_message(
+        &conn,
+        "ch2",
+        "bob",
+        "shared keyword again",
+        200,
+        None,
+        Some("m2"),
+    );
 
     let mut req = default_search("keyword");
     req.filters.in_channel = Some("ch1".to_string());
@@ -106,7 +167,15 @@ fn channel_filter_restricts_results() {
 #[test]
 fn sender_filter_restricts_results() {
     let conn = open_test_db();
-    insert_message(&conn, "ch1", "alice", "found by both", 100, None, Some("m1"));
+    insert_message(
+        &conn,
+        "ch1",
+        "alice",
+        "found by both",
+        100,
+        None,
+        Some("m1"),
+    );
     insert_message(&conn, "ch1", "bob", "found by both", 200, None, Some("m2"));
 
     let mut req = default_search("found");
@@ -121,8 +190,24 @@ fn sender_filter_restricts_results() {
 #[test]
 fn time_window_filter_restricts_results() {
     let conn = open_test_db();
-    insert_message(&conn, "ch1", "alice", "old news here", 100, None, Some("m1"));
-    insert_message(&conn, "ch1", "alice", "recent news here", 1000, None, Some("m2"));
+    insert_message(
+        &conn,
+        "ch1",
+        "alice",
+        "old news here",
+        100,
+        None,
+        Some("m1"),
+    );
+    insert_message(
+        &conn,
+        "ch1",
+        "alice",
+        "recent news here",
+        1000,
+        None,
+        Some("m2"),
+    );
 
     let mut req = default_search("news");
     req.filters.after = Some(500);
@@ -145,7 +230,15 @@ fn has_filter_restricts_to_attachment_kind() {
         Some(r#"{"kind":"image","ref":"abc"}"#),
         Some("m1"),
     );
-    insert_message(&conn, "ch1", "alice", "look at this picture", 200, None, Some("m2"));
+    insert_message(
+        &conn,
+        "ch1",
+        "alice",
+        "look at this picture",
+        200,
+        None,
+        Some("m2"),
+    );
 
     let mut req = default_search("picture");
     req.filters.has = vec![HasFilter::Image];
@@ -159,7 +252,15 @@ fn has_filter_restricts_to_attachment_kind() {
 #[test]
 fn fts5_triggers_keep_index_in_sync_on_delete() {
     let conn = open_test_db();
-    insert_message(&conn, "ch1", "alice", "delete-me-test", 100, None, Some("m1"));
+    insert_message(
+        &conn,
+        "ch1",
+        "alice",
+        "delete-me-test",
+        100,
+        None,
+        Some("m1"),
+    );
     let req = default_search("delete-me-test");
     let match_expr = build_match_expr(&req.query).unwrap();
     let pre = search_messages_table(&conn, "owner_pk", &match_expr, &req).unwrap();

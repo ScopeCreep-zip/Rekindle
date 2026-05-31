@@ -147,10 +147,7 @@ fn load_community_rows(
     rows.collect::<rusqlite::Result<Vec<_>>>()
 }
 
-fn load_role_rows(
-    conn: &rusqlite::Connection,
-    owner_key: &str,
-) -> rusqlite::Result<Vec<RoleRow>> {
+fn load_role_rows(conn: &rusqlite::Connection, owner_key: &str) -> rusqlite::Result<Vec<RoleRow>> {
     let mut stmt = conn.prepare(
         "SELECT community_id, role_id, name, color, permissions, position, hoist, mentionable, self_assignable, exclusion_group \
          FROM community_roles WHERE owner_key = ?1 ORDER BY position",
@@ -261,14 +258,16 @@ fn load_member_rows(
                 .unwrap_or_default(),
             bio: row.get::<_, Option<String>>("bio").unwrap_or_default(),
             pronouns: row.get::<_, Option<String>>("pronouns").unwrap_or_default(),
-            theme_color: row
-                .get::<_, Option<i64>>("theme_color")
-                .unwrap_or_default(),
+            theme_color: row.get::<_, Option<i64>>("theme_color").unwrap_or_default(),
             badges_json: row
                 .get::<_, String>("badges")
                 .unwrap_or_else(|_| "[]".into()),
-            avatar_ref: row.get::<_, Option<String>>("avatar_ref").unwrap_or_default(),
-            banner_ref: row.get::<_, Option<String>>("banner_ref").unwrap_or_default(),
+            avatar_ref: row
+                .get::<_, Option<String>>("avatar_ref")
+                .unwrap_or_default(),
+            banner_ref: row
+                .get::<_, Option<String>>("banner_ref")
+                .unwrap_or_default(),
         })
     })?;
     rows.collect::<rusqlite::Result<Vec<_>>>()

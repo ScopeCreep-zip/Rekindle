@@ -7,8 +7,8 @@
 //! cap.
 
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use rekindle_voice::{
@@ -139,10 +139,7 @@ impl VoiceSessionDeps for VoiceAdapter {
         let Some(channel) = community.channels.iter().find(|ch| ch.id == channel_id) else {
             return true;
         };
-        channel
-            .stage_speakers
-            .iter()
-            .any(|s| s == sender_pseudonym)
+        channel.stage_speakers.iter().any(|s| s == sender_pseudonym)
     }
 
     fn call_key_for_peer(&self, peer_pubkey: &str) -> Option<CallKeyInfo> {
@@ -168,11 +165,7 @@ impl VoiceSessionDeps for VoiceAdapter {
     }
 
     fn emit_voice_event(&self, event: VoiceSessionEvent) {
-        crate::event_dispatch::dispatch(
-            &self.app_handle,
-            "voice-event",
-            event_mapping::map(event),
-        );
+        crate::event_dispatch::dispatch(&self.app_handle, "voice-event", event_mapping::map(event));
     }
 
     fn register_background_handle(&self, handle: tokio::task::JoinHandle<()>) {
@@ -426,7 +419,8 @@ impl VoiceSessionDeps for VoiceAdapter {
     }
 
     fn emit_device_changed(&self, device_type: String, device_name: String, reason: String) {
-        crate::event_dispatch::dispatch(&self.app_handle, 
+        crate::event_dispatch::dispatch(
+            &self.app_handle,
             "voice-event",
             VoiceEvent::DeviceChanged {
                 device_type,
@@ -437,7 +431,8 @@ impl VoiceSessionDeps for VoiceAdapter {
     }
 
     fn emit_system_alert(&self, title: String, body: String) {
-        crate::event_dispatch::dispatch(&self.app_handle, 
+        crate::event_dispatch::dispatch(
+            &self.app_handle,
             "notification-event",
             crate::channels::NotificationEvent::SystemAlert { title, body },
         );

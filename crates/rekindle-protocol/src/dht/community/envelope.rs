@@ -343,9 +343,13 @@ pub enum ControlPayload {
 
     // ── Events ──
     /// Broadcast: event created.
-    EventCreated { event: rekindle_types::event::EventInfo },
+    EventCreated {
+        event: rekindle_types::event::EventInfo,
+    },
     /// Broadcast: event updated.
-    EventUpdated { event: rekindle_types::event::EventInfo },
+    EventUpdated {
+        event: rekindle_types::event::EventInfo,
+    },
     /// Broadcast: event deleted.
     EventDeleted { event_id: String },
     /// Broadcast: event RSVP changed.
@@ -888,10 +892,8 @@ mod tests {
         let payload = ControlPayload::MemberLeave {
             pseudonym_key: "abc123".into(),
         };
-        let bytes =
-            encode_community_envelope(&CommunityEnvelope::Control(payload)).unwrap();
-        let back =
-            crate::capnp_envelope::decode_community_envelope(&bytes).unwrap();
+        let bytes = encode_community_envelope(&CommunityEnvelope::Control(payload)).unwrap();
+        let back = crate::capnp_envelope::decode_community_envelope(&bytes).unwrap();
         match back {
             CommunityEnvelope::Control(ControlPayload::MemberLeave { pseudonym_key }) => {
                 assert_eq!(pseudonym_key, "abc123");
@@ -911,10 +913,8 @@ mod tests {
             generation: 17,
             requester_pseudonym: "deadbeef".repeat(4), // 32-hex-char pseudonym
         };
-        let bytes =
-            encode_community_envelope(&CommunityEnvelope::Control(payload)).unwrap();
-        let back =
-            crate::capnp_envelope::decode_community_envelope(&bytes).unwrap();
+        let bytes = encode_community_envelope(&CommunityEnvelope::Control(payload)).unwrap();
+        let back = crate::capnp_envelope::decode_community_envelope(&bytes).unwrap();
         match back {
             CommunityEnvelope::Control(ControlPayload::MekTransferAck {
                 community_id,
@@ -938,10 +938,8 @@ mod tests {
             generation: 99,
             requester_pseudonym: "cafebabe".repeat(4),
         };
-        let bytes =
-            encode_community_envelope(&CommunityEnvelope::Control(payload_none)).unwrap();
-        let back =
-            crate::capnp_envelope::decode_community_envelope(&bytes).unwrap();
+        let bytes = encode_community_envelope(&CommunityEnvelope::Control(payload_none)).unwrap();
+        let back = crate::capnp_envelope::decode_community_envelope(&bytes).unwrap();
         match back {
             CommunityEnvelope::Control(ControlPayload::MekTransferAck {
                 channel_id,
@@ -964,10 +962,8 @@ mod tests {
             requester_pseudonym: "feedface".repeat(4),
             full_segment_index: 0,
         };
-        let bytes =
-            encode_community_envelope(&CommunityEnvelope::Control(payload)).unwrap();
-        let back =
-            crate::capnp_envelope::decode_community_envelope(&bytes).unwrap();
+        let bytes = encode_community_envelope(&CommunityEnvelope::Control(payload)).unwrap();
+        let back = crate::capnp_envelope::decode_community_envelope(&bytes).unwrap();
         match back {
             CommunityEnvelope::Control(ControlPayload::RequestSegmentExpansion {
                 community_id,

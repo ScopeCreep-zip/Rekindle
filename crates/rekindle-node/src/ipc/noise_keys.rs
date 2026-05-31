@@ -16,7 +16,6 @@
 //! [RC-10] No unsafe code in this module.
 //! [RC-16] Private key bytes wrapped in `ZeroizingKeypair` for drop cleanup.
 
-
 use std::path::{Path, PathBuf};
 
 use super::error::{IpcError, Result};
@@ -37,9 +36,7 @@ pub fn validate_agent_name(name: &str) -> Result<()> {
     }
     for ch in name.chars() {
         if !ch.is_ascii_alphanumeric() && ch != '_' && ch != '-' {
-            return Err(IpcError::InvalidAgentName {
-                name: name.into(),
-            });
+            return Err(IpcError::InvalidAgentName { name: name.into() });
         }
     }
     Ok(())
@@ -124,16 +121,19 @@ pub const NOISE_PARAMS: &str = "Noise_IK_25519_ChaChaPoly_BLAKE2s";
 
 /// Generate a new X25519 static keypair for Noise IK.
 pub fn generate_keypair() -> Result<ZeroizingKeypair> {
-    let builder = snow::Builder::new(NOISE_PARAMS.parse().map_err(|e| {
-        IpcError::HandshakeFailed {
-            reason: format!("invalid Noise params: {e}"),
-        }
-    })?);
-    let keypair = builder.generate_keypair().map_err(|e| {
-        IpcError::HandshakeFailed {
+    let builder =
+        snow::Builder::new(
+            NOISE_PARAMS
+                .parse()
+                .map_err(|e| IpcError::HandshakeFailed {
+                    reason: format!("invalid Noise params: {e}"),
+                })?,
+        );
+    let keypair = builder
+        .generate_keypair()
+        .map_err(|e| IpcError::HandshakeFailed {
             reason: format!("keypair generation failed: {e}"),
-        }
-    })?;
+        })?;
     Ok(ZeroizingKeypair::new(keypair))
 }
 
@@ -197,13 +197,14 @@ pub async fn write_bus_keypair(keypair: &snow::Keypair) -> Result<()> {
     write_private_key_atomic(&key_path, &keypair.private).await?;
 
     // BLAKE3 tamper-detection checksum.
-    let pub_array: [u8; 32] = keypair
-        .public
-        .clone()
-        .try_into()
-        .map_err(|_| IpcError::HandshakeFailed {
-            reason: "bus public key is not 32 bytes".into(),
-        })?;
+    let pub_array: [u8; 32] =
+        keypair
+            .public
+            .clone()
+            .try_into()
+            .map_err(|_| IpcError::HandshakeFailed {
+                reason: "bus public key is not 32 bytes".into(),
+            })?;
     let checksum = keypair_checksum(&pub_array, &keypair.private);
     tokio::fs::write(dir.join("bus.checksum"), checksum)
         .await
@@ -236,13 +237,14 @@ pub async fn write_agent_keypair(agent_name: &str, keypair: &snow::Keypair) -> R
     write_private_key_atomic(&key_path, &keypair.private).await?;
 
     // Checksum.
-    let pub_array: [u8; 32] = keypair
-        .public
-        .clone()
-        .try_into()
-        .map_err(|_| IpcError::HandshakeFailed {
-            reason: format!("{agent_name} public key is not 32 bytes"),
-        })?;
+    let pub_array: [u8; 32] =
+        keypair
+            .public
+            .clone()
+            .try_into()
+            .map_err(|_| IpcError::HandshakeFailed {
+                reason: format!("{agent_name} public key is not 32 bytes"),
+            })?;
     let checksum = keypair_checksum(&pub_array, &keypair.private);
     tokio::fs::write(dir.join(format!("{agent_name}.checksum")), checksum)
         .await
@@ -256,14 +258,12 @@ pub async fn write_agent_keypair(agent_name: &str, keypair: &snow::Keypair) -> R
 pub async fn read_bus_public_key() -> Result<[u8; 32]> {
     let dir = runtime_dir()?;
     let pub_path = dir.join("bus.pub");
-    let bytes = tokio::fs::read(&pub_path)
-        .await
-        .map_err(IpcError::Io)?;
-    bytes.try_into().map_err(|v: Vec<u8>| {
-        IpcError::HandshakeFailed {
+    let bytes = tokio::fs::read(&pub_path).await.map_err(IpcError::Io)?;
+    bytes
+        .try_into()
+        .map_err(|v: Vec<u8>| IpcError::HandshakeFailed {
             reason: format!("bus.pub: expected 32 bytes, got {}", v.len()),
-        }
-    })
+        })
 }
 
 /// Read an agent's keypair from disk with tamper detection.
@@ -276,18 +276,15 @@ pub async fn read_agent_keypair(
     let key_path = dir.join(format!("{agent_name}.key"));
     let pub_path = dir.join(format!("{agent_name}.pub"));
 
-    let private_bytes = tokio::fs::read(&key_path)
-        .await
-        .map_err(IpcError::Io)?;
-    let public_bytes = tokio::fs::read(&pub_path)
-        .await
-        .map_err(IpcError::Io)?;
+    let private_bytes = tokio::fs::read(&key_path).await.map_err(IpcError::Io)?;
+    let public_bytes = tokio::fs::read(&pub_path).await.map_err(IpcError::Io)?;
 
-    let public_key: [u8; 32] = public_bytes.try_into().map_err(|v: Vec<u8>| {
-        IpcError::HandshakeFailed {
-            reason: format!("{agent_name}.pub: expected 32 bytes, got {}", v.len()),
-        }
-    })?;
+    let public_key: [u8; 32] =
+        public_bytes
+            .try_into()
+            .map_err(|v: Vec<u8>| IpcError::HandshakeFailed {
+                reason: format!("{agent_name}.pub: expected 32 bytes, got {}", v.len()),
+            })?;
 
     // Tamper detection.
     let checksum_path = dir.join(format!("{agent_name}.checksum"));

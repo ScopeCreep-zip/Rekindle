@@ -244,12 +244,15 @@ impl CallSignalingDeps for MockDeps {
         // Mock records the call but does NOT spawn anything (would
         // need its own runtime). Tests verify the spawn was invoked
         // with the right args.
-        self.state.lock().call_log.push(MockEvent::SpawnIncomingTimeout {
-            call_id,
-            peer_pubkey,
-            kind,
-            expires_at_ms,
-        });
+        self.state
+            .lock()
+            .call_log
+            .push(MockEvent::SpawnIncomingTimeout {
+                call_id,
+                peer_pubkey,
+                kind,
+                expires_at_ms,
+            });
     }
     fn spawn_dialing_call_timeout(
         &self,
@@ -538,22 +541,10 @@ impl CallSignalingDeps for EmptyNameDeps {
     fn register_background_handle(&self, h: tokio::task::JoinHandle<()>) {
         self.0.register_background_handle(h);
     }
-    fn spawn_incoming_call_timeout(
-        &self,
-        c: String,
-        p: String,
-        k: CallKind,
-        e: u64,
-    ) {
+    fn spawn_incoming_call_timeout(&self, c: String, p: String, k: CallKind, e: u64) {
         self.0.spawn_incoming_call_timeout(c, p, k, e);
     }
-    fn spawn_dialing_call_timeout(
-        &self,
-        c: String,
-        p: String,
-        k: CallKind,
-        e: u64,
-    ) {
+    fn spawn_dialing_call_timeout(&self, c: String, p: String, k: CallKind, e: u64) {
         self.0.spawn_dialing_call_timeout(c, p, k, e);
     }
 }
@@ -611,20 +602,29 @@ async fn handle_incoming_invite_arms_incoming_timeout() {
         deps.as_ref(),
         &initiator,
         "call-incoming-1",
-        0,            // CallKind::Audio
+        0, // CallKind::Audio
         &initiator,
         &initiator_x,
-        12_345_678,   // expires_at_ms
+        12_345_678, // expires_at_ms
     )
     .await;
 
-    let timeout_arm = deps.call_log().into_iter().find(|e| {
-        matches!(e, MockEvent::SpawnIncomingTimeout { .. })
-    });
-    let Some(MockEvent::SpawnIncomingTimeout { call_id, peer_pubkey, kind, expires_at_ms }) = timeout_arm else {
-        panic!("handle_incoming_invite MUST arm spawn_incoming_call_timeout — \
+    let timeout_arm = deps
+        .call_log()
+        .into_iter()
+        .find(|e| matches!(e, MockEvent::SpawnIncomingTimeout { .. }));
+    let Some(MockEvent::SpawnIncomingTimeout {
+        call_id,
+        peer_pubkey,
+        kind,
+        expires_at_ms,
+    }) = timeout_arm
+    else {
+        panic!(
+            "handle_incoming_invite MUST arm spawn_incoming_call_timeout — \
                 otherwise missed-call notifications never fire. Call log: {:?}",
-                deps.call_log());
+            deps.call_log()
+        );
     };
     assert_eq!(call_id, "call-incoming-1");
     assert_eq!(peer_pubkey, "bb".repeat(32));

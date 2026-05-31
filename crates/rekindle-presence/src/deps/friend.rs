@@ -65,11 +65,8 @@ pub trait FriendPresenceDeps: Send + Sync + 'static {
     // === Friend state mutations ===
     /// Apply a status update and return whether the prior status was
     /// `Offline` (so the caller can fire a `FriendOnline` edge event).
-    fn set_friend_status(
-        &self,
-        friend_key: &str,
-        status: UserStatusKind,
-    ) -> SetFriendStatusOutcome;
+    fn set_friend_status(&self, friend_key: &str, status: UserStatusKind)
+        -> SetFriendStatusOutcome;
     fn set_friend_offline(&self, friend_key: &str, last_seen_ts_ms: i64);
     fn set_friend_last_heartbeat(&self, friend_key: &str, heartbeat_ts_ms: i64);
     fn set_friend_game_info(&self, friend_key: &str, game: Option<GameInfoSnapshot>);

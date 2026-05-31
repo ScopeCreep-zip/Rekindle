@@ -70,11 +70,10 @@ pub(crate) async fn handle_friend_request_full(
             // TOFU (IdentityKeyStore.java:54-60): identity matches stored
             // → safe to proceed; mismatch → require explicit user trust
             // via Direction::SENDING UntrustedIdentityException.
-            let bundle_identity_key = serde_json::from_slice::<
-                rekindle_crypto::signal::PreKeyBundle,
-            >(req.prekey_bundle)
-            .ok()
-            .map(|b| b.identity_key);
+            let bundle_identity_key =
+                serde_json::from_slice::<rekindle_crypto::signal::PreKeyBundle>(req.prekey_bundle)
+                    .ok()
+                    .map(|b| b.identity_key);
 
             let identity_matches = if let Some(ref ik) = bundle_identity_key {
                 let signal = state.signal_manager.read();
@@ -126,9 +125,7 @@ pub(crate) async fn handle_friend_request_full(
             // user's friendship + session stay untouched until they
             // explicitly confirm.
             let peer_label = state_helpers::friend_display_name(state, req.sender_hex)
-                .unwrap_or_else(|| {
-                    format!("{}…", &req.sender_hex[..16.min(req.sender_hex.len())])
-                });
+                .unwrap_or_else(|| format!("{}…", &req.sender_hex[..16.min(req.sender_hex.len())]));
             tracing::error!(
                 from = %req.sender_hex,
                 "FriendRequest from already-Accepted peer with DIFFERENT identity_key — \
@@ -306,7 +303,8 @@ pub(crate) async fn handle_friend_accept_full(
         );
         // Start watching the friend's profile DHT record for presence
         if let Err(e) =
-            crate::services::presence_service::watch_friend(state, a.sender_hex, a.profile_dht_key).await
+            crate::services::presence_service::watch_friend(state, a.sender_hex, a.profile_dht_key)
+                .await
         {
             tracing::trace!(from = %a.sender_hex, error = %e, "failed to watch friend after accept");
         }
@@ -346,4 +344,3 @@ async fn persist_friend_request(
     })
     .await
 }
-

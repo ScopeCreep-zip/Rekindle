@@ -147,7 +147,10 @@ pub async fn upload_file<D: FilesDeps>(
 /// possession via `AttachmentCached`, gossip notify. Returns the new
 /// attachment_id (hex). Used by both regular file uploads
 /// ([`upload_file`]) and voice messages ([`send_voice_message_bytes`]).
-#[allow(clippy::too_many_arguments, reason = "core upload pipeline — bundling args would just push the field-set into a single-use struct")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "core upload pipeline — bundling args would just push the field-set into a single-use struct"
+)]
 pub async fn upload_bytes_as_attachment<D: FilesDeps>(
     deps: &D,
     community_id: &str,
@@ -426,7 +429,11 @@ mod tests {
 
         let calls = deps.calls.lock();
         assert_eq!(calls.channel_messages_written.len(), 1, "one SMPL message");
-        assert_eq!(calls.attachment_cacheds_written.len(), 1, "one AttachmentCached");
+        assert_eq!(
+            calls.attachment_cacheds_written.len(),
+            1,
+            "one AttachmentCached"
+        );
         assert_eq!(calls.channel_messages_persisted.len(), 1, "one SQLite row");
         assert_eq!(
             calls.slowmode_persists.len(),
@@ -521,7 +528,13 @@ mod tests {
         use std::path::PathBuf;
         assert_eq!(guess_mime_type(&PathBuf::from("a.png")), "image/png");
         assert_eq!(guess_mime_type(&PathBuf::from("a.OGG")), "audio/ogg");
-        assert_eq!(guess_mime_type(&PathBuf::from("a.unknown")), "application/octet-stream");
-        assert_eq!(guess_mime_type(&PathBuf::from("noext")), "application/octet-stream");
+        assert_eq!(
+            guess_mime_type(&PathBuf::from("a.unknown")),
+            "application/octet-stream"
+        );
+        assert_eq!(
+            guess_mime_type(&PathBuf::from("noext")),
+            "application/octet-stream"
+        );
     }
 }

@@ -7,14 +7,13 @@
 //!
 //! Adapted from open-sesame `core-ipc/src/client.rs`.
 
-
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use tokio::net::UnixStream;
-use tokio::sync::{Mutex, mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, Mutex};
 use uuid::Uuid;
 
 use super::error::{IpcError, Result};
@@ -34,7 +33,8 @@ pub struct BusClient {
     inbound_rx: mpsc::Receiver<Vec<u8>>,
     /// Typed subscription events from the server's EventRouter.
     /// Taken once by the consumer via `take_event_receiver()`.
-    event_rx: Option<mpsc::UnboundedReceiver<rekindle_types::subscription_events::SubscriptionEvent>>,
+    event_rx:
+        Option<mpsc::UnboundedReceiver<rekindle_types::subscription_events::SubscriptionEvent>>,
     /// Pending request-response waiters, keyed by msg_id.
     pending: Arc<Mutex<HashMap<Uuid, oneshot::Sender<IpcResponse>>>>,
     /// Monotonic epoch for timestamp generation.
@@ -81,7 +81,8 @@ impl BusClient {
 
         let (outbound_tx, mut outbound_rx) = mpsc::channel::<Vec<u8>>(256);
         let (inbound_tx, inbound_rx) = mpsc::channel::<Vec<u8>>(1024);
-        let (event_tx, event_rx) = mpsc::unbounded_channel::<rekindle_types::subscription_events::SubscriptionEvent>();
+        let (event_tx, event_rx) =
+            mpsc::unbounded_channel::<rekindle_types::subscription_events::SubscriptionEvent>();
         let pending: Arc<Mutex<HashMap<Uuid, oneshot::Sender<IpcResponse>>>> =
             Arc::new(Mutex::new(HashMap::new()));
 
@@ -260,7 +261,10 @@ impl BusClient {
     ///
     /// The TUI calls this at startup to get the event stream. The receiver
     /// is moved out — subsequent calls return `None`.
-    pub fn take_event_receiver(&mut self) -> Option<mpsc::UnboundedReceiver<rekindle_types::subscription_events::SubscriptionEvent>> {
+    pub fn take_event_receiver(
+        &mut self,
+    ) -> Option<mpsc::UnboundedReceiver<rekindle_types::subscription_events::SubscriptionEvent>>
+    {
         self.event_rx.take()
     }
 

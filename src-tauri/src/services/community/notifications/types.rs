@@ -30,7 +30,12 @@ impl Default for QuietHoursSettings {
 }
 
 impl QuietHoursSettings {
-    pub(super) fn from_db(enabled: i64, start_minute: i64, end_minute: i64, timezone: String) -> Self {
+    pub(super) fn from_db(
+        enabled: i64,
+        start_minute: i64,
+        end_minute: i64,
+        timezone: String,
+    ) -> Self {
         Self {
             enabled: enabled != 0,
             start_hour: u8::try_from(start_minute.div_euclid(60)).unwrap_or(22),

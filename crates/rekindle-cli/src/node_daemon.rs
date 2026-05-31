@@ -7,14 +7,13 @@
 //! Feature-gated behind `daemon` — only compiled when building the
 //! full binary that can run both CLI client and daemon server.
 
-
 use std::sync::Arc;
 
 use parking_lot::RwLock;
 
-use rekindle_node::daemon::{DaemonLifecycle, DaemonState};
 use rekindle_node::daemon::dispatch::{DaemonContext, PolicyConfig};
 use rekindle_node::daemon::handler::DaemonHandler;
+use rekindle_node::daemon::{DaemonLifecycle, DaemonState};
 use rekindle_node::ipc;
 use rekindle_node::state::StatePaths;
 
@@ -64,18 +63,21 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
 
     let session_arc = Arc::new(parking_lot::RwLock::new(session));
     let mek_cache = Arc::new(parking_lot::RwLock::new(MekCache::new()));
-    let signing_key_arc: Arc<parking_lot::RwLock<Option<rekindle_node::state::keystore::SigningKeyHandle>>> =
-        Arc::new(parking_lot::RwLock::new(None));
+    let signing_key_arc: Arc<
+        parking_lot::RwLock<Option<rekindle_node::state::keystore::SigningKeyHandle>>,
+    > = Arc::new(parking_lot::RwLock::new(None));
     let registry = Arc::new(tokio::sync::RwLock::new(ipc::ClearanceRegistry::new()));
 
     // Transport SubscriptionManager starts as None — created during unlock/resume.
     // The handler checks subscriptions.read().is_some() before forwarding.
-    let transport_subscriptions: Arc<parking_lot::RwLock<Option<rekindle_transport::SubscriptionManager>>> =
-        Arc::new(parking_lot::RwLock::new(None));
+    let transport_subscriptions: Arc<
+        parking_lot::RwLock<Option<rekindle_transport::SubscriptionManager>>,
+    > = Arc::new(parking_lot::RwLock::new(None));
 
     // Transport starts as None — filled after TransportNode::start().
-    let transport_for_handler: Arc<parking_lot::RwLock<Option<Arc<rekindle_transport::TransportNode>>>> =
-        Arc::new(parking_lot::RwLock::new(None));
+    let transport_for_handler: Arc<
+        parking_lot::RwLock<Option<Arc<rekindle_transport::TransportNode>>>,
+    > = Arc::new(parking_lot::RwLock::new(None));
 
     let pending_joins = Arc::new(parking_lot::Mutex::new(std::collections::HashMap::new()));
 
@@ -90,8 +92,12 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
     ));
 
     let transport = match rekindle_transport::TransportNode::start(
-        transport_config, handler, Arc::clone(&session_arc),
-    ).await {
+        transport_config,
+        handler,
+        Arc::clone(&session_arc),
+    )
+    .await
+    {
         Ok(node) => {
             let arc = Arc::new(node);
             // Fill the handler's transport reference now that it's started.
@@ -149,7 +155,10 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
     // authenticates the subscriber at Internal level when it connects.
     let daemon_subscriber_kp = ipc::generate_keypair()
         .map_err(|e| anyhow::anyhow!("daemon subscriber keypair generation failed: {e}"))?;
-    let daemon_subscriber_pubkey: [u8; 32] = daemon_subscriber_kp.as_inner().public.clone()
+    let daemon_subscriber_pubkey: [u8; 32] = daemon_subscriber_kp
+        .as_inner()
+        .public
+        .clone()
         .try_into()
         .map_err(|_| anyhow::anyhow!("subscriber pubkey is not 32 bytes"))?;
 
@@ -162,11 +171,8 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
         vec!["dispatch".into()],
     );
 
-    let bus_server = ipc::BusServer::bind(
-        &socket_path,
-        bus_keypair.into_inner(),
-        clearance_registry,
-    )?;
+    let bus_server =
+        ipc::BusServer::bind(&socket_path, bus_keypair.into_inner(), clearance_registry)?;
     tracing::info!(path = %socket_path.display(), "IPC bus server bound");
 
     // Start the event delivery system. The delivery task awaits the watch
@@ -176,7 +182,10 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
 
     // ── 8. Transition to Locked ───────────────────────────────────
     let _ = lifecycle.transition(DaemonState::Locked);
-    tracing::info!(state = lifecycle.state().as_str(), "daemon accepting connections");
+    tracing::info!(
+        state = lifecycle.state().as_str(),
+        "daemon accepting connections"
+    );
 
     // ── 9. Notify systemd READY=1 (Type=notify) ─────────────────
     notify_ready();
@@ -207,7 +216,9 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
             daemon_subscriber_kp.as_inner(),
             5,
             std::time::Duration::from_millis(200),
-        ).await {
+        )
+        .await
+        {
             Ok(c) => c,
             Err(e) => {
                 tracing::error!(error = %e, "daemon subscriber: failed to connect to own socket");
@@ -235,13 +246,22 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
         // Wait for operational state (SubscriptionManager created during unlock)
         loop {
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-            if lifecycle_consumer.state() == DaemonState::Operational { break; }
-            if matches!(lifecycle_consumer.state(), DaemonState::ShuttingDown | DaemonState::Stopped) { return; }
+            if lifecycle_consumer.state() == DaemonState::Operational {
+                break;
+            }
+            if matches!(
+                lifecycle_consumer.state(),
+                DaemonState::ShuttingDown | DaemonState::Stopped
+            ) {
+                return;
+            }
         }
 
         let mut event_rx = {
             let guard = daemon_ctx_consumer.subscriptions.read();
-            let Some(ref sub_mgr) = *guard else { return; };
+            let Some(ref sub_mgr) = *guard else {
+                return;
+            };
             sub_mgr.subscribe()
         };
 
@@ -250,14 +270,22 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
         loop {
             match event_rx.recv().await {
                 Ok(rekindle_types::subscription_events::SubscriptionEvent::Network(
-                    rekindle_types::subscription_events::NetworkEvent::ValueChanged { ref record_key, .. }
+                    rekindle_types::subscription_events::NetworkEvent::ValueChanged {
+                        ref record_key,
+                        ..
+                    },
                 )) => {
                     // Check if this is a join inbox for an operator community
                     let governance_key = {
                         let guard = daemon_ctx_consumer.session.read();
                         guard.as_ref().and_then(|s| {
-                            s.communities.values()
-                                .find(|m| m.is_operator && !m.join_inbox_key.is_empty() && m.join_inbox_key == *record_key)
+                            s.communities
+                                .values()
+                                .find(|m| {
+                                    m.is_operator
+                                        && !m.join_inbox_key.is_empty()
+                                        && m.join_inbox_key == *record_key
+                                })
                                 .map(|m| m.governance_key.clone())
                         })
                     };
@@ -270,14 +298,17 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
                             &daemon_ctx_consumer.transport,
                             &daemon_ctx_consumer.session_path,
                             &gov_key,
-                        ).await;
+                        )
+                        .await;
                     }
 
                     // Check if this is our friend inbox
                     let friend_inbox_key = {
                         let guard = daemon_ctx_consumer.session.read();
                         guard.as_ref().and_then(|s| {
-                            if !s.identity.friend_inbox_key.is_empty() && s.identity.friend_inbox_key == *record_key {
+                            if !s.identity.friend_inbox_key.is_empty()
+                                && s.identity.friend_inbox_key == *record_key
+                            {
                                 Some(s.identity.friend_inbox_key.clone())
                             } else {
                                 None
@@ -291,7 +322,8 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
                             &daemon_ctx_consumer.transport,
                             &daemon_ctx_consumer.session_path,
                             &inbox_key,
-                        ).await;
+                        )
+                        .await;
                     }
                 }
                 Ok(_) => {} // Other events — not our concern
@@ -419,7 +451,9 @@ async fn load_bus_keypair(
     let checksum_path = pub_path.with_file_name("bus.checksum");
     if checksum_path.exists() {
         let stored = tokio::fs::read(&checksum_path).await?;
-        let pub_array: [u8; 32] = public_bytes.clone().try_into()
+        let pub_array: [u8; 32] = public_bytes
+            .clone()
+            .try_into()
             .map_err(|_| anyhow::anyhow!("bus.pub not 32 bytes"))?;
         let expected = blake3::keyed_hash(&pub_array, &private_bytes);
 

@@ -110,4 +110,3 @@ pub async fn add_friend_inner(
 
     Ok(())
 }
-

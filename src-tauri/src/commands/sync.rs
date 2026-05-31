@@ -2,9 +2,7 @@
 //! (architecture §28.4). Thin adapters over `services::cross_device_sync`.
 
 use rekindle_secrets::sync_key::SyncKey;
-use rekindle_types::cross_device_sync::{
-    DeviceList, ReadState, SyncManifest, SyncPreferences,
-};
+use rekindle_types::cross_device_sync::{DeviceList, ReadState, SyncManifest, SyncPreferences};
 use std::sync::Arc;
 use tauri::State;
 
@@ -18,8 +16,8 @@ pub async fn ensure_personal_sync_record(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<String, String> {
-    let handle = cross_device_sync::ensure_personal_sync_record(state.inner(), pool.inner())
-        .await?;
+    let handle =
+        cross_device_sync::ensure_personal_sync_record(state.inner(), pool.inner()).await?;
     cross_device_sync::start_personal_sync_watch(state.inner(), pool.inner()).await?;
     Ok(handle.record_key)
 }

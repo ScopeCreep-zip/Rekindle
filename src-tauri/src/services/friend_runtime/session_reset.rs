@@ -103,10 +103,7 @@ pub async fn decline_session_reset_inner(
     peer_public_key: String,
     reason: Option<String>,
 ) -> Result<(), String> {
-    state
-        .pending_session_resets
-        .lock()
-        .remove(&peer_public_key);
+    state.pending_session_resets.lock().remove(&peer_public_key);
     let payload = rekindle_protocol::messaging::envelope::MessagePayload::SessionResetDecline {
         reason: reason.unwrap_or_default(),
     };

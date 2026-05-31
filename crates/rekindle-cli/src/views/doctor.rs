@@ -29,11 +29,11 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph};
 use ratatui::Frame;
 
-use rekindle_types::display::{Check, CheckStatus};
+use super::View;
 use crate::tui::action::{Action, CommandResult};
 use crate::tui::focus::{FocusId, FocusRing};
 use crate::tui::theme::ThemeManager;
-use super::View;
+use rekindle_types::display::{Check, CheckStatus};
 
 /// Doctor view state.
 pub struct DoctorView {
@@ -84,25 +84,35 @@ impl DoctorView {
         for check in &filtered {
             if current_category != Some(check.category.as_str()) {
                 current_category = Some(check.category.as_str());
-                items.push(ListItem::new(Line::from(
-                    Span::styled(
-                        format!(" {}", check.category.to_uppercase()),
-                        Style::new().bold(),
-                    ),
-                )));
+                items.push(ListItem::new(Line::from(Span::styled(
+                    format!(" {}", check.category.to_uppercase()),
+                    Style::new().bold(),
+                ))));
             }
 
             let (icon, icon_style) = match check.status {
                 CheckStatus::Pass => (
-                    if self.use_unicode { "✓ [PASS]" } else { "[PASS]" },
+                    if self.use_unicode {
+                        "✓ [PASS]"
+                    } else {
+                        "[PASS]"
+                    },
                     Style::new().bold(),
                 ),
                 CheckStatus::Warn => (
-                    if self.use_unicode { "⚠ [WARN]" } else { "[WARN]" },
+                    if self.use_unicode {
+                        "⚠ [WARN]"
+                    } else {
+                        "[WARN]"
+                    },
                     Style::new().bold(),
                 ),
                 CheckStatus::Fail => (
-                    if self.use_unicode { "✗ [FAIL]" } else { "[FAIL]" },
+                    if self.use_unicode {
+                        "✗ [FAIL]"
+                    } else {
+                        "[FAIL]"
+                    },
                     Style::new().bold(),
                 ),
             };
@@ -118,12 +128,10 @@ impl DoctorView {
             // Remediation hint for non-passing checks
             if check.status != CheckStatus::Pass && !check.description.is_empty() {
                 for hint_line in check.description.lines() {
-                    items.push(ListItem::new(Line::from(
-                        Span::styled(
-                            format!("     {hint_line}"),
-                            Style::new().dim(),
-                        ),
-                    )));
+                    items.push(ListItem::new(Line::from(Span::styled(
+                        format!("     {hint_line}"),
+                        Style::new().dim(),
+                    ))));
                 }
             }
         }
@@ -134,20 +142,26 @@ impl DoctorView {
     /// Summary counts: (pass, warn, fail).
     fn summary(&self) -> (usize, usize, usize) {
         let filtered = self.filtered_checks();
-        let pass = filtered.iter().filter(|c| c.status == CheckStatus::Pass).count();
-        let warn = filtered.iter().filter(|c| c.status == CheckStatus::Warn).count();
-        let fail = filtered.iter().filter(|c| c.status == CheckStatus::Fail).count();
+        let pass = filtered
+            .iter()
+            .filter(|c| c.status == CheckStatus::Pass)
+            .count();
+        let warn = filtered
+            .iter()
+            .filter(|c| c.status == CheckStatus::Warn)
+            .count();
+        let fail = filtered
+            .iter()
+            .filter(|c| c.status == CheckStatus::Fail)
+            .count();
         (pass, warn, fail)
     }
 }
 
 impl View for DoctorView {
     fn draw(&mut self, frame: &mut Frame, area: Rect, theme: &ThemeManager) -> Result<()> {
-        let [list_area, summary_area] = Layout::vertical([
-            Constraint::Fill(1),
-            Constraint::Length(1),
-        ])
-        .areas(area);
+        let [list_area, summary_area] =
+            Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(area);
 
         // Check list
         let filter_label = self

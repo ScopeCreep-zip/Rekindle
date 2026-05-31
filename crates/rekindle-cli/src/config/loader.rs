@@ -177,7 +177,9 @@ fn merge(base: &mut Config, overlay: &Config) {
         base.global.namespace.clone_from(&overlay.global.namespace);
     }
     if overlay.global.default_community.is_some() {
-        base.global.default_community.clone_from(&overlay.global.default_community);
+        base.global
+            .default_community
+            .clone_from(&overlay.global.default_community);
     }
 
     // Network — merge non-default values
@@ -187,10 +189,7 @@ fn merge(base: &mut Config, overlay: &Config) {
     merge_tui(&mut base.tui, &overlay.tui);
 }
 
-fn merge_network(
-    base: &mut super::schema::NetworkConfig,
-    overlay: &super::schema::NetworkConfig,
-) {
+fn merge_network(base: &mut super::schema::NetworkConfig, overlay: &super::schema::NetworkConfig) {
     if overlay.rpc_timeout_ms != 8_000 {
         base.rpc_timeout_ms = overlay.rpc_timeout_ms;
     }

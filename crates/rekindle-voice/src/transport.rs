@@ -98,10 +98,7 @@ impl VoicePacket {
     /// packet (and vice versa).
     pub fn signing_bytes(&self) -> Vec<u8> {
         let mut out = Vec::with_capacity(
-            b"rekindle-voice-packet-v1".len()
-                + self.sender_key.len()
-                + 12
-                + self.audio_data.len(),
+            b"rekindle-voice-packet-v1".len() + self.sender_key.len() + 12 + self.audio_data.len(),
         );
         out.extend_from_slice(b"rekindle-voice-packet-v1");
         out.extend_from_slice(&self.sender_key);

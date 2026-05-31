@@ -102,9 +102,7 @@ mod tests {
         let mut window = VecDeque::new();
         let p = policy(5, 60);
         for i in 0..4 {
-            assert!(
-                observe_join(&mut window, 100 + i, &format!("p{i}"), Some(&p)).is_none()
-            );
+            assert!(observe_join(&mut window, 100 + i, &format!("p{i}"), Some(&p)).is_none());
         }
         assert_eq!(window.len(), 4);
     }

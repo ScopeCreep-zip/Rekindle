@@ -172,7 +172,10 @@ impl McuLoop {
             let transport = self.transport.lock().await;
             select_recipients(&transport.peer_keys(), &self.our_key_bytes)
         };
-        let hex_keys: Vec<String> = decoded_streams.iter().map(|(key, _)| hex::encode(key)).collect();
+        let hex_keys: Vec<String> = decoded_streams
+            .iter()
+            .map(|(key, _)| hex::encode(key))
+            .collect();
 
         for recipient_key in &recipient_keys {
             let streams_for_recipient: Vec<(&str, &[f32])> = decoded_streams
@@ -275,8 +278,7 @@ mod tests {
     #[test]
     fn select_recipients_drops_invalid_hex() {
         let me = vec![0u8; 32];
-        let recipients =
-            select_recipients(&["not-hex".to_string(), hex::encode(&me)], &me);
+        let recipients = select_recipients(&["not-hex".to_string(), hex::encode(&me)], &me);
         assert!(recipients.is_empty(), "self filtered + invalid dropped");
     }
 }

@@ -15,5 +15,6 @@ pub async fn expand_community_segment(
     community_id: String,
     state: State<'_, SharedState>,
 ) -> Result<u32, String> {
-    crate::services::community::segments::expand_community_segment(state.inner(), &community_id).await
+    crate::services::community::segments::expand_community_segment(state.inner(), &community_id)
+        .await
 }

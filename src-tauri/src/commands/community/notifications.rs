@@ -1,7 +1,7 @@
 use tauri::State;
 
-use crate::services::community_notifications_runtime::QuietHoursSettingsDto;
 use crate::db::DbPool;
+use crate::services::community_notifications_runtime::QuietHoursSettingsDto;
 use crate::state::SharedState;
 
 #[tauri::command]
@@ -110,11 +110,13 @@ pub async fn get_do_not_disturb(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<bool, String> {
-    Ok(crate::services::community::notifications::is_do_not_disturb_active(
-        state.inner(),
-        pool.inner(),
+    Ok(
+        crate::services::community::notifications::is_do_not_disturb_active(
+            state.inner(),
+            pool.inner(),
+        )
+        .await,
     )
-    .await)
 }
 
 #[tauri::command]

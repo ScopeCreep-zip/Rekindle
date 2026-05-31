@@ -60,8 +60,16 @@ impl EnvelopeStore for SqliteEnvelopeStore {
                      max_retries, last_error)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, NULL)",
                 rusqlite::params![
-                    owner, recipient, kind_str, seq, correlation,
-                    payload, created_at, next_retry, retry_count, max_retries,
+                    owner,
+                    recipient,
+                    kind_str,
+                    seq,
+                    correlation,
+                    payload,
+                    created_at,
+                    next_retry,
+                    retry_count,
+                    max_retries,
                 ],
             )?;
             Ok(conn.last_insert_rowid())
@@ -92,12 +100,13 @@ impl EnvelopeStore for SqliteEnvelopeStore {
             )?;
             let rows = stmt.query_map(rusqlite::params![owner, now, lim], |row| {
                 let kind_str: String = row.get(2)?;
-                let kind = EnvelopeKind::from_wire(&kind_str)
-                    .ok_or_else(|| rusqlite::Error::FromSqlConversionFailure(
+                let kind = EnvelopeKind::from_wire(&kind_str).ok_or_else(|| {
+                    rusqlite::Error::FromSqlConversionFailure(
                         2,
                         rusqlite::types::Type::Text,
                         format!("unknown envelope_kind: {kind_str}").into(),
-                    ))?;
+                    )
+                })?;
                 let seq_i: i64 = row.get(3)?;
                 let created_at_i: i64 = row.get(6)?;
                 let next_retry_i: i64 = row.get(7)?;
@@ -192,10 +201,7 @@ impl EnvelopeStore for SqliteEnvelopeStore {
         self.mark_delivered(id).await
     }
 
-    async fn cancel_by_correlation(
-        &self,
-        correlation_id: &str,
-    ) -> Result<usize, StoreError> {
+    async fn cancel_by_correlation(&self, correlation_id: &str) -> Result<usize, StoreError> {
         let cid = correlation_id.to_string();
         db_call(&self.pool, move |conn| {
             let n = conn.execute(
@@ -324,8 +330,16 @@ impl EnvelopeStore for SqliteEnvelopeStore {
                      group_participants, inserted_at_ms)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
                 rusqlite::params![
-                    owner, call_id, peer, kind, status,
-                    expires, my_secret, peer_pub, participants, inserted,
+                    owner,
+                    call_id,
+                    peer,
+                    kind,
+                    status,
+                    expires,
+                    my_secret,
+                    peer_pub,
+                    participants,
+                    inserted,
                 ],
             )?;
             Ok(())
@@ -334,11 +348,7 @@ impl EnvelopeStore for SqliteEnvelopeStore {
         .map_err(map_db_err)
     }
 
-    async fn delete_active_call(
-        &self,
-        owner_key: &str,
-        call_id: &str,
-    ) -> Result<(), StoreError> {
+    async fn delete_active_call(&self, owner_key: &str, call_id: &str) -> Result<(), StoreError> {
         let owner = owner_key.to_string();
         let cid = call_id.to_string();
         db_call(&self.pool, move |conn| {
@@ -369,8 +379,8 @@ impl EnvelopeStore for SqliteEnvelopeStore {
                 let expires_i: i64 = row.get(4)?;
                 let inserted_i: i64 = row.get(8)?;
                 let participants_str: String = row.get(7)?;
-                let group_participants: Vec<String> = serde_json::from_str(&participants_str)
-                    .unwrap_or_default();
+                let group_participants: Vec<String> =
+                    serde_json::from_str(&participants_str).unwrap_or_default();
                 Ok(PersistedCallState {
                     owner_key: String::new(), // filled below
                     call_id: row.get(0)?,

@@ -99,7 +99,10 @@ mod tests {
 
     #[tokio::test]
     async fn shutdown_breaks_the_loop() {
-        let detector = GameDetector::new(crate::database::GameDatabase::bundled(), Duration::from_millis(10));
+        let detector = GameDetector::new(
+            crate::database::GameDatabase::bundled(),
+            Duration::from_millis(10),
+        );
         let publisher = Arc::new(CapturingPublisher {
             events: Mutex::new(Vec::new()),
         });

@@ -7,8 +7,8 @@
 //! references so the deps_impl method bodies stay short.
 
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 use rekindle_voice::{
     VoiceError, VoiceSessionDeps, VoiceSessionStartup, VoiceShutdownHandles, VoiceShutdownOpts,
@@ -98,10 +98,15 @@ pub(super) fn init_voice_session_impl(
     // Build the real transport with full signing-key + AEAD wiring
     // (Veilid routing context init, ed25519 signing key for
     // packet signatures, call_key for 1:1 AEAD).
-    let owner_pubkey = state_helpers::current_owner_key(state)
-        .map_err(|_| VoiceError::IdentityNotLoaded)?;
-    let transport =
-        create_transport_impl(state, &owner_pubkey, channel_id, community_id, peer_route_blob);
+    let owner_pubkey =
+        state_helpers::current_owner_key(state).map_err(|_| VoiceError::IdentityNotLoaded)?;
+    let transport = create_transport_impl(
+        state,
+        &owner_pubkey,
+        channel_id,
+        community_id,
+        peer_route_blob,
+    );
     let shared_transport = Arc::new(tokio::sync::Mutex::new(transport));
 
     // Install the real transport on the handle (overwrite the

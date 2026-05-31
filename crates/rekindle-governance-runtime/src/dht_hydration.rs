@@ -90,7 +90,10 @@ pub async fn open_community_dht_records<D: GovernanceRuntimeDeps>(deps: &D) {
         deps.watch_community_records_post_open(&rec.id).await;
     }
 
-    tracing::info!(count = records.len(), "opened community DHT records after login");
+    tracing::info!(
+        count = records.len(),
+        "opened community DHT records after login"
+    );
 }
 
 /// Recover per-community registry-linked state from the DHT:

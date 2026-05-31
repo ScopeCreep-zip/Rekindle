@@ -351,7 +351,10 @@ pub async fn upload_sticker<D: ChannelMessagingDeps>(
 }
 
 /// Phase 19.f — upload a soundboard sound.
-#[allow(clippy::too_many_arguments, reason = "Mirrors src-tauri upload_soundboard_sound signature; consolidating into a struct would just reshape the call site.")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Mirrors src-tauri upload_soundboard_sound signature; consolidating into a struct would just reshape the call site."
+)]
 pub async fn upload_soundboard_sound<D: ChannelMessagingDeps>(
     deps: &D,
     community_id: &str,
@@ -366,8 +369,7 @@ pub async fn upload_soundboard_sound<D: ChannelMessagingDeps>(
     validate_soundboard_bytes(&bytes)?;
     SoundboardMeta::validate_duration(duration_seconds)
         .map_err(|e| ChannelError::InvalidId(e.to_string()))?;
-    SoundboardMeta::validate_volume(volume)
-        .map_err(|e| ChannelError::InvalidId(e.to_string()))?;
+    SoundboardMeta::validate_volume(volume).map_err(|e| ChannelError::InvalidId(e.to_string()))?;
     SoundboardMeta::validate_emoji(emoji.as_deref())
         .map_err(|e| ChannelError::InvalidId(e.to_string()))?;
     enforce_count_limit(
@@ -473,9 +475,9 @@ pub fn list_expressions<D: ChannelMessagingDeps>(
     deps: &D,
     community_id: &str,
 ) -> Result<Vec<ExpressionView>, ChannelError> {
-    let gov = deps
-        .governance_state(community_id)
-        .ok_or_else(|| ChannelError::Adapter("governance state not loaded for this community".into()))?;
+    let gov = deps.governance_state(community_id).ok_or_else(|| {
+        ChannelError::Adapter("governance state not loaded for this community".into())
+    })?;
     let mut expressions: Vec<_> = gov
         .expressions
         .into_iter()
@@ -586,7 +588,10 @@ mod tests {
     #[test]
     fn detect_audio_ogg_webm_mp3() {
         assert_eq!(detect_audio_kind(b"OggS...."), Some("audio/ogg"));
-        assert_eq!(detect_audio_kind(b"\x1A\x45\xDF\xA3...."), Some("audio/webm"));
+        assert_eq!(
+            detect_audio_kind(b"\x1A\x45\xDF\xA3...."),
+            Some("audio/webm")
+        );
         assert_eq!(detect_audio_kind(b"ID3...."), Some("audio/mpeg"));
         // MP3 sync word
         assert_eq!(

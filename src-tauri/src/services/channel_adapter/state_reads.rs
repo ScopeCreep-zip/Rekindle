@@ -34,10 +34,7 @@ pub(super) fn channel_info_impl(
     let community = communities.get(community_id)?;
     let channel = community.channels.iter().find(|c| c.id == channel_id)?;
     let is_forum = matches!(channel.channel_type, ChannelType::Forum);
-    let last_send_at_ms = community
-        .channel_last_send_at
-        .get(channel_id)
-        .copied();
+    let last_send_at_ms = community.channel_last_send_at.get(channel_id).copied();
     Some(ChannelInfoSnapshot {
         channel_id: channel.id.clone(),
         channel_type: channel.channel_type.to_string(),
@@ -173,7 +170,10 @@ pub(super) fn list_member_profiles_impl(
         .collect()
 }
 
-pub(super) fn community_roles_impl(adapter: &ChannelAdapter, community_id: &str) -> Vec<RoleSnapshot> {
+pub(super) fn community_roles_impl(
+    adapter: &ChannelAdapter,
+    community_id: &str,
+) -> Vec<RoleSnapshot> {
     adapter
         .state
         .communities

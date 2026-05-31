@@ -33,9 +33,7 @@ pub async fn send_dm_message<D: DmDeps + ?Sized>(
         .await?
         .ok_or_else(|| DmError::SessionNotFound(record_key.to_string()))?;
     if meta.is_group {
-        return Err(DmError::InvalidInput(
-            "group dm send not yet wired".into(),
-        ));
+        return Err(DmError::InvalidInput("group dm send not yet wired".into()));
     }
     let my_subkey = meta.my_subkey;
     let my_pseudonym = meta.initiator_pseudonym.clone();
@@ -52,8 +50,7 @@ pub async fn send_dm_message<D: DmDeps + ?Sized>(
         .next_sequence_for_sender(&owner_key, record_key, &my_pseudonym)
         .await?;
 
-    let payload_bytes =
-        build_envelope(mek_bytes, mek_generation, body, next_sequence, now_ms)?;
+    let payload_bytes = build_envelope(mek_bytes, mek_generation, body, next_sequence, now_ms)?;
 
     let slot_signing = rekindle_secrets::derive::derive_slot_keypair(&meta.slot_seed, my_subkey)
         .map_err(|e| DmError::InvalidInput(format!("derive slot keypair: {e}")))?;
@@ -117,8 +114,7 @@ pub(crate) async fn maybe_ratchet<D: DmDeps + ?Sized>(
         .flatten();
 
     let now_secs = i64::try_from(rekindle_utils::timestamp_ms() / 1000).unwrap_or(i64::MAX);
-    let time_trigger =
-        oldest_ts.is_some_and(|ts| now_secs - ts >= DM_RATCHET_TIME_INTERVAL_SECS);
+    let time_trigger = oldest_ts.is_some_and(|ts| now_secs - ts >= DM_RATCHET_TIME_INTERVAL_SECS);
     let count_trigger =
         last_sequence > 0 && last_sequence.is_multiple_of(DM_RATCHET_MESSAGE_INTERVAL);
     if !(time_trigger || count_trigger) {

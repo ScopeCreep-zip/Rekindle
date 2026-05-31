@@ -2,7 +2,6 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
-
 use crate::channels::CommunityEvent;
 use crate::db::DbPool;
 use crate::db_helpers::db_call;

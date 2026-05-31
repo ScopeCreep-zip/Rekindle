@@ -49,13 +49,23 @@ pub enum Action {
     // ─── View transitions ───────────────────────────────────────
     ShowDashboard,
     ShowIdentitySettings,
-    ShowChannel { community: String, channel: String },
+    ShowChannel {
+        community: String,
+        channel: String,
+    },
     ShowDmInbox,
-    ShowDmThread { peer_key: String },
+    ShowDmThread {
+        peer_key: String,
+    },
     ShowFriendList,
-    ShowVoiceSession { community: String, channel: String },
+    ShowVoiceSession {
+        community: String,
+        channel: String,
+    },
     ShowDoctor,
-    ShowCommunityInfo { community: String },
+    ShowCommunityInfo {
+        community: String,
+    },
 
     // ─── Message operations ─────────────────────────────────────
     SendChannelMessage {
@@ -64,10 +74,16 @@ pub enum Action {
         text: String,
         reply_to: Option<String>,
     },
-    SendDm { peer_key: String, text: String },
+    SendDm {
+        peer_key: String,
+        text: String,
+    },
 
     // ─── Voice ──────────────────────────────────────────────────
-    JoinVoice { community: String, channel: String },
+    JoinVoice {
+        community: String,
+        channel: String,
+    },
     LeaveVoice,
     ToggleMute,
     ToggleDeafen,
@@ -76,25 +92,40 @@ pub enum Action {
     AcceptFriendRequest(String),
     RejectFriendRequest(String),
     /// Remove a friend — destructive, requires confirmation.
-    RemoveFriend { peer_key: String },
+    RemoveFriend {
+        peer_key: String,
+    },
 
     // ─── Clipboard ───────────────────────────────────────────────
     /// Copy focused message body to clipboard with 30s auto-clear.
-    YankToClipboard { text: String },
+    YankToClipboard {
+        text: String,
+    },
 
     // ─── Community operations ───────────────────────────────────
     /// Leave a community — destructive, requires confirmation.
-    LeaveCommunity { community: String },
+    LeaveCommunity {
+        community: String,
+    },
 
     // ─── Key operations ─────────────────────────────────────────
-    RequestMek { community: String, channel: String },
+    RequestMek {
+        community: String,
+        channel: String,
+    },
 
     // ─── Presence ───────────────────────────────────────────────
-    SetPresence { status: String, message: Option<String> },
+    SetPresence {
+        status: String,
+        message: Option<String>,
+    },
 
     // ─── Async results ──────────────────────────────────────────
     CommandComplete(Box<CommandResult>),
-    CommandFailed { context: String, error: String },
+    CommandFailed {
+        context: String,
+        error: String,
+    },
 
     // ─── Overlay ────────────────────────────────────────────────
     OpenOverlay(OverlayKind),
@@ -102,7 +133,10 @@ pub enum Action {
     ConfirmOverlay,
 
     // ─── Notifications ──────────────────────────────────────────
-    ShowToast { message: String, level: ToastLevel },
+    ShowToast {
+        message: String,
+        level: ToastLevel,
+    },
     DismissToast,
 
     // ─── Real-time subscription events ─────────────────────────

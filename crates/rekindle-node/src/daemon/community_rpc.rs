@@ -6,23 +6,21 @@
 //! Leave notification is still best-effort RPC (fire-and-forget from
 //! the leaving member to the community route for cleanup + rekey).
 
-
 use std::sync::Arc;
 use std::time::Duration;
 
 use parking_lot::RwLock;
 
-use rekindle_transport::payload::rpc::{
-    CallResponse, CommunityLeaveNotification,
-};
 use rekindle_transport::payload::dht_types::MemberSummary;
+use rekindle_transport::payload::rpc::{CallResponse, CommunityLeaveNotification};
 
 /// Maximum time the leave handler may run before returning.
 pub(crate) const HANDLER_DEADLINE: Duration = Duration::from_secs(12);
 
 /// Module-level cache for registry keypairs loaded from the OS keyring.
-static REGISTRY_KEYPAIR_CACHE: std::sync::LazyLock<parking_lot::Mutex<std::collections::HashMap<String, Vec<u8>>>> =
-    std::sync::LazyLock::new(|| parking_lot::Mutex::new(std::collections::HashMap::new()));
+static REGISTRY_KEYPAIR_CACHE: std::sync::LazyLock<
+    parking_lot::Mutex<std::collections::HashMap<String, Vec<u8>>>,
+> = std::sync::LazyLock::new(|| parking_lot::Mutex::new(std::collections::HashMap::new()));
 
 use rekindle_utils::timestamp_ms as now_ms;
 
@@ -52,7 +50,10 @@ pub async fn process_inbox(
         return;
     };
     let Some(signing_key_bytes) = get_signing_key(signing_key) else {
-        tracing::warn!(governance_key, "inbox: signing key not available (daemon locked?)");
+        tracing::warn!(
+            governance_key,
+            "inbox: signing key not available (daemon locked?)"
+        );
         return;
     };
     let Some(transport_node) = get_transport(transport) else {
@@ -65,7 +66,10 @@ pub async fn process_inbox(
     };
 
     // Read metadata for inbox key
-    if let Err(e) = rekindle_transport::broadcast::dht_writes::open_readonly(&transport_node, governance_key).await {
+    if let Err(e) =
+        rekindle_transport::broadcast::dht_writes::open_readonly(&transport_node, governance_key)
+            .await
+    {
         tracing::warn!(governance_key, error = %e, "inbox: cannot open governance record");
         return;
     }
@@ -85,13 +89,22 @@ pub async fn process_inbox(
     // force_refresh=true to pull the latest from the DHT network.
     let metadata = if metadata.join_inbox_key.is_empty() {
         if let Ok(Some(data)) = rekindle_transport::broadcast::dht_writes::get(
-            &transport_node, governance_key,
-            rekindle_transport::payload::dht_types::MANIFEST_METADATA, true,
-        ).await {
-            match serde_json::from_slice::<rekindle_transport::payload::dht_types::CommunityMetadata>(&data) {
+            &transport_node,
+            governance_key,
+            rekindle_transport::payload::dht_types::MANIFEST_METADATA,
+            true,
+        )
+        .await
+        {
+            match serde_json::from_slice::<rekindle_transport::payload::dht_types::CommunityMetadata>(
+                &data,
+            ) {
                 Ok(m) if !m.join_inbox_key.is_empty() => m,
                 Ok(_) => {
-                    tracing::warn!(governance_key, "inbox: join_inbox_key still empty after network refresh");
+                    tracing::warn!(
+                        governance_key,
+                        "inbox: join_inbox_key still empty after network refresh"
+                    );
                     return;
                 }
                 Err(e) => {
@@ -100,7 +113,10 @@ pub async fn process_inbox(
                 }
             }
         } else {
-            tracing::warn!(governance_key, "inbox: metadata fetch failed on network refresh");
+            tracing::warn!(
+                governance_key,
+                "inbox: metadata fetch failed on network refresh"
+            );
             return;
         }
     } else {
@@ -108,11 +124,21 @@ pub async fn process_inbox(
     };
 
     // Open inbox readonly to read pending requests
-    if let Err(e) = rekindle_transport::broadcast::dht_writes::open_readonly(&transport_node, &metadata.join_inbox_key).await {
+    if let Err(e) = rekindle_transport::broadcast::dht_writes::open_readonly(
+        &transport_node,
+        &metadata.join_inbox_key,
+    )
+    .await
+    {
         tracing::warn!(inbox_key = %metadata.join_inbox_key, error = %e, "inbox: cannot open inbox record");
         return;
     }
-    let pending = match rekindle_transport::operations::community::read_inbox_requests(&dht, &metadata.join_inbox_key).await {
+    let pending = match rekindle_transport::operations::community::read_inbox_requests(
+        &dht,
+        &metadata.join_inbox_key,
+    )
+    .await
+    {
         Ok(p) => p,
         Err(e) => {
             tracing::warn!(inbox_key = %metadata.join_inbox_key, error = %e, "inbox: read_inbox_requests failed");
@@ -130,14 +156,38 @@ pub async fn process_inbox(
     open_registry_writable(&transport_node, &registry_key).await;
 
     // Read current state
-    let bans = dht.governance().read_bans(governance_key).await.unwrap_or_else(|e| { tracing::warn!(error = %e, "DHT read failed, using empty"); Vec::new() });
-    let mut members = dht.registry().read_member_index(&registry_key).await.unwrap_or_else(|e| { tracing::warn!(error = %e, "DHT read failed, using empty"); Vec::new() });
-    let channels = dht.governance().read_channels(governance_key).await.unwrap_or_else(|e| { tracing::warn!(error = %e, "DHT read failed, using empty"); Vec::new() });
+    let bans = dht
+        .governance()
+        .read_bans(governance_key)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "DHT read failed, using empty");
+            Vec::new()
+        });
+    let mut members = dht
+        .registry()
+        .read_member_index(&registry_key)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "DHT read failed, using empty");
+            Vec::new()
+        });
+    let channels = dht
+        .governance()
+        .read_channels(governance_key)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "DHT read failed, using empty");
+            Vec::new()
+        });
 
     // Process leave entries first — remove members and rekey
     let mut left_members = Vec::new();
     for req in &pending {
-        if matches!(req.status, rekindle_transport::payload::dht_types::PendingJoinStatus::Left { .. }) {
+        if matches!(
+            req.status,
+            rekindle_transport::payload::dht_types::PendingJoinStatus::Left { .. }
+        ) {
             left_members.push(req.requester_pseudonym_hex.clone());
         }
     }
@@ -147,43 +197,77 @@ pub async fn process_inbox(
             members.retain(|m| m.pseudonym_key != *pseudonym);
         }
         if members.len() < before {
-            let _ = dht.registry().write_member_index(&registry_key, &members).await;
-            tracing::info!(removed = before - members.len(), "inbox: processed leave entries");
+            let _ = dht
+                .registry()
+                .write_member_index(&registry_key, &members)
+                .await;
+            tracing::info!(
+                removed = before - members.len(),
+                "inbox: processed leave entries"
+            );
 
             // Remove vault copies for left members
-            let mut vault = dht.registry().read_mek_vault(&registry_key).await.unwrap_or_else(|e| { tracing::warn!(error = %e, "DHT read failed, using empty"); Vec::new() });
+            let mut vault = dht
+                .registry()
+                .read_mek_vault(&registry_key)
+                .await
+                .unwrap_or_else(|e| {
+                    tracing::warn!(error = %e, "DHT read failed, using empty");
+                    Vec::new()
+                });
             for entry in &mut vault {
-                entry.copies.retain(|c| !left_members.contains(&c.target_pseudonym));
+                entry
+                    .copies
+                    .retain(|c| !left_members.contains(&c.target_pseudonym));
             }
             let _ = dht.registry().write_mek_vault(&registry_key, &vault).await;
 
             // Rekey for forward secrecy
             if let Some(sk) = get_signing_key(signing_key) {
-                let ps = rekindle_transport::crypto::pseudonym::derive_community_pseudonym(&sk, governance_key);
+                let ps = rekindle_transport::crypto::pseudonym::derive_community_pseudonym(
+                    &sk,
+                    governance_key,
+                );
                 let ps_hex = hex::encode(ps.verifying_key().to_bytes());
                 let mut new_vault = Vec::new();
                 for channel in &channels {
-                    let gen = mek_cache.read()
+                    let gen = mek_cache
+                        .read()
                         .current(governance_key, &channel.id)
-                        .map_or(0, rekindle_transport::crypto::mek::Mek::generation) + 1;
+                        .map_or(0, rekindle_transport::crypto::mek::Mek::generation)
+                        + 1;
                     let new_mek = rekindle_transport::crypto::mek::Mek::generate(gen);
                     let mek_wire = new_mek.to_wire_bytes();
-                    let copies = members.iter().filter_map(|m| {
-                        let pub_bytes: [u8; 32] = hex::decode(&m.pseudonym_key).ok()?.try_into().ok()?;
-                        rekindle_transport::crypto::mek::wrap_mek(&ps, &pub_bytes, &mek_wire).ok().map(|wrapped| {
-                            rekindle_transport::payload::dht_types::EncryptedMekCopy {
-                                target_pseudonym: m.pseudonym_key.clone(), encrypted_mek: wrapped,
-                            }
+                    let copies = members
+                        .iter()
+                        .filter_map(|m| {
+                            let pub_bytes: [u8; 32] =
+                                hex::decode(&m.pseudonym_key).ok()?.try_into().ok()?;
+                            rekindle_transport::crypto::mek::wrap_mek(&ps, &pub_bytes, &mek_wire)
+                                .ok()
+                                .map(|wrapped| {
+                                    rekindle_transport::payload::dht_types::EncryptedMekCopy {
+                                        target_pseudonym: m.pseudonym_key.clone(),
+                                        encrypted_mek: wrapped,
+                                    }
+                                })
                         })
-                    }).collect();
+                        .collect();
                     new_vault.push(rekindle_transport::payload::dht_types::MekVaultEntry {
-                        channel_id: channel.id.clone(), generation: gen,
-                        rotator_pseudonym: ps_hex.clone(), copies,
+                        channel_id: channel.id.clone(),
+                        generation: gen,
+                        rotator_pseudonym: ps_hex.clone(),
+                        copies,
                     });
-                    mek_cache.write().insert(governance_key, &channel.id, new_mek);
+                    mek_cache
+                        .write()
+                        .insert(governance_key, &channel.id, new_mek);
                 }
                 if !new_vault.is_empty() {
-                    let _ = dht.registry().write_mek_vault(&registry_key, &new_vault).await;
+                    let _ = dht
+                        .registry()
+                        .write_mek_vault(&registry_key, &new_vault)
+                        .await;
                 }
                 tracing::info!(rekeyed = new_vault.len(), "inbox: rekeyed after leave");
             }
@@ -194,7 +278,10 @@ pub async fn process_inbox(
     let mut new_members = 0u32;
     for req in &pending {
         // Skip leave entries (already processed above)
-        if matches!(req.status, rekindle_transport::payload::dht_types::PendingJoinStatus::Left { .. }) {
+        if matches!(
+            req.status,
+            rekindle_transport::payload::dht_types::PendingJoinStatus::Left { .. }
+        ) {
             continue;
         }
         // Verify Ed25519 signature to prevent impersonation via shared inbox keypair
@@ -206,13 +293,17 @@ pub async fn process_inbox(
         } else {
             let sig_ok = (|| -> Option<bool> {
                 let sig_bytes: [u8; 64] = hex::decode(&req.signature_hex).ok()?.try_into().ok()?;
-                let pub_bytes: [u8; 32] = hex::decode(&req.requester_pseudonym_hex).ok()?.try_into().ok()?;
+                let pub_bytes: [u8; 32] = hex::decode(&req.requester_pseudonym_hex)
+                    .ok()?
+                    .try_into()
+                    .ok()?;
                 let verifying_key = ed25519_dalek::VerifyingKey::from_bytes(&pub_bytes).ok()?;
                 let signature = ed25519_dalek::Signature::from_bytes(&sig_bytes);
                 let content = req.signature_content();
                 use ed25519_dalek::Verifier;
                 Some(verifying_key.verify(&content, &signature).is_ok())
-            })().unwrap_or(false);
+            })()
+            .unwrap_or(false);
             if !sig_ok {
                 tracing::warn!(
                     requester = %&req.requester_pseudonym_hex[..16.min(req.requester_pseudonym_hex.len())],
@@ -222,12 +313,18 @@ pub async fn process_inbox(
             }
         }
         // Skip banned
-        if bans.iter().any(|b| b.pseudonym_key == req.requester_pseudonym_hex) {
+        if bans
+            .iter()
+            .any(|b| b.pseudonym_key == req.requester_pseudonym_hex)
+        {
             tracing::info!(requester = %&req.requester_pseudonym_hex[..16.min(req.requester_pseudonym_hex.len())], "inbox: banned, skipping");
             continue;
         }
         // Skip already member
-        if members.iter().any(|m| m.pseudonym_key == req.requester_pseudonym_hex) {
+        if members
+            .iter()
+            .any(|m| m.pseudonym_key == req.requester_pseudonym_hex)
+        {
             tracing::debug!(requester = %&req.requester_pseudonym_hex[..16.min(req.requester_pseudonym_hex.len())], "inbox: already member, skipping");
             continue;
         }
@@ -236,10 +333,23 @@ pub async fn process_inbox(
             rekindle_transport::payload::dht_types::JoinPolicy::AutoAllow => {}
             rekindle_transport::payload::dht_types::JoinPolicy::WaitingRoom => {
                 // Add to moderation queue for manual approval
-                let mut queue = dht.registry().read_moderation_queue(&registry_key).await.unwrap_or_else(|e| { tracing::warn!(error = %e, "DHT read failed, using empty"); Vec::new() });
-                if !queue.iter().any(|p| p.requester_pseudonym_hex == req.requester_pseudonym_hex) {
+                let mut queue = dht
+                    .registry()
+                    .read_moderation_queue(&registry_key)
+                    .await
+                    .unwrap_or_else(|e| {
+                        tracing::warn!(error = %e, "DHT read failed, using empty");
+                        Vec::new()
+                    });
+                if !queue
+                    .iter()
+                    .any(|p| p.requester_pseudonym_hex == req.requester_pseudonym_hex)
+                {
                     queue.push(req.clone());
-                    let _ = dht.registry().write_moderation_queue(&registry_key, &queue).await;
+                    let _ = dht
+                        .registry()
+                        .write_moderation_queue(&registry_key, &queue)
+                        .await;
                     tracing::info!(requester = %&req.display_name, "inbox: added to waiting room");
                 }
                 continue;
@@ -254,7 +364,12 @@ pub async fn process_inbox(
         }
 
         // Register member
-        let slot = members.iter().map(|m| m.subkey_index).max().map_or(1, |m| m + 1).max(1);
+        let slot = members
+            .iter()
+            .map(|m| m.subkey_index)
+            .max()
+            .map_or(1, |m| m + 1)
+            .max(1);
         members.push(MemberSummary {
             pseudonym_key: req.requester_pseudonym_hex.clone(),
             display_name: req.display_name.clone(),
@@ -270,30 +385,59 @@ pub async fn process_inbox(
         tracing::info!(member = %req.display_name, slot, "inbox: member registered");
     }
 
-    if new_members == 0 { return }
+    if new_members == 0 {
+        return;
+    }
 
     // Write updated member index
-    if let Err(e) = dht.registry().write_member_index(&registry_key, &members).await {
+    if let Err(e) = dht
+        .registry()
+        .write_member_index(&registry_key, &members)
+        .await
+    {
         tracing::error!(error = %e, "inbox: failed to write member index");
         return;
     }
 
     // Wrap MEKs for all new members and update vault
-    let mut vault = dht.registry().read_mek_vault(&registry_key).await.unwrap_or_else(|e| { tracing::warn!(error = %e, "DHT read failed, using empty"); Vec::new() });
+    let mut vault = dht
+        .registry()
+        .read_mek_vault(&registry_key)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "DHT read failed, using empty");
+            Vec::new()
+        });
     for req in &pending {
-        if bans.iter().any(|b| b.pseudonym_key == req.requester_pseudonym_hex) { continue }
-        if matches!(metadata.join_policy, rekindle_transport::payload::dht_types::JoinPolicy::WaitingRoom) { continue }
+        if bans
+            .iter()
+            .any(|b| b.pseudonym_key == req.requester_pseudonym_hex)
+        {
+            continue;
+        }
+        if matches!(
+            metadata.join_policy,
+            rekindle_transport::payload::dht_types::JoinPolicy::WaitingRoom
+        ) {
+            continue;
+        }
 
         match rekindle_transport::operations::mek::wrap_meks_for_member(
-            &channels, &req.requester_pseudonym_hex, &signing_key_bytes, governance_key, mek_cache,
+            &channels,
+            &req.requester_pseudonym_hex,
+            &signing_key_bytes,
+            governance_key,
+            mek_cache,
         ) {
             Ok(transfers) => {
                 for t in &transfers {
                     if let Some(entry) = vault.iter_mut().find(|e| e.channel_id == t.channel_id) {
-                        entry.copies.push(rekindle_transport::payload::dht_types::EncryptedMekCopy {
-                            target_pseudonym: req.requester_pseudonym_hex.clone(),
-                            encrypted_mek: t.wrapped_mek.clone(),
-                        });
+                        entry.copies.push(
+                            rekindle_transport::payload::dht_types::EncryptedMekCopy {
+                                target_pseudonym: req.requester_pseudonym_hex.clone(),
+                                encrypted_mek: t.wrapped_mek.clone(),
+                            },
+                        );
                     }
                 }
             }
@@ -307,22 +451,45 @@ pub async fn process_inbox(
     // joiner's route. The joiner's on_gossip handler sees it and completes
     // the pending_join oneshot, unblocking the join immediately.
     for req in &pending {
-        if bans.iter().any(|b| b.pseudonym_key == req.requester_pseudonym_hex) { continue; }
-        if matches!(req.status, rekindle_transport::payload::dht_types::PendingJoinStatus::Left { .. }) { continue; }
-        if req.profile_dht_key.is_empty() { continue; }
+        if bans
+            .iter()
+            .any(|b| b.pseudonym_key == req.requester_pseudonym_hex)
+        {
+            continue;
+        }
+        if matches!(
+            req.status,
+            rekindle_transport::payload::dht_types::PendingJoinStatus::Left { .. }
+        ) {
+            continue;
+        }
+        if req.profile_dht_key.is_empty() {
+            continue;
+        }
 
         // Find the slot we assigned to this member
-        let Some(member) = members.iter().find(|m| m.pseudonym_key == req.requester_pseudonym_hex) else {
+        let Some(member) = members
+            .iter()
+            .find(|m| m.pseudonym_key == req.requester_pseudonym_hex)
+        else {
             continue;
         };
         let slot = member.subkey_index;
 
         // Read joiner's route blob from their profile DHT record
-        let _ = rekindle_transport::broadcast::dht_writes::open_readonly(&transport_node, &req.profile_dht_key).await;
+        let _ = rekindle_transport::broadcast::dht_writes::open_readonly(
+            &transport_node,
+            &req.profile_dht_key,
+        )
+        .await;
         let route_blob = match rekindle_transport::broadcast::dht_writes::get(
-            &transport_node, &req.profile_dht_key,
-            rekindle_transport::payload::dht_types::PROFILE_SUBKEY_ROUTE_BLOB, false,
-        ).await {
+            &transport_node,
+            &req.profile_dht_key,
+            rekindle_transport::payload::dht_types::PROFILE_SUBKEY_ROUTE_BLOB,
+            false,
+        )
+        .await
+        {
             Ok(Some(blob)) if !blob.is_empty() => {
                 tracing::info!(member = %req.display_name, blob_bytes = blob.len(), "inbox: joiner route blob read from profile");
                 blob
@@ -340,9 +507,12 @@ pub async fn process_inbox(
         // Look up the wrapped MEK for this specific joiner from the vault we just updated.
         // Carrying it in the notification means the joiner has the MEK instantly — no
         // DHT vault read needed, no propagation dependency.
-        let (mek_for_joiner, mek_gen) = vault.iter()
+        let (mek_for_joiner, mek_gen) = vault
+            .iter()
             .find_map(|entry| {
-                entry.copies.iter()
+                entry
+                    .copies
+                    .iter()
                     .find(|c| c.target_pseudonym == req.requester_pseudonym_hex)
                     .map(|c| (c.encrypted_mek.clone(), entry.generation))
             })
@@ -359,10 +529,15 @@ pub async fn process_inbox(
             },
         );
         let report = rekindle_transport::broadcast::gossip::send_direct(
-            &transport_node, governance_key, &members[0].pseudonym_key,
-            &signing_key_bytes, join_accepted,
-            &req.requester_pseudonym_hex, &route_blob,
-        ).await;
+            &transport_node,
+            governance_key,
+            &members[0].pseudonym_key,
+            &signing_key_bytes,
+            join_accepted,
+            &req.requester_pseudonym_hex,
+            &route_blob,
+        )
+        .await;
         if report.delivered > 0 {
             tracing::info!(member = %req.display_name, slot, "inbox: JoinAccepted sent directly to joiner (tier 2)");
         } else {
@@ -375,7 +550,12 @@ pub async fn process_inbox(
     }
 
     // Save session
-    { let guard = session.read(); if let Some(ref s) = *guard { let _ = s.save(session_path); } }
+    {
+        let guard = session.read();
+        if let Some(ref s) = *guard {
+            let _ = s.save(session_path);
+        }
+    }
     tracing::info!(community = %metadata.name, new_members, total = members.len(), "inbox processing complete");
 }
 
@@ -390,9 +570,19 @@ pub(crate) async fn handle_leave(
     transport: &RwLock<Option<Arc<rekindle_transport::TransportNode>>>,
     session_path: &std::path::Path,
 ) -> CallResponse {
-    if let Ok(response) = tokio::time::timeout(HANDLER_DEADLINE, handle_leave_inner(
-        notif, session, signing_key, mek_cache, transport, session_path,
-    )).await {
+    if let Ok(response) = tokio::time::timeout(
+        HANDLER_DEADLINE,
+        handle_leave_inner(
+            notif,
+            session,
+            signing_key,
+            mek_cache,
+            transport,
+            session_path,
+        ),
+    )
+    .await
+    {
         response
     } else {
         tracing::error!(
@@ -420,24 +610,47 @@ async fn handle_leave_inner(
     let Some(registry_key) = require_operator_registry(session, &notif.governance_key) else {
         return CallResponse::Ack;
     };
-    let Some(transport_node) = get_transport(transport) else { return CallResponse::Ack };
-    let Ok(dht) = transport_node.dht() else { return CallResponse::Ack };
+    let Some(transport_node) = get_transport(transport) else {
+        return CallResponse::Ack;
+    };
+    let Ok(dht) = transport_node.dht() else {
+        return CallResponse::Ack;
+    };
 
     open_registry_writable(&transport_node, &registry_key).await;
 
     // Remove from index
-    let mut members = dht.registry().read_member_index(&registry_key).await.unwrap_or_else(|e| { tracing::warn!(error = %e, "DHT read failed, using empty"); Vec::new() });
+    let mut members = dht
+        .registry()
+        .read_member_index(&registry_key)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "DHT read failed, using empty");
+            Vec::new()
+        });
     let before = members.len();
     members.retain(|m| m.pseudonym_key != notif.leaving_pseudonym_hex);
     if members.len() < before {
-        let _ = dht.registry().write_member_index(&registry_key, &members).await;
+        let _ = dht
+            .registry()
+            .write_member_index(&registry_key, &members)
+            .await;
         tracing::info!(remaining = members.len(), "member removed");
     }
 
     // Remove vault copies
-    let mut vault = dht.registry().read_mek_vault(&registry_key).await.unwrap_or_else(|e| { tracing::warn!(error = %e, "DHT read failed, using empty"); Vec::new() });
+    let mut vault = dht
+        .registry()
+        .read_mek_vault(&registry_key)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "DHT read failed, using empty");
+            Vec::new()
+        });
     for entry in &mut vault {
-        entry.copies.retain(|c| c.target_pseudonym != notif.leaving_pseudonym_hex);
+        entry
+            .copies
+            .retain(|c| c.target_pseudonym != notif.leaving_pseudonym_hex);
     }
     let _ = dht.registry().write_mek_vault(&registry_key, &vault).await;
 
@@ -446,39 +659,71 @@ async fn handle_leave_inner(
         tracing::warn!("locked — cannot rekey");
         return CallResponse::Ack;
     };
-    let channels = dht.governance().read_channels(&notif.governance_key).await.unwrap_or_else(|e| { tracing::warn!(error = %e, "DHT read failed, using empty"); Vec::new() });
+    let channels = dht
+        .governance()
+        .read_channels(&notif.governance_key)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "DHT read failed, using empty");
+            Vec::new()
+        });
     let our_ps = rekindle_transport::crypto::pseudonym::derive_community_pseudonym(
-        &signing_key_bytes, &notif.governance_key,
+        &signing_key_bytes,
+        &notif.governance_key,
     );
     let our_ps_hex = hex::encode(our_ps.verifying_key().to_bytes());
 
     let mut new_vault = Vec::new();
     for channel in &channels {
-        let gen = mek_cache.read()
+        let gen = mek_cache
+            .read()
             .current(&notif.governance_key, &channel.id)
-            .map_or(0, rekindle_transport::crypto::mek::Mek::generation) + 1;
+            .map_or(0, rekindle_transport::crypto::mek::Mek::generation)
+            + 1;
         let new_mek = rekindle_transport::crypto::mek::Mek::generate(gen);
         let mek_wire = new_mek.to_wire_bytes();
-        let copies = members.iter().filter_map(|m| {
-            let pub_bytes: [u8; 32] = hex::decode(&m.pseudonym_key).ok()?.try_into().ok()?;
-            rekindle_transport::crypto::mek::wrap_mek(&our_ps, &pub_bytes, &mek_wire).ok().map(|wrapped| {
-                rekindle_transport::payload::dht_types::EncryptedMekCopy {
-                    target_pseudonym: m.pseudonym_key.clone(), encrypted_mek: wrapped,
-                }
+        let copies = members
+            .iter()
+            .filter_map(|m| {
+                let pub_bytes: [u8; 32] = hex::decode(&m.pseudonym_key).ok()?.try_into().ok()?;
+                rekindle_transport::crypto::mek::wrap_mek(&our_ps, &pub_bytes, &mek_wire)
+                    .ok()
+                    .map(
+                        |wrapped| rekindle_transport::payload::dht_types::EncryptedMekCopy {
+                            target_pseudonym: m.pseudonym_key.clone(),
+                            encrypted_mek: wrapped,
+                        },
+                    )
             })
-        }).collect();
+            .collect();
         new_vault.push(rekindle_transport::payload::dht_types::MekVaultEntry {
-            channel_id: channel.id.clone(), generation: gen,
-            rotator_pseudonym: our_ps_hex.clone(), copies,
+            channel_id: channel.id.clone(),
+            generation: gen,
+            rotator_pseudonym: our_ps_hex.clone(),
+            copies,
         });
-        mek_cache.write().insert(&notif.governance_key, &channel.id, new_mek);
+        mek_cache
+            .write()
+            .insert(&notif.governance_key, &channel.id, new_mek);
     }
     if !new_vault.is_empty() {
-        let _ = dht.registry().write_mek_vault(&registry_key, &new_vault).await;
+        let _ = dht
+            .registry()
+            .write_mek_vault(&registry_key, &new_vault)
+            .await;
     }
 
-    { let guard = session.read(); if let Some(ref s) = *guard { let _ = s.save(session_path); } }
-    tracing::info!(rekeyed = new_vault.len(), remaining = members.len(), "leave + rekey complete");
+    {
+        let guard = session.read();
+        if let Some(ref s) = *guard {
+            let _ = s.save(session_path);
+        }
+    }
+    tracing::info!(
+        rekeyed = new_vault.len(),
+        remaining = members.len(),
+        "leave + rekey complete"
+    );
     CallResponse::Ack
 }
 
@@ -486,7 +731,11 @@ async fn handle_leave_inner(
 
 /// Load registry keypair bytes, using module-level cache.
 pub(crate) async fn load_registry_keypair(registry_key: &str) -> Option<Vec<u8>> {
-    let short = if registry_key.len() > 12 { &registry_key[..12] } else { registry_key };
+    let short = if registry_key.len() > 12 {
+        &registry_key[..12]
+    } else {
+        registry_key
+    };
     let label = format!("registry-{short}");
     {
         let cache = REGISTRY_KEYPAIR_CACHE.lock();
@@ -522,7 +771,8 @@ pub(crate) async fn open_registry_writable(
         Ok(()) => true,
         Err(e) => {
             tracing::warn!(error = %e, "registry open writable failed — falling back to readonly");
-            let _ = rekindle_transport::broadcast::dht_writes::open_readonly(node, registry_key).await;
+            let _ =
+                rekindle_transport::broadcast::dht_writes::open_readonly(node, registry_key).await;
             false
         }
     }
@@ -536,7 +786,9 @@ pub(crate) fn require_operator_registry(
     let guard = session.read();
     let sess = guard.as_ref()?;
     let membership = sess.community(governance_key)?;
-    if !membership.is_operator { return None; }
+    if !membership.is_operator {
+        return None;
+    }
     Some(membership.registry_key.clone())
 }
 

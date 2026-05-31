@@ -75,10 +75,7 @@ pub fn load_since(
 
 /// Latest (cursor, mac) for `owner_key`, or `(0, [0u8; 32])` if empty.
 /// Used to initialize the in-memory `AuditChain` on vault unlock.
-pub fn load_tail(
-    conn: &Connection,
-    owner_key: &str,
-) -> Result<(u64, [u8; 32]), rusqlite::Error> {
+pub fn load_tail(conn: &Connection, owner_key: &str) -> Result<(u64, [u8; 32]), rusqlite::Error> {
     use rusqlite::OptionalExtension as _;
     let row: Option<(i64, Vec<u8>)> = conn
         .query_row(
@@ -97,7 +94,10 @@ pub fn load_tail(
     }
     let mut mac = [0u8; 32];
     mac.copy_from_slice(&mac_bytes);
-    #[allow(clippy::cast_sign_loss, reason = "cursor is non-negative by SQL invariant")]
+    #[allow(
+        clippy::cast_sign_loss,
+        reason = "cursor is non-negative by SQL invariant"
+    )]
     let cursor = cursor_i64 as u64;
     Ok((cursor, mac))
 }
@@ -109,8 +109,9 @@ fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<AuditEntry> {
     let payload_json: String = row.get(3)?;
     #[allow(clippy::cast_sign_loss, reason = "see load_tail")]
     let cursor = cursor_i64 as u64;
-    let record: AuditRecord = serde_json::from_str(&payload_json)
-        .map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e)))?;
+    let record: AuditRecord = serde_json::from_str(&payload_json).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
+    })?;
     let mut prev_mac = [0u8; 32];
     let mut mac = [0u8; 32];
     if prev_mac_bytes.len() != 32 || mac_bytes.len() != 32 {
@@ -203,8 +204,7 @@ pub async fn append_async(
     {
         let ks = state.keystore.lock();
         if let Some(ref keystore) = *ks {
-            if let Err(e) =
-                crate::keystore::persist_audit_tail(keystore, entry.cursor, &entry.mac)
+            if let Err(e) = crate::keystore::persist_audit_tail(keystore, entry.cursor, &entry.mac)
             {
                 tracing::warn!(
                     cursor = entry.cursor,
@@ -331,8 +331,7 @@ pub async fn restore_chain(
     // and an `AuditChainBroken` event surfaces the tamper.
     let anchor = {
         let ks = state.keystore.lock();
-        ks.as_ref()
-            .and_then(crate::keystore::load_audit_tail)
+        ks.as_ref().and_then(crate::keystore::load_audit_tail)
     };
     // Decide whether SQLite has been tampered, taking three signals:
     //   anchor_cursor == sqlite_cursor && anchor_mac == sqlite_mac : clean.
@@ -491,7 +490,9 @@ mod tests {
 
         // verify against the loaded entries — chain is intact.
         let verifier = fixture_chain([7u8; 32]);
-        verifier.verify(&loaded).expect("persisted chain verifies cleanly");
+        verifier
+            .verify(&loaded)
+            .expect("persisted chain verifies cleanly");
     }
 
     #[tokio::test]
@@ -730,9 +731,7 @@ mod tests {
     #[test]
     fn anchor_equal_cursor_and_mac_is_clean() {
         // Happy path — both vault and SQLite agree.
-        assert!(
-            anchor_decision(5, [0xAAu8; MAC_LEN], 5, [0xAAu8; MAC_LEN]).is_none(),
-        );
+        assert!(anchor_decision(5, [0xAAu8; MAC_LEN], 5, [0xAAu8; MAC_LEN]).is_none(),);
     }
 
     #[tokio::test]

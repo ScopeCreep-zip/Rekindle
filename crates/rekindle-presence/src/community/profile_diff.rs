@@ -116,10 +116,7 @@ mod tests {
         let pk_hex = hex::encode(bytes);
         let mut prior = HashMap::new();
         prior.insert(pk_hex.clone(), snapshot(Some("alice"), Some("hi")));
-        let outcome = compute_profile_diff(
-            &prior,
-            &[row(1, Some("alice"), Some("hi"))],
-        );
+        let outcome = compute_profile_diff(&prior, &[row(1, Some("alice"), Some("hi"))]);
         assert!(!outcome.changed);
         assert!(outcome.updates.is_empty());
     }
@@ -131,10 +128,7 @@ mod tests {
         let pk_hex = hex::encode(bytes);
         let mut prior = HashMap::new();
         prior.insert(pk_hex.clone(), snapshot(Some("alice"), Some("hi")));
-        let outcome = compute_profile_diff(
-            &prior,
-            &[row(2, Some("alice-renamed"), Some("hi"))],
-        );
+        let outcome = compute_profile_diff(&prior, &[row(2, Some("alice-renamed"), Some("hi"))]);
         assert!(outcome.changed);
         assert_eq!(outcome.updates.len(), 1);
         assert_eq!(
@@ -158,10 +152,7 @@ mod tests {
         let pk_hex = hex::encode(bytes);
         let mut prior = HashMap::new();
         prior.insert(pk_hex.clone(), snapshot(Some("alice"), None));
-        let outcome = compute_profile_diff(
-            &prior,
-            &[row(4, Some("alice"), Some("now has bio"))],
-        );
+        let outcome = compute_profile_diff(&prior, &[row(4, Some("alice"), Some("now has bio"))]);
         assert!(outcome.changed);
     }
 

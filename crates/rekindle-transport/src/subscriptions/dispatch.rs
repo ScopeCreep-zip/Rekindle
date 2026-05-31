@@ -79,9 +79,13 @@ async fn dispatch_update<H: InboundHandler>(
             let pir = attachment.public_internet_ready;
             let att_state = AttachmentState::from_veilid_string(&state_str);
             shared.set_attachment(att_state, attached, pir);
-            handler.on_event(TransportEvent::AttachmentChanged {
-                state: state_str, is_attached: attached, public_internet_ready: pir,
-            }).await;
+            handler
+                .on_event(TransportEvent::AttachmentChanged {
+                    state: state_str,
+                    is_attached: attached,
+                    public_internet_ready: pir,
+                })
+                .await;
         }
         VeilidUpdate::RouteChange(change) => {
             dispatch_route_change(handler, shared, &change).await;
@@ -122,7 +126,10 @@ async fn dispatch_app_message<H: InboundHandler>(
             dispatch_dm(handler, tid, payload, shared).await;
         }
         other => {
-            warn!(type_id = other as u8, "unexpected RPC type in app_message, dropping");
+            warn!(
+                type_id = other as u8,
+                "unexpected RPC type in app_message, dropping"
+            );
         }
     }
 }
@@ -148,7 +155,10 @@ async fn dispatch_app_call<H: InboundHandler>(
     };
 
     if !type_id.is_rpc() {
-        warn!(type_id = type_id as u8, "non-RPC type in app_call, dropping");
+        warn!(
+            type_id = type_id as u8,
+            "non-RPC type in app_call, dropping"
+        );
         reply_nak(api, call_id).await;
         return;
     }
@@ -177,19 +187,25 @@ async fn dispatch_app_call<H: InboundHandler>(
         }
     };
 
-    let sender = if signed.sender_key_hex.is_empty() { None } else { Some(signed.sender_key_hex.as_str()) };
+    let sender = if signed.sender_key_hex.is_empty() {
+        None
+    } else {
+        Some(signed.sender_key_hex.as_str())
+    };
 
-    let response_bytes = if let Ok(bytes) = tokio::time::timeout(
-        APP_CALL_HANDLER_DEADLINE,
-        async {
-            let response = handler.on_call(sender, request).await;
-            crate::payload::rpc::serialize_call_response(&response)
-        },
-    ).await {
+    let response_bytes = if let Ok(bytes) = tokio::time::timeout(APP_CALL_HANDLER_DEADLINE, async {
+        let response = handler.on_call(sender, request).await;
+        crate::payload::rpc::serialize_call_response(&response)
+    })
+    .await
+    {
         bytes
     } else {
-        warn!(type_id = type_id as u8, deadline_secs = APP_CALL_HANDLER_DEADLINE.as_secs(),
-            "app_call handler exceeded deadline — sending NAK");
+        warn!(
+            type_id = type_id as u8,
+            deadline_secs = APP_CALL_HANDLER_DEADLINE.as_secs(),
+            "app_call handler exceeded deadline — sending NAK"
+        );
         b"NAK".to_vec()
     };
 
@@ -221,7 +237,11 @@ async fn dispatch_gossip<H: InboundHandler>(
     }
 
     let dedup_key = envelope.dedup_key();
-    if dedup.check_and_insert(&envelope.community_id, &envelope.sender_pseudonym, &dedup_key) {
+    if dedup.check_and_insert(
+        &envelope.community_id,
+        &envelope.sender_pseudonym,
+        &dedup_key,
+    ) {
         trace!(dedup_key = %dedup_key, "gossip dedup: duplicate");
         return;
     }
@@ -241,15 +261,22 @@ async fn dispatch_gossip<H: InboundHandler>(
     };
 
     // Deliver to InboundHandler — the daemon forwards to SubscriptionManager
-    handler.on_gossip(
-        &envelope.community_id,
-        &envelope.sender_pseudonym,
-        gossip_payload,
-        envelope.lamport_ts,
-    ).await;
+    handler
+        .on_gossip(
+            &envelope.community_id,
+            &envelope.sender_pseudonym,
+            gossip_payload,
+            envelope.lamport_ts,
+        )
+        .await;
 }
 
-async fn dispatch_dm<H: InboundHandler>(handler: &Arc<H>, type_id: TypeId, payload: &[u8], _shared: &SharedState) {
+async fn dispatch_dm<H: InboundHandler>(
+    handler: &Arc<H>,
+    type_id: TypeId,
+    payload: &[u8],
+    _shared: &SharedState,
+) {
     let signed: SignedPayload = match postcard::from_bytes(payload) {
         Ok(s) => s,
         Err(e) => {
@@ -313,7 +340,11 @@ async fn dispatch_voice<H: InboundHandler>(handler: &Arc<H>, payload: &[u8]) {
     handler.on_voice(&sender_key, voice).await;
 }
 
-fn verify_voice_signature(sender_hex: &str, data: &[u8], signature: &[u8]) -> crate::error::Result<()> {
+fn verify_voice_signature(
+    sender_hex: &str,
+    data: &[u8],
+    signature: &[u8],
+) -> crate::error::Result<()> {
     let key_bytes = hex::decode(sender_hex).map_err(|e| {
         crate::error::TransportError::SignatureVerificationFailed {
             sender: format!("invalid hex: {e}"),
@@ -354,7 +385,9 @@ async fn dispatch_value_change<H: InboundHandler>(
 
     if change.count == 0 || subkeys.is_empty() {
         debug!(key = %key, count = change.count, "DHT watch died");
-        handler.on_event(TransportEvent::WatchDied { record_key: key }).await;
+        handler
+            .on_event(TransportEvent::WatchDied { record_key: key })
+            .await;
         return;
     }
 
@@ -368,11 +401,19 @@ async fn dispatch_route_change<H: InboundHandler>(
 ) {
     if !change.dead_routes.is_empty() {
         let count = change.dead_routes.len();
-        handler.on_event(TransportEvent::LocalRoutesDied { count }).await;
+        handler
+            .on_event(TransportEvent::LocalRoutesDied { count })
+            .await;
     }
     if !change.dead_remote_routes.is_empty() {
-        let peer_keys: Vec<String> = change.dead_remote_routes.iter().map(ToString::to_string).collect();
-        handler.on_event(TransportEvent::RemoteRoutesDied { peer_keys }).await;
+        let peer_keys: Vec<String> = change
+            .dead_remote_routes
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        handler
+            .on_event(TransportEvent::RemoteRoutesDied { peer_keys })
+            .await;
     }
 }
 

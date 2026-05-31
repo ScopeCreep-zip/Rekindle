@@ -64,7 +64,16 @@ pub(super) fn handle_voice_join(
         let blob = blob.clone();
         let my_pk = my_pk.clone();
         let handle = tokio::spawn(async move {
-            voice_join_apply(&*deps_task, &cid, &ch_id, transport, sender_key, blob, my_pk).await;
+            voice_join_apply(
+                &*deps_task,
+                &cid,
+                &ch_id,
+                transport,
+                sender_key,
+                blob,
+                my_pk,
+            )
+            .await;
         });
         deps.register_background_handle(handle);
     }

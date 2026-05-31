@@ -14,7 +14,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{TransportError, Result};
+use crate::error::{Result, TransportError};
 use crate::frame::TypeId;
 
 // ── Community join is DHT-based ──────────────────────────────────────────
@@ -76,32 +76,80 @@ pub struct GovernanceRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum GovernanceOp {
     // ── Moderation ──────────────────────────────────────────────
-    Kick { target_pseudonym: String },
-    Ban { target_pseudonym: String, reason: Option<String> },
-    Unban { target_pseudonym: String },
-    Timeout { target_pseudonym: String, duration_seconds: u64, reason: Option<String> },
+    Kick {
+        target_pseudonym: String,
+    },
+    Ban {
+        target_pseudonym: String,
+        reason: Option<String>,
+    },
+    Unban {
+        target_pseudonym: String,
+    },
+    Timeout {
+        target_pseudonym: String,
+        duration_seconds: u64,
+        reason: Option<String>,
+    },
 
     // ── Join queue management ───────────────────────────────────
-    ApproveJoin { target_pseudonym: String },
-    RejectJoin { target_pseudonym: String, reason: String },
+    ApproveJoin {
+        target_pseudonym: String,
+    },
+    RejectJoin {
+        target_pseudonym: String,
+        reason: String,
+    },
 
     // ── Channel management ──────────────────────────────────────
-    CreateChannel { name: String, kind: String, topic: Option<String> },
-    DeleteChannel { channel_id: String },
-    UpdateChannel { channel_id: String, name: Option<String>, topic: Option<String> },
+    CreateChannel {
+        name: String,
+        kind: String,
+        topic: Option<String>,
+    },
+    DeleteChannel {
+        channel_id: String,
+    },
+    UpdateChannel {
+        channel_id: String,
+        name: Option<String>,
+        topic: Option<String>,
+    },
 
     // ── Role management ─────────────────────────────────────────
-    CreateRole { name: String, permissions: u64, color: u32, position: i32 },
-    UpdateRole { role_id: u32, name: Option<String>, permissions: Option<u64>, color: Option<u32> },
-    DeleteRole { role_id: u32 },
-    AssignRole { member_pseudonym: String, role_id: u32 },
-    UnassignRole { member_pseudonym: String, role_id: u32 },
+    CreateRole {
+        name: String,
+        permissions: u64,
+        color: u32,
+        position: i32,
+    },
+    UpdateRole {
+        role_id: u32,
+        name: Option<String>,
+        permissions: Option<u64>,
+        color: Option<u32>,
+    },
+    DeleteRole {
+        role_id: u32,
+    },
+    AssignRole {
+        member_pseudonym: String,
+        role_id: u32,
+    },
+    UnassignRole {
+        member_pseudonym: String,
+        role_id: u32,
+    },
 
     // ── MEK management ──────────────────────────────────────────
-    RotateMek { channel_id: String },
+    RotateMek {
+        channel_id: String,
+    },
 
     // ── Ownership ───────────────────────────────────────────────
-    TransferOwnership { new_owner_pseudonym: String },
+    TransferOwnership {
+        new_owner_pseudonym: String,
+    },
 
     // ── Channel record registration ─────────────────────────────
     /// Member registers their per-channel message record key so other
@@ -230,35 +278,41 @@ pub enum CallResponse {
 pub fn deserialize_inbound_call(type_id: TypeId, bytes: &[u8]) -> Result<InboundCall> {
     match type_id {
         TypeId::CommunityLeave => {
-            let req: CommunityLeaveNotification = postcard::from_bytes(bytes)
-                .map_err(|e| TransportError::DeserializationFailed {
-                    type_id: type_id as u8, reason: e.to_string(),
+            let req: CommunityLeaveNotification =
+                postcard::from_bytes(bytes).map_err(|e| TransportError::DeserializationFailed {
+                    type_id: type_id as u8,
+                    reason: e.to_string(),
                 })?;
             Ok(InboundCall::CommunityLeave(req))
         }
         TypeId::CommunityGovOp => {
-            let req: GovernanceRequest = postcard::from_bytes(bytes)
-                .map_err(|e| TransportError::DeserializationFailed {
-                    type_id: type_id as u8, reason: e.to_string(),
+            let req: GovernanceRequest =
+                postcard::from_bytes(bytes).map_err(|e| TransportError::DeserializationFailed {
+                    type_id: type_id as u8,
+                    reason: e.to_string(),
                 })?;
             Ok(InboundCall::CommunityGovOp(req))
         }
         TypeId::SyncRequest => {
-            let req: SyncRequest = postcard::from_bytes(bytes)
-                .map_err(|e| TransportError::DeserializationFailed {
-                    type_id: type_id as u8, reason: e.to_string(),
+            let req: SyncRequest =
+                postcard::from_bytes(bytes).map_err(|e| TransportError::DeserializationFailed {
+                    type_id: type_id as u8,
+                    reason: e.to_string(),
                 })?;
             Ok(InboundCall::Sync(req))
         }
         TypeId::DmCall => Ok(InboundCall::Dm(bytes.to_vec())),
         TypeId::CallInvite => {
-            let req: CallInvitePayload = postcard::from_bytes(bytes)
-                .map_err(|e| TransportError::DeserializationFailed {
-                    type_id: type_id as u8, reason: e.to_string(),
+            let req: CallInvitePayload =
+                postcard::from_bytes(bytes).map_err(|e| TransportError::DeserializationFailed {
+                    type_id: type_id as u8,
+                    reason: e.to_string(),
                 })?;
             Ok(InboundCall::CallInvite(req))
         }
-        _ => Err(TransportError::UnknownType { type_id: type_id as u8 }),
+        _ => Err(TransportError::UnknownType {
+            type_id: type_id as u8,
+        }),
     }
 }
 

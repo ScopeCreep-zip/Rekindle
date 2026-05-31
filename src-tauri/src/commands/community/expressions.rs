@@ -89,8 +89,5 @@ pub async fn list_expressions(
     state: State<'_, SharedState>,
     community_id: String,
 ) -> Result<Vec<ExpressionInfoDto>, String> {
-    crate::services::community_views_runtime::list_expressions_inner(
-        state.inner(),
-        &community_id,
-    )
+    crate::services::community_views_runtime::list_expressions_inner(state.inner(), &community_id)
 }

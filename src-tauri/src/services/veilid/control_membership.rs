@@ -237,4 +237,3 @@ pub(super) fn handle_membership_payload(
         _ => {}
     }
 }
-

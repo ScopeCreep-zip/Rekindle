@@ -54,11 +54,11 @@ pub fn send_video_frame<D: VideoDeps>(
         return Err(VideoError::InvalidInput("empty encoded payload".into()));
     }
 
-    let (mek_bytes, mek_gen) = deps.community_mek_bytes(community_id).ok_or_else(|| {
-        VideoError::MekUnavailable {
-            community: community_id.to_string(),
-        }
-    })?;
+    let (mek_bytes, mek_gen) =
+        deps.community_mek_bytes(community_id)
+            .ok_or_else(|| VideoError::MekUnavailable {
+                community: community_id.to_string(),
+            })?;
     let mek = rekindle_crypto::group::media_key::MediaEncryptionKey::from_bytes(mek_bytes, mek_gen);
     let ciphertext = mek
         .encrypt(&request.encoded_payload)
@@ -258,8 +258,8 @@ mod tests {
     fn missing_mek_rejected() {
         let deps = MockDeps::without_mek();
         let reassembly = VideoReassemblyState::new();
-        let err = send_video_frame(&deps, &reassembly, "c1", "ch1", &small_request(false))
-            .unwrap_err();
+        let err =
+            send_video_frame(&deps, &reassembly, "c1", "ch1", &small_request(false)).unwrap_err();
         assert!(matches!(err, VideoError::MekUnavailable { .. }));
     }
 
@@ -267,8 +267,8 @@ mod tests {
     fn missing_identity_rejected() {
         let deps = MockDeps::without_signing_key();
         let reassembly = VideoReassemblyState::new();
-        let err = send_video_frame(&deps, &reassembly, "c1", "ch1", &small_request(false))
-            .unwrap_err();
+        let err =
+            send_video_frame(&deps, &reassembly, "c1", "ch1", &small_request(false)).unwrap_err();
         assert!(matches!(err, VideoError::IdentityNotLoaded));
     }
 
@@ -312,10 +312,21 @@ mod tests {
         let topology_count = calls
             .sent
             .iter()
-            .filter(|e| matches!(e, CommunityEnvelope::Control(ControlPayload::TopologyChange { .. })))
+            .filter(|e| {
+                matches!(
+                    e,
+                    CommunityEnvelope::Control(ControlPayload::TopologyChange { .. })
+                )
+            })
             .count();
-        assert_eq!(topology_count, 1, "TopologyChange fires exactly once per stream");
-        assert!(second_batch >= 1, "second send produces at least 1 fragment");
+        assert_eq!(
+            topology_count, 1,
+            "TopologyChange fires exactly once per stream"
+        );
+        assert!(
+            second_batch >= 1,
+            "second send produces at least 1 fragment"
+        );
     }
 
     #[test]
@@ -334,6 +345,9 @@ mod tests {
     fn parity_count_for_multi_shard_keyframe_is_positive() {
         let ct = vec![0u8; FRAGMENT_PAYLOAD_LIMIT * 4 + 100];
         let p = parity_count_for(true, &ct);
-        assert!(p >= 1, "expected at least 1 parity shard for 5-shard keyframe");
+        assert!(
+            p >= 1,
+            "expected at least 1 parity shard for 5-shard keyframe"
+        );
     }
 }

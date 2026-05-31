@@ -8,11 +8,10 @@
 use veilid_core::{DHTSchemaSMPLMember, KeyPair, RoutingContext};
 
 use super::record;
-use crate::error::{TransportError, Result};
+use crate::error::{Result, TransportError};
 use crate::payload::dht_types::{
-    MekVaultEntry, MemberPresence, MemberSummary, REGISTRY_MEK_VAULT,
-    REGISTRY_MEMBER_INDEX, REGISTRY_MEMBER_SUBKEY_COUNT, REGISTRY_OWNER_SUBKEY_COUNT,
-    SLOTS_PER_SEGMENT,
+    MekVaultEntry, MemberPresence, MemberSummary, REGISTRY_MEK_VAULT, REGISTRY_MEMBER_INDEX,
+    REGISTRY_MEMBER_SUBKEY_COUNT, REGISTRY_OWNER_SUBKEY_COUNT, SLOTS_PER_SEGMENT,
 };
 
 /// Calculate the DHT subkey index for a member given their slot index.
@@ -40,7 +39,8 @@ impl<'a> RegistryOps<'a> {
             self.rc,
             crate::payload::dht_types::REGISTRY_TOTAL_SUBKEY_COUNT,
             None,
-        ).await?;
+        )
+        .await?;
 
         self.write_member_index(&key, &[]).await?;
         self.write_mek_vault(&key, &[]).await?;
@@ -55,11 +55,8 @@ impl<'a> RegistryOps<'a> {
         members: Vec<DHTSchemaSMPLMember>,
         initial_index: &[MemberSummary],
     ) -> Result<(String, Option<KeyPair>)> {
-        let (key, keypair) = record::create_smpl(
-            self.rc,
-            REGISTRY_OWNER_SUBKEY_COUNT,
-            members,
-        ).await?;
+        let (key, keypair) =
+            record::create_smpl(self.rc, REGISTRY_OWNER_SUBKEY_COUNT, members).await?;
 
         self.write_member_index(&key, initial_index).await?;
         self.write_mek_vault(&key, &[]).await?;
@@ -80,11 +77,8 @@ impl<'a> RegistryOps<'a> {
             });
         }
 
-        let (key, keypair) = record::create_smpl(
-            self.rc,
-            REGISTRY_OWNER_SUBKEY_COUNT,
-            members,
-        ).await?;
+        let (key, keypair) =
+            record::create_smpl(self.rc, REGISTRY_OWNER_SUBKEY_COUNT, members).await?;
 
         self.write_member_index(&key, &[]).await?;
         self.write_mek_vault(&key, &[]).await?;
@@ -97,16 +91,21 @@ impl<'a> RegistryOps<'a> {
 
     pub async fn read_member_index(&self, key: &str) -> Result<Vec<MemberSummary>> {
         match record::get(self.rc, key, REGISTRY_MEMBER_INDEX, false).await? {
-            Some(data) => serde_json::from_slice(&data).map_err(|e| {
-                TransportError::DeserializationFailed { type_id: 0, reason: format!("index: {e}") }
-            }),
+            Some(data) => {
+                serde_json::from_slice(&data).map_err(|e| TransportError::DeserializationFailed {
+                    type_id: 0,
+                    reason: format!("index: {e}"),
+                })
+            }
             None => Ok(Vec::new()),
         }
     }
 
     pub async fn write_member_index(&self, key: &str, members: &[MemberSummary]) -> Result<()> {
-        let bytes = serde_json::to_vec(members)
-            .map_err(|e| TransportError::SerializationFailed { reason: format!("index: {e}") })?;
+        let bytes =
+            serde_json::to_vec(members).map_err(|e| TransportError::SerializationFailed {
+                reason: format!("index: {e}"),
+            })?;
         record::set(self.rc, key, REGISTRY_MEMBER_INDEX, bytes, None).await
     }
 
@@ -114,16 +113,20 @@ impl<'a> RegistryOps<'a> {
 
     pub async fn read_mek_vault(&self, key: &str) -> Result<Vec<MekVaultEntry>> {
         match record::get(self.rc, key, REGISTRY_MEK_VAULT, false).await? {
-            Some(data) => serde_json::from_slice(&data).map_err(|e| {
-                TransportError::DeserializationFailed { type_id: 0, reason: format!("vault: {e}") }
-            }),
+            Some(data) => {
+                serde_json::from_slice(&data).map_err(|e| TransportError::DeserializationFailed {
+                    type_id: 0,
+                    reason: format!("vault: {e}"),
+                })
+            }
             None => Ok(Vec::new()),
         }
     }
 
     pub async fn write_mek_vault(&self, key: &str, vault: &[MekVaultEntry]) -> Result<()> {
-        let bytes = serde_json::to_vec(vault)
-            .map_err(|e| TransportError::SerializationFailed { reason: format!("vault: {e}") })?;
+        let bytes = serde_json::to_vec(vault).map_err(|e| TransportError::SerializationFailed {
+            reason: format!("vault: {e}"),
+        })?;
         record::set(self.rc, key, REGISTRY_MEK_VAULT, bytes, None).await
     }
 
@@ -133,10 +136,20 @@ impl<'a> RegistryOps<'a> {
         &self,
         key: &str,
     ) -> Result<Vec<crate::payload::dht_types::PendingJoinEntry>> {
-        match record::get(self.rc, key, crate::payload::dht_types::REGISTRY_MODERATION_QUEUE, false).await? {
-            Some(data) if !data.is_empty() => serde_json::from_slice(&data).map_err(|e| {
-                TransportError::DeserializationFailed { type_id: 0, reason: format!("moderation queue: {e}") }
-            }),
+        match record::get(
+            self.rc,
+            key,
+            crate::payload::dht_types::REGISTRY_MODERATION_QUEUE,
+            false,
+        )
+        .await?
+        {
+            Some(data) if !data.is_empty() => {
+                serde_json::from_slice(&data).map_err(|e| TransportError::DeserializationFailed {
+                    type_id: 0,
+                    reason: format!("moderation queue: {e}"),
+                })
+            }
             _ => Ok(Vec::new()),
         }
     }
@@ -146,9 +159,17 @@ impl<'a> RegistryOps<'a> {
         key: &str,
         queue: &[crate::payload::dht_types::PendingJoinEntry],
     ) -> Result<()> {
-        let bytes = serde_json::to_vec(queue)
-            .map_err(|e| TransportError::SerializationFailed { reason: format!("moderation queue: {e}") })?;
-        record::set(self.rc, key, crate::payload::dht_types::REGISTRY_MODERATION_QUEUE, bytes, None).await
+        let bytes = serde_json::to_vec(queue).map_err(|e| TransportError::SerializationFailed {
+            reason: format!("moderation queue: {e}"),
+        })?;
+        record::set(
+            self.rc,
+            key,
+            crate::payload::dht_types::REGISTRY_MODERATION_QUEUE,
+            bytes,
+            None,
+        )
+        .await
     }
 
     // ── Member presence (member subkeys) ─────────────────────────
@@ -163,7 +184,10 @@ impl<'a> RegistryOps<'a> {
         match record::get(self.rc, key, subkey, force_refresh).await? {
             Some(data) => {
                 let presence: MemberPresence = serde_json::from_slice(&data).map_err(|e| {
-                    TransportError::DeserializationFailed { type_id: 0, reason: format!("presence: {e}") }
+                    TransportError::DeserializationFailed {
+                        type_id: 0,
+                        reason: format!("presence: {e}"),
+                    }
                 })?;
                 Ok(Some(presence))
             }
@@ -179,8 +203,10 @@ impl<'a> RegistryOps<'a> {
         writer: KeyPair,
     ) -> Result<()> {
         let subkey = member_subkey(slot_index);
-        let bytes = serde_json::to_vec(presence)
-            .map_err(|e| TransportError::SerializationFailed { reason: format!("presence: {e}") })?;
+        let bytes =
+            serde_json::to_vec(presence).map_err(|e| TransportError::SerializationFailed {
+                reason: format!("presence: {e}"),
+            })?;
         record::set(self.rc, key, subkey, bytes, Some(writer)).await
     }
 
@@ -188,7 +214,9 @@ impl<'a> RegistryOps<'a> {
 
     pub async fn watch_presence(&self, key: &str, member_count: u32) -> Result<bool> {
         let subkeys: Vec<u32> = (0..member_count).map(member_subkey).collect();
-        if subkeys.is_empty() { return Ok(true); }
+        if subkeys.is_empty() {
+            return Ok(true);
+        }
         record::watch(self.rc, key, &subkeys).await
     }
 
@@ -212,10 +240,7 @@ impl<'a> RegistryOps<'a> {
 /// Derive a deterministic Ed25519 keypair for a SMPL member slot.
 ///
 /// Uses HKDF-SHA256(seed, "rekindle-slot-{index}") -> 32 bytes -> Ed25519.
-pub fn derive_slot_keypair(
-    seed: &[u8; 32],
-    slot: u32,
-) -> Result<ed25519_dalek::SigningKey> {
+pub fn derive_slot_keypair(seed: &[u8; 32], slot: u32) -> Result<ed25519_dalek::SigningKey> {
     use hkdf::Hkdf;
     use sha2::Sha256;
 

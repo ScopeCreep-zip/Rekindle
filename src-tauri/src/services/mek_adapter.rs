@@ -51,10 +51,10 @@ impl ChannelMekCache for AppStateMekCache {
     }
 
     fn insert(&self, community_id: &str, channel_id: &str, mek: MediaEncryptionKey) {
-        self.state.channel_mek_cache.lock().insert(
-            (community_id.to_string(), channel_id.to_string()),
-            mek,
-        );
+        self.state
+            .channel_mek_cache
+            .lock()
+            .insert((community_id.to_string(), channel_id.to_string()), mek);
     }
 
     fn current_generation(&self, community_id: &str, channel_id: &str) -> u64 {
@@ -209,9 +209,7 @@ impl MekDistributeDeps for MekAdapter {
             .voice_engine_peer_keys_for_channel(community_id, channel_id)
             .into_iter()
             .collect::<HashSet<_>>();
-        let my_pseudonym_hex = self
-            .my_pseudonym(community_id)
-            .map(|p| hex::encode(p.0));
+        let my_pseudonym_hex = self.my_pseudonym(community_id).map(|p| hex::encode(p.0));
         if let Some(me) = my_pseudonym_hex {
             participants.insert(me);
         }

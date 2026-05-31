@@ -60,7 +60,9 @@ pub async fn start_dm_call<D: CallSignalingDeps + ?Sized>(
     };
     if let Err(e) = deps.send_to_peer(peer_public_key, invite).await {
         deps.registry().remove(&call_id);
-        return Err(CallError::Transport(format!("call invite send failed: {e}")));
+        return Err(CallError::Transport(format!(
+            "call invite send failed: {e}"
+        )));
     }
 
     let display_name = {
@@ -111,9 +113,9 @@ pub async fn accept_dm_call<D: CallSignalingDeps + ?Sized>(
                 "call is not in Incoming state".into(),
             ));
         }
-        let peer_x25519 = call.peer_x25519_pub.ok_or_else(|| {
-            CallError::MalformedPayload("invite missing peer x25519".into())
-        })?;
+        let peer_x25519 = call
+            .peer_x25519_pub
+            .ok_or_else(|| CallError::MalformedPayload("invite missing peer x25519".into()))?;
         (call.peer_pubkey.clone(), peer_x25519)
     };
 
@@ -233,10 +235,7 @@ pub async fn end_dm_call<D: CallSignalingDeps + ?Sized>(
         .registry()
         .remove(call_id)
         .ok_or_else(|| CallError::CallNotFound(call_id.to_string()))?;
-    let was_voice_up = matches!(
-        removed.status,
-        CallStatus::Active | CallStatus::Connecting
-    );
+    let was_voice_up = matches!(removed.status, CallStatus::Active | CallStatus::Connecting);
     let reason_str = reason.unwrap_or_default();
 
     let peer_pubkey = removed.peer_pubkey.clone();
@@ -321,14 +320,15 @@ pub async fn start_group_call<D: CallSignalingDeps + ?Sized>(
             tracing::warn!(peer = %invitee, "Ed25519 pubkey not 32 bytes; skipping");
             continue;
         };
-        let invitee_x25519 = match rekindle_crypto::Identity::peer_ed25519_to_x25519(&invitee_ed_arr) {
-            Ok(p) => p.to_bytes().to_vec(),
-            Err(e) => {
-                tracing::warn!(peer = %invitee, error = %e,
+        let invitee_x25519 =
+            match rekindle_crypto::Identity::peer_ed25519_to_x25519(&invitee_ed_arr) {
+                Ok(p) => p.to_bytes().to_vec(),
+                Err(e) => {
+                    tracing::warn!(peer = %invitee, error = %e,
                     "Ed25519→X25519 conversion failed");
-                continue;
-            }
-        };
+                    continue;
+                }
+            };
         let secret = X25519StaticSecret::from(secret_bytes);
         let wrapped = match wrap_call_key(&secret, &invitee_x25519, &call_id, invitee, &call_key) {
             Ok(b) => b,

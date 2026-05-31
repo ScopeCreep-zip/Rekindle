@@ -34,7 +34,6 @@ pub enum FilesError {
     InvalidAttachmentId(String),
 
     // ── Phase 15 — surface variants for FilesDeps-parameterised flows ──
-
     #[error("permission denied: {0}")]
     PermissionDenied(String),
 

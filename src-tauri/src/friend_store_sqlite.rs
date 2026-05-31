@@ -20,8 +20,8 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use rekindle_transport::friend_store::{FriendRecord, FriendStatus, FriendStore};
 use rekindle_transport::envelope_store::StoreError;
+use rekindle_transport::friend_store::{FriendRecord, FriendStatus, FriendStore};
 
 use crate::db::DbPool;
 use crate::db_helpers::db_call;
@@ -196,11 +196,7 @@ mod tests {
     use super::*;
     use tokio_rusqlite::Connection as TokioConn;
 
-    async fn fresh_db_with_friend(
-        owner: &str,
-        pubkey: &str,
-        state: &str,
-    ) -> Arc<DbPool> {
+    async fn fresh_db_with_friend(owner: &str, pubkey: &str, state: &str) -> Arc<DbPool> {
         let pool = TokioConn::open_in_memory().await.unwrap();
         let owner_owned = owner.to_string();
         let pubkey_owned = pubkey.to_string();
@@ -293,12 +289,10 @@ mod tests {
 
         let pool_removing = fresh_db_with_friend("me", "carol", "removing").await;
         let store_removing = SqliteFriendStore::new(pool_removing);
-        assert!(
-            !store_removing
-                .is_active_friend("me", "carol")
-                .await
-                .unwrap()
-        );
+        assert!(!store_removing
+            .is_active_friend("me", "carol")
+            .await
+            .unwrap());
     }
 
     #[tokio::test]

@@ -152,8 +152,9 @@ pub async fn create_role<D: GovernanceRuntimeDeps>(
     exclusion_group: Option<String>,
 ) -> Result<u32, GovernanceRuntimeError> {
     let (existing_ids, next_position) = deps.role_table_summary(community_id);
-    let role_id = allocate_unique_role_id(&existing_ids)
-        .ok_or_else(|| GovernanceRuntimeError::Adapter("failed to allocate unique role id".into()))?;
+    let role_id = allocate_unique_role_id(&existing_ids).ok_or_else(|| {
+        GovernanceRuntimeError::Adapter("failed to allocate unique role id".into())
+    })?;
 
     let lamport = deps.increment_lamport(community_id);
     apply::write_entry(
@@ -283,7 +284,10 @@ mod tests {
     #[test]
     fn allocate_unique_role_id_minimum_threshold() {
         let id = allocate_unique_role_id(&[]).expect("found");
-        assert!(id >= 100, "id should be >= 100 to avoid built-in reserved range");
+        assert!(
+            id >= 100,
+            "id should be >= 100 to avoid built-in reserved range"
+        );
     }
 
     #[test]

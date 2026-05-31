@@ -15,7 +15,10 @@
 //! - `state_builder.rs`: the heaviest single method — `insert_community`
 //!   body, which builds a fresh `CommunityState` from `CommunityInsert`.
 
-#![allow(dead_code, reason = "Phase 18 adapter — some methods are touched only by future crate-side flows that haven't migrated all their entry points yet")]
+#![allow(
+    dead_code,
+    reason = "Phase 18 adapter — some methods are touched only by future crate-side flows that haven't migrated all their entry points yet"
+)]
 
 use std::sync::Arc;
 
@@ -49,7 +52,11 @@ pub struct GovernanceAdapter {
 
 impl GovernanceAdapter {
     pub fn new(state: Arc<AppState>, app_handle: AppHandle, pool: DbPool) -> Self {
-        Self { state, app_handle, pool }
+        Self {
+            state,
+            app_handle,
+            pool,
+        }
     }
 
     pub(super) fn rc(
@@ -89,11 +96,8 @@ pub async fn open_community_dht_records(state: &Arc<AppState>) {
         return;
     };
     let pool: tauri::State<'_, DbPool> = app_handle.state();
-    let adapter = GovernanceAdapter::new(
-        Arc::clone(state),
-        app_handle.clone(),
-        pool.inner().clone(),
-    );
+    let adapter =
+        GovernanceAdapter::new(Arc::clone(state), app_handle.clone(), pool.inner().clone());
     rekindle_governance_runtime::dht_hydration::open_community_dht_records(&adapter).await;
 }
 
@@ -105,11 +109,8 @@ pub async fn hydrate_community_state_from_dht(state: &Arc<AppState>) {
         return;
     };
     let pool: tauri::State<'_, DbPool> = app_handle.state();
-    let adapter = GovernanceAdapter::new(
-        Arc::clone(state),
-        app_handle.clone(),
-        pool.inner().clone(),
-    );
+    let adapter =
+        GovernanceAdapter::new(Arc::clone(state), app_handle.clone(), pool.inner().clone());
     rekindle_governance_runtime::dht_hydration::hydrate_community_state_from_dht(&adapter).await;
 }
 
@@ -130,11 +131,8 @@ pub async fn rebuild_governance_from_dht(state: &Arc<AppState>) {
         return;
     };
     let pool: tauri::State<'_, DbPool> = app_handle.state();
-    let adapter = GovernanceAdapter::new(
-        Arc::clone(state),
-        app_handle.clone(),
-        pool.inner().clone(),
-    );
+    let adapter =
+        GovernanceAdapter::new(Arc::clone(state), app_handle.clone(), pool.inner().clone());
     rekindle_governance_runtime::dht_hydration::rebuild_governance_from_dht(&adapter).await;
 }
 
@@ -151,7 +149,10 @@ pub(super) fn snapshot_roles(state: &Arc<AppState>, community_id: &str) -> Vec<R
 pub(super) fn snapshot_channels_and_categories(
     state: &Arc<AppState>,
     community_id: &str,
-) -> (Vec<ChannelsUpdatedChannelDto>, Vec<ChannelsUpdatedCategoryDto>) {
+) -> (
+    Vec<ChannelsUpdatedChannelDto>,
+    Vec<ChannelsUpdatedCategoryDto>,
+) {
     let communities = state.communities.read();
     let Some(community) = communities.get(community_id) else {
         return (Vec::new(), Vec::new());

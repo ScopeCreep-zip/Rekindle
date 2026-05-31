@@ -47,9 +47,7 @@ impl CallRegistry for ActiveCallRegistry {
         self.inner
             .lock()
             .values()
-            .find(|c| {
-                c.peer_pubkey == peer_pubkey_hex && matches!(c.status, CallStatus::Outgoing)
-            })
+            .find(|c| c.peer_pubkey == peer_pubkey_hex && matches!(c.status, CallStatus::Outgoing))
             .cloned()
     }
 

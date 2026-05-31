@@ -83,13 +83,18 @@ pub async fn read_sync_manifest(
     handle: &PersonalSyncRecordHandle,
     sync_key: &SyncKey,
 ) -> Result<Option<SyncManifest>, String> {
-    with_record(state, handle, async |rc, key| {
-        match read_decrypted_subkey(rc, key, SUBKEY_MANIFEST, sync_key).await? {
-            Some(bytes) => serde_json::from_slice(&bytes)
-                .map(Some)
-                .map_err(|e| format!("manifest decode: {e}")),
-            None => Ok(None),
-        }
+    with_record(state, handle, async |rc, key| match read_decrypted_subkey(
+        rc,
+        key,
+        SUBKEY_MANIFEST,
+        sync_key,
+    )
+    .await?
+    {
+        Some(bytes) => serde_json::from_slice(&bytes)
+            .map(Some)
+            .map_err(|e| format!("manifest decode: {e}")),
+        None => Ok(None),
     })
     .await
 }
@@ -112,12 +117,17 @@ pub async fn read_read_state(
     handle: &PersonalSyncRecordHandle,
     sync_key: &SyncKey,
 ) -> Result<ReadState, String> {
-    with_record(state, handle, async |rc, key| {
-        match read_decrypted_subkey(rc, key, SUBKEY_READ_STATE, sync_key).await? {
-            Some(bytes) => serde_json::from_slice::<ReadState>(&bytes)
-                .map_err(|e| format!("read state decode: {e}")),
-            None => Ok(ReadState::default()),
-        }
+    with_record(state, handle, async |rc, key| match read_decrypted_subkey(
+        rc,
+        key,
+        SUBKEY_READ_STATE,
+        sync_key,
+    )
+    .await?
+    {
+        Some(bytes) => serde_json::from_slice::<ReadState>(&bytes)
+            .map_err(|e| format!("read state decode: {e}")),
+        None => Ok(ReadState::default()),
     })
     .await
 }
@@ -132,8 +142,7 @@ pub async fn write_read_state(
         .await
         .unwrap_or_default();
     let merged = merge_read_state(local, remote);
-    let encoded =
-        serde_json::to_vec(&merged).map_err(|e| format!("read state encode: {e}"))?;
+    let encoded = serde_json::to_vec(&merged).map_err(|e| format!("read state encode: {e}"))?;
     with_record(state, handle, async |rc, key| {
         write_encrypted_subkey(rc, key, SUBKEY_READ_STATE, sync_key, &encoded).await
     })
@@ -146,12 +155,17 @@ pub async fn read_preferences(
     handle: &PersonalSyncRecordHandle,
     sync_key: &SyncKey,
 ) -> Result<SyncPreferences, String> {
-    with_record(state, handle, async |rc, key| {
-        match read_decrypted_subkey(rc, key, SUBKEY_PREFERENCES, sync_key).await? {
-            Some(bytes) => serde_json::from_slice::<SyncPreferences>(&bytes)
-                .map_err(|e| format!("prefs decode: {e}")),
-            None => Ok(SyncPreferences::default()),
-        }
+    with_record(state, handle, async |rc, key| match read_decrypted_subkey(
+        rc,
+        key,
+        SUBKEY_PREFERENCES,
+        sync_key,
+    )
+    .await?
+    {
+        Some(bytes) => serde_json::from_slice::<SyncPreferences>(&bytes)
+            .map_err(|e| format!("prefs decode: {e}")),
+        None => Ok(SyncPreferences::default()),
     })
     .await
 }
@@ -179,12 +193,17 @@ pub async fn read_device_list(
     handle: &PersonalSyncRecordHandle,
     sync_key: &SyncKey,
 ) -> Result<DeviceList, String> {
-    with_record(state, handle, async |rc, key| {
-        match read_decrypted_subkey(rc, key, SUBKEY_DEVICE_LIST, sync_key).await? {
-            Some(bytes) => serde_json::from_slice::<DeviceList>(&bytes)
-                .map_err(|e| format!("device list decode: {e}")),
-            None => Ok(DeviceList::default()),
-        }
+    with_record(state, handle, async |rc, key| match read_decrypted_subkey(
+        rc,
+        key,
+        SUBKEY_DEVICE_LIST,
+        sync_key,
+    )
+    .await?
+    {
+        Some(bytes) => serde_json::from_slice::<DeviceList>(&bytes)
+            .map_err(|e| format!("device list decode: {e}")),
+        None => Ok(DeviceList::default()),
     })
     .await
 }
@@ -199,12 +218,10 @@ pub async fn write_device_list(
         .await
         .unwrap_or_default();
     let merged = merge_device_list(local, remote);
-    let encoded =
-        serde_json::to_vec(&merged).map_err(|e| format!("device list encode: {e}"))?;
+    let encoded = serde_json::to_vec(&merged).map_err(|e| format!("device list encode: {e}"))?;
     with_record(state, handle, async |rc, key| {
         write_encrypted_subkey(rc, key, SUBKEY_DEVICE_LIST, sync_key, &encoded).await
     })
     .await?;
     Ok(merged)
 }
-

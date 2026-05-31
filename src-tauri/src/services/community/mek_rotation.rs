@@ -92,11 +92,8 @@ pub fn handle_incoming_mek_transfer(
         .ok_or_else(|| "DbPool state missing".to_string())?
         .inner()
         .clone();
-    let adapter = crate::services::mek_adapter::MekAdapter::new(
-        Arc::clone(state),
-        app_handle.clone(),
-        pool,
-    );
+    let adapter =
+        crate::services::mek_adapter::MekAdapter::new(Arc::clone(state), app_handle.clone(), pool);
     rekindle_mek_rotation::handle_incoming_mek_transfer(
         adapter.as_ref(),
         community_id,

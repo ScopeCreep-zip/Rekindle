@@ -120,11 +120,12 @@ impl FriendPresenceDeps for PresenceAdapter {
             // this the same as "watch will be retried later".
             return Ok(());
         };
-        let record_key: veilid_core::RecordKey = dht_record_key
-            .parse()
-            .map_err(|e: veilid_core::VeilidAPIError| {
-                PresenceError::InvalidDhtKey(e.to_string())
-            })?;
+        let record_key: veilid_core::RecordKey =
+            dht_record_key
+                .parse()
+                .map_err(|e: veilid_core::VeilidAPIError| {
+                    PresenceError::InvalidDhtKey(e.to_string())
+                })?;
         // The returned `DHTRecordDescriptor` is intentionally
         // dropped: the side effect (Veilid now tracks this record
         // for the watch + subsequent reads) is what we want; the
@@ -151,13 +152,13 @@ impl FriendPresenceDeps for PresenceAdapter {
         let Some(rc) = rc else {
             return Err(PresenceError::NotAttached);
         };
-        let record_key: veilid_core::RecordKey = dht_record_key
-            .parse()
-            .map_err(|e: veilid_core::VeilidAPIError| {
-                PresenceError::InvalidDhtKey(e.to_string())
-            })?;
-        let subkey_range: veilid_core::ValueSubkeyRangeSet =
-            subkeys.iter().copied().collect();
+        let record_key: veilid_core::RecordKey =
+            dht_record_key
+                .parse()
+                .map_err(|e: veilid_core::VeilidAPIError| {
+                    PresenceError::InvalidDhtKey(e.to_string())
+                })?;
+        let subkey_range: veilid_core::ValueSubkeyRangeSet = subkeys.iter().copied().collect();
         rc.watch_dht_values(record_key, Some(subkey_range), None, None)
             .await
             .map_err(|e| PresenceError::Dht(e.to_string()))
@@ -186,15 +187,17 @@ impl FriendPresenceDeps for PresenceAdapter {
         let Some(rc) = rc else {
             return Err(PresenceError::NotAttached);
         };
-        let record_key: veilid_core::RecordKey = profile_key
-            .parse()
-            .map_err(|e: veilid_core::VeilidAPIError| {
-                PresenceError::InvalidDhtKey(e.to_string())
-            })?;
+        let record_key: veilid_core::RecordKey =
+            profile_key
+                .parse()
+                .map_err(|e: veilid_core::VeilidAPIError| {
+                    PresenceError::InvalidDhtKey(e.to_string())
+                })?;
         let owner_kp = match owner_keypair_str {
-            Some(s) => Some(s.parse::<veilid_core::KeyPair>().map_err(|e| {
-                PresenceError::InvalidDhtKey(format!("owner keypair: {e}"))
-            })?),
+            Some(s) => Some(
+                s.parse::<veilid_core::KeyPair>()
+                    .map_err(|e| PresenceError::InvalidDhtKey(format!("owner keypair: {e}")))?,
+            ),
             None => None,
         };
         rc.open_dht_record(record_key, owner_kp)
@@ -215,14 +218,20 @@ impl FriendPresenceDeps for PresenceAdapter {
         let Some(rc) = rc else {
             return Err(PresenceError::NotAttached);
         };
-        let record_key: veilid_core::RecordKey = profile_key
-            .parse()
-            .map_err(|e: veilid_core::VeilidAPIError| {
-                PresenceError::InvalidDhtKey(e.to_string())
-            })?;
-        rc.set_dht_value(record_key, rekindle_presence::PROFILE_STATUS_SUBKEY, payload, None)
-            .await
-            .map_err(|e| PresenceError::Dht(e.to_string()))?;
+        let record_key: veilid_core::RecordKey =
+            profile_key
+                .parse()
+                .map_err(|e: veilid_core::VeilidAPIError| {
+                    PresenceError::InvalidDhtKey(e.to_string())
+                })?;
+        rc.set_dht_value(
+            record_key,
+            rekindle_presence::PROFILE_STATUS_SUBKEY,
+            payload,
+            None,
+        )
+        .await
+        .map_err(|e| PresenceError::Dht(e.to_string()))?;
         Ok(())
     }
 
@@ -268,7 +277,11 @@ impl FriendPresenceDeps for PresenceAdapter {
         if rc.open_dht_record(record_key.clone(), None).await.is_err() {
             return None;
         }
-        let value = rc.get_dht_value(record_key, subkey, force_refresh).await.ok().flatten()?;
+        let value = rc
+            .get_dht_value(record_key, subkey, force_refresh)
+            .await
+            .ok()
+            .flatten()?;
         let bytes = value.data().to_vec();
         if bytes.is_empty() {
             None
@@ -284,7 +297,8 @@ impl FriendPresenceDeps for PresenceAdapter {
             .values()
             .filter(|f| {
                 f.status != crate::state::UserStatus::Offline
-                    && f.last_heartbeat_at.is_some_and(|ts| now - ts > threshold_ms)
+                    && f.last_heartbeat_at
+                        .is_some_and(|ts| now - ts > threshold_ms)
             })
             .map(|f| f.public_key.clone())
             .collect()

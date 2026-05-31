@@ -169,7 +169,10 @@ pub fn delete_channel_message_inner(
     )
 }
 
-#[allow(clippy::too_many_arguments, reason = "Tauri command surface — matches forward_channel_message args")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Tauri command surface — matches forward_channel_message args"
+)]
 pub async fn forward_channel_message_inner(
     state: &Arc<AppState>,
     pool: &DbPool,
@@ -204,8 +207,7 @@ pub async fn send_channel_message_inner(
     channel_id: String,
     body: String,
 ) -> Result<SendChannelMessageResponse, String> {
-    let sent =
-        crate::services::community::send_message(state, pool, &channel_id, &body).await?;
+    let sent = crate::services::community::send_message(state, pool, &channel_id, &body).await?;
     crate::services::community::emit_local_chat_event(app, &sent, &channel_id);
     tracing::info!(status = %sent.result.status, message_id = %sent.result.message_id, "channel message sent");
     Ok(SendChannelMessageResponse {

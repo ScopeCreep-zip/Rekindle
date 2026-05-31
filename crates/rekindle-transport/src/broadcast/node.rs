@@ -9,8 +9,8 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::{info, warn};
 use veilid_core::{
-    RoutingContext, SafetySelection, SafetySpec, Sequencing, Stability,
-    VeilidAPI, VeilidConfig, VeilidUpdate,
+    RoutingContext, SafetySelection, SafetySpec, Sequencing, Stability, VeilidAPI, VeilidConfig,
+    VeilidUpdate,
 };
 
 use crate::config::{SafetyProfile, SequencingPreference, StabilityPreference, TransportConfig};
@@ -20,14 +20,14 @@ use crate::config::{SafetyProfile, SequencingPreference, StabilityPreference, Tr
 /// Override via `allocate_route_with_deadline()` for specific use cases.
 /// Pass 0 for unlimited retry (beacon mode).
 const DEFAULT_ROUTE_ALLOC_MAX_SECS: u64 = 1800;
-use crate::subscriptions::dispatch;
 use super::dht::DhtStore;
-use crate::error::{TransportError, Result};
-use crate::handler::InboundHandler;
 use super::peer_registry::PeerRegistry;
 use super::peer_route::RouteManager;
-use super::send::{Sender, Caller};
-use crate::shared::{SharedState, TransportSnapshot, TransportNotification};
+use super::send::{Caller, Sender};
+use crate::error::{Result, TransportError};
+use crate::handler::InboundHandler;
+use crate::shared::{SharedState, TransportNotification, TransportSnapshot};
+use crate::subscriptions::dispatch;
 
 /// The top-level transport node. Owns the Veilid API handle and all
 /// subsystems. There is exactly one of these per application lifetime.
@@ -93,9 +93,11 @@ impl TransportNode {
                 reason: format!("api_startup: {e}"),
             })?;
 
-        api.attach().await.map_err(|e| TransportError::AttachFailed {
-            reason: format!("attach: {e}"),
-        })?;
+        api.attach()
+            .await
+            .map_err(|e| TransportError::AttachFailed {
+                reason: format!("attach: {e}"),
+            })?;
 
         let config = Arc::new(config);
         let route_manager = Arc::new(parking_lot::RwLock::new(RouteManager::new()));
@@ -112,7 +114,14 @@ impl TransportNode {
             let c = Arc::clone(&config);
             let a = api.clone();
             let ss = Arc::clone(&shared_state);
-            tokio::spawn(dispatch::run_dispatch_loop(h, c, update_rx, shutdown_rx, a, ss))
+            tokio::spawn(dispatch::run_dispatch_loop(
+                h,
+                c,
+                update_rx,
+                shutdown_rx,
+                a,
+                ss,
+            ))
         };
 
         let (rr_tx, rr_rx) = mpsc::channel(1);
@@ -180,7 +189,14 @@ impl TransportNode {
             let c = Arc::clone(&config);
             let a = api.clone();
             let ss = Arc::clone(&shared_state);
-            tokio::spawn(dispatch::run_dispatch_loop(h, c, update_rx, shutdown_rx, a, ss))
+            tokio::spawn(dispatch::run_dispatch_loop(
+                h,
+                c,
+                update_rx,
+                shutdown_rx,
+                a,
+                ss,
+            ))
         };
 
         let (rr_tx, rr_rx) = mpsc::channel(1);
@@ -323,9 +339,12 @@ impl TransportNode {
             }
         }
 
-        self.api.detach().await.map_err(|e| TransportError::ShutdownFailed {
-            reason: format!("detach: {e}"),
-        })?;
+        self.api
+            .detach()
+            .await
+            .map_err(|e| TransportError::ShutdownFailed {
+                reason: format!("detach: {e}"),
+            })?;
         self.api.shutdown().await;
 
         info!("transport node shutdown complete");
@@ -373,28 +392,56 @@ impl TransportNode {
 
         // Step 2: Reopen profile and publish route blob
         if route_blob.is_empty() {
-            let _ = crate::broadcast::dht_writes::open_readonly(self, &session.identity.profile_dht_key).await;
-            let _ = crate::broadcast::dht_writes::open_readonly(self, &session.identity.mailbox_dht_key).await;
+            let _ = crate::broadcast::dht_writes::open_readonly(
+                self,
+                &session.identity.profile_dht_key,
+            )
+            .await;
+            let _ = crate::broadcast::dht_writes::open_readonly(
+                self,
+                &session.identity.mailbox_dht_key,
+            )
+            .await;
         } else {
             if let Some(ref keypair_bytes) = session.identity.profile_keypair_bytes {
                 if let Ok(kp) = deserialize_keypair(keypair_bytes) {
-                    match crate::broadcast::dht_writes::open_writable(self, &session.identity.profile_dht_key, kp).await {
+                    match crate::broadcast::dht_writes::open_writable(
+                        self,
+                        &session.identity.profile_dht_key,
+                        kp,
+                    )
+                    .await
+                    {
                         Ok(()) => {
                             let _ = crate::broadcast::dht_writes::set(
-                                self, &session.identity.profile_dht_key,
+                                self,
+                                &session.identity.profile_dht_key,
                                 crate::payload::dht_types::PROFILE_SUBKEY_ROUTE_BLOB,
-                                route_blob.clone(), None,
-                            ).await;
-                            info!(key = session.identity.profile_dht_key.as_str(), "profile reopened + route published");
+                                route_blob.clone(),
+                                None,
+                            )
+                            .await;
+                            info!(
+                                key = session.identity.profile_dht_key.as_str(),
+                                "profile reopened + route published"
+                            );
                         }
                         Err(e) => {
                             warn!(error = %e, "profile reopen failed — falling back to readonly");
-                            let _ = crate::broadcast::dht_writes::open_readonly(self, &session.identity.profile_dht_key).await;
+                            let _ = crate::broadcast::dht_writes::open_readonly(
+                                self,
+                                &session.identity.profile_dht_key,
+                            )
+                            .await;
                         }
                     }
                 }
             } else {
-                let _ = crate::broadcast::dht_writes::open_readonly(self, &session.identity.profile_dht_key).await;
+                let _ = crate::broadcast::dht_writes::open_readonly(
+                    self,
+                    &session.identity.profile_dht_key,
+                )
+                .await;
             }
 
             // Step 3: Reopen mailbox and publish route blob
@@ -403,18 +450,35 @@ impl TransportNode {
                 let pk = sk.verifying_key();
                 let bare_pub = veilid_core::BarePublicKey::new(&pk.to_bytes());
                 let bare_secret = veilid_core::BareSecretKey::new(signing_key_bytes);
-                let veilid_pub = veilid_core::PublicKey::new(veilid_core::CRYPTO_KIND_VLD0, bare_pub);
+                let veilid_pub =
+                    veilid_core::PublicKey::new(veilid_core::CRYPTO_KIND_VLD0, bare_pub);
                 veilid_core::KeyPair::new_from_parts(veilid_pub, bare_secret)
             };
-            match crate::broadcast::dht_writes::open_writable(self, &session.identity.mailbox_dht_key, identity_keypair).await {
+            match crate::broadcast::dht_writes::open_writable(
+                self,
+                &session.identity.mailbox_dht_key,
+                identity_keypair,
+            )
+            .await
+            {
                 Ok(()) => {
                     let dht = self.dht()?;
-                    let _ = dht.mailbox().update_route(&session.identity.mailbox_dht_key, &route_blob).await;
-                    info!(key = session.identity.mailbox_dht_key.as_str(), "mailbox reopened + route published");
+                    let _ = dht
+                        .mailbox()
+                        .update_route(&session.identity.mailbox_dht_key, &route_blob)
+                        .await;
+                    info!(
+                        key = session.identity.mailbox_dht_key.as_str(),
+                        "mailbox reopened + route published"
+                    );
                 }
                 Err(e) => {
                     warn!(error = %e, "mailbox reopen failed");
-                    let _ = crate::broadcast::dht_writes::open_readonly(self, &session.identity.mailbox_dht_key).await;
+                    let _ = crate::broadcast::dht_writes::open_readonly(
+                        self,
+                        &session.identity.mailbox_dht_key,
+                    )
+                    .await;
                 }
             }
         }
@@ -422,28 +486,55 @@ impl TransportNode {
         // Step 4: Reopen friend list
         if let Some(ref kp_bytes) = session.identity.friend_list_keypair_bytes {
             if let Ok(kp) = deserialize_keypair(kp_bytes) {
-                match crate::broadcast::dht_writes::open_writable(self, &session.identity.friend_list_dht_key, kp).await {
-                    Ok(()) => info!(key = session.identity.friend_list_dht_key.as_str(), "friend list reopened writable"),
+                match crate::broadcast::dht_writes::open_writable(
+                    self,
+                    &session.identity.friend_list_dht_key,
+                    kp,
+                )
+                .await
+                {
+                    Ok(()) => info!(
+                        key = session.identity.friend_list_dht_key.as_str(),
+                        "friend list reopened writable"
+                    ),
                     Err(e) => {
                         warn!(error = %e, "friend list writable reopen failed, falling back to readonly");
-                        let _ = crate::broadcast::dht_writes::open_readonly(self, &session.identity.friend_list_dht_key).await;
+                        let _ = crate::broadcast::dht_writes::open_readonly(
+                            self,
+                            &session.identity.friend_list_dht_key,
+                        )
+                        .await;
                     }
                 }
             } else {
-                let _ = crate::broadcast::dht_writes::open_readonly(self, &session.identity.friend_list_dht_key).await;
+                let _ = crate::broadcast::dht_writes::open_readonly(
+                    self,
+                    &session.identity.friend_list_dht_key,
+                )
+                .await;
             }
-        } else if let Err(e) = crate::broadcast::dht_writes::open_readonly(self, &session.identity.friend_list_dht_key).await {
+        } else if let Err(e) =
+            crate::broadcast::dht_writes::open_readonly(self, &session.identity.friend_list_dht_key)
+                .await
+        {
             warn!(error = %e, "friend list reopen failed");
         } else {
-            info!(key = session.identity.friend_list_dht_key.as_str(), "friend list reopened readonly (no keypair)");
+            info!(
+                key = session.identity.friend_list_dht_key.as_str(),
+                "friend list reopened readonly (no keypair)"
+            );
         }
 
         // Step 5: Reopen community governance + registry records (readonly)
         for membership in session.communities.values() {
-            if let Err(e) = crate::broadcast::dht_writes::open_readonly(self, &membership.governance_key).await {
+            if let Err(e) =
+                crate::broadcast::dht_writes::open_readonly(self, &membership.governance_key).await
+            {
                 warn!(error = %e, community = membership.community_name.as_str(), "governance reopen failed");
             }
-            if let Err(e) = crate::broadcast::dht_writes::open_readonly(self, &membership.registry_key).await {
+            if let Err(e) =
+                crate::broadcast::dht_writes::open_readonly(self, &membership.registry_key).await
+            {
                 warn!(error = %e, community = membership.community_name.as_str(), "registry reopen failed");
             }
         }
@@ -456,13 +547,24 @@ impl TransportNode {
             match crate::broadcast::route::allocate_community(self).await {
                 Ok((_route_id, community_route_blob)) => {
                     match crate::broadcast::route::publish_to_community_mailbox(
-                        self, &membership.community_mailbox_key, &community_route_blob,
-                    ).await {
-                        Ok(()) => info!(community = membership.community_name.as_str(), "community route refreshed"),
-                        Err(e) => warn!(community = membership.community_name.as_str(), error = %e, "community route publish failed"),
+                        self,
+                        &membership.community_mailbox_key,
+                        &community_route_blob,
+                    )
+                    .await
+                    {
+                        Ok(()) => info!(
+                            community = membership.community_name.as_str(),
+                            "community route refreshed"
+                        ),
+                        Err(e) => {
+                            warn!(community = membership.community_name.as_str(), error = %e, "community route publish failed")
+                        }
                     }
                 }
-                Err(e) => warn!(community = membership.community_name.as_str(), error = %e, "community route allocation failed"),
+                Err(e) => {
+                    warn!(community = membership.community_name.as_str(), error = %e, "community route allocation failed")
+                }
             }
         }
 
@@ -569,12 +671,16 @@ impl TransportNode {
     /// The `max_wait_secs` parameter controls the hard deadline. Pass 0 for
     /// unlimited retry (beacon mode for intermittently connected nodes).
     pub async fn allocate_route(&self) -> Result<(String, Vec<u8>)> {
-        self.allocate_route_with_deadline(DEFAULT_ROUTE_ALLOC_MAX_SECS).await
+        self.allocate_route_with_deadline(DEFAULT_ROUTE_ALLOC_MAX_SECS)
+            .await
     }
 
     /// Allocate a private route with a configurable deadline in seconds.
     /// Pass 0 for unlimited retry (beacon mode).
-    pub async fn allocate_route_with_deadline(&self, max_wait_secs: u64) -> Result<(String, Vec<u8>)> {
+    pub async fn allocate_route_with_deadline(
+        &self,
+        max_wait_secs: u64,
+    ) -> Result<(String, Vec<u8>)> {
         let start = std::time::Instant::now();
         let mut backoff = std::time::Duration::from_millis(500);
         let ceiling = std::time::Duration::from_secs(15);
@@ -621,7 +727,8 @@ impl TransportNode {
                             reason: format!(
                                 "network not ready after {} attempts over {}s — \
                                  check network connectivity and Veilid bootstrap peers",
-                                attempt, elapsed.as_secs()
+                                attempt,
+                                elapsed.as_secs()
                             ),
                         });
                     }
@@ -654,9 +761,12 @@ impl TransportNode {
     }
 
     pub fn import_route(&self, route_blob: &[u8]) -> Result<super::peer_registry::PeerTarget> {
-        let route_id = self.api.import_remote_private_route(route_blob.to_vec())
+        let route_id = self
+            .api
+            .import_remote_private_route(route_blob.to_vec())
             .map_err(|e| TransportError::RouteImportFailed {
-                peer: String::new(), reason: format!("{e}"),
+                peer: String::new(),
+                reason: format!("{e}"),
             })?;
         Ok(super::peer_registry::PeerTarget { route_id })
     }
@@ -675,7 +785,9 @@ pub(crate) fn build_routing_context(
     api: &VeilidAPI,
     profile: &SafetyProfile,
 ) -> Result<RoutingContext> {
-    let rc = api.routing_context().map_err(|_| TransportError::NotStarted)?;
+    let rc = api
+        .routing_context()
+        .map_err(|_| TransportError::NotStarted)?;
 
     // Phase 9 — `sender_anonymous` is the authoritative switch between
     // SafetySelection::Safe (sender hidden via a safety route — at any
@@ -725,13 +837,17 @@ pub(crate) fn map_sequencing(pref: SequencingPreference) -> Sequencing {
 pub fn deserialize_keypair(bytes: &[u8]) -> Result<veilid_core::KeyPair> {
     if bytes.len() != 64 {
         return Err(TransportError::Internal(format!(
-            "keypair bytes: expected 64, got {}", bytes.len()
+            "keypair bytes: expected 64, got {}",
+            bytes.len()
         )));
     }
     let bare_pub = veilid_core::BarePublicKey::new(&bytes[..32]);
     let bare_secret = veilid_core::BareSecretKey::new(&bytes[32..]);
     let veilid_pub = veilid_core::PublicKey::new(veilid_core::CRYPTO_KIND_VLD0, bare_pub);
-    Ok(veilid_core::KeyPair::new_from_parts(veilid_pub, bare_secret))
+    Ok(veilid_core::KeyPair::new_from_parts(
+        veilid_pub,
+        bare_secret,
+    ))
 }
 
 /// Serialize a Veilid `KeyPair` to bytes for keyring storage.

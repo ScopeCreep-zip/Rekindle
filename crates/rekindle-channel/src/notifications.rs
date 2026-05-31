@@ -79,11 +79,7 @@ impl NotificationThrottle {
         let window = guard.entry(key).or_default();
 
         let cutoff = now_ms.saturating_sub(NOTIFICATION_BURST_WINDOW_MS);
-        while window
-            .timestamps
-            .front()
-            .is_some_and(|ts| *ts < cutoff)
-        {
+        while window.timestamps.front().is_some_and(|ts| *ts < cutoff) {
             window.timestamps.pop_front();
         }
 
@@ -104,11 +100,7 @@ impl NotificationThrottle {
         }
     }
 
-    pub fn record_attempt_now(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-    ) -> NotificationDecision {
+    pub fn record_attempt_now(&self, community_id: &str, channel_id: &str) -> NotificationDecision {
         self.record_attempt(community_id, channel_id, Self::now_ms())
     }
 }

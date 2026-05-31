@@ -54,16 +54,24 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
         let mut last_err = None;
         let mut result = None;
         for attempt in 1..=5u32 {
-            match client.request_ok(rekindle_node::ipc::protocol::IpcRequest::Status).await {
-                Ok(v) => { result = Some(v); break; }
+            match client
+                .request_ok(rekindle_node::ipc::protocol::IpcRequest::Status)
+                .await
+            {
+                Ok(v) => {
+                    result = Some(v);
+                    break;
+                }
                 Err(e) => {
                     tracing::debug!(attempt, error = %e, "daemon not ready, retrying");
                     last_err = Some(e);
-                    tokio::time::sleep(std::time::Duration::from_millis(200 * u64::from(attempt))).await;
+                    tokio::time::sleep(std::time::Duration::from_millis(200 * u64::from(attempt)))
+                        .await;
                 }
             }
         }
-        result.ok_or_else(|| last_err.unwrap_or_else(|| anyhow::anyhow!("daemon not responding")))?
+        result
+            .ok_or_else(|| last_err.unwrap_or_else(|| anyhow::anyhow!("daemon not responding")))?
     };
     tracing::info!(state = %status["state"], "daemon connected");
 
@@ -81,12 +89,7 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
 
     let mut tui = terminal::Tui::new(&config.tui)
         .map_err(|e| anyhow::anyhow!("terminal initialization failed: {e}"))?;
-    let mut application = app::App::new(
-        Arc::clone(&client),
-        config,
-        theme_manager,
-        keymap_store,
-    );
+    let mut application = app::App::new(Arc::clone(&client), config, theme_manager, keymap_store);
 
     let result = application.run(&mut tui, event_rx).await;
 

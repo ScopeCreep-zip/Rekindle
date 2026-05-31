@@ -63,7 +63,8 @@ pub async fn should_emit_message_notification(
         sender_pseudonym_hex,
         &mut mentions,
     );
-    let mentioned = super::super::mentions::local_member_is_mentioned(state, community_id, &mentions);
+    let mentioned =
+        super::super::mentions::local_member_is_mentioned(state, community_id, &mentions);
 
     Ok(match level {
         NotificationLevel::All => true,
@@ -116,9 +117,8 @@ pub async fn emit_message_notification(
     let (title, payload_body) = match decision {
         NotificationDecision::EmitSummary { bundled_count } => {
             let title = format!("#{channel_name}");
-            let body = format!(
-                "[{community_name}] {bundled_count} more messages in #{channel_name}"
-            );
+            let body =
+                format!("[{community_name}] {bundled_count} more messages in #{channel_name}");
             (title, body)
         }
         NotificationDecision::Emit => {

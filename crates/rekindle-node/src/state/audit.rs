@@ -6,7 +6,6 @@
 //!
 //! Entries are appended as single JSON lines to `audit.jsonl`.
 
-
 use std::io::Write;
 use std::path::Path;
 
@@ -198,15 +197,21 @@ mod tests {
         // Write 2 entries.
         {
             let mut logger = AuditLogger::open(path).unwrap();
-            logger.append(b"a", None, SecurityLevel::Open, "A".into(), None).unwrap();
-            logger.append(b"b", None, SecurityLevel::Open, "B".into(), None).unwrap();
+            logger
+                .append(b"a", None, SecurityLevel::Open, "A".into(), None)
+                .unwrap();
+            logger
+                .append(b"b", None, SecurityLevel::Open, "B".into(), None)
+                .unwrap();
         }
 
         // Reopen and verify chain continues.
         let mut logger = AuditLogger::open(path).unwrap();
         assert_eq!(logger.sequence(), 2);
 
-        logger.append(b"c", None, SecurityLevel::Open, "C".into(), None).unwrap();
+        logger
+            .append(b"c", None, SecurityLevel::Open, "C".into(), None)
+            .unwrap();
         assert_eq!(logger.sequence(), 3);
 
         // Verify third entry chains from second.

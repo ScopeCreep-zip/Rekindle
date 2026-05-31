@@ -248,13 +248,7 @@ mod tests {
 
     #[test]
     fn parse_community_create() {
-        let cli = Cli::try_parse_from([
-            "rekindle",
-            "community",
-            "create",
-            "my community",
-        ])
-        .unwrap();
+        let cli = Cli::try_parse_from(["rekindle", "community", "create", "my community"]).unwrap();
         if let Some(Command::Community(CommunityCmd::Create { name, .. })) = cli.command {
             assert_eq!(name, "my community");
         } else {
@@ -322,16 +316,8 @@ mod tests {
 
     #[test]
     fn parse_dm_send() {
-        let cli = Cli::try_parse_from([
-            "rekindle",
-            "dm",
-            "send",
-            "-f",
-            "alice",
-            "-m",
-            "hey there",
-        ])
-        .unwrap();
+        let cli = Cli::try_parse_from(["rekindle", "dm", "send", "-f", "alice", "-m", "hey there"])
+            .unwrap();
         if let Some(Command::Dm(DmCmd::Send {
             friend, message, ..
         })) = cli.command
@@ -366,14 +352,7 @@ mod tests {
     #[test]
     fn parse_voice_join() {
         let cli = Cli::try_parse_from([
-            "rekindle",
-            "voice",
-            "join",
-            "-c",
-            "gaming",
-            "-C",
-            "voice-1",
-            "--muted",
+            "rekindle", "voice", "join", "-c", "gaming", "-C", "voice-1", "--muted",
         ])
         .unwrap();
         if let Some(Command::Voice(VoiceCmd::Join {
@@ -435,7 +414,10 @@ mod tests {
 
     #[test]
     fn parse_global_script() {
-        let cli = Cli::try_parse_from(["rekindle", "--script", "channel", "watch", "-c", "com", "-C", "ch"]).unwrap();
+        let cli = Cli::try_parse_from([
+            "rekindle", "--script", "channel", "watch", "-c", "com", "-C", "ch",
+        ])
+        .unwrap();
         assert!(cli.script);
     }
 
@@ -451,16 +433,9 @@ mod tests {
         // -c and -C and -m are all required
         assert!(Cli::try_parse_from(["rekindle", "channel", "send"]).is_err());
         assert!(Cli::try_parse_from(["rekindle", "channel", "send", "-c", "com"]).is_err());
-        assert!(Cli::try_parse_from([
-            "rekindle",
-            "channel",
-            "send",
-            "-c",
-            "com",
-            "-C",
-            "ch"
-        ])
-        .is_err());
+        assert!(
+            Cli::try_parse_from(["rekindle", "channel", "send", "-c", "com", "-C", "ch"]).is_err()
+        );
     }
 
     #[test]
