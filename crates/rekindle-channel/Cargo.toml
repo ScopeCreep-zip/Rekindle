@@ -1,0 +1,36 @@
+[package]
+name = "rekindle-channel"
+version = "0.1.0"
+edition = "2021"
+description = "Phase 19 — community channel messaging (send / receive / threads / reactions / expressions / mentions) layered on top of rekindle-mek-rotation + rekindle-gossip"
+license = "MIT"
+
+[lints]
+workspace = true
+
+[dependencies]
+rekindle-types = { path = "../rekindle-types" }
+rekindle-crypto = { path = "../rekindle-crypto" }
+rekindle-mek-rotation = { path = "../rekindle-mek-rotation" }
+rekindle-governance = { path = "../rekindle-governance" }
+rekindle-records = { path = "../rekindle-records" }
+rand = { workspace = true }
+base64 = "0.22"
+blake3 = "1"
+regex = "1"
+rekindle-gossip = { path = "../rekindle-gossip" }
+rekindle-codec = { path = "../rekindle-codec" }
+rekindle-protocol = { path = "../rekindle-protocol" }
+rekindle-secrets = { path = "../rekindle-secrets" }
+rekindle-utils = { path = "../rekindle-utils" }
+async-trait = "0.1"
+hex = { workspace = true }
+parking_lot = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
