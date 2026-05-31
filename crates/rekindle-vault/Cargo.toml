@@ -1,0 +1,24 @@
+[package]
+name = "rekindle-vault"
+version = "0.1.0"
+edition = "2021"
+description = "Double-encrypted SQLCipher vault for Rekindle (SQLCipher page-level AES-256-CBC + per-entry AES-256-GCM)"
+
+[lints]
+workspace = true
+
+[dependencies]
+rusqlite = { version = "0.37", features = ["bundled-sqlcipher-vendored-openssl"] }
+aes-gcm = "0.10"
+blake3 = "1"
+argon2 = "0.5"
+hex = "0.4"
+zeroize = { version = "1", features = ["derive"] }
+parking_lot = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+rand = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
