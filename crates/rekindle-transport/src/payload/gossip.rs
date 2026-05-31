@@ -720,6 +720,52 @@ impl ControlPayload {
                 message_id,
             }),
 
+            // The remaining categories (events, threads, game servers,
+            // governance, voice, admin delegation, bootstrap, sync, system)
+            // are mapped by `into_event_rest` to keep this method under the
+            // clippy::too_many_lines limit. They are listed explicitly rather
+            // than via `_` so that adding a `ControlPayload` variant remains a
+            // compile error here — exhaustiveness is preserved.
+            Self::EventCreated { .. }
+            | Self::EventUpdated { .. }
+            | Self::EventDeleted { .. }
+            | Self::EventRsvpChanged { .. }
+            | Self::EventReminder { .. }
+            | Self::ThreadCreated { .. }
+            | Self::ThreadMessage { .. }
+            | Self::ThreadArchived { .. }
+            | Self::GameServerAdded { .. }
+            | Self::GameServerRemoved { .. }
+            | Self::GovernanceUpdated { .. }
+            | Self::VoiceJoin { .. }
+            | Self::VoiceLeave { .. }
+            | Self::VoiceModeSwitch { .. }
+            | Self::VoiceMute { .. }
+            | Self::VoiceDeafen { .. }
+            | Self::VoiceRoster { .. }
+            | Self::AdminKeypairGrant { .. }
+            | Self::SlotKeypairGrant { .. }
+            | Self::BootstrapRequest { .. }
+            | Self::BootstrapResponse { .. }
+            | Self::SyncRequest { .. }
+            | Self::SyncResponse { .. }
+            | Self::SystemMessage { .. }
+            | Self::RaidAlert { .. }
+            | Self::ChannelLockdown { .. }
+            | Self::KickedNotification => self.into_event_rest(community, sender),
+        }
+    }
+
+    /// Tail of [`ControlPayload::into_event`] — see that method for the split
+    /// rationale. Handles events, threads, game servers, governance, voice
+    /// signaling, admin delegation, bootstrap, sync, and system payloads.
+    /// Earlier variants are routed by `into_event` and never reach the
+    /// `unreachable!` arm below.
+    fn into_event_rest(self, community: &str, sender: &str) -> SubscriptionEvent {
+        let c = || community.to_string();
+        let s = || sender.to_string();
+
+        match self {
             // ── Events ──────────────────────────────────────────
             Self::EventCreated { event } => SubscriptionEvent::Social(SocialEvent::EventCreated {
                 community: c(),
@@ -932,6 +978,11 @@ impl ControlPayload {
             Self::KickedNotification => {
                 SubscriptionEvent::System(SystemEvent::Kicked { community: c() })
             }
+
+            // Unreachable: every variant above the split is routed here by
+            // `into_event`, whose match is exhaustive — a new `ControlPayload`
+            // variant is a compile error there, not a silent fall-through.
+            _ => unreachable!("into_event_rest received a variant owned by into_event"),
         }
     }
 }

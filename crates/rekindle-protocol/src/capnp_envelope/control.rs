@@ -35,158 +35,158 @@ pub fn encode_control_payload(
     use ControlPayload as CP;
     match payload {
         CP::MemberJoinRequest { .. } => {
-            write_member_join_request(b.reborrow().init_member_join_request(), payload)
+            write_member_join_request(b.reborrow().init_member_join_request(), payload);
         }
         CP::MemberLeave { .. } => write_member_leave(b.reborrow().init_member_leave(), payload),
         CP::JoinAccepted { .. } => write_join_accepted(b.reborrow().init_join_accepted(), payload),
         CP::JoinRejected { .. } => write_join_rejected(b.reborrow().init_join_rejected(), payload),
         CP::MemberJoined { .. } => write_member_joined(b.reborrow().init_member_joined(), payload),
         CP::MemberRemoved { .. } => {
-            write_member_removed(b.reborrow().init_member_removed(), payload)
+            write_member_removed(b.reborrow().init_member_removed(), payload);
         }
         CP::Kick { .. } => write_kick(b.reborrow().init_kick(), payload),
         CP::Ban { .. } => write_ban(b.reborrow().init_ban(), payload),
         CP::Unban { .. } => write_unban(b.reborrow().init_unban(), payload),
         CP::TimeoutMember { .. } => {
-            write_timeout_member(b.reborrow().init_timeout_member(), payload)
+            write_timeout_member(b.reborrow().init_timeout_member(), payload);
         }
         CP::RemoveTimeout { .. } => {
-            write_remove_timeout(b.reborrow().init_remove_timeout(), payload)
+            write_remove_timeout(b.reborrow().init_remove_timeout(), payload);
         }
         CP::MemberTimedOut { .. } => {
-            write_member_timed_out(b.reborrow().init_member_timed_out(), payload)
+            write_member_timed_out(b.reborrow().init_member_timed_out(), payload);
         }
         CP::MessageEdited { .. } => {
-            write_message_edited(b.reborrow().init_message_edited(), payload)
+            write_message_edited(b.reborrow().init_message_edited(), payload);
         }
         CP::MessageDeleted { .. } => {
-            write_message_deleted(b.reborrow().init_message_deleted(), payload)
+            write_message_deleted(b.reborrow().init_message_deleted(), payload);
         }
         CP::MEKRotated { .. } => write_mek_rotated(b.reborrow().init_mek_rotated(), payload),
         CP::RequestMEK { .. } => write_request_mek(b.reborrow().init_request_mek(), payload),
         CP::MekTransfer { .. } => write_mek_transfer(b.reborrow().init_mek_transfer(), payload),
         CP::MekTransferAck { .. } => {
-            write_mek_transfer_ack(b.reborrow().init_mek_transfer_ack(), payload)
+            write_mek_transfer_ack(b.reborrow().init_mek_transfer_ack(), payload);
         }
         CP::RequestSegmentExpansion { .. } => {
-            write_request_segment_expansion(b.reborrow().init_request_segment_expansion(), payload)
+            write_request_segment_expansion(b.reborrow().init_request_segment_expansion(), payload);
         }
         CP::OnboardingComplete { .. } => {
-            write_onboarding_complete(b.reborrow().init_onboarding_complete(), payload)
+            write_onboarding_complete(b.reborrow().init_onboarding_complete(), payload);
         }
         CP::MemberRolesChanged { .. } => {
-            write_member_roles_changed(b.reborrow().init_member_roles_changed(), payload)
+            write_member_roles_changed(b.reborrow().init_member_roles_changed(), payload);
         }
         CP::ChannelOverwriteChanged { .. } => {
-            write_channel_overwrite_changed(b.reborrow().init_channel_overwrite_changed(), payload)
+            write_channel_overwrite_changed(b.reborrow().init_channel_overwrite_changed(), payload);
         }
         CP::ReactionAdded { .. } => {
-            write_reaction_added(b.reborrow().init_reaction_added(), payload)
+            write_reaction_added(b.reborrow().init_reaction_added(), payload);
         }
         CP::ReactionRemoved { .. } => {
-            write_reaction_removed(b.reborrow().init_reaction_removed(), payload)
+            write_reaction_removed(b.reborrow().init_reaction_removed(), payload);
         }
         CP::MessagePinned { .. } => {
-            write_message_pinned(b.reborrow().init_message_pinned(), payload)
+            write_message_pinned(b.reborrow().init_message_pinned(), payload);
         }
         CP::MessageUnpinned { .. } => {
-            write_message_unpinned(b.reborrow().init_message_unpinned(), payload)
+            write_message_unpinned(b.reborrow().init_message_unpinned(), payload);
         }
         CP::EventCreated { .. } => write_event_created(b.reborrow().init_event_created(), payload),
         CP::EventUpdated { .. } => write_event_updated(b.reborrow().init_event_updated(), payload),
         CP::EventDeleted { .. } => write_event_deleted(b.reborrow().init_event_deleted(), payload),
         CP::EventRsvpChanged { .. } => {
-            write_event_rsvp_changed(b.reborrow().init_event_rsvp_changed(), payload)
+            write_event_rsvp_changed(b.reborrow().init_event_rsvp_changed(), payload);
         }
         CP::ThreadCreated { .. } => {
-            write_thread_created(b.reborrow().init_thread_created(), payload)
+            write_thread_created(b.reborrow().init_thread_created(), payload);
         }
         CP::ThreadMessageReceived { .. } => {
-            write_thread_message_received(b.reborrow().init_thread_message_received(), payload)
+            write_thread_message_received(b.reborrow().init_thread_message_received(), payload);
         }
         CP::ThreadArchived { .. } => {
-            write_thread_archived(b.reborrow().init_thread_archived(), payload)
+            write_thread_archived(b.reborrow().init_thread_archived(), payload);
         }
         CP::GameServerAdded { .. } => {
-            write_game_server_added(b.reborrow().init_game_server_added(), payload)
+            write_game_server_added(b.reborrow().init_game_server_added(), payload);
         }
         CP::GameServerRemoved { .. } => {
-            write_game_server_removed(b.reborrow().init_game_server_removed(), payload)
+            write_game_server_removed(b.reborrow().init_game_server_removed(), payload);
         }
         CP::SubmitOnboardingAnswers { .. } => {
-            write_submit_onboarding_answers(b.reborrow().init_submit_onboarding_answers(), payload)
+            write_submit_onboarding_answers(b.reborrow().init_submit_onboarding_answers(), payload);
         }
         CP::EventReminder { .. } => {
-            write_event_reminder(b.reborrow().init_event_reminder(), payload)
+            write_event_reminder(b.reborrow().init_event_reminder(), payload);
         }
         CP::KickedNotification => b.reborrow().set_kicked_notification(()),
         CP::RaidAlert { .. } => write_raid_alert(b.reborrow().init_raid_alert(), payload),
         CP::ChannelLockdown { .. } => {
-            write_channel_lockdown(b.reborrow().init_channel_lockdown(), payload)
+            write_channel_lockdown(b.reborrow().init_channel_lockdown(), payload);
         }
         CP::SystemMessage { .. } => {
-            write_system_message(b.reborrow().init_system_message(), payload)
+            write_system_message(b.reborrow().init_system_message(), payload);
         }
         CP::AdminKeypairGrant { .. } => {
-            write_admin_keypair_grant(b.reborrow().init_admin_keypair_grant(), payload)
+            write_admin_keypair_grant(b.reborrow().init_admin_keypair_grant(), payload);
         }
         CP::SlotKeypairGrant { .. } => {
-            write_slot_keypair_grant(b.reborrow().init_slot_keypair_grant(), payload)
+            write_slot_keypair_grant(b.reborrow().init_slot_keypair_grant(), payload);
         }
         CP::GovernanceUpdated { .. } => {
-            write_governance_updated(b.reborrow().init_governance_updated(), payload)
+            write_governance_updated(b.reborrow().init_governance_updated(), payload);
         }
         CP::BootstrapRequest { .. } => {
-            write_bootstrap_request(b.reborrow().init_bootstrap_request(), payload)
+            write_bootstrap_request(b.reborrow().init_bootstrap_request(), payload);
         }
         CP::BootstrapResponse { .. } => {
-            write_bootstrap_response(b.reborrow().init_bootstrap_response(), payload)
+            write_bootstrap_response(b.reborrow().init_bootstrap_response(), payload);
         }
         CP::SyncRequest { .. } => write_sync_request(b.reborrow().init_sync_request(), payload),
         CP::SyncResponse { .. } => write_sync_response(b.reborrow().init_sync_response(), payload),
         CP::VoiceJoin { .. } => write_voice_join(b.reborrow().init_voice_join(), payload),
         CP::VoiceLeave { .. } => write_voice_leave(b.reborrow().init_voice_leave(), payload),
         CP::VoiceModeSwitch { .. } => {
-            write_voice_mode_switch(b.reborrow().init_voice_mode_switch(), payload)
+            write_voice_mode_switch(b.reborrow().init_voice_mode_switch(), payload);
         }
         CP::StageUpdate { .. } => write_stage_update(b.reborrow().init_stage_update(), payload),
         CP::SpeakRequest { .. } => write_speak_request(b.reborrow().init_speak_request(), payload),
         CP::SpeakResponse { .. } => {
-            write_speak_response(b.reborrow().init_speak_response(), payload)
+            write_speak_response(b.reborrow().init_speak_response(), payload);
         }
         CP::RequestAttachment { .. } => {
-            write_request_attachment(b.reborrow().init_request_attachment(), payload)
+            write_request_attachment(b.reborrow().init_request_attachment(), payload);
         }
         CP::AttachmentChunk { .. } => {
-            write_attachment_chunk(b.reborrow().init_attachment_chunk(), payload)
+            write_attachment_chunk(b.reborrow().init_attachment_chunk(), payload);
         }
         CP::MultiAttachmentChunk { .. } => {
-            write_multi_attachment_chunk(b.reborrow().init_multi_attachment_chunk(), payload)?
+            write_multi_attachment_chunk(b.reborrow().init_multi_attachment_chunk(), payload)?;
         }
         CP::VoiceMute { .. } => write_voice_mute(b.reborrow().init_voice_mute(), payload),
         CP::VoiceDeafen { .. } => write_voice_deafen(b.reborrow().init_voice_deafen(), payload),
         CP::VoiceRoster { .. } => write_voice_roster(b.reborrow().init_voice_roster(), payload),
         CP::SoundboardPlay { .. } => {
-            write_soundboard_play(b.reborrow().init_soundboard_play(), payload)
+            write_soundboard_play(b.reborrow().init_soundboard_play(), payload);
         }
         CP::VideoFragment { .. } => {
-            write_video_fragment(b.reborrow().init_video_fragment(), payload)
+            write_video_fragment(b.reborrow().init_video_fragment(), payload);
         }
         CP::VideoParityFragment { .. } => {
-            write_video_parity_fragment(b.reborrow().init_video_parity_fragment(), payload)
+            write_video_parity_fragment(b.reborrow().init_video_parity_fragment(), payload);
         }
         CP::FrameAck { .. } => write_frame_ack(b.reborrow().init_frame_ack(), payload),
         CP::KeyframeRequest { .. } => {
-            write_keyframe_request(b.reborrow().init_keyframe_request(), payload)
+            write_keyframe_request(b.reborrow().init_keyframe_request(), payload);
         }
         CP::BandwidthEstimate { .. } => {
-            write_bandwidth_estimate(b.reborrow().init_bandwidth_estimate(), payload)
+            write_bandwidth_estimate(b.reborrow().init_bandwidth_estimate(), payload);
         }
         CP::MediaCapabilities { .. } => {
-            write_media_capabilities(b.reborrow().init_media_capabilities(), payload)
+            write_media_capabilities(b.reborrow().init_media_capabilities(), payload);
         }
         CP::TopologyChange { .. } => {
-            write_topology_change(b.reborrow().init_topology_change(), payload)
+            write_topology_change(b.reborrow().init_topology_change(), payload);
         }
         CP::LinkPreview { .. } => write_link_preview(b.reborrow().init_link_preview(), payload),
     }

@@ -17,7 +17,7 @@ pub async fn allocate_personal(node: &TransportNode) -> Result<(String, Vec<u8>)
     let result = node.allocate_route().await;
     match &result {
         Ok((id, blob)) => {
-            info!(route_id = %id, blob_bytes = blob.len(), "route: personal allocated")
+            info!(route_id = %id, blob_bytes = blob.len(), "route: personal allocated");
         }
         Err(e) => warn!(error = %e, "route: personal allocation failed"),
     }

@@ -238,7 +238,7 @@ impl InboundHandler for DaemonHandler {
                             "MEK cached from JoinAccepted notification (tier 2)"
                         ),
                         Err(e) => {
-                            debug!(community = community_id, error = %e, "MEK cache from notification failed — will read vault")
+                            debug!(community = community_id, error = %e, "MEK cache from notification failed — will read vault");
                         }
                     }
                 }

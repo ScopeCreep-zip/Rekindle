@@ -496,6 +496,47 @@ impl std::fmt::Debug for IpcRequest {
                 .field("channel", channel)
                 .field("generation", generation)
                 .finish(),
+
+            // The remaining variants are formatted by `fmt_rest` to keep this
+            // method under the clippy::too_many_lines limit. They are listed
+            // explicitly rather than via `_` so adding an `IpcRequest` variant
+            // remains a compile error here — exhaustiveness is preserved.
+            Self::PrekeyReplenish
+            | Self::PresenceSet { .. }
+            | Self::GamePresenceSet { .. }
+            | Self::GamePresenceClear
+            | Self::RoleList { .. }
+            | Self::RoleCreate { .. }
+            | Self::RoleUpdate { .. }
+            | Self::RoleDelete { .. }
+            | Self::RoleAssign { .. }
+            | Self::RoleUnassign { .. }
+            | Self::Kick { .. }
+            | Self::Ban { .. }
+            | Self::Unban { .. }
+            | Self::Timeout { .. }
+            | Self::BanList { .. }
+            | Self::InviteCreate { .. }
+            | Self::InviteList { .. }
+            | Self::InviteRevoke { .. }
+            | Self::VoiceJoin { .. }
+            | Self::VoiceLeave
+            | Self::NetworkStatus
+            | Self::NetworkPeers
+            | Self::AgentRegister { .. }
+            | Self::AgentRevoke { .. }
+            | Self::PolicyReload
+            | Self::Shutdown => self.fmt_rest(f),
+        }
+    }
+}
+
+impl IpcRequest {
+    /// Tail of the [`std::fmt::Debug`] impl — formats the variants not handled
+    /// inline by `fmt`. See that impl for the split rationale. Variants handled
+    /// by `fmt` are routed there and never reach the `unreachable!` arm below.
+    fn fmt_rest(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
             Self::PrekeyReplenish => write!(f, "PrekeyReplenish"),
             Self::PresenceSet { status, message } => f
                 .debug_struct("PresenceSet")
@@ -666,6 +707,11 @@ impl std::fmt::Debug for IpcRequest {
             }
             Self::PolicyReload => write!(f, "PolicyReload"),
             Self::Shutdown => write!(f, "Shutdown"),
+
+            // Unreachable: the variants above are the only ones routed here by
+            // `fmt`, whose match is exhaustive — a new `IpcRequest` variant is
+            // a compile error there, not a silent fall-through to this arm.
+            _ => unreachable!("fmt_rest received a variant owned by the Debug impl"),
         }
     }
 }

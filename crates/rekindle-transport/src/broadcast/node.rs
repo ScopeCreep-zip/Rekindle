@@ -558,12 +558,12 @@ impl TransportNode {
                             "community route refreshed"
                         ),
                         Err(e) => {
-                            warn!(community = membership.community_name.as_str(), error = %e, "community route publish failed")
+                            warn!(community = membership.community_name.as_str(), error = %e, "community route publish failed");
                         }
                     }
                 }
                 Err(e) => {
-                    warn!(community = membership.community_name.as_str(), error = %e, "community route allocation failed")
+                    warn!(community = membership.community_name.as_str(), error = %e, "community route allocation failed");
                 }
             }
         }

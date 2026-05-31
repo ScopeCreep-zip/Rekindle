@@ -346,7 +346,7 @@ fn write_governance_entry_second_half(b: schema::Builder<'_>, e: &GovernanceEntr
             *lamport,
         ),
         GovernanceEntry::RemoveTimeoutEntry { target, lamport } => {
-            write_remove_timeout_entry(b.reborrow().init_remove_timeout_entry(), target, *lamport)
+            write_remove_timeout_entry(b.reborrow().init_remove_timeout_entry(), target, *lamport);
         }
         GovernanceEntry::RoleArchived { role_id, lamport } => {
             write_role_archived(b.reborrow().init_role_archived(), *role_id, *lamport);

@@ -102,7 +102,79 @@ async fn handle_op_inner(
         "governance op"
     );
 
+    // Dispatch by category. Each group is handled by its own function to
+    // keep every function under clippy::too_many_lines. The match lists every
+    // operation explicitly (not `_`) so adding a `GovernanceOp` is a compile
+    // error here — exhaustiveness is preserved at this dispatch point.
     match req.operation {
+        GovernanceOp::RegisterChannelRecord { .. }
+        | GovernanceOp::Ban { .. }
+        | GovernanceOp::Kick { .. }
+        | GovernanceOp::Unban { .. }
+        | GovernanceOp::Timeout { .. } => {
+            handle_op_group_a(
+                req.operation,
+                sender,
+                session,
+                signing_key,
+                mek_cache,
+                transport,
+                session_path,
+                gov_key,
+            )
+            .await
+        }
+        GovernanceOp::ApproveJoin { .. }
+        | GovernanceOp::RejectJoin { .. }
+        | GovernanceOp::CreateChannel { .. }
+        | GovernanceOp::DeleteChannel { .. }
+        | GovernanceOp::UpdateChannel { .. } => {
+            handle_op_group_b(
+                req.operation,
+                session,
+                signing_key,
+                mek_cache,
+                transport,
+                gov_key,
+            )
+            .await
+        }
+        GovernanceOp::CreateRole { .. }
+        | GovernanceOp::UpdateRole { .. }
+        | GovernanceOp::DeleteRole { .. }
+        | GovernanceOp::AssignRole { .. }
+        | GovernanceOp::UnassignRole { .. }
+        | GovernanceOp::RotateMek { .. }
+        | GovernanceOp::TransferOwnership { .. } => {
+            handle_op_group_c(
+                req.operation,
+                session,
+                signing_key,
+                mek_cache,
+                transport,
+                session_path,
+                gov_key,
+            )
+            .await
+        }
+    }
+}
+
+/// Group A governance ops: channel-record registration plus core moderation
+/// (register-record, ban, kick, unban, timeout). Split out of
+/// `handle_op_inner` to satisfy clippy::too_many_lines. The dispatcher's match
+/// is exhaustive, so the trailing `unreachable!` arm is never reached.
+async fn handle_op_group_a(
+    operation: GovernanceOp,
+    sender: Option<&str>,
+    session: &RwLock<Option<rekindle_transport::Session>>,
+    signing_key: &RwLock<Option<crate::state::keystore::SigningKeyHandle>>,
+    mek_cache: &RwLock<rekindle_transport::crypto::mek::MekCache>,
+    transport: &RwLock<Option<Arc<rekindle_transport::TransportNode>>>,
+    session_path: &std::path::Path,
+    gov_key: &str,
+) -> CallResponse {
+    match operation {
         // ── Channel record registration ─────────────────────────────
         GovernanceOp::RegisterChannelRecord {
             member_pseudonym,
@@ -288,6 +360,23 @@ async fn handle_op_inner(
             ack()
         }
 
+        // Unreachable: the dispatcher only routes group A ops here.
+        _ => unreachable!("handle_op_group_a received an out-of-group operation"),
+    }
+}
+
+/// Group B governance ops: join approval/rejection plus channel management
+/// (approve-join, reject-join, create/delete/update-channel). Split out of
+/// `handle_op_inner` to satisfy clippy::too_many_lines.
+async fn handle_op_group_b(
+    operation: GovernanceOp,
+    session: &RwLock<Option<rekindle_transport::Session>>,
+    signing_key: &RwLock<Option<crate::state::keystore::SigningKeyHandle>>,
+    mek_cache: &RwLock<rekindle_transport::crypto::mek::MekCache>,
+    transport: &RwLock<Option<Arc<rekindle_transport::TransportNode>>>,
+    gov_key: &str,
+) -> CallResponse {
+    match operation {
         // ── Approve join from waiting room ───────────────────────────
         GovernanceOp::ApproveJoin { target_pseudonym } => {
             let Some(registry_key) = require_operator_registry(session, gov_key) else {
@@ -495,6 +584,25 @@ async fn handle_op_inner(
             }
         }
 
+        // Unreachable: the dispatcher only routes group B ops here.
+        _ => unreachable!("handle_op_group_b received an out-of-group operation"),
+    }
+}
+
+/// Group C governance ops: role management, MEK rotation, and ownership
+/// transfer (create/update/delete/assign/unassign-role, rotate-mek,
+/// transfer-ownership). Split out of `handle_op_inner` to satisfy
+/// clippy::too_many_lines.
+async fn handle_op_group_c(
+    operation: GovernanceOp,
+    session: &RwLock<Option<rekindle_transport::Session>>,
+    signing_key: &RwLock<Option<crate::state::keystore::SigningKeyHandle>>,
+    mek_cache: &RwLock<rekindle_transport::crypto::mek::MekCache>,
+    transport: &RwLock<Option<Arc<rekindle_transport::TransportNode>>>,
+    session_path: &std::path::Path,
+    gov_key: &str,
+) -> CallResponse {
+    match operation {
         // ── Role management ──────────────────────────────────────────
         GovernanceOp::CreateRole {
             name,
@@ -693,6 +801,9 @@ async fn handle_op_inner(
             );
             ack()
         }
+
+        // Unreachable: the dispatcher only routes group C ops here.
+        _ => unreachable!("handle_op_group_c received an out-of-group operation"),
     }
 }
 
