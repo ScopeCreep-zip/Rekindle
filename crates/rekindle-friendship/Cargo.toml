@@ -1,0 +1,19 @@
+[package]
+name = "rekindle-friendship"
+version = "0.1.0"
+edition = "2021"
+description = "Three-tier inbox-scan coordinator (watch + 30s poll + direct) for Rekindle friendships"
+
+[lints]
+workspace = true
+
+[dependencies]
+tokio = { workspace = true, features = ["sync", "macros", "time", "rt"] }
+async-trait = "0.1"
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+parking_lot = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["sync", "macros", "time", "rt", "rt-multi-thread", "test-util"] }
