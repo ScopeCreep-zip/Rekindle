@@ -1,0 +1,29 @@
+[package]
+name = "rekindle-presence"
+version = "0.1.0"
+edition = "2021"
+description = "Phase 21 — presence primitives (status enum + idle decisions + presence-poll bucket timing). Pure decision/timing logic; AppState orchestration stays in src-tauri."
+license = "MIT"
+
+[lints]
+workspace = true
+
+[dependencies]
+async-trait = "0.1"
+blake3 = "1"
+hex = { workspace = true }
+rand = { workspace = true }
+rekindle-protocol = { path = "../rekindle-protocol" }
+rekindle-secrets = { path = "../rekindle-secrets" }
+rekindle-types = { path = "../rekindle-types" }
+rekindle-utils = { path = "../rekindle-utils" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["rt", "macros", "sync", "time"] }
+tracing = { workspace = true }
+
+[dev-dependencies]
+parking_lot = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["rt", "macros", "sync", "time", "test-util"] }
