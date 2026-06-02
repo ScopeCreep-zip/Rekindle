@@ -21,10 +21,9 @@ pub async fn dispatch(cmd: &DmCmd, client: &DaemonClient, mode: OutputMode) -> a
             format::print_structured(&value, mode)
         }
         DmCmd::Inbox { limit, .. } => {
-            #[allow(clippy::cast_possible_truncation)]
             let value = client
                 .request_ok(IpcRequest::DmInbox {
-                    limit: *limit as u32,
+                    limit: u32::try_from(*limit).unwrap_or(u32::MAX),
                 })
                 .await?;
             format::print_structured(&value, mode)
@@ -41,10 +40,9 @@ pub async fn dispatch(cmd: &DmCmd, client: &DaemonClient, mode: OutputMode) -> a
         } => {
             // DM read is inbox scoped to a conversation — daemon returns all, CLI filters
             let _ = conversation_id;
-            #[allow(clippy::cast_possible_truncation)]
             let value = client
                 .request_ok(IpcRequest::DmInbox {
-                    limit: *limit as u32,
+                    limit: u32::try_from(*limit).unwrap_or(u32::MAX),
                 })
                 .await?;
             format::print_structured(&value, mode)

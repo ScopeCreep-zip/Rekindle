@@ -4,8 +4,8 @@
 //! format (text, JSON, JSONL). This is the single formatting layer —
 //! command modules never call `println!` directly.
 //!
-//! Functions in this module are allowed to write to stdout via the
-//! `writeln!` macro on a `std::io::Stdout` handle.
+//! Functions in this module are allowed to write to stdout/stderr via the
+//! `writeln!` macro on a `std::io::Stdout`/`std::io::Stderr` handle.
 
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -56,6 +56,16 @@ pub fn print_text(msg: &str) -> anyhow::Result<()> {
     let mut stdout = std::io::stdout().lock();
     writeln!(stdout, "{msg}")?;
     Ok(())
+}
+
+/// Write a diagnostic line to stderr.
+///
+/// Used for startup diagnostics and error reporting that must not be
+/// captured by structured stdout consumers. Errors writing to stderr are
+/// ignored — there is nowhere left to report them.
+pub fn eprint_line(msg: &str) {
+    let mut stderr = std::io::stderr().lock();
+    let _ = writeln!(stderr, "{msg}");
 }
 
 /// Print a value in the appropriate format for the current mode.

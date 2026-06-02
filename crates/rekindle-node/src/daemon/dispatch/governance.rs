@@ -32,20 +32,25 @@ pub(crate) async fn handle_role_list(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Attributes for a new role, grouped so the dispatch handler threads a single
+/// spec instead of four independent scalars.
+pub(crate) struct RoleSpec<'a> {
+    pub name: &'a str,
+    pub permissions: u64,
+    pub color: u32,
+    pub position: i32,
+}
+
 pub(crate) async fn handle_role_create(
     ctx: &DaemonContext,
     state: DaemonState,
     community: &str,
-    name: &str,
-    permissions: u64,
-    color: u32,
-    position: i32,
+    spec: RoleSpec<'_>,
 ) -> IpcResponse {
     if !state.can_write() {
         return state_error(state, "write");
     }
-    let name = match validation::validate_name(name, "Role") {
+    let name = match validation::validate_name(spec.name, "Role") {
         Ok(n) => n,
         Err(e) => return e,
     };
@@ -61,9 +66,9 @@ pub(crate) async fn handle_role_create(
         &transport,
         &membership.governance_key,
         &name,
-        permissions,
-        color,
-        position,
+        spec.permissions,
+        spec.color,
+        spec.position,
     )
     .await
     {

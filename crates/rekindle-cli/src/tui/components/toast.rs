@@ -110,8 +110,11 @@ impl NotificationStack {
             let x = area.right().saturating_sub(width + 2);
 
             // Stack downward from top-right: first toast at y=1, second at y=5, etc.
-            #[allow(clippy::cast_possible_truncation)]
-            let y = area.y + 1 + (i as u16) * (height + 1);
+            let index = u16::try_from(i).unwrap_or(u16::MAX);
+            let y = area
+                .y
+                .saturating_add(1)
+                .saturating_add(index.saturating_mul(height + 1));
 
             let toast_area = Rect {
                 x,

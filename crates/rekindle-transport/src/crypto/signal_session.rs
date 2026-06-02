@@ -488,12 +488,10 @@ fn serialize_ratchet(state: &RatchetState) -> Vec<u8> {
     data.extend_from_slice(&state.root_key);
     data.extend_from_slice(&state.sending_chain_key);
     data.extend_from_slice(&state.receiving_chain_key);
-    #[allow(clippy::cast_possible_truncation)]
-    let our_len = state.our_ratchet_secret.len() as u32;
+    let our_len = u32::try_from(state.our_ratchet_secret.len()).unwrap_or(u32::MAX);
     data.extend_from_slice(&our_len.to_le_bytes());
     data.extend_from_slice(&state.our_ratchet_secret);
-    #[allow(clippy::cast_possible_truncation)]
-    let their_len = state.their_ratchet_public.len() as u32;
+    let their_len = u32::try_from(state.their_ratchet_public.len()).unwrap_or(u32::MAX);
     data.extend_from_slice(&their_len.to_le_bytes());
     data.extend_from_slice(&state.their_ratchet_public);
     data.extend_from_slice(&state.send_counter.to_le_bytes());

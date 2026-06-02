@@ -129,10 +129,6 @@ fn handle_session_reset_request(
 /// session matching the peer's new initiator-side session.
 /// `delete_session` is idempotent on a missing peer, so repeated
 /// accepts (e.g., due to a retry) just overwrite cleanly.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "matches MessagePayload::SessionResetAccept wire shape; collapsing into a struct would add boilerplate for a single call site"
-)]
 fn handle_session_reset_accept(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
@@ -202,16 +198,13 @@ fn handle_session_reset_accept(
     }
 }
 
-/// P3.3 — short safety number for out-of-band verification.
+/// Load our identity + the peer's published Ed25519 identity key and
+/// derive the short out-of-band safety number for the session.
 ///
-/// `BLAKE3(sort([our_identity_key, peer_identity_key]) ||
-/// "rekindle-safety-v1")` → first 8 hex chars (32 bits = roughly 6
-/// chars-worth of entropy by brute-force; small enough to read
-/// aloud, large enough to detect substitution attacks at the cost
-/// a casual user would tolerate).
-///
-/// Computed from a PreKeyBundle's identity_key field. Both sides
-/// produce the same value because `sort` is order-independent.
+/// Phase 3b — safety number derives from Ed25519 verifying keys so both
+/// sides see the same input (the PreKeyBundle now publishes Ed25519
+/// identity bytes, not X25519). The derivation itself lives in
+/// `rekindle_crypto::identity::safety_number`.
 fn compute_safety_number(
     state: &Arc<AppState>,
     _peer_hex: &str,
@@ -221,16 +214,9 @@ fn compute_safety_number(
         serde_json::from_slice(peer_prekey_bundle).ok()?;
     let our_secret_bytes = (*state.identity_secret.lock())?;
     let our_identity = rekindle_crypto::Identity::from_secret_bytes(&our_secret_bytes);
-    // Phase 3b — safety number derives from Ed25519 verifying keys
-    // so both sides see the same input (the PreKeyBundle now
-    // publishes Ed25519 identity bytes, not X25519).
     let our_pub_bytes = our_identity.public_key_bytes();
-    let mut keys = [our_pub_bytes.as_slice(), bundle.identity_key.as_slice()];
-    keys.sort();
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(keys[0]);
-    hasher.update(keys[1]);
-    hasher.update(b"rekindle-safety-v1");
-    let hash = hasher.finalize();
-    Some(hex::encode(&hash.as_bytes()[..4]))
+    Some(rekindle_crypto::identity::safety_number(
+        &our_pub_bytes,
+        &bundle.identity_key,
+    ))
 }

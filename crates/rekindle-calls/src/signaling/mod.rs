@@ -41,11 +41,11 @@ pub use deps::CallSignalingDeps;
 pub use event::CallSignalEvent;
 pub use group_handlers::{
     handle_group_accept_received, handle_group_call_payload, handle_group_decline_received,
-    handle_incoming_group_invite,
+    handle_incoming_group_invite, GroupInvite,
 };
 pub use handlers::{
     handle_accept_received, handle_decline_received, handle_incoming_invite,
-    handle_ringing_received,
+    handle_ringing_received, IncomingInvite,
 };
 pub use outbound::{
     accept_dm_call, accept_group_call, decline_dm_call, decline_group_call, end_dm_call,

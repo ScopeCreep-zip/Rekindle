@@ -119,8 +119,8 @@ impl App {
                     ),
                     dimmed_style,
                 )));
-                #[allow(clippy::cast_possible_truncation)]
-                let height = (lines.len() as u16 + 2).min(area.height);
+                let line_count = u16::try_from(lines.len()).unwrap_or(u16::MAX);
+                let height = line_count.saturating_add(2).min(area.height);
                 let popup = centered_rect(area, 50, height);
                 frame.render_widget(Clear, popup);
                 let block = Block::bordered()
@@ -128,27 +128,6 @@ impl App {
                     .border_style(self.theme.focused_border());
                 frame.render_widget(Paragraph::new(lines).block(block), popup);
             }
-            OverlayKind::ConfirmAction {
-                ref prompt,
-                ref consequence,
-                ..
-            } => {
-                let lines = vec![
-                    Line::from(""),
-                    Line::from(format!("  {prompt}")),
-                    Line::from(""),
-                    Line::from(Span::styled(format!("  {consequence}"), Style::new().dim())),
-                    Line::from(""),
-                    Line::from("  [y] Confirm    [n/Esc] Cancel"),
-                ];
-                let popup = centered_rect(area, 50, 8);
-                frame.render_widget(Clear, popup);
-                let block = Block::bordered()
-                    .title(" Confirm ")
-                    .border_style(Style::default().fg(self.theme.color("warning")));
-                frame.render_widget(Paragraph::new(lines).block(block), popup);
-            }
-            OverlayKind::Search(_) => {} // Handled by self.search.render()
         }
     }
 

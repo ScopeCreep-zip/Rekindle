@@ -21,10 +21,6 @@ pub(super) type BootstrapMemberEntry = MemberInfo;
 pub(super) type BootstrapRecentChannel = BootstrapChannelMessages;
 
 #[derive(Debug, Clone)]
-#[allow(
-    dead_code,
-    reason = "Phase 18 chiral split — non-`recent_messages` fields are kept for parity with the wire payload + future telemetry; only recent_messages is consumed by persist_bootstrap_recent_messages today"
-)]
 pub(super) struct BootstrapBundle {
     pub member_list: Vec<BootstrapMemberEntry>,
     pub governance_entry_count: usize,
@@ -139,6 +135,60 @@ pub(super) async fn persist_bootstrap_recent_messages(
                      sender_key, body, timestamp, message_id)
                  VALUES (?1, ?2, ?3, 'channel', ?4, ?5, ?6, ?7)",
                 rusqlite::params![owner, community, channel_id, sender, body, ts, message_id],
+            )?;
+        }
+        tx.commit()
+    })
+    .await;
+}
+
+/// Seed the local member roster from §14.4 `BootstrapResponse.member_list`
+/// so the joiner sees the full community membership immediately, rather
+/// than waiting for the DHT inspect/watch loop to rediscover each slot.
+/// `INSERT OR IGNORE` keeps any richer row a concurrent registry poll may
+/// have already written; the per-community profile columns are filled from
+/// the bootstrap snapshot when present.
+pub(super) async fn persist_bootstrap_members(
+    state: &Arc<AppState>,
+    community_id: &str,
+    bundle: &BootstrapBundle,
+) {
+    if bundle.member_list.is_empty() {
+        return;
+    }
+    let Some(app_handle) = state_helpers::app_handle(state) else {
+        return;
+    };
+    let pool: tauri::State<'_, DbPool> = app_handle.state();
+    let Ok(owner_key) = state_helpers::current_owner_key(state) else {
+        return;
+    };
+    let now = rekindle_utils::timestamp_secs().cast_signed();
+    let community = community_id.to_string();
+    let members = bundle.member_list.clone();
+    let _ = db_call(pool.inner(), move |conn| {
+        let tx = conn.transaction()?;
+        for m in &members {
+            let role_ids = serde_json::to_string(&m.role_ids).unwrap_or_else(|_| "[]".to_string());
+            let badges = serde_json::to_string(&m.badges).unwrap_or_else(|_| "[]".to_string());
+            tx.execute(
+                "INSERT OR IGNORE INTO community_members
+                    (owner_key, community_id, pseudonym_key, display_name, role_ids,
+                     timeout_until, joined_at, bio, pronouns, theme_color, badges)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                rusqlite::params![
+                    owner_key,
+                    community,
+                    m.pseudonym_key,
+                    m.display_name,
+                    role_ids,
+                    m.timeout_until.map(u64::cast_signed),
+                    now,
+                    m.bio,
+                    m.pronouns,
+                    m.theme_color.map(i64::from),
+                    badges,
+                ],
             )?;
         }
         tx.commit()

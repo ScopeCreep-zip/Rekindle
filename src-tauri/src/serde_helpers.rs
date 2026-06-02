@@ -8,7 +8,6 @@ use serde::{self, Deserialize, Deserializer, Serializer};
 /// is lost when the Owner role's `Permissions::all()` value exceeds safe integer range).
 ///
 /// The `&u64` reference is required by serde's `serialize_with` contract.
-#[allow(clippy::trivially_copy_pass_by_ref)]
 pub fn serialize_u64_as_string<S>(value: &u64, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,

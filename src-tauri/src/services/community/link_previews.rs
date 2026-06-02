@@ -119,7 +119,7 @@ fn sender_has_embed_links(
     community_id: &str,
     sender_pseudonym_hex: &str,
 ) -> bool {
-    use rekindle_governance::permissions::compute_permissions;
+    use rekindle_governance::permissions::{compute_permissions, has_capability};
     use rekindle_types::id::PseudonymKey;
 
     let communities = state.communities.read();
@@ -137,5 +137,5 @@ fn sender_has_embed_links(
     };
     let pseudonym = PseudonymKey(pk_arr);
     let perms = compute_permissions(&pseudonym, None, gov, rekindle_utils::timestamp_secs());
-    Permissions::from_bits_truncate(perms).contains(Permissions::EMBED_LINKS)
+    has_capability(perms, rekindle_types::permissions::EMBED_LINKS)
 }

@@ -745,6 +745,22 @@ CREATE TABLE IF NOT EXISTS pending_pairings (
     PRIMARY KEY (owner_key, pairing_code)
 );
 
+-- Warm local cache of the raw per-author governance entry set merged
+-- from the SMPL governance record (architecture v2.0 flat governance).
+-- The DHT is the source of truth; this is the lossless merge *input*
+-- (Vec<(PseudonymKey, Vec<GovernanceEntry>)> as JSON) so the next login
+-- re-merges an identical GovernanceState immediately instead of waiting
+-- on the slow best-effort DHT rebuild pass. A denormalized view of the
+-- merged state lives in the communities/channels/roles tables; this is
+-- the only place the full per-author entry set survives a restart.
+CREATE TABLE IF NOT EXISTS governance_entries_cache (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    community_id TEXT NOT NULL,
+    entries_json TEXT NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (owner_key, community_id)
+);
+
 -- FTS5 indexes for local search (architecture §23). External-content tables
 -- per https://sqlite.org/fts5.html#external_content_tables — index lives in
 -- a parallel virtual table, content stays in the canonical row table, and

@@ -174,11 +174,12 @@ pub use unread::{__cmd__get_unread_counts, __cmd__mark_channel_read};
 pub use unread::{get_unread_counts, mark_channel_read};
 pub use video::{
     __cmd__default_media_capabilities, __cmd__derive_video_stream_id,
-    __cmd__notify_video_topology_change, __cmd__send_video_bandwidth_estimate,
-    __cmd__send_video_frame, __cmd__send_video_frame_ack, __cmd__send_video_keyframe_request,
+    __cmd__notify_video_topology_change, __cmd__register_community_video_channel,
+    __cmd__send_video_bandwidth_estimate, __cmd__send_video_frame, __cmd__send_video_frame_ack,
+    __cmd__send_video_keyframe_request, __cmd__unregister_community_video_channel,
     default_media_capabilities, derive_video_stream_id, notify_video_topology_change,
-    send_video_bandwidth_estimate, send_video_frame, send_video_frame_ack,
-    send_video_keyframe_request,
+    register_community_video_channel, send_video_bandwidth_estimate, send_video_frame,
+    send_video_frame_ack, send_video_keyframe_request, unregister_community_video_channel,
 };
 
 pub(crate) use helpers::require_permission;

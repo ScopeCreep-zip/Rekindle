@@ -89,7 +89,7 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
 
     let mut tui = terminal::Tui::new(&config.tui)
         .map_err(|e| anyhow::anyhow!("terminal initialization failed: {e}"))?;
-    let mut application = app::App::new(Arc::clone(&client), config, theme_manager, keymap_store);
+    let mut application = app::App::new(Arc::clone(&client), &config, theme_manager, keymap_store);
 
     let result = application.run(&mut tui, event_rx).await;
 

@@ -5266,6 +5266,247 @@
     border-radius: 3px;
   }
 
+  /* §10.6 — main-pane conferencing "call stage" (community voice channel):
+     a participant gallery with screen-share / click-to-spotlight over a
+     centred control bar, plus an optional text-in-voice chat column. */
+  .call-stage {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--color-xfire-bg-dark);
+  }
+
+  .call-stage-hero {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    text-align: center;
+    padding: 24px;
+  }
+
+  .call-stage-hero-icon {
+    font-size: 48px;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .call-stage-hero-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--color-xfire-text-primary);
+  }
+
+  .call-stage-hero-subtitle {
+    font-size: 13px;
+    color: var(--color-xfire-text-dim);
+    max-width: 360px;
+  }
+
+  .call-stage-join-btn {
+    margin-top: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 18px;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    color: white;
+    background: var(--color-xfire-online);
+  }
+
+  .call-stage-join-btn:hover {
+    filter: brightness(1.08);
+  }
+
+  .call-stage-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    gap: 8px;
+  }
+
+  .call-stage-stage {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 10px 10px 64px; /* bottom room for the absolute control bar */
+  }
+
+  .call-stage-chat {
+    width: 320px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border-left: 1px solid var(--color-xfire-border);
+  }
+
+  .call-stage-gallery {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    grid-auto-rows: 1fr;
+    gap: 8px;
+    align-content: center;
+  }
+
+  .call-stage-spotlight-wrap {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .call-stage-filmstrip {
+    flex-shrink: 0;
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    height: 96px;
+  }
+
+  .call-stage-filmstrip .call-stage-tile {
+    width: 150px;
+    flex-shrink: 0;
+  }
+
+  .call-stage-tile {
+    position: relative;
+    aspect-ratio: 16 / 9;
+    min-height: 0;
+    background: black;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 2px solid transparent;
+  }
+
+  .call-stage-tile-spotlight {
+    flex: 1;
+    aspect-ratio: auto;
+    width: 100%;
+  }
+
+  .call-stage-tile-speaking {
+    border-color: var(--color-xfire-online);
+  }
+
+  .call-stage-tile-video,
+  .call-stage-tile-canvas,
+  .call-stage-tile-canvas canvas {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+
+  .call-stage-tile-video {
+    transform: scaleX(-1); /* mirror own preview, Discord-style */
+  }
+
+  .call-stage-tile-avatar {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-xfire-bg-secondary);
+  }
+
+  .call-stage-tile-overlay {
+    position: absolute;
+    bottom: 6px;
+    left: 6px;
+    right: 6px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    pointer-events: none;
+  }
+
+  .call-stage-tile-name {
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    font-size: 11px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .call-stage-tile-badge {
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    font-size: 11px;
+    padding: 1px 4px;
+    border-radius: 3px;
+  }
+
+  .call-stage-tile-badge-muted {
+    color: var(--color-xfire-busy);
+  }
+
+  /* Footer control bar, centred over the gallery (Element Call pattern). */
+  .call-control-bar {
+    position: absolute;
+    bottom: 10px;
+    left: 0;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+    pointer-events: none;
+  }
+
+  .call-control-group,
+  .call-control-quality {
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--color-xfire-bg-dark) 88%, transparent);
+    border: 1px solid var(--color-xfire-border);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  }
+
+  .call-control-bar .voice-btn {
+    width: 36px;
+    height: 36px;
+    font-size: 15px;
+  }
+
+  .call-control-quality {
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+    text-transform: capitalize;
+    box-shadow: none;
+  }
+
+  .call-control-quality-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--color-xfire-offline);
+  }
+
+  .call-control-quality-good { background: var(--color-xfire-online); }
+  .call-control-quality-fair { background: var(--color-xfire-away); }
+  .call-control-quality-poor { background: var(--color-xfire-busy); }
+
   /* Architecture §24 — community analytics dashboard. */
   .analytics-grid {
     display: grid;

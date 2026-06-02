@@ -132,7 +132,7 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
         sender_pseudonym_hex: &str,
         perm_mask: u64,
     ) -> bool {
-        use rekindle_governance::permissions::compute_permissions;
+        use rekindle_governance::permissions::{compute_permissions, has_all_capabilities};
         use rekindle_types::id::PseudonymKey;
 
         let communities = self.state.communities.read();
@@ -154,7 +154,7 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
             gov,
             rekindle_utils::timestamp_secs(),
         );
-        perms & perm_mask == perm_mask
+        has_all_capabilities(perms, perm_mask)
     }
 
     fn transport_handle(&self) -> Option<Arc<AsyncMutex<VoiceTransport>>> {

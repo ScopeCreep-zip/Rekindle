@@ -142,10 +142,6 @@ impl Navigator {
 
     // ── Overlay management ──────────────────────────────────────────
 
-    pub fn open_overlay(&mut self, kind: OverlayKind) {
-        self.overlay = Some(kind);
-    }
-
     pub fn close_overlay(&mut self) {
         self.overlay = None;
     }
@@ -200,8 +196,8 @@ impl Navigator {
         }
 
         // Priority 2: Overlay intercepts all keys
-        if let Some(ref overlay) = self.overlay {
-            return self.handle_overlay_key(key, overlay.clone());
+        if self.overlay.is_some() {
+            return self.handle_overlay_key();
         }
 
         // Priority 3: Input mode — only Esc and keymap-classified keys
@@ -244,28 +240,14 @@ impl Navigator {
     }
 
     /// Handle keys when an overlay is active.
-    fn handle_overlay_key(&mut self, key: KeyEvent, overlay: OverlayKind) -> KeyResolution {
-        match overlay {
-            OverlayKind::Help => {
-                self.overlay = None;
-                KeyResolution::Consumed
-            }
-            OverlayKind::ConfirmAction { action, .. } => match key.code {
-                KeyCode::Char('y') | KeyCode::Enter => {
-                    self.overlay = None;
-                    KeyResolution::Action(*action)
-                }
-                KeyCode::Char('n') | KeyCode::Esc => {
-                    self.overlay = None;
-                    KeyResolution::Consumed
-                }
-                _ => KeyResolution::Consumed,
-            },
-            OverlayKind::Search(_) => {
-                // Search overlay handles its own keys in the App layer
-                KeyResolution::Consumed
-            }
-        }
+    ///
+    /// Only the full-screen Help overlay flows through here, and it dismisses on
+    /// any key. Search and confirm dialogs own their own state
+    /// (`App::search` / `App::confirm`) and are handled in the App key layer
+    /// before this point.
+    fn handle_overlay_key(&mut self) -> KeyResolution {
+        self.overlay = None;
+        KeyResolution::Consumed
     }
 
     /// Handle keys in input mode.

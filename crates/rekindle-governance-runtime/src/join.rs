@@ -72,9 +72,11 @@ pub fn default_community_name(governance_key: &str) -> String {
 }
 
 /// M10.3 — look up an invite by `code_hash` in the raw governance subkey
-/// entries. Returns the encrypted secrets blob and the inviter's
-/// pseudonym (the writer of the subkey carrying the `InviteCreated`
-/// entry). Reader-validates: rejects revoked + expired invites.
+/// entries. Returns the invite-secrets DFLT record key (a pointer; the
+/// joiner fetches + decrypts the blob via `fetch_invite_secrets`) and the
+/// inviter's pseudonym (the writer of the subkey carrying the
+/// `InviteCreated` entry). Reader-validates: rejects revoked + expired
+/// invites.
 ///
 /// The inviter pseudonym is propagated to slot-claim so the joiner-side
 /// quota check (`invite_quota::check_active_invites_cap`) can run before
@@ -97,7 +99,7 @@ pub fn find_invite_in_entries(
             if let GovernanceEntry::InviteCreated {
                 invite_id,
                 code_hash: ch,
-                encrypted_secrets,
+                secrets_record_key,
                 expires_at,
                 ..
             } = entry
@@ -115,7 +117,7 @@ pub fn find_invite_in_entries(
                             ));
                         }
                     }
-                    return Ok((encrypted_secrets.clone(), author.clone()));
+                    return Ok((secrets_record_key.clone(), author.clone()));
                 }
             }
         }
@@ -224,12 +226,12 @@ mod tests {
                 code_hash: "abc".into(),
                 max_uses: 0,
                 expires_at: None,
-                encrypted_secrets: "secret-blob".into(),
+                secrets_record_key: "VLD0:record-key".into(),
                 lamport: 1,
             }],
         )];
-        let (blob, inviter) = find_invite_in_entries(&entries, "abc").expect("found");
-        assert_eq!(blob, "secret-blob");
+        let (record_key, inviter) = find_invite_in_entries(&entries, "abc").expect("found");
+        assert_eq!(record_key, "VLD0:record-key");
         assert_eq!(inviter.0, author.0);
     }
 
@@ -244,7 +246,7 @@ mod tests {
                     code_hash: "abc".into(),
                     max_uses: 0,
                     expires_at: None,
-                    encrypted_secrets: "x".into(),
+                    secrets_record_key: "x".into(),
                     lamport: 1,
                 },
                 GovernanceEntry::InviteRevoked {

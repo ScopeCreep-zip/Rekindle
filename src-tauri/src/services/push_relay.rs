@@ -18,7 +18,6 @@ use crate::services::message_service;
 use crate::state::AppState;
 use crate::state_helpers;
 
-#[allow(clippy::too_many_arguments)]
 pub async fn register_with_push_relay(
     state: &Arc<AppState>,
     pool: &DbPool,

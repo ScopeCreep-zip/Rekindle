@@ -255,6 +255,12 @@ pub async fn rebuild_governance_from_dht<D: GovernanceRuntimeDeps>(deps: &D) {
             .max()
             .unwrap_or(0);
 
+        // Persist the raw per-author entry set as a warm local cache so the
+        // next login can re-merge an identical GovernanceState immediately,
+        // instead of waiting on this (slow, best-effort) DHT pass. Done
+        // before apply so a crash mid-apply still leaves a usable cache.
+        deps.persist_governance_entries_cache(community_id, &all_entries);
+
         deps.apply_governance_rebuild_result(community_id, gov_state, max_lamport)
             .await;
 

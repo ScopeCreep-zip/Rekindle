@@ -395,7 +395,7 @@ struct InviteCreatedEntry @0xd5d4eb16e9bf1c2e {
     maxUses              @2 :UInt32;
     hasExpiresAt         @3 :Bool;
     expiresAt            @4 :UInt64;
-    encryptedSecrets     @5 :Text;
+    secretsRecordKey     @5 :Text;
     lamport              @6 :UInt64;
 }
 

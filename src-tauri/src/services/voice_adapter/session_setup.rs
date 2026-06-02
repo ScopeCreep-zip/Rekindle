@@ -80,19 +80,37 @@ pub(super) fn init_voice_session_impl(
         deafened_flag: Arc::clone(&deafened_flag),
     });
 
-    // Now that the engine is on state, start the cpal devices.
-    {
+    // Now that the engine is on state, start the cpal devices. The
+    // handle is already installed above, so on failure (e.g. the
+    // device refuses the negotiated config) we must clear it —
+    // otherwise the next join trips check_not_in_call ("already in a
+    // different voice channel") against a stale, half-started engine.
+    let device_result: Result<(), VoiceError> = {
         let mut ve = state.voice_engine.lock();
         if let Some(ref mut handle) = *ve {
-            handle
+            match handle
                 .engine
                 .start_capture()
-                .map_err(|e| VoiceError::Session(format!("start capture: {e}")))?;
-            handle
-                .engine
-                .start_playback()
-                .map_err(|e| VoiceError::Session(format!("start playback: {e}")))?;
+                .map_err(|e| VoiceError::Session(format!("start capture: {e}")))
+            {
+                Ok(()) => handle
+                    .engine
+                    .start_playback()
+                    .map_err(|e| VoiceError::Session(format!("start playback: {e}"))),
+                Err(e) => Err(e),
+            }
+        } else {
+            Ok(())
         }
+    };
+    if let Err(e) = device_result {
+        let mut ve = state.voice_engine.lock();
+        if let Some(ref mut handle) = *ve {
+            handle.engine.stop_capture();
+            handle.engine.stop_playback();
+        }
+        *ve = None;
+        return Err(e);
     }
 
     // Build the real transport with full signing-key + AEAD wiring
@@ -194,15 +212,14 @@ fn create_transport_impl(
     let sender_key = hex::decode(public_key).unwrap_or_default();
 
     if let Some(api) = api {
+        let sender: Arc<dyn rekindle_voice::VoiceFrameSender> =
+            Arc::new(super::frame_sender::VeilidVoiceFrameSender::new(api));
         if community_id.is_some() {
-            transport.init(api, sender_key);
+            transport.init(sender, sender_key);
         } else if let Some(blob) = resolved_peer_route {
-            if let Err(e) = transport.connect(api, blob, sender_key) {
-                tracing::warn!(error = %e, channel = %channel_id,
-                    "voice transport connect failed — audio only local");
-            }
+            transport.connect(sender, blob, sender_key);
         } else {
-            transport.init(api, sender_key);
+            transport.init(sender, sender_key);
         }
     }
 

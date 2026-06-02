@@ -562,12 +562,14 @@ async fn empty_friend_display_name_falls_back_to_initiator_pubkey() {
 
     crate::signaling::handlers::handle_incoming_invite(
         deps.as_ref(),
-        &sender,
-        "call-fb",
-        0,
-        &initiator,
-        &initiator_x,
-        12_345_678,
+        crate::signaling::handlers::IncomingInvite {
+            sender_hex: &sender,
+            call_id: "call-fb",
+            offer_kind: 0,
+            initiator_pubkey: &initiator,
+            initiator_x25519_pub: &initiator_x,
+            expires_at_ms: 12_345_678,
+        },
     )
     .await;
 
@@ -600,12 +602,14 @@ async fn handle_incoming_invite_arms_incoming_timeout() {
     let initiator_x = peer_x25519_pub_bytes();
     crate::signaling::handlers::handle_incoming_invite(
         deps.as_ref(),
-        &initiator,
-        "call-incoming-1",
-        0, // CallKind::Audio
-        &initiator,
-        &initiator_x,
-        12_345_678, // expires_at_ms
+        crate::signaling::handlers::IncomingInvite {
+            sender_hex: &initiator,
+            call_id: "call-incoming-1",
+            offer_kind: 0, // CallKind::Audio
+            initiator_pubkey: &initiator,
+            initiator_x25519_pub: &initiator_x,
+            expires_at_ms: 12_345_678,
+        },
     )
     .await;
 

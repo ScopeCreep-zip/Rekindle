@@ -29,10 +29,6 @@ pub async fn get_roles(
 /// `permissions` is accepted as a string to avoid JavaScript `Number` precision loss
 /// on u64 values above `2^53 - 1`.
 #[tauri::command]
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Tauri command surface — matches RoleDefinition shape"
-)]
 pub async fn create_role(
     community_id: String,
     name: String,
@@ -65,10 +61,6 @@ pub async fn create_role(
 /// `permissions` is accepted as a string to avoid JavaScript `Number` precision loss
 /// on u64 values above `2^53 - 1`.
 #[tauri::command]
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Tauri command surface — matches edit_role partial-update payload"
-)]
 pub async fn edit_role(
     community_id: String,
     role_id: u32,

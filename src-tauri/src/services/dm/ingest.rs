@@ -12,10 +12,6 @@ use crate::db::DbPool;
 use crate::services::dm_adapter::DmAdapter;
 use crate::state::AppState;
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "thin facade preserving message_service dispatcher arm signature"
-)]
 pub async fn handle_incoming_dm_invite(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
@@ -30,12 +26,14 @@ pub async fn handle_incoming_dm_invite(
     let adapter = DmAdapter::new(Arc::clone(state), app_handle.clone(), pool.clone());
     rekindle_dm::handle_incoming_dm_invite(
         &*adapter,
-        sender_hex,
-        record_key,
-        slot_seed,
-        alice_pseudonym,
-        alice_subkey,
-        bob_subkey,
+        rekindle_dm::IncomingDmInvite {
+            sender_hex,
+            record_key,
+            slot_seed,
+            alice_pseudonym,
+            alice_subkey,
+            bob_subkey,
+        },
     )
     .await
     .map_err(|e| e.to_string())
@@ -54,10 +52,6 @@ pub async fn handle_incoming_dm_decline(
         .map_err(|e| e.to_string())
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "thin facade preserving message_service dispatcher arm signature"
-)]
 pub async fn handle_incoming_group_dm_invite(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
@@ -73,13 +67,15 @@ pub async fn handle_incoming_group_dm_invite(
     let adapter = DmAdapter::new(Arc::clone(state), app_handle.clone(), pool.clone());
     rekindle_dm::handle_incoming_group_dm_invite(
         &*adapter,
-        sender_hex,
-        record_key,
-        slot_seed,
-        initiator_pseudonym,
-        participants_json,
-        wrapped_mek,
-        mek_generation,
+        rekindle_dm::IncomingGroupDmInvite {
+            sender_hex,
+            record_key,
+            slot_seed,
+            initiator_pseudonym,
+            participants_json,
+            wrapped_mek,
+            mek_generation,
+        },
     )
     .await
     .map_err(|e| e.to_string())

@@ -7,6 +7,7 @@
 
 mod call_signaling;
 mod dispatch;
+mod dm_dispatch;
 mod friend_handlers;
 mod outgoing;
 mod profile_push;

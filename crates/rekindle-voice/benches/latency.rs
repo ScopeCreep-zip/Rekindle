@@ -43,15 +43,18 @@ const CHANNELS: u16 = 1;
 const FRAME_SAMPLES: usize = 960;
 
 /// Generate a 20ms PCM frame of synthetic speech-like content (a
-/// 440 Hz sine wave). `cast_precision_loss` is a non-issue at these
-/// magnitudes: `i ≤ 960` and `SAMPLE_RATE = 48_000` both fit
-/// losslessly in `f32`'s 23-bit mantissa (max precise integer ≈ 16M).
-#[allow(clippy::cast_precision_loss)]
+/// 440 Hz sine wave). `i ≤ 960` and `SAMPLE_RATE = 48_000` both fit in
+/// `u16`, which converts to `f32` losslessly via `f32::from`, so no
+/// precision-loss cast is needed.
 fn synth_frame() -> Vec<f32> {
     let two_pi_freq = 2.0 * std::f32::consts::PI * 440.0;
-    let inv_sample_rate = 1.0_f32 / SAMPLE_RATE as f32;
+    let sample_rate = f32::from(u16::try_from(SAMPLE_RATE).unwrap_or(u16::MAX));
+    let inv_sample_rate = 1.0_f32 / sample_rate;
     (0..FRAME_SAMPLES)
-        .map(|i| (two_pi_freq * (i as f32) * inv_sample_rate).sin() * 0.5)
+        .map(|i| {
+            let i = f32::from(u16::try_from(i).unwrap_or(u16::MAX));
+            (two_pi_freq * i * inv_sample_rate).sin() * 0.5
+        })
         .collect()
 }
 

@@ -3,6 +3,9 @@
 //! (`create_community_invite_inner`, `revoke_community_invite_inner`,
 //! `list_community_invites_inner`).
 
+use std::sync::Arc;
+
+use rekindle_governance_runtime as gov_rt;
 use rekindle_protocol::dht::community::permissions_v2::Permissions;
 
 use crate::channels::community_channel::CommunityEvent;
@@ -115,6 +118,20 @@ pub async fn create_community_invite_inner(
         base64::engine::general_purpose::STANDARD.encode(&encrypted)
     };
 
+    // Store the encrypted secrets in a dedicated single-owner DFLT record
+    // and carry only the pointer in governance — the blob is multi-KB and
+    // would overflow the per-subkey SMPL cap if co-located with genesis
+    // entries (architecture: modular pointer records, not inline blobs).
+    let app_handle = state_helpers::app_handle(state).ok_or("app handle unavailable")?;
+    let adapter = crate::services::governance_adapter::GovernanceAdapter::new(
+        Arc::clone(state),
+        app_handle,
+        pool.clone(),
+    );
+    let secrets_record_key = gov_rt::publish_invite_secrets(&adapter, &encrypted_b64)
+        .await
+        .map_err(|e| e.to_string())?;
+
     let expires_at = expires_in_seconds.map(|seconds| rekindle_utils::timestamp_secs() + seconds);
     let lamport = state_helpers::increment_lamport(state, &community_id);
     crate::services::community::write_entry(
@@ -125,7 +142,7 @@ pub async fn create_community_invite_inner(
             code_hash: code_hash.clone(),
             max_uses: max_uses.unwrap_or(0),
             expires_at,
-            encrypted_secrets: encrypted_b64,
+            secrets_record_key,
             lamport,
         },
     )

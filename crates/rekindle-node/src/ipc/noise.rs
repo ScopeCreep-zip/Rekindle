@@ -72,10 +72,12 @@ impl NoiseTransport {
         writer: &mut W,
         payload: &[u8],
     ) -> Result<()> {
-        #[allow(clippy::cast_possible_truncation)] // validated ≤ 16 MiB < u32::MAX
-        if payload.len() > MAX_FRAME_SIZE as usize {
+        // Reject oversized payloads. A length that does not fit in u32 is, by
+        // definition, larger than MAX_FRAME_SIZE (16 MiB), so report u32::MAX.
+        let payload_len = u32::try_from(payload.len()).unwrap_or(u32::MAX);
+        if payload_len > MAX_FRAME_SIZE {
             return Err(IpcError::FrameTooLarge {
-                size: payload.len() as u32,
+                size: payload_len,
                 max: MAX_FRAME_SIZE,
             });
         }

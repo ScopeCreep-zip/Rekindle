@@ -7,6 +7,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use zeroize::Zeroizing;
 
 use crate::error::VaultError;
+use crate::key::VaultKey;
 use crate::schema;
 
 /// SQLCipher + per-entry AES-256-GCM keystore.
@@ -60,29 +61,29 @@ impl VaultStore {
         &self.path
     }
 
-    /// Insert-or-replace an entry under (`namespace`, `key`). The value is
+    /// Insert-or-replace the entry addressed by `vault_key`. The value is
     /// sealed with AES-256-GCM under the per-entry key before being stored.
-    pub fn put(&self, namespace: &str, key: &str, value: &[u8]) -> Result<(), VaultError> {
+    pub fn put(&self, vault_key: &VaultKey, value: &[u8]) -> Result<(), VaultError> {
+        let namespace = vault_key.namespace();
+        let key = vault_key.key();
         let (nonce, ct) = seal_aes_gcm(&self.entry_key, value)?;
         self.conn.lock().execute(
             "INSERT OR REPLACE INTO entries (namespace, key, nonce, ciphertext) VALUES (?1, ?2, ?3, ?4)",
-            params![namespace, key, nonce, ct],
+            params![namespace, key.as_ref(), nonce, ct],
         )?;
         Ok(())
     }
 
-    /// Look up and decrypt the entry under (`namespace`, `key`). Returns
+    /// Look up and decrypt the entry addressed by `vault_key`. Returns
     /// `None` if the row doesn't exist.
-    pub fn get(
-        &self,
-        namespace: &str,
-        key: &str,
-    ) -> Result<Option<Zeroizing<Vec<u8>>>, VaultError> {
+    pub fn get(&self, vault_key: &VaultKey) -> Result<Option<Zeroizing<Vec<u8>>>, VaultError> {
+        let namespace = vault_key.namespace();
+        let key = vault_key.key();
         let conn = self.conn.lock();
         let row: Option<(Vec<u8>, Vec<u8>)> = conn
             .query_row(
                 "SELECT nonce, ciphertext FROM entries WHERE namespace = ?1 AND key = ?2",
-                params![namespace, key],
+                params![namespace, key.as_ref()],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()?;
@@ -92,22 +93,26 @@ impl VaultStore {
         }
     }
 
-    /// Remove the entry under (`namespace`, `key`). Idempotent — no error
+    /// Remove the entry addressed by `vault_key`. Idempotent — no error
     /// if the row didn't exist.
-    pub fn delete(&self, namespace: &str, key: &str) -> Result<(), VaultError> {
+    pub fn delete(&self, vault_key: &VaultKey) -> Result<(), VaultError> {
+        let namespace = vault_key.namespace();
+        let key = vault_key.key();
         self.conn.lock().execute(
             "DELETE FROM entries WHERE namespace = ?1 AND key = ?2",
-            params![namespace, key],
+            params![namespace, key.as_ref()],
         )?;
         Ok(())
     }
 
-    /// Whether (`namespace`, `key`) has a stored entry.
-    pub fn key_exists(&self, namespace: &str, key: &str) -> Result<bool, VaultError> {
+    /// Whether `vault_key` has a stored entry.
+    pub fn key_exists(&self, vault_key: &VaultKey) -> Result<bool, VaultError> {
+        let namespace = vault_key.namespace();
+        let key = vault_key.key();
         let conn = self.conn.lock();
         let count: i64 = conn.query_row(
             "SELECT COUNT(*) FROM entries WHERE namespace = ?1 AND key = ?2",
-            params![namespace, key],
+            params![namespace, key.as_ref()],
             |r| r.get(0),
         )?;
         Ok(count > 0)
@@ -201,22 +206,24 @@ mod tests {
     fn round_trip_put_get_delete() {
         let (_dir, path) = fresh_path();
         let vault = VaultStore::open(&path, "passphrase-test-1").unwrap();
-        vault.put("ns", "k", b"hello world").unwrap();
-        let got = vault.get("ns", "k").unwrap().unwrap();
+        let k = VaultKey::AuditMacKey;
+        vault.put(&k, b"hello world").unwrap();
+        let got = vault.get(&k).unwrap().unwrap();
         assert_eq!(&*got, b"hello world");
-        vault.delete("ns", "k").unwrap();
-        assert!(vault.get("ns", "k").unwrap().is_none());
+        vault.delete(&k).unwrap();
+        assert!(vault.get(&k).unwrap().is_none());
     }
 
     #[test]
     fn reopen_same_passphrase_decrypts() {
         let (_dir, path) = fresh_path();
+        let k = VaultKey::AuditTail;
         {
             let vault = VaultStore::open(&path, "passphrase-test-2").unwrap();
-            vault.put("ns", "k", b"persisted").unwrap();
+            vault.put(&k, b"persisted").unwrap();
         }
         let vault = VaultStore::open(&path, "passphrase-test-2").unwrap();
-        let got = vault.get("ns", "k").unwrap().unwrap();
+        let got = vault.get(&k).unwrap().unwrap();
         assert_eq!(&*got, b"persisted");
     }
 
@@ -225,7 +232,7 @@ mod tests {
         let (_dir, path) = fresh_path();
         {
             let vault = VaultStore::open(&path, "right-passphrase").unwrap();
-            vault.put("ns", "k", b"secret").unwrap();
+            vault.put(&VaultKey::AuditMacKey, b"secret").unwrap();
         }
         let result = VaultStore::open(&path, "wrong-passphrase");
         assert!(result.is_err(), "wrong passphrase should be rejected");
@@ -236,8 +243,12 @@ mod tests {
         // Each put() uses a fresh nonce → ciphertexts must differ.
         let (_dir, path) = fresh_path();
         let vault = VaultStore::open(&path, "pp").unwrap();
-        vault.put("ns", "a", b"same").unwrap();
-        vault.put("ns", "b", b"same").unwrap();
+        vault
+            .put(&VaultKey::SignalPrekey { id: 1 }, b"same")
+            .unwrap();
+        vault
+            .put(&VaultKey::SignalPrekey { id: 2 }, b"same")
+            .unwrap();
         let conn = vault.conn.lock();
         let mut stmt = conn
             .prepare("SELECT ciphertext FROM entries ORDER BY key")
@@ -252,8 +263,9 @@ mod tests {
     fn key_exists_works() {
         let (_dir, path) = fresh_path();
         let vault = VaultStore::open(&path, "pp").unwrap();
-        assert!(!vault.key_exists("ns", "k").unwrap());
-        vault.put("ns", "k", b"v").unwrap();
-        assert!(vault.key_exists("ns", "k").unwrap());
+        let k = VaultKey::AuditMacKey;
+        assert!(!vault.key_exists(&k).unwrap());
+        vault.put(&k, b"v").unwrap();
+        assert!(vault.key_exists(&k).unwrap());
     }
 }

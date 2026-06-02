@@ -330,8 +330,7 @@ pub fn format_duration_ago(duration: Duration) -> String {
 /// Format an epoch timestamp (milliseconds) as a human-readable local time.
 pub fn format_timestamp(epoch_ms: u64) -> String {
     use chrono::{Local, TimeZone};
-    #[allow(clippy::cast_possible_wrap)]
-    let dt = Local.timestamp_millis_opt(epoch_ms as i64);
+    let dt = Local.timestamp_millis_opt(epoch_ms.cast_signed());
     match dt.single() {
         Some(t) => t.format("%Y-%m-%d %H:%M:%S").to_string(),
         None => format!("{epoch_ms}ms"),
@@ -341,8 +340,7 @@ pub fn format_timestamp(epoch_ms: u64) -> String {
 /// Format an epoch timestamp as a short time (HH:MM).
 pub fn format_time_short(epoch_ms: u64) -> String {
     use chrono::{Local, TimeZone};
-    #[allow(clippy::cast_possible_wrap)]
-    let dt = Local.timestamp_millis_opt(epoch_ms as i64);
+    let dt = Local.timestamp_millis_opt(epoch_ms.cast_signed());
     match dt.single() {
         Some(t) => t.format("%H:%M").to_string(),
         None => "??:??".to_string(),
@@ -356,17 +354,22 @@ pub fn format_bytes(bytes: u64) -> String {
     if bytes < 1024 {
         return format!("{bytes} B");
     }
-    #[allow(clippy::cast_precision_loss)]
-    let kb = bytes as f64 / 1024.0;
-    if kb < 1024.0 {
-        return format!("{kb:.1} KB");
-    }
-    let mb = kb / 1024.0;
-    if mb < 1024.0 {
-        return format!("{mb:.1} MB");
-    }
-    let gb = mb / 1024.0;
-    format!("{gb:.1} GB")
+    // Select the unit via integer division, then render one decimal place
+    // using fixed-point integer math so no precision-losing float cast is
+    // needed (tenths = value * 10 / divisor).
+    const KB: u64 = 1024;
+    const MB: u64 = 1024 * KB;
+    const GB: u64 = 1024 * MB;
+    let (divisor, unit) = if bytes < MB {
+        (KB, "KB")
+    } else if bytes < GB {
+        (MB, "MB")
+    } else {
+        (GB, "GB")
+    };
+    let whole = bytes / divisor;
+    let tenths = (bytes % divisor) * 10 / divisor;
+    format!("{whole}.{tenths} {unit}")
 }
 
 /// Abbreviate a hex key for display: first 8 chars + "..." + last 4.

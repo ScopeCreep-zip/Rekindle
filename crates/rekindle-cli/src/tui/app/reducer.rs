@@ -7,7 +7,6 @@ use crate::views::ViewKind;
 
 impl App {
     /// Process a single action — the TEA reducer.
-    #[allow(clippy::too_many_lines)]
     pub(crate) fn process_action(&mut self, action: Action, tui: &mut Tui) -> anyhow::Result<()> {
         match action {
             Action::Render => {
@@ -77,6 +76,10 @@ impl App {
                     self.search.close();
                 } else if self.nav.input_mode() {
                     self.nav.exit_input_mode();
+                } else if !self.notifications.is_empty() {
+                    // Warning/Error toasts are sticky (never auto-dismiss); Esc
+                    // clears them oldest-first when nothing else owns the key.
+                    self.notifications.dismiss_oldest();
                 }
             }
             Action::ToggleHelp => self.nav.toggle_help(),
@@ -137,8 +140,7 @@ impl App {
                     .navigate(ViewKind::FriendList, self.theme.use_unicode());
                 self.load_friend_list();
             }
-            Action::ShowVoiceSession { community, channel }
-            | Action::JoinVoice { community, channel } => {
+            Action::ShowVoiceSession { community, channel } => {
                 self.nav.navigate(
                     ViewKind::VoiceSession { community, channel },
                     self.theme.use_unicode(),
@@ -158,7 +160,6 @@ impl App {
             }
 
             // Overlays
-            Action::OpenOverlay(kind) => self.nav.open_overlay(kind),
             Action::CloseOverlay => {
                 self.nav.close_overlay();
                 self.search.close();
@@ -176,19 +177,7 @@ impl App {
                     self.pending_confirm_action = None;
                 }
             }
-            Action::LeaveVoice => {
-                if self.pending_confirm_action.is_some() {
-                    self.nav
-                        .navigate(ViewKind::Dashboard, self.theme.use_unicode());
-                    self.notifications
-                        .push("Left voice channel".into(), ToastLevel::Info);
-                    self.pending_confirm_action = None;
-                } else {
-                    self.pending_confirm_action = Some(Action::LeaveVoice);
-                    self.confirm
-                        .show("Leave voice channel?", "You will be disconnected.");
-                }
-            }
+            Action::LeaveVoice => self.process_leave_voice(),
             Action::ToggleMute => {
                 let _ = self.nav.current_view_mut().update(Action::ToggleMute);
             }
@@ -199,128 +188,14 @@ impl App {
             // Friend operations
             Action::AcceptFriendRequest(id) => self.spawn_accept_friend(id),
             Action::RejectFriendRequest(id) => self.spawn_reject_friend(id),
-            Action::RemoveFriend { ref peer_key } => {
-                if self.pending_confirm_action.is_some() {
-                    self.notifications.push(
-                        format!(
-                            "Removed friend {}",
-                            crate::helpers::abbreviate_key(peer_key)
-                        ),
-                        ToastLevel::Info,
-                    );
-                    self.pending_confirm_action = None;
-                } else {
-                    self.pending_confirm_action = Some(Action::RemoveFriend {
-                        peer_key: peer_key.clone(),
-                    });
-                    self.confirm.show(
-                        format!("Remove {}?", crate::helpers::abbreviate_key(peer_key)),
-                        "They will no longer see your messages or presence.",
-                    );
-                }
-            }
-            Action::LeaveCommunity { ref community } => {
-                if self.pending_confirm_action.is_some() {
-                    let name = self.community_name(community).to_string();
-                    self.notifications
-                        .push(format!("Left '{name}'"), ToastLevel::Info);
-                    self.pending_confirm_action = None;
-                    self.nav
-                        .navigate(ViewKind::Dashboard, self.theme.use_unicode());
-                } else {
-                    let name = self.community_name(community).to_string();
-                    self.pending_confirm_action = Some(Action::LeaveCommunity {
-                        community: community.clone(),
-                    });
-                    self.confirm.show(
-                        format!("Leave '{name}'?"),
-                        "You will lose access to all channels.",
-                    );
-                }
-            }
-            Action::RequestMek { community, channel } => {
-                self.notifications.push(
-                    format!(
-                        "MEK requested for #{channel} in {}",
-                        crate::helpers::abbreviate_key(&community)
-                    ),
-                    ToastLevel::Info,
-                );
-            }
+            Action::RemoveFriend { ref peer_key } => self.process_remove_friend(peer_key),
+            Action::LeaveCommunity { ref community } => self.process_leave_community(community),
 
             // Clipboard
-            Action::YankToClipboard { ref text } => {
-                if self.clipboard.is_none() {
-                    match arboard::Clipboard::new() {
-                        Ok(cb) => self.clipboard = Some(cb),
-                        Err(e) => {
-                            self.notifications
-                                .push(format!("Clipboard unavailable: {e}"), ToastLevel::Warning);
-                            return Ok(());
-                        }
-                    }
-                }
-                let cb = self.clipboard.as_mut().expect("initialized above");
-                match cb.set_text(text) {
-                    Ok(()) => {
-                        self.notifications.push(
-                            "Copied to clipboard (auto-clear in 30s)".into(),
-                            ToastLevel::Info,
-                        );
-                        self.clipboard_clear_at =
-                            Some(std::time::Instant::now() + std::time::Duration::from_secs(30));
-                    }
-                    Err(e) => self
-                        .notifications
-                        .push(format!("Clipboard write failed: {e}"), ToastLevel::Warning),
-                }
-            }
+            Action::YankToClipboard { ref text } => self.yank_to_clipboard(text),
 
-            Action::SetPresence { status, message } => {
-                let msg = message.as_deref().unwrap_or("");
-                self.notifications.push(
-                    format!(
-                        "Status set to {status}{}",
-                        if msg.is_empty() {
-                            String::new()
-                        } else {
-                            format!(" — {msg}")
-                        }
-                    ),
-                    ToastLevel::Success,
-                );
-            }
             Action::ShowToast { message, level } => self.notifications.push(message, level),
-            Action::DismissToast => self.notifications.dismiss_oldest(),
-            Action::CommandComplete(result) => {
-                self.loading_spinner.stop();
-                // Extract identity and community caches before forwarding to view
-                match &*result {
-                    super::super::action::CommandResult::IdentityLoaded {
-                        public_key,
-                        display_name,
-                    } => {
-                        self.cached_identity = Some(super::CachedIdentity {
-                            public_key: public_key.clone(),
-                            display_name: display_name.clone(),
-                        });
-                        self.nav
-                            .dashboard_mut()
-                            .set_identity(public_key, display_name);
-                    }
-                    super::super::action::CommandResult::CommunityListLoaded { communities } => {
-                        self.cached_communities = communities
-                            .iter()
-                            .map(|c| super::CachedCommunity {
-                                governance_key: c.governance_key.clone(),
-                                name: c.name.clone(),
-                            })
-                            .collect();
-                    }
-                    _ => {}
-                }
-                self.nav.current_view_mut().on_command_result(*result)?;
-            }
+            Action::CommandComplete(result) => self.process_command_complete(*result)?,
             Action::CommandFailed { context, error } => {
                 self.notifications
                     .push(format!("{context}: {error}"), ToastLevel::Error);
@@ -348,5 +223,129 @@ impl App {
             }
         }
         Ok(())
+    }
+
+    /// Handle a completed async command: update local caches, then forward
+    /// the result to the active view.
+    fn process_command_complete(
+        &mut self,
+        result: super::super::action::CommandResult,
+    ) -> anyhow::Result<()> {
+        use super::super::action::CommandResult;
+        self.loading_spinner.stop();
+        // Extract identity and community caches before forwarding to view
+        match &result {
+            CommandResult::IdentityLoaded {
+                public_key,
+                display_name,
+            } => {
+                self.cached_identity = Some(super::CachedIdentity {
+                    public_key: public_key.clone(),
+                    display_name: display_name.clone(),
+                });
+                self.nav
+                    .dashboard_mut()
+                    .set_identity(public_key, display_name);
+            }
+            CommandResult::CommunityListLoaded { communities } => {
+                self.cached_communities = communities
+                    .iter()
+                    .map(|c| super::CachedCommunity {
+                        governance_key: c.governance_key.clone(),
+                        name: c.name.clone(),
+                    })
+                    .collect();
+            }
+            _ => {}
+        }
+        self.nav.current_view_mut().on_command_result(result)
+    }
+
+    /// Copy text to the system clipboard, lazily initializing the clipboard
+    /// handle and scheduling a 30-second auto-clear.
+    fn yank_to_clipboard(&mut self, text: &str) {
+        if self.clipboard.is_none() {
+            match arboard::Clipboard::new() {
+                Ok(cb) => self.clipboard = Some(cb),
+                Err(e) => {
+                    self.notifications
+                        .push(format!("Clipboard unavailable: {e}"), ToastLevel::Warning);
+                    return;
+                }
+            }
+        }
+        let cb = self.clipboard.as_mut().expect("initialized above");
+        match cb.set_text(text) {
+            Ok(()) => {
+                self.notifications.push(
+                    "Copied to clipboard (auto-clear in 30s)".into(),
+                    ToastLevel::Info,
+                );
+                self.clipboard_clear_at =
+                    Some(std::time::Instant::now() + std::time::Duration::from_secs(30));
+            }
+            Err(e) => self
+                .notifications
+                .push(format!("Clipboard write failed: {e}"), ToastLevel::Warning),
+        }
+    }
+
+    /// Two-step leave-voice flow: first press arms a confirmation, second
+    /// press (after confirm) performs the disconnect.
+    fn process_leave_voice(&mut self) {
+        if self.pending_confirm_action.is_some() {
+            self.nav
+                .navigate(ViewKind::Dashboard, self.theme.use_unicode());
+            self.notifications
+                .push("Left voice channel".into(), ToastLevel::Info);
+            self.pending_confirm_action = None;
+        } else {
+            self.pending_confirm_action = Some(Action::LeaveVoice);
+            self.confirm
+                .show("Leave voice channel?", "You will be disconnected.");
+        }
+    }
+
+    /// Two-step remove-friend flow guarded by a confirmation dialog.
+    fn process_remove_friend(&mut self, peer_key: &str) {
+        if self.pending_confirm_action.is_some() {
+            self.notifications.push(
+                format!(
+                    "Removed friend {}",
+                    crate::helpers::abbreviate_key(peer_key)
+                ),
+                ToastLevel::Info,
+            );
+            self.pending_confirm_action = None;
+        } else {
+            self.pending_confirm_action = Some(Action::RemoveFriend {
+                peer_key: peer_key.to_string(),
+            });
+            self.confirm.show(
+                format!("Remove {}?", crate::helpers::abbreviate_key(peer_key)),
+                "They will no longer see your messages or presence.",
+            );
+        }
+    }
+
+    /// Two-step leave-community flow guarded by a confirmation dialog.
+    fn process_leave_community(&mut self, community: &str) {
+        if self.pending_confirm_action.is_some() {
+            let name = self.community_name(community).to_string();
+            self.notifications
+                .push(format!("Left '{name}'"), ToastLevel::Info);
+            self.pending_confirm_action = None;
+            self.nav
+                .navigate(ViewKind::Dashboard, self.theme.use_unicode());
+        } else {
+            let name = self.community_name(community).to_string();
+            self.pending_confirm_action = Some(Action::LeaveCommunity {
+                community: community.to_string(),
+            });
+            self.confirm.show(
+                format!("Leave '{name}'?"),
+                "You will lose access to all channels.",
+            );
+        }
     }
 }

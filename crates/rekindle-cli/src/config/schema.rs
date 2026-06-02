@@ -17,9 +17,11 @@ use serde::{Deserialize, Serialize};
 #[serde(deny_unknown_fields)]
 pub struct Config {
     /// Config schema version for forward compatibility.
-    #[serde(default = "default_config_version")]
-    #[allow(clippy::struct_field_names)]
-    pub config_version: u32,
+    ///
+    /// Renamed to `version` in Rust to avoid the redundant `config_` prefix,
+    /// while keeping the `config_version` key in serialized TOML.
+    #[serde(default = "default_config_version", rename = "config_version")]
+    pub version: u32,
 
     /// Global settings (storage, namespace).
     #[serde(default)]
@@ -37,7 +39,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            config_version: default_config_version(),
+            version: default_config_version(),
             global: GlobalConfig::default(),
             network: NetworkConfig::default(),
             tui: TuiConfig::default(),
@@ -344,7 +346,7 @@ mod tests {
     #[test]
     fn default_config_is_valid() {
         let cfg = Config::default();
-        assert_eq!(cfg.config_version, 1);
+        assert_eq!(cfg.version, 1);
         assert_eq!(cfg.global.namespace, "rekindle");
         assert_eq!(cfg.tui.theme, "catppuccin-latte");
         assert_eq!(cfg.network.rpc_timeout_ms, 8000);
@@ -357,7 +359,7 @@ mod tests {
         let cfg = Config::default();
         let toml_str = toml::to_string_pretty(&cfg).unwrap();
         let parsed: Config = toml::from_str(&toml_str).unwrap();
-        assert_eq!(parsed.config_version, cfg.config_version);
+        assert_eq!(parsed.version, cfg.version);
         assert_eq!(parsed.global.namespace, cfg.global.namespace);
     }
 

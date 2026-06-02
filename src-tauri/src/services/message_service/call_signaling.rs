@@ -43,12 +43,14 @@ pub(super) async fn handle_call_signaling_payload(
         } => {
             rekindle_calls::signaling::handlers::handle_incoming_invite(
                 deps,
-                sender_hex,
-                &call_id,
-                offer_kind,
-                &initiator_pubkey,
-                &initiator_x25519_pub,
-                expires_at_ms,
+                rekindle_calls::signaling::handlers::IncomingInvite {
+                    sender_hex,
+                    call_id: &call_id,
+                    offer_kind,
+                    initiator_pubkey: &initiator_pubkey,
+                    initiator_x25519_pub: &initiator_x25519_pub,
+                    expires_at_ms,
+                },
             )
             .await;
         }

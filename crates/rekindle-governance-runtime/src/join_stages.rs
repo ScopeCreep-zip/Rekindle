@@ -34,6 +34,33 @@ pub struct GovernanceSnapshot {
     pub description: Option<String>,
 }
 
+/// Shared join-cursor state threaded through the slot-claim state
+/// machine. All three claim functions (`claim_registry_slot`,
+/// `try_claim_in_candidates`, `auto_expand_and_retry`) borrow the same
+/// cluster of fields; bundling them here keeps each signature small and
+/// the cursor immutable for the duration of a join attempt.
+///
+/// The generic `D: GovernanceRuntimeDeps` stays a function type param
+/// (not on the struct) so the adapter type never leaks into the cursor.
+pub struct SlotClaimCtx<'a> {
+    /// Community identifier (used for segment expansion + mesh control).
+    pub community_id: &'a str,
+    /// Segment-0 invite registry key — the inviter's registry.
+    pub invite_registry_key: &'a str,
+    /// Inviter's pseudonym — drives the M10.3 invite-quota check.
+    pub inviter_pseudonym: &'a PseudonymKey,
+    /// Joiner's own pseudonym key.
+    pub my_pseudo: &'a PseudonymKey,
+    /// Joiner's pseudonym signing key for presence + slot writes.
+    pub pseudonym_signing: &'a SigningKey,
+    /// Merged governance state at the start of the join attempt.
+    pub gov_state: &'a GovernanceState,
+    /// Presence `status` label written into the claimed slot.
+    pub join_status_label: &'a str,
+    /// Optional display name written into the claimed slot.
+    pub display_name: Option<String>,
+}
+
 /// Outcome of a successful slot claim — segment + local subkey within
 /// that segment + the (string-formatted) writer keypair used for future
 /// writes. The adapter persists this into `CommunityState`.
@@ -154,23 +181,12 @@ struct ClaimAttemptOutcome {
 /// M10.3 — joiner-side invite quota check runs before any slot write as
 /// defense-in-depth (reader-validates also drops over-quota
 /// `InviteCreated` entries at merge time).
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Mirrors src-tauri signature; refactor into a context struct would propagate to every Phase 18 callsite without simplifying."
-)]
 pub async fn claim_registry_slot<D: GovernanceRuntimeDeps>(
     deps: &D,
-    community_id: &str,
-    invite_registry_key: &str,
     slot_seed_hex: &str,
-    inviter_pseudonym: &PseudonymKey,
-    my_pseudo: &PseudonymKey,
-    pseudonym_signing: &SigningKey,
-    gov_state: &GovernanceState,
-    join_status_label: &str,
-    display_name: Option<String>,
+    ctx: SlotClaimCtx<'_>,
 ) -> Result<ClaimedSlot, GovernanceRuntimeError> {
-    if !invite_quota::check_active_invites_cap(gov_state, inviter_pseudonym) {
+    if !invite_quota::check_active_invites_cap(ctx.gov_state, ctx.inviter_pseudonym) {
         return Err(GovernanceRuntimeError::Adapter(
             "invite quota exceeded for inviter — community is rate-limiting joins".into(),
         ));
@@ -181,59 +197,30 @@ pub async fn claim_registry_slot<D: GovernanceRuntimeDeps>(
         .try_into()
         .map_err(|_| GovernanceRuntimeError::Crypto("slot seed must be 32 bytes".into()))?;
 
-    let outcome = try_claim_in_candidates(
-        deps,
-        invite_registry_key,
-        &slot_seed_bytes,
-        &gov_state.segments,
-        my_pseudo,
-        pseudonym_signing,
-        join_status_label,
-        display_name.clone(),
-    )
-    .await?;
+    let outcome =
+        try_claim_in_candidates(deps, &ctx, &slot_seed_bytes, &ctx.gov_state.segments).await?;
     if let Some(claimed) = outcome.claimed {
         return Ok(claimed);
     }
 
     if let Some(full_seg) = outcome.last_full_segment {
-        return auto_expand_and_retry(
-            deps,
-            community_id,
-            invite_registry_key,
-            &slot_seed_bytes,
-            my_pseudo,
-            pseudonym_signing,
-            full_seg,
-            gov_state,
-            join_status_label,
-            display_name,
-        )
-        .await;
+        return auto_expand_and_retry(deps, &ctx, &slot_seed_bytes, full_seg).await;
     }
     Err(GovernanceRuntimeError::Adapter(
         "No reachable segment registry — Veilid attach may have failed".into(),
     ))
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Mirrors src-tauri inner-loop signature; passing a context struct would still need every field at the call site."
-)]
 async fn try_claim_in_candidates<D: GovernanceRuntimeDeps>(
     deps: &D,
-    invite_registry_key: &str,
+    ctx: &SlotClaimCtx<'_>,
     slot_seed_bytes: &[u8; 32],
     governance_segments: &[SegmentState],
-    my_pseudo: &PseudonymKey,
-    pseudonym_signing: &SigningKey,
-    join_status_label: &str,
-    display_name: Option<String>,
 ) -> Result<ClaimAttemptOutcome, GovernanceRuntimeError> {
     let mut candidates: Vec<SegmentClaimCandidate> = Vec::new();
     candidates.push(SegmentClaimCandidate {
         segment_index: 0,
-        registry_key: invite_registry_key.to_string(),
+        registry_key: ctx.invite_registry_key.to_string(),
         slot_range_start: 0,
     });
     for seg in governance_segments {
@@ -276,15 +263,15 @@ async fn try_claim_in_candidates<D: GovernanceRuntimeDeps>(
             deps.format_writer_keypair(slot_kp.verifying_key().to_bytes(), slot_kp.to_bytes());
 
         let mut presence = MemberPresence {
-            pseudonym_key: my_pseudo.clone(),
-            display_name: display_name.clone(),
-            status: join_status_label.into(),
+            pseudonym_key: ctx.my_pseudo.clone(),
+            display_name: ctx.display_name.clone(),
+            status: ctx.join_status_label.into(),
             route_blob: vec![],
             last_heartbeat: rekindle_utils::timestamp_secs(),
             ..Default::default()
         };
         let presence_sig =
-            derive::sign_with_pseudonym(pseudonym_signing, &presence.signing_bytes());
+            derive::sign_with_pseudonym(ctx.pseudonym_signing, &presence.signing_bytes());
         presence.signature = presence_sig.to_vec();
         let presence_bytes = serde_json::to_vec(&presence).map_err(|e| {
             GovernanceRuntimeError::Encoding(format!("presence serialization failed: {e}"))
@@ -308,7 +295,7 @@ async fn try_claim_in_candidates<D: GovernanceRuntimeDeps>(
         let written: MemberPresence = serde_json::from_slice(&verify_bytes).map_err(|e| {
             GovernanceRuntimeError::Encoding(format!("slot read-back deserialization failed: {e}"))
         })?;
-        if written.pseudonym_key != *my_pseudo {
+        if written.pseudonym_key != *ctx.my_pseudo {
             return Err(GovernanceRuntimeError::Adapter(format!(
                 "Slot collision in segment {} — another member claimed this slot. Please retry.",
                 candidate.segment_index
@@ -332,25 +319,21 @@ async fn try_claim_in_candidates<D: GovernanceRuntimeDeps>(
     })
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Mirrors src-tauri inner-loop signature; the underlying state is the join cursor itself."
-)]
 async fn auto_expand_and_retry<D: GovernanceRuntimeDeps>(
     deps: &D,
-    community_id: &str,
-    invite_registry_key: &str,
+    ctx: &SlotClaimCtx<'_>,
     slot_seed_bytes: &[u8; 32],
-    my_pseudo: &PseudonymKey,
-    pseudonym_signing: &SigningKey,
     full_segment_index: u32,
-    gov_state: &GovernanceState,
-    join_status_label: &str,
-    display_name: Option<String>,
 ) -> Result<ClaimedSlot, GovernanceRuntimeError> {
-    let perms = compute_permissions(my_pseudo, None, gov_state, rekindle_utils::timestamp_secs());
+    let community_id = ctx.community_id;
+    let perms = compute_permissions(
+        ctx.my_pseudo,
+        None,
+        ctx.gov_state,
+        rekindle_utils::timestamp_secs(),
+    );
     let have_manage_community = (perms & MANAGE_COMMUNITY) != 0;
-    let requester_pseudonym = hex::encode(my_pseudo.0);
+    let requester_pseudonym = hex::encode(ctx.my_pseudo.0);
 
     deps.emit_event(GovernanceRuntimeEvent::JoinPendingAlert {
         have_manage_community,
@@ -408,17 +391,7 @@ async fn auto_expand_and_retry<D: GovernanceRuntimeDeps>(
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     }
 
-    let outcome = try_claim_in_candidates(
-        deps,
-        invite_registry_key,
-        slot_seed_bytes,
-        &new_segments,
-        my_pseudo,
-        pseudonym_signing,
-        join_status_label,
-        display_name,
-    )
-    .await?;
+    let outcome = try_claim_in_candidates(deps, ctx, slot_seed_bytes, &new_segments).await?;
     if let Some(claimed) = outcome.claimed {
         return Ok(claimed);
     }

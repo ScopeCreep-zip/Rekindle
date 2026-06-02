@@ -79,7 +79,7 @@ mod tests {
             code_hash: format!("hash-{lamport}"),
             max_uses: 1,
             expires_at: None,
-            encrypted_secrets: String::new(),
+            secrets_record_key: String::new(),
             created_lamport: lamport,
             creator_pseudonym: creator,
         }

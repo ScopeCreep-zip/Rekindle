@@ -113,20 +113,27 @@ pub(crate) async fn handle_delete(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Mutable fields for a channel update request.
+///
+/// Groups the optional, caller-supplied channel attributes so the dispatch
+/// handler threads a single struct instead of three independent `Option`s.
+pub(crate) struct ChannelUpdate<'a> {
+    pub name: Option<&'a str>,
+    pub topic: Option<&'a str>,
+    pub slowmode_seconds: Option<u32>,
+}
+
 pub(crate) async fn handle_update(
     ctx: &DaemonContext,
     state: DaemonState,
     community: &str,
     channel_id: &str,
-    name: Option<&str>,
-    topic: Option<&str>,
-    slowmode_seconds: Option<u32>,
+    update: ChannelUpdate<'_>,
 ) -> IpcResponse {
     if !state.can_write() {
         return state_error(state, "write");
     }
-    if let Some(n) = name {
+    if let Some(n) = update.name {
         if let Err(e) = validation::validate_name(n, "Channel") {
             return e;
         }
@@ -144,9 +151,9 @@ pub(crate) async fn handle_update(
         &transport,
         &membership.governance_key,
         channel_id,
-        name,
-        topic,
-        slowmode_seconds,
+        update.name,
+        update.topic,
+        update.slowmode_seconds,
     )
     .await
     {

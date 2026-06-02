@@ -25,22 +25,24 @@ use std::sync::Arc;
 use parking_lot::RwLock;
 
 use crate::broadcast::peer_registry::{CircuitSummary, PeerRegistry, PeerSnapshot};
-use crate::broadcast::peer_route::RouteManager;
 use crate::crypto::mek::{Mek, MekCache, MekCacheEntrySnapshot};
 use crate::shared::{AttachmentState, SharedState, TransportNotification, TransportSnapshot};
 
 /// Mock transport node for testing without Veilid.
 ///
 /// Provides the same observable interfaces as `TransportNode` —
-/// `SharedState`, `PeerRegistry`, `RouteManager`, `MekCache` — but
-/// backed by in-memory state that tests can control directly.
+/// `SharedState`, `PeerRegistry`, `MekCache` — but backed by in-memory
+/// state that tests can control directly.
+///
+/// `RouteManager` is intentionally not held: `RouteManager::set_route`
+/// requires a `veilid_core::RouteId` that cannot be constructed without a
+/// Veilid runtime, so route state is modeled via `route_allocated_override`.
 pub struct MockNode {
     shared: Arc<SharedState>,
     peer_registry: Arc<RwLock<PeerRegistry>>,
-    route_manager: Arc<RwLock<RouteManager>>,
     mek_cache: Arc<RwLock<MekCache>>,
     /// Override for route_allocated in status_snapshot.
-    /// RouteManager::set_route requires a veilid_core::RouteId which
+    /// `RouteManager::set_route` requires a `veilid_core::RouteId` which
     /// cannot be constructed without a Veilid runtime. This flag lets
     /// tests control the route_allocated field in status_snapshot().
     route_allocated_override: std::sync::atomic::AtomicBool,
@@ -57,7 +59,6 @@ impl MockNode {
                 3,  // circuit_breaker_threshold
                 45, // circuit_breaker_cooldown_secs
             ))),
-            route_manager: Arc::new(RwLock::new(RouteManager::new())),
             mek_cache: Arc::new(RwLock::new(MekCache::new())),
             route_allocated_override: std::sync::atomic::AtomicBool::new(false),
         }
@@ -99,12 +100,6 @@ impl MockNode {
         self.peer_registry.write().cache_route(key, route_blob);
     }
 
-    /// Record a failure against a peer's circuit breaker.
-    #[allow(dead_code)]
-    pub fn fail_peer(&self, key: &str) {
-        self.peer_registry.write().record_failure(key);
-    }
-
     /// Trip a peer's circuit breaker by recording enough consecutive failures.
     pub fn trip_circuit(&self, key: &str) {
         let mut reg = self.peer_registry.write();
@@ -124,7 +119,6 @@ impl MockNode {
     /// `RouteManager::set_route` requires a `veilid_core::RouteId` which
     /// cannot be constructed without a Veilid runtime. This method sets
     /// an override flag that `status_snapshot()` reads instead.
-    #[allow(dead_code)]
     pub fn set_route_allocated(&self, allocated: bool) {
         self.route_allocated_override
             .store(allocated, std::sync::atomic::Ordering::Release);
@@ -147,12 +141,6 @@ impl MockNode {
     /// Peer registry.
     pub fn peers(&self) -> &Arc<RwLock<PeerRegistry>> {
         &self.peer_registry
-    }
-
-    /// Route manager.
-    #[allow(dead_code)]
-    pub fn routes(&self) -> &Arc<RwLock<RouteManager>> {
-        &self.route_manager
     }
 
     /// MEK cache.

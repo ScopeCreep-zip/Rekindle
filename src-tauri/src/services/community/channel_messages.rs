@@ -135,11 +135,13 @@ pub async fn forward_message(
     let adapter = build_adapter(state)?;
     let result = rekindle_channel::forward_channel_message(
         &adapter,
-        source_community_id,
-        source_channel_id,
-        source_message_id,
-        dest_community_id,
-        dest_channel_id,
+        rekindle_channel::ForwardChannelMessageParams {
+            source_community: source_community_id,
+            source_channel: source_channel_id,
+            source_message: source_message_id,
+            dest_community: dest_community_id,
+            dest_channel: dest_channel_id,
+        },
     )
     .await
     .map_err(|e| e.to_string())?;

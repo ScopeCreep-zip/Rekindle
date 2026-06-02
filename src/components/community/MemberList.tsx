@@ -299,12 +299,14 @@ const MemberList: Component<MemberListProps> = (props) => {
     const roles = () => memberRoles(member);
     const isOpen = () => openProfileFor() === member.pseudonymKey;
 
-    const popoverChildren = (
-      <>
-        <Popover.Trigger
-          as="div"
-          class="member-item"
-        >
+    const popover = (
+      <Popover
+        open={isOpen()}
+        onOpenChange={(open) =>
+          setOpenProfileFor(open ? member.pseudonymKey : null)
+        }
+      >
+        <Popover.Trigger as="div" class="member-item">
           <StatusDot status={member.status || "online"} />
           <div class="member-name-info">
             <span class="member-name">{member.displayName}</span>
@@ -335,17 +337,6 @@ const MemberList: Component<MemberListProps> = (props) => {
           onClose={() => setOpenProfileFor(null)}
           myPseudonymKey={props.myPseudonymKey}
         />
-      </>
-    );
-
-    const popover = (
-      <Popover
-        open={isOpen()}
-        onOpenChange={(open) =>
-          setOpenProfileFor(open ? member.pseudonymKey : null)
-        }
-      >
-        {popoverChildren}
       </Popover>
     );
 

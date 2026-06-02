@@ -13,7 +13,7 @@ use rekindle_types::id::{ChannelId, ThreadId};
 
 use crate::deps::{ChannelMessagingDeps, ThreadInfoSnapshot, ThreadStateSnapshot};
 use crate::error::ChannelError;
-use crate::send::{build_channel_message, encrypt_channel_body};
+use crate::send::{build_channel_message, encrypt_channel_body, BuildChannelMessageParams};
 
 // ---------- Pure validators (kept from prior crate version) ----------
 
@@ -434,18 +434,18 @@ fn build_thread_message<D: ChannelMessagingDeps>(
         .ok_or_else(|| ChannelError::Adapter("community not found".into()))?;
     let timestamp_ms = rekindle_utils::timestamp_secs() * 1000;
 
-    Ok(build_channel_message(
-        deps.next_thread_sequence(community_id),
-        sender_hex,
+    Ok(build_channel_message(BuildChannelMessageParams {
+        sequence: deps.next_thread_sequence(community_id),
+        sender_pseudonym: sender_hex,
         ciphertext,
         mek_generation,
-        i64::try_from(timestamp_ms).unwrap_or(i64::MAX),
+        timestamp_ms: i64::try_from(timestamp_ms).unwrap_or(i64::MAX),
         lamport_ts,
-        format!("tmsg_{}", uuid_simple()),
-        mention_flags,
+        message_id: format!("tmsg_{}", uuid_simple()),
+        mention_flag_bits: mention_flags,
         mentioned_pseudonyms,
         mentioned_roles,
-    ))
+    }))
 }
 
 fn decrypt_thread_body<D: ChannelMessagingDeps>(

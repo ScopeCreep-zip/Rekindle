@@ -61,6 +61,8 @@ pub async fn create_category(
     name: String,
     state: State<'_, SharedState>,
 ) -> Result<String, String> {
+    let _g =
+        rekindle_lifecycle::TransportGuard::write(&state.lifecycle).map_err(|e| e.to_string())?;
     create_category_inner(state.inner(), community_id, name).await
 }
 
@@ -70,6 +72,8 @@ pub async fn delete_category(
     category_id: String,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
+    let _g =
+        rekindle_lifecycle::TransportGuard::write(&state.lifecycle).map_err(|e| e.to_string())?;
     delete_category_inner(state.inner(), community_id, category_id).await
 }
 
@@ -80,6 +84,8 @@ pub async fn rename_category(
     new_name: String,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
+    let _g =
+        rekindle_lifecycle::TransportGuard::write(&state.lifecycle).map_err(|e| e.to_string())?;
     rename_category_inner(state.inner(), community_id, category_id, new_name).await
 }
 
@@ -90,6 +96,8 @@ pub async fn move_channel(
     category_id: Option<String>,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
+    let _g =
+        rekindle_lifecycle::TransportGuard::write(&state.lifecycle).map_err(|e| e.to_string())?;
     move_channel_inner(state.inner(), community_id, channel_id, category_id).await
 }
 
@@ -99,6 +107,8 @@ pub async fn reorder_categories(
     category_ids: Vec<String>,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
+    let _g =
+        rekindle_lifecycle::TransportGuard::write(&state.lifecycle).map_err(|e| e.to_string())?;
     reorder_categories_inner(state.inner(), community_id, category_ids).await
 }
 
@@ -109,6 +119,8 @@ pub async fn set_channel_topic(
     topic: String,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
+    let _g =
+        rekindle_lifecycle::TransportGuard::write(&state.lifecycle).map_err(|e| e.to_string())?;
     set_channel_topic_inner(state.inner(), community_id, channel_id, topic).await
 }
 
@@ -119,6 +131,8 @@ pub async fn set_channel_forum_tags(
     forum_tags: Vec<String>,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
+    let _g =
+        rekindle_lifecycle::TransportGuard::write(&state.lifecycle).map_err(|e| e.to_string())?;
     set_channel_forum_tags_inner(state.inner(), community_id, channel_id, forum_tags).await
 }
 
@@ -128,5 +142,7 @@ pub async fn reorder_channels(
     channel_ids: Vec<String>,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
+    let _g =
+        rekindle_lifecycle::TransportGuard::write(&state.lifecycle).map_err(|e| e.to_string())?;
     reorder_channels_inner(state.inner(), community_id, channel_ids).await
 }

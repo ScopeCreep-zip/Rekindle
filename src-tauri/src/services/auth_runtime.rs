@@ -233,9 +233,20 @@ pub async fn create_identity_inner(
 
     let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
 
-    let _ = state
+    // Wait for Starting → Locked (async Veilid attach) before unlocking —
+    // mirrors Briar's waitForStartup() / the daemon's can_unlock() gate. The
+    // timeout only bounds the wait; the real gate is the checked transition
+    // below, which validates the actual current state and fails loud instead
+    // of silently stranding the FSM in Locked.
+    let _ = tokio::time::timeout(
+        std::time::Duration::from_secs(20),
+        state.lifecycle.wait_until_unlockable(),
+    )
+    .await;
+    state
         .lifecycle
-        .transition(rekindle_lifecycle::LifecycleState::Resuming);
+        .transition(rekindle_lifecycle::LifecycleState::Resuming)
+        .map_err(|e| format!("network not ready ({e}) — wait for the node to connect and retry"))?;
 
     let (result, secret_bytes) = match create_identity_core(
         &config_dir,
@@ -276,9 +287,12 @@ pub async fn create_identity_inner(
     let coord_handle = crate::services::friendship::spawn_coordinator(&state, app.clone());
     state.background_handles.lock().push(coord_handle);
 
-    let _ = state
+    if let Err(e) = state
         .lifecycle
-        .transition(rekindle_lifecycle::LifecycleState::Operational);
+        .transition(rekindle_lifecycle::LifecycleState::Operational)
+    {
+        tracing::error!(error = %e, "post-create-identity: failed to reach Operational — commands will be gated");
+    }
 
     Ok(result)
 }
@@ -296,9 +310,20 @@ pub async fn login_inner(
 
     let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
 
-    let _ = state
+    // Wait for Starting → Locked (async Veilid attach) before unlocking —
+    // mirrors Briar's waitForStartup() / the daemon's can_unlock() gate. The
+    // timeout only bounds the wait; the real gate is the checked transition
+    // below, which validates the actual current state and fails loud instead
+    // of silently stranding the FSM in Locked.
+    let _ = tokio::time::timeout(
+        std::time::Duration::from_secs(20),
+        state.lifecycle.wait_until_unlockable(),
+    )
+    .await;
+    state
         .lifecycle
-        .transition(rekindle_lifecycle::LifecycleState::Resuming);
+        .transition(rekindle_lifecycle::LifecycleState::Resuming)
+        .map_err(|e| format!("network not ready ({e}) — wait for the node to connect and retry"))?;
 
     let (result, secret_key, dht_cols) = match login_core(
         &config_dir,
@@ -365,9 +390,12 @@ pub async fn login_inner(
     let coord_handle = crate::services::friendship::spawn_coordinator(&state, app.clone());
     state.background_handles.lock().push(coord_handle);
 
-    let _ = state
+    if let Err(e) = state
         .lifecycle
-        .transition(rekindle_lifecycle::LifecycleState::Operational);
+        .transition(rekindle_lifecycle::LifecycleState::Operational)
+    {
+        tracing::error!(error = %e, "post-login: failed to reach Operational — commands will be gated");
+    }
 
     Ok(result)
 }

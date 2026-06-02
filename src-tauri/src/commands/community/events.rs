@@ -51,10 +51,6 @@ pub struct CreateEventRequest {
 }
 
 #[tauri::command]
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Tauri command surface — matches edit_event partial-update payload"
-)]
 pub async fn edit_event(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,

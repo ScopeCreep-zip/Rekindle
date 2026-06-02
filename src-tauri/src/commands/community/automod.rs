@@ -26,10 +26,6 @@ pub async fn list_automod_rules(
 }
 
 #[tauri::command]
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Tauri command surface — matches AutoModRule trigger payload"
-)]
 pub async fn set_automod_rule(
     state: State<'_, SharedState>,
     community_id: String,

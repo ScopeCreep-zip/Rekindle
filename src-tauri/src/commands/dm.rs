@@ -121,3 +121,28 @@ pub struct SendDmVideoFrameRequest {
     pub timestamp: u32,
     pub encoded_payload_b64: String,
 }
+
+/// Phase 11 Tier 1 — register the per-peer `ipc::Channel` the DM video
+/// panel listens on. Inbound reassembled frames for `peer_pubkey` are
+/// pushed straight to this channel instead of the `dm-video-frame`
+/// event. Re-registering replaces the previous handle.
+#[tauri::command]
+pub async fn register_dm_video_channel(
+    peer_pubkey: String,
+    on_frame: tauri::ipc::Channel<crate::video_channels::DmVideoFrameMsg>,
+    state: State<'_, SharedState>,
+) -> Result<(), String> {
+    state.video_channels.register_dm(peer_pubkey, on_frame);
+    Ok(())
+}
+
+/// Phase 11 Tier 1 — drop the per-peer DM video channel when the panel
+/// unmounts so frames stop being forwarded.
+#[tauri::command]
+pub async fn unregister_dm_video_channel(
+    peer_pubkey: String,
+    state: State<'_, SharedState>,
+) -> Result<(), String> {
+    state.video_channels.unregister_dm(&peer_pubkey);
+    Ok(())
+}

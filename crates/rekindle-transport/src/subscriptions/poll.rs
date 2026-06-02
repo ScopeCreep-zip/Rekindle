@@ -114,8 +114,7 @@ pub async fn run_poll_loop(
                         continue;
                     }
 
-                    #[allow(clippy::cast_possible_truncation)]
-                    { total_populated += populated.len() as u32; }
+                    total_populated += u32::try_from(populated.len()).unwrap_or(u32::MAX);
 
                     // Step 2: Read only populated subkeys with force_refresh
                     let mut changed_subkeys = Vec::new();

@@ -45,8 +45,6 @@ pub struct App {
     pub(crate) action_rx: mpsc::UnboundedReceiver<Action>,
 
     pub(crate) client: Arc<DaemonClient>,
-    #[allow(dead_code)]
-    pub(crate) config: Arc<crate::config::schema::Config>,
 
     pub(crate) theme: ThemeManager,
     pub(crate) keymap: KeymapStore,
@@ -89,7 +87,7 @@ impl App {
     /// Construct a new App with all required state.
     pub fn new(
         client: Arc<DaemonClient>,
-        config: crate::config::schema::Config,
+        config: &crate::config::schema::Config,
         theme: ThemeManager,
         keymap: KeymapStore,
     ) -> Self {
@@ -125,7 +123,6 @@ impl App {
             action_tx,
             action_rx,
             client,
-            config: Arc::new(config),
             theme,
             keymap,
             nav: Navigator::new(tabs, use_unicode),

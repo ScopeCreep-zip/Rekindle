@@ -10,9 +10,7 @@ use tauri::Manager;
 use super::control_sync::{
     check_gossip_moderation_permission, handle_sync_request, handle_sync_response,
 };
-use crate::services::veilid::legacy::membership::{
-    handle_admin_keypair_grant, handle_slot_keypair_grant,
-};
+use crate::services::governance_adapter;
 
 pub(crate) fn handle_gossip_control_payloads(
     app_handle: &tauri::AppHandle,
@@ -28,9 +26,9 @@ pub(crate) fn handle_gossip_control_payloads(
             wrapped_owner_keypair,
             wrapped_slot_seed,
         } => {
-            handle_admin_keypair_grant(
-                app_handle,
+            governance_adapter::process_admin_keypair_grant(
                 state,
+                app_handle,
                 community_id,
                 sender_pseudonym,
                 &wrapped_owner_keypair,
@@ -42,9 +40,9 @@ pub(crate) fn handle_gossip_control_payloads(
             segment_index,
             wrapped_slot_keypair,
         } => {
-            handle_slot_keypair_grant(
-                app_handle,
+            governance_adapter::process_slot_keypair_grant(
                 state,
+                app_handle,
                 community_id,
                 sender_pseudonym,
                 slot_index,

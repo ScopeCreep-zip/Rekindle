@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use rekindle_gossip::rate_limit::TokenBucket;
-use rekindle_governance::permissions::compute_permissions;
+use rekindle_governance::permissions::{compute_permissions, has_capability};
 use rekindle_types::id::{ChannelId, PseudonymKey};
 use rekindle_types::permissions::BYPASS_SLOWMODE;
 
@@ -129,7 +129,7 @@ fn sender_has_bypass(
         governance_state,
         now_secs,
     );
-    (perms & BYPASS_SLOWMODE) != 0
+    has_capability(perms, BYPASS_SLOWMODE)
 }
 
 fn decode_pseudonym(hex_str: &str) -> Option<PseudonymKey> {

@@ -42,12 +42,11 @@ use cli::{Cli, Command};
 use output::OutputMode;
 use transport::DaemonClient;
 
-#[allow(clippy::print_stderr)]
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     #[cfg(feature = "tui")]
     if let Err(e) = color_eyre::install() {
-        eprintln!("warning: color-eyre install failed: {e}");
+        output::format::eprint_line(&format!("warning: color-eyre install failed: {e}"));
     }
 
     let _guard = helpers::init_tracing();
@@ -81,12 +80,12 @@ async fn main() {
     if let Err(e) = result {
         let code = error::exit_code(&e);
         if mode.use_color() {
-            eprintln!("{}: {e:#}", "error".red().bold());
+            output::format::eprint_line(&format!("{}: {e:#}", "error".red().bold()));
         } else {
-            eprintln!("error: {e:#}");
+            output::format::eprint_line(&format!("error: {e:#}"));
         }
         if let Some(hint) = error::remediation(&e) {
-            eprintln!("  {hint}");
+            output::format::eprint_line(&format!("  {hint}"));
         }
         std::process::exit(code);
     }
@@ -150,7 +149,35 @@ async fn cli_run(cli: Cli, mode: OutputMode) -> anyhow::Result<()> {
     result
 }
 
-#[allow(clippy::too_many_lines)]
+async fn dispatch_node(
+    cmd: cli::NodeCmd,
+    client: &DaemonClient,
+    mode: OutputMode,
+) -> anyhow::Result<()> {
+    match cmd {
+        cli::NodeCmd::Start { .. } => unreachable!("handled before daemon connect"),
+        cli::NodeCmd::Stop => {
+            let value = client
+                .request_ok(rekindle_node::ipc::protocol::IpcRequest::Shutdown)
+                .await?;
+            if mode.is_structured() {
+                output::format::print_structured(&value, mode)
+            } else {
+                output::format::print_text("Daemon shutdown initiated.")
+            }
+        }
+        cli::NodeCmd::Restart => {
+            output::format::print_text("Restart: use 'rekindle node stop && rekindle node start'")
+        }
+        cli::NodeCmd::Attach | cli::NodeCmd::Detach => {
+            let value = client
+                .request_ok(rekindle_node::ipc::protocol::IpcRequest::NetworkStatus)
+                .await?;
+            output::format::print_structured(&value, mode)
+        }
+    }
+}
+
 async fn dispatch_command(
     command: Command,
     client: &DaemonClient,
@@ -163,28 +190,7 @@ async fn dispatch_command(
         }
         Command::Init(args) => identity::cmd_init(&args, client, mode).await,
         Command::Identity(cmd) => identity::dispatch(&cmd, client, mode).await,
-        Command::Node(cmd) => match cmd {
-            cli::NodeCmd::Start { .. } => unreachable!("handled before daemon connect"),
-            cli::NodeCmd::Stop => {
-                let value = client
-                    .request_ok(rekindle_node::ipc::protocol::IpcRequest::Shutdown)
-                    .await?;
-                if mode.is_structured() {
-                    output::format::print_structured(&value, mode)
-                } else {
-                    output::format::print_text("Daemon shutdown initiated.")
-                }
-            }
-            cli::NodeCmd::Restart => output::format::print_text(
-                "Restart: use 'rekindle node stop && rekindle node start'",
-            ),
-            cli::NodeCmd::Attach | cli::NodeCmd::Detach => {
-                let value = client
-                    .request_ok(rekindle_node::ipc::protocol::IpcRequest::NetworkStatus)
-                    .await?;
-                output::format::print_structured(&value, mode)
-            }
-        },
+        Command::Node(cmd) => dispatch_node(cmd, client, mode).await,
         Command::Network(cmd) => network::dispatch(&cmd, client, mode).await,
         Command::Friend(cmd) => friends::dispatch(&cmd, client, mode).await,
         Command::Dm(cmd) => dm::dispatch(&cmd, client, mode).await,

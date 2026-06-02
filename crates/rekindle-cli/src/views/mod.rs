@@ -107,11 +107,6 @@ pub struct ViewRegistry {
     friend_list: Option<friend_list::FriendListView>,
     doctor_view: Option<doctor::DoctorView>,
     community_info: Option<community_info::CommunityInfoView>,
-    /// Action sender cloned to each view for async command spawning.
-    /// Views use this to fire background loads (refresh, search, history pagination)
-    /// without routing through the App reducer.
-    #[allow(dead_code)] // M3 passes to views via init()
-    action_tx: Option<tokio::sync::mpsc::UnboundedSender<Action>>,
 }
 
 impl ViewRegistry {
@@ -127,18 +122,7 @@ impl ViewRegistry {
             friend_list: None,
             doctor_view: None,
             community_info: None,
-            action_tx: None,
         }
-    }
-
-    /// Set the action sender for async command spawning from views.
-    ///
-    /// Called by `App::new()` after constructing the registry. M3 views
-    /// use this sender to spawn background loads directly instead of
-    /// routing every async request through the App reducer.
-    #[allow(dead_code)] // M3 calls from App::new
-    pub fn set_action_tx(&mut self, tx: tokio::sync::mpsc::UnboundedSender<Action>) {
-        self.action_tx = Some(tx);
     }
 
     /// Current view kind.

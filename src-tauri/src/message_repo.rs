@@ -109,7 +109,6 @@ pub fn insert_channel_message_with_protocol_metadata(
 
 /// Insert a channel message including the optional `forwarded_from_author`
 /// attribution (set when the row originates from a `ChannelEntry::Forward`).
-#[allow(clippy::too_many_arguments)]
 pub fn insert_channel_message_with_full_metadata(
     conn: &rusqlite::Connection,
     owner_key: &str,
@@ -126,20 +125,41 @@ pub fn insert_channel_message_with_full_metadata(
 ) -> Result<(), rusqlite::Error> {
     insert_channel_message_full(
         conn,
-        owner_key,
-        channel_id,
-        sender_key,
-        body,
-        timestamp,
-        is_read,
-        mek_generation,
-        message_id,
-        lamport_ts,
-        automod_blurred,
-        forwarded_from_author,
-        0,
-        None,
+        &ChannelMessageInsert {
+            owner_key,
+            channel_id,
+            sender_key,
+            body,
+            timestamp,
+            is_read,
+            mek_generation,
+            message_id,
+            lamport_ts,
+            automod_blurred,
+            forwarded_from_author,
+            flags: 0,
+            attachment_json: None,
+        },
     )
+}
+
+/// Full column set for a channel-message row insert. Mirrors the `messages`
+/// table shape; grouping the fields keeps the insert under the argument
+/// budget while each field stays explicit at the construction site.
+pub struct ChannelMessageInsert<'a> {
+    pub owner_key: &'a str,
+    pub channel_id: &'a str,
+    pub sender_key: &'a str,
+    pub body: &'a str,
+    pub timestamp: i64,
+    pub is_read: bool,
+    pub mek_generation: Option<i64>,
+    pub message_id: &'a str,
+    pub lamport_ts: u64,
+    pub automod_blurred: bool,
+    pub forwarded_from_author: Option<&'a str>,
+    pub flags: u32,
+    pub attachment_json: Option<&'a str>,
 }
 
 /// Insert a channel message with all metadata including `flags` (Lost
@@ -147,44 +167,31 @@ pub fn insert_channel_message_with_full_metadata(
 /// pre-serialized `attachment_json` payload. This is the maximal-form
 /// helper used by the Lost Cargo upload + voice-message paths;
 /// thinner wrappers above call into it with sensible defaults.
-#[allow(clippy::too_many_arguments)]
 pub fn insert_channel_message_full(
     conn: &rusqlite::Connection,
-    owner_key: &str,
-    channel_id: &str,
-    sender_key: &str,
-    body: &str,
-    timestamp: i64,
-    is_read: bool,
-    mek_generation: Option<i64>,
-    message_id: &str,
-    lamport_ts: u64,
-    automod_blurred: bool,
-    forwarded_from_author: Option<&str>,
-    flags: u32,
-    attachment_json: Option<&str>,
+    msg: &ChannelMessageInsert<'_>,
 ) -> Result<(), rusqlite::Error> {
-    let lamport_ts = i64::try_from(lamport_ts).unwrap_or(i64::MAX);
-    let flags = i64::from(flags);
+    let lamport_ts = i64::try_from(msg.lamport_ts).unwrap_or(i64::MAX);
+    let flags = i64::from(msg.flags);
     conn.execute(
         "INSERT INTO messages \
          (owner_key, conversation_id, conversation_type, sender_key, body, automod_blurred, timestamp, is_read, \
           mek_generation, message_id, lamport_ts, forwarded_from_author, flags, attachment_json) \
          VALUES (?, ?, 'channel', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         rusqlite::params![
-            owner_key,
-            channel_id,
-            sender_key,
-            body,
-            i32::from(automod_blurred),
-            timestamp,
-            is_read,
-            mek_generation,
-            message_id,
+            msg.owner_key,
+            msg.channel_id,
+            msg.sender_key,
+            msg.body,
+            i32::from(msg.automod_blurred),
+            msg.timestamp,
+            msg.is_read,
+            msg.mek_generation,
+            msg.message_id,
             lamport_ts,
-            forwarded_from_author,
+            msg.forwarded_from_author,
             flags,
-            attachment_json,
+            msg.attachment_json,
         ],
     )?;
     Ok(())

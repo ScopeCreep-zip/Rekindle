@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
-use rekindle_sync::history::{select_best_peer, HistoryAd};
+use rekindle_sync::history::{select_best_peer, select_deepest_peer, HistoryAd};
 use rekindle_types::presence::MemberPresence;
 
 use crate::state::AppState;
@@ -125,10 +125,7 @@ async fn request_history_catchup(state: &Arc<AppState>, community_id: &str) -> R
             .collect();
 
         let selected = if needed_lamport == 0 {
-            candidates
-                .iter()
-                .min_by_key(|(_, ad)| ad.oldest_lamport)
-                .map(|(idx, _)| *idx)
+            select_deepest_peer(&candidates)
         } else {
             select_best_peer(&candidates, needed_lamport)
         };

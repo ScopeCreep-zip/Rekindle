@@ -14,7 +14,6 @@ use rekindle_protocol::messaging::envelope::MessagePayload;
 use crate::signaling::deps::CallSignalingDeps;
 use crate::signaling::event::CallSignalEvent;
 use crate::state::{CallKind, CallState, CallStatus};
-use crate::CallError;
 
 /// Truncate a hex pubkey for display when no friend display name is
 /// known.
@@ -24,6 +23,25 @@ fn short_pubkey(pk: &str) -> String {
     } else {
         pk.to_string()
     }
+}
+
+/// Decoded `CallInvite` wire fields for [`handle_incoming_invite`].
+/// Borrows the envelope-owned strings/bytes so dispatch passes them
+/// without copying.
+pub struct IncomingInvite<'a> {
+    /// Hex pubkey of the Veilid sender (envelope `from`).
+    pub sender_hex: &'a str,
+    /// Call identifier from the invite.
+    pub call_id: &'a str,
+    /// Wire offer kind: `0` = audio, `1` = video.
+    pub offer_kind: u8,
+    /// Initiator's Ed25519 identity pubkey (hex), used for display
+    /// fallback.
+    pub initiator_pubkey: &'a str,
+    /// Initiator's X25519 ECDH public key (must be 32 bytes).
+    pub initiator_x25519_pub: &'a [u8],
+    /// Invite expiry, ms since epoch.
+    pub expires_at_ms: u64,
 }
 
 /// Receive arm for `CallInvite` (W13.4). Receiver-side entry. Inserts
@@ -37,19 +55,18 @@ fn short_pubkey(pk: &str) -> String {
 ///
 /// Fire-and-forget — does not return a Result. All failures log and
 /// drop.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "CallInvite envelope has 6 distinct fields; bundling adds indirection without arg-count win"
-)]
 pub async fn handle_incoming_invite<D: CallSignalingDeps + ?Sized>(
     deps: &D,
-    sender_hex: &str,
-    call_id: &str,
-    offer_kind: u8,
-    initiator_pubkey: &str,
-    initiator_x25519_pub: &[u8],
-    expires_at_ms: u64,
+    invite: IncomingInvite<'_>,
 ) {
+    let IncomingInvite {
+        sender_hex,
+        call_id,
+        offer_kind,
+        initiator_pubkey,
+        initiator_x25519_pub,
+        expires_at_ms,
+    } = invite;
     let kind = CallKind::from_u8(offer_kind).unwrap_or(CallKind::Audio);
     let display_name = if deps.friend_display_name(sender_hex).is_empty() {
         short_pubkey(initiator_pubkey)
@@ -348,11 +365,3 @@ async fn cancel_outgoing_for_glare<D: CallSignalingDeps + ?Sized>(
         voice_was_up: was_voice_up,
     });
 }
-
-/// Suppresses unused-import lints for items only referenced via fully
-/// qualified paths in this module body.
-#[allow(
-    dead_code,
-    reason = "lints suppression marker; CallError surfaced through deps return types only"
-)]
-fn _ensure_call_error_in_scope(_e: CallError) {}

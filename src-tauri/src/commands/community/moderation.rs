@@ -67,10 +67,6 @@ pub async fn remove_timeout(
 }
 
 #[tauri::command]
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Tauri command surface — matches PermissionOverwrite shape"
-)]
 pub async fn set_channel_overwrite(
     community_id: String,
     channel_id: String,

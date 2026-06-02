@@ -410,31 +410,9 @@ impl FilesDeps for FilesAdapter {
 
     async fn insert_channel_message_full(
         &self,
-        owner_key: &str,
-        channel_id: &str,
-        sender_key: &str,
-        message_id: &str,
-        timestamp_ms: i64,
-        mek_generation: u64,
-        lamport_ts: u64,
-        attachment_json: &str,
-        flags: u32,
-        body: &str,
+        row: rekindle_files::InsertChannelMessage<'_>,
     ) -> Result<(), FilesError> {
-        helpers::insert_channel_message_full_impl(
-            &self.pool,
-            owner_key,
-            channel_id,
-            sender_key,
-            message_id,
-            timestamp_ms,
-            mek_generation,
-            lamport_ts,
-            attachment_json,
-            flags,
-            body,
-        )
-        .await
+        helpers::insert_channel_message_full_impl(&self.pool, row).await
     }
 
     async fn persist_local_path(

@@ -105,13 +105,15 @@ pub async fn upload_soundboard_sound(
     let adapter = build_adapter(state)?;
     rekindle_channel::upload_soundboard_sound(
         &adapter,
-        community_id,
-        name,
-        bytes,
-        tags,
-        duration_seconds,
-        volume,
-        emoji,
+        rekindle_channel::UploadSoundboardSoundParams {
+            community_id,
+            name,
+            bytes,
+            tags,
+            duration_seconds,
+            volume,
+            emoji,
+        },
     )
     .await
     .map_err(|e| e.to_string())

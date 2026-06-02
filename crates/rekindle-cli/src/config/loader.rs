@@ -168,8 +168,8 @@ fn collect_dropins(dir: &Path) -> anyhow::Result<Vec<Config>> {
 /// - The `safety` section: field-level merge
 fn merge(base: &mut Config, overlay: &Config) {
     // Version: take higher
-    if overlay.config_version > base.config_version {
-        base.config_version = overlay.config_version;
+    if overlay.version > base.version {
+        base.version = overlay.version;
     }
 
     // Global
@@ -226,12 +226,12 @@ fn merge_tui(base: &mut super::schema::TuiConfig, overlay: &super::schema::TuiCo
     if !overlay.animations {
         base.animations = false;
     }
-    #[allow(clippy::float_cmp)]
-    if overlay.tick_rate != 4.0 {
+    // Compare bit patterns: only override when the overlay differs from the
+    // literal default sentinel (exact, not approximate, equality).
+    if overlay.tick_rate.to_bits() != 4.0_f64.to_bits() {
         base.tick_rate = overlay.tick_rate;
     }
-    #[allow(clippy::float_cmp)]
-    if overlay.frame_rate != 30.0 {
+    if overlay.frame_rate.to_bits() != 30.0_f64.to_bits() {
         base.frame_rate = overlay.frame_rate;
     }
     // Keybindings: merge by key, overlay wins

@@ -144,12 +144,8 @@ pub struct AppState {
     /// timestamps (unix seconds) for slowmode enforcement.
     pub channel_last_received: Mutex<HashMap<(String, String, String), u64>>,
     /// Wave 7 P7.3 — per-relay circuit-breaker state.
-    pub relay_health: Mutex<
-        HashMap<
-            crate::services::relay::health::RelayKey,
-            crate::services::relay::health::RelayHealth,
-        >,
-    >,
+    pub relay_health:
+        Mutex<HashMap<rekindle_route::relay::RelayKey, rekindle_route::relay::RelayHealth>>,
     /// Sender for queued SMPL channel-message writes.
     pub channel_write_retry_tx: Arc<RwLock<Option<rekindle_records::retry::WriteQueueHandle>>>,
     /// Per-community compiled AutoMod cache.
@@ -192,6 +188,10 @@ pub struct AppState {
     /// P3.3 — incoming SessionResetRequest payloads awaiting user confirmation.
     /// Held in memory only — never persisted before user explicit consent.
     pub pending_session_resets: Arc<Mutex<HashMap<String, Vec<u8>>>>,
+    /// Phase 11 Tier 1 — frontend-registered `ipc::Channel` handles for
+    /// the high-throughput video streams (DM + community). Frames bypass
+    /// the `event_dispatch` bus and go straight to these channels.
+    pub video_channels: crate::video_channels::VideoChannelRegistry,
 }
 
 impl Default for AppState {
@@ -271,6 +271,7 @@ impl Default for AppState {
             voice_packet_rx_staged: parking_lot::Mutex::new(None),
             group_calls: Arc::new(Mutex::new(HashMap::new())),
             pending_session_resets: Arc::new(Mutex::new(HashMap::new())),
+            video_channels: crate::video_channels::VideoChannelRegistry::new(),
         }
     }
 }

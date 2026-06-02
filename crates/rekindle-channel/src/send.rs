@@ -69,26 +69,43 @@ pub fn encrypt_channel_body(
         .map_err(|e| ChannelError::Encrypt(format!("MEK encryption failed: {e}")))
 }
 
+/// Already-computed inputs for the wire `ChannelMessage` constructor.
+///
+/// Owns its string/byte payloads because the orchestrator hands ownership
+/// of freshly-built values (encrypted body, mention metadata, message id)
+/// straight to the constructor — borrowing here would only force the
+/// callers to keep originals alive across the move into `ChannelMessage`.
+pub struct BuildChannelMessageParams {
+    pub sequence: u64,
+    pub sender_pseudonym: String,
+    pub ciphertext: Vec<u8>,
+    pub mek_generation: u64,
+    pub timestamp_ms: i64,
+    pub lamport_ts: u64,
+    pub message_id: String,
+    pub mention_flag_bits: u32,
+    pub mentioned_pseudonyms: Vec<String>,
+    pub mentioned_roles: Vec<String>,
+}
+
 /// Pure constructor for the wire `ChannelMessage`. All inputs are
 /// already-computed by the orchestrator (lamport_ts, sequence, sender
 /// pseudonym, encrypted body, mention metadata). Returns the struct
 /// ready for capnp encoding + DHT subkey write.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Mirrors wire-shape constructor; passing a context struct would just re-shape the args without semantic clarity."
-)]
-pub fn build_channel_message(
-    sequence: u64,
-    sender_pseudonym: String,
-    ciphertext: Vec<u8>,
-    mek_generation: u64,
-    timestamp_ms: i64,
-    lamport_ts: u64,
-    message_id: String,
-    mention_flag_bits: u32,
-    mentioned_pseudonyms: Vec<String>,
-    mentioned_roles: Vec<String>,
-) -> ChannelMessage {
+#[must_use]
+pub fn build_channel_message(params: BuildChannelMessageParams) -> ChannelMessage {
+    let BuildChannelMessageParams {
+        sequence,
+        sender_pseudonym,
+        ciphertext,
+        mek_generation,
+        timestamp_ms,
+        lamport_ts,
+        message_id,
+        mention_flag_bits,
+        mentioned_pseudonyms,
+        mentioned_roles,
+    } = params;
     ChannelMessage {
         sequence,
         sender_pseudonym,
@@ -138,18 +155,18 @@ mod tests {
 
     #[test]
     fn build_channel_message_carries_all_inputs() {
-        let msg = build_channel_message(
-            42,
-            "abc".into(),
-            vec![1, 2, 3],
-            7,
-            1_000_000,
-            99,
-            "msg_1".into(),
-            0b11,
-            vec!["pseu1".into()],
-            vec!["role1".into()],
-        );
+        let msg = build_channel_message(BuildChannelMessageParams {
+            sequence: 42,
+            sender_pseudonym: "abc".into(),
+            ciphertext: vec![1, 2, 3],
+            mek_generation: 7,
+            timestamp_ms: 1_000_000,
+            lamport_ts: 99,
+            message_id: "msg_1".into(),
+            mention_flag_bits: 0b11,
+            mentioned_pseudonyms: vec!["pseu1".into()],
+            mentioned_roles: vec!["role1".into()],
+        });
         assert_eq!(msg.sequence, 42);
         assert_eq!(msg.sender_pseudonym, "abc");
         assert_eq!(msg.ciphertext, vec![1, 2, 3]);

@@ -7,10 +7,10 @@
 //! member names, stage gate), identity, active call_key lookup
 //! (1:1 calls), Tauri emit, background task registration.
 //!
-//! Unlike `rekindle-calls::CallSignalingDeps`, this crate already has
-//! veilid-core direct access (pre-existing VEILID_ALLOWED exception),
-//! so DHT operations don't need abstraction. The trait surface focuses
-//! on `AppState` + Tauri integration points.
+//! Network frame IO (Veilid `app_message`) is delegated through the
+//! [`crate::transport::VoiceFrameSender`] port injected into
+//! `VoiceTransport`, so this crate imports no `veilid-core`. The trait
+//! surface here focuses on `AppState` + Tauri integration points.
 //!
 //! Implemented by `src-tauri/services/voice_adapter.rs` (lands in 14.h).
 

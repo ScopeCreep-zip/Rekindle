@@ -213,6 +213,43 @@ impl AppLifecycle {
         self.tx.subscribe()
     }
 
+    /// Await until the FSM accepts an unlock/login — i.e. reaches `Locked`
+    /// (Veilid attached). Returns immediately if already unlockable.
+    ///
+    /// This is Rekindle's analogue of Briar's
+    /// `LifecycleManager::waitForStartup()`: the login flow awaits it so it
+    /// can't race the asynchronous Veilid attach that drives `Starting →
+    /// Locked` (the bug this fixes left the FSM stranded in `Locked` because
+    /// the login transitions fired from `Starting`).
+    ///
+    /// This crate's tokio has only the `sync` feature (no timers), so there
+    /// is no internal timeout — callers wrap the call in
+    /// `tokio::time::timeout`. The subscribe happens BEFORE the first state
+    /// check so a `Starting → Locked` transition landing between the two
+    /// cannot be missed (the classic "ready signal already fired" race).
+    /// Returns early if the broadcast sender is dropped (app shutting down),
+    /// regardless of state.
+    pub async fn wait_until_unlockable(&self) {
+        let mut rx = self.subscribe();
+        if self.state().can_unlock() {
+            return;
+        }
+        loop {
+            match rx.recv().await {
+                Ok(s) if s.can_unlock() => return,
+                // A non-unlockable transition, or a lagged receiver that may
+                // have dropped the `Locked` transition — re-read the
+                // authoritative state in case we missed it.
+                Ok(_) | Err(broadcast::error::RecvError::Lagged(_)) => {
+                    if self.state().can_unlock() {
+                        return;
+                    }
+                }
+                Err(broadcast::error::RecvError::Closed) => return,
+            }
+        }
+    }
+
     /// Wait for a `ShuttingDown` transition (the daemon's main event loop
     /// `select!`s on this to trigger graceful shutdown from an IPC
     /// `Shutdown` request). Returns immediately if already ShuttingDown
@@ -493,6 +530,54 @@ mod tests {
         lc.transition(LifecycleState::Locked).unwrap();
         assert_eq!(rx.recv().await.unwrap(), LifecycleState::Starting);
         assert_eq!(rx.recv().await.unwrap(), LifecycleState::Locked);
+    }
+
+    /// `wait_until_unlockable` must return immediately when the FSM is
+    /// already `Locked` (the common re-login case after a logout, which
+    /// leaves the lifecycle in Locked).
+    #[tokio::test(flavor = "current_thread")]
+    async fn wait_until_unlockable_returns_immediately_when_locked() {
+        let lc = AppLifecycle::new();
+        lc.transition(LifecycleState::Starting).unwrap();
+        lc.transition(LifecycleState::Locked).unwrap();
+        // Already unlockable — completes without any further transition.
+        lc.wait_until_unlockable().await;
+        assert_eq!(lc.state(), LifecycleState::Locked);
+    }
+
+    /// A waiter that starts during `Starting` (not yet unlockable) must wake
+    /// exactly when the async attach drives `Starting → Locked`. This is the
+    /// precise race the fix targets.
+    #[tokio::test(flavor = "current_thread")]
+    async fn wait_until_unlockable_wakes_on_transition_to_locked() {
+        let lc = std::sync::Arc::new(AppLifecycle::new());
+        lc.transition(LifecycleState::Starting).unwrap();
+        let lc_clone = lc.clone();
+        let waiter = tokio::spawn(async move { lc_clone.wait_until_unlockable().await });
+        // Let the waiter subscribe + observe it's not yet unlockable before
+        // we fire the transition it's waiting for.
+        tokio::task::yield_now().await;
+        lc.transition(LifecycleState::Locked).unwrap();
+        waiter.await.unwrap();
+        assert_eq!(lc.state(), LifecycleState::Locked);
+    }
+
+    /// A waiter that starts in `Stopped` must skip the non-unlockable
+    /// `Stopped → Starting` transition (the `Ok(_)` intermediate arm) and
+    /// only return once `Starting → Locked` lands.
+    #[tokio::test(flavor = "current_thread")]
+    async fn wait_until_unlockable_skips_intermediate_transitions() {
+        let lc = std::sync::Arc::new(AppLifecycle::new());
+        let lc_clone = lc.clone();
+        let waiter = tokio::spawn(async move { lc_clone.wait_until_unlockable().await });
+        tokio::task::yield_now().await;
+        lc.transition(LifecycleState::Starting).unwrap();
+        tokio::task::yield_now().await;
+        // Still pending — Starting is not unlockable.
+        assert!(!waiter.is_finished());
+        lc.transition(LifecycleState::Locked).unwrap();
+        waiter.await.unwrap();
+        assert_eq!(lc.state(), LifecycleState::Locked);
     }
 
     #[tokio::test(flavor = "current_thread")]

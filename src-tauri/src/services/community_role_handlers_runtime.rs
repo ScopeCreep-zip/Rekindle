@@ -46,10 +46,6 @@ pub fn normalize_exclusion_group(raw: Option<String>) -> Result<Option<String>, 
     }
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Tauri command surface — matches RoleDefinition shape"
-)]
 pub async fn create_role_handler_inner(
     state: &SharedState,
     pool: &DbPool,
@@ -82,10 +78,6 @@ pub async fn create_role_handler_inner(
     .await
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Tauri command surface — matches edit_role partial-update payload"
-)]
 pub async fn edit_role_handler_inner(
     state: &SharedState,
     pool: &DbPool,

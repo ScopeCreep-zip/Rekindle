@@ -136,7 +136,7 @@ fn snapshot_governance_entries(governance: &GovernanceState) -> Vec<GovernanceEn
             code_hash: invite.code_hash.clone(),
             max_uses: invite.max_uses,
             expires_at: invite.expires_at,
-            encrypted_secrets: invite.encrypted_secrets.clone(),
+            secrets_record_key: invite.secrets_record_key.clone(),
             lamport: invite.created_lamport,
         });
     }

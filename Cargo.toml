@@ -130,6 +130,7 @@ items-after-statements = "allow"         # use statements in fn bodies (common i
 similar-names = "allow"                  # ct/pt, idx/id pairs — too many false positives
 doc-markdown = "allow"                   # noisy for technical codebases
 doc-lazy-continuation = "allow"          # multi-line doc comment formatting
+trivially-copy-pass-by-ref = "allow"     # serde serialize_with/skip_serializing_if mandate fn(&T)
 
 # --- Security: cherry-picked restriction lints ---
 dbg-macro = "deny"                       # no leftover dbg!() in production

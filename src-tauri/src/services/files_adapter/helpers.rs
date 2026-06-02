@@ -131,46 +131,38 @@ pub(super) fn historical_channel_mek_impl(
         .cloned()
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "mirrors message_repo::insert_channel_message_full's SQL column shape — see deps.rs for the rationale"
-)]
 pub(super) async fn insert_channel_message_full_impl(
     pool: &DbPool,
-    owner_key: &str,
-    channel_id: &str,
-    sender_key: &str,
-    message_id: &str,
-    timestamp_ms: i64,
-    mek_generation: u64,
-    lamport_ts: u64,
-    attachment_json: &str,
-    flags: u32,
-    body: &str,
+    row: rekindle_files::InsertChannelMessage<'_>,
 ) -> Result<(), FilesError> {
-    let mek_generation = i64::try_from(mek_generation).unwrap_or(i64::MAX);
-    let owner = owner_key.to_string();
-    let chan = channel_id.to_string();
-    let sender = sender_key.to_string();
-    let mid = message_id.to_string();
-    let attachment_json = attachment_json.to_string();
-    let body = body.to_string();
+    let mek_generation = i64::try_from(row.mek_generation).unwrap_or(i64::MAX);
+    let owner = row.owner_key.to_string();
+    let chan = row.channel_id.to_string();
+    let sender = row.sender_key.to_string();
+    let mid = row.message_id.to_string();
+    let attachment_json = row.attachment_json.to_string();
+    let body = row.body.to_string();
+    let timestamp_ms = row.timestamp_ms;
+    let lamport_ts = row.lamport_ts;
+    let flags = row.flags;
     crate::db_helpers::db_call(pool, move |conn| {
         crate::message_repo::insert_channel_message_full(
             conn,
-            &owner,
-            &chan,
-            &sender,
-            &body,
-            timestamp_ms,
-            true,
-            Some(mek_generation),
-            &mid,
-            lamport_ts,
-            false,
-            None,
-            flags,
-            Some(&attachment_json),
+            &crate::message_repo::ChannelMessageInsert {
+                owner_key: &owner,
+                channel_id: &chan,
+                sender_key: &sender,
+                body: &body,
+                timestamp: timestamp_ms,
+                is_read: true,
+                mek_generation: Some(mek_generation),
+                message_id: &mid,
+                lamport_ts,
+                automod_blurred: false,
+                forwarded_from_author: None,
+                flags,
+                attachment_json: Some(&attachment_json),
+            },
         )
     })
     .await

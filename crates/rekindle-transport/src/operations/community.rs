@@ -152,10 +152,9 @@ pub async fn create_community(
     // each PendingJoinEntry includes an Ed25519 signature over the entry content,
     // verified by process_inbox before approval. A SMPL-based inbox with per-joiner
     // writer slots is planned for v2 to eliminate the overwrite vector entirely.
-    #[allow(clippy::cast_possible_truncation)]
     let (inbox_key, inbox_keypair) = crate::broadcast::dht_writes::create_dflt(
         node,
-        crate::payload::dht_types::JOIN_INBOX_SUBKEY_COUNT as u16,
+        u16::try_from(crate::payload::dht_types::JOIN_INBOX_SUBKEY_COUNT).unwrap_or(u16::MAX),
         None,
     )
     .await

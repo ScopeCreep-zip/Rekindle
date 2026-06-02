@@ -119,16 +119,15 @@ impl DaemonHandler {
     }
 }
 
-#[allow(clippy::manual_async_fn)]
 impl InboundHandler for DaemonHandler {
-    fn on_dm(
+    async fn on_dm(
         &self,
         sender: &VerifiedSender,
         payload: DmPayload,
         timestamp: u64,
         _seq: u64,
         _correlation_id: Option<&str>,
-    ) -> impl std::future::Future<Output = ()> + Send {
+    ) {
         debug!(
             sender = &sender.public_key[..12.min(sender.public_key.len())],
             "handler: on_dm"
@@ -171,35 +170,33 @@ impl InboundHandler for DaemonHandler {
         let transport = Arc::clone(&self.transport);
         let session_path = self.session_path.clone();
 
-        async move {
-            if !should_scan_inbox {
-                return;
-            }
-
-            let inbox_key = {
-                let guard = session.read();
-                guard
-                    .as_ref()
-                    .map(|s| s.identity.friend_inbox_key.clone())
-                    .unwrap_or_default()
-            };
-            if inbox_key.is_empty() {
-                return;
-            }
-
-            debug!("FriendRequestAck received — scanning friend inbox");
-            super::friend_inbox::scan_friend_inbox(&session, &transport, &session_path, &inbox_key)
-                .await;
+        if !should_scan_inbox {
+            return;
         }
+
+        let inbox_key = {
+            let guard = session.read();
+            guard
+                .as_ref()
+                .map(|s| s.identity.friend_inbox_key.clone())
+                .unwrap_or_default()
+        };
+        if inbox_key.is_empty() {
+            return;
+        }
+
+        debug!("FriendRequestAck received — scanning friend inbox");
+        super::friend_inbox::scan_friend_inbox(&session, &transport, &session_path, &inbox_key)
+            .await;
     }
 
-    fn on_gossip(
+    async fn on_gossip(
         &self,
         community_id: &str,
         sender_pseudonym: &str,
         payload: GossipPayload,
         lamport_ts: u64,
-    ) -> impl std::future::Future<Output = ()> + Send {
+    ) {
         debug!(
             community = community_id,
             sender = &sender_pseudonym[..12.min(sender_pseudonym.len())],
@@ -256,31 +253,17 @@ impl InboundHandler for DaemonHandler {
         if let Some(ref sub_mgr) = *self.subscriptions.read() {
             sub_mgr.on_gossip(community_id, sender_pseudonym, payload, lamport_ts);
         }
-        async {}
     }
 
-    fn on_gossip_forward(
-        &self,
-        _envelope: &SignedGossipEnvelope,
-    ) -> impl std::future::Future<Output = ()> + Send {
+    async fn on_gossip_forward(&self, _envelope: &SignedGossipEnvelope) {
         // Gossip forwarding to mesh peers — handled by broadcast manager
-        async {}
     }
 
-    fn on_voice(
-        &self,
-        _sender_key: &str,
-        _packet: VoicePayload,
-    ) -> impl std::future::Future<Output = ()> + Send {
+    async fn on_voice(&self, _sender_key: &str, _packet: VoicePayload) {
         // Voice packet dispatch — handled by voice session manager
-        async {}
     }
 
-    fn on_call(
-        &self,
-        sender_pseudonym: Option<&str>,
-        request: InboundCall,
-    ) -> impl std::future::Future<Output = CallResponse> + Send {
+    async fn on_call(&self, sender_pseudonym: Option<&str>, request: InboundCall) -> CallResponse {
         let mek_cache = Arc::clone(&self.mek_cache);
         let signing_key_arc = Arc::clone(&self.signing_key);
         let session_arc = Arc::clone(&self.session);
@@ -288,60 +271,58 @@ impl InboundHandler for DaemonHandler {
         let session_path = self.session_path.clone();
         let sender_ps = sender_pseudonym.map(String::from);
 
-        async move {
-            match request {
-                InboundCall::CommunityLeave(notif) => {
-                    super::community_rpc::handle_leave(
-                        &notif,
-                        &session_arc,
-                        &signing_key_arc,
-                        &mek_cache,
-                        &transport_arc,
-                        &session_path,
-                    )
-                    .await
-                }
-                InboundCall::CommunityGovOp(op) => {
-                    super::governance_rpc::handle_op(
-                        sender_ps.as_deref(),
-                        op,
-                        &session_arc,
-                        &signing_key_arc,
-                        &mek_cache,
-                        &transport_arc,
-                        &session_path,
-                    )
-                    .await
-                }
-                InboundCall::Sync(_) | InboundCall::Dm(_) => CallResponse::Ack,
-                InboundCall::CallInvite(invite) => {
-                    // W16.5b — the daemon shell doesn't yet host a
-                    // `CallRuntime` (calls are GUI features wired via
-                    // the Tauri shell). Reply with a typed Rejected so
-                    // the caller's UI surfaces "Couldn't reach {peer}"
-                    // via `CallUnreachable { reason: "send_failed" }`
-                    // — equivalent to the receiver's call capability
-                    // being absent. W16.18 wires the CallRuntime here
-                    // for cross-shell parity.
-                    debug!(
-                        call_id = %invite.call_id,
-                        sender = ?sender_ps,
-                        "InboundCall::CallInvite at daemon — no CallRuntime; rejecting"
-                    );
-                    CallResponse::Rejected {
-                        reason: "daemon has no call runtime".into(),
-                    }
+        match request {
+            InboundCall::CommunityLeave(notif) => {
+                super::community_rpc::handle_leave(
+                    &notif,
+                    &session_arc,
+                    &signing_key_arc,
+                    &mek_cache,
+                    &transport_arc,
+                    &session_path,
+                )
+                .await
+            }
+            InboundCall::CommunityGovOp(op) => {
+                super::governance_rpc::handle_op(
+                    sender_ps.as_deref(),
+                    op,
+                    &session_arc,
+                    &signing_key_arc,
+                    &mek_cache,
+                    &transport_arc,
+                    &session_path,
+                )
+                .await
+            }
+            InboundCall::Sync(_) | InboundCall::Dm(_) => CallResponse::Ack,
+            InboundCall::CallInvite(invite) => {
+                // W16.5b — the daemon shell doesn't yet host a
+                // `CallRuntime` (calls are GUI features wired via
+                // the Tauri shell). Reply with a typed Rejected so
+                // the caller's UI surfaces "Couldn't reach {peer}"
+                // via `CallUnreachable { reason: "send_failed" }`
+                // — equivalent to the receiver's call capability
+                // being absent. W16.18 wires the CallRuntime here
+                // for cross-shell parity.
+                debug!(
+                    call_id = %invite.call_id,
+                    sender = ?sender_ps,
+                    "InboundCall::CallInvite at daemon — no CallRuntime; rejecting"
+                );
+                CallResponse::Rejected {
+                    reason: "daemon has no call runtime".into(),
                 }
             }
         }
     }
 
-    fn on_value_change(
+    async fn on_value_change(
         &self,
         record_key: &str,
         changed_subkeys: Vec<u32>,
         first_value: Option<Vec<u8>>,
-    ) -> impl std::future::Future<Output = ()> + Send {
+    ) {
         debug!(record_key, subkeys = ?changed_subkeys, "handler: on_value_change");
 
         // Forward to SubscriptionManager for event emission
@@ -375,36 +356,34 @@ impl InboundHandler for DaemonHandler {
         let session_path = self.session_path.clone();
         let record_key_owned = record_key.to_string();
 
-        async move {
-            // Process community join inbox
-            if let Some(gov_key) = governance_key {
-                info!(governance_key = %gov_key, "join inbox changed — processing");
-                super::community_rpc::process_inbox(
-                    &session,
-                    &signing_key,
-                    &mek_cache,
-                    &transport,
-                    &session_path,
-                    &gov_key,
-                )
-                .await;
-            }
+        // Process community join inbox
+        if let Some(gov_key) = governance_key {
+            info!(governance_key = %gov_key, "join inbox changed — processing");
+            super::community_rpc::process_inbox(
+                &session,
+                &signing_key,
+                &mek_cache,
+                &transport,
+                &session_path,
+                &gov_key,
+            )
+            .await;
+        }
 
-            // Process friend inbox — scan for new requests and persist to session
-            if is_friend_inbox {
-                debug!("friend inbox changed — scanning for new requests");
-                super::friend_inbox::scan_friend_inbox(
-                    &session,
-                    &transport,
-                    &session_path,
-                    &record_key_owned,
-                )
-                .await;
-            }
+        // Process friend inbox — scan for new requests and persist to session
+        if is_friend_inbox {
+            debug!("friend inbox changed — scanning for new requests");
+            super::friend_inbox::scan_friend_inbox(
+                &session,
+                &transport,
+                &session_path,
+                &record_key_owned,
+            )
+            .await;
         }
     }
 
-    fn on_event(&self, event: TransportEvent) -> impl std::future::Future<Output = ()> + Send {
+    async fn on_event(&self, event: TransportEvent) {
         debug!(event = ?std::mem::discriminant(&event), "handler: on_event");
         if let Some(ref sub_mgr) = *self.subscriptions.read() {
             match event {
@@ -427,6 +406,5 @@ impl InboundHandler for DaemonHandler {
                 }
             }
         }
-        async {}
     }
 }

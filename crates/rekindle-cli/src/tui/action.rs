@@ -7,7 +7,6 @@
 
 /// Unified action type for all TUI state transitions.
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // M3 wires remaining variants
 pub enum Action {
     // ─── Lifecycle ──────────────────────────────────────────────
     Tick,
@@ -80,10 +79,6 @@ pub enum Action {
     },
 
     // ─── Voice ──────────────────────────────────────────────────
-    JoinVoice {
-        community: String,
-        channel: String,
-    },
     LeaveVoice,
     ToggleMute,
     ToggleDeafen,
@@ -108,18 +103,6 @@ pub enum Action {
         community: String,
     },
 
-    // ─── Key operations ─────────────────────────────────────────
-    RequestMek {
-        community: String,
-        channel: String,
-    },
-
-    // ─── Presence ───────────────────────────────────────────────
-    SetPresence {
-        status: String,
-        message: Option<String>,
-    },
-
     // ─── Async results ──────────────────────────────────────────
     CommandComplete(Box<CommandResult>),
     CommandFailed {
@@ -128,7 +111,6 @@ pub enum Action {
     },
 
     // ─── Overlay ────────────────────────────────────────────────
-    OpenOverlay(OverlayKind),
     CloseOverlay,
     ConfirmOverlay,
 
@@ -137,7 +119,6 @@ pub enum Action {
         message: String,
         level: ToastLevel,
     },
-    DismissToast,
 
     // ─── Real-time subscription events ─────────────────────────
     /// Subscription event from the daemon's three-tier pipeline.
@@ -155,16 +136,13 @@ pub enum SearchMode {
 }
 
 /// Modal overlay type.
+///
+/// Search and confirm dialogs are handled by their own dedicated state
+/// (`SearchOverlay`, `ConfirmDialogState`); this enum covers the simple
+/// full-screen help overlay.
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // M3 wires Search and ConfirmAction
 pub enum OverlayKind {
     Help,
-    Search(SearchMode),
-    ConfirmAction {
-        prompt: String,
-        consequence: String,
-        action: Box<Action>,
-    },
 }
 
 /// Toast severity level.

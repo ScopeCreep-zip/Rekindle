@@ -127,12 +127,11 @@ pub async fn dispatch(
             limit,
             ..
         } => {
-            #[allow(clippy::cast_possible_truncation)]
             let value = client
                 .request_ok(IpcRequest::ChannelHistory {
                     community: community.clone(),
                     channel: channel.clone(),
-                    limit: *limit as u32,
+                    limit: u32::try_from(*limit).unwrap_or(u32::MAX),
                 })
                 .await?;
             format::print_structured(&value, mode)
@@ -140,7 +139,6 @@ pub async fn dispatch(
         ChannelCmd::Watch {
             community, channel, ..
         } => {
-            #[allow(clippy::cast_possible_truncation)]
             let value = client
                 .request_ok(IpcRequest::ChannelHistory {
                     community: community.clone(),

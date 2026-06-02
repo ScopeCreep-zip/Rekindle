@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use rekindle_records::schema::personal_sync_dflt_schema;
+use rekindle_protocol::dht::schema::personal_sync_dflt_schema;
 use veilid_core::CRYPTO_KIND_VLD0;
 
 use crate::db::DbPool;

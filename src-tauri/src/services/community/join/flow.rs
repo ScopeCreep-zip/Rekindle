@@ -74,6 +74,7 @@ pub async fn join_community(
     // 3. Decode the invite payload + optionally fetch bootstrap bundle.
     let invite = decode_invite_context(
         state,
+        &adapter,
         governance_key_str,
         invite_code,
         &snapshot.all_entries,
@@ -85,15 +86,17 @@ pub async fn join_community(
     let display_name = Some(crate::state_helpers::identity_display_name(state));
     let claimed = gov_rt::claim_registry_slot(
         &adapter,
-        governance_key_str,
-        &invite.registry_key,
         &invite.slot_seed_hex,
-        &invite.inviter_pseudonym,
-        &identity.pseudo,
-        &identity.pseudonym_signing,
-        &snapshot.gov_state,
-        join_status_label(state),
-        display_name,
+        gov_rt::SlotClaimCtx {
+            community_id: governance_key_str,
+            invite_registry_key: &invite.registry_key,
+            inviter_pseudonym: &invite.inviter_pseudonym,
+            my_pseudo: &identity.pseudo,
+            pseudonym_signing: &identity.pseudonym_signing,
+            gov_state: &snapshot.gov_state,
+            join_status_label: join_status_label(state),
+            display_name,
+        },
     )
     .await
     .map_err(|e| e.to_string())?;
@@ -260,6 +263,15 @@ pub async fn join_community(
     super::history::schedule_history_catchup(state.clone(), governance_key_str.to_string());
 
     if let Some(ref bundle) = invite.bootstrap_bundle {
+        tracing::info!(
+            community = %governance_key_str,
+            members = bundle.member_list.len(),
+            governance_entries = bundle.governance_entry_count,
+            channel_meks = bundle.channel_mek_count,
+            wrapped_owner_keypair = bundle.has_wrapped_owner_keypair,
+            "applying §14.4 bootstrap bundle"
+        );
+        super::bootstrap::persist_bootstrap_members(state, governance_key_str, bundle).await;
         super::bootstrap::persist_bootstrap_recent_messages(state, governance_key_str, bundle)
             .await;
     }
@@ -282,6 +294,7 @@ pub async fn join_community(
 
 async fn decode_invite_context(
     state: &Arc<AppState>,
+    adapter: &crate::services::governance_adapter::GovernanceAdapter,
     governance_key_str: &str,
     invite_code: &str,
     all_entries: &[(
@@ -291,8 +304,13 @@ async fn decode_invite_context(
     pseudo_hex: &str,
 ) -> Result<InviteContext, String> {
     let code_hash = rekindle_secrets::invite::hash_invite_code(invite_code);
-    let (encrypted_b64, inviter_pseudonym) =
+    let (secrets_record_key, inviter_pseudonym) =
         gov_rt::find_invite_in_entries(all_entries, &code_hash).map_err(|e| e.to_string())?;
+    // Governance carries only a pointer; fetch the encrypted blob from the
+    // invite-secrets DFLT record before decrypting.
+    let encrypted_b64 = gov_rt::fetch_invite_secrets(adapter, &secrets_record_key)
+        .await
+        .map_err(|e| e.to_string())?;
     let encrypted = {
         use base64::Engine;
         base64::engine::general_purpose::STANDARD

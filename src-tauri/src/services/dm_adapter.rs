@@ -15,8 +15,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use rekindle_dm::{DmDeps, DmError, DmEvent, DmMekCache, DmMekChain, DmStore, SqliteDmStore};
+use rekindle_protocol::dht::schema;
 use rekindle_protocol::messaging::envelope::MessagePayload;
-use rekindle_records::schema;
 use veilid_core::{
     BarePublicKey, BareSecretKey, KeyPair, PublicKey, RecordKey, ValueSubkeyRangeSet,
     CRYPTO_KIND_VLD0,
@@ -299,16 +299,21 @@ impl DmDeps for DmAdapter {
                 data,
             } => {
                 use base64::Engine as _;
-                let payload = serde_json::json!({
-                    "kind": "dmVideoFrame",
-                    "peerPubkey": sender_public_key_hex,
-                    "streamIdHex": hex::encode(stream_id),
-                    "frameSeq": frame_seq,
-                    "keyframe": keyframe,
-                    "timestamp": timestamp,
-                    "encodedPayloadB64": base64::engine::general_purpose::STANDARD.encode(&data),
-                });
-                crate::event_dispatch::dispatch(&self.app_handle, "dm-video-frame", payload);
+                // Phase 11 Tier 1 — high-throughput frames bypass the
+                // event bus and go to the per-peer `ipc::Channel` the DM
+                // video panel registered. No-op when no panel is open.
+                self.state.video_channels.send_dm(
+                    &sender_public_key_hex,
+                    crate::video_channels::DmVideoFrameMsg {
+                        peer_pubkey: sender_public_key_hex.clone(),
+                        stream_id_hex: hex::encode(stream_id),
+                        frame_seq,
+                        keyframe,
+                        timestamp,
+                        encoded_payload_b64: base64::engine::general_purpose::STANDARD
+                            .encode(&data),
+                    },
+                );
             }
         }
     }

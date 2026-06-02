@@ -61,14 +61,7 @@ impl CommunityInfoView {
     }
 
     /// Render the metadata section.
-    #[allow(clippy::unused_self)] // Method on self for consistency with View pattern
-    fn render_metadata(
-        &self,
-        frame: &mut Frame,
-        area: Rect,
-        detail: &CommunityDetail,
-        _theme: &ThemeManager,
-    ) {
+    fn render_metadata(frame: &mut Frame, area: Rect, detail: &CommunityDetail) {
         let gov_short = helpers::abbreviate_key(&detail.governance_key);
         let owner_short = helpers::abbreviate_key(&detail.owner_pseudonym);
         let created = helpers::format_timestamp(detail.created_at);
@@ -178,8 +171,7 @@ impl CommunityInfoView {
     }
 
     /// Render the roles section.
-    #[allow(clippy::unused_self)]
-    fn render_roles(&self, frame: &mut Frame, area: Rect, detail: &CommunityDetail) {
+    fn render_roles(frame: &mut Frame, area: Rect, detail: &CommunityDetail) {
         let title = format!(" Roles ({}) ", detail.roles.len());
         let block = Block::bordered()
             .title(title)
@@ -232,10 +224,10 @@ impl View for CommunityInfoView {
 
         let detail = self.detail.as_ref().expect("detail checked above");
 
-        #[allow(clippy::cast_possible_truncation)] // channels.len() bounded by DHT subkey limit
-        let channel_height = (detail.channels.len() as u16 + 2).min(area.height / 3);
-        #[allow(clippy::cast_possible_truncation)] // roles.len() bounded by governance manifest
-        let role_height = (detail.roles.len() as u16 + 2).min(area.height / 4);
+        let channel_count = u16::try_from(detail.channels.len()).unwrap_or(u16::MAX);
+        let channel_height = channel_count.saturating_add(2).min(area.height / 3);
+        let role_count = u16::try_from(detail.roles.len()).unwrap_or(u16::MAX);
+        let role_height = role_count.saturating_add(2).min(area.height / 4);
 
         let [meta_area, channels_area, roles_area] = Layout::vertical([
             Constraint::Length(8),
@@ -244,9 +236,9 @@ impl View for CommunityInfoView {
         ])
         .areas(area);
 
-        self.render_metadata(frame, meta_area, detail, theme);
+        Self::render_metadata(frame, meta_area, detail);
         self.render_channels(frame, channels_area, detail);
-        self.render_roles(frame, roles_area, detail);
+        Self::render_roles(frame, roles_area, detail);
 
         Ok(())
     }

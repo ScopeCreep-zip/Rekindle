@@ -32,7 +32,21 @@ impl App {
                             self.confirm.toggle_focus();
                             return None;
                         }
-                        _ => {}
+                        KeyCode::Char('y') => {
+                            // Explicit yes: focus Confirm, then resolve.
+                            self.confirm.confirm_focused = true;
+                            return Some(Action::ConfirmOverlay);
+                        }
+                        KeyCode::Char('n') | KeyCode::Esc => {
+                            // Explicit no: leave Confirm unfocused, then resolve (cancels).
+                            self.confirm.confirm_focused = false;
+                            return Some(Action::ConfirmOverlay);
+                        }
+                        KeyCode::Enter => {
+                            // Resolve based on whichever button is focused.
+                            return Some(Action::ConfirmOverlay);
+                        }
+                        _ => return None,
                     }
                 }
 

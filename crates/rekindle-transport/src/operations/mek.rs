@@ -223,8 +223,7 @@ pub async fn replenish_prekeys(
         None,
     )
     .await?;
-    #[allow(clippy::cast_possible_truncation)]
-    let count = byte_count as u32;
+    let count = u32::try_from(byte_count).unwrap_or(u32::MAX);
     info!(
         bytes = byte_count,
         subkey = crate::payload::dht_types::PROFILE_SUBKEY_PREKEY_BUNDLE,

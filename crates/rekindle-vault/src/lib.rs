@@ -36,8 +36,10 @@
 //! `/Users/kali/.claude/plans/memoized-dazzling-torvalds.md` § Phase 2.
 
 pub mod error;
+pub mod key;
 pub mod schema;
 pub mod store;
 
 pub use error::VaultError;
+pub use key::VaultKey;
 pub use store::VaultStore;

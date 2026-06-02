@@ -32,6 +32,19 @@ pub fn select_best_peer(ads: &[(usize, &HistoryAd)], needed_lamport: u64) -> Opt
         .map(|(idx, _)| *idx)
 }
 
+/// Select the peer offering the deepest backfill when the caller holds no
+/// local history yet (no specific lamport to target).
+///
+/// Returns the `peer_index` whose advertised range reaches furthest back —
+/// the smallest `oldest_lamport`, i.e. the most complete history. `None`
+/// when there are no candidates.
+#[must_use]
+pub fn select_deepest_peer(ads: &[(usize, &HistoryAd)]) -> Option<usize> {
+    ads.iter()
+        .min_by_key(|(_, ad)| ad.oldest_lamport)
+        .map(|(idx, _)| *idx)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{select_best_peer, HistoryAd};
@@ -96,5 +109,24 @@ mod tests {
     #[test]
     fn select_best_peer_empty_ads() {
         assert_eq!(select_best_peer(&[], 10), None);
+    }
+
+    #[test]
+    fn select_deepest_peer_picks_smallest_oldest_lamport() {
+        let shallow = HistoryAd {
+            channel_id: "ch".into(),
+            oldest_lamport: 40,
+            newest_lamport: 100,
+        };
+        let deep = HistoryAd {
+            channel_id: "ch".into(),
+            oldest_lamport: 1,
+            newest_lamport: 50,
+        };
+        assert_eq!(
+            super::select_deepest_peer(&[(0, &shallow), (1, &deep)]),
+            Some(1)
+        );
+        assert_eq!(super::select_deepest_peer(&[]), None);
     }
 }

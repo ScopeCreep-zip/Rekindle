@@ -73,8 +73,7 @@ pub async fn dispatch_role(
                 .transpose()?
                 .unwrap_or(0);
             let col = color.as_deref().map(parse_color).transpose()?.unwrap_or(0);
-            #[allow(clippy::cast_possible_wrap)]
-            let pos = position.map_or(0, |p| p as i32);
+            let pos = position.map_or(0, |p| i32::try_from(p).unwrap_or(i32::MAX));
             let value = client
                 .request_ok(IpcRequest::RoleCreate {
                     community: community.clone(),

@@ -4,9 +4,7 @@ use crate::db::DbPool;
 use crate::state::AppState;
 
 use super::control_events::handle_control_events_and_threads;
-use crate::services::veilid::legacy::membership::{
-    handle_join_accepted, handle_member_roles_changed, join_accepted_data,
-};
+use crate::services::governance_adapter;
 
 pub(crate) async fn handle_relayed_control(
     app_handle: &tauri::AppHandle,
@@ -195,7 +193,13 @@ async fn handle_join_and_roles_payload(
             pseudonym_key,
             role_ids,
         } => {
-            handle_member_roles_changed(app_handle, state, community_id, &pseudonym_key, &role_ids);
+            governance_adapter::process_member_roles_changed(
+                state,
+                app_handle,
+                community_id,
+                &pseudonym_key,
+                &role_ids,
+            );
         }
         ControlPayload::JoinAccepted {
             mek_encrypted,
@@ -205,19 +209,20 @@ async fn handle_join_and_roles_payload(
             slot_index,
             wrapped_slot_seed,
         } => {
-            handle_join_accepted(
-                app_handle,
+            let input = rekindle_governance_runtime::membership_events::JoinAcceptedInput {
+                mek_wire_bytes: &mek_encrypted,
+                mek_generation,
+                members: &members,
+                member_registry_key: member_registry_key.as_deref(),
+                slot_index,
+                wrapped_slot_seed: wrapped_slot_seed.as_deref(),
+            };
+            governance_adapter::process_join_accepted(
                 state,
+                app_handle,
                 community_id,
                 sender_pseudonym,
-                join_accepted_data(
-                    &mek_encrypted,
-                    mek_generation,
-                    &members,
-                    member_registry_key.as_deref(),
-                    slot_index,
-                    wrapped_slot_seed.as_deref(),
-                ),
+                input,
             )
             .await;
         }
@@ -281,7 +286,7 @@ async fn handle_join_and_roles_payload(
             // Other peers without the bit ignore — that's the spec's
             // "any admin reacts" model.
             let have_manage_community = {
-                use rekindle_governance::permissions::compute_permissions;
+                use rekindle_governance::permissions::{compute_permissions, has_capability};
                 use rekindle_types::permissions::MANAGE_COMMUNITY;
                 let communities = state.communities.read();
                 communities
@@ -292,13 +297,15 @@ async fn handle_join_and_roles_payload(
                         let arr: [u8; 32] = bytes.as_slice().try_into().ok()?;
                         let me = rekindle_types::id::PseudonymKey(arr);
                         cs.governance_state.as_ref().map(|gov| {
-                            (compute_permissions(
-                                &me,
-                                None,
-                                gov,
-                                rekindle_utils::time::timestamp_secs(),
-                            ) & MANAGE_COMMUNITY)
-                                != 0
+                            has_capability(
+                                compute_permissions(
+                                    &me,
+                                    None,
+                                    gov,
+                                    rekindle_utils::time::timestamp_secs(),
+                                ),
+                                MANAGE_COMMUNITY,
+                            )
                         })
                     })
                     .unwrap_or(false)

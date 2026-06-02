@@ -73,9 +73,12 @@ impl<'a> GovernanceOps<'a> {
 
     /// Create a new manifest record and initialize subkeys.
     pub async fn create(&self, metadata: &CommunityMetadata) -> Result<(String, Option<KeyPair>)> {
-        #[allow(clippy::cast_possible_truncation)]
-        let (key, keypair) =
-            record::create_dflt(self.rc, MANIFEST_SUBKEY_COUNT as u16, None).await?;
+        let (key, keypair) = record::create_dflt(
+            self.rc,
+            u16::try_from(MANIFEST_SUBKEY_COUNT).unwrap_or(u16::MAX),
+            None,
+        )
+        .await?;
 
         write_json_subkey(self.rc, &key, MANIFEST_METADATA, metadata, "metadata").await?;
         write_json_subkey(

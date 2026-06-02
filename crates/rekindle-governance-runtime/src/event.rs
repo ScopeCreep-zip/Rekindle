@@ -70,4 +70,24 @@ pub enum GovernanceRuntimeEvent {
         community_id: String,
         entry: Box<GovernanceEntry>,
     },
+
+    /// A `JoinAccepted` control message has been processed — adapter
+    /// emits `CommunityEvent::JoinAccepted`.
+    JoinAccepted { community_id: String },
+
+    /// A member's role set changed — adapter emits
+    /// `CommunityEvent::MemberRolesChanged`.
+    MemberRolesChanged {
+        community_id: String,
+        pseudonym_hex: String,
+        role_ids: Vec<u32>,
+    },
+
+    /// A member completed onboarding — adapter emits
+    /// `CommunityEvent::OnboardingComplete`.
+    OnboardingComplete {
+        community_id: String,
+        pseudonym_hex: String,
+        role_ids: Vec<u32>,
+    },
 }

@@ -6,6 +6,7 @@ use tokio::sync::mpsc;
 use crate::audio_thread::{AudioThread, AudioThreadLabels};
 use crate::device::{resolve_device, DeviceDirection};
 use crate::error::VoiceError;
+use crate::stream_config::{adapt_audio, negotiate_input_config};
 
 // Re-export for backward compatibility — external callers use
 // `rekindle_voice::capture::enumerate_audio_devices()`.
@@ -71,6 +72,11 @@ impl AudioCapture {
 }
 
 /// Build a cpal input stream on the current thread.
+///
+/// `sample_rate`/`channels` are the pipeline (Opus) format. The device may
+/// refuse that exact `StreamConfig`, so we negotiate a config it supports via
+/// [`negotiate_input_config`] and, when it differs, adapt each captured buffer
+/// back to the pipeline format with [`adapt_audio`] before forwarding.
 fn build_capture_stream(
     sample_rate: u32,
     channels: u16,
@@ -81,15 +87,30 @@ fn build_capture_stream(
     let host = cpal::default_host();
     let device = resolve_device(&host, device_name, &DeviceDirection::Input)?;
 
-    let supported = device
-        .default_input_config()
-        .map_err(|e| VoiceError::AudioDevice(format!("no input config: {e}")))?;
+    let (config, sample_format) = negotiate_input_config(&device, sample_rate, channels)?;
+    let dev_channels = config.channels;
+    let dev_rate = config.sample_rate.0;
+    let needs_adapt = dev_channels != channels || dev_rate != sample_rate;
 
-    let sample_format = supported.sample_format();
-    let config = cpal::StreamConfig {
-        channels,
-        sample_rate: cpal::SampleRate(sample_rate),
-        buffer_size: cpal::BufferSize::Default,
+    tracing::info!(
+        dev_channels,
+        dev_rate,
+        want_channels = channels,
+        want_rate = sample_rate,
+        ?sample_format,
+        needs_adapt,
+        "negotiated capture config"
+    );
+
+    // Forward captured f32 PCM to the pipeline, adapting to the codec format
+    // first when the device config differs.
+    let forward = move |samples: Vec<f32>, tx: &mpsc::Sender<Vec<f32>>| {
+        let out = if needs_adapt {
+            adapt_audio(&samples, dev_channels, dev_rate, channels, sample_rate)
+        } else {
+            samples
+        };
+        let _ = tx.try_send(out);
     };
 
     let make_error_callback = |error_tx: std_mpsc::Sender<String>| {
@@ -103,7 +124,7 @@ fn build_capture_stream(
         cpal::SampleFormat::F32 => device.build_input_stream(
             &config,
             move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                let _ = tx.try_send(data.to_vec());
+                forward(data.to_vec(), &tx);
             },
             make_error_callback(error_tx),
             None,
@@ -115,7 +136,7 @@ fn build_capture_stream(
                     .iter()
                     .map(|&s| f32::from(s) / f32::from(i16::MAX))
                     .collect();
-                let _ = tx.try_send(samples);
+                forward(samples, &tx);
             },
             make_error_callback(error_tx),
             None,
@@ -127,7 +148,7 @@ fn build_capture_stream(
                     .iter()
                     .map(|&s| (f32::from(s) / f32::from(u16::MAX)) * 2.0 - 1.0)
                     .collect();
-                let _ = tx.try_send(samples);
+                forward(samples, &tx);
             },
             make_error_callback(error_tx),
             None,

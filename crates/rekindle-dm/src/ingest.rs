@@ -13,32 +13,35 @@ use crate::error::DmError;
 use crate::invite::GroupDmParticipant;
 use crate::store::DmInvitePending;
 
-/// Handle a 1:1 DM invite from `sender_hex` for the SMPL record
-/// allocated at `record_key`. Persists locally; emits an invite event.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "DmInvite wire envelope has 6 distinct fields; bundling would only move the args from call site to constructor"
-)]
+/// Unpacked `DmInvite` wire envelope. Groups the six distinct fields so
+/// the ingest entry point stays under the argument-count budget while
+/// each field remains explicit at the dispatcher call site.
+pub struct IncomingDmInvite<'a> {
+    pub sender_hex: &'a str,
+    pub record_key: &'a str,
+    pub slot_seed: &'a [u8],
+    pub alice_pseudonym: &'a str,
+    pub alice_subkey: u32,
+    pub bob_subkey: u32,
+}
+
+/// Handle a 1:1 DM invite from `invite.sender_hex` for the SMPL record
+/// allocated at `invite.record_key`. Persists locally; emits an invite event.
 pub async fn handle_incoming_dm_invite<D: DmDeps + ?Sized>(
     deps: &D,
-    sender_hex: &str,
-    record_key: &str,
-    slot_seed: &[u8],
-    alice_pseudonym: &str,
-    alice_subkey: u32,
-    bob_subkey: u32,
+    invite: IncomingDmInvite<'_>,
 ) -> Result<(), DmError> {
     let owner_key = deps.owner_key()?;
     let participants = vec![
         GroupDmParticipant {
-            pseudonym: alice_pseudonym.to_string(),
-            subkey: alice_subkey,
-            public_key: sender_hex.to_string(),
+            pseudonym: invite.alice_pseudonym.to_string(),
+            subkey: invite.alice_subkey,
+            public_key: invite.sender_hex.to_string(),
         },
         // Our slot — public_key filled in when we accept and derive.
         GroupDmParticipant {
             pseudonym: String::new(),
-            subkey: bob_subkey,
+            subkey: invite.bob_subkey,
             public_key: String::new(),
         },
     ];
@@ -46,14 +49,14 @@ pub async fn handle_incoming_dm_invite<D: DmDeps + ?Sized>(
         .persist_invite_pending(
             &owner_key,
             DmInvitePending {
-                record_key: record_key.to_string(),
+                record_key: invite.record_key.to_string(),
                 is_group: false,
-                initiator_public_key: sender_hex.to_string(),
-                initiator_pseudonym: alice_pseudonym.to_string(),
-                my_subkey: bob_subkey,
+                initiator_public_key: invite.sender_hex.to_string(),
+                initiator_pseudonym: invite.alice_pseudonym.to_string(),
+                my_subkey: invite.bob_subkey,
                 participants,
                 mek_generation: 0,
-                slot_seed_hex: hex::encode(slot_seed),
+                slot_seed_hex: hex::encode(invite.slot_seed),
                 wrapped_mek_blob: None,
                 created_at: i64::try_from(rekindle_utils::timestamp_ms() / 1000)
                     .unwrap_or(i64::MAX),
@@ -61,33 +64,36 @@ pub async fn handle_incoming_dm_invite<D: DmDeps + ?Sized>(
         )
         .await?;
     deps.emit_event(DmEvent::InviteReceived {
-        record_key: record_key.to_string(),
-        sender_pseudonym: alice_pseudonym.to_string(),
-        sender_public_key_hex: sender_hex.to_string(),
+        record_key: invite.record_key.to_string(),
+        sender_pseudonym: invite.alice_pseudonym.to_string(),
+        sender_public_key_hex: invite.sender_hex.to_string(),
         is_group: false,
     });
     Ok(())
 }
 
+/// Unpacked `GroupDmInvite` wire envelope. Groups the distinct fields so
+/// the ingest entry point stays under the argument-count budget while
+/// each field remains explicit at the dispatcher call site.
+pub struct IncomingGroupDmInvite<'a> {
+    pub sender_hex: &'a str,
+    pub record_key: &'a str,
+    pub slot_seed: &'a [u8],
+    pub initiator_pseudonym: &'a str,
+    pub participants_json: &'a str,
+    pub wrapped_mek: &'a [u8],
+    pub mek_generation: u32,
+}
+
 /// Handle a group DM invite. Architecture §27.2: each `GroupDmParticipant`
 /// carries a `public_key` for verification — we find OUR slot by
 /// matching against our own identity public key.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "GroupDmInvite wire envelope has 8 distinct fields; bundling would only move the args from call site to constructor"
-)]
 pub async fn handle_incoming_group_dm_invite<D: DmDeps + ?Sized>(
     deps: &D,
-    sender_hex: &str,
-    record_key: &str,
-    slot_seed: &[u8],
-    initiator_pseudonym: &str,
-    participants_json: &str,
-    wrapped_mek: &[u8],
-    mek_generation: u32,
+    invite: IncomingGroupDmInvite<'_>,
 ) -> Result<(), DmError> {
     let owner_key = deps.owner_key()?;
-    let participants: Vec<GroupDmParticipant> = serde_json::from_str(participants_json)
+    let participants: Vec<GroupDmParticipant> = serde_json::from_str(invite.participants_json)
         .map_err(|e| DmError::InvalidInput(format!("invalid participants_json: {e}")))?;
 
     let secret_bytes = deps.identity_secret()?;
@@ -107,24 +113,24 @@ pub async fn handle_incoming_group_dm_invite<D: DmDeps + ?Sized>(
         .persist_invite_pending(
             &owner_key,
             DmInvitePending {
-                record_key: record_key.to_string(),
+                record_key: invite.record_key.to_string(),
                 is_group: true,
-                initiator_public_key: sender_hex.to_string(),
-                initiator_pseudonym: initiator_pseudonym.to_string(),
+                initiator_public_key: invite.sender_hex.to_string(),
+                initiator_pseudonym: invite.initiator_pseudonym.to_string(),
                 my_subkey,
                 participants,
-                mek_generation,
-                slot_seed_hex: hex::encode(slot_seed),
-                wrapped_mek_blob: Some(wrapped_mek.to_vec()),
+                mek_generation: invite.mek_generation,
+                slot_seed_hex: hex::encode(invite.slot_seed),
+                wrapped_mek_blob: Some(invite.wrapped_mek.to_vec()),
                 created_at: i64::try_from(rekindle_utils::timestamp_ms() / 1000)
                     .unwrap_or(i64::MAX),
             },
         )
         .await?;
     deps.emit_event(DmEvent::InviteReceived {
-        record_key: record_key.to_string(),
-        sender_pseudonym: initiator_pseudonym.to_string(),
-        sender_public_key_hex: sender_hex.to_string(),
+        record_key: invite.record_key.to_string(),
+        sender_pseudonym: invite.initiator_pseudonym.to_string(),
+        sender_public_key_hex: invite.sender_hex.to_string(),
         is_group: true,
     });
     Ok(())

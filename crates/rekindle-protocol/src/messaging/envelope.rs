@@ -837,7 +837,6 @@ pub struct ChannelMessageDto {
 /// Helper for `skip_serializing_if` on `u32` fields that default to 0.
 ///
 /// `serde`'s `skip_serializing_if` always passes by reference, so `&u32` is required.
-#[allow(clippy::trivially_copy_pass_by_ref)]
 fn is_zero(v: &u32) -> bool {
     *v == 0
 }

@@ -186,12 +186,9 @@ impl ChannelTree {
         }
     }
 
-    /// Get the currently selected node ID.
-    pub fn selected_id(&self) -> Option<&TreeNodeId> {
-        self.list_state
-            .selected()
-            .and_then(|i| self.nodes.get(i))
-            .map(|n| &n.id)
+    /// Get the currently selected node.
+    fn selected_node(&self) -> Option<&TreeNode> {
+        self.list_state.selected().and_then(|i| self.nodes.get(i))
     }
 
     /// Toggle expand/collapse of the selected node.
@@ -403,13 +400,19 @@ impl Component for ChannelTree {
                 None
             }
             KeyCode::Char('l') | KeyCode::Enter | KeyCode::Right => {
-                let selected = self.selected_id().cloned();
+                let selected = self.selected_node().map(|n| (n.id.clone(), n.kind.clone()));
                 match selected {
-                    Some(TreeNodeId::Channel { community, channel }) => {
-                        Some(Action::ShowChannel { community, channel })
+                    Some((TreeNodeId::Channel { community, channel }, kind)) => {
+                        if kind == "voice" {
+                            Some(Action::ShowVoiceSession { community, channel })
+                        } else {
+                            Some(Action::ShowChannel { community, channel })
+                        }
                     }
-                    Some(TreeNodeId::DmUser(peer_key)) => Some(Action::ShowDmThread { peer_key }),
-                    Some(id) if self.nodes.iter().any(|n| n.id == id && n.has_children) => {
+                    Some((TreeNodeId::DmUser(peer_key), _)) => {
+                        Some(Action::ShowDmThread { peer_key })
+                    }
+                    Some((id, _)) if self.nodes.iter().any(|n| n.id == id && n.has_children) => {
                         self.toggle_expand();
                         None
                     }
@@ -524,7 +527,7 @@ mod tests {
         let mut tree = ChannelTree::new(true);
         tree.set_communities(&[("gov1".into(), "dev-team".into(), Vec::new())], &[]);
         assert_eq!(
-            tree.selected_id(),
+            tree.selected_node().map(|n| &n.id),
             Some(&TreeNodeId::Community("gov1".into()))
         );
     }

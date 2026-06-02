@@ -125,14 +125,11 @@ impl CommunityPresenceDeps for PresenceAdapter {
         let event_rsvps = community
             .my_event_rsvps
             .iter()
-            .map(|(event_id, status)| {
-                let hash = blake3::hash(event_id.as_bytes());
-                let mut bytes = [0u8; 16];
-                bytes.copy_from_slice(&hash.as_bytes()[..16]);
-                rekindle_types::presence::EventRSVP {
-                    event_id: rekindle_types::id::EventId(bytes),
-                    status: status.clone(),
-                }
+            .map(|(event_id, status)| rekindle_types::presence::EventRSVP {
+                event_id: rekindle_types::id::EventId(rekindle_presence::presence_event_id_bytes(
+                    event_id,
+                )),
+                status: status.clone(),
             })
             .collect();
         SelfPresenceSnapshot {

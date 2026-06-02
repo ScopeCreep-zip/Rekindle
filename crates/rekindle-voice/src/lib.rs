@@ -22,6 +22,7 @@ pub mod send_loop; // Phase 14 — capture → process → encode → transport 
 pub mod session; // Phase 14.l — voice session orchestrator (start_session port).
 pub mod session_deps; // Phase 14 — VoiceSessionDeps trait + VoiceSessionEvent.
 pub mod signaling; // Phase 14.k — community voice signaling handlers (VoiceSignalingDeps).
+pub mod stream_config; // cpal stream-config negotiation + format adaptation.
 pub mod topology; // Phase 14 — pure mode-decision + stage-host election math.
 pub mod transport;
 
@@ -31,7 +32,7 @@ pub use session_deps::{
     AudioPrefs, CallKeyInfo, VoiceIdentity, VoicePeer, VoiceSessionDeps, VoiceSessionEvent,
     VoiceSessionStartup, VoiceShutdownHandles, VoiceShutdownOpts,
 };
-pub use transport::VoiceMode;
+pub use transport::{VoiceFrameSender, VoiceMode};
 
 use tokio::sync::mpsc;
 

@@ -48,6 +48,23 @@ pub enum FilesEvent {
     },
 }
 
+/// Column set for [`FilesDeps::insert_channel_message_full`]. Mirrors
+/// `message_repo::insert_channel_message_full`'s SQL shape; grouping the
+/// fields keeps the trait method under the argument-count budget while
+/// each field stays explicit at the construction site.
+pub struct InsertChannelMessage<'a> {
+    pub owner_key: &'a str,
+    pub channel_id: &'a str,
+    pub sender_key: &'a str,
+    pub message_id: &'a str,
+    pub timestamp_ms: i64,
+    pub mek_generation: u64,
+    pub lamport_ts: u64,
+    pub attachment_json: &'a str,
+    pub flags: u32,
+    pub body: &'a str,
+}
+
 /// Single deps trait for all Lost Cargo flows. Implementations
 /// supply concrete AppState / DbPool / AppHandle / Veilid wiring.
 #[async_trait]
@@ -211,22 +228,9 @@ pub trait FilesDeps: Send + Sync + 'static {
 
     // ── Persistence (async) ────────────────────────────────────────
 
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "mirrors message_repo::insert_channel_message_full's SQL column shape; bundling into a struct adds construction overhead at every callsite"
-    )]
     async fn insert_channel_message_full(
         &self,
-        owner_key: &str,
-        channel_id: &str,
-        sender_key: &str,
-        message_id: &str,
-        timestamp_ms: i64,
-        mek_generation: u64,
-        lamport_ts: u64,
-        attachment_json: &str,
-        flags: u32,
-        body: &str,
+        row: InsertChannelMessage<'_>,
     ) -> Result<(), FilesError>;
 
     /// Fire-and-forget — update channel_slowmode_state row.

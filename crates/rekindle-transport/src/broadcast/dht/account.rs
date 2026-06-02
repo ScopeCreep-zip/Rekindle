@@ -140,8 +140,7 @@ impl ShortArray {
                 reason: format!("write slot: {e}"),
             })?;
 
-        #[allow(clippy::cast_possible_truncation)] // ShortArray max 255 elements
-        let index = head.slots.len() as u32;
+        let index = u32::try_from(head.slots.len()).unwrap_or(u32::MAX);
         head.slots.push(slot);
         self.write_head(&head).await?;
         Ok(index)

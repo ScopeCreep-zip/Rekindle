@@ -343,10 +343,6 @@ pub async fn join_community_inner(
     Ok(())
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Tauri command surface — matches update_community_info partial-update payload"
-)]
 pub async fn update_community_info_inner(
     state: &SharedState,
     pool: &DbPool,

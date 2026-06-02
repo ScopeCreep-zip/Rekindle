@@ -6,7 +6,7 @@
 use rekindle_governance_runtime::{
     DhtRecordInfo, GovernanceRuntimeError, MemberIndexRow, RecentMessageRow,
 };
-use rekindle_records::schema;
+use rekindle_protocol::dht::schema;
 use veilid_core::{SetDHTValueOptions, CRYPTO_KIND_VLD0};
 
 use crate::db_helpers::db_call_or_default;
@@ -23,6 +23,26 @@ pub(super) async fn create_smpl_record_impl(
         .map_err(|e| GovernanceRuntimeError::Adapter(format!("SMPL schema build failed: {e}")))?;
     let desc = rc
         .create_dht_record(CRYPTO_KIND_VLD0, smpl_schema, None)
+        .await
+        .map_err(|e| GovernanceRuntimeError::Adapter(format!("create_dht_record failed: {e}")))?;
+    let record_key = desc.key().to_string();
+    let owner_keypair = desc
+        .owner_secret()
+        .map(|s| veilid_core::KeyPair::new_from_parts(desc.owner().clone(), s.value()).to_string());
+    Ok(DhtRecordInfo {
+        record_key,
+        owner_keypair,
+    })
+}
+
+pub(super) async fn create_dflt_record_impl(
+    adapter: &GovernanceAdapter,
+) -> Result<DhtRecordInfo, GovernanceRuntimeError> {
+    let rc = adapter.rc()?;
+    let dflt_schema = schema::invite_secrets_dflt_schema()
+        .map_err(|e| GovernanceRuntimeError::Adapter(format!("DFLT schema build failed: {e}")))?;
+    let desc = rc
+        .create_dht_record(CRYPTO_KIND_VLD0, dflt_schema, None)
         .await
         .map_err(|e| GovernanceRuntimeError::Adapter(format!("create_dht_record failed: {e}")))?;
     let record_key = desc.key().to_string();

@@ -6,10 +6,7 @@ use crate::state_helpers;
 
 use super::control_event_records::{handle_event_payload, handle_game_server_payload};
 use super::control_moderation::handle_gossip_control_payloads;
-use crate::services::veilid::legacy::membership::{
-    decrypt_with_cached_mek, fetch_mek_from_dht, MekDecryptResult,
-};
-use crate::services::veilid::legacy::onboarding::handle_onboarding_answers;
+use crate::services::governance_adapter;
 
 pub(crate) async fn handle_control_events_and_threads(
     app_handle: &tauri::AppHandle,
@@ -57,10 +54,10 @@ pub(crate) async fn handle_control_events_and_threads(
             new_generation,
             ..
         } => {
-            let app = app_handle.clone();
-            let state_clone = state.clone();
-            let cid = community_id.to_string();
-            fetch_mek_from_dht(&app, &state_clone, &cid);
+            tracing::debug!(
+                community = %community_id,
+                "MEKRotated: v2.0 uses invite-time MEK distribution — vault read skipped"
+            );
             crate::event_dispatch::emit_live(
                 app_handle,
                 "community-event",
@@ -81,8 +78,14 @@ pub(crate) async fn handle_control_events_and_threads(
             );
         }
         ControlPayload::SubmitOnboardingAnswers { ref answers } => {
-            handle_onboarding_answers(app_handle, state, community_id, sender_pseudonym, answers)
-                .await;
+            governance_adapter::process_onboarding_answers(
+                state,
+                app_handle,
+                community_id,
+                sender_pseudonym,
+                answers,
+            )
+            .await;
         }
         ControlPayload::OnboardingComplete {
             ref pseudonym_key,
@@ -311,13 +314,16 @@ fn handle_thread_payload(
             timestamp,
             reply_to_id,
         } => {
-            let body = {
-                let mek_cache = state.mek_cache.lock();
-                match decrypt_with_cached_mek(&mek_cache, community_id, &ciphertext, mek_generation)
-                {
-                    MekDecryptResult::Decrypted(text) => text,
-                    _ => String::new(),
-                }
+            let body = match governance_adapter::decrypt_channel_message(
+                state,
+                community_id,
+                &ciphertext,
+                mek_generation,
+            ) {
+                rekindle_governance_runtime::membership_events::MekDecryptResult::Decrypted(
+                    text,
+                ) => text,
+                _ => String::new(),
             };
             let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
             let cid = community_id.to_string();

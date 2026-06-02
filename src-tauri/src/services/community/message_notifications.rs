@@ -331,17 +331,7 @@ pub(super) fn emit_automod_alert(
             gov,
             rekindle_utils::timestamp_secs(),
         );
-        // Architecture §32 W17 — alert any member with a moderation
-        // role, not just those who can hand out timeouts. Spec just says
-        // "admins"; in our permission model that's the union of
-        // ADMINISTRATOR + the message/community/role/ban moderation
-        // capabilities. This matches who would actually act on the alert.
-        let mod_mask = rekindle_types::permissions::ADMINISTRATOR
-            | rekindle_types::permissions::MANAGE_COMMUNITY
-            | rekindle_types::permissions::MANAGE_MESSAGES
-            | rekindle_types::permissions::TIMEOUT_MEMBERS
-            | rekindle_types::permissions::BAN_MEMBERS;
-        perms & mod_mask != 0
+        rekindle_governance::permissions::has_moderation_capability(perms)
     };
     if can_moderate {
         crate::event_dispatch::emit_live(

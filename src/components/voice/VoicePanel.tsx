@@ -1,7 +1,6 @@
 import { Component, For, Show } from "solid-js";
-import { setVoiceState, voiceState } from "../../stores/voice.store";
+import { voiceState } from "../../stores/voice.store";
 import VoiceParticipantItem from "./VoiceParticipant";
-import SoundboardPanel from "./SoundboardPanel";
 import { handleToggleMute, handleToggleDeafen, handleLeaveVoice } from "../../handlers/voice.handlers";
 import {
   ICON_MIC,
@@ -9,19 +8,12 @@ import {
   ICON_HEADPHONES,
   ICON_HEADPHONES_OFF,
   ICON_HANGUP,
-  ICON_VIDEO,
-  ICON_VIDEO_OFF,
-  ICON_SCREEN_SHARE,
 } from "../../icons";
 
-function toggleCamera(): void {
-  setVoiceState("cameraOn", !voiceState.cameraOn);
-}
-
-function toggleScreenShare(): void {
-  setVoiceState("screenShareOn", !voiceState.screenShareOn);
-}
-
+/// Compact sidebar "connected" strip. Quick mute / deafen / leave plus the
+/// participant list — reachable from any channel while in a call. The full
+/// control set (camera, screen-share, soundboard, reactions) lives in the
+/// main-pane CallStage control bar so this row no longer overflows the rail.
 const VoicePanel: Component = () => {
   return (
     <div class="voice-panel">
@@ -55,32 +47,6 @@ const VoicePanel: Component = () => {
                 {voiceState.isDeafened ? ICON_HEADPHONES_OFF : ICON_HEADPHONES}
               </span>
             </button>
-            {/* Architecture §10.6 — camera + screen-share toggles. The
-             * desired-state lives in `voice.store.ts::cameraOn` /
-             * `screenShareOn`; VideoCallPanel reacts via createEffect
-             * to start/stop the WebCodecs pipeline. Toggle buttons sit
-             * in VoicePanel so they're always visible alongside the
-             * other call controls. */}
-            <button
-              class={`voice-btn ${voiceState.cameraOn ? "voice-btn-active" : ""}`}
-              onClick={toggleCamera}
-              title={voiceState.cameraOn ? "Stop camera" : "Start camera"}
-              aria-label={voiceState.cameraOn ? "Stop camera" : "Start camera"}
-              aria-pressed={voiceState.cameraOn}
-            >
-              <span class="nf-icon" aria-hidden="true">
-                {voiceState.cameraOn ? ICON_VIDEO : ICON_VIDEO_OFF}
-              </span>
-            </button>
-            <button
-              class={`voice-btn ${voiceState.screenShareOn ? "voice-btn-active" : ""}`}
-              onClick={toggleScreenShare}
-              title={voiceState.screenShareOn ? "Stop screen share" : "Share screen"}
-              aria-label={voiceState.screenShareOn ? "Stop screen share" : "Share screen"}
-              aria-pressed={voiceState.screenShareOn}
-            >
-              <span class="nf-icon" aria-hidden="true">{ICON_SCREEN_SHARE}</span>
-            </button>
             <button
               class="voice-btn voice-btn-disconnect"
               onClick={handleLeaveVoice}
@@ -99,11 +65,6 @@ const VoicePanel: Component = () => {
             {(participant) => <VoiceParticipantItem participant={participant} />}
           </For>
         </div>
-        {/* Plan §Failure 6 — soundboard alongside mute/deafen. Internally
-         *  gates on USE_SOUNDBOARD and on the active community having at
-         *  least one soundboard Expression, so non-permission users
-         *  see nothing rather than an empty panel. */}
-        <SoundboardPanel />
       </Show>
     </div>
   );

@@ -123,10 +123,6 @@ pub async fn unassign_role_inner(
     .map_err(|e| e.to_string())
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Tauri command surface — matches RoleDefinition shape"
-)]
 pub async fn create_role_inner(
     state: &SharedState,
     pool: &DbPool,
@@ -155,10 +151,6 @@ pub async fn create_role_inner(
     .map_err(|e| e.to_string())
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Tauri command surface — matches edit_role partial-update payload"
-)]
 pub async fn edit_role_inner(
     state: &SharedState,
     pool: &DbPool,

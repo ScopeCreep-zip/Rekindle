@@ -19,6 +19,7 @@ use crate::db::DbPool;
 use crate::state::AppState;
 
 use super::call_signaling::handle_call_signaling_payload;
+use super::dm_dispatch::handle_dm_payload;
 use super::friend_handlers::{
     handle_friend_accept_full, handle_friend_reject, handle_friend_request_full,
     handle_profile_key_rotated, handle_unfriended, handle_unfriended_ack, IncomingFriendAccept,
@@ -119,10 +120,6 @@ pub async fn try_handle_dm_invite_app_call(
 ///
 /// Flow: parse envelope → verify signature → decrypt if session exists →
 /// parse payload → dispatch by type (DM, friend request, typing, etc.)
-#[allow(
-    clippy::too_many_lines,
-    reason = "Top-level payload dispatch — each MessagePayload arm has its own helper; splitting further would obscure the dispatch table."
-)]
 pub async fn handle_incoming_message(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
@@ -280,35 +277,16 @@ pub async fn handle_incoming_message(
                 tracing::debug!(error = %e, target = %target_pubkey, "RelayEnvelope dropped");
             }
         }
-        MessagePayload::DmInvite {
-            record_key,
-            slot_seed,
-            alice_pseudonym,
-            alice_subkey,
-            bob_subkey,
-        } => {
-            if let Err(e) = crate::services::dm::handle_incoming_dm_invite(
-                app_handle,
-                state,
-                pool,
-                &msg.sender_hex,
-                &record_key,
-                &slot_seed,
-                &alice_pseudonym,
-                alice_subkey,
-                bob_subkey,
-            )
-            .await
-            {
-                tracing::warn!(error = %e, from = %msg.sender_hex, "failed to ingest DmInvite");
-            }
-        }
-        MessagePayload::DmAccept { record_key: _ } => {
-            // DmAccept is the reply to a DmInvite app_call; if it
-            // arrives via app_message instead (peer used the wrong
-            // path) we just log and ignore — Alice's outbound
-            // app_call already resolved with the inline reply.
-            tracing::trace!("received DmAccept via app_message; ignoring");
+        // DM-family payloads (invite/accept/decline/leave, group invite,
+        // video fragment) route through the dm_dispatch helper to keep this
+        // dispatcher under the workspace line budget.
+        payload @ (MessagePayload::DmInvite { .. }
+        | MessagePayload::DmAccept { .. }
+        | MessagePayload::DmDecline { .. }
+        | MessagePayload::GroupDmInvite { .. }
+        | MessagePayload::DmLeave { .. }
+        | MessagePayload::DmVideoFragment { .. }) => {
+            handle_dm_payload(app_handle, state, pool, &msg.sender_hex, payload).await;
         }
         // Wave 13 W13.4 — peer is calling us. Dispatch into the new
         // services::calls state machine which inserts CallState=Incoming,
@@ -360,53 +338,6 @@ pub async fn handle_incoming_message(
         MessagePayload::RelayOfferAck { ok: _, reason: _ } => {
             tracing::trace!("received RelayOfferAck via app_message; ignoring");
         }
-        MessagePayload::DmDecline {
-            record_key,
-            reason: _,
-        } => {
-            if let Err(e) =
-                crate::services::dm::handle_incoming_dm_decline(state, pool, &record_key).await
-            {
-                tracing::debug!(error = %e, "DmDecline drop");
-            }
-        }
-        MessagePayload::GroupDmInvite {
-            record_key,
-            slot_seed,
-            initiator_pseudonym,
-            participants_json,
-            wrapped_mek,
-            mek_generation,
-        } => {
-            if let Err(e) = crate::services::dm::handle_incoming_group_dm_invite(
-                app_handle,
-                state,
-                pool,
-                &msg.sender_hex,
-                &record_key,
-                &slot_seed,
-                &initiator_pseudonym,
-                &participants_json,
-                &wrapped_mek,
-                mek_generation,
-            )
-            .await
-            {
-                tracing::warn!(error = %e, from = %msg.sender_hex, "failed to ingest GroupDmInvite");
-            }
-        }
-        MessagePayload::DmLeave { record_key } => {
-            if let Err(e) = crate::services::dm::handle_incoming_dm_leave(
-                state,
-                pool,
-                &msg.sender_hex,
-                &record_key,
-            )
-            .await
-            {
-                tracing::debug!(error = %e, "DmLeave drop");
-            }
-        }
         MessagePayload::RegisterPushRelay { .. } | MessagePayload::UnregisterPushRelay { .. } => {
             // The push-relay daemon is a separate binary
             // (`rekindle-push-relay`). Desktop clients don't *receive*
@@ -447,42 +378,6 @@ pub async fn handle_incoming_message(
                 last_seen,
                 &route_blob,
             );
-        }
-        MessagePayload::DmVideoFragment {
-            stream_id,
-            frame_seq,
-            fragment_index,
-            fragment_count,
-            keyframe,
-            timestamp,
-            chunk,
-        } => {
-            // W11.4 — accumulate fragments and emit a `videoFrame`
-            // event when the last chunk lands. The Signal layer has
-            // already verified authenticity (sender's identity key is
-            // bound to the envelope), so we don't repeat per-fragment
-            // signatures the way community video does.
-            if let Some(frame) = state.dm_video_reassembly.record_fragment(
-                &msg.sender_hex,
-                stream_id,
-                frame_seq,
-                fragment_index,
-                fragment_count,
-                keyframe,
-                timestamp,
-                chunk,
-            ) {
-                // Phase 13 — assembled-frame event now flows through
-                // DmDeps::emit_event(DmEvent::VideoFrameAssembled); the
-                // adapter handles the base64 + json layout for the
-                // `dm-video-frame` Tauri emit.
-                let adapter = crate::services::dm_adapter::DmAdapter::new(
-                    Arc::clone(state),
-                    app_handle.clone(),
-                    pool.clone(),
-                );
-                rekindle_dm::video::dispatch_assembled_frame(&*adapter, &msg.sender_hex, frame);
-            }
         }
     }
 }

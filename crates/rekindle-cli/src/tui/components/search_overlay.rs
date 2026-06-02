@@ -241,11 +241,11 @@ impl SearchOverlay {
         let max = self.filtered_indices.len() - 1;
         let current = self.list_state.selected().unwrap_or(0);
 
-        #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
+        let magnitude = usize::try_from(delta.unsigned_abs()).unwrap_or(usize::MAX);
         let new = if delta > 0 {
-            (current + delta as usize).min(max)
+            current.saturating_add(magnitude).min(max)
         } else {
-            current.saturating_sub((-delta) as usize)
+            current.saturating_sub(magnitude)
         };
 
         self.list_state.select(Some(new));

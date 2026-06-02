@@ -7,6 +7,7 @@ use tokio::sync::mpsc;
 use crate::audio_thread::{AudioThread, AudioThreadLabels};
 use crate::device::{resolve_device, DeviceDirection};
 use crate::error::VoiceError;
+use crate::stream_config::{adapt_audio, negotiate_output_config};
 
 const PLAYBACK_LABELS: AudioThreadLabels = AudioThreadLabels {
     audio_thread: "audio-playback",
@@ -70,44 +71,133 @@ impl AudioPlayback {
 }
 
 /// Build a cpal output stream on the current thread.
+///
+/// `sample_rate`/`channels` are the pipeline (mixer) format. The device may
+/// refuse that exact `StreamConfig` and may also want a non-f32 sample format,
+/// so we negotiate a supported config via [`negotiate_output_config`] and adapt
+/// each drained buffer from the pipeline format to the device format before
+/// filling the output, converting to the device's sample type on write.
 fn build_playback_stream(
     sample_rate: u32,
     channels: u16,
-    mut rx: mpsc::Receiver<Vec<f32>>,
+    rx: mpsc::Receiver<Vec<f32>>,
     device_name: Option<&str>,
     error_tx: std_mpsc::Sender<String>,
 ) -> Result<cpal::Stream, VoiceError> {
     let host = cpal::default_host();
     let device = resolve_device(&host, device_name, &DeviceDirection::Output)?;
 
-    let config = cpal::StreamConfig {
-        channels,
-        sample_rate: cpal::SampleRate(sample_rate),
-        buffer_size: cpal::BufferSize::Default,
+    let (config, sample_format) = negotiate_output_config(&device, sample_rate, channels)?;
+    let dev_channels = config.channels;
+    let dev_rate = config.sample_rate.0;
+    let needs_adapt = dev_channels != channels || dev_rate != sample_rate;
+
+    tracing::info!(
+        dev_channels,
+        dev_rate,
+        want_channels = channels,
+        want_rate = sample_rate,
+        ?sample_format,
+        needs_adapt,
+        "negotiated playback config"
+    );
+
+    // Pre-allocate the ring buffer — one second of device audio is a generous
+    // ceiling.
+    let buffer_capacity = dev_rate as usize * usize::from(dev_channels.max(1));
+
+    let error_callback = move |err: cpal::StreamError| {
+        tracing::error!("output stream error: {err}");
+        let _ = error_tx.send(format!("output: {err}"));
     };
 
-    // Pre-allocate the ring buffer — one second of audio is a generous ceiling
-    let buffer_capacity = sample_rate as usize * usize::from(channels);
-    let mut sample_buffer: VecDeque<f32> = VecDeque::with_capacity(buffer_capacity);
-
-    device
-        .build_output_stream(
+    match sample_format {
+        cpal::SampleFormat::F32 => device.build_output_stream(
             &config,
-            move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                // Drain any available decoded audio from the channel
-                while let Ok(samples) = rx.try_recv() {
-                    sample_buffer.extend(samples);
-                }
-                // Fill the output buffer, substituting silence for missing samples
-                for sample in data.iter_mut() {
-                    *sample = sample_buffer.pop_front().unwrap_or(0.0);
-                }
-            },
-            move |err: cpal::StreamError| {
-                tracing::error!("output stream error: {err}");
-                let _ = error_tx.send(format!("output: {err}"));
-            },
+            output_callback::<f32>(
+                rx,
+                needs_adapt,
+                channels,
+                sample_rate,
+                dev_channels,
+                dev_rate,
+                buffer_capacity,
+            ),
+            error_callback,
             None,
-        )
-        .map_err(|e| VoiceError::AudioDevice(format!("failed to build output stream: {e}")))
+        ),
+        cpal::SampleFormat::I16 => device.build_output_stream(
+            &config,
+            output_callback::<i16>(
+                rx,
+                needs_adapt,
+                channels,
+                sample_rate,
+                dev_channels,
+                dev_rate,
+                buffer_capacity,
+            ),
+            error_callback,
+            None,
+        ),
+        cpal::SampleFormat::U16 => device.build_output_stream(
+            &config,
+            output_callback::<u16>(
+                rx,
+                needs_adapt,
+                channels,
+                sample_rate,
+                dev_channels,
+                dev_rate,
+                buffer_capacity,
+            ),
+            error_callback,
+            None,
+        ),
+        format => {
+            return Err(VoiceError::AudioDevice(format!(
+                "unsupported sample format: {format:?}"
+            )))
+        }
+    }
+    .map_err(|e| VoiceError::AudioDevice(format!("failed to build output stream: {e}")))
+}
+
+/// Build the cpal output data callback for a device sample type `T`.
+///
+/// Drains decoded f32 PCM from `rx` (pipeline format), adapts it to the device
+/// `(channels, rate)` when they differ, buffers it in a ring, and fills each
+/// output slot — converting f32 → `T` on write and substituting silence when
+/// the buffer underruns.
+fn output_callback<T>(
+    mut rx: mpsc::Receiver<Vec<f32>>,
+    needs_adapt: bool,
+    src_channels: u16,
+    src_rate: u32,
+    dst_channels: u16,
+    dst_rate: u32,
+    buffer_capacity: usize,
+) -> impl FnMut(&mut [T], &cpal::OutputCallbackInfo)
+where
+    T: cpal::SizedSample + cpal::FromSample<f32>,
+{
+    let mut sample_buffer: VecDeque<f32> = VecDeque::with_capacity(buffer_capacity);
+    move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
+        while let Ok(samples) = rx.try_recv() {
+            if needs_adapt {
+                sample_buffer.extend(adapt_audio(
+                    &samples,
+                    src_channels,
+                    src_rate,
+                    dst_channels,
+                    dst_rate,
+                ));
+            } else {
+                sample_buffer.extend(samples);
+            }
+        }
+        for slot in data.iter_mut() {
+            *slot = T::from_sample(sample_buffer.pop_front().unwrap_or(0.0));
+        }
+    }
 }

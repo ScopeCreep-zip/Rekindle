@@ -24,7 +24,8 @@ use crate::config::schema::TuiConfig;
 /// On `Drop`, the terminal is restored via `ratatui::restore()`.
 pub struct Tui {
     pub terminal: ratatui::DefaultTerminal,
-    #[allow(dead_code)] // Held to keep the spawned event task alive until Drop.
+    /// Handle to the spawned event task. Aborted on `Drop` (alongside the
+    /// cancellation token) to guarantee the task is torn down.
     task: JoinHandle<()>,
     pub cancellation_token: CancellationToken,
     pub event_rx: UnboundedReceiver<Event>,
@@ -125,6 +126,7 @@ impl Drop for Tui {
         );
         ratatui::restore();
         self.stop();
+        self.task.abort();
     }
 }
 

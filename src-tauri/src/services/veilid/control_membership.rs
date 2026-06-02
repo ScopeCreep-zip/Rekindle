@@ -10,7 +10,7 @@ use tauri::Manager;
 
 use crate::db::DbPool;
 use crate::db_helpers::db_fire;
-use crate::services::veilid::legacy::onboarding::handle_peer_assisted_join;
+use crate::services::governance_adapter;
 use crate::state::AppState;
 use crate::state_helpers;
 
@@ -33,10 +33,9 @@ pub(super) fn handle_membership_payload(
             invite_code,
             ..
         } => {
-            handle_peer_assisted_join(
-                app_handle,
+            governance_adapter::process_peer_assisted_join(
                 state,
-                pool,
+                app_handle,
                 community_id,
                 &pseudonym_key,
                 &display_name,

@@ -112,6 +112,10 @@ impl GovernanceRuntimeDeps for GovernanceAdapter {
         dht::create_smpl_record_impl(self, member_pubkeys).await
     }
 
+    async fn create_dflt_record(&self) -> Result<DhtRecordInfo, GovernanceRuntimeError> {
+        dht::create_dflt_record_impl(self).await
+    }
+
     fn format_writer_keypair(&self, ed_public: [u8; 32], ed_secret: [u8; 32]) -> String {
         let sk = rekindle_secrets::ed25519_dalek::SigningKey::from_bytes(&ed_secret);
         debug_assert_eq!(sk.verifying_key().to_bytes(), ed_public);
@@ -360,6 +364,14 @@ impl GovernanceRuntimeDeps for GovernanceAdapter {
             max_lamport,
         )
         .await;
+    }
+
+    fn persist_governance_entries_cache(
+        &self,
+        community_id: &str,
+        entries: &[(PseudonymKey, Vec<GovernanceEntry>)],
+    ) {
+        state_mutations::persist_governance_entries_cache_impl(self, community_id, entries);
     }
 
     fn list_registries_with_my_pseudonym(&self) -> Vec<(String, String, Option<String>)> {

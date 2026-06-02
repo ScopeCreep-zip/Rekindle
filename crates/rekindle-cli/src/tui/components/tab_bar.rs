@@ -183,8 +183,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut TabBarState, theme: &Th
             format!(" {} ", tab.label)
         };
 
-        #[allow(clippy::cast_possible_truncation)]
-        let label_width = label.len() as u16;
+        let label_width = u16::try_from(label.len()).unwrap_or(u16::MAX);
 
         // Check if this tab fits
         if used_width + label_width + 2 > max_width {

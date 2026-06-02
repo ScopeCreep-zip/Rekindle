@@ -30,7 +30,7 @@ pub use envelope::{
 pub use error::DmError;
 pub use ingest::{
     handle_incoming_dm_decline, handle_incoming_dm_invite, handle_incoming_dm_leave,
-    handle_incoming_group_dm_invite,
+    handle_incoming_group_dm_invite, IncomingDmInvite, IncomingGroupDmInvite,
 };
 pub use invite::{DmInvite, GroupDmInvite, GroupDmParticipant};
 pub use mek::{derive_dm_mek, ratchet_dm_mek, DmMek, DmMekChain, MEK_LEN};
@@ -41,4 +41,4 @@ pub use store::{
     DmConversation, DmInviteMeta, DmInvitePending, DmMessageInsert, DmMessageRecord, DmSessionMeta,
     DmStore, SqliteDmStore,
 };
-pub use video::{AssembledFrame, DmVideoReassemblyState, FRAGMENT_PAYLOAD_LIMIT};
+pub use video::{AssembledFrame, DmVideoFragment, DmVideoReassemblyState, FRAGMENT_PAYLOAD_LIMIT};

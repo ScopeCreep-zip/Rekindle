@@ -6,7 +6,7 @@
 //! → UI snapshot emit. All side effects flow through the
 //! `GovernanceRuntimeDeps` trait.
 
-use rekindle_governance::{merge, validate};
+use rekindle_governance::{compact, merge, validate};
 use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_secrets::derive;
 use rekindle_types::governance::{GovernanceEntry, GovernanceSubkeyPayload};
@@ -15,6 +15,12 @@ use rekindle_types::id::PseudonymKey;
 use crate::deps::GovernanceRuntimeDeps;
 use crate::error::GovernanceRuntimeError;
 use crate::event::GovernanceRuntimeEvent;
+
+/// Warn threshold (~85% of the ~4112 B SMPL per-subkey cap) at which a
+/// member's accumulated governance subkey is close to overflowing. A write
+/// past the cap fails as a generic "failed schema validation" with no size
+/// detail, so we surface the size proactively here.
+const SMPL_SUBKEY_WARN_BYTES: usize = 3500;
 
 /// Architecture §6 — classify a governance entry by which UI snapshot
 /// it invalidates so we can emit the right event after a successful
@@ -122,6 +128,13 @@ pub async fn write_entry<D: GovernanceRuntimeDeps>(
         .unwrap_or_default();
     my_entries.push(entry.clone());
 
+    // Architecture §4.2 Strategy 1 — bound this author's subkey to the current
+    // state it has produced before signing. Self-heals an already-wedged subkey
+    // on the next write: dead channel/category/event/invite lifecycles and
+    // superseded single-key metadata are dropped so the new entry fits under
+    // Veilid's ~4112 B SMPL per-subkey cap.
+    let my_entries = compact::compact_author_entries(my_entries);
+
     let identity_secret = deps
         .identity_secret()
         .ok_or(GovernanceRuntimeError::IdentitySecretUnavailable)?;
@@ -138,6 +151,28 @@ pub async fn write_entry<D: GovernanceRuntimeDeps>(
     let payload = serde_json::to_vec(&payload_struct).map_err(|e| {
         GovernanceRuntimeError::Encoding(format!("serialize governance entries: {e}"))
     })?;
+
+    // The whole per-author subkey is rewritten on every write and is bounded
+    // by Veilid's SMPL per-subkey cap (`min(MAX_SUBKEY_SIZE, MAX_RECORD_DATA_SIZE
+    // / subkey_count)` ≈ 4112 B for a 255-slot governance record). Exceeding it
+    // surfaces only as a generic "failed schema validation" from `set_dht_value`,
+    // so log the size here to make overflow diagnosable.
+    if payload.len() >= SMPL_SUBKEY_WARN_BYTES {
+        tracing::warn!(
+            payload_bytes = payload.len(),
+            entry_count = payload_struct.entries.len(),
+            subkey = my_slot,
+            "governance subkey payload approaching the SMPL per-subkey cap (~4112 B); \
+             the next write may fail schema validation"
+        );
+    } else {
+        tracing::debug!(
+            payload_bytes = payload.len(),
+            entry_count = payload_struct.entries.len(),
+            subkey = my_slot,
+            "writing governance subkey payload"
+        );
+    }
 
     // M9.5 — set_dht_value returns Some(stale) when our write was NOT
     // accepted by the network. Surface as WriteConflict so the caller

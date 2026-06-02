@@ -279,10 +279,6 @@ pub async fn remove_timeout_inner(
     Ok(())
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Tauri command surface — matches PermissionOverwrite shape"
-)]
 pub async fn set_channel_overwrite_inner(
     state: &crate::state::SharedState,
     pool: &crate::db::DbPool,

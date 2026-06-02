@@ -235,9 +235,11 @@ pub async fn dispatch(ctx: &DaemonContext, request: IpcRequest) -> IpcResponse {
                 state,
                 &community,
                 &channel_id,
-                name.as_deref(),
-                topic.as_deref(),
-                slowmode_seconds,
+                channel::ChannelUpdate {
+                    name: name.as_deref(),
+                    topic: topic.as_deref(),
+                    slowmode_seconds,
+                },
             )
             .await
         }
@@ -291,10 +293,12 @@ pub async fn dispatch(ctx: &DaemonContext, request: IpcRequest) -> IpcResponse {
                 ctx,
                 state,
                 &community,
-                &name,
-                permissions,
-                color,
-                position,
+                governance::RoleSpec {
+                    name: &name,
+                    permissions,
+                    color,
+                    position,
+                },
             )
             .await
         }

@@ -29,8 +29,10 @@ pub mod deps;
 pub mod dht_hydration;
 pub mod error;
 pub mod event;
+pub mod invite_secrets;
 pub mod join;
 pub mod join_stages;
+pub mod membership_events;
 pub mod origin;
 pub mod roles;
 pub mod segments;
@@ -47,13 +49,20 @@ pub use dht_hydration::{
 };
 pub use error::GovernanceRuntimeError;
 pub use event::GovernanceRuntimeEvent;
+pub use invite_secrets::{fetch_invite_secrets, publish_invite_secrets};
 pub use join::{
     default_community_name, derive_join_identity, find_invite_in_entries, merge_presence_entry,
     InitialPresence, JoinIdentity, JoinOnlineMember,
 };
 pub use join_stages::{
     claim_registry_slot, collect_initial_presence_state, load_governance_snapshot, ClaimedSlot,
-    GovernanceSnapshot,
+    GovernanceSnapshot, SlotClaimCtx,
+};
+pub use membership_events::{
+    decrypt_with_cached_mek, process_admin_keypair_grant, process_join_accepted,
+    process_member_roles_changed, process_onboarding_answers, process_peer_assisted_join,
+    process_slot_keypair_grant, JoinAcceptedInput, MekDecryptResult, MemberUpsertRow,
+    MembershipEventDeps, SlotGrantUpdate,
 };
 pub use origin::create_community;
 pub use segments::{

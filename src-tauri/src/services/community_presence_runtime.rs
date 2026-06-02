@@ -54,10 +54,6 @@ pub fn send_channel_typing_inner(
     crate::services::community::send_to_mesh(state, community_id, &envelope)
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Tauri command surface — matches PresenceUpdate envelope shape"
-)]
 pub async fn update_community_presence_inner(
     state: &SharedState,
     community_id: String,
@@ -224,10 +220,6 @@ pub async fn get_community_members_inner(
     Ok(members)
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Tauri command surface — matches per-community profile fields"
-)]
 pub async fn update_community_profile_inner(
     state: &SharedState,
     community_id: String,

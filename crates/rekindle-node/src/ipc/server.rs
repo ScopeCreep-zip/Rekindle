@@ -428,8 +428,8 @@ async fn handle_connection(
         let conns = state.connections.read().await;
         match conns.get(&conn_id) {
             Some(c) => {
-                #[allow(clippy::cast_possible_truncation)]
-                let duration = c.connected_at.elapsed().as_millis() as u64;
+                let duration =
+                    u64::try_from(c.connected_at.elapsed().as_millis()).unwrap_or(u64::MAX);
                 tracing::info!(
                     conn_id,
                     agent = c.verified_name.as_deref().unwrap_or("ephemeral"),

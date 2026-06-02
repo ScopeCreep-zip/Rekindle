@@ -9,7 +9,7 @@ workspace = true
 
 [dependencies]
 rekindle-types = { path = "../rekindle-types" }
+blake3 = "1"
 tokio = { workspace = true }
 tracing = { workspace = true }
-veilid-core = { version = "0.5.2", default-features = true }
 

@@ -237,11 +237,8 @@ impl DhtLog {
         let mut current_seg: Option<ShortArray> = None;
 
         for pos in start..spine.total_count {
-            #[allow(clippy::cast_possible_truncation)]
-            // segment index bounded by spine.segments.len()
-            let seg_idx = (pos / cap) as usize;
-            #[allow(clippy::cast_possible_truncation)] // offset < segment_capacity (u32)
-            let offset = (pos % cap) as u32;
+            let seg_idx = usize::try_from(pos / cap).unwrap_or(usize::MAX);
+            let offset = u32::try_from(pos % cap).unwrap_or(u32::MAX);
 
             if current_seg.is_none() || seg_idx != current_seg_idx {
                 current_seg_idx = seg_idx;

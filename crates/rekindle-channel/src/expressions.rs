@@ -350,21 +350,35 @@ pub async fn upload_sticker<D: ChannelMessagingDeps>(
     Ok(hex::encode(expression_id))
 }
 
+/// Inputs for a soundboard-sound upload.
+///
+/// Borrows the identifier strings (`&'a str`) since the orchestrator owns
+/// them, and owns the moved-in payload (`bytes`, `tags`, `emoji`) that is
+/// consumed by the cache write and governance entry.
+pub struct UploadSoundboardSoundParams<'a> {
+    pub community_id: &'a str,
+    pub name: &'a str,
+    pub bytes: Vec<u8>,
+    pub tags: Vec<String>,
+    pub duration_seconds: f32,
+    pub volume: f32,
+    pub emoji: Option<String>,
+}
+
 /// Phase 19.f — upload a soundboard sound.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Mirrors src-tauri upload_soundboard_sound signature; consolidating into a struct would just reshape the call site."
-)]
 pub async fn upload_soundboard_sound<D: ChannelMessagingDeps>(
     deps: &D,
-    community_id: &str,
-    name: &str,
-    bytes: Vec<u8>,
-    tags: Vec<String>,
-    duration_seconds: f32,
-    volume: f32,
-    emoji: Option<String>,
+    params: UploadSoundboardSoundParams<'_>,
 ) -> Result<String, ChannelError> {
+    let UploadSoundboardSoundParams {
+        community_id,
+        name,
+        bytes,
+        tags,
+        duration_seconds,
+        volume,
+        emoji,
+    } = params;
     validate_expression_name(name)?;
     validate_soundboard_bytes(&bytes)?;
     SoundboardMeta::validate_duration(duration_seconds)

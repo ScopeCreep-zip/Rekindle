@@ -7,7 +7,8 @@
 use std::sync::Arc;
 
 use rekindle_protocol::dht::community::permissions_v2::Permissions;
-use rekindle_records::schema;
+use rekindle_protocol::dht::schema;
+use rekindle_records::schema::MAX_MEMBERS_PER_SEGMENT;
 use rekindle_secrets::derive;
 use veilid_core::CRYPTO_KIND_VLD0;
 
@@ -68,8 +69,8 @@ pub async fn create_channel_inner(
         .map_err(|e| format!("invalid slot seed hex: {e}"))?
         .try_into()
         .map_err(|_| "slot seed must be 32 bytes")?;
-    let mut member_pubkeys = Vec::with_capacity(schema::MAX_MEMBERS_PER_SEGMENT);
-    for index in 0..schema::MAX_MEMBERS_PER_SEGMENT {
+    let mut member_pubkeys = Vec::with_capacity(MAX_MEMBERS_PER_SEGMENT);
+    for index in 0..MAX_MEMBERS_PER_SEGMENT {
         let keypair = derive::derive_slot_keypair(
             &slot_seed_bytes,
             u32::try_from(index).map_err(|_| "slot index overflow")?,

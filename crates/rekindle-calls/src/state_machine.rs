@@ -145,6 +145,33 @@ pub enum CallEvent {
     VoiceTransportDown { call_id: String, reason: String },
 }
 
+/// Caller-side call-setup field set for [`CallEvent::LocalStartCall`].
+/// Grouped into one owned struct so the `apply` helper takes a single
+/// argument; `StaticSecret` is move-only, so the fields are consumed.
+struct StartCallParams {
+    call_id: String,
+    peer: String,
+    peer_display_name: String,
+    kind: CallKind,
+    my_x25519_secret: StaticSecret,
+    my_x25519_pub: [u8; 32],
+    expires_at_ms: u64,
+    started_at_ms: u64,
+}
+
+/// Receiver-side invite field set for [`CallEvent::InviteReceived`].
+/// Grouped into one owned struct so the `apply` helper takes a single
+/// argument.
+struct InviteReceivedParams {
+    call_id: String,
+    from: String,
+    from_display_name: String,
+    kind: CallKind,
+    peer_x25519_pub: [u8; 32],
+    expires_at_ms: u64,
+    received_at_ms: u64,
+}
+
 /// Side-effects produced by [`CallStateMachine::apply`]. The runtime
 /// (W16.7) interprets these against transport, voice subsystem, store,
 /// timers, and the [`SharedState`] notification channel.
@@ -310,16 +337,16 @@ impl CallStateMachine {
                 my_x25519_pub,
                 expires_at_ms,
                 started_at_ms,
-            } => self.apply_local_start_call(
-                &call_id,
-                &peer,
+            } => self.apply_local_start_call(StartCallParams {
+                call_id,
+                peer,
                 peer_display_name,
                 kind,
                 my_x25519_secret,
                 my_x25519_pub,
                 expires_at_ms,
                 started_at_ms,
-            ),
+            }),
             CallEvent::LocalCancel { call_id, reason } => self.apply_local_cancel(&call_id, reason),
             CallEvent::LocalDialingTimeout { call_id } => {
                 self.apply_local_dialing_timeout(&call_id)
@@ -344,7 +371,7 @@ impl CallStateMachine {
                 peer_x25519_pub,
                 expires_at_ms,
                 received_at_ms,
-            } => self.apply_invite_received(
+            } => self.apply_invite_received(InviteReceivedParams {
                 call_id,
                 from,
                 from_display_name,
@@ -352,7 +379,7 @@ impl CallStateMachine {
                 peer_x25519_pub,
                 expires_at_ms,
                 received_at_ms,
-            ),
+            }),
             CallEvent::LocalAccept {
                 call_id,
                 my_x25519_secret,
@@ -374,18 +401,19 @@ impl CallStateMachine {
 
     // ── apply_* helpers ─────────────────────────────────────────────
 
-    #[allow(clippy::too_many_arguments)]
-    fn apply_local_start_call(
-        &mut self,
-        call_id: &str,
-        peer: &str,
-        peer_display_name: String,
-        kind: CallKind,
-        my_x25519_secret: StaticSecret,
-        my_x25519_pub: [u8; 32],
-        expires_at_ms: u64,
-        started_at_ms: u64,
-    ) -> Vec<Effect> {
+    fn apply_local_start_call(&mut self, params: StartCallParams) -> Vec<Effect> {
+        let StartCallParams {
+            call_id,
+            peer,
+            peer_display_name,
+            kind,
+            my_x25519_secret,
+            my_x25519_pub,
+            expires_at_ms,
+            started_at_ms,
+        } = params;
+        let call_id = call_id.as_str();
+        let peer = peer.as_str();
         let state = CallState {
             call_id: call_id.into(),
             peer_pubkey: peer.into(),
@@ -672,17 +700,16 @@ impl CallStateMachine {
         ]
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn apply_invite_received(
-        &mut self,
-        call_id: String,
-        from: String,
-        from_display_name: String,
-        kind: CallKind,
-        peer_x25519_pub: [u8; 32],
-        expires_at_ms: u64,
-        received_at_ms: u64,
-    ) -> Vec<Effect> {
+    fn apply_invite_received(&mut self, params: InviteReceivedParams) -> Vec<Effect> {
+        let InviteReceivedParams {
+            call_id,
+            from,
+            from_display_name,
+            kind,
+            peer_x25519_pub,
+            expires_at_ms,
+            received_at_ms,
+        } = params;
         // Reject duplicate invite for an existing call_id.
         if self.active.contains_key(&call_id) {
             return vec![];

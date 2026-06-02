@@ -1,10 +1,12 @@
-import { Component, createSignal, onMount, For, Show } from "solid-js";
+import { Component, createSignal, onMount, onCleanup, For, Show } from "solid-js";
 import Titlebar from "../components/titlebar/Titlebar";
 import Avatar from "../components/common/Avatar";
 import Modal from "../components/common/Modal";
 import LoadingButton from "../components/common/LoadingButton";
 import { handleLogin, handleCreateIdentity } from "../handlers/auth.handlers";
 import { commands, avatarDataUrl, IdentitySummary } from "../ipc/commands";
+import { canUnlock, setLifecycleState } from "../stores/lifecycle.store";
+import { subscribeLifecycleEvents } from "../ipc/channels/subscriptions";
 import { errorMessage } from "../utils/error";
 import { truncateKey } from "../utils/formatting";
 
@@ -51,8 +53,19 @@ const LoginWindow: Component = () => {
     }
   }
 
-  onMount(() => {
+  onMount(async () => {
     loadIdentities();
+    // Seed the derived lifecycle view from the single backend authority,
+    // then observe transitions — mirrors Briar's StartupViewModel. The
+    // login button stays "Connecting…" until the node attaches (locked).
+    try {
+      setLifecycleState(await commands.lifecycleCurrent());
+    } catch {
+      // lifecycle_current unavailable (very early boot) — the subscription
+      // below resyncs on the first transition.
+    }
+    const unlisten = await subscribeLifecycleEvents(setLifecycleState);
+    onCleanup(unlisten);
   });
 
   function selectAccount(id: IdentitySummary): void {
@@ -75,7 +88,7 @@ const LoginWindow: Component = () => {
   async function handleLoginSubmit(e: Event): Promise<void> {
     e.preventDefault();
     const sel = selected();
-    if (!sel || !passphrase().trim() || loading()) return;
+    if (!sel || !passphrase().trim() || loading() || !canUnlock()) return;
 
     setLoading(true);
     setError(null);
@@ -99,7 +112,7 @@ const LoginWindow: Component = () => {
 
   async function handleCreateSubmit(e: Event): Promise<void> {
     e.preventDefault();
-    if (!passphrase().trim() || loading()) return;
+    if (!passphrase().trim() || loading() || !canUnlock()) return;
 
     setLoading(true);
     setError(null);
@@ -205,8 +218,13 @@ const LoginWindow: Component = () => {
           <Show when={error() !== null}>
             <div class="form-error">{error()}</div>
           </Show>
-          <LoadingButton type="submit" loading={loading()} loadingLabel="Unlocking">
-            Unlock
+          <LoadingButton
+            type="submit"
+            loading={loading()}
+            disabled={!canUnlock()}
+            loadingLabel="Unlocking"
+          >
+            {canUnlock() ? "Unlock" : "Connecting…"}
           </LoadingButton>
           <button type="button" class="form-btn-secondary" onClick={goBack}>
             ← Switch Account
@@ -242,8 +260,13 @@ const LoginWindow: Component = () => {
           <Show when={error() !== null}>
             <div class="form-error">{error()}</div>
           </Show>
-          <LoadingButton type="submit" loading={loading()} loadingLabel="Creating identity">
-            Create Identity
+          <LoadingButton
+            type="submit"
+            loading={loading()}
+            disabled={!canUnlock()}
+            loadingLabel="Creating identity"
+          >
+            {canUnlock() ? "Create Identity" : "Connecting…"}
           </LoadingButton>
         </form>
       </Show>

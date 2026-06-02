@@ -195,8 +195,15 @@ pub async fn process_inbox(
     .await;
 
     // Process join entries
-    let new_members =
-        process_inbox_joins(&dht, &registry_key, &metadata, &bans, &mut members, &pending).await;
+    let new_members = process_inbox_joins(
+        &dht,
+        &registry_key,
+        &metadata,
+        &bans,
+        &mut members,
+        &pending,
+    )
+    .await;
 
     if new_members == 0 {
         return;
@@ -342,8 +349,7 @@ async fn process_inbox_leaves(
     let Some(sk) = get_signing_key(signing_key) else {
         return;
     };
-    let ps =
-        rekindle_transport::crypto::pseudonym::derive_community_pseudonym(&sk, governance_key);
+    let ps = rekindle_transport::crypto::pseudonym::derive_community_pseudonym(&sk, governance_key);
     let ps_hex = hex::encode(ps.verifying_key().to_bytes());
     let mut new_vault = Vec::new();
     for channel in channels {
@@ -360,12 +366,12 @@ async fn process_inbox_leaves(
                 let pub_bytes: [u8; 32] = hex::decode(&m.pseudonym_key).ok()?.try_into().ok()?;
                 rekindle_transport::crypto::mek::wrap_mek(&ps, &pub_bytes, &mek_wire)
                     .ok()
-                    .map(|wrapped| {
-                        rekindle_transport::payload::dht_types::EncryptedMekCopy {
+                    .map(
+                        |wrapped| rekindle_transport::payload::dht_types::EncryptedMekCopy {
                             target_pseudonym: m.pseudonym_key.clone(),
                             encrypted_mek: wrapped,
-                        }
-                    })
+                        },
+                    )
             })
             .collect();
         new_vault.push(rekindle_transport::payload::dht_types::MekVaultEntry {

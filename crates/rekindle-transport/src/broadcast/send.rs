@@ -271,8 +271,7 @@ impl Caller {
 
         let rc = build_routing_context(&self.api, &self.config.safety.rpc)?;
 
-        #[allow(clippy::cast_possible_truncation)]
-        let timeout_ms = timeout.as_millis() as u64;
+        let timeout_ms = u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX);
 
         let response = tokio::time::timeout(
             timeout,

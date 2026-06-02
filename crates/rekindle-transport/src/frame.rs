@@ -266,8 +266,9 @@ pub fn encode(type_id: TypeId, payload: &[u8]) -> Result<Vec<u8>> {
         });
     }
 
-    #[allow(clippy::cast_possible_truncation)]
-    let len = payload.len() as u16;
+    // `payload.len()` is bounded by `MAX_PAYLOAD_SIZE` (< u16::MAX) by the
+    // check above, so this conversion never saturates.
+    let len = u16::try_from(payload.len()).unwrap_or(u16::MAX);
     let mut frame = Vec::with_capacity(HEADER_SIZE + payload.len());
     frame.push(PROTOCOL_VERSION);
     frame.push(type_id as u8);

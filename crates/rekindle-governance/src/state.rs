@@ -341,7 +341,7 @@ pub struct InviteState {
     pub code_hash: String,
     pub max_uses: u32,
     pub expires_at: Option<u64>,
-    pub encrypted_secrets: String,
+    pub secrets_record_key: String,
     pub created_lamport: u64,
     /// M10.3 — the inviter's pseudonym, populated from the writing
     /// governance subkey at merge time. Used for the per-inviter

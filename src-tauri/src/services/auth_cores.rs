@@ -6,8 +6,7 @@
 
 use std::sync::Arc;
 
-use rekindle_crypto::keychain::{KEY_ED25519_PRIVATE, VAULT_IDENTITY};
-use rekindle_crypto::Keychain as _;
+use rekindle_vault::VaultKey;
 use rusqlite::OptionalExtension as _;
 
 use serde::{Deserialize, Serialize};
@@ -62,9 +61,8 @@ pub async fn create_identity_core(
     let keystore = StrongholdKeystore::initialize_for_identity(config_dir, &public_key, passphrase)
         .map_err(|e| crate::keystore::map_stronghold_error(&e))?;
     keystore
-        .store_key(VAULT_IDENTITY, KEY_ED25519_PRIVATE, &secret_bytes)
+        .vault_put(&VaultKey::IdentityEd25519, &secret_bytes)
         .map_err(|e| e.to_string())?;
-    keystore.save().map_err(|e| e.to_string())?;
 
     *keystore_handle.lock() = Some(keystore);
 
@@ -199,7 +197,7 @@ pub async fn login_core(
         })?;
 
     let secret_bytes = keystore
-        .load_key(VAULT_IDENTITY, KEY_ED25519_PRIVATE)
+        .vault_get(&VaultKey::IdentityEd25519)
         .map_err(|e| e.to_string())?;
 
     let secret = secret_bytes.ok_or_else(|| {
@@ -237,6 +235,17 @@ pub async fn login_core(
         keystore_handle,
         &key_array,
     );
+
+    // Re-merge last-known governance from the warm local cache so
+    // communities are usable immediately on open. Must follow the
+    // pseudonym restore above (set_governance_state reads
+    // my_pseudonym_key). The background DHT rebuild later overwrites
+    // this with anything newer.
+    if let Err(error) =
+        crate::community_loader::restore_governance_from_cache(pool, state, public_key).await
+    {
+        tracing::warn!(%error, "failed to restore governance from local cache");
+    }
 
     initialize_audit_chain(app_handle, state, pool, keystore_handle, public_key).await;
     if let Some(app) = app_handle {

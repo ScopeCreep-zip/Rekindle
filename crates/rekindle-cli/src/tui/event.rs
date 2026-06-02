@@ -15,7 +15,6 @@
 /// Produced by the `Tui` struct's event task and consumed by `App::run()`.
 /// Every event is lightweight and cloneable.
 #[derive(Clone, Debug)]
-#[allow(dead_code)] // Mouse and Paste fields read via pattern binding in event_to_action.
 pub enum Event {
     /// Initialization complete — sent once after the event loop starts.
     Init,

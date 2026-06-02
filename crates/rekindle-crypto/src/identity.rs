@@ -108,6 +108,24 @@ impl std::fmt::Debug for Identity {
     }
 }
 
+/// P3.3 — short safety number for out-of-band session verification.
+///
+/// `BLAKE3(sort([key_a, key_b]) || "rekindle-safety-v1")` → first 8 hex
+/// chars (32 bits — small enough to read aloud, large enough to detect
+/// substitution attacks at a cost a casual user would tolerate). Sorting
+/// the two identity keys makes the value order-independent, so both peers
+/// derive the same number regardless of who computes it.
+pub fn safety_number(key_a: &[u8], key_b: &[u8]) -> String {
+    let mut keys = [key_a, key_b];
+    keys.sort_unstable();
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(keys[0]);
+    hasher.update(keys[1]);
+    hasher.update(b"rekindle-safety-v1");
+    let hash = hasher.finalize();
+    hex::encode(&hash.as_bytes()[..4])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -173,5 +191,16 @@ mod tests {
         let shared_b = bob_secret.diffie_hellman(&alice_x25519_pub);
 
         assert_eq!(shared_a.as_bytes(), shared_b.as_bytes());
+    }
+
+    #[test]
+    fn safety_number_is_order_independent_and_short() {
+        let a = [0x11u8; 32];
+        let b = [0x22u8; 32];
+        let forward = safety_number(&a, &b);
+        let reverse = safety_number(&b, &a);
+        assert_eq!(forward, reverse, "both peers must derive the same number");
+        assert_eq!(forward.len(), 8, "32 bits = 8 hex chars");
+        assert_ne!(forward, safety_number(&a, &[0x33u8; 32]));
     }
 }

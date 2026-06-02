@@ -770,11 +770,6 @@ impl TransportNode {
             })?;
         Ok(super::peer_registry::PeerTarget { route_id })
     }
-
-    #[allow(dead_code)]
-    pub(crate) fn api(&self) -> &VeilidAPI {
-        &self.api
-    }
 }
 
 /// Build a Veilid `RoutingContext` from a [`SafetyProfile`].

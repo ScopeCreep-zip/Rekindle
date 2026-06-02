@@ -87,5 +87,42 @@ pub(super) fn emit_event_impl(adapter: &GovernanceAdapter, event: GovernanceRunt
         } => {
             tracing::trace!(community = %community_id, "governance entry applied");
         }
+        GovernanceRuntimeEvent::JoinAccepted { community_id } => {
+            emit_live(
+                &adapter.app_handle,
+                "community-event",
+                &CommunityEvent::JoinAccepted { community_id },
+            );
+        }
+        GovernanceRuntimeEvent::MemberRolesChanged {
+            community_id,
+            pseudonym_hex,
+            role_ids,
+        } => {
+            emit_live(
+                &adapter.app_handle,
+                "community-event",
+                &CommunityEvent::MemberRolesChanged {
+                    community_id,
+                    pseudonym_key: pseudonym_hex,
+                    role_ids,
+                },
+            );
+        }
+        GovernanceRuntimeEvent::OnboardingComplete {
+            community_id,
+            pseudonym_hex,
+            role_ids,
+        } => {
+            emit_live(
+                &adapter.app_handle,
+                "community-event",
+                &CommunityEvent::OnboardingComplete {
+                    community_id,
+                    pseudonym_key: pseudonym_hex,
+                    role_ids,
+                },
+            );
+        }
     }
 }

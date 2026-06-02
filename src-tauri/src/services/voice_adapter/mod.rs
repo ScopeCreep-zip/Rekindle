@@ -30,6 +30,7 @@ use crate::state::AppState;
 
 pub mod deps_impl;
 pub mod event_mapping;
+pub mod frame_sender;
 pub mod io_helpers;
 pub mod session_setup;
 

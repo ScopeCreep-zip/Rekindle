@@ -55,15 +55,12 @@ impl VideoDeps for VideoAdapter {
     }
 
     fn emit_event(&self, event: VideoEvent) {
-        let mapped = map_video_event(event);
-        crate::event_dispatch::emit_live(&self.app_handle, "community-event", &mapped);
-    }
-}
-
-fn map_video_event(event: VideoEvent) -> CommunityEvent {
-    use base64::Engine as _;
-    match event {
-        VideoEvent::FrameReady {
+        // Phase 11 Tier 1 — high-throughput reassembled frames bypass the
+        // `community-event` bus and go straight to the per-community
+        // `ipc::Channel` the video panel registered. The low-rate control
+        // events (acks, keyframe requests, topology, capabilities) stay on
+        // the event bus.
+        if let VideoEvent::FrameReady {
             community_id,
             sender_pseudonym,
             stream_id,
@@ -71,15 +68,36 @@ fn map_video_event(event: VideoEvent) -> CommunityEvent {
             keyframe,
             timestamp,
             payload,
-        } => CommunityEvent::VideoFrame {
-            community_id,
-            sender_pseudonym,
-            stream_id: hex::encode(stream_id),
-            frame_seq,
-            keyframe,
-            timestamp,
-            payload_b64: base64::engine::general_purpose::STANDARD.encode(&payload),
-        },
+        } = event
+        {
+            use base64::Engine as _;
+            self.state.video_channels.send_community(
+                &community_id,
+                crate::video_channels::CommunityVideoFrameMsg {
+                    community_id: community_id.clone(),
+                    sender_pseudonym,
+                    stream_id: hex::encode(stream_id),
+                    frame_seq,
+                    keyframe,
+                    timestamp,
+                    payload_b64: base64::engine::general_purpose::STANDARD.encode(&payload),
+                },
+            );
+            return;
+        }
+        let mapped = map_video_event(event);
+        crate::event_dispatch::emit_live(&self.app_handle, "community-event", &mapped);
+    }
+}
+
+fn map_video_event(event: VideoEvent) -> CommunityEvent {
+    match event {
+        // Phase 11 Tier 1 — frames are routed to the per-community
+        // `ipc::Channel` in `emit_event` before this mapper runs, so a
+        // `FrameReady` here means the dispatch invariant was violated.
+        VideoEvent::FrameReady { .. } => {
+            unreachable!("FrameReady is forwarded to the video ipc::Channel in emit_event")
+        }
         VideoEvent::FrameAck {
             community_id,
             sender_pseudonym,

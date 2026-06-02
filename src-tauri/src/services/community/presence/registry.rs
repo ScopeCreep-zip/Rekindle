@@ -118,13 +118,15 @@ pub async fn write_our_presence(state: &Arc<AppState>, community_id: &str) {
     let history_ranges = adapter.compute_history_ranges(community_id).await;
     rekindle_presence::write_our_presence(
         &adapter,
-        community_id,
-        &registry_key,
-        &creds.my_pseudonym_hex,
-        creds.my_subkey_index,
-        creds.slot_keypair_str.as_deref(),
-        creds.slot_seed_hex.is_some(),
-        history_ranges,
+        rekindle_presence::PresenceWrite {
+            community_id,
+            registry_key: &registry_key,
+            my_pseudonym_hex: &creds.my_pseudonym_hex,
+            my_subkey_index: creds.my_subkey_index,
+            slot_keypair_str: creds.slot_keypair_str.as_deref(),
+            has_slot_seed: creds.slot_seed_hex.is_some(),
+            history_ranges,
+        },
     )
     .await;
 }

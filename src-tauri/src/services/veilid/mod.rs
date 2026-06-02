@@ -13,7 +13,6 @@ mod control_membership;
 mod control_moderation;
 mod control_sync;
 mod dht_watch;
-mod legacy;
 mod lifecycle;
 mod network;
 

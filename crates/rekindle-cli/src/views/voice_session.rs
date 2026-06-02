@@ -262,6 +262,17 @@ impl View for VoiceSessionView {
         Ok(())
     }
 
+    fn handle_focused_key(&mut self, key: crossterm::event::KeyEvent) -> Option<Action> {
+        use crossterm::event::KeyCode;
+        // Voice controls advertised in the controls bar: [m] mute, [d] deafen, [l] leave.
+        match key.code {
+            KeyCode::Char('m') => Some(Action::ToggleMute),
+            KeyCode::Char('d') => Some(Action::ToggleDeafen),
+            KeyCode::Char('l') => Some(Action::LeaveVoice),
+            _ => None,
+        }
+    }
+
     fn focus_ring(&mut self) -> &mut FocusRing {
         &mut self.focus
     }

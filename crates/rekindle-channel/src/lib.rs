@@ -41,9 +41,9 @@ pub use expressions::{
     delete_expression, detect_audio_kind, detect_image_media_type, list_expressions,
     normalize_tags, play_soundboard, upload_emoji, upload_soundboard_sound, upload_sticker,
     validate_emoji_bytes, validate_expression_name, validate_soundboard_bytes,
-    validate_sticker_bytes, MAX_ANIMATED_EMOJI_BYTES, MAX_ANIMATED_EMOJI_COUNT,
-    MAX_SOUNDBOARD_BYTES, MAX_SOUNDBOARD_COUNT, MAX_STATIC_EMOJI_BYTES, MAX_STATIC_EMOJI_COUNT,
-    MAX_STICKER_BYTES, MAX_STICKER_COUNT,
+    validate_sticker_bytes, UploadSoundboardSoundParams, MAX_ANIMATED_EMOJI_BYTES,
+    MAX_ANIMATED_EMOJI_COUNT, MAX_SOUNDBOARD_BYTES, MAX_SOUNDBOARD_COUNT, MAX_STATIC_EMOJI_BYTES,
+    MAX_STATIC_EMOJI_COUNT, MAX_STICKER_BYTES, MAX_STICKER_COUNT,
 };
 pub use mentions::{
     has_perm, local_member_is_mentioned, matches_from_cleartext, parse_mentions,
@@ -56,7 +56,7 @@ pub use notifications::{
 };
 pub use pipeline::{
     enforce_slowmode_with_bypass, forward_channel_message, process_retry_write,
-    send_channel_message, ChannelSendResult,
+    send_channel_message, ChannelSendResult, ForwardChannelMessageParams,
 };
 pub use polls::{
     get_poll_results, persist_poll_close, persist_poll_create, persist_poll_vote, PollSnapshot,
@@ -66,7 +66,9 @@ pub use receive::{
     decrypt_channel_body, decrypt_channel_body_with_legacy_fallback, extract_mention_signals,
     MentionSignals,
 };
-pub use send::{build_channel_message, encrypt_channel_body, slowmode_check};
+pub use send::{
+    build_channel_message, encrypt_channel_body, slowmode_check, BuildChannelMessageParams,
+};
 pub use stage::{list_hand_raises, persist_hand_raise};
 pub use threads::{
     archive_thread, create_thread, default_auto_archive_seconds, is_thread_archived,

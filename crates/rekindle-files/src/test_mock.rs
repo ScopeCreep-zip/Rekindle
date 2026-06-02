@@ -49,13 +49,7 @@ pub struct MockReplies {
     pub queue: std::collections::VecDeque<Result<Vec<u8>, FilesError>>,
 }
 
-#[allow(
-    dead_code,
-    reason = "kept for symmetry + future test cases needing per-mock identity assertions"
-)]
 pub struct MockDeps {
-    pub community_id: String,
-    pub channel_id: String,
     pub owner_key: String,
     pub my_pseudonym: String,
     pub channel_log_key: String,
@@ -96,7 +90,10 @@ pub struct MockDeps {
 
 impl MockDeps {
     /// Construct with reasonable defaults; tests override fields directly.
-    pub fn new(community_id: &str, channel_id: &str) -> Self {
+    /// The `community_id` / `channel_id` args document the call site's
+    /// intent — the mock answers identically for any community/channel,
+    /// so they aren't stored.
+    pub fn new(_community_id: &str, _channel_id: &str) -> Self {
         let temp = TempDir::new().unwrap();
         let cache = ChunkCache::open(CacheConfig {
             root_dir: temp.path().to_path_buf(),
@@ -104,8 +101,6 @@ impl MockDeps {
         })
         .unwrap();
         Self {
-            community_id: community_id.to_string(),
-            channel_id: channel_id.to_string(),
             owner_key: "owner-pub-key".to_string(),
             my_pseudonym: "me-pseudonym".to_string(),
             channel_log_key: "channel-log-key-hex".to_string(),
@@ -333,24 +328,14 @@ impl FilesDeps for MockDeps {
             .unwrap_or_else(|| Err(FilesError::Transport("no mock reply queued".into())))
     }
 
-    #[allow(clippy::too_many_arguments, reason = "matches trait surface")]
     async fn insert_channel_message_full(
         &self,
-        _owner: &str,
-        _channel: &str,
-        _sender: &str,
-        message_id: &str,
-        _ts: i64,
-        _gen: u64,
-        _lamport: u64,
-        _aj: &str,
-        _flags: u32,
-        _body: &str,
+        row: crate::deps::InsertChannelMessage<'_>,
     ) -> Result<(), FilesError> {
         self.calls
             .lock()
             .channel_messages_persisted
-            .push(message_id.to_string());
+            .push(row.message_id.to_string());
         Ok(())
     }
 

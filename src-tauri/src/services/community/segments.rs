@@ -11,11 +11,7 @@ use tauri::Manager;
 
 use crate::state::SharedState;
 
-#[allow(
-    unused_imports,
-    reason = "MAX_SEGMENTS re-exported for any external admin tooling"
-)]
-pub use gov_rt::{SegmentDescriptor, MAX_SEGMENTS};
+use gov_rt::SegmentDescriptor;
 
 fn build_adapter(
     state: &SharedState,

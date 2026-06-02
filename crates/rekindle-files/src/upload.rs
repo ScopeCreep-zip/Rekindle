@@ -42,6 +42,24 @@ pub struct AttachmentRecordJson {
     pub local_path: Option<String>,
 }
 
+/// Caller-supplied inputs for [`upload_bytes_as_attachment`]. Groups the
+/// file payload + addressing + body so the core pipeline stays under the
+/// argument-count budget; each caller still names every field at the
+/// construction site.
+pub struct UploadRequest {
+    pub community_id: String,
+    pub channel_id: String,
+    pub bytes: Vec<u8>,
+    pub filename: String,
+    pub mime_type: String,
+    /// MEK-encrypted body plaintext (empty for plain uploads; JSON
+    /// metadata for voice messages).
+    pub body_plaintext: Vec<u8>,
+    pub flags: u32,
+    /// Local source path, persisted into the SQLite attachment row.
+    pub local_path: Option<String>,
+}
+
 /// Bundle of state computed once per upload — pseudonym, slot keypair,
 /// channel record key, current channel MEK. (The crate-side body uses
 /// the outer `community_id` arg directly so we don't carry it in the
@@ -130,14 +148,16 @@ pub async fn upload_file<D: FilesDeps>(
     let mime_type = guess_mime_type(file_path);
     upload_bytes_as_attachment(
         deps,
-        community_id,
-        channel_id,
-        bytes,
-        filename,
-        mime_type,
-        b"",
-        0,
-        Some(file_path.display().to_string()),
+        UploadRequest {
+            community_id: community_id.to_string(),
+            channel_id: channel_id.to_string(),
+            bytes,
+            filename,
+            mime_type,
+            body_plaintext: Vec::new(),
+            flags: 0,
+            local_path: Some(file_path.display().to_string()),
+        },
     )
     .await
 }
@@ -147,21 +167,23 @@ pub async fn upload_file<D: FilesDeps>(
 /// possession via `AttachmentCached`, gossip notify. Returns the new
 /// attachment_id (hex). Used by both regular file uploads
 /// ([`upload_file`]) and voice messages ([`send_voice_message_bytes`]).
-#[allow(
-    clippy::too_many_arguments,
-    reason = "core upload pipeline — bundling args would just push the field-set into a single-use struct"
-)]
 pub async fn upload_bytes_as_attachment<D: FilesDeps>(
     deps: &D,
-    community_id: &str,
-    channel_id: &str,
-    bytes: Vec<u8>,
-    filename: String,
-    mime_type: String,
-    body_plaintext: &[u8],
-    flags: u32,
-    local_path: Option<String>,
+    request: UploadRequest,
 ) -> Result<String, FilesError> {
+    let UploadRequest {
+        community_id,
+        channel_id,
+        bytes,
+        filename,
+        mime_type,
+        body_plaintext,
+        flags,
+        local_path,
+    } = request;
+    let community_id = community_id.as_str();
+    let channel_id = channel_id.as_str();
+    let body_plaintext = body_plaintext.as_slice();
     let total_size = bytes.len() as u64;
     if total_size > MAX_FILE_SIZE_BYTES {
         return Err(FilesError::FileTooLarge {
@@ -276,18 +298,18 @@ pub async fn upload_bytes_as_attachment<D: FilesDeps>(
     } else {
         String::new()
     };
-    deps.insert_channel_message_full(
-        &owner_key,
+    deps.insert_channel_message_full(crate::deps::InsertChannelMessage {
+        owner_key: &owner_key,
         channel_id,
-        &ctx.sender_pseudonym,
-        &message_id,
+        sender_key: &ctx.sender_pseudonym,
+        message_id: &message_id,
         timestamp_ms,
-        ctx.mek_generation,
+        mek_generation: ctx.mek_generation,
         lamport_ts,
-        &attachment_json,
+        attachment_json: &attachment_json,
         flags,
-        &body_for_db,
-    )
+        body: &body_for_db,
+    })
     .await?;
 
     // SMPL write — embed offer in a Message entry.
@@ -386,14 +408,16 @@ pub async fn send_voice_message_bytes<D: FilesDeps>(
 
     upload_bytes_as_attachment(
         deps,
-        community_id,
-        channel_id,
-        opus_bytes,
-        format!("voice-{}.ogg", Uuid::new_v4().simple()),
-        "audio/ogg".to_string(),
-        &body,
-        rekindle_types::channel::flags::VOICE_MESSAGE,
-        None,
+        UploadRequest {
+            community_id: community_id.to_string(),
+            channel_id: channel_id.to_string(),
+            bytes: opus_bytes,
+            filename: format!("voice-{}.ogg", Uuid::new_v4().simple()),
+            mime_type: "audio/ogg".to_string(),
+            body_plaintext: body,
+            flags: rekindle_types::channel::flags::VOICE_MESSAGE,
+            local_path: None,
+        },
     )
     .await
 }
@@ -407,20 +431,37 @@ mod tests {
     use super::*;
     use crate::test_mock::MockDeps;
 
+    /// A minimal valid upload request for the rejection-path tests, where
+    /// the gate fires before the payload matters.
+    fn sample_request() -> UploadRequest {
+        UploadRequest {
+            community_id: "c1".into(),
+            channel_id: "ch1".into(),
+            bytes: b"x".to_vec(),
+            filename: "f.txt".into(),
+            mime_type: "text/plain".into(),
+            body_plaintext: Vec::new(),
+            flags: 0,
+            local_path: None,
+        }
+    }
+
     #[tokio::test]
     async fn happy_path_writes_message_attachment_cached_and_persists_row() {
         let deps = MockDeps::new("c1", "ch1").with_mek(7, [42u8; 32]);
         let bytes = b"hello world payload".to_vec();
         let result = upload_bytes_as_attachment(
             &deps,
-            "c1",
-            "ch1",
-            bytes,
-            "hello.txt".into(),
-            "text/plain".into(),
-            b"",
-            0,
-            Some("/tmp/hello.txt".into()),
+            UploadRequest {
+                community_id: "c1".into(),
+                channel_id: "ch1".into(),
+                bytes,
+                filename: "hello.txt".into(),
+                mime_type: "text/plain".into(),
+                body_plaintext: Vec::new(),
+                flags: 0,
+                local_path: Some("/tmp/hello.txt".into()),
+            },
         )
         .await;
         assert!(result.is_ok(), "happy path should succeed");
@@ -449,14 +490,16 @@ mod tests {
         let bytes = vec![0u8; (MAX_FILE_SIZE_BYTES + 1) as usize];
         let err = upload_bytes_as_attachment(
             &deps,
-            "c1",
-            "ch1",
-            bytes,
-            "big.bin".into(),
-            "application/octet-stream".into(),
-            b"",
-            0,
-            None,
+            UploadRequest {
+                community_id: "c1".into(),
+                channel_id: "ch1".into(),
+                bytes,
+                filename: "big.bin".into(),
+                mime_type: "application/octet-stream".into(),
+                body_plaintext: Vec::new(),
+                flags: 0,
+                local_path: None,
+            },
         )
         .await
         .unwrap_err();
@@ -467,19 +510,9 @@ mod tests {
     async fn forum_channel_rejected() {
         let mut deps = MockDeps::new("c1", "ch1").with_mek(1, [0u8; 32]);
         deps.forum_channel = true;
-        let err = upload_bytes_as_attachment(
-            &deps,
-            "c1",
-            "ch1",
-            b"x".to_vec(),
-            "f.txt".into(),
-            "text/plain".into(),
-            b"",
-            0,
-            None,
-        )
-        .await
-        .unwrap_err();
+        let err = upload_bytes_as_attachment(&deps, sample_request())
+            .await
+            .unwrap_err();
         assert!(matches!(err, FilesError::InvalidInput(msg) if msg.contains("forum")));
     }
 
@@ -487,19 +520,9 @@ mod tests {
     async fn permission_denied_returns_error() {
         let mut deps = MockDeps::new("c1", "ch1").with_mek(1, [0u8; 32]);
         deps.permission_pass = false;
-        let err = upload_bytes_as_attachment(
-            &deps,
-            "c1",
-            "ch1",
-            b"x".to_vec(),
-            "f.txt".into(),
-            "text/plain".into(),
-            b"",
-            0,
-            None,
-        )
-        .await
-        .unwrap_err();
+        let err = upload_bytes_as_attachment(&deps, sample_request())
+            .await
+            .unwrap_err();
         assert!(matches!(err, FilesError::PermissionDenied(_)));
     }
 
@@ -507,19 +530,9 @@ mod tests {
     async fn slowmode_blocks_upload() {
         let mut deps = MockDeps::new("c1", "ch1").with_mek(1, [0u8; 32]);
         deps.slowmode_pass = false;
-        let err = upload_bytes_as_attachment(
-            &deps,
-            "c1",
-            "ch1",
-            b"x".to_vec(),
-            "f.txt".into(),
-            "text/plain".into(),
-            b"",
-            0,
-            None,
-        )
-        .await
-        .unwrap_err();
+        let err = upload_bytes_as_attachment(&deps, sample_request())
+            .await
+            .unwrap_err();
         assert!(matches!(err, FilesError::Slowmode(_)));
     }
 

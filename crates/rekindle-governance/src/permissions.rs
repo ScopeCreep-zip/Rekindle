@@ -119,6 +119,40 @@ fn hex_encode_pseudonym(key: &PseudonymKey) -> String {
     key.0.iter().map(|b| format!("{b:02x}")).collect()
 }
 
+/// Whether `perms` carries any moderation capability.
+///
+/// Architecture §32 W17 — automod alerts go to any member who could act
+/// on them, not just those who can hand out timeouts. The spec says
+/// "admins"; in the v2.0 permission model that's the union of
+/// `ADMINISTRATOR` plus the message/community/timeout/ban moderation bits.
+pub fn has_moderation_capability(perms: u64) -> bool {
+    const MOD_MASK: u64 =
+        ADMINISTRATOR | MANAGE_COMMUNITY | MANAGE_MESSAGES | TIMEOUT_MEMBERS | BAN_MEMBERS;
+    perms & MOD_MASK != 0
+}
+
+/// Whether an effective-permission bitmask carries the capability (or any
+/// capability) named by `capability`.
+///
+/// Reader-side single-bit gate: `perms & capability != 0`. This is the
+/// canonical capability test — callers in `src-tauri` must use it instead
+/// of inlining `perms & FLAG != 0`, so all permission-bit interpretation
+/// stays in the governance crate (Invariant 7).
+#[must_use]
+pub fn has_capability(perms: u64, capability: u64) -> bool {
+    perms & capability != 0
+}
+
+/// Whether an effective-permission bitmask carries *every* bit in `mask`.
+///
+/// Reader-side all-of gate: `perms & mask == mask`. Use when an action
+/// requires the full set of capabilities named by `mask` (e.g. a
+/// multi-bit `perm_mask` checked before a privileged voice operation).
+#[must_use]
+pub fn has_all_capabilities(perms: u64, mask: u64) -> bool {
+    perms & mask == mask
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -266,5 +300,28 @@ mod tests {
 
         let perms = compute_permissions(&pseudo(99), None, &state, 0);
         assert_eq!(perms & MENTION_EVERYONE, 0, "no SEND → MENTION stripped");
+    }
+
+    #[test]
+    fn has_capability_single_bit() {
+        assert!(has_capability(
+            BYPASS_SLOWMODE | SEND_MESSAGES,
+            BYPASS_SLOWMODE
+        ));
+        assert!(!has_capability(SEND_MESSAGES, BYPASS_SLOWMODE));
+        assert!(!has_capability(0, MANAGE_COMMUNITY));
+    }
+
+    #[test]
+    fn has_all_capabilities_requires_every_bit() {
+        let mask = SEND_MESSAGES | EMBED_LINKS;
+        assert!(has_all_capabilities(
+            SEND_MESSAGES | EMBED_LINKS | VIEW_CHANNELS,
+            mask
+        ));
+        assert!(!has_all_capabilities(SEND_MESSAGES, mask));
+        assert!(has_all_capabilities(ALL, mask));
+        // Empty mask is vacuously satisfied.
+        assert!(has_all_capabilities(0, 0));
     }
 }

@@ -1,12 +1,12 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
+use async_trait::async_trait;
 use chacha20poly1305::{
     aead::{Aead, KeyInit},
     ChaCha20Poly1305, Key, Nonce,
 };
-use rekindle_route::contexts::RouteContextSpec;
 use serde::{Deserialize, Serialize};
-use veilid_core::{RoutingContext, SafetySelection, Sequencing, Target, VeilidAPI};
 
 use crate::codec::EncodedFrame;
 use crate::error::VoiceError;
@@ -124,10 +124,20 @@ pub enum VoiceMode {
     },
 }
 
-/// Per-peer routing info for multi-peer voice transport.
-struct PeerRoute {
-    routing_context: RoutingContext,
-    route_id: veilid_core::RouteId,
+/// IO port for shipping a finished voice packet to a peer's Veilid
+/// private route (architecture §14 `VoiceSessionDeps::send_voice_frame`).
+///
+/// Implemented in the `src-tauri` voice adapter — the sanctioned layer
+/// that owns `veilid-core`. Injected into [`VoiceTransport`] so
+/// `rekindle-voice` stays free of `veilid-core` (Invariant 2 — only
+/// `rekindle-transport` and `rekindle-protocol` may import it). The
+/// adapter imports the route (cached) and calls Veilid `app_message`
+/// with `SafetySelection::Unsafe` for low-latency voice.
+#[async_trait]
+pub trait VoiceFrameSender: Send + Sync {
+    /// Ship already-built wire bytes (signed + optionally AEAD-encrypted
+    /// packet, `b'V'`-tagged) to the peer reachable via `route_blob`.
+    async fn send_voice_frame(&self, route_blob: &[u8], data: Vec<u8>) -> Result<(), VoiceError>;
 }
 
 /// Multi-peer voice transport over the Veilid network.
@@ -135,11 +145,12 @@ struct PeerRoute {
 /// Supports both full-mesh (each peer sends to every other) and MCU
 /// (all peers send to one host, host mixes and redistributes) modes.
 ///
-/// Uses `SafetySelection::Unsafe` for voice to minimize latency,
+/// All network IO is delegated to an injected [`VoiceFrameSender`],
+/// which uses `SafetySelection::Unsafe` for voice to minimize latency,
 /// trading sender privacy for acceptable voice quality.
 pub struct VoiceTransport {
     channel_id: String,
-    api: Option<VeilidAPI>,
+    sender: Option<Arc<dyn VoiceFrameSender>>,
     sender_key: Vec<u8>,
     /// Architecture §10.3 + §26 W26 — pseudonym signing key for voice
     /// packet authentication. Derived from the user's identity secret +
@@ -152,33 +163,18 @@ pub struct VoiceTransport {
     /// layer in `services/voice/send_loop.rs`, so this stays None and
     /// audio_data passes through unmodified.
     call_key: Option<[u8; 32]>,
-    /// Connected peers: pseudonym_key (hex) → route info.
-    peers: HashMap<String, PeerRoute>,
+    /// Connected peers: pseudonym_key (hex) → peer route blob.
+    peers: HashMap<String, Vec<u8>>,
     /// Current operating mode.
     mode: VoiceMode,
 }
 
 impl VoiceTransport {
-    fn build_voice_routing_context(api: &VeilidAPI) -> Result<RoutingContext, VoiceError> {
-        let spec = RouteContextSpec::rc_voice();
-        api.routing_context()
-            .map_err(|e| VoiceError::Transport(format!("routing context: {e}")))?
-            .with_safety(match spec.kind {
-                rekindle_route::contexts::RouteContextKind::Voice => {
-                    SafetySelection::Unsafe(Sequencing::NoPreference)
-                }
-                rekindle_route::contexts::RouteContextKind::Safe => {
-                    SafetySelection::Unsafe(Sequencing::PreferOrdered)
-                }
-            })
-            .map_err(|e| VoiceError::Transport(format!("with_safety: {e}")))
-    }
-
     /// Create a new transport for a voice channel.
     pub fn new(channel_id: String) -> Self {
         Self {
             channel_id,
-            api: None,
+            sender: None,
             sender_key: Vec::new(),
             signing_key: None,
             call_key: None,
@@ -203,12 +199,10 @@ impl VoiceTransport {
         self.call_key
     }
 
-    /// Initialize the transport with a Veilid API and sender identity.
-    ///
-    /// This replaces the old single-peer `connect()` for backward compatibility.
-    /// After calling `init()`, add peers with `add_peer()`.
-    pub fn init(&mut self, api: VeilidAPI, sender_key: Vec<u8>) {
-        self.api = Some(api);
+    /// Initialize the transport with a frame-sender backend and sender
+    /// identity. After calling `init()`, add peers with `add_peer()`.
+    pub fn init(&mut self, sender: Arc<dyn VoiceFrameSender>, sender_key: Vec<u8>) {
+        self.sender = Some(sender);
         self.sender_key = sender_key;
     }
 
@@ -226,44 +220,25 @@ impl VoiceTransport {
     /// Uses `"default"` as the peer key for the single remote participant.
     pub fn connect(
         &mut self,
-        api: VeilidAPI,
+        sender: Arc<dyn VoiceFrameSender>,
         route_blob: &[u8],
         sender_key: Vec<u8>,
-    ) -> Result<(), VoiceError> {
-        self.init(api, sender_key);
-        self.add_peer("default", route_blob)?;
+    ) {
+        self.init(sender, sender_key);
+        self.add_peer("default", route_blob);
         tracing::info!(channel = %self.channel_id, "voice transport connected (legacy single-peer)");
-        Ok(())
     }
 
-    /// Add a peer to the voice mesh.
-    pub fn add_peer(&mut self, pseudonym_key: &str, route_blob: &[u8]) -> Result<(), VoiceError> {
-        let api = self
-            .api
-            .as_ref()
-            .ok_or_else(|| VoiceError::Transport("transport not initialized".into()))?;
-
-        let routing_context = Self::build_voice_routing_context(api)?;
-
-        let route_id = api
-            .import_remote_private_route(route_blob.to_vec())
-            .map_err(|e| VoiceError::Transport(format!("import route: {e}")))?;
-
+    /// Add a peer to the voice mesh. The route blob is imported lazily
+    /// by the [`VoiceFrameSender`] on first send.
+    pub fn add_peer(&mut self, pseudonym_key: &str, route_blob: &[u8]) {
         tracing::info!(
             channel = %self.channel_id,
             peer = %pseudonym_key,
             "added voice peer"
         );
-
-        self.peers.insert(
-            pseudonym_key.to_string(),
-            PeerRoute {
-                routing_context,
-                route_id,
-            },
-        );
-
-        Ok(())
+        self.peers
+            .insert(pseudonym_key.to_string(), route_blob.to_vec());
     }
 
     /// Remove a peer from the voice mesh.
@@ -307,17 +282,17 @@ impl VoiceTransport {
             Err(e) => return vec![("*".into(), e)],
         };
 
+        let Some(sender) = self.sender.as_ref() else {
+            return vec![(
+                "*".into(),
+                VoiceError::Transport("transport not initialized".into()),
+            )];
+        };
+
         let mut errors = Vec::new();
-        for (key, peer) in &self.peers {
-            if let Err(e) = peer
-                .routing_context
-                .app_message(Target::RouteId(peer.route_id.clone()), data.clone())
-                .await
-            {
-                errors.push((
-                    key.clone(),
-                    VoiceError::Transport(format!("app_message: {e}")),
-                ));
+        for (key, route_blob) in &self.peers {
+            if let Err(e) = sender.send_voice_frame(route_blob, data.clone()).await {
+                errors.push((key.clone(), e));
             }
         }
         errors
@@ -329,19 +304,17 @@ impl VoiceTransport {
         pseudonym_key: &str,
         frame: &EncodedFrame,
     ) -> Result<(), VoiceError> {
-        let peer = self
+        let route_blob = self
             .peers
             .get(pseudonym_key)
             .ok_or_else(|| VoiceError::Transport(format!("peer not found: {pseudonym_key}")))?;
+        let sender = self
+            .sender
+            .as_ref()
+            .ok_or_else(|| VoiceError::Transport("transport not initialized".into()))?;
 
         let data = self.build_packet_data(frame)?;
-
-        peer.routing_context
-            .app_message(Target::RouteId(peer.route_id.clone()), data)
-            .await
-            .map_err(|e| VoiceError::Transport(format!("app_message: {e}")))?;
-
-        Ok(())
+        sender.send_voice_frame(route_blob, data).await
     }
 
     /// Legacy single-peer send (broadcasts to all peers).
@@ -366,7 +339,7 @@ impl VoiceTransport {
     /// Disconnect from the voice channel — removes all peers.
     pub fn disconnect(&mut self) {
         self.peers.clear();
-        self.api = None;
+        self.sender = None;
         self.sender_key.clear();
         self.signing_key = None;
         self.call_key = None;

@@ -334,6 +334,13 @@ async fn dispatch(server: &ServerState, cmd: &str, args: &Value) -> Result<Value
             "friendListDhtKey": Value::Null,
         })),
 
+        // ── Lifecycle ────────────────────────────────────────────────
+        // The frontend lifecycle store seeds from this on mount and gates
+        // the login button on `canUnlock()` (state == "locked"). The test
+        // double models readiness so the button is enabled in the harness;
+        // keeps "one lifecycle" — no VITE_E2E branch in product code.
+        "lifecycle_current" => Ok(json!("locked")),
+
         // ── No-op commands (window management, status, etc.) ─────────
         "get_game_status"
         | "show_buddy_list"

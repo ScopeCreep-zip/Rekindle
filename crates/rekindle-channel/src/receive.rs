@@ -125,7 +125,7 @@ pub fn extract_mention_signals(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::send::{build_channel_message, encrypt_channel_body};
+    use crate::send::{build_channel_message, encrypt_channel_body, BuildChannelMessageParams};
 
     fn sample_mek() -> ChannelMek {
         ChannelMek {
@@ -171,18 +171,18 @@ mod tests {
     }
 
     fn sample_message_with(flags: u32, pseudos: Vec<String>, roles: Vec<String>) -> ChannelMessage {
-        build_channel_message(
-            1,
-            "sender".into(),
-            vec![],
-            1,
-            0,
-            0,
-            "msg".into(),
-            flags,
-            pseudos,
-            roles,
-        )
+        build_channel_message(BuildChannelMessageParams {
+            sequence: 1,
+            sender_pseudonym: "sender".into(),
+            ciphertext: vec![],
+            mek_generation: 1,
+            timestamp_ms: 0,
+            lamport_ts: 0,
+            message_id: "msg".into(),
+            mention_flag_bits: flags,
+            mentioned_pseudonyms: pseudos,
+            mentioned_roles: roles,
+        })
     }
 
     #[test]

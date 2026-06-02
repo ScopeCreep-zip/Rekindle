@@ -41,10 +41,6 @@ pub async fn send_video_frame(
 }
 
 #[tauri::command]
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Tauri command surface — matches FrameAck envelope shape"
-)]
 pub async fn send_video_frame_ack(
     community_id: String,
     channel_id: String,
@@ -92,6 +88,33 @@ pub async fn send_video_bandwidth_estimate(
         window_secs,
         loss_q8,
     )
+}
+
+/// Phase 11 Tier 1 — register the per-community `ipc::Channel` the video
+/// panel listens on. Inbound reassembled frames for `community_id` are
+/// pushed straight to this channel instead of the `community-event`
+/// stream. Re-registering replaces the previous handle.
+#[tauri::command]
+pub async fn register_community_video_channel(
+    community_id: String,
+    on_frame: tauri::ipc::Channel<crate::video_channels::CommunityVideoFrameMsg>,
+    state: State<'_, SharedState>,
+) -> Result<(), String> {
+    state
+        .video_channels
+        .register_community(community_id, on_frame);
+    Ok(())
+}
+
+/// Phase 11 Tier 1 — drop the per-community video channel when the panel
+/// unmounts so frames stop being forwarded.
+#[tauri::command]
+pub async fn unregister_community_video_channel(
+    community_id: String,
+    state: State<'_, SharedState>,
+) -> Result<(), String> {
+    state.video_channels.unregister_community(&community_id);
+    Ok(())
 }
 
 #[tauri::command]

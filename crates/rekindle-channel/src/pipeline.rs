@@ -20,6 +20,7 @@ use crate::error::ChannelError;
 use crate::mentions::resolve_outbound_mentions;
 use crate::send::{
     build_channel_message, channel_message_subkey, encrypt_channel_body, slowmode_check,
+    BuildChannelMessageParams,
 };
 
 /// Architecture §28.7 — slowmode gate that combines the pure
@@ -191,18 +192,18 @@ pub async fn send_channel_message<D: ChannelMessagingDeps>(
     let (mentioned_pseudonyms, mentioned_roles, mention_flags) =
         resolve_outbound_mentions(deps, community_id, &sender_key, body);
 
-    let channel_msg = build_channel_message(
+    let channel_msg = build_channel_message(BuildChannelMessageParams {
         sequence,
-        sender_key.clone(),
-        ciphertext.clone(),
+        sender_pseudonym: sender_key.clone(),
+        ciphertext: ciphertext.clone(),
         mek_generation,
         timestamp_ms,
         lamport_ts,
-        message_id.clone(),
-        mention_flags,
+        message_id: message_id.clone(),
+        mention_flag_bits: mention_flags,
         mentioned_pseudonyms,
         mentioned_roles,
-    );
+    });
 
     let status = match deps
         .write_channel_message_smpl(&context, &channel_msg)
@@ -248,23 +249,35 @@ pub async fn send_channel_message<D: ChannelMessagingDeps>(
     })
 }
 
+/// Source/destination identifiers for a channel forward.
+///
+/// Borrows every id (`&'a str`) because the orchestrator already holds
+/// these as owned strings; forwarding only reads them for cache lookup
+/// and the destination write, so no clones are needed.
+pub struct ForwardChannelMessageParams<'a> {
+    pub source_community: &'a str,
+    pub source_channel: &'a str,
+    pub source_message: &'a str,
+    pub dest_community: &'a str,
+    pub dest_channel: &'a str,
+}
+
 /// Phase 19.g — full forward_channel_message pipeline.
 ///
 /// Forwards a previously-cached source message into a destination
 /// channel. Cross-community-safe because pseudonyms aren't linkable
 /// across community-scoped derivations (architecture §6.5).
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Mirrors src-tauri forward_message signature; src vs dest community/channel/message ids are all required for cache lookup + dest write."
-)]
 pub async fn forward_channel_message<D: ChannelMessagingDeps>(
     deps: &D,
-    _source_community_id: &str,
-    source_channel_id: &str,
-    source_message_id: &str,
-    dest_community_id: &str,
-    dest_channel_id: &str,
+    params: ForwardChannelMessageParams<'_>,
 ) -> Result<ChannelSendResult, ChannelError> {
+    let ForwardChannelMessageParams {
+        source_community: _source_community_id,
+        source_channel: source_channel_id,
+        source_message: source_message_id,
+        dest_community: dest_community_id,
+        dest_channel: dest_channel_id,
+    } = params;
     deps.require_channel_permission(
         dest_community_id,
         Some(dest_channel_id),

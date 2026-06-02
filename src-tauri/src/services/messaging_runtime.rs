@@ -169,10 +169,6 @@ pub fn delete_channel_message_inner(
     )
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Tauri command surface — matches forward_channel_message args"
-)]
 pub async fn forward_channel_message_inner(
     state: &Arc<AppState>,
     pool: &DbPool,

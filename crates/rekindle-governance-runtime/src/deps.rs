@@ -212,6 +212,11 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
         member_pubkeys: &[[u8; 32]],
     ) -> Result<DhtRecordInfo, GovernanceRuntimeError>;
 
+    /// Create a single-owner DFLT(1) record for one invite's encrypted
+    /// `InviteSecrets` blob. `owner_keypair` is `Some` (DFLT owns subkey 0)
+    /// so the caller can write the blob via `set_dht_value`.
+    async fn create_dflt_record(&self) -> Result<DhtRecordInfo, GovernanceRuntimeError>;
+
     /// Convert an Ed25519 `(public, secret)` byte pair into the string
     /// form that the adapter understands as `writer` for `set_dht_value`
     /// + persists in `CommunityState.slot_keypair`. Lives on the trait
@@ -450,6 +455,20 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
         community_id: &str,
         gov_state: GovernanceState,
         max_lamport: u64,
+    );
+
+    /// Persist the raw per-author governance entry set for a community to
+    /// local storage so `GovernanceState` can be losslessly re-merged on
+    /// the next login — without waiting for the slow, best-effort DHT
+    /// rebuild. The DHT stays authoritative; this is a warm cache
+    /// refreshed on every successful rebuild. The full per-author grouping
+    /// is preserved (not a flattened snapshot) so `merge`'s genesis +
+    /// reader-validation rules reproduce an identical state. Fire-and-
+    /// forget — failures are logged, never fatal.
+    fn persist_governance_entries_cache(
+        &self,
+        community_id: &str,
+        entries: &[(rekindle_types::id::PseudonymKey, Vec<GovernanceEntry>)],
     );
 
     /// Fire-and-forget spawn of a text-MEK rotation task for a newly

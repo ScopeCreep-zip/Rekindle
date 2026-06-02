@@ -30,6 +30,8 @@ pub async fn create_community(
     pool: State<'_, DbPool>,
     keystore_handle: State<'_, KeystoreHandle>,
 ) -> Result<String, String> {
+    let _g =
+        rekindle_lifecycle::TransportGuard::write(&state.lifecycle).map_err(|e| e.to_string())?;
     crate::services::community_lifecycle_runtime::create_community_inner(
         state.inner(),
         pool.inner(),
@@ -88,6 +90,8 @@ pub async fn update_community_info(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<(), String> {
+    let _g =
+        rekindle_lifecycle::TransportGuard::write(&state.lifecycle).map_err(|e| e.to_string())?;
     crate::services::community_lifecycle_runtime::update_community_info_inner(
         state.inner(),
         pool.inner(),

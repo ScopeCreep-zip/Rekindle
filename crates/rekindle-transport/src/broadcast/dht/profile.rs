@@ -26,7 +26,6 @@ impl<'a> ProfileOps<'a> {
     /// Create a new profile record and initialize subkeys.
     ///
     /// Returns `(key, keypair)`. The keypair MUST be persisted.
-    #[allow(clippy::cast_possible_truncation)] // PROFILE_SUBKEY_COUNT is 10, safe
     pub async fn create(
         &self,
         display_name: &str,
@@ -34,8 +33,12 @@ impl<'a> ProfileOps<'a> {
         prekey_bundle: &[u8],
         route_blob: &[u8],
     ) -> Result<(String, Option<KeyPair>)> {
-        let (key, keypair) =
-            record::create_dflt(self.rc, PROFILE_SUBKEY_COUNT as u16, None).await?;
+        let (key, keypair) = record::create_dflt(
+            self.rc,
+            u16::try_from(PROFILE_SUBKEY_COUNT).unwrap_or(u16::MAX),
+            None,
+        )
+        .await?;
 
         record::set(
             self.rc,

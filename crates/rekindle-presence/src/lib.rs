@@ -23,9 +23,9 @@ pub use community::{
     presence_event_id_bytes, presence_poll_tick, presence_poll_tick_public, random_peer_sample,
     role_ids_from_governance, run_initial_sync, start_presence_poll, steady_poll_duration,
     write_our_presence, ClassifiedRow, DiscoveredRow, EventRsvpEntry, GossipOverlayPlan,
-    GossipOverlaySnapshot, GossipRebuildOutcome, MemberProfileSnapshot, ProfileDiffOutcome,
-    MAX_SYNC_ATTEMPTS, RAPID_TICKS, RAPID_TICK_INTERVAL_SECS, STALE_HEARTBEAT_SECS,
-    STALE_SYNC_RETRY_SECS, STEADY_TICK_INTERVAL_SECS, SUBKEYS_PER_SEGMENT,
+    GossipOverlaySnapshot, GossipRebuildOutcome, MemberProfileSnapshot, PresenceWrite,
+    ProfileDiffOutcome, MAX_SYNC_ATTEMPTS, RAPID_TICKS, RAPID_TICK_INTERVAL_SECS,
+    STALE_HEARTBEAT_SECS, STALE_SYNC_RETRY_SECS, STEADY_TICK_INTERVAL_SECS, SUBKEYS_PER_SEGMENT,
 };
 pub use deps::{
     CommunityPresenceDeps, DiscoveredMemberRow, FriendPresenceDeps, FriendPresenceEvent,

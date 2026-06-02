@@ -101,9 +101,7 @@ async fn voice_join_apply(
 
     let (peer_count, current_mode) = {
         let mut t = transport.lock().await;
-        if let Err(e) = t.add_peer(&sender_key, &blob) {
-            tracing::warn!(peer = %sender_key, error = %e, "failed to add voice peer");
-        }
+        t.add_peer(&sender_key, &blob);
         (t.peer_count(), t.mode().clone())
     };
 
@@ -323,7 +321,7 @@ pub(super) fn handle_voice_roster(
         let mut t = transport.lock().await;
         for entry in participants {
             if !entry.route_blob.is_empty() {
-                let _ = t.add_peer(&entry.pseudonym_key, &entry.route_blob);
+                t.add_peer(&entry.pseudonym_key, &entry.route_blob);
             }
         }
     });

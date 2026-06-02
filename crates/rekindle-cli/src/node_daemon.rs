@@ -22,7 +22,6 @@ use rekindle_transport::crypto::mek::MekCache;
 /// Run the daemon in foreground. This is the handler for `rekindle node start`.
 ///
 /// Blocks until SIGTERM/Ctrl-C is received, then performs graceful shutdown.
-#[allow(clippy::too_many_lines)]
 pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
     // ── 1. Resolve paths and ensure directories ───────────────────
     let paths = StatePaths::resolve()?;
@@ -194,41 +193,11 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
     // The daemon connects to its own socket as a privileged internal
     // agent using the keypair registered in the clearance registry.
     // Requests are unicast to this connection by the server.
-    let daemon_ctx_subscriber = Arc::clone(&daemon_ctx);
-    let subscriber_socket = socket_path.clone();
-    let subscriber_handle = tokio::spawn(async move {
-        // Small delay to let the accept loop start.
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-
-        let server_pub = match ipc::noise_keys::read_bus_public_key().await {
-            Ok(k) => k,
-            Err(e) => {
-                tracing::error!(error = %e, "daemon subscriber: cannot read bus public key");
-                return;
-            }
-        };
-
-        let sender_id = uuid::Uuid::now_v7();
-        let client = match ipc::BusClient::connect_with_retry(
-            sender_id,
-            &subscriber_socket,
-            &server_pub,
-            daemon_subscriber_kp.as_inner(),
-            5,
-            std::time::Duration::from_millis(200),
-        )
-        .await
-        {
-            Ok(c) => c,
-            Err(e) => {
-                tracing::error!(error = %e, "daemon subscriber: failed to connect to own socket");
-                return;
-            }
-        };
-
-        tracing::info!("daemon bus subscriber connected");
-        daemon_ctx_subscriber.run_subscriber(client).await;
-    });
+    let subscriber_handle = spawn_bus_subscriber(
+        Arc::clone(&daemon_ctx),
+        socket_path.clone(),
+        daemon_subscriber_kp,
+    );
 
     // Event delivery is handled in-process by BusServer::start_event_delivery().
     // No bridge task needed — the server's internal task subscribes directly to
@@ -240,103 +209,7 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
     // Subscribes to SubscriptionManager events and triggers daemon-internal
     // actions (process_inbox, friend inbox scan) when tier 3 poll discovers
     // changes that tier 1 watch missed. Completes the three-tier guarantee.
-    let daemon_ctx_consumer = Arc::clone(&daemon_ctx);
-    let lifecycle_consumer = Arc::clone(&lifecycle);
-    let consumer_handle = tokio::spawn(async move {
-        // Wait for operational state (SubscriptionManager created during unlock)
-        loop {
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-            if lifecycle_consumer.state() == DaemonState::Operational {
-                break;
-            }
-            if matches!(
-                lifecycle_consumer.state(),
-                DaemonState::ShuttingDown | DaemonState::Stopped
-            ) {
-                return;
-            }
-        }
-
-        let mut event_rx = {
-            let guard = daemon_ctx_consumer.subscriptions.read();
-            let Some(ref sub_mgr) = *guard else {
-                return;
-            };
-            sub_mgr.subscribe()
-        };
-
-        tracing::info!("daemon-internal event consumer started (tier 3 → process_inbox)");
-
-        loop {
-            match event_rx.recv().await {
-                Ok(rekindle_types::subscription_events::SubscriptionEvent::Network(
-                    rekindle_types::subscription_events::NetworkEvent::ValueChanged {
-                        ref record_key,
-                        ..
-                    },
-                )) => {
-                    // Check if this is a join inbox for an operator community
-                    let governance_key = {
-                        let guard = daemon_ctx_consumer.session.read();
-                        guard.as_ref().and_then(|s| {
-                            s.communities
-                                .values()
-                                .find(|m| {
-                                    m.is_operator
-                                        && !m.join_inbox_key.is_empty()
-                                        && m.join_inbox_key == *record_key
-                                })
-                                .map(|m| m.governance_key.clone())
-                        })
-                    };
-                    if let Some(gov_key) = governance_key {
-                        tracing::info!(governance_key = %gov_key, "tier 3 poll triggered inbox processing");
-                        rekindle_node::daemon::community_rpc::process_inbox(
-                            &daemon_ctx_consumer.session,
-                            &daemon_ctx_consumer.signing_key,
-                            &daemon_ctx_consumer.mek_cache,
-                            &daemon_ctx_consumer.transport,
-                            &daemon_ctx_consumer.session_path,
-                            &gov_key,
-                        )
-                        .await;
-                    }
-
-                    // Check if this is our friend inbox
-                    let friend_inbox_key = {
-                        let guard = daemon_ctx_consumer.session.read();
-                        guard.as_ref().and_then(|s| {
-                            if !s.identity.friend_inbox_key.is_empty()
-                                && s.identity.friend_inbox_key == *record_key
-                            {
-                                Some(s.identity.friend_inbox_key.clone())
-                            } else {
-                                None
-                            }
-                        })
-                    };
-                    if let Some(inbox_key) = friend_inbox_key {
-                        tracing::info!("tier 3 poll triggered friend inbox scan");
-                        rekindle_node::daemon::friend_inbox::scan_friend_inbox(
-                            &daemon_ctx_consumer.session,
-                            &daemon_ctx_consumer.transport,
-                            &daemon_ctx_consumer.session_path,
-                            &inbox_key,
-                        )
-                        .await;
-                    }
-                }
-                Ok(_) => {} // Other events — not our concern
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                    tracing::warn!(skipped = n, "daemon event consumer: lagging");
-                }
-                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                    tracing::info!("daemon event consumer: subscription closed");
-                    break;
-                }
-            }
-        }
-    });
+    let consumer_handle = spawn_event_consumer(Arc::clone(&daemon_ctx), Arc::clone(&lifecycle));
 
     // ── 10. Run IPC accept loop with shutdown signal + watchdog ───
     let mut watchdog_interval = tokio::time::interval(std::time::Duration::from_secs(15));
@@ -379,25 +252,7 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
     let _ = subscriber_handle.await;
     let _ = consumer_handle.await;
 
-    {
-        let transport = daemon_ctx.transport.write().take();
-        if let Some(node) = transport {
-            match Arc::try_unwrap(node) {
-                Ok(n) => {
-                    if let Err(e) = n.shutdown().await {
-                        tracing::warn!(error = %e, "transport shutdown error");
-                    }
-                }
-                Err(arc) => {
-                    tracing::warn!(
-                        refs = Arc::strong_count(&arc),
-                        "transport shutdown with outstanding references — dropping"
-                    );
-                    drop(arc);
-                }
-            }
-        }
-    }
+    shutdown_transport(&daemon_ctx).await;
 
     *daemon_ctx.signing_key.write() = None;
 
@@ -405,6 +260,181 @@ pub async fn run_daemon(_attach_timeout: u64) -> anyhow::Result<()> {
     tracing::info!("rekindle daemon stopped");
 
     Ok(())
+}
+
+/// Spawn the daemon's own bus subscriber.
+///
+/// The daemon connects to its own socket as a privileged internal agent
+/// using the keypair registered in the clearance registry. Requests are
+/// unicast to this connection by the server.
+fn spawn_bus_subscriber(
+    daemon_ctx: Arc<DaemonContext>,
+    subscriber_socket: std::path::PathBuf,
+    daemon_subscriber_kp: ipc::ZeroizingKeypair,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        // Small delay to let the accept loop start.
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        let server_pub = match ipc::noise_keys::read_bus_public_key().await {
+            Ok(k) => k,
+            Err(e) => {
+                tracing::error!(error = %e, "daemon subscriber: cannot read bus public key");
+                return;
+            }
+        };
+
+        let sender_id = uuid::Uuid::now_v7();
+        let client = match ipc::BusClient::connect_with_retry(
+            sender_id,
+            &subscriber_socket,
+            &server_pub,
+            daemon_subscriber_kp.as_inner(),
+            5,
+            std::time::Duration::from_millis(200),
+        )
+        .await
+        {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::error!(error = %e, "daemon subscriber: failed to connect to own socket");
+                return;
+            }
+        };
+
+        tracing::info!("daemon bus subscriber connected");
+        daemon_ctx.run_subscriber(client).await;
+    })
+}
+
+/// Gracefully shut down the transport node, if one is running.
+async fn shutdown_transport(daemon_ctx: &Arc<DaemonContext>) {
+    let transport = daemon_ctx.transport.write().take();
+    if let Some(node) = transport {
+        match Arc::try_unwrap(node) {
+            Ok(n) => {
+                if let Err(e) = n.shutdown().await {
+                    tracing::warn!(error = %e, "transport shutdown error");
+                }
+            }
+            Err(arc) => {
+                tracing::warn!(
+                    refs = Arc::strong_count(&arc),
+                    "transport shutdown with outstanding references — dropping"
+                );
+                drop(arc);
+            }
+        }
+    }
+}
+
+/// Spawn the daemon-internal tier-3 event consumer.
+///
+/// Subscribes to `SubscriptionManager` events and triggers daemon-internal
+/// actions (process_inbox, friend inbox scan) when tier 3 poll discovers
+/// changes that tier 1 watch missed. Completes the three-tier guarantee.
+fn spawn_event_consumer(
+    daemon_ctx: Arc<DaemonContext>,
+    lifecycle: Arc<DaemonLifecycle>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        // Wait for operational state (SubscriptionManager created during unlock)
+        loop {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            if lifecycle.state() == DaemonState::Operational {
+                break;
+            }
+            if matches!(
+                lifecycle.state(),
+                DaemonState::ShuttingDown | DaemonState::Stopped
+            ) {
+                return;
+            }
+        }
+
+        let mut event_rx = {
+            let guard = daemon_ctx.subscriptions.read();
+            let Some(ref sub_mgr) = *guard else {
+                return;
+            };
+            sub_mgr.subscribe()
+        };
+
+        tracing::info!("daemon-internal event consumer started (tier 3 → process_inbox)");
+
+        loop {
+            match event_rx.recv().await {
+                Ok(rekindle_types::subscription_events::SubscriptionEvent::Network(
+                    rekindle_types::subscription_events::NetworkEvent::ValueChanged {
+                        ref record_key,
+                        ..
+                    },
+                )) => {
+                    handle_value_changed(&daemon_ctx, record_key).await;
+                }
+                Ok(_) => {} // Other events — not our concern
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                    tracing::warn!(skipped = n, "daemon event consumer: lagging");
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    tracing::info!("daemon event consumer: subscription closed");
+                    break;
+                }
+            }
+        }
+    })
+}
+
+/// Handle a tier-3 DHT `ValueChanged` notification by routing it to the
+/// matching operator community inbox and/or our friend inbox.
+async fn handle_value_changed(daemon_ctx: &Arc<DaemonContext>, record_key: &str) {
+    // Check if this is a join inbox for an operator community
+    let governance_key = {
+        let guard = daemon_ctx.session.read();
+        guard.as_ref().and_then(|s| {
+            s.communities
+                .values()
+                .find(|m| {
+                    m.is_operator && !m.join_inbox_key.is_empty() && m.join_inbox_key == *record_key
+                })
+                .map(|m| m.governance_key.clone())
+        })
+    };
+    if let Some(gov_key) = governance_key {
+        tracing::info!(governance_key = %gov_key, "tier 3 poll triggered inbox processing");
+        rekindle_node::daemon::community_rpc::process_inbox(
+            &daemon_ctx.session,
+            &daemon_ctx.signing_key,
+            &daemon_ctx.mek_cache,
+            &daemon_ctx.transport,
+            &daemon_ctx.session_path,
+            &gov_key,
+        )
+        .await;
+    }
+
+    // Check if this is our friend inbox
+    let friend_inbox_key = {
+        let guard = daemon_ctx.session.read();
+        guard.as_ref().and_then(|s| {
+            if !s.identity.friend_inbox_key.is_empty() && s.identity.friend_inbox_key == *record_key
+            {
+                Some(s.identity.friend_inbox_key.clone())
+            } else {
+                None
+            }
+        })
+    };
+    if let Some(inbox_key) = friend_inbox_key {
+        tracing::info!("tier 3 poll triggered friend inbox scan");
+        rekindle_node::daemon::friend_inbox::scan_friend_inbox(
+            &daemon_ctx.session,
+            &daemon_ctx.transport,
+            &daemon_ctx.session_path,
+            &inbox_key,
+        )
+        .await;
+    }
 }
 
 /// Load the bus server keypair from disk, or generate a fresh one.

@@ -19,11 +19,8 @@
 #![forbid(unsafe_code)]
 #![allow(
     clippy::print_stdout,
-    reason = "xtask is a CLI; structured output is human-read only"
-)]
-#![allow(
     clippy::print_stderr,
-    reason = "xtask is a CLI; structured output is human-read only"
+    reason = "xtask is a CLI; printing to the terminal is its product, not stray debug output (clippy treats print_stdout/print_stderr as restriction lints to exempt CLI binaries from)"
 )]
 
 use std::collections::BTreeMap;
@@ -359,18 +356,74 @@ fn find_bare_allows(root: &Path) -> Result<Vec<(PathBuf, usize, Vec<String>)>> {
         let Ok(txt) = std::fs::read_to_string(path) else {
             continue;
         };
-        for (lineno, line) in txt.lines().enumerate() {
-            let trimmed = line.trim_start();
-            if (trimmed.starts_with("#[allow(") || trimmed.starts_with("#![allow("))
-                && !line.contains("reason")
-                && !line.contains("nosemgrep")
-            {
-                let lints = extract_lints(line);
-                out.push((path.to_owned(), lineno + 1, lints));
+        let lines: Vec<&str> = txt.lines().collect();
+        let mut i = 0;
+        while i < lines.len() {
+            let trimmed = lines[i].trim_start();
+            if trimmed.starts_with("#[allow(") || trimmed.starts_with("#![allow(") {
+                // An allow attribute may wrap across several lines under
+                // rustfmt's vertical layout, so collect the whole
+                // parenthesised span before deciding it is bare — a
+                // `reason` on a continuation line still counts.
+                let (span, end) = collect_attr_span(&lines, i);
+                if !span.contains("reason") && !span.contains("nosemgrep") {
+                    out.push((path.to_owned(), i + 1, extract_lints(&span)));
+                }
+                i = end + 1;
+                continue;
             }
+            i += 1;
         }
     }
     Ok(out)
+}
+
+/// Join lines from `start` until the `allow( … )` parenthesis closes,
+/// returning the concatenated span text and the index of its final
+/// line. Skips `//` line comments and `"…"` string literals so parens
+/// inside a `reason` string or trailing comment don't skew the depth
+/// count.
+fn collect_attr_span(lines: &[&str], start: usize) -> (String, usize) {
+    let mut span = String::new();
+    let mut depth: i32 = 0;
+    let mut started = false;
+    for (idx, line) in lines.iter().enumerate().skip(start) {
+        if idx > start {
+            span.push('\n');
+        }
+        span.push_str(line);
+        let mut in_string = false;
+        let mut escaped = false;
+        let mut chars = line.chars().peekable();
+        while let Some(ch) = chars.next() {
+            if in_string {
+                if escaped {
+                    escaped = false;
+                } else if ch == '\\' {
+                    escaped = true;
+                } else if ch == '"' {
+                    in_string = false;
+                }
+                continue;
+            }
+            match ch {
+                '/' if chars.peek() == Some(&'/') => break,
+                '"' => in_string = true,
+                '(' => {
+                    depth += 1;
+                    started = true;
+                }
+                ')' => {
+                    depth -= 1;
+                    if started && depth == 0 {
+                        return (span, idx);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    (span, lines.len().saturating_sub(1))
 }
 
 fn extract_lints(line: &str) -> Vec<String> {

@@ -101,10 +101,8 @@ impl QueryEngine {
                 governance_key: m.governance_key.clone(),
                 name,
                 description,
-                #[allow(clippy::cast_possible_truncation)]
-                member_count: members.len() as u32,
-                #[allow(clippy::cast_possible_truncation)]
-                channel_count: channels.len() as u32,
+                member_count: u32::try_from(members.len()).unwrap_or(u32::MAX),
+                channel_count: u32::try_from(channels.len()).unwrap_or(u32::MAX),
                 our_pseudonym: m.pseudonym_key.clone(),
             });
         }
@@ -166,8 +164,7 @@ impl QueryEngine {
             description: metadata.description.unwrap_or_default(),
             owner_pseudonym: metadata.owner_pseudonym,
             created_at: metadata.created_at,
-            #[allow(clippy::cast_possible_truncation)]
-            member_count: members.len() as u32,
+            member_count: u32::try_from(members.len()).unwrap_or(u32::MAX),
             channels: channels.iter().map(channel_to_display).collect(),
             roles: roles.iter().map(role_to_display).collect(),
             our_pseudonym: membership.pseudonym_key.clone(),
@@ -262,8 +259,7 @@ impl QueryEngine {
             };
 
             // Read the last `limit` entries from this member's log
-            #[allow(clippy::cast_possible_truncation)]
-            let entries = match log.tail(limit as u32).await {
+            let entries = match log.tail(u32::try_from(limit).unwrap_or(u32::MAX)).await {
                 Ok(e) => e,
                 Err(e) => {
                     tracing::debug!(
@@ -426,8 +422,9 @@ impl QueryEngine {
 
         // Read recent entries — cap at a reasonable total
         let total_limit = limit_per_thread.saturating_mul(50).min(500);
-        #[allow(clippy::cast_possible_truncation)]
-        let raw_entries = dht_log.tail(total_limit as u32).await?;
+        let raw_entries = dht_log
+            .tail(u32::try_from(total_limit).unwrap_or(u32::MAX))
+            .await?;
 
         // Read friend list for name resolution
         let friends = self.dht.friend_list().read(friend_list_key).await?;

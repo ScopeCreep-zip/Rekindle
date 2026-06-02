@@ -1,0 +1,135 @@
+import { createMemo, createSignal } from "solid-js";
+import { voiceState } from "../../../stores/voice.store";
+import { authState } from "../../../stores/auth.store";
+import { activePipeline } from "./pipeline_store";
+
+/// One cell in the call gallery. `publicKey` (when present) lets the tile
+/// read live speaking/muted state reactively from the voice store, so the
+/// membership list below doesn't churn on every speaking event.
+export interface CallTile {
+  key: string;
+  /// Remote decoder canvas to mount, when this participant is sending video.
+  canvas?: HTMLCanvasElement;
+  /// Local-preview binder, for the self camera / screen tiles.
+  bindVideo?: (el: HTMLVideoElement | null) => void;
+  displayName: string;
+  avatarUrl?: string;
+  publicKey?: string;
+  isLocal: boolean;
+  /// Screen-share tile — preferred for the spotlight slot.
+  isScreen: boolean;
+}
+
+export function useCallStage() {
+  const [spotlightKey, setSpotlightKey] = createSignal<string | null>(null);
+
+  // Cache tiles by key so unchanged tiles keep their object identity across
+  // recomputes — <For> then reuses the DOM (and the appended remote canvas)
+  // instead of tearing it down. Speaking/muted are intentionally NOT read
+  // here; ParticipantTile reads them reactively from the store.
+  const cache = new Map<string, CallTile>();
+  const put = (out: CallTile[], key: string, data: Omit<CallTile, "key">): void => {
+    let tile = cache.get(key);
+    if (tile) {
+      Object.assign(tile, data);
+    } else {
+      tile = { key, ...data };
+      cache.set(key, tile);
+    }
+    out.push(tile);
+  };
+
+  const tiles = createMemo<CallTile[]>(() => {
+    const pipe = activePipeline();
+    const out: CallTile[] = [];
+
+    if (voiceState.isConnected) {
+      const camOn = pipe?.cameraOn() ?? false;
+      const scrOn = pipe?.screenOn() ?? false;
+      if (pipe && camOn) {
+        put(out, "self-camera", {
+          bindVideo: pipe.bindCameraVideo,
+          displayName: `${authState.displayName ?? "You"} (you)`,
+          isLocal: true,
+          isScreen: false,
+        });
+      }
+      if (pipe && scrOn) {
+        put(out, "self-screen", {
+          bindVideo: pipe.bindScreenVideo,
+          displayName: "Your screen",
+          isLocal: true,
+          isScreen: true,
+        });
+      }
+      if (!camOn && !scrOn) {
+        put(out, "self-avatar", {
+          displayName: `${authState.displayName ?? "You"} (you)`,
+          avatarUrl: authState.avatarUrl ?? undefined,
+          isLocal: true,
+          isScreen: false,
+        });
+      }
+    }
+
+    // Remote video tiles — one per live stream (a sender can have both a
+    // camera and a screen stream). Matched to a participant by pseudonym
+    // for the display name + speaking/muted overlay.
+    const remotes = pipe?.remotes() ?? [];
+    const withVideo = new Set<string>();
+    for (const r of remotes) {
+      const p = voiceState.participants.find((x) => x.publicKey === r.senderPseudonym);
+      if (p) withVideo.add(p.publicKey);
+      put(out, `remote-${r.streamId}`, {
+        canvas: r.canvas,
+        displayName: p?.displayName ?? "Participant",
+        publicKey: p?.publicKey,
+        isLocal: false,
+        isScreen: false,
+      });
+    }
+
+    // Audio-only participants → avatar tiles.
+    for (const p of voiceState.participants) {
+      if (withVideo.has(p.publicKey)) continue;
+      put(out, `participant-${p.publicKey}`, {
+        displayName: p.displayName,
+        publicKey: p.publicKey,
+        isLocal: false,
+        isScreen: false,
+      });
+    }
+
+    // Evict tiles that no longer exist so the cache can't grow unbounded.
+    const live = new Set(out.map((t) => t.key));
+    for (const key of [...cache.keys()]) {
+      if (!live.has(key)) cache.delete(key);
+    }
+    return out;
+  });
+
+  // Spotlight: an explicit click wins; otherwise auto-promote a local
+  // screen-share (Discord/Zoom behaviour). Remote screen vs camera isn't
+  // distinguishable on the wire, so remote promotion is click-only.
+  const spotlight = createMemo<CallTile | null>(() => {
+    const all = tiles();
+    const manual = spotlightKey();
+    if (manual) {
+      const hit = all.find((t) => t.key === manual);
+      if (hit) return hit;
+    }
+    return all.find((t) => t.isScreen && t.isLocal) ?? null;
+  });
+
+  const filmstrip = createMemo<CallTile[]>(() => {
+    const spot = spotlight();
+    if (!spot) return [];
+    return tiles().filter((t) => t.key !== spot.key);
+  });
+
+  function toggleSpotlight(key: string): void {
+    setSpotlightKey((cur) => (cur === key ? null : key));
+  }
+
+  return { tiles, spotlight, filmstrip, toggleSpotlight };
+}

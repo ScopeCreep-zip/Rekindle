@@ -6,6 +6,8 @@ use std::collections::HashMap;
 
 use rekindle_governance::state::GovernanceState;
 use rekindle_governance_runtime::DiscoveredMember;
+use rekindle_types::governance::GovernanceEntry;
+use rekindle_types::id::PseudonymKey;
 use rekindle_types::presence::MemberPresence;
 
 use crate::state_helpers;
@@ -39,6 +41,44 @@ pub(super) async fn apply_governance_rebuild_result_impl(
             "failed to persist rebuilt governance snapshot",
         );
     }
+}
+
+pub(super) fn persist_governance_entries_cache_impl(
+    adapter: &GovernanceAdapter,
+    community_id: &str,
+    entries: &[(PseudonymKey, Vec<GovernanceEntry>)],
+) {
+    let Ok(owner_key) = state_helpers::current_owner_key(&adapter.state) else {
+        return;
+    };
+    if owner_key.is_empty() {
+        return;
+    }
+    let Ok(entries_json) = serde_json::to_string(entries) else {
+        tracing::warn!(
+            community = %community_id,
+            "failed to serialize governance entries for local cache",
+        );
+        return;
+    };
+    let cid = community_id.to_string();
+    let now = rekindle_utils::timestamp_secs().cast_signed();
+    crate::db_helpers::db_fire(
+        &adapter.pool,
+        "persist governance entries cache",
+        move |conn| {
+            conn.execute(
+                "INSERT INTO governance_entries_cache
+                    (owner_key, community_id, entries_json, updated_at)
+                 VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(owner_key, community_id)
+                 DO UPDATE SET entries_json = excluded.entries_json,
+                               updated_at = excluded.updated_at",
+                rusqlite::params![owner_key, cid, entries_json, now],
+            )?;
+            Ok(())
+        },
+    );
 }
 
 pub(super) fn apply_recovered_member_state_impl(

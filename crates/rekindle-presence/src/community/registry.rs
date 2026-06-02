@@ -20,24 +20,34 @@ use crate::deps::{CommunityPresenceDeps, DiscoveredMemberRow};
 /// member's location.
 pub type DiscoveredRow = (u32, u32, MemberPresence);
 
+/// Inputs for [`write_our_presence`]. Groups the registry addressing +
+/// slot credentials + history ranges so the entry point stays under the
+/// argument-count budget while each caller-side lookup remains explicit
+/// and auditable at the construction site.
+pub struct PresenceWrite<'a> {
+    pub community_id: &'a str,
+    pub registry_key: &'a str,
+    pub my_pseudonym_hex: &'a str,
+    pub my_subkey_index: Option<u32>,
+    pub slot_keypair_str: Option<&'a str>,
+    pub has_slot_seed: bool,
+    pub history_ranges: Vec<rekindle_types::presence::HistoryRange>,
+}
+
 /// Build a fully-signed presence row + write it to our subkey on
 /// the registry record. Skips silently when credentials / writer
 /// keypair / subkey index are missing — same semantics as the
 /// pre-port `write_our_presence`.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "matches pre-port helper signature; argument count is intentionally explicit so each caller-side lookup is auditable"
-)]
-pub async fn write_our_presence<D: CommunityPresenceDeps>(
-    deps: &D,
-    community_id: &str,
-    registry_key: &str,
-    my_pseudonym_hex: &str,
-    my_subkey_index: Option<u32>,
-    slot_keypair_str: Option<&str>,
-    has_slot_seed: bool,
-    history_ranges: Vec<rekindle_types::presence::HistoryRange>,
-) {
+pub async fn write_our_presence<D: CommunityPresenceDeps>(deps: &D, write: PresenceWrite<'_>) {
+    let PresenceWrite {
+        community_id,
+        registry_key,
+        my_pseudonym_hex,
+        my_subkey_index,
+        slot_keypair_str,
+        has_slot_seed,
+        history_ranges,
+    } = write;
     let (Some(subkey_idx), Some(kp_str)) = (my_subkey_index, slot_keypair_str) else {
         tracing::warn!(
             community = %community_id,

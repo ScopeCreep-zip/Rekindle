@@ -34,7 +34,9 @@ pub use poll::{
     MAX_SYNC_ATTEMPTS, STALE_HEARTBEAT_SECS, STALE_SYNC_RETRY_SECS,
 };
 pub use profile_diff::{compute_profile_diff, MemberProfileSnapshot, ProfileDiffOutcome};
-pub use registry::{persist_discovered_registry_members, write_our_presence, DiscoveredRow};
+pub use registry::{
+    persist_discovered_registry_members, write_our_presence, DiscoveredRow, PresenceWrite,
+};
 pub use role_merge::compute_merged_roles;
 pub use rsvp_aggregate::{aggregate_event_rsvps, EventRsvpEntry};
 pub use scan_row::{parse_and_classify_row, AcceptedRow, ClassifiedRow, SUBKEYS_PER_SEGMENT};

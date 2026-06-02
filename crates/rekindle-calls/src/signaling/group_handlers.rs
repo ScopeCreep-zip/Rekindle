@@ -45,14 +45,16 @@ pub async fn handle_group_call_payload<D: CallSignalingDeps + ?Sized>(
         } => {
             handle_incoming_group_invite(
                 deps,
-                sender_hex,
-                &call_id,
-                offer_kind,
-                &initiator_pubkey,
-                &initiator_x25519_pub,
-                participants,
-                &wrapped_call_key,
-                expires_at_ms,
+                GroupInvite {
+                    sender_hex,
+                    call_id: &call_id,
+                    offer_kind,
+                    initiator_pubkey: &initiator_pubkey,
+                    initiator_x25519_pub: &initiator_x25519_pub,
+                    participants,
+                    wrapped_call_key: &wrapped_call_key,
+                    expires_at_ms,
+                },
             );
         }
         MessagePayload::GroupCallAccept {
@@ -101,24 +103,47 @@ pub async fn handle_group_call_payload<D: CallSignalingDeps + ?Sized>(
     }
 }
 
+/// Decoded `GroupCallOffer` wire fields for
+/// [`handle_incoming_group_invite`]. `participants` is owned (consumed
+/// into the registry + emitted event); the rest borrow the
+/// envelope-owned data.
+pub struct GroupInvite<'a> {
+    /// Hex pubkey of the Veilid sender (envelope `from`).
+    pub sender_hex: &'a str,
+    /// Group call identifier from the offer.
+    pub call_id: &'a str,
+    /// Wire offer kind: `0` = audio, `1` = video.
+    pub offer_kind: u8,
+    /// Initiator's Ed25519 identity pubkey (hex), used for display
+    /// fallback.
+    pub initiator_pubkey: &'a str,
+    /// Initiator's X25519 ECDH public key (must be 32 bytes).
+    pub initiator_x25519_pub: &'a [u8],
+    /// Full invitee roster for this call.
+    pub participants: Vec<String>,
+    /// Per-recipient sealed call key for this member.
+    pub wrapped_call_key: &'a [u8],
+    /// Offer expiry, ms since epoch.
+    pub expires_at_ms: u64,
+}
+
 /// Receiver-side entry into a group call. Mirrors the 1:1
 /// `handle_incoming_invite` shape but with the per-recipient X25519
 /// unwrap.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "GroupCallOffer envelope has 8 distinct wire fields; bundling adds indirection without arg-count win"
-)]
 pub fn handle_incoming_group_invite<D: CallSignalingDeps + ?Sized>(
     deps: &D,
-    sender_hex: &str,
-    call_id: &str,
-    offer_kind: u8,
-    initiator_pubkey: &str,
-    initiator_x25519_pub: &[u8],
-    participants: Vec<String>,
-    wrapped_call_key: &[u8],
-    expires_at_ms: u64,
+    invite: GroupInvite<'_>,
 ) {
+    let GroupInvite {
+        sender_hex,
+        call_id,
+        offer_kind,
+        initiator_pubkey,
+        initiator_x25519_pub,
+        participants,
+        wrapped_call_key,
+        expires_at_ms,
+    } = invite;
     // `offer_kind` is the wire-format u8 (0=audio, 1=video). The
     // GroupCallState + emitted IncomingGroupCall event both carry the
     // raw u8; we don't need the typed CallKind here, just validate it

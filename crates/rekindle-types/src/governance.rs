@@ -387,16 +387,20 @@ pub enum GovernanceEntry {
         lamport: u64,
     },
 
-    /// Create an invite. Stores the encrypted invite secrets in governance.
-    /// In v2.0, invites are governance entries rather than manifest subkeys.
+    /// Create an invite. In v2.0, invites are governance entries rather than
+    /// manifest subkeys. The several-KB encrypted `InviteSecrets` blob lives
+    /// in its own single-owner DFLT record (see
+    /// `rekindle_governance_runtime::invite_secrets`); governance stores only
+    /// the pointer so the entry stays within the SMPL per-subkey size cap.
     InviteCreated {
         invite_id: [u8; 16],
         /// SHA-256 hash of the invite code (hex). The raw code is never stored.
         code_hash: String,
         max_uses: u32,
         expires_at: Option<u64>,
-        /// Base64-encoded encrypted InviteSecrets blob.
-        encrypted_secrets: String,
+        /// DHT record key of the DFLT record holding the encrypted
+        /// `InviteSecrets` blob (decrypted with the out-of-band invite code).
+        secrets_record_key: String,
         lamport: u64,
     },
 
