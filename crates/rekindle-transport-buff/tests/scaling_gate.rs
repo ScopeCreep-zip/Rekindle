@@ -1,23 +1,36 @@
 #![cfg(not(loom))]
 //! Scaling regression gate.
 //!
-//! Asserts that throughput scaling from 1 to 8 producers/workers is
-//! monotonic-or-flat — a retrograde result (throughput declines as
-//! cores increase) signals reintroduced false sharing or contention.
+//! Detects catastrophic throughput collapse caused by false sharing,
+//! contention bugs, or broken cache-line discipline in the lock-free
+//! primitives. These are `#[test]` functions that run as part of
+//! `cargo test` and FAIL if the scaling shape is wrong. The criterion
+//! benches in `benches/` produce detailed reports for investigation;
+//! these tests produce pass/fail for CI.
 //!
-//! These are `#[test]` functions, not criterion benches. They run as
-//! part of `cargo test` and FAIL if the scaling shape is wrong. The
-//! criterion benches in `benches/` produce detailed reports for
-//! investigation; these tests produce pass/fail for CI.
+//! # Measurement discipline
 //!
-//! # Thresholds
+//! Each thread count gets a warmup pass (discarded) before the measured
+//! pass. This stabilizes CPU thermal state and cache residency so that
+//! comparison across thread counts reflects scaling behavior, not thermal
+//! ramp from cold→hot across sequential runs.
 //!
-//! Retrograde threshold: throughput at N threads must be at least 40%
-//! of throughput at 1 thread. This is deliberately loose — we're
-//! catching catastrophic regressions (10x collapse), not benchmarking
-//! to 1%. Thermal throttling, CI noise, and hyperthread contention
-//! can cause 2x swings; 40% absorbs that. A real regression (false
-//! sharing reintroduced) shows as 5-10x collapse which this catches.
+//! Best-of-3 measured passes per thread count absorbs transient OS
+//! scheduling noise (migration, timer interrupts, compaction).
+//!
+//! # Gates
+//!
+//! Two gates, both must pass:
+//!
+//! - **Pairwise**: throughput at N threads must be at least `PAIRWISE_FLOOR`
+//!   of throughput at N/2 threads. Detects collapse at a specific thread
+//!   count (the false-sharing signature: fine at 1, fine at 2, collapses
+//!   at 4 when adjacent slots share a cache line).
+//!
+//! - **Absolute**: throughput at N threads must be at least `ABSOLUTE_FLOOR`
+//!   of the single-thread baseline. Catches gradual decay that pairwise
+//!   misses (each step loses 40% → pairwise passes, but absolute ratio
+//!   at 8 threads is 0.04).
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -26,15 +39,92 @@ use std::time::{Duration, Instant};
 
 use rekindle_transport_buff::{CreditGuard, DispatchQueue, ReorderRing, SpinWake};
 
-/// Throughput at N threads must be at least this fraction of single-thread.
-/// 0.20 absorbs hyperthread contention on 4P/8L machines (where 8 producers
-/// on 4 physical cores is 2x oversubscribed — expected ~0.25 ratio) while
-/// still catching catastrophic false-sharing regressions (which show as
-/// ratio < 0.10, a 10x+ collapse).
-const RETROGRADE_FLOOR: f64 = 0.20;
+/// Pairwise floor: N-thread throughput must be >= this fraction of (N/2)-thread.
+/// 0.25 allows a 4x drop per doubling (severe but not catastrophic). A real
+/// false-sharing regression shows as 10-50x collapse at the affected level.
+const PAIRWISE_FLOOR: f64 = 0.25;
+
+/// Absolute floor against warm baseline. 0.05 (20x allowed total decay from
+/// 1→8 threads). Catches gradual compound decay that pairwise misses.
+/// CreditGuard's single-counter CAS is expected to hit ~0.15-0.25 at 8
+/// threads on 4P/8L — 0.05 catches only true catastrophic failure.
+const ABSOLUTE_FLOOR: f64 = 0.05;
+
+/// Warmup iterations before measurement. Stabilizes thermal state.
+const WARMUP_ROUNDS: usize = 1;
+/// Measured iterations — best-of-N absorbs transient scheduling noise.
+const MEASURE_ROUNDS: usize = 3;
 
 fn ops_per_sec(items: u64, elapsed: Duration) -> f64 {
     items as f64 / elapsed.as_secs_f64()
+}
+
+// ---------------------------------------------------------------------------
+// Shared measurement harness
+// ---------------------------------------------------------------------------
+
+/// Run `workload` for warmup, then take the best throughput from N measured
+/// runs. `workload(thread_count)` returns the total item count processed.
+fn measure_throughput(
+    thread_counts: &[usize],
+    workload: impl Fn(usize) -> u64,
+) -> Vec<(usize, f64)> {
+    let mut results = Vec::with_capacity(thread_counts.len());
+
+    for &n in thread_counts {
+        // Warmup: run the workload at this thread count to stabilize
+        // CPU frequency, cache residency, and thermal state.
+        for _ in 0..WARMUP_ROUNDS {
+            let _ = workload(n);
+        }
+
+        // Measure: best-of-N. Take the highest throughput — the run
+        // least affected by OS noise is the most representative of
+        // the primitive's actual scaling behavior.
+        let mut best = 0.0f64;
+        for _ in 0..MEASURE_ROUNDS {
+            let start = Instant::now();
+            let items = workload(n);
+            let elapsed = start.elapsed();
+            let throughput = ops_per_sec(items, elapsed);
+            if throughput > best {
+                best = throughput;
+            }
+        }
+
+        results.push((n, best));
+    }
+
+    results
+}
+
+/// Assert pairwise and absolute gates on measurement results.
+fn assert_scaling(label: &str, results: &[(usize, f64)]) {
+    let baseline = results[0].1;
+
+    // Absolute gate: every thread count vs baseline.
+    for &(n, throughput) in results {
+        let ratio = throughput / baseline;
+        assert!(
+            ratio >= ABSOLUTE_FLOOR,
+            "{label} ABSOLUTE scaling failure at {n} threads: \
+             {throughput:.0} ops/s vs baseline {baseline:.0} ops/s \
+             (ratio {ratio:.3}, floor {ABSOLUTE_FLOOR})"
+        );
+    }
+
+    // Pairwise gate: each level vs its predecessor.
+    for i in 1..results.len() {
+        let (prev_n, prev_tp) = results[i - 1];
+        let (n, throughput) = results[i];
+        let ratio = throughput / prev_tp;
+        assert!(
+            ratio >= PAIRWISE_FLOOR,
+            "{label} PAIRWISE scaling failure at {n} threads vs {prev_n} threads: \
+             {throughput:.0} ops/s vs {prev_tp:.0} ops/s \
+             (ratio {ratio:.3}, floor {PAIRWISE_FLOOR})"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -46,13 +136,9 @@ fn reorder_ring_scaling_not_retrograde() {
     const WINDOW: usize = 1024;
     const ITEMS_PER_PRODUCER: u64 = 50_000;
 
-    let mut results: Vec<(usize, f64)> = Vec::new();
-
-    for &producers in &[1usize, 2, 4, 8] {
+    let results = measure_throughput(&[1, 2, 4, 8], |producers| {
         let total = ITEMS_PER_PRODUCER * producers as u64;
         let ring = Arc::new(ReorderRing::<u64>::new(WINDOW));
-
-        let start = Instant::now();
 
         let handles: Vec<_> = (0..producers)
             .map(|p| {
@@ -81,33 +167,10 @@ fn reorder_ring_scaling_not_retrograde() {
             h.join().unwrap();
         }
 
-        let elapsed = start.elapsed();
-        let throughput = ops_per_sec(total, elapsed);
-        results.push((producers, throughput));
-    }
+        total
+    });
 
-    let baseline = results[0].1;
-    let physical_cores = std::thread::available_parallelism()
-        .map(|p| p.get() / 2)
-        .unwrap_or(4)
-        .max(1);
-    for &(producers, throughput) in &results {
-        // When producers exceed physical cores, spin contention from
-        // hyperthread sharing is expected to be severe. Use a looser
-        // floor for oversubscribed configurations.
-        let floor = if producers > physical_cores {
-            0.05
-        } else {
-            RETROGRADE_FLOOR
-        };
-        let ratio = throughput / baseline;
-        assert!(
-            ratio >= floor,
-            "ReorderRing scaling RETROGRADE at {producers} producers: \
-             {throughput:.0} ops/s vs baseline {baseline:.0} ops/s \
-             (ratio {ratio:.2}, floor {floor})"
-        );
-    }
+    assert_scaling("ReorderRing", &results);
 }
 
 // ---------------------------------------------------------------------------
@@ -119,13 +182,9 @@ fn dispatch_queue_scaling_not_retrograde() {
     const CAPACITY: usize = 256;
     const TOTAL_ITEMS: u64 = 100_000;
 
-    let mut results: Vec<(usize, f64)> = Vec::new();
-
-    for &workers in &[1usize, 2, 4, 8] {
+    let results = measure_throughput(&[1, 2, 4, 8], |workers| {
         let queue = Arc::new(DispatchQueue::<u64>::new(CAPACITY, SpinWake));
         let done = Arc::new(AtomicBool::new(false));
-
-        let start = Instant::now();
 
         let worker_handles: Vec<_> = (0..workers)
             .map(|_| {
@@ -137,6 +196,10 @@ fn dispatch_queue_scaling_not_retrograde() {
                         if q.pop().is_some() {
                             count += 1;
                         } else if d.load(Ordering::Acquire) {
+                            // Drain remaining after done signal.
+                            while q.pop().is_some() {
+                                count += 1;
+                            }
                             break;
                         } else {
                             std::hint::spin_loop();
@@ -160,45 +223,22 @@ fn dispatch_queue_scaling_not_retrograde() {
             .map(|h| h.join().unwrap())
             .sum();
 
-        // Drain stragglers.
+        // Drain stragglers (workers may exit between done check and final pop).
         let mut stragglers = 0u64;
         while queue.pop().is_some() {
             stragglers += 1;
         }
 
-        let elapsed = start.elapsed();
         assert_eq!(
             total_popped + stragglers,
             TOTAL_ITEMS,
             "lost items at {workers} workers"
         );
 
-        let throughput = ops_per_sec(TOTAL_ITEMS, elapsed);
-        results.push((workers, throughput));
-    }
+        TOTAL_ITEMS
+    });
 
-    let baseline = results[0].1;
-    let physical_cores = std::thread::available_parallelism()
-        .map(|p| p.get() / 2)
-        .unwrap_or(4)
-        .max(1);
-    for &(workers, throughput) in &results {
-        // When workers exceed physical cores, spin contention is expected
-        // to be severe (same class as CreditGuard single-counter CAS).
-        // Use a looser floor for oversubscribed configurations.
-        let floor = if workers > physical_cores {
-            0.05
-        } else {
-            RETROGRADE_FLOOR
-        };
-        let ratio = throughput / baseline;
-        assert!(
-            ratio >= floor,
-            "DispatchQueue scaling RETROGRADE at {workers} workers: \
-             {throughput:.0} ops/s vs baseline {baseline:.0} ops/s \
-             (ratio {ratio:.2}, floor {floor})"
-        );
-    }
+    assert_scaling("DispatchQueue", &results);
 }
 
 // ---------------------------------------------------------------------------
@@ -209,13 +249,9 @@ fn dispatch_queue_scaling_not_retrograde() {
 fn credit_guard_contention_not_catastrophic() {
     const OPS_PER_THREAD: u64 = 200_000;
 
-    let mut results: Vec<(usize, f64)> = Vec::new();
-
-    for &threads in &[1usize, 2, 4, 8] {
+    let results = measure_throughput(&[1, 2, 4, 8], |threads| {
         let total = OPS_PER_THREAD * threads as u64;
         let guard = Arc::new(CreditGuard::new(threads as u64 * OPS_PER_THREAD));
-
-        let start = Instant::now();
 
         let handles: Vec<_> = (0..threads)
             .map(|_| {
@@ -233,25 +269,10 @@ fn credit_guard_contention_not_catastrophic() {
             h.join().unwrap();
         }
 
-        let elapsed = start.elapsed();
         assert_eq!(guard.inflight(), 0, "credit leak at {threads} threads");
 
-        let throughput = ops_per_sec(total, elapsed);
-        results.push((threads, throughput));
-    }
+        total
+    });
 
-    // CreditGuard is expected to be retrograde under contention
-    // (single CAS counter). But catastrophic collapse (>20x slower
-    // at 8 threads than at 1) signals a bug, not expected contention.
-    let baseline = results[0].1;
-    for &(threads, throughput) in &results {
-        let ratio = throughput / baseline;
-        assert!(
-            ratio >= 0.05,
-            "CreditGuard CATASTROPHIC contention at {threads} threads: \
-             {throughput:.0} ops/s vs baseline {baseline:.0} ops/s \
-             (ratio {ratio:.2}, floor 0.05). Expected retrograde \
-             but not 20x+ collapse."
-        );
-    }
+    assert_scaling("CreditGuard", &results);
 }

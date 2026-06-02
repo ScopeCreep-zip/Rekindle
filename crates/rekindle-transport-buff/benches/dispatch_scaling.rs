@@ -28,7 +28,7 @@ fn bench_dispatch(c: &mut Criterion) {
                     let queue = Arc::new(DispatchQueue::<u64, SpinWake>::new(CAPACITY, SpinWake));
                     let done = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
-                    // Workers: pop until done signal.
+                    // Workers: pop until done signal, then drain remaining.
                     let worker_handles: Vec<_> = (0..n_workers)
                         .map(|_| {
                             let q = queue.clone();
@@ -38,7 +38,11 @@ fn bench_dispatch(c: &mut Criterion) {
                                 loop {
                                     if let Some(_) = q.pop() {
                                         count += 1;
-                                    } else if d.load(std::sync::atomic::Ordering::Relaxed) {
+                                    } else if d.load(std::sync::atomic::Ordering::Acquire) {
+                                        // Drain any stragglers after done signal.
+                                        while let Some(_) = q.pop() {
+                                            count += 1;
+                                        }
                                         break;
                                     } else {
                                         std::hint::spin_loop();
@@ -63,7 +67,14 @@ fn bench_dispatch(c: &mut Criterion) {
                         .map(|h| h.join().unwrap())
                         .sum();
 
-                    assert_eq!(total_popped, TOTAL_ITEMS);
+                    // Workers drained after done — stragglers may remain
+                    // if multiple workers exit concurrently. Drain the queue.
+                    let mut stragglers = 0u64;
+                    while let Some(_) = queue.pop() {
+                        stragglers += 1;
+                    }
+
+                    assert_eq!(total_popped + stragglers, TOTAL_ITEMS);
                 });
             },
         );
