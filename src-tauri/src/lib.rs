@@ -59,15 +59,12 @@ pub fn run() {
 
     tauri::Builder::default()
         // MUST be first — prevents multiple instances
-        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
-            // Check if launched via deep link (e.g. rekindle://community/abc123)
-            for arg in &args {
-                if arg.starts_with("rekindle://") {
-                    deep_links::handle_deep_link_url(app, arg);
-                    return;
-                }
-            }
-
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            // Deep-link URLs in argv are handled by the single-instance
+            // `deep-link` feature, which forwards them into the deep-link
+            // plugin (firing `on_open_url`, see setup.rs) *before* this
+            // callback runs. We only raise the existing window here — parsing
+            // argv again would double-fire the deep link.
             if let Some(w) = app.get_webview_window("buddy-list") {
                 let _ = w.show();
                 let _ = w.set_focus();

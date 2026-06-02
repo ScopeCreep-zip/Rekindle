@@ -4,7 +4,6 @@
 use std::sync::Arc;
 
 use tauri::{Emitter, Manager};
-#[cfg(target_os = "macos")]
 use tauri_plugin_deep_link::DeepLinkExt;
 
 use crate::state::SharedState;
@@ -20,17 +19,37 @@ pub fn run(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std::err
 
     tray::setup_tray(app)?;
 
-    // macOS: register deep link handler for when the app is already running.
-    // On Windows/Linux, the single-instance plugin callback handles deep link
-    // args instead (the OS re-launches the exe with the URL as an argument).
-    #[cfg(target_os = "macos")]
-    {
-        let dl_handle = app.handle().clone();
-        app.deep_link().on_open_url(move |event| {
-            for url in event.urls() {
-                crate::deep_links::handle_deep_link_url(&dl_handle, url.as_str());
-            }
-        });
+    // Deep links — one unified path for all desktop platforms.
+    //
+    // Delivery differs by OS but converges on `on_open_url`:
+    //   - macOS: Apple Event while the app is running (warm start).
+    //   - Windows/Linux: the OS re-launches the exe with the URL in argv;
+    //     the single-instance `deep-link` feature forwards that argv into
+    //     the deep-link plugin, which fires `on_open_url` here.
+    //
+    // Linux/Windows also need the `rekindle://` scheme registered with the
+    // desktop at runtime (handled at install time by the bundler, but
+    // `register_all` covers AppImage / portable / dev runs that skip that).
+    #[cfg(any(windows, target_os = "linux"))]
+    if let Err(e) = app.deep_link().register_all() {
+        tracing::warn!(error = %e, "failed to register rekindle:// deep-link scheme");
+    }
+
+    let dl_handle = app.handle().clone();
+    app.deep_link().on_open_url(move |event| {
+        for url in event.urls() {
+            crate::deep_links::handle_deep_link_url(&dl_handle, url.as_str());
+        }
+    });
+
+    // Cold start: the app was launched *by* a deep link. The plugin parsed
+    // argv at init (before any listener existed), so `on_open_url` won't
+    // fire for it — drain the captured URL(s) here instead.
+    if let Ok(Some(urls)) = app.deep_link().get_current() {
+        let cold_handle = app.handle().clone();
+        for url in urls {
+            crate::deep_links::handle_deep_link_url(&cold_handle, url.as_str());
+        }
     }
 
     // Register global keyboard shortcuts (plugin registered here for state access)
