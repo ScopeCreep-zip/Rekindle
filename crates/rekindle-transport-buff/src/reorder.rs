@@ -625,14 +625,19 @@ impl<T> ReorderRing<T> {
     /// back to publish+drain unnecessarily — a performance miss, not
     /// a correctness bug.
     ///
-    /// # Precondition
+    /// # Precondition enforcement
     ///
-    /// `seq` must not already be published to the ring. If `seq` is
-    /// already in a slot (published by a producer independently), the
-    /// fast path delivers the new item and the slot item is orphaned.
-    /// In the IPC use case this cannot happen because seq is assigned
-    /// by the consumer before dispatch — no producer publishes a seq
-    /// the consumer has not assigned.
+    /// `seq` must not already be published to the ring. This is enforced
+    /// at runtime: if the slot at `seq & mask` is FILLED, the fast path
+    /// returns `Err(item)` — the caller must fall back to `publish` +
+    /// `drain_contiguous`. In debug builds, this condition also fires a
+    /// `debug_assert` to surface the violation loudly during development.
+    ///
+    /// Without this check, a FILLED slot would be orphaned (its item
+    /// never delivered, its slot never reset to EMPTY). The check costs
+    /// one `Acquire` load on the slot state — the same load `publish`
+    /// performs — so the fast path's overhead is unchanged relative to
+    /// the fallback.
     ///
     /// # Safety contract (usage, not `unsafe`)
     ///
@@ -640,17 +645,36 @@ impl<T> ReorderRing<T> {
     /// thread may call this, because it reads and writes `next_deliver`.
     #[inline]
     pub fn try_deliver_direct(&self, seq: u64, item: T) -> Result<T, T> {
-        if seq == self.next_deliver.get()
-            && self.stored_count.load(Ordering::Acquire) == 0
+        if seq != self.next_deliver.get()
+            || self.stored_count.load(Ordering::Acquire) != 0
         {
-            let new_deliver = seq.wrapping_add(1);
-            self.next_deliver.set(new_deliver);
-            self.window_base
-                .store(new_deliver as usize, Ordering::Release);
-            Ok(item)
-        } else {
-            Err(item)
+            return Err(item);
         }
+
+        // Enforce the precondition: the slot for this seq must not already
+        // be FILLED. If a producer published to this slot independently
+        // (precondition violation), delivering directly would orphan the
+        // producer's item — the slot stays FILLED, never drained, never
+        // reset to EMPTY.
+        let idx = (seq & self.mask) as usize;
+        debug_assert!(idx < self.slots.len());
+        // SAFETY: idx < slots.len() guaranteed by mask.
+        let slot = unsafe { self.slots.get_unchecked(idx) };
+        let state = slot.state.load(Ordering::Acquire);
+        debug_assert!(
+            state != FILLED,
+            "try_deliver_direct: slot {idx} is FILLED — seq {seq} was already \
+             published by a producer, violating the precondition",
+        );
+        if state == FILLED {
+            return Err(item);
+        }
+
+        let new_deliver = seq.wrapping_add(1);
+        self.next_deliver.set(new_deliver);
+        self.window_base
+            .store(new_deliver as usize, Ordering::Release);
+        Ok(item)
     }
 
     /// The window size (number of slots).
@@ -1150,6 +1174,30 @@ mod tests {
             Err(val) => assert_eq!(val, 100),
             Ok(_) => panic!("fast path must fail when items are buffered"),
         }
+    }
+
+    #[test]
+    fn try_deliver_direct_rejects_when_slot_filled() {
+        // Precondition enforcement: if a producer already published to
+        // the slot for seq 0, try_deliver_direct must return Err — not
+        // silently orphan the producer's item.
+        let ring = ReorderRing::<u64>::new(8);
+
+        // Producer publishes seq 0 into slot 0.
+        ring.publish(0, 999).unwrap();
+
+        // Consumer tries the fast path for seq 0. The slot is FILLED,
+        // so the precondition check must reject.
+        match ring.try_deliver_direct(0, 42) {
+            Err(val) => assert_eq!(val, 42, "item must be returned on rejection"),
+            Ok(_) => panic!("fast path must reject when slot is FILLED"),
+        }
+
+        // The producer's item must still be in the ring, deliverable
+        // via the normal drain path.
+        let mut delivered = Vec::new();
+        ring.drain_contiguous(|seq, val| delivered.push((seq, val)));
+        assert_eq!(delivered, vec![(0, 999)], "producer's item must not be orphaned");
     }
 
     #[test]
