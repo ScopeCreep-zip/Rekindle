@@ -1,0 +1,51 @@
+[package]
+name = "rekindle-transport-buff"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+description = "Lock-free buffer primitives for parallel reorder, pool, and credit-bounded pipelines"
+license = "MIT OR Apache-2.0"
+
+[lints]
+workspace = true
+
+[dependencies]
+crossbeam-utils = "0.8"
+crossbeam-queue = "0.3"
+
+[dependencies.parking_lot]
+version = "0.12"
+optional = true
+
+[dependencies.tokio]
+version = "1"
+optional = true
+features = ["sync"]
+
+[target.'cfg(loom)'.dependencies]
+loom = "0.7"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+proptest = "1"
+
+[features]
+default = []
+seen-set = ["dep:parking_lot"]
+tokio = ["dep:tokio"]
+
+[[test]]
+name = "reorder_arrivals"
+path = "fuzz/reorder_arrivals.rs"
+
+[[bench]]
+name = "reorder_scaling"
+harness = false
+
+[[bench]]
+name = "dispatch_scaling"
+harness = false
+
+[[bench]]
+name = "credit_contention"
+harness = false

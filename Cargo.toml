@@ -31,6 +31,7 @@ members = [
     "crates/rekindle-aead",
     "crates/rekindle-hash",
     "crates/rekindle-transport-ipc",
+    "crates/rekindle-transport-buff",
 ]
 
 [workspace.dependencies]
@@ -63,12 +64,19 @@ opt-level = 3
 [profile.dev.package.scrypt]
 opt-level = 3
 
+# Thin LTO enables cross-crate inlining at link time. Recovers 3.8-5.4%
+# control frame throughput regression from crate extraction without manual
+# #[inline] annotations. ~20% link time cost vs fat LTO's ~5x cost.
+[profile.release]
+lto = "thin"
+
 [workspace.lints.rust]
 warnings = "deny"
 unused-imports = "deny"
 dead-code = "deny"
 unused-variables = "deny"
 unsafe-op-in-unsafe-fn = "warn"          # Rust 2024: explicit unsafe blocks in unsafe fns
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }
 
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }

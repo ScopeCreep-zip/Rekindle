@@ -1,0 +1,106 @@
+# rekindle-transport-buff — Complete Test Suite
+#
+# One command runs everything. Individual targets exist for debugging.
+#
+# Usage:
+#   mise run buff:test        # Full test suite (all modes, all features)
+#   mise run buff:test:default  # Default features only
+#   mise run buff:test:loom     # Loom model checking only
+#   mise run buff:test:tokio    # Tokio adapter feature
+#   mise run buff:test:seen     # OpaqueSeenSet feature
+#   mise run buff:test:fuzz     # Proptest fuzz target only
+#   mise run buff:bench         # Criterion benchmarks
+#   mise run buff:check         # Fast compilation check (all feature combos)
+#   mise run buff:lint          # Clippy lint gate
+
+["buff:test"]
+description = "Run the complete rekindle-transport-buff test suite (all modes, all features)"
+alias = ["bt"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "rekindle-transport-buff — Complete Test Suite"
+echo "=============================================="
+echo ""
+
+echo "── Phase 1: Default features ──"
+cargo test -p rekindle-transport-buff
+echo ""
+
+echo "── Phase 2: Loom model checking ──"
+RUSTFLAGS="--cfg loom" cargo test -p rekindle-transport-buff
+echo ""
+
+echo "── Phase 3: Tokio adapter feature ──"
+cargo test -p rekindle-transport-buff --features tokio
+echo ""
+
+echo "── Phase 4: OpaqueSeenSet feature ──"
+cargo test -p rekindle-transport-buff --features seen-set
+echo ""
+
+echo "── Phase 5: All features combined ──"
+cargo test -p rekindle-transport-buff --all-features
+echo ""
+
+echo "========================================"
+echo " rekindle-transport-buff: ALL TESTS PASS"
+echo "========================================"
+'''
+
+["buff:test:default"]
+description = "Default feature tests only"
+alias = ["btd"]
+run = "cargo test -p rekindle-transport-buff"
+
+["buff:test:loom"]
+description = "Loom model-checking tests only"
+alias = ["btl"]
+run = "RUSTFLAGS='--cfg loom' cargo test -p rekindle-transport-buff"
+
+["buff:test:tokio"]
+description = "Tokio adapter feature tests"
+alias = ["btt"]
+run = "cargo test -p rekindle-transport-buff --features tokio"
+
+["buff:test:seen"]
+description = "OpaqueSeenSet feature tests"
+alias = ["bts"]
+run = "cargo test -p rekindle-transport-buff --features seen-set"
+
+["buff:test:fuzz"]
+description = "Proptest fuzz target (arbitrary arrival orders, drain_until, rapid cycles)"
+alias = ["btf"]
+run = "cargo test -p rekindle-transport-buff --test reorder_arrivals"
+
+["buff:bench"]
+description = "Run criterion benchmarks (not part of test gate — manual perf analysis)"
+alias = ["bb"]
+run = "cargo bench -p rekindle-transport-buff"
+
+["buff:check"]
+description = "Fast compilation check across all feature combinations"
+alias = ["bc"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+cargo check -p rekindle-transport-buff
+cargo check -p rekindle-transport-buff --features tokio
+cargo check -p rekindle-transport-buff --features seen-set
+cargo check -p rekindle-transport-buff --all-features
+echo "All feature combinations compile."
+'''
+
+["buff:lint"]
+description = "Clippy lint gate across all feature combinations"
+alias = ["bl"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+cargo clippy -p rekindle-transport-buff -- -D warnings
+cargo clippy -p rekindle-transport-buff --features tokio -- -D warnings
+cargo clippy -p rekindle-transport-buff --features seen-set -- -D warnings
+cargo clippy -p rekindle-transport-buff --all-features -- -D warnings
+echo "Lint clean."
+'''

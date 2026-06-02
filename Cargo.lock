@@ -960,6 +960,7 @@ dependencies = [
  "cfg-if 1.0.4",
  "constant_time_eq 0.4.2",
  "cpufeatures 0.3.0",
+ "rayon-core",
 ]
 
 [[package]]
@@ -3534,6 +3535,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "304de19db7028420975a296ab0fcbbc8e69438c4ed254a1e41e2a7f37d5f0e0a"
 
 [[package]]
+name = "generator"
+version = "0.8.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b3b854b0e584ead1a33f18b2fcad7cf7be18b3875c78816b753639aa501513ae"
+dependencies = [
+ "cc",
+ "cfg-if 1.0.4",
+ "libc",
+ "log",
+ "rustversion",
+ "windows-link 0.2.1",
+ "windows-result 0.4.1",
+]
+
+[[package]]
 name = "generic-array"
 version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5362,6 +5378,19 @@ name = "log"
 version = "0.4.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
+
+[[package]]
+name = "loom"
+version = "0.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "419e0dc8046cb947daa77eb95ae174acfbddb7673b4151f56d1eed8e93fbfaca"
+dependencies = [
+ "cfg-if 1.0.4",
+ "generator",
+ "scoped-tls",
+ "tracing",
+ "tracing-subscriber",
+]
 
 [[package]]
 name = "lru"
@@ -8246,14 +8275,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "rekindle-transport-buff"
+version = "0.1.0"
+dependencies = [
+ "criterion",
+ "crossbeam-queue",
+ "crossbeam-utils",
+ "loom",
+ "parking_lot 0.12.5",
+ "proptest",
+ "tokio",
+]
+
+[[package]]
 name = "rekindle-transport-ipc"
 version = "0.1.0"
 dependencies = [
  "aws-lc-rs",
+ "bitflags 2.11.1",
  "blake3",
  "bytes 1.11.1",
  "criterion",
+ "crossbeam",
+ "crossbeam-utils",
  "dashmap",
+ "futures",
  "hex",
  "io-uring 0.7.12",
  "libc",
@@ -8270,12 +8316,14 @@ dependencies = [
  "snow",
  "static_assertions",
  "subtle",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "tokio-util",
  "tracing",
  "tracing-subscriber",
  "uuid",
+ "walkdir",
  "zeroize",
 ]
 
