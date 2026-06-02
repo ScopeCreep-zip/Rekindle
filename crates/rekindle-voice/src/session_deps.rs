@@ -134,6 +134,15 @@ pub trait VoiceSessionDeps: Send + Sync + 'static {
     /// identity is loaded.
     fn owner_key(&self) -> Result<String, VoiceError>;
 
+    /// The key we present as *ourselves* on the voice wire: the
+    /// per-community pseudonym hex for community voice (so our
+    /// outbound `sender_key` matches the pseudonym signing key and
+    /// remote peers can verify our Ed25519 signature), or the owner
+    /// key for 1:1 calls. Single source of truth for the send-loop
+    /// identity, the receive/MCU self-skip key, and the `LocalJoined`
+    /// roster entry. Empty string when no identity is loaded.
+    fn voice_self_identity(&self, community_id: Option<&str>) -> String;
+
     /// Identity Ed25519 secret bytes (32 B). Errors if no identity.
     fn identity_secret(&self) -> Result<[u8; 32], VoiceError>;
 

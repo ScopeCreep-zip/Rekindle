@@ -53,6 +53,24 @@ pub fn pseudonym_credentials(
     Ok((pseudonym, signing_key))
 }
 
+/// Voice self-identity hex — the key we present as *ourselves* on the
+/// voice wire. For community voice this is the per-community pseudonym
+/// (so `sender_key` matches the pseudonym signing key set on the
+/// transport and remote peers can verify our Ed25519 signature); for
+/// 1:1 calls it's the owner key (whose verifying key is the identity
+/// secret's signing key). Single source of truth for the outbound
+/// packet `sender_key`, the receive/MCU self-skip key, the send-loop
+/// identity, and the `LocalJoined` roster entry. Empty string when no
+/// identity is loaded.
+pub fn voice_self_identity(state: &Arc<AppState>, community_id: Option<&str>) -> String {
+    match community_id {
+        Some(cid) => pseudonym_credentials(state, cid)
+            .map(|(pseudo, _)| hex::encode(pseudo.0))
+            .unwrap_or_else(|_| owner_key_or_default(state)),
+        None => owner_key_or_default(state),
+    }
+}
+
 /// Clone the full identity state, or error `"not logged in"`.
 pub fn current_identity(state: &Arc<AppState>) -> Result<IdentityState, String> {
     state

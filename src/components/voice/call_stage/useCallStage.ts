@@ -1,7 +1,25 @@
 import { createMemo, createSignal } from "solid-js";
 import { voiceState } from "../../../stores/voice.store";
 import { authState } from "../../../stores/auth.store";
+import { communityState } from "../../../stores/community.store";
 import { activePipeline } from "./pipeline_store";
+
+/// Community voice keys `voiceState.participants` by the per-community
+/// pseudonym (not the owner key), so "us" in that roster is the local
+/// member's pseudonym for the community that owns the active voice
+/// channel — found by matching `voiceState.channelId` to a community's
+/// channel list (channel ids are globally unique). `null` until the
+/// community's pseudonym is hydrated.
+function selfPseudonymForActiveCall(): string | null {
+  const chId = voiceState.channelId;
+  if (!chId) return null;
+  for (const c of Object.values(communityState.communities)) {
+    if (c.channels.some((ch) => ch.id === chId)) {
+      return c.myPseudonymKey;
+    }
+  }
+  return null;
+}
 
 /// One cell in the call gallery. `publicKey` (when present) lets the tile
 /// read live speaking/muted state reactively from the voice store, so the
@@ -89,8 +107,14 @@ export function useCallStage() {
       });
     }
 
-    // Audio-only participants → avatar tiles.
+    // Audio-only participants → avatar tiles. Skip ourselves — the local
+    // user is already rendered by the self-* tiles above, and the join
+    // flow adds us to `voiceState.participants` too (keyed by our
+    // community pseudonym), so without this guard we'd show a second
+    // (avatar) card for the local user.
+    const selfKey = selfPseudonymForActiveCall();
     for (const p of voiceState.participants) {
+      if (selfKey && p.publicKey === selfKey) continue;
       if (withVideo.has(p.publicKey)) continue;
       put(out, `participant-${p.publicKey}`, {
         displayName: p.displayName,

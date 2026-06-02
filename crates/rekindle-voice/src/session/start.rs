@@ -46,6 +46,14 @@ pub async fn start_session<D: VoiceSessionDeps + ?Sized>(
     let identity = deps.current_identity()?;
     let prefs = deps.audio_prefs();
 
+    // Self-identity on the voice wire: the per-community pseudonym for
+    // community voice (so our signed packets verify against the
+    // pseudonym key remote peers expect), or the owner key for 1:1.
+    // Threaded into the loops + LocalJoined so every surface agrees on
+    // who "we" are — matching the signing key the transport was built
+    // with in init_voice_session.
+    let self_voice_id = deps.voice_self_identity(community_id);
+
     // W13.12 — 1:1 voice needs a resolved peer route BEFORE the
     // transport is initialized. If all three fallback sources (cache,
     // DHT subkey 6, mailbox) are empty, fail closed so the caller's
@@ -75,7 +83,7 @@ pub async fn start_session<D: VoiceSessionDeps + ?Sized>(
     // it would block the next join with "already in a different voice
     // channel".
     if let Err(e) = deps.spawn_voice_loops(
-        &identity.public_key,
+        &self_voice_id,
         startup.transport,
         startup.muted_flag,
         startup.deafened_flag,
@@ -88,7 +96,7 @@ pub async fn start_session<D: VoiceSessionDeps + ?Sized>(
     deps.emit_local_joined(
         channel_id,
         community_id,
-        &identity.public_key,
+        &self_voice_id,
         &identity.display_name,
     );
 

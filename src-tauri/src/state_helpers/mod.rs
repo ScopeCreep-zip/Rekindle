@@ -47,7 +47,7 @@ pub use governance::{
 pub use governance_persist::persist_governance_snapshot_to_sqlite;
 pub use identity::{
     current_identity, current_owner_key, identity_display_name, identity_status,
-    owner_key_or_default, pseudonym_credentials,
+    owner_key_or_default, pseudonym_credentials, voice_self_identity,
 };
 pub use node::{
     api_and_routing_context, app_handle, friend_list_dht_key, friend_list_owner_keypair,

@@ -15,8 +15,12 @@ use crate::mcu_loop;
 use crate::session_deps::VoiceSessionDeps;
 
 pub fn start_mcu_loop<D: VoiceSessionDeps + ?Sized>(deps: &Arc<D>) -> Result<(), VoiceError> {
-    let identity = deps.current_identity()?;
-    let our_key_bytes = hex::decode(&identity.public_key).unwrap_or_default();
+    // Self-skip key for the mixer must be the same identity we sign
+    // with — the pseudonym for community voice — so the host doesn't
+    // mix its own packets back. (MCU only runs for community channels.)
+    let community_id = deps.active_community_id();
+    let self_voice_id = deps.voice_self_identity(community_id.as_deref());
+    let our_key_bytes = hex::decode(&self_voice_id).unwrap_or_default();
 
     let transport = deps
         .current_shared_transport()

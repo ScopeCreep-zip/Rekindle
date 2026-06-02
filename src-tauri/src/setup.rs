@@ -7,9 +7,7 @@ use tauri::{Emitter, Manager};
 use tauri_plugin_deep_link::DeepLinkExt;
 
 use crate::state::SharedState;
-use crate::{
-    channels, db, event_dispatch, friend_store_sqlite, services, shortcuts, tray,
-};
+use crate::{channels, db, event_dispatch, friend_store_sqlite, services, shortcuts, tray};
 
 /// Run all one-time app setup. Invoked from the `tauri::Builder::setup` closure.
 pub fn run(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std::error::Error>> {

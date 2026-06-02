@@ -115,12 +115,17 @@ pub(super) fn init_voice_session_impl(
 
     // Build the real transport with full signing-key + AEAD wiring
     // (Veilid routing context init, ed25519 signing key for
-    // packet signatures, call_key for 1:1 AEAD).
-    let owner_pubkey =
-        state_helpers::current_owner_key(state).map_err(|_| VoiceError::IdentityNotLoaded)?;
+    // packet signatures, call_key for 1:1 AEAD). The sender_key we
+    // stamp on packets must be our voice self-identity (the community
+    // pseudonym, or owner key for 1:1) so it matches the signing key
+    // installed below and remote peers can verify our signature.
+    let self_voice_id = state_helpers::voice_self_identity(state, community_id);
+    if self_voice_id.is_empty() {
+        return Err(VoiceError::IdentityNotLoaded);
+    }
     let transport = create_transport_impl(
         state,
-        &owner_pubkey,
+        &self_voice_id,
         channel_id,
         community_id,
         peer_route_blob,
@@ -202,14 +207,14 @@ pub(super) fn take_shutdown_handles_impl(
 /// from the deleted `services::voice::session::create_transport`.
 fn create_transport_impl(
     state: &Arc<AppState>,
-    public_key: &str,
+    self_voice_id: &str,
     channel_id: &str,
     community_id: Option<&str>,
     resolved_peer_route: Option<&[u8]>,
 ) -> rekindle_voice::transport::VoiceTransport {
     let mut transport = rekindle_voice::transport::VoiceTransport::new(channel_id.to_string());
     let api = state_helpers::veilid_api(state);
-    let sender_key = hex::decode(public_key).unwrap_or_default();
+    let sender_key = hex::decode(self_voice_id).unwrap_or_default();
 
     if let Some(api) = api {
         let sender: Arc<dyn rekindle_voice::VoiceFrameSender> =

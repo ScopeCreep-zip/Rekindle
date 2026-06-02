@@ -32,6 +32,10 @@ impl VoiceSessionDeps for VoiceAdapter {
         }
     }
 
+    fn voice_self_identity(&self, community_id: Option<&str>) -> String {
+        state_helpers::voice_self_identity(&self.state, community_id)
+    }
+
     fn identity_secret(&self) -> Result<[u8; 32], VoiceError> {
         let guard = self.state.identity_secret.lock();
         guard.as_ref().copied().ok_or(VoiceError::IdentityNotLoaded)
