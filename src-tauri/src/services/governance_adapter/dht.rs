@@ -131,6 +131,36 @@ pub(super) async fn inspect_dht_record_update_get_seqs_impl(
         .collect())
 }
 
+pub(super) async fn inspect_dht_record_present_subkeys_impl(
+    adapter: &GovernanceAdapter,
+    record_key: &str,
+) -> Result<Vec<u32>, GovernanceRuntimeError> {
+    let rc = adapter.rc()?;
+    let key = GovernanceAdapter::parse_record_key(record_key)?;
+    let report = rc
+        .inspect_dht_record(
+            key,
+            Some(veilid_core::ValueSubkeyRangeSet::full()),
+            veilid_core::DHTReportScope::UpdateGet,
+        )
+        .await
+        .map_err(|e| GovernanceRuntimeError::Adapter(format!("inspect UpdateGet: {e}")))?;
+    // `ValueSeqNum` is `Option<u32>`: `None` => subkey empty, `Some(_)` =>
+    // value present (including seq 0). Keep only the populated indices.
+    Ok(report
+        .network_seqs()
+        .iter()
+        .enumerate()
+        .filter_map(|(i, s)| {
+            if s.to_option().is_some() {
+                u32::try_from(i).ok()
+            } else {
+                None
+            }
+        })
+        .collect())
+}
+
 pub(super) async fn open_dht_record_impl(
     adapter: &GovernanceAdapter,
     record_key: &str,

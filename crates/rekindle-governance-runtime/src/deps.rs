@@ -256,6 +256,18 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
         record_key: &str,
     ) -> Result<Vec<u64>, GovernanceRuntimeError>;
 
+    /// Network-authoritative inspect (`DHTReportScope::UpdateGet`) returning
+    /// the subkey indices that currently hold a value. Unlike
+    /// `inspect_dht_record_update_get_seqs`, this preserves the "no value"
+    /// (`ValueSeqNum::NONE`) vs "value present at seq 0" distinction, so it
+    /// can drive a sparse fetch of only populated subkeys on a cold join —
+    /// a 255-subkey SMPL record otherwise needs 255 serial network
+    /// `get_dht_value` round-trips, which blows past the UI's join timeout.
+    async fn inspect_dht_record_present_subkeys(
+        &self,
+        record_key: &str,
+    ) -> Result<Vec<u32>, GovernanceRuntimeError>;
+
     async fn open_dht_record(
         &self,
         record_key: &str,

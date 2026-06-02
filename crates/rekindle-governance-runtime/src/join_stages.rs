@@ -121,8 +121,34 @@ pub async fn load_governance_snapshot<D: GovernanceRuntimeDeps>(
     })
 }
 
-/// Scan all 255 subkeys of a single governance record. W26 — verify each
-/// payload's pseudonym signature; reject unsigned / mis-signed entries
+/// Subkeys an `UpdateGet` inspect reports as holding a value, or the full
+/// `0..255` range when the inspect call fails.
+///
+/// A blind `0..255` `get_dht_value` sweep costs 255 serial network
+/// round-trips on a cold join — the local store is empty until each subkey
+/// is fetched, and ~250 of those land on empty slots, enough to exceed the
+/// UI's join timeout. One inspect collapses that to a single network
+/// round-trip plus a fetch per populated subkey. On inspect error we fall
+/// back to the full sweep so a join never silently drops entries.
+async fn populated_subkeys_or_full_scan<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    record_key: &str,
+) -> Vec<u32> {
+    match deps.inspect_dht_record_present_subkeys(record_key).await {
+        Ok(subkeys) => subkeys,
+        Err(e) => {
+            tracing::warn!(
+                record = %record_key,
+                error = %e,
+                "inspect failed; falling back to full 0..255 subkey scan"
+            );
+            (0..255u32).collect()
+        }
+    }
+}
+
+/// Read the populated subkeys of a single governance record. W26 — verify
+/// each payload's pseudonym signature; reject unsigned / mis-signed entries
 /// (any member could write to any slot, signature is the only authorship
 /// proof).
 async fn fetch_governance_record_entries<D: GovernanceRuntimeDeps>(
@@ -131,7 +157,7 @@ async fn fetch_governance_record_entries<D: GovernanceRuntimeDeps>(
 ) -> Result<Vec<(PseudonymKey, Vec<GovernanceEntry>)>, GovernanceRuntimeError> {
     deps.open_dht_record(governance_key_str, None).await?;
     let mut all_entries = Vec::new();
-    for subkey in 0..255u32 {
+    for subkey in populated_subkeys_or_full_scan(deps, governance_key_str).await {
         let Ok(Some(bytes)) = deps.get_dht_value(governance_key_str, subkey, false).await else {
             continue;
         };
@@ -412,7 +438,7 @@ pub async fn collect_initial_presence_state<D: GovernanceRuntimeDeps>(
     let mut presence = InitialPresence::default();
     presence.known_members.insert(my_pseudo_hex.to_string());
 
-    for subkey in 0..255u32 {
+    for subkey in populated_subkeys_or_full_scan(deps, registry_key).await {
         if subkey == my_slot {
             continue;
         }

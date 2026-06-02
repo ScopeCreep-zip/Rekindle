@@ -155,6 +155,13 @@ impl GovernanceRuntimeDeps for GovernanceAdapter {
         dht::inspect_dht_record_update_get_seqs_impl(self, record_key).await
     }
 
+    async fn inspect_dht_record_present_subkeys(
+        &self,
+        record_key: &str,
+    ) -> Result<Vec<u32>, GovernanceRuntimeError> {
+        dht::inspect_dht_record_present_subkeys_impl(self, record_key).await
+    }
+
     async fn open_dht_record(
         &self,
         record_key: &str,
