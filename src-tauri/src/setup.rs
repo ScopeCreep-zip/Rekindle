@@ -9,7 +9,7 @@ use tauri_plugin_deep_link::DeepLinkExt;
 
 use crate::state::SharedState;
 use crate::{
-    channels, db, deep_links, event_dispatch, friend_store_sqlite, services, shortcuts, tray,
+    channels, db, event_dispatch, friend_store_sqlite, services, shortcuts, tray,
 };
 
 /// Run all one-time app setup. Invoked from the `tauri::Builder::setup` closure.
@@ -28,7 +28,7 @@ pub fn run(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std::err
         let dl_handle = app.handle().clone();
         app.deep_link().on_open_url(move |event| {
             for url in event.urls() {
-                deep_links::handle_deep_link_url(&dl_handle, url.as_str());
+                crate::deep_links::handle_deep_link_url(&dl_handle, url.as_str());
             }
         });
     }
