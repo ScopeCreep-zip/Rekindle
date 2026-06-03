@@ -350,6 +350,18 @@ pub enum CommunityEvent {
     /// Join accepted by a peer — MEK and community data received.
     #[serde(rename_all = "camelCase")]
     JoinAccepted { community_id: String },
+    /// Architecture §6.2 — per-phase "dial-in" progress for the
+    /// self-sovereign join. Emitted before and after each gated join
+    /// phase (governance snapshot → invite decode → slot claim → presence
+    /// → open records → watch) so the UI renders a stepper instead of a
+    /// single spinner. `status` is one of `started` / `done` / `failed` /
+    /// `timedOut`.
+    #[serde(rename_all = "camelCase")]
+    JoinProgress {
+        community_id: String,
+        stage: String,
+        status: String,
+    },
     /// Sync response received — channel messages were merged from an archiver.
     /// Frontend should refresh the channel's message list.
     #[serde(rename_all = "camelCase")]

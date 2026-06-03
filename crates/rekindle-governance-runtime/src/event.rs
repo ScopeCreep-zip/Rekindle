@@ -8,6 +8,21 @@
 
 use rekindle_types::governance::GovernanceEntry;
 
+/// Lifecycle status of a single join phase ("dial-in" gate). Carried by
+/// [`GovernanceRuntimeEvent::JoinProgress`] so the UI can render each
+/// phase as pending → active → done/failed/timed-out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JoinStageStatus {
+    /// The phase has begun.
+    Started,
+    /// The phase finished successfully.
+    Done,
+    /// The phase returned an error before its deadline.
+    Failed,
+    /// The phase exceeded its per-phase timeout budget.
+    TimedOut,
+}
+
 /// Lifecycle-side events. `RolesChanged` + `ChannelsUpdated` carry
 /// **identifiers only** — the src-tauri adapter snapshots the current
 /// in-memory `CommunityState` after applying and constructs the full
@@ -39,10 +54,11 @@ pub enum GovernanceRuntimeEvent {
     },
 
     /// A join attempt has progressed to a new stage. Adapter forwards
-    /// to `CommunityEvent::JoinProgress { stage_label }`.
+    /// to `CommunityEvent::JoinProgress { stage, status }`.
     JoinProgress {
         community_id: String,
         stage_label: String,
+        status: JoinStageStatus,
     },
 
     /// A join has succeeded — adapter emits

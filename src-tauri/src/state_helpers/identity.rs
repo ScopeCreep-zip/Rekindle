@@ -64,9 +64,10 @@ pub fn pseudonym_credentials(
 /// identity is loaded.
 pub fn voice_self_identity(state: &Arc<AppState>, community_id: Option<&str>) -> String {
     match community_id {
-        Some(cid) => pseudonym_credentials(state, cid)
-            .map(|(pseudo, _)| hex::encode(pseudo.0))
-            .unwrap_or_else(|_| owner_key_or_default(state)),
+        Some(cid) => pseudonym_credentials(state, cid).map_or_else(
+            |_| owner_key_or_default(state),
+            |(pseudo, _)| hex::encode(pseudo.0),
+        ),
         None => owner_key_or_default(state),
     }
 }

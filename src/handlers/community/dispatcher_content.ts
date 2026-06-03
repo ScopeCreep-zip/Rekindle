@@ -1,5 +1,6 @@
 import type { CommunityEvent } from "../../ipc/channels";
 import { setCommunityState, communityState } from "../../stores/community.store";
+import { applyJoinProgress, type JoinStageStatus } from "../../stores/join.store";
 import { commands } from "../../ipc/commands";
 import { addToast } from "../../stores/toast.store";
 import type { Message } from "../../stores/chat.store";
@@ -235,6 +236,14 @@ export function reduceContent(event: CommunityEvent): boolean {
         void handleResolveCommunityImageDataUrls(communityId);
       }
     });
+    return true;
+  } else if (event.type === "joinProgress") {
+    // Per-phase "dial-in" progress from the backend join gates. Pure
+    // display: mirror the phase + status into the join store so the
+    // JoinProgressStepper re-renders. No timeout logic here — the
+    // backend gate owns each phase's budget.
+    const { stage, status } = event.data;
+    applyJoinProgress(stage, status as JoinStageStatus);
     return true;
   } else if (event.type === "joinRejected") {
     const { reason } = event.data;

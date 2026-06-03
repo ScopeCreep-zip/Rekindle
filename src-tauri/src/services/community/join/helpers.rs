@@ -8,35 +8,6 @@ pub(crate) fn role_id_to_legacy_u32(role_id: &rekindle_types::id::RoleId) -> u32
     u32::from_le_bytes([role_id.0[0], role_id.0[1], role_id.0[2], role_id.0[3]])
 }
 
-/// Look up an invite by `code_hash` in the raw governance subkey entries.
-/// Returns the encrypted secrets blob and the inviter's pseudonym (the
-/// writer of the subkey carrying the `InviteCreated` entry).
-///
-/// M10.3 — the inviter pseudonym is propagated to `claim_registry_slot`
-/// so the joiner-side quota check (`invite_quota::check_active_invites_cap`)
-pub(super) async fn open_channel_records(
-    rc: &veilid_core::RoutingContext,
-    state: &Arc<AppState>,
-    community_id: &str,
-) {
-    let channel_keys: Vec<String> = {
-        let communities = state.communities.read();
-        communities
-            .get(community_id)
-            .map(|cs| cs.channel_log_keys.values().cloned().collect())
-            .unwrap_or_default()
-    };
-
-    for key_str in &channel_keys {
-        if let Ok(typed_key) = key_str.parse::<veilid_core::RecordKey>() {
-            if let Err(e) = rc.open_dht_record(typed_key, None).await {
-                tracing::debug!(key = %key_str, error = %e, "failed to open channel record on join");
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        }
-    }
-}
-
 pub(super) fn spawn_join_announcements(
     state: Arc<AppState>,
     community_id: String,

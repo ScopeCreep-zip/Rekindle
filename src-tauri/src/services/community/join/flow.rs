@@ -11,13 +11,14 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use rekindle_governance_runtime as gov_rt;
+use rekindle_governance_runtime::GovernanceRuntimeDeps;
 use rekindle_types::id::PseudonymKey;
 use tauri::Manager;
 
 use crate::state::{AppState, CommunityState, GossipOverlay, OnlineMember};
 
 use super::bootstrap::{fetch_bootstrap_bundle, BootstrapBundle};
-use super::helpers::{open_channel_records, role_id_to_legacy_u32, spawn_join_announcements};
+use super::helpers::{role_id_to_legacy_u32, spawn_join_announcements};
 use super::state::{build_channel_log_keys, build_channels, build_roles, join_status_label};
 
 struct InviteContext {
@@ -53,10 +54,18 @@ pub async fn join_community(
     );
 
     // 1. Multi-segment governance snapshot via crate primitive (DHT scan +
-    //    W26 signature verify + multi-segment re-merge).
-    let snapshot = gov_rt::load_governance_snapshot(&adapter, governance_key_str)
-        .await
-        .map_err(|e| e.to_string())?;
+    //    W26 signature verify + multi-segment re-merge), under its own gate.
+    let snapshot = gov_rt::gate(
+        &adapter,
+        governance_key_str,
+        gov_rt::JoinPhase::GovernanceSnapshot,
+        async {
+            gov_rt::load_governance_snapshot(&adapter, governance_key_str)
+                .await
+                .map_err(|e| e.to_string())
+        },
+    )
+    .await?;
 
     // 2. Joiner identity derived from master secret + community key.
     let identity_secret = state
@@ -72,43 +81,65 @@ pub async fn join_community(
     }
 
     // 3. Decode the invite payload + optionally fetch bootstrap bundle.
-    let invite = decode_invite_context(
-        state,
+    let invite = gov_rt::gate(
         &adapter,
         governance_key_str,
-        invite_code,
-        &snapshot.all_entries,
-        &identity.pseudo_hex,
+        gov_rt::JoinPhase::DecodeInvite,
+        decode_invite_context(
+            state,
+            &adapter,
+            governance_key_str,
+            invite_code,
+            &snapshot.all_entries,
+            &identity.pseudo_hex,
+        ),
     )
     .await?;
 
-    // 4. Claim a registry slot (with auto-expand fallback).
+    // 4. Claim a registry slot (with auto-expand fallback), under its gate.
     let display_name = Some(crate::state_helpers::identity_display_name(state));
-    let claimed = gov_rt::claim_registry_slot(
+    let claimed = gov_rt::gate(
         &adapter,
-        &invite.slot_seed_hex,
-        gov_rt::SlotClaimCtx {
-            community_id: governance_key_str,
-            invite_registry_key: &invite.registry_key,
-            inviter_pseudonym: &invite.inviter_pseudonym,
-            my_pseudo: &identity.pseudo,
-            pseudonym_signing: &identity.pseudonym_signing,
-            gov_state: &snapshot.gov_state,
-            join_status_label: join_status_label(state),
-            display_name,
+        governance_key_str,
+        gov_rt::JoinPhase::ClaimSlot,
+        async {
+            gov_rt::claim_registry_slot(
+                &adapter,
+                &invite.slot_seed_hex,
+                gov_rt::SlotClaimCtx {
+                    community_id: governance_key_str,
+                    invite_registry_key: &invite.registry_key,
+                    inviter_pseudonym: &invite.inviter_pseudonym,
+                    my_pseudo: &identity.pseudo,
+                    pseudonym_signing: &identity.pseudonym_signing,
+                    gov_state: &snapshot.gov_state,
+                    join_status_label: join_status_label(state),
+                    display_name,
+                },
+            )
+            .await
+            .map_err(|e| e.to_string())
         },
     )
-    .await
-    .map_err(|e| e.to_string())?;
+    .await?;
 
-    // 5. Initial presence state from a DHT registry scan.
-    let initial_presence = gov_rt::collect_initial_presence_state(
+    // 5. Initial presence state from a DHT registry scan (infallible, but
+    //    gated so a hung registry scan times out instead of stalling).
+    let initial_presence = gov_rt::gate(
         &adapter,
-        &claimed.registry_key,
-        claimed.local_subkey,
-        &identity.pseudo_hex,
+        governance_key_str,
+        gov_rt::JoinPhase::CollectPresence,
+        async {
+            Ok(gov_rt::collect_initial_presence_state(
+                &adapter,
+                &claimed.registry_key,
+                claimed.local_subkey,
+                &identity.pseudo_hex,
+            )
+            .await)
+        },
     )
-    .await;
+    .await?;
 
     // 6. Build the src-tauri CommunityState from all the gathered pieces.
     let channels = build_channels(&snapshot.gov_state);
@@ -230,25 +261,43 @@ pub async fn join_community(
         .write()
         .insert(governance_key_str.to_string(), community);
 
-    {
-        let mut communities = state.communities.write();
-        if let Some(cs) = communities.get_mut(governance_key_str) {
-            cs.open_community_records.governance_key = Some(governance_key_str.to_string());
-            cs.open_community_records.registry_key = Some(invite.registry_key);
-            cs.open_community_records.registry_writer = cs.slot_keypair.clone();
-            cs.open_community_records.channel_keys =
-                cs.channel_log_keys.values().cloned().collect();
-            cs.open_community_records.records_open = true;
-        }
-    }
+    // 7. Open + track + mark community records via the same open-with-writer
+    //    orchestrator login uses: governance read-only, registry opened WITH
+    //    the slot-keypair writer so presence/slot writes go through, and
+    //    `records_open` is only set true AFTER that writable open. This is the
+    //    fix for the post-join "record not open / no permission" bug — the old
+    //    path set records_open=true while the registry was still opened
+    //    read-only, which suppressed the later writable re-open. Gated as the
+    //    OpenRecords "dial-in" phase.
+    let setup = adapter
+        .list_communities_for_dht_open()
+        .into_iter()
+        .find(|s| s.id == governance_key_str)
+        .ok_or("dht-open setup missing for joined community")?;
+    gov_rt::gate(
+        &adapter,
+        governance_key_str,
+        gov_rt::JoinPhase::OpenRecords,
+        async {
+            gov_rt::open_and_track_one_community(&adapter, &setup).await;
+            Ok(())
+        },
+    )
+    .await?;
 
-    let rc = crate::state_helpers::safe_routing_context(state).ok_or("not attached")?;
-    open_channel_records(&rc, state, governance_key_str).await;
     if let Err(e) = super::super::files::ensure_cache_open(state, governance_key_str) {
         tracing::warn!(community = %governance_key_str, error = %e, "Lost Cargo cache unavailable on join");
     }
     super::super::files::sync_pinned_from_governance(state, governance_key_str);
-    let _ = super::super::watch::watch_community_records(state, governance_key_str).await;
+
+    // 8. Establish DHT value watches on the opened records, under its gate.
+    gov_rt::gate(
+        &adapter,
+        governance_key_str,
+        gov_rt::JoinPhase::WatchRecords,
+        super::super::watch::watch_community_records(state, governance_key_str),
+    )
+    .await?;
     super::super::inspect::start_inspect_loop(state.clone(), governance_key_str.to_string());
 
     {

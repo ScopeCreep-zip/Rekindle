@@ -26,73 +26,104 @@
 use rekindle_types::governance::{GovernanceEntry, GovernanceSubkeyPayload};
 use rekindle_types::id::PseudonymKey;
 
-use crate::deps::GovernanceRuntimeDeps;
+use crate::deps::{CommunityDhtOpenSetup, GovernanceRuntimeDeps};
 
 /// Open governance + registry + channel-log DHT records for every
 /// joined community. Best-effort — per-key failures log inside the
 /// adapter; the orchestrator never short-circuits.
 pub async fn open_community_dht_records<D: GovernanceRuntimeDeps>(deps: &D) {
     let records = deps.list_communities_for_dht_open();
-
     for rec in &records {
-        // Governance record (read-only — no writer keypair).
-        if let Err(error) = deps.open_dht_record(&rec.governance_key, None).await {
-            tracing::debug!(
-                community = %rec.id,
-                %error,
-                "failed to open governance record",
-            );
-            continue;
-        }
-
-        // Registry record — open with the writer keypair when we have
-        // one so subsequent presence writes go through.
-        if let Some(reg_key) = &rec.registry_key {
-            let writer = rec.registry_writer.clone();
-            if let Err(error) = deps.open_dht_record(reg_key, writer).await {
-                tracing::warn!(
-                    community = %rec.id,
-                    %error,
-                    "failed to open registry record on login",
-                );
-            }
-        }
-
-        // Channel-log records.
-        let channel_keys = deps.channel_log_keys_for_community(&rec.id);
-        for key in &channel_keys {
-            if let Err(error) = deps.open_dht_record(key, None).await {
-                tracing::debug!(
-                    community = %rec.id,
-                    %key,
-                    %error,
-                    "failed to open channel SMPL record on login",
-                );
-            }
-        }
-
-        // Track all opened keys + persist the post-open snapshot.
-        let mut all_keys = vec![rec.governance_key.clone()];
-        if let Some(rk) = &rec.registry_key {
-            all_keys.push(rk.clone());
-        }
-        all_keys.extend(channel_keys.iter().cloned());
-        deps.track_open_dht_records(&all_keys);
-
-        deps.mark_community_records_open(
-            &rec.id,
-            &rec.governance_key,
-            rec.registry_key.as_deref(),
-            rec.registry_writer.as_deref(),
-            channel_keys,
-        );
-
-        deps.watch_community_records_post_open(&rec.id).await;
+        open_one_community_dht_records(deps, rec).await;
     }
-
     tracing::info!(
         count = records.len(),
         "opened community DHT records after login"
+    );
+}
+
+/// Open + track + mark-open + watch a SINGLE community's governance,
+/// registry, and channel-log records.
+///
+/// Login hydration uses this combined wrapper; the self-sovereign join
+/// flow instead calls [`open_and_track_one_community`] and
+/// [`GovernanceRuntimeDeps::watch_community_records_post_open`] as two
+/// separately-gated "dial-in" phases (each with its own timeout).
+pub async fn open_one_community_dht_records<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    rec: &CommunityDhtOpenSetup,
+) {
+    open_and_track_one_community(deps, rec).await;
+    deps.watch_community_records_post_open(&rec.id).await;
+}
+
+/// Open + track + mark-open (NO watch) a SINGLE community's governance,
+/// registry, and channel-log records.
+///
+/// Shared by login hydration (`open_one_community_dht_records`) and the
+/// self-sovereign join path (`services::community::join::flow`) so both
+/// follow the identical Veilid open → track → mark-open sequence. The
+/// registry is opened **with** its writer keypair when one is known: a
+/// read-only (`None`) open clobbers the record's stored writer (Veilid
+/// `open_existing_record_locked`), so opening read-only here would
+/// silently strip write permission and break subsequent presence / slot
+/// writes. Best-effort — per-key failures are logged; never
+/// short-circuits the caller.
+pub async fn open_and_track_one_community<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    rec: &CommunityDhtOpenSetup,
+) {
+    // Governance record (read-only — writes use the shared slot keypair
+    // inline at set time).
+    if let Err(error) = deps.open_dht_record(&rec.governance_key, None).await {
+        tracing::debug!(
+            community = %rec.id,
+            %error,
+            "failed to open governance record",
+        );
+        return;
+    }
+
+    // Registry record — open WITH the writer keypair when we have one so
+    // subsequent presence/slot writes go through.
+    if let Some(reg_key) = &rec.registry_key {
+        let writer = rec.registry_writer.clone();
+        if let Err(error) = deps.open_dht_record(reg_key, writer).await {
+            tracing::warn!(
+                community = %rec.id,
+                %error,
+                "failed to open registry record",
+            );
+        }
+    }
+
+    // Channel-log records.
+    let channel_keys = deps.channel_log_keys_for_community(&rec.id);
+    for key in &channel_keys {
+        if let Err(error) = deps.open_dht_record(key, None).await {
+            tracing::debug!(
+                community = %rec.id,
+                %key,
+                %error,
+                "failed to open channel SMPL record",
+            );
+        }
+    }
+
+    // Track all opened keys + persist the post-open snapshot.
+    let mut all_keys = vec![rec.governance_key.clone()];
+    if let Some(rk) = &rec.registry_key {
+        all_keys.push(rk.clone());
+    }
+    all_keys.extend(channel_keys.iter().cloned());
+    deps.track_open_dht_records(&all_keys);
+
+    deps.mark_community_records_open(
+        &rec.id,
+        &rec.governance_key,
+        rec.registry_key.as_deref(),
+        rec.registry_writer.as_deref(),
+        channel_keys,
     );
 }
 

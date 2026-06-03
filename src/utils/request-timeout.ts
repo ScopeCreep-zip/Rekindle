@@ -1,8 +1,12 @@
 /**
- * Architecture §32 a11y — async UI submits (join community, friend
- * request, voice handshake, etc.) sometimes block on Veilid bootstrap
- * or NAT punch retries. Wrap the awaited promise so the UI can surface
- * a user-actionable error instead of spinning forever.
+ * Architecture §32 a11y — async UI submits (friend request, voice
+ * handshake, etc.) sometimes block on Veilid bootstrap or NAT punch
+ * retries. Wrap the awaited promise so the UI can surface a
+ * user-actionable error instead of spinning forever.
+ *
+ * The community join flow does NOT use this: it is gated per-phase in
+ * the backend (`join_gate`), which streams `joinProgress` events the
+ * frontend renders directly (see JoinProgressStepper).
  *
  * The Tauri command itself doesn't currently support cancellation;
  * timing out only stops the UI from awaiting. Any in-flight backend
@@ -44,8 +48,6 @@ export async function withTimeout<T>(
   }
 }
 
-/** Worst-case Veilid bootstrap window observed in field testing. */
-export const JOIN_TIMEOUT_MS = 15_000;
 /** DHT writes (governance, channel record). */
 export const DHT_WRITE_TIMEOUT_MS = 10_000;
 /** 1:1 message dispatch via private route. */

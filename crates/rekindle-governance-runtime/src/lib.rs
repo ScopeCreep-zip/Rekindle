@@ -31,6 +31,7 @@ pub mod error;
 pub mod event;
 pub mod invite_secrets;
 pub mod join;
+pub mod join_gate;
 pub mod join_stages;
 pub mod membership_events;
 pub mod origin;
@@ -45,15 +46,17 @@ pub use deps::{
     RecentMessageRow, UserStatusKind,
 };
 pub use dht_hydration::{
-    hydrate_community_state_from_dht, open_community_dht_records, rebuild_governance_from_dht,
+    hydrate_community_state_from_dht, open_and_track_one_community, open_community_dht_records,
+    open_one_community_dht_records, rebuild_governance_from_dht,
 };
 pub use error::GovernanceRuntimeError;
-pub use event::GovernanceRuntimeEvent;
+pub use event::{GovernanceRuntimeEvent, JoinStageStatus};
 pub use invite_secrets::{fetch_invite_secrets, publish_invite_secrets};
 pub use join::{
     default_community_name, derive_join_identity, find_invite_in_entries, merge_presence_entry,
     InitialPresence, JoinIdentity, JoinOnlineMember,
 };
+pub use join_gate::{gate, JoinPhase};
 pub use join_stages::{
     claim_registry_slot, collect_initial_presence_state, load_governance_snapshot, ClaimedSlot,
     GovernanceSnapshot, SlotClaimCtx,

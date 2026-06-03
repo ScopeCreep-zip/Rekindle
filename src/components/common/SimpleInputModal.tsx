@@ -1,4 +1,4 @@
-import { Component, Show, createSignal, createEffect } from "solid-js";
+import { Component, JSX, Show, createSignal, createEffect } from "solid-js";
 import Modal from "./Modal";
 import LoadingButton from "./LoadingButton";
 
@@ -13,6 +13,9 @@ interface SimpleInputModalProps {
   validate?: (value: string) => string | null;
   secondaryPlaceholder?: string;
   secondaryInitialValue?: string;
+  /** Optional display-only content rendered below the submit button
+   *  (e.g. a progress stepper). Purely presentational. */
+  extra?: JSX.Element;
 }
 
 const SimpleInputModal: Component<SimpleInputModalProps> = (props) => {
@@ -80,6 +83,7 @@ const SimpleInputModal: Component<SimpleInputModalProps> = (props) => {
         >
           {props.submitLabel ?? "Submit"}
         </LoadingButton>
+        <Show when={props.extra}>{props.extra}</Show>
       </form>
     </Modal>
   );

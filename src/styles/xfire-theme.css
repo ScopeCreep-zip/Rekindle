@@ -2796,6 +2796,52 @@
     background: var(--color-xfire-away);
   }
 
+  /* Community join "dial-in" stepper — per-phase backend join gates */
+  .join-stepper {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 12px;
+    padding: 0;
+    list-style: none;
+  }
+
+  .join-stepper-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+  }
+
+  .join-step-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--color-xfire-offline);
+  }
+
+  .join-step-dot-started {
+    background: var(--color-xfire-away);
+  }
+
+  /* Architecture §32 a11y — animation only for motion-tolerant users. */
+  @media (prefers-reduced-motion: no-preference) {
+    .join-step-dot-started {
+      animation: network-pulse 1.5s ease-in-out infinite;
+    }
+  }
+
+  .join-step-dot-done {
+    background: var(--color-xfire-online);
+  }
+
+  .join-step-dot-failed,
+  .join-step-dot-timedOut {
+    background: var(--color-xfire-busy);
+  }
+
   /* Community header actions */
   .community-header-actions {
     display: flex;

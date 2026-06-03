@@ -6,6 +6,15 @@ export type CommunityEvent =
       data: { communityId: string };
     }
   | {
+      // Per-phase "dial-in" progress for the self-sovereign join flow.
+      // The backend gates each phase in its own timeout and emits one
+      // event per transition; the frontend is a pure display of this
+      // stream (see JoinProgressStepper). `stage` is the phase label,
+      // `status` ∈ started | done | failed | timedOut.
+      type: "joinProgress";
+      data: { communityId: string; stage: string; status: string };
+    }
+  | {
       // Architecture §18.4 — eager-fetched expression bytes have landed.
       // Frontend should re-pull list_expressions for this community so
       // the picker re-renders with the resolved inline_data_base64.

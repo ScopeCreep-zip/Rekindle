@@ -4,7 +4,7 @@
 //! helpers) and emits the resulting `CommunityEvent` /
 //! `NotificationEvent` via `event_dispatch::emit_live`.
 
-use rekindle_governance_runtime::GovernanceRuntimeEvent;
+use rekindle_governance_runtime::{GovernanceRuntimeEvent, JoinStageStatus};
 
 use crate::channels::community_channel::CommunityEvent;
 use crate::channels::notification_channel::NotificationEvent;
@@ -51,8 +51,23 @@ pub(super) fn emit_event_impl(adapter: &GovernanceAdapter, event: GovernanceRunt
         GovernanceRuntimeEvent::JoinProgress {
             community_id,
             stage_label,
+            status,
         } => {
-            tracing::debug!(community = %community_id, stage = %stage_label, "join progress");
+            let status = match status {
+                JoinStageStatus::Started => "started",
+                JoinStageStatus::Done => "done",
+                JoinStageStatus::Failed => "failed",
+                JoinStageStatus::TimedOut => "timedOut",
+            };
+            emit_live(
+                &adapter.app_handle,
+                "community-event",
+                &CommunityEvent::JoinProgress {
+                    community_id,
+                    stage: stage_label,
+                    status: status.to_string(),
+                },
+            );
         }
         GovernanceRuntimeEvent::CommunityJoined { community_id, name } => {
             tracing::info!(community = %community_id, %name, "community joined (Phase 18 adapter)");
