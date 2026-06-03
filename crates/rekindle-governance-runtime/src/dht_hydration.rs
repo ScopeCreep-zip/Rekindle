@@ -127,6 +127,55 @@ pub async fn open_and_track_one_community<D: GovernanceRuntimeDeps>(
     );
 }
 
+/// Join-path open: identical sequence to [`open_and_track_one_community`],
+/// but the governance + registry opens are **required** — their failure
+/// aborts the caller (the join's OpenRecords gate) with a precise error
+/// instead of marking a half-open community that later raises veilid's
+/// "record not open". Channel-log opens stay best-effort. Login hydration
+/// keeps using the swallowing [`open_and_track_one_community`].
+pub async fn try_open_and_track_one_community<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    rec: &CommunityDhtOpenSetup,
+) -> Result<(), String> {
+    deps.open_dht_record(&rec.governance_key, None)
+        .await
+        .map_err(|e| format!("open governance record: {e}"))?;
+
+    if let Some(reg_key) = &rec.registry_key {
+        deps.open_dht_record(reg_key, rec.registry_writer.clone())
+            .await
+            .map_err(|e| format!("open registry record: {e}"))?;
+    }
+
+    let channel_keys = deps.channel_log_keys_for_community(&rec.id);
+    for key in &channel_keys {
+        if let Err(error) = deps.open_dht_record(key, None).await {
+            tracing::debug!(
+                community = %rec.id,
+                %key,
+                %error,
+                "failed to open channel SMPL record",
+            );
+        }
+    }
+
+    let mut all_keys = vec![rec.governance_key.clone()];
+    if let Some(rk) = &rec.registry_key {
+        all_keys.push(rk.clone());
+    }
+    all_keys.extend(channel_keys.iter().cloned());
+    deps.track_open_dht_records(&all_keys);
+
+    deps.mark_community_records_open(
+        &rec.id,
+        &rec.governance_key,
+        rec.registry_key.as_deref(),
+        rec.registry_writer.as_deref(),
+        channel_keys,
+    );
+    Ok(())
+}
+
 /// Recover per-community registry-linked state from the DHT:
 ///   1. Read each community's member registry; for the row matching
 ///      our `my_pseudonym_key`, install `my_subkey_index` +

@@ -21,8 +21,9 @@ pub(crate) async fn route_refresh_loop(
                 if evicted > 0 {
                     tracing::debug!(evicted, "evicted stale peer routes from live cache");
                 }
-                let should_refresh = {
+                let (should_refresh, missing_route) = {
                     let node = state.node.read();
+                    let attached = node.as_ref().is_some_and(|nh| nh.is_attached);
                     let has_live_route =
                         node.as_ref().is_some_and(|nh| nh.is_attached && nh.route_blob.is_some());
                     drop(node);
@@ -31,9 +32,14 @@ pub(crate) async fn route_refresh_loop(
                     let lifecycle_ready = routing_manager
                         .as_ref()
                         .is_some_and(|handle| handle.route_lifecycle.should_refresh_at(now));
-                    has_live_route && lifecycle_ready
+                    // Recover whenever we're attached with no route; otherwise
+                    // honor the normal proactive refresh cadence.
+                    (has_live_route && lifecycle_ready, attached && !has_live_route)
                 };
-                if should_refresh {
+                if missing_route {
+                    tracing::info!("route refresh: attached but no live route — allocating");
+                    super::super::network::allocate_fresh_private_route(&app_handle, &state).await;
+                } else if should_refresh {
                     tracing::debug!("proactive route refresh: re-allocating private route");
                     super::super::network::reallocate_private_route(&app_handle, &state).await;
 

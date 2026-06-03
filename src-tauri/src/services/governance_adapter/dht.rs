@@ -161,6 +161,10 @@ pub(super) async fn inspect_dht_record_present_subkeys_impl(
         .collect())
 }
 
+const GOV_OPEN_MAX_ATTEMPTS: u32 = 5;
+const GOV_OPEN_INITIAL_BACKOFF_MS: u64 = 300;
+const GOV_OPEN_MAX_BACKOFF_MS: u64 = 3_000;
+
 pub(super) async fn open_dht_record_impl(
     adapter: &GovernanceAdapter,
     record_key: &str,
@@ -172,11 +176,37 @@ pub(super) async fn open_dht_record_impl(
         Some(w) => Some(GovernanceAdapter::parse_writer_keypair(&w)?),
         None => None,
     };
-    let _desc = rc
-        .open_dht_record(key, kp)
-        .await
-        .map_err(|e| GovernanceRuntimeError::Adapter(format!("open_dht_record: {e}")))?;
-    Ok(())
+
+    // veilid raises "key not found" while the record descriptor is still
+    // propagating through the DHT or the safety route is warming after a
+    // refresh — both transient on a cold join. Retry with bounded backoff
+    // (mirrors rekindle-transport's `open_with_retry`), sized to fit inside
+    // the join's OpenRecords budget. Non-"not found" errors fail immediately.
+    let mut backoff = std::time::Duration::from_millis(GOV_OPEN_INITIAL_BACKOFF_MS);
+    let ceiling = std::time::Duration::from_millis(GOV_OPEN_MAX_BACKOFF_MS);
+    for attempt in 1..=GOV_OPEN_MAX_ATTEMPTS {
+        match rc.open_dht_record(key.clone(), kp.clone()).await {
+            Ok(_) => return Ok(()),
+            Err(e) => {
+                let msg = e.to_string();
+                if msg.contains("not found") && attempt < GOV_OPEN_MAX_ATTEMPTS {
+                    tracing::debug!(
+                        record = record_key,
+                        attempt,
+                        backoff_ms = backoff.as_millis(),
+                        "record descriptor not ready, retrying open"
+                    );
+                    tokio::time::sleep(backoff).await;
+                    backoff = (backoff * 2).min(ceiling);
+                    continue;
+                }
+                return Err(GovernanceRuntimeError::Adapter(format!(
+                    "open_dht_record: {e}"
+                )));
+            }
+        }
+    }
+    unreachable!()
 }
 
 pub(super) async fn recent_channel_messages_impl(

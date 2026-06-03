@@ -262,43 +262,58 @@ pub async fn join_community(
         .write()
         .insert(governance_key_str.to_string(), community);
 
-    // 7. Open + track + mark community records via the same open-with-writer
-    //    orchestrator login uses: governance read-only, registry opened WITH
-    //    the slot-keypair writer so presence/slot writes go through, and
-    //    `records_open` is only set true AFTER that writable open. This is the
-    //    fix for the post-join "record not open / no permission" bug — the old
-    //    path set records_open=true while the registry was still opened
-    //    read-only, which suppressed the later writable re-open. Gated as the
-    //    OpenRecords "dial-in" phase.
+    // 7-8. Open + watch community records, each under its own "dial-in" gate.
+    //    OpenRecords uses the open-with-writer orchestrator (governance
+    //    read-only; registry opened WITH the slot-keypair writer so
+    //    presence/slot writes go through) in its Result-returning form, so a
+    //    genuinely-failed governance/registry open aborts the gate with a
+    //    precise error instead of marking a half-open community that later
+    //    raises "record not open".
+    //
+    //    Both gates run AFTER the optimistic `state.communities` insert above,
+    //    so on ANY failure we remove the half-joined entry — a failed gate must
+    //    never leave the user "in" the community. Nothing is persisted to
+    //    SQLite until `join_community_inner` sees this fn return Ok, so the
+    //    rollback is a pure in-memory removal. (The DHT slot claimed in
+    //    ClaimSlot persists and is reused if the user retries — self-sovereign
+    //    joins are idempotent on the slot.)
     let setup = adapter
         .list_communities_for_dht_open()
         .into_iter()
         .find(|s| s.id == governance_key_str)
         .ok_or("dht-open setup missing for joined community")?;
-    gov_rt::gate(
-        &adapter,
-        governance_key_str,
-        gov_rt::JoinPhase::OpenRecords,
-        async {
-            gov_rt::open_and_track_one_community(&adapter, &setup).await;
-            Ok(())
-        },
-    )
-    .await?;
+    let finalize = async {
+        gov_rt::gate(
+            &adapter,
+            governance_key_str,
+            gov_rt::JoinPhase::OpenRecords,
+            gov_rt::try_open_and_track_one_community(&adapter, &setup),
+        )
+        .await?;
 
-    if let Err(e) = super::super::files::ensure_cache_open(state, governance_key_str) {
-        tracing::warn!(community = %governance_key_str, error = %e, "Lost Cargo cache unavailable on join");
+        if let Err(e) = super::super::files::ensure_cache_open(state, governance_key_str) {
+            tracing::warn!(community = %governance_key_str, error = %e, "Lost Cargo cache unavailable on join");
+        }
+        super::super::files::sync_pinned_from_governance(state, governance_key_str);
+
+        gov_rt::gate(
+            &adapter,
+            governance_key_str,
+            gov_rt::JoinPhase::WatchRecords,
+            super::super::watch::watch_community_records(state, governance_key_str),
+        )
+        .await
+    };
+    if let Err(e) = finalize.await {
+        tracing::warn!(
+            community = %governance_key_str,
+            error = %e,
+            "join failed after slot claim — rolling back optimistic membership"
+        );
+        state.communities.write().remove(governance_key_str);
+        return Err(e);
     }
-    super::super::files::sync_pinned_from_governance(state, governance_key_str);
 
-    // 8. Establish DHT value watches on the opened records, under its gate.
-    gov_rt::gate(
-        &adapter,
-        governance_key_str,
-        gov_rt::JoinPhase::WatchRecords,
-        super::super::watch::watch_community_records(state, governance_key_str),
-    )
-    .await?;
     super::super::inspect::start_inspect_loop(state.clone(), governance_key_str.to_string());
 
     {

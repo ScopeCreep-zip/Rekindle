@@ -301,17 +301,36 @@ pub async fn handle_route_change(
     }
 }
 
+/// Attempt `api.new_private_route()` up to `attempts` times with a fixed
+/// delay. Mirrors `login_runtime::allocate_route_with_retry` — peerinfo /
+/// relay readiness can lag a route death by a few seconds, so one transient
+/// failure must not leave the node permanently routeless.
+async fn new_private_route_with_retry(
+    api: &veilid_core::VeilidAPI,
+    attempts: u32,
+) -> Option<veilid_core::RouteBlob> {
+    for attempt in 1..=attempts {
+        match api.new_private_route().await {
+            Ok(rb) => return Some(rb),
+            Err(e) => {
+                tracing::warn!(attempt, attempts, error = %e, "private route allocation attempt failed");
+                if attempt < attempts {
+                    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                }
+            }
+        }
+    }
+    None
+}
+
 pub(crate) async fn reallocate_private_route(app_handle: &AppHandle, state: &Arc<AppState>) {
     let Some(api) = state_helpers::veilid_api(state) else {
         return;
     };
 
-    let new_route = match api.new_private_route().await {
-        Ok(rb) => rb,
-        Err(e) => {
-            tracing::warn!(error = %e, "route refresh: failed to allocate new route; keeping old");
-            return;
-        }
+    let Some(new_route) = new_private_route_with_retry(&api, 5).await else {
+        tracing::warn!("route refresh: failed to allocate new route; keeping old");
+        return;
     };
 
     {
@@ -361,61 +380,59 @@ pub(crate) async fn reallocate_private_route(app_handle: &AppHandle, state: &Arc
     tracing::info!("re-allocated private route (make-before-break)");
 }
 
-async fn allocate_fresh_private_route(app_handle: &AppHandle, state: &Arc<AppState>) {
+pub(crate) async fn allocate_fresh_private_route(app_handle: &AppHandle, state: &Arc<AppState>) {
     let Some(api) = state_helpers::veilid_api(state) else {
         return;
     };
 
-    match api.new_private_route().await {
-        Ok(route_blob) => {
-            {
-                let mut rm = state.routing_manager.write();
-                if let Some(ref mut handle) = *rm {
-                    handle
-                        .manager
-                        .set_allocated_route(route_blob.route_id.clone(), route_blob.blob.clone());
-                    handle.route_lifecycle.mark_refreshed(Instant::now());
-                }
-            }
-            if let Some(ref mut nh) = *state.node.write() {
-                nh.route_blob = Some(route_blob.blob.clone());
-            }
-            super::emit_network_status(app_handle, state);
+    let Some(route_blob) = new_private_route_with_retry(&api, 5).await else {
+        tracing::warn!(
+            "dead-route recovery: all allocation attempts failed; refresh-loop backstop will retry"
+        );
+        return;
+    };
 
-            if let Err(e) =
-                message_service::push_profile_update(state, 6, route_blob.blob.clone()).await
-            {
-                tracing::warn!(error = %e, "failed to re-publish route blob to DHT");
-            }
-
-            let mailbox_key = {
-                let node = state.node.read();
-                node.as_ref().and_then(|nh| nh.mailbox_dht_key.clone())
-            };
-            if let Some(mailbox_key) = mailbox_key {
-                let rc = {
-                    let node = state.node.read();
-                    node.as_ref().map(|nh| nh.routing_context.clone())
-                };
-                if let Some(rc) = rc {
-                    if let Err(e) = rekindle_protocol::dht::mailbox::update_mailbox_route(
-                        &rc,
-                        &mailbox_key,
-                        &route_blob.blob,
-                    )
-                    .await
-                    {
-                        tracing::warn!(error = %e, "failed to update mailbox route blob");
-                    }
-                }
-            }
-
-            tracing::info!("re-allocated private route");
-        }
-        Err(e) => {
-            tracing::warn!(error = %e, "failed to allocate private route");
+    {
+        let mut rm = state.routing_manager.write();
+        if let Some(ref mut handle) = *rm {
+            handle
+                .manager
+                .set_allocated_route(route_blob.route_id.clone(), route_blob.blob.clone());
+            handle.route_lifecycle.mark_refreshed(Instant::now());
         }
     }
+    if let Some(ref mut nh) = *state.node.write() {
+        nh.route_blob = Some(route_blob.blob.clone());
+    }
+    super::emit_network_status(app_handle, state);
+
+    if let Err(e) = message_service::push_profile_update(state, 6, route_blob.blob.clone()).await {
+        tracing::warn!(error = %e, "failed to re-publish route blob to DHT");
+    }
+
+    let mailbox_key = {
+        let node = state.node.read();
+        node.as_ref().and_then(|nh| nh.mailbox_dht_key.clone())
+    };
+    if let Some(mailbox_key) = mailbox_key {
+        let rc = {
+            let node = state.node.read();
+            node.as_ref().map(|nh| nh.routing_context.clone())
+        };
+        if let Some(rc) = rc {
+            if let Err(e) = rekindle_protocol::dht::mailbox::update_mailbox_route(
+                &rc,
+                &mailbox_key,
+                &route_blob.blob,
+            )
+            .await
+            {
+                tracing::warn!(error = %e, "failed to update mailbox route blob");
+            }
+        }
+    }
+
+    tracing::info!("re-allocated private route");
 }
 
 fn invalidate_all_watches(state: &Arc<AppState>) {
