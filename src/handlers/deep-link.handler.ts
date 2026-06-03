@@ -7,8 +7,11 @@ export function subscribeDeepLinkHandler(): Promise<UnlistenFn> {
   return subscribeDeepLinkEvents(async (event) => {
     if (event.action === "joinCommunity") {
       addToast("Joining community via invite...", "info");
-      await handleJoinCommunity(event.communityId, "Invited community", event.inviteCode);
-      // handleJoinCommunity shows success/error toast internally
+      // handleJoinCommunity shows success/error toasts internally and re-throws
+      // on failure (for the modal path); there is no modal here, so swallow it.
+      await handleJoinCommunity(event.communityId, "Invited community", event.inviteCode).catch(
+        () => {},
+      );
     }
   });
 }

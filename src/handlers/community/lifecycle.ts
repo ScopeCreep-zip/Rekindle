@@ -92,12 +92,15 @@ export async function handleJoinCommunity(
     handleSelectCommunity(communityId);
     addToast("Joined community!", "success");
   } catch (e) {
-    // Surface the backend's specific error string (banned / full / invalid invite / Stronghold locked / etc.)
-    // rather than swallowing it as a generic "Failed to join community" — the user can't act on a
-    // message that hides the cause.
+    // Surface the backend's specific error string (banned / full / invalid invite / Stronghold locked /
+    // a timed-out join phase / etc.) rather than swallowing it as a generic "Failed to join community" —
+    // the user can't act on a message that hides the cause. Re-throw so the join modal stays open and
+    // shows the failure inline next to the dial-in stepper's failed phase (programmatic callers such as
+    // the deep-link handler catch this themselves).
     console.error("Failed to join community:", e);
     const msg = typeof e === "string" ? e : "Failed to join community";
     addToast(msg, "error");
+    throw e instanceof Error ? e : new Error(msg);
   }
 }
 
