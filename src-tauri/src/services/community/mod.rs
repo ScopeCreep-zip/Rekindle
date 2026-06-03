@@ -26,6 +26,7 @@ pub mod message_notifications_handle;
 pub mod notifications;
 pub mod presence;
 pub mod receiver_limits;
+pub mod record_inventory;
 pub mod segments;
 pub mod stage;
 pub mod threads;

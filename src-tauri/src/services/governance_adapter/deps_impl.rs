@@ -492,6 +492,31 @@ impl GovernanceRuntimeDeps for GovernanceAdapter {
         state_helpers::track_open_records(&self.state, keys);
     }
 
+    fn register_governance_overflow_keys(&self, community_id: &str, keys: &[String]) {
+        if keys.is_empty() {
+            return;
+        }
+        {
+            let mut communities = self.state.communities.write();
+            if let Some(c) = communities.get_mut(community_id) {
+                let inventory = &mut c.open_community_records.governance_overflow_keys;
+                for key in keys {
+                    if !inventory.contains(key) {
+                        inventory.push(key.clone());
+                    }
+                }
+            }
+        }
+        state_helpers::track_open_records(&self.state, keys);
+    }
+
+    fn governance_overflow_keys_for_community(&self, community_id: &str) -> Vec<String> {
+        let cs = self.state.communities.read();
+        cs.get(community_id)
+            .map(|c| c.open_community_records.governance_overflow_keys.clone())
+            .unwrap_or_default()
+    }
+
     fn mark_community_records_open(
         &self,
         community_id: &str,

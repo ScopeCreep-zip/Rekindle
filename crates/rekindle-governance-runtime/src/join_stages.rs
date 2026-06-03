@@ -32,6 +32,13 @@ pub struct GovernanceSnapshot {
     pub gov_state: GovernanceState,
     pub name: String,
     pub description: Option<String>,
+    /// Every GovernanceOverflow record key followed while loading this
+    /// snapshot (primary + all segments). The src-tauri join flow seeds these
+    /// into the new `CommunityState.open_community_records.governance_overflow_keys`
+    /// so they are opened+tracked (§10) and warmed/rehydrated (§14.1) like every
+    /// other community record — the joiner can't register via `community_id`
+    /// here because the community isn't in `AppState` yet.
+    pub overflow_keys: Vec<String>,
 }
 
 /// Shared join-cursor state threaded through the slot-claim state
@@ -86,7 +93,9 @@ pub async fn load_governance_snapshot<D: GovernanceRuntimeDeps>(
     deps: &D,
     governance_key_str: &str,
 ) -> Result<GovernanceSnapshot, GovernanceRuntimeError> {
-    let mut all_entries = fetch_governance_record_entries(deps, governance_key_str).await?;
+    let primary = fetch_governance_record_entries(deps, governance_key_str).await?;
+    let mut all_entries = primary.authored;
+    let mut overflow_keys = primary.overflow_keys;
     let gov_state_v1 = merge::merge(&all_entries);
 
     // Pass 2: fetch every segment's governance record. CRDT idempotence +
@@ -97,7 +106,10 @@ pub async fn load_governance_snapshot<D: GovernanceRuntimeDeps>(
             continue;
         }
         match fetch_governance_record_entries(deps, &segment.governance_key).await {
-            Ok(mut extra) => all_entries.append(&mut extra),
+            Ok(mut extra) => {
+                all_entries.append(&mut extra.authored);
+                overflow_keys.append(&mut extra.overflow_keys);
+            }
             Err(e) => tracing::warn!(
                 segment = segment.segment_index,
                 governance_key = %segment.governance_key,
@@ -121,11 +133,15 @@ pub async fn load_governance_snapshot<D: GovernanceRuntimeDeps>(
         .as_ref()
         .and_then(|metadata| metadata.description.clone());
 
+    overflow_keys.sort();
+    overflow_keys.dedup();
+
     Ok(GovernanceSnapshot {
         all_entries,
         gov_state,
         name,
         description,
+        overflow_keys,
     })
 }
 
@@ -163,7 +179,7 @@ async fn populated_subkeys_or_full_scan<D: GovernanceRuntimeDeps>(
 async fn fetch_governance_record_entries<D: GovernanceRuntimeDeps>(
     deps: &D,
     governance_key_str: &str,
-) -> Result<Vec<(PseudonymKey, Vec<GovernanceEntry>)>, GovernanceRuntimeError> {
+) -> Result<crate::overflow::GovernanceReadout, GovernanceRuntimeError> {
     deps.open_dht_record(governance_key_str, None).await?;
     let occupied = populated_subkeys_or_full_scan(deps, governance_key_str).await;
     Ok(crate::overflow::read_governance_with_overflow(deps, governance_key_str, &occupied).await)
@@ -509,9 +525,11 @@ mod tests {
             gov_state: GovernanceState::default(),
             name: "t".into(),
             description: None,
+            overflow_keys: Vec::new(),
         };
         assert_eq!(snap.name, "t");
         assert!(snap.all_entries.is_empty());
+        assert!(snap.overflow_keys.is_empty());
     }
 
     #[test]

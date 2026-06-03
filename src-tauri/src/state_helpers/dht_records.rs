@@ -92,6 +92,9 @@ pub fn collect_and_clear_community_records(
         keys.push(k.clone());
     }
     keys.append(&mut records.channel_keys);
+    // §10 teardown: close GovernanceOverflow records too (the author's spill
+    // pages and any followed chain) — they were opened+tracked on join/login.
+    keys.append(&mut records.governance_overflow_keys);
     records.governance_key = None;
     records.registry_key = None;
     records.registry_writer = None;

@@ -191,6 +191,7 @@ pub async fn write_entry<D: GovernanceRuntimeDeps>(
     // already-published child. Overflow owner keypairs are DERIVED (not stored);
     // reuse a record key already in our chain, else create it once.
     let mut next_key: Option<String> = None;
+    let mut written_overflow_keys: Vec<String> = Vec::new();
     for i in (1..pages.len()).rev() {
         let page_index = u32::try_from(i).expect("overflow page index fits u32");
         let owner_writer =
@@ -209,12 +210,22 @@ pub async fn write_entry<D: GovernanceRuntimeDeps>(
             owner_writer,
         )
         .await?;
+        written_overflow_keys.push(rec_key.clone());
         next_key = Some(rec_key);
+    }
+
+    // Register our own spill pages in the community's record inventory so they
+    // are warmed (§14.1), opened+tracked (§10), rehydrated on restart (D5), and
+    // closed on leave (§10) like every other community record — the author MUST
+    // keep its overflow records alive or new channels vanish from joiners.
+    if !written_overflow_keys.is_empty() {
+        deps.register_governance_overflow_keys(community_id, &written_overflow_keys);
     }
 
     // Build + sign the primary subkey (page 0), pointing at the first overflow
     // record (or `None` when everything fit one page). The pointer is bound into
-    // the signature (`signing_bytes` domain tag v2).
+    // the signature (`signing_bytes`, the canonical `rekindle-gov-subkey-v1`
+    // domain).
     let (primary_payload, payload) =
         overflow::build_signed_payload(&pages[0], next_key, &pseudonym_signing_key, &pseudo)?;
 

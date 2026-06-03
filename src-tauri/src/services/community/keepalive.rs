@@ -69,33 +69,13 @@ pub fn start_dht_keepalive(state: Arc<AppState>, community_id: String) {
             };
             let keys = {
                 let communities = state.communities.read();
-                communities.get(&community_id).map(|c| {
-                    let mut keys = Vec::new();
-                    if let Some(key) = c.governance_key.clone() {
-                        keys.push(key);
-                    } else {
-                        keys.push(c.id.clone());
-                    }
-                    if let Some(key) = c.member_registry_key.clone() {
-                        keys.push(key);
-                    }
-                    keys.extend(c.channel_log_keys.values().cloned());
-                    // Mutual Aid (architecture §14.1) + Plate Gate
-                    // (§15.4): warm segment-N governance, registry,
-                    // and channel-segment records too — otherwise
-                    // expansion segments expire while the rest stay
-                    // hot, fragmenting the community's DHT presence.
-                    if let Some(gov) = c.governance_state.as_ref() {
-                        for seg in &gov.segments {
-                            keys.push(seg.governance_key.clone());
-                            keys.push(seg.registry_key.clone());
-                        }
-                        for csr in gov.channel_segment_records.values() {
-                            keys.push(csr.record_key.clone());
-                        }
-                    }
-                    keys
-                })
+                // §10/§14.1: warm the one authoritative inventory — governance,
+                // registry, channels, Plate Gate segments, my live invite
+                // secrets, AND GovernanceOverflow pages — so no record type is
+                // forgotten and left to expire.
+                communities
+                    .get(&community_id)
+                    .map(super::record_inventory::warmable_record_keys)
             };
             if let Some(keys) = keys {
                 // Touch the live v2 records by reading subkey 0 to

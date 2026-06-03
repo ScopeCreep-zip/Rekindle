@@ -48,7 +48,7 @@ pub use deps::{
 };
 pub use dht_hydration::{
     hydrate_community_state_from_dht, open_and_track_one_community, open_community_dht_records,
-    open_one_community_dht_records, rebuild_governance_from_dht, republish_active_invite_secrets,
+    open_one_community_dht_records, rebuild_governance_from_dht, republish_active_records,
     try_open_and_track_one_community,
 };
 pub use error::GovernanceRuntimeError;

@@ -97,19 +97,20 @@ pub async fn open_community_dht_records(state: &Arc<AppState>) {
     rekindle_governance_runtime::dht_hydration::open_community_dht_records(&adapter).await;
 }
 
-/// Re-open our own active invite-secrets DFLT records so veilid rehydrates
-/// them — keeps invites we created alive across a restart (the DFLT owner
-/// keypair is discarded after publish). Runs after `rebuild_governance_from_dht`
-/// so `gov_state.invites` is populated.
-pub async fn republish_active_invite_secrets(state: &Arc<AppState>) {
+/// Re-open our own locally-held write-once community records so veilid
+/// rehydrates them — keeps invite-secrets DFLT records AND GovernanceOverflow
+/// records alive across a restart (both have no retained owner keypair for live
+/// writes). Runs after `rebuild_governance_from_dht` so `gov_state.invites` +
+/// the overflow inventory are populated.
+pub async fn republish_active_records(state: &Arc<AppState>) {
     let Some(app_handle) = state.app_handle.read().clone() else {
-        tracing::warn!("republish_active_invite_secrets: app_handle not initialized");
+        tracing::warn!("republish_active_records: app_handle not initialized");
         return;
     };
     let pool: tauri::State<'_, DbPool> = app_handle.state();
     let adapter =
         GovernanceAdapter::new(Arc::clone(state), app_handle.clone(), pool.inner().clone());
-    rekindle_governance_runtime::dht_hydration::republish_active_invite_secrets(&adapter).await;
+    rekindle_governance_runtime::dht_hydration::republish_active_records(&adapter).await;
 }
 
 /// Phase 23.C entry point — chiral-split `hydrate_community_state_from_dht`.

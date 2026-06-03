@@ -450,7 +450,7 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
 
     /// Active invite-secrets DFLT record keys this identity created, across
     /// every joined community — non-expired, non-empty. Driven by
-    /// `dht_hydration::republish_active_invite_secrets` to keep our own
+    /// `dht_hydration::republish_active_records` to keep our own
     /// invites alive: the DFLT owner keypair is discarded after publish, so
     /// only a rehydrating re-open keeps the record on the network. Scoped to
     /// invites we authored because only those are local-store hits.
@@ -460,6 +460,22 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     /// `shutdown_node` can close them in bulk (`state.dht_manager`
     /// `open_records` set).
     fn track_open_dht_records(&self, keys: &[String]);
+
+    /// Merge `keys` into the community's
+    /// `CommunityRecords.governance_overflow_keys` inventory AND mark them
+    /// tracked-open on the DHT manager. Idempotent (de-duped). The single
+    /// entry point that registers a GovernanceOverflow record into the
+    /// authoritative per-community inventory, from any producer: the write
+    /// path (author's own spill pages) and every read path (Mutual Aid §14.1
+    /// — a reader keeps alive every overflow record it follows).
+    fn register_governance_overflow_keys(&self, community_id: &str, keys: &[String]);
+
+    /// Snapshot the GovernanceOverflow record keys held in this community's
+    /// `CommunityRecords.governance_overflow_keys` inventory. Consumed by
+    /// keepalive warming (§14.1), the open+track orchestrators (§10), and
+    /// login rehydration (D5) so overflow records share the same durability
+    /// path as channels.
+    fn governance_overflow_keys_for_community(&self, community_id: &str) -> Vec<String>;
 
     /// Persist the per-community `open_community_records` snapshot
     /// after a successful open pass — `governance_key` + `registry_key`

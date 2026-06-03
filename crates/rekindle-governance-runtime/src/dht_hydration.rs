@@ -135,12 +135,19 @@ pub async fn open_and_track_one_community<D: GovernanceRuntimeDeps>(
     let channel_keys = deps.channel_log_keys_for_community(&rec.id);
     open_channel_records_concurrent(deps, &rec.id, &channel_keys).await;
 
+    // GovernanceOverflow records (§10 open-once) — best-effort like channels;
+    // a missing overflow page never aborts the open pass (the read path warns
+    // and tolerates truncation, D6).
+    let overflow_keys = deps.governance_overflow_keys_for_community(&rec.id);
+    open_channel_records_concurrent(deps, &rec.id, &overflow_keys).await;
+
     // Track all opened keys + persist the post-open snapshot.
     let mut all_keys = vec![rec.governance_key.clone()];
     if let Some(rk) = &rec.registry_key {
         all_keys.push(rk.clone());
     }
     all_keys.extend(channel_keys.iter().cloned());
+    all_keys.extend(overflow_keys.iter().cloned());
     deps.track_open_dht_records(&all_keys);
 
     deps.mark_community_records_open(
@@ -175,11 +182,18 @@ pub async fn try_open_and_track_one_community<D: GovernanceRuntimeDeps>(
     let channel_keys = deps.channel_log_keys_for_community(&rec.id);
     open_channel_records_concurrent(deps, &rec.id, &channel_keys).await;
 
+    // GovernanceOverflow records (§10) — best-effort; the join's OpenRecords
+    // gate must not abort on a missing overflow page (self-sovereign join
+    // tolerates incomplete governance — the read path warns and continues).
+    let overflow_keys = deps.governance_overflow_keys_for_community(&rec.id);
+    open_channel_records_concurrent(deps, &rec.id, &overflow_keys).await;
+
     let mut all_keys = vec![rec.governance_key.clone()];
     if let Some(rk) = &rec.registry_key {
         all_keys.push(rk.clone());
     }
     all_keys.extend(channel_keys.iter().cloned());
+    all_keys.extend(overflow_keys.iter().cloned());
     deps.track_open_dht_records(&all_keys);
 
     deps.mark_community_records_open(
@@ -283,9 +297,19 @@ pub async fn rebuild_governance_from_dht<D: GovernanceRuntimeDeps>(deps: &D) {
         // chiral-split move intentionally simplifies the original
         // FuturesUnordered+Semaphore pattern; per-login hydration runs once and
         // the network read cost dominates anyway.
-        let all_entries: Vec<(PseudonymKey, Vec<GovernanceEntry>)> =
+        let readout =
             crate::overflow::read_governance_with_overflow(deps, gov_key_str, &occupied_subkeys)
                 .await;
+        let all_entries: Vec<(PseudonymKey, Vec<GovernanceEntry>)> = readout.authored;
+
+        // Mutual Aid §14.1 — register every overflow record we just followed in
+        // the community's inventory so it is warmed + rehydrated (D5) by this
+        // node going forward. Reconstructs the inventory from the chain itself
+        // after a restart (the primary subkey + its `overflow_next` are
+        // local-store hits), with no SQLite column.
+        if !readout.overflow_keys.is_empty() {
+            deps.register_governance_overflow_keys(community_id, &readout.overflow_keys);
+        }
 
         if all_entries.is_empty() {
             tracing::debug!(
@@ -335,29 +359,49 @@ pub async fn rebuild_governance_from_dht<D: GovernanceRuntimeDeps>(deps: &D) {
     }
 }
 
-/// Re-open every active invite-secrets DFLT record we created so veilid
-/// rehydrates them: an `open_record` local-store hit schedules
-/// `add_rehydration_request`, whose background write re-propagates the
-/// already-signed local subkey to restore network consensus — no owner
-/// keypair required. The DFLT owner keypair is discarded after the one-shot
-/// `publish_invite_secrets`, so without this an inviter restart lets the
-/// record age off the DHT and the invite stops resolving for new joiners.
-/// Best-effort — per-key failures are logged, never fatal to login.
+/// Re-open every locally-held write-once community record so veilid rehydrates
+/// it: an `open_record` local-store hit schedules `add_rehydration_request`,
+/// whose background write re-propagates the already-signed local subkey to
+/// restore network consensus — no owner keypair required. Covers two record
+/// classes whose owner keypair is not retained for live writes:
 ///
-/// Runs after `rebuild_governance_from_dht` so `gov_state.invites` is
-/// populated; scoped adapter-side to invites we authored (the only ones we
-/// hold locally, so the re-open is an instant local hit).
-pub async fn republish_active_invite_secrets<D: GovernanceRuntimeDeps>(deps: &D) {
-    let keys = deps.list_my_active_invite_secret_keys();
+/// 1. **Invite-secrets DFLT records** we authored — the DFLT owner keypair is
+///    discarded after the one-shot `publish_invite_secrets`, so without this an
+///    inviter restart lets the record age off the DHT and the invite stops
+///    resolving for new joiners.
+/// 2. **GovernanceOverflow records** this node holds — both the author's own
+///    spill pages AND any overflow chain followed as a reader (the inventory is
+///    repopulated from the `overflow_next` chain by `rebuild_governance_from_dht`,
+///    which runs just before this). Re-opening keeps them on the network across a
+///    restart, symmetric for owner and member ("readers keep what they read
+///    alive", §14.1) — without it a spilled channel vanishes for joiners once the
+///    last holder restarts past the DHT TTL.
+///
+/// Best-effort — per-key failures are logged, never fatal to login. Runs after
+/// `rebuild_governance_from_dht` so `gov_state.invites` + the overflow inventory
+/// are populated; both record classes are local-store hits (we authored or
+/// previously opened+tracked them).
+pub async fn republish_active_records<D: GovernanceRuntimeDeps>(deps: &D) {
+    let invite_keys = deps.list_my_active_invite_secret_keys();
+
+    let mut overflow_keys: Vec<String> = Vec::new();
+    for (community_id, _gov_key) in deps.list_community_governance_targets() {
+        overflow_keys.extend(deps.governance_overflow_keys_for_community(&community_id));
+    }
+    overflow_keys.sort();
+    overflow_keys.dedup();
+
     let mut rehydrated = 0usize;
-    for key in &keys {
+    for key in invite_keys.iter().chain(overflow_keys.iter()) {
         match deps.open_dht_record(key, None).await {
             Ok(()) => rehydrated += 1,
-            Err(error) => tracing::debug!(%key, %error, "invite-secrets re-open failed"),
+            Err(error) => tracing::debug!(%key, %error, "record re-open for rehydration failed"),
         }
     }
     tracing::info!(
         rehydrated,
-        "re-opened active invite-secrets records for rehydration"
+        invite_secrets = invite_keys.len(),
+        overflow = overflow_keys.len(),
+        "re-opened active community records for rehydration"
     );
 }

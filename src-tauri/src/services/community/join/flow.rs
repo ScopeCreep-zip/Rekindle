@@ -245,7 +245,13 @@ pub async fn join_community(
         known_members,
         presence_poll_shutdown_tx: None,
         dht_keepalive_shutdown_tx: None,
-        open_community_records: crate::state::CommunityRecords::default(),
+        // Seed the GovernanceOverflow records discovered during the snapshot so
+        // OpenRecords (§10) opens+tracks them and keepalive (§14.1) warms them —
+        // the joiner can't register via community_id before this insert.
+        open_community_records: crate::state::CommunityRecords {
+            governance_overflow_keys: snapshot.overflow_keys,
+            ..crate::state::CommunityRecords::default()
+        },
         my_event_rsvps: HashMap::new(),
         event_rsvps_by_event: HashMap::new(),
         onboarding_complete: false,

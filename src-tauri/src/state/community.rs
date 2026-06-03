@@ -237,6 +237,12 @@ pub struct CommunityRecords {
     pub registry_writer: Option<String>,
     /// All opened channel SMPL record keys.
     pub channel_keys: Vec<String>,
+    /// Member-owned GovernanceOverflow record keys (the author's spill pages,
+    /// and any overflow chain this node has *followed* as a reader — Mutual Aid
+    /// §14.1: readers keep what they read alive). Warmed + tracked-open + closed
+    /// on leave like `channel_keys`; never *watched* (the primary subkey's watch
+    /// already re-follows the chain on change).
+    pub governance_overflow_keys: Vec<String>,
     /// Whether records have been opened for this session (false after restart until rejoin).
     pub records_open: bool,
     /// Fingerprint of the last inspected governance record state.

@@ -190,7 +190,7 @@ pub fn partition_into_pages(
 
 /// Build and sign a `GovernanceSubkeyPayload` for one page, returning the struct
 /// and its canonical JSON bytes. The `overflow_next` pointer is bound into the
-/// signature (`signing_bytes` domain tag v2).
+/// signature (`signing_bytes`, the canonical `rekindle-gov-subkey-v1` domain).
 pub fn build_signed_payload(
     entries: &[GovernanceEntry],
     overflow_next: Option<String>,
@@ -356,18 +356,32 @@ pub fn overflow_owner_writer<D: OverflowIo>(
     deps.format_writer_keypair(owner.verifying_key().to_bytes(), owner.to_bytes())
 }
 
+/// Outcome of [`read_governance_with_overflow`]: the `(author, entries)` pairs
+/// ready for [`rekindle_governance::merge`], plus every overflow record key the
+/// pass followed. Callers register `overflow_keys` into the community's record
+/// inventory (Mutual Aid §14.1 — a reader keeps alive every record it reads) so
+/// the followed pages share the keepalive / rehydration / teardown path.
+#[derive(Debug, Default)]
+pub struct GovernanceReadout {
+    pub authored: Vec<(PseudonymKey, Vec<GovernanceEntry>)>,
+    pub overflow_keys: Vec<String>,
+}
+
 /// Read a governance record's occupied subkeys, W26-verify each payload, and
-/// follow every author's `overflow_next` chain, returning all
-/// `(author_pseudonym, entries)` pairs ready for [`rekindle_governance::merge`].
-/// Overflow pages are emitted as their own pairs — merge flattens and re-sorts
-/// by Lamport, so paging is invisible to the merged state. Cycle-guarded by a
-/// shared visited-key set and depth-capped at [`MAX_OVERFLOW_PAGES`] per chain.
+/// follow every author's `overflow_next` chain. Overflow pages are emitted as
+/// their own pairs — merge flattens and re-sorts by Lamport, so paging is
+/// invisible to the merged state. Cycle-guarded by a shared visited-key set and
+/// depth-capped at [`MAX_OVERFLOW_PAGES`] per chain. A momentarily-unreachable
+/// page is reported (warn, not silent) so a dormant community's truncation is
+/// diagnosable; durability (warming + rehydration of the returned
+/// `overflow_keys`) is what actually keeps the page reachable.
 pub async fn read_governance_with_overflow<D: OverflowIo>(
     deps: &D,
     gov_key: &str,
     occupied: &[u32],
-) -> Vec<(PseudonymKey, Vec<GovernanceEntry>)> {
+) -> GovernanceReadout {
     let mut out: Vec<(PseudonymKey, Vec<GovernanceEntry>)> = Vec::new();
+    let mut overflow_keys: Vec<String> = Vec::new();
     let mut visited: HashSet<String> = HashSet::new();
 
     for &subkey in occupied {
@@ -390,15 +404,32 @@ pub async fn read_governance_with_overflow<D: OverflowIo>(
                 break;
             }
             depth += 1;
+            // Register the key regardless of this read's success: Mutual Aid
+            // keeps us warming + rehydrating every overflow record we follow, so
+            // a momentarily-unreachable page must stay in the inventory for a
+            // later warm cycle to re-fetch.
+            overflow_keys.push(key.clone());
             let _ = deps.open_dht_record(&key, None).await;
             let Ok(Some(page_bytes)) = deps.get_dht_value(&key, OVERFLOW_SUBKEY, false).await
             else {
+                tracing::warn!(
+                    overflow_key = %key,
+                    "overflow page unreachable — governance may be truncated until a holder warms it",
+                );
                 break;
             };
             if page_bytes.is_empty() {
+                tracing::warn!(
+                    overflow_key = %key,
+                    "overflow page empty — governance may be truncated",
+                );
                 break;
             }
             let Some(page) = verify_payload(&page_bytes, Some(&author)) else {
+                tracing::warn!(
+                    overflow_key = %key,
+                    "overflow page failed verification — dropping (possible chain redirect)",
+                );
                 break;
             };
             out.push((author.clone(), page.entries));
@@ -406,7 +437,10 @@ pub async fn read_governance_with_overflow<D: OverflowIo>(
         }
     }
 
-    out
+    GovernanceReadout {
+        authored: out,
+        overflow_keys,
+    }
 }
 
 #[cfg(test)]
@@ -613,10 +647,17 @@ mod tests {
         );
         assert_eq!(chain.overflow_keys.len(), pages.len() - 1);
 
-        // read_governance_with_overflow (read path) → flatten == every entry.
-        let pairs = read_governance_with_overflow(&mock, gov_key, &[my_slot]).await;
-        let flattened: Vec<GovernanceEntry> = pairs.into_iter().flat_map(|(_, e)| e).collect();
+        // read_governance_with_overflow (read path) → flatten == every entry,
+        // and it reports every overflow key it followed (for inventory register).
+        let readout = read_governance_with_overflow(&mock, gov_key, &[my_slot]).await;
+        let flattened: Vec<GovernanceEntry> =
+            readout.authored.into_iter().flat_map(|(_, e)| e).collect();
         assert_eq!(flattened, input, "read path must reproduce all 30 channels");
+        assert_eq!(
+            readout.overflow_keys.len(),
+            pages.len() - 1,
+            "read path must report every followed overflow key",
+        );
     }
 
     /// An overflow page signed by a *different* author than the primary that
@@ -651,8 +692,9 @@ mod tests {
         .unwrap();
         mock.set_dht_value("govkey", 0, bytes, None).await.unwrap();
 
-        let pairs = read_governance_with_overflow(&mock, "govkey", &[0]).await;
-        let flattened: Vec<GovernanceEntry> = pairs.into_iter().flat_map(|(_, e)| e).collect();
+        let readout = read_governance_with_overflow(&mock, "govkey", &[0]).await;
+        let flattened: Vec<GovernanceEntry> =
+            readout.authored.into_iter().flat_map(|(_, e)| e).collect();
         assert_eq!(
             flattened.len(),
             1,
