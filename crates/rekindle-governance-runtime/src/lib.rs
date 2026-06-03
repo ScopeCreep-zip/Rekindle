@@ -35,6 +35,7 @@ pub mod join_gate;
 pub mod join_stages;
 pub mod membership_events;
 pub mod origin;
+pub mod overflow;
 pub mod roles;
 pub mod segments;
 
@@ -69,6 +70,10 @@ pub use membership_events::{
     MembershipEventDeps, SlotGrantUpdate,
 };
 pub use origin::create_community;
+pub use overflow::{
+    partition_into_pages, read_governance_with_overflow, read_my_chain, MAX_OVERFLOW_PAGES,
+    OVERFLOW_PAGE_BUDGET, PRIMARY_PAGE_BUDGET,
+};
 pub use segments::{
     channel_record_keys_per_segment, ensure_channel_segment_record, expand_community_segment,
     highest_segment_full, open_new_segments, segment_descriptors, SegmentDescriptor, MAX_SEGMENTS,

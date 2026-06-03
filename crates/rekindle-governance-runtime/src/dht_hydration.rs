@@ -23,7 +23,7 @@
 //!    lamport restore via the adapter.
 //! 8. For each new ban: `spawn_text_mek_rotation_for_ban` (fire-and-forget).
 
-use rekindle_types::governance::{GovernanceEntry, GovernanceSubkeyPayload};
+use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
 
 use crate::deps::{CommunityDhtOpenSetup, GovernanceRuntimeDeps};
@@ -276,53 +276,16 @@ pub async fn rebuild_governance_from_dht<D: GovernanceRuntimeDeps>(deps: &D) {
                 }
             };
 
-        // Read each occupied subkey. Sequential — the chiral-split move
-        // intentionally simplifies the original FuturesUnordered+Semaphore
-        // pattern; per-login hydration runs once and the network read
-        // cost dominates anyway.
-        let mut all_entries: Vec<(PseudonymKey, Vec<GovernanceEntry>)> = Vec::new();
-        for subkey in occupied_subkeys {
-            let bytes = match deps.get_dht_value(gov_key_str, subkey, false).await {
-                Ok(Some(b)) => b,
-                Ok(None) => continue,
-                Err(error) => {
-                    tracing::debug!(
-                        community = %community_id,
-                        subkey,
-                        %error,
-                        "failed to read governance subkey",
-                    );
-                    continue;
-                }
-            };
-            if bytes.is_empty() {
-                continue;
-            }
-            let Ok(payload) = serde_json::from_slice::<GovernanceSubkeyPayload>(&bytes) else {
-                continue;
-            };
-            // Architecture §26 W26 — drop subkey reads whose author
-            // signature doesn't verify. The SMPL slot keypair is
-            // community-shared, so any member could otherwise forge a
-            // payload claiming to be the creator.
-            let Ok(sig_arr): Result<[u8; 64], _> = payload.signature.as_slice().try_into() else {
-                continue;
-            };
-            if rekindle_secrets::derive::verify_pseudonym_signature(
-                &payload.author_pseudonym.0,
-                &payload.signing_bytes(),
-                &sig_arr,
-            )
-            .is_err()
-            {
-                tracing::warn!(
-                    community = %community_id,
-                    "governance subkey rejected: bad pseudonym signature",
-                );
-                continue;
-            }
-            all_entries.push((payload.author_pseudonym, payload.entries));
-        }
+        // Read each occupied subkey, W26-verify, and follow every author's
+        // `overflow_next` chain so an author whose log spilled past one subkey
+        // is reassembled in full before merge (architecture §"Follow
+        // GovernanceOverflow pointers", line 1609). Sequential — the
+        // chiral-split move intentionally simplifies the original
+        // FuturesUnordered+Semaphore pattern; per-login hydration runs once and
+        // the network read cost dominates anyway.
+        let all_entries: Vec<(PseudonymKey, Vec<GovernanceEntry>)> =
+            crate::overflow::read_governance_with_overflow(deps, gov_key_str, &occupied_subkeys)
+                .await;
 
         if all_entries.is_empty() {
             tracing::debug!(

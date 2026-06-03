@@ -217,6 +217,21 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     /// so the caller can write the blob via `set_dht_value`.
     async fn create_dflt_record(&self) -> Result<DhtRecordInfo, GovernanceRuntimeError>;
 
+    /// Create a single-owner DFLT(1) governance **overflow** record owned by the
+    /// HKDF-derived `owner_keypair` (string form, as produced by
+    /// [`GovernanceRuntimeDeps::format_writer_keypair`]). The derived owner grants
+    /// write authority on any device with no persisted keypair, but the returned
+    /// record key is NOT re-derivable — veilid mixes a random encryption key into
+    /// it and refuses to re-create an existing owner+schema record. The caller
+    /// therefore persists the returned key in the primary subkey's `overflow_next`
+    /// chain and reuses it via `open_dht_record`; create runs at most once per
+    /// page. The caller writes the overflow page to subkey 0 via `set_dht_value`
+    /// with the same writer.
+    async fn create_overflow_record(
+        &self,
+        owner_keypair: String,
+    ) -> Result<String, GovernanceRuntimeError>;
+
     /// Convert an Ed25519 `(public, secret)` byte pair into the string
     /// form that the adapter understands as `writer` for `set_dht_value`
     /// + persists in `CommunityState.slot_keypair`. Lives on the trait

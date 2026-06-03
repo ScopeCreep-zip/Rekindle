@@ -14,7 +14,7 @@ use rekindle_governance::state::{GovernanceState, SegmentState};
 use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_secrets::derive;
 use rekindle_secrets::ed25519_dalek::SigningKey;
-use rekindle_types::governance::{GovernanceEntry, GovernanceSubkeyPayload};
+use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::permissions::MANAGE_COMMUNITY;
 use rekindle_types::presence::MemberPresence;
@@ -152,41 +152,18 @@ async fn populated_subkeys_or_full_scan<D: GovernanceRuntimeDeps>(
     }
 }
 
-/// Read the populated subkeys of a single governance record. W26 — verify
-/// each payload's pseudonym signature; reject unsigned / mis-signed entries
-/// (any member could write to any slot, signature is the only authorship
-/// proof).
+/// Read the populated subkeys of a single governance record, W26-verify each
+/// payload's pseudonym signature (any member could write to any slot, so the
+/// signature is the only authorship proof), and follow every author's
+/// `overflow_next` chain so a spilled author's log is reassembled in full
+/// before merge (architecture §"Follow GovernanceOverflow pointers", line 1609).
 async fn fetch_governance_record_entries<D: GovernanceRuntimeDeps>(
     deps: &D,
     governance_key_str: &str,
 ) -> Result<Vec<(PseudonymKey, Vec<GovernanceEntry>)>, GovernanceRuntimeError> {
     deps.open_dht_record(governance_key_str, None).await?;
-    let mut all_entries = Vec::new();
-    for subkey in populated_subkeys_or_full_scan(deps, governance_key_str).await {
-        let Ok(Some(bytes)) = deps.get_dht_value(governance_key_str, subkey, false).await else {
-            continue;
-        };
-        if bytes.is_empty() {
-            continue;
-        }
-        let Ok(payload) = serde_json::from_slice::<GovernanceSubkeyPayload>(&bytes) else {
-            continue;
-        };
-        let Ok(sig_arr): Result<[u8; 64], _> = payload.signature.as_slice().try_into() else {
-            continue;
-        };
-        if derive::verify_pseudonym_signature(
-            &payload.author_pseudonym.0,
-            &payload.signing_bytes(),
-            &sig_arr,
-        )
-        .is_err()
-        {
-            continue;
-        }
-        all_entries.push((payload.author_pseudonym, payload.entries));
-    }
-    Ok(all_entries)
+    let occupied = populated_subkeys_or_full_scan(deps, governance_key_str).await;
+    Ok(crate::overflow::read_governance_with_overflow(deps, governance_key_str, &occupied).await)
 }
 
 /// (segment_index, registry_key, slot_range_start) for each segment to

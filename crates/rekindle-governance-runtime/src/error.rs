@@ -51,7 +51,11 @@ pub enum GovernanceRuntimeError {
     #[error("governance verify read-back returned empty after write")]
     VerifyEmpty,
 
-    #[error("governance subkey full: {bytes} B exceeds the SMPL per-subkey cap of {cap} B")]
+    /// Safety net under `GovernanceOverflow` paging: a single governance entry
+    /// too large to fit even a whole overflow page (real entries are < ~500 B).
+    /// Accumulation no longer reaches here — past one page an author's writes
+    /// spill into member-owned overflow records (see `overflow`).
+    #[error("governance entry too large: {bytes} B exceeds the per-page cap of {cap} B")]
     SubkeyOverflow { bytes: usize, cap: usize },
 
     #[error("segment cap reached ({0}); raise MAX_SEGMENTS once lazy-fetch lands")]

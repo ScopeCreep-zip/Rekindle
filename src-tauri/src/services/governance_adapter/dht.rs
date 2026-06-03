@@ -55,6 +55,30 @@ pub(super) async fn create_dflt_record_impl(
     })
 }
 
+pub(super) async fn create_overflow_record_impl(
+    adapter: &GovernanceAdapter,
+    owner_keypair: String,
+) -> Result<String, GovernanceRuntimeError> {
+    let rc = adapter.rc()?;
+    let kp = GovernanceAdapter::parse_writer_keypair(&owner_keypair)?;
+    // Reuse the single-owner DFLT(1) schema — an overflow record holds exactly
+    // one author's spilled governance page in subkey 0.
+    let dflt_schema = schema::invite_secrets_dflt_schema().map_err(|e| {
+        GovernanceRuntimeError::Adapter(format!("overflow DFLT schema build failed: {e}"))
+    })?;
+    // The HKDF-derived owner keypair (per identity, community, page) grants
+    // write authority on any device with no persisted keypair. The returned
+    // record key is NOT re-derivable, though — veilid mixes a random encryption
+    // key into it and refuses to re-create an existing owner+schema record — so
+    // the caller persists this key in the `overflow_next` chain and reuses it via
+    // `open_dht_record`. Create is therefore invoked at most once per page.
+    let desc = rc
+        .create_dht_record(CRYPTO_KIND_VLD0, dflt_schema, Some(kp))
+        .await
+        .map_err(|e| GovernanceRuntimeError::Adapter(format!("create overflow record: {e}")))?;
+    Ok(desc.key().to_string())
+}
+
 pub(super) async fn get_dht_value_impl(
     adapter: &GovernanceAdapter,
     record_key: &str,

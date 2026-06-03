@@ -22,6 +22,32 @@ pub struct BannedMemberInfo {
     pub banned_by: String,
 }
 
+/// Parse + W26-verify a governance subkey payload, optionally requiring it be
+/// authored by `expect_author`. An overflow page must be signed by the same
+/// author that pointed at it, else a member could redirect the chain at a
+/// record they control.
+fn verify_governance_payload(
+    bytes: &[u8],
+    expect_author: Option<&rekindle_types::id::PseudonymKey>,
+) -> Option<rekindle_types::governance::GovernanceSubkeyPayload> {
+    let payload =
+        serde_json::from_slice::<rekindle_types::governance::GovernanceSubkeyPayload>(bytes)
+            .ok()?;
+    if let Some(expected) = expect_author {
+        if payload.author_pseudonym != *expected {
+            return None;
+        }
+    }
+    let sig_arr: [u8; 64] = payload.signature.as_slice().try_into().ok()?;
+    rekindle_secrets::derive::verify_pseudonym_signature(
+        &payload.author_pseudonym.0,
+        &payload.signing_bytes(),
+        &sig_arr,
+    )
+    .ok()?;
+    Some(payload)
+}
+
 pub async fn get_audit_log_inner(
     state: &SharedState,
     community_id: String,
@@ -78,34 +104,65 @@ pub async fn get_audit_log_inner(
     }
 
     let mut rows = Vec::new();
+    // Authors whose primary subkey points into an overflow chain — followed
+    // after the primary sweep so the audit view shows complete history
+    // (architecture §"Follow GovernanceOverflow pointers", line 1609).
+    let mut chains: Vec<(rekindle_types::id::PseudonymKey, String)> = Vec::new();
     while let Some(result) = futs.next().await {
         if let Ok(Some(val)) = result {
             if val.data().is_empty() {
                 continue;
             }
-            if let Ok(payload) = serde_json::from_slice::<
-                rekindle_types::governance::GovernanceSubkeyPayload,
-            >(val.data())
-            {
-                let Ok(sig_arr): Result<[u8; 64], _> = payload.signature.as_slice().try_into()
-                else {
-                    continue;
-                };
-                if rekindle_secrets::derive::verify_pseudonym_signature(
-                    &payload.author_pseudonym.0,
-                    &payload.signing_bytes(),
-                    &sig_arr,
-                )
-                .is_err()
-                {
-                    continue;
+            if let Some(payload) = verify_governance_payload(val.data(), None) {
+                let author = payload.author_pseudonym.clone();
+                let actor = hex::encode(author.0);
+                if let Some(next) = payload.overflow_next {
+                    chains.push((author, next));
                 }
-                let actor = hex::encode(payload.author_pseudonym.0);
                 for entry in payload.entries {
                     rows.push(crate::audit_view::governance_entry_to_audit_row(
                         &actor, entry,
                     ));
                 }
+            }
+        }
+    }
+
+    // Follow each author's overflow chain (one page per DFLT record at subkey 0),
+    // verifying every page against the author that pointed at it. Shared
+    // visited-set cycle guard; per-chain depth cap.
+    let mut visited = std::collections::HashSet::new();
+    for (author, first_key) in chains {
+        let actor = hex::encode(author.0);
+        let mut next = Some(first_key);
+        let mut depth = 0usize;
+        while let Some(key_str) = next.take() {
+            if depth >= rekindle_governance_runtime::MAX_OVERFLOW_PAGES
+                || !visited.insert(key_str.clone())
+            {
+                break;
+            }
+            depth += 1;
+            let Ok(rec_key) = key_str.parse::<veilid_core::RecordKey>() else {
+                break;
+            };
+            if rc.open_dht_record(rec_key.clone(), None).await.is_err() {
+                break;
+            }
+            let Ok(Some(val)) = rc.get_dht_value(rec_key, 0, false).await else {
+                break;
+            };
+            if val.data().is_empty() {
+                break;
+            }
+            let Some(payload) = verify_governance_payload(val.data(), Some(&author)) else {
+                break;
+            };
+            next = payload.overflow_next;
+            for entry in payload.entries {
+                rows.push(crate::audit_view::governance_entry_to_audit_row(
+                    &actor, entry,
+                ));
             }
         }
     }

@@ -116,6 +116,13 @@ impl GovernanceRuntimeDeps for GovernanceAdapter {
         dht::create_dflt_record_impl(self).await
     }
 
+    async fn create_overflow_record(
+        &self,
+        owner_keypair: String,
+    ) -> Result<String, GovernanceRuntimeError> {
+        dht::create_overflow_record_impl(self, owner_keypair).await
+    }
+
     fn format_writer_keypair(&self, ed_public: [u8; 32], ed_secret: [u8; 32]) -> String {
         let sk = rekindle_secrets::ed25519_dalek::SigningKey::from_bytes(&ed_secret);
         debug_assert_eq!(sk.verifying_key().to_bytes(), ed_public);

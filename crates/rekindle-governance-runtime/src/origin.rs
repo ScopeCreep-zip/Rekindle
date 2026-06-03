@@ -147,6 +147,9 @@ pub async fn create_community<D: GovernanceRuntimeDeps>(
     let mut genesis_payload = GovernanceSubkeyPayload {
         author_pseudonym: my_pseudo.clone(),
         entries: genesis_entries.clone(),
+        // Genesis is 5 entries (community-meta + @everyone role + a welcome
+        // channel set) — far under one subkey, so it never spills.
+        overflow_next: None,
         signature: Vec::new(),
     };
     let genesis_sig =

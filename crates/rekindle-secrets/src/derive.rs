@@ -22,6 +22,32 @@ pub fn derive_community_pseudonym(master_secret: &[u8; 32], community_id: &str) 
     SigningKey::from_bytes(&seed)
 }
 
+/// Owner keypair for this author's `page_index`-th governance overflow record.
+///
+/// Page 0 is the author's primary SMPL governance subkey; overflow records
+/// begin at page 1. When one author's compacted governance entry log exceeds a
+/// single subkey, the excess spills into a chain of member-owned overflow
+/// records and the primary subkey carries an `overflow_next` pointer
+/// (architecture §"Follow GovernanceOverflow pointers", line 1609).
+///
+/// The owner keypair is derived deterministically from the identity secret so
+/// the overflow record is re-openable on any device with **zero persisted
+/// keypair** — Veilid's `create_dht_record(.., owner: Some(kp))` is
+/// deterministic for a given owner + schema, so re-deriving this keypair on a
+/// fresh install yields the same record. Domain-separated from the pseudonym
+/// and slot derivations by its own HKDF salt.
+pub fn derive_governance_overflow_keypair(
+    master_secret: &[u8; 32],
+    community_id: &str,
+    page_index: u32,
+) -> SigningKey {
+    let hkdf = Hkdf::<Sha256>::new(Some(b"rekindle-gov-overflow-v1"), master_secret);
+    let mut seed = [0u8; 32];
+    hkdf.expand(format!("{community_id}:{page_index}").as_bytes(), &mut seed)
+        .expect("32-byte output is a valid HKDF-SHA256 length");
+    SigningKey::from_bytes(&seed)
+}
+
 /// Sign arbitrary bytes with a pseudonym key, returning a 64-byte Ed25519 signature.
 pub fn sign_with_pseudonym(signing_key: &SigningKey, data: &[u8]) -> [u8; 64] {
     use ed25519_dalek::Signer;

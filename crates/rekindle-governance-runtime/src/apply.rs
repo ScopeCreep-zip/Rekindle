@@ -9,25 +9,29 @@
 use rekindle_governance::{compact, merge, validate};
 use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_secrets::derive;
-use rekindle_types::governance::{GovernanceEntry, GovernanceSubkeyPayload};
+use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
 
 use crate::deps::GovernanceRuntimeDeps;
 use crate::error::GovernanceRuntimeError;
 use crate::event::GovernanceRuntimeEvent;
+use crate::overflow;
 
-/// Warn threshold (~85% of the ~4112 B SMPL per-subkey cap) at which a
-/// member's accumulated governance subkey is close to overflowing. A write
-/// past the cap fails as a generic "failed schema validation" with no size
-/// detail, so we surface the size proactively here.
+/// Warn threshold (~85% of the ~4112 B SMPL per-subkey cap) for the **primary**
+/// governance subkey. With `GovernanceOverflow` spill (see `overflow`), the
+/// primary page is bounded under [`overflow::PRIMARY_PAGE_BUDGET`] before we get
+/// here, so this should rarely fire — a primary near the cap signals the paging
+/// budget drifted, not impending data loss.
 const SMPL_SUBKEY_WARN_BYTES: usize = 3500;
 
 /// Hard SMPL per-subkey cap for a 255-slot governance record:
 /// `MAX_RECORD_DATA_SIZE (1_048_576) / subkey_count (255)`. A `set_dht_value`
-/// over this fails inside Veilid as a generic "failed schema validation" with
-/// no size detail, so we reject proactively with a typed error + a per-kind
-/// breakdown to make the offender obvious instead of surfacing Veilid's opaque
-/// string to the UI.
+/// over this fails inside Veilid as a generic "failed schema validation" with no
+/// size detail. With overflow paging the primary page is partitioned under this
+/// cap, so this guard is now a **safety net** (a single entry larger than a
+/// whole page) rather than the accumulation wall it once was — kept so any
+/// regression names itself with a typed error + per-kind breakdown instead of
+/// Veilid's opaque string.
 const SMPL_SUBKEY_MAX_BYTES: usize = 1_048_576 / 255;
 
 /// Architecture §6 — classify a governance entry by which UI snapshot
@@ -141,37 +145,18 @@ pub async fn write_entry<D: GovernanceRuntimeDeps>(
         .slot_keypair
         .ok_or_else(|| GovernanceRuntimeError::SlotKeypairMissing(community_id.to_string()))?;
 
-    // Read existing entries from our SMPL subkey. Architecture §26 W26 —
-    // re-verify the payload signature before accumulating, so an attacker
-    // who overwrote our subkey can't launder forged entries through us.
-    let existing_bytes = deps
-        .get_dht_value(&gov_key_str, my_slot, false)
-        .await?
-        .filter(|b| !b.is_empty());
-    let mut my_entries: Vec<GovernanceEntry> = existing_bytes
-        .as_deref()
-        .and_then(|data| serde_json::from_slice::<GovernanceSubkeyPayload>(data).ok())
-        .filter(|payload| {
-            derive::verify_pseudonym_signature(
-                &payload.author_pseudonym.0,
-                &payload.signing_bytes(),
-                payload
-                    .signature
-                    .as_slice()
-                    .try_into()
-                    .unwrap_or(&[0u8; 64]),
-            )
-            .is_ok()
-        })
-        .map(|payload| payload.entries)
-        .unwrap_or_default();
+    // Architecture §"Follow GovernanceOverflow pointers" (line 1609) — reassemble
+    // this author's FULL logical entry set across the primary SMPL subkey + every
+    // overflow record in our chain, re-verifying each payload's signature (W26)
+    // against our own pseudonym before accumulating. Capturing the existing
+    // overflow record keys lets us reuse (open) them rather than re-create.
+    let chain = overflow::read_my_chain(deps, &gov_key_str, my_slot, &pseudo).await?;
+    let mut my_entries = chain.entries;
     my_entries.push(entry.clone());
 
-    // Architecture §4.2 Strategy 1 — bound this author's subkey to the current
-    // state it has produced before signing. Self-heals an already-wedged subkey
-    // on the next write: dead channel/category/event/invite lifecycles and
-    // superseded single-key metadata are dropped so the new entry fits under
-    // Veilid's ~4112 B SMPL per-subkey cap.
+    // Architecture §4.2 Strategy 1 — compact the WHOLE logical set before
+    // re-paging (the genesis guard + create/archive lifecycle pairing require the
+    // full set). Dead lifecycles and superseded single-key metadata are dropped.
     let my_entries = compact::compact_author_entries(my_entries, rekindle_utils::timestamp_secs());
 
     let identity_secret = deps
@@ -179,52 +164,86 @@ pub async fn write_entry<D: GovernanceRuntimeDeps>(
         .ok_or(GovernanceRuntimeError::IdentitySecretUnavailable)?;
     let pseudonym_signing_key = derive::derive_community_pseudonym(&identity_secret, community_id);
 
-    let mut payload_struct = GovernanceSubkeyPayload {
-        author_pseudonym: pseudo.clone(),
-        entries: my_entries,
-        signature: Vec::new(),
+    // Partition the compacted log into pages: page 0 is the primary SMPL subkey
+    // (small budget), pages ≥1 are member-owned overflow DFLT(1) records (~8×
+    // larger). An entry larger than a whole overflow page is unsplittable → the
+    // should-never-happen SubkeyOverflow safety net (real entries are < ~500 B).
+    let pages = match overflow::partition_into_pages(
+        my_entries,
+        overflow::PRIMARY_PAGE_BUDGET,
+        overflow::OVERFLOW_PAGE_BUDGET,
+    ) {
+        Ok(pages) => pages,
+        Err(bytes) => {
+            tracing::error!(
+                entry_bytes = bytes,
+                cap = overflow::OVERFLOW_PAGE_BUDGET,
+                "a single governance entry exceeds the overflow page budget; unsplittable"
+            );
+            return Err(GovernanceRuntimeError::SubkeyOverflow {
+                bytes,
+                cap: overflow::OVERFLOW_PAGE_BUDGET,
+            });
+        }
     };
-    let signature =
-        derive::sign_with_pseudonym(&pseudonym_signing_key, &payload_struct.signing_bytes());
-    payload_struct.signature = signature.to_vec();
-    let payload = serde_json::to_vec(&payload_struct).map_err(|e| {
-        GovernanceRuntimeError::Encoding(format!("serialize governance entries: {e}"))
-    })?;
 
-    // The whole per-author subkey is rewritten on every write and is bounded
-    // by Veilid's SMPL per-subkey cap (`min(MAX_SUBKEY_SIZE, MAX_RECORD_DATA_SIZE
-    // / subkey_count)` ≈ 4112 B for a 255-slot governance record). Exceeding it
-    // surfaces only as a generic "failed schema validation" from `set_dht_value`,
-    // so log the size here to make overflow diagnosable.
+    // Write overflow pages highest-index-first so each parent points at an
+    // already-published child. Overflow owner keypairs are DERIVED (not stored);
+    // reuse a record key already in our chain, else create it once.
+    let mut next_key: Option<String> = None;
+    for i in (1..pages.len()).rev() {
+        let page_index = u32::try_from(i).expect("overflow page index fits u32");
+        let owner_writer =
+            overflow::overflow_owner_writer(deps, &identity_secret, community_id, page_index);
+        let rec_key = match chain.overflow_keys.get(i - 1) {
+            Some(existing) => existing.clone(),
+            None => deps.create_overflow_record(owner_writer.clone()).await?,
+        };
+        overflow::write_overflow_page(
+            deps,
+            &rec_key,
+            &pages[i],
+            next_key.clone(),
+            &pseudonym_signing_key,
+            &pseudo,
+            owner_writer,
+        )
+        .await?;
+        next_key = Some(rec_key);
+    }
+
+    // Build + sign the primary subkey (page 0), pointing at the first overflow
+    // record (or `None` when everything fit one page). The pointer is bound into
+    // the signature (`signing_bytes` domain tag v2).
+    let (primary_payload, payload) =
+        overflow::build_signed_payload(&pages[0], next_key, &pseudonym_signing_key, &pseudo)?;
+
+    // The primary SMPL subkey is bounded by Veilid's per-subkey cap
+    // (`min(MAX_SUBKEY_SIZE, MAX_RECORD_DATA_SIZE / subkey_count)` ≈ 4112 B for a
+    // 255-slot record). Paging keeps page 0 under PRIMARY_PAGE_BUDGET, so these
+    // guards are now a safety net rather than an expected path.
     if payload.len() >= SMPL_SUBKEY_WARN_BYTES {
         tracing::warn!(
             payload_bytes = payload.len(),
-            entry_count = payload_struct.entries.len(),
+            entry_count = primary_payload.entries.len(),
             subkey = my_slot,
-            "governance subkey payload approaching the SMPL per-subkey cap (~4112 B); \
-             the next write may fail schema validation"
+            "governance primary subkey payload approaching the SMPL per-subkey cap (~4112 B)"
         );
     } else {
         tracing::debug!(
             payload_bytes = payload.len(),
-            entry_count = payload_struct.entries.len(),
+            entry_count = primary_payload.entries.len(),
             subkey = my_slot,
-            "writing governance subkey payload"
+            "writing governance primary subkey payload"
         );
     }
-
-    // A payload over the per-subkey cap fails inside Veilid as a generic
-    // "failed schema validation" with no size detail. Reject here with a typed
-    // error + per-kind breakdown so overflow names itself rather than surfacing
-    // Veilid's opaque string. Compaction above should keep us well under cap, so
-    // this is a diagnostic safety net, not an expected path.
     if payload.len() > SMPL_SUBKEY_MAX_BYTES {
         tracing::error!(
             payload_bytes = payload.len(),
             cap = SMPL_SUBKEY_MAX_BYTES,
             subkey = my_slot,
-            breakdown = %entry_kind_breakdown(&payload_struct.entries),
-            "governance subkey exceeds the SMPL per-subkey cap even after compaction"
+            breakdown = %entry_kind_breakdown(&primary_payload.entries),
+            "governance primary subkey exceeds the SMPL per-subkey cap even after paging"
         );
         return Err(GovernanceRuntimeError::SubkeyOverflow {
             bytes: payload.len(),

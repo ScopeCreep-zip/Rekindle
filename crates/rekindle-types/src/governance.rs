@@ -455,6 +455,17 @@ pub enum GovernanceEntry {
 pub struct GovernanceSubkeyPayload {
     pub author_pseudonym: PseudonymKey,
     pub entries: Vec<GovernanceEntry>,
+    /// VLD0 key of this author's *next* governance overflow record in the
+    /// chain, or `None` when these entries fit a single subkey. Set when one
+    /// author's compacted entry log exceeds the SMPL per-subkey cap and spills
+    /// into a member-owned overflow record (architecture §"Follow
+    /// GovernanceOverflow pointers", line 1609; `overflow_next` header, line
+    /// 305). Readers MUST open the pointed-at record, verify each payload
+    /// against THIS `author_pseudonym`, and merge its entries before running
+    /// the CRDT merge, otherwise spilled state silently vanishes from the
+    /// merged view. Authenticated by [`signing_bytes`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overflow_next: Option<String>,
     /// 64-byte Ed25519 signature over [`signing_bytes`]. Empty `Vec` for
     /// pre-signature payloads in disk fixtures or in-flight legacy
     /// rows; readers treat empty signatures as authentication failure
@@ -469,14 +480,23 @@ impl GovernanceSubkeyPayload {
     /// `author_pseudonym`. Including the entry count and a domain tag
     /// stops cross-protocol forgeries (a signature for a presence write
     /// can't be replayed as a governance write).
+    ///
+    /// The `overflow_next` pointer is bound into the signature so a rogue
+    /// member cannot rewrite an author's chain to redirect readers at a
+    /// record they control. The domain tag is `v2` (was `v1` before the
+    /// pointer existed); pre-ship, no compatibility shim — old payloads
+    /// simply fail verification.
     pub fn signing_bytes(&self) -> Vec<u8> {
         let entries_json = serde_json::to_vec(&self.entries).unwrap_or_default();
-        let mut out =
-            Vec::with_capacity(b"rekindle-gov-subkey-v1".len() + 32 + 8 + entries_json.len());
-        out.extend_from_slice(b"rekindle-gov-subkey-v1");
+        let next = self.overflow_next.as_deref().unwrap_or("");
+        let mut out = Vec::with_capacity(
+            b"rekindle-gov-subkey-v2".len() + 32 + 8 + entries_json.len() + next.len(),
+        );
+        out.extend_from_slice(b"rekindle-gov-subkey-v2");
         out.extend_from_slice(&self.author_pseudonym.0);
         out.extend_from_slice(&(self.entries.len() as u64).to_le_bytes());
         out.extend_from_slice(&entries_json);
+        out.extend_from_slice(next.as_bytes());
         out
     }
 }

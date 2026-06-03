@@ -787,6 +787,7 @@ mod tests {
         let payload = GovernanceSubkeyPayload {
             author_pseudonym: PseudonymKey([7u8; 32]),
             entries: out,
+            overflow_next: None,
             signature: vec![0u8; 64],
         };
         let bytes = serde_json::to_vec(&payload).expect("serialize payload");
