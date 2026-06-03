@@ -69,6 +69,11 @@ pub struct ClaimedSlot {
     pub segment_index: u32,
     pub local_subkey: u32,
     pub slot_keypair_str: String,
+    /// Registry subkeys that held a value at claim time — the present-set from
+    /// the ClaimSlot inspect (architecture §6.2 Step 7). `collect_initial_presence_state`
+    /// (Step 12) reads ONLY these, never a blind `0..255` sweep: each empty
+    /// subkey's cold `get_dht_value` blocks up to `get_value_timeout_ms` (10 s).
+    pub occupied_subkeys: Vec<u32>,
 }
 
 /// First-pass + multi-segment governance snapshot: fetch + W26-verify
@@ -271,12 +276,15 @@ async fn try_claim_in_candidates<D: GovernanceRuntimeDeps>(
             );
             continue;
         }
-        let seqs = deps
-            .inspect_dht_record_update_get_seqs(&candidate.registry_key)
+        // Architecture §6.2 Step 7: one inspect fanout → the present-subkey set.
+        // Empty = "no value present" (not "seq == 0") so an occupied-but-seq-0
+        // slot is never mis-claimed; the same set is reused by Step 12 presence
+        // collection so it reads only occupied slots, never a blind 0..255 sweep.
+        let present = deps
+            .inspect_dht_record_present_subkeys(&candidate.registry_key)
             .await?;
-        let Some(local_subkey) =
-            (0..255u32).find(|subkey| seqs.get(*subkey as usize).copied().unwrap_or(0) == 0)
-        else {
+        let present_set: std::collections::HashSet<u32> = present.iter().copied().collect();
+        let Some(local_subkey) = (0..255u32).find(|subkey| !present_set.contains(subkey)) else {
             last_full_segment = Some(candidate.segment_index);
             continue;
         };
@@ -334,6 +342,7 @@ async fn try_claim_in_candidates<D: GovernanceRuntimeDeps>(
                 segment_index: candidate.segment_index,
                 local_subkey,
                 slot_keypair_str: slot_kp_str,
+                occupied_subkeys: present,
             }),
             last_full_segment,
         });
@@ -426,39 +435,36 @@ async fn auto_expand_and_retry<D: GovernanceRuntimeDeps>(
     ))
 }
 
-/// DHT registry scan + W26-verify each `MemberPresence` row, populating
-/// the initial `peers` + `online_members` + `known_members` sets that
-/// the adapter then plumbs into `GossipOverlay`.
+/// Architecture §6.2 Step 12 — read + W26-verify the `MemberPresence` row in
+/// each occupied registry slot (the `occupied_subkeys` set captured by the
+/// Step 7 ClaimSlot inspect), populating the initial `peers` +
+/// `online_members` + `known_members` sets the adapter plumbs into
+/// `GossipOverlay`. Reading only occupied slots avoids the cold-join 10 s
+/// `get_value_timeout_ms` stall a blind `0..255` sweep incurs on empty slots.
 pub async fn collect_initial_presence_state<D: GovernanceRuntimeDeps>(
     deps: &D,
     registry_key: &str,
     my_slot: u32,
     my_pseudo_hex: &str,
+    occupied_subkeys: &[u32],
 ) -> InitialPresence {
     use futures::stream::{FuturesUnordered, StreamExt};
 
+    let started = std::time::Instant::now();
     let mut presence = InitialPresence::default();
     presence.known_members.insert(my_pseudo_hex.to_string());
 
-    // Mirror the proven steady-state presence poll (`scan_segment_raw`): pump
-    // every local subkey through a bounded-concurrency `get_dht_value` rather
-    // than a network `inspect`. `force_refresh = false` returns a cached row
-    // when one exists, otherwise does a single quick per-subkey network get —
-    // empty slots resolve to `None` fast.
-    //
-    // The previous implementation used `inspect_dht_record_present_subkeys`
-    // (`DHTReportScope::UpdateGet` over the full 255-subkey range) to avoid a
-    // *serial* 255-get sweep. But that inspect is itself a slow network report
-    // on a freshly-claimed cold registry and was hanging past the
-    // CollectPresence gate budget ("finding members" stuck). The poll proves
-    // the fix is *concurrency*, not inspect: 255 gets with 10 in flight stays
-    // well inside budget. Reading from the read-only-opened registry the slot
-    // claim left behind is sufficient here — we only read; the writable open +
-    // record tracking happens in the later OpenRecords phase.
-    const SCAN_PARALLELISM: usize = 10;
+    // Architecture §6.2 Step 12: read `MemberPresence` ONLY from the slots the
+    // Step 7 (ClaimSlot) inspect reported occupied. A blind `0..255` sweep is
+    // fatal on a cold join — every empty subkey's
+    // `get_dht_value(force_refresh = false)` blocks up to `get_value_timeout_ms`
+    // (10 s) on a network RPC, busting the 10 s CollectPresence gate. The +10 s
+    // steady-state presence poll (`flow.rs`) and the DHT value watches backfill
+    // anyone who claimed a slot after our Step 7 inspect.
+    const SCAN_PARALLELISM: usize = 16;
     let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(SCAN_PARALLELISM));
     let mut scans = FuturesUnordered::new();
-    for subkey in 0..segments::SLOTS_PER_SEGMENT {
+    for &subkey in occupied_subkeys {
         if subkey == my_slot {
             continue;
         }
@@ -469,6 +475,7 @@ pub async fn collect_initial_presence_state<D: GovernanceRuntimeDeps>(
         });
     }
 
+    let mut verified = 0usize;
     while let Some(result) = scans.next().await {
         let Ok(Some(bytes)) = result else {
             continue;
@@ -495,8 +502,16 @@ pub async fn collect_initial_presence_state<D: GovernanceRuntimeDeps>(
             &row.route_blob,
             row.last_heartbeat,
         );
+        verified += 1;
     }
 
+    tracing::info!(
+        registry = %registry_key,
+        occupied = occupied_subkeys.len(),
+        verified,
+        elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+        "collect_initial_presence_state: cold-join presence scan complete"
+    );
     presence
 }
 
@@ -524,6 +539,7 @@ mod tests {
             segment_index: 0,
             local_subkey: 5,
             slot_keypair_str: "kp".into(),
+            occupied_subkeys: vec![],
         };
         assert_eq!(slot.registry_key, "rk");
         assert_eq!(slot.local_subkey, 5);

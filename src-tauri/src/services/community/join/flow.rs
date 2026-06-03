@@ -135,6 +135,7 @@ pub async fn join_community(
                 &claimed.registry_key,
                 claimed.local_subkey,
                 &identity.pseudo_hex,
+                &claimed.occupied_subkeys,
             )
             .await)
         },
