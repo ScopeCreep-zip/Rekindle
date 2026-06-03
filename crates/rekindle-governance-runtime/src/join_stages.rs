@@ -435,14 +435,42 @@ pub async fn collect_initial_presence_state<D: GovernanceRuntimeDeps>(
     my_slot: u32,
     my_pseudo_hex: &str,
 ) -> InitialPresence {
+    use futures::stream::{FuturesUnordered, StreamExt};
+
     let mut presence = InitialPresence::default();
     presence.known_members.insert(my_pseudo_hex.to_string());
 
-    for subkey in populated_subkeys_or_full_scan(deps, registry_key).await {
+    // Mirror the proven steady-state presence poll (`scan_segment_raw`): pump
+    // every local subkey through a bounded-concurrency `get_dht_value` rather
+    // than a network `inspect`. `force_refresh = false` returns a cached row
+    // when one exists, otherwise does a single quick per-subkey network get —
+    // empty slots resolve to `None` fast.
+    //
+    // The previous implementation used `inspect_dht_record_present_subkeys`
+    // (`DHTReportScope::UpdateGet` over the full 255-subkey range) to avoid a
+    // *serial* 255-get sweep. But that inspect is itself a slow network report
+    // on a freshly-claimed cold registry and was hanging past the
+    // CollectPresence gate budget ("finding members" stuck). The poll proves
+    // the fix is *concurrency*, not inspect: 255 gets with 10 in flight stays
+    // well inside budget. Reading from the read-only-opened registry the slot
+    // claim left behind is sufficient here — we only read; the writable open +
+    // record tracking happens in the later OpenRecords phase.
+    const SCAN_PARALLELISM: usize = 10;
+    let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(SCAN_PARALLELISM));
+    let mut scans = FuturesUnordered::new();
+    for subkey in 0..segments::SLOTS_PER_SEGMENT {
         if subkey == my_slot {
             continue;
         }
-        let Ok(Some(bytes)) = deps.get_dht_value(registry_key, subkey, false).await else {
+        let sem = std::sync::Arc::clone(&sem);
+        scans.push(async move {
+            let _permit = sem.acquire().await.expect("scan semaphore not closed");
+            deps.get_dht_value(registry_key, subkey, false).await
+        });
+    }
+
+    while let Some(result) = scans.next().await {
+        let Ok(Some(bytes)) = result else {
             continue;
         };
         if bytes.is_empty() {

@@ -37,7 +37,7 @@ pub const MAX_SEGMENTS: u32 = 8;
 
 /// Local subkey count per segment record (matches genesis SMPL schema
 /// in `origin.rs` and architecture §4.6:449).
-const SLOTS_PER_SEGMENT: u32 = 255;
+pub(crate) const SLOTS_PER_SEGMENT: u32 = 255;
 
 /// One row of the segments table — combines the implicit segment 0
 /// (from `CommunityMembership.governance_key + member_registry_key`)

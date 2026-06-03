@@ -7479,6 +7479,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "blake3",
+ "futures",
  "hex",
  "parking_lot 0.12.5",
  "rand 0.8.5",
