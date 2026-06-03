@@ -8,7 +8,7 @@ export async function handleCreateCommunityInvite(
   communityId: string,
   maxUses?: number,
   expiresInSeconds?: number,
-): Promise<{ code: string; governanceKey: string } | null> {
+): Promise<{ code: string; governanceKey: string; secretsRecordKey: string } | null> {
   try {
     const result = await commands.createCommunityInvite(communityId, maxUses, expiresInSeconds);
     // Optimistic store update — the raw code is only available to the creator
@@ -20,6 +20,8 @@ export async function handleCreateCommunityInvite(
       uses: 0,
       expiresAt: expiresInSeconds ? now + expiresInSeconds : null,
       createdAt: now,
+      code: result.code,
+      secretsRecordKey: result.secretsRecordKey,
     };
     setCommunityState("communityInvites", communityId, (prev) => [newInvite, ...(prev ?? [])]);
     return result;

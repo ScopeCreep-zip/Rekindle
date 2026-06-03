@@ -233,6 +233,7 @@ fn verify_payload(
 
 /// This author's full logical entry log plus the ordered keys of the overflow
 /// records currently in their chain (`overflow_keys[i]` is page `i + 1`).
+#[derive(Debug)]
 pub struct MyChain {
     pub entries: Vec<GovernanceEntry>,
     pub overflow_keys: Vec<String>,
@@ -256,14 +257,19 @@ pub async fn read_my_chain<D: OverflowIo>(
         .get_dht_value(gov_key, my_slot, false)
         .await?
         .filter(|b| !b.is_empty());
-    let Some(primary) = primary_bytes
-        .as_deref()
-        .and_then(|b| verify_payload(b, Some(me)))
-    else {
+    let Some(primary_bytes) = primary_bytes else {
+        // Slot is genuinely empty (genesis author's first write, or a brand-new
+        // member's freshly-claimed slot) — a fresh write is safe.
         return Ok(MyChain {
             entries,
             overflow_keys,
         });
+    };
+    let Some(primary) = verify_payload(&primary_bytes, Some(me)) else {
+        // Slot is OCCUPIED but its payload fails verification. Returning an empty
+        // chain here would make `write_entry` rewrite the slot with only the new
+        // entry, wiping our genesis/governance off the DHT. Refuse instead.
+        return Err(GovernanceRuntimeError::PrimarySubkeyUnverifiable { slot: my_slot });
     };
     entries.extend(primary.entries);
 
@@ -651,6 +657,36 @@ mod tests {
             flattened.len(),
             1,
             "mis-authored overflow page must be dropped"
+        );
+    }
+
+    /// A genuinely empty primary slot is safe to write fresh → empty chain.
+    #[tokio::test]
+    async fn read_my_chain_empty_slot_returns_empty_chain() {
+        let mock = MockDht::default();
+        let author = PseudonymKey([4u8; 32]);
+        let chain = read_my_chain(&mock, "govkey", 5, &author).await.unwrap();
+        assert!(chain.entries.is_empty());
+        assert!(chain.overflow_keys.is_empty());
+    }
+
+    /// An occupied-but-unverifiable primary slot must NOT return an empty chain
+    /// (which would let `write_entry` overwrite and wipe genesis) — it errors.
+    #[tokio::test]
+    async fn read_my_chain_occupied_unverifiable_errors() {
+        let mock = MockDht::default();
+        let author = PseudonymKey([4u8; 32]);
+        // Garbage that won't deserialize into a verifiable payload.
+        mock.set_dht_value("govkey", 5, b"not-a-payload".to_vec(), None)
+            .await
+            .unwrap();
+        let err = read_my_chain(&mock, "govkey", 5, &author).await;
+        assert!(
+            matches!(
+                err,
+                Err(GovernanceRuntimeError::PrimarySubkeyUnverifiable { slot: 5 })
+            ),
+            "occupied garbage must refuse to overwrite, got {err:?}"
         );
     }
 }

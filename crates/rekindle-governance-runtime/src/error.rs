@@ -51,6 +51,16 @@ pub enum GovernanceRuntimeError {
     #[error("governance verify read-back returned empty after write")]
     VerifyEmpty,
 
+    /// Our own primary governance subkey is present on the DHT but its payload
+    /// fails W26 verification (corruption, or a legacy signature from an
+    /// incompatible format). Refuse to write rather than overwrite the slot with
+    /// only the new entry, which would destroy our genesis/governance. Distinct
+    /// from a genuinely empty slot, where a fresh write is safe.
+    #[error(
+        "governance primary subkey {slot} is present but unverifiable — refusing to overwrite"
+    )]
+    PrimarySubkeyUnverifiable { slot: u32 },
+
     /// Safety net under `GovernanceOverflow` paging: a single governance entry
     /// too large to fit even a whole overflow page (real entries are < ~500 B).
     /// Accumulation no longer reaches here — past one page an author's writes

@@ -7,6 +7,7 @@ use crate::state::SharedState;
 pub struct DeepLinkAction {
     pub action: String,
     pub community_id: String,
+    pub secrets_record_key: String,
     pub invite_code: String,
 }
 
@@ -16,21 +17,28 @@ pub struct DeepLinkAction {
 /// `AppState::pending_deep_link` and replayed after login.
 ///
 /// Supported formats:
-///   `rekindle://invite/{governance_key}/{invite_code}`
+///   `rekindle://invite/{governance_key}/{secrets_record_key}/{invite_code}`
 pub fn handle_deep_link_url(app: &AppHandle, url: &str) {
     let url = url.trim();
-    // Parse: rekindle://invite/{governance_key}/{invite_code}
+    // Parse: rekindle://invite/{governance_key}/{secrets_record_key}/{invite_code}
     let rest = url
         .strip_prefix("rekindle://invite/")
         .or_else(|| url.strip_prefix("rekindle://community/"));
     if let Some(rest) = rest {
         let rest = rest.trim_end_matches('/');
-        // Expect: {governance_key}/{invite_code}
-        if let Some((governance_key, invite_code)) = rest.split_once('/') {
-            if !governance_key.is_empty() && !invite_code.is_empty() {
+        // Expect: {governance_key}/{secrets_record_key}/{invite_code}
+        let mut it = rest.splitn(3, '/');
+        if let (Some(governance_key), Some(secrets_record_key), Some(invite_code)) =
+            (it.next(), it.next(), it.next())
+        {
+            if !governance_key.is_empty()
+                && !secrets_record_key.is_empty()
+                && !invite_code.is_empty()
+            {
                 let action = DeepLinkAction {
                     action: "joinCommunity".into(),
                     community_id: governance_key.to_string(),
+                    secrets_record_key: secrets_record_key.to_string(),
                     invite_code: invite_code.to_string(),
                 };
 

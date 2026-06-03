@@ -47,8 +47,11 @@ pub struct SlotClaimCtx<'a> {
     pub community_id: &'a str,
     /// Segment-0 invite registry key — the inviter's registry.
     pub invite_registry_key: &'a str,
-    /// Inviter's pseudonym — drives the M10.3 invite-quota check.
-    pub inviter_pseudonym: &'a PseudonymKey,
+    /// Inviter's pseudonym — drives the M10.3 invite-quota check. `None` when
+    /// the invite was accepted from its link pointer and governance carried no
+    /// matching `InviteCreated` to attribute it to an inviter; the best-effort
+    /// quota cap is then skipped (the inviter still enforces it at write time).
+    pub inviter_pseudonym: Option<&'a PseudonymKey>,
     /// Joiner's own pseudonym key.
     pub my_pseudo: &'a PseudonymKey,
     /// Joiner's pseudonym signing key for presence + slot writes.
@@ -194,10 +197,12 @@ pub async fn claim_registry_slot<D: GovernanceRuntimeDeps>(
     slot_seed_hex: &str,
     ctx: SlotClaimCtx<'_>,
 ) -> Result<ClaimedSlot, GovernanceRuntimeError> {
-    if !invite_quota::check_active_invites_cap(ctx.gov_state, ctx.inviter_pseudonym) {
-        return Err(GovernanceRuntimeError::Adapter(
-            "invite quota exceeded for inviter — community is rate-limiting joins".into(),
-        ));
+    if let Some(inviter) = ctx.inviter_pseudonym {
+        if !invite_quota::check_active_invites_cap(ctx.gov_state, inviter) {
+            return Err(GovernanceRuntimeError::Adapter(
+                "invite quota exceeded for inviter — community is rate-limiting joins".into(),
+            ));
+        }
     }
 
     let slot_seed_bytes: [u8; 32] = hex::decode(slot_seed_hex)

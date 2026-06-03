@@ -55,8 +55,9 @@ pub use error::GovernanceRuntimeError;
 pub use event::{GovernanceRuntimeEvent, JoinStageStatus};
 pub use invite_secrets::{fetch_invite_secrets, publish_invite_secrets};
 pub use join::{
-    default_community_name, derive_join_identity, find_invite_in_entries, merge_presence_entry,
-    InitialPresence, JoinIdentity, JoinOnlineMember,
+    default_community_name, derive_join_identity, find_invite_in_entries,
+    inspect_invite_in_entries, merge_presence_entry, InitialPresence, InviteGovStatus,
+    JoinIdentity, JoinOnlineMember,
 };
 pub use join_gate::{gate, JoinPhase};
 pub use join_stages::{

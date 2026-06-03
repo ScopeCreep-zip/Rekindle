@@ -21,6 +21,7 @@ use crate::state_helpers;
 pub struct InviteCreatedDto {
     pub code: String,
     pub governance_key: String,
+    pub secrets_record_key: String,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -34,6 +35,8 @@ pub struct InviteInfoDto {
     pub created_at: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub secrets_record_key: Option<String>,
 }
 
 pub async fn create_community_invite_inner(
@@ -170,7 +173,7 @@ pub async fn create_community_invite_inner(
             code_hash: code_hash.clone(),
             max_uses: max_uses.unwrap_or(0),
             expires_at,
-            secrets_record_key,
+            secrets_record_key: secrets_record_key.clone(),
             lamport,
         },
     )
@@ -184,10 +187,11 @@ pub async fn create_community_invite_inner(
     let mu = max_uses.map_or(0, i64::from);
     let exp = expires_in_seconds.map(|seconds| now + i64::try_from(seconds).unwrap_or(0));
     let cid_for_db = cid.clone();
+    let srk_for_db = secrets_record_key.clone();
     crate::db_helpers::db_fire(pool, "persist invite locally", move |conn| {
         conn.execute(
-            "INSERT OR REPLACE INTO community_invites (owner_key, community_id, code, code_hash, max_uses, expires_at, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            rusqlite::params![owner_key, cid_for_db, raw_code, ch, mu, exp, now],
+            "INSERT OR REPLACE INTO community_invites (owner_key, community_id, code, code_hash, secrets_record_key, max_uses, expires_at, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            rusqlite::params![owner_key, cid_for_db, raw_code, ch, srk_for_db, mu, exp, now],
         )?;
         Ok(())
     });
@@ -212,6 +216,7 @@ pub async fn create_community_invite_inner(
     Ok(InviteCreatedDto {
         code,
         governance_key,
+        secrets_record_key,
     })
 }
 
@@ -250,20 +255,21 @@ pub async fn list_community_invites_inner(
     community_id: String,
 ) -> Result<Vec<InviteInfoDto>, String> {
     let cid = community_id.clone();
-    let local_invites: Vec<(String, String, i64, Option<i64>, i64, i64)> =
+    let local_invites: Vec<(String, String, String, i64, Option<i64>, i64, i64)> =
         crate::db_helpers::db_call_or_default(pool, move |conn| {
             let mut stmt = conn.prepare(
-                "SELECT code_hash, code, max_uses, expires_at, created_at, uses \
+                "SELECT code_hash, code, secrets_record_key, max_uses, expires_at, created_at, uses \
                  FROM community_invites WHERE community_id = ?",
             )?;
             let rows = stmt.query_map([&cid], |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
-                    row.get::<_, i64>(2)?,
-                    row.get::<_, Option<i64>>(3)?,
-                    row.get::<_, i64>(4)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i64>(3)?,
+                    row.get::<_, Option<i64>>(4)?,
                     row.get::<_, i64>(5)?,
+                    row.get::<_, i64>(6)?,
                 ))
             })?;
             rows.collect::<Result<Vec<_>, _>>()
@@ -273,18 +279,25 @@ pub async fn list_community_invites_inner(
     Ok(local_invites
         .into_iter()
         .map(
-            |(code_hash, code, max_uses, expires_at, created_at, uses)| InviteInfoDto {
-                code_hash,
-                created_by: String::new(),
-                max_uses: if max_uses == 0 {
-                    None
-                } else {
-                    Some(max_uses.try_into().unwrap_or(0))
-                },
-                uses: u32::try_from(uses).unwrap_or(0),
-                expires_at: expires_at.map(|expires| expires.try_into().unwrap_or(0)),
-                created_at: created_at.try_into().unwrap_or(0),
-                code: Some(code),
+            |(code_hash, code, secrets_record_key, max_uses, expires_at, created_at, uses)| {
+                InviteInfoDto {
+                    code_hash,
+                    created_by: String::new(),
+                    max_uses: if max_uses == 0 {
+                        None
+                    } else {
+                        Some(max_uses.try_into().unwrap_or(0))
+                    },
+                    uses: u32::try_from(uses).unwrap_or(0),
+                    expires_at: expires_at.map(|expires| expires.try_into().unwrap_or(0)),
+                    created_at: created_at.try_into().unwrap_or(0),
+                    code: Some(code),
+                    secrets_record_key: if secrets_record_key.is_empty() {
+                        None
+                    } else {
+                        Some(secrets_record_key)
+                    },
+                }
             },
         )
         .collect())

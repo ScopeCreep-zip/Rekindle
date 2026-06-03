@@ -557,6 +557,11 @@ CREATE TABLE IF NOT EXISTS community_invites (
     community_id TEXT NOT NULL,
     code TEXT NOT NULL,
     code_hash TEXT NOT NULL,
+    -- VLD0 pointer to the single-owner DFLT record holding this invite's
+    -- encrypted InviteSecrets blob. Surfaced into the deep link so the
+    -- joiner fetches+decrypts secrets directly (chiral §12), without
+    -- depending on the InviteCreated governance entry being visible.
+    secrets_record_key TEXT NOT NULL DEFAULT '',
     max_uses INTEGER NOT NULL DEFAULT 0,
     expires_at INTEGER,
     created_at INTEGER NOT NULL,

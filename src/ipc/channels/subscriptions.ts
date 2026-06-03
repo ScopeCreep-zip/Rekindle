@@ -96,6 +96,7 @@ export function subscribeProfileUpdates(
 export interface DeepLinkAction {
   action: string;
   communityId: string;
+  secretsRecordKey: string;
   inviteCode: string;
 }
 

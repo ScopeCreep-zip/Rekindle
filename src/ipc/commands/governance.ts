@@ -54,11 +54,11 @@ export const governanceCommands = {
 
   // Community invites
   createCommunityInvite: (communityId: string, maxUses?: number, expiresInSeconds?: number) =>
-    invoke<{ code: string; governanceKey: string }>("create_community_invite", { communityId, maxUses: maxUses ?? null, expiresInSeconds: expiresInSeconds ?? null }),
+    invoke<{ code: string; governanceKey: string; secretsRecordKey: string }>("create_community_invite", { communityId, maxUses: maxUses ?? null, expiresInSeconds: expiresInSeconds ?? null }),
   revokeCommunityInvite: (communityId: string, codeHash: string) =>
     invoke<void>("revoke_community_invite", { communityId, codeHash }),
   listCommunityInvites: (communityId: string) =>
-    invoke<{ codeHash: string; createdBy: string; maxUses: number | null; uses: number; expiresAt: number | null; createdAt: number; code?: string }[]>(
+    invoke<{ codeHash: string; createdBy: string; maxUses: number | null; uses: number; expiresAt: number | null; createdAt: number; code?: string; secretsRecordKey?: string }[]>(
       "list_community_invites", { communityId }
     ),
 

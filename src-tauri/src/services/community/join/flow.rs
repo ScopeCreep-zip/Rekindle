@@ -26,13 +26,14 @@ struct InviteContext {
     slot_seed_hex: String,
     bootstrap_bundle: Option<BootstrapBundle>,
     mek_generation: u64,
-    inviter_pseudonym: PseudonymKey,
+    inviter_pseudonym: Option<PseudonymKey>,
 }
 
 pub async fn join_community(
     state: &Arc<AppState>,
     governance_key_str: &str,
     invite_code: Option<&str>,
+    secrets_record_key: Option<&str>,
 ) -> Result<(), String> {
     let invite_code =
         invite_code.ok_or("invite code required — community join requires a valid invite link")?;
@@ -90,6 +91,7 @@ pub async fn join_community(
             &adapter,
             governance_key_str,
             invite_code,
+            secrets_record_key,
             &snapshot.all_entries,
             &identity.pseudo_hex,
         ),
@@ -109,7 +111,7 @@ pub async fn join_community(
                 gov_rt::SlotClaimCtx {
                     community_id: governance_key_str,
                     invite_registry_key: &invite.registry_key,
-                    inviter_pseudonym: &invite.inviter_pseudonym,
+                    inviter_pseudonym: invite.inviter_pseudonym.as_ref(),
                     my_pseudo: &identity.pseudo,
                     pseudonym_signing: &identity.pseudonym_signing,
                     gov_state: &snapshot.gov_state,
@@ -362,6 +364,7 @@ async fn decode_invite_context(
     adapter: &crate::services::governance_adapter::GovernanceAdapter,
     governance_key_str: &str,
     invite_code: &str,
+    link_secrets_record_key: Option<&str>,
     all_entries: &[(
         PseudonymKey,
         Vec<rekindle_types::governance::GovernanceEntry>,
@@ -369,8 +372,30 @@ async fn decode_invite_context(
     pseudo_hex: &str,
 ) -> Result<InviteContext, String> {
     let code_hash = rekindle_secrets::invite::hash_invite_code(invite_code);
-    let (secrets_record_key, inviter_pseudonym) =
-        gov_rt::find_invite_in_entries(all_entries, &code_hash).map_err(|e| e.to_string())?;
+    // Chiral §12: secrets are decrypted directly from the invite. Governance is
+    // read only to ENFORCE revocation/expiry when visible and to recover the
+    // inviter pseudonym for the best-effort quota sanity check — never as the
+    // sole source of the secrets pointer (which now rides in the deep link).
+    let status = gov_rt::inspect_invite_in_entries(all_entries, &code_hash);
+    if matches!(status, gov_rt::InviteGovStatus::Revoked) {
+        return Err("invite has been revoked".into());
+    }
+    if matches!(status, gov_rt::InviteGovStatus::Expired) {
+        return Err("invite has expired".into());
+    }
+    let secrets_record_key = link_secrets_record_key
+        .map(str::to_string)
+        .or_else(|| match &status {
+            gov_rt::InviteGovStatus::Active {
+                secrets_record_key, ..
+            } => Some(secrets_record_key.clone()),
+            _ => None,
+        })
+        .ok_or("invite has no secrets pointer (no link pointer and no governance entry)")?;
+    let inviter_pseudonym = match status {
+        gov_rt::InviteGovStatus::Active { inviter, .. } => Some(inviter),
+        _ => None,
+    };
     // Governance carries only a pointer; fetch the encrypted blob from the
     // invite-secrets DFLT record before decrypting.
     let encrypted_b64 = gov_rt::fetch_invite_secrets(adapter, &secrets_record_key)

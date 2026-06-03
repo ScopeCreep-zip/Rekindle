@@ -80,8 +80,12 @@ export const communityCommands = {
   }),
   createCommunity: (name: string) =>
     invoke<string>("create_community", { name }),
-  joinCommunity: (communityId: string, inviteCode?: string) =>
-    invoke<void>("join_community", { communityId, inviteCode: inviteCode ?? null }),
+  joinCommunity: (communityId: string, inviteCode?: string, secretsRecordKey?: string) =>
+    invoke<void>("join_community", {
+      communityId,
+      inviteCode: inviteCode ?? null,
+      secretsRecordKey: secretsRecordKey ?? null,
+    }),
   createChannel: (
     communityId: string,
     name: string,

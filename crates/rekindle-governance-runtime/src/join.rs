@@ -85,6 +85,49 @@ pub fn find_invite_in_entries(
     subkeys: &[(PseudonymKey, Vec<GovernanceEntry>)],
     code_hash: &str,
 ) -> Result<(String, PseudonymKey), GovernanceRuntimeError> {
+    match inspect_invite_in_entries(subkeys, code_hash) {
+        InviteGovStatus::Active {
+            inviter,
+            secrets_record_key,
+        } => Ok((secrets_record_key, inviter)),
+        InviteGovStatus::Revoked => Err(GovernanceRuntimeError::Adapter(
+            "invite has been revoked".into(),
+        )),
+        InviteGovStatus::Expired => {
+            Err(GovernanceRuntimeError::Adapter("invite has expired".into()))
+        }
+        InviteGovStatus::NotFound => Err(GovernanceRuntimeError::Adapter(
+            "invalid invite code — no matching invite found in governance".into(),
+        )),
+    }
+}
+
+/// Governance's view of an invite, looked up by `code_hash` across the raw
+/// subkey entries. The join path uses this to *enforce* revocation/expiry and
+/// to recover the inviter pseudonym (for the quota sanity check) plus the
+/// secrets pointer — but only as a fallback: a link-borne invite carries its
+/// own `secrets_record_key`, so a missing or unverifiable `InviteCreated`
+/// (→ `NotFound`) no longer blocks acceptance.
+pub enum InviteGovStatus {
+    Active {
+        inviter: PseudonymKey,
+        secrets_record_key: String,
+    },
+    Revoked,
+    Expired,
+    NotFound,
+}
+
+/// Classify an invite from the raw governance subkey entries. Reader-validates:
+/// `Revoked`/`Expired` are reported whenever governance shows them so the caller
+/// can reject; `Active` carries the inviter + secrets pointer; `NotFound` means
+/// no matching `InviteCreated` is visible (governance incomplete or the entry
+/// was never written).
+#[must_use]
+pub fn inspect_invite_in_entries(
+    subkeys: &[(PseudonymKey, Vec<GovernanceEntry>)],
+    code_hash: &str,
+) -> InviteGovStatus {
     let mut revoked_ids: HashSet<[u8; 16]> = HashSet::new();
     for (_, entries) in subkeys {
         for entry in entries {
@@ -106,25 +149,22 @@ pub fn find_invite_in_entries(
             {
                 if ch == code_hash {
                     if revoked_ids.contains(invite_id) {
-                        return Err(GovernanceRuntimeError::Adapter(
-                            "invite has been revoked".into(),
-                        ));
+                        return InviteGovStatus::Revoked;
                     }
                     if let Some(exp) = expires_at {
                         if rekindle_utils::timestamp_secs() > *exp {
-                            return Err(GovernanceRuntimeError::Adapter(
-                                "invite has expired".into(),
-                            ));
+                            return InviteGovStatus::Expired;
                         }
                     }
-                    return Ok((secrets_record_key.clone(), author.clone()));
+                    return InviteGovStatus::Active {
+                        inviter: author.clone(),
+                        secrets_record_key: secrets_record_key.clone(),
+                    };
                 }
             }
         }
     }
-    Err(GovernanceRuntimeError::Adapter(
-        "invalid invite code — no matching invite found in governance".into(),
-    ))
+    InviteGovStatus::NotFound
 }
 
 /// Merge a signed `MemberPresence` row into the in-progress
@@ -270,5 +310,52 @@ mod tests {
             GovernanceRuntimeError::Adapter(msg) => assert!(msg.contains("no matching invite")),
             other => panic!("expected Adapter(no matching invite), got {other:?}"),
         }
+    }
+
+    #[test]
+    fn inspect_invite_active_carries_inviter_and_secrets() {
+        let author = PseudonymKey([9u8; 32]);
+        let entries = vec![(
+            author.clone(),
+            vec![GovernanceEntry::InviteCreated {
+                invite_id: [2u8; 16],
+                code_hash: "live".into(),
+                max_uses: 0,
+                expires_at: None,
+                secrets_record_key: "VLD0:secrets".into(),
+                lamport: 1,
+            }],
+        )];
+        match inspect_invite_in_entries(&entries, "live") {
+            InviteGovStatus::Active {
+                inviter,
+                secrets_record_key,
+            } => {
+                assert_eq!(inviter.0, author.0);
+                assert_eq!(secrets_record_key, "VLD0:secrets");
+            }
+            _ => panic!("expected Active"),
+        }
+    }
+
+    #[test]
+    fn inspect_invite_expired_when_past_expiry() {
+        let author = PseudonymKey([3u8; 32]);
+        let entries = vec![(
+            author,
+            vec![GovernanceEntry::InviteCreated {
+                invite_id: [4u8; 16],
+                code_hash: "old".into(),
+                max_uses: 0,
+                // Unix epoch + 1s — unconditionally in the past.
+                expires_at: Some(1),
+                secrets_record_key: "x".into(),
+                lamport: 1,
+            }],
+        )];
+        assert!(matches!(
+            inspect_invite_in_entries(&entries, "old"),
+            InviteGovStatus::Expired
+        ));
     }
 }

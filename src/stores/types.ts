@@ -22,6 +22,9 @@ export interface InviteDto {
   createdAt: number;
   /** Raw invite code — only available for invites this node created. */
   code?: string;
+  /** VLD0 pointer to the encrypted InviteSecrets DFLT record. Carried in the
+   *  deep link so the joiner fetches secrets directly. Local-only invites. */
+  secretsRecordKey?: string;
 }
 
 // ── Onboarding ──

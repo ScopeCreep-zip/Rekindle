@@ -224,12 +224,19 @@ pub async fn join_community_inner(
     keystore_handle: &KeystoreHandle,
     community_id: String,
     invite_code: Option<String>,
+    secrets_record_key: Option<String>,
 ) -> Result<(), String> {
     use crate::db;
     use crate::services;
 
     let owner_key = state_helpers::current_owner_key(state)?;
-    services::community::join_community(state, &community_id, invite_code.as_deref()).await?;
+    services::community::join_community(
+        state,
+        &community_id,
+        invite_code.as_deref(),
+        secrets_record_key.as_deref(),
+    )
+    .await?;
 
     let (
         name,

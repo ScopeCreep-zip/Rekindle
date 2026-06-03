@@ -42,8 +42,8 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
     return community?.governanceKey ?? props.communityId;
   }
 
-  function buildInviteLink(code: string): string {
-    return `rekindle://invite/${governanceKey()}/${code}`;
+  function buildInviteLink(secretsKey: string, code: string): string {
+    return `rekindle://invite/${governanceKey()}/${secretsKey}/${code}`;
   }
 
   async function copyToClipboard(text: string, hash?: string): Promise<void> {
@@ -64,7 +64,7 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
     const parsedExpiresIn = expiresIn() !== "" ? parseInt(expiresIn(), 10) : undefined;
     const result = await handleCreateCommunityInvite(props.communityId, parsedMaxUses, parsedExpiresIn);
     if (result) {
-      const link = buildInviteLink(result.code);
+      const link = buildInviteLink(result.secretsRecordKey, result.code);
       setCreatedLink(link);
       await copyToClipboard(link);
       setCreatingInvite(false);
@@ -181,10 +181,10 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
                 </span>
               </div>
               <div class="settings-list-actions">
-                <Show when={invite.code}>
+                <Show when={invite.code && invite.secretsRecordKey}>
                   <button
                     class="form-btn-secondary"
-                    onClick={() => copyToClipboard(buildInviteLink(invite.code!), invite.codeHash)}
+                    onClick={() => copyToClipboard(buildInviteLink(invite.secretsRecordKey!, invite.code!), invite.codeHash)}
                   >
                     {copiedHash() === invite.codeHash ? "Copied!" : "Copy Link"}
                   </button>

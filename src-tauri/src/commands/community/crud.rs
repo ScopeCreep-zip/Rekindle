@@ -45,6 +45,7 @@ pub async fn create_community(
 pub async fn join_community(
     community_id: String,
     invite_code: Option<String>,
+    secrets_record_key: Option<String>,
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
     keystore_handle: State<'_, KeystoreHandle>,
@@ -57,6 +58,7 @@ pub async fn join_community(
         keystore_handle.inner(),
         community_id,
         invite_code,
+        secrets_record_key,
     )
     .await
 }

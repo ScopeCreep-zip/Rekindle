@@ -9,10 +9,12 @@ interface JoinCommunityModalProps {
   onClose: () => void;
 }
 
-/** Parse a deep link URL: rekindle://invite/{communityId}/{inviteCode} or rekindle://community/{communityId}/{inviteCode} */
-function parseDeepLink(input: string): { communityId: string; inviteCode: string } | null {
-  const match = input.match(/^rekindle:\/\/(?:invite|community)\/([^/]+)\/([^/]+)\/?$/);
-  if (match) return { communityId: match[1], inviteCode: match[2] };
+/** Parse a deep link URL: rekindle://invite/{communityId}/{secretsRecordKey}/{inviteCode} (or community://). */
+function parseDeepLink(
+  input: string,
+): { communityId: string; secretsRecordKey: string; inviteCode: string } | null {
+  const match = input.match(/^rekindle:\/\/(?:invite|community)\/([^/]+)\/([^/]+)\/([^/]+)\/?$/);
+  if (match) return { communityId: match[1], secretsRecordKey: match[2], inviteCode: match[3] };
   return null;
 }
 
@@ -35,7 +37,12 @@ const JoinCommunityModal: Component<JoinCommunityModalProps> = (props) => {
         beginJoinProgress();
         const deepLink = parseDeepLink(input.trim());
         const promise = deepLink
-          ? handleJoinCommunity(deepLink.communityId, name || "Joined community", deepLink.inviteCode)
+          ? handleJoinCommunity(
+              deepLink.communityId,
+              name || "Joined community",
+              deepLink.inviteCode,
+              deepLink.secretsRecordKey,
+            )
           : handleJoinCommunity(input, name || input.slice(0, 12) + "...");
         return promise.finally(() => endJoinProgress());
       }}

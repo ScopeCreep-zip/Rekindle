@@ -53,9 +53,10 @@ export async function handleJoinCommunity(
   communityId: string,
   name: string,
   inviteCode?: string,
+  secretsRecordKey?: string,
 ): Promise<void> {
   try {
-    await commands.joinCommunity(communityId, inviteCode);
+    await commands.joinCommunity(communityId, inviteCode, secretsRecordKey);
     // Re-fetch community details to get channels, pseudonym key, MEK generation, roles
     const details = await commands.getCommunityDetails();
     const joined = details.find((c) => c.id === communityId);
