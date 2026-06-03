@@ -64,6 +64,7 @@ pub(super) fn spawn_login_services(
             crate::services::governance_adapter::open_community_dht_records(&bg_state).await;
             crate::services::governance_adapter::hydrate_community_state_from_dht(&bg_state).await;
             crate::services::governance_adapter::rebuild_governance_from_dht(&bg_state).await;
+            crate::services::governance_adapter::republish_active_invite_secrets(&bg_state).await;
             tracing::info!("background DHT hydration complete — governance state rebuilt");
 
             // Emit GovernanceUpdated for each community so the frontend refreshes

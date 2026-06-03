@@ -433,6 +433,14 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     /// Returned in unspecified order; the orchestrator opens each in turn.
     fn channel_log_keys_for_community(&self, community_id: &str) -> Vec<String>;
 
+    /// Active invite-secrets DFLT record keys this identity created, across
+    /// every joined community — non-expired, non-empty. Driven by
+    /// `dht_hydration::republish_active_invite_secrets` to keep our own
+    /// invites alive: the DFLT owner keypair is discarded after publish, so
+    /// only a rehydrating re-open keeps the record on the network. Scoped to
+    /// invites we authored because only those are local-store hits.
+    fn list_my_active_invite_secret_keys(&self) -> Vec<String>;
+
     /// Track every opened DHT record key on the live DHT manager so
     /// `shutdown_node` can close them in bulk (`state.dht_manager`
     /// `open_records` set).

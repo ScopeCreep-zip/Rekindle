@@ -456,6 +456,31 @@ impl GovernanceRuntimeDeps for GovernanceAdapter {
             .unwrap_or_default()
     }
 
+    fn list_my_active_invite_secret_keys(&self) -> Vec<String> {
+        let now = rekindle_utils::timestamp_secs();
+        let communities = self.state.communities.read();
+        let mut keys = Vec::new();
+        for c in communities.values() {
+            let (Some(my_pk_hex), Some(gov)) = (&c.my_pseudonym_key, &c.governance_state) else {
+                continue;
+            };
+            for invite in gov.invites.values() {
+                // Only invites we authored are in our local record store, so
+                // re-opening them is an instant local-store hit (→ rehydrate).
+                if hex::encode(invite.creator_pseudonym.0) != *my_pk_hex {
+                    continue;
+                }
+                if invite.expires_at.is_some_and(|exp| exp <= now) {
+                    continue;
+                }
+                if !invite.secrets_record_key.is_empty() {
+                    keys.push(invite.secrets_record_key.clone());
+                }
+            }
+        }
+        keys
+    }
+
     fn track_open_dht_records(&self, keys: &[String]) {
         state_helpers::track_open_records(&self.state, keys);
     }

@@ -57,6 +57,40 @@ pub async fn open_one_community_dht_records<D: GovernanceRuntimeDeps>(
     deps.watch_community_records_post_open(&rec.id).await;
 }
 
+/// Open a community's channel-log SMPL records concurrently (bounded).
+/// Channel opens are best-effort — per-key failures are logged. Run in
+/// parallel so a cold join's 2-3 channel opens overlap instead of summing:
+/// sequential cold opens, each exhausting the adapter's "not found" backoff
+/// ladder, blew the 20 s OpenRecords gate budget.
+async fn open_channel_records_concurrent<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+    channel_keys: &[String],
+) {
+    use futures::stream::{FuturesUnordered, StreamExt};
+
+    const OPEN_PARALLELISM: usize = 8;
+    let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(OPEN_PARALLELISM));
+    let mut opens = FuturesUnordered::new();
+    for key in channel_keys {
+        let sem = std::sync::Arc::clone(&sem);
+        opens.push(async move {
+            let _permit = sem.acquire().await.expect("open semaphore not closed");
+            (key, deps.open_dht_record(key, None).await)
+        });
+    }
+    while let Some((key, result)) = opens.next().await {
+        if let Err(error) = result {
+            tracing::debug!(
+                community = %community_id,
+                %key,
+                %error,
+                "failed to open channel SMPL record",
+            );
+        }
+    }
+}
+
 /// Open + track + mark-open (NO watch) a SINGLE community's governance,
 /// registry, and channel-log records.
 ///
@@ -97,18 +131,9 @@ pub async fn open_and_track_one_community<D: GovernanceRuntimeDeps>(
         }
     }
 
-    // Channel-log records.
+    // Channel-log records (concurrent, best-effort).
     let channel_keys = deps.channel_log_keys_for_community(&rec.id);
-    for key in &channel_keys {
-        if let Err(error) = deps.open_dht_record(key, None).await {
-            tracing::debug!(
-                community = %rec.id,
-                %key,
-                %error,
-                "failed to open channel SMPL record",
-            );
-        }
-    }
+    open_channel_records_concurrent(deps, &rec.id, &channel_keys).await;
 
     // Track all opened keys + persist the post-open snapshot.
     let mut all_keys = vec![rec.governance_key.clone()];
@@ -148,16 +173,7 @@ pub async fn try_open_and_track_one_community<D: GovernanceRuntimeDeps>(
     }
 
     let channel_keys = deps.channel_log_keys_for_community(&rec.id);
-    for key in &channel_keys {
-        if let Err(error) = deps.open_dht_record(key, None).await {
-            tracing::debug!(
-                community = %rec.id,
-                %key,
-                %error,
-                "failed to open channel SMPL record",
-            );
-        }
-    }
+    open_channel_records_concurrent(deps, &rec.id, &channel_keys).await;
 
     let mut all_keys = vec![rec.governance_key.clone()];
     if let Some(rk) = &rec.registry_key {
@@ -354,4 +370,31 @@ pub async fn rebuild_governance_from_dht<D: GovernanceRuntimeDeps>(deps: &D) {
             deps.spawn_text_mek_rotation_for_ban(community_id, &banned_pseudonym);
         }
     }
+}
+
+/// Re-open every active invite-secrets DFLT record we created so veilid
+/// rehydrates them: an `open_record` local-store hit schedules
+/// `add_rehydration_request`, whose background write re-propagates the
+/// already-signed local subkey to restore network consensus — no owner
+/// keypair required. The DFLT owner keypair is discarded after the one-shot
+/// `publish_invite_secrets`, so without this an inviter restart lets the
+/// record age off the DHT and the invite stops resolving for new joiners.
+/// Best-effort — per-key failures are logged, never fatal to login.
+///
+/// Runs after `rebuild_governance_from_dht` so `gov_state.invites` is
+/// populated; scoped adapter-side to invites we authored (the only ones we
+/// hold locally, so the re-open is an instant local hit).
+pub async fn republish_active_invite_secrets<D: GovernanceRuntimeDeps>(deps: &D) {
+    let keys = deps.list_my_active_invite_secret_keys();
+    let mut rehydrated = 0usize;
+    for key in &keys {
+        match deps.open_dht_record(key, None).await {
+            Ok(()) => rehydrated += 1,
+            Err(error) => tracing::debug!(%key, %error, "invite-secrets re-open failed"),
+        }
+    }
+    tracing::info!(
+        rehydrated,
+        "re-opened active invite-secrets records for rehydration"
+    );
 }
