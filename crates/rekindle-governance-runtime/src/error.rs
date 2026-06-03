@@ -51,6 +51,9 @@ pub enum GovernanceRuntimeError {
     #[error("governance verify read-back returned empty after write")]
     VerifyEmpty,
 
+    #[error("governance subkey full: {bytes} B exceeds the SMPL per-subkey cap of {cap} B")]
+    SubkeyOverflow { bytes: usize, cap: usize },
+
     #[error("segment cap reached ({0}); raise MAX_SEGMENTS once lazy-fetch lands")]
     SegmentCapReached(u32),
 

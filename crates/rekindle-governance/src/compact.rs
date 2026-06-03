@@ -27,7 +27,14 @@
 //!   channel that has since been deleted, whose children are dropped anyway
 //!   (matching "delete the channel, delete its threads" semantics).
 //! * Invites — `InviteRevoked` removes the invite from state; we keep the
-//!   revoke tombstone and drop the superseded `InviteCreated`.
+//!   revoke tombstone and drop the superseded `InviteCreated`. We additionally
+//!   drop expired invites (`expires_at <= now`) and, past
+//!   `MAX_ACTIVE_INVITES_PER_INVITER`, the oldest live invites — see
+//!   `invites_to_prune`. These prunes are wall-clock / count driven but stay
+//!   convergent because compaction output is published and merged identically
+//!   by every peer (the clock only affects what THIS author publishes; the
+//!   reader-side `check_active_invites_cap` stays clock-free, counting expired
+//!   invites until the author's next write sheds them).
 //! * Single-key display state — `CommunityMeta`, `CommunityNotificationDefault`,
 //!   `OnboardingConfig`, `WelcomeScreen` — keep only the highest-lamport entry.
 //! * `MEKGenerationBump` — Max-Register; keep only the highest generation.
@@ -49,6 +56,8 @@ use std::collections::{HashMap, HashSet};
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::{CategoryId, ChannelId, EventId};
 
+use crate::invite_quota::MAX_ACTIVE_INVITES_PER_INVITER;
+
 /// Position of an entry within an entity's create → update → archive lifecycle.
 #[derive(Clone, Copy)]
 enum Life {
@@ -63,7 +72,10 @@ enum Life {
 /// appended. Output is the bounded log to sign and publish. The merged
 /// `GovernanceState` is unchanged for every entity that is currently part of
 /// the community (see module docs for the safety argument).
-pub fn compact_author_entries(entries: Vec<GovernanceEntry>) -> Vec<GovernanceEntry> {
+pub fn compact_author_entries(
+    entries: Vec<GovernanceEntry>,
+    now_secs: u64,
+) -> Vec<GovernanceEntry> {
     if entries.len() <= 1 {
         return entries;
     }
@@ -81,6 +93,7 @@ pub fn compact_author_entries(entries: Vec<GovernanceEntry>) -> Vec<GovernanceEn
     let dropped_categories = terminated(&entries, genesis_lamport, category_life);
     let dropped_events = terminated(&entries, genesis_lamport, event_life);
     let (revoked_invites, revoke_keep) = revoked_invites(&entries, genesis_lamport);
+    let pruned_invites = invites_to_prune(&entries, &revoked_invites, genesis_lamport, now_secs);
 
     // Highest-lamport survivor for each single-key LWW family.
     let keep_meta = max_lamport(&entries, |e| {
@@ -152,7 +165,7 @@ pub fn compact_author_entries(entries: Vec<GovernanceEntry>) -> Vec<GovernanceEn
                     !dropped_events.contains(event_id)
                 }
                 GovernanceEntry::InviteCreated { invite_id, .. } => {
-                    !revoked_invites.contains(invite_id)
+                    !revoked_invites.contains(invite_id) && !pruned_invites.contains(invite_id)
                 }
                 GovernanceEntry::InviteRevoked {
                     invite_id, lamport, ..
@@ -278,6 +291,64 @@ fn revoked_invites(
         .filter_map(|id| max_revoke.get(id).map(|revoke| (*id, *revoke)))
         .collect();
     (revoked, revoke_keep)
+}
+
+/// Invite ids to drop from this author's subkey beyond the revoke logic:
+///   1. expired invites (`expires_at <= now_secs`) — wall-clock pruned. Safe
+///      because compaction output is published and merged identically by every
+///      peer (the clock only affects what THIS author publishes, never how
+///      peers interpret it — see module "Convergence").
+///   2. the oldest live invites beyond `MAX_ACTIVE_INVITES_PER_INVITER` —
+///      self-heals an author already over the cap (e.g. minted before the cap
+///      was lowered). Keep-newest-N is clock-free.
+///
+/// The genesis-bearing invite and revoked invites (handled separately) are
+/// excluded.
+fn invites_to_prune(
+    entries: &[GovernanceEntry],
+    revoked: &HashSet<[u8; 16]>,
+    genesis_lamport: u64,
+    now_secs: u64,
+) -> HashSet<[u8; 16]> {
+    let created: Vec<([u8; 16], u64, Option<u64>)> = entries
+        .iter()
+        .filter_map(|e| match e {
+            GovernanceEntry::InviteCreated {
+                invite_id,
+                lamport,
+                expires_at,
+                ..
+            } => Some((*invite_id, *lamport, *expires_at)),
+            _ => None,
+        })
+        .collect();
+
+    let mut prune: HashSet<[u8; 16]> = HashSet::new();
+
+    // 1. expired (never the genesis entry).
+    for (id, lamport, expires_at) in &created {
+        if *lamport != genesis_lamport && expires_at.is_some_and(|exp| exp <= now_secs) {
+            prune.insert(*id);
+        }
+    }
+
+    // 2. keep-newest-N among the still-live (not-expired, not-revoked, not-genesis).
+    let mut live: Vec<([u8; 16], u64)> = created
+        .iter()
+        .filter(|(id, lamport, _)| {
+            *lamport != genesis_lamport && !prune.contains(id) && !revoked.contains(id)
+        })
+        .map(|(id, lamport, _)| (*id, *lamport))
+        .collect();
+    live.sort_by_key(|(_, lamport)| std::cmp::Reverse(*lamport));
+    for (id, _) in live
+        .into_iter()
+        .skip(MAX_ACTIVE_INVITES_PER_INVITER as usize)
+    {
+        prune.insert(id);
+    }
+
+    prune
 }
 
 fn max_lamport(
@@ -411,6 +482,17 @@ mod tests {
         }
     }
 
+    fn invite_created_exp(id: u8, lamport: u64, expires_at: Option<u64>) -> GovernanceEntry {
+        GovernanceEntry::InviteCreated {
+            invite_id: [id; 16],
+            code_hash: "0".repeat(64),
+            max_uses: 0,
+            expires_at,
+            secrets_record_key: "VLD0:invitesecretsrecordkeyplaceholderplc".into(),
+            lamport,
+        }
+    }
+
     fn invite_revoked(id: u8, lamport: u64) -> GovernanceEntry {
         GovernanceEntry::InviteRevoked {
             invite_id: [id; 16],
@@ -424,38 +506,46 @@ mod tests {
 
     #[test]
     fn single_entry_is_returned_unchanged() {
-        let out = compact_author_entries(vec![meta(1)]);
+        let out = compact_author_entries(vec![meta(1)], 0);
         assert_eq!(out.len(), 1);
     }
 
     #[test]
     fn channel_create_and_archive_drop_both() {
-        let out =
-            compact_author_entries(vec![meta(1), chan_created(0xAA, 2), chan_archived(0xAA, 3)]);
+        let out = compact_author_entries(
+            vec![meta(1), chan_created(0xAA, 2), chan_archived(0xAA, 3)],
+            0,
+        );
         assert_eq!(out.len(), 1);
         assert!(matches!(out[0], GovernanceEntry::CommunityMeta { .. }));
     }
 
     #[test]
     fn updates_for_dead_channel_are_dropped() {
-        let out = compact_author_entries(vec![
-            meta(1),
-            chan_created(0xAA, 2),
-            chan_updated(0xAA, 3),
-            chan_archived(0xAA, 4),
-        ]);
+        let out = compact_author_entries(
+            vec![
+                meta(1),
+                chan_created(0xAA, 2),
+                chan_updated(0xAA, 3),
+                chan_archived(0xAA, 4),
+            ],
+            0,
+        );
         assert_eq!(out.len(), 1);
         assert!(matches!(out[0], GovernanceEntry::CommunityMeta { .. }));
     }
 
     #[test]
     fn live_channel_with_two_updates_is_kept() {
-        let out = compact_author_entries(vec![
-            meta(1),
-            chan_created(0xAA, 2),
-            chan_updated(0xAA, 3),
-            chan_updated(0xAA, 4),
-        ]);
+        let out = compact_author_entries(
+            vec![
+                meta(1),
+                chan_created(0xAA, 2),
+                chan_updated(0xAA, 3),
+                chan_updated(0xAA, 4),
+            ],
+            0,
+        );
         assert_eq!(out.len(), 4);
         assert_eq!(
             count(&out, |e| matches!(
@@ -471,7 +561,8 @@ mod tests {
         // Conservative deviation from the §4.2 plan: roles feed `validate_write`
         // (cross-author moderation hierarchy + assignment gating), so a same
         // -author define+archive pair is NOT folded.
-        let out = compact_author_entries(vec![meta(1), role_def(0xBB, 2), role_archived(0xBB, 3)]);
+        let out =
+            compact_author_entries(vec![meta(1), role_def(0xBB, 2), role_archived(0xBB, 3)], 0);
         assert_eq!(out.len(), 3);
         assert_eq!(
             count(&out, |e| matches!(
@@ -488,7 +579,7 @@ mod tests {
 
     #[test]
     fn community_meta_collapses_to_latest() {
-        let out = compact_author_entries(vec![role_def(0xBB, 1), meta(5), meta(10)]);
+        let out = compact_author_entries(vec![role_def(0xBB, 1), meta(5), meta(10)], 0);
         assert_eq!(out.len(), 2);
         let metas: Vec<u64> = out
             .iter()
@@ -504,7 +595,7 @@ mod tests {
     fn genesis_community_meta_is_preserved_even_when_superseded() {
         // The author's lowest-lamport entry is force-kept (creator genesis),
         // so an LWW collapse can never drop it even though a later meta wins.
-        let out = compact_author_entries(vec![meta(1), meta(10)]);
+        let out = compact_author_entries(vec![meta(1), meta(10)], 0);
         assert_eq!(out.len(), 2);
         assert_eq!(
             count(&out, |e| matches!(e, GovernanceEntry::CommunityMeta { .. })),
@@ -514,7 +605,7 @@ mod tests {
 
     #[test]
     fn mek_keeps_highest_generation() {
-        let out = compact_author_entries(vec![meta(1), mek(1, 5), mek(2, 6), mek(2, 7)]);
+        let out = compact_author_entries(vec![meta(1), mek(1, 5), mek(2, 6), mek(2, 7)], 0);
         let kept: Vec<(u64, u64)> = out
             .iter()
             .filter_map(|e| match e {
@@ -531,11 +622,10 @@ mod tests {
 
     #[test]
     fn invite_create_and_revoke_keeps_only_tombstone() {
-        let out = compact_author_entries(vec![
-            meta(1),
-            invite_created(0xCC, 2),
-            invite_revoked(0xCC, 3),
-        ]);
+        let out = compact_author_entries(
+            vec![meta(1), invite_created(0xCC, 2), invite_revoked(0xCC, 3)],
+            0,
+        );
         assert_eq!(out.len(), 2);
         assert_eq!(
             count(&out, |e| matches!(e, GovernanceEntry::InviteCreated { .. })),
@@ -549,8 +639,79 @@ mod tests {
 
     #[test]
     fn live_invite_is_kept() {
-        let out = compact_author_entries(vec![meta(1), invite_created(0xCC, 2)]);
+        let out = compact_author_entries(vec![meta(1), invite_created(0xCC, 2)], 0);
         assert_eq!(out.len(), 2);
+        assert_eq!(
+            count(&out, |e| matches!(e, GovernanceEntry::InviteCreated { .. })),
+            1
+        );
+    }
+
+    #[test]
+    fn expired_invite_is_pruned() {
+        // expires_at(100) <= now(200) → dropped (no tombstone needed).
+        let out =
+            compact_author_entries(vec![meta(1), invite_created_exp(0xCC, 2, Some(100))], 200);
+        assert_eq!(
+            count(&out, |e| matches!(e, GovernanceEntry::InviteCreated { .. })),
+            0
+        );
+    }
+
+    #[test]
+    fn unexpired_invite_is_kept() {
+        // expires_at(300) > now(200) → kept.
+        let out =
+            compact_author_entries(vec![meta(1), invite_created_exp(0xCC, 2, Some(300))], 200);
+        assert_eq!(
+            count(&out, |e| matches!(e, GovernanceEntry::InviteCreated { .. })),
+            1
+        );
+    }
+
+    #[test]
+    fn permanent_invite_is_kept() {
+        // expires_at = None → never expires.
+        let out =
+            compact_author_entries(vec![meta(1), invite_created_exp(0xCC, 2, None)], u64::MAX);
+        assert_eq!(
+            count(&out, |e| matches!(e, GovernanceEntry::InviteCreated { .. })),
+            1
+        );
+    }
+
+    #[test]
+    fn over_cap_live_invites_keep_newest_n() {
+        // meta(1) genesis + 10 permanent invites (lamports 2..=11). Cap is 8,
+        // so the 8 newest survive and the 2 oldest (lamports 2, 3) are dropped.
+        let mut entries = vec![meta(1)];
+        for i in 0..10_u8 {
+            entries.push(invite_created_exp(0x20 + i, u64::from(i) + 2, None));
+        }
+        let out = compact_author_entries(entries, 0);
+        assert_eq!(
+            count(&out, |e| matches!(e, GovernanceEntry::InviteCreated { .. })),
+            MAX_ACTIVE_INVITES_PER_INVITER as usize
+        );
+        // The two oldest (lamports 2 and 3) are the ones dropped.
+        let kept_lamports: Vec<u64> = out
+            .iter()
+            .filter_map(|e| match e {
+                GovernanceEntry::InviteCreated { lamport, .. } => Some(*lamport),
+                _ => None,
+            })
+            .collect();
+        assert!(!kept_lamports.contains(&2));
+        assert!(!kept_lamports.contains(&3));
+        assert!(kept_lamports.contains(&11));
+    }
+
+    #[test]
+    fn genesis_invite_never_pruned_even_if_expired() {
+        // The author's lowest-lamport entry is the genesis; it is force-kept
+        // even when it is an expired invite.
+        let out =
+            compact_author_entries(vec![invite_created_exp(0xCC, 1, Some(100)), meta(2)], 200);
         assert_eq!(
             count(&out, |e| matches!(e, GovernanceEntry::InviteCreated { .. })),
             1
@@ -584,7 +745,7 @@ mod tests {
         // The write that previously overflowed: an invite pointer entry.
         entries.push(invite_created(0xEE, 15));
 
-        let out = compact_author_entries(entries);
+        let out = compact_author_entries(entries, 0);
 
         // All three dead channels (and their archives) are gone.
         assert_eq!(

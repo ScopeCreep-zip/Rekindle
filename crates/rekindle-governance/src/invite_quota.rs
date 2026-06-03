@@ -9,7 +9,7 @@
 
 use rekindle_types::id::PseudonymKey;
 
-use crate::state::{CommunityPolicyState, GovernanceState};
+use crate::state::GovernanceState;
 
 /// Hard ceiling on per-invite reuse. Even if `CommunityPolicy` permits a
 /// higher value, readers reject the entry. Combined with the per-inviter
@@ -22,6 +22,15 @@ use crate::state::{CommunityPolicyState, GovernanceState};
 /// (small groups, classroom rosters, conference attendees) without
 /// granting attacker leverage.
 pub const MAX_USES_PER_INVITE: u32 = 100;
+
+/// Hard ceiling on simultaneously-active invites per inviter. Deliberately
+/// decoupled from `CommunityPolicy.max_joins_per_interval` (which bounds the
+/// raid-detection JOIN rate, not a record count): every live invite is a
+/// governance `InviteCreated` pointer entry occupying the author's SMPL subkey,
+/// so the count must be bounded independently of the join-rate policy to keep
+/// the subkey under Veilid's ~4112 B per-subkey cap. `compact_author_entries`
+/// enforces the same bound on the write path (keep-newest-N).
+pub const MAX_ACTIVE_INVITES_PER_INVITER: u32 = 8;
 
 /// Count active (non-revoked, non-expired) invites whose `creator_pseudonym`
 /// matches `inviter`. Excludes the entry currently being validated by
@@ -41,19 +50,16 @@ pub fn active_invites_by_inviter(state: &GovernanceState, inviter: &PseudonymKey
         .unwrap_or(u32::MAX)
 }
 
-/// Check whether `inviter` may mint a new invite, given the current state
-/// and the community's policy. Returns `true` if accept, `false` if reject.
+/// Check whether `inviter` may mint a new invite. Returns `true` if accept,
+/// `false` if reject.
 ///
-/// Defaults to `CommunityPolicyState::DEFAULT_MAX_JOINS_PER_INTERVAL` when
-/// no `CommunityPolicy` entry has been merged yet (community is using
-/// defaults, architecture §20.6 line 2607).
+/// The cap is the fixed `MAX_ACTIVE_INVITES_PER_INVITER` — independent of
+/// `CommunityPolicy.max_joins_per_interval` (which governs the raid-detection
+/// join rate, a different concern). The count stays clock-free (incl. expired
+/// invites) so `validate_write` converges across peers; expired invites are
+/// shed on the author's next write by `compact_author_entries`.
 pub fn check_active_invites_cap(state: &GovernanceState, inviter: &PseudonymKey) -> bool {
-    let cap = state
-        .community_policy
-        .as_ref()
-        .map(|p| p.max_joins_per_interval)
-        .unwrap_or(CommunityPolicyState::DEFAULT_MAX_JOINS_PER_INTERVAL);
-    active_invites_by_inviter(state, inviter) < cap
+    active_invites_by_inviter(state, inviter) < MAX_ACTIVE_INVITES_PER_INVITER
 }
 
 /// Reject invites whose declared reuse count exceeds the hard cap.
@@ -68,7 +74,7 @@ mod tests {
     use std::collections::HashMap;
 
     use super::*;
-    use crate::state::InviteState;
+    use crate::state::{CommunityPolicyState, InviteState};
 
     fn pseudo(b: u8) -> PseudonymKey {
         PseudonymKey([b; 32])
@@ -97,35 +103,40 @@ mod tests {
     }
 
     #[test]
-    fn cap_uses_default_when_no_policy() {
+    fn cap_uses_fixed_ceiling() {
         let mut state = GovernanceState::default();
-        // 19 invites — under the default cap of 20.
-        for i in 0..19_u8 {
+        // One under the cap — may still mint.
+        for i in 0..(MAX_ACTIVE_INVITES_PER_INVITER as u8 - 1) {
             let mut iid = [0u8; 16];
             iid[0] = i;
             state.invites.insert(iid, invite(pseudo(5), u64::from(i)));
         }
         assert!(check_active_invites_cap(&state, &pseudo(5)));
 
-        // 20 invites — at cap, the 21st is rejected.
-        let mut iid_20 = [0u8; 16];
-        iid_20[0] = 19;
-        state.invites.insert(iid_20, invite(pseudo(5), 19));
+        // At the cap — the next mint is rejected.
+        let mut iid_cap = [0u8; 16];
+        iid_cap[0] = MAX_ACTIVE_INVITES_PER_INVITER as u8 - 1;
+        state.invites.insert(
+            iid_cap,
+            invite(pseudo(5), u64::from(MAX_ACTIVE_INVITES_PER_INVITER)),
+        );
         assert!(!check_active_invites_cap(&state, &pseudo(5)));
     }
 
     #[test]
-    fn cap_respects_community_policy_override() {
+    fn cap_ignores_community_policy() {
+        // A permissive raid-rate policy cannot raise the invite-count cap —
+        // they govern different things.
         let mut state = GovernanceState {
             community_policy: Some(CommunityPolicyState {
                 policy_text: None,
-                max_joins_per_interval: 5,
+                max_joins_per_interval: 1000,
                 join_interval_seconds: 600,
                 lamport: 1,
             }),
             ..Default::default()
         };
-        for i in 0..5_u8 {
+        for i in 0..(MAX_ACTIVE_INVITES_PER_INVITER as u8) {
             let mut iid = [0u8; 16];
             iid[0] = i;
             state.invites.insert(iid, invite(pseudo(5), u64::from(i)));

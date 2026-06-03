@@ -22,6 +22,14 @@ use crate::event::GovernanceRuntimeEvent;
 /// detail, so we surface the size proactively here.
 const SMPL_SUBKEY_WARN_BYTES: usize = 3500;
 
+/// Hard SMPL per-subkey cap for a 255-slot governance record:
+/// `MAX_RECORD_DATA_SIZE (1_048_576) / subkey_count (255)`. A `set_dht_value`
+/// over this fails inside Veilid as a generic "failed schema validation" with
+/// no size detail, so we reject proactively with a typed error + a per-kind
+/// breakdown to make the offender obvious instead of surfacing Veilid's opaque
+/// string to the UI.
+const SMPL_SUBKEY_MAX_BYTES: usize = 1_048_576 / 255;
+
 /// Architecture §6 — classify a governance entry by which UI snapshot
 /// it invalidates so we can emit the right event after a successful
 /// CRDT apply. `Roles` triggers a `RolesChanged` snapshot;
@@ -55,6 +63,37 @@ fn classify_entry(entry: &GovernanceEntry) -> EntryAffects {
             ..EntryAffects::default()
         },
         _ => EntryAffects::default(),
+    }
+}
+
+/// Per-kind entry counts for overflow diagnostics, e.g.
+/// `"ChannelCreated=2, InviteCreated=8, RoleDefinition=3"`. Only runs on the
+/// should-never-happen `SubkeyOverflow` path.
+fn entry_kind_breakdown(entries: &[GovernanceEntry]) -> String {
+    use std::collections::BTreeMap;
+    let mut counts: BTreeMap<&'static str, usize> = BTreeMap::new();
+    for e in entries {
+        *counts.entry(entry_kind(e)).or_insert(0) += 1;
+    }
+    counts
+        .iter()
+        .map(|(kind, n)| format!("{kind}={n}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn entry_kind(entry: &GovernanceEntry) -> &'static str {
+    match entry {
+        GovernanceEntry::InviteCreated { .. } => "InviteCreated",
+        GovernanceEntry::InviteRevoked { .. } => "InviteRevoked",
+        GovernanceEntry::ChannelCreated { .. } => "ChannelCreated",
+        GovernanceEntry::ChannelUpdated { .. } => "ChannelUpdated",
+        GovernanceEntry::ChannelArchived { .. } => "ChannelArchived",
+        GovernanceEntry::RoleDefinition { .. } => "RoleDefinition",
+        GovernanceEntry::RoleAssignment { .. } => "RoleAssignment",
+        GovernanceEntry::MEKGenerationBump { .. } => "MEKGenerationBump",
+        GovernanceEntry::CommunityMeta { .. } => "CommunityMeta",
+        _ => "other",
     }
 }
 
@@ -133,7 +172,7 @@ pub async fn write_entry<D: GovernanceRuntimeDeps>(
     // on the next write: dead channel/category/event/invite lifecycles and
     // superseded single-key metadata are dropped so the new entry fits under
     // Veilid's ~4112 B SMPL per-subkey cap.
-    let my_entries = compact::compact_author_entries(my_entries);
+    let my_entries = compact::compact_author_entries(my_entries, rekindle_utils::timestamp_secs());
 
     let identity_secret = deps
         .identity_secret()
@@ -172,6 +211,25 @@ pub async fn write_entry<D: GovernanceRuntimeDeps>(
             subkey = my_slot,
             "writing governance subkey payload"
         );
+    }
+
+    // A payload over the per-subkey cap fails inside Veilid as a generic
+    // "failed schema validation" with no size detail. Reject here with a typed
+    // error + per-kind breakdown so overflow names itself rather than surfacing
+    // Veilid's opaque string. Compaction above should keep us well under cap, so
+    // this is a diagnostic safety net, not an expected path.
+    if payload.len() > SMPL_SUBKEY_MAX_BYTES {
+        tracing::error!(
+            payload_bytes = payload.len(),
+            cap = SMPL_SUBKEY_MAX_BYTES,
+            subkey = my_slot,
+            breakdown = %entry_kind_breakdown(&payload_struct.entries),
+            "governance subkey exceeds the SMPL per-subkey cap even after compaction"
+        );
+        return Err(GovernanceRuntimeError::SubkeyOverflow {
+            bytes: payload.len(),
+            cap: SMPL_SUBKEY_MAX_BYTES,
+        });
     }
 
     // M9.5 — set_dht_value returns Some(stale) when our write was NOT

@@ -231,7 +231,7 @@ proptest! {
         let raw = [ctx.clone(), vec![(author.clone(), e.clone())]].concat();
         let folded = [
             ctx,
-            vec![(author, crate::compact::compact_author_entries(e))],
+            vec![(author, crate::compact::compact_author_entries(e, 0))],
         ]
         .concat();
         prop_assert_eq!(merge(&raw), merge(&folded));

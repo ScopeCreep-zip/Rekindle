@@ -20,7 +20,7 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
   const [loaded, setLoaded] = createSignal(false);
   const [creatingInvite, setCreatingInvite] = createSignal(false);
   const [maxUses, setMaxUses] = createSignal("");
-  const [expiresIn, setExpiresIn] = createSignal("");
+  const [expiresIn, setExpiresIn] = createSignal("604800");
   const [copiedHash, setCopiedHash] = createSignal<string | null>(null);
   const [revokingHash, setRevokingHash] = createSignal<string | null>(null);
   const [createdLink, setCreatedLink] = createSignal<string | null>(null);
@@ -69,7 +69,7 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
       await copyToClipboard(link);
       setCreatingInvite(false);
       setMaxUses("");
-      setExpiresIn("");
+      setExpiresIn("604800");
     }
   }
 

@@ -45,6 +45,11 @@ pub async fn create_community_invite_inner(
 ) -> Result<InviteCreatedDto, String> {
     require_permission(state, &community_id, Permissions::CREATE_INSTANT_INVITE)?;
 
+    // Clamp a provided TTL so a programmatic/edited call can't mint a
+    // near-permanent invite that lingers in governance. `None` stays permanent.
+    const MAX_INVITE_TTL_SECS: u64 = 30 * 24 * 60 * 60;
+    let expires_in_seconds = expires_in_seconds.map(|s| s.min(MAX_INVITE_TTL_SECS));
+
     let code = hex::encode(random_nonce(16));
     let code_hash = rekindle_secrets::invite::hash_invite_code(&code);
 
@@ -74,6 +79,29 @@ pub async fn create_community_invite_inner(
             state_helpers::our_route_blob(state).unwrap_or_default(),
         )
     };
+
+    // Guard (architecture §6.2): an invite must bootstrap the joiner into the
+    // PRIMARY (segment-0) registry — the joiner treats the invite registry as
+    // `slot_range_start 0` and derives slot keypairs from it. `member_registry_key`
+    // is the primary registry, propagated from the creator through the invite
+    // chain; segment 0 is implicit and never listed in `gov_state.segments`, so a
+    // collision with a segment-≥1 registry means the value is corrupt and the
+    // invite would mis-route joiners. Refuse to mint it rather than ship a break.
+    if let Some(gov) = state_helpers::governance_state(state, &community_id) {
+        if let Some(seg) = gov
+            .segments
+            .iter()
+            .find(|s| s.segment_index != 0 && s.registry_key == registry_key)
+        {
+            tracing::error!(
+                community = %community_id,
+                segment = seg.segment_index,
+                "invite registry key matches a segment-{} registry, not the primary — refusing to mint a mis-routing invite",
+                seg.segment_index,
+            );
+            return Err("invite registry key is a segment registry, not the primary".into());
+        }
+    }
 
     let mek_wire_b64 = {
         let cache = state.mek_cache.lock();
