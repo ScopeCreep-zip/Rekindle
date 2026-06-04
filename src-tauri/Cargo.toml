@@ -108,6 +108,13 @@ chrono-tz = "0.9"
 [target.'cfg(target_os = "linux")'.dependencies]
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["client", "staging"] }
+# WebKitGTK ships the MediaStream API gated off and denies getUserMedia
+# permission requests by default — the cause of the blank in-app webcam on
+# Linux. We reach the underlying WebView (same version wry/tauri compiles
+# against, so `PlatformWebview::inner()` type-matches) to enable
+# `enable-media-stream` and approve media-device permission requests. v2_4
+# gates `set_enable_media_stream`.
+webkit2gtk = { version = "2.0.2", features = ["v2_4"] }
 
 [dev-dependencies]
 tempfile = "3"

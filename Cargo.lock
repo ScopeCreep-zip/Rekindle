@@ -7165,6 +7165,7 @@ dependencies = [
  "veilid-core",
  "wayland-client",
  "wayland-protocols",
+ "webkit2gtk",
  "zeroize",
 ]
 

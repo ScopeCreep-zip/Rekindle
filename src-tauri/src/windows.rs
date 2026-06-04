@@ -19,7 +19,7 @@ pub fn open_login(app: &AppHandle, preselect_key: Option<&str>) -> Result<(), St
         None => "/login".to_string(),
     };
 
-    WebviewWindowBuilder::new(app, "login", WebviewUrl::App(path.into()))
+    let window = WebviewWindowBuilder::new(app, "login", WebviewUrl::App(path.into()))
         .title("Rekindle")
         .inner_size(380.0, 480.0)
         .min_inner_size(340.0, 440.0)
@@ -30,6 +30,7 @@ pub fn open_login(app: &AppHandle, preselect_key: Option<&str>) -> Result<(), St
         .center()
         .build()
         .map_err(|e: tauri::Error| e.to_string())?;
+    crate::platform::enable_webview_media_capture(&window);
 
     Ok(())
 }
@@ -44,17 +45,19 @@ pub fn open_buddy_list(app: &AppHandle) -> Result<(), String> {
         let _ = window.destroy();
     }
 
-    WebviewWindowBuilder::new(app, "buddy-list", WebviewUrl::App("/buddy-list".into()))
-        .title("Rekindle")
-        .inner_size(320.0, 650.0)
-        .min_inner_size(300.0, 500.0)
-        .max_inner_size(400.0, 900.0)
-        .decorations(false)
-        .transparent(true)
-        .shadow(true)
-        .resizable(true)
-        .build()
-        .map_err(|e: tauri::Error| e.to_string())?;
+    let window =
+        WebviewWindowBuilder::new(app, "buddy-list", WebviewUrl::App("/buddy-list".into()))
+            .title("Rekindle")
+            .inner_size(320.0, 650.0)
+            .min_inner_size(300.0, 500.0)
+            .max_inner_size(400.0, 900.0)
+            .decorations(false)
+            .transparent(true)
+            .shadow(true)
+            .resizable(true)
+            .build()
+            .map_err(|e: tauri::Error| e.to_string())?;
+    crate::platform::enable_webview_media_capture(&window);
 
     Ok(())
 }
@@ -74,7 +77,7 @@ pub fn open_chat_window(
     }
 
     let url = WebviewUrl::App(format!("/chat?peer={public_key}").into());
-    WebviewWindowBuilder::new(app, &label, url)
+    let window = WebviewWindowBuilder::new(app, &label, url)
         .title(format!("Chat - {display_name}"))
         .inner_size(480.0, 550.0)
         .min_inner_size(380.0, 400.0)
@@ -84,6 +87,7 @@ pub fn open_chat_window(
         .resizable(true)
         .build()
         .map_err(|e: tauri::Error| e.to_string())?;
+    crate::platform::enable_webview_media_capture(&window);
 
     Ok(())
 }
@@ -107,7 +111,7 @@ pub fn open_dm_window(app: &AppHandle, record_key: &str, title_hint: &str) -> Re
     }
 
     let url = WebviewUrl::App(format!("/dm?record={record_key}").into());
-    WebviewWindowBuilder::new(app, &label, url)
+    let window = WebviewWindowBuilder::new(app, &label, url)
         .title(format!("DM - {title_hint}"))
         .inner_size(480.0, 550.0)
         .min_inner_size(380.0, 400.0)
@@ -117,6 +121,7 @@ pub fn open_dm_window(app: &AppHandle, record_key: &str, title_hint: &str) -> Re
         .resizable(true)
         .build()
         .map_err(|e: tauri::Error| e.to_string())?;
+    crate::platform::enable_webview_media_capture(&window);
 
     Ok(())
 }
@@ -141,7 +146,7 @@ pub fn open_settings(app: &AppHandle, tab: Option<&str>) -> Result<(), String> {
         None => "/settings".to_string(),
     };
 
-    WebviewWindowBuilder::new(app, "settings", WebviewUrl::App(path.into()))
+    let window = WebviewWindowBuilder::new(app, "settings", WebviewUrl::App(path.into()))
         .title("Rekindle - Settings")
         .inner_size(500.0, 550.0)
         .min_inner_size(420.0, 450.0)
@@ -151,6 +156,7 @@ pub fn open_settings(app: &AppHandle, tab: Option<&str>) -> Result<(), String> {
         .resizable(true)
         .build()
         .map_err(|e: tauri::Error| e.to_string())?;
+    crate::platform::enable_webview_media_capture(&window);
 
     Ok(())
 }
@@ -175,7 +181,7 @@ pub fn open_community_window(
     }
 
     let url = WebviewUrl::App(format!("/community?id={community_id}").into());
-    WebviewWindowBuilder::new(app, &label, url)
+    let window = WebviewWindowBuilder::new(app, &label, url)
         .title(format!("Community - {community_name}"))
         .inner_size(900.0, 650.0)
         .min_inner_size(750.0, 500.0)
@@ -185,6 +191,7 @@ pub fn open_community_window(
         .resizable(true)
         .build()
         .map_err(|e: tauri::Error| e.to_string())?;
+    crate::platform::enable_webview_media_capture(&window);
 
     Ok(())
 }
@@ -237,7 +244,7 @@ pub fn open_call_window(app: &AppHandle, call_id: &str) -> Result<(), String> {
     }
 
     let url = WebviewUrl::App(format!("/call?id={call_id}").into());
-    WebviewWindowBuilder::new(app, &label, url)
+    let window = WebviewWindowBuilder::new(app, &label, url)
         .title("Call")
         .inner_size(420.0, 540.0)
         .min_inner_size(360.0, 420.0)
@@ -248,6 +255,7 @@ pub fn open_call_window(app: &AppHandle, call_id: &str) -> Result<(), String> {
         .always_on_top(false)
         .build()
         .map_err(|e: tauri::Error| e.to_string())?;
+    crate::platform::enable_webview_media_capture(&window);
 
     Ok(())
 }
@@ -267,7 +275,7 @@ pub fn open_profile_window(
     }
 
     let url = WebviewUrl::App(format!("/profile?key={public_key}").into());
-    WebviewWindowBuilder::new(app, &label, url)
+    let window = WebviewWindowBuilder::new(app, &label, url)
         .title(format!("Profile - {display_name}"))
         .inner_size(380.0, 500.0)
         .min_inner_size(340.0, 420.0)
@@ -277,6 +285,7 @@ pub fn open_profile_window(
         .resizable(true)
         .build()
         .map_err(|e: tauri::Error| e.to_string())?;
+    crate::platform::enable_webview_media_capture(&window);
 
     Ok(())
 }

@@ -44,3 +44,56 @@ pub fn linux_display_setup() {
         }
     }
 }
+
+/// Enable in-webview camera/microphone capture on Linux (WebKitGTK).
+///
+/// WebKitGTK ships the MediaStream API (`navigator.mediaDevices.getUserMedia`
+/// / `enumerateDevices`) gated off and silently *denies* every media
+/// permission request unless the embedder opts in — so a Tauri webview shows a
+/// blank camera and an empty device list with no OS prompt. We flip on
+/// `enable-media-stream` and approve the two media-device permission request
+/// types (capture + device enumeration), denying every other type
+/// (geolocation, notifications, …) so we don't broaden the webview's authority.
+///
+/// Frames are captured via WebCodecs and shipped over Veilid, so no
+/// WebRTC/gstreamer stack is required — only the capture API.
+///
+/// No-op on macOS/Windows: those webviews honour getUserMedia natively and
+/// surface the OS permission prompt themselves.
+#[cfg(target_os = "linux")]
+pub fn enable_webview_media_capture(window: &tauri::WebviewWindow) {
+    use webkit2gtk::glib::prelude::Cast;
+    use webkit2gtk::{
+        DeviceInfoPermissionRequest, PermissionRequestExt, SettingsExt, UserMediaPermissionRequest,
+        WebViewExt,
+    };
+
+    let label = window.label().to_string();
+    let result = window.with_webview(move |platform_webview| {
+        let webview = platform_webview.inner();
+        if let Some(settings) = WebViewExt::settings(&webview) {
+            settings.set_enable_media_stream(true);
+        }
+        webview.connect_permission_request(|_webview, request| {
+            let is_media_request = request
+                .downcast_ref::<UserMediaPermissionRequest>()
+                .is_some()
+                || request
+                    .downcast_ref::<DeviceInfoPermissionRequest>()
+                    .is_some();
+            if is_media_request {
+                request.allow();
+            } else {
+                request.deny();
+            }
+            true
+        });
+    });
+    if let Err(e) = result {
+        tracing::warn!(window = %label, error = %e, "could not enable webview media capture");
+    }
+}
+
+/// No-op outside Linux — native webviews handle media permissions themselves.
+#[cfg(not(target_os = "linux"))]
+pub fn enable_webview_media_capture(_window: &tauri::WebviewWindow) {}
