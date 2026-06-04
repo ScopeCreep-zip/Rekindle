@@ -11,7 +11,7 @@
 //! AppState/SQLite mutations.
 
 use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
-use rekindle_protocol::dht::community::permissions_v2::Permissions;
+use rekindle_types::permissions;
 
 use crate::commands::community::helpers::{hex_to_id_16, require_permission};
 use crate::db::DbPool;
@@ -32,7 +32,7 @@ pub async fn set_onboarding_config_inner(
     community_id: String,
     config: serde_json::Value,
 ) -> Result<(), String> {
-    require_permission(state, &community_id, Permissions::MANAGE_COMMUNITY)?;
+    require_permission(state, &community_id, permissions::MANAGE_COMMUNITY)?;
     let config: rekindle_protocol::dht::community::onboarding::OnboardingConfig =
         serde_json::from_value(config).map_err(|e| format!("invalid config: {e}"))?;
     validate_onboarding_shape(&config)?;
@@ -71,7 +71,7 @@ pub async fn set_welcome_screen_inner(
     community_id: String,
     screen: serde_json::Value,
 ) -> Result<(), String> {
-    require_permission(state, &community_id, Permissions::MANAGE_COMMUNITY)?;
+    require_permission(state, &community_id, permissions::MANAGE_COMMUNITY)?;
     let screen: rekindle_protocol::dht::community::onboarding::WelcomeScreen =
         serde_json::from_value(screen).map_err(|e| format!("invalid screen: {e}"))?;
     if screen.channels.len() > MAX_WELCOME_SCREEN_CHANNELS {

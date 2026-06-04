@@ -2,7 +2,7 @@ use tauri::State;
 
 use crate::db::DbPool;
 use crate::state::SharedState;
-use rekindle_protocol::dht::community::permissions_v2::Permissions;
+use rekindle_types::permissions;
 
 use super::helpers::require_permission;
 
@@ -19,7 +19,7 @@ pub async fn create_poll(
     duration_seconds: Option<u64>,
 ) -> Result<String, String> {
     let _ = pool;
-    require_permission(state.inner(), &community_id, Permissions::SEND_POLLS)?;
+    require_permission(state.inner(), &community_id, permissions::SEND_POLLS)?;
     crate::services::community::persist_poll_create(
         state.inner(),
         &community_id,
@@ -43,7 +43,7 @@ pub async fn vote_poll(
     selected_answers: Vec<u8>,
 ) -> Result<(), String> {
     let _ = pool;
-    require_permission(state.inner(), &community_id, Permissions::SEND_MESSAGES)?;
+    require_permission(state.inner(), &community_id, permissions::SEND_MESSAGES)?;
     crate::services::community::persist_poll_vote(
         state.inner(),
         &community_id,
@@ -64,7 +64,7 @@ pub async fn close_poll(
 ) -> Result<(), String> {
     let _ = pool;
     let moderator_override =
-        require_permission(state.inner(), &community_id, Permissions::MANAGE_MESSAGES).is_ok();
+        require_permission(state.inner(), &community_id, permissions::MANAGE_MESSAGES).is_ok();
     crate::services::community::persist_poll_close(
         state.inner(),
         &community_id,
@@ -84,7 +84,7 @@ pub async fn get_poll_results(
     poll_id: String,
 ) -> Result<Vec<u32>, String> {
     let _ = pool;
-    require_permission(state.inner(), &community_id, Permissions::VIEW_CHANNEL)?;
+    require_permission(state.inner(), &community_id, permissions::VIEW_CHANNELS)?;
     crate::services::community::channel_polls::get_poll_results(
         state.inner(),
         &community_id,

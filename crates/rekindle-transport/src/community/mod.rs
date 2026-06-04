@@ -8,4 +8,3 @@
 pub mod audit_log;
 pub mod automod;
 pub mod onboarding;
-pub mod permissions;

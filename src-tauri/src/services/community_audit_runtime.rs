@@ -5,7 +5,7 @@
 
 use futures::stream::{FuturesUnordered, StreamExt};
 
-use rekindle_protocol::dht::community::permissions_v2::Permissions;
+use rekindle_types::permissions;
 
 use crate::commands::community::helpers::require_permission;
 use crate::commands::community::types::AuditLogEntryInfoDto;
@@ -54,7 +54,7 @@ pub async fn get_audit_log_inner(
     before_timestamp: Option<u64>,
     limit: u32,
 ) -> Result<Vec<AuditLogEntryInfoDto>, String> {
-    require_permission(state, &community_id, Permissions::VIEW_AUDIT_LOG)?;
+    require_permission(state, &community_id, permissions::VIEW_AUDIT_LOG)?;
 
     let gov_key_str = {
         let communities = state.communities.read();

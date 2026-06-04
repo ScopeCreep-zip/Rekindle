@@ -9,7 +9,7 @@ use crate::commands::community::helpers::require_permission;
 use crate::db::DbPool;
 use crate::services::community_role_runtime::{create_role_inner, edit_role_inner};
 use crate::state::SharedState;
-use rekindle_protocol::dht::community::permissions_v2::Permissions;
+use rekindle_types::permissions;
 
 /// Architecture §19.4 — explicit edit verb so callers can either set
 /// a new exclusion-group slug or clear it. Omitting the field
@@ -58,7 +58,7 @@ pub async fn create_role_handler_inner(
     self_assignable: bool,
     exclusion_group: Option<String>,
 ) -> Result<u32, String> {
-    require_permission(state, &community_id, Permissions::MANAGE_ROLES)?;
+    require_permission(state, &community_id, permissions::MANAGE_ROLES)?;
     let permissions_u64: u64 = permissions
         .parse()
         .map_err(|e| format!("invalid permissions: {e}"))?;
@@ -92,7 +92,7 @@ pub async fn edit_role_handler_inner(
     self_assignable: Option<bool>,
     exclusion_group: Option<ExclusionGroupEdit>,
 ) -> Result<(), String> {
-    require_permission(state, &community_id, Permissions::MANAGE_ROLES)?;
+    require_permission(state, &community_id, permissions::MANAGE_ROLES)?;
     let permissions_u64: Option<u64> = permissions
         .map(|s| s.parse::<u64>())
         .transpose()

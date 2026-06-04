@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use rekindle_governance_runtime as gov_rt;
-use rekindle_protocol::dht::community::permissions_v2::Permissions;
+use rekindle_types::permissions;
 
 use crate::channels::community_channel::CommunityEvent;
 use crate::commands::community::helpers::{
@@ -46,7 +46,7 @@ pub async fn create_community_invite_inner(
     max_uses: Option<u32>,
     expires_in_seconds: Option<u64>,
 ) -> Result<InviteCreatedDto, String> {
-    require_permission(state, &community_id, Permissions::CREATE_INSTANT_INVITE)?;
+    require_permission(state, &community_id, permissions::CREATE_INVITES)?;
 
     // Clamp a provided TTL so a programmatic/edited call can't mint a
     // near-permanent invite that lingers in governance. `None` stays permanent.
@@ -225,7 +225,7 @@ pub async fn revoke_community_invite_inner(
     community_id: String,
     code_hash: String,
 ) -> Result<(), String> {
-    require_permission(state, &community_id, Permissions::MANAGE_COMMUNITY)?;
+    require_permission(state, &community_id, permissions::MANAGE_COMMUNITY)?;
     let lamport = state_helpers::increment_lamport(state, &community_id);
     crate::services::community::write_entry(
         state,

@@ -19,7 +19,6 @@
 //! coordinate-wise join. This module is just the orchestration that wires
 //! the new SMPL records into governance.
 
-use rekindle_protocol::dht::community::permissions_v2::Permissions;
 use rekindle_secrets::derive;
 use rekindle_secrets::keys::SlotSeed;
 use rekindle_types::governance::GovernanceEntry;
@@ -119,7 +118,7 @@ pub async fn expand_community_segment<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
 ) -> Result<u32, GovernanceRuntimeError> {
-    deps.require_permission(community_id, Permissions::MANAGE_COMMUNITY.bits())?;
+    deps.require_permission(community_id, rekindle_types::permissions::MANAGE_COMMUNITY)?;
 
     let descriptors = segment_descriptors(deps, community_id);
     let next_segment_index = descriptors.last().map_or(1, |d| d.segment_index + 1);

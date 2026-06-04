@@ -10,14 +10,14 @@ use crate::commands::community::policy::CommunityPolicyDto;
 use crate::state::SharedState;
 use crate::state_helpers;
 use rekindle_governance::state::CommunityPolicyState;
-use rekindle_protocol::dht::community::permissions_v2::Permissions;
 use rekindle_types::governance::GovernanceEntry;
+use rekindle_types::permissions;
 
 pub fn get_community_policy_inner(
     state: &SharedState,
     community_id: &str,
 ) -> Result<CommunityPolicyDto, String> {
-    require_permission(state, community_id, Permissions::VIEW_CHANNEL)?;
+    require_permission(state, community_id, permissions::VIEW_CHANNELS)?;
     let policy = state_helpers::governance_state(state, community_id)
         .and_then(|gs| gs.community_policy.clone());
     Ok(CommunityPolicyDto {
@@ -42,7 +42,7 @@ pub async fn set_community_policy_inner(
     max_joins_per_interval: u32,
     join_interval_seconds: u32,
 ) -> Result<(), String> {
-    require_permission(state, community_id, Permissions::MANAGE_COMMUNITY)?;
+    require_permission(state, community_id, permissions::MANAGE_COMMUNITY)?;
     if max_joins_per_interval == 0 {
         return Err("max_joins_per_interval must be > 0".into());
     }

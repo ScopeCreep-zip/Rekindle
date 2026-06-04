@@ -3,7 +3,7 @@ use tauri::State;
 use crate::commands::chat::Message;
 use crate::db::DbPool;
 use crate::state::SharedState;
-use rekindle_protocol::dht::community::permissions_v2::Permissions;
+use rekindle_types::permissions;
 
 use super::helpers::require_permission;
 
@@ -40,7 +40,7 @@ pub async fn get_channel_threads(
     community_id: String,
     channel_id: String,
 ) -> Result<Vec<ThreadInfoDto>, String> {
-    require_permission(state.inner(), &community_id, Permissions::VIEW_CHANNEL)?;
+    require_permission(state.inner(), &community_id, permissions::VIEW_CHANNELS)?;
     crate::services::community::threads::list_threads(
         state.inner(),
         pool.inner(),
@@ -57,7 +57,7 @@ pub async fn get_active_threads(
     community_id: String,
     channel_id: String,
 ) -> Result<Vec<ThreadInfoDto>, String> {
-    require_permission(state.inner(), &community_id, Permissions::VIEW_CHANNEL)?;
+    require_permission(state.inner(), &community_id, permissions::VIEW_CHANNELS)?;
     crate::services::community::threads::list_active_threads(
         state.inner(),
         pool.inner(),
@@ -76,7 +76,7 @@ pub async fn send_thread_message(
     body: String,
 ) -> Result<(), String> {
     let _ = pool;
-    require_permission(state.inner(), &community_id, Permissions::SEND_MESSAGES)?;
+    require_permission(state.inner(), &community_id, permissions::SEND_MESSAGES)?;
     crate::services::community::threads::send_thread_message(
         state.inner(),
         &community_id,
@@ -96,7 +96,7 @@ pub async fn get_thread_messages(
     before_timestamp: Option<u64>,
 ) -> Result<Vec<Message>, String> {
     let _ = pool;
-    require_permission(state.inner(), &community_id, Permissions::VIEW_CHANNEL)?;
+    require_permission(state.inner(), &community_id, permissions::VIEW_CHANNELS)?;
     crate::services::community::threads::load_thread_messages(
         state.inner(),
         &community_id,
@@ -115,7 +115,7 @@ pub async fn archive_thread(
     thread_id: String,
 ) -> Result<(), String> {
     let _ = pool;
-    require_permission(state.inner(), &community_id, Permissions::MANAGE_THREADS)?;
+    require_permission(state.inner(), &community_id, permissions::MANAGE_THREADS)?;
     crate::services::community::threads::archive_thread(state.inner(), &community_id, &thread_id)
         .await
 }

@@ -22,7 +22,6 @@ use rekindle_protocol::dht::community::channel_record::{
     ChannelAttachmentCached, ChannelMessage, ChannelRecordEntry,
 };
 use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
-use rekindle_protocol::dht::community::permissions_v2::Permissions;
 use uuid::Uuid;
 
 use crate::cache::ChunkCache;
@@ -109,11 +108,7 @@ pub trait FilesDeps: Send + Sync + 'static {
 
     // ── Permissions + slowmode + mentions ──────────────────────────
 
-    fn require_permission(
-        &self,
-        community_id: &str,
-        permission: Permissions,
-    ) -> Result<(), FilesError>;
+    fn require_permission(&self, community_id: &str, permission: u64) -> Result<(), FilesError>;
 
     fn enforce_slowmode(
         &self,

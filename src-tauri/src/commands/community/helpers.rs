@@ -1,5 +1,4 @@
 use crate::state::SharedState;
-use rekindle_protocol::dht::community::permissions_v2::Permissions;
 
 pub(crate) fn hex_to_id_16(hex_str: &str) -> [u8; 16] {
     hex::decode(hex_str)
@@ -40,7 +39,7 @@ pub(crate) fn random_nonce(bytes_len: usize) -> Vec<u8> {
 pub(crate) fn require_permission(
     state: &SharedState,
     community_id: &str,
-    required: Permissions,
+    required: u64,
 ) -> Result<(), String> {
     let communities = state.communities.read();
     let community = communities.get(community_id).ok_or("community not found")?;
@@ -63,11 +62,9 @@ pub(crate) fn require_permission(
         gov,
         rekindle_utils::timestamp_secs(),
     );
-    if perms & rekindle_types::permissions::ADMINISTRATOR != 0
-        || perms & required.bits() == required.bits()
-    {
+    if rekindle_governance::permissions::has_all_capabilities(perms, required) {
         Ok(())
     } else {
-        Err(format!("missing permission: {required:?}"))
+        Err(format!("missing permission: {required:#x}"))
     }
 }

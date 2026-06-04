@@ -8,7 +8,7 @@ use crate::commands::community::helpers::require_permission;
 use crate::db::DbPool;
 use crate::state::SharedState;
 use crate::state_helpers;
-use rekindle_protocol::dht::community::permissions_v2::Permissions;
+use rekindle_types::permissions;
 
 use super::community_moderation_runtime::{admin_delete_one_message, BULK_DELETE_CAP};
 
@@ -29,7 +29,7 @@ pub async fn bulk_delete_channel_messages_inner(
             message_ids.len()
         ));
     }
-    require_permission(state, &community_id, Permissions::MANAGE_MESSAGES)?;
+    require_permission(state, &community_id, permissions::MANAGE_MESSAGES)?;
     let owner_key = state_helpers::current_owner_key(state)?;
 
     let mut deleted = 0u32;

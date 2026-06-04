@@ -2,7 +2,7 @@ use tauri::State;
 
 use crate::db::DbPool;
 use crate::state::SharedState;
-use rekindle_protocol::dht::community::permissions_v2::Permissions;
+use rekindle_types::permissions;
 
 use super::helpers::require_permission;
 use crate::services::community_mek_local_rotate::rotate_mek_local;
@@ -29,7 +29,7 @@ pub async fn rotate_mek(
     state
         .idempotency
         .wrap(idempotency_key, || async move {
-            require_permission(&state_clone, &community_id, Permissions::ADMINISTRATOR)?;
+            require_permission(&state_clone, &community_id, permissions::ADMINISTRATOR)?;
             rotate_mek_local(&state_clone, &community_id, &keystore_clone).await?;
             tracing::info!(community = %community_id, "MEK rotated locally");
             Ok(())

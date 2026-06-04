@@ -8,7 +8,7 @@
 use std::sync::Arc;
 
 use rekindle_governance_runtime::roles::{ExclusionGroupEdit, RoleSnapshotPatch};
-use rekindle_protocol::dht::community::permissions_v2::Permissions;
+use rekindle_types::permissions;
 use tauri::Manager;
 
 use crate::commands::community::helpers::require_permission;
@@ -52,7 +52,7 @@ pub async fn delete_role_with_check_inner(
     community_id: String,
     role_id: u32,
 ) -> Result<(), String> {
-    require_permission(state, &community_id, Permissions::MANAGE_ROLES)?;
+    require_permission(state, &community_id, permissions::MANAGE_ROLES)?;
     delete_role_inner(state, pool, community_id, role_id).await
 }
 
@@ -63,7 +63,7 @@ pub async fn assign_role_with_check_inner(
     pseudonym_key: String,
     role_id: u32,
 ) -> Result<(), String> {
-    require_permission(state, &community_id, Permissions::MANAGE_ROLES)?;
+    require_permission(state, &community_id, permissions::MANAGE_ROLES)?;
     assign_role_inner(state, pool, &community_id, &pseudonym_key, role_id).await
 }
 
@@ -74,7 +74,7 @@ pub async fn unassign_role_with_check_inner(
     pseudonym_key: String,
     role_id: u32,
 ) -> Result<(), String> {
-    require_permission(state, &community_id, Permissions::MANAGE_ROLES)?;
+    require_permission(state, &community_id, permissions::MANAGE_ROLES)?;
     unassign_role_inner(state, pool, &community_id, &pseudonym_key, role_id).await
 }
 

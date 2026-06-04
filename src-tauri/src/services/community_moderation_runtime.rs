@@ -11,7 +11,7 @@
 //! changes (e.g. audit-chain entry on every delete).
 
 use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
-use rekindle_protocol::dht::community::permissions_v2::Permissions;
+use rekindle_types::permissions;
 
 use crate::commands::community::helpers::require_permission;
 use crate::db::DbPool;
@@ -29,7 +29,7 @@ pub async fn admin_delete_channel_message_inner(
     message_id: String,
     reason: Option<String>,
 ) -> Result<(), String> {
-    require_permission(state, &community_id, Permissions::MANAGE_MESSAGES)?;
+    require_permission(state, &community_id, permissions::MANAGE_MESSAGES)?;
     let owner_key = state_helpers::current_owner_key(state)?;
     admin_delete_one_message(
         state,
@@ -150,10 +150,10 @@ pub async fn remove_community_member_inner(
     use crate::services::community_registry_slot::clear_registry_presence_slot;
     use crate::state_helpers;
     use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
-    use rekindle_protocol::dht::community::permissions_v2::Permissions;
+    use rekindle_types::permissions;
 
     let owner_key = state_helpers::current_owner_key(&state)?;
-    require_permission(&state, &community_id, Permissions::KICK_MEMBERS)?;
+    require_permission(&state, &community_id, permissions::KICK_MEMBERS)?;
 
     crate::services::community::send_to_mesh(
         &state,
@@ -210,9 +210,9 @@ pub async fn timeout_member_inner(
     use crate::commands::community::helpers::{hex_to_pseudo_32, require_permission};
     use crate::db_helpers::db_call;
     use crate::state_helpers;
-    use rekindle_protocol::dht::community::permissions_v2::Permissions;
+    use rekindle_types::permissions;
 
-    require_permission(state, &community_id, Permissions::MODERATE_MEMBERS)?;
+    require_permission(state, &community_id, permissions::TIMEOUT_MEMBERS)?;
     let owner_key = state_helpers::current_owner_key(state)?;
     let lamport = state_helpers::increment_lamport(state, &community_id);
     crate::services::community::write_entry(
@@ -251,9 +251,9 @@ pub async fn remove_timeout_inner(
     use crate::commands::community::helpers::{hex_to_pseudo_32, require_permission};
     use crate::db_helpers::db_call;
     use crate::state_helpers;
-    use rekindle_protocol::dht::community::permissions_v2::Permissions;
+    use rekindle_types::permissions;
 
-    require_permission(state, &community_id, Permissions::MODERATE_MEMBERS)?;
+    require_permission(state, &community_id, permissions::TIMEOUT_MEMBERS)?;
     let owner_key = state_helpers::current_owner_key(state)?;
     let lamport = state_helpers::increment_lamport(state, &community_id);
     crate::services::community::write_entry(
@@ -292,9 +292,9 @@ pub async fn set_channel_overwrite_inner(
     use crate::commands::community::helpers::{hex_to_id_16, require_permission};
     use crate::db_helpers::db_call;
     use crate::state_helpers;
-    use rekindle_protocol::dht::community::permissions_v2::Permissions;
+    use rekindle_types::permissions;
 
-    require_permission(state, &community_id, Permissions::MANAGE_COMMUNITY)?;
+    require_permission(state, &community_id, permissions::MANAGE_COMMUNITY)?;
     let owner_key = state_helpers::current_owner_key(state)?;
 
     let lamport = state_helpers::increment_lamport(state, &community_id);
@@ -337,9 +337,9 @@ pub async fn delete_channel_overwrite_inner(
     use crate::commands::community::helpers::{hex_to_id_16, require_permission};
     use crate::db_helpers::db_call;
     use crate::state_helpers;
-    use rekindle_protocol::dht::community::permissions_v2::Permissions;
+    use rekindle_types::permissions;
 
-    require_permission(state, &community_id, Permissions::MANAGE_COMMUNITY)?;
+    require_permission(state, &community_id, permissions::MANAGE_COMMUNITY)?;
     let owner_key = state_helpers::current_owner_key(state)?;
 
     let lamport = state_helpers::increment_lamport(state, &community_id);
@@ -414,9 +414,9 @@ pub async fn ban_member_inner(
 ) -> Result<(), String> {
     use crate::commands::community::helpers::{hex_to_pseudo_32, require_permission};
     use crate::state_helpers;
-    use rekindle_protocol::dht::community::permissions_v2::Permissions;
+    use rekindle_types::permissions;
 
-    require_permission(state, &community_id, Permissions::BAN_MEMBERS)?;
+    require_permission(state, &community_id, permissions::BAN_MEMBERS)?;
     let lamport = state_helpers::increment_lamport(state, &community_id);
     crate::services::community::write_entry(
         state,
@@ -458,9 +458,9 @@ pub async fn unban_member_inner(
 ) -> Result<(), String> {
     use crate::commands::community::helpers::{hex_to_pseudo_32, require_permission};
     use crate::state_helpers;
-    use rekindle_protocol::dht::community::permissions_v2::Permissions;
+    use rekindle_types::permissions;
 
-    require_permission(state, &community_id, Permissions::BAN_MEMBERS)?;
+    require_permission(state, &community_id, permissions::BAN_MEMBERS)?;
     let lamport = state_helpers::increment_lamport(state, &community_id);
     crate::services::community::write_entry(
         state,

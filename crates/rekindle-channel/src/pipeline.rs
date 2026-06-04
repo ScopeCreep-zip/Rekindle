@@ -9,8 +9,7 @@
 
 use rekindle_protocol::dht::community::channel_record::{ChannelForward, ChannelMessage};
 use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
-use rekindle_protocol::dht::community::permissions_v2::Permissions;
-use rekindle_types::permissions::BYPASS_SLOWMODE;
+use rekindle_types::permissions::{BYPASS_SLOWMODE, SEND_MESSAGES};
 
 use crate::deps::{
     ChannelMessagingDeps, ChannelSendOutcome, ChannelWriteContext, PendingChannelWrite,
@@ -144,11 +143,7 @@ pub async fn send_channel_message<D: ChannelMessagingDeps>(
 
     deps.ensure_channel_segment_record(community_id, channel_id)
         .await?;
-    deps.require_channel_permission(
-        community_id,
-        Some(channel_id),
-        Permissions::SEND_MESSAGES.bits(),
-    )?;
+    deps.require_channel_permission(community_id, Some(channel_id), SEND_MESSAGES)?;
     enforce_slowmode_with_bypass(deps, community_id, channel_id, timestamp_ms)?;
 
     let sender_key = deps
@@ -278,11 +273,7 @@ pub async fn forward_channel_message<D: ChannelMessagingDeps>(
         dest_community: dest_community_id,
         dest_channel: dest_channel_id,
     } = params;
-    deps.require_channel_permission(
-        dest_community_id,
-        Some(dest_channel_id),
-        Permissions::SEND_MESSAGES.bits(),
-    )?;
+    deps.require_channel_permission(dest_community_id, Some(dest_channel_id), SEND_MESSAGES)?;
 
     let dest_info = deps
         .channel_info(dest_community_id, dest_channel_id)

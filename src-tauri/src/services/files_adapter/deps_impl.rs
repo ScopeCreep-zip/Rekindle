@@ -12,7 +12,6 @@ use rekindle_protocol::dht::community::channel_record::{
     ChannelAttachmentCached, ChannelMessage, ChannelRecordEntry,
 };
 use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
-use rekindle_protocol::dht::community::permissions_v2::Permissions;
 use rekindle_types::attachment::AttachmentOffer;
 use uuid::Uuid;
 
@@ -128,11 +127,7 @@ impl FilesDeps for FilesAdapter {
 
     // ── Permissions + slowmode + mentions ──────────────────────────
 
-    fn require_permission(
-        &self,
-        community_id: &str,
-        permission: Permissions,
-    ) -> Result<(), FilesError> {
+    fn require_permission(&self, community_id: &str, permission: u64) -> Result<(), FilesError> {
         crate::commands::community::require_permission(&self.state, community_id, permission)
             .map_err(FilesError::PermissionDenied)
     }

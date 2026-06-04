@@ -18,7 +18,7 @@ use rekindle_protocol::dht::community::channel_record::{
     ChannelAttachmentCached, ChannelMessage, CHANNEL_OWNER_SUBKEY_COUNT,
 };
 use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
-use rekindle_protocol::dht::community::permissions_v2::Permissions;
+use rekindle_types::permissions;
 use uuid::Uuid;
 
 use crate::chunker::{Chunker, CHUNK_SIZE_BYTES, MAX_FILE_SIZE_BYTES};
@@ -78,7 +78,7 @@ fn build_upload_context<D: FilesDeps>(
     community_id: &str,
     channel_id: &str,
 ) -> Result<UploadContext, FilesError> {
-    deps.require_permission(community_id, Permissions::SEND_MESSAGES)?;
+    deps.require_permission(community_id, permissions::SEND_MESSAGES)?;
     if deps.channel_is_forum(community_id, channel_id) {
         return Err(FilesError::InvalidInput(
             "forum channels accept posts only through thread creation".into(),
@@ -374,7 +374,7 @@ pub async fn send_voice_message_bytes<D: FilesDeps>(
     duration_ms: u32,
     waveform: Vec<u8>,
 ) -> Result<String, FilesError> {
-    deps.require_permission(community_id, Permissions::SEND_VOICE_MESSAGES)?;
+    deps.require_permission(community_id, permissions::SEND_VOICE_MESSAGES)?;
     if duration_ms == 0 || duration_ms > 5 * 60 * 1000 {
         return Err(FilesError::InvalidInput(format!(
             "voice message duration {duration_ms}ms outside 1ms..=5min"

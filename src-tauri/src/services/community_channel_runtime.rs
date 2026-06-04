@@ -6,10 +6,10 @@
 
 use std::sync::Arc;
 
-use rekindle_protocol::dht::community::permissions_v2::Permissions;
 use rekindle_protocol::dht::schema;
 use rekindle_records::schema::MAX_MEMBERS_PER_SEGMENT;
 use rekindle_secrets::derive;
+use rekindle_types::permissions;
 use veilid_core::CRYPTO_KIND_VLD0;
 
 use crate::db::DbPool;
@@ -28,7 +28,7 @@ pub async fn create_channel_inner(
 ) -> Result<String, String> {
     use crate::commands::community::helpers::{hex_to_id_16, random_16_bytes, require_permission};
 
-    require_permission(&state, &community_id, Permissions::MANAGE_CHANNELS)?;
+    require_permission(&state, &community_id, permissions::MANAGE_CHANNELS)?;
     let owner_key = state_helpers::current_owner_key(&state)?;
     let rc = state_helpers::routing_context(&state).ok_or("not attached")?;
     let next_position = {
@@ -153,9 +153,9 @@ pub async fn create_category_inner(
     name: String,
 ) -> Result<String, String> {
     use crate::commands::community::helpers::{random_16_bytes, require_permission};
-    use rekindle_protocol::dht::community::permissions_v2::Permissions;
+    use rekindle_types::permissions;
 
-    require_permission(state, &community_id, Permissions::MANAGE_CHANNELS)?;
+    require_permission(state, &community_id, permissions::MANAGE_CHANNELS)?;
     let next_position = {
         let communities = state.communities.read();
         let community = communities
@@ -196,9 +196,9 @@ pub async fn delete_category_inner(
     category_id: String,
 ) -> Result<(), String> {
     use crate::commands::community::helpers::{hex_to_id_16, require_permission};
-    use rekindle_protocol::dht::community::permissions_v2::Permissions;
+    use rekindle_types::permissions;
 
-    require_permission(state, &community_id, Permissions::MANAGE_CHANNELS)?;
+    require_permission(state, &community_id, permissions::MANAGE_CHANNELS)?;
     let lamport = state_helpers::increment_lamport(state, &community_id);
     crate::services::community::write_entry(
         state,
@@ -231,9 +231,9 @@ pub async fn rename_category_inner(
     new_name: String,
 ) -> Result<(), String> {
     use crate::commands::community::helpers::{hex_to_id_16, require_permission};
-    use rekindle_protocol::dht::community::permissions_v2::Permissions;
+    use rekindle_types::permissions;
 
-    require_permission(state, &community_id, Permissions::MANAGE_CHANNELS)?;
+    require_permission(state, &community_id, permissions::MANAGE_CHANNELS)?;
     let lamport = state_helpers::increment_lamport(state, &community_id);
     crate::services::community::write_entry(
         state,
@@ -267,9 +267,9 @@ pub async fn move_channel_inner(
     category_id: Option<String>,
 ) -> Result<(), String> {
     use crate::commands::community::helpers::{hex_to_id_16, require_permission};
-    use rekindle_protocol::dht::community::permissions_v2::Permissions;
+    use rekindle_types::permissions;
 
-    require_permission(state, &community_id, Permissions::MANAGE_CHANNELS)?;
+    require_permission(state, &community_id, permissions::MANAGE_CHANNELS)?;
     let lamport = state_helpers::increment_lamport(state, &community_id);
     let parsed_category_id = category_id
         .as_deref()
@@ -310,9 +310,9 @@ pub async fn reorder_categories_inner(
     category_ids: Vec<String>,
 ) -> Result<(), String> {
     use crate::commands::community::helpers::{hex_to_id_16, require_permission};
-    use rekindle_protocol::dht::community::permissions_v2::Permissions;
+    use rekindle_types::permissions;
 
-    require_permission(state, &community_id, Permissions::MANAGE_CHANNELS)?;
+    require_permission(state, &community_id, permissions::MANAGE_CHANNELS)?;
     for (index, category_id) in category_ids.iter().enumerate() {
         let lamport = state_helpers::increment_lamport(state, &community_id);
         crate::services::community::write_entry(
@@ -353,9 +353,9 @@ pub async fn set_channel_topic_inner(
     topic: String,
 ) -> Result<(), String> {
     use crate::commands::community::helpers::{hex_to_id_16, require_permission};
-    use rekindle_protocol::dht::community::permissions_v2::Permissions;
+    use rekindle_types::permissions;
 
-    require_permission(state, &community_id, Permissions::MANAGE_CHANNELS)?;
+    require_permission(state, &community_id, permissions::MANAGE_CHANNELS)?;
     let lamport = state_helpers::increment_lamport(state, &community_id);
     crate::services::community::write_entry(
         state,
@@ -390,9 +390,9 @@ pub async fn set_channel_forum_tags_inner(
     forum_tags: Vec<String>,
 ) -> Result<(), String> {
     use crate::commands::community::helpers::{hex_to_id_16, require_permission};
-    use rekindle_protocol::dht::community::permissions_v2::Permissions;
+    use rekindle_types::permissions;
 
-    require_permission(state, &community_id, Permissions::MANAGE_CHANNELS)?;
+    require_permission(state, &community_id, permissions::MANAGE_CHANNELS)?;
     let tags: Vec<String> = forum_tags
         .into_iter()
         .map(|tag| tag.trim().to_string())
@@ -432,9 +432,9 @@ pub async fn reorder_channels_inner(
     channel_ids: Vec<String>,
 ) -> Result<(), String> {
     use crate::commands::community::helpers::{hex_to_id_16, require_permission};
-    use rekindle_protocol::dht::community::permissions_v2::Permissions;
+    use rekindle_types::permissions;
 
-    require_permission(state, &community_id, Permissions::MANAGE_CHANNELS)?;
+    require_permission(state, &community_id, permissions::MANAGE_CHANNELS)?;
     for (i, ch_id) in channel_ids.iter().enumerate() {
         let lamport = state_helpers::increment_lamport(state, &community_id);
         crate::services::community::write_entry(

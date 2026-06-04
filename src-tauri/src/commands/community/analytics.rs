@@ -3,8 +3,8 @@
 //! Permission gate is enforced here against the merged governance state
 //! so a non-admin client can't bypass UI gating to fetch insights.
 
-use rekindle_protocol::dht::community::permissions_v2::Permissions;
 use rekindle_types::analytics::CommunityAnalytics;
+use rekindle_types::permissions;
 use tauri::State;
 
 use crate::commands::community::require_permission;
@@ -18,6 +18,6 @@ pub async fn get_community_analytics(
     state: State<'_, SharedState>,
     pool: State<'_, DbPool>,
 ) -> Result<CommunityAnalytics, String> {
-    require_permission(state.inner(), &community_id, Permissions::VIEW_INSIGHTS)?;
+    require_permission(state.inner(), &community_id, permissions::VIEW_INSIGHTS)?;
     analytics::compute_community_analytics(state.inner(), pool.inner(), &community_id).await
 }

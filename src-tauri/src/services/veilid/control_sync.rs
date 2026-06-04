@@ -12,74 +12,42 @@ pub(crate) fn check_gossip_moderation_permission(
     payload: &rekindle_protocol::dht::community::envelope::ControlPayload,
 ) -> bool {
     use rekindle_protocol::dht::community::envelope::ControlPayload;
-    use rekindle_protocol::dht::community::permissions_v2::Permissions;
+    use rekindle_types::permissions;
 
-    let required = match payload {
-        ControlPayload::Kick { .. } => Permissions::KICK_MEMBERS,
-        ControlPayload::Ban { .. } | ControlPayload::Unban { .. } => Permissions::BAN_MEMBERS,
+    let required: u64 = match payload {
+        ControlPayload::Kick { .. } => permissions::KICK_MEMBERS,
+        ControlPayload::Ban { .. } | ControlPayload::Unban { .. } => permissions::BAN_MEMBERS,
         ControlPayload::TimeoutMember { .. } | ControlPayload::RemoveTimeout { .. } => {
-            Permissions::MODERATE_MEMBERS
+            permissions::TIMEOUT_MEMBERS
         }
         _ => return true,
     };
 
-    let communities = state.communities.read();
-    let Some(community) = communities.get(community_id) else {
+    let Some(gov) = crate::state_helpers::governance_state(state, community_id) else {
         return false;
     };
-
-    let sender_role_ids = community.member_roles.get(sender_pseudonym).cloned();
-    match sender_role_ids {
-        Some(ref role_ids) => {
-            let roles_v2: Vec<rekindle_protocol::dht::community::types::RoleEntryV2> = community
-                .roles
-                .iter()
-                .map(
-                    |role| rekindle_protocol::dht::community::types::RoleEntryV2 {
-                        id: role.id,
-                        name: role.name.clone(),
-                        color: role.color,
-                        permissions: role.permissions,
-                        position: role.position,
-                        hoist: role.hoist,
-                        mentionable: role.mentionable,
-                        self_assignable: role.self_assignable,
-                    },
-                )
-                .collect();
-            drop(communities);
-            let is_owner = crate::state_helpers::governance_state(state, community_id)
-                .and_then(|gov| {
-                    let pseudo_bytes: [u8; 32] =
-                        hex::decode(sender_pseudonym).ok()?.try_into().ok()?;
-                    Some(
-                        gov.creator.as_ref()
-                            == Some(&rekindle_types::id::PseudonymKey(pseudo_bytes)),
-                    )
-                })
-                .unwrap_or(false);
-            let permissions =
-                rekindle_protocol::dht::community::permissions_v2::calculate_permissions_v2(
-                    role_ids,
-                    &roles_v2,
-                    &[],
-                    sender_pseudonym,
-                    is_owner,
-                    None,
-                );
-            if permissions.has(required) {
-                true
-            } else {
-                tracing::warn!(
-                    community = %community_id,
-                    sender = %sender_pseudonym,
-                    required = ?required,
-                    "gossip moderation: sender lacks required permission — ignoring"
-                );
-                false
-            }
-        }
-        None => community.known_members.contains(sender_pseudonym),
+    let Ok(bytes) = hex::decode(sender_pseudonym) else {
+        return false;
+    };
+    let Ok(pseudo_bytes): Result<[u8; 32], _> = bytes.try_into() else {
+        return false;
+    };
+    let perms = rekindle_governance::permissions::compute_permissions(
+        &rekindle_types::id::PseudonymKey(pseudo_bytes),
+        None,
+        &gov,
+        rekindle_utils::timestamp_secs(),
+    );
+    if rekindle_governance::permissions::has_capability(perms, required) {
+        true
+    } else {
+        tracing::warn!(
+            community = %community_id,
+            sender = %sender_pseudonym,
+            required = format!("{required:#x}"),
+            "gossip moderation: sender lacks required permission — ignoring"
+        );
+        false
     }
 }
 

@@ -4,7 +4,7 @@
 //! persistence. Sibling to `community_channel_runtime.rs` (which holds
 //! the create + category orchestrators).
 
-use rekindle_protocol::dht::community::permissions_v2::Permissions;
+use rekindle_types::permissions;
 
 use crate::commands::community::helpers::{hex_to_id_16, require_permission};
 use crate::db::DbPool;
@@ -18,7 +18,7 @@ pub async fn delete_channel_inner(
     community_id: String,
     channel_id: String,
 ) -> Result<(), String> {
-    require_permission(state, &community_id, Permissions::MANAGE_CHANNELS)?;
+    require_permission(state, &community_id, permissions::MANAGE_CHANNELS)?;
     let owner_key = state_helpers::current_owner_key(state)?;
 
     let lamport = state_helpers::increment_lamport(state, &community_id);
@@ -63,7 +63,7 @@ pub async fn rename_channel_inner(
     channel_id: String,
     new_name: String,
 ) -> Result<(), String> {
-    require_permission(state, &community_id, Permissions::MANAGE_CHANNELS)?;
+    require_permission(state, &community_id, permissions::MANAGE_CHANNELS)?;
     let owner_key = state_helpers::current_owner_key(state)?;
 
     let lamport = state_helpers::increment_lamport(state, &community_id);

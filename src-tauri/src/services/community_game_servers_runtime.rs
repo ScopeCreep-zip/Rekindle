@@ -4,7 +4,7 @@
 //! `get_game_servers` (SQLite scan of cached entries).
 
 use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
-use rekindle_protocol::dht::community::permissions_v2::Permissions;
+use rekindle_types::permissions;
 
 use crate::channels::community_channel::GameServerInfoDto;
 use crate::commands::community::helpers::{random_nonce, require_permission};
@@ -20,7 +20,7 @@ pub fn add_game_server_inner(
     label: String,
     address: String,
 ) -> Result<String, String> {
-    require_permission(state, community_id, Permissions::MANAGE_CHANNELS)?;
+    require_permission(state, community_id, permissions::MANAGE_CHANNELS)?;
     let server_id = format!("gs_{}", hex::encode(random_nonce(8)));
     let added_by = {
         let communities = state.communities.read();
@@ -54,7 +54,7 @@ pub async fn get_game_servers_inner(
     pool: &DbPool,
     community_id: String,
 ) -> Result<Vec<GameServerInfoDto>, String> {
-    require_permission(state, &community_id, Permissions::VIEW_CHANNEL)?;
+    require_permission(state, &community_id, permissions::VIEW_CHANNELS)?;
     let owner_key = state_helpers::current_owner_key(state)?;
     db_call(pool, move |conn| {
         let mut stmt = conn.prepare(

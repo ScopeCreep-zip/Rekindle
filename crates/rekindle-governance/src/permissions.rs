@@ -208,6 +208,19 @@ mod tests {
     }
 
     #[test]
+    fn everyone_can_connect_to_voice() {
+        // Regression: a non-creator member must receive CONNECT (and
+        // USE_VOICE_ACTIVITY) from DEFAULT_EVERYONE so the canonical
+        // voice-join gate (require_permission → has_all_capabilities) passes.
+        // A permission bit-layout mismatch previously denied every non-owner
+        // member voice access.
+        let state = base_state();
+        let perms = compute_permissions(&pseudo(99), None, &state, 0);
+        assert!(has_all_capabilities(perms, CONNECT), "member lacks CONNECT");
+        assert!(has_all_capabilities(perms, USE_VOICE_ACTIVITY));
+    }
+
+    #[test]
     fn administrator_bypasses_all() {
         let mut state = base_state();
         let admin_role = RoleState {

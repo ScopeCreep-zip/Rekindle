@@ -5,7 +5,6 @@
 
 use rekindle_channel::error::ChannelError;
 use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
-use rekindle_protocol::dht::community::permissions_v2::Permissions;
 use rekindle_types::attachment::AttachmentOffer;
 use rekindle_types::governance::GovernanceEntry;
 
@@ -66,7 +65,6 @@ pub(super) fn require_channel_permission_impl(
     community_id: &str,
     perm_bits: u64,
 ) -> Result<(), ChannelError> {
-    let perms = Permissions::from_bits_truncate(perm_bits);
-    crate::commands::community::require_permission(&adapter.state, community_id, perms)
+    crate::commands::community::require_permission(&adapter.state, community_id, perm_bits)
         .map_err(ChannelError::PermissionDenied)
 }

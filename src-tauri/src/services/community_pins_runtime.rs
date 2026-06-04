@@ -3,7 +3,7 @@
 //! `unpin_message`, and `get_channel_pins` bodies.
 
 use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
-use rekindle_protocol::dht::community::permissions_v2::Permissions;
+use rekindle_types::permissions;
 
 use crate::commands::community::helpers::require_permission;
 use crate::db::DbPool;
@@ -26,7 +26,7 @@ pub fn pin_message_inner(
     channel_id: String,
     message_id: String,
 ) -> Result<(), String> {
-    require_permission(state, community_id, Permissions::MANAGE_MESSAGES)?;
+    require_permission(state, community_id, permissions::MANAGE_MESSAGES)?;
     let pinned_by = {
         let communities = state.communities.read();
         communities
@@ -51,7 +51,7 @@ pub fn unpin_message_inner(
     channel_id: String,
     message_id: String,
 ) -> Result<(), String> {
-    require_permission(state, community_id, Permissions::MANAGE_MESSAGES)?;
+    require_permission(state, community_id, permissions::MANAGE_MESSAGES)?;
     crate::services::community::send_to_mesh(
         state,
         community_id,
@@ -68,7 +68,7 @@ pub async fn get_channel_pins_inner(
     community_id: String,
     channel_id: String,
 ) -> Result<Vec<PinnedMessageInfoDto>, String> {
-    require_permission(state, &community_id, Permissions::VIEW_CHANNEL)?;
+    require_permission(state, &community_id, permissions::VIEW_CHANNELS)?;
     let owner_key = state_helpers::current_owner_key(state)?;
     db_call(pool, move |conn| {
         let mut stmt = conn.prepare(

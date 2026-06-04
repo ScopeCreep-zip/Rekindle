@@ -5,7 +5,6 @@ pub mod envelope;
 pub mod manifest;
 pub mod member_registry;
 pub mod onboarding;
-pub mod permissions_v2;
 pub mod types;
 
 // Re-export types for convenient access via `dht::community::*`
@@ -18,7 +17,6 @@ pub use envelope::{
     PresenceGameInfo, SignedEnvelope,
 };
 pub use onboarding::{OnboardingConfig, OnboardingMode, OnboardingQuestion, WelcomeScreen};
-pub use permissions_v2::{calculate_permissions_v2, has_permission_v2, Permissions};
 pub use types::{
     BanEntry, CategoryEntry, ChannelEntryV2, ChannelKind, CommunityMetadataV2, CommunityPolicy,
     CoordinatorInfo, EncryptedMEKCopy, InviteEntry, InviteSecrets, MEKVaultEntry, MemberPresence,

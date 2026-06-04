@@ -143,7 +143,7 @@ pub async fn server_deafen_member(
     crate::commands::community::require_permission(
         state.inner(),
         &community_id,
-        rekindle_protocol::dht::community::permissions_v2::Permissions::DEAFEN_MEMBERS,
+        rekindle_types::permissions::DEAFEN_MEMBERS,
     )?;
     let deps = build_voice_signaling_deps(&app, state.inner())?;
     rekindle_voice::signaling::server_deafen_member(
@@ -166,7 +166,7 @@ pub async fn request_to_speak(
     crate::commands::community::require_permission(
         state.inner(),
         &community_id,
-        rekindle_protocol::dht::community::permissions_v2::Permissions::REQUEST_TO_SPEAK,
+        rekindle_types::permissions::REQUEST_TO_SPEAK,
     )?;
     let deps = build_voice_signaling_deps(&app, state.inner())?;
     rekindle_voice::signaling::request_to_speak(&deps, &community_id, &channel_id)
@@ -183,7 +183,7 @@ pub async fn get_stage_hand_raises(
     crate::commands::community::require_permission(
         state.inner(),
         &community_id,
-        rekindle_protocol::dht::community::permissions_v2::Permissions::VIEW_CHANNEL,
+        rekindle_types::permissions::VIEW_CHANNELS,
     )?;
     crate::services::community::list_hand_raises(state.inner(), &community_id, &channel_id).await
 }
@@ -200,7 +200,7 @@ pub async fn respond_to_speak_request(
     crate::commands::community::require_permission(
         state.inner(),
         &community_id,
-        rekindle_protocol::dht::community::permissions_v2::Permissions::MANAGE_MESSAGES,
+        rekindle_types::permissions::MANAGE_MESSAGES,
     )?;
     let deps = build_voice_signaling_deps(&app_handle, state.inner())?;
     rekindle_voice::signaling::respond_to_speak_request(

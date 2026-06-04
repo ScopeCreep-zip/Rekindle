@@ -14,7 +14,7 @@ use crate::message_view::merge_message_lists;
 use crate::state::AppState;
 use crate::state_helpers;
 use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
-use rekindle_protocol::dht::community::permissions_v2::Permissions;
+use rekindle_types::permissions;
 
 #[derive(Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -46,7 +46,7 @@ pub async fn get_channel_messages_inner(
     };
 
     if let Some(ref cid) = community_id {
-        require_permission(&state, cid, Permissions::READ_MESSAGE_HISTORY)?;
+        require_permission(&state, cid, permissions::READ_HISTORY)?;
     }
 
     let channel_id_clone = channel_id.clone();
@@ -220,7 +220,7 @@ pub async fn get_older_channel_messages_inner(
     before_timestamp: u64,
     limit: u32,
 ) -> Result<Vec<Message>, String> {
-    require_permission(&state, &community_id, Permissions::READ_MESSAGE_HISTORY)?;
+    require_permission(&state, &community_id, permissions::READ_HISTORY)?;
     let our_key = state_helpers::current_owner_key(&state).unwrap_or_default();
     let my_pseudonym_key = {
         let communities = state.communities.read();

@@ -3,7 +3,7 @@
 //! `community_*_runtime.rs` modules.
 
 use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
-use rekindle_protocol::dht::community::permissions_v2::Permissions;
+use rekindle_types::permissions;
 
 use crate::channels::community_channel::EventInfoDto;
 use crate::db::DbPool;
@@ -61,7 +61,7 @@ pub async fn create_event_inner(
 ) -> Result<String, String> {
     use crate::commands::community::helpers::{random_nonce, require_permission};
 
-    require_permission(state, community_id, Permissions::MANAGE_EVENTS)?;
+    require_permission(state, community_id, permissions::MANAGE_EVENTS)?;
     if title.chars().count() > rekindle_types::event::MAX_EVENT_NAME_CHARS {
         return Err(format!(
             "event name exceeds {} characters (architecture §21)",
@@ -147,7 +147,7 @@ pub async fn edit_event_inner(
 ) -> Result<(), String> {
     use crate::commands::community::helpers::require_permission;
 
-    require_permission(state, &community_id, Permissions::MANAGE_EVENTS)?;
+    require_permission(state, &community_id, permissions::MANAGE_EVENTS)?;
     let events = get_events_inner(state, pool, community_id.clone()).await?;
     let Some(existing) = events.into_iter().find(|event| event.id == event_id) else {
         return Err("event not found".into());
@@ -184,7 +184,7 @@ pub fn delete_event_inner(
 ) -> Result<(), String> {
     use crate::commands::community::helpers::require_permission;
 
-    require_permission(state, community_id, Permissions::MANAGE_EVENTS)?;
+    require_permission(state, community_id, permissions::MANAGE_EVENTS)?;
     crate::services::community::send_to_mesh(
         state,
         community_id,
@@ -200,7 +200,7 @@ pub async fn cancel_event_inner(
 ) -> Result<(), String> {
     use crate::commands::community::helpers::require_permission;
 
-    require_permission(state, &community_id, Permissions::MANAGE_EVENTS)?;
+    require_permission(state, &community_id, permissions::MANAGE_EVENTS)?;
     let events = get_events_inner(state, pool, community_id.clone()).await?;
     let Some(existing) = events.into_iter().find(|event| event.id == event_id) else {
         return Err("event not found".into());
@@ -228,7 +228,7 @@ pub async fn set_event_rsvp_inner(
     use crate::commands::community::helpers::require_permission;
     use crate::db_helpers::db_call;
 
-    require_permission(state, &community_id, Permissions::VIEW_CHANNEL)?;
+    require_permission(state, &community_id, permissions::VIEW_CHANNELS)?;
     let normalized_status = normalize_rsvp_status(&status);
     let pseudonym_key = {
         let communities = state.communities.read();
@@ -320,7 +320,7 @@ pub async fn get_events_inner(
     use crate::commands::community::helpers::require_permission;
     use crate::db_helpers::db_call;
 
-    require_permission(state, &community_id, Permissions::VIEW_CHANNEL)?;
+    require_permission(state, &community_id, permissions::VIEW_CHANNELS)?;
     let owner_key = crate::state_helpers::current_owner_key(state)?;
     let community_id_for_db = community_id.clone();
     let mut events: Vec<EventInfoDto> = db_call(pool, move |conn| {
@@ -408,7 +408,7 @@ pub fn list_event_attendees_inner(
     use crate::channels::community_channel::EventRsvpInfoDto;
     use crate::commands::community::helpers::require_permission;
 
-    require_permission(state, community_id, Permissions::VIEW_CHANNEL)?;
+    require_permission(state, community_id, permissions::VIEW_CHANNELS)?;
     let attendees = {
         let communities = state.communities.read();
         communities

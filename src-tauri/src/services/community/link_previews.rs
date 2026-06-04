@@ -8,8 +8,8 @@
 use std::sync::Arc;
 
 use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
-use rekindle_protocol::dht::community::permissions_v2::Permissions;
 use rekindle_types::link_preview::LinkPreview;
+use rekindle_types::permissions;
 use tauri::Manager;
 
 use crate::channels::CommunityEvent;
@@ -28,7 +28,7 @@ pub async fn fetch_and_broadcast(
     message_id: &str,
     url: &str,
 ) -> Result<LinkPreview, String> {
-    require_permission(state, community_id, Permissions::EMBED_LINKS)?;
+    require_permission(state, community_id, permissions::EMBED_LINKS)?;
     // Architecture §28.8 line 3220 — respect the user's IP-privacy
     // preference. When the toggle is off, the OpenGraph fetch is
     // skipped entirely so no third-party server learns this device's IP.

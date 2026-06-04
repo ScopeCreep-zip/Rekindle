@@ -13,7 +13,6 @@ use rekindle_governance_runtime::{
     MekSnapshot, MemberIndexRow, OnlineMemberSnapshot, RecentMessageRow, UserStatusKind,
 };
 use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
-use rekindle_protocol::dht::community::permissions_v2::Permissions;
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
 
@@ -269,8 +268,7 @@ impl GovernanceRuntimeDeps for GovernanceAdapter {
         community_id: &str,
         perm_bits: u64,
     ) -> Result<(), GovernanceRuntimeError> {
-        let perms = Permissions::from_bits_truncate(perm_bits);
-        crate::commands::community::require_permission(&self.state, community_id, perms)
+        crate::commands::community::require_permission(&self.state, community_id, perm_bits)
             .map_err(|_| GovernanceRuntimeError::PermissionDenied)
     }
 

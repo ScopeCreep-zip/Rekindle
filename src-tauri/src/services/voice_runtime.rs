@@ -143,7 +143,7 @@ pub async fn join_voice_channel_inner(
         crate::commands::community::require_permission(
             state,
             cid,
-            rekindle_protocol::dht::community::permissions_v2::Permissions::CONNECT,
+            rekindle_types::permissions::CONNECT,
         )?;
     }
     let deps = build_voice_session_deps(app, state)?;
@@ -167,7 +167,7 @@ pub fn server_mute_member_inner(
     crate::commands::community::require_permission(
         state,
         community_id,
-        rekindle_protocol::dht::community::permissions_v2::Permissions::MUTE_MEMBERS,
+        rekindle_types::permissions::MUTE_MEMBERS,
     )?;
     let deps = build_voice_signaling_deps(app, state)?;
     rekindle_voice::signaling::server_mute_member(

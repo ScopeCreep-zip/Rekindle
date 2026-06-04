@@ -16,7 +16,7 @@
 use std::path::Path;
 
 use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
-use rekindle_protocol::dht::community::permissions_v2::Permissions;
+use rekindle_types::permissions;
 use uuid::Uuid;
 
 use crate::deps::FilesDeps;
@@ -39,7 +39,7 @@ pub async fn download_attachment<D: FilesDeps>(
     attachment_id_hex: &str,
     save_path: &Path,
 ) -> Result<(), FilesError> {
-    deps.require_permission(community_id, Permissions::READ_MESSAGE_HISTORY)?;
+    deps.require_permission(community_id, permissions::READ_HISTORY)?;
     deps.ensure_cache_open(community_id)?;
 
     let offer = fetch_offer(deps, community_id, channel_id, attachment_id_hex).await?;

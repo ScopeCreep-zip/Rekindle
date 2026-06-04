@@ -1,7 +1,7 @@
 use tauri::State;
 
 use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
-use rekindle_protocol::dht::community::permissions_v2::Permissions;
+use rekindle_types::permissions;
 
 use crate::db::DbPool;
 use crate::services::community_game_servers_runtime::{
@@ -30,7 +30,7 @@ pub async fn remove_game_server(
     community_id: String,
     server_id: String,
 ) -> Result<(), String> {
-    require_permission(state.inner(), &community_id, Permissions::MANAGE_CHANNELS)?;
+    require_permission(state.inner(), &community_id, permissions::MANAGE_CHANNELS)?;
     crate::services::community::send_to_mesh(
         state.inner(),
         &community_id,

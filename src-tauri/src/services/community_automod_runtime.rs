@@ -3,7 +3,7 @@
 //! orchestrators (DTO mapping, trigger-JSON synthesis, governance
 //! entry writes).
 
-use rekindle_protocol::dht::community::permissions_v2::Permissions;
+use rekindle_types::permissions;
 
 use crate::commands::community::automod::AutoModRuleDto;
 use crate::commands::community::helpers::{random_16_bytes, require_permission};
@@ -40,7 +40,7 @@ pub async fn set_automod_rule_inner(
     regex_patterns: Vec<String>,
     action: String,
 ) -> Result<String, String> {
-    require_permission(state, &community_id, Permissions::MANAGE_COMMUNITY)?;
+    require_permission(state, &community_id, permissions::MANAGE_COMMUNITY)?;
     let trigger_json = serde_json::to_string(&serde_json::json!({
         "keywords": keywords,
         "regexPatterns": regex_patterns,
@@ -75,7 +75,7 @@ pub async fn delete_automod_rule_inner(
     community_id: String,
     rule_id: String,
 ) -> Result<(), String> {
-    require_permission(state, &community_id, Permissions::MANAGE_COMMUNITY)?;
+    require_permission(state, &community_id, permissions::MANAGE_COMMUNITY)?;
     let rule_id_bytes: [u8; 16] = hex::decode(&rule_id)
         .map_err(|e| format!("invalid rule id: {e}"))?
         .try_into()

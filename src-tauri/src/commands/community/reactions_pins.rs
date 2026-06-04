@@ -5,7 +5,7 @@ use crate::services::community_pins_runtime::{
     get_channel_pins_inner, pin_message_inner, unpin_message_inner,
 };
 use crate::state::SharedState;
-use rekindle_protocol::dht::community::permissions_v2::Permissions;
+use rekindle_types::permissions;
 
 use super::helpers::require_permission;
 use crate::services::community_pins_runtime::PinnedMessageInfoDto;
@@ -21,7 +21,7 @@ pub async fn add_reaction(
     emoji: String,
 ) -> Result<(), String> {
     let _ = pool;
-    require_permission(state.inner(), &community_id, Permissions::SEND_MESSAGES)?;
+    require_permission(state.inner(), &community_id, permissions::SEND_MESSAGES)?;
     crate::services::community::persist_reaction(
         state.inner(),
         &community_id,
@@ -44,7 +44,7 @@ pub async fn remove_reaction(
     emoji: String,
 ) -> Result<(), String> {
     let _ = pool;
-    require_permission(state.inner(), &community_id, Permissions::SEND_MESSAGES)?;
+    require_permission(state.inner(), &community_id, permissions::SEND_MESSAGES)?;
     crate::services::community::persist_reaction(
         state.inner(),
         &community_id,

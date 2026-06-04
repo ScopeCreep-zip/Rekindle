@@ -20,7 +20,6 @@ use rekindle_protocol::dht::community::channel_record::{
     ChannelAttachmentCached, ChannelMessage, ChannelRecordEntry,
 };
 use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
-use rekindle_protocol::dht::community::permissions_v2::Permissions;
 use tempfile::TempDir;
 use uuid::Uuid;
 
@@ -194,7 +193,7 @@ impl FilesDeps for MockDeps {
         self.channel_mek.clone()
     }
 
-    fn require_permission(&self, _c: &str, _p: Permissions) -> Result<(), FilesError> {
+    fn require_permission(&self, _c: &str, _p: u64) -> Result<(), FilesError> {
         if self.permission_pass {
             Ok(())
         } else {

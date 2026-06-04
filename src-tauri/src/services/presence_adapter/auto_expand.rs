@@ -10,11 +10,11 @@ use std::sync::Arc;
 use crate::state::AppState;
 
 pub(super) fn maybe_auto_expand_segment(state: &Arc<AppState>, community_id: &str) {
-    use rekindle_protocol::dht::community::permissions_v2::Permissions;
+    use rekindle_types::permissions;
     if crate::commands::community::require_permission(
         state,
         community_id,
-        Permissions::MANAGE_COMMUNITY,
+        permissions::MANAGE_COMMUNITY,
     )
     .is_err()
     {
