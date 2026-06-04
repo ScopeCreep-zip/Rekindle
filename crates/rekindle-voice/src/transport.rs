@@ -273,6 +273,18 @@ impl VoiceTransport {
         self.peers.keys().cloned().collect()
     }
 
+    /// `(pseudonym_key, route_blob)` for every connected peer. The route
+    /// is the one the peer advertised in its VoiceJoin — authoritative
+    /// for voice. Used by MEK rotation and the roster broadcast to
+    /// source routes without depending on the gossip presence overlay
+    /// (which lags a fresh join).
+    pub fn peer_entries(&self) -> Vec<(String, Vec<u8>)> {
+        self.peers
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
+    }
+
     /// Broadcast an encoded audio frame to ALL connected peers (mesh mode).
     ///
     /// Returns a list of (pseudonym_key, error) for any failed sends.

@@ -216,27 +216,24 @@ impl MekDistributeDeps for MekAdapter {
         if !include_trigger_in_recipients {
             participants.remove(trigger_pseudonym);
         }
+        // Authoritative voice routes: each peer's route as advertised in
+        // its VoiceJoin (already in the transport). Preferred over the
+        // gossip presence overlay, which lags a fresh join — the cause
+        // of the MEK being delivered to an empty route so a just-joined
+        // peer never decrypts. online_members is the fallback.
+        let transport_routes = self
+            .state
+            .voice_engine_peer_routes_for_channel(community_id, channel_id);
         let communities = self.state.communities.read();
         let Some(community) = communities.get(community_id) else {
             return Vec::new();
         };
-        let Some(gossip) = community.gossip.as_ref() else {
-            return Vec::new();
-        };
-        participants
-            .into_iter()
-            .map(|pseudonym| {
-                let route_blob = gossip
-                    .online_members
-                    .get(&pseudonym)
-                    .map(|member| member.route_blob.clone())
-                    .unwrap_or_default();
-                RotationRecipient {
-                    pseudonym_hex: pseudonym,
-                    route_blob,
-                }
-            })
-            .collect()
+        let gossip = community.gossip.as_ref();
+        resolve_recipients(participants, &transport_routes, |pseudonym| {
+            gossip
+                .and_then(|g| g.online_members.get(pseudonym))
+                .map(|member| member.route_blob.clone())
+        })
     }
 
     async fn broadcast_to_peer(
@@ -415,5 +412,79 @@ impl MekDistributeDeps for MekAdapter {
     ) -> Result<(), rekindle_mek_rotation::MekRotationError> {
         crate::services::community::send_to_mesh(&self.state, community_id, envelope)
             .map_err(rekindle_mek_rotation::MekRotationError::InvalidInput)
+    }
+}
+
+/// Resolve each participant's MEK-delivery route: the transport route
+/// (advertised in the peer's VoiceJoin, authoritative for voice) is
+/// preferred; `online_route` is the gossip-presence fallback for peers
+/// not in the transport. A peer in neither gets an empty route. Pulled
+/// out of `voice_recipients` so the transport-precedence rule (the fix
+/// for the key being delivered to an empty route during the gossip lag)
+/// is unit-testable.
+fn resolve_recipients<F>(
+    participants: impl IntoIterator<Item = String>,
+    transport_routes: &std::collections::HashMap<String, Vec<u8>>,
+    online_route: F,
+) -> Vec<RotationRecipient>
+where
+    F: Fn(&str) -> Option<Vec<u8>>,
+{
+    participants
+        .into_iter()
+        .map(|pseudonym| {
+            let route_blob = transport_routes
+                .get(&pseudonym)
+                .cloned()
+                .or_else(|| online_route(&pseudonym))
+                .unwrap_or_default();
+            RotationRecipient {
+                pseudonym_hex: pseudonym,
+                route_blob,
+            }
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_recipients;
+    use std::collections::HashMap;
+
+    #[test]
+    fn transport_only_peer_gets_route_without_online_members() {
+        // The bug: a just-joined peer is in the voice transport but not
+        // yet in online_members, so the key went to an empty route. Now
+        // the transport route is used, so the peer is reachable.
+        let mut transport = HashMap::new();
+        transport.insert("peerA".to_string(), vec![1, 2, 3]);
+        let recipients = resolve_recipients(["peerA".to_string()], &transport, |_| None);
+        assert_eq!(recipients.len(), 1);
+        assert_eq!(recipients[0].pseudonym_hex, "peerA");
+        assert_eq!(recipients[0].route_blob, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn online_route_used_as_fallback_when_transport_missing() {
+        let transport = HashMap::new();
+        let recipients = resolve_recipients(["peerB".to_string()], &transport, |pk| {
+            (pk == "peerB").then(|| vec![9, 9])
+        });
+        assert_eq!(recipients[0].route_blob, vec![9, 9]);
+    }
+
+    #[test]
+    fn transport_route_preferred_over_online() {
+        let mut transport = HashMap::new();
+        transport.insert("peerC".to_string(), vec![1]);
+        let recipients = resolve_recipients(["peerC".to_string()], &transport, |_| Some(vec![2]));
+        assert_eq!(recipients[0].route_blob, vec![1]);
+    }
+
+    #[test]
+    fn peer_in_neither_gets_empty_route() {
+        let transport = HashMap::new();
+        let recipients = resolve_recipients(["ghost".to_string()], &transport, |_| None);
+        assert!(recipients[0].route_blob.is_empty());
     }
 }

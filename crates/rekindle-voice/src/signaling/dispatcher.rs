@@ -106,10 +106,10 @@ pub async fn handle_voice_signaling(
             mute::handle_voice_deafen(deps.as_ref(), community_id, &target_pseudonym, deafened);
         }
         ControlPayload::VoiceRoster {
-            channel_id: _,
+            channel_id,
             participants,
         } => {
-            presence::handle_voice_roster(&deps, participants);
+            presence::handle_voice_roster(&deps, community_id, channel_id, participants);
         }
         ControlPayload::SoundboardPlay {
             channel_id,

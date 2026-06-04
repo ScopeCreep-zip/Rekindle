@@ -389,6 +389,14 @@ pub enum CommunityEvent {
         channel_id: String,
         pseudonym_key: String,
     },
+    /// Full voice-channel roster sent to a joiner so it sees everyone
+    /// already present (decoupled from MEK-decrypt). §10.1/§10.5.
+    #[serde(rename_all = "camelCase")]
+    VoiceRoster {
+        community_id: String,
+        channel_id: String,
+        participants: Vec<String>,
+    },
     /// Voice channel mode switched (mesh ↔ MCU).
     #[serde(rename_all = "camelCase")]
     VoiceModeSwitch {

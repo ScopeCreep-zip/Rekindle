@@ -51,6 +51,13 @@ pub enum CommunityVoiceEvent {
         channel_id: String,
         pseudonym_key: String,
     },
+    /// Full voice-channel roster sent to a joiner so it sees everyone
+    /// already present, decoupled from MEK-decrypt (§10.1/§10.5).
+    VoiceRoster {
+        community_id: String,
+        channel_id: String,
+        participants: Vec<String>,
+    },
     VoiceModeSwitch {
         community_id: String,
         channel_id: String,
@@ -106,6 +113,12 @@ pub trait VoiceSignalingDeps: Send + Sync + 'static {
     /// Our pseudonym in the given community, or `None` if we're not
     /// a member.
     fn my_pseudonym(&self, community_id: &str) -> Option<String>;
+
+    /// Our own Veilid private route blob — the authoritative route
+    /// peers use to reach us. Same source the send path stamps onto
+    /// the outbound VoiceJoin; used to advertise self in a roster
+    /// broadcast so a later joiner can reach us.
+    fn our_route_blob(&self) -> Vec<u8>;
 
     /// Snapshot of stage-channel state. `None` if community/channel
     /// not found. `is_stage = false` for non-stage channels.

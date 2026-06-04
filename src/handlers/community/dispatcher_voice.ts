@@ -4,8 +4,31 @@ import { commands } from "../../ipc/commands";
 import { addToast } from "../../stores/toast.store";
 import { announce } from "../../components/common/AnnounceRegion";
 import { settingsState } from "../../stores/settings.store";
-import { voiceState } from "../../stores/voice.store";
+import { voiceState, setVoiceState } from "../../stores/voice.store";
 import { refreshStageHandRaises } from "./shared";
+
+/// Mirror signaling membership into the call-UI roster
+/// (`voiceState.participants`), keyed by per-community pseudonym — the
+/// same key `useCallStage` and the receive loop use. Only the channel
+/// we're actively connected to drives this roster; self is rendered
+/// separately so it's skipped. Decouples the roster from MEK-decrypt
+/// (§10.1/§10.5): a member appears as soon as it's signaled, not only
+/// once we can decrypt its audio.
+function mirrorRosterAdd(communityId: string, channelId: string, pseudonyms: string[]): void {
+  if (voiceState.activeCallType !== "community" || voiceState.channelId !== channelId) return;
+  const community = communityState.communities[communityId];
+  const self = community?.myPseudonymKey;
+  const nameFor = (pk: string): string =>
+    community?.members.find((m) => m.pseudonymKey === pk)?.displayName ?? pk.slice(0, 8);
+  for (const pk of pseudonyms) {
+    if (pk === self) continue;
+    setVoiceState("participants", (prev) =>
+      prev.some((p) => p.publicKey === pk)
+        ? prev
+        : [...prev, { publicKey: pk, displayName: nameFor(pk), isMuted: false, isSpeaking: false }],
+    );
+  }
+}
 
 /// Voice / stage / soundboard slice of the community event dispatcher.
 /// Returns `true` when the event was consumed.
@@ -32,12 +55,25 @@ export function reduceVoice(event: CommunityEvent): boolean {
     }
     return true;
   } else if (event.type === "voiceJoin") {
-    const { channelId, pseudonymKey } = event.data;
+    const { communityId, channelId, pseudonymKey } = event.data;
     setCommunityState("voiceChannels", channelId, (prev) => {
       const state = prev ?? { participants: [], mode: "mesh" as const, hostPseudonym: null };
       if (state.participants.includes(pseudonymKey)) return state;
       return { ...state, participants: [...state.participants, pseudonymKey] };
     });
+    mirrorRosterAdd(communityId, channelId, [pseudonymKey]);
+    return true;
+  } else if (event.type === "voiceRoster") {
+    // §10.1/§10.5 — a present member's catch-up roster. Tells a joiner
+    // about everyone already in the channel (including members that
+    // joined before us, whose VoiceJoin we never received).
+    const { communityId, channelId, participants } = event.data;
+    setCommunityState("voiceChannels", channelId, (prev) => {
+      const state = prev ?? { participants: [], mode: "mesh" as const, hostPseudonym: null };
+      const merged = Array.from(new Set([...state.participants, ...participants]));
+      return { ...state, participants: merged };
+    });
+    mirrorRosterAdd(communityId, channelId, participants);
     return true;
   } else if (event.type === "voiceLeave") {
     const { channelId, pseudonymKey } = event.data;
@@ -45,6 +81,9 @@ export function reduceVoice(event: CommunityEvent): boolean {
       if (!prev) return prev;
       return { ...prev, participants: prev.participants.filter((p) => p !== pseudonymKey) };
     });
+    if (voiceState.activeCallType === "community" && voiceState.channelId === channelId) {
+      setVoiceState("participants", (prev) => prev.filter((p) => p.publicKey !== pseudonymKey));
+    }
     return true;
   } else if (event.type === "voiceModeSwitch") {
     const { channelId, mode, hostPseudonym } = event.data;

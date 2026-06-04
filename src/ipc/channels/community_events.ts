@@ -464,6 +464,14 @@ export type CommunityEvent =
       };
     }
   | {
+      type: "voiceRoster";
+      data: {
+        communityId: string;
+        channelId: string;
+        participants: string[];
+      };
+    }
+  | {
       type: "voiceModeSwitch";
       data: {
         communityId: string;

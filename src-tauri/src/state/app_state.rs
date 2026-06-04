@@ -323,4 +323,27 @@ impl AppState {
         let transport = handle.transport.blocking_lock();
         transport.peer_keys()
     }
+
+    /// Snapshot the voice transport's `pseudonym → route_blob` map when
+    /// the active engine is joined to the given community + channel.
+    /// Empty when no engine is active or it's on a different channel.
+    /// §10.5 MEK rotation uses these (the routes each peer advertised in
+    /// its VoiceJoin) as the authoritative recipient routes, so a
+    /// just-joined peer still receives the new-generation key even
+    /// before the gossip presence overlay catches up.
+    pub fn voice_engine_peer_routes_for_channel(
+        &self,
+        community_id: &str,
+        channel_id: &str,
+    ) -> std::collections::HashMap<String, Vec<u8>> {
+        let ve = self.voice_engine.lock();
+        let Some(handle) = ve.as_ref() else {
+            return std::collections::HashMap::new();
+        };
+        if handle.community_id.as_deref() != Some(community_id) || handle.channel_id != channel_id {
+            return std::collections::HashMap::new();
+        }
+        let transport = handle.transport.blocking_lock();
+        transport.peer_entries().into_iter().collect()
+    }
 }

@@ -71,6 +71,10 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
             .and_then(|c| c.my_pseudonym_key.clone())
     }
 
+    fn our_route_blob(&self) -> Vec<u8> {
+        state_helpers::our_route_blob(&self.state).unwrap_or_default()
+    }
+
     fn stage_channel_info(&self, community_id: &str, channel_id: &str) -> Option<StageChannelInfo> {
         let communities = self.state.communities.read();
         let community = communities.get(community_id)?;
@@ -333,6 +337,21 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
                         community_id,
                         channel_id,
                         pseudonym_key,
+                    },
+                );
+            }
+            CommunityVoiceEvent::VoiceRoster {
+                community_id,
+                channel_id,
+                participants,
+            } => {
+                crate::event_dispatch::dispatch(
+                    &self.app_handle,
+                    "community-event",
+                    CommunityEvent::VoiceRoster {
+                        community_id,
+                        channel_id,
+                        participants,
                     },
                 );
             }
