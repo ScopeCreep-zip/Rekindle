@@ -45,11 +45,22 @@ shaped the cryptographic choices.
 | Document | Description |
 |----------|-------------|
 | [`overview.md`](architecture/overview.md) | System architecture, layer responsibilities, data-flow diagrams |
-| [`communities.md`](architecture/communities.md) | Chiral-network v2.0 — flat SMPL governance, three-path delivery, CRDT merge, plate-gate scaling |
-| [`crates.md`](architecture/crates.md) | All 22 workspace crates, tier hierarchy, daemon/CLI track |
-| [`data-layer.md`](architecture/data-layer.md) | SQLite schema, Stronghold vault, DHT record layout |
+| [`communities.md`](architecture/communities.md) | Index for the three-part Communities spec (overview / channels / governance) |
+| [`communities-overview.md`](architecture/communities-overview.md) | Chiral-network model, three-path delivery, SMPL schema, mutual-aid patterns, permissions, design principles |
+| [`communities-channels.md`](architecture/communities-channels.md) | MEK lifecycle, channel messaging via `rekindle-channel`, voice / video / stage, DMs and group DMs |
+| [`communities-governance.md`](architecture/communities-governance.md) | CRDT governance, the pure / runtime split, self-sovereign join, Plate Gate scaling |
+| [`crates.md`](architecture/crates.md) | Inventory and tier diagram for all 33 workspace crates |
+| [`crates-tier-detail.md`](architecture/crates-tier-detail.md) | Per-crate descriptions for every workspace member |
+| [`data-layer.md`](architecture/data-layer.md) | SQLite schema, Vault (`rekindle-vault`), DHT record layout |
 | [`frontend.md`](architecture/frontend.md) | SolidJS frontend — windows, components, stores, handlers, IPC layer |
-| [`tauri-backend.md`](architecture/tauri-backend.md) | Tauri shell — commands, channels, services, app state |
+| [`tauri-backend.md`](architecture/tauri-backend.md) | Tauri shell — commands, channels, services, plugin setup |
+| [`tauri-state.md`](architecture/tauri-state.md) | `AppState` reference (~47 fields) + `state_helpers/` accessors |
+| [`tauri-modules.md`](architecture/tauri-modules.md) | Top-level `src-tauri/src/` module catalogue |
+| [`event-dispatch.md`](architecture/event-dispatch.md) | Phase 23.A single-source event router + `EventJournal` |
+| [`services-pattern.md`](architecture/services-pattern.md) | Runtime / adapter / pure-logic layering in `src-tauri/src/services/` |
+| [`lifecycle-fsm.md`](architecture/lifecycle-fsm.md) | 9-state app FSM + `TransportGuard` from `rekindle-lifecycle` |
+| [`presence.md`](architecture/presence.md) | Friend / community presence orchestrators from `rekindle-presence` |
+| [`audit-chain.md`](architecture/audit-chain.md) | BLAKE3 keyed hash chain via `rekindle-audit` |
 | [`voice.md`](architecture/voice.md) | Voice pipeline (cpal threading, Opus, RNNoise, AEC3, jitter buffer, mixer, MCU pattern, mutual-aid SFU) |
 | [`game-detect.md`](architecture/game-detect.md) | Cross-platform process scanning, JSON game DB, rich presence |
 | [`files.md`](architecture/files.md) | Lost Cargo file delivery (chunking, BLAKE3, swarm fetch, LRU cache) |
@@ -85,6 +96,10 @@ Append-only — superseded ADRs stay in place with a "Superseded by" link.
 | [0003](decisions/0003-flat-smpl-governance.md) | Flat SMPL governance replaces the v1.0 coordinator model |
 | [0004](decisions/0004-tauri-2-frontend.md) | Use Tauri 2 + SolidJS as the desktop frontend |
 | [0005](decisions/0005-daemon-cli-track.md) | Add a daemon + CLI track alongside the Tauri desktop app |
+| [0006](decisions/0006-vault-replaces-stronghold.md) | Replace `iota_stronghold` with the SQLCipher-backed `rekindle-vault` |
+| [0007](decisions/0007-event-dispatch-single-source.md) | Single-source event-emission router (Phase 23.A) |
+| [0008](decisions/0008-runtime-adapter-pattern.md) | Runtime / adapter / pure-logic layering in `services/` |
+| [0009](decisions/0009-crate-harvest-tiers.md) | Tier bumps and the 11 harvested crates |
 
 See [`decisions/README.md`](decisions/README.md) for how to write a new ADR.
 

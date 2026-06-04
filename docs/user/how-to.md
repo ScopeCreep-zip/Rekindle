@@ -224,6 +224,7 @@ store — your data is already local.
 
 - Local SQLite is at the path listed in
   [`install.md`](install.md). You can copy `db.sqlite3` and your
-  Stronghold vault to back up your identity and history.
+  vault file (plus its `.salt` sidecar) to back up your identity
+  and history.
 - Cap'n Proto schemas at `schemas/` document the wire format if
   you want to write a custom export tool.

@@ -1,50 +1,90 @@
 # Rust Crate Reference
 
-Rekindle's business logic is split across **22 workspace crates** organised
+Rekindle's business logic is split across **33 workspace crates** organised
 into a strict tier hierarchy: lower tiers know nothing about higher tiers,
 and the lowest tiers (`rekindle-types`, `rekindle-secrets`) contain zero I/O,
 zero async, and zero side effects.
 
-The `src-tauri` crate is the place that wires these together with Tauri,
-SQLite, and the Veilid runtime for the **desktop app**. A separate
-**daemon + CLI** track (`rekindle-node`, `rekindle-cli`, `rekindle-transport`)
-gives a process-isolated way to run the same protocol stack with multiple
-frontends — see [Daemon and CLI Track](#daemon-and-cli-track) below.
+Two frontends sit on top of this stack:
+
+- The **desktop app** (`src-tauri/`) links `rekindle-protocol` directly and
+  runs the Veilid node in-process. This is the primary user-facing build.
+- The **daemon + CLI** track (`rekindle-node` + `rekindle-cli`) funnels every
+  Veilid call through `rekindle-transport` and exposes it over a Noise-IK
+  encrypted IPC bus.
+
+Both speak the same protocol on the wire. The difference is process layout.
+
+Per-crate detail lives in [`crates-tier-detail.md`](crates-tier-detail.md).
+This file is the inventory and the tier diagram.
 
 ## Workspace Members
 
+The list below mirrors `[workspace] members` in the repository root
+`Cargo.toml`. Counts are `.rs` files under each crate's `src/`.
+
 ```
 crates/
-# ── Tiered pure-logic crates (zero Tauri, zero direct veilid-core) ────
-├── rekindle-types/                 Tier 1: shared IDs, enums, error taxonomy
-├── rekindle-secrets/               Tier 2: keys, MEK, signing — sole crypto boundary
-├── rekindle-codec/                 Tier 3: signed envelope build/verify, dedup
-├── rekindle-records/               Tier 3: DHT record lifecycle, retry, SMPL schema
-├── rekindle-utils/                 Time helpers
-├── rekindle-route/                 Tier 4: private route lifecycle, peer cache
-├── rekindle-gossip/                Tier 5: gossip mesh primitives
-├── rekindle-governance/            Tier 6: pure CRDT merge, permissions
-├── rekindle-dm/                    Tier 7: DM / group DM logic
-├── rekindle-calls/                 Tier 7: direct call key derivation
-├── rekindle-files/                 Tier 7: chunked P2P file delivery (Lost Cargo)
-├── rekindle-link-preview/          Tier 7: OpenGraph fetcher (sandboxed)
-├── rekindle-video/                 Tier 7: video / screen-share fragmentation
+# ── Tier 1 — Vocabulary ───────────────────────────────────────────────
+├── rekindle-types/                 (35) shared IDs, enums, error taxonomy
 
-# ── Cross-cutting integration crates ────────────────────────────────
-├── rekindle-sync/                  Cross-device sync (fetch, gap, history, watching)
-├── rekindle-protocol/              Veilid + Cap'n Proto + DHT — used by the desktop app
-├── rekindle-crypto/                Identity, Signal Protocol, DHT record keys
-├── rekindle-game-detect/           Cross-platform game detection
-├── rekindle-voice/                 Opus codec, audio I/O, jitter, mixer, transport
-├── rekindle-e2e-server/            HTTP IPC bridge for Playwright E2E tests
+# ── Tier 2 — Cryptographic boundary ───────────────────────────────────
+├── rekindle-secrets/                (9) keys, MEK, signing — sole crypto boundary
+├── rekindle-vault/                  (5) SQLCipher double-encrypted store [NEW]
+├── rekindle-audit/                  (2) BLAKE3 keyed hash chain [NEW]
 
-# ── Daemon / CLI track (alternate frontend) ─────────────────────────
-├── rekindle-transport/             Unified Veilid boundary for the daemon track
-├── rekindle-node/                  Daemon: owns Veilid, serves Noise-IK IPC bus
-└── rekindle-cli/                   CLI/TUI client of rekindle-node
+# ── Tier 3 — Wire format, records, local state ────────────────────────
+├── rekindle-codec/                  (3) signed envelope build/verify, dedup
+├── rekindle-records/                (4) DHT record lifecycle, SMPL schema
+├── rekindle-events/                 (5) dedup + SubscriptionState + EventJournal [NEW]
+├── rekindle-idempotency/            (2) LRU+TTL command-dedup cache [NEW]
+├── rekindle-mek-rotation/           (9) cascade election + MEK distribute [NEW]
+├── rekindle-analytics/              (8) local-only SQL aggregations [NEW]
+
+# ── Tier 4 — Routing ──────────────────────────────────────────────────
+├── rekindle-route/                  (6) private-route lifecycle, peer cache
+├── rekindle-lifecycle/              (4) 9-state app FSM + TransportGuard [NEW]
+
+# ── Tier 5 — Gossip mesh + presence ───────────────────────────────────
+├── rekindle-gossip/                 (9) gossip mesh primitives
+├── rekindle-presence/              (24) presence primitives + orchestrators [NEW]
+├── rekindle-friendship/             (4) inbox-scan coordinator [NEW]
+
+# ── Tier 6 — Governance ───────────────────────────────────────────────
+├── rekindle-governance/            (24) pure CRDT merge, permissions
+├── rekindle-governance-runtime/    (23) async lifecycle (origin/bootstrap/join) [NEW]
+
+# ── Tier 7 — Self-contained features ──────────────────────────────────
+├── rekindle-channel/               (15) channel messaging, threads, reactions [NEW]
+├── rekindle-dm/                    (13) DM / group DM logic
+├── rekindle-calls/                 (14) direct-call key derivation + signaling state
+├── rekindle-files/                 (16) chunked P2P file delivery (Lost Cargo)
+├── rekindle-link-preview/           (1) OpenGraph fetcher (sandboxed)
+├── rekindle-video/                 (10) video / screen-share fragmentation
+
+# ── Cross-cutting integration crates ──────────────────────────────────
+├── rekindle-sync/                  (14) cross-device sync orchestration
+├── rekindle-protocol/              (53) Veilid + Cap'n Proto — used by the desktop app
+├── rekindle-crypto/                (22) identity, Signal Protocol, DHT record keys
+├── rekindle-game-detect/           (11) cross-platform game detection
+├── rekindle-voice/                 (32) Opus codec, audio I/O, jitter, mixer
+├── rekindle-e2e-server/             (1) HTTP IPC bridge for Playwright E2E tests
+
+# ── Daemon / CLI track ────────────────────────────────────────────────
+├── rekindle-transport/             (87) sole Veilid boundary on the daemon track
+├── rekindle-node/                  (32) daemon: owns transport, serves IPC bus
+└── rekindle-cli/                   (65) CLI/TUI client of rekindle-node
+
+# ── Utilities (no tier) ───────────────────────────────────────────────
+└── rekindle-utils/                  (2) time helpers
 ```
 
-Workspace-level dependencies (`Cargo.toml`):
+Tag legend: `[NEW]` marks crates introduced after the May 2026 snapshot
+documented in earlier revisions of this file — the eleven harvest crates
+that produced this rewrite. See
+[`decisions/0009-crate-harvest-tiers.md`](../decisions/0009-crate-harvest-tiers.md).
+
+Workspace-level dependencies declared in `Cargo.toml`:
 `serde`, `serde_json`, `tokio`, `tracing`, `tracing-subscriber`, `thiserror`,
 `anyhow`, `bytes`, `futures`, `parking_lot`, `capnp`, `capnpc`, `hex`, `rand`.
 
@@ -53,508 +93,39 @@ Workspace lints enforce `deny(warnings)`, `deny(dead_code)`,
 `clippy::pedantic = warn`, plus restriction lints `dbg-macro = deny`,
 `todo = deny`, `unimplemented = deny`, `undocumented-unsafe-blocks = deny`.
 
----
-
-## Tier 1 — Vocabulary
-
-### rekindle-types
-
-Shared type definitions for the Rekindle v2.0 community system. Zero logic,
-zero I/O, zero async — every other Rekindle crate depends on this.
-
-```
-src/
-├── lib.rs
-├── analytics.rs
-├── attachment.rs
-├── channel.rs
-├── cross_device_sync.rs
-├── error.rs
-├── event.rs
-├── expression.rs
-├── governance.rs
-├── id.rs
-├── invite.rs
-├── link_preview.rs
-├── permissions.rs
-├── presence.rs
-└── search.rs
-```
-
-These are the v2.0 types for flat SMPL governance. They do **not** re-export
-v1.0 types from `rekindle-protocol` — they replace them.
-
----
-
-## Tier 2 — Cryptographic Boundary
-
-### rekindle-secrets
-
-The **sole crate** that handles raw key material. Every secret type implements
-`Zeroize + ZeroizeOnDrop`. No other crate in the workspace should import
-`ed25519-dalek`, `x25519-dalek`, `aes-gcm`, or `hkdf` directly.
-
-```
-src/
-├── lib.rs           Re-exports ed25519_dalek for slot/keypair conversions
-├── derive.rs        HKDF-SHA256 derivations (per-channel MEK, per-community pseudonym)
-├── invite.rs        Invite signing keys
-├── keys.rs          Ed25519 / X25519 wrappers with Zeroize
-├── mek.rs           MediaEncryptionKey: AES-256-GCM symmetric key
-├── rotator.rs       MEK rotation rotator (deterministic blake3-based selection)
-├── sign.rs          Sign/verify helpers
-└── sync_key.rs      Cross-device pairing key
-```
-
-Dependencies: `rekindle-types`, `ed25519-dalek`, `x25519-dalek`, `aes-gcm`,
-`hkdf`, `blake3`, `zeroize`.
-
----
-
-## Tier 3 — Wire Format and Records
-
-### rekindle-codec
-
-Signed envelope construction, verification, dedup, and serialization for the
-gossip mesh.
-
-```
-src/
-├── lib.rs
-├── dedup.rs       Sliding-window dedup cache (envelope ID → seen-at)
-└── envelope.rs    SignedEnvelope build/verify; CommunityEnvelope payloads
-```
-
-Dependencies: `rekindle-types`, `rekindle-secrets`.
-
-### rekindle-records
-
-DHT record lifecycle management for the v2.0 universal SMPL schema
-(`o_cnt: 0`, 255 member slots — the "Q-pid equation"). Houses the durable
-write retry queue.
-
-```
-src/
-├── lib.rs
-├── lifecycle.rs   open / close / republish / refresh
-├── retry.rs       WriteQueueHandle — durable SMPL write retry with backoff
-└── schema.rs      Universal SMPL schema constants + helpers
-```
-
-Dependencies: `rekindle-types`, `rekindle-secrets`, `veilid-core`.
-
----
-
-## Tier 4 — Routing
-
-### rekindle-route
-
-Private route lifecycle: allocation, refresh, peer route cache.
-
-```
-src/
-├── lib.rs
-├── cache.rs       RouteCache — per-peer route blob + TTL eviction
-├── contexts.rs    Per-purpose RoutingContext factories (priv route, safety route, unsafe)
-└── lifecycle.rs   RouteLifecycle — periodic refresh, dead-route detection
-```
-
-Dependencies: `rekindle-types`, `veilid-core`.
-
----
-
-## Tier 5 — Gossip Mesh
-
-### rekindle-gossip
-
-Transport-agnostic gossip mesh primitives. Pure logic — does not call
-`app_message` itself; the integration layer plumbs the broadcast helpers
-into Veilid.
-
-```
-src/
-├── lib.rs
-├── broadcast.rs   Generic broadcast helpers
-├── dedup.rs       DedupCache (re-exported into AppState)
-├── lamport.rs     Lamport clock arithmetic
-├── mesh.rs        fanout_degree() — adaptive D selection (≤20 → N-1; 21–60 → 6; 61+ → 8)
-└── rate_limit.rs  Sender-side token bucket
-```
-
-Dependencies: `rekindle-types`, `rekindle-codec`.
-
----
-
-## Tier 6 — Governance CRDT
-
-### rekindle-governance
-
-**No I/O. No async. No side effects.** Takes `GovernanceEntry` variants from
-all member subkeys, sorts by `(lamport, author_pseudonym)`, and applies
-deterministic merge rules to produce a `GovernanceState`. Every peer running
-the same merge on the same entries produces an identical result — this is
-the CRDT convergence guarantee.
-
-```
-src/
-├── lib.rs
-├── merge.rs       merge() — the entire CRDT engine
-├── permissions.rs Reader-validates: derive effective permissions for a member
-├── state.rs       GovernanceState (channels, roles, members, bans, settings, …)
-└── validate.rs    Entry-level validation (size, well-formedness)
-```
-
-The `proptest-regressions/merge.txt` file pins property-test seeds for the
-merge function — do not delete.
-
-Dependencies: `rekindle-types` only.
-
----
-
-## Tier 7 — Self-Contained Features
-
-### rekindle-dm
-
-Direct messages and group DMs (architecture §27). DMs are SMPL records with
-`o_cnt: 0`, exactly 2 member subkeys, and a MEK derived deterministically via
-X25519 ECDH between the two identity keys (no separate key exchange round-trip).
-Group DMs wrap the MEK per recipient.
-
-Pure logic — no DHT, no Tauri. The `src-tauri/services/dm/` layer wires it
-to Veilid and SQLite.
-
-```
-src/
-├── lib.rs       Re-exports DmInvite, GroupDmInvite, DmMek, DmMekChain
-├── error.rs     DmError
-├── invite.rs    DmInvite, GroupDmInvite, GroupDmParticipant
-└── mek.rs       derive_dm_mek (X25519 ECDH → HKDF), ratchet_dm_mek, DmMekChain
-```
-
-### rekindle-calls
-
-Direct calls (architecture §10.10, "Chiralgrams"): peer-to-peer voice/video
-between two friends. The crate derives a 32-byte `call_key` via X25519 ECDH
-plus HKDF-SHA256 (`HKDF_INFO = b"rekindle-call-key-v1"`, salt = call ID),
-giving the same shared secret on both sides. The `state` module tracks
-ringing/answered/missed call state. `rekindle-voice` consumes `call_key` to
-encrypt frames over `app_message` — this crate has no Veilid, no audio I/O,
-no Tauri.
-
-```
-src/
-├── lib.rs       derive_call_key, CallKeyError
-└── state.rs     CallKind, CallStatus, CallState
-```
-
-Dependencies: `rekindle-types`, `x25519-dalek`, `hkdf`, `sha2`, `zeroize`.
-
-### rekindle-files
-
-Lost Cargo: chunked Merkle-verified P2P file delivery (architecture §28.9).
-Per-file FEK pattern (Signal/Matrix style), AttachmentBitmap for swarm fetch,
-filesystem cache with synchronous LRU eviction, BLAKE3 chunk hashes.
-
-```
-src/
-├── lib.rs
-├── cache.rs       Filesystem ChunkCache (PinnedSet, LRU eviction)
-├── chunker.rs     Chunk splitting with size/count limits
-├── error.rs       FileError
-├── manifest.rs    AttachmentManifest (chunk hashes, size, MIME)
-├── pinned.rs      PinnedSet — attachments exempt from eviction
-└── verify.rs      Merkle verification
-```
-
-Tier 7, pure logic, zero async, zero Tauri.
-
-### rekindle-link-preview
-
-Architecture §28.8 — sandboxed OpenGraph fetcher. Single public async
-function `fetch_link_preview`. Hard limits: 5s timeout, 256 KB body cap,
-plain text/html only, max 5 redirects, custom `User-Agent`.
-
-### rekindle-video
-
-Video & screen-share fragmentation/reassembly per architecture §10.6. Pure
-logic — no codec FFI, no Tauri, no I/O. The actual VP9 encode/decode plugs
-in via the `VideoCodec` trait at the application layer; this crate handles
-only the on-the-wire framing (≤28 KB payload chunks, FEC-friendly indexing,
-per-stream reassembly buffer with bounded memory).
-
-```
-src/
-├── lib.rs
-├── fragment.rs       fragment_frame, fragment_frame_with_fec, reconstruct_frame
-└── reassembler.rs    Reassembler — per-stream buffer with bounded memory
-```
-
----
-
-## Cross-Cutting Integration Crates
-
-### rekindle-protocol
-
-Veilid networking, DHT record management, Cap'n Proto serialization, and
-routing. Hosts the v1.0 `MessageEnvelope` / `MessagePayload` types still used
-for 1:1 friend traffic (DM invites, friend requests, relay payloads, presence
-inline updates).
-
-```
-src/
-├── lib.rs            Cap'n Proto generated module includes
-├── error.rs          ProtocolError
-├── node.rs           RekindleNode — Veilid node lifecycle
-├── routing.rs        Private route allocation, peer route import
-├── peer.rs           Peer address resolution
-├── capnp_codec.rs    Cap'n Proto encode/decode helpers
-├── messaging/
-│   ├── envelope.rs   MessageEnvelope, MessagePayload (DirectMessage,
-│   │                 ChannelMessage, FriendRequest/Accept/Reject,
-│   │                 ProfileKeyRotated, PresenceUpdate, Unfriended,
-│   │                 RelayOffer/Withdraw/Ack/Envelope, DmInvite/Accept/
-│   │                 Decline, GroupDmInvite, DmLeave, RegisterPushRelay,
-│   │                 UnregisterPushRelay, WakeNotify, StatusRequest/Response)
-│   ├── sender.rs     Outbound delivery via app_message
-│   └── receiver.rs   Inbound dispatch
-└── dht/
-    ├── mod.rs        DHTManager
-    ├── profile.rs    User profile record (DFLT, 8 subkeys)
-    ├── presence.rs   Presence read/write
-    ├── friends.rs    Friend list DHT record
-    ├── conversation.rs  Per-friend encrypted conversation record
-    ├── account.rs    Account record (encrypted, contact/chat/invite refs)
-    ├── mailbox.rs    Mailbox DHT record (route blob inbox)
-    ├── channel.rs    Channel message records
-    ├── short_array.rs DHTShortArray (max 255)
-    ├── log.rs        DHTLog (append-only spanning records)
-    └── community/
-        ├── mod.rs
-        ├── envelope.rs       Community gossip envelope
-        ├── manifest.rs       Manifest record helpers
-        ├── member_registry.rs SMPL member registry layout
-        ├── channel_record.rs  SMPL channel record layout (+ tests/)
-        ├── audit_log.rs      Audit log entries
-        ├── automod.rs        AutoMod rule storage
-        ├── onboarding.rs     Onboarding config / welcome screen
-        ├── permissions_v2.rs Permission bitmask definitions
-        └── types.rs          ChannelKind, ChannelRecordKind, etc.
-```
-
-### rekindle-crypto
-
-Cryptographic operations including Ed25519 identity, Signal Protocol session
-handling, group MEK primitives, and HKDF-derived DHT record keys.
-
-```
-src/
-├── lib.rs
-├── error.rs
-├── identity.rs        Ed25519 keypair, sign/verify, hex helpers
-├── keychain.rs        Keychain trait, vault/key constants
-├── dht_crypto.rs      DhtRecordKey: account/conversation key derivation +
-│                      XChaCha20-Poly1305 encrypt/decrypt
-├── group/
-│   ├── mod.rs
-│   ├── media_key.rs   MediaEncryptionKey: AES-256-GCM with generation tracking
-│   └── pseudonym.rs   derive_community_pseudonym() — HKDF → unlinkable Ed25519
-└── signal/
-    ├── mod.rs         SignalSessionManager — X3DH + Double Ratchet
-    ├── session.rs     Session establishment / encrypt / decrypt
-    ├── prekeys.rs     PreKeyBundle struct
-    ├── store.rs       Stronghold-backed Signal stores
-    ├── memory_stores.rs / test_stores.rs  In-memory stores for testing
-```
-
-### rekindle-game-detect
-
-Cross-platform game detection. Process scanning + JSON game database +
-launcher integration.
-
-```
-src/
-├── lib.rs           GameDetector public API
-├── error.rs
-├── scanner.rs       Scan loop with configurable interval
-├── database.rs      JSON game database (process name → game info)
-├── launcher.rs      Launch a game targeting a specific server
-├── rich_presence.rs Server info + elapsed time tracking
-└── platform/
-    ├── mod.rs       list_process_names() platform abstraction
-    ├── linux.rs     /proc enumeration
-    ├── macos.rs     macOS process enumeration
-    └── windows.rs   CreateToolhelp32Snapshot enumeration
-```
-
-### rekindle-voice
-
-Voice chat pipeline. `cpal::Stream` is `!Send` on macOS, so capture and
-playback live on dedicated OS threads and bridge to Tokio via `mpsc` channels.
-
-```
-src/
-├── lib.rs            VoiceEngine — central controller
-├── error.rs
-├── capture.rs        cpal microphone input on dedicated thread
-├── playback.rs       cpal speaker output on dedicated thread
-├── codec.rs          OpusCodec (48kHz mono, VoIP mode, 32kbps, in-band FEC)
-├── audio_processing.rs  RNNoise denoising + AEC3 echo cancellation + VAD
-├── audio_thread.rs   Threading helpers
-├── device.rs         Device enumeration / selection
-├── jitter.rs         JitterBuffer — adaptive, BTreeMap by sequence
-├── mixer.rs          AudioMixer — multi-participant mixing
-└── transport.rs      VoiceTransport — Veilid app_message with SafetySelection::Unsafe
-```
-
-Voice packets use `SafetySelection::Unsafe` for direct UDP-like delivery,
-bypassing privacy routing to minimize latency.
-
-### rekindle-sync
-
-Cross-device sync: fetch, gap detection, history, warming, and DHT watching.
-
-```
-src/
-├── lib.rs
-├── fetch.rs        Fetch missing subkeys
-├── gap.rs          Gap detection across record subkeys
-├── history.rs      Catch-up history fetch
-├── inspect.rs      Network sequence inspection (cheaper than full fetch)
-├── verify.rs       Verify fetched payloads
-├── warming.rs      Record warming on first interest
-└── watch.rs        watch_dht_values orchestration
-```
-
-### rekindle-utils
-
-Time helpers (`now_ms`, `now_secs`, monotonic timestamp utilities).
-
-```
-src/
-├── lib.rs
-└── time.rs
-```
-
-### rekindle-e2e-server
-
-HTTP IPC bridge that exposes Tauri commands over `localhost:3001` so
-Playwright tests can drive the real Rust backend without the Tauri webview.
-Used when `VITE_E2E=true`.
-
-```
-src/
-└── bin/
-    └── e2e_server.rs  HTTP server binary (entry point: e2e-server)
-```
-
----
-
-## Daemon and CLI Track
-
-Alongside the Tauri desktop app, Rekindle ships a **daemon + IPC bus**
-architecture that lets multiple frontends (CLI, TUI, automation, future
-bridges) drive one shared Veilid node. The desktop app today still embeds
-Veilid in-process via `rekindle-protocol`; the daemon track is the
-chiral-network-aligned direction for headless deployments and out-of-process
-clients.
-
-### rekindle-transport
-
-The **sole Veilid boundary** on the daemon track. Every other crate in this
-track depends on `rekindle-transport` and never imports `veilid-core` directly.
-
-The crate is split into two `veilid_core`-aware modules and a body of pure
-business logic:
-
-- `broadcast/` — outbound: sends, DHT writes, route management, node
-  lifecycle. The only outbound module that imports `veilid_core`.
-- `subscriptions/` — inbound: event dispatch, DHT watches, value-change
-  routing. The only inbound module that imports `veilid_core`.
-- Everything else (`operations/`, `payload/`, `crypto/`, `session/`,
-  `community/`, `gossip.rs`, `frame.rs`, `query.rs`, `handler.rs`, …)
-  contains zero `veilid_core` imports.
-
-Public API re-exports include `TransportNode`, `Sender`, `RouteManager`,
-`PeerRegistry`, `DhtStore`, `InboundHandler`, `GossipMesh`,
-`SignalSessionManager`, `Session`, `QueryEngine`, plus per-feature
-operation modules (`operations::{community, channel, dm, friend, voice,
-mek, presence, roles, moderation, invites, identity}`).
-
-Dependencies: `rekindle-types`, `rekindle-utils`, `veilid-core`,
-`ed25519-dalek`, `x25519-dalek`, `aes-gcm`, `hkdf`, `blake3`, `bitflags`.
-
-### rekindle-node
-
-The Rekindle **daemon**. Owns the `TransportNode`, manages persistent
-state, and serves CLI/TUI/Tauri frontends plus automation bots over a
-Noise-IK encrypted IPC bus.
-
-```
-src/
-├── lib.rs            Crate-level docs + re-exports
-├── validation.rs     Request validation
-├── ipc/              Encrypted IPC bus
-│   ├── server.rs     Bus server (Unix socket / Windows named pipe)
-│   ├── client.rs     Client side (used by rekindle-cli)
-│   ├── transport.rs  Socket transport
-│   ├── framing.rs    Length-prefixed frames
-│   ├── noise.rs      Noise IK handshake
-│   ├── noise_keys.rs Daemon long-term key storage (OS keyring)
-│   ├── protocol.rs   IpcRequest / IpcResponse
-│   ├── registry.rs   Connected client registry (UCred-pinned)
-│   └── message.rs    Wire envelopes
-├── daemon/           Lifecycle + RPC handlers
-│   ├── mod.rs
-│   ├── handler.rs    Top-level request dispatch
-│   ├── community_rpc.rs / governance_rpc.rs
-│   ├── friend_inbox.rs
-│   ├── event_router.rs
-│   └── dispatch/     Per-operation dispatch tables
-└── state/            Session, config, path management
-```
-
-`rekindle-node` depends on `rekindle-transport` and `rekindle-types` only —
-it never imports `veilid-core` directly. The IPC bus uses Noise IK for
-authentication and confidentiality, the OS keyring (`keyring` crate) for the
-daemon's long-term Ed25519 key, `rustix` for safe `SO_PEERCRED` extraction,
-and `sd-notify` for systemd `READY=1` and watchdog keepalive on Linux.
-
-### rekindle-cli
-
-CLI and TUI for the daemon track. The binary is named `rekindle-cli`
-(renamed from `rekindle` to avoid collision with the desktop app's binary
-under `src-tauri/`). Every CLI command sends an `IpcRequest` over the
-Noise-IK bus and renders the `IpcResponse` — the CLI never touches
-`TransportNode`, `Session`, or the OS keyring directly.
-
-```
-src/
-├── main.rs              clap entry point
-├── cli/                 clap subcommand definitions
-├── tui/                 ratatui interactive mode
-├── views/               Screen renderers
-├── output/              JSON / table renderers
-├── config/              Config file loading
-├── transport.rs         IPC client wrapper
-├── node_daemon.rs       (`daemon` feature) embedded daemon mode
-├── identity.rs / keys.rs / network.rs / presence.rs
-├── friends.rs / dm.rs / community.rs / channel.rs / governance.rs / voice.rs
-├── helpers.rs / error.rs
-```
-
-Default features: `tui` (ratatui + crossterm + textarea + arboard) and
-`daemon` (embeds the daemon in the same binary for solo-developer setups,
-gated on `rekindle-transport`, `snow`, `sd-notify`, `rustix`, `postcard`).
-Both can be disabled for a minimal CLI-only build.
-
----
+## Tier Invariants
+
+The tier hierarchy is a contract. The CI gauntlet greps every crate's
+`src/` for forbidden imports and fails the build on violation.
+
+| Tier | Crates | Allowed | Forbidden |
+|------|--------|---------|-----------|
+| 1 | `types` | `serde`, `thiserror` | `tokio`, async, `veilid-core`, `tauri`, any crypto lib |
+| 2 | `secrets`, `vault`, `audit` | crypto libs (only here) | `veilid-core`, `tauri`, network I/O |
+| 3 | `codec`, `records`, `events`, `idempotency`, `mek-rotation`, `analytics` | `tokio`, `async-trait`, in-process DB (`rusqlite`) for `analytics` only | `veilid-core`, `tauri` |
+| 4 | `route`, `lifecycle` | `tokio` | `veilid-core`, `tauri` |
+| 5 | `gossip`, `presence`, `friendship` | `tokio`, `async-trait` (deps traits) | `veilid-core`, `tauri` |
+| 6 | `governance`, `governance-runtime` | `tokio` (runtime only), `async-trait` | `veilid-core`, `tauri`, `rusqlite`, `iota_stronghold` |
+| 7 | `channel`, `dm`, `calls`, `files`, `link-preview`, `video` | `tokio`, `async-trait`, file I/O (`files` cache) | `veilid-core`, `tauri` |
+
+Two crates are deliberate exceptions and carry `veilid-core`:
+
+- `rekindle-protocol` — the Veilid boundary for the **desktop app** (Tauri).
+- `rekindle-transport` — the Veilid boundary for the **daemon track** (CLI).
+
+Every other crate that touches Veilid does so through one of these two,
+parameterised over a `Deps` trait so the pure logic stays portable. See
+[`decisions/0001-veilid-as-transport.md`](../decisions/0001-veilid-as-transport.md)
+for the dual-boundary rationale.
+
+`rekindle-crypto`, `rekindle-voice`, `rekindle-game-detect`, `rekindle-sync`,
+and `rekindle-utils` are **cross-cutting**: they sit alongside the tier
+column rather than inside it, and are consumed by whichever frontend needs
+them. They respect the no-`tauri` rule but may take a `veilid-core`
+dependency where it is unavoidable (`rekindle-sync` uses Veilid's
+`watch_dht_values` orchestration; `rekindle-crypto` does not).
 
 ## Visual Tier Diagram
-
-The desktop app and the daemon track share the same lower-tier crates but
-take different routes to Veilid. The desktop app links Veilid through
-`rekindle-protocol` in-process; the daemon track funnels every Veilid
-operation through `rekindle-transport`.
 
 ```
    ┌─────────────────┐                  ┌──────────────────┐
@@ -571,25 +142,35 @@ operation through `rekindle-transport`.
             ▼                                      ▼
    ┌──────────────────┐                  ┌────────────────────┐
    │ rekindle-protocol│                  │ rekindle-transport │
-   │ (Veilid + capnp) │                  │ (sole Veilid       │
-   │                  │                  │  boundary on this  │
-   │                  │                  │  track)            │
+   │  desktop Veilid  │                  │  daemon Veilid     │
+   │  boundary        │                  │  boundary          │
    └────────┬─────────┘                  └─────────┬──────────┘
             │                                      │
             └──────────────────┬───────────────────┘
                                ▼
-              ┌──────────────────────────────┐
-              │ Tier 7   dm, calls, files,   │
-              │          video, link-preview │
-              │ Tier 6   governance (CRDT)   │
-              │ Tier 5   gossip              │
-              │ Tier 4   route               │
-              │ Tier 3   codec, records      │
-              │ Tier 2   secrets             │
-              │ Tier 1   types               │
-              └──────────────────────────────┘
+              ┌──────────────────────────────────────────┐
+              │ Tier 7  channel, dm, calls, files,       │
+              │         video, link-preview              │
+              │ Tier 6  governance + governance-runtime  │
+              │ Tier 5  gossip, presence, friendship     │
+              │ Tier 4  route, lifecycle                 │
+              │ Tier 3  codec, records, events,          │
+              │         idempotency, mek-rotation,       │
+              │         analytics                        │
+              │ Tier 2  secrets, vault, audit            │
+              │ Tier 1  types                            │
+              └──────────────────────────────────────────┘
 ```
 
-Cross-cutting crates (`rekindle-crypto`, `rekindle-voice`,
-`rekindle-game-detect`, `rekindle-sync`, `rekindle-utils`) sit alongside
-the integration layer and are consumed by whichever frontend needs them.
+## Most-Common Reading Paths
+
+| If you are … | Start at |
+|---|---|
+| New to the codebase | [`overview.md`](overview.md) → this file → [`crates-tier-detail.md`](crates-tier-detail.md) |
+| Adding a feature | [`crates-tier-detail.md`](crates-tier-detail.md) for the target crate, then [`tauri-backend.md`](tauri-backend.md) for wiring |
+| Auditing the Veilid boundary | [`crates-tier-detail.md`](crates-tier-detail.md) entries for `rekindle-protocol` and `rekindle-transport`; [`decisions/0001-veilid-as-transport.md`](../decisions/0001-veilid-as-transport.md) |
+| Tracking the harvest work | [`decisions/0009-crate-harvest-tiers.md`](../decisions/0009-crate-harvest-tiers.md); [`roadmap.md`](../roadmap.md) "Harvest crates" section |
+
+Cross-cutting subsystem docs (`event-dispatch.md`, `services-pattern.md`,
+`lifecycle-fsm.md`, `presence.md`, `audit-chain.md`) cover how the
+harvest crates integrate with `src-tauri` and the daemon track.

@@ -82,6 +82,9 @@ Daemon / CLI track:
 | B12 | New dependency must be verified on its registry page (slopsquatting defence) | `cargo audit` + `cargo deny [sources]` + Semgrep `rekindle-no-suspicious-extern-crate` | Active |
 | B13 | DB schema is a single file (`src-tauri/migrations/001_init.sql`); bump `SCHEMA_VERSION` in `db.rs` on change | Project convention | Review |
 | B14 | No legacy compatibility shims (project is pre-release) | Project convention | Review |
+| B15 | Pure CRDT logic lives in `rekindle-governance`; async lifecycle (origin / bootstrap / join / segments / apply) lives in `rekindle-governance-runtime`. No I/O in the pure crate. | Code review + per-crate `Cargo.toml` excludes | Active |
+| B16 | All on-disk secret material goes through `rekindle-vault` via the `src-tauri/src/keystore/` adapters. No direct file I/O on secret bytes from any other crate. | Code review + `cargo xtask check-boundaries` | Active |
+| B17 | The literal text `app.emit(` appears in `src-tauri/` **only** inside `event_dispatch.rs`. Every Rust → Frontend emit goes through `event_dispatch::emit_live` or `emit_journaled`. | CI grep gauntlet | Active |
 
 ### Backend file-size soft cap
 
@@ -129,7 +132,7 @@ will surface in the file-size CI job.
 | F7 | No `localStorage` / `sessionStorage` access from components / stores | `dependency-cruiser.cjs` `no-direct-storage` | Active |
 | F8 | No raw `fetch()` from components / stores / handlers | Semgrep + dep-cruiser `no-raw-fetch` | Active (warn) |
 | F9 | No `crypto.subtle.*` calls anywhere in `src/**` | Semgrep `rekindle-no-frontend-crypto-primitives` | Active |
-| F10 | No `innerHTML` outside the audited Stronghold-QR site | Semgrep `rekindle-no-inner-html` (active; `nosemgrep` directive on the audited line) | Active |
+| F10 | No `innerHTML` outside the audited vault-QR site | Semgrep `rekindle-no-inner-html` (active; `nosemgrep` directive on the audited line) | Active |
 | F11 | All Tauri IPC via the typed wrappers in `src/ipc/commands.ts` | Semgrep `rekindle-no-raw-tauri-invoke` | Active |
 | F12 | Tailwind utilities live in `src/styles/`; components compose semantic class names | Project convention; bulk inline-class detection planned | Warn-only (1 128 existing matches tracked) |
 | F13 | No `console.log` of secret-bearing fields | Biome `noConsole` (warns) + Semgrep `rekindle-no-secret-in-log` | Active |

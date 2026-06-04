@@ -1,15 +1,20 @@
 # Security Model
 
-Rekindle implements a four-layer encryption architecture. Each layer addresses
-a distinct threat surface, and all four operate simultaneously during normal
-operation.
+Rekindle implements a five-layer encryption architecture. Each layer
+addresses a distinct threat surface, and all operate simultaneously
+during normal operation.
 
 ## Encryption Layer Stack
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  Layer 4: Stronghold At-Rest Encryption                     │
-│  AES-256-GCM, Argon2id KDF                                  │
+│  Layer 5: Audit Chain (tamper-evident integrity)            │
+│  BLAKE3-keyed MAC chain (rekindle-audit)                    │
+│  Scope: Administrative actions logged for tamper-evidence   │
+├─────────────────────────────────────────────────────────────┤
+│  Layer 4: Vault At-Rest Encryption (rekindle-vault)         │
+│  SQLCipher AES-256-CBC + per-entry AES-256-GCM,             │
+│  Argon2id KDF → BLAKE3-keyed master derivation              │
 │  Scope: Private keys and secrets stored on device           │
 ├─────────────────────────────────────────────────────────────┤
 │  Layer 3: Group / DM Media Encryption Key (MEK)             │
@@ -108,9 +113,10 @@ is established.
 ### Implementation
 
 The `rekindle-crypto` crate provides `SignalSessionManager` which wraps the
-Signal protocol primitives with Stronghold-backed key storage. Session state
-is persisted in the `signal_sessions` SQLite table. PreKeys are managed in
-the `prekeys` table.
+Signal protocol primitives with vault-backed key storage (the
+`keystore/signal.rs` adapter on top of `rekindle-vault`). Session state is
+persisted in the `signal_sessions` SQLite table. PreKeys are managed in the
+`prekeys` table.
 
 ## Layer 3: Group / DM Media Encryption Key (MEK)
 
@@ -158,11 +164,14 @@ The 255-subkey SMPL layout caps a single segment at 255 members. Beyond that,
 **Plate Gates** (architecture §15) add fractal SMPL segments. Each segment
 has its own member registry and MEK vault.
 
-## Layer 4: Stronghold (At-Rest Encryption)
+## Layer 4: Vault (`rekindle-vault`, At-Rest Encryption)
 
-**Algorithm:** AES-256-GCM
-**KDF:** Argon2id (memory-hard, GPU-resistant)
-**Managed by:** `iota_stronghold` (used directly, not via Tauri plugin)
+**Algorithms:** SQLCipher AES-256-CBC at the page level **and** per-entry
+AES-256-GCM (double encryption)
+**KDF:** Argon2id (memory-hard, GPU-resistant) → BLAKE3-keyed master
+derivation
+**Managed by:** `rekindle-vault` (replaces the previous `iota_stronghold`
+dependency — see [`../decisions/0006-vault-replaces-stronghold.md`](../decisions/0006-vault-replaces-stronghold.md))
 
 ### Vault Contents
 
@@ -174,17 +183,40 @@ has its own member registry and MEK vault.
 | Signed prekey (private) | Signal Protocol key exchange |
 | One-time prekeys (private) | Signal Protocol first-contact |
 | Per-community / per-channel MEKs | Channel message decryption |
+| Slot seed + slot keypairs | Per-community pseudonyms |
+| Audit MAC key + tail anchor | Tamper-evident audit chain (Layer 5) |
 | Veilid protected store key | Veilid local storage encryption |
 
 ### Protection
 
-- Vault encrypted with key derived from user's local passphrase via Argon2id
-- Keys zeroized from memory when Stronghold is dropped
-- Vault file never leaves the device
-- Login is the act of providing the passphrase to unlock the Stronghold
+- Vault file (`{pubkey}.vault`) encrypted with key derived from user's
+  local passphrase via Argon2id, then split into a SQLCipher page key and a
+  per-entry GCM key via BLAKE3-keyed derivation.
+- Salt lives in a `{pubkey}.vault.salt` sidecar (plaintext — salts only
+  need to be unique per install).
+- Keys zeroised from memory when the vault handle is dropped.
+- Vault file never leaves the device.
+- Login is the act of providing the passphrase to unlock the vault.
 
-Each identity has its own `.stronghold` file. Multiple identities can coexist
-on one device, each with a separate passphrase.
+Each identity has its own vault file. Multiple identities can coexist on
+one device, each with a separate passphrase.
+
+## Layer 5: Audit Chain (`rekindle-audit`)
+
+**Algorithm:** BLAKE3-keyed MAC chain.
+**Managed by:** `rekindle-audit` + `src-tauri/src/audit_repo/`.
+
+Every administrative action (community / channel / role / member
+mutations, MEK rotations, vault passphrase changes, device pairings) is
+appended to a tamper-evident chain. Each `AuditEntry` carries `prev_mac +
+mac` where `mac = BLAKE3-keyed(key, prev_mac || cursor_le ||
+payload_json)`. Tampering with any byte of any entry's payload
+invalidates every entry from that cursor forward.
+
+The MAC key lives in the vault under `("audit", "mac_key")`. Loss of the
+vault loses the chain; theft of the vault gains MAC-forgery capability —
+no worse than what the attacker already has by virtue of holding the
+identity secret. See [`../architecture/audit-chain.md`](../architecture/audit-chain.md).
 
 ## Identity System
 
@@ -195,7 +227,7 @@ Rekindle:     passphrase → unlock local vault → Ed25519 keypair = identity
 
 - **Identity = Ed25519 keypair** generated locally on first run
 - **Public key** is shared with friends, published to DHT
-- **Private key** never leaves the device (stored in Stronghold)
+- **Private key** never leaves the device (stored in the vault)
 - **Passphrase** unlocks the local vault — never transmitted
 - **No recovery from passphrase loss** — but cross-device sync (architecture
   §28.4) lets you pair a new device while you still have access to an
@@ -283,7 +315,7 @@ relevant records itself, and decrypts locally.
 | Server compromise | No server to compromise |
 | Push-relay compromise (mobile) | Relay sees only opaque wake signals |
 | Metadata collection | No central server logging connections |
-| Stored data theft | Stronghold encryption at rest |
+| Stored data theft | Vault (`rekindle-vault`) encryption at rest |
 | Key compromise (past messages) | Signal forward secrecy + MEK rotation |
 | Key compromise (future messages) | Signal future secrecy + MEK rotation |
 | Removed member reading future messages | MEK rotation on membership change |

@@ -20,8 +20,8 @@ to build from source — see
 When Rekindle launches for the first time, you see the **login
 window**. There are no usernames or passwords — your identity is an
 Ed25519 keypair. Click **Create new identity** and the app generates
-the keypair, opens an `iota_stronghold` vault to hold it, and asks
-for a **passphrase**.
+the keypair, opens a SQLCipher vault (`rekindle-vault`) to hold it,
+and asks for a **passphrase**.
 
 The passphrase encrypts the vault on disk. Pick something you'll
 remember and that you'd be willing to type a few times a day.

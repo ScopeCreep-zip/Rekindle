@@ -22,9 +22,9 @@ A single, long-running process that owns the Veilid node enables:
 - **Multiple frontends sharing one node** — desktop UI + CLI + future
   mobile or web client all driving the same identity, presence, and
   routes.
-- **Privilege isolation** — the daemon holds the Stronghold vault and
-  long-term keys; each client only holds the credentials needed for
-  the operations it performs.
+- **Privilege isolation** — the daemon holds the vault
+  (`rekindle-vault`) and long-term keys; each client only holds the
+  credentials needed for the operations it performs.
 - **Cleaner restart story** — desktop UI can crash or be force-quit
   without losing the network state, presence, or in-flight transfers.
 
@@ -136,7 +136,7 @@ crates/rekindle-node/src/
              │ network ready
              ▼
        ┌────────────┐
-       │   LOCKED   │  Stronghold not unlocked; secrets not in memory
+       │   LOCKED   │  Vault not unlocked; secrets not in memory
        └─────┬──────┘
              │ Unlock(passphrase)
              ▼

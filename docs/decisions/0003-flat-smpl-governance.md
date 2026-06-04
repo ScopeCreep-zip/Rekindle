@@ -127,11 +127,18 @@ plate-gate scaling, mutual-aid infrastructure — are described in
 
 **Migration scope.**
 
-- Delete `services/coordinator/` (3,793 lines).
+- Delete `services/coordinator/` (3 793 lines).
 - Replace v1.0 DFLT manifest record with v2.0 SMPL governance record.
 - Replace coordinator-mediated join flow with self-sovereign join.
-- Replace coordinator-distributed MEK with peer-to-peer rotator.
-- Implement `rekindle-governance` (Tier 6, pure CRDT merge).
+- Replace coordinator-distributed MEK with peer-to-peer rotator
+  (now in the dedicated `rekindle-mek-rotation` crate).
+- Implement `rekindle-governance` (Tier 6, pure CRDT merge, no I/O,
+  no async).
+- Layer the async lifecycle (origin, bootstrap, join, segments,
+  apply) in a separate `rekindle-governance-runtime` crate so the
+  pure-CRDT crate stays free of `tokio` and runs synchronously in
+  property tests. See
+  [`../architecture/communities-governance.md`](../architecture/communities-governance.md).
 - Tracked in [`../roadmap.md`](../roadmap.md).
 
 ## Pros and cons of the options

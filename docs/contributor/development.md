@@ -154,7 +154,7 @@ Rekindle supports two E2E testing strategies:
 - The `rekindle-e2e-server` crate exposes Tauri commands over HTTP at
   `http://127.0.0.1:3001/invoke`
 - Playwright drives the real SolidJS UI in a browser
-- Uses real SQLite + Stronghold + Ed25519 — no mocking
+- Uses real SQLite + Vault (`rekindle-vault`) + Ed25519 — no mocking
 - Frontend code path: `VITE_E2E=true` → `invoke()` sends HTTP POST
 - `channels.ts` uses `safeListen()` which is a no-op in this mode
 
@@ -231,11 +231,12 @@ The schema is defined in `src-tauri/migrations/001_init.sql`. There are no
 migration files — the schema is edited directly since it is not yet deployed
 to production.
 
-A `SCHEMA_VERSION` constant in `src-tauri/src/db.rs` (currently **56**) is
+A `SCHEMA_VERSION` constant in `src-tauri/src/db.rs` (currently **71**) is
 incremented whenever `001_init.sql` changes. On startup, if the stored
-version does not match, all SQLite tables are dropped, Stronghold files are
-deleted, the Veilid local storage is wiped, and the Lost Cargo file cache is
-removed. This ensures the four data stores remain synchronized.
+version does not match, all SQLite tables are dropped, the vault file (and
+its salt sidecar) is deleted, the Veilid local storage is wiped, and the
+Lost Cargo file cache is removed. This ensures the data stores remain
+synchronised.
 
 ### Concurrency
 
@@ -265,17 +266,19 @@ even in dev builds:
 ```toml
 [profile.dev.package.argon2]
 opt-level = 3
-[profile.dev.package.rust-argon2]
+[profile.dev.package.aes-gcm]
 opt-level = 3
-[profile.dev.package.iota_stronghold]
-opt-level = 2
-[profile.dev.package.iota-crypto]
+[profile.dev.package.blake3]
 opt-level = 3
 [profile.dev.package.scrypt]
 opt-level = 3
 ```
 
-`iota_stronghold` uses `rust-argon2` (not the `argon2` crate) internally.
+`rekindle-vault` depends on the `argon2` crate directly. Additional
+service surfaces (`rekindle-events`, `event_dispatch`, the
+`*_runtime.rs` orchestration in `src-tauri/src/services/`) are
+documented in [`../architecture/tauri-modules.md`](../architecture/tauri-modules.md)
+and [`../architecture/services-pattern.md`](../architecture/services-pattern.md).
 
 ## Environment Variables
 

@@ -17,6 +17,10 @@ filename is `NNNN-short-title.md`.
 | [0003](0003-flat-smpl-governance.md) | Flat SMPL governance replaces the v1.0 coordinator model | Accepted (supersedes the v1.0 design) |
 | [0004](0004-tauri-2-frontend.md) | Use Tauri 2 + SolidJS as the desktop frontend | Accepted |
 | [0005](0005-daemon-cli-track.md) | Add a daemon + CLI track alongside the Tauri desktop app | Accepted |
+| [0006](0006-vault-replaces-stronghold.md) | Replace `iota_stronghold` with the SQLCipher-backed `rekindle-vault` | Accepted |
+| [0007](0007-event-dispatch-single-source.md) | Route every Rust → Frontend event through one mpsc dispatcher | Accepted |
+| [0008](0008-runtime-adapter-pattern.md) | Runtime / adapter / pure-logic layering in `src-tauri/src/services/` | Accepted |
+| [0009](0009-crate-harvest-tiers.md) | Tier bumps and the eleven harvest crates | Accepted |
 
 ## How to write a new ADR
 

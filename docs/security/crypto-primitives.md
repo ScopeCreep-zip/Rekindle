@@ -19,12 +19,14 @@ which primitives address which threats.
 | Identity / signing | **Ed25519** | `ed25519-dalek` |
 | Key agreement | **X25519** | `x25519-dalek` (with `static_secrets`) |
 | Channel content AEAD | **AES-256-GCM** | `aes-gcm` |
-| At-rest / transport AEAD (Veilid layer; Stronghold; chunk FEK) | **XChaCha20-Poly1305** | `chacha20poly1305` (via Veilid + Stronghold + Rekindle file FEK) |
+| At-rest / transport AEAD (Veilid layer; chunk FEK) | **XChaCha20-Poly1305** | `chacha20poly1305` (via Veilid + Rekindle file FEK) |
+| At-rest vault (entry seal) | **AES-256-GCM** + page-level **AES-256-CBC** via SQLCipher | `aes-gcm`, SQLCipher (via `rekindle-vault`) |
+| Tamper-evident audit MAC | **BLAKE3-keyed** | `blake3` (via `rekindle-audit`) |
 | 1:1 messaging | **Signal Protocol** (X3DH + Double Ratchet) | `libsignal-protocol`-derived (in `rekindle-crypto`) |
 | Hash / KDF / dedup | **SHA-256** | `sha2` |
 | Hash (rotator selection, content addressing) | **BLAKE3** | `blake3` |
 | Key derivation | **HKDF-SHA256** | `hkdf` |
-| Passphrase KDF | **Argon2id** | `rust-argon2` (via `iota_stronghold`) |
+| Passphrase KDF | **Argon2id** | `argon2` (via `rekindle-vault`) |
 | IPC bus handshake | **Noise IK** (`Noise_IK_25519_ChaChaPoly_BLAKE2s`) | `snow` |
 | Audio codec (not crypto, but listed for completeness) | **Opus** | `opus` |
 
@@ -140,8 +142,7 @@ rotation cadence.
 
 - **Veilid transport encryption (Layer 1)** — provided by
   `veilid-core`; not implemented by us.
-- **Stronghold at-rest encryption (Layer 5)** — passphrase-derived
-  key.
+- **Veilid storage `protected_store_key`** stored in the vault.
 - **File chunk encryption** — per-file FEK encrypts each chunk.
 - **MEK wrapping** during peer-to-peer key delivery — wraps the new
   MEK with the X25519 ECDH-derived shared secret.
@@ -150,8 +151,8 @@ rotation cadence.
 
 - 192-bit nonce (XChaCha) vs 96-bit (ChaCha). With random nonces, the
   larger space removes any need to track "have I seen this nonce
-  before?" for long-lived keys (Stronghold vault, file FEK over many
-  chunks).
+  before?" for long-lived keys (file FEK over many chunks, Veilid
+  protected store).
 - Constant-time, no timing side channels even on hardware without
   AES-NI.
 - IETF-track ([draft-irtf-cfrg-xchacha](https://datatracker.ietf.org/doc/draft-irtf-cfrg-xchacha/));
@@ -164,8 +165,11 @@ rotation cadence.
   same long-lived-key setting. Less mature tooling; we chose XChaCha
   for the same robustness with broader implementation availability.
 - **AES-256-GCM with a 96-bit nonce.** Tracking nonce uniqueness over
-  the file FEK / Stronghold lifetimes is more error-prone than just
-  using a 192-bit random nonce.
+  the file FEK lifetime is more error-prone than just using a 192-bit
+  random nonce. (Note: the vault *does* use AES-256-GCM for per-entry
+  sealing, but each entry is sealed with a freshly generated 96-bit
+  nonce within a single per-key namespace, so the collision risk is
+  bounded by the entry-write rate, not by the file-chunk count.)
 
 ## 5. Signal Protocol — 1:1 friend messaging
 
@@ -189,8 +193,10 @@ ongoing per-message forward and backward secrecy.
   record.
 
 **Implementation.** `crates/rekindle-crypto/src/signal/` contains the
-session manager, with stores backed by Stronghold. Our types follow
-the [libsignal-protocol](https://github.com/signalapp/libsignal) data
+session manager, with stores backed by the vault
+(`src-tauri/src/keystore/signal.rs` adapter on top of
+`rekindle-vault`). Our types follow the
+[libsignal-protocol](https://github.com/signalapp/libsignal) data
 shapes.
 
 **Alternatives considered and rejected.**
@@ -288,8 +294,10 @@ the same output across contexts.
 
 ## 9. Argon2id — passphrase KDF
 
-**Where used.** Stronghold vault key derivation from the user's
-passphrase.
+**Where used.** `rekindle-vault` master-key derivation from the
+user's passphrase. The Argon2id output is then split into a
+SQLCipher page key and a per-entry GCM key via BLAKE3-keyed
+derivation.
 
 **Why.**
 
@@ -299,9 +307,9 @@ passphrase.
 - Winner of the [Password Hashing Competition](https://www.password-hashing.net/).
 - Standardised as [RFC 9106](https://datatracker.ietf.org/doc/html/rfc9106).
 
-**Implementation note.** `iota_stronghold` uses `rust-argon2`
-internally. Debug builds make Argon2 painfully slow; the workspace
-overrides debug optimisation for that crate:
+**Implementation note.** `rekindle-vault` depends on the `argon2`
+crate directly. Debug builds make Argon2 painfully slow; the
+workspace overrides debug optimisation for the relevant crates:
 
 ```toml
 [profile.dev.package.rust-argon2]

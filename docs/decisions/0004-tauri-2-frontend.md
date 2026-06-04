@@ -78,9 +78,10 @@ immediately.
 Tauri 2's plugin ecosystem covers our needs:
 `single-instance` (prevent multiple instances), `notification`,
 `store` (preferences), `process`, `deep-link` (`rekindle://`),
-`autostart`, `global-shortcut`. We replaced `stronghold` with
-direct `iota_stronghold` and `sql` with direct `rusqlite` to keep
-control of the dependency graph.
+`autostart`, `global-shortcut`. We replaced the `stronghold` plugin
+with `rekindle-vault` (SQLCipher-backed; see
+[`0006-vault-replaces-stronghold.md`](0006-vault-replaces-stronghold.md))
+and `sql` with direct `rusqlite` to keep control of the dependency graph.
 
 Frameless transparent windows fall out of `decorations: false`
 + `transparent: true` in `tauri.conf.json` and the
@@ -114,9 +115,9 @@ with `data-tauri-drag-region`.
 - **Veilid's deeply-nested future types** require
   `#![recursion_limit = "512"]` in any crate that holds long-lived
   futures over Tauri commands. This is a small ergonomic tax.
-- **Argon2 perf** in debug mode is slow because of `iota_stronghold`'s
-  internal use of `rust-argon2`. We override with
-  `[profile.dev.package.rust-argon2] opt-level = 3`.
+- **Argon2 perf** in debug mode is slow because `rekindle-vault`
+  uses Argon2id for the master-key KDF. We override with
+  `[profile.dev.package.argon2] opt-level = 3`.
 - **Less mature than Electron** — fewer Stack Overflow answers,
   smaller plugin ecosystem. We've found this to be less of a problem
   than expected because the cross-platform OS-integration plugins we

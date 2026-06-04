@@ -14,7 +14,7 @@ non-trivial protocol stack.
 │  └── Cross-cutting integration: real I/O, slower          │
 ├──────────────────────────────────────────────────────────┤
 │  Playwright E2E (real backend)    (pnpm test:e2e)         │
-│  ├── Real SQLite + Stronghold + Veilid bootstrap          │
+│  ├── Real SQLite + Vault + Veilid bootstrap               │
 │  ├── HTTP IPC via rekindle-e2e-server                     │
 │  └── Catches integration bugs the unit tests miss         │
 ├──────────────────────────────────────────────────────────┤
@@ -81,12 +81,12 @@ Argon2 is intentionally slow. Debug builds make it painfully so. The
 workspace overrides this for the `rust-argon2` crate:
 
 ```toml
-[profile.dev.package.rust-argon2]
+[profile.dev.package.argon2]
 opt-level = 3
 ```
 
-If you add a test that exercises Stronghold unlock, expect it to be
-slow without this override.
+If you add a test that exercises vault unlock, expect it to be slow
+without this override.
 
 ## Playwright E2E (real backend)
 

@@ -15,7 +15,7 @@ passwords, or email addresses. The private key never leaves the device.
 Identity creation:
   1. Generate Ed25519 keypair
   2. Derive X25519 key for Diffie-Hellman
-  3. Store private keys in Stronghold vault (encrypted by passphrase)
+  3. Store private keys in the vault (`rekindle-vault`, SQLCipher double-encrypted)
   4. Publish public key + display name to DHT profile record
   5. Allocate a Veilid private route for receiving messages
   6. Publish a deterministic mailbox DHT record with the current route blob

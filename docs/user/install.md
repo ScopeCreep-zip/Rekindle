@@ -139,8 +139,9 @@ directory:
 Within that directory you'll find:
 
 - `db.sqlite3` — local message and friend cache.
-- `stronghold/<identity_pubkey>.stronghold` — your encrypted vault.
-  Each identity has its own file.
+- `<identity_pubkey>.vault` + `<identity_pubkey>.vault.salt` — your
+  encrypted vault file (SQLCipher double-encrypted) and its salt
+  sidecar. Each identity has its own pair of files.
 - `file_cache/<community_id>/` — Lost Cargo file chunks per
   community.
 - `veilid/` — Veilid node storage.

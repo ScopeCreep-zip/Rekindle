@@ -76,8 +76,8 @@ classes by construction:
 - No analytics, no engagement tracking, no behavioural metrics.
 - Per-community pseudonyms are derived automatically; the user does
   not need to opt in to unlinkability.
-- The Stronghold vault is encrypted at rest by default with the
-  user's passphrase; there is no "skip the passphrase" mode.
+- The vault (`rekindle-vault`) is encrypted at rest by default with
+  the user's passphrase; there is no "skip the passphrase" mode.
 - Voice is `SafetySelection::Unsafe` for low latency by default for
   voice channels (acceptable because participants are mutually
   known); chat uses safety routes by default for sender anonymity.
@@ -149,8 +149,8 @@ require legal entity), not on architecture.
 **Status: not applicable (no passwords).**
 
 Rekindle's identity model is an Ed25519 keypair stored in the
-Stronghold vault. There are no usernames, no passwords, no
-phishable login flow. The Stronghold passphrase is the only thing
+vault (`rekindle-vault`). There are no usernames, no passwords, no
+phishable login flow. The vault passphrase is the only thing
 the user types — and an attacker who phishes the passphrase still
 needs physical access to the device to use it (the vault is
 local-only).

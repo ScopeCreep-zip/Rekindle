@@ -87,7 +87,8 @@ triple); the new device transcribes or scans it and dials back.
 5.                                ─── PairingAccept ──▶
                                          ▶ unwrap → master secret +
                                              record key + owner keypair
-                                         ▶ persist to local Stronghold
+                                         ▶ persist to local vault
+                                             (rekindle-vault)
                                          ▶ open personal sync record
                                          ▶ append self to device list
                                                                  
@@ -135,10 +136,18 @@ start_personal_sync_watch(state, handle)
     └── watch_dht_values(record_key, full_subkey_range)
         ▶ on ValueChange:
             decrypt → CRDT-merge → apply to local state
-            emit("sync-event") to frontend
+            event_dispatch::emit_journaled("sync-event", …)
         ▶ on watch lapse: re-arm; in the meantime inspect_dht_record
                           every 60 s as fallback
 ```
+
+The `sync-event` emit flows through the standard
+[event dispatch router](event-dispatch.md), so a reload during a sync
+update is recovered by the same `event_resume` cursor-tick mechanism
+that recovers chat or presence events. Cross-device reconciliation
+(the per-subkey CRDT merge) is a separate concern that runs on every
+device's `ValueChange` independently — the journal does not
+participate in the multi-device CRDT.
 
 Merge rules per subkey:
 
@@ -189,7 +198,7 @@ hex, and its own `device_id` in the local `identity` table:
 identity:
   ...
   personal_sync_record_key   TEXT
-  personal_sync_owner_keypair TEXT  -- hex; encrypted at rest by Stronghold
+  personal_sync_owner_keypair TEXT  -- hex; encrypted at rest by the vault
   device_id                  TEXT
   ...
 ```

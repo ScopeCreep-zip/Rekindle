@@ -104,7 +104,7 @@ Forbidden patterns that AI tools love to suggest:
 | `import { invoke } from "@tauri-apps/api"` in a component | Direct Tauri import bypasses the typed wrapper layer | Use `src/ipc/commands.ts` |
 | Business logic in `*.tsx` (validation, encryption, parsing) | Frontend is presentation only | Add a Tauri command in Rust |
 | `class="flex bg-xfire-bg-panel p-2 ..."` inline | Project policy: global styles only | Add a semantic class in `src/styles/xfire-theme.css` |
-| `localStorage.getItem(...)` direct access | Bypasses Stronghold + tauri-store integrity | Use `@tauri-apps/plugin-store` via `src/ipc/store.ts` |
+| `localStorage.getItem(...)` direct access | Bypasses vault + tauri-store integrity | Use `@tauri-apps/plugin-store` via `src/ipc/store.ts` |
 | `crypto.subtle.*` calls | Frontend crypto breaks the Tier-2 sole-crypto-boundary | Add a Tauri command (`rekindle-secrets`) |
 | `console.log(secret)` / logging private keys | Devtools / observability sink | Never |
 | `<div innerHTML={x} />` for any peer-controlled content | DOM XSS | Read [`../security/frontend-rendering.md`](../security/frontend-rendering.md) |

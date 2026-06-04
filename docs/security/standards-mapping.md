@@ -44,8 +44,8 @@ DASVS (below) covers the desktop-specific concerns ASVS does not.
 | V1 | Security architecture documented | **Met** | [`../architecture/communities.md`](../architecture/communities.md), [`overview.md`](overview.md), [`crypto-primitives.md`](crypto-primitives.md) |
 | V1 | ADRs for architectural decisions | **Met** | [`../decisions/`](../decisions/) (5 ADRs published; format MADR 4.0) |
 | V2 — Authentication | Password-based authentication | **N/A** | Identity is an Ed25519 keypair; no passwords. See `../decisions/0002-signal-protocol-for-1to1.md`. |
-| V2 | Multi-factor authentication | **N/A** | Same as above. The Stronghold passphrase + device possession is the local equivalent. |
-| V2 | Credential storage | **Met** | Stronghold vault (Argon2id + XChaCha20-Poly1305). [`overview.md`](overview.md) §"Layer 5". |
+| V2 | Multi-factor authentication | **N/A** | Same as above. The vault passphrase + device possession is the local equivalent. |
+| V2 | Credential storage | **Met** | Vault (`rekindle-vault`, SQLCipher + AES-256-GCM + Argon2id). [`overview.md`](overview.md) §"Layer 4". |
 | V6 — Cryptography | Approved primitives only | **Met** | Ed25519, X25519, AES-256-GCM, XChaCha20-Poly1305, BLAKE3, SHA-256, HKDF-SHA256, Argon2id. [`crypto-primitives.md`](crypto-primitives.md). |
 | V6 | Authenticated encryption (AEAD) | **Met** | All content uses AEAD (AES-GCM or XChaCha20-Poly1305). |
 | V6 | Forward secrecy | **Met** | Signal Double Ratchet (1:1), MEK rotation (community), per-call key (direct calls). |
@@ -75,7 +75,7 @@ controls ASVS skips because it assumes a web context.
 | Chapter | Control area | Status | Where |
 |---------|--------------|--------|-------|
 | Bootstrapping | Window decorations / chrome | **Met** | Frameless transparent windows, custom Xfire titlebar. [`../architecture/ui-skin.md`](../architecture/ui-skin.md). |
-| Local storage | At-rest encryption of secrets | **Met** | Stronghold vault (Argon2id + XChaCha20-Poly1305). |
+| Local storage | At-rest encryption of secrets | **Met** | Vault (`rekindle-vault`, SQLCipher AES-256-CBC + per-entry AES-256-GCM + Argon2id). |
 | Local storage | At-rest encryption of message data | **Open** | SQLite is not encrypted by default; users get coverage from OS-level FDE. Documented gap in [`threat-model.md`](threat-model.md) §I6. |
 | OS integration | Secure URL-scheme handling | **Met** | `rekindle://` deep links validated before action; no shell-out to invite payloads. |
 | OS integration | Single-instance enforcement | **Met** | Tauri `single-instance` plugin registered first. |
@@ -133,7 +133,7 @@ Other practices apply when targeting federal procurement.
 | PS.3 — Archive and protect each software release | **Met** | GitHub Releases (post first tag); CHANGELOG.md tracks every release. |
 | PW.1 — Design software to meet security requirements and mitigate security risks | **Met** | Threat model + ADRs document this. |
 | PW.2 — Review the design to verify it meets security requirements | **Met** | ADRs go through PR review. Architecture docs are public. |
-| PW.4 — Reuse existing, well-secured software | **Met** | We use Veilid (Apache 2.0), Signal Protocol (libsignal lineage), `iota_stronghold`, `ed25519-dalek`. We do not write our own crypto. |
+| PW.4 — Reuse existing, well-secured software | **Met** | We use Veilid (Apache 2.0), Signal Protocol (libsignal lineage), SQLCipher (via `rekindle-vault`), `ed25519-dalek`, `aes-gcm`. We do not write our own crypto. |
 | PW.5 — Create source code by adhering to secure coding practices | **Met** | Clippy + workspace lints (`deny(warnings)`, `dbg_macro = deny`, `todo = deny`, `undocumented_unsafe_blocks = deny`). [`../contributor/style-guide.md`](../contributor/style-guide.md). |
 | PW.6 — Configure the compilation, interpreter, and build processes to improve executable security | **Met** | `RUSTFLAGS = "-D warnings"` in CI; `#![forbid(unsafe_code)]` in pure-logic crates. |
 | PW.7 — Review and/or analyze human-readable code | **Met** | PR template requires test results, security review questions, subsystem checklist. [`../../.github/PULL_REQUEST_TEMPLATE.md`](../../.github/PULL_REQUEST_TEMPLATE.md). |

@@ -7,7 +7,7 @@
 
 The Tauri 2 desktop app embeds Veilid in-process — the GUI process
 itself owns the Veilid node, the DHT records, the Signal sessions,
-and the Stronghold vault. This is the right shape for the
+and the vault (`rekindle-vault`). This is the right shape for the
 user-facing desktop build, but it locks out:
 
 - **Headless deployments** — servers, automation, bots, bridges, CI

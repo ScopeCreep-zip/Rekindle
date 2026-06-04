@@ -84,8 +84,11 @@ outright, delete old code paths. Do not add:
 - Compatibility shims that translate between two versions.
 
 The `001_init.sql` schema is edited in place and `SCHEMA_VERSION` is
-bumped. On mismatch, the DB tables are dropped, Stronghold files
-removed, and Veilid storage wiped (3 stores must stay in sync).
+bumped (currently 70). On mismatch, the DB tables are dropped, the
+vault file (and its salt sidecar) is removed, and Veilid storage is
+wiped — the three stores must stay in sync. The runtime / adapter /
+pure-logic split for new services lives in
+[`../architecture/services-pattern.md`](../architecture/services-pattern.md).
 
 ### Async + parking_lot
 

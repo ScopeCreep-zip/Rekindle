@@ -1,5 +1,10 @@
 # Glossary
 
+<!-- waiver: structural exception to the 500-LoC house budget. A
+     glossary is a single alphabetised reference list; splitting it
+     would defeat its purpose. New entries should be terse (≤4 lines)
+     to keep growth bounded. -->
+
 Project-specific vocabulary used across Rekindle's codebase and
 documentation. Sorted alphabetically. Terms inherited from referenced
 external systems (Veilid, Signal, Death Stranding) are included where
@@ -32,7 +37,7 @@ format and signatures on top. Voice uses
 chat uses safety routes for sender anonymity.
 
 **Argon2id.** Memory-hard passphrase KDF used to derive the
-Stronghold vault key from the user's passphrase. Standardised in
+vault master key from the user's passphrase. Standardised in
 [RFC 9106](https://datatracker.ietf.org/doc/html/rfc9106). See
 [`security/crypto-primitives.md` §9](security/crypto-primitives.md).
 
@@ -433,10 +438,52 @@ profile; Alice sends through Carol who forwards an opaque
 encrypted blob she cannot read. See
 [`protocol/relay.md`](protocol/relay.md).
 
-**Stronghold.** IOTA Stronghold — the on-disk vault that holds
-long-term secrets (master secret, identity keys, Signal sessions,
-MEK history, slot seed). Encrypted with a key derived via Argon2id
-from the user's passphrase.
+**Vault (`rekindle-vault`).** SQLCipher double-encrypted on-disk
+store (AES-256-CBC page-level + AES-256-GCM per-entry, Argon2id KDF)
+for identity keys, Signal sessions, MEKs, slot seeds, audit MAC key.
+Replaces `iota_stronghold`. See
+[`decisions/0006-vault-replaces-stronghold.md`](decisions/0006-vault-replaces-stronghold.md).
+
+**Audit chain.** Tamper-evident BLAKE3-keyed hash chain
+(`rekindle-audit`) — entry MACs depend on the predecessor, so any
+tamper invalidates the chain forward. See
+[`architecture/audit-chain.md`](architecture/audit-chain.md).
+
+**EventJournal.** In-memory cursor-keyed ring of emitted Tauri
+events. `event_resume` replays missed entries on soft stalls. Lives
+in `rekindle-events`. See
+[`architecture/event-dispatch.md`](architecture/event-dispatch.md).
+
+**Idempotency cache.** LRU + TTL cache keyed by a frontend-generated
+UUID v7 (`rekindle-idempotency`) so duplicate mutating commands
+collapse to one side effect.
+
+**Lifecycle FSM.** 9-state app FSM in `rekindle-lifecycle`
+(`Stopped` → `Starting` → `Locked` → `Resuming` → `Operational` ↔
+`Degraded` ↔ `Detached` → `Locking` → `ShuttingDown`); shared by
+Tauri and the daemon. See
+[`architecture/lifecycle-fsm.md`](architecture/lifecycle-fsm.md).
+
+**TransportGuard.** RAII guard at mutating-command entry asserting
+the lifecycle is in a `can_write` state. Lives in
+`rekindle-lifecycle::guard`.
+
+**MEK rotation cascade.** Deterministic rotator-selection in
+`rekindle-mek-rotation` — lowest `blake3(departed || self)` hash
+rotates; cascade fallback if the elected peer is offline.
+
+**InboxScanCoordinator.** Three-tier scan coordinator
+(`rekindle-friendship`): Veilid watch + 30 s backstop poll +
+user-triggered direct trigger, debounced into one stream.
+
+**Presence orchestrator.** Pure-logic decision and timing layer
+(`rekindle-presence`) covering friend, community, idle, and game
+presence. See [`architecture/presence.md`](architecture/presence.md).
+
+**Governance runtime.** Async lifecycle
+(`rekindle-governance-runtime`) layered on the pure-CRDT
+`rekindle-governance` crate — origin, bootstrap, join, segments,
+apply. See [`architecture/communities-governance.md`](architecture/communities-governance.md).
 
 **Subkey.** A numbered entry within a Veilid DHT record. SMPL
 records assign subkeys to specific writers. Each subkey holds up

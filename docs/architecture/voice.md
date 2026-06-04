@@ -214,6 +214,20 @@ Dialing and Incoming. Voice transport setup
 (`services/voice/session.rs`) only runs after the W14.1 permanent
 ingress is in place — no per-call channel construction races.
 
+The Phase 14.q `CallRegistry` trait (defined in
+`rekindle_calls::signaling`) is the boundary between the call state
+machine and the Tauri shell. `AppState.active_calls: Arc<dyn
+CallRegistry>` holds the live registry; the adapter implementation
+lives at `src-tauri/src/services/calls_adapter/` and follows the
+standard runtime / adapter / pure-logic split documented in
+[`services-pattern.md`](services-pattern.md). The trait surface lets
+`rekindle-calls` own the lifecycle decisions (ring timeout, accept,
+decline, end) while the adapter owns the AppState writes and the
+`event_dispatch` emits. Calls are invoked via the IPC commands
+`start_dm_call`, `accept_dm_call`, `decline_dm_call`, `end_dm_call`,
+`send_call_media_state`, `send_call_reaction`, `mute_caller_temp`,
+plus the group-call variants — all registered through `invoke.rs`.
+
 `services/voice/signaling.rs` retains the wire types for community
 voice operations (join/leave/handraise/server-mute) which still use a
 combination of governance entries and gossip. `session.rs` holds the

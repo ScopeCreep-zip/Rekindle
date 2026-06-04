@@ -89,8 +89,8 @@ identity key, so the bundle cannot be forged.
 **Negative.**
 
 - **Per-peer session state.** Each friend has a Signal session
-  serialised in Stronghold. State accumulates with friend count;
-  not a problem at human scale but worth noting.
+  serialised in the vault (`rekindle-vault`). State accumulates with
+  friend count; not a problem at human scale but worth noting.
 - **PreKey replenishment is a real chore.** One-time prekeys are
   consumed on session establishment; we must replenish before they
   run out. This is on the roadmap as outstanding work.

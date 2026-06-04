@@ -196,8 +196,8 @@ peer connections, and explicit user actions.
 
 ### 2.10 Memory hygiene
 
-Every secret type implements `Zeroize + ZeroizeOnDrop`. The Stronghold
-vault is sealed when not in use. The CLI's `print_stdout` is denied at
+Every secret type implements `Zeroize + ZeroizeOnDrop`. The vault
+(`rekindle-vault`) is sealed when not in use. The CLI's `print_stdout` is denied at
 the lint level — every output goes through structured renderers so
 secrets cannot accidentally leak via formatted strings.
 
@@ -216,7 +216,7 @@ inherent to E2E P2P.
 
 ### 3.2 Live memory of a running, unlocked app
 
-Once the user authenticates and the Stronghold vault is open, secrets
+Once the user authenticates and the vault is open, secrets
 are in memory. A live memory dump (root-level malware, debugger
 attach, kernel exploit) can extract them. Zeroize-on-drop limits the
 exposure window for *not currently in use* secrets but cannot

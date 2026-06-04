@@ -52,8 +52,8 @@ as load-bearing.
 We **do not** defend against:
 
 - An adversary with full physical access to an unlocked, logged-in
-  device. Once the user has authenticated and the Stronghold vault is
-  open, the secrets are in memory and the adversary has them.
+  device. Once the user has authenticated and the vault is open, the
+  secrets are in memory and the adversary has them.
 - An adversary who controls the user's identity-key generator at the
   time of identity creation. We assume the OS CSPRNG is not backdoored.
 - A targeted-malware compromise of the user's device that lies dormant
@@ -64,20 +64,21 @@ We **do not** defend against:
 
 | # | Asset | Sensitivity | Where it lives |
 |---|-------|-------------|----------------|
-| Z1 | Identity keypair (Ed25519) | Critical — root of all derived keys | Stronghold vault on disk |
+| Z1 | Identity keypair (Ed25519) | Critical — root of all derived keys | Vault (`rekindle-vault`) on disk |
 | Z2 | Per-community pseudonym (Ed25519) | Critical for unlinkability | Derived per-session via HKDF; cached in memory |
-| Z3 | Signal Protocol session state | High | Stronghold (per-peer) |
-| Z4 | Pre-keys + signed prekey | Medium | Stronghold; published via DHT |
-| Z5 | Channel MEK (per channel, current generation) | High | Memory cache; historical generations in Stronghold |
-| Z6 | DM MEK chain | High | Stronghold |
+| Z3 | Signal Protocol session state | High | Vault (per-peer) |
+| Z4 | Pre-keys + signed prekey | Medium | Vault; published via DHT |
+| Z5 | Channel MEK (per channel, current generation) | High | Memory cache; historical generations in the vault |
+| Z6 | DM MEK chain | High | Vault |
 | Z7 | Slot keypair (per community) | Low — derived deterministically; not sensitive | Derived from `slot_seed` on demand |
-| Z8 | Slot seed | High — distributed via invite | Stronghold |
-| Z9 | Master secret (cross-device) | Critical | Stronghold; transferred only via paired-device handshake |
+| Z8 | Slot seed | High — distributed via invite | Vault |
+| Z9 | Master secret (cross-device) | Critical | Vault; transferred only via paired-device handshake |
 | Z10 | SQLite contents (messages, friends, communities, etc.) | High — represents social graph | Disk; OS-level encryption is the user's choice |
 | Z11 | Local Veilid node identity | Medium | Veilid storage; relinking requires bootstrap |
 | Z12 | Friend list, community membership | High — represents who the user knows | DHT (encrypted) + SQLite |
 | Z13 | Presence (status, route blob, game info) | Medium | DHT presence record (visible to friends/community members) |
 | Z14 | Plaintext message content | Critical | Memory only; never persisted unencrypted |
+| Z15 | Audit MAC key + tail anchor | High — tamper-evidence root | Vault; loss invalidates the chain |
 
 ## 3. STRIDE Threats and Mitigations
 
@@ -122,7 +123,7 @@ would create cross-community linkability.
 | I3 | Banned member decrypts post-ban messages | MEK rotation on member departure. New MEK is wrapped only for remaining members. |
 | I4 | Banned member decrypts pre-ban messages they had once cached | Acknowledged limitation. Forward secrecy protects only future content. The MEK rotation cadence and the deterministic rotator protocol minimise the exposure window for *future* content. |
 | I5 | Veilid relay node sees content | Layer 1 Veilid AEAD makes intermediate relays see only ciphertext. Layer 4 application AEAD makes them see only outer-envelope ciphertext even after Layer 1 unwraps. Defense in depth. |
-| I6 | Attacker reads at-rest secrets from disk | Layer 5: Stronghold vault encrypted with Argon2id-derived key from the user's passphrase. Vault is sealed when not in use. SQLite is not encrypted by default — users on full-disk-encryption OSes get coverage from there; users without FDE accept this gap. |
+| I6 | Attacker reads at-rest secrets from disk | Layer 4: `rekindle-vault` SQLCipher double-encryption — page-level AES-256-CBC keyed by Argon2id-derived master, per-entry AES-256-GCM on top, sealed when not in use. SQLite (main DB) is not encrypted by default — users on full-disk-encryption OSes get coverage from there; users without FDE accept this gap. |
 | I7 | Memory dump on running app reveals secrets | Limited mitigation: every secret type implements `Zeroize + ZeroizeOnDrop` so secrets are wiped when the holding struct drops. Live secrets in active use are still in memory and recoverable from a memory dump. |
 | I8 | Attacker correlates a user's pseudonyms across communities | Pseudonyms are derived per-community via HKDF(`master_secret`, `community_id`). Distinct communities yield cryptographically unrelated pseudonyms. An attacker who compromises one community's member list learns only pseudonyms meaningless outside that community. |
 | I9 | Push relay correlates wake-pushes with content | Wake payload contains only `{type: "wake", ts}` — no content, no record key, no community ID. Relay cannot correlate; platform vendor cannot correlate. The relay daemon does see *which* DHT keys the device cares about, which is metadata; this is opt-in and self-hostable. (See [`../protocol/relay.md`](../protocol/relay.md).) |
