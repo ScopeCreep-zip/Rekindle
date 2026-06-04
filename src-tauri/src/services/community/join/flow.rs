@@ -270,56 +270,63 @@ pub async fn join_community(
         .write()
         .insert(governance_key_str.to_string(), community);
 
-    // 7-8. Open + watch community records, each under its own "dial-in" gate.
-    //    OpenRecords uses the open-with-writer orchestrator (governance
-    //    read-only; registry opened WITH the slot-keypair writer so
-    //    presence/slot writes go through) in its Result-returning form, so a
-    //    genuinely-failed governance/registry open aborts the gate with a
-    //    precise error instead of marking a half-open community that later
-    //    raises "record not open".
-    //
-    //    Both gates run AFTER the optimistic `state.communities` insert above,
-    //    so on ANY failure we remove the half-joined entry — a failed gate must
-    //    never leave the user "in" the community. Nothing is persisted to
-    //    SQLite until `join_community_inner` sees this fn return Ok, so the
-    //    rollback is a pure in-memory removal. (The DHT slot claimed in
-    //    ClaimSlot persists and is reused if the user retries — self-sovereign
-    //    joins are idempotent on the slot.)
-    let setup = adapter
+    // 7-8. Post-commit record reconciliation (architecture §6.2 Steps 11/13).
+    //    The join COMMITTED at the slot claim above: every input the user needs
+    //    to *interact* — full governance state (channels/roles/categories), the
+    //    channel MEK (cached in DecodeInvite), the claimed registry slot +
+    //    `slot_keypair`, the channel-log keys, and the gossip overlay — is
+    //    already installed in the `CommunityState` inserted above. Opening the
+    //    channel/overflow records (Step 11), establishing DHT watches (Step 13),
+    //    warming the file cache, and history catch-up (Step 15) are best-effort
+    //    RECONCILIATION, not prerequisites: the governance + registry records
+    //    were already opened during the snapshot read and the slot claim, the
+    //    send path opens channel records on demand and queues+retries failed
+    //    writes, and the inspect / keepalive / login-rehydration loops re-open
+    //    and re-watch anything that lags. So these steps run under their dial-in
+    //    gates purely to stream progress — their failure is logged and NEVER
+    //    rolls back the committed membership (a slow or unreachable record must
+    //    not un-join a fully-equipped member). This uses the same swallowing
+    //    discipline as the login hydration path's `open_and_track_one_community`.
+    if let Some(setup) = adapter
         .list_communities_for_dht_open()
         .into_iter()
         .find(|s| s.id == governance_key_str)
-        .ok_or("dht-open setup missing for joined community")?;
-    let finalize = async {
-        gov_rt::gate(
+    {
+        let _ = gov_rt::gate(
             &adapter,
             governance_key_str,
             gov_rt::JoinPhase::OpenRecords,
-            gov_rt::try_open_and_track_one_community(&adapter, &setup),
+            async {
+                gov_rt::open_and_track_one_community(&adapter, &setup).await;
+                Ok(())
+            },
         )
-        .await?;
+        .await;
 
         if let Err(e) = super::super::files::ensure_cache_open(state, governance_key_str) {
             tracing::warn!(community = %governance_key_str, error = %e, "Lost Cargo cache unavailable on join");
         }
         super::super::files::sync_pinned_from_governance(state, governance_key_str);
 
-        gov_rt::gate(
+        if let Err(e) = gov_rt::gate(
             &adapter,
             governance_key_str,
             gov_rt::JoinPhase::WatchRecords,
             super::super::watch::watch_community_records(state, governance_key_str),
         )
         .await
-    };
-    if let Err(e) = finalize.await {
+        {
+            tracing::warn!(
+                community = %governance_key_str,
+                error = %e,
+                "watch setup deferred to inspect-loop recovery"
+            );
+        }
+    } else {
         tracing::warn!(
             community = %governance_key_str,
-            error = %e,
-            "join failed after slot claim — rolling back optimistic membership"
+            "dht-open setup missing after join; records will open on next login rehydration"
         );
-        state.communities.write().remove(governance_key_str);
-        return Err(e);
     }
 
     super::super::inspect::start_inspect_loop(state.clone(), governance_key_str.to_string());

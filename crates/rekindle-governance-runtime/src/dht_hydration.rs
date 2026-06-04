@@ -131,16 +131,24 @@ pub async fn open_and_track_one_community<D: GovernanceRuntimeDeps>(
         }
     }
 
-    // Channel-log + GovernanceOverflow records (concurrent, best-effort) in one
-    // batch so an unreachable overflow page overlaps the channel opens instead
-    // of adding a second serial "not found" retry ladder that would stall
-    // login. A missing overflow page never aborts the open pass (the read path
-    // warns and tolerates truncation, D6).
+    // Channel-log + GovernanceOverflow records open in ONE bounded concurrent
+    // batch (best-effort) so an unreachable overflow page overlaps the channel
+    // opens instead of adding a second serial "not found" retry ladder. The 12s
+    // cap guarantees the best-effort opens can never starve the caller (the
+    // join's OpenRecords gate, or login hydration) — without it an unreachable
+    // overflow page's full retry ladder could blow the gate budget and skip the
+    // track + mark-open bookkeeping below, leaving channel keys un-tracked for
+    // watch/keepalive/leave. A missing overflow page never aborts the open pass
+    // (the read path warns and tolerates truncation, D6).
     let channel_keys = deps.channel_log_keys_for_community(&rec.id);
     let overflow_keys = deps.governance_overflow_keys_for_community(&rec.id);
     let mut best_effort_keys = channel_keys.clone();
     best_effort_keys.extend(overflow_keys.iter().cloned());
-    open_channel_records_concurrent(deps, &rec.id, &best_effort_keys).await;
+    let _ = tokio::time::timeout(
+        std::time::Duration::from_secs(12),
+        open_channel_records_concurrent(deps, &rec.id, &best_effort_keys),
+    )
+    .await;
 
     // Track all opened keys + persist the post-open snapshot.
     let mut all_keys = vec![rec.governance_key.clone()];
@@ -158,67 +166,6 @@ pub async fn open_and_track_one_community<D: GovernanceRuntimeDeps>(
         rec.registry_writer.as_deref(),
         channel_keys,
     );
-}
-
-/// Join-path open: identical sequence to [`open_and_track_one_community`],
-/// but the governance + registry opens are **required** — their failure
-/// aborts the caller (the join's OpenRecords gate) with a precise error
-/// instead of marking a half-open community that later raises veilid's
-/// "record not open". Channel-log opens stay best-effort. Login hydration
-/// keeps using the swallowing [`open_and_track_one_community`].
-pub async fn try_open_and_track_one_community<D: GovernanceRuntimeDeps>(
-    deps: &D,
-    rec: &CommunityDhtOpenSetup,
-) -> Result<(), String> {
-    deps.open_dht_record(&rec.governance_key, None)
-        .await
-        .map_err(|e| format!("open governance record: {e}"))?;
-
-    if let Some(reg_key) = &rec.registry_key {
-        deps.open_dht_record(reg_key, rec.registry_writer.clone())
-            .await
-            .map_err(|e| format!("open registry record: {e}"))?;
-    }
-
-    // Channel-log + GovernanceOverflow records open in ONE bounded concurrent
-    // batch (best-effort). Two *serial* batches let an unreachable overflow
-    // page run its full "not found" retry ladder AFTER the channel batch,
-    // summing both ladders and blowing the 20s OpenRecords budget — the join
-    // then timed out at "Connecting to records" with the slot already claimed
-    // (the inviter sees a member the joiner never finished becoming). One
-    // overlapped batch makes the cost the single slowest open, and the outer
-    // timeout guarantees the best-effort opens can never starve the gate (the
-    // required governance/registry opens above are local-store hits — both
-    // were already opened during the snapshot and slot claim — so they are
-    // instant). A missing overflow page still never aborts the join: the
-    // snapshot already warned and merged a tolerant (possibly truncated)
-    // governance view.
-    let channel_keys = deps.channel_log_keys_for_community(&rec.id);
-    let overflow_keys = deps.governance_overflow_keys_for_community(&rec.id);
-    let mut best_effort_keys = channel_keys.clone();
-    best_effort_keys.extend(overflow_keys.iter().cloned());
-    let _ = tokio::time::timeout(
-        std::time::Duration::from_secs(12),
-        open_channel_records_concurrent(deps, &rec.id, &best_effort_keys),
-    )
-    .await;
-
-    let mut all_keys = vec![rec.governance_key.clone()];
-    if let Some(rk) = &rec.registry_key {
-        all_keys.push(rk.clone());
-    }
-    all_keys.extend(channel_keys.iter().cloned());
-    all_keys.extend(overflow_keys.iter().cloned());
-    deps.track_open_dht_records(&all_keys);
-
-    deps.mark_community_records_open(
-        &rec.id,
-        &rec.governance_key,
-        rec.registry_key.as_deref(),
-        rec.registry_writer.as_deref(),
-        channel_keys,
-    );
-    Ok(())
 }
 
 /// Recover per-community registry-linked state from the DHT:
