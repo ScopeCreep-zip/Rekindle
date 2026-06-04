@@ -27,22 +27,25 @@ use rekindle_presence::CommunityPresenceDeps;
 /// `poll.rs::presence_poll_tick` keep compiling.
 pub(crate) use rekindle_presence::DiscoveredRow;
 
+/// Ensure the community's member-registry record is open in Veilid's routing
+/// context, (re)opening it **writable** when we hold a writer keypair.
+///
+/// §10 "open once, keep open" is implemented here as *ensure-open before every
+/// use*, NOT as a one-way `records_open` latch. The old short-circuit
+/// (`if records_open { return Ok(()) }`) trusted an in-memory flag that
+/// `mark_community_records_open` sets even when the registry open warn-failed —
+/// so a single failed/dropped open wedged presence into a permanent
+/// `record not open` flood with zero member visibility, and nothing ever
+/// cleared the flag. Veilid's `open_dht_record` is idempotent (re-opening an
+/// already-open record is a cheap no-op that preserves the writer when the
+/// keypair is supplied), so calling it once per ~60 s poll tick is free and
+/// self-heals transient drops, restarts, and failed initial opens.
 pub(crate) async fn ensure_registry_open(
     state: &Arc<AppState>,
     community_id: &str,
     mgr: &DHTManager,
     registry_key: &str,
 ) -> Result<(), String> {
-    let records_open = {
-        let communities = state.communities.read();
-        communities
-            .get(community_id)
-            .is_some_and(|c| c.open_community_records.records_open)
-    };
-    if records_open {
-        return Ok(());
-    }
-
     let (registry_kp, slot_kp) = {
         let communities = state.communities.read();
         let c = communities.get(community_id);
@@ -76,7 +79,7 @@ pub(crate) async fn ensure_registry_open(
             cs.open_community_records.records_open = true;
         }
     }
-    tracing::debug!(community = %community_id, "presence_poll: re-opened registry after restart");
+    tracing::trace!(community = %community_id, "presence_poll: registry open ensured");
     Ok(())
 }
 

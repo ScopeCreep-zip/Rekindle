@@ -33,9 +33,39 @@ pub(super) async fn scan_segment_raw(
         return Vec::new();
     };
 
+    let mut out = Vec::new();
+
+    // Probe subkey 0 serially first. A `get_dht_value` against a record that
+    // isn't open in the routing context fails `Generic: record not open`, and
+    // fanning out 255 such calls floods the log with one ERROR each (logged
+    // internally by `veilid_api`, so we can't suppress them after the fact).
+    // The caller's `ensure_registry_open` should have opened this record; if it
+    // didn't (a not-yet-opened segment, a transient drop), bail after a single
+    // read and let the next poll tick re-open — self-healing, not a 255× flood.
+    match rc.get_dht_value(reg_key.clone(), 0, false).await {
+        Err(error) => {
+            tracing::debug!(
+                registry_key,
+                %error,
+                "scan_segment_raw: registry not readable — skipping scan this tick",
+            );
+            return Vec::new();
+        }
+        Ok(maybe) => {
+            if skip_subkey != Some(0) {
+                if let Some(val) = maybe {
+                    let bytes = val.data().to_vec();
+                    if !bytes.is_empty() {
+                        out.push((0, bytes));
+                    }
+                }
+            }
+        }
+    }
+
     let sem = Arc::new(tokio::sync::Semaphore::new(SCAN_PARALLELISM));
     let mut futs = FuturesUnordered::new();
-    for subkey in 0..max_subkey {
+    for subkey in 1..max_subkey {
         if Some(subkey) == skip_subkey {
             continue;
         }
@@ -50,7 +80,6 @@ pub(super) async fn scan_segment_raw(
         });
     }
 
-    let mut out = Vec::new();
     while let Some((subkey, result)) = futs.next().await {
         let Ok(Some(val)) = result else { continue };
         let bytes = val.data().to_vec();
