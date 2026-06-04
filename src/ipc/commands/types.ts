@@ -176,6 +176,28 @@ export interface CommunityPolicy {
   joinIntervalSeconds: number;
 }
 
+/** How coarse a peer's last-seen timestamp is exposed. */
+export type LastSeenPrecision = "hidden" | "coarse" | "exact";
+
+/** Per-signal share scope. Default-deny: "none" hides the signal. */
+export type ShareScope = "none" | "members";
+
+/**
+ * Per-community presence sharing consent (default-deny). Local-only — never
+ * published to the registry. Gates what our own presence row reveals and,
+ * by reciprocity, which peer signals we get to read.
+ */
+export interface PresenceSharingPolicy {
+  /** Master switch: appear online at all. Off ⇒ Invisible to peers. */
+  shareOnline: boolean;
+  /** Share which channel we're in (text/voice). */
+  shareLocation: ShareScope;
+  /** Share activity / game string. */
+  shareActivity: ShareScope;
+  /** Last-seen granularity exposed to peers. */
+  lastSeen: LastSeenPrecision;
+}
+
 export interface NetworkStatus {
   attachmentState: string;
   isAttached: boolean;

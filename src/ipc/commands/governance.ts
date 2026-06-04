@@ -1,6 +1,6 @@
 import { invoke } from "../invoke";
 import type {
-  CreateEventRequest, EventInfo, ExclusionGroupEdit, Message,
+  CreateEventRequest, EventInfo, ExclusionGroupEdit, Message, PresenceSharingPolicy,
 } from "./types";
 
 export const governanceCommands = {
@@ -23,6 +23,17 @@ export const governanceCommands = {
 
   sendChannelTyping: (communityId: string, channelId: string) =>
     invoke<void>("send_channel_typing", { communityId, channelId }),
+
+  // Presence: tell peers which channel we're focused on (or null to clear).
+  // `kind` is "voice" for voice channels, "text" otherwise.
+  setActiveChannel: (communityId: string, channelId: string | null, kind: string) =>
+    invoke<void>("set_active_channel", { communityId, channelId, kind }),
+
+  // Presence sharing consent (default-deny). Local-only; never published.
+  getPresencePolicy: (communityId: string) =>
+    invoke<PresenceSharingPolicy>("get_presence_policy", { communityId }),
+  setPresencePolicy: (communityId: string, policy: PresenceSharingPolicy) =>
+    invoke<void>("set_presence_policy", { communityId, policy }),
 
   updateCommunityPresence: (communityId: string, status: string, gameName?: string, gameId?: number, elapsedSeconds?: number, serverAddress?: string) =>
     invoke<void>("update_community_presence", { communityId, status, gameName, gameId, elapsedSeconds, serverAddress }),

@@ -121,6 +121,9 @@ pub fn assemble_member_profiles_for(
                     badges,
                     avatar_ref: r.avatar_ref.clone(),
                     banner_ref: r.banner_ref.clone(),
+                    // Location is live session state, never persisted —
+                    // it repopulates from the next presence scan.
+                    location: None,
                 },
             )
         })
@@ -203,5 +206,11 @@ pub fn build_community_state(
         my_banner_ref: None,
         member_profiles: assemble_member_profiles_for(&community.id, &rows.members),
         recent_member_joins: std::collections::VecDeque::new(),
+        my_session_location: None,
+        presence_policy: community
+            .presence_policy_json
+            .as_deref()
+            .and_then(|json| serde_json::from_str(json).ok())
+            .unwrap_or_default(),
     }
 }

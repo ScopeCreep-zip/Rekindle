@@ -2,7 +2,8 @@ use tauri::State;
 
 use crate::db::DbPool;
 use crate::services::community_presence_runtime::{
-    get_community_members_inner, send_channel_typing_inner, update_community_presence_inner,
+    get_community_members_inner, get_presence_policy_inner, send_channel_typing_inner,
+    set_active_channel_inner, set_presence_policy_inner, update_community_presence_inner,
     update_community_profile_inner,
 };
 use crate::state::SharedState;
@@ -38,6 +39,34 @@ pub async fn update_community_presence(
         server_address,
     )
     .await
+}
+
+#[tauri::command]
+pub async fn set_active_channel(
+    community_id: String,
+    channel_id: Option<String>,
+    kind: String,
+    state: State<'_, SharedState>,
+) -> Result<(), String> {
+    set_active_channel_inner(state.inner(), community_id, channel_id, kind).await
+}
+
+#[tauri::command]
+pub async fn set_presence_policy(
+    community_id: String,
+    policy: rekindle_types::presence::PresenceSharingPolicy,
+    state: State<'_, SharedState>,
+    pool: State<'_, DbPool>,
+) -> Result<(), String> {
+    set_presence_policy_inner(state.inner(), pool.inner(), community_id, policy).await
+}
+
+#[tauri::command]
+pub async fn get_presence_policy(
+    community_id: String,
+    state: State<'_, SharedState>,
+) -> Result<rekindle_types::presence::PresenceSharingPolicy, String> {
+    Ok(get_presence_policy_inner(state.inner(), &community_id))
 }
 
 #[tauri::command]

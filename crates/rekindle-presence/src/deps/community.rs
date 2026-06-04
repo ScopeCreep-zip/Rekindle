@@ -110,6 +110,40 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
         ranges: &[rekindle_types::presence::HistoryRange],
     ) -> Option<rekindle_types::presence::EncryptedHistoryRanges>;
 
+    /// The local user's current session for this community — typed
+    /// status (mapped from identity `UserStatus`), focused channel
+    /// (`my_session_location`), and last-active. Built under the
+    /// communities lock. The single source of truth the write path
+    /// derives the loose `status` string from.
+    fn self_session(&self, community_id: &str) -> rekindle_types::presence::MemberSession;
+
+    /// The local user's per-community presence sharing policy
+    /// (default-deny). Local-only — never published. Applied to the
+    /// session before signing + publishing.
+    fn presence_policy(
+        &self,
+        community_id: &str,
+    ) -> rekindle_types::presence::PresenceSharingPolicy;
+
+    /// Encrypt the identity-revealing `SessionExtras` (location +
+    /// activity) under the current community MEK so only current
+    /// members can read them. `None` when MEK is missing OR there is
+    /// nothing to share (caller omits the field).
+    fn encrypt_session_extras_with_current_mek(
+        &self,
+        community_id: &str,
+        extras: &rekindle_types::presence::SessionExtras,
+    ) -> Option<rekindle_types::presence::EncryptedSessionExtras>;
+
+    /// Decrypt a peer's MEK-encrypted `SessionExtras` during the
+    /// roster read. `None` when we lack the matching MEK generation
+    /// (the roster gracefully shows no location for that peer).
+    fn decrypt_session_extras(
+        &self,
+        community_id: &str,
+        encrypted: &rekindle_types::presence::EncryptedSessionExtras,
+    ) -> Option<rekindle_types::presence::SessionExtras>;
+
     /// Compute history ranges from the local message log for the
     /// Shared Locker pattern (architecture §14.3). DB-backed.
     async fn compute_history_ranges(
@@ -403,13 +437,22 @@ pub struct SegmentDescriptor {
 
 /// In-memory snapshot of one online community member used by the
 /// gossip overlay rebuild. Mirrors src-tauri's `OnlineMember`
-/// shape (route_blob + status + last_seen) without forcing the
-/// crate to depend on the AppState type.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// shape without forcing the crate to depend on the AppState type.
+///
+/// `location` / `last_active` are the decoded session signals used by
+/// the roster — `location` is filled by the orchestrator after the
+/// scan (decrypting the MEK-bounded `SessionExtras`), so it defaults to
+/// `None` on the bare classifier output.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct OnlineMemberSnapshot {
     pub route_blob: Vec<u8>,
     pub status: String,
     pub last_seen: u64,
+    /// Where this member is focused (text/voice channel), if shared.
+    pub location: Option<rekindle_types::presence::SessionLocation>,
+    /// Member's self-reported last-active (already coarsened per their
+    /// policy); drives last-seen on the read side.
+    pub last_active: u64,
 }
 
 /// Per-community profile fields the presence write path needs.

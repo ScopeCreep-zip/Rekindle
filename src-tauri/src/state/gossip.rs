@@ -4,15 +4,23 @@
 use std::collections::{HashMap, VecDeque};
 
 /// An online community member with their route blob and last-seen timestamp.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct OnlineMember {
-    /// Veilid private route blob for reaching this member.
+    /// Veilid private route blob for reaching this member. May be empty:
+    /// liveness (in `online_members`) is decoupled from reachability
+    /// (route present), so a routeless-but-live member still appears here.
     pub route_blob: Vec<u8>,
     /// Last advertised member status from the registry or gossip mesh.
     pub status: String,
     /// Timestamp (seconds since epoch) of last valid gossip message or presence update.
     /// Used for TTL-based eviction of stale members.
     pub last_seen: u64,
+    /// Where this member is focused (text/voice channel), once decoded
+    /// from their session. `None` until the roster decode fills it.
+    pub location: Option<rekindle_types::presence::SessionLocation>,
+    /// Member's self-reported last-active (already coarsened per their
+    /// policy); drives last-seen bucketing on the roster.
+    pub last_active: u64,
 }
 
 /// Gossip overlay state for a community.

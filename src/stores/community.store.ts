@@ -56,6 +56,18 @@ export interface Member {
   avatarRef?: string | null;
   /** BLAKE3 reference for the member's banner in this community. */
   bannerRef?: string | null;
+  /** Where the member is focused right now (if they share it). Drives the
+   * "in #channel" roster grouping. `kind` is "text" | "voice". */
+  location?: MemberLocation | null;
+  /** Member's last-active unix seconds, already coarsened by their sharing
+   * policy (0 / undefined = not shared). Drives the "last seen" label. */
+  lastActive?: number;
+}
+
+/** A member's focused channel, decoded from their shared session. */
+export interface MemberLocation {
+  kind: "text" | "voice";
+  channelId: string;
 }
 
 export interface Role {

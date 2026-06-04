@@ -29,6 +29,11 @@ pub struct MemberProfileSnapshot {
     pub badges: Vec<String>,
     pub avatar_ref: Option<String>,
     pub banner_ref: Option<String>,
+    /// The member's focused channel, decoded from `session.location`.
+    /// Included in the diff so a channel move flags `MembersRefreshed`
+    /// (the roster re-fetches location via the same one-flow path); the
+    /// live value the DTO renders still comes from the online overlay.
+    pub location: Option<rekindle_types::presence::SessionLocation>,
 }
 
 /// Outcome of the diff: the rows to write back + whether the
@@ -65,6 +70,7 @@ pub fn compute_profile_diff<S: BuildHasher>(
             badges: presence.badges.clone(),
             avatar_ref: presence.avatar_ref.clone(),
             banner_ref: presence.banner_ref.clone(),
+            location: presence.session.location.clone(),
         };
         let prev = prior_snapshots.get(&pseudonym_hex);
         if prev.is_none_or(|existing| existing != &next) {
@@ -154,6 +160,31 @@ mod tests {
         prior.insert(pk_hex.clone(), snapshot(Some("alice"), None));
         let outcome = compute_profile_diff(&prior, &[row(4, Some("alice"), Some("now has bio"))]);
         assert!(outcome.changed);
+    }
+
+    #[test]
+    fn changed_location_flagged() {
+        use rekindle_types::presence::SessionLocation;
+        let mut bytes = [0u8; 32];
+        bytes[0] = 7;
+        let pk_hex = hex::encode(bytes);
+        let mut prior = HashMap::new();
+        prior.insert(pk_hex.clone(), snapshot(Some("carol"), None));
+
+        // Build a row whose session has a text location.
+        let mut row = row(7, Some("carol"), None);
+        row.2.session.location = Some(SessionLocation::Text {
+            channel_id: "abc".to_string(),
+        });
+
+        let outcome = compute_profile_diff(&prior, &[row]);
+        assert!(outcome.changed, "a new location must flag a refresh");
+        assert_eq!(
+            outcome.updates.get(&pk_hex).unwrap().location,
+            Some(SessionLocation::Text {
+                channel_id: "abc".to_string(),
+            })
+        );
     }
 
     #[test]

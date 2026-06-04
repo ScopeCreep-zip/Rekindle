@@ -158,6 +158,8 @@ mod tests {
             banner_hash: None,
             member_profiles: HashMap::new(),
             recent_member_joins: VecDeque::new(),
+            my_session_location: None,
+            presence_policy: rekindle_types::presence::PresenceSharingPolicy::default(),
         }
     }
 

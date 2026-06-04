@@ -127,6 +127,8 @@ pub(super) fn insert_community_into_state(state: &Arc<AppState>, community: Comm
         my_banner_ref: None,
         member_profiles: HashMap::new(),
         recent_member_joins: std::collections::VecDeque::new(),
+        my_session_location: None,
+        presence_policy: rekindle_types::presence::PresenceSharingPolicy::default(),
     };
 
     state.mek_cache.lock().insert(

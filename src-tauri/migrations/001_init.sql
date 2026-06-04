@@ -103,6 +103,10 @@ CREATE TABLE IF NOT EXISTS communities (
     coordinator_epoch INTEGER NOT NULL DEFAULT 0,
     governance_key TEXT,
     lamport_clock INTEGER NOT NULL DEFAULT 0,
+    -- Local-only presence sharing consent (default-deny). JSON-encoded
+    -- PresenceSharingPolicy; NULL falls back to the default-deny policy.
+    -- Never published to the registry — this is the user's private choice.
+    presence_policy TEXT,
     PRIMARY KEY (owner_key, id)
 );
 

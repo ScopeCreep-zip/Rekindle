@@ -248,11 +248,20 @@ impl MembershipEventDeps for GovernanceAdapter {
                         {
                             continue;
                         }
-                        if !presence.route_blob.is_empty() && presence.status != "offline" {
+                        // Liveness ≠ reachability. A just-joined member is
+                        // online the moment it heartbeats; its route may not
+                        // have been allocated yet. Populate `online_members`
+                        // (roster) regardless of route, but only add to
+                        // `peers` (the set we actually send bytes to) once a
+                        // route is present.
+                        if presence.status != "offline" {
                             let mut communities = state.communities.write();
                             if let Some(cs) = communities.get_mut(&community_id) {
                                 if let Some(ref mut gossip) = cs.gossip {
+                                    let route_present = !presence.route_blob.is_empty();
                                     let om = crate::state::OnlineMember {
+                                        location: presence.session.location.clone(),
+                                        last_active: presence.session.last_active,
                                         route_blob: presence.route_blob,
                                         status: presence.status,
                                         last_seen: rekindle_utils::timestamp_secs(),
@@ -260,7 +269,9 @@ impl MembershipEventDeps for GovernanceAdapter {
                                     gossip
                                         .online_members
                                         .insert(member.pseudonym_hex.clone(), om.clone());
-                                    gossip.peers.insert(member.pseudonym_hex.clone(), om);
+                                    if route_present {
+                                        gossip.peers.insert(member.pseudonym_hex.clone(), om);
+                                    }
                                     found_peers += 1;
                                 }
                             }

@@ -78,6 +78,7 @@ const CommunitySidebar: Component<{ vm: CommunityVm }> = (props) => {
         <ChannelList
           channels={vm.activeCommunity()!.channels}
           categories={vm.activeCommunity()!.categories}
+          members={vm.activeCommunity()!.members}
           selectedId={vm.selectedChannelId()}
           communityId={vm.selectedCommunityId()}
           canManage={vm.canManageChannels()}

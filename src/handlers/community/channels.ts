@@ -39,6 +39,20 @@ export async function handleCreateChannel(
   }
 }
 
+// Debounce active-channel publishing: a user scrubbing through channels
+// shouldn't trigger a registry presence write per channel. Only the
+// channel they settle on (~400ms) is announced to peers.
+let activeChannelTimer: ReturnType<typeof setTimeout> | undefined;
+
+function publishActiveChannel(communityId: string, channelId: string, kind: string): void {
+  if (activeChannelTimer) clearTimeout(activeChannelTimer);
+  activeChannelTimer = setTimeout(() => {
+    commands.setActiveChannel(communityId, channelId, kind).catch((e) => {
+      console.warn("Failed to publish active channel:", e);
+    });
+  }, 400);
+}
+
 export function handleSelectChannel(channelId: string): void {
   setCommunityState("activeChannel", channelId);
 
@@ -51,6 +65,14 @@ export function handleSelectChannel(channelId: string): void {
       const chIdx = community.channels.findIndex((ch) => ch.id === channelId);
       if (chIdx >= 0 && community.channels[chIdx].unreadCount > 0) {
         setCommunityState("communities", communityId, "channels", chIdx, "unreadCount", 0);
+      }
+
+      // Tell peers which channel we're focused on (debounced). Voice
+      // join/leave publishes its own Voice location separately.
+      if (chIdx >= 0) {
+        const chType = community.channels[chIdx].type;
+        const kind = chType === "voice" || chType === "stage" ? "voice" : "text";
+        publishActiveChannel(communityId, channelId, kind);
       }
 
       // Find the last message in the channel to send as read position

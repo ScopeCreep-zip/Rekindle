@@ -47,6 +47,18 @@ function parseBadges(input: string): string[] {
     .slice(0, MAX_BADGES);
 }
 
+/** Coarse relative last-seen. The value is already bucketed by the peer's
+ * sharing policy (hour granularity unless they opted into exact), so this
+ * only renders it relative — never finer than the data they shared. */
+function formatLastSeen(secs: number): string {
+  const delta = Math.floor(Date.now() / 1000) - secs;
+  if (delta < 90) return "just now";
+  if (delta < 3600) return `${Math.round(delta / 60)} minutes ago`;
+  if (delta < 86400) return `${Math.round(delta / 3600)} hours ago`;
+  if (delta < 604800) return `${Math.round(delta / 86400)} days ago`;
+  return new Date(secs * 1000).toLocaleDateString();
+}
+
 /**
  * Architecture §32 Phase 5 W15 — per-community profile popover. Renders
  * inside a Kobalte `<Popover>` that the parent (MemberList) wraps around
@@ -248,6 +260,9 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
           <StatusDot status={props.member.status || "online"} />
           <span>{props.member.status || "online"}</span>
         </div>
+        <Show when={props.member.status === "offline" && (props.member.lastActive ?? 0) > 0}>
+          <div class="profile-popup-lastseen">Last seen {formatLastSeen(props.member.lastActive!)}</div>
+        </Show>
         <Show when={props.member.pronouns}>
           <div class="profile-popup-pronouns">{props.member.pronouns}</div>
         </Show>

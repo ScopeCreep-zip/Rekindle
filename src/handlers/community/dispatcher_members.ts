@@ -136,6 +136,12 @@ export function reduceMembership(event: CommunityEvent): boolean {
       const idx = community.members.findIndex((m) => m.pseudonymKey === pseudonymKey);
       if (idx >= 0) {
         setCommunityState("communities", communityId, "members", idx, "status", status);
+        // A member that just went offline is no longer "in" any channel —
+        // clear their location so the channel presence badge stops counting
+        // them without waiting for the next full members re-fetch.
+        if (status === "offline") {
+          setCommunityState("communities", communityId, "members", idx, "location", null);
+        }
         const gameInfo = event.data.gameName
           ? {
               gameName: event.data.gameName,

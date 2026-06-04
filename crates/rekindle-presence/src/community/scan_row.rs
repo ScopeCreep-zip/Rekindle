@@ -30,8 +30,8 @@ pub const SUBKEYS_PER_SEGMENT: u32 = 255;
 #[derive(Debug, Clone, PartialEq)]
 pub enum ClassifiedRow {
     /// Row passed every check. `online_member` is `Some` when the
-    /// row has a fresh heartbeat, non-empty route blob, and
-    /// non-"offline" status; `None` for rows that count as
+    /// row has a fresh heartbeat and non-"offline" status (liveness
+    /// only — route_blob may be empty); `None` for rows that count as
     /// "discovered" but don't enter the gossip overlay this tick.
     Accepted(Box<AcceptedRow>),
     /// Row's `MemberPresence` JSON couldn't be deserialised.
@@ -64,12 +64,15 @@ pub struct AcceptedRow {
 /// [`ClassifiedRow::EmptyPayload`].
 ///
 /// The `online_member` slot of [`ClassifiedRow::Accepted`] applies
-/// the architecture §3 gossip-overlay membership rules:
+/// the architecture §3 gossip-overlay membership rules. Liveness is
+/// decoupled from reachability — an online member may have an empty
+/// `route_blob` (route not yet allocated); reachability consumers read
+/// the blob off the snapshot and gate on it themselves:
 /// - `status == "offline"` → not online (but still discovered for
 ///   member registry + role merging).
 /// - `last_heartbeat <= stale_threshold` → stale; not online.
-/// - empty `route_blob` → not reachable; not online.
-/// - otherwise → online, with `last_seen = now_secs`.
+/// - otherwise → online (route_blob carried through, may be empty),
+///   with `last_seen = now_secs`.
 #[must_use]
 pub fn parse_and_classify_row<S: BuildHasher>(
     raw_bytes: &[u8],
@@ -101,11 +104,15 @@ pub fn parse_and_classify_row<S: BuildHasher>(
     }
 
     let stale_cutoff = now_secs.saturating_sub(stale_heartbeat_threshold_secs);
-    // Collapse the three "treat as offline" reasons (status, stale
-    // heartbeat, empty route blob) into a single check.
-    let is_offline = presence.status == "offline"
-        || presence.last_heartbeat <= stale_cutoff
-        || presence.route_blob.is_empty();
+    // Liveness (am I here, now) ≠ reachability (can a route reach me).
+    // "Offline" is a function of status + heartbeat freshness ONLY. The
+    // route blob is allocated asynchronously and is frequently empty at
+    // first write; gating liveness on it made freshly-joined, actively-
+    // heartbeating members invisible to every peer until their route
+    // landed (seconds-to-never). Route travels in
+    // `OnlineMemberSnapshot.route_blob` (may be empty) for the separate
+    // reachability consumers (DM / MEK delivery), which check it there.
+    let is_offline = presence.status == "offline" || presence.last_heartbeat <= stale_cutoff;
     let online_member = if is_offline {
         None
     } else {
@@ -113,6 +120,10 @@ pub fn parse_and_classify_row<S: BuildHasher>(
             route_blob: presence.route_blob.clone(),
             status: presence.status.clone(),
             last_seen: now_secs,
+            // `location` lives in the MEK-encrypted SessionExtras; the
+            // orchestrator decrypts + fills it after this pure classify.
+            location: presence.session.location.clone(),
+            last_active: presence.session.last_active,
         })
     };
 
@@ -249,7 +260,12 @@ mod tests {
     }
 
     #[test]
-    fn empty_route_blob_yields_no_online_slot() {
+    fn empty_route_blob_still_online() {
+        // Liveness ≠ reachability: a fresh, non-offline heartbeat with
+        // no route allocated yet is STILL online (the live "can't see
+        // each other" bug was this row being classified offline). The
+        // empty route is carried through on the snapshot for separate
+        // reachability consumers.
         let mut presence = signed_presence_for(&[6u8; 32], "c1", "online");
         // Strip route + re-sign so the row still verifies.
         presence.route_blob.clear();
@@ -262,7 +278,9 @@ mod tests {
         let ClassifiedRow::Accepted(row) = result else {
             panic!("expected Accepted");
         };
-        let online_member = row.online_member;
-        assert!(online_member.is_none());
+        let online = row.online_member.expect("routeless member is still online");
+        assert!(online.route_blob.is_empty());
+        assert_eq!(online.status, "online");
+        assert_eq!(online.last_seen, 1000);
     }
 }

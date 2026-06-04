@@ -1,6 +1,6 @@
 import { Component, For, Show, createSignal, createMemo, JSX } from "solid-js";
 import { ContextMenu } from "@kobalte/core/context-menu";
-import type { Channel, Category } from "../../stores/community.store";
+import type { Channel, Category, Member } from "../../stores/community.store";
 import { voiceState } from "../../stores/voice.store";
 import CategoryHeader from "./CategoryHeader";
 import {
@@ -18,6 +18,7 @@ import {
 interface ChannelListProps {
   channels: Channel[];
   categories: Category[];
+  members: Member[];
   selectedId?: string;
   communityId: string;
   canManage: boolean;
@@ -46,6 +47,19 @@ const ChannelList: Component<ChannelListProps> = (props) => {
   const sortedCategories = createMemo(() =>
     [...props.categories].sort((a, b) => a.sortOrder - b.sortOrder),
   );
+
+  // Roster grouping: count members focused on each channel. Drives the
+  // "● N" presence indicator. Only members who share their location have
+  // a non-null `location` (default-deny), so this naturally reflects
+  // exactly what peers consented to expose.
+  const presenceByChannel = createMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const m of props.members) {
+      const loc = m.location;
+      if (loc) counts[loc.channelId] = (counts[loc.channelId] ?? 0) + 1;
+    }
+    return counts;
+  });
 
   // Architecture §10.8 — text-in-voice channels are only visible while the
   // viewer is connected to the parent voice channel.
@@ -139,6 +153,15 @@ const ChannelList: Component<ChannelListProps> = (props) => {
         >
           <span class={channelIconClass(channel)}>{channelIcon(channel)}</span>
           <span class="channel-name">{channel.name}</span>
+          {(presenceByChannel()[channel.id] ?? 0) > 0 && (
+            <span
+              class="channel-presence-badge"
+              title={`${presenceByChannel()[channel.id]} here`}
+            >
+              <span class="channel-presence-dot" aria-hidden="true">●</span>
+              {presenceByChannel()[channel.id]}
+            </span>
+          )}
           {channel.unreadCount > 0 && (
             <span class="channel-unread-badge">{channel.unreadCount}</span>
           )}

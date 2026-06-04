@@ -160,6 +160,82 @@ impl CommunityPresenceDeps for PresenceAdapter {
         })
     }
 
+    fn self_session(&self, community_id: &str) -> rekindle_types::presence::MemberSession {
+        use rekindle_types::presence::SessionStatus;
+        // Map the identity-level UserStatus onto the typed session
+        // vocabulary so friends + community presence speak one language.
+        let status = match state_helpers::identity_status(&self.state)
+            .unwrap_or(crate::state::UserStatus::Online)
+        {
+            crate::state::UserStatus::Online => SessionStatus::Online,
+            crate::state::UserStatus::Away => SessionStatus::Away,
+            crate::state::UserStatus::Busy => SessionStatus::Busy,
+            crate::state::UserStatus::Offline => SessionStatus::Offline,
+            crate::state::UserStatus::Invisible => SessionStatus::Invisible,
+        };
+        let location = {
+            let communities = self.state.communities.read();
+            communities
+                .get(community_id)
+                .and_then(|c| c.my_session_location.clone())
+        };
+        rekindle_types::presence::MemberSession {
+            status,
+            location,
+            // Activity (game string) is policy-gated and wired in a
+            // follow-up; the session always carries a fresh last_active
+            // so peers can bucket our last-seen.
+            activity: None,
+            last_active: rekindle_utils::timestamp_secs(),
+        }
+    }
+
+    fn presence_policy(
+        &self,
+        community_id: &str,
+    ) -> rekindle_types::presence::PresenceSharingPolicy {
+        let communities = self.state.communities.read();
+        communities
+            .get(community_id)
+            .map(|c| c.presence_policy.clone())
+            .unwrap_or_default()
+    }
+
+    fn encrypt_session_extras_with_current_mek(
+        &self,
+        community_id: &str,
+        extras: &rekindle_types::presence::SessionExtras,
+    ) -> Option<rekindle_types::presence::EncryptedSessionExtras> {
+        let mek = {
+            let cache = self.state.mek_cache.lock();
+            cache.get(community_id).cloned()?
+        };
+        let plaintext = serde_json::to_vec(extras).ok()?;
+        let ciphertext = mek.encrypt(&plaintext).ok()?;
+        Some(rekindle_types::presence::EncryptedSessionExtras {
+            mek_generation: mek.generation(),
+            ciphertext,
+        })
+    }
+
+    fn decrypt_session_extras(
+        &self,
+        community_id: &str,
+        encrypted: &rekindle_types::presence::EncryptedSessionExtras,
+    ) -> Option<rekindle_types::presence::SessionExtras> {
+        let mek = {
+            let cache = self.state.mek_cache.lock();
+            cache.get(community_id).cloned()?
+        };
+        // Generation must match — a rotated-out ex-member's extras are
+        // unreadable, which is the intended MEK-bounded readership.
+        if mek.generation() != encrypted.mek_generation {
+            return None;
+        }
+        let plaintext = mek.decrypt(&encrypted.ciphertext).ok()?;
+        serde_json::from_slice(&plaintext).ok()
+    }
+
     async fn compute_history_ranges(
         &self,
         community_id: &str,

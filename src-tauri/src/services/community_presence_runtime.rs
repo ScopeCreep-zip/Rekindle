@@ -32,6 +32,16 @@ pub struct MemberDto {
     pub avatar_ref: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub banner_ref: Option<String>,
+    /// Where the member is focused right now (text/voice channel), if
+    /// they share it. Serializes as `{kind, channelId}`; the roster
+    /// groups members by this to render "in #channel".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub location: Option<rekindle_types::presence::SessionLocation>,
+    /// Member's last-active unix seconds, already coarsened by their
+    /// sharing policy (0 = hidden / not shared). Drives the "last seen"
+    /// label on the roster.
+    #[serde(default)]
+    pub last_active: u64,
 }
 
 pub fn send_channel_typing_inner(
@@ -92,6 +102,89 @@ pub async fn update_community_presence_inner(
     gossip_result
 }
 
+/// Set (or clear) the local user's focused channel for `community_id`
+/// and republish presence so peers see the move within one write.
+///
+/// `channel_id == None` clears the location (left all channels).
+/// `kind` is "voice" for voice channels, anything else → text. The
+/// new location rides in `MemberSession.location` on the next write
+/// (plaintext in Layer 1; MEK-encrypted extras in Layer 2).
+pub async fn set_active_channel_inner(
+    state: &SharedState,
+    community_id: String,
+    channel_id: Option<String>,
+    kind: String,
+) -> Result<(), String> {
+    let location = channel_id.map(|cid| {
+        if kind == "voice" {
+            rekindle_types::presence::SessionLocation::Voice { channel_id: cid }
+        } else {
+            rekindle_types::presence::SessionLocation::Text { channel_id: cid }
+        }
+    });
+    {
+        let mut communities = state.communities.write();
+        let community = communities
+            .get_mut(&community_id)
+            .ok_or_else(|| "unknown community".to_string())?;
+        community.my_session_location = location;
+    }
+    // Republish immediately so the roster reflects the move now rather
+    // than on the next heartbeat tick.
+    crate::services::community::write_our_presence(state, &community_id).await;
+    Ok(())
+}
+
+/// Update the local presence sharing consent (default-deny), persist it
+/// to SQLite, and republish immediately so the new redaction takes effect
+/// now. The policy is local-only — never written to the registry; it only
+/// gates what `write_our_presence` publishes and what the roster reads.
+pub async fn set_presence_policy_inner(
+    state: &SharedState,
+    pool: &DbPool,
+    community_id: String,
+    policy: rekindle_types::presence::PresenceSharingPolicy,
+) -> Result<(), String> {
+    let owner_key = state_helpers::current_owner_key(state)?;
+    {
+        let mut communities = state.communities.write();
+        let community = communities
+            .get_mut(&community_id)
+            .ok_or_else(|| "unknown community".to_string())?;
+        community.presence_policy = policy.clone();
+    }
+
+    let policy_json = serde_json::to_string(&policy).map_err(|e| e.to_string())?;
+    let cid_for_db = community_id.clone();
+    db_call(pool, move |conn| {
+        conn.execute(
+            "UPDATE communities SET presence_policy = ? WHERE owner_key = ? AND id = ?",
+            rusqlite::params![policy_json, owner_key, cid_for_db],
+        )?;
+        Ok(())
+    })
+    .await?;
+
+    // Republish now so opting out of a signal redacts it immediately
+    // rather than on the next heartbeat tick.
+    crate::services::community::write_our_presence(state, &community_id).await;
+    Ok(())
+}
+
+/// Read the local presence sharing consent so the settings panel can bind
+/// its toggles to the current choice. Defaults (default-deny) when the
+/// community isn't loaded.
+pub fn get_presence_policy_inner(
+    state: &SharedState,
+    community_id: &str,
+) -> rekindle_types::presence::PresenceSharingPolicy {
+    let communities = state.communities.read();
+    communities
+        .get(community_id)
+        .map(|c| c.presence_policy.clone())
+        .unwrap_or_default()
+}
+
 pub async fn get_community_members_inner(
     state: &SharedState,
     pool: &DbPool,
@@ -106,7 +199,16 @@ pub async fn get_community_members_inner(
     let my_status =
         state_helpers::identity_status(state).unwrap_or(crate::state::UserStatus::Online);
 
-    let (role_defs, online_statuses, member_profiles, my_profile) = {
+    // Local user's own focused channel (peers learn it from their
+    // decoded session; for ourselves it's authoritative local state).
+    let my_location = {
+        let communities = state.communities.read();
+        communities
+            .get(&community_id)
+            .and_then(|c| c.my_session_location.clone())
+    };
+
+    let (role_defs, online_members, member_profiles, my_profile) = {
         let communities = state.communities.read();
         communities.get(&community_id).map_or_else(
             || {
@@ -118,13 +220,24 @@ pub async fn get_community_members_inner(
                 )
             },
             |c| {
+                // Carry status + decoded location together so the roster
+                // can render "online, in #channel" from one lookup.
                 let online = c
                     .gossip
                     .as_ref()
                     .map(|g| {
                         g.online_members
                             .iter()
-                            .map(|(pk, member)| (pk.clone(), member.status.clone()))
+                            .map(|(pk, member)| {
+                                (
+                                    pk.clone(),
+                                    (
+                                        member.status.clone(),
+                                        member.location.clone(),
+                                        member.last_active,
+                                    ),
+                                )
+                            })
                             .collect::<std::collections::HashMap<_, _>>()
                     })
                     .unwrap_or_default();
@@ -140,6 +253,7 @@ pub async fn get_community_members_inner(
                     badges: c.my_badges.clone(),
                     avatar_ref: c.my_avatar_ref.clone(),
                     banner_ref: c.my_banner_ref.clone(),
+                    location: my_location.clone(),
                 };
                 (
                     c.roles.clone(),
@@ -161,7 +275,8 @@ pub async fn get_community_members_inner(
 
         let rows = stmt.query_map(rusqlite::params![owner_key, community_id_clone], |row| {
             let pseudonym_key = db::get_str(row, "pseudonym_key");
-            let status_str = if my_pseudonym.as_deref() == Some(&pseudonym_key) {
+            let is_me = my_pseudonym.as_deref() == Some(&pseudonym_key);
+            let status_str = if is_me {
                 match my_status {
                     crate::state::UserStatus::Online => "online",
                     crate::state::UserStatus::Away => "away",
@@ -171,9 +286,25 @@ pub async fn get_community_members_inner(
                     }
                 }
             } else {
-                online_statuses
+                online_members
                     .get(&pseudonym_key)
-                    .map_or("offline", String::as_str)
+                    .map_or("offline", |(status, _, _)| status.as_str())
+            };
+            let location = if is_me {
+                my_location.clone()
+            } else {
+                online_members
+                    .get(&pseudonym_key)
+                    .and_then(|(_, loc, _)| loc.clone())
+            };
+            // Last-seen: ourselves is "now"; peers carry the value they
+            // chose to share (already coarsened on their side, 0 = hidden).
+            let last_active = if is_me {
+                rekindle_utils::timestamp_secs()
+            } else {
+                online_members
+                    .get(&pseudonym_key)
+                    .map_or(0, |(_, _, la)| *la)
             };
 
             let role_ids_json = db::get_str(row, "role_ids");
@@ -186,7 +317,7 @@ pub async fn get_community_members_inner(
                 .flatten()
                 .map(i64::cast_unsigned);
 
-            let profile = if my_pseudonym.as_deref() == Some(&pseudonym_key) {
+            let profile = if is_me {
                 my_profile.clone()
             } else {
                 member_profiles.get(&pseudonym_key).cloned()
@@ -206,6 +337,8 @@ pub async fn get_community_members_inner(
                 badges: snap.badges,
                 avatar_ref: snap.avatar_ref,
                 banner_ref: snap.banner_ref,
+                location,
+                last_active,
             })
         })?;
 

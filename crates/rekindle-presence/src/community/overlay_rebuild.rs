@@ -126,6 +126,7 @@ mod tests {
             route_blob: blob.to_vec(),
             status: "online".to_string(),
             last_seen: 0,
+            ..Default::default()
         }
     }
 

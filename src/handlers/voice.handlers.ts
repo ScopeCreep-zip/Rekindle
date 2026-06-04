@@ -2,6 +2,7 @@ import type { UnlistenFn } from "@tauri-apps/api/event";
 import { commands } from "../ipc/commands";
 import { subscribeVoiceEvents } from "../ipc/channels";
 import { voiceState, setVoiceState } from "../stores/voice.store";
+import { communityState } from "../stores/community.store";
 import { friendsState, setFriendsState } from "../stores/friends.store";
 import { addToast } from "../stores/toast.store";
 
@@ -91,12 +92,26 @@ export async function handleJoinVoice(channelId: string, communityId?: string): 
     // here — that was the C1 bug: prior code set isConnected/channelId but
     // not activeCallType, so the <Show> gate at CommunityWindow.tsx:731-744
     // never opened and VideoCallPanel never mounted.
+
+    // Publish our Voice session location so peers see "in 🔊 channel" on the
+    // roster. The dedicated join button calls stopPropagation, so the
+    // channel-row select never fires for it — set the location here so both
+    // entry points (row select and join button) announce the move.
+    if (communityId) {
+      commands.setActiveChannel(communityId, channelId, "voice").catch((e) => {
+        console.warn("Failed to publish voice location:", e);
+      });
+    }
   } catch (e) {
     console.error("Failed to join voice:", e);
   }
 }
 
 export async function handleLeaveVoice(): Promise<void> {
+  // Capture the call context before leaveVoice resets voiceState so we know
+  // whether to clear a community Voice location.
+  const wasCommunityCall = voiceState.activeCallType === "community";
+  const communityId = communityState.activeCommunity;
   try {
     await commands.leaveVoice();
 
@@ -113,6 +128,15 @@ export async function handleLeaveVoice(): Promise<void> {
       connectionQuality: "good",
       activeCallType: null,
     });
+
+    // Clear our Voice session location so the roster stops showing us in the
+    // channel we just left. The next text-channel select re-asserts a Text
+    // location; until then we show as focused nowhere (single-field model).
+    if (wasCommunityCall && communityId) {
+      commands.setActiveChannel(communityId, null, "voice").catch((e) => {
+        console.warn("Failed to clear voice location:", e);
+      });
+    }
   } catch (e) {
     console.error("Failed to leave voice:", e);
   }

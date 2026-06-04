@@ -134,11 +134,13 @@ pub use polls::{
     create_poll, get_poll_results, vote_poll,
 };
 pub use presence::{
-    __cmd__get_community_members, __cmd__send_channel_typing, __cmd__update_community_presence,
+    __cmd__get_community_members, __cmd__get_presence_policy, __cmd__send_channel_typing,
+    __cmd__set_active_channel, __cmd__set_presence_policy, __cmd__update_community_presence,
     __cmd__update_community_profile,
 };
 pub use presence::{
-    get_community_members, send_channel_typing, update_community_presence, update_community_profile,
+    get_community_members, get_presence_policy, send_channel_typing, set_active_channel,
+    set_presence_policy, update_community_presence, update_community_profile,
 };
 pub use profile_blobs::{
     __cmd__get_community_avatar_data_url, __cmd__set_community_avatar, __cmd__set_community_banner,

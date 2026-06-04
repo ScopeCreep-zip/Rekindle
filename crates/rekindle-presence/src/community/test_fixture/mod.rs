@@ -133,6 +133,29 @@ impl CommunityPresenceDeps for MockCommunityDeps {
             .push((community_id.to_string(), ranges.len()));
         None
     }
+    fn self_session(&self, _community_id: &str) -> rekindle_types::presence::MemberSession {
+        rekindle_types::presence::MemberSession::default()
+    }
+    fn presence_policy(
+        &self,
+        _community_id: &str,
+    ) -> rekindle_types::presence::PresenceSharingPolicy {
+        rekindle_types::presence::PresenceSharingPolicy::default()
+    }
+    fn encrypt_session_extras_with_current_mek(
+        &self,
+        _community_id: &str,
+        _extras: &rekindle_types::presence::SessionExtras,
+    ) -> Option<rekindle_types::presence::EncryptedSessionExtras> {
+        None
+    }
+    fn decrypt_session_extras(
+        &self,
+        _community_id: &str,
+        _encrypted: &rekindle_types::presence::EncryptedSessionExtras,
+    ) -> Option<rekindle_types::presence::SessionExtras> {
+        None
+    }
     async fn compute_history_ranges(
         &self,
         community_id: &str,

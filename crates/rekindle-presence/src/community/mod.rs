@@ -13,6 +13,7 @@
 //!   modules stay focused on orchestration.
 
 pub mod overlay_rebuild;
+pub mod policy;
 pub mod poll;
 pub mod profile_diff;
 pub mod registry;
@@ -29,6 +30,7 @@ pub mod util;
 pub use overlay_rebuild::{
     compute_rebuild_plan, GossipOverlayPlan, GossipOverlaySnapshot, GossipRebuildOutcome,
 };
+pub use policy::{apply_sharing_policy, coarsen_to_bucket, filter_incoming};
 pub use poll::{
     gossip_degree, presence_poll_tick, presence_poll_tick_public, steady_poll_duration,
     MAX_SYNC_ATTEMPTS, STALE_HEARTBEAT_SECS, STALE_SYNC_RETRY_SECS,

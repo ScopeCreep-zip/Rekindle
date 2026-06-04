@@ -25,6 +25,7 @@ import InvitesTab from "./settings/InvitesTab";
 import AuditLogTab from "./settings/AuditLogTab";
 import AutoModTab from "./settings/AutoModTab";
 import AnalyticsTab from "./settings/AnalyticsTab";
+import PrivacyTab from "./settings/PrivacyTab";
 
 export interface ConfirmOptions {
   title: string;
@@ -40,7 +41,7 @@ interface CommunitySettingsModalProps {
   onClose: () => void;
 }
 
-type TabId = "overview" | "channels" | "members" | "invites" | "roles" | "bans" | "audit-log" | "security" | "automod" | "analytics";
+type TabId = "overview" | "channels" | "members" | "invites" | "roles" | "bans" | "audit-log" | "security" | "automod" | "analytics" | "privacy";
 
 const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) => {
   const [activeTab, setActiveTab] = createSignal<TabId>("overview");
@@ -66,10 +67,12 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
 
   const tabs = createMemo((): { id: TabId; label: string }[] => {
     if (!isAdmin()) {
-      // Non-admins see only read-only overview and members
+      // Non-admins see read-only overview + members, plus their own
+      // privacy/presence consent (a personal setting, not moderation).
       return [
         { id: "overview", label: "Overview" },
         { id: "members", label: "Members" },
+        { id: "privacy", label: "Privacy" },
       ];
     }
 
@@ -77,6 +80,7 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
       { id: "overview", label: "Overview" },
       { id: "channels", label: "Channels" },
       { id: "members", label: "Members" },
+      { id: "privacy", label: "Privacy" },
     ];
     if (canCreateInvite() || canManageCommunity()) base.push({ id: "invites", label: "Invites" });
     if (canManageRoles()) base.push({ id: "roles", label: "Roles" });
@@ -154,6 +158,9 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
         </Show>
         <Show when={activeTab() === "analytics"}>
           <AnalyticsTab community={props.community} />
+        </Show>
+        <Show when={activeTab() === "privacy"}>
+          <PrivacyTab community={props.community} />
         </Show>
         <Show when={activeTab() === "audit-log"}>
           <AuditLogTab communityId={props.community.id} />

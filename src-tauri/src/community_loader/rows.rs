@@ -28,6 +28,7 @@ pub struct CommunityRow {
     pub my_subkey_index: Option<u32>,
     pub my_segment_index: Option<u32>,
     pub onboarding_complete: bool,
+    pub presence_policy_json: Option<String>,
 }
 
 pub struct ChannelRow {
@@ -110,7 +111,7 @@ fn load_community_rows(
         "SELECT c.id, c.name, c.description, c.icon_hash, c.banner_hash, \
          c.my_role_ids, c.dht_owner_keypair, c.my_pseudonym_key, c.mek_generation, \
          c.member_registry_key, c.my_subkey_index, c.my_segment_index, \
-         COALESCE(cm.onboarding_complete, 0) \
+         COALESCE(cm.onboarding_complete, 0), c.presence_policy \
          FROM communities c \
          LEFT JOIN community_members cm \
            ON cm.owner_key = c.owner_key \
@@ -142,6 +143,7 @@ fn load_community_rows(
                 .unwrap_or(None)
                 .map(|v| u32::try_from(v).unwrap_or(0)),
             onboarding_complete: row.get::<_, i64>(12).unwrap_or(0) != 0,
+            presence_policy_json: db::get_str_opt(row, "presence_policy"),
         })
     })?;
     rows.collect::<rusqlite::Result<Vec<_>>>()

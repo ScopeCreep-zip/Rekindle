@@ -96,6 +96,11 @@ pub async fn presence_poll_tick<D: CommunityPresenceDeps>(
     let descriptors = deps.segment_descriptors(community_id);
     let my_subkey = creds.my_subkey_index.unwrap_or(u32::MAX);
 
+    // Read-side reciprocity policy (local-only, default-deny): a signal
+    // we don't share, we don't get to read off peers' rows. Read once
+    // before the scan so every row is filtered against the same policy.
+    let our_policy = deps.presence_policy(community_id);
+
     let mut discovered = Vec::new();
     let mut online_members = std::collections::HashMap::new();
     let mut known_member_keys = std::collections::HashSet::new();
@@ -116,6 +121,29 @@ pub async fn presence_poll_tick<D: CommunityPresenceDeps>(
                 now_secs,
             );
             if let crate::community::scan_row::ClassifiedRow::Accepted(row) = classified {
+                let mut row = *row;
+                // Read-side MEK gate: the writer moved the identity-
+                // revealing signals (location/activity) out of the
+                // plaintext session into a MEK-encrypted blob. Decrypt
+                // with our current MEK (None when we lack the matching
+                // generation — the peer just shows no location), merge
+                // them back, then drop any signal our own policy doesn't
+                // reciprocate so the model self-balances.
+                if let Some(enc) = &row.presence.session_extras_encrypted {
+                    if let Some(extras) = deps.decrypt_session_extras(community_id, enc) {
+                        row.presence.session.location = extras.location;
+                        row.presence.session.activity = extras.activity;
+                    }
+                }
+                row.presence.session =
+                    crate::community::filter_incoming(row.presence.session, &our_policy);
+                // Re-derive the roster signals from the merged + filtered
+                // session — the pure classifier only saw the redacted
+                // plaintext session, so its snapshot location is stale.
+                if let Some(om) = row.online_member.as_mut() {
+                    om.location.clone_from(&row.presence.session.location);
+                    om.last_active = row.presence.session.last_active;
+                }
                 known_member_keys.insert(row.pseudonym_hex.clone());
                 discovered.push((descriptor.segment_index, subkey, row.presence));
                 if let Some(om) = row.online_member {
@@ -318,6 +346,7 @@ mod tests {
             route_blob: route.to_vec(),
             status: "online".to_string(),
             last_seen: 0,
+            ..Default::default()
         }
     }
 

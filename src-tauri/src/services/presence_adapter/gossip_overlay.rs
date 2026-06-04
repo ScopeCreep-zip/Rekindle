@@ -143,6 +143,8 @@ fn online_member_from_state(state_member: &OnlineMember) -> OnlineMemberSnapshot
         route_blob: state_member.route_blob.clone(),
         status: state_member.status.clone(),
         last_seen: state_member.last_seen,
+        location: state_member.location.clone(),
+        last_active: state_member.last_active,
     }
 }
 
@@ -151,5 +153,7 @@ fn state_online_from_snapshot(snapshot: OnlineMemberSnapshot) -> OnlineMember {
         route_blob: snapshot.route_blob,
         status: snapshot.status,
         last_seen: snapshot.last_seen,
+        location: snapshot.location,
+        last_active: snapshot.last_active,
     }
 }

@@ -192,6 +192,7 @@ fn snapshot_to_crate(local: &MemberProfileSnapshot) -> rekindle_presence::Member
         badges: local.badges.clone(),
         avatar_ref: local.avatar_ref.clone(),
         banner_ref: local.banner_ref.clone(),
+        location: local.location.clone(),
     }
 }
 
@@ -206,5 +207,6 @@ fn snapshot_from_crate(
         badges: snapshot.badges,
         avatar_ref: snapshot.avatar_ref,
         banner_ref: snapshot.banner_ref,
+        location: snapshot.location,
     }
 }

@@ -167,6 +167,7 @@ pub async fn join_community(
                     route_blob: m.route_blob.clone(),
                     status: m.status.clone(),
                     last_seen: m.last_seen,
+                    ..Default::default()
                 },
             )
         })
@@ -181,6 +182,7 @@ pub async fn join_community(
                     route_blob: m.route_blob.clone(),
                     status: m.status.clone(),
                     last_seen: m.last_seen,
+                    ..Default::default()
                 },
             )
         })
@@ -263,6 +265,8 @@ pub async fn join_community(
         my_banner_ref: None,
         member_profiles: HashMap::new(),
         recent_member_joins: std::collections::VecDeque::new(),
+        my_session_location: None,
+        presence_policy: rekindle_types::presence::PresenceSharingPolicy::default(),
     };
 
     state

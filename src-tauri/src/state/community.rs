@@ -220,6 +220,21 @@ pub struct CommunityState {
     /// policy window length when entries are inserted.
     #[serde(skip)]
     pub recent_member_joins: VecDeque<(u64, String)>,
+
+    /// Where the local user is currently focused in this community
+    /// (text or voice channel). Drives `MemberSession.location` on the
+    /// next presence write. Local-only and reset on restart — the
+    /// frontend re-asserts it on channel open, like `my_bio`.
+    #[serde(skip)]
+    pub my_session_location: Option<rekindle_types::presence::SessionLocation>,
+
+    /// Per-community presence sharing policy (default-deny). Local-only
+    /// consent state — **never** published to the registry. Applied at
+    /// write time (redact what isn't shared) and read time (drop peer
+    /// signals we don't reciprocate). Persisted to SQLite alongside the
+    /// other per-community prefs.
+    #[serde(default)]
+    pub presence_policy: rekindle_types::presence::PresenceSharingPolicy,
 }
 
 /// Tracks DHT records opened for a single community.
@@ -277,6 +292,11 @@ pub struct MemberProfileSnapshot {
     pub badges: Vec<String>,
     pub avatar_ref: Option<String>,
     pub banner_ref: Option<String>,
+    /// Last-known focused channel (from the member's decoded
+    /// `session.location`). Cached only to gate `MembersRefreshed` on a
+    /// channel move; the live roster value is read from the gossip
+    /// online overlay, not from here.
+    pub location: Option<rekindle_types::presence::SessionLocation>,
 }
 
 /// A role definition cached from merged governance state.

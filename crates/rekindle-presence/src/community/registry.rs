@@ -79,10 +79,33 @@ pub async fn write_our_presence<D: CommunityPresenceDeps>(deps: &D, write: Prese
         .and_then(|b| <[u8; 32]>::try_from(b.as_slice()).ok())
         .unwrap_or([0u8; 32]);
 
+    // Typed session is the single source of truth: the loose `status`
+    // wire string is derived from it so transitional readers and
+    // session-aware readers can never disagree. Invisible folds to
+    // "offline" in the wire string (peers must not see it).
+    //
+    // Privacy gate (default-deny): redact the session to exactly what our
+    // sharing policy permits BEFORE signing, then move the surviving
+    // identity-revealing signals (location/activity) out of the plaintext
+    // into a MEK-encrypted blob so only current members can read them.
+    let policy = deps.presence_policy(community_id);
+    let mut session =
+        crate::community::policy::apply_sharing_policy(deps.self_session(community_id), &policy);
+    let extras = rekindle_types::presence::SessionExtras {
+        location: session.location.take(),
+        activity: session.activity.take(),
+    };
+    let session_extras_encrypted = if extras.location.is_some() || extras.activity.is_some() {
+        deps.encrypt_session_extras_with_current_mek(community_id, &extras)
+    } else {
+        None
+    };
+    let status = session.status.as_wire_str().to_string();
+
     let mut presence = MemberPresence {
         pseudonym_key: rekindle_types::id::PseudonymKey(pseudonym_bytes),
         display_name: Some(deps.identity_display_name()),
-        status: deps.current_presence_status_str(community_id),
+        status,
         route_blob: our_route_blob.unwrap_or_default(),
         last_heartbeat: now_secs(),
         event_rsvps: snapshot.event_rsvps,
@@ -93,6 +116,8 @@ pub async fn write_our_presence<D: CommunityPresenceDeps>(deps: &D, write: Prese
         badges: snapshot.badges,
         avatar_ref: snapshot.avatar_ref,
         banner_ref: snapshot.banner_ref,
+        session,
+        session_extras_encrypted,
         ..Default::default()
     };
 

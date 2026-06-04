@@ -341,6 +341,7 @@ async fn handle_relayed_envelope(
                                     route_blob: blob.clone(),
                                     status: status.clone(),
                                     last_seen: rekindle_utils::timestamp_secs(),
+                                    ..Default::default()
                                 };
                                 gossip
                                     .online_members

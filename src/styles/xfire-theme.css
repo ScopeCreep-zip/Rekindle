@@ -1138,6 +1138,29 @@
     flex-shrink: 0;
   }
 
+  .channel-presence-badge {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--color-xfire-text-dim);
+    flex-shrink: 0;
+  }
+
+  /* If unread is also present, the unread badge keeps the far-right slot
+     and the presence count sits just left of it. */
+  .channel-presence-badge + .channel-unread-badge {
+    margin-left: 4px;
+  }
+
+  .channel-presence-dot {
+    color: var(--color-xfire-online);
+    font-size: 8px;
+    line-height: 1;
+  }
+
   /* Member list sidebar */
   .member-sidebar {
     width: 200px;
@@ -1236,6 +1259,12 @@
     gap: 6px;
     font-size: 12px;
     color: var(--color-xfire-text-secondary);
+  }
+
+  .profile-popup-lastseen {
+    font-size: 11px;
+    color: var(--color-xfire-text-tertiary, var(--color-xfire-text-secondary));
+    margin-top: -2px;
   }
 
   .profile-popup-roles {

@@ -112,6 +112,7 @@ impl GossipDeps for GossipAdapter {
                     route_blob,
                     status: status.to_string(),
                     last_seen: now,
+                    ..Default::default()
                 };
                 gossip
                     .online_members
