@@ -80,37 +80,32 @@ pub(super) fn init_voice_session_impl(
         deafened_flag: Arc::clone(&deafened_flag),
     });
 
-    // Now that the engine is on state, start the cpal devices. The
-    // handle is already installed above, so on failure (e.g. the
-    // device refuses the negotiated config) we must clear it —
-    // otherwise the next join trips check_not_in_call ("already in a
-    // different voice channel") against a stale, half-started engine.
-    let device_result: Result<(), VoiceError> = {
+    // Now that the engine is on state, start the cpal devices. Device
+    // bring-up is NON-FATAL: a member must be able to enter a voice channel
+    // even when their mic or speakers can't open — listen-only when capture
+    // fails, present-only when both fail — the way Discord and Mumble behave.
+    // On Linux especially, cpal's ALSA backend can error or time out opening a
+    // device held by PipeWire/PulseAudio. We log the failure but keep the
+    // engine installed so the session still comes up; the send/receive loops
+    // already tolerate an absent capture_rx / playback_tx. The engine now
+    // corresponds to a real (possibly degraded) session, so leave/teardown
+    // clears it normally and check_not_in_call stays correct.
+    {
         let mut ve = state.voice_engine.lock();
         if let Some(ref mut handle) = *ve {
-            match handle
-                .engine
-                .start_capture()
-                .map_err(|e| VoiceError::Session(format!("start capture: {e}")))
-            {
-                Ok(()) => handle
-                    .engine
-                    .start_playback()
-                    .map_err(|e| VoiceError::Session(format!("start playback: {e}"))),
-                Err(e) => Err(e),
+            if let Err(e) = handle.engine.start_capture() {
+                tracing::warn!(
+                    error = %e,
+                    "voice capture device unavailable — joining without mic (listen-only)"
+                );
             }
-        } else {
-            Ok(())
+            if let Err(e) = handle.engine.start_playback() {
+                tracing::warn!(
+                    error = %e,
+                    "voice playback device unavailable — joining without speaker output"
+                );
+            }
         }
-    };
-    if let Err(e) = device_result {
-        let mut ve = state.voice_engine.lock();
-        if let Some(ref mut handle) = *ve {
-            handle.engine.stop_capture();
-            handle.engine.stop_playback();
-        }
-        *ve = None;
-        return Err(e);
     }
 
     // Build the real transport with full signing-key + AEAD wiring

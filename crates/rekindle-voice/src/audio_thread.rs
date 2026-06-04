@@ -122,10 +122,25 @@ impl AudioThread {
             })
             .map_err(|e| VoiceError::AudioDevice(format!("{spawn_failed}: {e}")))?;
 
-        // Wait for the audio thread to report success or failure
-        init_rx
-            .recv()
-            .map_err(|_| VoiceError::AudioDevice(self.labels.init_died.into()))??;
+        // Wait (bounded) for the audio thread to report success or failure.
+        // cpal's ALSA backend opens the device synchronously inside
+        // build_*_stream (snd_pcm_open/start) and can block indefinitely when a
+        // sound server (PipeWire/PulseAudio) holds the raw `default` PCM,
+        // violating cpal's "streams never block" contract. An unbounded recv
+        // here would wedge the entire voice-join, so we time out and surface a
+        // device error the caller can degrade on instead of hanging forever.
+        match init_rx.recv_timeout(std::time::Duration::from_secs(5)) {
+            Ok(inner) => inner?,
+            Err(std_mpsc::RecvTimeoutError::Timeout) => {
+                return Err(VoiceError::AudioDevice(format!(
+                    "{} stream init timed out (device may be held by the sound server)",
+                    self.labels.direction
+                )));
+            }
+            Err(std_mpsc::RecvTimeoutError::Disconnected) => {
+                return Err(VoiceError::AudioDevice(self.labels.init_died.into()));
+            }
+        }
 
         self.shutdown_tx = Some(shutdown_tx);
         self.thread_handle = Some(handle);

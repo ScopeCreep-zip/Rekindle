@@ -59,7 +59,7 @@ pub fn find_device(
 /// Resolve an audio device by optional name for the given direction.
 ///
 /// - `Some(name)` → search by name, fall back to default (via `find_device`).
-/// - `None` → return the system default directly.
+/// - `None` → the preferred default (see [`preferred_default_device`]).
 pub fn resolve_device(
     host: &cpal::Host,
     device_name: Option<&str>,
@@ -67,10 +67,46 @@ pub fn resolve_device(
 ) -> Result<cpal::Device, VoiceError> {
     match device_name {
         Some(name) => find_device(host, name, direction),
-        None => direction.default_device(host).ok_or_else(|| {
-            VoiceError::AudioDevice(format!("no {} device available", direction.label()))
-        }),
+        None => preferred_default_device(host, direction),
     }
+}
+
+/// The default device to open when the user hasn't pinned a specific one.
+///
+/// On a sound-server Linux stack (PipeWire/PulseAudio) the raw ALSA `default`
+/// PCM is backed by the hardware device the server holds exclusively, so cpal's
+/// blocking `snd_pcm_open`/`snd_pcm_start` inside `build_*_stream` can hang
+/// indefinitely. The `pipewire`/`pulse` ALSA bridge PCMs are non-exclusive
+/// client connections to the server and open without blocking, so we prefer
+/// them over `default` and only fall back to the raw default when no bridge is
+/// present (e.g. a bare-ALSA system). Other platforms use the system default
+/// directly. This mirrors cpal's own documented Linux workaround for versions
+/// without a native PipeWire backend.
+fn preferred_default_device(
+    host: &cpal::Host,
+    direction: &DeviceDirection,
+) -> Result<cpal::Device, VoiceError> {
+    #[cfg(target_os = "linux")]
+    {
+        for bridge in ["pipewire", "pulse"] {
+            if let Some(device) = direction
+                .devices(host)
+                .into_iter()
+                .find(|device| device.name().ok().as_deref() == Some(bridge))
+            {
+                tracing::info!(
+                    device = bridge,
+                    direction = direction.label(),
+                    "using sound-server bridge device instead of raw ALSA default"
+                );
+                return Ok(device);
+            }
+        }
+    }
+
+    direction.default_device(host).ok_or_else(|| {
+        VoiceError::AudioDevice(format!("no {} device available", direction.label()))
+    })
 }
 
 /// Enumerated audio devices (input and output).
