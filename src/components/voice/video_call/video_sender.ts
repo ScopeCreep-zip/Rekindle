@@ -112,14 +112,24 @@ export function createVideoSender(
         onError(`Encoder error: ${e.message}`);
       },
     });
-    encoder.configure({
+    // L1T2 temporal layering makes a dropped delta survivable (the T0 base
+    // layer still decodes), but isn't universal on WKWebView/WebKitGTK — probe
+    // and fall back to a flat config. Start at the slowest receiver's estimate
+    // so we never over-send the weakest peer.
+    const baseConfig: VideoEncoderConfig = {
       codec: "vp09.00.30.08",
       width: ENCODE_WIDTH,
       height: ENCODE_HEIGHT,
       framerate: ENCODE_FPS,
-      bitrate: 800_000,
+      bitrate: ts.lowestReceiverKbps * 1000,
       latencyMode: "realtime",
-    });
+    };
+    const layered: VideoEncoderConfig = { ...baseConfig, scalabilityMode: "L1T2" };
+    const layeredSupported = await VideoEncoder.isConfigSupported(layered)
+      .then((r) => r.supported === true)
+      .catch(() => false);
+    encoder.configure(layeredSupported ? layered : baseConfig);
+    let configuredKbps = ts.lowestReceiverKbps;
 
     let cancelled = false;
     const frameIntervalMs = 1000 / ENCODE_FPS;
@@ -130,6 +140,22 @@ export function createVideoSender(
       if (cancelled) return;
       const now = performance.now();
       if (now - lastEmittedAt >= frameIntervalMs) {
+        // Architecture §10.6 line 4081 — adapt to the slowest receiver's
+        // measured kbps (from real frame acks). reconfigure() forces a
+        // keyframe, so only act on a material (>15%) drift to avoid churn.
+        if (Math.abs(ts.lowestReceiverKbps - configuredKbps) / configuredKbps > 0.15) {
+          configuredKbps = ts.lowestReceiverKbps;
+          try {
+            encoder.configure({
+              ...baseConfig,
+              bitrate: configuredKbps * 1000,
+              ...(layeredSupported ? { scalabilityMode: "L1T2" } : {}),
+            });
+            ts.lastKeyframeMs = now; // reconfigure already emits a keyframe
+          } catch (e) {
+            console.error("encoder reconfigure failed:", e);
+          }
+        }
         try {
           captureCtx.drawImage(captureVideo, 0, 0, captureCanvas.width, captureCanvas.height);
           const isKeyframe = now - ts.lastKeyframeMs >= KEYFRAME_INTERVAL_MS;

@@ -10,9 +10,11 @@ import {
   ENCODE_WIDTH,
   ENCODE_HEIGHT,
   ENCODE_FPS,
+  ACK_INTERVAL_MS,
   type RemoteStream,
   decodeBase64ToBytes,
 } from "./codec_utils";
+import { VideoPlayoutBuffer } from "./playout_buffer";
 import { createVideoSender, type SenderRoute } from "./video_sender";
 
 /** W11.4 — `community` panel routes encoded frames through gossip
@@ -60,6 +62,8 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
    *  by community id. Control events still ride `community-event`. */
   let dmFrameChannel: Channel<DmVideoFrameMsg> | null = null;
   let communityFrameChannel: Channel<CommunityVideoFrameMsg> | null = null;
+  /** Single rAF that paces every remote's playout buffer into its decoder. */
+  let playoutRaf: number | null = null;
 
   const localCameraVideoRef: { value: HTMLVideoElement | undefined } = { value: undefined };
   const localScreenVideoRef: { value: HTMLVideoElement | undefined } = { value: undefined };
@@ -86,6 +90,9 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
   // HTTP invoke bridge — leaving the rest of the panel inert there.
   onMount(() => {
     const isE2E = import.meta.env.VITE_E2E === "true";
+    // One rAF clock paces playout for all remotes. E2E has no decoders/frames,
+    // so the loop is harmless there (remotes() stays empty).
+    playoutRaf = requestAnimationFrame(playoutPump);
     if (props.mode === "community") {
       const communityIdLocal = props.communityId;
       unlistenCommunity = subscribeCommunityEvents((event) => {
@@ -153,6 +160,7 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
   onCleanup(() => {
     void stopCamera();
     void stopScreen();
+    if (playoutRaf !== null) cancelAnimationFrame(playoutRaf);
     unlistenCommunity?.then((unlisten) => unlisten());
     if (communityFrameChannel && props.mode === "community") {
       void commands.unregisterCommunityVideoChannel(props.communityId);
@@ -209,38 +217,75 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
       });
       decoder.configure({ codec: "vp09.00.30.08" });
       const ctx = canvas.getContext("2d");
-      remote = { streamId, senderPseudonym: sender_, decoder, canvas, ctx, ready: true };
+      remote = {
+        streamId,
+        senderPseudonym: sender_,
+        decoder,
+        canvas,
+        ctx,
+        ready: true,
+        buffer: new VideoPlayoutBuffer(),
+        lastAckAt: 0,
+      };
       setRemotes((prev) => [...prev, remote!]);
     }
 
-    try {
-      const chunk = new EncodedVideoChunk({
-        type: keyframe ? "key" : "delta",
-        timestamp,
-        data,
-      });
-      remote.decoder.decode(chunk);
-      // Architecture §10.6 line 4081 — ack each decoded keyframe so the
-      // sender gets fresh bandwidth + frame-seq feedback at least every
-      // keyframe interval (~2 s). Conservative defaults until we measure
-      // real network jitter via the WebRTC stats API.
-      if (keyframe && props.mode === "community") {
+    // Reorder + jitter-absorb instead of decoding on arrival. The playout
+    // pump (started in onMount) releases due chunks in seq order and paints
+    // them on a steady clock — the fix for choppiness.
+    remote.buffer.push({
+      frameSeq,
+      keyframe,
+      timestamp,
+      data,
+      receivedAt: performance.now(),
+    });
+  }
+
+  /** Community-only: ask the sender to emit a keyframe so a decoder that lost
+   *  track (gap / decode error) can re-sync. DM relies on the periodic cadence. */
+  function requestKeyframeFor(streamId: string): void {
+    if (props.mode === "community") {
+      void commands.sendVideoKeyframeRequest(props.communityId, props.channelId, streamId);
+    }
+  }
+
+  /** Drives every remote's playout buffer: release due chunks in order,
+   *  decode them, recover gaps via keyframe request, and ack measured
+   *  kbps/loss (~1 Hz) so the sender's adaptive bitrate has real input. */
+  function playoutPump(): void {
+    const now = performance.now();
+    for (const r of remotes()) {
+      const { release, requestKeyframe } = r.buffer.popDue(now);
+      for (const f of release) {
+        try {
+          r.decoder.decode(
+            new EncodedVideoChunk({
+              type: f.keyframe ? "key" : "delta",
+              timestamp: f.timestamp,
+              data: f.data,
+            }),
+          );
+        } catch (e) {
+          console.error("decode chunk failed:", e);
+          requestKeyframeFor(r.streamId);
+        }
+      }
+      if (requestKeyframe) requestKeyframeFor(r.streamId);
+      if (props.mode === "community" && now - r.lastAckAt >= ACK_INTERVAL_MS) {
+        r.lastAckAt = now;
+        const { kbps, lossQ8, lastFrameSeq } = r.buffer.takeStats(now);
         void commands.sendVideoFrameAck(
           props.communityId,
           props.channelId,
-          streamId,
-          frameSeq,
-          800, // assumed downstream kbps, matches encoder bitrate
-          0, // loss_q8 = 0 = perfect (no measured loss yet)
+          r.streamId,
+          lastFrameSeq,
+          kbps,
+          lossQ8,
         );
       }
-    } catch (e) {
-      console.error("decode chunk failed:", e);
-      // Request a keyframe so the decoder can recover (community only).
-      if (props.mode === "community") {
-        void commands.sendVideoKeyframeRequest(props.communityId, props.channelId, streamId);
-      }
     }
+    playoutRaf = requestAnimationFrame(playoutPump);
   }
 
   async function startCamera(): Promise<void> {
