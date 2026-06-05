@@ -8,6 +8,43 @@ pub(crate) fn role_id_to_legacy_u32(role_id: &rekindle_types::id::RoleId) -> u32
     u32::from_le_bytes([role_id.0[0], role_id.0[1], role_id.0[2], role_id.0[3]])
 }
 
+/// Assemble the durable roster (architecture §13.4) the join orchestrator
+/// persists into `community_members`: the joiner's own freshly-claimed row
+/// plus every member the cold-join registry scan discovered, each tagged with
+/// its registry segment/slot and resolved governance role ids. Pure — the
+/// caller hands it the scan output and the merged governance state and gets
+/// back the exact `DiscoveredMember` batch the creator self-persist path uses.
+pub(super) fn build_discovered_roster(
+    claimed: &rekindle_governance_runtime::ClaimedSlot,
+    initial_presence: &rekindle_governance_runtime::InitialPresence,
+    my_role_ids: Vec<u32>,
+    gov_state: &rekindle_governance::state::GovernanceState,
+) -> Vec<rekindle_governance_runtime::DiscoveredMember> {
+    let mut roster = Vec::with_capacity(initial_presence.discovered.len() + 1);
+    roster.push(rekindle_governance_runtime::DiscoveredMember {
+        segment_index: claimed.segment_index,
+        slot_index: claimed.local_subkey,
+        presence: claimed.self_presence.clone(),
+        role_ids: my_role_ids,
+    });
+    for (slot, presence) in &initial_presence.discovered {
+        let role_ids = gov_state
+            .role_assignments
+            .get(&presence.pseudonym_key)
+            .map_or_else(
+                || vec![0],
+                |rids| rids.iter().map(role_id_to_legacy_u32).collect(),
+            );
+        roster.push(rekindle_governance_runtime::DiscoveredMember {
+            segment_index: claimed.segment_index,
+            slot_index: *slot,
+            presence: presence.clone(),
+            role_ids,
+        });
+    }
+    roster
+}
+
 pub(super) fn spawn_join_announcements(
     state: Arc<AppState>,
     community_id: String,

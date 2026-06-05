@@ -84,6 +84,13 @@ pub struct ClaimedSlot {
     /// (Step 12) reads ONLY these, never a blind `0..255` sweep: each empty
     /// subkey's cold `get_dht_value` blocks up to `get_value_timeout_ms` (10 s).
     pub occupied_subkeys: Vec<u32>,
+    /// The joiner's own signed `MemberPresence` row, read back + verified from
+    /// the slot it just claimed. The src-tauri orchestrator persists it into
+    /// `community_members` so the joiner appears in their own roster
+    /// immediately — mirroring the creator self-row persist in
+    /// `origin::create_community` (Members panel populates without waiting for
+    /// the steady presence poll).
+    pub self_presence: MemberPresence,
 }
 
 /// First-pass + multi-segment governance snapshot: fetch + W26-verify
@@ -341,6 +348,7 @@ async fn try_claim_in_candidates<D: GovernanceRuntimeDeps>(
                 local_subkey,
                 slot_keypair_str: slot_kp_str,
                 occupied_subkeys: present,
+                self_presence: written,
             }),
             last_full_segment,
         });
@@ -469,12 +477,15 @@ pub async fn collect_initial_presence_state<D: GovernanceRuntimeDeps>(
         let sem = std::sync::Arc::clone(&sem);
         scans.push(async move {
             let _permit = sem.acquire().await.expect("scan semaphore not closed");
-            deps.get_dht_value(registry_key, subkey, false).await
+            (
+                subkey,
+                deps.get_dht_value(registry_key, subkey, false).await,
+            )
         });
     }
 
     let mut verified = 0usize;
-    while let Some(result) = scans.next().await {
+    while let Some((subkey, result)) = scans.next().await {
         let Ok(Some(bytes)) = result else {
             continue;
         };
@@ -500,6 +511,11 @@ pub async fn collect_initial_presence_state<D: GovernanceRuntimeDeps>(
             &row.route_blob,
             row.last_heartbeat,
         );
+        // Keep the full verified row for the durable roster persist in the
+        // src-tauri orchestrator (`community_members`). `merge_presence_entry`
+        // only borrowed the liveness/route fields above; the whole row carries
+        // display_name/roles/profile the roster needs.
+        presence.discovered.push((subkey, row));
         verified += 1;
     }
 
@@ -540,6 +556,7 @@ mod tests {
             local_subkey: 5,
             slot_keypair_str: "kp".into(),
             occupied_subkeys: vec![],
+            self_presence: MemberPresence::default(),
         };
         assert_eq!(slot.registry_key, "rk");
         assert_eq!(slot.local_subkey, 5);

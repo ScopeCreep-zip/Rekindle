@@ -45,6 +45,17 @@ pub struct InitialPresence {
     pub peers: HashMap<String, JoinOnlineMember>,
     pub online: HashMap<String, JoinOnlineMember>,
     pub known_members: HashSet<String>,
+    /// Full W26-verified `MemberPresence` rows discovered in the cold-join
+    /// registry scan, paired with the registry slot index they occupy. The
+    /// src-tauri orchestrator turns these into durable `community_members`
+    /// rows — the roster that `get_community_members` reads — while the
+    /// `online`/`peers` maps above remain the *ephemeral* online overlay.
+    /// Separating durable membership from ephemeral presence is why a fresh
+    /// joiner can see peers at all: like Matrix's `m.room.member` room state
+    /// (delivered eagerly + completely at join) vs. `m.presence` EDUs
+    /// (architecture §13.4). Excludes the joiner's own slot (its row rides in
+    /// `ClaimedSlot::self_presence`).
+    pub discovered: Vec<(u32, rekindle_types::presence::MemberPresence)>,
 }
 
 /// Derive the joiner's pseudonym + signing key for a specific community.
@@ -178,7 +189,7 @@ pub fn merge_presence_entry(
     last_seen: u64,
 ) {
     presence.known_members.insert(pseudonym_key.to_string());
-    if status == "offline" || route_blob.is_empty() {
+    if status == "offline" {
         return;
     }
     let member = JoinOnlineMember {
@@ -186,10 +197,20 @@ pub fn merge_presence_entry(
         status: status.to_string(),
         last_seen,
     };
+    // Liveness ≠ reachability. A non-offline, heartbeating member is ONLINE
+    // even with no route allocated yet (routes land asynchronously and are
+    // frequently empty on a fresh join) — gating online on the route blob is
+    // what made two fresh members invisible to each other at join. The route
+    // is a separate reachability fact: only members with a route enter
+    // `peers` (the set we actually send bytes to). Mirrors the steady-poll
+    // classifier (`rekindle-presence` scan_row) and the gossip-overlay split
+    // (governance_adapter::membership_events).
     presence
-        .peers
+        .online
         .insert(pseudonym_key.to_string(), member.clone());
-    presence.online.insert(pseudonym_key.to_string(), member);
+    if !route_blob.is_empty() {
+        presence.peers.insert(pseudonym_key.to_string(), member);
+    }
 }
 
 #[cfg(test)]
@@ -237,12 +258,18 @@ mod tests {
     }
 
     #[test]
-    fn merge_presence_empty_route_skips_routing() {
+    fn merge_presence_empty_route_is_online_but_unreachable() {
+        // Liveness ≠ reachability: a fresh, non-offline member with no route
+        // allocated yet is STILL online (this was the "can't see each other at
+        // join" bug). The empty route keeps it out of `peers` (unreachable
+        // until a route lands) but it MUST appear in `online`.
         let mut presence = InitialPresence::default();
         merge_presence_entry(&mut presence, "abc", "online", &[], 100);
         assert!(presence.known_members.contains("abc"));
         assert!(presence.peers.is_empty());
-        assert!(presence.online.is_empty());
+        assert_eq!(presence.online.len(), 1);
+        assert_eq!(presence.online["abc"].last_seen, 100);
+        assert!(presence.online["abc"].route_blob.is_empty());
     }
 
     #[test]

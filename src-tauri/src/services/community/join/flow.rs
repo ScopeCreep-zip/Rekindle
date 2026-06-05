@@ -157,6 +157,22 @@ pub async fn join_community(
         );
     let channel_log_keys = build_channel_log_keys(&snapshot.gov_state);
 
+    // Durable roster (architecture §13.4): turn every member discovered in the
+    // cold-join registry scan — plus our own freshly-claimed row — into
+    // `community_members` rows. `get_community_members` reads that table, so
+    // without this a fresh joiner sees an empty member list even though the
+    // gossip overlay (below) is seeded; the overlay is only the *ephemeral*
+    // online layer that decorates table rows. Built here, before
+    // `snapshot.gov_state` is moved into `CommunityState`, so role assignments
+    // are still readable; persisted after the community is inserted (the
+    // persister resolves the community by id).
+    let discovered_members = super::helpers::build_discovered_roster(
+        &claimed,
+        &initial_presence,
+        my_role_ids.clone(),
+        &snapshot.gov_state,
+    );
+
     let initial_peers: HashMap<String, OnlineMember> = initial_presence
         .peers
         .iter()
@@ -273,6 +289,13 @@ pub async fn join_community(
         .communities
         .write()
         .insert(governance_key_str.to_string(), community);
+
+    // Persist the durable roster now that the community is in the state map
+    // (the persister resolves the community by id, fires `MemberDiscovered`
+    // per newly-seen pseudonym, and batches the SQLite upsert). The joiner now
+    // sees the full membership — themselves + every scanned peer — immediately,
+    // independent of route allocation or the +10s steady poll.
+    adapter.persist_discovered_registry_members(governance_key_str, discovered_members);
 
     // 7-8. Post-commit record reconciliation (architecture §6.2 Steps 11/13).
     //    The join COMMITTED at the slot claim above: every input the user needs
