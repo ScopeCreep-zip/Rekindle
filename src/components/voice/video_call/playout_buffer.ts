@@ -153,6 +153,18 @@ export class VideoPlayoutBuffer {
     return { kbps: Math.max(1, kbps), lossQ8, lastFrameSeq: this.lastReleasedSeq };
   }
 
+  /** Read-only snapshot for the render-path latency log (DEBUG_VIDEO_LATENCY).
+   *  Isolates the buffer's own contribution (delay + occupancy) from the
+   *  decoder's internal latency measured separately at the decode→output edge. */
+  debugStats(): { size: number; playoutDelayMs: number; jitterMs: number; nextSeq: number | null } {
+    return {
+      size: this.frames.size,
+      playoutDelayMs: Math.round(this.playoutDelayMs),
+      jitterMs: Math.round(this.jitterMs),
+      nextSeq: this.nextSeq,
+    };
+  }
+
   private minSeq(): number | null {
     let min: number | null = null;
     for (const k of this.frames.keys()) if (min === null || k < min) min = k;

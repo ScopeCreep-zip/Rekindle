@@ -11,6 +11,7 @@ import {
   ENCODE_HEIGHT,
   ENCODE_FPS,
   ACK_INTERVAL_MS,
+  DEBUG_VIDEO_LATENCY,
   type RemoteStream,
   decodeBase64ToBytes,
 } from "./codec_utils";
@@ -34,6 +35,26 @@ export type VideoCallPanelProps =
       peerId: string;
       visible: boolean;
     };
+
+const DECODER_CODEC = "vp09.00.30.08";
+
+// `optimizeForLatency` tells the decoder to minimise frames buffered before
+// output — but it's a hint not all engines honour (WKWebView / WebView2 /
+// WebKitGTK-via-GStreamer differ), so probe it through isConfigSupported and
+// fall back to the plain config. Probed once per process and cached; later
+// decoders resolve the settled promise on a microtask.
+let optimizeForLatencyProbe: Promise<boolean> | null = null;
+function probeOptimizeForLatency(): Promise<boolean> {
+  if (!optimizeForLatencyProbe) {
+    optimizeForLatencyProbe = VideoDecoder.isConfigSupported({
+      codec: DECODER_CODEC,
+      optimizeForLatency: true,
+    })
+      .then((r) => r.supported === true)
+      .catch(() => false);
+  }
+  return optimizeForLatencyProbe;
+}
 
 export function useVideoCallPanel(props: VideoCallPanelProps) {
   // Architecture §10.6 — desired state lives in the voice store so the
@@ -202,6 +223,12 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
             frame.close();
             return;
           }
+          if (DEBUG_VIDEO_LATENCY) {
+            // Pair this output with its decode() call to measure the decoder's
+            // internal latency (decode→paint), isolated from buffer delay.
+            const t0 = target.decodeStamps.shift();
+            if (t0 !== undefined) target.lastDecodeMs = performance.now() - t0;
+          }
           target.ctx.drawImage(frame, 0, 0, target.canvas.width, target.canvas.height);
           frame.close();
         },
@@ -215,7 +242,6 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
           }
         },
       });
-      decoder.configure({ codec: "vp09.00.30.08" });
       const ctx = canvas.getContext("2d");
       remote = {
         streamId,
@@ -223,10 +249,33 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
         decoder,
         canvas,
         ctx,
-        ready: true,
+        // Flipped true once the async probe + configure below completes; the
+        // playout pump skips decode until then.
+        ready: false,
         buffer: new VideoPlayoutBuffer(),
         lastAckAt: 0,
+        decodeStamps: [],
+        lastDecodeMs: 0,
+        lastDebugAt: 0,
       };
+      // Configure off the cached latency-hint probe, then open the gate. The
+      // first keyframe waits in the buffer (initial-fill delay) so the pump
+      // won't try to decode before this lands. Probing here — not reconfiguring
+      // a live decoder — avoids a key-chunk-required hitch mid-stream.
+      const created = remote;
+      void probeOptimizeForLatency().then((supported) => {
+        if (decoder.state === "closed") return;
+        try {
+          decoder.configure(
+            supported
+              ? { codec: DECODER_CODEC, optimizeForLatency: true }
+              : { codec: DECODER_CODEC },
+          );
+          created.ready = true;
+        } catch (e) {
+          console.error("decoder configure failed:", e);
+        }
+      });
       setRemotes((prev) => [...prev, remote!]);
     }
 
@@ -256,9 +305,12 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
   function playoutPump(): void {
     const now = performance.now();
     for (const r of remotes()) {
+      // Skip until the async decoder.configure() has landed (see ingest).
+      if (!r.ready) continue;
       const { release, requestKeyframe } = r.buffer.popDue(now);
       for (const f of release) {
         try {
+          if (DEBUG_VIDEO_LATENCY) r.decodeStamps.push(performance.now());
           r.decoder.decode(
             new EncodedVideoChunk({
               type: f.keyframe ? "key" : "delta",
@@ -267,11 +319,23 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
             }),
           );
         } catch (e) {
+          // decode() threw — no output callback will fire, so drop the stamp
+          // we just pushed to keep the FIFO aligned with real outputs.
+          if (DEBUG_VIDEO_LATENCY) r.decodeStamps.pop();
           console.error("decode chunk failed:", e);
           requestKeyframeFor(r.streamId);
         }
       }
       if (requestKeyframe) requestKeyframeFor(r.streamId);
+      if (DEBUG_VIDEO_LATENCY && now - r.lastDebugAt >= 1000) {
+        r.lastDebugAt = now;
+        const s = r.buffer.debugStats();
+        console.debug(
+          `[video ${r.streamId.slice(0, 8)}] playoutDelay=${s.playoutDelayMs}ms ` +
+            `bufSize=${s.size} decodeQueue=${r.decoder.decodeQueueSize} ` +
+            `lastDecode=${Math.round(r.lastDecodeMs)}ms jitter=${s.jitterMs}ms`,
+        );
+      }
       if (props.mode === "community" && now - r.lastAckAt >= ACK_INTERVAL_MS) {
         r.lastAckAt = now;
         const { kbps, lossQ8, lastFrameSeq } = r.buffer.takeStats(now);
