@@ -7,6 +7,14 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Veilid Safe-route relay hops applied to **every** path, voice and video included.
+///
+/// 3 = "Tor-class": a middle relay means no guard+exit collusion of two nodes can
+/// link sender to receiver. This is the single anonymity floor — `hop_count` is never
+/// lowered per data class; only `stability`/`sequencing` vary. veilid-core also rejects
+/// a Safe route with `hop_count == 0`, so the floor is always a valid route.
+pub const ANONYMITY_HOP_FLOOR: u8 = 3;
+
 /// Top-level transport configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -85,11 +93,18 @@ pub struct SafetyConfig {
 }
 
 /// Privacy/performance parameters for a single data class.
+///
+/// Every class routes through a Veilid **safety route** (sender hidden
+/// behind an ephemeral route id) at the uniform [`ANONYMITY_HOP_FLOOR`].
+/// Classes differ only in `stability`/`sequencing` (latency/ordering
+/// knobs) — never in anonymity. Voice keeps `LowLatency` stability, the
+/// lowest-latency variant *within* the 3-hop Safe floor, rather than
+/// trading anonymity for speed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SafetyProfile {
-    /// Extra hops for sender privacy. 0 = no safety route (direct).
-    /// 1 = one relay hop (default).
+    /// Safety-route relay hops. Floor-enforced to [`ANONYMITY_HOP_FLOOR`]
+    /// by the transport builder; values below it are clamped up.
     pub hop_count: u8,
 
     /// Prefer connection reliability or low latency.
@@ -99,25 +114,6 @@ pub struct SafetyProfile {
     /// Message ordering preference.
     #[serde(default)]
     pub sequencing: SequencingPreference,
-
-    /// **Phase 9** — whether to wrap the sender in a Veilid safety route
-    /// (anonymous) or send directly from the personal private route
-    /// (identified). Independent of `hop_count`: safety routes still
-    /// need hops, direct routes never do.
-    ///
-    /// `true` for most user-facing actions (DM text, DHT writes, RPC) —
-    /// even a 1-hop safety route hides "who sent this" from the
-    /// destination's incoming relay.
-    ///
-    /// `false` for voice calls (the recipient already knows we're
-    /// calling them; latency is paramount) and other contexts where
-    /// the user has explicitly opted out of anonymity.
-    #[serde(default = "default_true")]
-    pub sender_anonymous: bool,
-}
-
-fn default_true() -> bool {
-    true
 }
 
 /// Stability preference -- maps to Veilid's `Stability` enum internally.
@@ -147,38 +143,36 @@ pub enum SequencingPreference {
 impl SafetyProfile {
     pub fn default_text() -> Self {
         Self {
-            hop_count: 1,
+            hop_count: ANONYMITY_HOP_FLOOR,
             stability: StabilityPreference::Reliable,
             sequencing: SequencingPreference::PreferOrdered,
-            sender_anonymous: true,
         }
     }
 
     pub fn default_voice() -> Self {
         Self {
-            hop_count: 1,
+            // Voice routes through the same 3-hop Tor-class floor as every
+            // other class; LowLatency stability is the lowest-latency
+            // variant *within* that anonymous floor (not an Unsafe route).
+            hop_count: ANONYMITY_HOP_FLOOR,
             stability: StabilityPreference::LowLatency,
             sequencing: SequencingPreference::NoPreference,
-            // Voice: latency over anonymity. Sender is direct.
-            sender_anonymous: false,
         }
     }
 
     pub fn default_dht() -> Self {
         Self {
-            hop_count: 1,
+            hop_count: ANONYMITY_HOP_FLOOR,
             stability: StabilityPreference::Reliable,
             sequencing: SequencingPreference::PreferOrdered,
-            sender_anonymous: true,
         }
     }
 
     pub fn default_rpc() -> Self {
         Self {
-            hop_count: 1,
+            hop_count: ANONYMITY_HOP_FLOOR,
             stability: StabilityPreference::Reliable,
             sequencing: SequencingPreference::EnsureOrdered,
-            sender_anonymous: true,
         }
     }
 }
@@ -257,11 +251,29 @@ mod tests {
     #[test]
     fn safety_profile_defaults() {
         let text = SafetyProfile::default_text();
-        assert_eq!(text.hop_count, 1);
+        assert_eq!(text.hop_count, ANONYMITY_HOP_FLOOR);
         assert_eq!(text.stability, StabilityPreference::Reliable);
 
+        // Voice rides the same anonymity floor as text; only its
+        // stability/sequencing differ (lowest-latency *within* the floor).
         let voice = SafetyProfile::default_voice();
+        assert_eq!(voice.hop_count, ANONYMITY_HOP_FLOOR);
         assert_eq!(voice.stability, StabilityPreference::LowLatency);
         assert_eq!(voice.sequencing, SequencingPreference::NoPreference);
+    }
+
+    #[test]
+    fn every_class_default_is_at_or_above_the_floor() {
+        for p in [
+            SafetyProfile::default_text(),
+            SafetyProfile::default_voice(),
+            SafetyProfile::default_dht(),
+            SafetyProfile::default_rpc(),
+        ] {
+            assert!(
+                p.hop_count >= ANONYMITY_HOP_FLOOR,
+                "no data class may route below the anonymity floor",
+            );
+        }
     }
 }

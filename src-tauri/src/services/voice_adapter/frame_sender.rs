@@ -11,9 +11,11 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use parking_lot::Mutex;
-use rekindle_route::contexts::{RouteContextKind, RouteContextSpec};
+use rekindle_types::config::ANONYMITY_HOP_FLOOR;
 use rekindle_voice::{VoiceError, VoiceFrameSender};
-use veilid_core::{RouteId, RoutingContext, SafetySelection, Sequencing, Target, VeilidAPI};
+use veilid_core::{
+    RouteId, RoutingContext, SafetySelection, SafetySpec, Sequencing, Stability, Target, VeilidAPI,
+};
 
 pub struct VeilidVoiceFrameSender {
     api: VeilidAPI,
@@ -30,16 +32,22 @@ impl VeilidVoiceFrameSender {
         }
     }
 
-    /// Build the low-latency voice routing context
-    /// (`SafetySelection::Unsafe` — trade sender privacy for latency).
+    /// Build the voice routing context: a 3-hop Tor-class Safe route
+    /// (sender hidden behind an ephemeral route id) with `LowLatency`
+    /// stability — the lowest-latency variant that is still anonymous.
+    /// Voice never uses `SafetySelection::Unsafe`: a vulnerable user's
+    /// real node identity must not be exposed to a relay just to shave
+    /// latency, and Unsafe routing is gated behind veilid-core's
+    /// `footgun` feature, which we never enable.
     fn build_voice_routing_context(api: &VeilidAPI) -> Result<RoutingContext, VoiceError> {
-        let spec = RouteContextSpec::rc_voice();
         api.routing_context()
             .map_err(|e| VoiceError::Transport(format!("routing context: {e}")))?
-            .with_safety(match spec.kind {
-                RouteContextKind::Voice => SafetySelection::Unsafe(Sequencing::NoPreference),
-                RouteContextKind::Safe => SafetySelection::Unsafe(Sequencing::PreferOrdered),
-            })
+            .with_safety(SafetySelection::Safe(SafetySpec {
+                preferred_route: None,
+                hop_count: ANONYMITY_HOP_FLOOR as usize,
+                stability: Stability::LowLatency,
+                sequencing: Sequencing::NoPreference,
+            }))
             .map_err(|e| VoiceError::Transport(format!("with_safety: {e}")))
     }
 

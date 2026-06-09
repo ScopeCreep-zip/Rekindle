@@ -32,9 +32,11 @@ Veilid's connection table if abused. See
 primitive. Maximum payload ~32 KB. Used in Rekindle for gossip,
 voice frames, presence updates, ephemeral notifications. The bytes
 are uninterpreted by Veilid — Rekindle layers its own envelope
-format and signatures on top. Voice uses
-`SafetySelection::Unsafe(Sequencing::NoPreference)` for low latency;
-chat uses safety routes for sender anonymity.
+format and signatures on top. Every `app_message`, voice included,
+rides a 3-hop Tor-class `SafetySelection::Safe` route for sender
+anonymity; voice selects `Stability::LowLatency` /
+`Sequencing::NoPreference` — the lowest-latency variant *within* that
+anonymity floor, not a weaker route.
 
 **Argon2id.** Memory-hard passphrase KDF used to derive the
 vault master key from the user's passphrase. Standardised in

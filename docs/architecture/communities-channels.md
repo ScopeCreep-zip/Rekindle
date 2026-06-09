@@ -156,10 +156,13 @@ The detailed schema for these tables is in
 
 ## 3. Voice, Video, and Stage
 
-Voice traffic uses Veilid's `app_message` with
-`SafetySelection::Unsafe` for sub-50 ms latency, accepting reduced
-sender anonymity (acceptable in voice channels where participants
-are known). The full voice pipeline lives in `crates/rekindle-voice/`;
+Voice traffic uses Veilid's `app_message` over the same 3-hop
+Tor-class `SafetySelection::Safe` route as every other path, so the
+sender's node identity is never exposed — voice gets no weaker
+anonymity than text. It selects `Stability::LowLatency` within that
+floor (lowest-latency anonymous variant), and the mouth-to-ear budget
+is re-baselined to the ITU-T G.114 interactive band. The full voice
+pipeline lives in `crates/rekindle-voice/`;
 the Tauri-side orchestration is in `src-tauri/src/services/voice/`
 (send / receive / MCU loops, signaling, device monitor, session
 state). See [`voice.md`](voice.md) for the detailed pipeline.

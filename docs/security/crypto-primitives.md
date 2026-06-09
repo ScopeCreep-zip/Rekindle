@@ -366,9 +366,13 @@ private route system that builds on top.
 Listed here because every choice in the audio path has security
 implications: Opus's algorithmic delay and bitrate behaviour are part
 of the timing-side-channel surface that voice traffic analysis would
-exploit. We use the standard parameters; users with extreme threat
-models route voice through higher-hop safety routes (trading latency
-for sender anonymity).
+exploit. We use the standard parameters. Voice is not a privacy
+exception: it rides the same 3-hop Tor-class `SafetySelection::Safe`
+route as every other path (uniform `ANONYMITY_HOP_FLOOR`), so sender
+anonymity holds for voice too — the only per-class difference is that
+voice selects `Stability::LowLatency` within that floor. The
+mouth-to-ear cost of three relay hops is budgeted to the ITU-T G.114
+interactive band.
 
 ## What we do not use
 

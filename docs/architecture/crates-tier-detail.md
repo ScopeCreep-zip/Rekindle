@@ -376,8 +376,10 @@ channels. Modules: `capture`, `playback`, `codec` (`OpusCodec` —
 `mixer`, `transport`, plus group / MCU / mutual-aid SFU machinery for
 calls of more than four participants.
 
-Voice packets use `SafetySelection::Unsafe` for direct UDP-like
-delivery, bypassing privacy routing to minimise latency.
+Voice packets use the same 3-hop Tor-class `SafetySelection::Safe`
+route as every other path (`Stability::LowLatency` within the
+anonymity floor), so the sender's node identity is never exposed;
+mouth-to-ear latency is budgeted to the ITU-T G.114 interactive band.
 
 ### rekindle-sync
 

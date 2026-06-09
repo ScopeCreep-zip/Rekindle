@@ -97,8 +97,8 @@ eavesdrop.
 
 Click a voice channel in any community to join it. The first time
 you join, your microphone activates (you can mute with the bottom
-panel toggle); audio routes peer-to-peer with sub-50 ms latency for
-small groups. For more than 4 participants, one peer in the call
+panel toggle); audio routes peer-to-peer over an anonymous route at
+low latency for small groups. For more than 4 participants, one peer in the call
 volunteers as a mutual-aid relay so that bandwidth stays manageable
 on every member.
 

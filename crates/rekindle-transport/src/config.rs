@@ -10,4 +10,5 @@
 
 pub use rekindle_types::config::{
     SafetyConfig, SafetyProfile, SequencingPreference, StabilityPreference, TransportConfig,
+    ANONYMITY_HOP_FLOOR,
 };

@@ -78,9 +78,12 @@ classes by construction:
   not need to opt in to unlinkability.
 - The vault (`rekindle-vault`) is encrypted at rest by default with
   the user's passphrase; there is no "skip the passphrase" mode.
-- Voice is `SafetySelection::Unsafe` for low latency by default for
-  voice channels (acceptable because participants are mutually
-  known); chat uses safety routes by default for sender anonymity.
+- Every path — voice, video, chat, governance — uses a 3-hop Tor-class
+  `SafetySelection::Safe` route by default for sender anonymity. There
+  is no low-latency "Unsafe" mode that exposes the sender's node
+  identity, and veilid-core's `footgun` feature (which would re-enable
+  Unsafe routing) is never compiled in. Voice trades a modest latency
+  cost (ITU-T G.114 interactive band) for not deanonymizing the user.
 - The Tauri capabilities file declares only the APIs the frontend
   actually uses — denied-by-default, not allowed-by-default.
 

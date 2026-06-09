@@ -44,17 +44,22 @@ adjacent nodes — no single intermediate node knows both the sender's
 identity and the destination. This is Tor-style sender anonymity built
 into Veilid.
 
-| Hop count | Latency | Anonymity |
-|-----------|---------|-----------|
-| 0 (`Unsafe`) | ~50 ms | None — sender visible |
-| 1 | ~100 ms | One relay knows the sender |
-| 2 | ~150 ms | No single node knows both ends |
-| 3 (default) | ~200 ms | Strong — Tor-class |
+| Hop count | Latency | Anonymity | Used by Rekindle |
+|-----------|---------|-----------|------------------|
+| 0 (`Unsafe`) | ~50 ms | None — sender's node id visible to the first relay | **Never** (also gated behind veilid-core's `footgun` feature, which we do not enable) |
+| 1 | ~100 ms | One relay links both ends — not real anonymity | No |
+| 2 | ~150 ms | No single node knows both ends | No |
+| 3 (`ANONYMITY_HOP_FLOOR`) | ~200 ms | Strong — Tor-class | **Every path** |
 
-Rekindle uses different hop counts per traffic type: voice uses
-`Unsafe` for sub-50 ms latency (acceptable because voice channel
-participants are mutually known); chat / governance use 1–2 hops; the
-user can configure hop count for sensitive workflows.
+Rekindle routes **every** traffic type — voice and video included —
+through a 3-hop Tor-class `SafetySelection::Safe` route. `hop_count` is
+a single uniform anonymity floor (`rekindle_types::config::ANONYMITY_HOP_FLOOR`),
+never lowered per traffic type; the transport builder clamps any
+configured value up to it. Voice keeps `LowLatency` stability — the
+lowest-latency variant *within* the anonymous floor — rather than
+exposing the sender's identity for speed. A single relay (1 hop) already
+links both call ends, so it is not an acceptable floor on a
+vulnerable-user platform.
 
 ### 1.3 Receiver anonymity (private routes)
 

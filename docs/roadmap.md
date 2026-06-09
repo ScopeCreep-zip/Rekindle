@@ -145,7 +145,7 @@ codec with acceptable latency.
 - [x] Voice activity detection (energy-based + RNNoise denoising)
 - [x] Jitter buffer (adaptive, BTreeMap-by-sequence)
 - [x] Audio mixer (multi-participant)
-- [x] Voice transport over Veilid (`SafetySelection::Unsafe`)
+- [x] Voice transport over Veilid (3-hop Tor-class `SafetySelection::Safe`)
 - [x] Join / leave voice channel commands
 - [x] Mute / deafen controls
 - [x] Global shortcut: `Ctrl+Shift+M` toggle mute
@@ -241,7 +241,7 @@ live work.
 | Risk | Impact | Mitigation |
 |------|--------|------------|
 | Veilid DHT latency (500 ms–5 s) | Slow presence updates | Aggressive SQLite caching + `watch_dht_values` + inspect polling fallback |
-| Voice latency over privacy routes | Unusable voice | `SafetySelection::Unsafe` for voice (direct UDP-like) |
+| Voice latency over privacy routes | Higher mouth-to-ear latency | 3-hop Tor-class `SafetySelection::Safe` (`LowLatency` stability within the floor); budget re-baselined to ITU-T G.114 interactive band — privacy is not traded for latency |
 | Veilid API maturity | Breaking changes | Isolate Veilid behind handles in `rekindle-protocol` / `rekindle-transport` |
 | MEK distribution at scale | Slow rotation cascades | Deterministic rotator + per-channel MEK + Plate Gates |
 | Cross-platform audio | cpal issues on Linux, macOS permissions | Dedicated threads, `mpsc` bridge, hot-swap detection |

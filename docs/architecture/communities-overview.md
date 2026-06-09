@@ -266,7 +266,7 @@ and that imposes real constraints.
 
 | Feature | Rekindle | Discord | Tradeoff |
 |---------|----------|---------|----------|
-| Delivery latency | 50–350 ms | 20–50 ms | Comparable for chat; voice uses `Unsafe` for sub-50 ms |
+| Delivery latency | 50–350 ms | 20–50 ms | Comparable for chat; voice rides the same 3-hop Tor-class `Safe` route (ITU-T G.114 interactive band) — anonymity is not traded for latency |
 | Search | Local FTS5 from join date | Server-side full history | Privacy: cannot search what you cannot decrypt |
 | File availability | Peer-cached (≥1 online peer) | CDN | Dead community + no online peers = unreachable; local pinning mitigates |
 | Push notifications | Opt-in relay (timing metadata leak) | Built-in | Three-tier escalation, each tier leaks more |
@@ -322,8 +322,11 @@ priority. When principles conflict, lower-numbered principles win.
    durable source of truth.
 4. **Storage IS the vote.** DHT records expire if not refreshed;
    active use keeps them alive. No GC, no admin cleanup.
-5. **Privacy is a stamina budget.** Voice uses `Unsafe`; text uses
-   safety routes; governance uses 2–3 hops. A slider, not a switch.
+5. **Anonymity is a floor, not a slider.** Every path — voice, video,
+   text, governance — rides a 3-hop Tor-class `Safe` route
+   (`ANONYMITY_HOP_FLOOR`). Classes differ only in latency/ordering
+   knobs (voice picks `LowLatency`), never in hop count. No path gets a
+   lower-hop fast lane.
 6. **Assume everything degrades.** Three-path delivery exists
    because every individual path fails sometimes.
 7. **Reader validates, not writer.** Any member can write any

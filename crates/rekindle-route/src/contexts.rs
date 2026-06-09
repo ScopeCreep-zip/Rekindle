@@ -1,79 +1,39 @@
-//! Routing-context selection metadata for chat and voice paths.
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RouteContextKind {
-    Safe,
-    Voice,
-}
+//! Routing-context selection metadata for application traffic.
+//!
+//! Every path uses a Veilid Safe route at the uniform
+//! [`rekindle_types::config::ANONYMITY_HOP_FLOOR`] (3-hop Tor-class).
+//! There is no Safe-vs-Unsafe split and no per-class hop distinction —
+//! only `ordered` (sequencing preference) differs at this layer.
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RouteContextSpec {
-    pub kind: RouteContextKind,
+    /// Safety-route relay hops. Always the anonymity floor.
     pub hop_count: usize,
-    pub sender_anonymous: bool,
+    /// Prefer ordered delivery on the safety route.
     pub ordered: bool,
 }
 
 impl RouteContextSpec {
+    /// The single anonymous routing spec used for every application path.
     pub fn rc_safe() -> Self {
         Self {
-            kind: RouteContextKind::Safe,
-            hop_count: 3,
-            sender_anonymous: true,
+            hop_count: rekindle_types::config::ANONYMITY_HOP_FLOOR as usize,
             ordered: false,
-        }
-    }
-
-    pub fn rc_voice() -> Self {
-        Self {
-            kind: RouteContextKind::Voice,
-            hop_count: 0,
-            sender_anonymous: false,
-            ordered: false,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct DualRoutingContexts<T> {
-    pub safe: T,
-    pub voice: T,
-}
-
-impl<T> DualRoutingContexts<T> {
-    pub fn new(safe: T, voice: T) -> Self {
-        Self { safe, voice }
-    }
-
-    pub fn get(&self, kind: RouteContextKind) -> &T {
-        match kind {
-            RouteContextKind::Safe => &self.safe,
-            RouteContextKind::Voice => &self.voice,
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{DualRoutingContexts, RouteContextKind, RouteContextSpec};
+    use super::RouteContextSpec;
 
     #[test]
-    fn safe_and_voice_specs_match_architecture() {
+    fn safe_spec_matches_anonymity_floor() {
         let safe = RouteContextSpec::rc_safe();
-        assert_eq!(safe.kind, RouteContextKind::Safe);
-        assert_eq!(safe.hop_count, 3);
-        assert!(safe.sender_anonymous);
-
-        let voice = RouteContextSpec::rc_voice();
-        assert_eq!(voice.kind, RouteContextKind::Voice);
-        assert_eq!(voice.hop_count, 0);
-        assert!(!voice.sender_anonymous);
-    }
-
-    #[test]
-    fn dual_contexts_select_by_kind() {
-        let contexts = DualRoutingContexts::new("safe", "voice");
-        assert_eq!(contexts.get(RouteContextKind::Safe), &"safe");
-        assert_eq!(contexts.get(RouteContextKind::Voice), &"voice");
+        assert_eq!(
+            safe.hop_count,
+            rekindle_types::config::ANONYMITY_HOP_FLOOR as usize
+        );
+        assert!(!safe.ordered);
     }
 }

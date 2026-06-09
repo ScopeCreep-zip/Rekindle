@@ -2,8 +2,9 @@
 
 The voice pipeline carries low-latency audio between peers in 1:1 calls,
 DM/group-DM calls, and community voice channels. It is built on Veilid's
-`app_message` primitive with `SafetySelection::Unsafe` for sub-50 ms
-delivery, and on `cpal` for cross-platform audio I/O.
+`app_message` primitive over a 3-hop Tor-class `SafetySelection::Safe`
+route (anonymous sender, `LowLatency` stability), and on `cpal` for
+cross-platform audio I/O.
 
 The implementation lives in two places:
 
@@ -38,7 +39,7 @@ mocks.
                                  │ Vec<u8>
                                  ▼
                     ┌─────────────────────────┐
-                    │  VoiceTransport (send)  │  Veilid app_message, Unsafe routing
+                    │  VoiceTransport (send)  │  Veilid app_message, 3-hop Safe route
                     └────────────┬────────────┘
                                  │
                               ===NETWORK===
@@ -131,19 +132,31 @@ sequence number — packets arriving out of order are reordered, late
 arrivals beyond the buffer window are dropped, and the consumer pulls in
 order at the configured target latency.
 
-## Transport: `app_message` with `Unsafe` routing
+## Transport: `app_message` over a 3-hop Safe route
 
 ```rust
-SafetySelection::Unsafe(Sequencing::NoPreference)
+SafetySelection::Safe(SafetySpec {
+    preferred_route: None,
+    hop_count: ANONYMITY_HOP_FLOOR, // 3 — Tor-class, uniform across all paths
+    stability: Stability::LowLatency,
+    sequencing: Sequencing::NoPreference,
+})
 ```
 
-Voice packets bypass safety routing for low latency. This is acceptable
-because:
+Voice routes through the same anonymity floor as every other path. It
+does **not** use `SafetySelection::Unsafe`:
 
-1. Voice channel participants are mutually known — the privacy property
-   that safety routes provide (sender anonymity) is irrelevant when
-   participants already see each other in the channel.
-2. Each voice packet exposes only that *some* peer is sending audio at
+1. Unsafe routing exposes the sender's real Veilid node identity to the
+   first relay. On a vulnerable-user platform that deanonymization is
+   unacceptable even when call participants are mutually known — a
+   compromised relay (or a single relay at 1 hop) could link a user to
+   their network identity and traffic pattern. It is also gated behind
+   veilid-core's `footgun` cargo feature, which Rekindle never enables.
+2. `LowLatency` stability + `NoPreference` sequencing make voice the
+   lowest-latency variant *within* the 3-hop Safe floor. The latency
+   cost of the relay hops is the deliberate price of anonymity (see the
+   ITU-T G.114 budget in `crates/rekindle-voice/tests/latency_budget.rs`).
+3. Each voice packet exposes only that *some* route is sending audio at
    timestamp T. The actual audio is encrypted with the channel MEK
    (community voice) or the X25519-derived call key (1:1, see
    [`rekindle-calls`](crates.md#rekindle-calls)).

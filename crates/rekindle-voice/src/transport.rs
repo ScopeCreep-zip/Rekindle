@@ -132,7 +132,8 @@ pub enum VoiceMode {
 /// `rekindle-voice` stays free of `veilid-core` (Invariant 2 — only
 /// `rekindle-transport` and `rekindle-protocol` may import it). The
 /// adapter imports the route (cached) and calls Veilid `app_message`
-/// with `SafetySelection::Unsafe` for low-latency voice.
+/// over a 3-hop Tor-class `SafetySelection::Safe` route (LowLatency
+/// stability) — anonymous on every voice frame, never Unsafe.
 #[async_trait]
 pub trait VoiceFrameSender: Send + Sync {
     /// Ship already-built wire bytes (signed + optionally AEAD-encrypted
@@ -146,8 +147,9 @@ pub trait VoiceFrameSender: Send + Sync {
 /// (all peers send to one host, host mixes and redistributes) modes.
 ///
 /// All network IO is delegated to an injected [`VoiceFrameSender`],
-/// which uses `SafetySelection::Unsafe` for voice to minimize latency,
-/// trading sender privacy for acceptable voice quality.
+/// which routes voice over a 3-hop Tor-class `SafetySelection::Safe`
+/// route (LowLatency stability) — the lowest-latency variant that still
+/// hides the sender, accepting a modest latency cost for anonymity.
 pub struct VoiceTransport {
     channel_id: String,
     sender: Option<Arc<dyn VoiceFrameSender>>,

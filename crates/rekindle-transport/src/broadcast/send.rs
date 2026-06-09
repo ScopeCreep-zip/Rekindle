@@ -40,19 +40,14 @@ impl Sender {
 
     /// Send a class-tagged message to a single peer.
     ///
-    /// Phase 9 — `class` selects the [`rekindle_types::config::SafetyProfile`]
-    /// via [`rekindle_route::profile::profile_for_class`]. Voice frames
-    /// take the Unsafe/direct path (0-hop, sender visible — call
-    /// participants are mutually known by design). All other classes
-    /// take a Safe/anonymous safety route (1–2 hops, sender hidden via
-    /// route ID rather than node identity). Threat model: see
+    /// `class` selects the [`rekindle_types::config::SafetyProfile`] via
+    /// [`rekindle_route::profile::profile_for_class`]. Every class —
+    /// voice included — takes a Safe/anonymous safety route at the
+    /// 3-hop Tor-class anonymity floor (sender hidden behind a route id,
+    /// never the node identity); classes differ only in
+    /// stability/sequencing. Threat model: see
     /// `docs/security/threat-model.md` Z12 (social graph leakage) and
     /// `docs/security/privacy-properties.md` § 1.2 (sender anonymity).
-    ///
-    /// Prior to Phase 9 every DM used `self.config.safety.text`
-    /// unconditionally, which silently routed Voice through a 2-hop
-    /// safety route (latency disaster) and DHT writes through the same
-    /// path as plaintext DMs (acceptable but coincidental).
     pub async fn send_dm(
         &self,
         target: &PeerTarget,
@@ -90,7 +85,6 @@ impl Sender {
             type_id = type_id as u8,
             class = class.as_str(),
             hop_count = profile.hop_count,
-            sender_anonymous = profile.sender_anonymous,
             "DM sent",
         );
         Ok(())

@@ -49,9 +49,13 @@ This layer does not provide end-to-end encryption — Veilid nodes along the
 route decrypt and re-encrypt at each hop. Forward secrecy is not guaranteed
 at this level. Layers 2 and 3 exist to address those gaps.
 
-Voice traffic uses `SafetySelection::Unsafe` for direct UDP-like delivery,
-trading routing privacy for latency. Voice packets are still authenticated
-and the call-level signaling traverses the standard private-route path.
+Voice traffic uses the same 3-hop Tor-class `SafetySelection::Safe` route as
+every other path — the sender's node identity is never exposed, so voice gets
+no weaker routing privacy than chat. It selects `Stability::LowLatency` within
+that anonymity floor (the lowest-latency variant that is still anonymous), and
+the mouth-to-ear budget is re-baselined to the ITU-T G.114 interactive band.
+Voice packets are authenticated and the call-level signaling traverses the same
+private-route path.
 
 ## Layer 2: Signal Protocol (1:1 Friend Messages)
 

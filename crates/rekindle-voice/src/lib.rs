@@ -102,16 +102,15 @@ impl Default for VoiceConfig {
             sample_rate: 48000,
             channels: 1,
             frame_size: 960, // 20ms at 48kHz
-            // Architecture §32 Phase 7 W26 line 4147 ("<100ms
-            // mouth-to-ear") leaves room for ~40ms of jitter buffer
-            // after capture + Opus algorithmic + decode + playback
-            // overhead. 40ms matches the industry VoIP defaults
-            // (Mumble 20–50ms, Discord ~40ms, WebRTC ~50ms) and is
-            // achievable over Veilid's `SafetySelection::Unsafe`
-            // per-packet routes used by voice. Adaptive jitter
-            // (start small, grow on observed loss) is the proper
-            // long-term solution; until then 40ms is the
-            // spec-compliant default.
+            // 40ms jitter buffer matches the industry VoIP defaults
+            // (Mumble 20–50ms, Discord ~40ms, WebRTC ~50ms). The buffer
+            // depth is independent of routing: voice rides a 3-hop
+            // Tor-class `SafetySelection::Safe` route (anonymous), which
+            // raises the *network* leg into the ITU-T G.114 interactive
+            // band (≤400ms one-way "acceptable") rather than the old
+            // 0-hop Unsafe sub-100ms target. Adaptive jitter (start
+            // small, grow on observed loss) is the proper long-term
+            // solution; until then 40ms is the default.
             jitter_buffer_ms: 40,
             vad_threshold: 0.02,
             vad_hold_ms: 300,

@@ -169,7 +169,7 @@ would create cross-community linkability.
 |----|--------|------------|
 | I-priv1 | A non-friend identifies the user from public DHT records | Profile records are encrypted; only the owner key (held by the user) and friends with explicit access can decrypt the friend list / mailbox / presence. |
 | I-priv2 | A community member identifies the user across communities | Pseudonym separation (L1). |
-| I-priv3 | A network adversary identifies the user from packet timing | Veilid safety routes obfuscate sender; user can choose hop count to trade latency for anonymity. |
+| I-priv3 | A network adversary identifies the user from packet timing | Veilid safety routes obfuscate the sender on every path. The hop count is a fixed 3-hop Tor-class floor (`ANONYMITY_HOP_FLOOR`), not a per-class or user-tunable knob — voice and video get the same anonymity as text, never a lower-hop fast path. |
 
 ### N — Non-repudiation (privacy-violating)
 
@@ -394,8 +394,10 @@ Tracked in [`../roadmap.md`](../roadmap.md) and the issues listed in
   polish before users can rely on it.
 - **Gossip metadata analysis.** A network adversary observing many
   Veilid relays can do traffic-pattern analysis. Veilid's mitigations
-  (safety routes) help but do not eliminate this. Higher-hop counts
-  trade latency for resistance.
+  (safety routes) help but do not eliminate this. Rekindle fixes the
+  hop count at a 3-hop Tor-class floor on every path — including voice
+  and video — rather than exposing a lower-hop fast path, accepting the
+  latency cost as a deliberate privacy tradeoff.
 
 ## 7. How to report a finding
 

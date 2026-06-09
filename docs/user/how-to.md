@@ -118,8 +118,8 @@ files are exempt from the LRU eviction in every member's cache.
 1. Open the friend's chat window.
 2. Click the **phone** icon in the titlebar.
 3. The friend gets a ringing notification. They can accept or
-   decline. Once accepted, audio flows peer-to-peer with sub-50 ms
-   latency.
+   decline. Once accepted, audio flows peer-to-peer over an anonymous
+   route at low latency.
 
 ### Community voice channel
 
