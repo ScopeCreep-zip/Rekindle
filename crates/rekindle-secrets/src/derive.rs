@@ -65,11 +65,11 @@ pub fn verify_pseudonym_signature(
     data: &[u8],
     signature: &[u8; 64],
 ) -> Result<(), CryptoError> {
-    use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+    use ed25519_dalek::{Signature, VerifyingKey};
     let vk = VerifyingKey::from_bytes(public_key_bytes)
         .map_err(|e| CryptoError::Verification(format!("bad pseudonym public key: {e}")))?;
     let sig = Signature::from_bytes(signature);
-    vk.verify(data, &sig)
+    vk.verify_strict(data, &sig)
         .map_err(|e| CryptoError::Verification(format!("pseudonym signature: {e}")))
 }
 
@@ -100,7 +100,7 @@ pub fn derive_slot_keypair(seed: &[u8; 32], slot: u32) -> Result<SigningKey, Cry
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ed25519_dalek::{Signer, Verifier, VerifyingKey};
+    use ed25519_dalek::{Signer, VerifyingKey};
 
     #[test]
     fn pseudonym_deterministic() {
@@ -130,7 +130,7 @@ mod tests {
         let key = derive_community_pseudonym(&[99u8; 32], "test");
         let verifying = VerifyingKey::from(&key);
         let sig = key.sign(b"test message");
-        assert!(verifying.verify(b"test message", &sig).is_ok());
+        assert!(verifying.verify_strict(b"test message", &sig).is_ok());
     }
 
     #[test]
@@ -145,7 +145,7 @@ mod tests {
         let sig = sign_with_pseudonym(&key, b"hello");
         let verifying = VerifyingKey::from(&key);
         let signature = ed25519_dalek::Signature::from_bytes(&sig);
-        assert!(verifying.verify(b"hello", &signature).is_ok());
+        assert!(verifying.verify_strict(b"hello", &signature).is_ok());
     }
 
     #[test]

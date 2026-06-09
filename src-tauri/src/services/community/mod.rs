@@ -32,6 +32,7 @@ pub mod stage;
 pub mod threads;
 pub mod threads_store;
 pub mod video;
+pub mod video_session;
 pub mod watch;
 
 // Re-export public API (callers use services::community::function_name)

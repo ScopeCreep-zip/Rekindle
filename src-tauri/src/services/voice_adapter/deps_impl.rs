@@ -169,6 +169,13 @@ impl VoiceSessionDeps for VoiceAdapter {
     }
 
     fn emit_voice_event(&self, event: VoiceSessionEvent) {
+        // Phase B — mirror UserJoined / UserLeft into the per-call
+        // video session aggregator so a new peer's cap slot is created
+        // (seeded with the conservative interim default) before their
+        // first `MediaCapabilities` advertisement arrives, and so a
+        // departing peer's stale entry stops gating the negotiated
+        // shape.
+        event_mapping::sync_video_session(&self.state, &event);
         crate::event_dispatch::dispatch(&self.app_handle, "voice-event", event_mapping::map(event));
     }
 
@@ -265,6 +272,20 @@ impl VoiceSessionDeps for VoiceAdapter {
             public_key,
             display_name,
         );
+        // Phase B — seed the per-call video session state + force-emit
+        // the current `SessionVideoConfig` so a late-mounting frontend
+        // gets the policy event without waiting for a membership delta.
+        // Only community sessions carry a `SessionVideoConfig` (DM video
+        // shape is policed by a different code path).
+        if let Some(community_id) = community_id {
+            if let Err(e) = crate::services::community::video_session::on_local_joined(
+                &self.state,
+                community_id,
+                channel_id,
+            ) {
+                tracing::warn!(error = %e, "video_session::on_local_joined failed");
+            }
+        }
     }
 
     fn spawn_voice_loops(

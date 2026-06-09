@@ -162,6 +162,8 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::community::notify_video_topology_change,
         commands::community::register_community_video_channel,
         commands::community::unregister_community_video_channel,
+        commands::community::report_local_video_capabilities,
+        commands::community::report_video_decoder_status,
         commands::community::delete_emoji,
         commands::community::list_expressions,
         // community threads

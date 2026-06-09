@@ -39,6 +39,17 @@ pub fn handle_video_payload<D: VideoDeps>(
             payload,
             signature,
         } => {
+            let payload_len = payload.len();
+            tracing::debug!(
+                target: "rekindle_video::receive",
+                frame_seq = frame_seq,
+                frag_index = frag_index,
+                frag_total = frag_total,
+                stream_id = %hex::encode(stream_id),
+                keyframe = keyframe,
+                payload_bytes = payload_len,
+                "ingested video fragment"
+            );
             let frag = VideoFragment {
                 stream_id,
                 frame_seq,
@@ -65,6 +76,17 @@ pub fn handle_video_payload<D: VideoDeps>(
             payload,
             signature,
         } => {
+            let payload_len = payload.len();
+            tracing::debug!(
+                target: "rekindle_video::receive::parity",
+                frame_seq = frame_seq,
+                parity_index = parity_index,
+                parity_total = parity_total,
+                data_count = data_count,
+                stream_id = %hex::encode(stream_id),
+                payload_bytes = payload_len,
+                "ingested video parity fragment"
+            );
             let frag = VideoParityFragment {
                 stream_id,
                 frame_seq,
@@ -170,6 +192,8 @@ pub fn handle_video_payload<D: VideoDeps>(
             max_pixel_count,
             max_fps,
             codecs,
+            supports_optimize_for_latency,
+            supported_scalability_modes,
         } => {
             deps.emit_event(VideoEvent::MediaCapabilities {
                 community_id: community_id.to_string(),
@@ -178,6 +202,8 @@ pub fn handle_video_payload<D: VideoDeps>(
                 max_pixel_count,
                 max_fps,
                 codecs,
+                supports_optimize_for_latency,
+                supported_scalability_modes,
             });
         }
         _ => {}
@@ -205,10 +231,29 @@ fn emit_frame_ready<D: VideoDeps>(
     let plaintext = match mek.decrypt(&frame.payload) {
         Ok(p) => p,
         Err(e) => {
-            tracing::warn!(error = %e, "video frame MEK decrypt failed");
+            tracing::warn!(
+                target: "rekindle_video::receive",
+                error = %e,
+                community_id = %community_id,
+                sender_pseudonym = %sender_pseudonym,
+                stream_id = %hex::encode(frame.stream_id),
+                frame_seq = frame.frame_seq,
+                "video frame MEK decrypt failed"
+            );
             return;
         }
     };
+    let plaintext_bytes = plaintext.len();
+    tracing::info!(
+        target: "rekindle_video::receive",
+        frame_seq = frame.frame_seq,
+        stream_id = %hex::encode(frame.stream_id),
+        bytes = plaintext_bytes,
+        keyframe = frame.keyframe,
+        community_id = %community_id,
+        sender_pseudonym = %sender_pseudonym,
+        "frame reassembled"
+    );
     deps.emit_event(VideoEvent::FrameReady {
         community_id: community_id.to_string(),
         sender_pseudonym: sender_pseudonym.to_string(),
@@ -321,7 +366,9 @@ mod tests {
                 channel_id: "ch1".into(),
                 max_pixel_count: 480 * 854,
                 max_fps: 30,
-                codecs: vec!["vp9".into()],
+                codecs: vec![rekindle_types::video::Codec::Vp9],
+                supports_optimize_for_latency: false,
+                supported_scalability_modes: vec![rekindle_types::video::ScalabilityMode::Flat],
             },
             0,
         );

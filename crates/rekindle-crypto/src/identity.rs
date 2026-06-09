@@ -1,4 +1,4 @@
-use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
+use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use rand::rngs::OsRng;
 use zeroize::ZeroizeOnDrop;
 
@@ -57,7 +57,7 @@ impl Identity {
         signature: &Signature,
     ) -> Result<(), CryptoError> {
         public_key
-            .verify(message, signature)
+            .verify_strict(message, signature)
             .map_err(|e| CryptoError::VerificationError(e.to_string()))
     }
 

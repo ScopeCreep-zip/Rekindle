@@ -5,8 +5,17 @@
 /// 1. Wayland discovery — tmux/SSH/TTY sessions don't inherit WAYLAND_DISPLAY
 ///    from the compositor. Scan XDG_RUNTIME_DIR for the socket.
 ///
-/// 2. NVIDIA + WebKitGTK workarounds — proprietary drivers have known issues
-///    with WebKitGTK's DMABuf renderer and explicit sync on all distros.
+/// 2. WebKitGTK DMABuf renderer is disabled unconditionally on Linux. The
+///    DMABuf path silently corrupts WebCodecs capture on Mesa/AMD/Intel as
+///    well as NVIDIA (FourCC 538982482 / GBM swap-chain failures —
+///    WebKit bug 261874, Ubuntu Launchpad #2041664, tauri-apps/tauri#8426).
+///    Driver-detecting the workaround would be a creative path: vulnerable
+///    users shouldn't pay an asymmetric-behavior cost because a probe missed
+///    a driver edge case. Cost is some GPU compositing overhead.
+///
+/// 3. NVIDIA explicit-sync workaround — the `__NV_DISABLE_EXPLICIT_SYNC`
+///    env var is interpreted only by the NVIDIA driver, so we gate it on
+///    the driver being present for grep-clarity (not for correctness).
 ///
 /// All vars are skipped if already set, so users can always override.
 ///
@@ -34,14 +43,16 @@ pub fn linux_display_setup() {
         }
     }
 
-    // NVIDIA workarounds
-    if Path::new("/proc/driver/nvidia/version").exists() {
-        if std::env::var("WEBKIT_DISABLE_DMABUF_RENDERER").is_err() {
-            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
-        }
-        if std::env::var("__NV_DISABLE_EXPLICIT_SYNC").is_err() {
-            std::env::set_var("__NV_DISABLE_EXPLICIT_SYNC", "1");
-        }
+    // Disable DMABuf renderer unconditionally on Linux — see doc above.
+    if std::env::var("WEBKIT_DISABLE_DMABUF_RENDERER").is_err() {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
+
+    // NVIDIA-only explicit-sync workaround (env var ignored on other drivers).
+    if Path::new("/proc/driver/nvidia/version").exists()
+        && std::env::var("__NV_DISABLE_EXPLICIT_SYNC").is_err()
+    {
+        std::env::set_var("__NV_DISABLE_EXPLICIT_SYNC", "1");
     }
 }
 

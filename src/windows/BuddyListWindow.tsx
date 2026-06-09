@@ -30,6 +30,7 @@ import { subscribeDeepLinkHandler } from "../handlers/deep-link.handler";
 import { handleListDms, subscribeDmInbox } from "../handlers/dm.handlers";
 import { handleHydrateRelayState } from "../handlers/relay.handlers";
 import { hydrateState } from "../ipc/hydrate";
+import { probeAndReportLocalVideoCapabilities } from "../handlers/video.handlers";
 import {
   subscribeNetworkStatus,
   subscribeProfileUpdates,
@@ -108,6 +109,15 @@ const BuddyListWindow: Component = () => {
     handleGetGameStatus().then((game) => {
       setAuthState("gameInfo", game);
     });
+
+    // Phase B / C — one-shot WebCodecs probe matrix. Reports the
+    // local encoder + decoder reach to the backend so the negotiator
+    // picks a session config that matches the WebView's actual
+    // capabilities (instead of the conservative interim default).
+    // The buddy-list window is the root post-login window — every
+    // call session is opened from here — so the probe runs exactly
+    // once per app launch.
+    void probeAndReportLocalVideoCapabilities();
 
     // Keyboard shortcuts
     document.addEventListener("keydown", handleKeyboardShortcuts);

@@ -1,15 +1,17 @@
 import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { Channel } from "@tauri-apps/api/core";
 import { commands } from "../../../ipc/commands";
-import type { CommunityVideoFrameMsg, DmVideoFrameMsg } from "../../../ipc/commands";
+import type {
+  CommunityVideoFrameMsg,
+  DmVideoFrameMsg,
+  SessionVideoConfig,
+} from "../../../ipc/commands";
 import { subscribeCommunityEvents } from "../../../ipc/channels";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { setVoiceState, voiceState } from "../../../stores/voice.store";
 import { settingsState } from "../../../stores/settings.store";
+import { videoSessionConfigFor } from "../../../stores/video.store";
 import {
-  ENCODE_WIDTH,
-  ENCODE_HEIGHT,
-  ENCODE_FPS,
   ACK_INTERVAL_MS,
   DEBUG_VIDEO_LATENCY,
   type RemoteStream,
@@ -36,24 +38,16 @@ export type VideoCallPanelProps =
       visible: boolean;
     };
 
-const DECODER_CODEC = "vp09.00.30.08";
-
-// `optimizeForLatency` tells the decoder to minimise frames buffered before
-// output — but it's a hint not all engines honour (WKWebView / WebView2 /
-// WebKitGTK-via-GStreamer differ), so probe it through isConfigSupported and
-// fall back to the plain config. Probed once per process and cached; later
-// decoders resolve the settled promise on a microtask.
-let optimizeForLatencyProbe: Promise<boolean> | null = null;
-function probeOptimizeForLatency(): Promise<boolean> {
-  if (!optimizeForLatencyProbe) {
-    optimizeForLatencyProbe = VideoDecoder.isConfigSupported({
-      codec: DECODER_CODEC,
-      optimizeForLatency: true,
-    })
-      .then((r) => r.supported === true)
-      .catch(() => false);
+/** Phase A — the codec parameter string the WebCodecs API expects.
+ *  The wire-level `Codec` enum from `rekindle_types::video` round-trips
+ *  as `"vp9"`; expand into the full RFC-6386 string here so callers
+ *  pass it straight to `VideoEncoder` / `VideoDecoder`. Adding a new
+ *  variant means adding a new arm here. */
+function wireCodecToWebCodecsString(codec: SessionVideoConfig["decoder"]["codec"]): string {
+  switch (codec) {
+    case "vp9":
+      return "vp09.00.30.08";
   }
-  return optimizeForLatencyProbe;
 }
 
 export function useVideoCallPanel(props: VideoCallPanelProps) {
@@ -213,9 +207,33 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
         // Wait for the first keyframe before instantiating a decoder.
         return;
       }
+      // Phase C — read the negotiated decoder constraints from the
+      // backend-owned store. DM mode is 1:1 — community policy doesn't
+      // apply, so the store has no entry; fall back to a baseline VP9
+      // configure (DM peers always run the same WebCodecs floor we ship).
+      const config =
+        props.mode === "community"
+          ? videoSessionConfigFor(props.communityId, props.channelId)
+          : undefined;
+      if (props.mode === "community" && !config) {
+        // Backend hasn't emitted VideoSessionConfig for this room yet.
+        // Drop the keyframe — the playout buffer never seeded any state
+        // — and wait for the next one. The session config arrives via
+        // on_local_joined's force-emit, so this branch is a tiny race
+        // window at call start, not a steady-state condition.
+        return;
+      }
+      // DM mode (no community config) uses the baseline VP9 decoder.
+      const decoderCodec = config?.decoder.codec ?? "vp9";
+      const decoderOptimizeForLatency =
+        config?.decoder.optimizeForLatency ?? false;
+      const encoderWidth = config?.encoder.maxWidth ?? 854;
+      const encoderHeight = config?.encoder.maxHeight ?? 480;
+      const webCodecsString = wireCodecToWebCodecsString(decoderCodec);
+
       const canvas = document.createElement("canvas");
-      canvas.width = ENCODE_WIDTH;
-      canvas.height = ENCODE_HEIGHT;
+      canvas.width = encoderWidth;
+      canvas.height = encoderHeight;
       const decoder = new VideoDecoder({
         output: (frame: VideoFrame) => {
           const target = remotes().find((r) => r.streamId === streamId);
@@ -233,11 +251,19 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
           frame.close();
         },
         error: (e: Error) => {
-          console.error("VideoDecoder error:", e);
           // Architecture §10.6 line 4081 — decoder lost track; ask the
           // sender for a keyframe. Community-only — DM relies on the
-          // sender's regular 2-second keyframe cadence.
+          // sender's regular 2-second keyframe cadence. Also surface
+          // the failure structurally so the WKWebView / WebKitGTK
+          // divergence is observable in backend trace.
           if (props.mode === "community") {
+            void commands.reportVideoDecoderStatus(
+              props.communityId,
+              sender_,
+              streamId,
+              false,
+              e.message,
+            );
             void commands.sendVideoKeyframeRequest(props.communityId, props.channelId, streamId);
           }
         },
@@ -249,8 +275,8 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
         decoder,
         canvas,
         ctx,
-        // Flipped true once the async probe + configure below completes; the
-        // playout pump skips decode until then.
+        // Flipped true on a successful decoder.configure(); the playout
+        // pump skips decode until then.
         ready: false,
         buffer: new VideoPlayoutBuffer(),
         lastAckAt: 0,
@@ -258,24 +284,38 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
         lastDecodeMs: 0,
         lastDebugAt: 0,
       };
-      // Configure off the cached latency-hint probe, then open the gate. The
-      // first keyframe waits in the buffer (initial-fill delay) so the pump
-      // won't try to decode before this lands. Probing here — not reconfiguring
-      // a live decoder — avoids a key-chunk-required hitch mid-stream.
+      // Phase C — configure straight from the negotiated decoder
+      // constraints. No probe round-trip: the backend has already
+      // negotiated `optimizeForLatency` against every peer's
+      // capability report, so a synchronous configure here either
+      // succeeds (set ready=true) or fails (report + leave ready=false).
       const created = remote;
-      void probeOptimizeForLatency().then((supported) => {
-        if (decoder.state === "closed") return;
-        try {
-          decoder.configure(
-            supported
-              ? { codec: DECODER_CODEC, optimizeForLatency: true }
-              : { codec: DECODER_CODEC },
+      try {
+        decoder.configure({
+          codec: webCodecsString,
+          optimizeForLatency: decoderOptimizeForLatency,
+        });
+        created.ready = true;
+        if (props.mode === "community") {
+          void commands.reportVideoDecoderStatus(
+            props.communityId,
+            sender_,
+            streamId,
+            true,
           );
-          created.ready = true;
-        } catch (e) {
-          console.error("decoder configure failed:", e);
         }
-      });
+      } catch (e) {
+        const errorMessage = e instanceof Error ? e.message : String(e);
+        if (props.mode === "community") {
+          void commands.reportVideoDecoderStatus(
+            props.communityId,
+            sender_,
+            streamId,
+            false,
+            errorMessage,
+          );
+        }
+      }
       setRemotes((prev) => [...prev, remote!]);
     }
 
@@ -352,6 +392,24 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
     playoutRaf = requestAnimationFrame(playoutPump);
   }
 
+  /** Capture / display constraints come from the backend-negotiated
+   *  encoder config (Phase B / C). DM mode (no community context) uses
+   *  the baseline VP9 floor — DM peers always run the same WebCodecs
+   *  capability set we ship. */
+  function captureConstraints(): { width: number; height: number; frameRate: number } {
+    if (props.mode === "community") {
+      const config = videoSessionConfigFor(props.communityId, props.channelId);
+      if (config) {
+        return {
+          width: config.encoder.maxWidth,
+          height: config.encoder.maxHeight,
+          frameRate: config.encoder.maxFps,
+        };
+      }
+    }
+    return { width: 854, height: 480, frameRate: 15 };
+  }
+
   async function startCamera(): Promise<void> {
     setError(null);
     try {
@@ -359,12 +417,13 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
       // Settings → Video. `exact` surfaces an OverconstrainedError if the
       // device disappeared so the user sees a clear message.
       const deviceId = settingsState.selectedVideoDeviceId;
+      const { width, height, frameRate } = captureConstraints();
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           deviceId: deviceId ? { exact: deviceId } : undefined,
-          width: ENCODE_WIDTH,
-          height: ENCODE_HEIGHT,
-          frameRate: ENCODE_FPS,
+          width,
+          height,
+          frameRate,
         },
         audio: false,
       });
@@ -395,8 +454,9 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
   async function startScreen(): Promise<void> {
     setError(null);
     try {
+      const { frameRate } = captureConstraints();
       const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { frameRate: ENCODE_FPS },
+        video: { frameRate },
         audio: false,
       });
       screenStream = stream;
@@ -427,6 +487,53 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
     }
     setScreenOn(false);
   }
+
+  // Phase C — when the backend re-negotiates the session config (a
+  // weaker / stronger peer joined or left), tear down every remote
+  // decoder so the next inbound keyframe rebuilds it against the new
+  // constraints. Sender-side encoder teardown lives in video_sender.ts
+  // — the sender subscribes to the same store. DM mode has no
+  // community config, so the effect short-circuits there.
+  //
+  // The first emit after a fresh subscription is part of the steady
+  // state (every effect runs once on creation). `previousConfigRef`
+  // skips that first run so we don't tear down a remote that never
+  // existed.
+  let previousConfig: SessionVideoConfig | undefined;
+  createEffect(() => {
+    if (props.mode !== "community") return;
+    const config = videoSessionConfigFor(props.communityId, props.channelId);
+    if (config === undefined) return;
+    if (previousConfig === undefined) {
+      previousConfig = config;
+      return;
+    }
+    if (
+      previousConfig.encoder.codec === config.encoder.codec &&
+      previousConfig.encoder.maxWidth === config.encoder.maxWidth &&
+      previousConfig.encoder.maxHeight === config.encoder.maxHeight &&
+      previousConfig.encoder.maxFps === config.encoder.maxFps &&
+      previousConfig.encoder.scalabilityMode === config.encoder.scalabilityMode &&
+      previousConfig.decoder.codec === config.decoder.codec &&
+      previousConfig.decoder.optimizeForLatency === config.decoder.optimizeForLatency
+    ) {
+      return;
+    }
+    previousConfig = config;
+    // Drop every remote — the pump skips closed decoders and the next
+    // inbound keyframe re-seeds a fresh RemoteStream with the new
+    // decoder constraints from the store.
+    setRemotes((prev) => {
+      for (const r of prev) {
+        try {
+          r.decoder.close();
+        } catch (e) {
+          console.error("decoder close on config change failed:", e);
+        }
+      }
+      return [];
+    });
+  });
 
   // Architecture §10.6 — react to store-level toggle changes from
   // VoicePanel (lifted controls). The pipeline lifecycle stays here; the

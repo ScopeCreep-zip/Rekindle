@@ -3,7 +3,8 @@
 //! Replaces the request/response model (`CommunityRequest`/`CommunityResponse`/`CommunityBroadcast`)
 //! with unidirectional envelopes sent via `app_message` (fire-and-forget).
 
-use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
+use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
+use rekindle_types::video::{Codec, ScalabilityMode};
 use serde::{Deserialize, Serialize};
 
 /// Wire envelope wrapping all community P2P traffic.
@@ -642,11 +643,19 @@ pub enum ControlPayload {
     /// Capability negotiation broadcast on join. Senders union the
     /// reported caps and pick a resolution + framerate every receiver
     /// can decode (architecture §10.6 line 4084).
+    ///
+    /// Pre-release schema break (memory rule: `feedback_no_legacy_compat`):
+    /// `codecs` is now `Vec<Codec>` (typed), and two new fields carry the
+    /// `optimizeForLatency` + scalability-mode signals the negotiator
+    /// needs. No version compat shim — the wire layer drops the old
+    /// shape entirely.
     MediaCapabilities {
         channel_id: String,
         max_pixel_count: u32,
         max_fps: u8,
-        codecs: Vec<String>,
+        codecs: Vec<Codec>,
+        supports_optimize_for_latency: bool,
+        supported_scalability_modes: Vec<ScalabilityMode>,
     },
 
     /// Architecture §10.6 + Phase 6 Week 22 — broadcast that the
@@ -739,7 +748,7 @@ pub fn verify_envelope(signed: &SignedEnvelope) -> Result<(), String> {
     let signature = Signature::from_bytes(&sig_array);
 
     verifying_key
-        .verify(&signed.envelope_bytes, &signature)
+        .verify_strict(&signed.envelope_bytes, &signature)
         .map_err(|e| format!("invalid envelope signature: {e}"))
 }
 
@@ -811,6 +820,67 @@ mod tests {
         signed.sender_pseudonym = wrong_hex;
 
         assert!(verify_envelope(&signed).is_err());
+    }
+
+    /// Phase A schema break — `MediaCapabilities` carries typed `Codec`
+    /// + `ScalabilityMode` lists plus `supports_optimize_for_latency`.
+    /// Round-trip through the Cap'n Proto wire form and assert every
+    /// field comes back untouched.
+    #[test]
+    fn envelope_media_capabilities_capnp_roundtrip() {
+        let inner = ControlPayload::MediaCapabilities {
+            channel_id: "ch_42".into(),
+            max_pixel_count: 1280 * 720,
+            max_fps: 30,
+            codecs: vec![Codec::Vp9],
+            supports_optimize_for_latency: true,
+            supported_scalability_modes: vec![ScalabilityMode::Flat, ScalabilityMode::L1T2],
+        };
+        let envelope = CommunityEnvelope::Control(inner);
+        let bytes = encode_community_envelope(&envelope).unwrap();
+        let back = crate::capnp_envelope::decode_community_envelope(&bytes).unwrap();
+        match back {
+            CommunityEnvelope::Control(ControlPayload::MediaCapabilities {
+                channel_id,
+                max_pixel_count,
+                max_fps,
+                codecs,
+                supports_optimize_for_latency,
+                supported_scalability_modes,
+            }) => {
+                assert_eq!(channel_id, "ch_42");
+                assert_eq!(max_pixel_count, 1280 * 720);
+                assert_eq!(max_fps, 30);
+                assert_eq!(codecs, vec![Codec::Vp9]);
+                assert!(supports_optimize_for_latency);
+                assert_eq!(
+                    supported_scalability_modes,
+                    vec![ScalabilityMode::Flat, ScalabilityMode::L1T2]
+                );
+            }
+            other => panic!("wrong variant after capnp round-trip: {other:?}"),
+        }
+    }
+
+    /// Phase A — sign + verify a `MediaCapabilities` envelope to confirm
+    /// the typed shape rides the same signed-envelope path as the rest
+    /// of the gossip surface.
+    #[test]
+    fn envelope_media_capabilities_sign_and_verify() {
+        let signing_key = SigningKey::from_bytes(&[7u8; 32]);
+        let verifying_key = VerifyingKey::from(&signing_key);
+        let pseudo = hex::encode(verifying_key.to_bytes());
+        let envelope = CommunityEnvelope::Control(ControlPayload::MediaCapabilities {
+            channel_id: "ch_42".into(),
+            max_pixel_count: 854 * 480,
+            max_fps: 15,
+            codecs: vec![Codec::Vp9],
+            supports_optimize_for_latency: false,
+            supported_scalability_modes: vec![ScalabilityMode::Flat],
+        });
+        let bytes = encode_community_envelope(&envelope).unwrap();
+        let signed = sign_envelope(&signing_key, "community_xyz", &pseudo, &bytes);
+        assert!(verify_envelope(&signed).is_ok());
     }
 
     #[test]

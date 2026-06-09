@@ -550,7 +550,7 @@ pub fn create_invite_blob(
 ///
 /// Returns `Ok(())` if the signature is valid, `Err` otherwise.
 pub fn verify_invite_blob(blob: &InviteBlob) -> Result<(), String> {
-    use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+    use ed25519_dalek::{Signature, VerifyingKey};
 
     let pub_bytes =
         hex::decode(&blob.public_key).map_err(|e| format!("invalid public key hex: {e}"))?;
@@ -581,7 +581,7 @@ pub fn verify_invite_blob(blob: &InviteBlob) -> Result<(), String> {
     let signable_bytes = serde_json::to_vec(&signable).unwrap_or_default();
 
     verifying_key
-        .verify(&signable_bytes, &signature)
+        .verify_strict(&signable_bytes, &signature)
         .map_err(|e| {
             // Most signature failures users hit in practice are version
             // mismatches: the sender's build pre-dates the B11 issued_at

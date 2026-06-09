@@ -232,7 +232,22 @@ async fn dispatch_gossip<H: InboundHandler>(
     };
 
     if let Err(e) = crate::crypto::envelope::verify_gossip_envelope(&envelope) {
-        warn!(error = %e, sender = %envelope.sender_pseudonym, "dropping gossip: bad signature");
+        // Phase F — promote the failure to structured fields so the
+        // `RUST_LOG=rekindle_transport=debug` trace stream gives the
+        // operator the community_id + sender_pseudonym + reason
+        // without having to grep the unstructured message tail. The
+        // transport-layer gossip envelope here does NOT carry video
+        // payloads (those ride the protocol-layer `CommunityEnvelope`
+        // verified in `src-tauri/services/veilid/app_message.rs`), so
+        // no `VideoEvent::EnvelopeRejected` is emitted at this site —
+        // only the structured warn.
+        tracing::warn!(
+            target: "rekindle_transport::dispatch",
+            reason = %e,
+            sender_pseudonym = %envelope.sender_pseudonym,
+            community_id = %envelope.community_id,
+            "verify_gossip_envelope failed"
+        );
         return;
     }
 
@@ -366,8 +381,7 @@ fn verify_voice_signature(
         }
     })?;
     let sig = ed25519_dalek::Signature::from_bytes(&sig_arr);
-    use ed25519_dalek::Verifier;
-    verifying_key.verify(data, &sig).map_err(|_| {
+    verifying_key.verify_strict(data, &sig).map_err(|_| {
         crate::error::TransportError::SignatureVerificationFailed {
             sender: sender_hex.to_string(),
         }

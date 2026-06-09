@@ -71,8 +71,7 @@ mod tests {
         // Verify we can sign and verify with the derived key
         use ed25519_dalek::Signer;
         let sig = key.sign(b"test message");
-        use ed25519_dalek::Verifier;
-        assert!(verifying.verify(b"test message", &sig).is_ok());
+        assert!(verifying.verify_strict(b"test message", &sig).is_ok());
     }
 
     #[test]

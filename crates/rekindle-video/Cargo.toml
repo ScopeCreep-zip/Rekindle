@@ -12,6 +12,7 @@ workspace = true
 rekindle-crypto = { path = "../rekindle-crypto" }
 rekindle-protocol = { path = "../rekindle-protocol" }
 rekindle-secrets = { path = "../rekindle-secrets" }
+rekindle-types = { path = "../rekindle-types" }
 serde = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
@@ -21,3 +22,9 @@ blake3 = "1"
 # Architecture §10.6 line 4080 — FEC data on VideoFragment so a small
 # number of dropped fragments doesn't force a keyframe re-request.
 reed-solomon-erasure = "6"
+
+[dev-dependencies]
+# Phase F — smoke-test harness needs an installed subscriber to confirm
+# `tracing::debug!(target: "rekindle_video::send", …)` events land on
+# stderr with the expected structured fields.
+tracing-subscriber = { workspace = true }

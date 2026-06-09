@@ -381,11 +381,11 @@ impl VoiceTransport {
             .as_slice()
             .try_into()
             .map_err(|_| VoiceError::Transport("voice packet sender_key length".into()))?;
-        use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+        use ed25519_dalek::{Signature, VerifyingKey};
         let vk = VerifyingKey::from_bytes(&sender_arr)
             .map_err(|e| VoiceError::Transport(format!("voice packet sender_key invalid: {e}")))?;
         let sig = Signature::from_bytes(&sig_arr);
-        vk.verify(&packet.signing_bytes(), &sig)
+        vk.verify_strict(&packet.signing_bytes(), &sig)
             .map_err(|e| VoiceError::Transport(format!("voice packet signature: {e}")))?;
         Ok(packet)
     }

@@ -1,4 +1,4 @@
-use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+use ed25519_dalek::{Signature, VerifyingKey};
 
 use crate::capnp_codec;
 use crate::error::ProtocolError;
@@ -33,7 +33,7 @@ pub fn verify_envelope(envelope: &MessageEnvelope) -> Result<bool, ProtocolError
         .map_err(|_| ProtocolError::Verification("signature must be 64 bytes".into()))?;
     let signature = Signature::from_bytes(&sig_bytes);
 
-    match verifying_key.verify(&signed_data, &signature) {
+    match verifying_key.verify_strict(&signed_data, &signature) {
         Ok(()) => {
             tracing::trace!(
                 sender = hex::encode(&envelope.sender_key),

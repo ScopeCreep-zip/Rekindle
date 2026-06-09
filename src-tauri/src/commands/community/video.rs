@@ -135,3 +135,49 @@ pub async fn notify_video_topology_change(
         reason,
     )
 }
+
+/// Architecture §10.6 Phase B — frontend reports the WebView's
+/// WebCodecs probe matrix at app startup so the backend can run
+/// `negotiate_session_config` with up-to-date local caps. Subsequent
+/// `CommunityEvent::VideoSessionConfig` emissions then reflect the
+/// real local encoder + decoder reach instead of the conservative
+/// `MediaCapabilities::interim_default()` placeholder.
+#[tauri::command]
+pub async fn report_local_video_capabilities(
+    state: State<'_, SharedState>,
+    caps: rekindle_video::MediaCapabilities,
+) -> Result<(), String> {
+    crate::services::community::video_session::on_local_caps_reported(state.inner(), caps)
+}
+
+/// Phase F — frontend reports the result of its `decoder.configure()`
+/// call. Backend logs structurally so the WKWebView / WebKitGTK divergence
+/// in receiver decode is visible in trace logs without UI screenshots.
+#[tauri::command]
+pub async fn report_video_decoder_status(
+    community_id: String,
+    sender_pseudonym: String,
+    stream_id: String,
+    ok: bool,
+    error_message: Option<String>,
+) -> Result<(), String> {
+    if ok {
+        tracing::info!(
+            target: "rekindle_video::decoder",
+            community_id = %community_id,
+            sender_pseudonym = %sender_pseudonym,
+            stream_id = %stream_id,
+            "decoder.configure() ok"
+        );
+    } else {
+        tracing::warn!(
+            target: "rekindle_video::decoder",
+            community_id = %community_id,
+            sender_pseudonym = %sender_pseudonym,
+            stream_id = %stream_id,
+            error = error_message.as_deref().unwrap_or("<unspecified>"),
+            "decoder.configure() failed"
+        );
+    }
+    Ok(())
+}

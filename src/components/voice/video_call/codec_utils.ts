@@ -2,11 +2,16 @@
 // WebCodecs video pipeline. Split out of VideoCallPanel so the sender
 // (video_sender.ts) and the orchestration hook can share them without a
 // circular import.
+//
+// Phase A / C — resolution / fps / codec are NOT defined here. The
+// backend's `rekindle_video::policy::negotiate_session_config()` emits a
+// `SessionVideoConfig` on `CommunityEvent::VideoSessionConfig` and both
+// the encoder (`video_sender.ts`) and decoder (`useVideoCallPanel.ts`)
+// configure from that store value. The constants below are runtime
+// tuning (playout buffer + keyframe cadence + diagnostics), not
+// capability negotiation.
 import type { VideoPlayoutBuffer } from "./playout_buffer";
 
-export const ENCODE_WIDTH = 854; // 480p widescreen
-export const ENCODE_HEIGHT = 480;
-export const ENCODE_FPS = 15;
 export const KEYFRAME_INTERVAL_MS = 2000;
 
 // Receiver playout buffer. delay = jitterEstimate × multiplier, clamped to
@@ -31,8 +36,9 @@ export interface RemoteStream {
   decoder: VideoDecoder;
   canvas: HTMLCanvasElement;
   ctx: CanvasRenderingContext2D | null;
-  // False until the async optimizeForLatency probe + decoder.configure() lands;
-  // the playout pump skips decode until then (a few ms on the first stream).
+  // False until the synchronous decoder.configure() lands; the playout
+  // pump skips decode until then. Phase C — driven by the negotiated
+  // `SessionVideoConfig` from the backend, no per-WebView probe.
   ready: boolean;
   // Reorder + jitter-absorb encoded chunks before decode (see playout_buffer.ts).
   buffer: VideoPlayoutBuffer;

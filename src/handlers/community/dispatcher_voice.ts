@@ -5,6 +5,7 @@ import { addToast } from "../../stores/toast.store";
 import { announce } from "../../components/common/AnnounceRegion";
 import { settingsState } from "../../stores/settings.store";
 import { voiceState, setVoiceState } from "../../stores/voice.store";
+import { setVideoSessionConfig } from "../../stores/video.store";
 import { refreshStageHandRaises } from "./shared";
 
 /// Mirror signaling membership into the call-UI roster
@@ -141,6 +142,25 @@ export function reduceVoice(event: CommunityEvent): boolean {
     });
     void refreshStageHandRaises(communityId, channelId);
     addToast(granted ? "Request to speak approved" : "Request to speak denied", granted ? "success" : "info");
+    return true;
+  } else if (event.type === "videoSessionConfig") {
+    // Phase B / C — backend negotiated a new room-wide encoder +
+    // decoder shape. Cache it; both the WebCodecs encoder
+    // (video_sender.ts) and decoder (useVideoCallPanel.ts) read from
+    // the store and reconfigure on change.
+    const { communityId, channelId, config } = event.data;
+    setVideoSessionConfig(communityId, channelId, config);
+    return true;
+  } else if (event.type === "videoEnvelopeRejected") {
+    // Phase F — a gossiped video envelope failed signature or shape
+    // verification at the receive boundary. Surface a warn-level toast
+    // so the asymmetric-drop case is observable from the UI without
+    // grepping structured logs.
+    const { senderPseudonym, reason } = event.data;
+    addToast(
+      `Dropped video from ${senderPseudonym.slice(0, 8)}: ${reason}`,
+      "error",
+    );
     return true;
   } else if (event.type === "soundboardPlay") {
     // Architecture §10.9 — peer triggered a soundboard sound. The

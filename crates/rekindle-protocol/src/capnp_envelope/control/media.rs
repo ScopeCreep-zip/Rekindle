@@ -2,10 +2,42 @@
 
 use super::super::len_u32;
 use super::{decode_control_payload, encode_control_payload};
-use crate::capnp_codec::{capnp_err, text_to_string};
+use crate::capnp_codec::{capnp_err, not_in_schema, text_to_string};
 use crate::community_envelope_capnp as cap;
 use crate::dht::community::envelope::ControlPayload;
 use crate::error::ProtocolError;
+use rekindle_types::video::{Codec, ScalabilityMode};
+
+/// Map the Rust `Codec` enum to its Cap'n Proto counterpart. Centralized
+/// so adding a new variant is a single edit touching both sides.
+fn codec_to_capnp(c: Codec) -> cap::Codec {
+    match c {
+        Codec::Vp9 => cap::Codec::Vp9,
+    }
+}
+
+/// Inverse of [`codec_to_capnp`]. Returns an error on unknown wire
+/// values (capnp's forward-compat `Unknown` discriminant); no fallback
+/// (memory rule: `feedback_no_fallback`).
+fn codec_from_capnp(c: cap::Codec) -> Codec {
+    match c {
+        cap::Codec::Vp9 => Codec::Vp9,
+    }
+}
+
+fn scalability_mode_to_capnp(m: ScalabilityMode) -> cap::ScalabilityMode {
+    match m {
+        ScalabilityMode::Flat => cap::ScalabilityMode::Flat,
+        ScalabilityMode::L1T2 => cap::ScalabilityMode::L1t2,
+    }
+}
+
+fn scalability_mode_from_capnp(m: cap::ScalabilityMode) -> ScalabilityMode {
+    match m {
+        cap::ScalabilityMode::Flat => ScalabilityMode::Flat,
+        cap::ScalabilityMode::L1t2 => ScalabilityMode::L1T2,
+    }
+}
 
 pub(super) fn write_request_attachment(
     mut p: cap::request_attachment_payload::Builder<'_>,
@@ -188,6 +220,8 @@ pub(super) fn write_media_capabilities(
         max_pixel_count,
         max_fps,
         codecs,
+        supports_optimize_for_latency,
+        supported_scalability_modes,
     } = payload
     else {
         unreachable!("write_media_capabilities: variant mismatch")
@@ -195,9 +229,18 @@ pub(super) fn write_media_capabilities(
     p.set_channel_id(channel_id);
     p.set_max_pixel_count(*max_pixel_count);
     p.set_max_fps(*max_fps);
-    let mut list = p.reborrow().init_codecs(len_u32(codecs.len()));
-    for (i, c) in codecs.iter().enumerate() {
-        list.set(len_u32(i), c.as_str());
+    p.set_supports_optimize_for_latency(*supports_optimize_for_latency);
+    {
+        let mut list = p.reborrow().init_codecs_typed(len_u32(codecs.len()));
+        for (i, c) in codecs.iter().enumerate() {
+            list.set(len_u32(i), codec_to_capnp(*c));
+        }
+    }
+    let mut modes = p
+        .reborrow()
+        .init_supported_scalability_modes(len_u32(supported_scalability_modes.len()));
+    for (i, m) in supported_scalability_modes.iter().enumerate() {
+        modes.set(len_u32(i), scalability_mode_to_capnp(*m));
     }
 }
 
@@ -362,17 +405,26 @@ pub(super) fn read_bandwidth_estimate(
 pub(super) fn read_media_capabilities(
     p: cap::media_capabilities_payload::Reader<'_>,
 ) -> Result<ControlPayload, ProtocolError> {
-    let codecs: Result<Vec<String>, ProtocolError> = p
-        .get_codecs()
-        .map_err(|e| capnp_err(&e))?
-        .iter()
-        .map(|t| text_to_string(t.map_err(|e| capnp_err(&e))?))
-        .collect();
+    let codec_list = p.get_codecs_typed().map_err(|e| capnp_err(&e))?;
+    let mut codecs: Vec<Codec> = Vec::with_capacity(codec_list.len() as usize);
+    for c in codec_list {
+        codecs.push(codec_from_capnp(c.map_err(not_in_schema)?));
+    }
+    let mode_list = p
+        .get_supported_scalability_modes()
+        .map_err(|e| capnp_err(&e))?;
+    let mut supported_scalability_modes: Vec<ScalabilityMode> =
+        Vec::with_capacity(mode_list.len() as usize);
+    for m in mode_list {
+        supported_scalability_modes.push(scalability_mode_from_capnp(m.map_err(not_in_schema)?));
+    }
     Ok(ControlPayload::MediaCapabilities {
         channel_id: text_to_string(p.get_channel_id().map_err(|e| capnp_err(&e))?)?,
         max_pixel_count: p.get_max_pixel_count(),
         max_fps: p.get_max_fps(),
-        codecs: codecs?,
+        codecs,
+        supports_optimize_for_latency: p.get_supports_optimize_for_latency(),
+        supported_scalability_modes,
     })
 }
 

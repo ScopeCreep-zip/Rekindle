@@ -52,6 +52,8 @@ pub(super) fn broadcast_media_capabilities_impl(
         max_pixel_count: caps.max_pixel_count,
         max_fps: caps.max_fps,
         codecs: caps.codecs,
+        supports_optimize_for_latency: caps.supports_optimize_for_latency,
+        supported_scalability_modes: caps.supported_scalability_modes,
     });
     crate::services::community::send_to_mesh(state, community_id, &envelope)
 }

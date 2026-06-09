@@ -192,6 +192,12 @@ pub struct AppState {
     /// the high-throughput video streams (DM + community). Frames bypass
     /// the `event_dispatch` bus and go straight to these channels.
     pub video_channels: crate::video_channels::VideoChannelRegistry,
+    /// Architecture §10.6 Phase B — per-(community, channel) aggregated
+    /// MediaCapabilities + last-emitted `SessionVideoConfig` snapshot.
+    /// Recomputed (and idempotently re-emitted) whenever the room
+    /// composition changes or a peer reports new caps. Backend owns the
+    /// negotiation; the frontend just reads the resulting event.
+    pub video_sessions: crate::services::community::video_session::VideoSessionStateMap,
 }
 
 impl Default for AppState {
@@ -272,6 +278,7 @@ impl Default for AppState {
             group_calls: Arc::new(Mutex::new(HashMap::new())),
             pending_session_resets: Arc::new(Mutex::new(HashMap::new())),
             video_channels: crate::video_channels::VideoChannelRegistry::new(),
+            video_sessions: crate::services::community::video_session::VideoSessionStateMap::new(),
         }
     }
 }

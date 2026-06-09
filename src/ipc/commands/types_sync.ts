@@ -18,6 +18,54 @@ export interface SendVideoFrameRequest {
   encodedPayloadB64: string;
 }
 
+/// Phase A — typed video codec / scalability vocabulary, mirroring
+/// `rekindle_types::video::{Codec, ScalabilityMode}`. The Rust enums
+/// serialize as `#[serde(rename_all = "lowercase")]`, so the wire
+/// shape on the JSON-over-Tauri surface is a string literal union.
+/// No `Other(string)` escape hatch — see `crates/rekindle-types/src/video.rs`.
+export type Codec = "vp9";
+export type ScalabilityMode = "flat" | "l1t2";
+
+/// Phase A — extended `MediaCapabilities` shape (mirrors
+/// `crates/rekindle-video/src/lib.rs::MediaCapabilities`). The
+/// frontend probes its WebView once at startup and reports the result;
+/// the backend reconciles against the gossiped per-peer caps.
+export interface MediaCapabilities {
+  maxPixelCount: number;
+  maxFps: number;
+  codecs: Codec[];
+  supportsOptimizeForLatency: boolean;
+  supportedScalabilityModes: ScalabilityMode[];
+}
+
+/// Phase A — encoder side of the negotiated session config (mirrors
+/// `crates/rekindle-video/src/lib.rs::EncoderConstraints`). Width /
+/// height are in pixels so the WebCodecs `VideoEncoder.configure` call
+/// doesn't need a square-root of `maxPixelCount`.
+export interface EncoderConstraints {
+  codec: Codec;
+  maxWidth: number;
+  maxHeight: number;
+  maxFps: number;
+  scalabilityMode: ScalabilityMode;
+}
+
+/// Phase A — decoder side of the negotiated session config (mirrors
+/// `crates/rekindle-video/src/lib.rs::DecoderConstraints`).
+export interface DecoderConstraints {
+  codec: Codec;
+  optimizeForLatency: boolean;
+}
+
+/// Phase A / B — the room-wide encoder + decoder configuration the
+/// backend negotiator emits on `CommunityEvent::VideoSessionConfig`.
+/// Every peer encodes and decodes against the same shape. Mirrors
+/// `crates/rekindle-video/src/lib.rs::SessionVideoConfig`.
+export interface SessionVideoConfig {
+  encoder: EncoderConstraints;
+  decoder: DecoderConstraints;
+}
+
 export interface BackgroundSyncReport {
   communitiesChecked: number;
   recordsInspected: number;

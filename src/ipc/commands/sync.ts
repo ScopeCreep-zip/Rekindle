@@ -1,7 +1,7 @@
 import { Channel } from "@tauri-apps/api/core";
 import { invoke } from "../invoke";
 import type {
-  BackgroundSyncReport, CommunityAnalytics, CommunityVideoFrameMsg, DeviceList, DmConversation, DmMessageRecord, DmVideoFrameMsg, LinkPreview, MessageSearch, PairingAccept, PairingQrPayload, PairingSession, SearchResult, SendVideoFrameRequest, SyncManifest, SyncPreferences, SyncReadState, VideoTopologyReason, VideoTrackLabel,
+  BackgroundSyncReport, CommunityAnalytics, CommunityVideoFrameMsg, DeviceList, DmConversation, DmMessageRecord, DmVideoFrameMsg, LinkPreview, MediaCapabilities, MessageSearch, PairingAccept, PairingQrPayload, PairingSession, SearchResult, SendVideoFrameRequest, SyncManifest, SyncPreferences, SyncReadState, VideoTopologyReason, VideoTrackLabel,
 } from "./types_sync";
 
 export const syncCommands = {
@@ -157,17 +157,43 @@ export const syncCommands = {
     }),
   /**
    * Architecture §10.6 — interim default media capabilities (480p @
-   * 15fps, VP9 only) for clients that don't introspect their hardware.
-   * The video send-side init in `VoicePanel.tsx::startVideo()` seeds
-   * its WebCodecs `VideoEncoderConfig` with these values when the
-   * browser's `MediaCapabilities` API isn't available, then advertises
-   * the result in `MediaCapabilities` envelopes so peers can size
-   * their VP9 bitrate to the slowest receiver.
+   * 15fps, VP9 only). Phase A — typed shape (`MediaCapabilities`).
+   * The backend now drives encoder + decoder config through
+   * `CommunityEvent::VideoSessionConfig`; this helper remains exposed
+   * for CLI / TUI frontends and tests that want the baseline floor.
    */
   defaultMediaCapabilities: () =>
-    invoke<{ maxPixelCount: number; maxFps: number; codecs: string[] }>(
-      "default_media_capabilities",
-    ),
+    invoke<MediaCapabilities>("default_media_capabilities"),
+  /**
+   * Phase B — frontend reports its one-shot WebView WebCodecs probe
+   * matrix at app startup. Backend updates every active session's
+   * local-peer caps and re-emits `CommunityEvent::VideoSessionConfig`
+   * when the negotiated shape changes. Idempotent — calling more than
+   * once just overwrites the previous report.
+   */
+  reportLocalVideoCapabilities: (caps: MediaCapabilities) =>
+    invoke<void>("report_local_video_capabilities", { caps }),
+  /**
+   * Phase F — frontend reports the result of the per-stream
+   * `VideoDecoder.configure()` call. Backend logs structurally so the
+   * WKWebView / WebKitGTK divergence is visible in trace output. `ok`
+   * is the boolean outcome; `errorMessage` carries the failure detail
+   * when `ok` is false (omitted on success).
+   */
+  reportVideoDecoderStatus: (
+    communityId: string,
+    senderPseudonym: string,
+    streamId: string,
+    ok: boolean,
+    errorMessage?: string,
+  ) =>
+    invoke<void>("report_video_decoder_status", {
+      communityId,
+      senderPseudonym,
+      streamId,
+      ok,
+      errorMessage: errorMessage ?? null,
+    }),
   /**
    * Architecture §10.6 line 4081 — receiver acks frames roughly every
    * 500 ms with measured downstream kbps + loss so senders can adapt

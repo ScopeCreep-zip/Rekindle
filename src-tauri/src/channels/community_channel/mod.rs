@@ -1,3 +1,5 @@
+use rekindle_types::video::{Codec, ScalabilityMode};
+use rekindle_video::SessionVideoConfig;
 use serde::Serialize;
 
 mod dto;
@@ -186,6 +188,10 @@ pub enum CommunityEvent {
         loss_q8: u8,
     },
     /// Architecture §10.6 line 4084 — peer's decode capabilities.
+    /// Typed codec / scalability-mode lists let the frontend store
+    /// reconcile against the typed `Codec` / `ScalabilityMode` enums
+    /// without parsing strings (Phase A schema break — no legacy
+    /// `Vec<String>` shape on the JSON-over-Tauri surface).
     #[serde(rename_all = "camelCase")]
     VideoMediaCapabilities {
         community_id: String,
@@ -193,7 +199,36 @@ pub enum CommunityEvent {
         channel_id: String,
         max_pixel_count: u32,
         max_fps: u8,
-        codecs: Vec<String>,
+        codecs: Vec<Codec>,
+        supports_optimize_for_latency: bool,
+        supported_scalability_modes: Vec<ScalabilityMode>,
+    },
+    /// Architecture §10.6 — backend-negotiated per-call video config.
+    /// Recomputed and re-emitted whenever room membership changes or a
+    /// peer reports new capabilities. Frontend reconciles encoder +
+    /// decoder by tearing down and reconfiguring with the new
+    /// constraints. Backend owns the policy — CLI/TUI frontends inherit
+    /// the same `SessionVideoConfig` payload without re-running any
+    /// negotiation themselves.
+    #[serde(rename_all = "camelCase")]
+    VideoSessionConfig {
+        community_id: String,
+        channel_id: String,
+        config: SessionVideoConfig,
+    },
+    /// Phase F — a gossiped video envelope failed signature or shape
+    /// verification at the receive boundary. Surfaced to the UI so the
+    /// asymmetric-drop case (one peer rejects, the other doesn't) is
+    /// observable from frontend signals instead of grep.
+    ///
+    /// `communityId` / `senderPseudonym` may be the sentinel string
+    /// `"<unknown>"` when the envelope failed to deserialize before
+    /// those routing fields could be read.
+    #[serde(rename_all = "camelCase")]
+    VideoEnvelopeRejected {
+        community_id: String,
+        sender_pseudonym: String,
+        reason: String,
     },
     /// Architecture §10.6 + Phase 6 Week 22 — the active video relay
     /// for a `(channel_id, stream_id)` changed. Frontend should

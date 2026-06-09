@@ -84,7 +84,28 @@ async fn handle_gossip_envelope(
     // sender_pseudonym + dedup_key triples to fill the dedup cache and
     // suppress real gossip from that sender.
     if let Err(e) = verify_envelope(&signed) {
-        tracing::warn!(error = %e, "rejecting gossip envelope: bad signature");
+        // Phase F — promote to structured fields so operators reading
+        // `RUST_LOG=rekindle_video=debug,rekindle_transport=debug` get
+        // the routing context without grep, AND surface video-related
+        // rejections to the frontend as `VideoEnvelopeRejected` so the
+        // asymmetric-drop case (Pop!_OS rejects, macOS accepts or vice
+        // versa) is observable from frontend signals.
+        let reason = e.clone();
+        tracing::warn!(
+            target: "rekindle_video::verify",
+            reason = %reason,
+            sender_pseudonym = %signed.sender_pseudonym,
+            community_id = %community_id,
+            "verify_envelope failed"
+        );
+        if envelope_carries_video(&signed.envelope_bytes) {
+            crate::services::video_adapter::VideoAdapter::new(state.clone(), app_handle.clone())
+                .emit_video_envelope_rejected(
+                    community_id.clone(),
+                    signed.sender_pseudonym.clone(),
+                    reason,
+                );
+        }
         return;
     }
 
@@ -187,6 +208,35 @@ fn envelope_hash(envelope_bytes: &[u8]) -> String {
     let mut h = Blake2b::<U16>::new();
     h.update(envelope_bytes);
     hex::encode(h.finalize())
+}
+
+/// Phase F — return true iff the decoded envelope carries a video
+/// control payload (fragment, parity, capabilities, keyframe req,
+/// bandwidth, topology). Used at the verify-failure boundary so we
+/// only emit `VideoEnvelopeRejected` for envelopes that actually
+/// belong to the video pipeline — non-video gossip failures stay on
+/// the structured-trace path only and do not produce UI toasts.
+///
+/// If decoding fails (which is itself a wire-shape issue) we
+/// conservatively return false — the rejection is logged via tracing
+/// and a video-specific UI toast would be a guess.
+fn envelope_carries_video(envelope_bytes: &[u8]) -> bool {
+    let Ok(Some(env)) = try_decode_community_envelope(envelope_bytes) else {
+        return false;
+    };
+    let CommunityEnvelope::Control(payload) = env else {
+        return false;
+    };
+    matches!(
+        payload,
+        ControlPayload::VideoFragment { .. }
+            | ControlPayload::VideoParityFragment { .. }
+            | ControlPayload::MediaCapabilities { .. }
+            | ControlPayload::KeyframeRequest { .. }
+            | ControlPayload::BandwidthEstimate { .. }
+            | ControlPayload::TopologyChange { .. }
+            | ControlPayload::FrameAck { .. }
+    )
 }
 
 pub(crate) fn is_private_control_payload(envelope_bytes: &[u8]) -> bool {

@@ -50,6 +50,21 @@ pub fn send_video_frame<D: VideoDeps>(
     channel_id: &str,
     request: &VideoFrameSend,
 ) -> Result<u32, VideoError> {
+    // Phase F — IPC entry trace. The Tauri command in src-tauri delivered
+    // an encoded VP9 chunk from the WebView; record the byte count and
+    // routing context (no payload bytes) so a `RUST_LOG=rekindle_video=
+    // debug` operator can confirm the chunk arrived from the frontend
+    // before MEK-encrypt + fragment + sign run.
+    tracing::debug!(
+        target: "rekindle_video::send",
+        community_id = %community_id,
+        channel_id = %channel_id,
+        stream_id = %hex::encode(request.stream_id),
+        frame_seq = request.frame_seq,
+        keyframe = request.keyframe,
+        encoded_bytes = request.encoded_payload.len(),
+        "received encoded frame from frontend"
+    );
     if request.encoded_payload.is_empty() {
         return Err(VideoError::InvalidInput("empty encoded payload".into()));
     }
@@ -157,6 +172,7 @@ impl<D: VideoDeps> SendCtx<'_, D> {
             let to_sign = fragment_signing_bytes(fragment);
             fragment.signature = self.signing_key.sign(&to_sign).to_bytes().to_vec();
         }
+        let total_bytes: usize = fragments.iter().map(|f| f.payload.len()).sum();
         for fragment in fragments {
             let envelope = CommunityEnvelope::Control(ControlPayload::VideoFragment {
                 channel_id: self.channel_id.to_string(),
@@ -171,6 +187,15 @@ impl<D: VideoDeps> SendCtx<'_, D> {
             });
             self.deps.send_to_mesh(self.community_id, &envelope)?;
         }
+        tracing::debug!(
+            target: "rekindle_video::send",
+            frame_seq = self.frame_seq,
+            fragment_count = count,
+            total_bytes = total_bytes,
+            stream_id = %hex::encode(self.stream_id),
+            keyframe = self.keyframe,
+            "sent video frame"
+        );
         Ok(count)
     }
 
@@ -194,6 +219,10 @@ impl<D: VideoDeps> SendCtx<'_, D> {
         }
 
         let total = u32::try_from(fec.data.len() + fec.parity.len()).unwrap_or(u32::MAX);
+        let data_count = u32::try_from(fec.data.len()).unwrap_or(u32::MAX);
+        let parity_count_total = u32::try_from(fec.parity.len()).unwrap_or(u32::MAX);
+        let data_bytes: usize = fec.data.iter().map(|f| f.payload.len()).sum();
+        let parity_bytes: usize = fec.parity.iter().map(|f| f.payload.len()).sum();
         for fragment in fec.data {
             let envelope = CommunityEnvelope::Control(ControlPayload::VideoFragment {
                 channel_id: self.channel_id.to_string(),
@@ -208,6 +237,15 @@ impl<D: VideoDeps> SendCtx<'_, D> {
             });
             self.deps.send_to_mesh(self.community_id, &envelope)?;
         }
+        tracing::debug!(
+            target: "rekindle_video::send",
+            frame_seq = self.frame_seq,
+            fragment_count = data_count,
+            total_bytes = data_bytes,
+            stream_id = %hex::encode(self.stream_id),
+            keyframe = self.keyframe,
+            "sent video frame"
+        );
         for fragment in fec.parity {
             let envelope = CommunityEnvelope::Control(ControlPayload::VideoParityFragment {
                 channel_id: self.channel_id.to_string(),
@@ -223,6 +261,15 @@ impl<D: VideoDeps> SendCtx<'_, D> {
             });
             self.deps.send_to_mesh(self.community_id, &envelope)?;
         }
+        tracing::debug!(
+            target: "rekindle_video::send::parity",
+            frame_seq = self.frame_seq,
+            parity_count = parity_count_total,
+            total_bytes = parity_bytes,
+            stream_id = %hex::encode(self.stream_id),
+            data_shards = data_count,
+            "sent parity fragments"
+        );
         Ok(total)
     }
 }
@@ -270,6 +317,142 @@ mod tests {
         let err =
             send_video_frame(&deps, &reassembly, "c1", "ch1", &small_request(false)).unwrap_err();
         assert!(matches!(err, VideoError::IdentityNotLoaded));
+    }
+
+    /// Phase F smoke test — install a process-wide `tracing` Layer that
+    /// records every event's target + field set, then exercise
+    /// `send_video_frame`. Confirms the `rekindle_video::send` target
+    /// with structured fields actually fires (which is what
+    /// `RUST_LOG=rekindle_video=debug` operators see at runtime).
+    ///
+    /// **Why global, not per-thread.** `tracing` caches per-callsite
+    /// `Interest` decisions on first registration. If parallel sibling
+    /// tests reach the same callsite first with no subscriber, the
+    /// macro is cached as "never enabled" for the entire process and
+    /// later per-thread `with_default` subscribers can't observe the
+    /// event. Setting one global Layer up-front via `Once` makes the
+    /// callsites permanently enabled for the test binary.
+    #[test]
+    fn structured_trace_emits_on_send() {
+        use std::sync::Arc;
+
+        use parking_lot::Mutex;
+        use tracing::field::{Field, Visit};
+        use tracing_subscriber::layer::{Context, SubscriberExt};
+        use tracing_subscriber::registry::Registry;
+        use tracing_subscriber::util::SubscriberInitExt;
+        use tracing_subscriber::Layer;
+
+        #[derive(Debug, Default)]
+        struct Captured {
+            target: String,
+            message: String,
+            fields: Vec<String>,
+        }
+
+        #[derive(Clone, Default)]
+        struct Sink(Arc<Mutex<Vec<Captured>>>);
+
+        impl<S: tracing::Subscriber> Layer<S> for Sink {
+            fn on_event(&self, event: &tracing::Event<'_>, _ctx: Context<'_, S>) {
+                let mut rec = Captured {
+                    target: event.metadata().target().to_string(),
+                    ..Captured::default()
+                };
+                struct V<'a>(&'a mut Captured);
+                impl Visit for V<'_> {
+                    fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+                        let formatted = format!("{value:?}");
+                        if field.name() == "message" {
+                            self.0.message = formatted;
+                        } else {
+                            self.0.fields.push(field.name().to_string());
+                        }
+                    }
+                }
+                event.record(&mut V(&mut rec));
+                self.0.lock().push(rec);
+            }
+        }
+
+        // One global sink shared by every test; the smoke test reads
+        // its own slice by filtering on the unique community_id we use
+        // for `send_video_frame` (sentinel: `"c_smoke_phase_f"`).
+        //
+        // We also chain an stderr-fmt layer so the Phase F smoke
+        // verification shell command
+        //   RUST_LOG=… cargo test -p rekindle-video --lib send 2>&1 \
+        //     | grep "rekindle_video::send"
+        // observes the same structured output the assertions below
+        // verify. The fmt layer respects `RUST_LOG`; the sink layer
+        // does not — assertions stay deterministic regardless of env.
+        static SINK: std::sync::OnceLock<Sink> = std::sync::OnceLock::new();
+        let sink = SINK
+            .get_or_init(|| {
+                use tracing_subscriber::EnvFilter;
+                let s = Sink::default();
+                let fmt_layer = tracing_subscriber::fmt::layer()
+                    .with_writer(std::io::stderr)
+                    .with_filter(
+                        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("off")),
+                    );
+                let _ = Registry::default()
+                    .with(s.clone())
+                    .with(fmt_layer)
+                    .try_init();
+                s
+            })
+            .clone();
+
+        let snapshot_before = sink.0.lock().len();
+        let deps = MockDeps::new();
+        let reassembly = VideoReassemblyState::new();
+        let mut req = small_request(false);
+        // Distinct stream_id so our IPC-entry trace is identifiable
+        // even if a parallel test fires the same callsite.
+        req.stream_id = [0xF0; 16];
+        send_video_frame(&deps, &reassembly, "c_smoke_phase_f", "ch_smoke", &req)
+            .expect("send happy path");
+
+        let captured = sink.0.lock();
+        let new_events: Vec<&Captured> = captured
+            .iter()
+            .skip(snapshot_before)
+            .filter(|c| c.target == "rekindle_video::send")
+            .collect();
+        assert!(
+            new_events.len() >= 2,
+            "expected at least two `rekindle_video::send` events (IPC entry + post-send), got {}: {:?}",
+            new_events.len(),
+            new_events
+                .iter()
+                .map(|c| (&c.message, &c.fields))
+                .collect::<Vec<_>>()
+        );
+        let has_frame_seq = new_events
+            .iter()
+            .any(|c| c.fields.iter().any(|f| f == "frame_seq"));
+        let has_stream_id = new_events
+            .iter()
+            .any(|c| c.fields.iter().any(|f| f == "stream_id"));
+        let has_fragment_count = new_events
+            .iter()
+            .any(|c| c.fields.iter().any(|f| f == "fragment_count"));
+        let has_encoded_bytes = new_events
+            .iter()
+            .any(|c| c.fields.iter().any(|f| f == "encoded_bytes"));
+        assert!(
+            has_frame_seq && has_stream_id,
+            "send events must carry frame_seq and stream_id; got: {new_events:?}"
+        );
+        assert!(
+            has_fragment_count,
+            "at least one send event must carry fragment_count; got: {new_events:?}"
+        );
+        assert!(
+            has_encoded_bytes,
+            "IPC-entry event must carry encoded_bytes; got: {new_events:?}"
+        );
     }
 
     #[test]

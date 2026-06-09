@@ -1,6 +1,6 @@
 //! Ed25519 signature verification for prekey bundle fields.
 
-use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+use ed25519_dalek::{Signature, VerifyingKey};
 
 use super::PqxdhError;
 
@@ -18,7 +18,7 @@ pub fn verify_spk(
     payload.push(SPK_DOMAIN_TAG);
     payload.extend_from_slice(spk_bytes);
     identity_key
-        .verify(&payload, &sig)
+        .verify_strict(&payload, &sig)
         .map_err(|e| PqxdhError::SignatureVerify(format!("SPK: {e}")))
 }
 
@@ -38,7 +38,7 @@ pub fn verify_pq(
     payload.push(PQ_DOMAIN_TAG);
     payload.extend_from_slice(domain_subtag);
     payload.extend_from_slice(pqpk_bytes);
-    identity_key.verify(&payload, &sig).map_err(|e| {
+    identity_key.verify_strict(&payload, &sig).map_err(|e| {
         PqxdhError::SignatureVerify(format!(
             "PQ {}: {e}",
             String::from_utf8_lossy(domain_subtag)

@@ -17,3 +17,6 @@ zeroize = { version = "1", features = ["derive"] }
 rand = { workspace = true }
 libcrux-ml-kem = { workspace = true }
 hex = "0.4"
+
+[dev-dependencies]
+curve25519-dalek = { version = "4.1", features = ["rand_core", "digest"] }

@@ -29,3 +29,4 @@ pub mod presence;
 pub mod search;
 pub mod subscription_events;
 pub mod thread;
+pub mod video;

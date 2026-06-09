@@ -25,6 +25,28 @@ impl VideoAdapter {
     pub fn new(state: Arc<AppState>, app_handle: tauri::AppHandle) -> Arc<Self> {
         Arc::new(Self { state, app_handle })
     }
+
+    /// Phase F — emit a `VideoEvent::EnvelopeRejected` from outside the
+    /// receive pipeline so the protocol-level `verify_envelope` failure
+    /// site in `services/veilid/app_message.rs` can surface the drop to
+    /// the UI without needing to construct a full `ControlPayload`. The
+    /// adapter's normal mapping path (`map_video_event`) handles the
+    /// translation to `CommunityEvent::VideoEnvelopeRejected`.
+    pub fn emit_video_envelope_rejected(
+        &self,
+        community_id: String,
+        sender_pseudonym: String,
+        reason: String,
+    ) {
+        VideoDeps::emit_event(
+            self,
+            VideoEvent::EnvelopeRejected {
+                community_id,
+                sender_pseudonym,
+                reason,
+            },
+        );
+    }
 }
 
 impl VideoDeps for VideoAdapter {
@@ -84,6 +106,41 @@ impl VideoDeps for VideoAdapter {
                 },
             );
             return;
+        }
+        // Phase B — feed a gossiped MediaCapabilities into the per-call
+        // video session aggregator BEFORE forwarding the raw advertisement
+        // to the frontend, so the frontend store sees the policy
+        // re-emission (`CommunityEvent::VideoSessionConfig`) in the same
+        // event stream as the cap update that produced it. The aggregator
+        // emit and the raw cap emit both ride the existing dispatch queue
+        // — order is preserved.
+        if let VideoEvent::MediaCapabilities {
+            community_id,
+            sender_pseudonym,
+            channel_id,
+            max_pixel_count,
+            max_fps,
+            codecs,
+            supports_optimize_for_latency,
+            supported_scalability_modes,
+        } = &event
+        {
+            let caps = rekindle_video::MediaCapabilities {
+                max_pixel_count: *max_pixel_count,
+                max_fps: *max_fps,
+                codecs: codecs.clone(),
+                supports_optimize_for_latency: *supports_optimize_for_latency,
+                supported_scalability_modes: supported_scalability_modes.clone(),
+            };
+            if let Err(e) = crate::services::community::video_session::on_peer_caps_received(
+                &self.state,
+                community_id,
+                channel_id,
+                sender_pseudonym,
+                caps,
+            ) {
+                tracing::warn!(error = %e, "video_session::on_peer_caps_received failed");
+            }
         }
         let mapped = map_video_event(event);
         crate::event_dispatch::emit_live(&self.app_handle, "community-event", &mapped);
@@ -165,6 +222,8 @@ fn map_video_event(event: VideoEvent) -> CommunityEvent {
             max_pixel_count,
             max_fps,
             codecs,
+            supports_optimize_for_latency,
+            supported_scalability_modes,
         } => CommunityEvent::VideoMediaCapabilities {
             community_id,
             sender_pseudonym,
@@ -172,6 +231,22 @@ fn map_video_event(event: VideoEvent) -> CommunityEvent {
             max_pixel_count,
             max_fps,
             codecs,
+            supports_optimize_for_latency,
+            supported_scalability_modes,
+        },
+        // Phase F — surface the asymmetric-drop case to the UI so
+        // sender-side and receiver-side observers both see the same
+        // verification failure. The frontend listens on
+        // `community-event` and shows a toast / status pill instead of
+        // requiring a grep through Rust logs to detect the condition.
+        VideoEvent::EnvelopeRejected {
+            community_id,
+            sender_pseudonym,
+            reason,
+        } => CommunityEvent::VideoEnvelopeRejected {
+            community_id,
+            sender_pseudonym,
+            reason,
         },
     }
 }

@@ -428,8 +428,7 @@ async fn process_inbox_joins(
                 let verifying_key = ed25519_dalek::VerifyingKey::from_bytes(&pub_bytes).ok()?;
                 let signature = ed25519_dalek::Signature::from_bytes(&sig_bytes);
                 let content = req.signature_content();
-                use ed25519_dalek::Verifier;
-                Some(verifying_key.verify(&content, &signature).is_ok())
+                Some(verifying_key.verify_strict(&content, &signature).is_ok())
             })()
             .unwrap_or(false);
             if !sig_ok {

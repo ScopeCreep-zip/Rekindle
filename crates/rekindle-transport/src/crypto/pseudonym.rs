@@ -32,7 +32,6 @@ pub fn pseudonym_to_x25519(key: &SigningKey) -> StaticSecret {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ed25519_dalek::Verifier;
 
     #[test]
     fn deterministic_derivation() {
@@ -63,7 +62,7 @@ mod tests {
         let verifying = key.verifying_key();
         use ed25519_dalek::Signer;
         let sig = key.sign(b"test message");
-        assert!(verifying.verify(b"test message", &sig).is_ok());
+        assert!(verifying.verify_strict(b"test message", &sig).is_ok());
     }
 
     #[test]

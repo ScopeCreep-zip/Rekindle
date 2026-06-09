@@ -3,10 +3,9 @@
 // adaptive-bitrate state. Split out of VideoCallPanel so the orchestration
 // hook stays focused on UI lifecycle + the receiver path.
 import { commands } from "../../../ipc/commands";
+import type { SessionVideoConfig } from "../../../ipc/commands";
+import { videoSessionConfigFor } from "../../../stores/video.store";
 import {
-  ENCODE_WIDTH,
-  ENCODE_HEIGHT,
-  ENCODE_FPS,
   KEYFRAME_INTERVAL_MS,
   bytesToBase64,
   randomStreamIdHex,
@@ -56,6 +55,53 @@ export function createVideoSender(
     screen: freshTrack(),
   };
 
+  /** Phase C — read the negotiated encoder constraints. Community mode
+   *  reads the backend-emitted `SessionVideoConfig`; DM mode (1:1) uses
+   *  the baseline VP9 floor — DM peers always run the same WebCodecs
+   *  capability set we ship. */
+  function encoderConstraints(): SessionVideoConfig["encoder"] {
+    if (route.mode === "community") {
+      const config = videoSessionConfigFor(route.communityId, route.channelId);
+      if (config) return config.encoder;
+    }
+    return {
+      codec: "vp9",
+      maxWidth: 854,
+      maxHeight: 480,
+      maxFps: 15,
+      scalabilityMode: "flat",
+    };
+  }
+
+  /** Phase A — `Codec` enum → full WebCodecs codec parameter string.
+   *  Adding a new codec variant means adding a new arm here. */
+  function wireCodecToWebCodecsString(codec: SessionVideoConfig["encoder"]["codec"]): string {
+    switch (codec) {
+      case "vp9":
+        return "vp09.00.30.08";
+    }
+  }
+
+  /** Build the WebCodecs config for `encoder.configure()`. `bitrate` is
+   *  rebound per-call because the adaptive loop varies it independently
+   *  of the negotiated capability shape. */
+  function buildEncoderConfig(
+    constraints: SessionVideoConfig["encoder"],
+    bitrate: number,
+  ): VideoEncoderConfig {
+    const base: VideoEncoderConfig = {
+      codec: wireCodecToWebCodecsString(constraints.codec),
+      width: constraints.maxWidth,
+      height: constraints.maxHeight,
+      framerate: constraints.maxFps,
+      bitrate,
+      latencyMode: "realtime",
+    };
+    return constraints.scalabilityMode === "l1t2"
+      ? { ...base, scalabilityMode: "L1T2" }
+      : base;
+  }
+
   async function start(label: TrackLabel, stream: MediaStream): Promise<void> {
     const ts = tracks[label];
     // Community streams use the deterministic backend-derived id so
@@ -82,9 +128,10 @@ export function createVideoSender(
       console.error("capture <video> play failed:", e);
     });
 
+    let constraints = encoderConstraints();
     const captureCanvas = document.createElement("canvas");
-    captureCanvas.width = ENCODE_WIDTH;
-    captureCanvas.height = ENCODE_HEIGHT;
+    captureCanvas.width = constraints.maxWidth;
+    captureCanvas.height = constraints.maxHeight;
     const captureCtx = captureCanvas.getContext("2d");
     if (!captureCtx) throw new Error("2d context unavailable");
 
@@ -112,32 +159,44 @@ export function createVideoSender(
         onError(`Encoder error: ${e.message}`);
       },
     });
-    // L1T2 temporal layering makes a dropped delta survivable (the T0 base
-    // layer still decodes), but isn't universal on WKWebView/WebKitGTK — probe
-    // and fall back to a flat config. Start at the slowest receiver's estimate
-    // so we never over-send the weakest peer.
-    const baseConfig: VideoEncoderConfig = {
-      codec: "vp09.00.30.08",
-      width: ENCODE_WIDTH,
-      height: ENCODE_HEIGHT,
-      framerate: ENCODE_FPS,
-      bitrate: ts.lowestReceiverKbps * 1000,
-      latencyMode: "realtime",
-    };
-    const layered: VideoEncoderConfig = { ...baseConfig, scalabilityMode: "L1T2" };
-    const layeredSupported = await VideoEncoder.isConfigSupported(layered)
-      .then((r) => r.supported === true)
-      .catch(() => false);
-    encoder.configure(layeredSupported ? layered : baseConfig);
+    // Phase C — configure once from the backend-negotiated constraints.
+    // The negotiator already intersected every peer's L1T2 support; no
+    // unilateral probe / branch. Start at the slowest receiver's
+    // estimate so we never over-send the weakest peer.
+    encoder.configure(buildEncoderConfig(constraints, ts.lowestReceiverKbps * 1000));
     let configuredKbps = ts.lowestReceiverKbps;
 
     let cancelled = false;
-    const frameIntervalMs = 1000 / ENCODE_FPS;
+    let frameIntervalMs = 1000 / constraints.maxFps;
     let lastEmittedAt = 0;
     let rafHandle: number | null = null;
 
     const pump = (): void => {
       if (cancelled) return;
+      // Phase C — pick up any negotiated-config change between frames.
+      // The receiver-side hook tears down decoders on the same trigger
+      // — both sides reconfigure together so the next keyframe lands on
+      // a matching pipeline. Comparing the codec/width/height/fps/mode
+      // shape covers every config-driven encoder.configure() input.
+      const fresh = encoderConstraints();
+      const constraintsChanged =
+        fresh.codec !== constraints.codec ||
+        fresh.maxWidth !== constraints.maxWidth ||
+        fresh.maxHeight !== constraints.maxHeight ||
+        fresh.maxFps !== constraints.maxFps ||
+        fresh.scalabilityMode !== constraints.scalabilityMode;
+      if (constraintsChanged) {
+        constraints = fresh;
+        captureCanvas.width = constraints.maxWidth;
+        captureCanvas.height = constraints.maxHeight;
+        frameIntervalMs = 1000 / constraints.maxFps;
+        try {
+          encoder.configure(buildEncoderConfig(constraints, configuredKbps * 1000));
+          ts.lastKeyframeMs = performance.now();
+        } catch (e) {
+          console.error("encoder reconfigure on policy change failed:", e);
+        }
+      }
       const now = performance.now();
       if (now - lastEmittedAt >= frameIntervalMs) {
         // Architecture §10.6 line 4081 — adapt to the slowest receiver's
@@ -146,11 +205,7 @@ export function createVideoSender(
         if (Math.abs(ts.lowestReceiverKbps - configuredKbps) / configuredKbps > 0.15) {
           configuredKbps = ts.lowestReceiverKbps;
           try {
-            encoder.configure({
-              ...baseConfig,
-              bitrate: configuredKbps * 1000,
-              ...(layeredSupported ? { scalabilityMode: "L1T2" } : {}),
-            });
+            encoder.configure(buildEncoderConfig(constraints, configuredKbps * 1000));
             ts.lastKeyframeMs = now; // reconfigure already emits a keyframe
           } catch (e) {
             console.error("encoder reconfigure failed:", e);

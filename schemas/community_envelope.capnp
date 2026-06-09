@@ -567,11 +567,36 @@ struct BandwidthEstimatePayload @0xea003f000000a000 {
     lossQ8               @3 :UInt8;
 }
 
+# Video codec identifier. Mirrors `rekindle_types::video::Codec`.
+# Closed enum — no `Other(String)` escape hatch. Adding a codec is a
+# deliberate schema break, not a fallback.
+enum Codec @0xeb0001000000a000 {
+    vp9 @0;
+}
+
+# VP9 SVC scalability mode. Mirrors `rekindle_types::video::ScalabilityMode`.
+enum ScalabilityMode @0xeb0002000000a000 {
+    flat @0;
+    l1t2 @1;
+}
+
+# Pre-release schema break: the previous `codecs @3 :List(Text)` field
+# was deleted outright (memory rule: `feedback_no_legacy_compat` — no
+# version-bump preserving the old shape). Cap'n Proto requires
+# sequential ordinals, so the new typed fields take @3, @4, @5 — there
+# is no live peer running the old schema (the wire-shape break is the
+# point). The 64-bit struct ID (@0xea0040000000a000) is unchanged
+# because this is the same logical payload: any peer attempting to
+# decode the pre-break shape against this struct gets a clean schema
+# error, not a silent type-confusion. Adding a new field in the future
+# follows append-only discipline from @6 onward.
 struct MediaCapabilitiesPayload @0xea0040000000a000 {
-    channelId            @0 :Text;
-    maxPixelCount        @1 :UInt32;
-    maxFps               @2 :UInt8;
-    codecs               @3 :List(Text);
+    channelId                       @0 :Text;
+    maxPixelCount                   @1 :UInt32;
+    maxFps                          @2 :UInt8;
+    supportsOptimizeForLatency      @3 :Bool;
+    codecsTyped                     @4 :List(Codec);
+    supportedScalabilityModes       @5 :List(ScalabilityMode);
 }
 
 struct TopologyChangePayload @0xea0041000000a000 {

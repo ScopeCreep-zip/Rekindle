@@ -4,7 +4,7 @@
 //! and DM messages. Every inbound message is verified here before dispatch.
 //! This is the fix for the unsigned app_call vulnerability.
 
-use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
+use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Result, TransportError};
@@ -130,7 +130,7 @@ pub fn verify_signed_payload_with_window(
     let signature = parse_signature(&signed.signature)?;
 
     verifying_key
-        .verify(&signed_data, &signature)
+        .verify_strict(&signed_data, &signature)
         .map_err(|_| TransportError::SignatureVerificationFailed {
             sender: signed.sender_key_hex.clone(),
         })?;
@@ -196,7 +196,7 @@ pub fn verify_gossip_envelope(envelope: &SignedGossipEnvelope) -> Result<()> {
     let signature = parse_signature(&envelope.signature)?;
 
     verifying_key
-        .verify(&envelope.payload_bytes, &signature)
+        .verify_strict(&envelope.payload_bytes, &signature)
         .map_err(|_| TransportError::SignatureVerificationFailed {
             sender: envelope.sender_pseudonym.clone(),
         })
