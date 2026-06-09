@@ -5,17 +5,17 @@
 /// 1. Wayland discovery — tmux/SSH/TTY sessions don't inherit WAYLAND_DISPLAY
 ///    from the compositor. Scan XDG_RUNTIME_DIR for the socket.
 ///
-/// 2. WebKitGTK DMABuf renderer is disabled unconditionally on Linux. The
-///    DMABuf path silently corrupts WebCodecs capture on Mesa/AMD/Intel as
-///    well as NVIDIA (FourCC 538982482 / GBM swap-chain failures —
-///    WebKit bug 261874, Ubuntu Launchpad #2041664, tauri-apps/tauri#8426).
-///    Driver-detecting the workaround would be a creative path: vulnerable
-///    users shouldn't pay an asymmetric-behavior cost because a probe missed
-///    a driver edge case. Cost is some GPU compositing overhead.
+/// 2. NVIDIA + WebKitGTK workarounds — proprietary drivers have known issues
+///    with WebKitGTK's DMABuf renderer and explicit sync on all distros.
 ///
-/// 3. NVIDIA explicit-sync workaround — the `__NV_DISABLE_EXPLICIT_SYNC`
-///    env var is interpreted only by the NVIDIA driver, so we gate it on
-///    the driver being present for grep-clarity (not for correctness).
+///    NOTE: this is scoped to NVIDIA on purpose. Disabling the DMABuf
+///    renderer unconditionally on Linux regressed input handling on
+///    non-NVIDIA Mesa/Wayland (Pop!_OS): the webview rendered but did not
+///    receive pointer events, because modern WebKitGTK (2.42+) treats the
+///    DMABuf path as primary and the disabled-fallback path mis-routes input
+///    on Wayland subsurfaces. The asymmetric-video fix lives in the codec
+///    negotiation path (frontend probe removal), not here, so this guard
+///    stays NVIDIA-only.
 ///
 /// All vars are skipped if already set, so users can always override.
 ///
@@ -43,16 +43,16 @@ pub fn linux_display_setup() {
         }
     }
 
-    // Disable DMABuf renderer unconditionally on Linux — see doc above.
-    if std::env::var("WEBKIT_DISABLE_DMABUF_RENDERER").is_err() {
-        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
-    }
-
-    // NVIDIA-only explicit-sync workaround (env var ignored on other drivers).
-    if Path::new("/proc/driver/nvidia/version").exists()
-        && std::env::var("__NV_DISABLE_EXPLICIT_SYNC").is_err()
-    {
-        std::env::set_var("__NV_DISABLE_EXPLICIT_SYNC", "1");
+    // NVIDIA workarounds — DMABuf renderer + explicit sync both break only on
+    // the proprietary driver. Gate on the driver being present so non-NVIDIA
+    // Mesa/Wayland keeps the (input-correct) DMABuf path.
+    if Path::new("/proc/driver/nvidia/version").exists() {
+        if std::env::var("WEBKIT_DISABLE_DMABUF_RENDERER").is_err() {
+            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        }
+        if std::env::var("__NV_DISABLE_EXPLICIT_SYNC").is_err() {
+            std::env::set_var("__NV_DISABLE_EXPLICIT_SYNC", "1");
+        }
     }
 }
 
