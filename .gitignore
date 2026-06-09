@@ -115,3 +115,4 @@ ehthumbs.db
 *.sqlite-shm
 .gitsecret/keys/random_seed
 !*.secret
+tmp
