@@ -10,16 +10,16 @@ license = "MIT"
 workspace = true
 
 [features]
-default = ["aegis", "sha256-mb"]
-aegis      = ["rekindle-aead/aegis"]
-sha256-mb  = ["rekindle-hash/sha256-mb"]
-bulk-uring = ["dep:io-uring"]
-bulk-memfd = []
+default = []
+bench-harness = ["dep:criterion", "dep:tracing-subscriber", "dep:tempfile"]
 
 [dependencies]
 rekindle-types = { path = "../rekindle-types" }
-rekindle-aead  = { path = "../rekindle-aead" }
-rekindle-hash  = { path = "../rekindle-hash" }
+rekindle-aead  = { path = "../rekindle-aead", features = ["aegis"] }
+rekindle-hash  = { path = "../rekindle-hash", features = ["sha256-mb"] }
+rekindle-transport-buff = { path = "../rekindle-transport-buff", features = ["tokio"] }
+crossbeam       = "0.8"
+crossbeam-utils = "0.8"
 
 tokio       = { workspace = true, features = ["net", "io-util", "sync", "rt", "macros", "time"] }
 tokio-util  = "0.7"
@@ -34,7 +34,7 @@ parking_lot = { workspace = true }
 dashmap     = "6"
 smallvec    = "1"
 zeroize     = { version = "1", features = ["zeroize_derive"] }
-blake3      = "1"
+blake3      = { version = "1", features = ["rayon"] }
 rustix      = { version = "1", features = ["net", "fs", "process"] }
 hex         = "0.4"
 uuid        = { version = "1", features = ["v7", "serde"] }
@@ -42,31 +42,37 @@ tracing     = { workspace = true }
 thiserror   = { workspace = true }
 subtle      = "2"
 static_assertions = "1"
+bitflags = "2"
 libc        = "0.2"
+criterion   = { version = "0.7", optional = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"], optional = true }
+tempfile    = { version = "3", optional = true }
 
-io-uring = { version = "0.7", optional = true }
+[target.'cfg(target_os = "linux")'.dependencies]
+io-uring = "0.7"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros", "rt-multi-thread"] }
-criterion = "0.5"
+criterion = "0.7"
+futures = "0.3"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+walkdir = "2"
+tempfile = "3"
 
 [[bench]]
-name = "throughput"
+name = "v3_crypto_primitives"
+path = "benches/v3/crypto_primitives.rs"
 harness = false
+required-features = ["bench-harness"]
 
 [[bench]]
-name = "socket_bulk"
+name = "v3_socket_e2e"
+path = "benches/v3/socket_e2e.rs"
 harness = false
+required-features = ["bench-harness"]
 
 [[bench]]
-name = "socket_control"
+name = "v3_calibrated_floors"
+path = "benches/v3/calibrated_floors.rs"
 harness = false
-
-[[bench]]
-name = "socket_concurrency"
-harness = false
-
-[[bench]]
-name = "minimal_repro"
-harness = false
+required-features = ["bench-harness"]
