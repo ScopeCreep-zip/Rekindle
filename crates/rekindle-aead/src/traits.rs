@@ -10,9 +10,13 @@ pub enum AeadAlgorithm {
     /// AES-256-GCM — FIPS-validated, ~3.6 GiB/s seal on Coffee Lake.
     #[default]
     Aes256Gcm,
-    /// AEGIS-128L — ~6–8 GiB/s, symmetric encrypt/decrypt, 128-bit key.
-    /// Requires the `aegis` feature flag.
+    /// AEGIS-128L — 8-block (1024-bit) state, 32-byte rate per update.
+    /// 128-bit key. Requires the `aegis` feature flag.
     Aegis128L,
+    /// AEGIS-128X2 — 2×parallel AEGIS-128L, 64-byte rate per update.
+    /// Faster than AEGIS-128L even without VAES, faster with AVX2.
+    /// 128-bit key. Default when `aegis` feature enabled.
+    Aegis128X2,
 }
 
 /// Errors from AEAD operations.
@@ -128,4 +132,30 @@ pub trait BulkAead: Send + Sync {
     ///
     /// Callers slice to `&nonce[..self.nonce_len()]` when passing to AEAD.
     fn build_nonce(&self, counter: u64) -> [u8; 16];
+
+    /// Maximum safe nonce counter value for this algorithm.
+    ///
+    /// The `NonceCounter` aborts the process when the counter reaches
+    /// this limit. The margin below `u64::MAX` accounts for:
+    ///
+    /// 1. **Contention headroom**: `fetch_add(1, Relaxed)` is not
+    ///    linearizable. Under 8-way contention, multiple threads may
+    ///    pass the limit check before any observes the updated value.
+    ///    The margin must exceed the maximum concurrent callers.
+    ///
+    /// 2. **Rekey reservation**: Snow's `Cipher::rekey()` uses
+    ///    `u64::MAX` as a sentinel nonce. The limit must exclude it.
+    ///
+    /// 3. **Abort-trapping runtimes**: In environments where
+    ///    `process::abort()` is trapped (WASM, certain test harnesses),
+    ///    a thread that passed the check before the abort may continue
+    ///    with a nonce near the limit. The margin prevents that thread
+    ///    from reaching `u64::MAX` on subsequent increments.
+    ///
+    /// Default: `u64::MAX - (1 << 20)` (~1M margin). Override in
+    /// algorithm implementations if the nonce space is smaller (e.g.,
+    /// a 32-bit counter sub-range would use `u32::MAX - (1 << 16)`).
+    fn nonce_counter_limit(&self) -> u64 {
+        u64::MAX - (1 << 20)
+    }
 }

@@ -1,0 +1,311 @@
+# rekindle-transport-ipc — Development Lifecycle
+#
+# Complete development, test, benchmark, and diagnostic tooling for the
+# IPC transport crate. Covers compilation, linting, all test tiers,
+# benchmarks, diagnostic runs, and isolated pressure validation.
+#
+# Usage:
+#   mise run ipc                       # Full gate: check + lint + test + pressure
+#   mise run ipc:check                 # Fast compilation check
+#   mise run ipc:lint                  # Clippy lint gate
+#   mise run ipc:test                  # All tests (excludes pressure)
+#   mise run ipc:test:pressure         # Pressure tests isolated (RSS measurement)
+#   mise run ipc:test:pressure:sustained    # Sustained bulk leak detection
+#   mise run ipc:test:pressure:backpressure # Backpressure OOM prevention
+#   mise run ipc:test:e2e              # Socket E2E only (skips pressure)
+#   mise run ipc:bench                 # Criterion benchmarks
+#   mise run ipc:bench:crypto          # Crypto primitives benchmark
+#   mise run ipc:bench:e2e             # Socket E2E benchmark
+#   mise run ipc:diag                  # Diagnostic pressure run (verbose counters)
+#   mise run ipc:diag:pool             # Pool integration diagnostics
+#   mise run ipc:diag:heartbeat        # Heartbeat under bulk saturation
+#   mise run ipc:diag:audit            # Audit chain integrity under load
+#   mise run ipc:doc                   # Build rustdoc
+
+["ipc"]
+description = "Full gate: check + lint + test + pressure (the CI gate)"
+alias = ["i"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "rekindle-transport-ipc — Full CI Gate"
+echo "======================================="
+echo ""
+
+echo "── check ──"
+cargo check -p rekindle-transport-ipc
+echo "✅ compiles"
+echo ""
+
+echo "── lint ──"
+cargo clippy -p rekindle-transport-ipc -- -D warnings
+echo "✅ lint clean"
+echo ""
+
+echo "── test (excludes pressure) ──"
+cargo test -p rekindle-transport-ipc --features bench-harness --test 'v3_*' -- --skip pressure
+echo "✅ tests pass"
+echo ""
+
+echo "── pressure (isolated, sequential) ──"
+cargo test -p rekindle-transport-ipc --features bench-harness --test v3_socket_e2e pressure -- --test-threads=1
+echo "✅ pressure tests pass"
+echo ""
+
+echo "======================================="
+echo " rekindle-transport-ipc: GATE PASS"
+echo "======================================="
+'''
+
+["ipc:check"]
+description = "Fast compilation check"
+alias = ["ic"]
+run = "cargo check -p rekindle-transport-ipc"
+
+["ipc:lint"]
+description = "Clippy lint gate"
+alias = ["il"]
+run = "cargo clippy -p rekindle-transport-ipc -- -D warnings"
+
+["ipc:test"]
+description = "All tests excluding pressure (pressure needs isolation)"
+alias = ["it"]
+run = "cargo test -p rekindle-transport-ipc --features bench-harness --test 'v3_*' -- --skip pressure"
+
+["ipc:test:e2e"]
+description = "Socket E2E tests only (skips pressure)"
+alias = ["ite"]
+run = "cargo test -p rekindle-transport-ipc --features bench-harness --test v3_socket_e2e -- --skip pressure"
+
+["ipc:test:pressure"]
+description = "Pressure tests ISOLATED — sequential execution prevents glibc per-thread arena cross-contamination"
+alias = ["itp"]
+run = "cargo test -p rekindle-transport-ipc --features bench-harness --test v3_socket_e2e pressure -- --test-threads=1"
+
+["ipc:test:pressure:sustained"]
+description = "Sustained bulk transfer memory leak detection — isolated"
+alias = ["itps"]
+run = "cargo test -p rekindle-transport-ipc --features bench-harness --test v3_socket_e2e pressure::sustained_bulk_no_leak_no_stall -- --test-threads=1 --nocapture"
+
+["ipc:test:pressure:backpressure"]
+description = "Backpressure OOM prevention — isolated"
+alias = ["itpb"]
+run = "cargo test -p rekindle-transport-ipc --features bench-harness --test v3_socket_e2e pressure::backpressure_prevents_oom -- --test-threads=1 --nocapture"
+
+["ipc:bench"]
+description = "Workload benchmarks only (crypto primitives + socket E2E). Run ipc:baseline first."
+alias = ["ib"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+unset RUST_LOG
+echo "rekindle-transport-ipc — Workload Benchmarks"
+echo "============================================="
+if [ ! -f target/calibration_floors.jsonl ]; then
+  echo ""
+  echo "⚠  No calibration baseline found."
+  echo "   Run 'mise run ipc:baseline' first (~30 min, one-time)."
+  echo "   Workload results without a baseline cannot be interpreted."
+  echo ""
+fi
+cargo bench -p rekindle-transport-ipc --features bench-harness --bench v3_crypto_primitives
+cargo bench -p rekindle-transport-ipc --features bench-harness --bench v3_socket_e2e
+echo ""
+echo "Workload benchmarks complete."
+echo "Criterion reports: target/criterion/report/index.html"
+'''
+
+["ipc:baseline"]
+description = "Calibrated irreducible floor baseline (~30 min, run once per machine/kernel)"
+alias = ["ibl"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+unset RUST_LOG
+echo "rekindle-transport-ipc — Calibrated Baseline"
+echo "============================================="
+echo "This measures irreducible hardware/OS/runtime floors."
+echo "Run once per machine, kernel version, or hardware change."
+echo ""
+cargo bench -p rekindle-transport-ipc --features bench-harness --bench v3_calibrated_floors -- --save-baseline floors
+echo ""
+echo "╔═══════════════════════════════════════════════════════════════╗"
+echo "║              Baseline Calibration Complete                   ║"
+echo "╠═══════════════════════════════════════════════════════════════╣"
+echo "║                                                             ║"
+echo "║  Calibration data:                                          ║"
+echo "║    target/calibration_floors.jsonl                                  ║"
+echo "║                                                             ║"
+echo "║  Criterion floor reports:                                    ║"
+echo "║    target/criterion/report/index.html                        ║"
+echo "║                                                             ║"
+echo "║  Run 'mise run ipc:bench' for workload benchmarks.           ║"
+echo "║                                                             ║"
+echo "╚═══════════════════════════════════════════════════════════════╝"
+echo ""
+echo "Per-group HTML reports:"
+for d in target/criterion/*/report; do
+  [ -f "$d/index.html" ] && echo "  file://$PWD/$d/index.html"
+done
+echo ""
+'''
+
+["ipc:baseline:check"]
+description = "Re-run floors against saved baseline — detects regressions from kernel/config/hardware changes"
+alias = ["iblc"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+unset RUST_LOG
+echo "rekindle-transport-ipc — Baseline Regression Check"
+echo "==================================================="
+echo "Comparing against saved 'floors' baseline."
+echo "Look for 'Performance has regressed' in criterion output."
+echo ""
+cargo bench -p rekindle-transport-ipc --features bench-harness --bench v3_calibrated_floors -- --baseline-lenient floors
+echo ""
+echo "Regression check complete."
+echo "Criterion reports: target/criterion/report/index.html"
+'''
+
+["ipc:bench:all"]
+description = "Full suite: baseline + workload benchmarks (long run)"
+alias = ["iba"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+mise run ipc:baseline
+mise run ipc:bench
+'''
+
+["ipc:bench:ci"]
+description = "CI benchmark gate — no plots, baseline comparison only"
+alias = ["ibci"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+unset RUST_LOG
+echo "rekindle-transport-ipc — CI Benchmark Gate"
+echo "============================================"
+REKINDLE_BENCH_NO_PLOTS=1 cargo bench -p rekindle-transport-ipc --features bench-harness --bench v3_calibrated_floors -- --baseline-lenient floors
+echo ""
+echo "CI benchmark gate complete."
+echo "Calibration JSONL: target/calibration_floors.jsonl"
+'''
+
+["ipc:bench:cal"]
+description = "Calibrated floor benchmarks (OSC-identified, dependency-gated, validated)"
+alias = ["ibcal"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+unset RUST_LOG
+cargo bench -p rekindle-transport-ipc --features bench-harness --bench v3_calibrated_floors
+echo ""
+echo "Outputs:"
+echo "  Calibration JSONL: target/calibration_floors.jsonl"
+echo "  HTML reports:"
+for d in target/criterion/*/report; do
+  [ -f "$d/index.html" ] && echo "    file://$PWD/$d/index.html"
+done
+'''
+
+["ipc:bench:cal:io"]
+description = "Calibrated floors — io tier only (syscall, send, recv, rtt, throughput, pressure)"
+alias = ["ibcio"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+unset RUST_LOG
+cargo bench -p rekindle-transport-ipc --features bench-harness --bench v3_calibrated_floors -- 'syscall_floor|rtt_bare|socket_floor|socket_buffer'
+echo ""
+echo "Outputs:"
+for d in target/criterion/{syscall_floor,rtt_bare,socket_floor,socket_buffer_pressure}/report; do
+  [ -f "$d/index.html" ] && echo "  file://$PWD/$d/index.html"
+done
+'''
+
+["ipc:bench:cal:mem"]
+description = "Calibrated floors — mem tier only (dram, cache, memcpy, alloc, page_fault, blake3)"
+alias = ["ibcm"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+unset RUST_LOG
+cargo bench -p rekindle-transport-ipc --features bench-harness --bench v3_calibrated_floors -- 'dram_bandwidth|cache_hierarchy|memcpy_floor|allocation_floor|page_fault|blake3_floor'
+echo ""
+echo "Outputs:"
+for d in target/criterion/{dram_bandwidth,cache_hierarchy,memcpy_floor,allocation_floor,page_fault,blake3_floor}/report; do
+  [ -f "$d/index.html" ] && echo "  file://$PWD/$d/index.html"
+done
+'''
+
+["ipc:bench:crypto"]
+description = "Crypto primitives benchmark (AEAD, BLAKE3, envelope/header)"
+alias = ["ibc"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+unset RUST_LOG
+cargo bench -p rekindle-transport-ipc --features bench-harness --bench v3_crypto_primitives
+'''
+
+["ipc:bench:e2e"]
+description = "Socket E2E benchmark (full handshake + transfer latency)"
+alias = ["ibe"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+unset RUST_LOG
+cargo bench -p rekindle-transport-ipc --features bench-harness --bench v3_socket_e2e
+'''
+
+["ipc:test:e2e:concurrent"]
+description = "Concurrent multi-stream saturation — guards audit queue capacity"
+alias = ["itec"]
+run = "cargo test -p rekindle-transport-ipc --features bench-harness --test v3_socket_e2e stream::concurrent_large_streams_saturate_pool -- --nocapture"
+
+["ipc:test:e2e:rotation"]
+description = "Key rotation E2E — proves post-rotation frames decrypt correctly"
+alias = ["iter"]
+run = "cargo test -p rekindle-transport-ipc --features bench-harness --test v3_socket_e2e rotation -- --nocapture"
+
+["ipc:test:e2e:pubsub"]
+description = "Pub/sub E2E — proves subscribe/publish/unsubscribe lifecycle"
+alias = ["itep"]
+run = "cargo test -p rekindle-transport-ipc --features bench-harness --test v3_socket_e2e pubsub -- --nocapture"
+
+["ipc:diag"]
+description = "Diagnostic pressure run — verbose output with pool counters and RSS curve"
+alias = ["id"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+unset RUST_LOG
+echo "rekindle-transport-ipc — Diagnostic Pressure Run"
+echo "=================================================="
+echo "Pool counters, RSS snapshots, and allocation tracking visible."
+echo ""
+RUST_LOG=debug cargo test -p rekindle-transport-ipc --features bench-harness --test v3_socket_e2e pressure -- --test-threads=1 --nocapture 2>&1 | grep -E "(transfer|PIPELINE|wire_pool|RecvBufPool|RSS|growth|DIAG|pool)"
+'''
+
+["ipc:diag:pool"]
+description = "Pool integration diagnostics — validates pool cycling under load"
+alias = ["idp"]
+run = "cargo test -p rekindle-transport-ipc --features bench-harness --test v3_socket_e2e pool_integration -- --nocapture"
+
+["ipc:diag:heartbeat"]
+description = "Heartbeat under bulk saturation — proves control loop is not starved"
+alias = ["idh"]
+run = "cargo test -p rekindle-transport-ipc --features bench-harness --test v3_socket_e2e heartbeat -- --nocapture"
+
+["ipc:diag:audit"]
+description = "Audit chain integrity under load — proves no gaps in hash chain"
+alias = ["ida"]
+run = "cargo test -p rekindle-transport-ipc --features bench-harness --test v3_socket_e2e audit -- --nocapture"
+
+["ipc:doc"]
+description = "Build rustdoc"
+alias = ["idoc"]
+run = "cargo doc -p rekindle-transport-ipc --no-deps --document-private-items"

@@ -24,6 +24,28 @@ pub mod aes_gcm;
 #[allow(unsafe_code)]
 pub mod aegis128l;
 
+#[cfg(feature = "aegis")]
+#[allow(unsafe_code)]
+pub mod aegis128x2;
+
+/// Shared one-time initialization for all AEGIS variants.
+/// aegis_init() is NOT thread-safe per libaegis docs — a single
+/// Once guards all variants against concurrent init.
+#[cfg(feature = "aegis")]
+#[allow(unsafe_code)]
+pub(crate) mod aegis_init {
+    static INIT: std::sync::Once = std::sync::Once::new();
+    extern "C" { fn aegis_init() -> i32; }
+    pub fn ensure_init() {
+        INIT.call_once(|| {
+            // SAFETY: aegis_init() is an idempotent library initializer with no
+            // preconditions. Called exactly once via std::sync::Once.
+            let rc = unsafe { aegis_init() };
+            assert_eq!(rc, 0, "aegis_init failed");
+        });
+    }
+}
+
 pub use traits::{AeadAlgorithm, AeadError, BulkAead};
 
 #[cfg(test)]

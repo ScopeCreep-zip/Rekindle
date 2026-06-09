@@ -101,3 +101,8 @@ unimplemented = "deny"                   # no unimplemented!() in shipped code
 undocumented-unsafe-blocks = "deny"      # every unsafe block needs // SAFETY: comment
 print-stdout = "warn"                    # prefer tracing over println!
 print-stderr = "warn"                    # prefer tracing over eprintln!
+
+# Local patch for violin plot axis range fix — will move to git fork for PR.
+# See: bheisler/criterion.rs src/plot/{gnuplot_backend,plotters_backend}/summary.rs
+[patch.crates-io]
+criterion = { path = "../../bheisler/criterion.rs" }

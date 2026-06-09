@@ -6,6 +6,7 @@
 //! These are the v2.0 types for flat SMPL governance. They do NOT re-export
 //! v1.0 types from rekindle-protocol — those are replaced, not wrapped.
 
+pub mod daemon;
 pub mod analytics;
 pub mod attachment;
 pub mod channel;

@@ -1860,7 +1860,7 @@ dependencies = [
  "cast",
  "ciborium",
  "clap 4.6.1",
- "criterion-plot",
+ "criterion-plot 0.5.0",
  "futures",
  "is-terminal",
  "itertools 0.10.5",
@@ -1879,6 +1879,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "criterion"
+version = "0.7.0"
+dependencies = [
+ "anes",
+ "cast",
+ "ciborium",
+ "clap 4.6.1",
+ "criterion-plot 0.7.0",
+ "itertools 0.13.0",
+ "num-traits",
+ "oorandom",
+ "plotters",
+ "rayon",
+ "regex",
+ "serde",
+ "serde_json",
+ "tinytemplate",
+ "walkdir",
+]
+
+[[package]]
 name = "criterion-plot"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1886,6 +1907,14 @@ checksum = "6b50826342786a51a89e2da3a28f1c32b06e387201bc2d19791f622c673706b1"
 dependencies = [
  "cast",
  "itertools 0.10.5",
+]
+
+[[package]]
+name = "criterion-plot"
+version = "0.7.0"
+dependencies = [
+ "cast",
+ "itertools 0.13.0",
 ]
 
 [[package]]
@@ -7852,7 +7881,7 @@ version = "0.1.0"
 dependencies = [
  "aws-lc-rs",
  "cc",
- "criterion",
+ "criterion 0.5.1",
  "serde",
  "static_assertions",
  "zeroize",
@@ -8078,7 +8107,7 @@ dependencies = [
  "aws-lc-rs",
  "blake3",
  "cc",
- "criterion",
+ "criterion 0.5.1",
  "nasm-rs",
  "static_assertions",
 ]
@@ -8105,7 +8134,7 @@ dependencies = [
  "aws-lc-rs",
  "blake3",
  "bytes 1.11.1",
- "criterion",
+ "criterion 0.5.1",
  "crossbeam",
  "dashmap",
  "ed25519-dalek",
@@ -8278,7 +8307,7 @@ dependencies = [
 name = "rekindle-transport-buff"
 version = "0.1.0"
 dependencies = [
- "criterion",
+ "criterion 0.5.1",
  "crossbeam-queue",
  "crossbeam-utils",
  "loom",
@@ -8295,7 +8324,7 @@ dependencies = [
  "bitflags 2.11.1",
  "blake3",
  "bytes 1.11.1",
- "criterion",
+ "criterion 0.7.0",
  "crossbeam",
  "crossbeam-utils",
  "dashmap",
@@ -8308,6 +8337,7 @@ dependencies = [
  "rayon",
  "rekindle-aead",
  "rekindle-hash",
+ "rekindle-transport-buff",
  "rekindle-types",
  "rustix 1.1.4",
  "serde",
@@ -8361,6 +8391,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+ "toml 0.8.2",
 ]
 
 [[package]]
@@ -8384,7 +8415,7 @@ dependencies = [
  "bincode",
  "bytes 1.11.1",
  "cpal",
- "criterion",
+ "criterion 0.7.0",
  "dasp_sample",
  "ed25519-dalek",
  "nnnoiseless",

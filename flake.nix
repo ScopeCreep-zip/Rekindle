@@ -20,6 +20,7 @@
           nasm
           libsodium.dev
         ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
+          linuxPackages.perf
           alsa-lib.dev
           libopus.dev
           libseccomp.dev

@@ -54,8 +54,6 @@ fn ffi_mut_ptr(slice: &mut [u8]) -> *mut u8 {
 // ── libaegis FFI declarations ──────────────────────────────────────
 
 extern "C" {
-    fn aegis_init() -> i32;
-
     fn aegis128l_encrypt_detached(
         c: *mut u8,
         mac: *mut u8,
@@ -81,16 +79,11 @@ extern "C" {
     ) -> i32;
 }
 
-/// One-time runtime initialization. Detects CPU features (AES-NI)
-/// and selects the optimal code path. Safe to call multiple times.
+/// One-time runtime initialization via shared crate-level Once.
+/// aegis_init() is NOT thread-safe — a single Once in crate::aegis_init
+/// guards all AEGIS variants against concurrent initialization.
 fn ensure_init() {
-    static INIT: std::sync::Once = std::sync::Once::new();
-    INIT.call_once(|| {
-        // SAFETY: aegis_init() initializes CPU feature detection.
-        // It is thread-safe and idempotent. Returns 0 on success.
-        let rc = unsafe { aegis_init() };
-        assert_eq!(rc, 0, "aegis_init failed — AES-NI may not be available");
-    });
+    crate::aegis_init::ensure_init();
 }
 
 /// AEGIS-128L AEAD key.

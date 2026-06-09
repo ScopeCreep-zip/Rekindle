@@ -265,15 +265,12 @@ impl SubscriptionFilter {
         // Community scope check
         if let Some(ref scope) = self.community_scope {
             match event.community() {
-                Some(community) => {
-                    if community != scope {
-                        return false;
-                    }
+                Some(community) if community != scope => {
+                    return false;
                 }
-                None => {
-                    // Global events (friend, network, unread) pass community filters
-                    // — they're relevant regardless of community scope.
-                }
+                // Global events (friend, network, unread) pass community filters
+                // — they're relevant regardless of community scope.
+                _ => {}
             }
         }
 
