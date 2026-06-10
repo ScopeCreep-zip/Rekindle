@@ -5,6 +5,7 @@ import { voiceState, setVoiceState } from "../stores/voice.store";
 import { communityState } from "../stores/community.store";
 import { friendsState, setFriendsState } from "../stores/friends.store";
 import { addToast } from "../stores/toast.store";
+import { probeAndReportLocalVideoCapabilities } from "./video.handlers";
 
 let voiceEventUnlisten: UnlistenFn | null = null;
 
@@ -81,6 +82,17 @@ export async function initVoiceEventListener(): Promise<UnlistenFn> {
 
 export async function handleJoinVoice(channelId: string, communityId?: string): Promise<void> {
   try {
+    // Lazy one-shot WebCodecs probe — first call context is the right
+    // time to learn the WebView's encoder/decoder reach. Deliberately
+    // NOT awaited: caps that land after LocalJoined recompute + re-emit
+    // the session config, and the probe must never delay joining audio.
+    // It cannot run earlier (login path): a cold WebCodecs call aborts
+    // the web process on WebKitGTK 2.52.3 + GStreamer 1.24 (Ubuntu /
+    // Pop!_OS 24.04) — see handlers/video.handlers.ts.
+    probeAndReportLocalVideoCapabilities().catch((e) => {
+      console.error("WebCodecs capability probe failed:", e);
+    });
+
     // Subscribe BEFORE the command fires so the LocalJoined event the backend
     // emits during start_session reaches us — late subscription would miss it.
     if (!voiceEventUnlisten) {

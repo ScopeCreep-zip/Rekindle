@@ -1,8 +1,22 @@
-// Phase B / C — one-shot WebCodecs probe matrix. Runs at app startup
-// (BuddyListWindow.onMount) and reports the WebView's real encoder +
-// decoder reach to the backend. The backend's negotiator then picks a
-// `SessionVideoConfig` against the actual capability set instead of the
-// conservative `MediaCapabilities::interim_default()` placeholder.
+// Phase B / C — one-shot WebCodecs probe matrix. Runs lazily when the
+// first voice/call session is joined (handleJoinVoice) and reports the
+// WebView's real encoder + decoder reach to the backend. The backend's
+// negotiator then picks a `SessionVideoConfig` against the actual
+// capability set instead of the conservative
+// `MediaCapabilities::interim_default()` placeholder; caps that land
+// after LocalJoined recompute + re-emit the config, so lazy reporting
+// is fully supported.
+//
+// The probe must NEVER run on the login path. WebKitGTK 2.52.3 (the
+// 2026-05 Ubuntu/Pop!_OS 24.04 security backport, built against
+// GStreamer 1.24) has an initialization-order bug: calling
+// `VideoEncoder.isConfigSupported` as the FIRST media API in a fresh
+// web process registers webkit's encoder element before GStreamer is
+// initialized, corrupting GType registration and ABORTING the whole
+// WebKitWebProcess ("GStreamer:ERROR gst_register_core_elements") —
+// which killed the UI right after login when this probe ran from
+// BuddyListWindow.onMount. Touching any other media API first
+// (enumerateDevices) initializes GStreamer properly; see warmup below.
 //
 // No fallback paths: if the WebView cannot encode or decode VP9 the
 // app refuses to run video. WKWebView (macOS) and WebKitGTK (Linux)
@@ -31,6 +45,19 @@ let probeRan = false;
 export async function probeAndReportLocalVideoCapabilities(): Promise<void> {
   if (probeRan) return;
   probeRan = true;
+
+  // Warm the WebView's media stack before the first WebCodecs call.
+  // On WebKitGTK 2.52.3 + GStreamer 1.24 (Ubuntu/Pop!_OS 24.04
+  // security backport) a cold `isConfigSupported` aborts the web
+  // process (init-order bug, see header). enumerateDevices is
+  // side-effect-free everywhere else (no permission prompt, labels
+  // anonymized) and forces GStreamer to initialize first.
+  try {
+    await navigator.mediaDevices.enumerateDevices();
+  } catch {
+    // No media devices / API unavailable — the probes below decide
+    // whether video is possible; warming is best-effort.
+  }
 
   const [encoderBaseline, encoderL1T2, decoderBaseline, decoderOptimizeLatency] =
     await Promise.all([

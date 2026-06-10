@@ -9,6 +9,7 @@ import type {
 import { subscribeCommunityEvents } from "../../../ipc/channels";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { setVoiceState, voiceState } from "../../../stores/voice.store";
+import { probeAndReportLocalVideoCapabilities } from "../../../handlers/video.handlers";
 import { settingsState } from "../../../stores/settings.store";
 import { videoSessionConfigFor } from "../../../stores/video.store";
 import {
@@ -105,6 +106,16 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
   // HTTP invoke bridge — leaving the rest of the panel inert there.
   onMount(() => {
     const isE2E = import.meta.env.VITE_E2E === "true";
+    // Idempotent WebCodecs probe (no-op if handleJoinVoice already ran
+    // it). Guarantees the media stack is warm before this panel's
+    // first `new VideoDecoder` — a cold WebCodecs call aborts the web
+    // process on WebKitGTK 2.52.3 + GStreamer 1.24 (Ubuntu/Pop!_OS
+    // 24.04); see handlers/video.handlers.ts.
+    if (!isE2E) {
+      probeAndReportLocalVideoCapabilities().catch((e) => {
+        console.error("WebCodecs capability probe failed:", e);
+      });
+    }
     // One rAF clock paces playout for all remotes. E2E has no decoders/frames,
     // so the loop is harmless there (remotes() stays empty).
     playoutRaf = requestAnimationFrame(playoutPump);
