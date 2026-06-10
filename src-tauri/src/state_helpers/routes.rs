@@ -18,15 +18,47 @@ pub fn friend_for_dht_key(state: &Arc<AppState>, dht_key: &str) -> Option<String
 
 /// Cache a route blob for a peer.
 pub fn cache_peer_route(state: &Arc<AppState>, peer_key: &str, route_blob: Vec<u8>) {
-    let api = veilid_api(state);
-    let mut dht_mgr = state.dht_manager.write();
-    if let (Some(api), Some(mgr)) = (api, dht_mgr.as_mut()) {
-        mgr.manager.cache_route(&api, peer_key, route_blob.clone());
-        let mut routing_mgr = state.routing_manager.write();
-        if let Some(handle) = routing_mgr.as_mut() {
-            handle
-                .peer_route_cache
-                .insert_at(peer_key.to_string(), route_blob, Instant::now());
+    {
+        let api = veilid_api(state);
+        let mut dht_mgr = state.dht_manager.write();
+        if let (Some(api), Some(mgr)) = (api, dht_mgr.as_mut()) {
+            mgr.manager.cache_route(&api, peer_key, route_blob.clone());
+            let mut routing_mgr = state.routing_manager.write();
+            if let Some(handle) = routing_mgr.as_mut() {
+                handle.peer_route_cache.insert_at(
+                    peer_key.to_string(),
+                    route_blob.clone(),
+                    Instant::now(),
+                );
+            }
+        }
+    }
+
+    // 1:1-call healing: call signaling carries no route blobs, so the
+    // friend-route machinery (profile subkey-6 watch, conversation
+    // header sync, mailbox) is the ONLY source of fresh routes for DM
+    // call media. If a call with this peer is live, push the fresh
+    // blob into the bound voice transport's single legacy "default"
+    // roster slot so frames survive the peer's route rotation.
+    let in_call = state
+        .active_calls
+        .list_all()
+        .iter()
+        .any(|c| c.peer_pubkey == peer_key);
+    if in_call {
+        let transport = {
+            let ve = state.voice_engine.lock();
+            ve.as_ref()
+                .filter(|h| h.community_id.is_none())
+                .map(|h| h.transport.clone())
+        };
+        if let Some(transport) = transport {
+            tauri::async_runtime::spawn(async move {
+                transport
+                    .lock()
+                    .await
+                    .refresh_peer_route("default", &route_blob);
+            });
         }
     }
 }

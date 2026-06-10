@@ -243,6 +243,27 @@ impl VoiceTransport {
             .insert(pseudonym_key.to_string(), route_blob.to_vec());
     }
 
+    /// Refresh a peer's route blob ONLY if they are already in the
+    /// roster. Healing path for the gossip re-resolve: a successful
+    /// DHT re-resolve proves the VoiceJoin-era blob is stale, and
+    /// frame sends have no re-resolve of their own. Gossip peers who
+    /// are not in this channel must never be added to the media plane,
+    /// hence no insert.
+    pub fn refresh_peer_route(&mut self, pseudonym_key: &str, route_blob: &[u8]) -> bool {
+        match self.peers.get_mut(pseudonym_key) {
+            Some(existing) => {
+                *existing = route_blob.to_vec();
+                tracing::info!(
+                    channel = %self.channel_id,
+                    peer = %pseudonym_key,
+                    "refreshed voice peer route from re-resolve"
+                );
+                true
+            }
+            None => false,
+        }
+    }
+
     /// Remove a peer from the voice mesh.
     pub fn remove_peer(&mut self, pseudonym_key: &str) {
         if self.peers.remove(pseudonym_key).is_some() {

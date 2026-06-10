@@ -103,23 +103,43 @@ impl GossipDeps for GossipAdapter {
         status: &str,
         route_blob: Vec<u8>,
     ) {
-        let mut communities = self.state.communities.write();
-        if let Some(community) = communities.get_mut(community_id) {
-            if let Some(ref mut gossip) = community.gossip {
-                let now = rekindle_utils::timestamp_secs();
-                let member = OnlineMember {
-                    route_blob,
-                    status: status.to_string(),
-                    last_seen: now,
-                    ..Default::default()
-                };
-                gossip
-                    .online_members
-                    .insert(peer_key.to_string(), member.clone());
-                if gossip.peers.contains_key(peer_key) {
-                    gossip.peers.insert(peer_key.to_string(), member);
+        {
+            let mut communities = self.state.communities.write();
+            if let Some(community) = communities.get_mut(community_id) {
+                if let Some(ref mut gossip) = community.gossip {
+                    let now = rekindle_utils::timestamp_secs();
+                    let member = OnlineMember {
+                        route_blob: route_blob.clone(),
+                        status: status.to_string(),
+                        last_seen: now,
+                        ..Default::default()
+                    };
+                    gossip
+                        .online_members
+                        .insert(peer_key.to_string(), member.clone());
+                    if gossip.peers.contains_key(peer_key) {
+                        gossip.peers.insert(peer_key.to_string(), member);
+                    }
                 }
             }
+        }
+
+        // A successful re-resolve proves the peer's advertised voice
+        // route is stale too. Heal the bound voice transport's roster
+        // entry (refresh-only — never adds gossip peers to the media
+        // plane) so frame sends, which have no re-resolve of their
+        // own, stop failing against the VoiceJoin-era blob.
+        let transport = {
+            let ve = self.state.voice_engine.lock();
+            ve.as_ref()
+                .filter(|h| h.community_id.as_deref() == Some(community_id))
+                .map(|h| h.transport.clone())
+        };
+        if let Some(transport) = transport {
+            let pk = peer_key.to_string();
+            tauri::async_runtime::spawn(async move {
+                transport.lock().await.refresh_peer_route(&pk, &route_blob);
+            });
         }
     }
 

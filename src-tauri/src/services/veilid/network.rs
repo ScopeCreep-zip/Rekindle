@@ -377,6 +377,10 @@ pub(crate) async fn reallocate_private_route(app_handle: &AppHandle, state: &Arc
         }
     }
 
+    // Peers' voice rosters hold the blob we advertised at VoiceJoin —
+    // re-announce so directed channel sends to us survive the rotation.
+    crate::services::voice_adapter::reannounce_voice_route(state);
+
     tracing::info!("re-allocated private route (make-before-break, old route held one cycle)");
 }
 
@@ -431,6 +435,10 @@ pub(crate) async fn allocate_fresh_private_route(app_handle: &AppHandle, state: 
             }
         }
     }
+
+    // Dead-route recovery is the worst case for voice peers — the blob
+    // they hold died with the route. Re-announce immediately.
+    crate::services::voice_adapter::reannounce_voice_route(state);
 
     tracing::info!("re-allocated private route");
 }

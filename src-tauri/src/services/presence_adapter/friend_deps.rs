@@ -86,12 +86,10 @@ impl FriendPresenceDeps for PresenceAdapter {
     }
 
     fn cache_route_blob(&self, friend_key: &str, blob: Vec<u8>) {
-        if let Some(api) = state_helpers::veilid_api(&self.state) {
-            let mut dht_mgr = self.state.dht_manager.write();
-            if let Some(mgr) = dht_mgr.as_mut() {
-                mgr.manager.cache_route(&api, friend_key, blob);
-            }
-        }
+        // Single chokepoint for fresh friend routes: also fills the
+        // peer_route_cache (this path previously skipped it) and heals
+        // an active 1:1 call's voice roster with the new blob.
+        state_helpers::cache_peer_route(&self.state, friend_key, blob);
     }
 
     fn track_open_record(&self, dht_record_key: &str) {

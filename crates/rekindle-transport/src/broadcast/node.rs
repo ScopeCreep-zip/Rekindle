@@ -72,14 +72,15 @@ impl TransportNode {
         );
         veilid_config.protected_store.allow_insecure_fallback =
             config.allow_insecure_protected_store;
-        // Inbound private routes from `new_private_route()` use this
-        // config value (veilid default: 1 hop). Pin it to the anonymity
-        // floor so the RECEIVE path is as private as the 3-hop Safe
-        // send path — and so reply safety specs (which inherit the
-        // inbound route's hop count) match the tested 3-hop safety-route
-        // pool instead of falling into fresh allocation, where
-        // veilid-core 0.5.2 bails on `safety_spec.preferred_route`.
-        veilid_config.network.rpc.default_route_hop_count = ANONYMITY_HOP_FLOOR;
+        // `network.rpc.default_route_hop_count` stays at the veilid
+        // default (1): compiled paths are safety(3)+private(1) = 4 hops,
+        // at/above the architecture §8 "Compiled Route = Safety +
+        // Private" 3-hop target. Pinning inbound routes to 3 hops was
+        // tried and reverted — `new_private_route()` round-trip TESTS
+        // each allocation, so 3-hop tripled the relays that must all
+        // answer (allocations flapped) and put 6 hops under every voice
+        // frame. Reply-path safety for inbound RPCs is handled by the
+        // one-cycle route-release grace instead.
 
         let (update_tx, update_rx) = mpsc::channel::<VeilidUpdate>(4096);
         let update_callback: veilid_core::UpdateCallback = Arc::new(move |update| {

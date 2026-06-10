@@ -92,6 +92,23 @@ pub fn advertise_media_capabilities(
     io_helpers::broadcast_media_capabilities_impl(state, community_id, channel_id)
 }
 
+/// Re-broadcast VoiceJoin carrying the refreshed route blob. Free-fn
+/// facade for the route-refresh / dead-route recovery paths
+/// (`services/veilid/network.rs`) — no-op when no community voice
+/// session is bound.
+pub fn reannounce_voice_route(state: &Arc<AppState>) {
+    let Some(app_handle) = state.app_handle.read().clone() else {
+        return;
+    };
+    let Some(pool) = tauri::Manager::try_state::<DbPool>(&app_handle) else {
+        return;
+    };
+    let pool = pool.inner().clone();
+    let adapter = VoiceAdapter::new(Arc::clone(state), app_handle, pool);
+    let deps: Arc<dyn VoiceSessionDeps> = adapter;
+    rekindle_voice::session::reannounce_voice_route(&deps);
+}
+
 /// Tear down voice with the given scope. Wraps adapter + crate call.
 /// Takes `&AppState` (not `&Arc<AppState>`) for caller compat — the
 /// callers in cleanup.rs / message_service.rs have a borrow only.

@@ -273,8 +273,16 @@ async fn sync_single_conversation(
     // Read header and cache route blob + profile
     match record.read_header().await {
         Ok(header) => {
-            // Cache route blob
-            if !header.route_blob.is_empty() {
+            // The header's route blob is a snapshot from conversation
+            // creation — the rotation path re-publishes profile
+            // subkey 6 + mailbox, never conversation headers — so it
+            // is a last-resort fallback only. It must not override
+            // fresher route knowledge from the subkey-6 watch
+            // (cache_peer_route also heals an active call's voice
+            // roster, which a stale blob would poison every tick).
+            if !header.route_blob.is_empty()
+                && state_helpers::cached_route_blob(state, friend_key).is_none()
+            {
                 state_helpers::cache_peer_route(state, friend_key, header.route_blob);
             }
 

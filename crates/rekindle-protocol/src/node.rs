@@ -57,22 +57,25 @@ impl RekindleNode {
         );
 
         // 1. Build VeilidConfig from our NodeConfig
-        let mut veilid_config = VeilidConfig::new(
+        //
+        // `network.rpc.default_route_hop_count` stays at the veilid
+        // default (1): inbound private routes are 1-hop, the Safe send
+        // side is 3-hop, so every compiled path is safety(3)+private(1)
+        // = 4 hops — at/above the architecture §8 "Compiled Route =
+        // Safety + Private" 3-hop target. Pinning inbound routes to 3
+        // hops was tried and reverted: `new_private_route()` round-trip
+        // TESTS each allocation, so 3-hop tripled the relays that must
+        // all answer (allocations flapped, presence rows published
+        // empty blobs) and put 6 hops under every voice frame — voice
+        // rosters stopped forming. Reply-path safety for inbound RPCs
+        // is handled by the one-cycle route-release grace instead.
+        let veilid_config = VeilidConfig::new(
             &config.app_namespace,     // program_name
             "com",                     // organization
             &config.qualifier,         // qualifier
             Some(&config.storage_dir), // storage_directory override
             None,                      // config_directory (use default)
         );
-        // Inbound private routes from `new_private_route()` use this
-        // config value (veilid default: 1 hop). Pin it to the anonymity
-        // floor so the RECEIVE path is as private as the 3-hop Safe
-        // send path — and so reply safety specs (which inherit the
-        // inbound route's hop count) match the tested 3-hop safety-route
-        // pool instead of falling into fresh allocation, where
-        // veilid-core 0.5.2 bails on `safety_spec.preferred_route`.
-        veilid_config.network.rpc.default_route_hop_count =
-            rekindle_types::config::ANONYMITY_HOP_FLOOR;
 
         // 2. Create an mpsc channel for VeilidUpdate events
         let (update_tx, update_rx) = mpsc::channel::<VeilidUpdate>(4096);

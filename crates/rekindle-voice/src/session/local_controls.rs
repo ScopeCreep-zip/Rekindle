@@ -53,6 +53,43 @@ pub async fn join_voice_channel<D: VoiceSessionDeps + ?Sized>(
     Ok(())
 }
 
+/// Re-broadcast VoiceJoin carrying the CURRENT route blob. The route
+/// refresh path calls this after installing a new private route:
+/// peers' voice rosters hold the blob we advertised at join time
+/// (authoritative for voice — see `VoiceTransport::peer_entries`), so
+/// without a re-announce every directed send to us starts failing once
+/// the replaced route's grace cycle expires. Architecture §9 — the
+/// refresh step includes presence re-announcement. Receivers treat a
+/// repeat VoiceJoin as a roster upsert (`voice_join_apply` →
+/// `add_peer`), and the gossip dedup key for Control payloads is a
+/// full content hash, so the new-blob envelope is never dropped as a
+/// duplicate. No-op when not in a community voice channel.
+pub fn reannounce_voice_route<D: VoiceSessionDeps + ?Sized>(deps: &Arc<D>) {
+    let (channel_id, community_id) = deps.active_channel_info();
+    let Some(cid) = community_id else {
+        return;
+    };
+    let route_blob = deps.our_route_blob();
+    if route_blob.is_empty() {
+        tracing::warn!(
+            community = %cid,
+            channel = %channel_id,
+            "voice route re-announce skipped — no route blob available",
+        );
+        return;
+    }
+    let envelope = CommunityEnvelope::Control(ControlPayload::VoiceJoin {
+        channel_id: channel_id.clone(),
+        route_blob,
+    });
+    deps.send_community_envelope(&cid, &envelope);
+    tracing::info!(
+        community = %cid,
+        channel = %channel_id,
+        "re-announced voice route after route refresh",
+    );
+}
+
 /// User clicked Leave. Reads the current channel/community off the
 /// engine, broadcasts VoiceLeave (community channels only),
 /// tears down the voice session, emits UserLeft.
