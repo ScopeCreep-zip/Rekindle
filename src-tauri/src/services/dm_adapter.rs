@@ -295,6 +295,7 @@ impl DmDeps for DmAdapter {
                 stream_id,
                 frame_seq,
                 keyframe,
+                codec,
                 timestamp,
                 data,
             } => {
@@ -309,6 +310,7 @@ impl DmDeps for DmAdapter {
                         stream_id_hex: hex::encode(stream_id),
                         frame_seq,
                         keyframe,
+                        codec,
                         timestamp,
                         encoded_payload_b64: base64::engine::general_purpose::STANDARD
                             .encode(&data),

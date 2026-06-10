@@ -520,6 +520,10 @@ impl CallRuntime {
             // derived); a recovered Outgoing/Incoming call hasn't
             // accepted yet, so call_key is None either way.
             call_key: None,
+            // Peer caps aren't persisted either — a recovered pre-accept
+            // call re-learns them from the CallAccept; senders treat
+            // empty as the VP9 floor.
+            peer_video_decode_codecs: Vec::new(),
         };
         self.inner.state_machine.lock().rehydrate(state);
 

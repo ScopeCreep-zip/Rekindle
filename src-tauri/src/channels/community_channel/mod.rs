@@ -195,11 +195,12 @@ pub enum CommunityEvent {
         window_secs: u8,
         loss_q8: u8,
     },
-    /// Architecture §10.6 line 4084 — peer's decode capabilities.
+    /// Architecture §10.6 line 4084 — peer's capability advertisement,
+    /// direction-split into encode + decode codec lists (WebView
+    /// engines are asymmetric; see `rekindle_video::MediaCapabilities`).
     /// Typed codec / scalability-mode lists let the frontend store
     /// reconcile against the typed `Codec` / `ScalabilityMode` enums
-    /// without parsing strings (Phase A schema break — no legacy
-    /// `Vec<String>` shape on the JSON-over-Tauri surface).
+    /// without parsing strings.
     #[serde(rename_all = "camelCase")]
     VideoMediaCapabilities {
         community_id: String,
@@ -207,7 +208,8 @@ pub enum CommunityEvent {
         channel_id: String,
         max_pixel_count: u32,
         max_fps: u8,
-        codecs: Vec<Codec>,
+        encode_codecs: Vec<Codec>,
+        decode_codecs: Vec<Codec>,
         supports_optimize_for_latency: bool,
         supported_scalability_modes: Vec<ScalabilityMode>,
     },
@@ -223,6 +225,19 @@ pub enum CommunityEvent {
         community_id: String,
         channel_id: String,
         config: SessionVideoConfig,
+    },
+    /// Phase 3 — the negotiator found NO encoder codec every peer can
+    /// decode (`negotiate_session_config` returned `None` with a
+    /// non-empty local encode set). Emitted once per
+    /// compatible→incompatible transition (latched — membership churn
+    /// while incompatible does not re-emit). `peers` lists the
+    /// pseudonyms whose decode sets blocked every local encode codec.
+    /// Voice is unaffected; the frontend surfaces a toast.
+    #[serde(rename_all = "camelCase")]
+    VideoCodecIncompatible {
+        community_id: String,
+        channel_id: String,
+        peers: Vec<String>,
     },
     /// Phase F — a gossiped video envelope failed signature or shape
     /// verification at the receive boundary. Surfaced to the UI so the

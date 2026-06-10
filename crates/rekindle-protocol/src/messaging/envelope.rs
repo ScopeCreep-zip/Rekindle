@@ -219,6 +219,14 @@ pub enum MessagePayload {
         /// Unix milliseconds when the ring should be considered missed.
         /// Initiator sets `now + 30_000`. Each side enforces locally.
         expires_at_ms: u64,
+        /// Phase 5 — codecs the initiator's WebView can DECODE
+        /// (preference-ordered wire strings: "vp9" / "vp8" / "h264").
+        /// The acceptor's video sender intersects its encode set
+        /// against this list. `serde(default)` covers an invite sent
+        /// before the initiator's probe ran — receivers treat empty as
+        /// "unknown, assume vp9 floor".
+        #[serde(default)]
+        video_decode_codecs: Vec<String>,
     },
     /// Wave 13 — optional alerting ack: "I got the invite, I'm ringing
     /// the user now." Lets the caller's UI distinguish "in transit"
@@ -234,6 +242,11 @@ pub enum MessagePayload {
     CallAccept {
         call_id: String,
         acceptor_x25519_pub: Vec<u8>,
+        /// Phase 5 — codecs the acceptor's WebView can DECODE (mirror
+        /// of `CallInvite::video_decode_codecs`, same wire strings and
+        /// empty-means-unknown semantics).
+        #[serde(default)]
+        video_decode_codecs: Vec<String>,
     },
     /// Wave 13 — receiver's explicit decline (was an inline RPC reply;
     /// now standalone `app_message`).
@@ -440,8 +453,12 @@ pub enum MessagePayload {
         /// Total fragments for this frame. Receivers wait until they
         /// have all `fragment_count` to reassemble.
         fragment_count: u16,
-        /// True for VP9 keyframes (decoder bootstrapping).
+        /// True for keyframes (decoder bootstrapping).
         keyframe: bool,
+        /// Codec wire string ("vp9" | "vp8" | "h264") — the receiver
+        /// configures its decoder from this tag (RTP payload-type
+        /// analog). Authenticity comes from the Signal session layer.
+        codec: String,
         /// Encoder-provided presentation timestamp.
         timestamp: u32,
         /// VP9 chunk bytes (no nested encryption — Signal layer
@@ -599,6 +616,82 @@ pub fn verify_invite_blob(blob: &InviteBlob) -> Result<(), String> {
                 format!("invalid invite signature: {e}")
             }
         })
+}
+
+#[cfg(test)]
+mod call_payload_tests {
+    use super::*;
+
+    /// Phase 5 — `video_decode_codecs` rides CallInvite/CallAccept and
+    /// round-trips through the JSON wire form.
+    #[test]
+    fn call_invite_and_accept_decode_codecs_roundtrip() {
+        let invite = MessagePayload::CallInvite {
+            call_id: "c1".into(),
+            offer_kind: 1,
+            initiator_pubkey: "ab".repeat(32),
+            initiator_x25519_pub: vec![7u8; 32],
+            expires_at_ms: 123,
+            video_decode_codecs: vec!["vp9".into(), "h264".into()],
+        };
+        let json = serde_json::to_string(&invite).unwrap();
+        let back: MessagePayload = serde_json::from_str(&json).unwrap();
+        let MessagePayload::CallInvite {
+            video_decode_codecs,
+            ..
+        } = back
+        else {
+            panic!("wrong variant");
+        };
+        assert_eq!(video_decode_codecs, vec!["vp9", "h264"]);
+
+        let accept = MessagePayload::CallAccept {
+            call_id: "c1".into(),
+            acceptor_x25519_pub: vec![9u8; 32],
+            video_decode_codecs: vec!["vp8".into()],
+        };
+        let json = serde_json::to_string(&accept).unwrap();
+        let back: MessagePayload = serde_json::from_str(&json).unwrap();
+        let MessagePayload::CallAccept {
+            video_decode_codecs,
+            ..
+        } = back
+        else {
+            panic!("wrong variant");
+        };
+        assert_eq!(video_decode_codecs, vec!["vp8"]);
+    }
+
+    /// `serde(default)` — an invite serialized before the field existed
+    /// (or from a sender whose probe hadn't run) deserializes to an
+    /// empty list, which senders treat as the VP9 floor.
+    #[test]
+    fn call_payloads_missing_decode_codecs_default_empty() {
+        let invite_json = format!(
+            r#"{{"type":"CallInvite","call_id":"c1","offer_kind":0,"initiator_pubkey":"{}","initiator_x25519_pub":[1,2],"expires_at_ms":5}}"#,
+            "ab".repeat(32)
+        );
+        let back: MessagePayload = serde_json::from_str(&invite_json).unwrap();
+        let MessagePayload::CallInvite {
+            video_decode_codecs,
+            ..
+        } = back
+        else {
+            panic!("wrong variant");
+        };
+        assert!(video_decode_codecs.is_empty());
+
+        let accept_json = r#"{"type":"CallAccept","call_id":"c1","acceptor_x25519_pub":[1,2]}"#;
+        let back: MessagePayload = serde_json::from_str(accept_json).unwrap();
+        let MessagePayload::CallAccept {
+            video_decode_codecs,
+            ..
+        } = back
+        else {
+            panic!("wrong variant");
+        };
+        assert!(video_decode_codecs.is_empty());
+    }
 }
 
 #[cfg(test)]

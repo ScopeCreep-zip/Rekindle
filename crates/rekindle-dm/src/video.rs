@@ -48,6 +48,7 @@ struct PeerReassembly {
 struct PartialFrame {
     fragment_count: u16,
     keyframe: bool,
+    codec: String,
     timestamp: u32,
     /// Indexed by `fragment_index`; `None` until that fragment lands.
     chunks: Vec<Option<Vec<u8>>>,
@@ -65,6 +66,9 @@ pub struct DmVideoFragment<'a> {
     pub fragment_index: u16,
     pub fragment_count: u16,
     pub keyframe: bool,
+    /// Codec wire string — carried through to the assembled frame so
+    /// the frontend configures the right decoder.
+    pub codec: String,
     pub timestamp: u32,
     pub chunk: Vec<u8>,
 }
@@ -87,6 +91,7 @@ impl DmVideoReassemblyState {
             fragment_index,
             fragment_count,
             keyframe,
+            codec,
             timestamp,
             chunk,
         } = fragment;
@@ -104,16 +109,20 @@ impl DmVideoReassemblyState {
         let entry = peer.frames.entry(key).or_insert_with(|| PartialFrame {
             fragment_count,
             keyframe,
+            codec: codec.clone(),
             timestamp,
             chunks: vec![None; fragment_count as usize],
             received_at: Instant::now(),
         });
-        // Defensive: a sender shouldn't change fragment_count mid-frame.
-        // If they do, treat it as a fresh frame.
-        if entry.fragment_count != fragment_count {
+        // Defensive: a sender shouldn't change fragment_count — or the
+        // codec tag — mid-frame (the community reassembler drops the
+        // same condition as `CodecMismatch`). If they do, treat it as
+        // a fresh frame so chunks of two codecs never merge.
+        if entry.fragment_count != fragment_count || entry.codec != codec {
             *entry = PartialFrame {
                 fragment_count,
                 keyframe,
+                codec,
                 timestamp,
                 chunks: vec![None; fragment_count as usize],
                 received_at: Instant::now(),
@@ -133,6 +142,7 @@ impl DmVideoReassemblyState {
                 stream_id,
                 frame_seq,
                 keyframe: assembled.keyframe,
+                codec: assembled.codec,
                 timestamp: assembled.timestamp,
                 data,
             });
@@ -168,6 +178,8 @@ pub struct AssembledFrame {
     pub stream_id: [u8; 16],
     pub frame_seq: u32,
     pub keyframe: bool,
+    /// Codec wire string from the fragments.
+    pub codec: String,
     pub timestamp: u32,
     pub data: Vec<u8>,
 }
@@ -186,6 +198,7 @@ pub fn dispatch_assembled_frame<D: crate::deps::DmDeps + ?Sized>(
         stream_id: frame.stream_id,
         frame_seq: frame.frame_seq,
         keyframe: frame.keyframe,
+        codec: frame.codec,
         timestamp: frame.timestamp,
         data: frame.data,
     });
@@ -217,6 +230,7 @@ mod tests {
             fragment_index,
             fragment_count,
             keyframe,
+            codec: "vp9".to_string(),
             timestamp,
             chunk,
         }
@@ -302,6 +316,50 @@ mod tests {
         let result = state.record_fragment(frag(PEER, SID, 5, 0, 1, false, 500, vec![9, 9]));
         assert!(result.is_some()); // new fragment_count=1, fragment_index=0 → completes
         assert_eq!(result.unwrap().data, vec![9, 9]);
+    }
+
+    #[test]
+    fn changing_codec_mid_frame_resets() {
+        let state = DmVideoReassemblyState::new();
+        assert!(state
+            .record_fragment(frag(PEER, SID, 6, 0, 2, false, 600, vec![1, 2]))
+            .is_none());
+        // Same frame, same fragment_count, different codec tag — the
+        // vp9 chunk from above must NOT merge into this h264 frame.
+        let second = DmVideoFragment {
+            peer_pubkey: PEER,
+            stream_id: SID,
+            frame_seq: 6,
+            fragment_index: 1,
+            fragment_count: 2,
+            keyframe: false,
+            codec: "h264".to_string(),
+            timestamp: 600,
+            chunk: vec![3, 4],
+        };
+        assert!(
+            state.record_fragment(second).is_none(),
+            "codec switch mid-frame must reset, not complete the frame"
+        );
+        // The reset frame is h264 and holds only the resetting
+        // fragment's chunk (index 1). Supplying index 0 completes it —
+        // and the assembled data proves the vp9 chunk [1, 2] was
+        // discarded, not merged.
+        let assembled = state
+            .record_fragment(DmVideoFragment {
+                peer_pubkey: PEER,
+                stream_id: SID,
+                frame_seq: 6,
+                fragment_index: 0,
+                fragment_count: 2,
+                keyframe: false,
+                codec: "h264".to_string(),
+                timestamp: 600,
+                chunk: vec![9, 9],
+            })
+            .expect("reset h264 frame completes from its two h264 chunks");
+        assert_eq!(assembled.codec, "h264");
+        assert_eq!(assembled.data, vec![9, 9, 3, 4]);
     }
 
     #[test]

@@ -9,14 +9,25 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Video codec identifier. Single concrete variant today; future
-/// codecs add variants — never `Other(String)`.
+/// Video codec identifier. Closed set, multi-codec by design (the
+/// platform reality: Apple WebKit guarantees H.264 hardware encode but
+/// not VP9; WebKitGTK guarantees VP8/VP9 via libvpx but H.264 only via
+/// optional GStreamer plugins). Mirrors the RFC 7742 model — a small
+/// negotiated set, never `Other(String)`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Codec {
-    /// VP9 (RFC 6386). Wire string `"vp9"`; full codec parameter
+    /// VP9. Wire string `"vp9"`; WebCodecs codec parameter
     /// `vp09.00.30.08` is constructed at the encoder layer.
     Vp9,
+    /// VP8 (RFC 6386) — the 2026 industry interop floor (RFC 7742 MTI;
+    /// Signal group calls still run it). WebCodecs string is `"vp8"`.
+    Vp8,
+    /// H.264 constrained baseline in Annex-B form (`avc1.42E01F` +
+    /// `avc: { format: "annexb" }` on the encoder) — SPS/PPS ride the
+    /// bitstream, so decoders configure codec-string-only with no
+    /// avcC `description`. The Apple-WebKit-guaranteed encoder.
+    H264,
 }
 
 impl Codec {
@@ -26,6 +37,8 @@ impl Codec {
     pub fn wire_str(&self) -> &'static str {
         match self {
             Self::Vp9 => "vp9",
+            Self::Vp8 => "vp8",
+            Self::H264 => "h264",
         }
     }
 
@@ -34,6 +47,29 @@ impl Codec {
     pub fn from_wire_str(s: &str) -> Option<Self> {
         match s {
             "vp9" => Some(Self::Vp9),
+            "vp8" => Some(Self::Vp8),
+            "h264" => Some(Self::H264),
+            _ => None,
+        }
+    }
+
+    /// One-byte wire form for the per-fragment codec tag's SIGNING
+    /// BYTES (codec-confusion defense). Values match the capnp enum
+    /// ordinals (`vp9 @0; vp8 @1; h264 @2;`) — keep them in lock-step.
+    pub fn wire_byte(&self) -> u8 {
+        match self {
+            Self::Vp9 => 0,
+            Self::Vp8 => 1,
+            Self::H264 => 2,
+        }
+    }
+
+    /// Inverse of [`Self::wire_byte`].
+    pub fn from_wire_byte(b: u8) -> Option<Self> {
+        match b {
+            0 => Some(Self::Vp9),
+            1 => Some(Self::Vp8),
+            2 => Some(Self::H264),
             _ => None,
         }
     }
@@ -70,9 +106,29 @@ mod tests {
 
     #[test]
     fn codec_wire_roundtrip() {
+        for codec in [Codec::Vp9, Codec::Vp8, Codec::H264] {
+            assert_eq!(Codec::from_wire_str(codec.wire_str()), Some(codec));
+            assert_eq!(Codec::from_wire_byte(codec.wire_byte()), Some(codec));
+        }
         assert_eq!(Codec::Vp9.wire_str(), "vp9");
-        assert_eq!(Codec::from_wire_str("vp9"), Some(Codec::Vp9));
+        assert_eq!(Codec::Vp8.wire_str(), "vp8");
+        assert_eq!(Codec::H264.wire_str(), "h264");
         assert_eq!(Codec::from_wire_str("av1"), None);
+        assert_eq!(Codec::from_wire_byte(99), None);
+        // wire_byte values are the capnp enum ordinals — lock-step.
+        assert_eq!(Codec::Vp9.wire_byte(), 0);
+        assert_eq!(Codec::Vp8.wire_byte(), 1);
+        assert_eq!(Codec::H264.wire_byte(), 2);
+    }
+
+    #[test]
+    fn new_codec_serde_lowercase() {
+        assert_eq!(serde_json::to_string(&Codec::Vp8).unwrap(), "\"vp8\"");
+        assert_eq!(serde_json::to_string(&Codec::H264).unwrap(), "\"h264\"");
+        assert_eq!(
+            serde_json::from_str::<Codec>("\"h264\"").unwrap(),
+            Codec::H264
+        );
     }
 
     #[test]

@@ -379,13 +379,15 @@ fn build_roster_entries(
 ) -> Vec<VoiceRosterEntry> {
     let mut entries: Vec<VoiceRosterEntry> = peers
         .into_iter()
-        .map(|(pseudonym_key, route_blob, display_name)| VoiceRosterEntry {
-            pseudonym_key,
-            route_blob,
-            muted: false,
-            deafened: false,
-            display_name,
-        })
+        .map(
+            |(pseudonym_key, route_blob, display_name)| VoiceRosterEntry {
+                pseudonym_key,
+                route_blob,
+                muted: false,
+                deafened: false,
+                display_name,
+            },
+        )
         .collect();
 
     if !my_pk.is_empty() && !entries.iter().any(|e| e.pseudonym_key == my_pk) {

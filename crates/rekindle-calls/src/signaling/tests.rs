@@ -186,6 +186,9 @@ impl CallSignalingDeps for MockDeps {
     fn friend_display_name(&self, _peer: &str) -> String {
         "Mock Friend".into()
     }
+    fn local_video_decode_codecs(&self) -> Vec<String> {
+        vec!["vp9".to_string()]
+    }
     async fn send_to_peer(&self, _peer: &str, _payload: MessagePayload) -> Result<(), CallError> {
         Ok(())
     }
@@ -279,6 +282,7 @@ fn seed_outgoing_call(deps: &MockDeps, call_id: &str, peer_hex: &str, kind: Call
         my_x25519_secret: Some(my_secret),
         peer_x25519_pub: None,
         call_key: None,
+        peer_video_decode_codecs: Vec::new(),
     });
 }
 
@@ -300,6 +304,7 @@ async fn w14_1_pre_stage_runs_before_start_voice_session() {
         &"bb".repeat(32),
         "call-1",
         &acceptor_pub,
+        &["vp9".to_string()],
     )
     .await;
 
@@ -319,6 +324,57 @@ async fn w14_1_pre_stage_runs_before_start_voice_session() {
     );
 }
 
+// ─── Phase 5: peer video decode codecs stored from invite + accept ────
+
+#[tokio::test]
+async fn invite_stores_peer_video_decode_codecs() {
+    let deps = MockDeps::new();
+    let sender = "bb".repeat(32);
+    let initiator_x = peer_x25519_pub_bytes();
+    crate::signaling::handlers::handle_incoming_invite(
+        deps.as_ref(),
+        crate::signaling::handlers::IncomingInvite {
+            sender_hex: &sender,
+            call_id: "call-codecs-i",
+            offer_kind: 1,
+            initiator_pubkey: &sender,
+            initiator_x25519_pub: &initiator_x,
+            expires_at_ms: 9_999_999_999_999,
+            video_decode_codecs: &["vp8".to_string(), "h264".to_string()],
+        },
+    )
+    .await;
+    let call = deps
+        .registry
+        .get("call-codecs-i")
+        .expect("invite must insert CallState");
+    assert_eq!(call.peer_video_decode_codecs, vec!["vp8", "h264"]);
+}
+
+#[tokio::test]
+async fn accept_stores_peer_video_decode_codecs() {
+    let deps = MockDeps::new();
+    seed_outgoing_call(&deps, "call-codecs-a", &"bb".repeat(32), CallKind::Video);
+    let acceptor_pub = peer_x25519_pub_bytes();
+    crate::signaling::handlers::handle_accept_received(
+        deps.as_ref(),
+        &"bb".repeat(32),
+        "call-codecs-a",
+        &acceptor_pub,
+        &["h264".to_string(), "vp9".to_string()],
+    )
+    .await;
+    let call = deps
+        .registry
+        .get("call-codecs-a")
+        .expect("accepted call stays registered");
+    assert_eq!(
+        call.peer_video_decode_codecs,
+        vec!["h264", "vp9"],
+        "accept must overwrite the empty seed with the peer's list"
+    );
+}
+
 // ─── W14.2 regression: CallConnected carries the kind ────────────────
 
 #[tokio::test]
@@ -332,6 +388,7 @@ async fn w14_2_call_connected_carries_kind_audio() {
         &"bb".repeat(32),
         "call-a",
         &acceptor_pub,
+        &["vp9".to_string()],
     )
     .await;
 
@@ -357,6 +414,7 @@ async fn w14_2_call_connected_carries_kind_video() {
         &"bb".repeat(32),
         "call-v",
         &acceptor_pub,
+        &["vp9".to_string()],
     )
     .await;
 
@@ -508,6 +566,9 @@ impl CallSignalingDeps for EmptyNameDeps {
     fn friend_display_name(&self, _peer: &str) -> String {
         String::new()
     }
+    fn local_video_decode_codecs(&self) -> Vec<String> {
+        self.0.local_video_decode_codecs()
+    }
     async fn send_to_peer(&self, p: &str, msg: MessagePayload) -> Result<(), CallError> {
         self.0.send_to_peer(p, msg).await
     }
@@ -569,6 +630,7 @@ async fn empty_friend_display_name_falls_back_to_initiator_pubkey() {
             initiator_pubkey: &initiator,
             initiator_x25519_pub: &initiator_x,
             expires_at_ms: 12_345_678,
+            video_decode_codecs: &["vp9".to_string()],
         },
     )
     .await;
@@ -609,6 +671,7 @@ async fn handle_incoming_invite_arms_incoming_timeout() {
             initiator_pubkey: &initiator,
             initiator_x25519_pub: &initiator_x,
             expires_at_ms: 12_345_678,
+            video_decode_codecs: &["vp9".to_string()],
         },
     )
     .await;

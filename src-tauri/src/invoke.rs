@@ -216,6 +216,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::calls::decline_group_call,
         commands::calls::end_group_call,
         commands::calls::get_missed_calls,
+        commands::calls::dm_peer_video_decode_codecs,
         // status
         commands::status::set_status,
         commands::status::set_nickname,

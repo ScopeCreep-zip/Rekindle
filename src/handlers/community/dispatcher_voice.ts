@@ -196,6 +196,17 @@ export function reduceVoice(event: CommunityEvent): boolean {
     const { communityId, channelId, config } = event.data;
     setVideoSessionConfig(communityId, channelId, config);
     return true;
+  } else if (event.type === "videoCodecIncompatible") {
+    // Phase 3 — no local encode codec is decodable by every peer in
+    // the call. Backend latches the transition, so this fires once —
+    // a single toast, no spam. Voice keeps working.
+    const { peers } = event.data;
+    const names = peers.map((p) => p.slice(0, 8)).join(", ");
+    addToast(
+      `Video unavailable: no compatible codec with ${names || "current peers"}`,
+      "error",
+    );
+    return true;
   } else if (event.type === "videoEnvelopeRejected") {
     // Phase F — a gossiped video envelope failed signature or shape
     // verification at the receive boundary. Surface a warn-level toast

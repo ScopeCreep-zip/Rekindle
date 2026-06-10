@@ -141,7 +141,11 @@ pub async fn reconcile_from_presence(
     {
         let mut t = transport.lock().await;
         for add in &plan.add {
-            t.add_peer(&add.pseudonym_hex, &add.route_blob, add.display_name.as_deref());
+            t.add_peer(
+                &add.pseudonym_hex,
+                &add.route_blob,
+                add.display_name.as_deref(),
+            );
         }
         for gone in &plan.remove {
             t.remove_peer(gone);
@@ -226,11 +230,11 @@ mod tests {
             "me",
             &[],
             &[
-                row("me", Some("ch1"), true),       // self
-                row("bob", Some("ch2"), true),      // different channel
-                row("carol", Some("ch1"), false),   // stale heartbeat
-                row("erin", None, true),            // not in any channel
-                routeless,                          // no route yet
+                row("me", Some("ch1"), true),     // self
+                row("bob", Some("ch2"), true),    // different channel
+                row("carol", Some("ch1"), false), // stale heartbeat
+                row("erin", None, true),          // not in any channel
+                routeless,                        // no route yet
             ],
         );
         assert!(plan.add.is_empty());

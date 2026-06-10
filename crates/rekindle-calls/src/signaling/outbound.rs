@@ -42,6 +42,8 @@ pub async fn start_dm_call<D: CallSignalingDeps + ?Sized>(
         my_x25519_secret: Some(my_secret),
         peer_x25519_pub: None,
         call_key: None,
+        // Filled from the peer's CallAccept.
+        peer_video_decode_codecs: Vec::new(),
     });
 
     deps.spawn_dialing_call_timeout(
@@ -57,6 +59,7 @@ pub async fn start_dm_call<D: CallSignalingDeps + ?Sized>(
         initiator_pubkey,
         initiator_x25519_pub: my_pub.to_vec(),
         expires_at_ms,
+        video_decode_codecs: deps.local_video_decode_codecs(),
     };
     if let Err(e) = deps.send_to_peer(peer_public_key, invite).await {
         deps.registry().remove(&call_id);
@@ -161,6 +164,7 @@ pub async fn accept_dm_call<D: CallSignalingDeps + ?Sized>(
     let accept = MessagePayload::CallAccept {
         call_id: call_id.to_string(),
         acceptor_x25519_pub: my_pub.to_vec(),
+        video_decode_codecs: deps.local_video_decode_codecs(),
     };
     if let Err(e) = deps.send_to_peer(&peer_pubkey, accept).await {
         // We're locally in-call but the peer never got the accept.

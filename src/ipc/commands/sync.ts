@@ -98,7 +98,7 @@ export const syncCommands = {
   runBackgroundSync: () =>
     invoke<BackgroundSyncReport>("run_background_sync"),
   /**
-   * Send one VP9-encoded frame chunk (from the WebCodecs VideoEncoder
+   * Send one encoded frame chunk (from the WebCodecs VideoEncoder
    * output) into the community video stream. The backend MEK-encrypts,
    * fragments to ≤28 KB, attaches FEC parity for keyframes, signs each
    * fragment, and broadcasts via gossip. Returns the number of
@@ -125,7 +125,7 @@ export const syncCommands = {
   /**
    * Phase 11 Tier 1 — register the per-peer `ipc::Channel` the video
    * panel decodes from. Replaces the high-throughput `dm-video-frame`
-   * Tauri event so VP9 frames bypass the shared event bus. The backend
+   * Tauri event so video frames bypass the shared event bus. The backend
    * pushes each reassembled DM frame straight to `onFrame`; re-registering
    * for the same peer replaces the prior handle.
    */
@@ -173,6 +173,17 @@ export const syncCommands = {
    */
   reportLocalVideoCapabilities: (caps: MediaCapabilities) =>
     invoke<void>("report_local_video_capabilities", { caps }),
+  /**
+   * Phase 5 — the DM peer's advertised video decode codecs (wire
+   * strings, preference-ordered — from their CallInvite/CallAccept).
+   * Empty = unknown (peer's probe hadn't run); the sender treats that
+   * as the VP9 floor.
+   */
+  dmPeerVideoDecodeCodecs: (peerPublicKey: string) =>
+    // Typed string[] (not Codec[]) — this is peer-controlled wire
+    // data; the sender only ever uses it as a membership test against
+    // its own typed encode list, so unknown strings simply never match.
+    invoke<string[]>("dm_peer_video_decode_codecs", { peerPublicKey }),
   /**
    * Phase F — frontend reports the result of the per-stream
    * `VideoDecoder.configure()` call. Backend logs structurally so the
@@ -271,7 +282,7 @@ export const syncCommands = {
   /**
    * Phase 11 Tier 1 — register the per-community `ipc::Channel` the video
    * panel decodes from. Replaces the `community-event` `videoFrame`
-   * variant so high-throughput VP9 frames bypass the shared event bus;
+   * variant so high-throughput video frames bypass the shared event bus;
    * control events (acks, keyframe requests, topology) still ride
    * `community-event`. Re-registering replaces the prior handle.
    */

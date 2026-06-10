@@ -99,6 +99,7 @@ pub(super) async fn handle_dm_payload(
             fragment_index,
             fragment_count,
             keyframe,
+            codec,
             timestamp,
             chunk,
         } => {
@@ -107,6 +108,17 @@ pub(super) async fn handle_dm_payload(
             // already verified authenticity (sender's identity key is
             // bound to the envelope), so we don't repeat per-fragment
             // signatures the way community video does.
+            //
+            // Reader-validates: the codec tag is peer-controlled wire
+            // data. The community path can't even decode an unknown
+            // codec (closed capnp enum); mirror that gate here so an
+            // arbitrary string never reaches the frontend's decoder
+            // construction.
+            if rekindle_types::video::Codec::from_wire_str(&codec).is_none() {
+                tracing::debug!(peer = %sender_hex, %codec,
+                    "DmVideoFragment with unknown codec tag; dropping");
+                return;
+            }
             if let Some(frame) =
                 state
                     .dm_video_reassembly
@@ -117,6 +129,7 @@ pub(super) async fn handle_dm_payload(
                         fragment_index,
                         fragment_count,
                         keyframe,
+                        codec,
                         timestamp,
                         chunk,
                     })

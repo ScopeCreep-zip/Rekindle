@@ -603,11 +603,11 @@ pub enum ControlPayload {
     },
 
     /// Architecture §10.6 video / screen-share fragment. Frames are
-    /// VP9-encoded, MEK-encrypted, then split into ≤28 KB chunks so
-    /// they fit inside Veilid `app_message`. The 16-byte `stream_id`
-    /// is `blake3(channel_id || sender_pseudonym)[..16]` so concurrent
-    /// streams in the same channel never collide. Reassembly happens
-    /// in `rekindle-video::Reassembler` on the receive side.
+    /// encoded with `codec`, MEK-encrypted, then split into ≤28 KB
+    /// chunks so they fit inside Veilid `app_message`. The 16-byte
+    /// `stream_id` is `blake3(channel_id || sender_pseudonym)[..16]` so
+    /// concurrent streams in the same channel never collide. Reassembly
+    /// happens in `rekindle-video::Reassembler` on the receive side.
     VideoFragment {
         channel_id: String,
         stream_id: [u8; 16],
@@ -615,6 +615,9 @@ pub enum ControlPayload {
         frag_index: u8,
         frag_total: u8,
         keyframe: bool,
+        /// RTP payload-type analog — receivers configure their decoder
+        /// from this tag. Signature-covered.
+        codec: Codec,
         timestamp: u32,
         payload: Vec<u8>,
         signature: Vec<u8>,
@@ -633,6 +636,8 @@ pub enum ControlPayload {
         parity_index: u8,
         parity_total: u8,
         data_count: u8,
+        /// Codec of the frame this parity covers. Signature-covered.
+        codec: Codec,
         frame_len: u32,
         timestamp: u32,
         payload: Vec<u8>,
@@ -668,20 +673,21 @@ pub enum ControlPayload {
         loss_q8: u8,
     },
 
-    /// Capability negotiation broadcast on join. Senders union the
-    /// reported caps and pick a resolution + framerate every receiver
-    /// can decode (architecture §10.6 line 4084).
+    /// Capability negotiation broadcast on join. Senders intersect
+    /// every receiver's decode set against their own encode set and
+    /// pick their per-node encoder codec (architecture §10.6 line 4084).
     ///
     /// Pre-release schema break (memory rule: `feedback_no_legacy_compat`):
-    /// `codecs` is now `Vec<Codec>` (typed), and two new fields carry the
-    /// `optimizeForLatency` + scalability-mode signals the negotiator
-    /// needs. No version compat shim — the wire layer drops the old
-    /// shape entirely.
+    /// the single symmetric `codecs` list split into `encode_codecs` +
+    /// `decode_codecs` — WebView engines are direction-asymmetric
+    /// (Apple WebKit: H.264 hw encode, broader decode). No version
+    /// compat shim — the wire layer drops the old shape entirely.
     MediaCapabilities {
         channel_id: String,
         max_pixel_count: u32,
         max_fps: u8,
-        codecs: Vec<Codec>,
+        encode_codecs: Vec<Codec>,
+        decode_codecs: Vec<Codec>,
         supports_optimize_for_latency: bool,
         supported_scalability_modes: Vec<ScalabilityMode>,
     },
@@ -850,17 +856,83 @@ mod tests {
         assert!(verify_envelope(&signed).is_err());
     }
 
-    /// Phase A schema break — `MediaCapabilities` carries typed `Codec`
-    /// + `ScalabilityMode` lists plus `supports_optimize_for_latency`.
-    /// Round-trip through the Cap'n Proto wire form and assert every
-    /// field comes back untouched.
+    /// Phase 2 — the per-fragment codec tag (RTP payload-type analog)
+    /// must survive the Cap'n Proto wire form for BOTH fragment
+    /// variants. Non-VP9 codecs chosen so a write/read arm that
+    /// silently defaulted to `vp9 @0` fails the assert.
+    #[test]
+    fn envelope_video_fragment_codec_capnp_roundtrip() {
+        let data = CommunityEnvelope::Control(ControlPayload::VideoFragment {
+            channel_id: "ch_video".into(),
+            stream_id: [0xAB; 16],
+            frame_seq: 7,
+            frag_index: 0,
+            frag_total: 2,
+            keyframe: true,
+            codec: Codec::H264,
+            timestamp: 1234,
+            payload: vec![1, 2, 3],
+            signature: vec![9; 64],
+        });
+        let bytes = encode_community_envelope(&data).unwrap();
+        let back = crate::capnp_envelope::decode_community_envelope(&bytes).unwrap();
+        match back {
+            CommunityEnvelope::Control(ControlPayload::VideoFragment {
+                codec,
+                keyframe,
+                frame_seq,
+                ..
+            }) => {
+                assert_eq!(codec, Codec::H264);
+                assert!(keyframe);
+                assert_eq!(frame_seq, 7);
+            }
+            other => panic!("wrong variant after capnp round-trip: {other:?}"),
+        }
+
+        let parity = CommunityEnvelope::Control(ControlPayload::VideoParityFragment {
+            channel_id: "ch_video".into(),
+            stream_id: [0xCD; 16],
+            frame_seq: 8,
+            parity_index: 1,
+            parity_total: 2,
+            data_count: 4,
+            codec: Codec::Vp8,
+            frame_len: 4096,
+            timestamp: 5678,
+            payload: vec![4, 5, 6],
+            signature: vec![7; 64],
+        });
+        let bytes = encode_community_envelope(&parity).unwrap();
+        let back = crate::capnp_envelope::decode_community_envelope(&bytes).unwrap();
+        match back {
+            CommunityEnvelope::Control(ControlPayload::VideoParityFragment {
+                codec,
+                data_count,
+                frame_len,
+                ..
+            }) => {
+                assert_eq!(codec, Codec::Vp8);
+                assert_eq!(data_count, 4);
+                assert_eq!(frame_len, 4096);
+            }
+            other => panic!("wrong variant after capnp round-trip: {other:?}"),
+        }
+    }
+
+    /// Phase 3 schema break — `MediaCapabilities` carries direction-split
+    /// `encode_codecs` + `decode_codecs` typed lists plus
+    /// `supports_optimize_for_latency`. Round-trip through the Cap'n
+    /// Proto wire form and assert every field comes back untouched —
+    /// asymmetric lists chosen so a swapped encode/decode mapping fails.
     #[test]
     fn envelope_media_capabilities_capnp_roundtrip() {
         let inner = ControlPayload::MediaCapabilities {
             channel_id: "ch_42".into(),
             max_pixel_count: 1280 * 720,
             max_fps: 30,
-            codecs: vec![Codec::Vp9],
+            encode_codecs: vec![Codec::H264],
+            decode_codecs: vec![Codec::Vp9, Codec::Vp8, Codec::H264],
             supports_optimize_for_latency: true,
             supported_scalability_modes: vec![ScalabilityMode::Flat, ScalabilityMode::L1T2],
         };
@@ -872,14 +944,16 @@ mod tests {
                 channel_id,
                 max_pixel_count,
                 max_fps,
-                codecs,
+                encode_codecs,
+                decode_codecs,
                 supports_optimize_for_latency,
                 supported_scalability_modes,
             }) => {
                 assert_eq!(channel_id, "ch_42");
                 assert_eq!(max_pixel_count, 1280 * 720);
                 assert_eq!(max_fps, 30);
-                assert_eq!(codecs, vec![Codec::Vp9]);
+                assert_eq!(encode_codecs, vec![Codec::H264]);
+                assert_eq!(decode_codecs, vec![Codec::Vp9, Codec::Vp8, Codec::H264]);
                 assert!(supports_optimize_for_latency);
                 assert_eq!(
                     supported_scalability_modes,
@@ -902,7 +976,8 @@ mod tests {
             channel_id: "ch_42".into(),
             max_pixel_count: 854 * 480,
             max_fps: 15,
-            codecs: vec![Codec::Vp9],
+            encode_codecs: vec![Codec::Vp9],
+            decode_codecs: vec![Codec::Vp9],
             supports_optimize_for_latency: false,
             supported_scalability_modes: vec![ScalabilityMode::Flat],
         });

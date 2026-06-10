@@ -423,6 +423,7 @@ impl CallStateMachine {
             my_x25519_secret: Some(my_x25519_secret),
             peer_x25519_pub: None,
             call_key: None,
+            peer_video_decode_codecs: Vec::new(),
         };
         let secret_bytes = state.my_x25519_secret.as_ref().map(StaticSecret::to_bytes);
         self.active.insert(call_id.into(), state);
@@ -724,6 +725,7 @@ impl CallStateMachine {
             my_x25519_secret: None,
             peer_x25519_pub: Some(peer_x25519_pub),
             call_key: None,
+            peer_video_decode_codecs: Vec::new(),
         };
         self.active.insert(call_id.clone(), state);
 

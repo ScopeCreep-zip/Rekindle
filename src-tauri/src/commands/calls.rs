@@ -94,6 +94,25 @@ pub async fn accept_dm_call(
         .map_err(|e| e.to_string())
 }
 
+/// Phase 5 — the DM peer's advertised video decode codecs for the
+/// call currently registered against `peer_public_key` (wire strings,
+/// preference-ordered — from their CallInvite or CallAccept). Empty
+/// when the peer's envelope predates its probe; the sender treats
+/// that as the VP9 floor.
+#[tauri::command]
+pub async fn dm_peer_video_decode_codecs(
+    peer_public_key: String,
+    state: State<'_, SharedState>,
+) -> Result<Vec<String>, String> {
+    Ok(state
+        .active_calls
+        .list_all()
+        .into_iter()
+        .find(|c| c.peer_pubkey == peer_public_key)
+        .map(|c| c.peer_video_decode_codecs.clone())
+        .unwrap_or_default())
+}
+
 /// W13.7 — receiver declines. Drop CallState, fire CallDecline.
 #[tauri::command]
 pub async fn decline_dm_call(

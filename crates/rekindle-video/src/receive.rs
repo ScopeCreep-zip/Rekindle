@@ -76,6 +76,7 @@ pub fn handle_video_payload<D: VideoDeps>(
             frag_index,
             frag_total,
             keyframe,
+            codec,
             timestamp,
             payload,
             signature,
@@ -97,6 +98,7 @@ pub fn handle_video_payload<D: VideoDeps>(
                 frag_index,
                 frag_total,
                 keyframe,
+                codec,
                 timestamp,
                 payload,
                 signature,
@@ -137,6 +139,7 @@ pub fn handle_video_payload<D: VideoDeps>(
             parity_index,
             parity_total,
             data_count,
+            codec,
             frame_len,
             timestamp,
             payload,
@@ -159,6 +162,7 @@ pub fn handle_video_payload<D: VideoDeps>(
                 parity_index,
                 parity_total,
                 data_count,
+                codec,
                 frame_len,
                 timestamp,
                 payload,
@@ -281,7 +285,8 @@ pub fn handle_video_payload<D: VideoDeps>(
             channel_id,
             max_pixel_count,
             max_fps,
-            codecs,
+            encode_codecs,
+            decode_codecs,
             supports_optimize_for_latency,
             supported_scalability_modes,
         } => {
@@ -291,7 +296,8 @@ pub fn handle_video_payload<D: VideoDeps>(
                 channel_id,
                 max_pixel_count,
                 max_fps,
-                codecs,
+                encode_codecs,
+                decode_codecs,
                 supports_optimize_for_latency,
                 supported_scalability_modes,
             });
@@ -380,6 +386,7 @@ fn emit_frame_ready<D: VideoDeps>(
         stream_id: frame.stream_id,
         frame_seq: frame.frame_seq,
         keyframe: frame.keyframe,
+        codec: frame.codec,
         timestamp: frame.timestamp,
         payload: plaintext,
     });
@@ -390,6 +397,7 @@ mod tests {
     use super::*;
     use crate::reassembly_state::VideoReassemblyState;
     use crate::test_mock::MockDeps;
+    use rekindle_types::video::Codec;
 
     /// Build a single-fragment VideoFragment payload signed by the
     /// pseudonym derived from `seed` for community `"c1"`, MEK-encrypted
@@ -409,6 +417,7 @@ mod tests {
             frag_index: 0,
             frag_total: 1,
             keyframe: true,
+            codec: Codec::Vp9,
             timestamp: 42,
             payload: ciphertext,
             signature: Vec::new(),
@@ -416,8 +425,11 @@ mod tests {
         frag.signature = if forge_signature {
             vec![0u8; 64]
         } else {
-            sign_with_pseudonym(&signing_key, &crate::fragment::fragment_signing_bytes(&frag))
-                .to_vec()
+            sign_with_pseudonym(
+                &signing_key,
+                &crate::fragment::fragment_signing_bytes(&frag),
+            )
+            .to_vec()
         };
         (
             sender_hex,
@@ -428,6 +440,7 @@ mod tests {
                 frag_index: frag.frag_index,
                 frag_total: frag.frag_total,
                 keyframe: frag.keyframe,
+                codec: frag.codec,
                 timestamp: frag.timestamp,
                 payload: frag.payload,
                 signature: frag.signature,
@@ -503,13 +516,16 @@ mod tests {
                 frag_index: 0,
                 frag_total: 1,
                 keyframe: true,
+                codec: Codec::Vp9,
                 timestamp: 7,
                 payload: newer_mek.encrypt(b"frame").expect("encrypt"),
                 signature: Vec::new(),
             };
-            frag.signature =
-                sign_with_pseudonym(&signing_key, &crate::fragment::fragment_signing_bytes(&frag))
-                    .to_vec();
+            frag.signature = sign_with_pseudonym(
+                &signing_key,
+                &crate::fragment::fragment_signing_bytes(&frag),
+            )
+            .to_vec();
             ControlPayload::VideoFragment {
                 channel_id: "ch1".into(),
                 stream_id: frag.stream_id,
@@ -517,6 +533,7 @@ mod tests {
                 frag_index: frag.frag_index,
                 frag_total: frag.frag_total,
                 keyframe: frag.keyframe,
+                codec: frag.codec,
                 timestamp: frag.timestamp,
                 payload: frag.payload,
                 signature: frag.signature,
@@ -525,7 +542,14 @@ mod tests {
 
         handle_video_payload(&deps, &reassembly, "c1", &sender_hex, make_payload(1), 0);
         // Second failing frame inside the debounce window: no new request.
-        handle_video_payload(&deps, &reassembly, "c1", &sender_hex, make_payload(2), 1_000);
+        handle_video_payload(
+            &deps,
+            &reassembly,
+            "c1",
+            &sender_hex,
+            make_payload(2),
+            1_000,
+        );
 
         let calls = deps.calls.lock();
         assert_eq!(
@@ -583,7 +607,8 @@ mod tests {
                 channel_id: "ch1".into(),
                 max_pixel_count: 480 * 854,
                 max_fps: 30,
-                codecs: vec![rekindle_types::video::Codec::Vp9],
+                encode_codecs: vec![rekindle_types::video::Codec::Vp9],
+                decode_codecs: vec![rekindle_types::video::Codec::Vp9],
                 supports_optimize_for_latency: false,
                 supported_scalability_modes: vec![rekindle_types::video::ScalabilityMode::Flat],
             },
@@ -611,6 +636,7 @@ mod tests {
                 frag_index: 0,
                 frag_total: 1,
                 keyframe: false,
+                codec: Codec::Vp9,
                 timestamp: 0,
                 payload: vec![0xAB; 64],
                 signature: vec![0u8; 64],
@@ -718,17 +744,34 @@ mod tests {
                 channel_id: "ch1".into(),
                 max_pixel_count: 480 * 854,
                 max_fps: 30,
-                codecs: vec![rekindle_types::video::Codec::Vp9],
+                encode_codecs: vec![rekindle_types::video::Codec::H264],
+                decode_codecs: vec![
+                    rekindle_types::video::Codec::Vp9,
+                    rekindle_types::video::Codec::H264,
+                ],
                 supports_optimize_for_latency: false,
                 supported_scalability_modes: vec![rekindle_types::video::ScalabilityMode::Flat],
             },
             0,
         );
         let calls = deps.calls.lock();
-        assert!(matches!(
-            calls.events[0],
-            VideoEvent::MediaCapabilities { .. }
-        ));
+        let VideoEvent::MediaCapabilities {
+            ref encode_codecs,
+            ref decode_codecs,
+            ..
+        } = calls.events[0]
+        else {
+            panic!("expected MediaCapabilities variant");
+        };
+        // Direction-split lists must map through without being swapped.
+        assert_eq!(encode_codecs, &vec![rekindle_types::video::Codec::H264]);
+        assert_eq!(
+            decode_codecs,
+            &vec![
+                rekindle_types::video::Codec::Vp9,
+                rekindle_types::video::Codec::H264,
+            ]
+        );
     }
 
     #[test]

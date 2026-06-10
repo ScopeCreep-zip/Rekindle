@@ -118,6 +118,8 @@ pub struct SendDmVideoFrameRequest {
     pub stream_id_hex: String,
     pub frame_seq: u32,
     pub keyframe: bool,
+    /// Codec wire string ("vp9" | "vp8" | "h264").
+    pub codec: String,
     pub timestamp: u32,
     pub encoded_payload_b64: String,
 }

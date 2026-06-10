@@ -40,6 +40,7 @@ pub(super) async fn handle_call_signaling_payload(
             initiator_pubkey,
             initiator_x25519_pub,
             expires_at_ms,
+            video_decode_codecs,
         } => {
             rekindle_calls::signaling::handlers::handle_incoming_invite(
                 deps,
@@ -50,6 +51,7 @@ pub(super) async fn handle_call_signaling_payload(
                     initiator_pubkey: &initiator_pubkey,
                     initiator_x25519_pub: &initiator_x25519_pub,
                     expires_at_ms,
+                    video_decode_codecs: &video_decode_codecs,
                 },
             )
             .await;
@@ -57,12 +59,14 @@ pub(super) async fn handle_call_signaling_payload(
         MessagePayload::CallAccept {
             call_id,
             acceptor_x25519_pub,
+            video_decode_codecs,
         } => {
             rekindle_calls::signaling::handlers::handle_accept_received(
                 deps,
                 sender_hex,
                 &call_id,
                 &acceptor_x25519_pub,
+                &video_decode_codecs,
             )
             .await;
         }

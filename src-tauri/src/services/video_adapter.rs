@@ -89,12 +89,10 @@ impl VideoDeps for VideoAdapter {
         // is the rotation triggered by OUR OWN join (§10.7) whose
         // MekTransfer hasn't landed yet. Fire the existing cascade for
         // current+1; responders hold exactly that generation.
-        let current_gen = self
-            .state
-            .mek_cache
-            .lock()
-            .get(community_id)
-            .map_or(0, rekindle_crypto::group::media_key::MediaEncryptionKey::generation);
+        let current_gen = self.state.mek_cache.lock().get(community_id).map_or(
+            0,
+            rekindle_crypto::group::media_key::MediaEncryptionKey::generation,
+        );
         let Some(my_pseudonym) = self
             .state
             .communities
@@ -129,6 +127,7 @@ impl VideoDeps for VideoAdapter {
             stream_id,
             frame_seq,
             keyframe,
+            codec,
             timestamp,
             payload,
         } = event
@@ -142,6 +141,7 @@ impl VideoDeps for VideoAdapter {
                     stream_id: hex::encode(stream_id),
                     frame_seq,
                     keyframe,
+                    codec: codec.wire_str().to_string(),
                     timestamp,
                     payload_b64: base64::engine::general_purpose::STANDARD.encode(&payload),
                 },
@@ -161,7 +161,8 @@ impl VideoDeps for VideoAdapter {
             channel_id,
             max_pixel_count,
             max_fps,
-            codecs,
+            encode_codecs,
+            decode_codecs,
             supports_optimize_for_latency,
             supported_scalability_modes,
         } = &event
@@ -169,7 +170,8 @@ impl VideoDeps for VideoAdapter {
             let caps = rekindle_video::MediaCapabilities {
                 max_pixel_count: *max_pixel_count,
                 max_fps: *max_fps,
-                codecs: codecs.clone(),
+                encode_codecs: encode_codecs.clone(),
+                decode_codecs: decode_codecs.clone(),
                 supports_optimize_for_latency: *supports_optimize_for_latency,
                 supported_scalability_modes: supported_scalability_modes.clone(),
             };
@@ -262,7 +264,8 @@ fn map_video_event(event: VideoEvent) -> CommunityEvent {
             channel_id,
             max_pixel_count,
             max_fps,
-            codecs,
+            encode_codecs,
+            decode_codecs,
             supports_optimize_for_latency,
             supported_scalability_modes,
         } => CommunityEvent::VideoMediaCapabilities {
@@ -271,7 +274,8 @@ fn map_video_event(event: VideoEvent) -> CommunityEvent {
             channel_id,
             max_pixel_count,
             max_fps,
-            codecs,
+            encode_codecs,
+            decode_codecs,
             supports_optimize_for_latency,
             supported_scalability_modes,
         },

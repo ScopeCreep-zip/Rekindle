@@ -51,7 +51,8 @@ pub(super) fn broadcast_media_capabilities_impl(
         channel_id: channel_id.to_string(),
         max_pixel_count: caps.max_pixel_count,
         max_fps: caps.max_fps,
-        codecs: caps.codecs,
+        encode_codecs: caps.encode_codecs,
+        decode_codecs: caps.decode_codecs,
         supports_optimize_for_latency: caps.supports_optimize_for_latency,
         supported_scalability_modes: caps.supported_scalability_modes,
     });

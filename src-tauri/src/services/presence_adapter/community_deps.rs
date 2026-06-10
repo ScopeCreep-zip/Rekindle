@@ -510,7 +510,8 @@ impl CommunityPresenceDeps for PresenceAdapter {
         let Some(app) = self.state.app_handle.read().clone() else {
             return;
         };
-        let Ok(deps) = crate::services::voice_runtime::build_voice_signaling_deps(&app, &self.state)
+        let Ok(deps) =
+            crate::services::voice_runtime::build_voice_signaling_deps(&app, &self.state)
         else {
             return;
         };

@@ -29,6 +29,9 @@ pub enum VideoEvent {
         stream_id: [u8; 16],
         frame_seq: u32,
         keyframe: bool,
+        /// Codec the frame was encoded with — the frontend configures
+        /// its decoder from this tag, never from the session config.
+        codec: rekindle_types::video::Codec,
         timestamp: u32,
         payload: Vec<u8>,
     },
@@ -70,7 +73,8 @@ pub enum VideoEvent {
         channel_id: String,
         max_pixel_count: u32,
         max_fps: u8,
-        codecs: Vec<Codec>,
+        encode_codecs: Vec<Codec>,
+        decode_codecs: Vec<Codec>,
         supports_optimize_for_latency: bool,
         supported_scalability_modes: Vec<ScalabilityMode>,
     },

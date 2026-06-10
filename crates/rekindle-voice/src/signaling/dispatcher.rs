@@ -51,7 +51,12 @@ pub async fn handle_voice_signaling(
             );
         }
         ControlPayload::VoiceJoinConfirmed { channel_id } => {
-            presence::handle_voice_join_confirmed(&deps, community_id, sender_pseudonym, channel_id);
+            presence::handle_voice_join_confirmed(
+                &deps,
+                community_id,
+                sender_pseudonym,
+                channel_id,
+            );
         }
         ControlPayload::VoiceLeave { channel_id } => {
             presence::handle_voice_leave(&deps, community_id, sender_pseudonym, channel_id);

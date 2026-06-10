@@ -45,6 +45,15 @@ pub(crate) const LOCAL_PEER_KEY: &str = "<local>";
 pub struct VideoSessionState {
     pub peer_caps: HashMap<String, MediaCapabilities>,
     pub last_emitted: Option<SessionVideoConfig>,
+    /// Phase 3 latch — true after `VideoCodecIncompatible` was emitted
+    /// for the current peer set. Prevents per-recompute toast spam:
+    /// the event fires only on the compatible→incompatible TRANSITION,
+    /// and a recovery (negotiation succeeds again) clears the latch and
+    /// force-emits the config.
+    pub last_incompatible: bool,
+    /// Phase 3 — decode-only local (empty `encode_codecs`) is a
+    /// supported mode, logged once per session instead of evented.
+    pub decode_only_logged: bool,
 }
 
 /// Per-(community_id, channel_id) session state. `RwLock` is `parking_lot`
@@ -81,10 +90,16 @@ enum RecomputeOutcome {
     /// Emit `CommunityEvent::VideoSessionConfig { config }`. Includes
     /// the first-emit case and every change after.
     Emit(SessionVideoConfig),
+    /// Phase 3 — no local encode codec is decodable by every peer.
+    /// Emit `CommunityEvent::VideoCodecIncompatible { peers }` (only
+    /// returned on the compatible→incompatible transition — latched).
+    EmitIncompatible { peers: Vec<String> },
 }
 
-/// Core recompute + decide-to-emit pass. Reads every cap snapshot in the
-/// `(community, channel)` slot, runs the pure-logic negotiator, and
+/// Core recompute + decide-to-emit pass. Splits the local caps
+/// (`LOCAL_PEER_KEY`, falling back to the pending probe slot — covers a
+/// peer's caps arriving via `ensure_slot` before `on_local_joined` ran)
+/// from the remote peers', runs the pure-logic per-node negotiator, and
 /// returns whether the caller should emit. `force_emit_unchanged=true`
 /// is the load-bearing primitive for `on_local_joined`: a late-mounting
 /// frontend must receive the current config even when the negotiated
@@ -98,6 +113,9 @@ fn recompute_and_decide(
 ) -> Result<RecomputeOutcome, String> {
     let key = (community_id.to_string(), channel_id.to_string());
     let mut guard = sessions.inner.write();
+    let pending_local = guard
+        .get(&pending_slot_key())
+        .and_then(|s| s.peer_caps.get(LOCAL_PEER_KEY).cloned());
     let entry = guard.get_mut(&key).ok_or_else(|| {
         format!(
             "video session state missing for community={community_id} channel={channel_id} — \
@@ -106,15 +124,103 @@ fn recompute_and_decide(
         )
     })?;
 
-    let caps_snapshot: Vec<MediaCapabilities> = entry.peer_caps.values().cloned().collect();
-    let new_config = negotiate_session_config(&caps_snapshot);
+    let local = entry
+        .peer_caps
+        .get(LOCAL_PEER_KEY)
+        .cloned()
+        .or(pending_local)
+        .unwrap_or_else(MediaCapabilities::interim_default);
+    let peers: Vec<MediaCapabilities> = entry
+        .peer_caps
+        .iter()
+        .filter(|(k, _)| *k != LOCAL_PEER_KEY)
+        .map(|(_, v)| v.clone())
+        .collect();
 
-    let unchanged = entry.last_emitted.as_ref() == Some(&new_config);
-    if unchanged && !force_emit_unchanged {
-        return Ok(RecomputeOutcome::NoEmit);
+    match negotiate_session_config(&local, &peers) {
+        Some(new_config) => {
+            entry.decode_only_logged = false;
+            let was_incompatible = std::mem::take(&mut entry.last_incompatible);
+            let unchanged = entry.last_emitted.as_ref() == Some(&new_config);
+            // Recovering from incompatible force-emits even when the
+            // shape matches: the frontend tore its session down on the
+            // incompatible event and needs the config to restart.
+            if unchanged && !force_emit_unchanged && !was_incompatible {
+                return Ok(RecomputeOutcome::NoEmit);
+            }
+            entry.last_emitted = Some(new_config.clone());
+            Ok(RecomputeOutcome::Emit(new_config))
+        }
+        None if local.encode_codecs.is_empty() => {
+            // Decode-only platform — a supported mode (the user can
+            // watch, not send). Not an incompatibility; log once.
+            if !entry.decode_only_logged {
+                entry.decode_only_logged = true;
+                tracing::info!(
+                    community_id,
+                    channel_id,
+                    "local WebView reports no video encoder — decode-only session"
+                );
+            }
+            Ok(RecomputeOutcome::NoEmit)
+        }
+        None => {
+            if entry.last_incompatible {
+                return Ok(RecomputeOutcome::NoEmit);
+            }
+            entry.last_incompatible = true;
+            // Name the individually-blocking peers (decode set disjoint
+            // from our entire encode set); if the failure is only
+            // collective (each candidate blocked by a different peer),
+            // every peer is implicated.
+            let blocking: Vec<String> = entry
+                .peer_caps
+                .iter()
+                .filter(|(k, _)| *k != LOCAL_PEER_KEY)
+                .filter(|(_, p)| {
+                    local
+                        .encode_codecs
+                        .iter()
+                        .all(|c| !p.decode_codecs.contains(c))
+                })
+                .map(|(k, _)| k.clone())
+                .collect();
+            let peers = if blocking.is_empty() {
+                entry
+                    .peer_caps
+                    .keys()
+                    .filter(|k| *k != LOCAL_PEER_KEY)
+                    .cloned()
+                    .collect()
+            } else {
+                blocking
+            };
+            Ok(RecomputeOutcome::EmitIncompatible { peers })
+        }
     }
-    entry.last_emitted = Some(new_config.clone());
-    Ok(RecomputeOutcome::Emit(new_config))
+}
+
+/// Fan a recompute outcome out to the frontend event stream.
+fn apply_outcome(
+    state: &Arc<AppState>,
+    community_id: &str,
+    channel_id: &str,
+    outcome: RecomputeOutcome,
+) {
+    match outcome {
+        RecomputeOutcome::NoEmit => {}
+        RecomputeOutcome::Emit(config) => {
+            emit_session_config(state, community_id, channel_id, config);
+        }
+        RecomputeOutcome::EmitIncompatible { peers } => {
+            let event = CommunityEvent::VideoCodecIncompatible {
+                community_id: community_id.to_string(),
+                channel_id: channel_id.to_string(),
+                peers,
+            };
+            crate::event_dispatch::emit_now(state, "community-event", &event);
+        }
+    }
 }
 
 /// Ensure the `(community, channel)` slot exists. Idempotent — called
@@ -213,11 +319,8 @@ pub fn on_local_caps_reported(
             LOCAL_PEER_KEY,
             caps.clone(),
         )?;
-        if let RecomputeOutcome::Emit(config) =
-            recompute_and_decide(&state.video_sessions, community_id, channel_id, false)?
-        {
-            emit_session_config(state, community_id, channel_id, config);
-        }
+        let outcome = recompute_and_decide(&state.video_sessions, community_id, channel_id, false)?;
+        apply_outcome(state, community_id, channel_id, outcome);
     }
     set_pending_local_caps(state, Some(caps));
     Ok(())
@@ -277,18 +380,18 @@ pub fn on_local_joined(
         LOCAL_PEER_KEY,
         local_caps,
     )?;
-    if let RecomputeOutcome::Emit(config) =
-        recompute_and_decide(&state.video_sessions, community_id, channel_id, true)?
-    {
-        emit_session_config(state, community_id, channel_id, config);
-    }
+    let outcome = recompute_and_decide(&state.video_sessions, community_id, channel_id, true)?;
+    apply_outcome(state, community_id, channel_id, outcome);
     Ok(())
 }
 
 /// A remote peer joined the call. We don't yet know their real caps
 /// (they'll be advertised via `MediaCapabilities` gossip on join);
-/// seeding with `interim_default` is the most conservative floor —
-/// the negotiator can't pick a config no peer can decode.
+/// seed with `optimistic_peer_default` — listing every codec we ship —
+/// so a pre-caps joiner never blocks the local encoder pick. The
+/// placeholder self-heals when the real advertisement lands
+/// (`on_peer_caps_received` recomputes), and receivers create decoders
+/// from per-fragment tags regardless of what this node encodes.
 pub fn on_peer_joined(
     state: &Arc<AppState>,
     community_id: &str,
@@ -301,13 +404,10 @@ pub fn on_peer_joined(
         community_id,
         channel_id,
         sender_pseudonym,
-        MediaCapabilities::interim_default(),
+        MediaCapabilities::optimistic_peer_default(),
     )?;
-    if let RecomputeOutcome::Emit(config) =
-        recompute_and_decide(&state.video_sessions, community_id, channel_id, false)?
-    {
-        emit_session_config(state, community_id, channel_id, config);
-    }
+    let outcome = recompute_and_decide(&state.video_sessions, community_id, channel_id, false)?;
+    apply_outcome(state, community_id, channel_id, outcome);
     Ok(())
 }
 
@@ -326,11 +426,8 @@ pub fn on_peer_left(
         channel_id,
         sender_pseudonym,
     )?;
-    if let RecomputeOutcome::Emit(config) =
-        recompute_and_decide(&state.video_sessions, community_id, channel_id, false)?
-    {
-        emit_session_config(state, community_id, channel_id, config);
-    }
+    let outcome = recompute_and_decide(&state.video_sessions, community_id, channel_id, false)?;
+    apply_outcome(state, community_id, channel_id, outcome);
     Ok(())
 }
 
@@ -352,11 +449,8 @@ pub fn on_peer_caps_received(
         sender_pseudonym,
         caps,
     )?;
-    if let RecomputeOutcome::Emit(config) =
-        recompute_and_decide(&state.video_sessions, community_id, channel_id, false)?
-    {
-        emit_session_config(state, community_id, channel_id, config);
-    }
+    let outcome = recompute_and_decide(&state.video_sessions, community_id, channel_id, false)?;
+    apply_outcome(state, community_id, channel_id, outcome);
     Ok(())
 }
 
@@ -395,9 +489,24 @@ mod tests {
         MediaCapabilities {
             max_pixel_count: 320 * 240,
             max_fps: 10,
-            codecs: vec![Codec::Vp9],
-            supports_optimize_for_latency: false,
-            supported_scalability_modes: vec![ScalabilityMode::Flat],
+            ..MediaCapabilities::interim_default()
+        }
+    }
+
+    /// Phase 3 latch state for the test slot.
+    fn incompatible_latch(state: &Arc<AppState>) -> bool {
+        let guard = state.video_sessions.inner.read();
+        guard
+            .get(&(COMMUNITY_ID.to_string(), CHANNEL_ID.to_string()))
+            .is_some_and(|s| s.last_incompatible)
+    }
+
+    /// A peer that decodes ONLY H.264 — disjoint from the local
+    /// interim default's VP9-only encode set.
+    fn h264_only_decoder() -> MediaCapabilities {
+        MediaCapabilities {
+            decode_codecs: vec![Codec::H264],
+            ..MediaCapabilities::interim_default()
         }
     }
 
@@ -408,7 +517,8 @@ mod tests {
         on_local_joined(&state, COMMUNITY_ID, CHANNEL_ID).expect("on_local_joined");
         let cfg = snapshot(&state).expect("first emit must populate last_emitted");
         // Local-only call resolves to the interim default shape.
-        let baseline = negotiate_session_config(&[MediaCapabilities::interim_default()]);
+        let baseline = negotiate_session_config(&MediaCapabilities::interim_default(), &[])
+            .expect("local-only negotiation succeeds");
         assert_eq!(cfg, baseline, "local-only config = interim_default");
     }
 
@@ -431,7 +541,8 @@ mod tests {
             "negotiated config must change when a strictly weaker peer joins"
         );
         let expected =
-            negotiate_session_config(&[MediaCapabilities::interim_default(), weaker_caps()]);
+            negotiate_session_config(&MediaCapabilities::interim_default(), &[weaker_caps()])
+                .expect("compatible");
         assert_eq!(after, expected);
     }
 
@@ -445,7 +556,8 @@ mod tests {
 
         on_peer_left(&state, COMMUNITY_ID, CHANNEL_ID, "peer_weak").unwrap();
         let after = snapshot(&state).unwrap();
-        let baseline = negotiate_session_config(&[MediaCapabilities::interim_default()]);
+        let baseline = negotiate_session_config(&MediaCapabilities::interim_default(), &[])
+            .expect("local-only negotiation succeeds");
         assert_eq!(after, baseline, "leave reverts to local-only config");
     }
 
@@ -482,9 +594,9 @@ mod tests {
         let strong = MediaCapabilities {
             max_pixel_count: 1280 * 720,
             max_fps: 30,
-            codecs: vec![Codec::Vp9],
             supports_optimize_for_latency: true,
             supported_scalability_modes: vec![ScalabilityMode::Flat, ScalabilityMode::L1T2],
+            ..MediaCapabilities::interim_default()
         };
         on_local_caps_reported(&state, strong.clone()).unwrap();
         // No active call → nothing to emit yet but the caps are cached.
@@ -494,8 +606,95 @@ mod tests {
         let cfg = snapshot(&state).unwrap();
         // Local-only session should pick up the stronger caps, not the
         // interim default.
-        let expected = negotiate_session_config(&[strong]);
+        let expected = negotiate_session_config(&strong, &[]).expect("local-only");
         assert_eq!(cfg, expected);
+    }
+
+    #[test]
+    fn incompatible_peer_latches_once_and_recovers() {
+        let state = fresh_state();
+        on_local_joined(&state, COMMUNITY_ID, CHANNEL_ID).unwrap();
+        let before = snapshot(&state).unwrap();
+        assert!(!incompatible_latch(&state));
+
+        // Real caps arrive: the peer decodes only H.264 while the local
+        // interim default encodes only VP9 → empty intersection.
+        on_peer_joined(&state, COMMUNITY_ID, CHANNEL_ID, "peer_h264").unwrap();
+        on_peer_caps_received(
+            &state,
+            COMMUNITY_ID,
+            CHANNEL_ID,
+            "peer_h264",
+            h264_only_decoder(),
+        )
+        .unwrap();
+        assert!(
+            incompatible_latch(&state),
+            "disjoint codec sets must latch incompatible"
+        );
+        assert_eq!(
+            snapshot(&state).as_ref(),
+            Some(&before),
+            "incompatible negotiation must not clobber the last emitted config"
+        );
+
+        // Membership churn while incompatible: latch stays set (no
+        // second EmitIncompatible — verified structurally by the latch
+        // short-circuit in recompute_and_decide).
+        on_peer_caps_received(
+            &state,
+            COMMUNITY_ID,
+            CHANNEL_ID,
+            "peer_h264",
+            h264_only_decoder(),
+        )
+        .unwrap();
+        assert!(incompatible_latch(&state));
+
+        // Recovery: the peer re-advertises with VP9 decode → latch
+        // clears and the config force-emits.
+        on_peer_caps_received(
+            &state,
+            COMMUNITY_ID,
+            CHANNEL_ID,
+            "peer_h264",
+            MediaCapabilities::interim_default(),
+        )
+        .unwrap();
+        assert!(!incompatible_latch(&state), "recovery must clear the latch");
+        assert_eq!(snapshot(&state).as_ref(), Some(&before));
+    }
+
+    #[test]
+    fn decode_only_local_is_not_incompatible() {
+        let state = fresh_state();
+        // Local WebView probe found no encoder at all.
+        let decode_only = MediaCapabilities {
+            encode_codecs: vec![],
+            ..MediaCapabilities::interim_default()
+        };
+        on_local_caps_reported(&state, decode_only).unwrap();
+        on_local_joined(&state, COMMUNITY_ID, CHANNEL_ID).unwrap();
+        assert!(
+            snapshot(&state).is_none(),
+            "decode-only local has no encoder config to emit"
+        );
+        assert!(
+            !incompatible_latch(&state),
+            "decode-only is a supported mode, not an incompatibility"
+        );
+    }
+
+    #[test]
+    fn pre_caps_peer_placeholder_never_blocks() {
+        let state = fresh_state();
+        on_local_joined(&state, COMMUNITY_ID, CHANNEL_ID).unwrap();
+        // A joiner whose advertisement hasn't landed yet must not flip
+        // the session incompatible (optimistic placeholder seeds every
+        // shipped codec).
+        on_peer_joined(&state, COMMUNITY_ID, CHANNEL_ID, "peer_pending").unwrap();
+        assert!(!incompatible_latch(&state));
+        assert!(snapshot(&state).is_some());
     }
 
     #[test]

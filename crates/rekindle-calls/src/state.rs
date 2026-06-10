@@ -82,6 +82,12 @@ pub struct CallState {
     /// Derived 32-byte symmetric key. `None` until both sides have
     /// exchanged X25519 publics. Zeroized when this struct is dropped.
     pub call_key: Option<[u8; 32]>,
+    /// Phase 5 — codecs the PEER's WebView can decode
+    /// (preference-ordered wire strings: "vp9" / "vp8" / "h264").
+    /// Captured from `CallInvite` (Incoming side) or `CallAccept`
+    /// (Outgoing side). Empty = peer predates its probe (or sent
+    /// nothing) — senders treat that as the VP9 floor.
+    pub peer_video_decode_codecs: Vec<String>,
 }
 
 impl Drop for CallState {
@@ -103,6 +109,7 @@ impl std::fmt::Debug for CallState {
             .field("has_secret", &self.my_x25519_secret.is_some())
             .field("has_peer_pub", &self.peer_x25519_pub.is_some())
             .field("has_call_key", &self.call_key.is_some())
+            .field("peer_video_decode_codecs", &self.peer_video_decode_codecs)
             .finish()
     }
 }

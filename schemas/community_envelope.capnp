@@ -554,6 +554,10 @@ struct VideoFragmentPayload @0xea003b000000a000 {
     timestamp            @6 :UInt32;
     payload              @7 :Data;
     signature            @8 :Data;
+    # RTP payload-type analog — receivers configure their decoder from
+    # this tag. Signature-covered (the codec byte rides the fragment
+    # signing bytes).
+    codec                @9 :Codec;
 }
 
 struct VideoParityFragmentPayload @0xea003c000000a000 {
@@ -568,6 +572,9 @@ struct VideoParityFragmentPayload @0xea003c000000a000 {
     timestamp            @7 :UInt32;
     payload              @8 :Data;
     signature            @9 :Data;
+    # Codec of the frame this parity covers — mirrors
+    # VideoFragmentPayload.codec; signature-covered.
+    codec                @10 :Codec;
 }
 
 struct FrameAckPayload @0xea003d000000a000 {
@@ -596,7 +603,9 @@ struct BandwidthEstimatePayload @0xea003f000000a000 {
 # Closed enum — no `Other(String)` escape hatch. Adding a codec is a
 # deliberate schema break, not a fallback.
 enum Codec @0xeb0001000000a000 {
-    vp9 @0;
+    vp9  @0;
+    vp8  @1;
+    h264 @2;
 }
 
 # VP9 SVC scalability mode. Mirrors `rekindle_types::video::ScalabilityMode`.
@@ -605,23 +614,26 @@ enum ScalabilityMode @0xeb0002000000a000 {
     l1t2 @1;
 }
 
-# Pre-release schema break: the previous `codecs @3 :List(Text)` field
-# was deleted outright (memory rule: `feedback_no_legacy_compat` — no
-# version-bump preserving the old shape). Cap'n Proto requires
-# sequential ordinals, so the new typed fields take @3, @4, @5 — there
-# is no live peer running the old schema (the wire-shape break is the
-# point). The 64-bit struct ID (@0xea0040000000a000) is unchanged
-# because this is the same logical payload: any peer attempting to
-# decode the pre-break shape against this struct gets a clean schema
-# error, not a silent type-confusion. Adding a new field in the future
-# follows append-only discipline from @6 onward.
+# Pre-release schema break (second re-shape, same precedent as the
+# first: memory rule `feedback_no_legacy_compat`, no version-bump
+# preserving the old shape). The symmetric `codecsTyped @4` list split
+# into direction-specific `encodeCodecs @4` + `decodeCodecs @5`
+# (WebView engines are encode/decode asymmetric — Apple WebKit
+# guarantees H.264 hw encode but not VP9 encode), which pushes
+# `supportedScalabilityModes` to @6. The 64-bit struct ID
+# (@0xea0040000000a000) is unchanged because this is the same logical
+# payload: any peer attempting to decode the pre-break shape against
+# this struct gets a clean schema error, not a silent type-confusion.
+# Adding a new field in the future follows append-only discipline from
+# @7 onward.
 struct MediaCapabilitiesPayload @0xea0040000000a000 {
     channelId                       @0 :Text;
     maxPixelCount                   @1 :UInt32;
     maxFps                          @2 :UInt8;
     supportsOptimizeForLatency      @3 :Bool;
-    codecsTyped                     @4 :List(Codec);
-    supportedScalabilityModes       @5 :List(ScalabilityMode);
+    encodeCodecs                    @4 :List(Codec);
+    decodeCodecs                    @5 :List(Codec);
+    supportedScalabilityModes       @6 :List(ScalabilityMode);
 }
 
 struct TopologyChangePayload @0xea0041000000a000 {

@@ -1,16 +1,22 @@
 //! Pure-logic video session negotiator.
 //!
-//! Computes the single `SessionVideoConfig` that every peer in a video
-//! channel must encode and decode against. No I/O, no time, no
-//! randomness — given the same inputs, every peer derives the same
-//! output, so the backend on each device picks identical encoder and
-//! decoder settings without any coordinator.
+//! Computes the `SessionVideoConfig` the LOCAL node encodes and decodes
+//! against. No I/O, no time, no randomness — but unlike the pre-split
+//! negotiator the output is PER-NODE, not room-symmetric: each node
+//! picks its own encoder codec (first of its `encode_codecs` that every
+//! remote peer can decode), so a Mac sending H.264 and a Pop!_OS peer
+//! sending VP9 in the same call is the correct steady state. Receivers
+//! demux by the per-fragment codec tag, never by this config.
 //!
 //! Plan-doc invariants:
-//! - intersection of supported codecs; pick the first codec all peers list
-//! - min of (max_width, max_height, max_fps) across peers
-//! - `optimizeForLatency` only when ALL peers report support
-//! - `ScalabilityMode::L1T2` only when ALL peers list it
+//! - encoder codec: first of `local.encode_codecs` contained in EVERY
+//!   peer's `decode_codecs`; zero peers → local's first preference;
+//!   empty intersection or no local encoder → `None` (caller surfaces
+//!   `VideoCodecIncompatible` / decode-only)
+//! - min of (max_width, max_height, max_fps) across local + peers
+//! - `optimizeForLatency` only when ALL (local + peers) report support
+//! - `ScalabilityMode::L1T2` only for VP9 AND when ALL list it (the
+//!   WebView probe only validates L1T2 against the VP9 encoder)
 //! - frame budget: `max_width * max_height * 3 <= 7 MiB`. Panic in
 //!   debug builds (this means the caller passed inconsistent caps);
 //!   in release, clamp width and height down to the budget.
@@ -27,48 +33,38 @@ use crate::{
 const FRAME_BUDGET_BYTES: u64 = 7 * 1024 * 1024;
 const BYTES_PER_PIXEL: u64 = 3;
 
-/// Compute the room-wide `SessionVideoConfig` for a set of peer caps.
+/// Compute the local node's `SessionVideoConfig` against a set of
+/// remote peer caps.
 ///
-/// `peers` may be empty — in that case the local participant is alone
-/// in the channel and the negotiator returns the interim default
-/// (a backend invariant we can rely on because the caller always seeds
-/// at least the local peer's caps via [`MediaCapabilities::interim_default`]
-/// before calling).
+/// `peers` may be empty — the local participant is alone in the
+/// channel and the config follows their own caps.
 ///
-/// # Panics
-///
-/// - In debug builds, if any peer reports an empty codec list (a backend
-///   bug — caps are required to include at least `Codec::Vp9` per
-///   [`MediaCapabilities::interim_default`]).
-/// - In debug builds, if `max_width * max_height * 3 > 7 MiB`.
-pub fn negotiate_session_config(peers: &[MediaCapabilities]) -> SessionVideoConfig {
-    if peers.is_empty() {
-        let caps = MediaCapabilities::interim_default();
-        return config_from_single(&caps);
-    }
+/// Returns `None` when no encoder codec works: either the local node
+/// has no encoder at all (`encode_codecs` is empty — a decode-only
+/// platform, still a valid watcher) or no local encode codec is
+/// decodable by every peer (genuine incompatibility — the caller emits
+/// `VideoCodecIncompatible`).
+pub fn negotiate_session_config(
+    local: &MediaCapabilities,
+    peers: &[MediaCapabilities],
+) -> Option<SessionVideoConfig> {
+    let codec = pick_encoder_codec(local, peers)?;
 
-    // Intersect supported codecs across all peers in the order of the
-    // first peer's preference list. This produces deterministic output
-    // regardless of which peer iterates first.
-    let codec = pick_codec(peers);
-
-    // Minimum resolution / fps across the mesh. width × height is
+    // Minimum resolution / fps across local + peers. width × height is
     // approximated from `max_pixel_count` assuming the 16:9 aspect ratio
     // that the WebView capture pipeline produces. The reverse map
-    // (pixel_count → width × height) sticks to powers of two so the
-    // encoder gets clean numbers (e.g. 1280×720, 854×480).
-    let max_pixel_count = peers
-        .iter()
+    // (pixel_count → width × height) sticks to the standard ladder so
+    // the encoder gets clean numbers (e.g. 1280×720, 854×480).
+    let max_pixel_count = all_caps(local, peers)
         .map(|c| c.max_pixel_count)
         .min()
-        .expect("non-empty checked above");
+        .expect("iterator includes local — never empty");
     let (mut max_width, mut max_height) = resolution_from_pixel_count(max_pixel_count);
     let max_fps = u32::from(
-        peers
-            .iter()
+        all_caps(local, peers)
             .map(|c| c.max_fps)
             .min()
-            .expect("non-empty checked above"),
+            .expect("iterator includes local — never empty"),
     );
 
     // Frame budget assertion + saturating clamp.
@@ -89,10 +85,10 @@ pub fn negotiate_session_config(peers: &[MediaCapabilities]) -> SessionVideoConf
         }
     }
 
-    let scalability_mode = pick_scalability_mode(peers);
-    let optimize_for_latency = peers.iter().all(|c| c.supports_optimize_for_latency);
+    let scalability_mode = pick_scalability_mode(codec, local, peers);
+    let optimize_for_latency = all_caps(local, peers).all(|c| c.supports_optimize_for_latency);
 
-    SessionVideoConfig {
+    Some(SessionVideoConfig {
         encoder: EncoderConstraints {
             codec,
             max_width,
@@ -101,75 +97,47 @@ pub fn negotiate_session_config(peers: &[MediaCapabilities]) -> SessionVideoConf
             scalability_mode,
         },
         decoder: DecoderConstraints {
-            codec,
             optimize_for_latency,
         },
-    }
+    })
 }
 
-/// Single-peer shortcut: return a config tuned to one peer's caps. Used
-/// when `peers.is_empty()` so the negotiator never returns a degenerate
-/// (zero-fps, zero-resolution) config.
-fn config_from_single(caps: &MediaCapabilities) -> SessionVideoConfig {
-    let codec = *caps
-        .codecs
-        .first()
-        .expect("interim_default seeds Codec::Vp9");
-    let (max_width, max_height) = resolution_from_pixel_count(caps.max_pixel_count);
-    let scalability_mode = if caps
-        .supported_scalability_modes
-        .contains(&ScalabilityMode::L1T2)
-    {
-        ScalabilityMode::L1T2
-    } else {
-        ScalabilityMode::Flat
-    };
-    SessionVideoConfig {
-        encoder: EncoderConstraints {
-            codec,
-            max_width,
-            max_height,
-            max_fps: u32::from(caps.max_fps),
-            scalability_mode,
-        },
-        decoder: DecoderConstraints {
-            codec,
-            optimize_for_latency: caps.supports_optimize_for_latency,
-        },
-    }
+/// Local + every remote peer, as one iterator. The min-merge invariants
+/// (resolution, fps, latency, L1T2) all range over this set.
+fn all_caps<'a>(
+    local: &'a MediaCapabilities,
+    peers: &'a [MediaCapabilities],
+) -> impl Iterator<Item = &'a MediaCapabilities> {
+    std::iter::once(local).chain(peers.iter())
 }
 
-/// Pick the first codec from peer 0's preference list that every other
-/// peer also supports. Panic with a clear `unreachable!` if the
-/// intersection is empty — this means a peer with no codecs joined a
-/// video channel, which is a backend bug because every cap-broadcast
-/// site uses `MediaCapabilities::interim_default()` as the floor.
-fn pick_codec(peers: &[MediaCapabilities]) -> Codec {
-    debug_assert!(
-        peers.iter().all(|c| !c.codecs.is_empty()),
-        "negotiate_session_config: peer reported empty codec list — backend bug"
-    );
-    let first = &peers[0];
-    for candidate in &first.codecs {
-        if peers.iter().all(|p| p.codecs.contains(candidate)) {
-            return *candidate;
-        }
-    }
-    unreachable!(
-        "negotiate_session_config: codec intersection empty across {} peers — \
-        backend invariant violated (every cap-broadcast site must seed \
-        MediaCapabilities::interim_default which includes Codec::Vp9)",
-        peers.len()
-    )
+/// First codec from the local ENCODE preference list that every peer
+/// can DECODE. With zero peers the intersection is vacuous and the
+/// local first preference wins. `None` = no local encoder, or no
+/// mutually decodable codec (the caller decides which it is by
+/// checking `local.encode_codecs.is_empty()`).
+fn pick_encoder_codec(local: &MediaCapabilities, peers: &[MediaCapabilities]) -> Option<Codec> {
+    local
+        .encode_codecs
+        .iter()
+        .copied()
+        .find(|candidate| peers.iter().all(|p| p.decode_codecs.contains(candidate)))
 }
 
-/// `ScalabilityMode::L1T2` only when every peer lists it; otherwise
-/// `Flat`. No asymmetric configuration — see plan §A.
-fn pick_scalability_mode(peers: &[MediaCapabilities]) -> ScalabilityMode {
-    let all_l1t2 = peers.iter().all(|c| {
-        c.supported_scalability_modes
-            .contains(&ScalabilityMode::L1T2)
-    });
+/// `ScalabilityMode::L1T2` only when the picked codec is VP9 and every
+/// participant (local + peers) lists it; otherwise `Flat`. The WebView
+/// probe validates L1T2 against the VP9 encoder only — forcing `Flat`
+/// for VP8/H.264 keeps `encoder.configure()` valid on WebKit.
+fn pick_scalability_mode(
+    codec: Codec,
+    local: &MediaCapabilities,
+    peers: &[MediaCapabilities],
+) -> ScalabilityMode {
+    let all_l1t2 = codec == Codec::Vp9
+        && all_caps(local, peers).all(|c| {
+            c.supported_scalability_modes
+                .contains(&ScalabilityMode::L1T2)
+        });
     if all_l1t2 {
         ScalabilityMode::L1T2
     } else {
@@ -220,35 +188,38 @@ mod tests {
     use super::*;
 
     fn mac_caps() -> MediaCapabilities {
-        // Mac WKWebView style: 720p @ 30, VP9, L1T2 supported,
-        // optimizeForLatency works.
+        // Mac WKWebView style: 720p @ 30, H.264 hardware encode only,
+        // decodes H.264 + VP9, L1T2 supported, optimizeForLatency works.
         MediaCapabilities {
             max_pixel_count: 1280 * 720,
             max_fps: 30,
-            codecs: vec![Codec::Vp9],
+            encode_codecs: vec![Codec::H264],
+            decode_codecs: vec![Codec::Vp9, Codec::H264],
             supports_optimize_for_latency: true,
             supported_scalability_modes: vec![ScalabilityMode::Flat, ScalabilityMode::L1T2],
         }
     }
 
     fn pop_caps() -> MediaCapabilities {
-        // Pop!_OS WebKitGTK style: 1080p @ 30, VP9, no L1T2,
-        // optimizeForLatency probe fails (the acute defect in the plan).
+        // Pop!_OS WebKitGTK style: 1080p @ 30, VP9/VP8 via libvpx +
+        // H.264 decode via GStreamer, no L1T2, optimizeForLatency probe
+        // fails.
         MediaCapabilities {
             max_pixel_count: 1920 * 1080,
             max_fps: 30,
-            codecs: vec![Codec::Vp9],
+            encode_codecs: vec![Codec::Vp9, Codec::Vp8],
+            decode_codecs: vec![Codec::Vp9, Codec::Vp8, Codec::H264],
             supports_optimize_for_latency: false,
             supported_scalability_modes: vec![ScalabilityMode::Flat],
         }
     }
 
     #[test]
-    fn empty_peers_falls_back_to_interim_default() {
-        let cfg = negotiate_session_config(&[]);
+    fn zero_peers_uses_local_first_preference() {
+        let cfg = negotiate_session_config(&MediaCapabilities::interim_default(), &[])
+            .expect("local-only negotiation always succeeds with an encoder");
         // Interim default ladder rung: 854×480.
         assert_eq!(cfg.encoder.codec, Codec::Vp9);
-        assert_eq!(cfg.decoder.codec, Codec::Vp9);
         assert_eq!(cfg.encoder.max_width, 854);
         assert_eq!(cfg.encoder.max_height, 480);
         assert_eq!(cfg.encoder.max_fps, 15);
@@ -257,44 +228,102 @@ mod tests {
     }
 
     #[test]
-    fn single_peer_uses_that_peer_caps() {
-        let caps = mac_caps();
-        let cfg = negotiate_session_config(std::slice::from_ref(&caps));
+    fn single_local_uses_own_caps() {
+        let cfg = negotiate_session_config(&mac_caps(), &[]).expect("alone in channel");
         // Largest ladder rung ≤ 1280×720 = 1280×720 itself.
+        assert_eq!(cfg.encoder.codec, Codec::H264, "local first preference");
         assert_eq!(cfg.encoder.max_width, 1280);
         assert_eq!(cfg.encoder.max_height, 720);
         assert_eq!(cfg.encoder.max_fps, 30);
-        // Single peer supports L1T2 → picked.
-        assert_eq!(cfg.encoder.scalability_mode, ScalabilityMode::L1T2);
+        // H.264 picked → L1T2 suppressed even though the local engine
+        // lists it (L1T2 is only probed against VP9).
+        assert_eq!(cfg.encoder.scalability_mode, ScalabilityMode::Flat);
         assert!(cfg.decoder.optimize_for_latency);
     }
 
     #[test]
-    fn mixed_caps_picks_minimum_resolution_and_strict_intersection() {
-        // Mac (1280×720, L1T2 yes, optimize yes) + Pop (1920×1080, L1T2
-        // no, optimize no). Expect 1280×720, Flat, optimize=false.
-        let cfg = negotiate_session_config(&[mac_caps(), pop_caps()]);
-        assert_eq!(cfg.encoder.codec, Codec::Vp9);
+    fn asymmetric_pick_is_per_node() {
+        // Mac (encodes h264 only) facing Pop (decodes vp9/vp8/h264):
+        // Mac's pick is H264. Pop facing Mac (decodes vp9+h264): Pop's
+        // pick is its first preference VP9. Each node encodes its own
+        // codec — the correct steady state, not an error.
+        let mac_cfg = negotiate_session_config(&mac_caps(), &[pop_caps()]).expect("compatible");
+        assert_eq!(mac_cfg.encoder.codec, Codec::H264);
+
+        let pop_cfg = negotiate_session_config(&pop_caps(), &[mac_caps()]).expect("compatible");
+        assert_eq!(pop_cfg.encoder.codec, Codec::Vp9);
+    }
+
+    #[test]
+    fn mixed_caps_min_merge_resolution_latency() {
+        let cfg = negotiate_session_config(&mac_caps(), &[pop_caps()]).expect("compatible");
         assert_eq!(cfg.encoder.max_width, 1280);
         assert_eq!(cfg.encoder.max_height, 720);
         assert_eq!(cfg.encoder.max_fps, 30);
+        assert!(
+            !cfg.decoder.optimize_for_latency,
+            "optimizeForLatency must drop out when ANY participant reports unsupported"
+        );
+    }
+
+    #[test]
+    fn preference_order_respected() {
+        // Local prefers vp9 then h264; peer decodes only h264 → h264.
+        let local = MediaCapabilities {
+            encode_codecs: vec![Codec::Vp9, Codec::H264],
+            ..MediaCapabilities::interim_default()
+        };
+        let peer = MediaCapabilities {
+            decode_codecs: vec![Codec::H264],
+            ..MediaCapabilities::interim_default()
+        };
+        let cfg = negotiate_session_config(&local, &[peer]).expect("h264 bridges");
+        assert_eq!(cfg.encoder.codec, Codec::H264);
+    }
+
+    #[test]
+    fn empty_intersection_returns_none() {
+        let local = MediaCapabilities {
+            encode_codecs: vec![Codec::Vp9],
+            ..MediaCapabilities::interim_default()
+        };
+        let peer = MediaCapabilities {
+            decode_codecs: vec![Codec::H264],
+            ..MediaCapabilities::interim_default()
+        };
+        assert!(negotiate_session_config(&local, &[peer]).is_none());
+    }
+
+    #[test]
+    fn decode_only_local_returns_none() {
+        let local = MediaCapabilities {
+            encode_codecs: vec![],
+            ..MediaCapabilities::interim_default()
+        };
+        assert!(negotiate_session_config(&local, &[]).is_none());
+        assert!(negotiate_session_config(&local, &[pop_caps()]).is_none());
+    }
+
+    #[test]
+    fn l1t2_requires_vp9_and_unanimous_support() {
+        // Two Mac-style peers but with VP9 encode: all list L1T2 → kept.
+        let vp9_mac = MediaCapabilities {
+            encode_codecs: vec![Codec::Vp9],
+            decode_codecs: vec![Codec::Vp9],
+            ..mac_caps()
+        };
+        let cfg =
+            negotiate_session_config(&vp9_mac, std::slice::from_ref(&vp9_mac)).expect("compatible");
+        assert_eq!(cfg.encoder.codec, Codec::Vp9);
+        assert_eq!(cfg.encoder.scalability_mode, ScalabilityMode::L1T2);
+
+        // Same pair but one participant lacks L1T2 → Flat.
+        let cfg = negotiate_session_config(&vp9_mac, &[pop_caps()]).expect("compatible");
         assert_eq!(
             cfg.encoder.scalability_mode,
             ScalabilityMode::Flat,
-            "L1T2 must drop out when ANY peer doesn't list it"
+            "L1T2 must drop out when ANY participant doesn't list it"
         );
-        assert!(
-            !cfg.decoder.optimize_for_latency,
-            "optimizeForLatency must drop out when ANY peer reports unsupported"
-        );
-    }
-
-    #[test]
-    fn all_peers_l1t2_keeps_l1t2() {
-        let two_mac = vec![mac_caps(), mac_caps()];
-        let cfg = negotiate_session_config(&two_mac);
-        assert_eq!(cfg.encoder.scalability_mode, ScalabilityMode::L1T2);
-        assert!(cfg.decoder.optimize_for_latency);
     }
 
     #[test]
@@ -304,11 +333,9 @@ mod tests {
         let tiny = MediaCapabilities {
             max_pixel_count: 100,
             max_fps: 10,
-            codecs: vec![Codec::Vp9],
-            supports_optimize_for_latency: false,
-            supported_scalability_modes: vec![ScalabilityMode::Flat],
+            ..MediaCapabilities::interim_default()
         };
-        let cfg = negotiate_session_config(std::slice::from_ref(&tiny));
+        let cfg = negotiate_session_config(&tiny, &[]).expect("alone in channel");
         // Derived width × height should be ≤ 100.
         assert!(cfg.encoder.max_width * cfg.encoder.max_height <= 100);
         assert_eq!(cfg.encoder.max_fps, 10);

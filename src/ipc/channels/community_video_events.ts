@@ -40,9 +40,10 @@ export type CommunityVideoEvent =
       };
     }
   | {
-      // Architecture §10.6 — peer's decode capabilities for adaptive sender.
-      // Phase A — typed `Codec[]` + `supports_optimize_for_latency` +
-      // `supported_scalability_modes` (no `Vec<String>` legacy shape).
+      // Architecture §10.6 — peer's capability advertisement,
+      // direction-split into encode + decode codec lists (WebView
+      // engines are asymmetric — Apple WebKit: H.264 hw encode,
+      // broader decode).
       type: "videoMediaCapabilities";
       data: {
         communityId: string;
@@ -50,7 +51,8 @@ export type CommunityVideoEvent =
         channelId: string;
         maxPixelCount: number;
         maxFps: number;
-        codecs: Codec[];
+        encodeCodecs: Codec[];
+        decodeCodecs: Codec[];
         supportsOptimizeForLatency: boolean;
         supportedScalabilityModes: ScalabilityMode[];
       };
@@ -67,6 +69,18 @@ export type CommunityVideoEvent =
         communityId: string;
         channelId: string;
         config: SessionVideoConfig;
+      };
+    }
+  | {
+      // Phase 3 — the backend negotiator found NO local encode codec
+      // every peer can decode. Latched backend-side: fires once per
+      // compatible→incompatible transition. `peers` lists the blocking
+      // pseudonyms. Voice is unaffected.
+      type: "videoCodecIncompatible";
+      data: {
+        communityId: string;
+        channelId: string;
+        peers: string[];
       };
     }
   | {

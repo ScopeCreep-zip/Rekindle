@@ -65,6 +65,19 @@ impl CallSignalingDeps for CallsAdapter {
             .unwrap_or_default()
     }
 
+    fn local_video_decode_codecs(&self) -> Vec<String> {
+        // Phase 5 — the WebView's probed decode set, as wire strings.
+        // Before the probe runs, the conservative interim default
+        // (VP9-only) applies — the same floor the community
+        // capability broadcast uses (`voice_adapter::io_helpers`).
+        crate::services::community::video_session::reported_local_caps(&self.state)
+            .unwrap_or_else(rekindle_video::MediaCapabilities::interim_default)
+            .decode_codecs
+            .into_iter()
+            .map(|c| c.wire_str().to_string())
+            .collect()
+    }
+
     async fn send_to_peer(
         &self,
         peer_pubkey_hex: &str,

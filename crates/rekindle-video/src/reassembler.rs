@@ -8,6 +8,8 @@
 
 use std::collections::HashMap;
 
+use rekindle_types::video::Codec;
+
 use thiserror::Error;
 
 use crate::fragment::{
@@ -35,6 +37,8 @@ pub enum ReassemblerError {
     TooManyFragments,
     #[error("keyframe flag mismatch within the same frame_seq")]
     KeyframeMismatch,
+    #[error("codec tag mismatch within the same frame_seq")]
+    CodecMismatch,
     #[error("parity_index {0} >= parity_total {1}")]
     ParityIndexOutOfRange(u8, u8),
     #[error("parity metadata mismatch — frame already has different data_count/parity_total")]
@@ -49,6 +53,10 @@ pub struct ReassembledFrame {
     pub stream_id: [u8; STREAM_ID_LEN],
     pub frame_seq: u32,
     pub keyframe: bool,
+    /// Codec tag carried by the frame's fragments — forwarded on
+    /// `VideoEvent::FrameReady` so the frontend configures the right
+    /// decoder.
+    pub codec: Codec,
     pub timestamp: u32,
     pub payload: Vec<u8>,
     /// `true` if at least one parity fragment was used to recover a
@@ -60,6 +68,10 @@ pub struct ReassembledFrame {
 #[derive(Debug)]
 struct PartialFrame {
     frag_total: u8,
+    /// Codec tag from the first fragment (data or parity). A
+    /// mid-frame codec mismatch drops the frame like a keyframe-flag
+    /// mismatch would.
+    codec: Codec,
     /// Set by the first data fragment. Parity fragments don't carry
     /// the keyframe flag (their role is shard-recovery, not stream
     /// metadata), so when parity arrives first the value stays `None`
@@ -81,9 +93,16 @@ struct PartialFrame {
 }
 
 impl PartialFrame {
-    fn from_data(frag_total: u8, keyframe: bool, timestamp: u32, received_at_ms: u32) -> Self {
+    fn from_data(
+        frag_total: u8,
+        keyframe: bool,
+        codec: Codec,
+        timestamp: u32,
+        received_at_ms: u32,
+    ) -> Self {
         Self {
             frag_total,
+            codec,
             keyframe: Some(keyframe),
             timestamp,
             received_at_ms,
@@ -95,9 +114,10 @@ impl PartialFrame {
         }
     }
 
-    fn from_parity(data_count: u8, timestamp: u32, received_at_ms: u32) -> Self {
+    fn from_parity(data_count: u8, codec: Codec, timestamp: u32, received_at_ms: u32) -> Self {
         Self {
             frag_total: data_count,
+            codec,
             keyframe: None,
             timestamp,
             received_at_ms,
@@ -157,9 +177,18 @@ impl Reassembler {
         cap_pending(buffer, fragment.frame_seq);
 
         let partial = buffer.frames.entry(fragment.frame_seq).or_insert_with(|| {
-            PartialFrame::from_data(total, fragment.keyframe, fragment.timestamp, now_ms)
+            PartialFrame::from_data(
+                total,
+                fragment.keyframe,
+                fragment.codec,
+                fragment.timestamp,
+                now_ms,
+            )
         });
 
+        if partial.codec != fragment.codec {
+            return Err(ReassemblerError::CodecMismatch);
+        }
         if partial.frag_total != total {
             return Err(ReassemblerError::FragTotalMismatch {
                 saw: total,
@@ -218,9 +247,17 @@ impl Reassembler {
         cap_pending(buffer, fragment.frame_seq);
 
         let partial = buffer.frames.entry(fragment.frame_seq).or_insert_with(|| {
-            PartialFrame::from_parity(fragment.data_count, fragment.timestamp, now_ms)
+            PartialFrame::from_parity(
+                fragment.data_count,
+                fragment.codec,
+                fragment.timestamp,
+                now_ms,
+            )
         });
 
+        if partial.codec != fragment.codec {
+            return Err(ReassemblerError::CodecMismatch);
+        }
         if partial.frag_total != fragment.data_count {
             return Err(ReassemblerError::ParityMetadataMismatch);
         }
@@ -298,6 +335,7 @@ fn try_complete(
             stream_id,
             frame_seq,
             keyframe: partial.keyframe.unwrap_or(false),
+            codec: partial.codec,
             timestamp: partial.timestamp,
             payload,
             recovered_via_fec: false,
@@ -349,6 +387,7 @@ fn try_complete(
         stream_id,
         frame_seq,
         keyframe: partial.keyframe.unwrap_or(false),
+        codec: partial.codec,
         timestamp: partial.timestamp,
         payload,
         recovered_via_fec: true,
@@ -363,7 +402,15 @@ mod tests {
     use crate::fragment::{fragment_frame, fragment_frame_with_fec, FRAGMENT_PAYLOAD_LIMIT};
 
     fn fragmented(frame_seq: u32, payload: &[u8], keyframe: bool) -> Vec<VideoFragment> {
-        fragment_frame([7u8; STREAM_ID_LEN], frame_seq, keyframe, 0, payload).unwrap()
+        fragment_frame(
+            [7u8; STREAM_ID_LEN],
+            frame_seq,
+            keyframe,
+            Codec::Vp9,
+            0,
+            payload,
+        )
+        .unwrap()
     }
 
     #[test]
@@ -426,12 +473,43 @@ mod tests {
     }
 
     #[test]
+    fn codec_mismatch_rejected() {
+        // Phase 2 — a fragment whose codec tag differs from the frame's
+        // first-seen tag must be rejected, same posture as the
+        // frag_total mismatch above. (Such a fragment also fails its
+        // signature check upstream — this guards the buffer invariant
+        // independently.)
+        let mut r = Reassembler::new();
+        let frags = fragmented(4, &vec![0; FRAGMENT_PAYLOAD_LIMIT * 2 + 1], true);
+        let mut relabeled = frags[1].clone();
+        relabeled.codec = Codec::H264;
+        let _ = r.ingest("alice", frags[0].clone(), 0).unwrap();
+        let err = r.ingest("alice", relabeled, 0).unwrap_err();
+        assert!(matches!(err, ReassemblerError::CodecMismatch));
+    }
+
+    #[test]
+    fn parity_codec_mismatch_rejected() {
+        // Same invariant on the PARITY ingest path.
+        let mut r = Reassembler::new();
+        let frame = vec![0xEEu8; FRAGMENT_PAYLOAD_LIMIT * 2 + 200];
+        let fec = fragment_frame_with_fec([7u8; STREAM_ID_LEN], 5, true, Codec::Vp9, 0, &frame, 2)
+            .unwrap();
+        assert!(r.ingest("alice", fec.data[0].clone(), 0).unwrap().is_none());
+        let mut relabeled = fec.parity[0].clone();
+        relabeled.codec = Codec::Vp8;
+        let err = r.ingest_parity("alice", relabeled, 0).unwrap_err();
+        assert!(matches!(err, ReassemblerError::CodecMismatch));
+    }
+
+    #[test]
     fn fec_recovers_lost_data_shard_via_parity() {
         // 3-data + 2-parity frame. Lose data[1]. Receive remaining
         // data[0], data[2], parity[0]. Reassembler should reconstruct.
         let mut r = Reassembler::new();
         let frame = vec![0xCDu8; FRAGMENT_PAYLOAD_LIMIT * 2 + 200];
-        let fec = fragment_frame_with_fec([5u8; STREAM_ID_LEN], 9, true, 50, &frame, 2).unwrap();
+        let fec = fragment_frame_with_fec([5u8; STREAM_ID_LEN], 9, true, Codec::Vp9, 50, &frame, 2)
+            .unwrap();
         assert_eq!(fec.data.len(), 3);
         assert_eq!(fec.parity.len(), 2);
 
@@ -456,7 +534,9 @@ mod tests {
         // `frame_len` (verified by the byte-for-byte match below).
         let mut r = Reassembler::new();
         let frame = vec![0xEEu8; FRAGMENT_PAYLOAD_LIMIT * 2 + 13];
-        let fec = fragment_frame_with_fec([6u8; STREAM_ID_LEN], 11, true, 99, &frame, 1).unwrap();
+        let fec =
+            fragment_frame_with_fec([6u8; STREAM_ID_LEN], 11, true, Codec::Vp9, 99, &frame, 1)
+                .unwrap();
         assert_eq!(fec.data.len(), 3);
         assert_eq!(fec.parity.len(), 1);
 
@@ -485,7 +565,8 @@ mod tests {
         // no-op against an already-removed partial.
         let mut r = Reassembler::new();
         let frame = vec![0xCCu8; FRAGMENT_PAYLOAD_LIMIT * 2 + 33];
-        let fec = fragment_frame_with_fec([8u8; STREAM_ID_LEN], 12, true, 1, &frame, 1).unwrap();
+        let fec = fragment_frame_with_fec([8u8; STREAM_ID_LEN], 12, true, Codec::Vp9, 1, &frame, 1)
+            .unwrap();
         assert!(r.ingest("alice", fec.data[0].clone(), 0).unwrap().is_none());
         assert!(r.ingest("alice", fec.data[1].clone(), 0).unwrap().is_none());
         let done = r.ingest("alice", fec.data[2].clone(), 0).unwrap();

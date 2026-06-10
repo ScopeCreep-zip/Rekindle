@@ -414,11 +414,7 @@ impl CommunityPresenceDeps for MockCommunityDeps {
     fn active_voice_channel(&self, _community_id: &str) -> Option<String> {
         self.state.lock().active_voice_channel.clone()
     }
-    fn reconcile_voice_roster(
-        &self,
-        community_id: &str,
-        rows: Vec<crate::deps::VoicePresenceRow>,
-    ) {
+    fn reconcile_voice_roster(&self, community_id: &str, rows: Vec<crate::deps::VoicePresenceRow>) {
         self.state
             .lock()
             .calls_reconcile_voice_roster

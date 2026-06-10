@@ -26,11 +26,14 @@ pub async fn send_dm_video_frame_inner(
         state,
         pool,
         &peer_pubkey,
-        stream_id,
-        request.frame_seq,
-        request.keyframe,
-        request.timestamp,
-        &payload,
+        dm::video::DmVideoFrameSend {
+            stream_id,
+            frame_seq: request.frame_seq,
+            keyframe: request.keyframe,
+            codec: request.codec,
+            timestamp: request.timestamp,
+            encoded_payload: payload,
+        },
     )
     .await
 }

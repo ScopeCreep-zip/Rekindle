@@ -430,12 +430,12 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
                         channel_id,
                         participants: participants
                             .into_iter()
-                            .map(
-                                |p| crate::channels::community_channel::VoiceRosterParticipantEvent {
+                            .map(|p| {
+                                crate::channels::community_channel::VoiceRosterParticipantEvent {
                                     pseudonym_key: p.pseudonym_key,
                                     display_name: p.display_name,
-                                },
-                            )
+                                }
+                            })
                             .collect(),
                     },
                 );

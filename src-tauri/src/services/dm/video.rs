@@ -24,19 +24,43 @@ pub use rekindle_dm::{DmVideoReassemblyState, FRAGMENT_PAYLOAD_LIMIT};
 /// chunks and send each as a `MessagePayload::DmVideoFragment` via the
 /// existing Signal-encrypted DM transport. Returns the number of
 /// fragments sent.
+/// One outbound DM video frame, decoded from the Tauri command's
+/// request shape. Bundled so the send fn stays under the argument
+/// budget.
+pub struct DmVideoFrameSend {
+    pub stream_id: [u8; 16],
+    pub frame_seq: u32,
+    pub keyframe: bool,
+    /// Codec wire string the frontend encoder produced this frame with.
+    pub codec: String,
+    pub timestamp: u32,
+    pub encoded_payload: Vec<u8>,
+}
+
 pub async fn send_dm_video_frame(
     state: &Arc<AppState>,
     pool: &DbPool,
     peer_pubkey: &str,
-    stream_id: [u8; 16],
-    frame_seq: u32,
-    keyframe: bool,
-    timestamp: u32,
-    encoded_payload: &[u8],
+    frame: DmVideoFrameSend,
 ) -> Result<u32, String> {
+    let DmVideoFrameSend {
+        stream_id,
+        frame_seq,
+        keyframe,
+        codec,
+        timestamp,
+        encoded_payload,
+    } = frame;
     if encoded_payload.is_empty() {
         return Err("empty encoded payload".to_string());
     }
+    // Hard error on unknown codec wire strings — same gate as the
+    // community sender (`community_video_runtime`). Normalizing through
+    // the typed enum also guarantees the on-wire tag is canonical.
+    let codec = rekindle_types::video::Codec::from_wire_str(&codec)
+        .ok_or_else(|| format!("unknown codec wire string: {codec}"))?
+        .wire_str()
+        .to_string();
     let chunks: Vec<&[u8]> = encoded_payload.chunks(FRAGMENT_PAYLOAD_LIMIT).collect();
     let fragment_count = u16::try_from(chunks.len())
         .map_err(|_| format!("frame too large to fragment ({} chunks)", chunks.len()))?;
@@ -48,6 +72,7 @@ pub async fn send_dm_video_frame(
             fragment_index: u16::try_from(idx).expect("checked above"),
             fragment_count,
             keyframe,
+            codec: codec.clone(),
             timestamp,
             chunk: chunk.to_vec(),
         };

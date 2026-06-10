@@ -32,6 +32,9 @@ pub struct DmVideoFrameMsg {
     pub stream_id_hex: String,
     pub frame_seq: u32,
     pub keyframe: bool,
+    /// Codec wire string — the receiver configures its decoder from
+    /// this tag (RTP payload-type analog).
+    pub codec: String,
     pub timestamp: u32,
     pub encoded_payload_b64: String,
 }
@@ -47,6 +50,9 @@ pub struct CommunityVideoFrameMsg {
     pub stream_id: String,
     pub frame_seq: u32,
     pub keyframe: bool,
+    /// Codec wire string — the receiver configures its decoder from
+    /// this tag (RTP payload-type analog).
+    pub codec: String,
     pub timestamp: u32,
     pub payload_b64: String,
 }
@@ -140,6 +146,7 @@ mod tests {
             stream_id_hex: "ab12".into(),
             frame_seq: seq,
             keyframe: true,
+            codec: "vp9".into(),
             timestamp: 4321,
             encoded_payload_b64: "Zm9v".into(),
         }
@@ -160,6 +167,7 @@ mod tests {
         assert_eq!(v["streamIdHex"], "ab12");
         assert_eq!(v["frameSeq"], 7);
         assert_eq!(v["keyframe"], true);
+        assert_eq!(v["codec"], "vp9");
         assert_eq!(v["encodedPayloadB64"], "Zm9v");
     }
 
@@ -209,6 +217,7 @@ mod tests {
                 stream_id: "ff00".into(),
                 frame_seq: 12,
                 keyframe: false,
+                codec: "vp9".into(),
                 timestamp: 999,
                 payload_b64: "YmFy".into(),
             },
@@ -220,6 +229,7 @@ mod tests {
         assert_eq!(v["communityId"], "comm1");
         assert_eq!(v["senderPseudonym"], "psd");
         assert_eq!(v["frameSeq"], 12);
+        assert_eq!(v["codec"], "vp9");
         assert_eq!(v["payloadB64"], "YmFy");
     }
 }

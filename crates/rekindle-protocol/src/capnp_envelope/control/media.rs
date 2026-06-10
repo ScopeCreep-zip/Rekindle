@@ -13,6 +13,8 @@ use rekindle_types::video::{Codec, ScalabilityMode};
 fn codec_to_capnp(c: Codec) -> cap::Codec {
     match c {
         Codec::Vp9 => cap::Codec::Vp9,
+        Codec::Vp8 => cap::Codec::Vp8,
+        Codec::H264 => cap::Codec::H264,
     }
 }
 
@@ -22,6 +24,8 @@ fn codec_to_capnp(c: Codec) -> cap::Codec {
 fn codec_from_capnp(c: cap::Codec) -> Codec {
     match c {
         cap::Codec::Vp9 => Codec::Vp9,
+        cap::Codec::Vp8 => Codec::Vp8,
+        cap::Codec::H264 => Codec::H264,
     }
 }
 
@@ -107,6 +111,7 @@ pub(super) fn write_video_fragment(
         frag_index,
         frag_total,
         keyframe,
+        codec,
         timestamp,
         payload: data,
         signature,
@@ -120,6 +125,7 @@ pub(super) fn write_video_fragment(
     p.set_frag_index(*frag_index);
     p.set_frag_total(*frag_total);
     p.set_keyframe(*keyframe);
+    p.set_codec(codec_to_capnp(*codec));
     p.set_timestamp(*timestamp);
     p.set_payload(data);
     p.set_signature(signature);
@@ -136,6 +142,7 @@ pub(super) fn write_video_parity_fragment(
         parity_index,
         parity_total,
         data_count,
+        codec,
         frame_len,
         timestamp,
         payload: data,
@@ -150,6 +157,7 @@ pub(super) fn write_video_parity_fragment(
     p.set_parity_index(*parity_index);
     p.set_parity_total(*parity_total);
     p.set_data_count(*data_count);
+    p.set_codec(codec_to_capnp(*codec));
     p.set_frame_len(*frame_len);
     p.set_timestamp(*timestamp);
     p.set_payload(data);
@@ -219,7 +227,8 @@ pub(super) fn write_media_capabilities(
         channel_id,
         max_pixel_count,
         max_fps,
-        codecs,
+        encode_codecs,
+        decode_codecs,
         supports_optimize_for_latency,
         supported_scalability_modes,
     } = payload
@@ -231,8 +240,18 @@ pub(super) fn write_media_capabilities(
     p.set_max_fps(*max_fps);
     p.set_supports_optimize_for_latency(*supports_optimize_for_latency);
     {
-        let mut list = p.reborrow().init_codecs_typed(len_u32(codecs.len()));
-        for (i, c) in codecs.iter().enumerate() {
+        let mut list = p
+            .reborrow()
+            .init_encode_codecs(len_u32(encode_codecs.len()));
+        for (i, c) in encode_codecs.iter().enumerate() {
+            list.set(len_u32(i), codec_to_capnp(*c));
+        }
+    }
+    {
+        let mut list = p
+            .reborrow()
+            .init_decode_codecs(len_u32(decode_codecs.len()));
+        for (i, c) in decode_codecs.iter().enumerate() {
             list.set(len_u32(i), codec_to_capnp(*c));
         }
     }
@@ -335,6 +354,7 @@ pub(super) fn read_video_fragment(
         frag_index: p.get_frag_index(),
         frag_total: p.get_frag_total(),
         keyframe: p.get_keyframe(),
+        codec: codec_from_capnp(p.get_codec().map_err(not_in_schema)?),
         timestamp: p.get_timestamp(),
         payload: p.get_payload().map_err(|e| capnp_err(&e))?.to_vec(),
         signature: p.get_signature().map_err(|e| capnp_err(&e))?.to_vec(),
@@ -355,6 +375,7 @@ pub(super) fn read_video_parity_fragment(
         parity_index: p.get_parity_index(),
         parity_total: p.get_parity_total(),
         data_count: p.get_data_count(),
+        codec: codec_from_capnp(p.get_codec().map_err(not_in_schema)?),
         frame_len: p.get_frame_len(),
         timestamp: p.get_timestamp(),
         payload: p.get_payload().map_err(|e| capnp_err(&e))?.to_vec(),
@@ -402,14 +423,22 @@ pub(super) fn read_bandwidth_estimate(
     })
 }
 
+/// Decode one `List(Codec)` field into a typed `Vec<Codec>`.
+fn read_codec_list(
+    list: capnp::enum_list::Reader<'_, cap::Codec>,
+) -> Result<Vec<Codec>, ProtocolError> {
+    let mut codecs: Vec<Codec> = Vec::with_capacity(list.len() as usize);
+    for c in list {
+        codecs.push(codec_from_capnp(c.map_err(not_in_schema)?));
+    }
+    Ok(codecs)
+}
+
 pub(super) fn read_media_capabilities(
     p: cap::media_capabilities_payload::Reader<'_>,
 ) -> Result<ControlPayload, ProtocolError> {
-    let codec_list = p.get_codecs_typed().map_err(|e| capnp_err(&e))?;
-    let mut codecs: Vec<Codec> = Vec::with_capacity(codec_list.len() as usize);
-    for c in codec_list {
-        codecs.push(codec_from_capnp(c.map_err(not_in_schema)?));
-    }
+    let encode_codecs = read_codec_list(p.get_encode_codecs().map_err(|e| capnp_err(&e))?)?;
+    let decode_codecs = read_codec_list(p.get_decode_codecs().map_err(|e| capnp_err(&e))?)?;
     let mode_list = p
         .get_supported_scalability_modes()
         .map_err(|e| capnp_err(&e))?;
@@ -422,7 +451,8 @@ pub(super) fn read_media_capabilities(
         channel_id: text_to_string(p.get_channel_id().map_err(|e| capnp_err(&e))?)?,
         max_pixel_count: p.get_max_pixel_count(),
         max_fps: p.get_max_fps(),
-        codecs,
+        encode_codecs,
+        decode_codecs,
         supports_optimize_for_latency: p.get_supports_optimize_for_latency(),
         supported_scalability_modes,
     })

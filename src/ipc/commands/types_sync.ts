@@ -11,6 +11,7 @@ export type VideoTopologyReason =
   | (string & {});
 
 export interface SendVideoFrameRequest {
+  codec: Codec;
   streamIdHex: string;
   frameSeq: number;
   keyframe: boolean;
@@ -23,17 +24,20 @@ export interface SendVideoFrameRequest {
 /// serialize as `#[serde(rename_all = "lowercase")]`, so the wire
 /// shape on the JSON-over-Tauri surface is a string literal union.
 /// No `Other(string)` escape hatch — see `crates/rekindle-types/src/video.rs`.
-export type Codec = "vp9";
+export type Codec = "vp9" | "vp8" | "h264";
 export type ScalabilityMode = "flat" | "l1t2";
 
-/// Phase A — extended `MediaCapabilities` shape (mirrors
+/// Phase 3 — direction-split `MediaCapabilities` shape (mirrors
 /// `crates/rekindle-video/src/lib.rs::MediaCapabilities`). The
-/// frontend probes its WebView once at startup and reports the result;
-/// the backend reconciles against the gossiped per-peer caps.
+/// frontend probes its WebView per-codec × per-direction at startup
+/// and reports the result; the backend reconciles against the
+/// gossiped per-peer caps. `encodeCodecs` may be empty (decode-only
+/// platform — the user can watch but not send).
 export interface MediaCapabilities {
   maxPixelCount: number;
   maxFps: number;
-  codecs: Codec[];
+  encodeCodecs: Codec[];
+  decodeCodecs: Codec[];
   supportsOptimizeForLatency: boolean;
   supportedScalabilityModes: ScalabilityMode[];
 }
@@ -50,10 +54,11 @@ export interface EncoderConstraints {
   scalabilityMode: ScalabilityMode;
 }
 
-/// Phase A — decoder side of the negotiated session config (mirrors
-/// `crates/rekindle-video/src/lib.rs::DecoderConstraints`).
+/// Phase 3 — decoder tuning side of the negotiated session config
+/// (mirrors `crates/rekindle-video/src/lib.rs::DecoderConstraints`).
+/// Carries NO codec: decoders are created from the per-frame codec
+/// tag, never from session config.
 export interface DecoderConstraints {
-  codec: Codec;
   optimizeForLatency: boolean;
 }
 
@@ -313,6 +318,8 @@ export interface DmVideoFrameMsg {
   streamIdHex: string;
   frameSeq: number;
   keyframe: boolean;
+  /** Codec wire string — the decoder follows this tag. */
+  codec: Codec;
   timestamp: number;
   encodedPayloadB64: string;
 }
@@ -328,6 +335,8 @@ export interface CommunityVideoFrameMsg {
   streamId: string;
   frameSeq: number;
   keyframe: boolean;
+  /** Codec wire string — the decoder follows this tag. */
+  codec: Codec;
   timestamp: number;
   payloadB64: string;
 }

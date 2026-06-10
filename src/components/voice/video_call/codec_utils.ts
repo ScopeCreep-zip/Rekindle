@@ -11,8 +11,27 @@
 // tuning (playout buffer + keyframe cadence + diagnostics), not
 // capability negotiation.
 import type { VideoPlayoutBuffer } from "./playout_buffer";
+import type { Codec } from "../../../ipc/commands/types_sync";
 
 export const KEYFRAME_INTERVAL_MS = 2000;
+
+/** `Codec` wire string → fully-specified WebCodecs codec parameter.
+ *  Shared by the encoder (video_sender.ts) and decoder
+ *  (useVideoCallPanel.ts) — one map, one edit per new codec. H.264 is
+ *  constrained-baseline in Annex-B form: the encoder additionally sets
+ *  `avc: { format: "annexb" }`, and decoders configure
+ *  codec-string-only (SPS/PPS ride the bitstream; no avcC
+ *  description). */
+export function wireCodecToWebCodecsString(codec: Codec): string {
+  switch (codec) {
+    case "vp9":
+      return "vp09.00.30.08";
+    case "vp8":
+      return "vp8";
+    case "h264":
+      return "avc1.42E01F";
+  }
+}
 
 // Receiver playout buffer. delay = jitterEstimate × multiplier, clamped to
 // [min, max]. These are *call* bounds (live), not *streaming* bounds: WebRTC's
@@ -33,6 +52,9 @@ export const DEBUG_VIDEO_LATENCY = true;
 export interface RemoteStream {
   streamId: string;
   senderPseudonym: string;
+  /** Codec this stream's decoder is configured for — from the
+   *  per-frame tag. A tag change tears the decoder down. */
+  codec: Codec;
   decoder: VideoDecoder;
   canvas: HTMLCanvasElement;
   ctx: CanvasRenderingContext2D | null;

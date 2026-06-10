@@ -42,6 +42,10 @@ pub struct IncomingInvite<'a> {
     pub initiator_x25519_pub: &'a [u8],
     /// Invite expiry, ms since epoch.
     pub expires_at_ms: u64,
+    /// Phase 5 — codecs the initiator can DECODE (wire strings).
+    /// Stored on the CallState so the accept-side video sender can
+    /// intersect its encode set.
+    pub video_decode_codecs: &'a [String],
 }
 
 /// Receive arm for `CallInvite` (W13.4). Receiver-side entry. Inserts
@@ -66,6 +70,7 @@ pub async fn handle_incoming_invite<D: CallSignalingDeps + ?Sized>(
         initiator_pubkey,
         initiator_x25519_pub,
         expires_at_ms,
+        video_decode_codecs,
     } = invite;
     let kind = CallKind::from_u8(offer_kind).unwrap_or(CallKind::Audio);
     let display_name = if deps.friend_display_name(sender_hex).is_empty() {
@@ -111,6 +116,7 @@ pub async fn handle_incoming_invite<D: CallSignalingDeps + ?Sized>(
         my_x25519_secret: None,
         peer_x25519_pub: Some(peer_arr),
         call_key: None,
+        peer_video_decode_codecs: video_decode_codecs.to_vec(),
     });
 
     // Surface incoming-call UI (adapter emits ChatEvent::IncomingCall +
@@ -161,6 +167,7 @@ pub async fn handle_accept_received<D: CallSignalingDeps + ?Sized>(
     sender_hex: &str,
     call_id: &str,
     acceptor_x25519_pub: &[u8],
+    video_decode_codecs: &[String],
 ) {
     if acceptor_x25519_pub.len() != 32 {
         tracing::warn!(call = %call_id, "CallAccept with bad x25519 length");
@@ -219,6 +226,7 @@ pub async fn handle_accept_received<D: CallSignalingDeps + ?Sized>(
         let mut peer_arr = [0u8; 32];
         peer_arr.copy_from_slice(acceptor_x25519_pub);
         call.peer_x25519_pub = Some(peer_arr);
+        call.peer_video_decode_codecs = video_decode_codecs.to_vec();
         // my_x25519_secret was already cloned-out above; the registry
         // still has the original.
         registry.insert(call);

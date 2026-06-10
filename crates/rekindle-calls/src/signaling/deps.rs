@@ -50,6 +50,16 @@ pub trait CallSignalingDeps: Send + Sync + 'static {
     /// lookup; falls back to truncated pubkey hex).
     fn friend_display_name(&self, peer_pubkey_hex: &str) -> String;
 
+    // --- Media capabilities ---
+
+    /// Phase 5 — codecs the LOCAL WebView can decode, as
+    /// preference-ordered wire strings ("vp9" / "vp8" / "h264").
+    /// Rides `CallInvite` / `CallAccept` so the DM peer's video sender
+    /// can intersect its encode set against ours. The adapter reads
+    /// `video_session::reported_local_caps()` (falling back to the
+    /// conservative interim default when the probe hasn't run yet).
+    fn local_video_decode_codecs(&self) -> Vec<String>;
+
     // --- Transport ---
 
     /// Send a signed-but-not-encrypted `app_message` to a peer

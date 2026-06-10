@@ -12,6 +12,7 @@
 
 use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_secrets::ed25519_dalek::{Signer, SigningKey};
+use rekindle_types::video::Codec;
 
 use crate::deps::VideoDeps;
 use crate::error::VideoError;
@@ -34,6 +35,10 @@ pub struct VideoFrameSend {
     pub stream_id: [u8; 16],
     pub frame_seq: u32,
     pub keyframe: bool,
+    /// Codec the frontend encoder produced this chunk with — travels
+    /// on every fragment (RTP payload-type analog) and is covered by
+    /// the fragment signature.
+    pub codec: Codec,
     pub timestamp: u32,
     pub encoded_payload: Vec<u8>,
 }
@@ -91,6 +96,7 @@ pub fn send_video_frame<D: VideoDeps>(
         stream_id: request.stream_id,
         frame_seq: request.frame_seq,
         keyframe: request.keyframe,
+        codec: request.codec,
         timestamp: request.timestamp,
         signing_key: &signing_key,
     };
@@ -155,6 +161,7 @@ struct SendCtx<'a, D: VideoDeps> {
     stream_id: [u8; 16],
     frame_seq: u32,
     keyframe: bool,
+    codec: Codec,
     timestamp: u32,
     signing_key: &'a SigningKey,
 }
@@ -165,6 +172,7 @@ impl<D: VideoDeps> SendCtx<'_, D> {
             self.stream_id,
             self.frame_seq,
             self.keyframe,
+            self.codec,
             self.timestamp,
             ciphertext,
         )?;
@@ -182,6 +190,7 @@ impl<D: VideoDeps> SendCtx<'_, D> {
                 frag_index: fragment.frag_index,
                 frag_total: fragment.frag_total,
                 keyframe: fragment.keyframe,
+                codec: fragment.codec,
                 timestamp: fragment.timestamp,
                 payload: fragment.payload,
                 signature: fragment.signature,
@@ -206,6 +215,7 @@ impl<D: VideoDeps> SendCtx<'_, D> {
             self.stream_id,
             self.frame_seq,
             self.keyframe,
+            self.codec,
             self.timestamp,
             ciphertext,
             parity_count,
@@ -233,6 +243,7 @@ impl<D: VideoDeps> SendCtx<'_, D> {
                 frag_index: fragment.frag_index,
                 frag_total: fragment.frag_total,
                 keyframe: fragment.keyframe,
+                codec: fragment.codec,
                 timestamp: fragment.timestamp,
                 payload: fragment.payload,
                 signature: fragment.signature,
@@ -257,6 +268,7 @@ impl<D: VideoDeps> SendCtx<'_, D> {
                 parity_index: fragment.parity_index,
                 parity_total: fragment.parity_total,
                 data_count: fragment.data_count,
+                codec: fragment.codec,
                 frame_len: fragment.frame_len,
                 timestamp: fragment.timestamp,
                 payload: fragment.payload,
@@ -290,6 +302,7 @@ mod tests {
             stream_id: [9u8; 16],
             frame_seq: 1,
             keyframe,
+            codec: Codec::Vp9,
             timestamp: 100,
             encoded_payload: vec![0xAB; 256],
         }

@@ -223,7 +223,12 @@ impl GossipDeps for GossipAdapter {
         // another member's route.
         let banned: std::collections::HashSet<String> =
             state_helpers::governance_state(&self.state, community_id)
-                .map(|gov| gov.bans.iter().map(|pseudo| hex::encode(pseudo.0)).collect())
+                .map(|gov| {
+                    gov.bans
+                        .iter()
+                        .map(|pseudo| hex::encode(pseudo.0))
+                        .collect()
+                })
                 .unwrap_or_default();
         rekindle_presence::route_for_peer(
             &raw,

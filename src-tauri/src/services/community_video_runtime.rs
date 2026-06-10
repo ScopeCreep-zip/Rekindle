@@ -15,6 +15,9 @@ pub struct SendVideoFrameRequest {
     pub stream_id_hex: String,
     pub frame_seq: u32,
     pub keyframe: bool,
+    /// Codec wire string ("vp9" | "vp8" | "h264") the frontend encoder
+    /// produced this chunk with. Unknown values are a hard error.
+    pub codec: String,
     pub timestamp: u32,
     pub encoded_payload_b64: String,
 }
@@ -55,10 +58,13 @@ pub fn send_video_frame_inner(
     let payload = base64::engine::general_purpose::STANDARD
         .decode(request.encoded_payload_b64.as_bytes())
         .map_err(|e| format!("invalid base64 payload: {e}"))?;
+    let codec = rekindle_types::video::Codec::from_wire_str(&request.codec)
+        .ok_or_else(|| format!("unknown codec wire string: {}", request.codec))?;
     let send_request = video::VideoFrameSend {
         stream_id,
         frame_seq: request.frame_seq,
         keyframe: request.keyframe,
+        codec,
         timestamp: request.timestamp,
         encoded_payload: payload,
     };

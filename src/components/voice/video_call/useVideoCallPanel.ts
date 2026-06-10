@@ -2,6 +2,7 @@ import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { Channel } from "@tauri-apps/api/core";
 import { commands } from "../../../ipc/commands";
 import type {
+  Codec,
   CommunityVideoFrameMsg,
   DmVideoFrameMsg,
   SessionVideoConfig,
@@ -11,19 +12,23 @@ import type { UnlistenFn } from "@tauri-apps/api/event";
 import { setVoiceState, voiceState } from "../../../stores/voice.store";
 import { probeAndReportLocalVideoCapabilities } from "../../../handlers/video.handlers";
 import { settingsState } from "../../../stores/settings.store";
-import { videoSessionConfigFor } from "../../../stores/video.store";
+import {
+  setDmPeerDecodeCodecs,
+  videoSessionConfigFor,
+} from "../../../stores/video.store";
 import {
   ACK_INTERVAL_MS,
   DEBUG_VIDEO_LATENCY,
   type RemoteStream,
   decodeBase64ToBytes,
+  wireCodecToWebCodecsString,
 } from "./codec_utils";
 import { VideoPlayoutBuffer } from "./playout_buffer";
 import { createVideoSender, type SenderRoute } from "./video_sender";
 
 /** W11.4 — `community` panel routes encoded frames through gossip
  *  fan-out + MEK; `dm` panel routes 1:1 via Signal Double Ratchet. The
- *  decoder side is identical (WebCodecs VP9). */
+ *  decoder side is identical — decoders follow per-frame codec tags. */
 export type VideoCallPanelProps =
   | {
       mode: "community";
@@ -38,18 +43,6 @@ export type VideoCallPanelProps =
       peerId: string;
       visible: boolean;
     };
-
-/** Phase A — the codec parameter string the WebCodecs API expects.
- *  The wire-level `Codec` enum from `rekindle_types::video` round-trips
- *  as `"vp9"`; expand into the full RFC-6386 string here so callers
- *  pass it straight to `VideoEncoder` / `VideoDecoder`. Adding a new
- *  variant means adding a new arm here. */
-function wireCodecToWebCodecsString(codec: SessionVideoConfig["decoder"]["codec"]): string {
-  switch (codec) {
-    case "vp9":
-      return "vp09.00.30.08";
-  }
-}
 
 export function useVideoCallPanel(props: VideoCallPanelProps) {
   // Architecture §10.6 — desired state lives in the voice store so the
@@ -72,7 +65,7 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
   let screenStream: MediaStream | null = null;
 
   let unlistenCommunity: Promise<UnlistenFn> | null = null;
-  /** Phase 11 Tier 1 — high-throughput VP9 frames arrive on a dedicated
+  /** Phase 11 Tier 1 — high-throughput video frames arrive on a dedicated
    *  per-stream `ipc::Channel` (registered with the backend on mount),
    *  not the shared event bus. DM mode keys by peer pubkey; community mode
    *  by community id. Control events still ride `community-event`. */
@@ -100,7 +93,7 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
   }
 
   // Architecture §10.6 / Phase 11 Tier 1 — receiver pipeline. Reassembled
-  // VP9 frames flow over a dedicated per-stream `ipc::Channel`; community
+  // video frames flow over a dedicated per-stream `ipc::Channel`; community
   // control events (acks, keyframe/topology) still ride `community-event`.
   // E2E mode skips Channel registration — channels can't serialize over the
   // HTTP invoke bridge — leaving the rest of the panel inert there.
@@ -168,6 +161,7 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
             msg.streamId,
             msg.frameSeq,
             msg.keyframe,
+            msg.codec,
             msg.timestamp,
             msg.payloadB64,
           );
@@ -183,12 +177,25 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
           msg.streamIdHex,
           msg.frameSeq,
           msg.keyframe,
+          msg.codec,
           msg.timestamp,
           msg.encodedPayloadB64,
         );
       };
       dmFrameChannel = ch;
       void commands.registerDmVideoChannel(props.peerId, ch);
+      // Phase 5 — pull the peer's decode codecs (captured from their
+      // CallInvite/CallAccept) so the DM sender can intersect against
+      // its own encode set. Pre-fetch frames go out as VP9; the
+      // sender's per-frame constraints check picks up the store write
+      // and reconfigures.
+      const peerId = props.peerId;
+      void commands
+        .dmPeerVideoDecodeCodecs(peerId)
+        .then((codecs) => setDmPeerDecodeCodecs(peerId, codecs))
+        .catch((e: unknown) => {
+          console.error("dmPeerVideoDecodeCodecs fetch failed:", e);
+        });
     }
   });
 
@@ -217,36 +224,49 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
     streamId: string,
     frameSeq: number,
     keyframe: boolean,
+    codec: Codec,
     timestamp: number,
     payloadB64: string,
   ): void {
     const data = decodeBase64ToBytes(payloadB64);
     let remote = remotes().find((r) => r.streamId === streamId);
+    // Mid-call codec switch (RTP payload-type semantics): a tag change
+    // tears down the old decoder; the fresh one seeds from this frame
+    // if it's a keyframe, else from the next keyframe.
+    if (remote && remote.codec !== codec) {
+      try {
+        remote.decoder.close();
+      } catch (e) {
+        console.error("decoder close on codec switch failed:", e);
+      }
+      setRemotes((prev) => prev.filter((r) => r.streamId !== streamId));
+      remote = undefined;
+    }
     if (!remote) {
       if (!keyframe) {
         // Wait for the first keyframe before instantiating a decoder.
         return;
       }
-      // Phase C — read the negotiated decoder constraints from the
-      // backend-owned store when available. The config primarily
-      // constrains the ENCODER; a VP9 decoder configured with the
-      // baseline codec string decodes any compliant stream. So when
-      // the config hasn't been negotiated yet (late joiner, caps
-      // round-trip in flight) we DO NOT drop the keyframe — the old
-      // gate here turned that race into a permanently black tile
-      // (decoder never created, every later keyframe dropped too).
-      // Baseline fallbacks below cover both DM mode and the not-yet-
-      // negotiated community case.
+      // Phase C — read the negotiated decoder TUNING from the
+      // backend-owned store when available (the codec itself comes
+      // from the per-frame tag, never the config). When the config
+      // hasn't been negotiated yet (late joiner, caps round-trip in
+      // flight) we DO NOT drop the keyframe — the old gate here turned
+      // that race into a permanently black tile (decoder never
+      // created, every later keyframe dropped too). Baseline fallbacks
+      // below cover both DM mode and the not-yet-negotiated community
+      // case.
       const config =
         props.mode === "community"
           ? videoSessionConfigFor(props.communityId, props.channelId)
           : undefined;
-      const decoderCodec = config?.decoder.codec ?? "vp9";
       const decoderOptimizeForLatency =
         config?.decoder.optimizeForLatency ?? false;
       const encoderWidth = config?.encoder.maxWidth ?? 854;
       const encoderHeight = config?.encoder.maxHeight ?? 480;
-      const webCodecsString = wireCodecToWebCodecsString(decoderCodec);
+      // The decoder follows the per-frame codec TAG, never the session
+      // config — the config constrains the local ENCODER only.
+      const webCodecsString = wireCodecToWebCodecsString(codec);
 
       const canvas = document.createElement("canvas");
       canvas.width = encoderWidth;
@@ -289,6 +309,7 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
       remote = {
         streamId,
         senderPseudonym: sender_,
+        codec,
         decoder,
         canvas,
         ctx,
@@ -411,8 +432,8 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
 
   /** Capture / display constraints come from the backend-negotiated
    *  encoder config (Phase B / C). DM mode (no community context) uses
-   *  the baseline VP9 floor — DM peers always run the same WebCodecs
-   *  capability set we ship. */
+   *  the baseline 480p@15 floor — the codec pick is the sender's
+   *  concern (see video_sender.ts pickDmEncoderCodec). */
   function captureConstraints(): { width: number; height: number; frameRate: number } {
     if (props.mode === "community") {
       const config = videoSessionConfigFor(props.communityId, props.channelId);
@@ -531,7 +552,6 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
       previousConfig.encoder.maxHeight === config.encoder.maxHeight &&
       previousConfig.encoder.maxFps === config.encoder.maxFps &&
       previousConfig.encoder.scalabilityMode === config.encoder.scalabilityMode &&
-      previousConfig.decoder.codec === config.decoder.codec &&
       previousConfig.decoder.optimizeForLatency === config.decoder.optimizeForLatency
     ) {
       return;

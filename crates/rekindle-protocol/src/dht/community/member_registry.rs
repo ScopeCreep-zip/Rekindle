@@ -17,9 +17,7 @@
 use crate::dht::DHTManager;
 use crate::error::ProtocolError;
 
-use super::types::{
-    MEKVaultEntry, MemberSummary, REGISTRY_MEK_VAULT, REGISTRY_MEMBER_INDEX,
-};
+use super::types::{MEKVaultEntry, MemberSummary, REGISTRY_MEK_VAULT, REGISTRY_MEMBER_INDEX};
 
 /// Maximum member slots per registry segment.
 ///
@@ -120,4 +118,3 @@ pub fn derive_slot_veilid_keypair(
         bare_secret,
     ))
 }
-

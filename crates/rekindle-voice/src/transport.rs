@@ -426,7 +426,10 @@ impl VoiceTransport {
 
         let mut errors = Vec::new();
         for (key, peer) in &self.peers {
-            if let Err(e) = sender.send_voice_frame(&peer.route_blob, data.clone()).await {
+            if let Err(e) = sender
+                .send_voice_frame(&peer.route_blob, data.clone())
+                .await
+            {
                 errors.push((key.clone(), e));
             }
         }

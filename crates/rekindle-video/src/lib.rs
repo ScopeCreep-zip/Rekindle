@@ -37,10 +37,12 @@ pub use stream_id::derive_stream_id;
 /// they join a video-bearing channel. Used by the sender to pick a
 /// resolution + framerate compatible with the slowest receiver.
 ///
-/// Carries typed `Codec` and `ScalabilityMode` lists (no `Vec<String>`
-/// fallback) plus the WebCodecs `optimizeForLatency` flag — the three
-/// inputs `negotiate_session_config` needs to pick one room-wide
-/// encoder/decoder config.
+/// Encode and decode codec sets are SEPARATE lists because WebView
+/// engines are asymmetric (Apple WebKit guarantees H.264 hardware
+/// encode but not VP9 encode; it can still decode VP9 in many builds).
+/// The negotiator picks the LOCAL encoder codec as the first of
+/// `encode_codecs` every remote peer can decode — mirroring how WebRTC
+/// `getCapabilities` is queried per-direction.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MediaCapabilities {
@@ -51,8 +53,11 @@ pub struct MediaCapabilities {
     /// Highest framerate the peer can decode. Capped at 15fps in
     /// the interim phase.
     pub max_fps: u8,
-    /// Codecs this peer can decode, ordered by preference.
-    pub codecs: Vec<Codec>,
+    /// Codecs this peer can ENCODE, ordered by preference. May be
+    /// empty: a decode-only peer can watch but not send video.
+    pub encode_codecs: Vec<Codec>,
+    /// Codecs this peer can DECODE, ordered by preference.
+    pub decode_codecs: Vec<Codec>,
     /// Whether this peer's `VideoDecoder.configure({ optimizeForLatency: true })`
     /// probe succeeded. The negotiator only enables low-latency mode if
     /// every peer reports `true` (no asymmetric configuration).
@@ -63,14 +68,35 @@ pub struct MediaCapabilities {
 }
 
 impl MediaCapabilities {
-    /// Conservative default suitable for the interim §10.6 budget:
-    /// 480p (854×480) @ 15 fps, VP9 only, flat scalability, no
-    /// `optimizeForLatency` until the WebView probe confirms it.
+    /// Conservative default for the LOCAL peer before the WebView probe
+    /// reports: 480p (854×480) @ 15 fps, VP9-only both directions, flat
+    /// scalability, no `optimizeForLatency`. This shape is BROADCAST as
+    /// our capabilities — it must never overstate what the local engine
+    /// can actually decode.
     pub fn interim_default() -> Self {
         Self {
             max_pixel_count: 854 * 480,
             max_fps: 15,
-            codecs: vec![Codec::Vp9],
+            encode_codecs: vec![Codec::Vp9],
+            decode_codecs: vec![Codec::Vp9],
+            supports_optimize_for_latency: false,
+            supported_scalability_modes: vec![ScalabilityMode::Flat],
+        }
+    }
+
+    /// Optimistic placeholder for a REMOTE peer whose `MediaCapabilities`
+    /// advertisement hasn't arrived yet. Lists every codec we ship so a
+    /// pre-caps joiner never blocks the local encoder pick; it
+    /// self-heals when the real advertisement lands (the aggregator
+    /// recomputes on `on_peer_caps_received`) and receivers create
+    /// decoders from per-fragment tags regardless. Never broadcast as
+    /// LOCAL caps — see `interim_default` for that.
+    pub fn optimistic_peer_default() -> Self {
+        Self {
+            max_pixel_count: 854 * 480,
+            max_fps: 15,
+            encode_codecs: vec![Codec::Vp9, Codec::Vp8, Codec::H264],
+            decode_codecs: vec![Codec::Vp9, Codec::Vp8, Codec::H264],
             supports_optimize_for_latency: false,
             supported_scalability_modes: vec![ScalabilityMode::Flat],
         }
@@ -90,17 +116,21 @@ pub struct EncoderConstraints {
     pub scalability_mode: ScalabilityMode,
 }
 
-/// Decoder configuration the negotiator hands to every peer's decoder.
+/// Decoder tuning the negotiator hands to the local decoder pipeline.
+/// Carries NO codec: decoders are created from the per-fragment codec
+/// tag (the RTP payload-type analog), never from session config.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DecoderConstraints {
-    pub codec: Codec,
     pub optimize_for_latency: bool,
 }
 
-/// The room-wide encoder + decoder configuration produced by
-/// [`policy::negotiate_session_config`]. Symmetric: every peer encodes
-/// and decodes against the same shape.
+/// The PER-NODE encoder + decoder configuration produced by
+/// [`policy::negotiate_session_config`]. Asymmetric by design: each
+/// node picks its own encoder codec (first of its `encode_codecs`
+/// every remote can decode), so a Mac may send H.264 while a Pop!_OS
+/// peer in the same call sends VP9. Resolution/fps/latency are still
+/// min-merged room-wide.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionVideoConfig {
@@ -130,11 +160,23 @@ mod tests {
         let caps = MediaCapabilities::interim_default();
         assert!(caps.max_pixel_count <= 480 * 1280); // 720p ceiling
         assert_eq!(caps.max_fps, 15);
-        assert_eq!(caps.codecs, vec![Codec::Vp9]);
+        assert_eq!(caps.encode_codecs, vec![Codec::Vp9]);
+        assert_eq!(caps.decode_codecs, vec![Codec::Vp9]);
         assert!(!caps.supports_optimize_for_latency);
         assert_eq!(
             caps.supported_scalability_modes,
             vec![ScalabilityMode::Flat]
         );
+    }
+
+    #[test]
+    fn optimistic_peer_default_lists_all_shipped_codecs() {
+        let caps = MediaCapabilities::optimistic_peer_default();
+        assert_eq!(
+            caps.decode_codecs,
+            vec![Codec::Vp9, Codec::Vp8, Codec::H264],
+            "remote placeholder must never block the local encoder pick"
+        );
+        assert_eq!(caps.encode_codecs, caps.decode_codecs);
     }
 }

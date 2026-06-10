@@ -3,12 +3,17 @@
 // adaptive-bitrate state. Split out of VideoCallPanel so the orchestration
 // hook stays focused on UI lifecycle + the receiver path.
 import { commands } from "../../../ipc/commands";
-import type { SessionVideoConfig } from "../../../ipc/commands";
-import { videoSessionConfigFor } from "../../../stores/video.store";
+import type { Codec, SessionVideoConfig } from "../../../ipc/commands";
+import { localVideoCapabilities } from "../../../handlers/video.handlers";
+import {
+  dmPeerDecodeCodecsFor,
+  videoSessionConfigFor,
+} from "../../../stores/video.store";
 import {
   KEYFRAME_INTERVAL_MS,
   bytesToBase64,
   randomStreamIdHex,
+  wireCodecToWebCodecsString,
 } from "./codec_utils";
 
 export type TrackLabel = "camera" | "screen";
@@ -58,17 +63,33 @@ export function createVideoSender(
     screen: freshTrack(),
   };
 
+  /** Phase 5 — first of OUR probed encode codecs the DM peer can
+   *  decode (their list rides CallInvite/CallAccept). Falls back to
+   *  the VP9 floor while either side of the intersection is unknown —
+   *  the pre-caps race is safe because receivers create decoders from
+   *  per-fragment tags, and the pump's constraints check re-runs this
+   *  every frame, so the pick self-corrects once the fetch lands. */
+  function pickDmEncoderCodec(peerId: string): Codec {
+    const local = localVideoCapabilities();
+    const peerDecode = dmPeerDecodeCodecsFor(peerId);
+    if (local && peerDecode && peerDecode.length > 0) {
+      const pick = local.encodeCodecs.find((c) => peerDecode.includes(c));
+      if (pick) return pick;
+    }
+    return "vp9";
+  }
+
   /** Phase C — read the negotiated encoder constraints. Community mode
-   *  reads the backend-emitted `SessionVideoConfig`; DM mode (1:1) uses
-   *  the baseline VP9 floor — DM peers always run the same WebCodecs
-   *  capability set we ship. */
+   *  reads the backend-emitted `SessionVideoConfig` (the backend
+   *  negotiator already picked our per-node encoder codec); DM mode
+   *  (1:1) intersects locally via `pickDmEncoderCodec`. */
   function encoderConstraints(): SessionVideoConfig["encoder"] {
     if (route.mode === "community") {
       const config = videoSessionConfigFor(route.communityId, route.channelId);
       if (config) return config.encoder;
     }
     return {
-      codec: "vp9",
+      codec: route.mode === "dm" ? pickDmEncoderCodec(route.peerId) : "vp9",
       maxWidth: 854,
       maxHeight: 480,
       maxFps: 15,
@@ -76,18 +97,11 @@ export function createVideoSender(
     };
   }
 
-  /** Phase A — `Codec` enum → full WebCodecs codec parameter string.
-   *  Adding a new codec variant means adding a new arm here. */
-  function wireCodecToWebCodecsString(codec: SessionVideoConfig["encoder"]["codec"]): string {
-    switch (codec) {
-      case "vp9":
-        return "vp09.00.30.08";
-    }
-  }
-
   /** Build the WebCodecs config for `encoder.configure()`. `bitrate` is
    *  rebound per-call because the adaptive loop varies it independently
-   *  of the negotiated capability shape. */
+   *  of the negotiated capability shape. H.264 encodes Annex-B so
+   *  SPS/PPS ride the bitstream — receivers configure their decoder
+   *  codec-string-only, no avcC `description` plumbing. */
   function buildEncoderConfig(
     constraints: SessionVideoConfig["encoder"],
     bitrate: number,
@@ -99,6 +113,7 @@ export function createVideoSender(
       framerate: constraints.maxFps,
       bitrate,
       latencyMode: "realtime",
+      ...(constraints.codec === "h264" ? { avc: { format: "annexb" as const } } : {}),
     };
     return constraints.scalabilityMode === "l1t2"
       ? { ...base, scalabilityMode: "L1T2" }
@@ -132,6 +147,11 @@ export function createVideoSender(
     });
 
     let constraints = encoderConstraints();
+    // The codec the encoder is CURRENTLY configured for — every encoded
+    // chunk is tagged with it (RTP payload-type analog). Updated only
+    // after a codec-changing reconfigure (post-flush) so queued chunks
+    // of the old codec keep their truthful tag.
+    let currentCodec = constraints.codec;
     const captureCanvas = document.createElement("canvas");
     captureCanvas.width = constraints.maxWidth;
     captureCanvas.height = constraints.maxHeight;
@@ -148,6 +168,7 @@ export function createVideoSender(
           streamIdHex,
           frameSeq: seq,
           keyframe: chunk.type === "key",
+          codec: currentCodec,
           timestamp: Math.floor(performance.now()),
           encodedPayloadB64: payloadB64,
         };
@@ -189,15 +210,32 @@ export function createVideoSender(
         fresh.maxFps !== constraints.maxFps ||
         fresh.scalabilityMode !== constraints.scalabilityMode;
       if (constraintsChanged) {
+        const codecChanged = fresh.codec !== currentCodec;
         constraints = fresh;
         captureCanvas.width = constraints.maxWidth;
         captureCanvas.height = constraints.maxHeight;
         frameIntervalMs = 1000 / constraints.maxFps;
-        try {
-          encoder.configure(buildEncoderConfig(constraints, configuredKbps * 1000));
-          ts.lastKeyframeMs = performance.now();
-        } catch (e) {
-          console.error("encoder reconfigure on policy change failed:", e);
+        const reconfigure = (): void => {
+          try {
+            encoder.configure(buildEncoderConfig(constraints, configuredKbps * 1000));
+            currentCodec = constraints.codec;
+            ts.lastKeyframeMs = performance.now();
+          } catch (e) {
+            console.error("encoder reconfigure on policy change failed:", e);
+          }
+        };
+        if (codecChanged) {
+          // Drain chunks queued under the old codec so their tag stays
+          // truthful, THEN reconfigure. A missed flush self-heals via
+          // the receiver's decode-error → KeyframeRequest path.
+          void encoder
+            .flush()
+            .catch((e: unknown) => {
+              console.error("encoder flush before codec switch failed:", e);
+            })
+            .finally(reconfigure);
+        } else {
+          reconfigure();
         }
       }
       const now = performance.now();

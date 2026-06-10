@@ -87,6 +87,8 @@ pub enum DmEvent {
         stream_id: [u8; 16],
         frame_seq: u32,
         keyframe: bool,
+        /// Codec wire string — the receiver's decoder follows this tag.
+        codec: String,
         timestamp: u32,
         data: Vec<u8>,
     },
