@@ -21,6 +21,7 @@ pub use community::{
     aggregate_event_rsvps, compute_merged_roles, compute_profile_diff, compute_rebuild_plan,
     gossip_degree, parse_and_classify_row, persist_discovered_registry_members,
     presence_event_id_bytes, presence_poll_tick, presence_poll_tick_public, random_peer_sample,
+    route_for_peer,
     role_ids_from_governance, run_initial_sync, start_presence_poll, steady_poll_duration,
     write_our_presence, ClassifiedRow, DiscoveredRow, EventRsvpEntry, GossipOverlayPlan,
     GossipOverlaySnapshot, GossipRebuildOutcome, MemberProfileSnapshot, PresenceWrite,

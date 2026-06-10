@@ -336,9 +336,9 @@ pub(crate) async fn reallocate_private_route(app_handle: &AppHandle, state: &Arc
     {
         let mut rm = state.routing_manager.write();
         if let Some(ref mut handle) = *rm {
-            if let Err(e) = handle.manager.release_private_route() {
-                tracing::warn!(error = %e, "failed to release old private route");
-            }
+            // Grace inside set_allocated_route: the replaced route stays
+            // alive one refresh cycle so in-flight private-routed RPCs
+            // can still compile replies against it.
             handle
                 .manager
                 .set_allocated_route(new_route.route_id.clone(), new_route.blob.clone());
@@ -377,7 +377,7 @@ pub(crate) async fn reallocate_private_route(app_handle: &AppHandle, state: &Arc
         }
     }
 
-    tracing::info!("re-allocated private route (make-before-break)");
+    tracing::info!("re-allocated private route (make-before-break, old route held one cycle)");
 }
 
 pub(crate) async fn allocate_fresh_private_route(app_handle: &AppHandle, state: &Arc<AppState>) {

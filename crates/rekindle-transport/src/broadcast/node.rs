@@ -72,6 +72,14 @@ impl TransportNode {
         );
         veilid_config.protected_store.allow_insecure_fallback =
             config.allow_insecure_protected_store;
+        // Inbound private routes from `new_private_route()` use this
+        // config value (veilid default: 1 hop). Pin it to the anonymity
+        // floor so the RECEIVE path is as private as the 3-hop Safe
+        // send path — and so reply safety specs (which inherit the
+        // inbound route's hop count) match the tested 3-hop safety-route
+        // pool instead of falling into fresh allocation, where
+        // veilid-core 0.5.2 bails on `safety_spec.preferred_route`.
+        veilid_config.network.rpc.default_route_hop_count = ANONYMITY_HOP_FLOOR;
 
         let (update_tx, update_rx) = mpsc::channel::<VeilidUpdate>(4096);
         let update_callback: veilid_core::UpdateCallback = Arc::new(move |update| {
@@ -879,26 +887,43 @@ async fn run_route_refresh_loop(
     let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(interval_secs));
     interval.tick().await; // skip immediate first tick
 
+    // Routes replaced by the previous tick, held alive one extra cycle.
+    // Veilid compiles the reply to an inbound private-routed RPC against
+    // the route the question arrived on — releasing a route the moment
+    // its replacement lands kills every in-flight reply (and trips
+    // veilid-core 0.5.2's `safety_spec.preferred_route` allocation bail).
+    let mut personal_grace: Option<veilid_core::RouteId> = None;
+    // Community mailbox routes, keyed by mailbox key: the route published
+    // last tick (live) and the one it replaced (retiring — released after
+    // its one-cycle grace). Pre-fix these were never released at all.
+    let mut community_live: std::collections::HashMap<String, veilid_core::RouteId> =
+        std::collections::HashMap::new();
+    let mut community_retiring: std::collections::HashMap<String, veilid_core::RouteId> =
+        std::collections::HashMap::new();
+
     loop {
         tokio::select! {
             _ = interval.tick() => {
                 // ── Personal route refresh ─────────────────────────────
-                {
-                    let rm = route_manager.read();
-                    if let Some(old_id) = rm.route_id() {
-                        if let Err(e) = api.release_private_route(old_id.clone()) {
-                            tracing::debug!(error = %e, "old route release failed (likely already dead)");
-                        }
+                // Release the route replaced last cycle — grace is over.
+                if let Some(expired) = personal_grace.take() {
+                    if let Err(e) = api.release_private_route(expired) {
+                        tracing::debug!(error = %e, "grace-expired route release failed (likely already dead)");
                     }
                 }
+                // Make-before-break: allocate the replacement BEFORE
+                // touching the current route, then park the replaced
+                // route for one grace cycle.
                 match api.new_private_route().await {
                     Ok(rb) => {
+                        personal_grace = route_manager.read().route_id().cloned();
                         route_manager.write().set_route(rb.route_id, rb.blob);
                         tracing::debug!("personal route refreshed");
                     }
                     Err(e) => {
-                        route_manager.write().forget_route();
-                        tracing::warn!(error = %e, "personal route refresh failed — retry next tick");
+                        // Keep the current route — a failed refresh must
+                        // not leave the node routeless.
+                        tracing::warn!(error = %e, "personal route refresh failed — keeping current route, retry next tick");
                     }
                 }
 
@@ -926,11 +951,33 @@ async fn run_route_refresh_loop(
                     let dht = DhtStore::new(rc);
 
                     for (name, mailbox_key) in &operator_communities {
+                        // Route replaced two cycles ago — grace over.
+                        if let Some(expired) = community_retiring.remove(mailbox_key) {
+                            if let Err(e) = api.release_private_route(expired) {
+                                tracing::debug!(community = %name, error = %e, "grace-expired community route release failed");
+                            }
+                        }
                         match api.new_private_route().await {
                             Ok(rb) => {
                                 match dht.mailbox().update_community_route(mailbox_key, &rb.blob).await {
-                                    Ok(()) => tracing::debug!(community = %name, "community route refreshed"),
-                                    Err(e) => tracing::warn!(community = %name, error = %e, "community route publish failed"),
+                                    Ok(()) => {
+                                        // The previously published route
+                                        // enters its one-cycle grace.
+                                        if let Some(prev) = community_live.insert(mailbox_key.clone(), rb.route_id) {
+                                            community_retiring.insert(mailbox_key.clone(), prev);
+                                        }
+                                        tracing::debug!(community = %name, "community route refreshed");
+                                    }
+                                    Err(e) => {
+                                        // Never published — nothing can
+                                        // reference it; release now so a
+                                        // failing mailbox doesn't leak an
+                                        // allocation per tick.
+                                        if let Err(re) = api.release_private_route(rb.route_id) {
+                                            tracing::debug!(error = %re, "unpublished community route release failed");
+                                        }
+                                        tracing::warn!(community = %name, error = %e, "community route publish failed");
+                                    }
                                 }
                             }
                             Err(e) => {
@@ -939,6 +986,24 @@ async fn run_route_refresh_loop(
                         }
                     }
                 }
+
+                // Drop route state for communities we no longer operate.
+                let active_mailboxes: std::collections::HashSet<&String> =
+                    operator_communities.iter().map(|(_, key)| key).collect();
+                community_live.retain(|key, route| {
+                    if active_mailboxes.contains(key) {
+                        return true;
+                    }
+                    let _ = api.release_private_route(route.clone());
+                    false
+                });
+                community_retiring.retain(|key, route| {
+                    if active_mailboxes.contains(key) {
+                        return true;
+                    }
+                    let _ = api.release_private_route(route.clone());
+                    false
+                });
             }
             _ = shutdown_rx.recv() => {
                 tracing::info!("route refresh loop shutting down");

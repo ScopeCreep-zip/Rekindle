@@ -41,7 +41,9 @@ pub use registry::{
 };
 pub use role_merge::compute_merged_roles;
 pub use rsvp_aggregate::{aggregate_event_rsvps, EventRsvpEntry};
-pub use scan_row::{parse_and_classify_row, AcceptedRow, ClassifiedRow, SUBKEYS_PER_SEGMENT};
+pub use scan_row::{
+    parse_and_classify_row, route_for_peer, AcceptedRow, ClassifiedRow, SUBKEYS_PER_SEGMENT,
+};
 pub use spawn::{
     start_presence_poll, RAPID_TICKS, RAPID_TICK_INTERVAL_SECS, STEADY_TICK_INTERVAL_SECS,
 };

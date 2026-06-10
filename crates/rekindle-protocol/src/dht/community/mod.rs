@@ -20,8 +20,7 @@ pub use onboarding::{OnboardingConfig, OnboardingMode, OnboardingQuestion, Welco
 pub use types::{
     BanEntry, CategoryEntry, ChannelEntryV2, ChannelKind, CommunityMetadataV2, CommunityPolicy,
     CoordinatorInfo, EncryptedMEKCopy, InviteEntry, InviteSecrets, MEKVaultEntry, MemberPresence,
-    MemberSummary, ModerationLevel, RegistrySegmentInfo, RegistrySpine, RoleEntryV2,
-    SignedPresence, MANIFEST_REGISTRY_SPINE,
+    MemberSummary, ModerationLevel, RoleEntryV2, SignedPresence,
 };
 
 use serde::{Deserialize, Serialize};

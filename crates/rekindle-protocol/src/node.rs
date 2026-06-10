@@ -57,13 +57,22 @@ impl RekindleNode {
         );
 
         // 1. Build VeilidConfig from our NodeConfig
-        let veilid_config = VeilidConfig::new(
+        let mut veilid_config = VeilidConfig::new(
             &config.app_namespace,     // program_name
             "com",                     // organization
             &config.qualifier,         // qualifier
             Some(&config.storage_dir), // storage_directory override
             None,                      // config_directory (use default)
         );
+        // Inbound private routes from `new_private_route()` use this
+        // config value (veilid default: 1 hop). Pin it to the anonymity
+        // floor so the RECEIVE path is as private as the 3-hop Safe
+        // send path — and so reply safety specs (which inherit the
+        // inbound route's hop count) match the tested 3-hop safety-route
+        // pool instead of falling into fresh allocation, where
+        // veilid-core 0.5.2 bails on `safety_spec.preferred_route`.
+        veilid_config.network.rpc.default_route_hop_count =
+            rekindle_types::config::ANONYMITY_HOP_FLOOR;
 
         // 2. Create an mpsc channel for VeilidUpdate events
         let (update_tx, update_rx) = mpsc::channel::<VeilidUpdate>(4096);

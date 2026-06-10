@@ -143,11 +143,15 @@ CREATE TABLE IF NOT EXISTS community_members (
     role_ids TEXT NOT NULL DEFAULT '[0,1]',
     timeout_until INTEGER,
     joined_at INTEGER NOT NULL,
+    -- LOCAL slot within the segment's registry record (raw SMPL subkey
+    -- 0..254 — records are o_cnt:0, no owner offset). Written by the
+    -- registry scan and the JoinAccepted upsert; NULL until first
+    -- discovered.
     subkey_index INTEGER,
     -- Plate Gate (architecture §15): which segment hosts this member's slot.
     -- 0 = primary segment (the genesis registry); 1..=MAX_SEGMENTS for each
-    -- expansion. The local subkey within that segment's registry record is
-    -- always `subkey_index - segment_index * 255`.
+    -- expansion. The global slot (keypair derivation) is
+    -- `segment_index * 255 + subkey_index`.
     segment_index INTEGER NOT NULL DEFAULT 0,
     onboarding_complete INTEGER NOT NULL DEFAULT 0,
     -- Per-community profile fields (architecture §8.2 / §24.2). Mirrored

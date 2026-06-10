@@ -134,6 +134,41 @@ pub fn parse_and_classify_row<S: BuildHasher>(
     }))
 }
 
+/// Gate a single registry-subkey payload down to a usable route blob
+/// for one EXPECTED peer. Used by the gossip mesh's stale-route
+/// re-resolve: the caller reads the peer's raw SMPL slot fresh from
+/// the DHT and must not trust the bytes until they pass the same W26
+/// signature + ban + liveness classification as the presence scan,
+/// PLUS a pseudonym match — slot indices come from local SQLite and a
+/// shifted or re-claimed slot must never hand back another member's
+/// route.
+#[must_use]
+pub fn route_for_peer<S: BuildHasher>(
+    raw_bytes: &[u8],
+    expected_pseudonym_hex: &str,
+    banned_pseudonyms: &HashSet<String, S>,
+    stale_heartbeat_threshold_secs: u64,
+    now_secs: u64,
+) -> Option<Vec<u8>> {
+    let classified = parse_and_classify_row(
+        raw_bytes,
+        banned_pseudonyms,
+        stale_heartbeat_threshold_secs,
+        now_secs,
+    );
+    let ClassifiedRow::Accepted(row) = classified else {
+        return None;
+    };
+    if row.pseudonym_hex != expected_pseudonym_hex {
+        return None;
+    }
+    let online = row.online_member?;
+    if online.route_blob.is_empty() {
+        return None;
+    }
+    Some(online.route_blob)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -282,5 +317,74 @@ mod tests {
         assert!(online.route_blob.is_empty());
         assert_eq!(online.status, "online");
         assert_eq!(online.last_seen, 1000);
+    }
+
+    #[test]
+    fn route_for_peer_returns_blob_on_full_match() {
+        let presence = signed_presence_for(&[7u8; 32], "c1", "online");
+        let expected = hex::encode(presence.pseudonym_key.0);
+        let bytes = serde_json::to_vec(&presence).unwrap();
+        let banned = HashSet::new();
+        let blob = route_for_peer(&bytes, &expected, &banned, 60, 1000);
+        assert_eq!(blob, Some(vec![1, 2, 3, 4]));
+    }
+
+    #[test]
+    fn route_for_peer_rejects_pseudonym_mismatch() {
+        // The slot index came from local SQLite — if the slot was
+        // re-claimed by a different member (or the index is shifted),
+        // the row verifies but belongs to someone else. Must be None,
+        // never another member's route.
+        let presence = signed_presence_for(&[8u8; 32], "c1", "online");
+        let bytes = serde_json::to_vec(&presence).unwrap();
+        let banned = HashSet::new();
+        let other = hex::encode([9u8; 32]);
+        assert_eq!(route_for_peer(&bytes, &other, &banned, 60, 1000), None);
+    }
+
+    #[test]
+    fn route_for_peer_rejects_offline_stale_banned_and_empty_blob() {
+        let banned = HashSet::new();
+
+        // Offline status.
+        let offline = signed_presence_for(&[10u8; 32], "c1", "offline");
+        let key = hex::encode(offline.pseudonym_key.0);
+        let bytes = serde_json::to_vec(&offline).unwrap();
+        assert_eq!(route_for_peer(&bytes, &key, &banned, 60, 1000), None);
+
+        // Stale heartbeat (last_heartbeat=1000, cutoff=now-60=1940).
+        let stale = signed_presence_for(&[11u8; 32], "c1", "online");
+        let key = hex::encode(stale.pseudonym_key.0);
+        let bytes = serde_json::to_vec(&stale).unwrap();
+        assert_eq!(route_for_peer(&bytes, &key, &banned, 60, 2000), None);
+
+        // Banned author.
+        let banned_row = signed_presence_for(&[12u8; 32], "c1", "online");
+        let key = hex::encode(banned_row.pseudonym_key.0);
+        let bytes = serde_json::to_vec(&banned_row).unwrap();
+        let mut ban_set = HashSet::new();
+        ban_set.insert(key.clone());
+        assert_eq!(route_for_peer(&bytes, &key, &ban_set, 60, 1000), None);
+
+        // Empty route blob — online but unreachable.
+        let mut routeless = signed_presence_for(&[13u8; 32], "c1", "online");
+        routeless.route_blob.clear();
+        let signing_key = derive_community_pseudonym(&[13u8; 32], "c1");
+        let sig = sign_with_pseudonym(&signing_key, &routeless.signing_bytes());
+        routeless.signature = sig.to_vec();
+        let key = hex::encode(routeless.pseudonym_key.0);
+        let bytes = serde_json::to_vec(&routeless).unwrap();
+        assert_eq!(route_for_peer(&bytes, &key, &banned, 60, 1000), None);
+    }
+
+    #[test]
+    fn route_for_peer_rejects_unverifiable_rows() {
+        let banned = HashSet::new();
+        let key = hex::encode([14u8; 32]);
+        assert_eq!(route_for_peer(&[], &key, &banned, 60, 1000), None);
+        let mut forged = signed_presence_for(&[14u8; 32], "c1", "online");
+        forged.signature = vec![0u8; 64];
+        let bytes = serde_json::to_vec(&forged).unwrap();
+        assert_eq!(route_for_peer(&bytes, &key, &banned, 60, 1000), None);
     }
 }

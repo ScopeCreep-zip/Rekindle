@@ -30,8 +30,8 @@ pub const MANIFEST_AUTOMOD: u32 = 9;
 pub const MANIFEST_ONBOARDING: u32 = 10;
 /// Subkey 11: Welcome screen.
 pub const MANIFEST_WELCOME: u32 = 11;
-/// Subkey 12: Registry spine (for >256 member chaining).
-pub const MANIFEST_REGISTRY_SPINE: u32 = 12;
+/// Subkey 12: Reserved (was the v1 registry spine — v2 discovers
+/// segments via `SegmentAdded` governance entries).
 /// Subkey 13: Reserved.
 /// Subkey 14: Audit log DHT record key (pointer).
 pub const MANIFEST_AUDIT_LOG_KEY: u32 = 14;
@@ -40,14 +40,10 @@ pub const MANIFEST_SUBKEY_COUNT: u32 = 16;
 
 // ── Member registry subkey layout (SMPL, multi-writer) ──
 
-/// Owner subkey 0: Member index (list of all member pseudonym keys + subkey assignments).
+/// Subkey 0: Member index (list of all member pseudonym keys + subkey assignments).
 pub const REGISTRY_MEMBER_INDEX: u32 = 0;
-/// Owner subkey 1: MEK vault (encrypted MEK copies for key distribution).
+/// Subkey 1: MEK vault (encrypted MEK copies for key distribution).
 pub const REGISTRY_MEK_VAULT: u32 = 1;
-/// Owner subkey count for the coordinator (controls member index + MEK vault).
-pub const REGISTRY_OWNER_SUBKEY_COUNT: u16 = 2;
-/// Each member gets 1 subkey for their presence data.
-pub const REGISTRY_MEMBER_SUBKEY_COUNT: u16 = 1;
 
 // ── Channel types ──
 
@@ -264,31 +260,6 @@ pub struct SignedPresence {
     pub presence: MemberPresence,
     /// Ed25519 signature over the serialized `presence` bytes.
     pub pseudonym_signature: Vec<u8>,
-}
-
-/// Registry spine for communities with >256 members.
-///
-/// Stored in manifest subkey 12. Tracks multiple registry segments,
-/// each holding up to 256 member slots.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RegistrySpine {
-    /// Total number of members across all segments.
-    pub total_members: u32,
-    /// Ordered list of registry segments.
-    pub segments: Vec<RegistrySegmentInfo>,
-}
-
-/// Information about a single registry segment record.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RegistrySegmentInfo {
-    /// DHT record key for this segment.
-    pub record_key: String,
-    /// Slot seed encrypted with the community MEK (for admin delegation).
-    pub slot_seed_encrypted: Vec<u8>,
-    /// Member index range covered by this segment (start_index, end_index).
-    pub member_range: (u32, u32),
 }
 
 /// A ban entry in the manifest ban list (subkey 4).
