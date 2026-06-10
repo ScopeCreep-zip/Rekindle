@@ -68,7 +68,7 @@ pub fn send_video_frame_inner(
 pub fn send_video_frame_ack_inner(
     state: &SharedState,
     community_id: &str,
-    channel_id: String,
+    channel_id: &str,
     stream_id_hex: &str,
     last_frame_seq: u32,
     kbps: u32,
@@ -76,50 +76,50 @@ pub fn send_video_frame_ack_inner(
 ) -> Result<(), String> {
     let stream_id = decode_stream_id(stream_id_hex)?;
     let envelope = CommunityEnvelope::Control(ControlPayload::FrameAck {
-        channel_id,
+        channel_id: channel_id.to_string(),
         stream_id,
         last_frame_seq,
         kbps,
         loss_q8,
     });
-    crate::services::community::send_to_mesh(state, community_id, &envelope)
+    crate::services::community::send_to_channel_peers(state, community_id, channel_id, &envelope)
 }
 
 pub fn send_video_keyframe_request_inner(
     state: &SharedState,
     community_id: &str,
-    channel_id: String,
+    channel_id: &str,
     stream_id_hex: &str,
 ) -> Result<(), String> {
     let stream_id = decode_stream_id(stream_id_hex)?;
     let envelope = CommunityEnvelope::Control(ControlPayload::KeyframeRequest {
-        channel_id,
+        channel_id: channel_id.to_string(),
         stream_id,
     });
-    crate::services::community::send_to_mesh(state, community_id, &envelope)
+    crate::services::community::send_to_channel_peers(state, community_id, channel_id, &envelope)
 }
 
 pub fn send_video_bandwidth_estimate_inner(
     state: &SharedState,
     community_id: &str,
-    channel_id: String,
+    channel_id: &str,
     kbps: u32,
     window_secs: u8,
     loss_q8: u8,
 ) -> Result<(), String> {
     let envelope = CommunityEnvelope::Control(ControlPayload::BandwidthEstimate {
-        channel_id,
+        channel_id: channel_id.to_string(),
         kbps,
         window_secs,
         loss_q8,
     });
-    crate::services::community::send_to_mesh(state, community_id, &envelope)
+    crate::services::community::send_to_channel_peers(state, community_id, channel_id, &envelope)
 }
 
 pub fn notify_video_topology_change_inner(
     state: &SharedState,
     community_id: &str,
-    channel_id: String,
+    channel_id: &str,
     stream_id_hex: &str,
     relay_host_pseudonym: Option<String>,
     reason: String,
@@ -127,11 +127,11 @@ pub fn notify_video_topology_change_inner(
     let stream_id = decode_stream_id(stream_id_hex)?;
     let lamport = state_helpers::increment_lamport(state, community_id);
     let envelope = CommunityEnvelope::Control(ControlPayload::TopologyChange {
-        channel_id,
+        channel_id: channel_id.to_string(),
         stream_id,
         relay_host_pseudonym,
         reason,
         lamport,
     });
-    crate::services::community::send_to_mesh(state, community_id, &envelope)
+    crate::services::community::send_to_channel_peers(state, community_id, channel_id, &envelope)
 }

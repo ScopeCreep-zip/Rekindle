@@ -234,6 +234,21 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
         }
     }
 
+    fn advertise_media_capabilities(&self, community_id: &str, channel_id: &str) {
+        if let Err(e) = crate::services::voice_adapter::advertise_media_capabilities(
+            &self.state,
+            community_id,
+            channel_id,
+        ) {
+            tracing::debug!(
+                community = %community_id,
+                channel = %channel_id,
+                error = %e,
+                "directed media-caps advertise skipped"
+            );
+        }
+    }
+
     async fn persist_hand_raise(&self, community_id: String, channel_id: String, raised: bool) {
         if let Err(error) = crate::services::community::persist_hand_raise(
             &self.state,

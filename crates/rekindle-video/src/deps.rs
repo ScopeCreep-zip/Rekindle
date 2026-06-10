@@ -107,12 +107,24 @@ pub trait VideoDeps: Send + Sync + 'static {
         community_id: &str,
     ) -> Option<rekindle_secrets::ed25519_dalek::SigningKey>;
 
-    /// Broadcast a gossip envelope to the community mesh.
-    fn send_to_mesh(
+    /// Send an envelope to exactly the peers in the given voice/video
+    /// channel's roster (directed `app_message` per peer, ttl = 0) —
+    /// never to the community gossip mesh. Architecture §10.6: media
+    /// and its per-stream control traffic stay inside the channel the
+    /// members are actively in.
+    fn send_to_channel(
         &self,
         community_id: &str,
+        channel_id: &str,
         envelope: &CommunityEnvelope,
     ) -> Result<(), VideoError>;
+
+    /// The channel the local user is actively joined to in this
+    /// community's voice/video session, or `None` when not in any
+    /// channel of this community. Reader-validates gate for every
+    /// inbound video payload: anything addressed to a different
+    /// channel is dropped before reassembly / decrypt / emit.
+    fn local_active_channel(&self, community_id: &str) -> Option<String>;
 
     /// Increment the per-community Lamport clock and return the new
     /// value. Used by `TopologyChange` writes so lamport-LWW dedup

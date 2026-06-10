@@ -242,12 +242,19 @@ fn set_pending_local_caps(state: &Arc<AppState>, caps: Option<MediaCapabilities>
     }
 }
 
-fn pending_local_caps(state: &Arc<AppState>) -> MediaCapabilities {
+/// The most recently reported local WebCodecs probe caps, or `None`
+/// if the frontend hasn't reported yet. Also feeds the directed
+/// `MediaCapabilities` advertisements (`voice_adapter::io_helpers`) so
+/// peers negotiate against our real probe matrix, not the placeholder.
+pub fn reported_local_caps(state: &Arc<AppState>) -> Option<MediaCapabilities> {
     let guard = state.video_sessions.inner.read();
     guard
         .get(&pending_slot_key())
         .and_then(|s| s.peer_caps.get(LOCAL_PEER_KEY).cloned())
-        .unwrap_or_else(MediaCapabilities::interim_default)
+}
+
+fn pending_local_caps(state: &Arc<AppState>) -> MediaCapabilities {
+    reported_local_caps(state).unwrap_or_else(MediaCapabilities::interim_default)
 }
 
 /// The local peer joined a (community, channel) voice/video session.

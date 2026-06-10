@@ -98,7 +98,13 @@ async fn handle_gossip_envelope(
             community_id = %community_id,
             "verify_envelope failed"
         );
-        if envelope_carries_video(&signed.envelope_bytes) {
+        // §10.6 — only surface the rejection toast when the local user
+        // is actually in the channel the video payload addresses;
+        // members outside the channel must not see (or even be told
+        // about) channel media.
+        if video_payload_channel_from_bytes(&signed.envelope_bytes)
+            .is_some_and(|ch| local_in_channel(state, community_id, &ch))
+        {
             crate::services::video_adapter::VideoAdapter::new(state.clone(), app_handle.clone())
                 .emit_video_envelope_rejected(
                     community_id.clone(),
@@ -118,16 +124,30 @@ async fn handle_gossip_envelope(
         }
     }
 
+    let video_channel = video_payload_channel_from_bytes(&signed.envelope_bytes);
+
     // M10.4 — receiver-side per-sender gossip rate floor (architecture
     // §20.2 line 2585). The 10 msg/s cap is enforced even on senders
     // running modified clients that ignore their own send-side limit.
     // Drop is silent: we do not forward, do not ack, do not log at info
     // level (that would amplify the attack via tracing storms).
-    if !crate::services::community::receiver_limits::check_gossip_rate(
-        state,
-        community_id,
-        &signed.sender_pseudonym,
-    ) {
+    //
+    // §10.6 exemption: directed channel media (video fragments arrive
+    // at frame rate, well above 10/s) has its own congestion control
+    // (FrameAck / BandwidthEstimate / KeyframeRequest) and is exempt
+    // — but ONLY when we are actively in the addressed channel. Video
+    // for any other channel stays under the floor and is then dropped
+    // by the receive gate regardless.
+    let in_channel_media = video_channel
+        .as_deref()
+        .is_some_and(|ch| local_in_channel(state, community_id, ch));
+    if !in_channel_media
+        && !crate::services::community::receiver_limits::check_gossip_rate(
+            state,
+            community_id,
+            &signed.sender_pseudonym,
+        )
+    {
         tracing::trace!(
             community = %community_id,
             sender = %signed.sender_pseudonym,
@@ -152,8 +172,12 @@ async fn handle_gossip_envelope(
         }
     }
 
+    // §10.6 — channel media is directed, never epidemic: video
+    // payloads are excluded from gossip forwarding even if a
+    // non-compliant sender ships them with ttl > 0, so honest nodes
+    // never amplify channel media beyond the roster it was sent to.
     let is_private = is_private_control_payload(&signed.envelope_bytes);
-    if signed.ttl > 0 && !is_private {
+    if signed.ttl > 0 && !is_private && video_channel.is_none() {
         gossip_forward(state, community_id, &signed);
     }
 
@@ -210,33 +234,34 @@ fn envelope_hash(envelope_bytes: &[u8]) -> String {
     hex::encode(h.finalize())
 }
 
-/// Phase F — return true iff the decoded envelope carries a video
-/// control payload (fragment, parity, capabilities, keyframe req,
-/// bandwidth, topology). Used at the verify-failure boundary so we
-/// only emit `VideoEnvelopeRejected` for envelopes that actually
-/// belong to the video pipeline — non-video gossip failures stay on
-/// the structured-trace path only and do not produce UI toasts.
+/// Phase F + §10.6 — if the decoded envelope carries a video control
+/// payload (fragment, parity, capabilities, keyframe req, bandwidth,
+/// topology, ack), the channel it is addressed to. Used at the
+/// verify-failure boundary (toast gating), the §20.2 rate floor
+/// (in-channel media exemption), and the forward branch (video is
+/// directed, never gossip-relayed). The variant set lives in
+/// `rekindle_video::video_payload_channel` so the classification has
+/// one definition.
 ///
 /// If decoding fails (which is itself a wire-shape issue) we
-/// conservatively return false — the rejection is logged via tracing
+/// conservatively return `None` — the rejection is logged via tracing
 /// and a video-specific UI toast would be a guess.
-fn envelope_carries_video(envelope_bytes: &[u8]) -> bool {
-    let Ok(Some(env)) = try_decode_community_envelope(envelope_bytes) else {
-        return false;
+fn video_payload_channel_from_bytes(envelope_bytes: &[u8]) -> Option<String> {
+    let Ok(Some(CommunityEnvelope::Control(ref payload))) =
+        try_decode_community_envelope(envelope_bytes)
+    else {
+        return None;
     };
-    let CommunityEnvelope::Control(payload) = env else {
-        return false;
-    };
-    matches!(
-        payload,
-        ControlPayload::VideoFragment { .. }
-            | ControlPayload::VideoParityFragment { .. }
-            | ControlPayload::MediaCapabilities { .. }
-            | ControlPayload::KeyframeRequest { .. }
-            | ControlPayload::BandwidthEstimate { .. }
-            | ControlPayload::TopologyChange { .. }
-            | ControlPayload::FrameAck { .. }
-    )
+    rekindle_video::video_payload_channel(payload).map(str::to_string)
+}
+
+/// True when the local user's active voice/video session is bound to
+/// exactly this (community, channel).
+fn local_in_channel(state: &Arc<AppState>, community_id: &str, channel_id: &str) -> bool {
+    let ve = state.voice_engine.lock();
+    ve.as_ref().is_some_and(|handle| {
+        handle.community_id.as_deref() == Some(community_id) && handle.channel_id == channel_id
+    })
 }
 
 pub(crate) fn is_private_control_payload(envelope_bytes: &[u8]) -> bool {

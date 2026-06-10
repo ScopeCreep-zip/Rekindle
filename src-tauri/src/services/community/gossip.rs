@@ -46,6 +46,71 @@ pub fn send_to_mesh(
     Ok(())
 }
 
+/// Architecture §10.6 — directed channel-scoped send for voice/video
+/// media and its per-stream control traffic. Resolves the recipient
+/// set from the active voice session's transport roster (the peers
+/// that announced VoiceJoin for this exact channel) and fans the
+/// signed envelope out to them with `ttl = 0`, so it is never queued,
+/// relayed, or seen by community members outside the channel.
+///
+/// Errors when the local user is not actively joined to
+/// `(community_id, channel_id)` — sending channel media while not in
+/// the channel is a caller bug, not a transport condition.
+pub fn send_to_channel_peers(
+    state: &SharedState,
+    community_id: &str,
+    channel_id: &str,
+    envelope: &CommunityEnvelope,
+) -> Result<(), String> {
+    let transport = {
+        let ve = state.voice_engine.lock();
+        let Some(handle) = ve.as_ref() else {
+            return Err("not in a voice session".to_string());
+        };
+        if handle.community_id.as_deref() != Some(community_id) || handle.channel_id != channel_id {
+            return Err(format!(
+                "active voice session is not bound to {community_id}/{channel_id}"
+            ));
+        }
+        handle.transport.clone()
+    };
+    let Some(adapter) = build_adapter(state) else {
+        return Err("app handle / db pool unavailable".to_string());
+    };
+    let adapter = Arc::new(adapter);
+    let cid = community_id.to_string();
+    let ch = channel_id.to_string();
+    let env = envelope.clone();
+    // Same fire-and-forget shape as `send_to_mesh`: the roster
+    // snapshot needs the tokio transport lock, so peers are resolved
+    // inside the spawned task.
+    tauri::async_runtime::spawn(async move {
+        let peers: Vec<rekindle_gossip::PeerInfo> = transport
+            .lock()
+            .await
+            .peer_entries()
+            .into_iter()
+            .map(|(pseudonym_key, route_blob)| rekindle_gossip::PeerInfo {
+                pseudonym_key,
+                route_blob,
+            })
+            .collect();
+        if peers.is_empty() {
+            tracing::debug!(
+                community = %cid,
+                channel = %ch,
+                "send_to_channel_peers: solo in channel — nothing to send",
+            );
+            return;
+        }
+        if let Err(error) = rekindle_gossip::send_to_channel_peers(adapter, &cid, &env, peers).await
+        {
+            tracing::warn!(community = %cid, channel = %ch, %error, "send_to_channel_peers: pipeline error");
+        }
+    });
+    Ok(())
+}
+
 /// Fan out a pre-signed envelope. Used by the presence-poll drain
 /// path which holds pending broadcasts from a prior empty-peers
 /// fan-out attempt.

@@ -59,6 +59,71 @@ pub async fn send_to_mesh<D: GossipDeps>(
     Ok(())
 }
 
+/// Directed, channel-scoped variant of [`send_to_mesh`]. Signs the
+/// envelope exactly like the mesh path but forces `ttl = 0` and fans
+/// out to exactly the given peers (the voice/video channel roster)
+/// instead of the community gossip overlay. Architecture §10.6 —
+/// media and its per-stream control traffic flow only among the
+/// members actively in the channel, so there is no reliability
+/// ranking, no fan-out degree cap, and no pending-mesh queue: a
+/// frame with no recipients is stale by the next frame interval and
+/// is dropped, not deferred.
+pub async fn send_to_channel_peers<D: GossipDeps>(
+    deps: Arc<D>,
+    community_id: &str,
+    envelope: &CommunityEnvelope,
+    peers: Vec<PeerInfo>,
+) -> Result<(), GossipError> {
+    let my_pseudonym_key = deps.my_pseudonym_key(community_id);
+    let identity_secret = deps
+        .identity_secret()
+        .ok_or(GossipError::IdentityNotLoaded)?;
+
+    let signing_key = rekindle_crypto::group::pseudonym::derive_community_pseudonym(
+        &identity_secret,
+        community_id,
+    );
+    let envelope_bytes = encode_community_envelope(envelope)
+        .map_err(|e| GossipError::EncodeFailed(e.to_string()))?;
+    let mut signed = envelope::sign_envelope(
+        &signing_key,
+        community_id,
+        &my_pseudonym_key,
+        &envelope_bytes,
+    );
+    // ttl = 0 — honest receivers must never gossip-forward channel
+    // media beyond the roster the sender addressed.
+    signed.ttl = 0;
+
+    let dedup_key = extract_mesh_dedup_key(envelope);
+    deps.check_and_insert_dedup(community_id, &my_pseudonym_key, &dedup_key);
+    deps.increment_lamport(community_id);
+
+    if peers.is_empty() {
+        tracing::debug!(
+            community = %community_id,
+            "send_to_channel_peers: no channel peers — dropping",
+        );
+        return Ok(());
+    }
+
+    let signed_bytes = encode_signed_envelope(&signed);
+    let cid_owner = community_id.to_string();
+    tokio::spawn(async move {
+        let mut set = tokio::task::JoinSet::new();
+        for peer in peers {
+            let deps_clone = Arc::clone(&deps);
+            let cid = cid_owner.clone();
+            let data = signed_bytes.clone();
+            set.spawn(async move {
+                send_to_one_peer(deps_clone, cid, peer, data, None).await;
+            });
+        }
+        while set.join_next().await.is_some() {}
+    });
+    Ok(())
+}
+
 /// Fan-out a pre-signed envelope. Idempotent + crash-safe by design:
 /// if `current_peers` returns zero, the envelope is queued for the
 /// next presence-poll cycle instead of being dropped (architecture
@@ -418,6 +483,64 @@ mod tests {
         assert_eq!(st.sent_payloads.len(), 1);
         assert_eq!(st.reliability, vec![("c1".into(), "carol".into(), false)]);
         assert!(st.route_updates.is_empty());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn channel_peers_send_reaches_every_peer_with_ttl_zero() {
+        use rekindle_protocol::capnp_envelope::decode_signed_envelope;
+
+        let deps = Arc::new(MockDeps::new());
+        let peers: Vec<PeerInfo> = (0..3u8)
+            .map(|i| PeerInfo {
+                pseudonym_key: format!("peer{i}"),
+                route_blob: vec![i; 3],
+            })
+            .collect();
+        let envelope = CommunityEnvelope::TypingIndicator {
+            channel_id: "ch1".to_string(),
+            pseudonym_key: "me".to_string(),
+        };
+
+        send_to_channel_peers(Arc::clone(&deps), "c1", &envelope, peers)
+            .await
+            .expect("directed send happy path");
+        for _ in 0..40 {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            if deps.state.lock().sent_payloads.len() == 3 {
+                break;
+            }
+        }
+        let st = deps.state.lock();
+        assert_eq!(
+            st.sent_payloads.len(),
+            3,
+            "every channel peer gets the envelope — no fan-out degree cap"
+        );
+        for (_route, data) in &st.sent_payloads {
+            let signed = decode_signed_envelope(data).expect("wire-decodable");
+            assert_eq!(signed.ttl, 0, "directed media must not be relayable");
+            assert_eq!(signed.community_id, "c1");
+        }
+        assert!(st.pending_queue.is_empty());
+        assert_eq!(st.lamport_bumps, vec!["c1".to_string()]);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn channel_peers_send_with_empty_roster_drops_instead_of_queueing() {
+        let deps = Arc::new(MockDeps::new());
+        let envelope = CommunityEnvelope::TypingIndicator {
+            channel_id: "ch1".to_string(),
+            pseudonym_key: "me".to_string(),
+        };
+        send_to_channel_peers(Arc::clone(&deps), "c1", &envelope, Vec::new())
+            .await
+            .expect("empty roster is not an error");
+        let st = deps.state.lock();
+        assert!(
+            st.pending_queue.is_empty(),
+            "live media is dropped, never deferred to the pending-mesh queue"
+        );
+        assert!(st.sent_payloads.is_empty());
     }
 
     #[test]

@@ -1,11 +1,18 @@
 //! Phase 16 — community video receive dispatcher.
 //!
-//! Routes inbound `ControlPayload::Video*` variants from the gossip
-//! mesh: fragment + parity fragment ingest into the per-community
-//! reassembler, then MEK-decrypt the assembled frame and emit
-//! `VideoEvent::FrameReady`. The other 4 control variants (FrameAck,
+//! Routes inbound `ControlPayload::Video*` variants from the directed
+//! channel-peer transport: fragment + parity fragment ingest into the
+//! per-community reassembler, then MEK-decrypt the assembled frame and
+//! emit `VideoEvent::FrameReady`. The other control variants (FrameAck,
 //! KeyframeRequest, BandwidthEstimate, TopologyChange,
 //! MediaCapabilities) map 1:1 to their VideoEvent variants.
+//!
+//! Architecture §10.6 reader-validates gate: every payload carries the
+//! channel it belongs to, and anything addressed to a channel the
+//! local user is not actively joined to is dropped up front — before
+//! reassembly, MEK decrypt, or any event reaches the frontend. A
+//! compliant sender only ever addresses the channel roster, so this
+//! gate is defense-in-depth against non-compliant or stale senders.
 
 use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use rekindle_protocol::dht::community::envelope::ControlPayload;
@@ -14,6 +21,24 @@ use crate::deps::{VideoDeps, VideoEvent};
 use crate::reassembler::ReassembledFrame;
 use crate::reassembly_state::VideoReassemblyState;
 use crate::{VideoFragment, VideoParityFragment};
+
+/// The channel a video-flavoured `ControlPayload` is addressed to.
+/// `None` for every non-video variant. Shared with the src-tauri
+/// ingress (relay exclusion, rejected-toast gating, rate-floor
+/// exemption) so "is video + which channel" has one definition.
+#[must_use]
+pub fn video_payload_channel(payload: &ControlPayload) -> Option<&str> {
+    match payload {
+        ControlPayload::VideoFragment { channel_id, .. }
+        | ControlPayload::VideoParityFragment { channel_id, .. }
+        | ControlPayload::FrameAck { channel_id, .. }
+        | ControlPayload::KeyframeRequest { channel_id, .. }
+        | ControlPayload::BandwidthEstimate { channel_id, .. }
+        | ControlPayload::TopologyChange { channel_id, .. }
+        | ControlPayload::MediaCapabilities { channel_id, .. } => Some(channel_id),
+        _ => None,
+    }
+}
 
 /// Dispatch entry point — routed from the src-tauri Veilid control
 /// receiver when any video-flavoured `ControlPayload` arrives. Each
@@ -27,6 +52,21 @@ pub fn handle_video_payload<D: VideoDeps>(
     payload: ControlPayload,
     now_ms: u32,
 ) {
+    let Some(payload_channel) = video_payload_channel(&payload) else {
+        return;
+    };
+    let active = deps.local_active_channel(community_id);
+    if active.as_deref() != Some(payload_channel) {
+        tracing::debug!(
+            target: "rekindle_video::receive",
+            community_id = %community_id,
+            sender_pseudonym = %sender_pseudonym,
+            payload_channel = %payload_channel,
+            active_channel = active.as_deref().unwrap_or("<none>"),
+            "video payload for a channel we're not in — dropping"
+        );
+        return;
+    }
     match payload {
         ControlPayload::VideoFragment {
             channel_id: _,
@@ -212,8 +252,9 @@ pub fn handle_video_payload<D: VideoDeps>(
 
 /// Decrypt a reassembled frame under the current community MEK and
 /// emit `VideoEvent::FrameReady` with the plaintext payload. If no
-/// MEK is cached (e.g. the user hasn't joined voice/video), drop the
-/// frame silently — this matches pre-Phase-16 behavior.
+/// MEK is cached, drop the frame silently. The channel gate in
+/// `handle_video_payload` already guarantees the frame belongs to the
+/// channel we're actively in; the MEK check is the crypto fallback.
 fn emit_frame_ready<D: VideoDeps>(
     deps: &D,
     community_id: &str,
@@ -270,6 +311,87 @@ mod tests {
     use super::*;
     use crate::reassembly_state::VideoReassemblyState;
     use crate::test_mock::MockDeps;
+
+    #[test]
+    fn payload_for_other_channel_is_dropped() {
+        // Local user is in ch1; a FrameAck addressed to ch2 must be
+        // dropped before any event reaches the frontend.
+        let deps = MockDeps::new();
+        let reassembly = VideoReassemblyState::new();
+        handle_video_payload(
+            &deps,
+            &reassembly,
+            "c1",
+            "peer1",
+            ControlPayload::FrameAck {
+                channel_id: "ch2".into(),
+                stream_id: [5u8; 16],
+                last_frame_seq: 7,
+                kbps: 1000,
+                loss_q8: 12,
+            },
+            0,
+        );
+        assert!(
+            deps.calls.lock().events.is_empty(),
+            "payload for a channel we're not in must not produce events"
+        );
+    }
+
+    #[test]
+    fn payload_with_no_active_session_is_dropped() {
+        // Not in any voice/video channel: every video payload is
+        // dropped, even with a community MEK cached.
+        let deps = MockDeps::in_channel(None);
+        let reassembly = VideoReassemblyState::new();
+        handle_video_payload(
+            &deps,
+            &reassembly,
+            "c1",
+            "peer1",
+            ControlPayload::MediaCapabilities {
+                channel_id: "ch1".into(),
+                max_pixel_count: 480 * 854,
+                max_fps: 30,
+                codecs: vec![rekindle_types::video::Codec::Vp9],
+                supports_optimize_for_latency: false,
+                supported_scalability_modes: vec![rekindle_types::video::ScalabilityMode::Flat],
+            },
+            0,
+        );
+        assert!(
+            deps.calls.lock().events.is_empty(),
+            "no active session means no video consumption"
+        );
+    }
+
+    #[test]
+    fn fragment_for_other_channel_never_reaches_reassembly() {
+        let deps = MockDeps::new();
+        let reassembly = VideoReassemblyState::new();
+        handle_video_payload(
+            &deps,
+            &reassembly,
+            "c1",
+            "peer1",
+            ControlPayload::VideoFragment {
+                channel_id: "ch2".into(),
+                stream_id: [9u8; 16],
+                frame_seq: 1,
+                frag_index: 0,
+                frag_total: 1,
+                keyframe: false,
+                timestamp: 0,
+                payload: vec![0xAB; 64],
+                signature: vec![0u8; 64],
+            },
+            0,
+        );
+        assert!(
+            deps.calls.lock().events.is_empty(),
+            "single-fragment frame for another channel must not be reassembled or emitted"
+        );
+    }
 
     #[test]
     fn frame_ack_maps_to_event() {

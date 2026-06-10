@@ -41,7 +41,17 @@ pub(super) fn handle_voice_join(
         deps.register_background_handle(handle);
     }
 
-    let Some(transport) = deps.transport_handle() else {
+    // §10.6 channel scoping — only a transport bound to this exact
+    // (community, channel) may absorb the joiner. A join announced
+    // for any other channel (or while we're not in voice at all) is
+    // pure UI signaling: adding the peer would pollute our roster and
+    // leak our channel's media to members of a different channel.
+    let transport = if deps.voice_engine_bound_to(community_id, &channel_id) {
+        deps.transport_handle()
+    } else {
+        None
+    };
+    let Some(transport) = transport else {
         deps.emit_event(CommunityVoiceEvent::VoiceJoin {
             community_id: community_id.to_string(),
             channel_id,
@@ -104,6 +114,12 @@ async fn voice_join_apply(
         t.add_peer(&sender_key, &blob);
         (t.peer_count(), t.mode().clone())
     };
+
+    // §10.6 — the joiner needs our MediaCapabilities and missed any
+    // advertisement we made before they arrived. Directed re-advertise
+    // to the roster (which now includes them); receivers dedup the
+    // identical envelope, so peers that already hold our caps drop it.
+    deps.advertise_media_capabilities(community_id, channel_id);
 
     if is_stage {
         reconcile_stage_transport(deps, community_id, channel_id, &transport, &my_pk).await;
@@ -225,7 +241,15 @@ pub(super) fn handle_voice_leave(
         deps.register_background_handle(handle);
     }
 
-    let Some(transport) = deps.transport_handle() else {
+    // §10.6 channel scoping — mirror of the join gate: a leave in a
+    // channel we're not bound to must not touch our transport (it
+    // could evict a same-pseudonym peer who is still in OUR channel).
+    let transport = if deps.voice_engine_bound_to(community_id, &channel_id) {
+        deps.transport_handle()
+    } else {
+        None
+    };
+    let Some(transport) = transport else {
         deps.emit_event(CommunityVoiceEvent::VoiceLeave {
             community_id: community_id.to_string(),
             channel_id,
@@ -345,23 +369,38 @@ pub(super) fn handle_voice_roster(
     // audio we could decrypt.
     deps.emit_event(CommunityVoiceEvent::VoiceRoster {
         community_id: community_id.to_string(),
-        channel_id,
+        channel_id: channel_id.clone(),
         participants: participants
             .iter()
             .map(|e| e.pseudonym_key.clone())
             .collect(),
     });
 
+    // §10.6 channel scoping — only absorb roster routes for the
+    // channel our engine is bound to. Rosters for other channels are
+    // UI-only; adding their peers would cross-wire two channels'
+    // media planes.
+    if !deps.voice_engine_bound_to(community_id, &channel_id) {
+        return;
+    }
     let Some(transport) = deps.transport_handle() else {
         return;
     };
+    let deps_task = Arc::clone(deps);
+    let cid = community_id.to_string();
     let handle = tokio::spawn(async move {
-        let mut t = transport.lock().await;
-        for entry in participants {
-            if !entry.route_blob.is_empty() {
-                t.add_peer(&entry.pseudonym_key, &entry.route_blob);
+        {
+            let mut t = transport.lock().await;
+            for entry in participants {
+                if !entry.route_blob.is_empty() {
+                    t.add_peer(&entry.pseudonym_key, &entry.route_blob);
+                }
             }
         }
+        // We (the joiner) just learned the channel roster — directed
+        // re-advertise so every present member gets our caps. The
+        // session-start advertisement ran against an empty roster.
+        deps_task.advertise_media_capabilities(&cid, &channel_id);
     });
     deps.register_background_handle(handle);
 }

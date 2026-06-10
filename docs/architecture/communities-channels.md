@@ -196,6 +196,30 @@ Per the Veilid `app_message` 32 KiB cap, frames are chunked into
 reassembly buffers. The codec (VP9 today) plugs in via a
 `VideoCodec` trait — the crate handles only on-the-wire framing.
 
+**Channel-scoped delivery.** Video media and its per-stream control
+traffic (fragments, parity, acks, keyframe requests, bandwidth
+estimates, topology changes, capability advertisements) never ride
+the community gossip mesh. Senders address exactly the voice-channel
+roster — the peers whose `VoiceJoin`/`VoiceRoster` signaling bound
+them to the same channel — via directed per-peer `app_message` with
+`ttl = 0` (`rekindle_gossip::send_to_channel_peers`). Three receiver
+gates back this up (reader-validates):
+
+1. Video envelopes are excluded from gossip forwarding even if a
+   non-compliant sender ships them with `ttl > 0`.
+2. `rekindle_video::handle_video_payload` drops any payload addressed
+   to a channel the local user is not actively joined to, before
+   reassembly, MEK decrypt, or any frontend event.
+3. The §20.2 per-sender gossip rate floor (10 msg/s) exempts only
+   media for the channel we are actively in — frame-rate traffic for
+   any other channel stays under the floor and is then dropped by
+   gate 2 anyway.
+
+`MediaCapabilities` exchange survives the move off the mesh via
+directed re-advertise hooks: every present member re-advertises to
+the roster when a `VoiceJoin` for their channel arrives, and a joiner
+re-advertises once its `VoiceRoster` lands.
+
 Quality target today: ~480p @ 15 fps at ~800 kbps. Higher quality
 requires upstream `veilid-media` work.
 

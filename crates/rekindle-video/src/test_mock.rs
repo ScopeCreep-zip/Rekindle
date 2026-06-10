@@ -2,8 +2,6 @@
 //! unit tests. Held in-tree (cfg-gated) so any crate test can exercise
 //! send/receive paths against deterministic state.
 
-#![cfg(test)]
-
 use parking_lot::Mutex;
 use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use rekindle_protocol::dht::community::envelope::CommunityEnvelope;
@@ -22,6 +20,11 @@ pub struct MockCalls {
 pub struct MockDeps {
     pub mek: Option<MediaEncryptionKey>,
     pub signing_key: Option<SigningKey>,
+    /// Channel the mock reports as the local active voice/video
+    /// session for every community. Tests default to `"ch1"`; the
+    /// send-path smoke tests address other channels but never hit the
+    /// receive gate.
+    pub active_channel: Option<String>,
     pub calls: Mutex<MockCalls>,
     pub next_lamport: Mutex<u64>,
 }
@@ -33,6 +36,7 @@ impl MockDeps {
         Self {
             mek: Some(MediaEncryptionKey::from_bytes([1u8; 32], 1)),
             signing_key: Some(sk),
+            active_channel: Some("ch1".to_string()),
             calls: Mutex::new(MockCalls::default()),
             next_lamport: Mutex::new(0),
         }
@@ -49,6 +53,12 @@ impl MockDeps {
         me.signing_key = None;
         me
     }
+
+    pub fn in_channel(channel: Option<&str>) -> Self {
+        let mut me = Self::new();
+        me.active_channel = channel.map(str::to_string);
+        me
+    }
 }
 
 impl VideoDeps for MockDeps {
@@ -60,9 +70,18 @@ impl VideoDeps for MockDeps {
         self.signing_key.clone()
     }
 
-    fn send_to_mesh(&self, _c: &str, envelope: &CommunityEnvelope) -> Result<(), VideoError> {
+    fn send_to_channel(
+        &self,
+        _c: &str,
+        _channel_id: &str,
+        envelope: &CommunityEnvelope,
+    ) -> Result<(), VideoError> {
         self.calls.lock().sent.push(envelope.clone());
         Ok(())
+    }
+
+    fn local_active_channel(&self, _c: &str) -> Option<String> {
+        self.active_channel.clone()
     }
 
     fn increment_lamport(&self, _c: &str) -> u64 {

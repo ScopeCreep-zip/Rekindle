@@ -28,7 +28,7 @@ pub use fragment::{
 pub use policy::negotiate_session_config;
 pub use reassembler::{ReassembledFrame, Reassembler, ReassemblerError};
 pub use reassembly_state::VideoReassemblyState;
-pub use receive::handle_video_payload;
+pub use receive::{handle_video_payload, video_payload_channel};
 pub use rekindle_types::video::{Codec, ScalabilityMode};
 pub use send::{send_video_frame, VideoFrameSend};
 pub use stream_id::derive_stream_id;

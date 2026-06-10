@@ -63,13 +63,25 @@ impl VideoDeps for VideoAdapter {
         Some(rekindle_crypto::group::pseudonym::derive_community_pseudonym(&secret, community_id))
     }
 
-    fn send_to_mesh(
+    fn send_to_channel(
         &self,
         community_id: &str,
+        channel_id: &str,
         envelope: &CommunityEnvelope,
     ) -> Result<(), rekindle_video::VideoError> {
-        crate::services::community::send_to_mesh(&self.state, community_id, envelope)
-            .map_err(rekindle_video::VideoError::Transport)
+        crate::services::community::send_to_channel_peers(
+            &self.state,
+            community_id,
+            channel_id,
+            envelope,
+        )
+        .map_err(rekindle_video::VideoError::Transport)
+    }
+
+    fn local_active_channel(&self, community_id: &str) -> Option<String> {
+        let ve = self.state.voice_engine.lock();
+        let handle = ve.as_ref()?;
+        (handle.community_id.as_deref() == Some(community_id)).then(|| handle.channel_id.clone())
     }
 
     fn increment_lamport(&self, community_id: &str) -> u64 {

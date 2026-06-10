@@ -2,8 +2,9 @@
 //!
 //! Architecture §10.6 — MEK-encrypt the VP9 payload, fragment to ≤28 KB,
 //! sign each fragment with the community pseudonym Ed25519 key, then
-//! dispatch fragments + (for keyframes) FEC parity to the community
-//! mesh via `VideoDeps::send_to_mesh`.
+//! dispatch fragments + (for keyframes) FEC parity to exactly the
+//! voice/video channel roster via `VideoDeps::send_to_channel` —
+//! never to the community gossip mesh.
 //!
 //! The reassembly state is consulted ONLY to fire a one-shot
 //! `TopologyChange { reason: "initial" }` per (community, stream) so
@@ -41,8 +42,8 @@ pub struct VideoFrameSend {
 /// command after the webview encoder produces a `VideoEncoder.encode()`
 /// chunk. MEK-encrypts the payload, fragments to ≤28 KB, signs each
 /// fragment with the sender's pseudonym Ed25519 key, and dispatches
-/// each fragment as a `ControlPayload::VideoFragment` to the community
-/// mesh.
+/// each fragment as a `ControlPayload::VideoFragment` directly to the
+/// channel roster.
 pub fn send_video_frame<D: VideoDeps>(
     deps: &D,
     reassembly: &VideoReassemblyState,
@@ -127,7 +128,7 @@ fn emit_initial_topology<D: VideoDeps>(
         reason: "initial".to_string(),
         lamport,
     });
-    deps.send_to_mesh(community_id, &envelope)
+    deps.send_to_channel(community_id, channel_id, &envelope)
 }
 
 #[must_use]
@@ -185,7 +186,8 @@ impl<D: VideoDeps> SendCtx<'_, D> {
                 payload: fragment.payload,
                 signature: fragment.signature,
             });
-            self.deps.send_to_mesh(self.community_id, &envelope)?;
+            self.deps
+                .send_to_channel(self.community_id, self.channel_id, &envelope)?;
         }
         tracing::debug!(
             target: "rekindle_video::send",
@@ -235,7 +237,8 @@ impl<D: VideoDeps> SendCtx<'_, D> {
                 payload: fragment.payload,
                 signature: fragment.signature,
             });
-            self.deps.send_to_mesh(self.community_id, &envelope)?;
+            self.deps
+                .send_to_channel(self.community_id, self.channel_id, &envelope)?;
         }
         tracing::debug!(
             target: "rekindle_video::send",
@@ -259,7 +262,8 @@ impl<D: VideoDeps> SendCtx<'_, D> {
                 payload: fragment.payload,
                 signature: fragment.signature,
             });
-            self.deps.send_to_mesh(self.community_id, &envelope)?;
+            self.deps
+                .send_to_channel(self.community_id, self.channel_id, &envelope)?;
         }
         tracing::debug!(
             target: "rekindle_video::send::parity",

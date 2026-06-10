@@ -80,6 +80,18 @@ pub async fn start_session(
         .map_err(|e| e.to_string())
 }
 
+/// Architecture §10.6 — directed advertise of our `MediaCapabilities`
+/// to the active channel roster. Free-fn facade used by the voice
+/// signaling adapter's `advertise_media_capabilities` deps method
+/// (join-apply / roster-apply re-advertise hooks).
+pub fn advertise_media_capabilities(
+    state: &Arc<AppState>,
+    community_id: &str,
+    channel_id: &str,
+) -> Result<(), String> {
+    io_helpers::broadcast_media_capabilities_impl(state, community_id, channel_id)
+}
+
 /// Tear down voice with the given scope. Wraps adapter + crate call.
 /// Takes `&AppState` (not `&Arc<AppState>`) for caller compat — the
 /// callers in cleanup.rs / message_service.rs have a borrow only.

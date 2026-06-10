@@ -248,6 +248,15 @@ per-channel session state in `VoiceSessionMap`. Session state lives in
 `AppState.voice_engine` as `VoiceEngineHandle` (engine + transport +
 background task join handles).
 
+**Transport mutations are channel-gated.** `VoiceJoin`, `VoiceLeave`,
+and `VoiceRoster` envelopes arrive over the community mesh for every
+channel (they drive the occupancy UI for all members), but they only
+mutate the local `VoiceTransport` peer set — and trigger MCU
+election / roster replies — when `voice_engine_bound_to(community,
+channel)` matches the active session. A join in a channel we are not
+in must never add a peer to our media roster: the transport roster is
+the recipient set for both voice frames and directed channel video.
+
 **Active call state is intentionally NOT persisted** — matches Signal
 RingRTC and Discord Voice Gateway. Voice transport state (cpal stream
 identity, opus encoder state, AEAD nonce counters, jitter buffer state,

@@ -20,5 +20,5 @@ pub mod peer_select;
 pub mod rate_limit;
 
 pub use deps::{GossipDeps, GossipError, PeerInfo};
-pub use mesh_broadcast::{send_to_mesh, send_to_mesh_raw, MAX_PENDING_MESH};
+pub use mesh_broadcast::{send_to_channel_peers, send_to_mesh, send_to_mesh_raw, MAX_PENDING_MESH};
 pub use peer_select::{scores_from_counters, sort_peers_by_reliability};

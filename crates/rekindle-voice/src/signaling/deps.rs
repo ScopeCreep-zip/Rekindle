@@ -207,6 +207,14 @@ pub trait VoiceSignalingDeps: Send + Sync + 'static {
     /// the existing src-tauri function is sync (fire-and-forget).
     fn send_to_mesh(&self, community_id: &str, envelope: &CommunityEnvelope);
 
+    /// Architecture §10.6 — directed re-advertise of our
+    /// `MediaCapabilities` to the current channel roster. Called after
+    /// a bound join-apply / roster-apply so capability exchange
+    /// happens peer-to-peer inside the channel (the mesh never carries
+    /// channel media signaling). Sync fire-and-forget like
+    /// `send_to_mesh`; failures log inside the adapter.
+    fn advertise_media_capabilities(&self, community_id: &str, channel_id: &str);
+
     /// Persist our own hand-raise state on a SpeakResponse. Phase 19
     /// (rekindle-channel) eventually owns this; today the adapter
     /// delegates to `services::community::persist_hand_raise`.

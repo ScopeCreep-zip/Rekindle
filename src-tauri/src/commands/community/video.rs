@@ -53,7 +53,7 @@ pub async fn send_video_frame_ack(
     send_video_frame_ack_inner(
         state.inner(),
         &community_id,
-        channel_id,
+        &channel_id,
         &stream_id_hex,
         last_frame_seq,
         kbps,
@@ -68,7 +68,7 @@ pub async fn send_video_keyframe_request(
     stream_id_hex: String,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
-    send_video_keyframe_request_inner(state.inner(), &community_id, channel_id, &stream_id_hex)
+    send_video_keyframe_request_inner(state.inner(), &community_id, &channel_id, &stream_id_hex)
 }
 
 #[tauri::command]
@@ -83,7 +83,7 @@ pub async fn send_video_bandwidth_estimate(
     send_video_bandwidth_estimate_inner(
         state.inner(),
         &community_id,
-        channel_id,
+        &channel_id,
         kbps,
         window_secs,
         loss_q8,
@@ -129,7 +129,7 @@ pub async fn notify_video_topology_change(
     notify_video_topology_change_inner(
         state.inner(),
         &community_id,
-        channel_id,
+        &channel_id,
         &stream_id_hex,
         relay_host_pseudonym,
         reason,
