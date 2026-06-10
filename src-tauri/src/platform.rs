@@ -17,6 +17,23 @@
 ///    negotiation path (frontend probe removal), not here, so this guard
 ///    stays NVIDIA-only.
 ///
+/// 3. Nix dev-shell GUI-stack hygiene — Konductor's frontend shell leaks
+///    its Nix webkitgtk/GTK/GLib/GStreamer onto LD_LIBRARY_PATH. Rekindle
+///    targets the HOST WebKitGTK stack; WebKitWebProcess children inherit
+///    this env, and resolving part of the stack from /nix/store and part
+///    from the host mixes two GLib/GStreamer ABIs. The web process then
+///    aborts during GStreamer core element registration
+///    (`GStreamer:ERROR gst_register_core_elements`, "GstPadTemplate has
+///    no property named 'caps'") the moment anything touches media — for
+///    Rekindle that's the WebCodecs capability probe at login, which made
+///    the app die right after login on dev machines. The scrub runs in
+///    `main` (after our own libs are already resolved), so it governs the
+///    children WebKit spawns: whichever stack the UI process loaded, the
+///    web process resolves the same one via its RUNPATH instead of a mix.
+///    Intended Nix runtime deps (REKINDLE_LIB_PATH: sodium/opus/alsa/dbus)
+///    don't match the GUI-stack list and pass through. `.envrc` applies
+///    the same filter for the UI process itself.
+///
 /// All vars are skipped if already set, so users can always override.
 ///
 /// See: https://github.com/tauri-apps/tauri/issues/9394
@@ -53,6 +70,104 @@ pub fn linux_display_setup() {
         if std::env::var("__NV_DISABLE_EXPLICIT_SYNC").is_err() {
             std::env::set_var("__NV_DISABLE_EXPLICIT_SYNC", "1");
         }
+    }
+
+    scrub_nix_gui_stack_from_ld_library_path();
+}
+
+/// Nix-store package-name fragments of the GUI/WebKit/media stack that
+/// must never leak into the webview's library search path (doc item 3
+/// on [`linux_display_setup`]). Matched against the segment following
+/// the store hash, e.g. `/nix/store/<hash>-webkitgtk-2.50.4/lib`.
+#[cfg(target_os = "linux")]
+const NIX_GUI_STACK_FRAGMENTS: &[&str] = &[
+    "-webkitgtk-",
+    "-gtk+3-",
+    "-glib-",
+    "-gdk-pixbuf-",
+    "-pango-",
+    "-cairo-",
+    "-libsoup-",
+    "-at-spi2-",
+    "-librsvg-",
+    "-libxkbcommon-",
+    "-libayatana-",
+    "-gstreamer-",
+    "-gst-plugins-",
+    "-graphene-",
+    "-harfbuzz-",
+    "-fontconfig-",
+    "-freetype-",
+    "-libepoxy-",
+    "-enchant-",
+];
+
+/// Pure filter body — split out so the keep/drop policy is unit-testable
+/// without mutating process env. Returns `None` when nothing was dropped.
+#[cfg(target_os = "linux")]
+fn filter_nix_gui_stack(current: &str) -> Option<String> {
+    let kept: Vec<&str> = current
+        .split(':')
+        .filter(|entry| {
+            !(entry.starts_with("/nix/store/")
+                && NIX_GUI_STACK_FRAGMENTS
+                    .iter()
+                    .any(|fragment| entry.contains(fragment)))
+        })
+        .collect();
+    let filtered = kept.join(":");
+    (filtered != current).then_some(filtered)
+}
+
+#[cfg(target_os = "linux")]
+fn scrub_nix_gui_stack_from_ld_library_path() {
+    let Ok(current) = std::env::var("LD_LIBRARY_PATH") else {
+        return;
+    };
+    if current.is_empty() {
+        return;
+    }
+    if let Some(filtered) = filter_nix_gui_stack(&current) {
+        // Note: runs before the tracing subscriber is installed, so this
+        // event is dropped in normal startup — it fires only for callers
+        // that re-run setup after init. The scrub itself is what matters.
+        tracing::info!(
+            was = %current,
+            "scrubbed Nix GUI-stack entries from LD_LIBRARY_PATH for webview child processes"
+        );
+        std::env::set_var("LD_LIBRARY_PATH", filtered);
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::filter_nix_gui_stack;
+
+    #[test]
+    fn drops_nix_gui_stack_keeps_host_and_runtime_deps() {
+        let input = concat!(
+            "/nix/store/4i6mqkahmcjamn3gy5ni5r8hjidf7srh-webkitgtk-2.50.4+abi=4.1/lib:",
+            "/nix/store/wy4c9khmxwp1vd2p6nbf1lpg0rpnk61v-glib-2.86.3/lib:",
+            "/nix/store/dw1l57pjcr8ysf3r7xpx06mm8gg1xicd-gstreamer-1.26.5/lib:",
+            "/nix/store/abc123-libsodium-1.0.20/lib:",
+            "/nix/store/def456-libopus-1.5.2/lib:",
+            "/usr/local/lib"
+        );
+        let filtered = filter_nix_gui_stack(input).expect("GUI entries must be dropped");
+        assert_eq!(
+            filtered,
+            "/nix/store/abc123-libsodium-1.0.20/lib:/nix/store/def456-libopus-1.5.2/lib:/usr/local/lib",
+            "REKINDLE_LIB_PATH deps and host paths pass through"
+        );
+    }
+
+    #[test]
+    fn clean_path_is_left_untouched() {
+        assert_eq!(filter_nix_gui_stack("/usr/lib:/opt/lib"), None);
+        assert_eq!(
+            filter_nix_gui_stack("/nix/store/abc-libsodium-1.0.20/lib"),
+            None
+        );
     }
 }
 
