@@ -8,8 +8,6 @@
 //! `calls_*` Vec on `MockState` so tests assert both behaviour AND
 //! the exact (community_id, …) values that flowed through.
 
-#![cfg(test)]
-
 mod state;
 
 use std::collections::{HashMap, HashSet};

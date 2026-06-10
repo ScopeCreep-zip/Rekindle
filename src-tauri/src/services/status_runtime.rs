@@ -53,7 +53,7 @@ pub async fn set_nickname_inner(
     let public_key = {
         let mut identity = state.identity.write();
         let id = identity.as_mut().ok_or("not logged in")?;
-        id.display_name = nickname.clone();
+        id.display_name.clone_from(&nickname);
         id.public_key.clone()
     };
 

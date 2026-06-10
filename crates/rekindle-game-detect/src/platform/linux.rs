@@ -38,10 +38,16 @@ pub fn is_wine_process(pid: u32) -> bool {
     if let Some(cmdline) = read_cmdline(pid) {
         cmdline
             .iter()
-            .any(|arg| arg.contains("wine") || arg.contains("proton") || arg.ends_with(".exe"))
+            .any(|arg| arg.contains("wine") || arg.contains("proton") || has_exe_extension(arg))
     } else {
         false
     }
+}
+
+/// Windows paths are case-insensitive — `GAME.EXE` and `game.exe`
+/// name the same binary, so match the extension case-insensitively.
+fn has_exe_extension(arg: &str) -> bool {
+    arg.len() >= 4 && arg[arg.len() - 4..].eq_ignore_ascii_case(".exe")
 }
 
 /// Extract the Windows executable name from a Wine/Proton process.
@@ -50,7 +56,7 @@ pub fn is_wine_process(pid: u32) -> bool {
 pub fn extract_wine_exe_name(pid: u32) -> Option<String> {
     let cmdline = read_cmdline(pid)?;
     for arg in &cmdline {
-        if arg.ends_with(".exe") {
+        if has_exe_extension(arg) {
             // Get just the filename from the Windows-style path
             let name = arg.rsplit(['\\', '/']).next()?;
             return Some(name.to_string());
@@ -67,7 +73,7 @@ pub fn list_pids() -> Vec<u32> {
         return vec![];
     };
     entries
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
         .filter_map(|e| e.file_name().to_str()?.parse::<u32>().ok())
         .collect()
 }

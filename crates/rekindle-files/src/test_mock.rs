@@ -8,8 +8,6 @@
 //! at a `TempDir` so chunk insert/get/bitmap behave exactly like
 //! production.
 
-#![cfg(test)]
-
 use std::collections::HashMap;
 use std::path::Path;
 

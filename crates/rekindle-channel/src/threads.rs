@@ -199,9 +199,9 @@ pub async fn list_threads<D: ChannelMessagingDeps>(
                 last_message_at: 0,
                 message_count: 0,
             });
-        dto.name = thread.name.clone();
+        dto.name.clone_from(&thread.name);
         dto.creator_pseudonym = hex::encode(thread.creator.0);
-        dto.forum_tag = thread.forum_tag.clone();
+        dto.forum_tag.clone_from(&thread.forum_tag);
         dto.auto_archive_seconds = u32::try_from(thread.auto_archive_seconds).unwrap_or(u32::MAX);
 
         let (last_lamport, last_activity, message_count) =

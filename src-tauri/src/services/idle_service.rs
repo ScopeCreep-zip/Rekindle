@@ -59,16 +59,16 @@ mod wayland_idle {
             self.idle_since.store(ACTIVE_SENTINEL, Ordering::Relaxed);
         }
 
-        /// Returns idle duration in seconds, or `Some(0)` if active.
+        /// Returns idle duration in seconds, or `0` if active.
         /// The 1-second notification timeout is added to the elapsed idle time.
-        pub fn get_idle_seconds(&self) -> Option<u64> {
+        pub fn get_idle_seconds(&self) -> u64 {
             let since = self.idle_since.load(Ordering::Relaxed);
             if since == ACTIVE_SENTINEL {
-                return Some(0);
+                return 0;
             }
             let now = self.start.elapsed().as_secs();
             // Add 1s for the notification timeout (user was idle 1s before we got notified)
-            Some(now.saturating_sub(since) + 1)
+            now.saturating_sub(since) + 1
         }
     }
 
@@ -188,19 +188,19 @@ mod wayland_idle {
 
     /// Try to initialize the Wayland idle monitor (called once at service start).
     pub fn try_init() {
-        if std::env::var("WAYLAND_DISPLAY").is_ok() || std::env::var("WAYLAND_SOCKET").is_ok() {
-            if WAYLAND_IDLE.get().is_none() {
-                let state = Arc::new(WaylandIdleState::new());
-                if WAYLAND_IDLE.set(state.clone()).is_ok() {
-                    start_wayland_monitor(state);
-                }
+        let on_wayland =
+            std::env::var("WAYLAND_DISPLAY").is_ok() || std::env::var("WAYLAND_SOCKET").is_ok();
+        if on_wayland && WAYLAND_IDLE.get().is_none() {
+            let state = Arc::new(WaylandIdleState::new());
+            if WAYLAND_IDLE.set(state.clone()).is_ok() {
+                start_wayland_monitor(state);
             }
         }
     }
 
     /// Query idle seconds from the Wayland monitor, if running.
     pub fn get_idle_seconds() -> Option<u64> {
-        WAYLAND_IDLE.get()?.get_idle_seconds()
+        Some(WAYLAND_IDLE.get()?.get_idle_seconds())
     }
 }
 
