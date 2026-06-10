@@ -126,9 +126,33 @@ pub async fn shutdown_voice(state: &AppState, opts: &VoiceShutdownOpts) {
     else {
         return;
     };
-    let adapter = VoiceAdapter::new(state_arc, app_handle, pool);
+    // Capture the active slot BEFORE teardown drops the engine handle
+    // — the media-ready gate must flip not-ready for the session that
+    // is ending.
+    let active_slot = {
+        let ve = state.voice_engine.lock();
+        ve.as_ref()
+            .and_then(|h| h.community_id.clone().map(|c| (c, h.channel_id.clone())))
+    };
+    let adapter = VoiceAdapter::new(Arc::clone(&state_arc), app_handle, pool);
     let deps: Arc<dyn VoiceSessionDeps> = adapter;
     rekindle_voice::session::shutdown_voice(&deps, opts).await;
+    if let Some((community_id, channel_id)) = active_slot {
+        crate::services::community::media_ready_runtime::clear_media_ready(
+            &state_arc,
+            &community_id,
+            &channel_id,
+        );
+    }
+    // Phase 4 — stop the video pacer with the session. Dropping the
+    // frame sender also ends the task if the shutdown send raced.
+    let pacer_shutdown = state.video_pacer_shutdown_tx.write().take();
+    if let Some(tx) = pacer_shutdown {
+        let _ = tx.try_send(());
+    }
+    *state.video_pacer_tx.write() = None;
+    *state.video_pacer_rate_tx.write() = None;
+    state.video_bitrate_targets.lock().clear();
 
     // Belt-and-suspenders: clear voice channels even if the adapter
     // path early-returned (no AppHandle in tests, etc.).
@@ -146,6 +170,9 @@ pub fn spawn_drop_telemetry(state: &Arc<AppState>, app: &tauri::AppHandle) {
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             let count = task_state.voice_pkt_drops.swap(0, Ordering::Relaxed);
+            task_state
+                .voice_ingress_drops_total
+                .fetch_add(count, Ordering::Relaxed);
             if count > 0 {
                 crate::event_dispatch::dispatch(
                     &task_app,

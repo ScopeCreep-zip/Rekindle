@@ -81,26 +81,41 @@ pub fn send_to_channel_peers(
     let cid = community_id.to_string();
     let ch = channel_id.to_string();
     let env = envelope.clone();
+    let state_for_counter = Arc::clone(state);
     // Same fire-and-forget shape as `send_to_mesh`: the roster
     // snapshot needs the tokio transport lock, so peers are resolved
     // inside the spawned task.
+    let drop_counter = Arc::clone(&state_for_counter);
     tauri::async_runtime::spawn(async move {
-        let peers: Vec<rekindle_gossip::PeerInfo> = transport
-            .lock()
-            .await
-            .peer_entries()
-            .into_iter()
-            .map(|(pseudonym_key, route_blob)| rekindle_gossip::PeerInfo {
-                pseudonym_key,
-                route_blob,
-            })
-            .collect();
+        let (peers, handshake) = {
+            let guard = transport.lock().await;
+            let peers: Vec<rekindle_gossip::PeerInfo> = guard
+                .peer_entries()
+                .into_iter()
+                .map(|(pseudonym_key, route_blob)| rekindle_gossip::PeerInfo {
+                    pseudonym_key,
+                    route_blob,
+                })
+                .collect();
+            (peers, guard.handshake())
+        };
         if peers.is_empty() {
-            tracing::debug!(
-                community = %cid,
-                channel = %ch,
-                "send_to_channel_peers: solo in channel — nothing to send",
-            );
+            // Encoded media with nobody to send to — under the
+            // media-ready gate this should never fire in steady state;
+            // every occurrence is a roster/handshake regression signal.
+            let n = drop_counter
+                .channel_send_empty_roster_drops
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                + 1;
+            if n == 1 || n.is_multiple_of(30) {
+                tracing::warn!(
+                    community = %cid,
+                    channel = %ch,
+                    ?handshake,
+                    dropped_total = n,
+                    "send_to_channel_peers: empty roster — envelope dropped",
+                );
+            }
             return;
         }
         if let Err(error) = rekindle_gossip::send_to_channel_peers(adapter, &cid, &env, peers).await

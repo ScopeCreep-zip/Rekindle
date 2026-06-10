@@ -410,6 +410,26 @@ impl VoiceReceiveLoop {
         if self.last_quality_check.elapsed() < Duration::from_secs(5) {
             return;
         }
+        // Phase 5 — surface receive-side jitter drops (overflow trims +
+        // late arrivals) so Linux dropouts are attributable from the UI
+        // instead of trace-level logs.
+        let (mut overflow, mut late) = (0u64, 0u64);
+        for participant in self.participants.values_mut() {
+            let (o, l) = participant.jitter_buffer.take_drops();
+            overflow += o;
+            late += l;
+        }
+        if overflow > 0 || late > 0 {
+            tracing::warn!(
+                rx_overflow_drops = overflow,
+                rx_late_drops = late,
+                "voice receive-side drops in the last 5s"
+            );
+        }
+        self.deps.emit_voice_event(VoiceSessionEvent::ReceiveStats {
+            rx_overflow_drops: overflow,
+            rx_late_drops: late,
+        });
         tracing::debug!(
             participants = self.participants.len(),
             self.packets_received,

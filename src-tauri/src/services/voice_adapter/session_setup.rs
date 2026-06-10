@@ -393,5 +393,30 @@ pub(super) fn spawn_voice_loops_impl(
             handle.device_monitor_handle = monitor_handle;
         }
     }
+
+    // Phase 4 — per-session video pacer (community sessions only; DM
+    // video is 1:1 and unpaced). Frames built by `build_video_frame`
+    // queue here and release at the audio-first budgeted rate.
+    {
+        let already_running = state.video_pacer_tx.read().is_some();
+        if !already_running {
+            let (frame_tx, frame_rx) = mpsc::channel::<rekindle_video::PacedFrame>(
+                rekindle_video::pacer::MAX_QUEUED_FRAMES,
+            );
+            let (rate_tx, rate_rx) = tokio::sync::watch::channel(rekindle_video::VIDEO_START_KBPS);
+            let (pacer_shutdown_tx, pacer_shutdown_rx) = mpsc::channel::<()>(1);
+            let pacer_deps =
+                crate::services::video_adapter::VideoAdapter::new(state.clone(), app.clone());
+            tokio::spawn(rekindle_video::run_video_pacer(
+                pacer_deps,
+                frame_rx,
+                rate_rx,
+                pacer_shutdown_rx,
+            ));
+            *state.video_pacer_tx.write() = Some(frame_tx);
+            *state.video_pacer_rate_tx.write() = Some(rate_tx);
+            *state.video_pacer_shutdown_tx.write() = Some(pacer_shutdown_tx);
+        }
+    }
     Ok(())
 }

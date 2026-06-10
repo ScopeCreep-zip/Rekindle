@@ -5,19 +5,26 @@
 //! (≤28 KB payload chunks, FEC-friendly indexing, per-stream
 //! reassembly buffer with bounded memory).
 
+pub mod budget;
 pub mod deps;
 pub mod error;
 pub mod fragment;
+pub mod pacer;
 pub mod policy;
 pub mod reassembler;
 pub mod reassembly_state;
 pub mod receive;
 pub mod send;
+pub mod send_pacer;
 pub mod stream_id;
 
 #[cfg(test)]
 mod test_mock;
 
+pub use budget::{
+    target_from_feedback, video_budget_kbps, VIDEO_MAX_KBPS, VIDEO_MIN_KBPS, VIDEO_START_KBPS,
+    VOICE_RESERVE_KBPS,
+};
 pub use deps::{VideoDeps, VideoEvent};
 pub use error::VideoError;
 pub use fragment::{
@@ -25,12 +32,14 @@ pub use fragment::{
     reconstruct_frame, FecFragments, FragmentError, VideoFragment, VideoParityFragment,
     FRAGMENT_PAYLOAD_LIMIT, MAX_FRAGMENTS_PER_FRAME, STREAM_ID_LEN,
 };
+pub use pacer::{PacedFrame, PacerStats, VideoPacer};
 pub use policy::negotiate_session_config;
 pub use reassembler::{ReassembledFrame, Reassembler, ReassemblerError};
 pub use reassembly_state::VideoReassemblyState;
 pub use receive::{handle_video_payload, video_payload_channel};
 pub use rekindle_types::video::{Codec, ScalabilityMode};
-pub use send::{send_video_frame, VideoFrameSend};
+pub use send::{build_video_frame, VideoFrameSend};
+pub use send_pacer::run_video_pacer;
 pub use stream_id::derive_stream_id;
 
 /// Media capabilities a peer advertises in `MediaCapabilities` when

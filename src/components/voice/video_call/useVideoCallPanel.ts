@@ -63,6 +63,11 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
 
   let cameraStream: MediaStream | null = null;
   let screenStream: MediaStream | null = null;
+  // Reactive mirrors of the capture streams — the EGRESS effects below
+  // attach/detach the sender from these, so local preview (capture)
+  // and network send are independent lifecycles.
+  const [cameraCapture, setCameraCapture] = createSignal<MediaStream | null>(null);
+  const [screenCapture, setScreenCapture] = createSignal<MediaStream | null>(null);
 
   let unlistenCommunity: Promise<UnlistenFn> | null = null;
   /** Phase 11 Tier 1 — high-throughput video frames arrive on a dedicated
@@ -143,14 +148,14 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
           if (event.data.channelId === props.channelId) {
             sender.forceKeyframeAll();
           }
-        } else if (event.type === "videoFrameAck") {
-          // Architecture §10.6 line 4081 — adapt encoder bitrate to the
-          // slowest receiver. configure() picks up the new value on the
-          // next keyframe interval.
-          sender.noteReceiverKbps(event.data.streamId, event.data.kbps);
-        } else if (event.type === "videoBandwidthEstimate") {
-          // Out-of-band, channel-scoped hint; clamp both streams.
-          sender.noteBandwidth(event.data.kbps);
+        } else if (event.type === "videoBitrateTarget") {
+          // Phase 4 — the BACKEND owns the bitrate policy now (AIMD
+          // over FrameAck/BandwidthEstimate feedback with the audio
+          // reserve subtracted). The encoder just follows the target;
+          // the raw ack events no longer steer it directly.
+          if (event.data.channelId === props.channelId) {
+            sender.setTargetKbps(event.data.kbps);
+          }
         }
       });
       if (!isE2E) {
@@ -219,6 +224,11 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
     }
   });
 
+  // Per-stream count of delta frames dropped while waiting for a
+  // keyframe (decoder not yet created). Cleared when the keyframe
+  // arrives; drives the explicit keyframe-request escalation.
+  const keyframeWaitDrops = new Map<string, number>();
+
   function ingestRemoteFrame(
     sender_: string,
     streamId: string,
@@ -234,6 +244,9 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
     // tears down the old decoder; the fresh one seeds from this frame
     // if it's a keyframe, else from the next keyframe.
     if (remote && remote.codec !== codec) {
+      console.warn(
+        `codec switch ${remote.codec} → ${codec} on stream ${streamId.slice(0, 8)} — decoder torn down`,
+      );
       try {
         remote.decoder.close();
       } catch (e) {
@@ -244,9 +257,29 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
     }
     if (!remote) {
       if (!keyframe) {
-        // Wait for the first keyframe before instantiating a decoder.
+        // Waiting for the first keyframe before instantiating a
+        // decoder. If we landed mid-GOP (joined while the sender was
+        // between keyframes, or the FIR-on-confirm envelope was lost),
+        // deltas pile up here — after 15 of them, explicitly request a
+        // keyframe so the tile lights up within ~1s instead of waiting
+        // out the sender's keyframe cadence.
+        const dropped = (keyframeWaitDrops.get(streamId) ?? 0) + 1;
+        keyframeWaitDrops.set(streamId, dropped);
+        if (dropped === 1 || dropped % 30 === 0) {
+          console.warn(
+            `dropping delta frames for unknown stream ${streamId.slice(0, 8)} — waiting for keyframe (${dropped} dropped)`,
+          );
+        }
+        if (dropped === 15 && props.mode === "community") {
+          void commands.sendVideoKeyframeRequest(
+            props.communityId,
+            props.channelId,
+            streamId,
+          );
+        }
         return;
       }
+      keyframeWaitDrops.delete(streamId);
       // Phase C — read the negotiated decoder TUNING from the
       // backend-owned store when available (the codec itself comes
       // from the per-frame tag, never the config). When the config
@@ -466,16 +499,21 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
         audio: false,
       });
       cameraStream = stream;
+      setCameraCapture(stream);
       if (localCameraVideoRef.value) {
         localCameraVideoRef.value.srcObject = stream;
       }
-      await sender.start("camera", stream);
+      // Capture + local preview only — the egress effect attaches the
+      // sender when (and only when) the media-ready gate is open, so a
+      // solo member sees their own tile immediately and sending starts
+      // the moment a peer connects.
       setCameraOn(true);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(`Camera failed: ${msg}`);
       cameraStream?.getTracks().forEach((t) => t.stop());
       cameraStream = null;
+      setCameraCapture(null);
     }
   }
 
@@ -483,6 +521,7 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
     sender.stop("camera");
     cameraStream?.getTracks().forEach((t) => t.stop());
     cameraStream = null;
+    setCameraCapture(null);
     if (localCameraVideoRef.value) {
       localCameraVideoRef.value.srcObject = null;
     }
@@ -498,6 +537,7 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
         audio: false,
       });
       screenStream = stream;
+      setScreenCapture(stream);
       if (localScreenVideoRef.value) {
         localScreenVideoRef.value.srcObject = stream;
       }
@@ -506,13 +546,14 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
       stream.getVideoTracks()[0]?.addEventListener("ended", () => {
         void stopScreen();
       });
-      await sender.start("screen", stream);
+      // Capture + preview only — sender attaches via the egress effect.
       setScreenOn(true);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(`Screen share failed: ${msg}`);
       screenStream?.getTracks().forEach((t) => t.stop());
       screenStream = null;
+      setScreenCapture(null);
     }
   }
 
@@ -520,6 +561,7 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
     sender.stop("screen");
     screenStream?.getTracks().forEach((t) => t.stop());
     screenStream = null;
+    setScreenCapture(null);
     if (localScreenVideoRef.value) {
       localScreenVideoRef.value.srcObject = null;
     }
@@ -575,8 +617,17 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
   // Architecture §10.6 — react to store-level toggle changes from
   // VoicePanel (lifted controls). The pipeline lifecycle stays here; the
   // buttons live where the rest of the voice controls do.
+  //
+  // CAPTURE (getUserMedia + local preview) follows the toggle alone —
+  // a solo member sees their own tile immediately, exactly like every
+  // comparable app. EGRESS (encoder + network send) is a separate
+  // effect gated on the backend media-ready state, so frames are never
+  // produced for an empty roster and sending starts automatically the
+  // moment the gate opens (peer joined, handshake converged, MEK in).
   let cameraRunning = false;
   let screenRunning = false;
+  const mediaGateOpen = (): boolean =>
+    props.mode !== "community" || (voiceState.mediaReady?.ready ?? false);
   createEffect(() => {
     const want = voiceState.cameraOn;
     if (want && !cameraRunning) {
@@ -601,6 +652,41 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
     } else if (!want && screenRunning) {
       screenRunning = false;
       void stopScreen();
+    }
+  });
+  // EGRESS effects — attach/detach the sender pipeline. Detaching on
+  // gate close (channel emptied) keeps the preview alive while the
+  // encoder stops feeding the backend gate.
+  let cameraSending = false;
+  createEffect(() => {
+    const stream = cameraCapture();
+    const shouldSend = voiceState.cameraOn && stream !== null && mediaGateOpen();
+    if (shouldSend && !cameraSending) {
+      cameraSending = true;
+      void sender.start("camera", stream).catch((e) => {
+        cameraSending = false;
+        const msg = e instanceof Error ? e.message : String(e);
+        setError(`Camera send failed: ${msg}`);
+      });
+    } else if (!shouldSend && cameraSending) {
+      cameraSending = false;
+      sender.stop("camera");
+    }
+  });
+  let screenSending = false;
+  createEffect(() => {
+    const stream = screenCapture();
+    const shouldSend = voiceState.screenShareOn && stream !== null && mediaGateOpen();
+    if (shouldSend && !screenSending) {
+      screenSending = true;
+      void sender.start("screen", stream).catch((e) => {
+        screenSending = false;
+        const msg = e instanceof Error ? e.message : String(e);
+        setError(`Screen share send failed: ${msg}`);
+      });
+    } else if (!shouldSend && screenSending) {
+      screenSending = false;
+      sender.stop("screen");
     }
   });
 

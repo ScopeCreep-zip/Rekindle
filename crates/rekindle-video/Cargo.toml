@@ -13,11 +13,15 @@ rekindle-crypto = { path = "../rekindle-crypto" }
 rekindle-protocol = { path = "../rekindle-protocol" }
 rekindle-secrets = { path = "../rekindle-secrets" }
 rekindle-types = { path = "../rekindle-types" }
+rekindle-utils = { path = "../rekindle-utils" }
 serde = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 parking_lot = { workspace = true }
 hex = { workspace = true }
+# Phase 4 - async pacer driver (send_pacer.rs): mpsc/watch channels +
+# the poll-interval sleep. Precedent: rekindle-voice.
+tokio = { workspace = true }
 blake3 = "1"
 # Architecture §10.6 line 4080 — FEC data on VideoFragment so a small
 # number of dropped fragments doesn't force a keyframe re-request.
@@ -28,3 +32,7 @@ reed-solomon-erasure = "6"
 # `tracing::debug!(target: "rekindle_video::send", …)` events land on
 # stderr with the expected structured fields.
 tracing-subscriber = { workspace = true }
+# Phase 4 - pacer invariants (rate bound, keyframe survival, fragment
+# order) are property-tested. Precedent: rekindle-gossip.
+proptest = "1"
+

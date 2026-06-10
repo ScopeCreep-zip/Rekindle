@@ -357,6 +357,10 @@ impl MekDistributeDeps for MekAdapter {
                     .mek_cache
                     .lock()
                     .insert(community_id.to_string(), mek.clone());
+                crate::services::community::media_ready_runtime::on_mek_updated(
+                    &self.state,
+                    community_id,
+                );
                 crate::services::community::mek_rotation_support::update_generation_state(
                     &self.state,
                     community_id,

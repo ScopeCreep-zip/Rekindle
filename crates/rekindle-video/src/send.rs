@@ -1,14 +1,17 @@
-//! Phase 16 — community video send pipeline.
+//! Phase 16 — community video send pipeline (build side).
 //!
-//! Architecture §10.6 — MEK-encrypt the VP9 payload, fragment to ≤28 KB,
-//! sign each fragment with the community pseudonym Ed25519 key, then
-//! dispatch fragments + (for keyframes) FEC parity to exactly the
-//! voice/video channel roster via `VideoDeps::send_to_channel` —
+//! Architecture §10.6 — MEK-encrypt the encoded payload, fragment to
+//! ≤28 KB, sign each fragment with the community pseudonym Ed25519
+//! key. Phase 4: the signed envelopes are NOT dispatched here — they
+//! are returned as one `PacedFrame` and released through the
+//! audio-first `VideoPacer` (`send_pacer::run_video_pacer`), which
+//! fans out to the channel roster via `VideoDeps::send_to_channel` —
 //! never to the community gossip mesh.
 //!
 //! The reassembly state is consulted ONLY to fire a one-shot
 //! `TopologyChange { reason: "initial" }` per (community, stream) so
-//! receivers know to spin up a decoder.
+//! receivers know to spin up a decoder; that tiny control envelope is
+//! still sent IMMEDIATELY (it must precede the first fragment).
 
 use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_secrets::ed25519_dalek::{Signer, SigningKey};
@@ -20,6 +23,7 @@ use crate::fragment::{
     fragment_frame, fragment_frame_with_fec, fragment_signing_bytes, parity_signing_bytes,
     FRAGMENT_PAYLOAD_LIMIT,
 };
+use crate::pacer::PacedFrame;
 use crate::reassembly_state::VideoReassemblyState;
 
 /// One parity per N data shards for keyframes. With 4× ratio,
@@ -43,19 +47,20 @@ pub struct VideoFrameSend {
     pub encoded_payload: Vec<u8>,
 }
 
-/// Send-side entry point — invoked from the `send_video_frame` Tauri
+/// Build-side entry point — invoked from the `send_video_frame` Tauri
 /// command after the webview encoder produces a `VideoEncoder.encode()`
 /// chunk. MEK-encrypts the payload, fragments to ≤28 KB, signs each
-/// fragment with the sender's pseudonym Ed25519 key, and dispatches
-/// each fragment as a `ControlPayload::VideoFragment` directly to the
-/// channel roster.
-pub fn send_video_frame<D: VideoDeps>(
+/// fragment with the sender's pseudonym Ed25519 key, and returns the
+/// envelopes as ONE `PacedFrame` for the pacer to release at the
+/// budgeted rate.
+pub fn build_video_frame<D: VideoDeps>(
     deps: &D,
     reassembly: &VideoReassemblyState,
     community_id: &str,
     channel_id: &str,
     request: &VideoFrameSend,
-) -> Result<u32, VideoError> {
+    now_ms: u64,
+) -> Result<PacedFrame, VideoError> {
     // Phase F — IPC entry trace. The Tauri command in src-tauri delivered
     // an encoded VP9 chunk from the WebView; record the byte count and
     // routing context (no payload bytes) so a `RUST_LOG=rekindle_video=
@@ -90,8 +95,6 @@ pub fn send_video_frame<D: VideoDeps>(
         .ok_or(VideoError::IdentityNotLoaded)?;
 
     let ctx = SendCtx {
-        deps,
-        community_id,
         channel_id,
         stream_id: request.stream_id,
         frame_seq: request.frame_seq,
@@ -110,11 +113,22 @@ pub fn send_video_frame<D: VideoDeps>(
     }
 
     let parity_count = parity_count_for(request.keyframe, &ciphertext);
-    if parity_count > 0 {
-        ctx.send_with_fec(&ciphertext, parity_count)
+    let envelopes = if parity_count > 0 {
+        ctx.collect_with_fec(&ciphertext, parity_count)?
     } else {
-        ctx.send_without_fec(&ciphertext)
-    }
+        ctx.collect_without_fec(&ciphertext)?
+    };
+    let bytes = ciphertext.len();
+    Ok(PacedFrame {
+        community_id: community_id.to_string(),
+        channel_id: channel_id.to_string(),
+        stream_id: request.stream_id,
+        frame_seq: request.frame_seq,
+        keyframe: request.keyframe,
+        envelopes,
+        bytes,
+        enqueued_ms: now_ms,
+    })
 }
 
 fn emit_initial_topology<D: VideoDeps>(
@@ -151,12 +165,10 @@ fn parity_count_for(keyframe: bool, ciphertext: &[u8]) -> u8 {
     u8::try_from(data.div_ceil(KEYFRAME_PARITY_RATIO_DENOM)).unwrap_or(u8::MAX)
 }
 
-/// Bundle of references the FEC and non-FEC dispatch helpers both
+/// Bundle of references the FEC and non-FEC collect helpers both
 /// need. Keeps each helper at one parameter (`ciphertext`) plus the
 /// shared context.
-struct SendCtx<'a, D: VideoDeps> {
-    deps: &'a D,
-    community_id: &'a str,
+struct SendCtx<'a> {
     channel_id: &'a str,
     stream_id: [u8; 16],
     frame_seq: u32,
@@ -166,8 +178,8 @@ struct SendCtx<'a, D: VideoDeps> {
     signing_key: &'a SigningKey,
 }
 
-impl<D: VideoDeps> SendCtx<'_, D> {
-    fn send_without_fec(&self, ciphertext: &[u8]) -> Result<u32, VideoError> {
+impl SendCtx<'_> {
+    fn collect_without_fec(&self, ciphertext: &[u8]) -> Result<Vec<CommunityEnvelope>, VideoError> {
         let mut fragments = fragment_frame(
             self.stream_id,
             self.frame_seq,
@@ -182,22 +194,23 @@ impl<D: VideoDeps> SendCtx<'_, D> {
             fragment.signature = self.signing_key.sign(&to_sign).to_bytes().to_vec();
         }
         let total_bytes: usize = fragments.iter().map(|f| f.payload.len()).sum();
-        for fragment in fragments {
-            let envelope = CommunityEnvelope::Control(ControlPayload::VideoFragment {
-                channel_id: self.channel_id.to_string(),
-                stream_id: fragment.stream_id,
-                frame_seq: fragment.frame_seq,
-                frag_index: fragment.frag_index,
-                frag_total: fragment.frag_total,
-                keyframe: fragment.keyframe,
-                codec: fragment.codec,
-                timestamp: fragment.timestamp,
-                payload: fragment.payload,
-                signature: fragment.signature,
-            });
-            self.deps
-                .send_to_channel(self.community_id, self.channel_id, &envelope)?;
-        }
+        let envelopes: Vec<CommunityEnvelope> = fragments
+            .into_iter()
+            .map(|fragment| {
+                CommunityEnvelope::Control(ControlPayload::VideoFragment {
+                    channel_id: self.channel_id.to_string(),
+                    stream_id: fragment.stream_id,
+                    frame_seq: fragment.frame_seq,
+                    frag_index: fragment.frag_index,
+                    frag_total: fragment.frag_total,
+                    keyframe: fragment.keyframe,
+                    codec: fragment.codec,
+                    timestamp: fragment.timestamp,
+                    payload: fragment.payload,
+                    signature: fragment.signature,
+                })
+            })
+            .collect();
         tracing::debug!(
             target: "rekindle_video::send",
             frame_seq = self.frame_seq,
@@ -205,12 +218,16 @@ impl<D: VideoDeps> SendCtx<'_, D> {
             total_bytes = total_bytes,
             stream_id = %hex::encode(self.stream_id),
             keyframe = self.keyframe,
-            "sent video frame"
+            "built video frame"
         );
-        Ok(count)
+        Ok(envelopes)
     }
 
-    fn send_with_fec(&self, ciphertext: &[u8], parity_count: u8) -> Result<u32, VideoError> {
+    fn collect_with_fec(
+        &self,
+        ciphertext: &[u8],
+        parity_count: u8,
+    ) -> Result<Vec<CommunityEnvelope>, VideoError> {
         let mut fec = fragment_frame_with_fec(
             self.stream_id,
             self.frame_seq,
@@ -235,8 +252,10 @@ impl<D: VideoDeps> SendCtx<'_, D> {
         let parity_count_total = u32::try_from(fec.parity.len()).unwrap_or(u32::MAX);
         let data_bytes: usize = fec.data.iter().map(|f| f.payload.len()).sum();
         let parity_bytes: usize = fec.parity.iter().map(|f| f.payload.len()).sum();
+        let mut envelopes: Vec<CommunityEnvelope> =
+            Vec::with_capacity(usize::try_from(total).unwrap_or(0));
         for fragment in fec.data {
-            let envelope = CommunityEnvelope::Control(ControlPayload::VideoFragment {
+            envelopes.push(CommunityEnvelope::Control(ControlPayload::VideoFragment {
                 channel_id: self.channel_id.to_string(),
                 stream_id: fragment.stream_id,
                 frame_seq: fragment.frame_seq,
@@ -247,9 +266,7 @@ impl<D: VideoDeps> SendCtx<'_, D> {
                 timestamp: fragment.timestamp,
                 payload: fragment.payload,
                 signature: fragment.signature,
-            });
-            self.deps
-                .send_to_channel(self.community_id, self.channel_id, &envelope)?;
+            }));
         }
         tracing::debug!(
             target: "rekindle_video::send",
@@ -258,24 +275,24 @@ impl<D: VideoDeps> SendCtx<'_, D> {
             total_bytes = data_bytes,
             stream_id = %hex::encode(self.stream_id),
             keyframe = self.keyframe,
-            "sent video frame"
+            "built video frame"
         );
         for fragment in fec.parity {
-            let envelope = CommunityEnvelope::Control(ControlPayload::VideoParityFragment {
-                channel_id: self.channel_id.to_string(),
-                stream_id: fragment.stream_id,
-                frame_seq: fragment.frame_seq,
-                parity_index: fragment.parity_index,
-                parity_total: fragment.parity_total,
-                data_count: fragment.data_count,
-                codec: fragment.codec,
-                frame_len: fragment.frame_len,
-                timestamp: fragment.timestamp,
-                payload: fragment.payload,
-                signature: fragment.signature,
-            });
-            self.deps
-                .send_to_channel(self.community_id, self.channel_id, &envelope)?;
+            envelopes.push(CommunityEnvelope::Control(
+                ControlPayload::VideoParityFragment {
+                    channel_id: self.channel_id.to_string(),
+                    stream_id: fragment.stream_id,
+                    frame_seq: fragment.frame_seq,
+                    parity_index: fragment.parity_index,
+                    parity_total: fragment.parity_total,
+                    data_count: fragment.data_count,
+                    codec: fragment.codec,
+                    frame_len: fragment.frame_len,
+                    timestamp: fragment.timestamp,
+                    payload: fragment.payload,
+                    signature: fragment.signature,
+                },
+            ));
         }
         tracing::debug!(
             target: "rekindle_video::send::parity",
@@ -284,9 +301,9 @@ impl<D: VideoDeps> SendCtx<'_, D> {
             total_bytes = parity_bytes,
             stream_id = %hex::encode(self.stream_id),
             data_shards = data_count,
-            "sent parity fragments"
+            "built parity fragments"
         );
-        Ok(total)
+        Ok(envelopes)
     }
 }
 
@@ -314,7 +331,7 @@ mod tests {
         let reassembly = VideoReassemblyState::new();
         let mut req = small_request(false);
         req.encoded_payload.clear();
-        let err = send_video_frame(&deps, &reassembly, "c1", "ch1", &req).unwrap_err();
+        let err = build_video_frame(&deps, &reassembly, "c1", "ch1", &req, 0).unwrap_err();
         assert!(matches!(err, VideoError::InvalidInput(_)));
     }
 
@@ -322,8 +339,8 @@ mod tests {
     fn missing_mek_rejected() {
         let deps = MockDeps::without_mek();
         let reassembly = VideoReassemblyState::new();
-        let err =
-            send_video_frame(&deps, &reassembly, "c1", "ch1", &small_request(false)).unwrap_err();
+        let err = build_video_frame(&deps, &reassembly, "c1", "ch1", &small_request(false), 0)
+            .unwrap_err();
         assert!(matches!(err, VideoError::MekUnavailable { .. }));
     }
 
@@ -331,8 +348,8 @@ mod tests {
     fn missing_identity_rejected() {
         let deps = MockDeps::without_signing_key();
         let reassembly = VideoReassemblyState::new();
-        let err =
-            send_video_frame(&deps, &reassembly, "c1", "ch1", &small_request(false)).unwrap_err();
+        let err = build_video_frame(&deps, &reassembly, "c1", "ch1", &small_request(false), 0)
+            .unwrap_err();
         assert!(matches!(err, VideoError::IdentityNotLoaded));
     }
 
@@ -428,8 +445,8 @@ mod tests {
         // Distinct stream_id so our IPC-entry trace is identifiable
         // even if a parallel test fires the same callsite.
         req.stream_id = [0xF0; 16];
-        send_video_frame(&deps, &reassembly, "c_smoke_phase_f", "ch_smoke", &req)
-            .expect("send happy path");
+        build_video_frame(&deps, &reassembly, "c_smoke_phase_f", "ch_smoke", &req, 0)
+            .expect("build happy path");
 
         let captured = sink.0.lock();
         let new_events: Vec<&Captured> = captured
@@ -476,18 +493,24 @@ mod tests {
     fn first_frame_emits_initial_topology_change() {
         let deps = MockDeps::new();
         let reassembly = VideoReassemblyState::new();
-        let count = send_video_frame(&deps, &reassembly, "c1", "ch1", &small_request(false))
-            .expect("send happy path");
-        assert!(count >= 1, "at least one fragment");
+        let frame = build_video_frame(&deps, &reassembly, "c1", "ch1", &small_request(false), 7)
+            .expect("build happy path");
+        assert!(!frame.envelopes.is_empty(), "at least one fragment");
+        assert_eq!(frame.enqueued_ms, 7);
+        // The pacer-bypassing control envelope: exactly the initial
+        // TopologyChange went straight to deps; the fragments did NOT.
         let calls = deps.calls.lock();
-        // First sent envelope should be the TopologyChange { reason: "initial" }.
-        let first = calls.sent.first().expect("at least one envelope sent");
+        assert_eq!(
+            calls.sent.len(),
+            1,
+            "only the topology envelope dispatches here"
+        );
         assert!(matches!(
-            first,
+            calls.sent.first().expect("topology sent"),
             CommunityEnvelope::Control(ControlPayload::TopologyChange { reason, .. }) if reason == "initial"
         ));
-        // Subsequent envelopes are VideoFragment.
-        for env in calls.sent.iter().skip(1) {
+        // The returned frame carries the fragments for the pacer.
+        for env in &frame.envelopes {
             assert!(matches!(
                 env,
                 CommunityEnvelope::Control(ControlPayload::VideoFragment { .. })
@@ -499,15 +522,11 @@ mod tests {
     fn second_frame_same_stream_skips_initial_topology() {
         let deps = MockDeps::new();
         let reassembly = VideoReassemblyState::new();
-        send_video_frame(&deps, &reassembly, "c1", "ch1", &small_request(false)).unwrap();
-        let envelopes_after_first = deps.calls.lock().sent.len();
-        // Send another inter-frame on the same stream.
+        build_video_frame(&deps, &reassembly, "c1", "ch1", &small_request(false), 0).unwrap();
         let mut req2 = small_request(false);
         req2.frame_seq = 2;
-        send_video_frame(&deps, &reassembly, "c1", "ch1", &req2).unwrap();
-        let envelopes_after_second = deps.calls.lock().sent.len();
-        let second_batch = envelopes_after_second - envelopes_after_first;
-        // The second send should NOT include another TopologyChange.
+        let frame2 = build_video_frame(&deps, &reassembly, "c1", "ch1", &req2, 0).unwrap();
+        // The second build must NOT dispatch another TopologyChange.
         let calls = deps.calls.lock();
         let topology_count = calls
             .sent
@@ -524,8 +543,8 @@ mod tests {
             "TopologyChange fires exactly once per stream"
         );
         assert!(
-            second_batch >= 1,
-            "second send produces at least 1 fragment"
+            !frame2.envelopes.is_empty(),
+            "second build produces at least 1 fragment"
         );
     }
 

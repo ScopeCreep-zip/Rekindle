@@ -12,6 +12,58 @@ use rekindle_voice::VoiceSessionEvent;
 use crate::channels::VoiceEvent;
 use crate::state::AppState;
 
+/// Last-known halves of the merged `ConnectionQuality` UI event. The
+/// send loop reports `quality` and the receive loop reports jitter
+/// drops on independent 5 s cadences; each emission carries the full
+/// picture from this cache.
+#[derive(Debug, Clone)]
+pub struct VoiceQualityCache {
+    pub quality: String,
+    pub rx_overflow_drops: u64,
+    pub rx_late_drops: u64,
+}
+
+impl Default for VoiceQualityCache {
+    fn default() -> Self {
+        Self {
+            quality: "good".to_string(),
+            rx_overflow_drops: 0,
+            rx_late_drops: 0,
+        }
+    }
+}
+
+/// Phase 5 — fold a quality/receive-stats event into the cache and
+/// build the merged UI event. Returns `None` for every other variant.
+pub(super) fn merge_quality_event(
+    state: &Arc<AppState>,
+    event: &rekindle_voice::VoiceSessionEvent,
+) -> Option<VoiceEvent> {
+    use rekindle_voice::VoiceSessionEvent as E;
+    let mut cache = state.voice_quality_cache.lock();
+    match event {
+        E::ConnectionQuality { quality } => {
+            cache.quality.clone_from(quality);
+        }
+        E::ReceiveStats {
+            rx_overflow_drops,
+            rx_late_drops,
+        } => {
+            cache.rx_overflow_drops = *rx_overflow_drops;
+            cache.rx_late_drops = *rx_late_drops;
+        }
+        _ => return None,
+    }
+    Some(VoiceEvent::ConnectionQuality {
+        quality: cache.quality.clone(),
+        rx_overflow_drops: cache.rx_overflow_drops,
+        rx_late_drops: cache.rx_late_drops,
+        ingress_drops: state
+            .voice_ingress_drops_total
+            .load(std::sync::atomic::Ordering::Relaxed),
+    })
+}
+
 /// Phase B — sync the per-call video session aggregator when a peer
 /// appears or disappears from the voice session. Other `VoiceSessionEvent`
 /// variants (speaking, mute, etc.) carry no video-session-relevant
@@ -57,8 +109,21 @@ pub(super) fn sync_video_session(state: &Arc<AppState>, event: &VoiceSessionEven
                 tracing::debug!(error = %e, "video_session::on_peer_left ignored");
             }
         }
-        _ => {}
+        _ => return,
     }
+    // Media-ready input: roster occupancy follows the same join/leave
+    // signals that maintain the video-session slot above.
+    let remote_peers = crate::services::community::video_session::remote_peer_count(
+        state,
+        &community_id,
+        &channel_id,
+    );
+    crate::services::community::media_ready_runtime::update_media_ready(
+        state,
+        &community_id,
+        &channel_id,
+        |i| i.roster_non_empty = remote_peers > 0,
+    );
 }
 
 pub(super) fn map(event: VoiceSessionEvent) -> VoiceEvent {
@@ -96,8 +161,10 @@ pub(super) fn map(event: VoiceSessionEvent) -> VoiceEvent {
             reason: "voice loop".into(),
             count,
         },
-        VoiceSessionEvent::ConnectionQuality { quality } => {
-            VoiceEvent::ConnectionQuality { quality }
+        VoiceSessionEvent::ConnectionQuality { .. } | VoiceSessionEvent::ReceiveStats { .. } => {
+            unreachable!(
+                "quality/receive-stats are merged + emitted in emit_voice_event before map()"
+            )
         }
     }
 }
@@ -140,6 +207,9 @@ pub(super) fn emit_local_joined_impl(
         "voice-event",
         &VoiceEvent::ConnectionQuality {
             quality: "good".to_string(),
+            rx_overflow_drops: 0,
+            rx_late_drops: 0,
+            ingress_drops: 0,
         },
     );
     crate::event_dispatch::dispatch(

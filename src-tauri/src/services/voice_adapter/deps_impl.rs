@@ -176,6 +176,12 @@ impl VoiceSessionDeps for VoiceAdapter {
         // departing peer's stale entry stops gating the negotiated
         // shape.
         event_mapping::sync_video_session(&self.state, &event);
+        // Phase 5 — quality + receive-stats merge into ONE UI event
+        // (each emission carries both halves from the cache).
+        if let Some(merged) = event_mapping::merge_quality_event(&self.state, &event) {
+            crate::event_dispatch::dispatch(&self.app_handle, "voice-event", merged);
+            return;
+        }
         crate::event_dispatch::dispatch(&self.app_handle, "voice-event", event_mapping::map(event));
     }
 
@@ -278,6 +284,22 @@ impl VoiceSessionDeps for VoiceAdapter {
         // Only community sessions carry a `SessionVideoConfig` (DM video
         // shape is policed by a different code path).
         if let Some(community_id) = community_id {
+            // Seed the media-ready gate BEFORE the config emit below so
+            // its `session_config_emitted` hook lands on a slot whose
+            // other inputs already reflect reality.
+            let mek_present = self.state.mek_cache.lock().get(community_id).is_some();
+            let caps_reported =
+                crate::services::community::video_session::reported_local_caps(&self.state)
+                    .is_some();
+            crate::services::community::media_ready_runtime::update_media_ready(
+                &self.state,
+                community_id,
+                channel_id,
+                |i| {
+                    i.mek_present = mek_present;
+                    i.local_caps_reported = caps_reported;
+                },
+            );
             if let Err(e) = crate::services::community::video_session::on_local_joined(
                 &self.state,
                 community_id,

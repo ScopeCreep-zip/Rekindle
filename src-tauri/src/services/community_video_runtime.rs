@@ -58,6 +58,25 @@ pub fn send_video_frame_inner(
     let payload = base64::engine::general_purpose::STANDARD
         .decode(request.encoded_payload_b64.as_bytes())
         .map_err(|e| format!("invalid base64 payload: {e}"))?;
+    if let Err(reason) = crate::services::community::media_ready_runtime::media_ready_gate(
+        state,
+        community_id,
+        channel_id,
+    ) {
+        let n = crate::services::community::media_ready_runtime::note_pre_ready_drop(state);
+        if n == 1 || n.is_multiple_of(30) {
+            // One line per ~2s at 15fps — enough to diagnose, never spam.
+            tracing::warn!(
+                target: "rekindle_video::send",
+                community_id,
+                channel_id,
+                dropped_total = n,
+                %reason,
+                "video frame dropped — media not ready"
+            );
+        }
+        return Err(format!("media not ready: {reason}"));
+    }
     let codec = rekindle_types::video::Codec::from_wire_str(&request.codec)
         .ok_or_else(|| format!("unknown codec wire string: {}", request.codec))?;
     let send_request = video::VideoFrameSend {
@@ -140,4 +159,43 @@ pub fn notify_video_topology_change_inner(
         lamport,
     });
     crate::services::community::send_to_channel_peers(state, community_id, channel_id, &envelope)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    /// Phase 1 — the media-ready gate is the FIRST check: a default
+    /// AppState (no voice session, no handshake) must reject the frame
+    /// with the gate's reason and count the drop.
+    #[test]
+    fn send_video_frame_rejected_before_media_ready() {
+        let state: SharedState = Arc::new(crate::state::AppState::default());
+        let request = SendVideoFrameRequest {
+            stream_id_hex: "00".repeat(16),
+            frame_seq: 1,
+            keyframe: true,
+            codec: "vp9".to_string(),
+            timestamp: 0,
+            encoded_payload_b64: "AAAA".to_string(),
+        };
+        let err = send_video_frame_inner(&state, "c1", "ch1", &request)
+            .expect_err("default state must be gated");
+        assert!(
+            err.starts_with("media not ready:"),
+            "gate must name itself: got {err}"
+        );
+        assert!(
+            err.contains("not-in-voice"),
+            "reason names the blocker: {err}"
+        );
+        assert_eq!(
+            state
+                .video_pre_ready_drops
+                .load(std::sync::atomic::Ordering::Relaxed),
+            1,
+            "drop counter increments"
+        );
+    }
 }

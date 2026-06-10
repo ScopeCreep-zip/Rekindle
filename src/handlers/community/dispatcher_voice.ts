@@ -112,6 +112,15 @@ export function reduceVoice(event: CommunityEvent): boolean {
       }
     }
     return true;
+  } else if (event.type === "voiceMediaReady") {
+    // Backend media-ready gate transition. The control bar disables
+    // camera/screen-share until ready; the camera effect in
+    // useVideoCallPanel re-fires when this flips true.
+    const { channelId, ready, reason } = event.data;
+    if (voiceState.activeCallType === "community" && voiceState.channelId === channelId) {
+      setVoiceState("mediaReady", { ready, reason });
+    }
+    return true;
   } else if (event.type === "voicePeerConfirmed") {
     // A joiner finished its handshake — render them solid.
     const { channelId, pseudonymKey } = event.data;

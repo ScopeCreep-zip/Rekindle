@@ -15,11 +15,13 @@ use rekindle_protocol::dht::community::envelope::{
     verify_envelope, CommunityEnvelope, ControlPayload, SignedEnvelope,
 };
 
-pub async fn handle(
-    app_handle: &AppHandle,
-    state: &Arc<AppState>,
-    msg: veilid_core::VeilidAppMessage,
-) {
+// `_app_handle` kept for dispatch-callback signature symmetry — the
+// gossip/legacy processing that used it now runs in the ingress worker
+// (`process_ingress_item`).
+// Now fully synchronous: the voice fast path is a `try_send` and
+// everything else is a queue push — the dispatch loop never blocks on
+// an app_message again.
+pub fn handle(_app_handle: &AppHandle, state: &Arc<AppState>, msg: &veilid_core::VeilidAppMessage) {
     let message = msg.message().to_vec();
     tracing::info!(msg_len = message.len(), "app_message received");
 
@@ -63,13 +65,42 @@ pub async fn handle(
         return;
     }
 
+    // Everything below is queued, NOT processed inline: gossip/video
+    // processing (sig verify → dedup → reassembly → MEK decrypt → emit)
+    // is slow enough that a fragment burst would stall this serial
+    // dispatch path and starve the voice fast path above. The worker
+    // spawned by `lifecycle::dispatch` drains the queue in FIFO order.
+    use crate::services::veilid::ingress_queue::IngressItem;
     if let Ok(signed) = decode_signed_envelope(&message) {
-        handle_gossip_envelope(app_handle, state, signed).await;
+        let is_video = video_payload_channel_from_bytes(&signed.envelope_bytes).is_some();
+        state
+            .gossip_ingress
+            .push(IngressItem::Gossip { signed, is_video });
         return;
     }
 
-    let pool: tauri::State<'_, DbPool> = app_handle.state();
-    message_service::handle_incoming_message(app_handle, state, pool.inner(), &message).await;
+    state.gossip_ingress.push(IngressItem::Legacy(message));
+}
+
+/// Worker-side processing of one queued ingress item. Lives here so the
+/// gossip pipeline (`handle_gossip_envelope`) stays private to this
+/// module; the dispatch-loop worker only sees this entry point.
+pub(crate) async fn process_ingress_item(
+    app_handle: &AppHandle,
+    state: &Arc<AppState>,
+    item: crate::services::veilid::ingress_queue::IngressItem,
+) {
+    use crate::services::veilid::ingress_queue::IngressItem;
+    match item {
+        IngressItem::Gossip { signed, .. } => {
+            handle_gossip_envelope(app_handle, state, signed).await;
+        }
+        IngressItem::Legacy(message) => {
+            let pool: tauri::State<'_, DbPool> = app_handle.state();
+            message_service::handle_incoming_message(app_handle, state, pool.inner(), &message)
+                .await;
+        }
+    }
 }
 
 async fn handle_gossip_envelope(

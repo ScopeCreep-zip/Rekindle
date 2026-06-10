@@ -13,6 +13,7 @@ mod control_membership;
 mod control_moderation;
 mod control_sync;
 mod dht_watch;
+pub(crate) mod ingress_queue;
 mod lifecycle;
 mod network;
 
@@ -27,7 +28,7 @@ pub async fn handle_veilid_update(
     update: VeilidUpdate,
 ) {
     match update {
-        VeilidUpdate::AppMessage(msg) => app_message::handle(app_handle, state, *msg).await,
+        VeilidUpdate::AppMessage(msg) => app_message::handle(app_handle, state, &msg),
         VeilidUpdate::AppCall(call) => network::handle_app_call(app_handle, state, *call).await,
         VeilidUpdate::ValueChange(change) => {
             dht_watch::handle_value_change(app_handle, state, *change).await;

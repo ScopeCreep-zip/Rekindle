@@ -20,6 +20,12 @@ pub struct JitterBuffer {
     initial_fill_done: bool,
     /// Timestamp of the first packet arrival (for initial fill timing).
     first_packet_time: Option<std::time::Instant>,
+    /// Packets discarded by the over-capacity trim since the last
+    /// `take_drops` — the receive-side health signal the quality event
+    /// surfaces (Phase 5).
+    overflow_drops: u64,
+    /// Packets discarded for arriving after their playback slot.
+    late_drops: u64,
 }
 
 impl JitterBuffer {
@@ -32,6 +38,8 @@ impl JitterBuffer {
             max_packets: 50,
             initial_fill_done: false,
             first_packet_time: None,
+            overflow_drops: 0,
+            late_drops: 0,
         }
     }
 
@@ -46,6 +54,7 @@ impl JitterBuffer {
 
         // Drop packets that are too old (already played)
         if self.initial_fill_done && seq < self.next_playback_seq {
+            self.late_drops += 1;
             tracing::trace!(
                 seq,
                 expected = self.next_playback_seq,
@@ -59,10 +68,20 @@ impl JitterBuffer {
         // Trim if buffer is too large
         while self.buffer.len() > self.max_packets {
             self.buffer.pop_first();
+            self.overflow_drops += 1;
             if self.initial_fill_done {
                 self.next_playback_seq += 1;
             }
         }
+    }
+
+    /// Drain the drop counters (overflow, late) accumulated since the
+    /// last call — read on the 5 s quality cadence.
+    pub fn take_drops(&mut self) -> (u64, u64) {
+        let drops = (self.overflow_drops, self.late_drops);
+        self.overflow_drops = 0;
+        self.late_drops = 0;
+        drops
     }
 
     /// Pop the next packet for playback, if available.
@@ -196,5 +215,20 @@ mod tests {
 
         jb.push(make_packet(0)); // late, should be dropped
         assert_eq!(jb.depth(), 0);
+        assert_eq!(jb.take_drops(), (0, 1), "late drop counted");
+        assert_eq!(jb.take_drops(), (0, 0), "take_drops resets");
+    }
+
+    #[test]
+    fn test_overflow_trim_counted() {
+        let mut jb = JitterBuffer::new(0);
+        for seq in 0..60 {
+            jb.push(make_packet(seq));
+        }
+        // max_packets = 50 → ten packets trimmed.
+        assert_eq!(jb.depth(), 50);
+        let (overflow, late) = jb.take_drops();
+        assert_eq!(overflow, 10, "overflow trim counted");
+        assert_eq!(late, 0);
     }
 }

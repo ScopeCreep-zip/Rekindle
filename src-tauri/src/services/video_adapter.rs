@@ -185,8 +185,78 @@ impl VideoDeps for VideoAdapter {
                 tracing::warn!(error = %e, "video_session::on_peer_caps_received failed");
             }
         }
+        // Phase 4 — backend-owned bitrate policy: receiver feedback
+        // drives the pacer rate AND a `VideoBitrateTarget` event the
+        // frontend encoder follows. Emit hysteresis (>15% move) keeps
+        // configure()-forced keyframes rare.
+        match &event {
+            VideoEvent::FrameAck {
+                community_id,
+                channel_id,
+                kbps,
+                loss_q8,
+                ..
+            }
+            | VideoEvent::BandwidthEstimate {
+                community_id,
+                channel_id,
+                kbps,
+                loss_q8,
+                ..
+            } => {
+                self.apply_bitrate_feedback(community_id, channel_id, *kbps, *loss_q8);
+            }
+            _ => {}
+        }
         let mapped = map_video_event(event);
         crate::event_dispatch::emit_live(&self.app_handle, "community-event", &mapped);
+    }
+}
+
+impl VideoAdapter {
+    /// One AIMD step from receiver feedback; on a material (>15%) move
+    /// update the pacer rate and emit `CommunityEvent::VideoBitrateTarget`.
+    fn apply_bitrate_feedback(&self, community_id: &str, channel_id: &str, kbps: u32, loss_q8: u8) {
+        let key = (community_id.to_string(), channel_id.to_string());
+        let next = {
+            let targets = self.state.video_bitrate_targets.lock();
+            let prev = targets
+                .get(&key)
+                .copied()
+                .unwrap_or(rekindle_video::VIDEO_START_KBPS);
+            rekindle_video::target_from_feedback(prev, kbps, loss_q8)
+        };
+        let prev_emitted = self
+            .state
+            .video_bitrate_targets
+            .lock()
+            .get(&key)
+            .copied()
+            .unwrap_or(rekindle_video::VIDEO_START_KBPS);
+        let drift =
+            (f64::from(next) - f64::from(prev_emitted)).abs() / f64::from(prev_emitted.max(1));
+        if drift <= 0.15 {
+            return;
+        }
+        self.state.video_bitrate_targets.lock().insert(key, next);
+        if let Some(rate_tx) = self.state.video_pacer_rate_tx.read().as_ref() {
+            let _ = rate_tx.send(next);
+        }
+        tracing::info!(
+            target: "rekindle_video::pacer",
+            community_id,
+            channel_id,
+            kbps = next,
+            feedback_kbps = kbps,
+            loss_q8,
+            "bitrate target updated"
+        );
+        let event = CommunityEvent::VideoBitrateTarget {
+            community_id: community_id.to_string(),
+            channel_id: channel_id.to_string(),
+            kbps: next,
+        };
+        crate::event_dispatch::emit_live(&self.app_handle, "community-event", &event);
     }
 }
 
@@ -298,8 +368,10 @@ fn map_video_event(event: VideoEvent) -> CommunityEvent {
 
 // ── Free-fn facades (preserve pre-Phase-16 signatures) ───────────────
 
-/// Send a video frame to the community mesh. Builds a VideoAdapter +
-/// delegates to `rekindle_video::send_video_frame`.
+/// Build a video frame (MEK-encrypt + fragment + sign) and hand it to
+/// the per-session pacer, which releases fragments at the audio-first
+/// budgeted rate. The frame count returned is the fragment count the
+/// pacer will release.
 pub fn send_video_frame(
     state: &crate::state::SharedState,
     community_id: &str,
@@ -312,14 +384,37 @@ pub fn send_video_frame(
         .clone()
         .ok_or_else(|| "app handle not initialized".to_string())?;
     let adapter = VideoAdapter::new(state.clone(), app_handle);
-    rekindle_video::send_video_frame(
+    let frame = rekindle_video::build_video_frame(
         adapter.as_ref(),
         &state.video_reassembly,
         community_id,
         channel_id,
         request,
+        rekindle_utils::timestamp_ms(),
     )
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+    let fragment_count = u32::try_from(frame.envelopes.len()).unwrap_or(u32::MAX);
+    let pacer_tx = state.video_pacer_tx.read().clone();
+    let Some(tx) = pacer_tx else {
+        return Err("video pacer not running — no active voice session".to_string());
+    };
+    if tx.try_send(frame).is_err() {
+        let n = state
+            .video_pacer_send_drops
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            + 1;
+        if n == 1 || n.is_multiple_of(30) {
+            tracing::warn!(
+                target: "rekindle_video::pacer",
+                community_id,
+                channel_id,
+                dropped_total = n,
+                "video pacer saturated — frame refused at intake"
+            );
+        }
+        return Err("video pacer saturated".to_string());
+    }
+    Ok(fragment_count)
 }
 
 /// Receive-side dispatcher facade. Builds a VideoAdapter + delegates

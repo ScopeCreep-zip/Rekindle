@@ -375,6 +375,20 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
                 peer,
                 display_name,
             } => {
+                // Media-ready input: the three-way handshake stage.
+                let handshake = match state.as_str() {
+                    "seen" => Some(rekindle_voice::transport::JoinHandshake::Seen),
+                    "connected" => Some(rekindle_voice::transport::JoinHandshake::Connected),
+                    _ => None,
+                };
+                if let Some(hs) = handshake {
+                    crate::services::community::media_ready_runtime::update_media_ready(
+                        &self.state,
+                        &community_id,
+                        &channel_id,
+                        |i| i.handshake = hs,
+                    );
+                }
                 crate::event_dispatch::dispatch(
                     &self.app_handle,
                     "community-event",

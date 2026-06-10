@@ -1,7 +1,7 @@
 import { Channel } from "@tauri-apps/api/core";
 import { invoke } from "../invoke";
 import type {
-  BackgroundSyncReport, CommunityAnalytics, CommunityVideoFrameMsg, DeviceList, DmConversation, DmMessageRecord, DmVideoFrameMsg, LinkPreview, MediaCapabilities, MessageSearch, PairingAccept, PairingQrPayload, PairingSession, SearchResult, SendVideoFrameRequest, SyncManifest, SyncPreferences, SyncReadState, VideoTopologyReason, VideoTrackLabel,
+  BackgroundSyncReport, Codec, CommunityAnalytics, CommunityVideoFrameMsg, DeviceList, DmConversation, DmMessageRecord, DmVideoFrameMsg, LinkPreview, MediaCapabilities, MessageSearch, PairingAccept, PairingQrPayload, PairingSession, SearchResult, SendVideoFrameRequest, SyncManifest, SyncPreferences, SyncReadState, VideoTopologyReason, VideoTrackLabel,
 } from "./types_sync";
 
 export const syncCommands = {
@@ -191,6 +191,26 @@ export const syncCommands = {
    * is the boolean outcome; `errorMessage` carries the failure detail
    * when `ok` is false (omitted on success).
    */
+  /**
+   * Phase 2 — encoder lifecycle events (configure result, watchdog
+   * recreations, fatal stops) logged backend-side under
+   * `rekindle_video::encoder`. `communityId` for community calls,
+   * `peerId` for DM calls.
+   */
+  reportVideoEncoderStatus: (
+    communityId: string | null,
+    peerId: string | null,
+    codec: Codec,
+    ok: boolean,
+    detail?: string,
+  ) =>
+    invoke<void>("report_video_encoder_status", {
+      communityId,
+      peerId,
+      codec,
+      ok,
+      detail: detail ?? null,
+    }),
   reportVideoDecoderStatus: (
     communityId: string,
     senderPseudonym: string,

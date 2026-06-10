@@ -19,21 +19,19 @@ pub enum VoiceEvent {
         display_name: String,
     },
     #[serde(rename_all = "camelCase")]
-    UserLeft {
-        public_key: String,
-    },
+    UserLeft { public_key: String },
     #[serde(rename_all = "camelCase")]
-    UserSpeaking {
-        public_key: String,
-        speaking: bool,
-    },
+    UserSpeaking { public_key: String, speaking: bool },
     #[serde(rename_all = "camelCase")]
-    UserMuted {
-        public_key: String,
-        muted: bool,
-    },
+    UserMuted { public_key: String, muted: bool },
+    /// Merged 5 s health report: send-side quality classification +
+    /// receive-side jitter drops + cumulative inbound-channel drops.
+    #[serde(rename_all = "camelCase")]
     ConnectionQuality {
         quality: String,
+        rx_overflow_drops: u64,
+        rx_late_drops: u64,
+        ingress_drops: u64,
     },
     #[serde(rename_all = "camelCase")]
     DeviceChanged {
@@ -45,8 +43,5 @@ pub enum VoiceEvent {
     /// Surfaces silent failures (channel full, no active call,
     /// AEAD decrypt fail) at info!/warn! log + as a frontend event.
     /// Backend-driven policy: emit every 1 s if count > 0.
-    PacketsDropped {
-        reason: String,
-        count: u64,
-    },
+    PacketsDropped { reason: String, count: u64 },
 }

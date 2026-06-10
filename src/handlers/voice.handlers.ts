@@ -60,6 +60,9 @@ export async function initVoiceEventListener(): Promise<UnlistenFn> {
         break;
       case "connectionQuality":
         setVoiceState("connectionQuality", event.data.quality);
+        setVoiceState("rxOverflowDrops", event.data.rxOverflowDrops);
+        setVoiceState("rxLateDrops", event.data.rxLateDrops);
+        setVoiceState("ingressDrops", event.data.ingressDrops);
         break;
       case "deviceChanged":
         setVoiceState("deviceChangeCount", (prev) => prev + 1);
@@ -104,6 +107,9 @@ export async function handleJoinVoice(channelId: string, communityId?: string): 
     // advance this to "seen"/"connected".
     if (communityId) {
       setVoiceState("joinHandshake", "announced");
+      // Media-ready resets with the new session; the backend emits the
+      // first voiceMediaReady transition once the slot is seeded.
+      setVoiceState("mediaReady", null);
     }
     // Backend emits VoiceEvent::LocalJoined which the listener mirrors into
     // voiceState (isConnected + channelId + activeCallType). No manual set
@@ -146,6 +152,7 @@ export async function handleLeaveVoice(): Promise<void> {
       connectionQuality: "good",
       activeCallType: null,
       joinHandshake: null,
+      mediaReady: null,
     });
 
     // Clear our Voice session location so the roster stops showing us in the

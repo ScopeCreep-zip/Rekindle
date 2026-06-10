@@ -17,6 +17,11 @@ export interface VoiceState {
   isDeafened: boolean;
   participants: VoiceParticipant[];
   connectionQuality: string;
+  /** Phase 5 — receive-side jitter drops in the last 5 s window. */
+  rxOverflowDrops: number;
+  rxLateDrops: number;
+  /** Cumulative inbound voice-channel drops since login. */
+  ingressDrops: number;
   activeCallType: "dm" | "community" | null;
   inputDevice: string | null;
   outputDevice: string | null;
@@ -36,6 +41,10 @@ export interface VoiceState {
    *  yet), "seen" (a member acked), "connected" (confirmed sent).
    *  Null outside community calls. */
   joinHandshake: "announced" | "seen" | "connected" | null;
+  /** Backend media-ready gate: video may only start when `ready`.
+   *  `reason` names the next blocker ("handshake-seen", "mek-missing",
+   *  …) for the connecting state. Null until the first transition. */
+  mediaReady: { ready: boolean; reason: string } | null;
 }
 
 const [voiceState, setVoiceState] = createStore<VoiceState>({
@@ -45,6 +54,9 @@ const [voiceState, setVoiceState] = createStore<VoiceState>({
   isDeafened: false,
   participants: [],
   connectionQuality: "good",
+  rxOverflowDrops: 0,
+  rxLateDrops: 0,
+  ingressDrops: 0,
   activeCallType: null,
   inputDevice: null,
   outputDevice: null,
@@ -54,6 +66,7 @@ const [voiceState, setVoiceState] = createStore<VoiceState>({
   cameraOn: false,
   screenShareOn: false,
   joinHandshake: null,
+  mediaReady: null,
 });
 
 export { voiceState, setVoiceState };

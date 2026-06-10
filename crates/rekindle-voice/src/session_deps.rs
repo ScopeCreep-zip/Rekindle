@@ -480,6 +480,14 @@ pub enum VoiceSessionEvent {
     /// Connection quality summary (every 5 s from send_loop). Quality
     /// is `"good"` / `"fair"` / `"poor"` based on packet loss %.
     ConnectionQuality { quality: String },
+    /// Receive-side health (every 5 s from receive_loop): jitter-buffer
+    /// drop counters summed across participants since the last report.
+    /// Complements `ConnectionQuality` (a SEND-side loss signal) so the
+    /// UI can attribute dropouts to the right side of the pipe.
+    ReceiveStats {
+        rx_overflow_drops: u64,
+        rx_late_drops: u64,
+    },
 }
 
 /// Used by the deps trait helper to return owned data; placeholder for

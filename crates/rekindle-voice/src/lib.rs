@@ -14,6 +14,7 @@ pub mod election; // Phase 14 — deterministic MCU host election (pure logic).
 pub mod error;
 pub mod jitter;
 pub mod mcu_loop; // Phase 14 — MCU mixing for groups (>4 participants or stage channels).
+pub mod media_ready; // Media-ready session gate (WebRTC "transport before RTP" analog).
 pub mod mixer;
 pub mod playback;
 pub mod receive_loop; // Phase 14 — packet receive → decode → mix → playback pipeline.

@@ -198,6 +198,45 @@ pub struct AppState {
     /// composition changes or a peer reports new caps. Backend owns the
     /// negotiation; the frontend just reads the resulting event.
     pub video_sessions: crate::services::community::video_session::VideoSessionStateMap,
+    /// Media-ready session gate (WebRTC "transport before RTP" analog):
+    /// per-(community, channel) bring-up inputs → derived ready state.
+    /// `media_ready_runtime` owns transitions + the
+    /// `CommunityEvent::VoiceMediaReady` emission.
+    pub media_ready: Mutex<rekindle_voice::media_ready::MediaReadyTracker>,
+    /// Video frames rejected by the media-ready gate (observability).
+    pub video_pre_ready_drops: std::sync::atomic::AtomicU64,
+    /// Inbound gossip/legacy envelope queue — the app_message callback
+    /// pushes and returns so video processing can never stall voice
+    /// packet delivery; one worker (spawned by the dispatch loop)
+    /// drains it in FIFO order.
+    pub gossip_ingress: Arc<crate::services::veilid::ingress_queue::GossipIngressQueue>,
+    /// Producer side of the per-session video pacer (Phase 4). `None`
+    /// outside an active community voice session. Built frames are
+    /// `try_send`-ed here; the pacer task releases them at the
+    /// budgeted, audio-first rate.
+    pub video_pacer_tx: RwLock<Option<mpsc::Sender<rekindle_video::PacedFrame>>>,
+    /// Rate input of the running pacer (kbps). Driven by the backend
+    /// bitrate policy in `video_adapter::emit_event`.
+    pub video_pacer_rate_tx: RwLock<Option<tokio::sync::watch::Sender<u32>>>,
+    /// Shutdown for the pacer task (fired on voice teardown).
+    pub video_pacer_shutdown_tx: RwLock<Option<mpsc::Sender<()>>>,
+    /// Last emitted bitrate target per (community, channel) — the
+    /// AIMD policy's previous-value state + emit hysteresis anchor.
+    pub video_bitrate_targets: Mutex<HashMap<(String, String), u32>>,
+    /// Frames refused because the pacer channel was full/absent.
+    pub video_pacer_send_drops: std::sync::atomic::AtomicU64,
+    /// Phase 5 — last-known halves of the merged ConnectionQuality
+    /// emission (send-side quality + receive-side jitter drops arrive
+    /// on different 5 s cadences; each emission carries both).
+    pub voice_quality_cache:
+        Mutex<crate::services::voice_adapter::event_mapping::VoiceQualityCache>,
+    /// Phase 5 — CUMULATIVE inbound voice drops (`voice_pkt_drops` is
+    /// swap-reset every second by the telemetry poller; this total
+    /// feeds the quality event's `ingress_drops`).
+    pub voice_ingress_drops_total: std::sync::atomic::AtomicU64,
+    /// Channel-media sends that found an empty roster (observability —
+    /// frames encoded but with nobody to send to).
+    pub channel_send_empty_roster_drops: std::sync::atomic::AtomicU64,
 }
 
 impl Default for AppState {
@@ -279,6 +318,21 @@ impl Default for AppState {
             pending_session_resets: Arc::new(Mutex::new(HashMap::new())),
             video_channels: crate::video_channels::VideoChannelRegistry::new(),
             video_sessions: crate::services::community::video_session::VideoSessionStateMap::new(),
+            media_ready: Mutex::new(rekindle_voice::media_ready::MediaReadyTracker::new()),
+            gossip_ingress: Arc::new(
+                crate::services::veilid::ingress_queue::GossipIngressQueue::new(),
+            ),
+            video_pacer_tx: RwLock::new(None),
+            video_pacer_rate_tx: RwLock::new(None),
+            video_pacer_shutdown_tx: RwLock::new(None),
+            video_bitrate_targets: Mutex::new(HashMap::new()),
+            video_pacer_send_drops: std::sync::atomic::AtomicU64::new(0),
+            voice_quality_cache: Mutex::new(
+                crate::services::voice_adapter::event_mapping::VoiceQualityCache::default(),
+            ),
+            voice_ingress_drops_total: std::sync::atomic::AtomicU64::new(0),
+            video_pre_ready_drops: std::sync::atomic::AtomicU64::new(0),
+            channel_send_empty_roster_drops: std::sync::atomic::AtomicU64::new(0),
         }
     }
 }

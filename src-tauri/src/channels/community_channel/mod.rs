@@ -239,6 +239,16 @@ pub enum CommunityEvent {
         channel_id: String,
         peers: Vec<String>,
     },
+    /// Phase 4 — backend bitrate policy output (AIMD over receiver
+    /// FrameAck/BandwidthEstimate feedback, audio reserve subtracted).
+    /// The frontend encoder follows this target; the pacer rate moves
+    /// with it on the backend.
+    #[serde(rename_all = "camelCase")]
+    VideoBitrateTarget {
+        community_id: String,
+        channel_id: String,
+        kbps: u32,
+    },
     /// Phase F — a gossiped video envelope failed signature or shape
     /// verification at the receive boundary. Surfaced to the UI so the
     /// asymmetric-drop case (one peer rejects, the other doesn't) is
@@ -476,6 +486,19 @@ pub enum CommunityEvent {
         community_id: String,
         channel_id: String,
         pseudonym_key: String,
+    },
+    /// Media-ready gate state for the active voice/video session
+    /// (WebRTC "transport before RTP" analog). Emitted on every
+    /// (ready, reason) transition; `reason` names the next blocker
+    /// ("handshake-announced" → … → "ready"). The frontend disables
+    /// camera/screen-share until `ready` and the backend hard-rejects
+    /// video egress.
+    #[serde(rename_all = "camelCase")]
+    VoiceMediaReady {
+        community_id: String,
+        channel_id: String,
+        ready: bool,
+        reason: String,
     },
     /// Voice channel mode switched (mesh ↔ MCU).
     #[serde(rename_all = "camelCase")]

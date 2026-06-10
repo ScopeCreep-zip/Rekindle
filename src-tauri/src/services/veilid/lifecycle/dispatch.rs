@@ -44,6 +44,39 @@ pub async fn start_dispatch_loop(
 ) {
     tracing::info!("veilid dispatch loop started");
 
+    // Phase 3 — gossip ingress worker: drains the queue the
+    // app_message callback pushes into, so video-fragment processing
+    // can never stall this serial loop (which also carries the voice
+    // fast path). Single worker — per-sender fragment ORDER is
+    // load-bearing for reassembly. Terminated by a watch flag flipped
+    // when this loop shuts down.
+    let (worker_stop_tx, mut worker_stop_rx) = tokio::sync::watch::channel(false);
+    let worker_handle = {
+        let app_handle = app_handle.clone();
+        let state = Arc::clone(&state);
+        tauri::async_runtime::spawn(async move {
+            loop {
+                tokio::select! {
+                    biased;
+                    _ = worker_stop_rx.changed() => {
+                        if *worker_stop_rx.borrow() {
+                            tracing::info!("gossip ingress worker shutting down");
+                            break;
+                        }
+                    }
+                    item = state.gossip_ingress.pop() => {
+                        crate::services::veilid::app_message::process_ingress_item(
+                            &app_handle,
+                            &state,
+                            item,
+                        )
+                        .await;
+                    }
+                }
+            }
+        })
+    };
+
     // Phase 9 — listen for lifecycle transitions so the cold-start
     // buffer can drain the moment the app becomes Operational. The
     // current() check below covers the (unlikely) case where Operational
@@ -60,6 +93,8 @@ pub async fn start_dispatch_loop(
             biased;
             _ = shutdown_rx.recv() => {
                 tracing::info!("veilid dispatch loop shutting down");
+                let _ = worker_stop_tx.send(true);
+                worker_handle.abort();
                 break;
             }
             lifecycle_result = lifecycle_rx.recv() => {

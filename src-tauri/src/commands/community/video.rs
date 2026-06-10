@@ -150,6 +150,42 @@ pub async fn report_local_video_capabilities(
     crate::services::community::video_session::on_local_caps_reported(state.inner(), caps)
 }
 
+/// Phase 2 — frontend reports encoder lifecycle events (configure
+/// success/failure, watchdog recreations, fatal stops). Mirror of
+/// `report_video_decoder_status` for the SEND side: the WKWebView /
+/// WebKitGTK encoder divergence must be visible in `RUST_LOG` traces.
+/// `community_id` is set for community calls, `peer_id` for DM calls.
+#[tauri::command]
+pub async fn report_video_encoder_status(
+    community_id: Option<String>,
+    peer_id: Option<String>,
+    codec: String,
+    ok: bool,
+    detail: Option<String>,
+) -> Result<(), String> {
+    let scope = community_id
+        .or(peer_id)
+        .unwrap_or_else(|| "<unscoped>".to_string());
+    if ok {
+        tracing::info!(
+            target: "rekindle_video::encoder",
+            scope = %scope,
+            codec = %codec,
+            detail = detail.as_deref().unwrap_or(""),
+            "encoder ok"
+        );
+    } else {
+        tracing::warn!(
+            target: "rekindle_video::encoder",
+            scope = %scope,
+            codec = %codec,
+            detail = detail.as_deref().unwrap_or("<unspecified>"),
+            "encoder failure"
+        );
+    }
+    Ok(())
+}
+
 /// Phase F — frontend reports the result of its `decoder.configure()`
 /// call. Backend logs structurally so the WKWebView / WebKitGTK divergence
 /// in receiver decode is visible in trace logs without UI screenshots.

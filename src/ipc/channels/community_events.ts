@@ -491,6 +491,18 @@ export type CommunityEvent =
       };
     }
   | {
+      // Media-ready gate state for the active voice/video session
+      // (WebRTC "transport before RTP" analog). `reason` names the
+      // next blocker; camera/screen-share stay disabled until ready.
+      type: "voiceMediaReady";
+      data: {
+        communityId: string;
+        channelId: string;
+        ready: boolean;
+        reason: string;
+      };
+    }
+  | {
       type: "voiceModeSwitch";
       data: {
         communityId: string;

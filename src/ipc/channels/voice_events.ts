@@ -19,7 +19,15 @@ export type VoiceEvent =
       type: "userMuted";
       data: { publicKey: string; muted: boolean };
     }
-  | { type: "connectionQuality"; data: { quality: string } }
+  | {
+      type: "connectionQuality";
+      data: {
+        quality: string;
+        rxOverflowDrops: number;
+        rxLateDrops: number;
+        ingressDrops: number;
+      };
+    }
   | {
       type: "deviceChanged";
       data: { deviceType: string; deviceName: string; reason: string };

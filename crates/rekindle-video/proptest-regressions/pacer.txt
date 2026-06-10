@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc e0080d5da1bbc28e4ea5c3596f80fc0db54844745ec50948b4a399395a7b1d3e # shrinks to rate_kbps = 136, frames = [(1, 25308), (3, 3216), (1, 9235), (2, 16837)]

@@ -211,6 +211,14 @@ fn apply_outcome(
         RecomputeOutcome::NoEmit => {}
         RecomputeOutcome::Emit(config) => {
             emit_session_config(state, community_id, channel_id, config);
+            // Media-ready input: the frontend encoder now has a
+            // negotiated shape to configure from.
+            crate::services::community::media_ready_runtime::update_media_ready(
+                state,
+                community_id,
+                channel_id,
+                |i| i.session_config_emitted = true,
+            );
         }
         RecomputeOutcome::EmitIncompatible { peers } => {
             let event = CommunityEvent::VideoCodecIncompatible {
@@ -343,6 +351,19 @@ fn set_pending_local_caps(state: &Arc<AppState>, caps: Option<MediaCapabilities>
     if let Some(caps) = caps {
         entry.peer_caps.insert(LOCAL_PEER_KEY.to_string(), caps);
     }
+}
+
+/// Number of REMOTE peers currently tracked in a slot (excludes
+/// `LOCAL_PEER_KEY`). Feeds the media-ready gate's roster input —
+/// maintained by the same join/leave signals that keep `peer_caps`
+/// current, so the two views can't drift.
+pub fn remote_peer_count(state: &Arc<AppState>, community_id: &str, channel_id: &str) -> usize {
+    let guard = state.video_sessions.inner.read();
+    guard
+        .get(&(community_id.to_string(), channel_id.to_string()))
+        .map_or(0, |s| {
+            s.peer_caps.keys().filter(|k| *k != LOCAL_PEER_KEY).count()
+        })
 }
 
 /// The most recently reported local WebCodecs probe caps, or `None`

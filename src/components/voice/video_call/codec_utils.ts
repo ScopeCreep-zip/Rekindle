@@ -13,7 +13,11 @@
 import type { VideoPlayoutBuffer } from "./playout_buffer";
 import type { Codec } from "../../../ipc/commands/types_sync";
 
-export const KEYFRAME_INTERVAL_MS = 2000;
+// 4s: at the 350 kbps budget a 30-50 KB keyframe costs ~0.7-1.1 s of
+// bucket — a 2 s cadence spent half the budget on keyframes alone.
+// Join-time recovery stays fast via FIR-on-confirmed + the receiver's
+// 15-dropped-deltas keyframe-request escalation.
+export const KEYFRAME_INTERVAL_MS = 4000;
 
 /** `Codec` wire string → fully-specified WebCodecs codec parameter.
  *  Shared by the encoder (video_sender.ts) and decoder

@@ -29,9 +29,18 @@ const CallControlBar: Component<{
   onToggleChat: () => void;
   onPip?: () => void;
 }> = (props) => {
+  // Community calls gate video EGRESS on the backend's media-ready
+  // state (handshake + roster + MEK + caps + config). The buttons stay
+  // enabled — camera/screen start locally (preview) right away and the
+  // sender attaches the moment the gate opens; the tooltip says so.
+  const previewOnly = (): boolean =>
+    voiceState.activeCallType === "community" && !(voiceState.mediaReady?.ready ?? false);
   return (
     <div class="call-control-bar">
-      <div class="call-control-quality" title={`Connection: ${voiceState.connectionQuality}`}>
+      <div
+        class="call-control-quality"
+        title={`Connection: ${voiceState.connectionQuality} — rx drops 5s: ${voiceState.rxOverflowDrops + voiceState.rxLateDrops}, inbound drops total: ${voiceState.ingressDrops}`}
+      >
         <span
           class="call-control-quality-dot"
           classList={{
@@ -70,7 +79,13 @@ const CallControlBar: Component<{
         <button
           class={`voice-btn ${voiceState.cameraOn ? "voice-btn-active" : ""}`}
           onClick={() => setVoiceState("cameraOn", !voiceState.cameraOn)}
-          title={voiceState.cameraOn ? "Stop camera" : "Start camera"}
+          title={
+            voiceState.cameraOn
+              ? "Stop camera"
+              : previewOnly()
+                ? "Start camera (preview only until someone else connects)"
+                : "Start camera"
+          }
           aria-label={voiceState.cameraOn ? "Stop camera" : "Start camera"}
           aria-pressed={voiceState.cameraOn}
         >
@@ -81,7 +96,13 @@ const CallControlBar: Component<{
         <button
           class={`voice-btn ${voiceState.screenShareOn ? "voice-btn-active" : ""}`}
           onClick={() => setVoiceState("screenShareOn", !voiceState.screenShareOn)}
-          title={voiceState.screenShareOn ? "Stop screen share" : "Share screen"}
+          title={
+            voiceState.screenShareOn
+              ? "Stop screen share"
+              : previewOnly()
+                ? "Share screen (preview only until someone else connects)"
+                : "Share screen"
+          }
           aria-label={voiceState.screenShareOn ? "Stop screen share" : "Share screen"}
           aria-pressed={voiceState.screenShareOn}
         >

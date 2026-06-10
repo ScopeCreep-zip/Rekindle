@@ -15,11 +15,24 @@
 //! signaling (join/leave/speaking/mute/quality) at a handful of events
 //! per call, so it stays on the centralized `event_dispatch` bus.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 use parking_lot::Mutex;
 use serde::Serialize;
 use tauri::ipc::Channel;
+
+/// Phase 6 — bound on community frames buffered while the panel hasn't
+/// registered its channel yet (remote senders can already be streaming
+/// when we join: their frames physically arrive before mount). ~6 s of
+/// one 15 fps stream; oldest evicted beyond it.
+pub const PENDING_COMMUNITY_FRAMES_MAX: usize = 90;
+
+/// Pre-registration frame buffer for one community.
+#[derive(Default)]
+struct PendingFrames {
+    frames: VecDeque<CommunityVideoFrameMsg>,
+    evicted: u64,
+}
 
 /// One reassembled DM video frame pushed to the per-peer channel the DM
 /// video panel registers. Mirrors the previous `dm-video-frame` event
@@ -65,6 +78,9 @@ pub struct CommunityVideoFrameMsg {
 pub struct VideoChannelRegistry {
     dm: Mutex<HashMap<String, Channel<DmVideoFrameMsg>>>,
     community: Mutex<HashMap<String, Channel<CommunityVideoFrameMsg>>>,
+    /// Frames that arrived before `register_community` — drained into
+    /// the channel, in order, the moment it registers (Phase 6).
+    pending_community: Mutex<HashMap<String, PendingFrames>>,
 }
 
 impl VideoChannelRegistry {
@@ -100,22 +116,63 @@ impl VideoChannelRegistry {
         community_id: String,
         channel: Channel<CommunityVideoFrameMsg>,
     ) {
+        // Phase 6 — drain frames that beat the registration, in order.
+        // Post-drain mid-GOP deltas self-heal via the panel's
+        // 15-dropped-deltas keyframe-request escalation.
+        let pending = self.pending_community.lock().remove(&community_id);
+        if let Some(pending) = pending {
+            let drained = pending.frames.len();
+            for frame in pending.frames {
+                if channel.send(frame).is_err() {
+                    // Channel already dead (hard reload mid-drain):
+                    // nothing to register.
+                    return;
+                }
+            }
+            tracing::info!(
+                target: "rekindle_video::receive",
+                community_id = %community_id,
+                drained,
+                evicted = pending.evicted,
+                "flushed pre-registration video frames"
+            );
+        }
         self.community.lock().insert(community_id, channel);
     }
 
     pub fn unregister_community(&self, community_id: &str) {
         self.community.lock().remove(community_id);
+        self.pending_community.lock().remove(community_id);
     }
 
-    /// Push a frame to the community's channel. Same ephemeral + stale
-    /// semantics as [`Self::send_dm`].
+    /// Push a frame to the community's channel. Stale-channel semantics
+    /// as [`Self::send_dm`]; an UNREGISTERED community buffers the
+    /// frame (bounded) instead of dropping it — the panel-mount /
+    /// remote-sender race would otherwise eat the first seconds of
+    /// video including the keyframe (Phase 6).
     pub fn send_community(&self, community_id: &str, frame: CommunityVideoFrameMsg) {
         let mut map = self.community.lock();
-        let dead = map
-            .get(community_id)
-            .is_some_and(|ch| ch.send(frame).is_err());
-        if dead {
-            map.remove(community_id);
+        if let Some(ch) = map.get(community_id) {
+            if ch.send(frame).is_err() {
+                map.remove(community_id);
+            }
+        } else {
+            drop(map);
+            let mut pending = self.pending_community.lock();
+            let entry = pending.entry(community_id.to_string()).or_default();
+            if entry.frames.len() >= PENDING_COMMUNITY_FRAMES_MAX {
+                entry.frames.pop_front();
+                entry.evicted += 1;
+                if entry.evicted == 1 || entry.evicted.is_multiple_of(30) {
+                    tracing::warn!(
+                        target: "rekindle_video::receive",
+                        community_id = %community_id,
+                        evicted = entry.evicted,
+                        "community video frames arriving before panel registration — buffering (evicting oldest)"
+                    );
+                }
+            }
+            entry.frames.push_back(frame);
         }
     }
 }
@@ -201,6 +258,81 @@ mod tests {
 
         assert_eq!(log_a.lock().len(), 1);
         assert!(log_b.lock().is_empty(), "peerB channel untouched");
+    }
+
+    fn community_frame(seq: u32) -> CommunityVideoFrameMsg {
+        CommunityVideoFrameMsg {
+            community_id: "comm1".into(),
+            sender_pseudonym: "psd".into(),
+            stream_id: "ff00".into(),
+            frame_seq: seq,
+            keyframe: seq == 1,
+            codec: "vp9".into(),
+            timestamp: 0,
+            payload_b64: "YmFy".into(),
+        }
+    }
+
+    /// Phase 6 — frames that arrive before the panel registers are
+    /// buffered and drained IN ORDER at registration.
+    #[test]
+    fn pre_registration_frames_drain_in_order() {
+        let reg = VideoChannelRegistry::new();
+        for seq in 1..=5 {
+            reg.send_community("comm1", community_frame(seq));
+        }
+        let (channel, log) = recording_channel::<CommunityVideoFrameMsg>();
+        reg.register_community("comm1".into(), channel);
+        let got = log.lock();
+        assert_eq!(got.len(), 5, "all buffered frames drained");
+        let seqs: Vec<u64> = got
+            .iter()
+            .map(|s| {
+                serde_json::from_str::<serde_json::Value>(s).unwrap()["frameSeq"]
+                    .as_u64()
+                    .unwrap()
+            })
+            .collect();
+        assert_eq!(seqs, vec![1, 2, 3, 4, 5], "drain preserves arrival order");
+        drop(got);
+        // Post-registration frames flow live.
+        reg.send_community("comm1", community_frame(6));
+        assert_eq!(log.lock().len(), 6);
+    }
+
+    /// Phase 6 — the pre-registration buffer is bounded: oldest evicted.
+    #[test]
+    fn pre_registration_buffer_evicts_oldest_at_cap() {
+        let reg = VideoChannelRegistry::new();
+        let overflow = 10;
+        let total = u32::try_from(PENDING_COMMUNITY_FRAMES_MAX + overflow).unwrap();
+        for seq in 1..=total {
+            reg.send_community("comm1", community_frame(seq));
+        }
+        let (channel, log) = recording_channel::<CommunityVideoFrameMsg>();
+        reg.register_community("comm1".into(), channel);
+        let got = log.lock();
+        assert_eq!(got.len(), PENDING_COMMUNITY_FRAMES_MAX);
+        let first: serde_json::Value = serde_json::from_str(&got[0]).unwrap();
+        assert_eq!(
+            first["frameSeq"].as_u64().unwrap(),
+            u64::try_from(overflow).unwrap() + 1,
+            "the oldest frames were the ones evicted"
+        );
+    }
+
+    /// Phase 6 — unregister clears any pending buffer too.
+    #[test]
+    fn unregister_clears_pending_buffer() {
+        let reg = VideoChannelRegistry::new();
+        reg.send_community("comm1", community_frame(1));
+        reg.unregister_community("comm1");
+        let (channel, log) = recording_channel::<CommunityVideoFrameMsg>();
+        reg.register_community("comm1".into(), channel);
+        assert!(
+            log.lock().is_empty(),
+            "stale pending frames must not replay"
+        );
     }
 
     #[test]

@@ -72,6 +72,17 @@ export type CommunityVideoEvent =
       };
     }
   | {
+      // Phase 4 — backend bitrate policy output (AIMD over receiver
+      // feedback, audio reserve subtracted). The encoder follows this
+      // target; the backend pacer rate moves with it.
+      type: "videoBitrateTarget";
+      data: {
+        communityId: string;
+        channelId: string;
+        kbps: number;
+      };
+    }
+  | {
       // Phase 3 — the backend negotiator found NO local encode codec
       // every peer can decode. Latched backend-side: fires once per
       // compatible→incompatible transition. `peers` lists the blocking

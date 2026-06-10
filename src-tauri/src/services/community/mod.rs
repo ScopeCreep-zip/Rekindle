@@ -17,6 +17,7 @@ pub mod inspect;
 pub mod join;
 pub mod keepalive;
 pub mod link_previews;
+pub mod media_ready_runtime;
 pub mod mek_rotation;
 pub mod mek_rotation_orchestrators;
 pub(crate) mod mek_rotation_support;
