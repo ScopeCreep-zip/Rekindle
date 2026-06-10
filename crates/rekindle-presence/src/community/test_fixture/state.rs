@@ -80,4 +80,6 @@ pub struct MockState {
     pub calls_update_pending: Vec<(String, String, u64, u32)>,
     pub calls_prune_pending: Vec<(String, u32)>,
     pub calls_auto_expand: Vec<String>,
+    pub active_voice_channel: Option<String>,
+    pub calls_reconcile_voice_roster: Vec<(String, Vec<crate::deps::VoicePresenceRow>)>,
 }

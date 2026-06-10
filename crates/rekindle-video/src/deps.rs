@@ -131,6 +131,14 @@ pub trait VideoDeps: Send + Sync + 'static {
     /// works at every receiver.
     fn increment_lamport(&self, community_id: &str) -> u64;
 
+    /// A reassembled frame failed to decrypt under our current MEK —
+    /// the sender is on a newer generation (voice MEK rotates on every
+    /// membership change, §10.7), classically right after WE joined.
+    /// Fire the RequestMEK cascade instead of dropping silently
+    /// (silent drop = permanently black tile). Debounced by the
+    /// caller; fire-and-forget.
+    fn request_mek_refresh(&self, community_id: &str, channel_id: &str);
+
     /// Emit a UI-facing event from a receive-side handler.
     fn emit_event(&self, event: VideoEvent);
 }

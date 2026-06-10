@@ -490,6 +490,46 @@ impl CommunityPresenceDeps for PresenceAdapter {
         );
     }
 
+    fn active_voice_channel(&self, community_id: &str) -> Option<String> {
+        let ve = self.state.voice_engine.lock();
+        ve.as_ref()
+            .filter(|h| h.community_id.as_deref() == Some(community_id))
+            .map(|h| h.channel_id.clone())
+    }
+
+    fn reconcile_voice_roster(
+        &self,
+        community_id: &str,
+        rows: Vec<rekindle_presence::VoicePresenceRow>,
+    ) {
+        // Cheap pre-gate before building the signaling deps: skip
+        // entirely when no voice session is bound to this community.
+        if self.active_voice_channel(community_id).is_none() {
+            return;
+        }
+        let Some(app) = self.state.app_handle.read().clone() else {
+            return;
+        };
+        let Ok(deps) = crate::services::voice_runtime::build_voice_signaling_deps(&app, &self.state)
+        else {
+            return;
+        };
+        let views: Vec<rekindle_voice::signaling::PresencePeerView> = rows
+            .into_iter()
+            .map(|r| rekindle_voice::signaling::PresencePeerView {
+                pseudonym_hex: r.pseudonym_hex,
+                display_name: r.display_name,
+                route_blob: r.route_blob,
+                voice_channel_id: r.voice_channel_id,
+                fresh: r.fresh,
+            })
+            .collect();
+        let cid = community_id.to_string();
+        tauri::async_runtime::spawn(async move {
+            rekindle_voice::signaling::reconcile_from_presence(&deps, &cid, views).await;
+        });
+    }
+
     fn stale_pending_syncs(
         &self,
         community_id: &str,

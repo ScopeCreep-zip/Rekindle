@@ -104,6 +104,7 @@ pub async fn presence_poll_tick<D: CommunityPresenceDeps>(
     let mut discovered = Vec::new();
     let mut online_members = std::collections::HashMap::new();
     let mut known_member_keys = std::collections::HashSet::new();
+    let mut voice_rows: Vec<crate::deps::VoicePresenceRow> = Vec::new();
     for descriptor in &descriptors {
         let skip_subkey = (descriptor.segment_index == creds.my_segment_index).then_some(my_subkey);
         let raw_rows = deps
@@ -129,10 +130,12 @@ pub async fn presence_poll_tick<D: CommunityPresenceDeps>(
                 // generation — the peer just shows no location), merge
                 // them back, then drop any signal our own policy doesn't
                 // reciprocate so the model self-balances.
+                let mut row_voice_channel: Option<String> = None;
                 if let Some(enc) = &row.presence.session_extras_encrypted {
                     if let Some(extras) = deps.decrypt_session_extras(community_id, enc) {
                         row.presence.session.location = extras.location;
                         row.presence.session.activity = extras.activity;
+                        row_voice_channel = extras.voice_channel_id;
                     }
                 }
                 row.presence.session =
@@ -145,6 +148,15 @@ pub async fn presence_poll_tick<D: CommunityPresenceDeps>(
                     om.last_active = row.presence.session.last_active;
                 }
                 known_member_keys.insert(row.pseudonym_hex.clone());
+                // Presence-derived voice membership for the roster
+                // reconcile — stale rows included so ghosts expire.
+                voice_rows.push(crate::deps::VoicePresenceRow {
+                    pseudonym_hex: row.pseudonym_hex.clone(),
+                    display_name: row.presence.display_name.clone(),
+                    route_blob: row.presence.route_blob.clone(),
+                    voice_channel_id: row_voice_channel,
+                    fresh: row.online_member.is_some(),
+                });
                 discovered.push((descriptor.segment_index, subkey, row.presence));
                 if let Some(om) = row.online_member {
                     online_members.insert(row.pseudonym_hex, om);
@@ -182,6 +194,11 @@ pub async fn presence_poll_tick<D: CommunityPresenceDeps>(
         &merged_roles,
         &banned,
     );
+    // Voice roster backstop (three-path Path 1, MatrixRTC pattern):
+    // hand the scan's presence-derived membership to the voice layer —
+    // members whose VoiceJoin gossip was lost get added, ghosts whose
+    // rows say "left" or whose heartbeat went stale get expired.
+    deps.reconcile_voice_roster(community_id, voice_rows);
     // Per-event RSVP aggregation: load known events + read local
     // RSVPs, compose via pure `aggregate_event_rsvps`, write back.
     let known_event_ids = deps.load_known_event_ids(community_id).await;

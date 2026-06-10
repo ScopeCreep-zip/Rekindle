@@ -453,6 +453,7 @@ export type CommunityEvent =
         channelId: string;
         pseudonymKey: string;
         routeBlob: number[];
+        displayName: string | null;
       };
     }
   | {
@@ -468,7 +469,25 @@ export type CommunityEvent =
       data: {
         communityId: string;
         channelId: string;
-        participants: string[];
+        participants: { pseudonymKey: string; displayName: string | null }[];
+      };
+    }
+  | {
+      type: "voiceJoinHandshake";
+      data: {
+        communityId: string;
+        channelId: string;
+        state: string;
+        peer: string | null;
+        displayName: string | null;
+      };
+    }
+  | {
+      type: "voicePeerConfirmed";
+      data: {
+        communityId: string;
+        channelId: string;
+        pseudonymKey: string;
       };
     }
   | {

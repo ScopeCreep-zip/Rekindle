@@ -94,6 +94,11 @@ pub struct VoiceRosterEntry {
     pub muted: bool,
     #[serde(default)]
     pub deafened: bool,
+    /// Display name as known to the roster broadcaster — identity
+    /// rides the handshake (SimpleX `x.grp.mem.info` pattern) so the
+    /// roster UI never depends on registry-scan timing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
 }
 
 /// Signed wrapper: sender_pseudonym + serialized envelope + Ed25519 signature.
@@ -470,12 +475,35 @@ pub enum ControlPayload {
     },
 
     // ── Voice channel signaling ──
-    /// Broadcast: member joined a voice channel.
+    /// Broadcast: member joined a voice channel (handshake leg 1 —
+    /// "reach out").
     VoiceJoin {
         channel_id: String,
         /// Private route blob for receiving voice packets.
         route_blob: Vec<u8>,
+        /// Joiner's self-sovereign display name.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        display_name: Option<String>,
     },
+    /// Handshake leg 2 — "seen": a present member acks the joiner's
+    /// VoiceJoin, carrying its own identity + route so the ack alone
+    /// lets the joiner add the acker to its media roster. Directed to
+    /// the channel roster (ttl = 0), never relayed.
+    VoiceJoinAck {
+        channel_id: String,
+        /// Pseudonym of the joiner being acked.
+        joiner_pseudonym: String,
+        /// Acker's display name.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        display_name: Option<String>,
+        /// Acker's private route blob.
+        route_blob: Vec<u8>,
+    },
+    /// Handshake leg 3 — "confirmed": the joiner is transport-ready
+    /// (routes ingested) and asks members to start media. Receivers
+    /// force a video keyframe (RFC 5104 FIR semantics — a new member
+    /// needs a full intra to start decoding). Directed, ttl = 0.
+    VoiceJoinConfirmed { channel_id: String },
     /// Broadcast: member left a voice channel.
     VoiceLeave { channel_id: String },
     /// Broadcast: voice channel mode switch (mesh ↔ MCU).

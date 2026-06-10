@@ -122,6 +122,8 @@ struct VoiceRosterEntry @0xe8d4eb16e9bf1c2e {
     routeBlob        @1 :Data;
     muted            @2 :Bool;
     deafened         @3 :Bool;
+    # Display name as known to the roster broadcaster. Empty = unknown.
+    displayName      @4 :Text;
 }
 
 struct OnboardingAnswer @0xe9d4eb16e9bf1c2e {
@@ -437,6 +439,29 @@ struct SyncResponsePayload @0xea002d000000a000 {
 struct VoiceJoinPayload @0xea002e000000a000 {
     channelId            @0 :Text;
     routeBlob            @1 :Data;
+    # Joiner's self-sovereign display name — identity rides the
+    # handshake (SimpleX x.grp.mem.info pattern) so the roster UI
+    # never depends on registry-scan timing. Empty = not set.
+    displayName          @2 :Text;
+}
+
+# Seen leg of the three-way join handshake: a present member tells the
+# joiner "I received your VoiceJoin, here's me" (directed, ttl=0).
+struct VoiceJoinAckPayload @0xea0045000000a000 {
+    channelId            @0 :Text;
+    # Pseudonym of the joiner being acked (dedup/filter on receive).
+    joinerPseudonym      @1 :Text;
+    # Acker's display name + route so the ack alone is enough for the
+    # joiner to add the acker to its media roster.
+    displayName          @2 :Text;
+    routeBlob            @3 :Data;
+}
+
+# Confirmed leg: the joiner tells channel members "transport-ready —
+# start sending me media" (directed, ttl=0). Receivers force a video
+# keyframe (RFC 5104 FIR semantics: new member needs a full intra).
+struct VoiceJoinConfirmedPayload @0xea0046000000a000 {
+    channelId            @0 :Text;
 }
 
 struct VoiceLeavePayload @0xea002f000000a000 {
@@ -703,5 +728,7 @@ struct ControlPayload @0xeaffffff00000001 {
         linkPreview              @66 :LinkPreviewPayload;
         mekTransferAck           @67 :MekTransferAckPayload;
         requestSegmentExpansion  @68 :RequestSegmentExpansionPayload;
+        voiceJoinAck             @69 :VoiceJoinAckPayload;
+        voiceJoinConfirmed       @70 :VoiceJoinConfirmedPayload;
     }
 }

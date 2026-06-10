@@ -31,10 +31,17 @@ pub mod deps;
 pub(crate) mod dispatcher;
 pub(crate) mod mute;
 pub(crate) mod presence;
+pub mod roster_reconcile;
 pub(crate) mod stage;
 
-pub use deps::{perms, CommunityVoiceEvent, StageChannelInfo, VoiceSignalingDeps};
+pub use deps::{
+    perms, CommunityVoiceEvent, StageChannelInfo, VoiceRosterParticipant, VoiceSignalingDeps,
+};
 pub use dispatcher::handle_voice_signaling;
+pub use roster_reconcile::{
+    compute_roster_reconcile, reconcile_from_presence, PresencePeerView, ReconcileAdd,
+    ReconcilePlan, JOIN_GRACE_SECS,
+};
 pub use stage::{
     request_to_speak, respond_to_speak_request, server_deafen_member, server_mute_member,
 };

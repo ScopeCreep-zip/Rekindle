@@ -411,6 +411,19 @@ impl CommunityPresenceDeps for MockCommunityDeps {
             .calls_emit_offline
             .push((community_id.to_string(), pseudonym_key.to_string()));
     }
+    fn active_voice_channel(&self, _community_id: &str) -> Option<String> {
+        self.state.lock().active_voice_channel.clone()
+    }
+    fn reconcile_voice_roster(
+        &self,
+        community_id: &str,
+        rows: Vec<crate::deps::VoicePresenceRow>,
+    ) {
+        self.state
+            .lock()
+            .calls_reconcile_voice_roster
+            .push((community_id.to_string(), rows));
+    }
     fn stale_pending_syncs(
         &self,
         community_id: &str,

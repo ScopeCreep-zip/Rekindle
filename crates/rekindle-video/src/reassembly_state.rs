@@ -31,7 +31,15 @@ pub struct VideoReassemblyState {
     /// wins; lower-lamport messages are dropped so the reassembler
     /// doesn't flap between relays. Keyed by `(community_id, stream_id)`.
     last_topology_lamport: Mutex<HashMap<(String, [u8; 16]), u64>>,
+    /// Per-community clock (ms) of the last MEK-refresh request fired
+    /// by the decrypt-failure path — debounces the cascade request to
+    /// once per window even at 15 fps of undecryptable frames.
+    last_mek_request_ms: Mutex<HashMap<String, u32>>,
 }
+
+/// Decrypt failures within this window of a fired MEK request don't
+/// fire another one (the request cascade retries internally anyway).
+pub const MEK_REQUEST_DEBOUNCE_MS: u32 = 10_000;
 
 impl VideoReassemblyState {
     #[must_use]
@@ -108,12 +116,28 @@ impl VideoReassemblyState {
         self.last_topology_lamport
             .lock()
             .retain(|(cid, _), _| cid != community_id);
+        self.last_mek_request_ms.lock().remove(community_id);
     }
 
     pub fn clear(&self) {
         self.inner.lock().clear();
         self.started_streams.lock().clear();
         self.last_topology_lamport.lock().clear();
+        self.last_mek_request_ms.lock().clear();
+    }
+
+    /// Debounce gate for the decrypt-failure MEK refresh: returns
+    /// `true` (and stamps the clock) at most once per
+    /// [`MEK_REQUEST_DEBOUNCE_MS`] per community.
+    pub fn should_request_mek(&self, community_id: &str, now_ms: u32) -> bool {
+        let mut map = self.last_mek_request_ms.lock();
+        match map.get(community_id) {
+            Some(last) if now_ms.wrapping_sub(*last) < MEK_REQUEST_DEBOUNCE_MS => false,
+            _ => {
+                map.insert(community_id.to_string(), now_ms);
+                true
+            }
+        }
     }
 
     /// Architecture §10.6 + §22 tie-break — return `true` when the

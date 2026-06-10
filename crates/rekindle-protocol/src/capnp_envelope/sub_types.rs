@@ -676,16 +676,19 @@ pub(super) fn write_voice_roster_entry(
     b.set_route_blob(&e.route_blob);
     b.set_muted(e.muted);
     b.set_deafened(e.deafened);
+    b.set_display_name(e.display_name.as_deref().unwrap_or_default());
 }
 
 pub(super) fn read_voice_roster_entry(
     r: crate::community_envelope_capnp::voice_roster_entry::Reader<'_>,
 ) -> Result<VoiceRosterEntry, ProtocolError> {
+    let display_name = text_to_string(r.get_display_name().map_err(|e| capnp_err(&e))?)?;
     Ok(VoiceRosterEntry {
         pseudonym_key: text_to_string(r.get_pseudonym_key().map_err(|e| capnp_err(&e))?)?,
         route_blob: r.get_route_blob().map_err(|e| capnp_err(&e))?.to_vec(),
         muted: r.get_muted(),
         deafened: r.get_deafened(),
+        display_name: (!display_name.is_empty()).then_some(display_name),
     })
 }
 

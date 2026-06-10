@@ -94,8 +94,16 @@ pub async fn write_our_presence<D: CommunityPresenceDeps>(deps: &D, write: Prese
     let extras = rekindle_types::presence::SessionExtras {
         location: session.location.take(),
         activity: session.activity.take(),
+        // Durable voice-roster membership claim (MatrixRTC pattern).
+        // Deliberately NOT behind the location-sharing policy: being
+        // in a voice channel is intrinsically visible to its members,
+        // and leaving the channel is how you stop sharing it.
+        voice_channel_id: deps.active_voice_channel(community_id),
     };
-    let session_extras_encrypted = if extras.location.is_some() || extras.activity.is_some() {
+    let session_extras_encrypted = if extras.location.is_some()
+        || extras.activity.is_some()
+        || extras.voice_channel_id.is_some()
+    {
         deps.encrypt_session_extras_with_current_mek(community_id, &extras)
     } else {
         None

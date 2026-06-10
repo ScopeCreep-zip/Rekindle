@@ -385,6 +385,18 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
     /// event for a peer that's just gone offline.
     fn emit_member_presence_offline(&self, community_id: &str, pseudonym_key: &str);
 
+    /// Voice channel the LOCAL user is currently connected to in this
+    /// community, if any. Rides the MEK-encrypted `SessionExtras` on
+    /// our presence row (MatrixRTC `m.rtc.member` pattern) so the
+    /// channel roster has a durable, heartbeat-renewed backstop.
+    fn active_voice_channel(&self, community_id: &str) -> Option<String>;
+
+    /// Hand the scan's presence-derived voice membership view to the
+    /// voice layer for roster reconciliation (add lost-VoiceJoin
+    /// members, expire ghosts). Fire-and-forget — the add/remove
+    /// DECISIONS live in `rekindle-voice`; the adapter only bridges.
+    fn reconcile_voice_roster(&self, community_id: &str, rows: Vec<VoicePresenceRow>);
+
     /// Pending-sync entries the orchestrator should retry (older
     /// than `stale_window_secs` with attempt count below
     /// `max_attempts`).
@@ -433,6 +445,24 @@ pub struct PresenceCredentials {
 pub struct SegmentDescriptor {
     pub segment_index: u32,
     pub registry_key: String,
+}
+
+/// Presence-derived voice membership view of one community member,
+/// handed from the registry scan to the voice roster reconcile
+/// (architecture three-path: the SMPL presence row is the DURABLE
+/// roster; gossip VoiceJoin/VoiceLeave is the fast path).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VoicePresenceRow {
+    pub pseudonym_hex: String,
+    pub display_name: Option<String>,
+    pub route_blob: Vec<u8>,
+    /// MEK-decrypted voice channel claim from the row's SessionExtras.
+    /// `None` when not in a channel or when our MEK can't decrypt.
+    pub voice_channel_id: Option<String>,
+    /// Row passed the scan's liveness gate (fresh heartbeat +
+    /// non-offline). Stale rows still flow through so the reconcile
+    /// can expire ghosts.
+    pub fresh: bool,
 }
 
 /// In-memory snapshot of one online community member used by the

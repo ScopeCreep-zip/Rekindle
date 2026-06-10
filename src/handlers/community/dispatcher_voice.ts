@@ -15,19 +15,41 @@ import { refreshStageHandRaises } from "./shared";
 /// separately so it's skipped. Decouples the roster from MEK-decrypt
 /// (§10.1/§10.5): a member appears as soon as it's signaled, not only
 /// once we can decrypt its audio.
-function mirrorRosterAdd(communityId: string, channelId: string, pseudonyms: string[]): void {
+function mirrorRosterAdd(
+  communityId: string,
+  channelId: string,
+  entries: { pseudonymKey: string; displayName: string | null }[],
+): void {
   if (voiceState.activeCallType !== "community" || voiceState.channelId !== channelId) return;
   const community = communityState.communities[communityId];
   const self = community?.myPseudonymKey;
-  const nameFor = (pk: string): string =>
-    community?.members.find((m) => m.pseudonymKey === pk)?.displayName ?? pk.slice(0, 8);
-  for (const pk of pseudonyms) {
+  // Handshake-carried name wins (it never depends on registry-scan
+  // timing); members store is the fallback; truncated key is last.
+  const nameFor = (pk: string, carried: string | null): string =>
+    carried ??
+    community?.members.find((m) => m.pseudonymKey === pk)?.displayName ??
+    pk.slice(0, 8);
+  for (const { pseudonymKey: pk, displayName } of entries) {
     if (pk === self) continue;
-    setVoiceState("participants", (prev) =>
-      prev.some((p) => p.publicKey === pk)
-        ? prev
-        : [...prev, { publicKey: pk, displayName: nameFor(pk), isMuted: false, isSpeaking: false }],
-    );
+    setVoiceState("participants", (prev) => {
+      const existing = prev.findIndex((p) => p.publicKey === pk);
+      if (existing >= 0) {
+        // Upgrade a truncated-key placeholder with the carried name.
+        if (displayName && prev[existing].displayName !== displayName) {
+          return prev.map((p, i) => (i === existing ? { ...p, displayName } : p));
+        }
+        return prev;
+      }
+      return [
+        ...prev,
+        {
+          publicKey: pk,
+          displayName: nameFor(pk, displayName),
+          isMuted: false,
+          isSpeaking: false,
+        },
+      ];
+    });
   }
 }
 
@@ -56,13 +78,13 @@ export function reduceVoice(event: CommunityEvent): boolean {
     }
     return true;
   } else if (event.type === "voiceJoin") {
-    const { communityId, channelId, pseudonymKey } = event.data;
+    const { communityId, channelId, pseudonymKey, displayName } = event.data;
     setCommunityState("voiceChannels", channelId, (prev) => {
       const state = prev ?? { participants: [], mode: "mesh" as const, hostPseudonym: null };
       if (state.participants.includes(pseudonymKey)) return state;
       return { ...state, participants: [...state.participants, pseudonymKey] };
     });
-    mirrorRosterAdd(communityId, channelId, [pseudonymKey]);
+    mirrorRosterAdd(communityId, channelId, [{ pseudonymKey, displayName }]);
     return true;
   } else if (event.type === "voiceRoster") {
     // §10.1/§10.5 — a present member's catch-up roster. Tells a joiner
@@ -71,10 +93,33 @@ export function reduceVoice(event: CommunityEvent): boolean {
     const { communityId, channelId, participants } = event.data;
     setCommunityState("voiceChannels", channelId, (prev) => {
       const state = prev ?? { participants: [], mode: "mesh" as const, hostPseudonym: null };
-      const merged = Array.from(new Set([...state.participants, ...participants]));
+      const merged = Array.from(
+        new Set([...state.participants, ...participants.map((p) => p.pseudonymKey)]),
+      );
       return { ...state, participants: merged };
     });
     mirrorRosterAdd(communityId, channelId, participants);
+    return true;
+  } else if (event.type === "voiceJoinHandshake") {
+    // Local three-way join progress: announced → seen → connected.
+    const { channelId, state } = event.data;
+    if (voiceState.activeCallType === "community" && voiceState.channelId === channelId) {
+      if (state === "seen" || state === "connected") {
+        setVoiceState("joinHandshake", state);
+        if (state === "connected") {
+          announce("Voice channel connected", "polite");
+        }
+      }
+    }
+    return true;
+  } else if (event.type === "voicePeerConfirmed") {
+    // A joiner finished its handshake — render them solid.
+    const { channelId, pseudonymKey } = event.data;
+    if (voiceState.activeCallType === "community" && voiceState.channelId === channelId) {
+      setVoiceState("participants", (prev) =>
+        prev.map((p) => (p.publicKey === pseudonymKey ? { ...p, isConfirmed: true } : p)),
+      );
+    }
     return true;
   } else if (event.type === "voiceLeave") {
     const { channelId, pseudonymKey } = event.data;

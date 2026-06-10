@@ -14,6 +14,19 @@ import {
 /// participant list — reachable from any channel while in a call. The full
 /// control set (camera, screen-share, soundboard, reactions) lives in the
 /// main-pane CallStage control bar so this row no longer overflows the rail.
+/// Header status string. Community calls surface the three-way join
+/// handshake (backend-emitted): announced = our VoiceJoin is out but
+/// nobody has seen us; seen = a member acked, confirming; connected =
+/// handshake complete (or a non-community call).
+function statusLabel(): string {
+  if (!voiceState.isConnected) return "Not Connected";
+  if (voiceState.activeCallType === "community") {
+    if (voiceState.joinHandshake === "announced") return "Voice — waiting for others…";
+    if (voiceState.joinHandshake === "seen") return "Voice — connecting…";
+  }
+  return "Voice Connected";
+}
+
 const VoicePanel: Component = () => {
   return (
     <div class="voice-panel">
@@ -21,7 +34,7 @@ const VoicePanel: Component = () => {
         <span
           class={voiceState.isConnected ? "voice-panel-status" : "voice-panel-status-disconnected"}
         >
-          {voiceState.isConnected ? "Voice Connected" : "Not Connected"}
+          {statusLabel()}
         </span>
         <Show when={voiceState.isConnected}>
           <div class="voice-panel-controls">

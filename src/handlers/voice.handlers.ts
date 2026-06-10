@@ -99,6 +99,12 @@ export async function handleJoinVoice(channelId: string, communityId?: string): 
       voiceEventUnlisten = await initVoiceEventListener();
     }
     await commands.joinVoiceChannel(channelId, communityId);
+    // Community joins start the three-way handshake: VoiceJoin is out,
+    // nobody has seen us yet. The backend's voiceJoinHandshake events
+    // advance this to "seen"/"connected".
+    if (communityId) {
+      setVoiceState("joinHandshake", "announced");
+    }
     // Backend emits VoiceEvent::LocalJoined which the listener mirrors into
     // voiceState (isConnected + channelId + activeCallType). No manual set
     // here — that was the C1 bug: prior code set isConnected/channelId but
@@ -139,6 +145,7 @@ export async function handleLeaveVoice(): Promise<void> {
       participants: [],
       connectionQuality: "good",
       activeCallType: null,
+      joinHandshake: null,
     });
 
     // Clear our Voice session location so the roster stops showing us in the

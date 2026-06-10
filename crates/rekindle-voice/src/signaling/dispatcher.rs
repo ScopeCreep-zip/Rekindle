@@ -23,6 +23,7 @@ pub async fn handle_voice_signaling(
         ControlPayload::VoiceJoin {
             channel_id,
             route_blob,
+            display_name,
         } => {
             presence::handle_voice_join(
                 &deps,
@@ -30,7 +31,27 @@ pub async fn handle_voice_signaling(
                 sender_pseudonym,
                 channel_id,
                 route_blob,
+                display_name,
             );
+        }
+        ControlPayload::VoiceJoinAck {
+            channel_id,
+            joiner_pseudonym,
+            display_name,
+            route_blob,
+        } => {
+            presence::handle_voice_join_ack(
+                &deps,
+                community_id,
+                sender_pseudonym,
+                channel_id,
+                &joiner_pseudonym,
+                display_name,
+                route_blob,
+            );
+        }
+        ControlPayload::VoiceJoinConfirmed { channel_id } => {
+            presence::handle_voice_join_confirmed(&deps, community_id, sender_pseudonym, channel_id);
         }
         ControlPayload::VoiceLeave { channel_id } => {
             presence::handle_voice_leave(&deps, community_id, sender_pseudonym, channel_id);

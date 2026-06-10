@@ -47,6 +47,7 @@ pub async fn join_voice_channel<D: VoiceSessionDeps + ?Sized>(
         let envelope = CommunityEnvelope::Control(ControlPayload::VoiceJoin {
             channel_id: channel_id.to_string(),
             route_blob,
+            display_name: deps.my_display_name(),
         });
         deps.send_community_envelope(cid, &envelope);
     }
@@ -81,6 +82,7 @@ pub fn reannounce_voice_route<D: VoiceSessionDeps + ?Sized>(deps: &Arc<D>) {
     let envelope = CommunityEnvelope::Control(ControlPayload::VoiceJoin {
         channel_id: channel_id.clone(),
         route_blob,
+        display_name: deps.my_display_name(),
     });
     deps.send_community_envelope(&cid, &envelope);
     tracing::info!(

@@ -384,6 +384,11 @@ impl VoiceSessionDeps for VoiceAdapter {
         state_helpers::our_route_blob(&self.state).unwrap_or_default()
     }
 
+    fn my_display_name(&self) -> Option<String> {
+        let name = state_helpers::identity_display_name(&self.state);
+        (!name.is_empty()).then_some(name)
+    }
+
     fn pre_stage_mcu_channel(
         &self,
     ) -> tokio::sync::mpsc::Receiver<rekindle_voice::transport::VoicePacket> {

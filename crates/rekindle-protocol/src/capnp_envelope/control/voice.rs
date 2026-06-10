@@ -14,12 +14,43 @@ pub(super) fn write_voice_join(
     let ControlPayload::VoiceJoin {
         channel_id,
         route_blob,
+        display_name,
     } = payload
     else {
         unreachable!("write_voice_join: variant mismatch")
     };
     p.set_channel_id(channel_id);
     p.set_route_blob(route_blob);
+    p.set_display_name(display_name.as_deref().unwrap_or_default());
+}
+
+pub(super) fn write_voice_join_ack(
+    mut p: cap::voice_join_ack_payload::Builder<'_>,
+    payload: &ControlPayload,
+) {
+    let ControlPayload::VoiceJoinAck {
+        channel_id,
+        joiner_pseudonym,
+        display_name,
+        route_blob,
+    } = payload
+    else {
+        unreachable!("write_voice_join_ack: variant mismatch")
+    };
+    p.set_channel_id(channel_id);
+    p.set_joiner_pseudonym(joiner_pseudonym);
+    p.set_display_name(display_name.as_deref().unwrap_or_default());
+    p.set_route_blob(route_blob);
+}
+
+pub(super) fn write_voice_join_confirmed(
+    mut p: cap::voice_join_confirmed_payload::Builder<'_>,
+    payload: &ControlPayload,
+) {
+    let ControlPayload::VoiceJoinConfirmed { channel_id } = payload else {
+        unreachable!("write_voice_join_confirmed: variant mismatch")
+    };
+    p.set_channel_id(channel_id);
 }
 
 pub(super) fn write_voice_leave(
@@ -189,9 +220,31 @@ pub(super) fn write_soundboard_play(
 pub(super) fn read_voice_join(
     p: cap::voice_join_payload::Reader<'_>,
 ) -> Result<ControlPayload, ProtocolError> {
+    let display_name = text_to_string(p.get_display_name().map_err(|e| capnp_err(&e))?)?;
     Ok(ControlPayload::VoiceJoin {
         channel_id: text_to_string(p.get_channel_id().map_err(|e| capnp_err(&e))?)?,
         route_blob: p.get_route_blob().map_err(|e| capnp_err(&e))?.to_vec(),
+        display_name: (!display_name.is_empty()).then_some(display_name),
+    })
+}
+
+pub(super) fn read_voice_join_ack(
+    p: cap::voice_join_ack_payload::Reader<'_>,
+) -> Result<ControlPayload, ProtocolError> {
+    let display_name = text_to_string(p.get_display_name().map_err(|e| capnp_err(&e))?)?;
+    Ok(ControlPayload::VoiceJoinAck {
+        channel_id: text_to_string(p.get_channel_id().map_err(|e| capnp_err(&e))?)?,
+        joiner_pseudonym: text_to_string(p.get_joiner_pseudonym().map_err(|e| capnp_err(&e))?)?,
+        display_name: (!display_name.is_empty()).then_some(display_name),
+        route_blob: p.get_route_blob().map_err(|e| capnp_err(&e))?.to_vec(),
+    })
+}
+
+pub(super) fn read_voice_join_confirmed(
+    p: cap::voice_join_confirmed_payload::Reader<'_>,
+) -> Result<ControlPayload, ProtocolError> {
+    Ok(ControlPayload::VoiceJoinConfirmed {
+        channel_id: text_to_string(p.get_channel_id().map_err(|e| capnp_err(&e))?)?,
     })
 }
 

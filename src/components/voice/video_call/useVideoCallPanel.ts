@@ -141,6 +141,15 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
           );
         } else if (event.type === "videoKeyframeRequest") {
           sender.forceKeyframe(event.data.streamId);
+        } else if (event.type === "voicePeerConfirmed") {
+          // Three-way handshake leg 3 landed: the joiner is
+          // transport-ready. RFC 5104 FIR semantics — a new member
+          // needs a full intra to start decoding; force one on every
+          // active local stream so their tiles light up immediately
+          // instead of waiting out the keyframe cadence.
+          if (event.data.channelId === props.channelId) {
+            sender.forceKeyframeAll();
+          }
         } else if (event.type === "videoFrameAck") {
           // Architecture §10.6 line 4081 — adapt encoder bitrate to the
           // slowest receiver. configure() picks up the new value on the
@@ -219,22 +228,19 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
         return;
       }
       // Phase C — read the negotiated decoder constraints from the
-      // backend-owned store. DM mode is 1:1 — community policy doesn't
-      // apply, so the store has no entry; fall back to a baseline VP9
-      // configure (DM peers always run the same WebCodecs floor we ship).
+      // backend-owned store when available. The config primarily
+      // constrains the ENCODER; a VP9 decoder configured with the
+      // baseline codec string decodes any compliant stream. So when
+      // the config hasn't been negotiated yet (late joiner, caps
+      // round-trip in flight) we DO NOT drop the keyframe — the old
+      // gate here turned that race into a permanently black tile
+      // (decoder never created, every later keyframe dropped too).
+      // Baseline fallbacks below cover both DM mode and the not-yet-
+      // negotiated community case.
       const config =
         props.mode === "community"
           ? videoSessionConfigFor(props.communityId, props.channelId)
           : undefined;
-      if (props.mode === "community" && !config) {
-        // Backend hasn't emitted VideoSessionConfig for this room yet.
-        // Drop the keyframe — the playout buffer never seeded any state
-        // — and wait for the next one. The session config arrives via
-        // on_local_joined's force-emit, so this branch is a tiny race
-        // window at call start, not a steady-state condition.
-        return;
-      }
-      // DM mode (no community config) uses the baseline VP9 decoder.
       const decoderCodec = config?.decoder.codec ?? "vp9";
       const decoderOptimizeForLatency =
         config?.decoder.optimizeForLatency ?? false;

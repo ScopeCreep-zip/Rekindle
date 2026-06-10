@@ -165,10 +165,44 @@ pub struct VoiceTransport {
     /// layer in `services/voice/send_loop.rs`, so this stays None and
     /// audio_data passes through unmodified.
     call_key: Option<[u8; 32]>,
-    /// Connected peers: pseudonym_key (hex) → peer route blob.
-    peers: HashMap<String, Vec<u8>>,
+    /// Connected peers: pseudonym_key (hex) → roster entry.
+    peers: HashMap<String, VoicePeer>,
     /// Current operating mode.
     mode: VoiceMode,
+    /// Local three-way join handshake progress.
+    handshake: JoinHandshake,
+}
+
+/// One connected roster entry. `added_at` powers the presence-reconcile
+/// join-grace: a peer added moments ago via gossip must not be expired
+/// just because their presence row hasn't propagated yet.
+#[derive(Debug, Clone)]
+pub struct VoicePeer {
+    /// Route blob the peer advertised (VoiceJoin / roster / re-resolve).
+    pub route_blob: Vec<u8>,
+    /// When this entry was (first) added to the roster.
+    pub added_at: std::time::Instant,
+    /// Display name as carried by the join handshake (VoiceJoin /
+    /// VoiceJoinAck / roster entry). `None` until any leg supplies it.
+    pub display_name: Option<String>,
+}
+
+/// Local three-way join handshake progress (SimpleX
+/// `x.grp.acpt`/`x.grp.mem.con` analog): we announced (leg 1), a
+/// member saw us (leg 2 — explicit VoiceJoinAck, or implicit via a
+/// roster/mutual VoiceJoin), and we confirmed transport-readiness
+/// (leg 3 — VoiceJoinConfirmed sent). A member alone in a channel
+/// stays `Announced` until a second participant completes the
+/// handshake mutually.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum JoinHandshake {
+    /// VoiceJoin broadcast, no evidence anyone received it.
+    #[default]
+    Announced,
+    /// At least one member acked / showed up — we are seen.
+    Seen,
+    /// VoiceJoinConfirmed sent — both sides converged.
+    Connected,
 }
 
 impl VoiceTransport {
@@ -182,7 +216,35 @@ impl VoiceTransport {
             call_key: None,
             peers: HashMap::new(),
             mode: VoiceMode::default(),
+            handshake: JoinHandshake::default(),
         }
+    }
+
+    /// Current local join-handshake stage.
+    pub fn handshake(&self) -> JoinHandshake {
+        self.handshake
+    }
+
+    /// Leg-2 evidence arrived (explicit VoiceJoinAck, roster receipt,
+    /// or a mutual VoiceJoin while we were still unseen). Returns
+    /// `true` only on the Announced→Seen transition so callers emit
+    /// the state event exactly once.
+    pub fn advance_handshake_seen(&mut self) -> bool {
+        if self.handshake == JoinHandshake::Announced {
+            self.handshake = JoinHandshake::Seen;
+            return true;
+        }
+        false
+    }
+
+    /// Leg 3 — mark the handshake complete. Returns `true` only on
+    /// the first call so VoiceJoinConfirmed is sent exactly once.
+    pub fn advance_handshake_connected(&mut self) -> bool {
+        if self.handshake != JoinHandshake::Connected {
+            self.handshake = JoinHandshake::Connected;
+            return true;
+        }
+        false
     }
 
     /// Wave 13 W13.14 — install the AEAD call_key for 1:1 DM calls so
@@ -227,20 +289,40 @@ impl VoiceTransport {
         sender_key: Vec<u8>,
     ) {
         self.init(sender, sender_key);
-        self.add_peer("default", route_blob);
+        self.add_peer("default", route_blob, None);
         tracing::info!(channel = %self.channel_id, "voice transport connected (legacy single-peer)");
     }
 
     /// Add a peer to the voice mesh. The route blob is imported lazily
     /// by the [`VoiceFrameSender`] on first send.
-    pub fn add_peer(&mut self, pseudonym_key: &str, route_blob: &[u8]) {
+    pub fn add_peer(&mut self, pseudonym_key: &str, route_blob: &[u8], display_name: Option<&str>) {
         tracing::info!(
             channel = %self.channel_id,
             peer = %pseudonym_key,
             "added voice peer"
         );
-        self.peers
-            .insert(pseudonym_key.to_string(), route_blob.to_vec());
+        // Re-add keeps the original added_at (route upsert, not a
+        // fresh join) so the presence-reconcile grace isn't reset by
+        // repeat VoiceJoin announces. A name supplied by any handshake
+        // leg upgrades a missing one; `None` never erases a known name.
+        match self.peers.get_mut(pseudonym_key) {
+            Some(existing) => {
+                existing.route_blob = route_blob.to_vec();
+                if let Some(name) = display_name {
+                    existing.display_name = Some(name.to_string());
+                }
+            }
+            None => {
+                self.peers.insert(
+                    pseudonym_key.to_string(),
+                    VoicePeer {
+                        route_blob: route_blob.to_vec(),
+                        added_at: std::time::Instant::now(),
+                        display_name: display_name.map(str::to_string),
+                    },
+                );
+            }
+        }
     }
 
     /// Refresh a peer's route blob ONLY if they are already in the
@@ -252,7 +334,7 @@ impl VoiceTransport {
     pub fn refresh_peer_route(&mut self, pseudonym_key: &str, route_blob: &[u8]) -> bool {
         match self.peers.get_mut(pseudonym_key) {
             Some(existing) => {
-                *existing = route_blob.to_vec();
+                existing.route_blob = route_blob.to_vec();
                 tracing::info!(
                     channel = %self.channel_id,
                     peer = %pseudonym_key,
@@ -262,6 +344,24 @@ impl VoiceTransport {
             }
             None => false,
         }
+    }
+
+    /// `(pseudonym_key, seconds since added)` for every roster entry —
+    /// the view the presence-derived roster reconcile decides over.
+    pub fn peer_views(&self) -> Vec<(String, u64)> {
+        self.peers
+            .iter()
+            .map(|(k, v)| (k.clone(), v.added_at.elapsed().as_secs()))
+            .collect()
+    }
+
+    /// `(pseudonym_key, route_blob, display_name)` for every roster
+    /// entry — the roster-broadcast builder's view.
+    pub fn peer_named_entries(&self) -> Vec<(String, Vec<u8>, Option<String>)> {
+        self.peers
+            .iter()
+            .map(|(k, v)| (k.clone(), v.route_blob.clone(), v.display_name.clone()))
+            .collect()
     }
 
     /// Remove a peer from the voice mesh.
@@ -304,7 +404,7 @@ impl VoiceTransport {
     pub fn peer_entries(&self) -> Vec<(String, Vec<u8>)> {
         self.peers
             .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
+            .map(|(k, v)| (k.clone(), v.route_blob.clone()))
             .collect()
     }
 
@@ -325,8 +425,8 @@ impl VoiceTransport {
         };
 
         let mut errors = Vec::new();
-        for (key, route_blob) in &self.peers {
-            if let Err(e) = sender.send_voice_frame(route_blob, data.clone()).await {
+        for (key, peer) in &self.peers {
+            if let Err(e) = sender.send_voice_frame(&peer.route_blob, data.clone()).await {
                 errors.push((key.clone(), e));
             }
         }
@@ -339,7 +439,7 @@ impl VoiceTransport {
         pseudonym_key: &str,
         frame: &EncodedFrame,
     ) -> Result<(), VoiceError> {
-        let route_blob = self
+        let peer = self
             .peers
             .get(pseudonym_key)
             .ok_or_else(|| VoiceError::Transport(format!("peer not found: {pseudonym_key}")))?;
@@ -349,7 +449,7 @@ impl VoiceTransport {
             .ok_or_else(|| VoiceError::Transport("transport not initialized".into()))?;
 
         let data = self.build_packet_data(frame)?;
-        sender.send_voice_frame(route_blob, data).await
+        sender.send_voice_frame(&peer.route_blob, data).await
     }
 
     /// Legacy single-peer send (broadcasts to all peers).
@@ -379,6 +479,7 @@ impl VoiceTransport {
         self.signing_key = None;
         self.call_key = None;
         self.mode = VoiceMode::default();
+        self.handshake = JoinHandshake::default();
         tracing::info!(channel = %self.channel_id, "voice transport disconnected");
     }
 

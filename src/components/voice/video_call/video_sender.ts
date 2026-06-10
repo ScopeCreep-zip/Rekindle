@@ -40,6 +40,9 @@ export interface VideoSender {
   stop(label: TrackLabel): void;
   /** Force the next encoded frame on the matching stream to be a keyframe. */
   forceKeyframe(streamId: string): void;
+  /** Force a keyframe on EVERY active local stream — RFC 5104 FIR
+   *  semantics for "a new member entered the conference". */
+  forceKeyframeAll(): void;
   /** Clamp a track's reported downstream kbps to the receiver's estimate. */
   noteReceiverKbps(streamId: string, kbps: number): void;
   /** Channel-scoped bandwidth hint — clamps both tracks. */
@@ -272,6 +275,12 @@ export function createVideoSender(
     }
   }
 
+  function forceKeyframeAll(): void {
+    for (const ts of Object.values(tracks)) {
+      if (ts.streamId !== null) ts.lastKeyframeMs = 0;
+    }
+  }
+
   function noteReceiverKbps(streamId: string, kbps: number): void {
     for (const ts of Object.values(tracks)) {
       if (ts.streamId === streamId) {
@@ -286,5 +295,5 @@ export function createVideoSender(
     }
   }
 
-  return { start, stop, forceKeyframe, noteReceiverKbps, noteBandwidth };
+  return { start, stop, forceKeyframe, forceKeyframeAll, noteReceiverKbps, noteBandwidth };
 }

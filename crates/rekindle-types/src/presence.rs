@@ -276,6 +276,15 @@ pub struct SessionExtras {
     pub location: Option<SessionLocation>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub activity: Option<String>,
+    /// Voice channel this member is CURRENTLY connected to (MatrixRTC
+    /// `m.rtc.member` pattern — the durable, heartbeat-renewed roster
+    /// membership claim). Unlike `location`, this is NOT subject to the
+    /// location-sharing policy or read-side reciprocity: participating
+    /// in a voice channel is intrinsically visible to its members, and
+    /// leaving the channel is how you stop sharing it. MEK-encrypted
+    /// like the rest of the extras, so it stays members-only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voice_channel_id: Option<String>,
 }
 
 /// MEK-encrypted wire form for [`SessionExtras`]. Same shape as
@@ -485,6 +494,7 @@ mod tests {
                 channel_id: "general".into(),
             }),
             activity: Some("Playing Halo".into()),
+            voice_channel_id: Some("lounge-voice".into()),
         };
         let json = serde_json::to_vec(&extras).unwrap();
         let back: SessionExtras = serde_json::from_slice(&json).unwrap();

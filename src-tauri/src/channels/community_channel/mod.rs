@@ -8,6 +8,14 @@ pub use dto::{
     GameServerInfoDto, RoleDto, ThreadInfoDto,
 };
 
+/// One voice-roster participant as shipped to the frontend.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VoiceRosterParticipantEvent {
+    pub pseudonym_key: String,
+    pub display_name: Option<String>,
+}
+
 /// Events streamed from Rust to the frontend for community operations.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase", tag = "type", content = "data")]
@@ -416,6 +424,9 @@ pub enum CommunityEvent {
         channel_id: String,
         pseudonym_key: String,
         route_blob: Vec<u8>,
+        /// Name carried by the join handshake — render without waiting
+        /// for the registry scan.
+        display_name: Option<String>,
     },
     /// A member left a voice channel.
     #[serde(rename_all = "camelCase")]
@@ -430,7 +441,26 @@ pub enum CommunityEvent {
     VoiceRoster {
         community_id: String,
         channel_id: String,
-        participants: Vec<String>,
+        participants: Vec<VoiceRosterParticipantEvent>,
+    },
+    /// Local three-way voice join handshake progressed
+    /// ("seen" | "connected"). `peer`/`display_name` identify the
+    /// member whose evidence drove the transition.
+    #[serde(rename_all = "camelCase")]
+    VoiceJoinHandshake {
+        community_id: String,
+        channel_id: String,
+        state: String,
+        peer: Option<String>,
+        display_name: Option<String>,
+    },
+    /// A joiner completed its handshake (transport-ready) — the UI
+    /// renders them solid instead of pending.
+    #[serde(rename_all = "camelCase")]
+    VoicePeerConfirmed {
+        community_id: String,
+        channel_id: String,
+        pseudonym_key: String,
     },
     /// Voice channel mode switched (mesh ↔ MCU).
     #[serde(rename_all = "camelCase")]

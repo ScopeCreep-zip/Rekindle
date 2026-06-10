@@ -35,6 +35,13 @@ pub struct StageChannelInfo {
     pub moderator: Option<String>,
 }
 
+/// One roster-event participant: pseudonym + handshake-carried name.
+#[derive(Debug, Clone)]
+pub struct VoiceRosterParticipant {
+    pub pseudonym_key: String,
+    pub display_name: Option<String>,
+}
+
 /// Frontend events the signaling handlers emit. The adapter maps each
 /// variant to its concrete src-tauri `CommunityEvent` payload and
 /// calls `app.emit("community-event", _)`.
@@ -45,6 +52,9 @@ pub enum CommunityVoiceEvent {
         channel_id: String,
         pseudonym_key: String,
         route_blob: Vec<u8>,
+        /// Name carried by the handshake — frontends render it without
+        /// waiting for the registry scan.
+        display_name: Option<String>,
     },
     VoiceLeave {
         community_id: String,
@@ -56,7 +66,25 @@ pub enum CommunityVoiceEvent {
     VoiceRoster {
         community_id: String,
         channel_id: String,
-        participants: Vec<String>,
+        participants: Vec<VoiceRosterParticipant>,
+    },
+    /// Local three-way join handshake progressed (announced → seen →
+    /// connected). `peer`/`display_name` identify the member whose
+    /// evidence drove the transition (None for the connected leg).
+    VoiceJoinHandshake {
+        community_id: String,
+        channel_id: String,
+        /// "seen" | "connected" — wire string, backend-owned vocabulary.
+        state: String,
+        peer: Option<String>,
+        display_name: Option<String>,
+    },
+    /// A joiner finished its handshake (VoiceJoinConfirmed received) —
+    /// it is transport-ready and media to it is now worthwhile.
+    VoicePeerConfirmed {
+        community_id: String,
+        channel_id: String,
+        pseudonym_key: String,
     },
     VoiceModeSwitch {
         community_id: String,
@@ -214,6 +242,17 @@ pub trait VoiceSignalingDeps: Send + Sync + 'static {
     /// channel media signaling). Sync fire-and-forget like
     /// `send_to_mesh`; failures log inside the adapter.
     fn advertise_media_capabilities(&self, community_id: &str, channel_id: &str);
+
+    /// Architecture §10.6 — directed channel-scoped send (ttl = 0,
+    /// roster only, never relayed). Carries the join-handshake legs
+    /// (VoiceJoinAck / VoiceJoinConfirmed). Adapter delegates to
+    /// `services::community::send_to_channel_peers`. Sync
+    /// fire-and-forget; failures log inside the adapter.
+    fn send_to_channel(&self, community_id: &str, channel_id: &str, envelope: &CommunityEnvelope);
+
+    /// Our self-sovereign display name, carried in VoiceJoinAck so the
+    /// joiner learns who saw them without a registry-scan round trip.
+    fn my_display_name(&self) -> Option<String>;
 
     /// Persist our own hand-raise state on a SpeakResponse. Phase 19
     /// (rekindle-channel) eventually owns this; today the adapter

@@ -5,6 +5,9 @@ export interface VoiceParticipant {
   displayName: string;
   isMuted: boolean;
   isSpeaking: boolean;
+  /** Three-way handshake: this peer sent VoiceJoinConfirmed (it is
+   *  transport-ready). Undefined/false renders as "connecting". */
+  isConfirmed?: boolean;
 }
 
 export interface VoiceState {
@@ -28,6 +31,11 @@ export interface VoiceState {
   cameraOn: boolean;
   /** Architecture §10.6 — desired screen-share state. */
   screenShareOn: boolean;
+  /** Local three-way join handshake state for community voice
+   *  (backend-emitted): "announced" (VoiceJoin sent, nobody seen us
+   *  yet), "seen" (a member acked), "connected" (confirmed sent).
+   *  Null outside community calls. */
+  joinHandshake: "announced" | "seen" | "connected" | null;
 }
 
 const [voiceState, setVoiceState] = createStore<VoiceState>({
@@ -45,6 +53,7 @@ const [voiceState, setVoiceState] = createStore<VoiceState>({
   deviceChangeCount: 0,
   cameraOn: false,
   screenShareOn: false,
+  joinHandshake: null,
 });
 
 export { voiceState, setVoiceState };

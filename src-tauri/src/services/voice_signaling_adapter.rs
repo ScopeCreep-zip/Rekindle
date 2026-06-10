@@ -321,6 +321,32 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
         rekindle_voice::session::stop_mcu_loop(&deps).await;
     }
 
+    fn send_to_channel(
+        &self,
+        community_id: &str,
+        channel_id: &str,
+        envelope: &rekindle_protocol::dht::community::envelope::CommunityEnvelope,
+    ) {
+        if let Err(e) = crate::services::community::send_to_channel_peers(
+            &self.state,
+            community_id,
+            channel_id,
+            envelope,
+        ) {
+            tracing::debug!(
+                community = %community_id,
+                channel = %channel_id,
+                error = %e,
+                "voice signaling directed send failed",
+            );
+        }
+    }
+
+    fn my_display_name(&self) -> Option<String> {
+        let name = crate::state_helpers::identity_display_name(&self.state);
+        (!name.is_empty()).then_some(name)
+    }
+
     fn emit_event(&self, event: CommunityVoiceEvent) {
         match event {
             CommunityVoiceEvent::VoiceJoin {
@@ -328,6 +354,7 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
                 channel_id,
                 pseudonym_key,
                 route_blob,
+                display_name,
             } => {
                 crate::event_dispatch::dispatch(
                     &self.app_handle,
@@ -337,6 +364,41 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
                         channel_id,
                         pseudonym_key,
                         route_blob,
+                        display_name,
+                    },
+                );
+            }
+            CommunityVoiceEvent::VoiceJoinHandshake {
+                community_id,
+                channel_id,
+                state,
+                peer,
+                display_name,
+            } => {
+                crate::event_dispatch::dispatch(
+                    &self.app_handle,
+                    "community-event",
+                    CommunityEvent::VoiceJoinHandshake {
+                        community_id,
+                        channel_id,
+                        state,
+                        peer,
+                        display_name,
+                    },
+                );
+            }
+            CommunityVoiceEvent::VoicePeerConfirmed {
+                community_id,
+                channel_id,
+                pseudonym_key,
+            } => {
+                crate::event_dispatch::dispatch(
+                    &self.app_handle,
+                    "community-event",
+                    CommunityEvent::VoicePeerConfirmed {
+                        community_id,
+                        channel_id,
+                        pseudonym_key,
                     },
                 );
             }
@@ -366,7 +428,15 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
                     CommunityEvent::VoiceRoster {
                         community_id,
                         channel_id,
-                        participants,
+                        participants: participants
+                            .into_iter()
+                            .map(
+                                |p| crate::channels::community_channel::VoiceRosterParticipantEvent {
+                                    pseudonym_key: p.pseudonym_key,
+                                    display_name: p.display_name,
+                                },
+                            )
+                            .collect(),
                     },
                 );
             }

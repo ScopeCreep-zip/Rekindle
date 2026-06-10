@@ -385,6 +385,11 @@ pub trait VoiceSessionDeps: Send + Sync + 'static {
     /// envelope. Returns empty Vec if we have no advertised route.
     fn our_route_blob(&self) -> Vec<u8>;
 
+    /// Our self-sovereign display name for the join handshake —
+    /// identity rides VoiceJoin so peers' rosters never depend on
+    /// registry-scan timing. `None` when no profile name is set.
+    fn my_display_name(&self) -> Option<String>;
+
     // ── MCU lifecycle deps (Phase 14.l-mcu) ─────────────────────────
 
     /// Create a fresh MCU packet mpsc + install the sender on

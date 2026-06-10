@@ -15,6 +15,7 @@ pub struct MockCalls {
     pub sent: Vec<CommunityEnvelope>,
     pub events: Vec<VideoEvent>,
     pub lamport_calls: u64,
+    pub mek_refresh_requests: Vec<(String, String)>,
 }
 
 pub struct MockDeps {
@@ -82,6 +83,13 @@ impl VideoDeps for MockDeps {
 
     fn local_active_channel(&self, _c: &str) -> Option<String> {
         self.active_channel.clone()
+    }
+
+    fn request_mek_refresh(&self, community_id: &str, channel_id: &str) {
+        self.calls
+            .lock()
+            .mek_refresh_requests
+            .push((community_id.to_string(), channel_id.to_string()));
     }
 
     fn increment_lamport(&self, _c: &str) -> u64 {

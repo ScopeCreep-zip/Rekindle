@@ -289,6 +289,101 @@ mod tests {
     }
 
     #[test]
+    fn voice_join_handshake_roundtrip() {
+        use crate::dht::community::envelope::ControlPayload;
+
+        // Leg 1 — VoiceJoin with carried display name.
+        let env = CommunityEnvelope::Control(ControlPayload::VoiceJoin {
+            channel_id: "ch_voice".into(),
+            route_blob: vec![9, 9, 9],
+            display_name: Some("FireStarter92".into()),
+        });
+        let bytes = encode_community_envelope(&env).unwrap();
+        match decode_community_envelope(&bytes).unwrap() {
+            CommunityEnvelope::Control(ControlPayload::VoiceJoin {
+                channel_id,
+                route_blob,
+                display_name,
+            }) => {
+                assert_eq!(channel_id, "ch_voice");
+                assert_eq!(route_blob, vec![9, 9, 9]);
+                assert_eq!(display_name.as_deref(), Some("FireStarter92"));
+            }
+            _ => panic!("wrong variant"),
+        }
+
+        // Leg 2 — VoiceJoinAck carries acker identity + route.
+        let env = CommunityEnvelope::Control(ControlPayload::VoiceJoinAck {
+            channel_id: "ch_voice".into(),
+            joiner_pseudonym: "joiner_hex".into(),
+            display_name: None,
+            route_blob: vec![4, 2],
+        });
+        let bytes = encode_community_envelope(&env).unwrap();
+        match decode_community_envelope(&bytes).unwrap() {
+            CommunityEnvelope::Control(ControlPayload::VoiceJoinAck {
+                channel_id,
+                joiner_pseudonym,
+                display_name,
+                route_blob,
+            }) => {
+                assert_eq!(channel_id, "ch_voice");
+                assert_eq!(joiner_pseudonym, "joiner_hex");
+                assert_eq!(display_name, None, "empty wire text decodes to None");
+                assert_eq!(route_blob, vec![4, 2]);
+            }
+            _ => panic!("wrong variant"),
+        }
+
+        // Leg 3 — VoiceJoinConfirmed.
+        let env = CommunityEnvelope::Control(ControlPayload::VoiceJoinConfirmed {
+            channel_id: "ch_voice".into(),
+        });
+        let bytes = encode_community_envelope(&env).unwrap();
+        match decode_community_envelope(&bytes).unwrap() {
+            CommunityEnvelope::Control(ControlPayload::VoiceJoinConfirmed { channel_id }) => {
+                assert_eq!(channel_id, "ch_voice");
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn voice_roster_entry_display_name_roundtrip() {
+        use crate::dht::community::envelope::{ControlPayload, VoiceRosterEntry};
+
+        let env = CommunityEnvelope::Control(ControlPayload::VoiceRoster {
+            channel_id: "ch_voice".into(),
+            participants: vec![
+                VoiceRosterEntry {
+                    pseudonym_key: "alice_hex".into(),
+                    route_blob: vec![1],
+                    muted: true,
+                    deafened: false,
+                    display_name: Some("Alice".into()),
+                },
+                VoiceRosterEntry {
+                    pseudonym_key: "bob_hex".into(),
+                    route_blob: vec![2],
+                    muted: false,
+                    deafened: false,
+                    display_name: None,
+                },
+            ],
+        });
+        let bytes = encode_community_envelope(&env).unwrap();
+        match decode_community_envelope(&bytes).unwrap() {
+            CommunityEnvelope::Control(ControlPayload::VoiceRoster { participants, .. }) => {
+                assert_eq!(participants.len(), 2);
+                assert_eq!(participants[0].display_name.as_deref(), Some("Alice"));
+                assert!(participants[0].muted);
+                assert_eq!(participants[1].display_name, None);
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
     fn message_notification_roundtrip() {
         let env = CommunityEnvelope::MessageNotification {
             channel_id: "ch_01".into(),

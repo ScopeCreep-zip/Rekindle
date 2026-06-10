@@ -11,7 +11,7 @@ pub mod friend;
 
 pub use community::{
     CommunityPresenceDeps, DiscoveredMemberRow, OnlineMemberSnapshot, PresenceCredentials,
-    SegmentDescriptor, SelfPresenceSnapshot,
+    SegmentDescriptor, SelfPresenceSnapshot, VoicePresenceRow,
 };
 pub use friend::{
     FriendPresenceDeps, FriendPresenceEvent, GameInfoSnapshot, SetFriendStatusOutcome,
