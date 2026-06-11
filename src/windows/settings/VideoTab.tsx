@@ -6,48 +6,62 @@ import { commands } from "../../ipc/commands";
 const VideoTab: Component = () => {
   // Plan §Failure 2 — WebView-enumerated camera devices. The list is
   // UI-only (not persisted); the persisted selection lives on
-  // `settingsState.selectedVideoDeviceId` and on `Preferences.videoDeviceId`.
+  // `settingsState.selectedVideoDeviceId/Label` and on
+  // `Preferences.videoDeviceId/videoDeviceLabel`. The LABEL is the
+  // stable key — WebKit deviceIds are origin/data-store salted and
+  // rotate across reinstalls.
   const [videoDevices, setVideoDevices] = createSignal<MediaDeviceInfo[]>([]);
   const [videoEnumError, setVideoEnumError] = createSignal<string | null>(null);
 
-  // Plan §Failure 2 — enumerate cameras + load persisted selection on
-  // mount. WebView-side enumeration: getUserMedia must succeed once
-  // before labels are populated; we request a temporary stream,
-  // enumerate, then immediately stop it.
-  onMount(() => {
+  // WebView-side enumeration: getUserMedia must succeed once in THIS
+  // window before labels populate; request a temporary stream,
+  // enumerate, then immediately stop it. Failures show the REAL
+  // exception text and reach the terminal log via the capture-error
+  // bridge — a silent "System Default only" list is undiagnosable.
+  async function refreshDevices(): Promise<void> {
     setVideoEnumError(null);
-    void (async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: false,
+      });
+      stream.getTracks().forEach((t) => t.stop());
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      setVideoDevices(devices.filter((d) => d.kind === "videoinput"));
+    } catch (e) {
+      const msg = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+      setVideoEnumError(msg);
+      void commands.reportMediaCaptureError("settings-enumerate", msg);
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-        stream.getTracks().forEach((t) => t.stop());
         const devices = await navigator.mediaDevices.enumerateDevices();
         setVideoDevices(devices.filter((d) => d.kind === "videoinput"));
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        setVideoEnumError(msg);
-        try {
-          const devices = await navigator.mediaDevices.enumerateDevices();
-          setVideoDevices(devices.filter((d) => d.kind === "videoinput"));
-        } catch (inner) {
-          console.error("Failed to enumerate video devices:", inner);
-        }
+      } catch (inner) {
+        console.error("Failed to enumerate video devices:", inner);
       }
-    })();
-    commands.getPreferences().then((prefs) => {
-      setSettingsState("selectedVideoDeviceId", prefs.videoDeviceId);
-    }).catch((e) => {
-      console.error("Failed to load video preferences:", e);
-    });
+    }
+  }
+
+  onMount(() => {
+    void refreshDevices();
+    commands
+      .getPreferences()
+      .then((prefs) => {
+        setSettingsState("selectedVideoDeviceId", prefs.videoDeviceId);
+        setSettingsState("selectedVideoDeviceLabel", prefs.videoDeviceLabel);
+      })
+      .catch((e) => {
+        console.error("Failed to load video preferences:", e);
+      });
   });
 
-  // Plan §Failure 2 — write `videoDeviceId` to the Preferences store.
-  // Read by `VideoCallPanel.startCamera()` when a call begins. The full
-  // Preferences struct is round-tripped (the store has no partial-update
-  // command) — same shape as the rest of the settings tab.
+  // Persist BOTH id and label — `VideoCallPanel.startCamera()` resolves
+  // id-first, then label, then default. The full Preferences struct is
+  // round-tripped (the store has no partial-update command).
   async function persistVideoSelection(): Promise<void> {
     try {
       const prefs = await commands.getPreferences();
       prefs.videoDeviceId = settingsState.selectedVideoDeviceId;
+      prefs.videoDeviceLabel = settingsState.selectedVideoDeviceLabel;
       await commands.setPreferences(prefs);
     } catch (e) {
       console.error("Failed to persist video device selection:", e);
@@ -63,7 +77,11 @@ const VideoTab: Component = () => {
           value={settingsState.selectedVideoDeviceId ?? ""}
           onChange={(e) => {
             const next = e.currentTarget.value || null;
+            const label = next
+              ? (videoDevices().find((d) => d.deviceId === next)?.label ?? null)
+              : null;
             setSettingsState("selectedVideoDeviceId", next);
+            setSettingsState("selectedVideoDeviceLabel", label);
             void persistVideoSelection();
           }}
         >
@@ -77,9 +95,19 @@ const VideoTab: Component = () => {
           </For>
         </select>
       </FormField>
+      <Show when={videoDevices().length === 0 || videoEnumError()}>
+        <button
+          type="button"
+          class="form-button"
+          onClick={() => void refreshDevices()}
+        >
+          Request camera access / refresh devices
+        </button>
+      </Show>
       <Show when={videoEnumError()}>
         <div class="settings-hint">
-          Camera permission denied — labels will be hidden until access is granted.
+          Camera access failed: {videoEnumError()} — the device list stays
+          empty until access succeeds (also logged to the app terminal).
         </div>
       </Show>
       <div class="settings-hint">

@@ -26,6 +26,7 @@ export interface SettingsState {
    *  through the same path as audio. WebView enumerates camera devices
    *  client-side so the dropdown lives entirely in the frontend. */
   selectedVideoDeviceId: string | null;
+  selectedVideoDeviceLabel: string | null;
   /** W12.2 — gates the synthesized ring on incoming calls and the
    *  ringback on outgoing calls. Independent from `soundEnabled`
    *  (which only covers message notification sounds) so the user can
@@ -53,6 +54,7 @@ const [settingsState, setSettingsState] = createStore<SettingsState>({
   selectedInputDevice: null,
   selectedOutputDevice: null,
   selectedVideoDeviceId: null,
+  selectedVideoDeviceLabel: null,
   ringtoneEnabled: true,
   ringtoneVolume: 0.4,
   inCallDndAutoEnable: true,

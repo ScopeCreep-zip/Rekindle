@@ -150,6 +150,7 @@ export interface Preferences {
   inputDevice: string | null;
   outputDevice: string | null;
   videoDeviceId: string | null;
+  videoDeviceLabel: string | null;
   inputVolume: number;
   outputVolume: number;
   noiseSuppression: boolean;

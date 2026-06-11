@@ -11,7 +11,6 @@ import { subscribeCommunityEvents } from "../../../ipc/channels";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { setVoiceState, voiceState } from "../../../stores/voice.store";
 import { probeAndReportLocalVideoCapabilities } from "../../../handlers/video.handlers";
-import { settingsState } from "../../../stores/settings.store";
 import {
   setDmPeerDecodeCodecs,
   videoSessionConfigFor,
@@ -481,6 +480,37 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
     return { width: 854, height: 480, frameRate: 15 };
   }
 
+  /// Resolve the persisted camera selection against the LIVE device
+  /// list: exact deviceId first, then label (WebKit deviceIds are
+  /// origin/data-store salted and rotate across reinstalls — the
+  /// label is the stable key), else system default. Preferences are
+  /// read via IPC because Tauri windows are separate JS contexts —
+  /// the Settings WINDOW's store writes never reach this window's
+  /// `settingsState` (the old code read a copy that was always null,
+  /// so the saved selection silently never applied).
+  async function resolveSavedCamera(): Promise<string | undefined> {
+    try {
+      const prefs = await commands.getPreferences();
+      const savedId = prefs.videoDeviceId;
+      const savedLabel = prefs.videoDeviceLabel;
+      if (!savedId && !savedLabel) return undefined;
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const cams = devices.filter((d) => d.kind === "videoinput");
+      if (savedId && cams.some((d) => d.deviceId === savedId)) return savedId;
+      if (savedLabel) {
+        const byLabel = cams.find((d) => d.label === savedLabel);
+        if (byLabel) return byLabel.deviceId;
+      }
+      void commands.reportMediaCaptureError(
+        "camera-saved-device",
+        `saved camera not in device list (id=${savedId ?? "-"}, label=${savedLabel ?? "-"}) — using default`,
+      );
+    } catch {
+      // Preference read / enumeration unavailable — default camera.
+    }
+    return undefined;
+  }
+
   async function startCamera(): Promise<void> {
     setError(null);
     const { width, height, frameRate } = captureConstraints();
@@ -495,13 +525,10 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
         audio: false,
       });
     try {
-      // Honour the persisted camera selection from Settings → Video,
-      // but WebKit deviceIds are origin/data-store salted and rotate
-      // across reinstalls — a stale saved id throws
-      // OverconstrainedError forever. Retry once unpinned (default
-      // camera) and tell the user, instead of a permanently dead
-      // camera button (Discord/Meet behaviour for vanished devices).
-      const savedId = settingsState.selectedVideoDeviceId;
+      // Resolved persisted selection (id → label → default); the
+      // unpinned retry below stays as the safety net for a device
+      // that vanishes between resolution and open.
+      const savedId = await resolveSavedCamera();
       let stream: MediaStream;
       try {
         stream = await open(savedId ?? undefined);

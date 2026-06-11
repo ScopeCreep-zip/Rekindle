@@ -21,6 +21,11 @@ pub struct Preferences {
     /// Selected camera deviceId (WebView MediaDevices). None = system default.
     #[serde(default)]
     pub video_device_id: Option<String>,
+    /// Selected camera LABEL — WebKit deviceIds are origin/data-store
+    /// salted and rotate across reinstalls; the label is the stable
+    /// key. Selection resolves id-first, then label, then default.
+    #[serde(default)]
+    pub video_device_label: Option<String>,
     /// Input volume multiplier (0.0–1.0).
     #[serde(default = "default_volume")]
     pub input_volume: f32,
@@ -91,6 +96,7 @@ impl Default for Preferences {
             input_device: None,
             output_device: None,
             video_device_id: None,
+            video_device_label: None,
             input_volume: 1.0,
             output_volume: 1.0,
             noise_suppression: true,
