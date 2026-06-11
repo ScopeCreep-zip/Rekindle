@@ -79,11 +79,6 @@ impl CapabilitySet {
         Self { capabilities: BTreeSet::new() }
     }
 
-    /// Construct from an iterator of capabilities.
-    pub fn from_iter(iter: impl IntoIterator<Item = Capability>) -> Self {
-        Self { capabilities: iter.into_iter().collect() }
-    }
-
     /// Set union: all capabilities from both sets.
     pub fn union(&self, other: &Self) -> Self {
         Self {
@@ -167,6 +162,12 @@ impl CapabilitySet {
                 }
             }
         }
+    }
+}
+
+impl std::iter::FromIterator<Capability> for CapabilitySet {
+    fn from_iter<I: IntoIterator<Item = Capability>>(iter: I) -> Self {
+        Self { capabilities: iter.into_iter().collect() }
     }
 }
 

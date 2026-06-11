@@ -86,6 +86,15 @@ pub fn dh_public_from_seed(seed: &DhSeed) -> Result<DhKey, IdentityError> {
     Ok(DhKey(out))
 }
 
+/// Derive the X25519 seed bytes from any 32-byte seed via G2.
+///
+/// Used by community operations that derive X25519 keys from pseudonym
+/// seeds for MEK wrapping ECDH. The returned bytes are the raw X25519
+/// private scalar suitable for `reusable_from_seed()`.
+pub fn x25519_seed_from(seed: &[u8; 32]) -> [u8; 32] {
+    blake3::derive_key(crate::origin::tags::derivation_tags::DH_FROM_SEED, seed)
+}
+
 /// Perform X25519 DH agreement between our seed and a peer's DhKey.
 ///
 /// Returns the 32-byte shared secret wrapped in `Zeroizing`.
@@ -152,7 +161,7 @@ mod tests {
         let o = originate_from_seed(
             OriginSeed::from_vault_bytes(Zeroizing::new(seed))
         ).unwrap();
-        assert_eq!(o.dh_seed.as_bytes(), &expected);
+        assert_eq!(o.dh_seed.expose(), &expected);
     }
 
     #[test]

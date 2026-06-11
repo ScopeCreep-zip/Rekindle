@@ -97,6 +97,29 @@ impl core::fmt::Debug for PersonaSecrets {
     }
 }
 
+/// G3 only — pseudonym seed derivation. Called by `SelfIdentity::pseudonym_seed()`.
+///
+/// Separated from `derive_persona` so that `SelfIdentity` can produce just
+/// the seed without materializing the full persona (G4+G5). The derivation
+/// grammar is frozen — this function delegates to the same IKM construction
+/// as `derive_persona`, never inlines a domain tag.
+pub(crate) fn pseudonym_seed_from_origin(
+    seed: &OriginSeed,
+    governance: &GovernanceKey,
+) -> Zeroizing<[u8; 32]> {
+    let canonical = governance.canonical_bytes();
+    let substrate_byte = governance.substrate().discriminant_byte();
+
+    let mut ikm = Vec::with_capacity(32 + 1 + canonical.len());
+    ikm.extend_from_slice(seed.expose());
+    ikm.push(substrate_byte);
+    ikm.extend_from_slice(canonical);
+
+    let result = blake3::derive_key(derivation_tags::PSEUDONYM_SEED, &ikm);
+    zeroize::Zeroize::zeroize(&mut ikm);
+    Zeroizing::new(result)
+}
+
 /// G3 + G4 + G5 in one call. The ONLY pseudonym producer in the workspace.
 ///
 /// Derivation grammar (pinned):
@@ -110,26 +133,9 @@ pub fn derive_persona(
     governance: &GovernanceKey,
     slot_index: u32,
 ) -> Result<(CommunityPersona, PersonaSecrets), IdentityError> {
-    // G3: Pseudonym seed derivation
-    //
-    // IKM = OriginSeed (32 bytes) ‖ substrate_discriminant (1 byte) ‖ canonical_bytes (variable)
-    //
-    // v2 grammar: fixed context string, governance key in IKM (not interpolated
-    // into the context string). Substrate discriminant byte in IKM per A-7.
-    let canonical = governance.canonical_bytes();
-    let substrate_byte = governance.substrate().discriminant_byte();
-
-    let mut ikm = Vec::with_capacity(32 + 1 + canonical.len());
-    ikm.extend_from_slice(seed.expose());
-    ikm.push(substrate_byte);
-    ikm.extend_from_slice(canonical);
-
-    let pseudonym_seed_raw = blake3::derive_key(derivation_tags::PSEUDONYM_SEED, &ikm);
-
-    // Zeroize the IKM (contains seed bytes in the clear)
-    zeroize::Zeroize::zeroize(&mut ikm);
-
-    let pseudonym_seed = Zeroizing::new(pseudonym_seed_raw);
+    // G3: Pseudonym seed derivation — delegates to the extracted function
+    // so that SelfIdentity::pseudonym_seed() can call it independently.
+    let pseudonym_seed = pseudonym_seed_from_origin(seed, governance);
 
     // G4: Ed25519 pseudonym keypair from pseudonym seed
     let kp = sign::keypair_from_seed(&pseudonym_seed)

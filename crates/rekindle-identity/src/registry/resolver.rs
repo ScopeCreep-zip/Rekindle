@@ -31,21 +31,23 @@ pub struct ResolvedPeer {
 }
 
 /// Remote peer resolution cache. Bounded LRU, DashMap-sharded.
+///
+/// The `insert` method uses the DashMap `entry` API to make
+/// presence-check and insertion atomic, preventing the TOCTOU race
+/// where two threads both see the key as absent and both insert.
 pub struct PeerResolver {
     entries: DashMap<PeerRef, ResolvedPeer>,
-    /// LRU eviction order. Protected by a single mutex — only
-    /// touched on insert and eviction, not on reads.
+    /// LRU eviction order. The mutex serializes insert/eviction.
+    /// Reads (`get`) never touch this.
     lru_order: Mutex<VecDeque<PeerRef>>,
     capacity: usize,
 }
 
 impl PeerResolver {
-    /// Create a resolver with the default capacity.
     pub fn new() -> Self {
         Self::with_capacity(DEFAULT_CAPACITY)
     }
 
-    /// Create a resolver with a specific capacity.
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             entries: DashMap::new(),
@@ -60,19 +62,31 @@ impl PeerResolver {
     }
 
     /// Insert or update a cached peer. Evicts LRU if at capacity.
+    ///
+    /// Uses the DashMap entry API to make the new-vs-update decision
+    /// atomic — no TOCTOU between contains_key and insert.
     pub fn insert(&self, peer: PeerRef, resolved: ResolvedPeer) {
-        if !self.entries.contains_key(&peer) {
-            // New entry — add to LRU and potentially evict
-            let mut lru = self.lru_order.lock().expect("lru lock poisoned");
-            if lru.len() >= self.capacity {
-                // Evict oldest
-                if let Some(evicted) = lru.pop_front() {
-                    self.entries.remove(&evicted);
-                }
+        let mut lru = self.lru_order.lock().expect("lru lock poisoned");
+
+        // Phase 1: evict if at capacity BEFORE acquiring the entry guard.
+        // This prevents the same-shard self-deadlock where entry(peer) holds
+        // a shard lock and remove(&evicted) tries to acquire the same shard.
+        if !self.entries.contains_key(&peer) && lru.len() >= self.capacity {
+            if let Some(evicted) = lru.pop_front() {
+                self.entries.remove(&evicted);
             }
-            lru.push_back(peer);
         }
-        self.entries.insert(peer, resolved);
+
+        // Phase 2: insert or update. No eviction under this guard.
+        match self.entries.entry(peer) {
+            dashmap::mapref::entry::Entry::Vacant(v) => {
+                lru.push_back(peer);
+                v.insert(resolved);
+            }
+            dashmap::mapref::entry::Entry::Occupied(mut o) => {
+                o.insert(resolved);
+            }
+        }
     }
 
     /// Update the locator record for a peer.
@@ -106,26 +120,13 @@ impl PeerResolver {
         removed.map(|(_, v)| v)
     }
 
-    /// Number of cached peers.
-    pub fn len(&self) -> usize {
-        self.entries.len()
-    }
-
-    /// Whether the cache is empty.
-    pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
-    }
-
-    /// Cache capacity.
-    pub fn capacity(&self) -> usize {
-        self.capacity
-    }
+    pub fn len(&self) -> usize { self.entries.len() }
+    pub fn is_empty(&self) -> bool { self.entries.is_empty() }
+    pub fn capacity(&self) -> usize { self.capacity }
 }
 
 impl Default for PeerResolver {
-    fn default() -> Self {
-        Self::new()
-    }
+    fn default() -> Self { Self::new() }
 }
 
 #[cfg(test)]
@@ -173,7 +174,6 @@ mod tests {
             resolver.insert(peer, empty_resolved());
         }
 
-        // Capacity is 4, we inserted 5. First should be evicted.
         assert_eq!(resolver.len(), 4);
         assert!(resolver.get(&peers[0]).is_none(), "oldest entry must be evicted");
         assert!(resolver.get(&peers[4]).is_some(), "newest entry must survive");
@@ -212,6 +212,25 @@ mod tests {
     }
 
     #[test]
+    fn concurrent_insert_no_duplicate() {
+        use std::sync::Arc;
+        let resolver = Arc::new(PeerResolver::with_capacity(100));
+        let peer = make_peer(0x01);
+
+        let handles: Vec<_> = (0..8).map(|_| {
+            let resolver = Arc::clone(&resolver);
+            std::thread::spawn(move || {
+                resolver.insert(peer, empty_resolved());
+            })
+        }).collect();
+
+        for h in handles { h.join().unwrap(); }
+
+        assert_eq!(resolver.len(), 1,
+            "concurrent inserts of same key must produce one entry");
+    }
+
+    #[test]
     fn concurrent_reads() {
         use std::sync::Arc;
         let resolver = Arc::new(PeerResolver::new());
@@ -232,8 +251,6 @@ mod tests {
             })
         }).collect();
 
-        for h in handles {
-            h.join().unwrap();
-        }
+        for h in handles { h.join().unwrap(); }
     }
 }

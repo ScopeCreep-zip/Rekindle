@@ -14,7 +14,8 @@ use dashmap::DashMap;
 
 use crate::locator::record::LocatorRecord;
 use crate::locator::GovernanceKey;
-use crate::origin::originate::{IdentityRoot, RotationEpoch};
+use crate::origin::originate::RotationEpoch;
+use crate::peer::PeerId;
 use crate::projection::pseudonym::CommunityPersona;
 use crate::root::PeerRef;
 
@@ -46,10 +47,14 @@ impl GovernanceKeyHash {
 }
 
 impl ResidentIdentity {
-    /// Construct a new resident identity.
-    pub fn new(root: IdentityRoot, epoch: RotationEpoch) -> Self {
+    /// Construct a new resident identity from a PeerId.
+    ///
+    /// The PeerRef is copied from the PeerId — no PeerRef::anchor()
+    /// mint here. The PeerId was constructed via bind() which is
+    /// the sanctioned anchor mint site.
+    pub fn new(peer_id: &PeerId, epoch: RotationEpoch) -> Self {
         Self {
-            peer: PeerRef::anchor(root),
+            peer: *peer_id.peer_ref(),
             epoch,
             locators: ArcSwap::new(Arc::new(None)),
             persona_cache: DashMap::new(),
@@ -151,15 +156,32 @@ impl Default for ResidentSet {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::locator::ProfileLocator;
+    use crate::operational::dh::dh_public_from_seed;
     use crate::origin::originate::originate_from_seed;
     use crate::origin::seed::OriginSeed;
+    use crate::peer::{CryptoIdentity, NetworkAddr, SocialProfile};
     use zeroize::Zeroizing;
 
-    fn make_resident(byte: u8) -> ResidentIdentity {
+    fn make_peer_id(byte: u8) -> PeerId {
         let o = originate_from_seed(
             OriginSeed::from_vault_bytes(Zeroizing::new([byte; 32]))
         ).unwrap();
-        ResidentIdentity::new(o.root, RotationEpoch::ORIGIN)
+        let dh = dh_public_from_seed(&o.dh_seed).unwrap();
+        let crypto = CryptoIdentity { root: o.root, dh };
+        let network = NetworkAddr {
+            profile: ProfileLocator::parse("VLD0:test").unwrap(),
+            mailbox: None,
+            inbox: None,
+            locator_epoch: 0,
+        };
+        let social = SocialProfile { display: None, cached_name: None };
+        PeerId::bind(crypto, network, social)
+    }
+
+    fn make_resident(byte: u8) -> ResidentIdentity {
+        let peer_id = make_peer_id(byte);
+        ResidentIdentity::new(&peer_id, RotationEpoch::ORIGIN)
     }
 
     #[test]

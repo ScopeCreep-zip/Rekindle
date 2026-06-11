@@ -63,6 +63,9 @@ pub mod derivation_tags {
 
     /// DisplayName signed claim domain.
     pub const DISPLAY_NAME_SIGN: &str = "rekindle identity display-name v1";
+
+    /// Community member slot seed.
+    pub const SLOT_SEED: &str = "rekindle identity slot-seed v1";
 }
 
 #[cfg(test)]
@@ -88,6 +91,7 @@ mod tests {
             PREKEY_BINDING_SIGN,
             LOCATOR_SIGN,
             DISPLAY_NAME_SIGN,
+            SLOT_SEED,
         ];
         let mut seen = std::collections::HashSet::new();
         for tag in &tags {
@@ -115,6 +119,7 @@ mod tests {
             PREKEY_BINDING_SIGN,
             LOCATOR_SIGN,
             DISPLAY_NAME_SIGN,
+            SLOT_SEED,
         ];
         for tag in &tags {
             assert!(
@@ -139,7 +144,7 @@ mod tests {
             DEVICE_SIGN, ROTATION_SIGN, REVOCATION_SIGN, DEATH_SIGN,
             LINKAGE_ROOT_SIGN, LINKAGE_PSEUDONYM_SIGN,
             GRANT_SIGN, PREKEY_BINDING_SIGN, LOCATOR_SIGN,
-            DISPLAY_NAME_SIGN,
+            DISPLAY_NAME_SIGN, SLOT_SEED,
         ];
         for tag in &tags {
             assert!(!tag.is_empty(), "empty tag");

@@ -1,0 +1,10 @@
+error[E0624]: associated function `from_verified` is private
+ --> tests/compile_fail/verified_no_external_constructor.rs:7:31
+  |
+7 |     let _v = Verified::<u64>::from_verified(42); // must not compile — pub(crate)
+  |                               ^^^^^^^^^^^^^ private associated function
+  |
+ ::: src/wire/verified.rs
+  |
+  |     pub(crate) fn from_verified(inner: T) -> Self {
+  |     --------------------------------------------- private associated function defined here

@@ -1,0 +1,5 @@
+error[E0599]: no method named `clone` found for struct `OriginSeed` in the current scope
+ --> tests/compile_fail/origin_seed_not_clone.rs:7:22
+  |
+7 |     let _copy = seed.clone(); // must not compile
+  |                      ^^^^^ method not found in `OriginSeed`

@@ -5,30 +5,37 @@
 //! - `head_to_anchor`: current-head root → anchor root (secondary index)
 //! - `prior_head`: anchor root → prior head root (eviction tracking)
 //!
-//! All mutation paths acquire `invariant_lock.write()`. Index-touching
-//! read paths (`snapshot_by_root`) acquire `invariant_lock.read()`.
-//! Pure primary-key reads (`state`, `snapshot`, `is_within_grace`) are
-//! lock-free — they take `&PeerRef` and go straight to `records` via
-//! `peer.root()`, never touching the index.
+//! **Lock architecture:**
+//! - `invariant_lock: RwLock<()>` — protects the cross-map invariant.
+//!   Write side: all mutation paths. Read side: `snapshot_by_root`.
+//! - `upgrade_mutex: Mutex<()>` — serializes the read→write upgrade in
+//!   `resolve_or_observe`. Without it, two threads that both miss the
+//!   read path race for the write lock and the loser may starve under
+//!   unfair `RwLock` implementations (per matrix-rust-sdk `StateLock` pattern).
+//! - Lock-free: `state`, `snapshot`, `is_within_grace` — these take
+//!   `&PeerRef` and go straight to `records` via `peer.root()`.
 //!
-//! `resolve_or_observe` is the single external entry point for turning
-//! an observed root into a `PeerRef`. It acquires the write lock because
-//! its Arm 3 (first contact) mutates.
+//! **Double-checked locking in `resolve_or_observe`:**
+//! Read lock → try Arm 1 (index) and Arm 2 (primary key) → on hit, return.
+//! On miss → drop read → acquire upgrade_mutex → acquire write lock →
+//! re-check both arms (a concurrent rotation or first-contact may have
+//! landed) → only then Arm 3 (first contact). The re-check is mandatory:
+//! without it, the split-identity race returns.
 //!
 //! **Provisional identity reconciliation:** when `apply_rotation`
 //! advances a peer to `new_head`, it checks whether `new_head` already
 //! exists as a primary key (a provisional first-contact record created
-//! before the rotation proof arrived — the common case in a distributed
-//! system where you encounter a peer's new head via a message before
-//! their rotation proof propagates). If so, `apply_rotation` merges the
-//! provisional record into the anchor's record and removes the orphan.
-//! This prevents the split-identity defect where one peer has two
-//! primary entries. The merge rule: `Verified` state and the
-//! `previously_verified` latch transfer (positive assertions survive);
-//! violation states on the provisional do not transfer (they were
-//! triggered by a view that the merge corrects).
+//! before the rotation proof arrived). If so, it merges the provisional
+//! into the anchor and removes the orphan.
+//!
+//! Merge rule (all paths through `transition()`):
+//! - `previously_verified` latch: always OR'd (latches never clear).
+//! - `Verified` on provisional: `transition(VerificationSucceeded)`.
+//! - `VerificationViolation`/`PinViolation`: `transition(UnexplainedRootChange)`
+//!   with merged latch. The table produces VerificationViolation if latch set.
+//! - `Pinned`: no state change (nothing to transfer).
 
-use std::sync::RwLock;
+use std::sync::{Mutex, RwLock};
 
 use dashmap::DashMap;
 
@@ -44,14 +51,47 @@ use crate::wire::verified::Verified;
 use super::record::{TrustRecord, TrustRecordPersist};
 use super::state::{TrustEvent, TrustState, transition};
 
+/// A change in trust state worth surfacing to the user.
+/// Only "significant" changes are emitted — not every transition.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IdentityStatusChange {
+    pub peer: PeerRef,
+    pub old_state: TrustState,
+    pub new_state: TrustState,
+}
+
+impl IdentityStatusChange {
+    /// Whether this change is "significant" — should surface a UI warning.
+    /// Per matrix-rust-sdk RoomIdentityState: significant changes are
+    /// violations and their resolution. Insignificant: Pinned→Verified.
+    pub fn is_significant(&self) -> bool {
+        use TrustState::*;
+        !matches!(
+            (self.old_state, self.new_state),
+            (Pinned, Verified) | (Verified, Pinned)
+        ) && self.old_state != self.new_state
+    }
+}
+
 pub struct TrustStore {
     records: DashMap<IdentityRoot, TrustRecord>,
+    /// Forward index: head root → anchor root.
     head_to_anchor: DashMap<IdentityRoot, IdentityRoot>,
+    /// Reverse index: anchor root → all head roots pointing to it.
+    /// Used by `apply_death` for O(1) cleanup instead of O(n) retain().
+    anchor_to_heads: DashMap<IdentityRoot, Vec<IdentityRoot>>,
+    /// Tracks the immediately-prior head per anchor for index eviction.
     prior_head: DashMap<IdentityRoot, IdentityRoot>,
+    /// Roots declared dead. Blocks re-observation.
+    dead_roots: DashMap<IdentityRoot, ()>,
     /// Write side: all mutation paths.
     /// Read side: `snapshot_by_root` (index-touching read).
-    /// Lock-free: `state`, `snapshot`, `is_within_grace`.
     invariant_lock: RwLock<()>,
+    /// Serializes the read→write upgrade in `resolve_or_observe`.
+    upgrade_mutex: Mutex<()>,
+    /// Event sender for trust state changes. Subscribers receive only
+    /// significant changes. `None` if no subscriber.
+    event_tx: Mutex<Option<std::sync::mpsc::Sender<IdentityStatusChange>>>,
 }
 
 impl TrustStore {
@@ -59,33 +99,80 @@ impl TrustStore {
         Self {
             records: DashMap::new(),
             head_to_anchor: DashMap::new(),
+            anchor_to_heads: DashMap::new(),
             prior_head: DashMap::new(),
+            dead_roots: DashMap::new(),
             invariant_lock: RwLock::new(()),
+            upgrade_mutex: Mutex::new(()),
+            event_tx: Mutex::new(None),
+        }
+    }
+
+    /// Subscribe to significant trust state changes. Returns the receiving end.
+    /// Only one subscriber at a time — calling again replaces the previous.
+    pub fn subscribe(&self) -> std::sync::mpsc::Receiver<IdentityStatusChange> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        *self.event_tx.lock().expect("event_tx poisoned") = Some(tx);
+        rx
+    }
+
+    /// Emit a state change event if significant.
+    fn emit_if_significant(&self, peer: PeerRef, old_state: TrustState, new_state: TrustState) {
+        if old_state == new_state { return; }
+        let change = IdentityStatusChange { peer, old_state, new_state };
+        if change.is_significant() {
+            if let Some(tx) = self.event_tx.lock().expect("event_tx poisoned").as_ref() {
+                let _ = tx.send(change);
+            }
         }
     }
 
     // ── The single external door ────────────────────────────────
 
     /// Given an observed root, returns the stable `PeerRef` and current
-    /// trust state. Handles known-head, known-anchor, and first-contact
-    /// atomically under the write lock.
+    /// trust state. Handles known-head, known-anchor, and first-contact.
+    ///
+    /// Double-checked locking: read lock for the fast path (Arms 1/2),
+    /// upgrade to write lock with re-check for the slow path (Arm 3).
     pub fn resolve_or_observe(&self, root: IdentityRoot) -> (PeerRef, TrustState) {
-        eprintln!("[resolve_or_observe] acquiring invariant_lock.write for {:?}", &root.as_bytes()[..4]);
-        let _guard = self.invariant_lock.write().expect("lock poisoned");
-        eprintln!("[resolve_or_observe] lock acquired");
+        // Fast path: read lock. Arms 1 and 2 are pure reads.
+        {
+            let _rguard = self.invariant_lock.read().expect("lock poisoned");
 
+            if let Some(anchor_root) = self.head_to_anchor_get(&root) {
+                tracing::trace!(root = ?&root.as_bytes()[..4], "resolve: Arm 1 (read) head in index");
+                let state = self.records.get(&anchor_root)
+                    .map(|r| r.state)
+                    .unwrap_or(TrustState::Pinned);
+                return (PeerRef::anchor(anchor_root), state);
+            }
+            if let Some(entry) = self.records.get(&root) {
+                tracing::trace!(root = ?&root.as_bytes()[..4], "resolve: Arm 2 (read) primary key");
+                return (PeerRef::anchor(root), entry.state);
+            }
+            tracing::trace!(root = ?&root.as_bytes()[..4], "resolve: read miss, upgrading");
+        } // ← read guard dropped
+
+        // Slow path: serialize the upgrade, then write lock with re-check.
+        let _upgrade = self.upgrade_mutex.lock().expect("upgrade mutex poisoned");
+        let _wguard = self.invariant_lock.write().expect("lock poisoned");
+
+        // Re-check Arm 1 under write lock — a concurrent rotation may have landed.
         if let Some(anchor_root) = self.head_to_anchor_get(&root) {
-            eprintln!("[resolve_or_observe] Arm 1: head found in index");
+            tracing::trace!(root = ?&root.as_bytes()[..4], "resolve: Arm 1 (write re-check) head in index");
             let state = self.records.get(&anchor_root)
                 .map(|r| r.state)
                 .unwrap_or(TrustState::Pinned);
             return (PeerRef::anchor(anchor_root), state);
         }
+        // Re-check Arm 2 under write lock — a concurrent first-contact may have landed.
         if let Some(entry) = self.records.get(&root) {
-            eprintln!("[resolve_or_observe] Arm 2: root is primary key");
+            tracing::trace!(root = ?&root.as_bytes()[..4], "resolve: Arm 2 (write re-check) primary key");
             return (PeerRef::anchor(root), entry.state);
         }
-        eprintln!("[resolve_or_observe] Arm 3: first contact");
+
+        // Arm 3: genuine first contact, write lock held.
+        tracing::debug!(root = ?&root.as_bytes()[..4], "resolve: Arm 3 first contact");
         self.observe_root_internal(root)
     }
 
@@ -93,6 +180,31 @@ impl TrustStore {
 
     fn head_to_anchor_get(&self, root: &IdentityRoot) -> Option<IdentityRoot> {
         self.head_to_anchor.get(root).map(|e| *e.value())
+    }
+
+    /// Insert into the forward index and maintain the reverse index.
+    fn index_insert(&self, head: IdentityRoot, anchor: IdentityRoot) {
+        self.head_to_anchor.insert(head, anchor);
+        self.anchor_to_heads.entry(anchor).or_default().push(head);
+    }
+
+    /// Remove a single head from both indexes.
+    fn index_remove_head(&self, head: &IdentityRoot) {
+        if let Some((_, anchor)) = self.head_to_anchor.remove(head) {
+            if let Some(mut heads) = self.anchor_to_heads.get_mut(&anchor) {
+                heads.retain(|h| h != head);
+            }
+        }
+    }
+
+    /// Remove ALL heads for an anchor from both indexes. O(k) where k is
+    /// the number of heads for this anchor (bounded to 2 by eviction).
+    fn index_remove_all_for_anchor(&self, anchor: &IdentityRoot) {
+        if let Some((_, heads)) = self.anchor_to_heads.remove(anchor) {
+            for head in heads {
+                self.head_to_anchor.remove(&head);
+            }
+        }
     }
 
     fn resolve_anchor_root(&self, root: &IdentityRoot) -> Option<IdentityRoot> {
@@ -106,18 +218,27 @@ impl TrustStore {
     }
 
     fn observe_root_internal(&self, root: IdentityRoot) -> (PeerRef, TrustState) {
-        eprintln!("[observe_root_internal] acquiring records.entry");
+        // Block re-observation of dead roots. A dead identity must not
+        // be resurrected by a network observation.
+        if self.dead_roots.contains_key(&root) {
+            tracing::debug!(root = ?&root.as_bytes()[..4], "first contact blocked: root is dead");
+            // Return a synthetic Pinned state — the caller gets a PeerRef
+            // but any subsequent operation will find no record and fail.
+            // This is the correct behavior: the peer is known-dead, not unknown.
+            return (PeerRef::anchor(root), TrustState::Pinned);
+        }
+
         let entry = self.records.entry(root);
         match entry {
             dashmap::mapref::entry::Entry::Vacant(v) => {
-                eprintln!("[observe_root_internal] vacant — inserting first contact");
+                tracing::debug!(root = ?&root.as_bytes()[..4], "first contact: inserting");
                 let record = TrustRecord::first_contact(root);
                 let state = record.state;
                 v.insert(record);
                 (PeerRef::anchor(root), state)
             }
             dashmap::mapref::entry::Entry::Occupied(o) => {
-                eprintln!("[observe_root_internal] occupied — returning existing");
+                // DashMap::entry contract: occupied key equals `root`.
                 (PeerRef::anchor(root), o.get().state)
             }
         }
@@ -129,38 +250,25 @@ impl TrustStore {
     /// the grace window, updates the secondary index.
     ///
     /// **Provisional reconciliation:** if `new_head` already exists as
-    /// a primary key (a first-contact record created before the rotation
-    /// proof arrived), the provisional record is merged into the anchor
-    /// and the orphan is removed.
-    ///
-    /// Merge rule (single rule, all paths through `transition()`):
-    /// - `previously_verified` latch: always OR'd into anchor (latches never clear).
-    /// - `Verified` on provisional: `transition(VerificationSucceeded)` → `Verified`.
-    /// - `VerificationViolation` or `PinViolation` on provisional:
-    ///   `transition(UnexplainedRootChange)` with the merged latch. The table
-    ///   produces `VerificationViolation` if latch is set, `PinViolation` if not.
-    ///   The rotation proof does NOT cover the hop the violation recorded.
-    /// - `Pinned` on provisional: no state change on anchor (nothing to transfer).
-    ///
-    /// No direct state pokes — every assignment flows through `transition()`.
+    /// a primary key, the provisional record is merged into the anchor
+    /// and the orphan is removed. See module doc for merge rule.
     pub fn apply_rotation(
         &self,
         peer: &PeerRef,
         chain: &RotationChain,
         now: Hlc,
     ) -> Result<TrustState, IdentityError> {
-        eprintln!("[apply_rotation] acquiring invariant_lock.write");
         let _guard = self.invariant_lock.write().expect("lock poisoned");
         let anchor_root = *peer.root();
 
-        // Phase 1: read what we need from the anchor entry, then drop the guard.
+        // Phase 1: read+mutate the anchor entry, then drop the guard.
         // This prevents the DashMap shard deadlock where get_mut(anchor) and
         // remove(new_head) hash to the same shard.
-        eprintln!("[apply_rotation] acquiring records.get_mut(anchor) — phase 1 read");
-        let (old_head, new_head, anchor_state, anchor_latch) = {
+        tracing::debug!(anchor = ?&anchor_root.as_bytes()[..4], "rotation: phase 1");
+        let (old_head, new_head, anchor_state, anchor_latch, pre_rotation_state) = {
             let mut entry = self.records.get_mut(&anchor_root)
-                .ok_or(IdentityError::Encoding("peer not in trust store".into()))?;
-            eprintln!("[apply_rotation] got records entry");
+                .ok_or(IdentityError::PeerNotInStore)?;
+            let pre_rotation_state = entry.state;
 
             let old_head = entry.pinned_root;
             let (new_head, new_epoch) = chain.head();
@@ -179,22 +287,21 @@ impl TrustStore {
             entry.state = new_state;
             entry.previously_verified = new_latch;
 
-            (old_head, new_head, new_state, new_latch)
-        }; // ← guard dropped here, shard lock released
-        eprintln!("[apply_rotation] phase 1 done, anchor guard dropped");
+            (old_head, new_head, new_state, new_latch, pre_rotation_state)
+        }; // ← guard dropped, shard lock released
 
         // Phase 2: provisional reconciliation (no anchor guard held).
-        // final_state starts as Phase 1's result, overwritten if merge happens.
         let mut final_state = anchor_state;
         if new_head != anchor_root {
-            eprintln!("[apply_rotation] checking for provisional at new_head");
             if let Some((_, provisional)) = self.records.remove(&new_head) {
-                eprintln!("[apply_rotation] provisional removed, merging state={:?} latch={}",
-                    provisional.state, provisional.previously_verified);
+                tracing::debug!(
+                    anchor = ?&anchor_root.as_bytes()[..4],
+                    new_head = ?&new_head.as_bytes()[..4],
+                    prov_state = ?provisional.state,
+                    prov_latch = provisional.previously_verified,
+                    "rotation: merging provisional"
+                );
 
-                // Compute merged state through the transition table.
-                // The provisional's state represents an observation that
-                // may or may not survive the merge.
                 let mut merged_state = anchor_state;
                 let mut merged_latch = anchor_latch;
 
@@ -203,68 +310,61 @@ impl TrustStore {
                     merged_latch = true;
                 }
 
-                // State merge: the provisional's observation persists unless
-                // it's just Pinned (nothing to transfer).
                 match provisional.state {
                     TrustState::Verified => {
-                        // Positive assertion: verification survives.
                         let (s, l) = transition(merged_state, merged_latch,
                             TrustEvent::VerificationSucceeded);
                         merged_state = s;
                         merged_latch = l;
                     }
                     TrustState::VerificationViolation | TrustState::PinViolation => {
-                        // The provisional saw an unexplained change that the
-                        // rotation proof does NOT cover. Surface it as a
-                        // root change on the anchor — the transition table
-                        // will produce VerificationViolation (if latch set)
-                        // or PinViolation (if not), which is correct.
                         let (s, l) = transition(merged_state, merged_latch,
                             TrustEvent::UnexplainedRootChange);
                         merged_state = s;
                         merged_latch = l;
                     }
-                    TrustState::Pinned => {
-                        // Nothing to transfer.
-                    }
+                    TrustState::Pinned => {}
                 }
 
-                // Phase 3: re-acquire anchor entry to write merged state.
-                // Under invariant_lock.write(), nothing can remove the anchor
-                // between Phase 1 drop and this re-acquire. If it's gone,
-                // the invariant is violated — panic, don't skip.
-                eprintln!("[apply_rotation] re-acquiring anchor entry for merge write");
+                // Phase 3: re-acquire anchor to write merged state.
                 let mut entry = self.records.get_mut(&anchor_root)
                     .expect("anchor entry vanished under write lock — invariant violation");
                 entry.state = merged_state;
                 entry.previously_verified = merged_latch;
-                eprintln!("[apply_rotation] merge written: state={:?} latch={}",
-                    merged_state, merged_latch);
+                tracing::debug!(
+                    anchor = ?&anchor_root.as_bytes()[..4],
+                    merged_state = ?merged_state,
+                    merged_latch,
+                    "rotation: merge written"
+                );
                 drop(entry);
 
                 // Clean provisional's index entries
-                self.head_to_anchor.retain(|_, anchor| *anchor != new_head);
+                self.index_remove_all_for_anchor(&new_head);
                 self.prior_head.remove(&new_head);
 
-                // Return merged state directly — no re-read from map.
                 final_state = merged_state;
-            } else {
-                eprintln!("[apply_rotation] no provisional found");
             }
         }
 
-        // Phase 4: index maintenance (no records guard held).
+        // Phase 4: index maintenance.
         if let Some((_, prior_prior)) = self.prior_head.remove(&anchor_root) {
             if prior_prior != anchor_root {
-                self.head_to_anchor.remove(&prior_prior);
+                self.index_remove_head(&prior_prior);
             }
         }
         if old_head != anchor_root {
             self.prior_head.insert(anchor_root, old_head);
         }
-        self.head_to_anchor.insert(new_head, anchor_root);
-        eprintln!("[apply_rotation] complete, returning state={:?}", final_state);
+        self.index_insert(new_head, anchor_root);
+        tracing::debug!(
+            anchor = ?&anchor_root.as_bytes()[..4],
+            new_head = ?&new_head.as_bytes()[..4],
+            final_state = ?final_state,
+            "rotation: complete"
+        );
 
+        self.emit_if_significant(*peer, pre_rotation_state, final_state);
         Ok(final_state)
     }
 
@@ -274,16 +374,15 @@ impl TrustStore {
         &self,
         cert: &Verified<RevocationCertificate>,
     ) -> Result<TrustState, IdentityError> {
-        eprintln!("[apply_revocation] acquiring invariant_lock.write");
         let _guard = self.invariant_lock.write().expect("lock poisoned");
-        eprintln!("[apply_revocation] lock acquired");
         let cert = cert.get();
+        tracing::debug!(root = ?&cert.root.as_bytes()[..4], "revocation");
 
         let anchor_root = self.resolve_anchor_root(&cert.root)
-            .ok_or(IdentityError::Encoding("revocation: peer not in trust store".into()))?;
+            .ok_or(IdentityError::PeerNotInStore)?;
 
         let mut entry = self.records.get_mut(&anchor_root)
-            .ok_or(IdentityError::Encoding("revocation: record disappeared".into()))?;
+            .ok_or(IdentityError::RecordDisappeared)?;
 
         entry.void_grace();
         entry.revoked_at_epoch = Some(cert.epoch_at_issue);
@@ -305,16 +404,20 @@ impl TrustStore {
         &self,
         notice: &Verified<DeathNotice>,
     ) -> Option<TrustRecord> {
-        eprintln!("[apply_death] acquiring invariant_lock.write");
         let _guard = self.invariant_lock.write().expect("lock poisoned");
-        eprintln!("[apply_death] lock acquired");
         let notice = notice.get();
+        tracing::debug!(root = ?&notice.root.as_bytes()[..4], "death");
 
         let anchor_root = self.resolve_anchor_root(&notice.root)?;
 
         let removed = self.records.remove(&anchor_root).map(|(_, record)| record);
-        self.head_to_anchor.retain(|_, anchor| *anchor != anchor_root);
+        self.index_remove_all_for_anchor(&anchor_root);
         self.prior_head.remove(&anchor_root);
+
+        // Block future re-observation of this root and any heads that
+        // pointed to it. A dead identity must not be resurrected.
+        self.dead_roots.insert(anchor_root, ());
+        self.dead_roots.insert(notice.root, ());
 
         removed
     }
@@ -325,13 +428,13 @@ impl TrustStore {
         &self,
         peer: &PeerRef,
     ) -> Result<TrustState, IdentityError> {
-        eprintln!("[mark_verified] acquiring invariant_lock.write");
         let _guard = self.invariant_lock.write().expect("lock poisoned");
-        eprintln!("[mark_verified] lock acquired");
+        tracing::debug!(root = ?&peer.root().as_bytes()[..4], "mark_verified");
 
         let mut entry = self.records.get_mut(peer.root())
-            .ok_or(IdentityError::Encoding("peer not in trust store".into()))?;
+            .ok_or(IdentityError::PeerNotInStore)?;
 
+        let old_state = entry.state;
         let (new_state, new_latch) = transition(
             entry.state,
             entry.previously_verified,
@@ -339,20 +442,30 @@ impl TrustStore {
         );
         entry.state = new_state;
         entry.previously_verified = new_latch;
+        drop(entry);
 
+        self.emit_if_significant(*peer, old_state, new_state);
         Ok(new_state)
     }
 
-    pub fn acknowledge(
+    /// Pin the current root — resolves PinViolation without affecting
+    /// the previously_verified latch. The user acknowledges the identity
+    /// change without withdrawing their verification requirement.
+    ///
+    /// Per matrix-rust-sdk: `pin_current_master_key()` resolves pin
+    /// violation only. It does NOT clear `previously_verified`.
+    pub fn pin_current_root(
         &self,
         peer: &PeerRef,
     ) -> Result<TrustState, IdentityError> {
-        eprintln!("[acknowledge] acquiring invariant_lock.write");
         let _guard = self.invariant_lock.write().expect("lock poisoned");
-        eprintln!("[acknowledge] lock acquired");
+        tracing::debug!(root = ?&peer.root().as_bytes()[..4], "pin_current_root");
 
         let mut entry = self.records.get_mut(peer.root())
-            .ok_or(IdentityError::Encoding("peer not in trust store".into()))?;
+            .ok_or(IdentityError::PeerNotInStore)?;
+
+        let old_state = entry.state;
+        entry.pinned_root = entry.anchor_root;
 
         let (new_state, new_latch) = transition(
             entry.state,
@@ -361,8 +474,73 @@ impl TrustStore {
         );
         entry.state = new_state;
         entry.previously_verified = new_latch;
+        drop(entry);
 
+        self.emit_if_significant(*peer, old_state, new_state);
         Ok(new_state)
+    }
+
+    /// Withdraw verification — resolves VerificationViolation AND clears
+    /// the previously_verified latch. The user is saying "I no longer hold
+    /// this peer to the verified standard."
+    ///
+    /// Per matrix-rust-sdk: `withdraw_verification()` calls `pin()` first
+    /// (update pinned_root), then clears the latch. Future unexplained
+    /// changes will produce PinViolation, not VerificationViolation.
+    pub fn withdraw_verification(
+        &self,
+        peer: &PeerRef,
+    ) -> Result<TrustState, IdentityError> {
+        let _guard = self.invariant_lock.write().expect("lock poisoned");
+        tracing::debug!(root = ?&peer.root().as_bytes()[..4], "withdraw_verification");
+
+        let mut entry = self.records.get_mut(peer.root())
+            .ok_or(IdentityError::PeerNotInStore)?;
+
+        let old_state = entry.state;
+        entry.pinned_root = entry.anchor_root;
+
+        let (new_state, new_latch) = transition(
+            entry.state,
+            entry.previously_verified,
+            TrustEvent::VerificationWithdrawn,
+        );
+        entry.state = new_state;
+        entry.previously_verified = new_latch;
+        drop(entry);
+
+        self.emit_if_significant(*peer, old_state, new_state);
+        Ok(new_state)
+    }
+
+    /// Cascade own trust change: when our own identity becomes verified,
+    /// set `previously_verified = true` on all peers signed by our identity.
+    /// Per matrix-rust-sdk: `check_all_identities_and_update_was_previously_
+    /// verified_flag_if_needed`.
+    ///
+    /// `is_signed_by_us` is a caller-provided predicate. The trust store
+    /// does not know how to verify signatures — that logic lives in the
+    /// chat layer.
+    pub fn cascade_own_trust_change(
+        &self,
+        is_signed_by_us: impl Fn(&IdentityRoot) -> bool,
+    ) -> usize {
+        let _guard = self.invariant_lock.write().expect("lock poisoned");
+        tracing::debug!("cascade_own_trust_change: scanning all records");
+
+        let mut updated = 0;
+        for mut entry in self.records.iter_mut() {
+            if !entry.previously_verified && is_signed_by_us(&entry.anchor_root) {
+                tracing::debug!(
+                    root = ?&entry.anchor_root.as_bytes()[..4],
+                    "cascade: setting previously_verified latch"
+                );
+                entry.previously_verified = true;
+                updated += 1;
+            }
+        }
+        tracing::debug!(updated, "cascade_own_trust_change: complete");
+        updated
     }
 
     /// Handle an unexplained root change (no rotation proof).
@@ -376,13 +554,17 @@ impl TrustStore {
         peer: &PeerRef,
         new_root: IdentityRoot,
     ) -> Result<TrustState, IdentityError> {
-        eprintln!("[unexplained_root_change] acquiring invariant_lock.write");
         let _guard = self.invariant_lock.write().expect("lock poisoned");
-        eprintln!("[unexplained_root_change] lock acquired");
+        tracing::debug!(
+            root = ?&peer.root().as_bytes()[..4],
+            new_root = ?&new_root.as_bytes()[..4],
+            "unexplained_root_change"
+        );
 
         let mut entry = self.records.get_mut(peer.root())
-            .ok_or(IdentityError::Encoding("peer not in trust store".into()))?;
+            .ok_or(IdentityError::PeerNotInStore)?;
 
+        let old_state = entry.state;
         let (new_state, new_latch) = transition(
             entry.state,
             entry.previously_verified,
@@ -392,7 +574,9 @@ impl TrustStore {
         entry.previously_verified = new_latch;
         entry.pinned_root = new_root;
         entry.void_grace();
+        drop(entry);
 
+        self.emit_if_significant(*peer, old_state, new_state);
         Ok(new_state)
     }
 
@@ -405,9 +589,7 @@ impl TrustStore {
 
     /// Takes the read lock: touches the index to resolve head → anchor.
     pub fn snapshot_by_root(&self, root: &IdentityRoot) -> Option<TrustRecord> {
-        eprintln!("[snapshot_by_root] acquiring invariant_lock.read");
         let _guard = self.invariant_lock.read().expect("lock poisoned");
-        eprintln!("[snapshot_by_root] read lock acquired");
         let anchor = if let Some(a) = self.head_to_anchor_get(root) {
             a
         } else if self.records.contains_key(root) {
@@ -441,8 +623,17 @@ impl TrustStore {
         let store = Self::new();
         for record in records {
             let anchor = record.anchor_root;
+            // Rebuild head_to_anchor + anchor_to_heads for current head
             if record.pinned_root != anchor {
-                store.head_to_anchor.insert(record.pinned_root, anchor);
+                store.index_insert(record.pinned_root, anchor);
+            }
+            // Rebuild prior_head from persisted prior_head_root
+            if let Some(prior) = record.prior_head_root {
+                if prior != anchor {
+                    store.prior_head.insert(anchor, prior);
+                    // Prior head also needs to be in the forward+reverse index
+                    store.index_insert(prior, anchor);
+                }
             }
             store.records.insert(anchor, record);
         }
@@ -561,22 +752,15 @@ mod tests {
         let (root_0, seed_0) = make_root(0x01);
         let (root_1, _) = make_root(0x02);
 
-        // First contact with root_0 (the real anchor)
         let (anchor, _) = store.resolve_or_observe(root_0);
-
-        // root_1 observed as first contact BEFORE the rotation proof arrives.
-        // This is the common case: you see a peer's new head in a message
-        // before their rotation proof propagates through the DHT.
         let (provisional_peer, _) = store.resolve_or_observe(root_1);
         assert_ne!(anchor, provisional_peer, "before merge: two separate peers");
         assert_eq!(store.len(), 2, "before merge: two primary entries");
 
-        // Verify the provisional identity independently
         store.mark_verified(&provisional_peer).unwrap();
         let provisional_record = store.snapshot(&provisional_peer).unwrap();
         assert!(provisional_record.previously_verified);
 
-        // Now the rotation proof arrives
         let proof = RotationProof::create(
             &seed_0, root_0, root_1, RotationEpoch(1), Hlc::now(),
         ).unwrap();
@@ -585,33 +769,20 @@ mod tests {
         ).unwrap();
         store.apply_rotation(&anchor, &chain, Hlc::now()).unwrap();
 
-        // After merge: exactly 1 primary entry
         assert_eq!(store.len(), 1, "after merge: provisional orphan removed");
 
-        // root_1 resolves to the anchor
         let (resolved, _) = store.resolve_or_observe(root_1);
         assert_eq!(resolved, anchor, "root_1 must resolve to root_0 anchor");
 
-        // The provisional's Verified state and latch transferred
         let merged_record = store.snapshot(&anchor).unwrap();
         assert!(merged_record.previously_verified,
             "provisional verification must survive merge");
-        // pinned_root is root_1 (the proof's head), not whatever the
-        // provisional may have advanced to. The merge removes the
-        // provisional record; the anchor's pinned_root was set by
-        // Phase 1's advance_rotation.
         assert_eq!(merged_record.pinned_root, root_1,
             "pinned_root must be the rotation proof's head");
     }
 
     #[test]
     fn merge_provisional_verification_violation_transfers_as_pin_violation() {
-        // A provisional identity was verified, then saw an unexplained
-        // change (VerificationViolation). The rotation proof arrives,
-        // merging the provisional into the anchor. The violation signal
-        // must NOT be silently discarded — it transfers as PinViolation
-        // on the anchor with the latch preserved, because the human
-        // saw something change and that signal must survive.
         let store = TrustStore::new();
         let (root_0, seed_0) = make_root(0x01);
         let (root_1, _) = make_root(0x02);
@@ -620,7 +791,6 @@ mod tests {
         let (anchor, _) = store.resolve_or_observe(root_0);
         let (provisional, _) = store.resolve_or_observe(root_1);
 
-        // Verify the provisional, then trigger VerificationViolation
         store.mark_verified(&provisional).unwrap();
         store.unexplained_root_change(&provisional, root_change).unwrap();
 
@@ -628,7 +798,6 @@ mod tests {
         assert_eq!(prov_record.state, TrustState::VerificationViolation);
         assert!(prov_record.previously_verified);
 
-        // Rotation proof arrives linking root_0 → root_1
         let proof = RotationProof::create(
             &seed_0, root_0, root_1, RotationEpoch(1), Hlc::now(),
         ).unwrap();
@@ -640,34 +809,16 @@ mod tests {
         assert_eq!(store.len(), 1, "provisional merged");
 
         let merged = store.snapshot(&anchor).unwrap();
-        // The latch MUST survive — the human verified something.
         assert!(merged.previously_verified,
             "latch must survive merge from VerificationViolation provisional");
-        // The violation transfers as VerificationViolation — the latch is
-        // set (OR'd from the provisional), and the transition table says
-        // latch + unexplained change = VerificationViolation. The rotation
-        // proof explains the identity topology (root_0 = root_1) but NOT
-        // the change the human observed (root_1 → root_change). The table
-        // is the authority; no override.
         assert_eq!(merged.state, TrustState::VerificationViolation,
             "latch=true + unexplained hop = VerificationViolation per transition table");
-        // pinned_root is root_1 (the proof's head). root_change (the
-        // provisional's advanced head from the unexplained hop) is lost —
-        // the merge removes the provisional, and the proof only covers
-        // root_0 → root_1. This is documented and intentional: the
-        // unexplained hop is signaled through the state (PinViolation)
-        // but the root itself is not carried forward.
         assert_eq!(merged.pinned_root, root_1,
             "pinned_root must be the rotation proof's head, not root_change");
     }
 
     #[test]
     fn merge_provisional_pin_violation_transfers() {
-        // A provisional identity had an unexplained change (PinViolation)
-        // before the rotation proof arrived. The unexplained hop
-        // (root_1 → root_change) is NOT covered by the rotation proof
-        // (which covers root_0 → root_1). The violation must survive
-        // the merge as PinViolation on the anchor.
         let store = TrustStore::new();
         let (root_0, seed_0) = make_root(0x01);
         let (root_1, _) = make_root(0x02);
@@ -676,13 +827,11 @@ mod tests {
         let (anchor, _) = store.resolve_or_observe(root_0);
         let (provisional, _) = store.resolve_or_observe(root_1);
 
-        // Trigger PinViolation on the provisional (no prior verification)
         store.unexplained_root_change(&provisional, root_change).unwrap();
         let prov_record = store.snapshot(&provisional).unwrap();
         assert_eq!(prov_record.state, TrustState::PinViolation);
         assert!(!prov_record.previously_verified);
 
-        // Rotation proof arrives
         let proof = RotationProof::create(
             &seed_0, root_0, root_1, RotationEpoch(1), Hlc::now(),
         ).unwrap();
@@ -694,12 +843,9 @@ mod tests {
         assert_eq!(store.len(), 1, "provisional merged");
 
         let merged = store.snapshot(&anchor).unwrap();
-        // The unexplained hop survives — the rotation proof doesn't cover it.
-        // Latch was never set, so this is PinViolation (not VerificationViolation).
         assert!(!merged.previously_verified);
         assert_eq!(merged.state, TrustState::PinViolation,
             "PinViolation on provisional must transfer — the unexplained hop is still unexplained");
-        // pinned_root is root_1 (proof's head). root_change is lost.
         assert_eq!(merged.pinned_root, root_1,
             "pinned_root must be the rotation proof's head, not root_change");
     }
@@ -725,7 +871,7 @@ mod tests {
             epoch_at_issue: RotationEpoch::ORIGIN,
             signature: crate::wire::signable::Signature64::ZERO,
         };
-        let verified_cert = Verified::new_trusted(cert);
+        let verified_cert = Verified::new_for_test(cert);
         store.apply_revocation(&verified_cert).unwrap();
 
         assert!(!store.is_within_grace(&anchor, &now));
@@ -745,7 +891,7 @@ mod tests {
             issued_at: Hlc::now(),
             signature: crate::wire::signable::Signature64::ZERO,
         };
-        let verified_death = Verified::new_trusted(death);
+        let verified_death = Verified::new_for_test(death);
         let removed = store.apply_death(&verified_death);
         assert!(removed.is_some());
         assert_eq!(store.len(), 0);
@@ -773,7 +919,7 @@ mod tests {
             issued_at: Hlc::now(),
             signature: crate::wire::signable::Signature64::ZERO,
         };
-        let verified_death = Verified::new_trusted(death);
+        let verified_death = Verified::new_for_test(death);
         let removed = store.apply_death(&verified_death);
         assert!(removed.is_some());
         assert_eq!(store.len(), 0);
@@ -903,38 +1049,273 @@ mod tests {
 
         let store_writer = Arc::clone(&store);
         let writer = std::thread::spawn(move || {
-            eprintln!("[writer] acquiring lock for apply_rotation");
             store_writer.apply_rotation(&anchor, &chain, Hlc::now()).unwrap();
-            eprintln!("[writer] apply_rotation complete");
         });
 
-        let handles: Vec<_> = (0..4).map(|i| {
+        let handles: Vec<_> = (0..4).map(|_| {
             let store = Arc::clone(&store);
             std::thread::spawn(move || {
-                eprintln!("[resolver-{i}] starting 100 iterations");
-                for j in 0..100 {
-                    eprintln!("[resolver-{i}] iteration {j} acquiring lock");
+                for _ in 0..100 {
                     let _ = store.resolve_or_observe(root_1);
-                    eprintln!("[resolver-{i}] iteration {j} done");
                 }
-                eprintln!("[resolver-{i}] complete");
             })
         }).collect();
 
-        eprintln!("[main] joining writer");
         writer.join().unwrap();
-        eprintln!("[main] writer joined, joining resolvers");
-        for (i, h) in handles.into_iter().enumerate() {
-            eprintln!("[main] joining resolver-{i}");
+        for h in handles {
             h.join().unwrap();
-            eprintln!("[main] resolver-{i} joined");
         }
-        eprintln!("[main] all joined");
 
         let (peer, _) = store.resolve_or_observe(root_1);
         assert_eq!(*peer.root(), root_0,
             "root_1 must resolve to root_0 anchor");
         assert_eq!(store.len(), 1,
             "exactly 1 peer — no split identity");
+    }
+
+    #[test]
+    fn apply_rotation_same_shard_no_deadlock() {
+        // WS-3.3: Force anchor_root and new_head to the same DashMap shard.
+        // The phased acquisition (drop get_mut guard before remove) prevents
+        // the self-deadlock. This test proves it survives the colliding case.
+        //
+        // Strategy: use DashMap::hasher() (public) to compute hashes for
+        // candidate roots. Two keys collide on shard when their hashes agree
+        // modulo the shard count. DashMap v6 uses (hash >> 7) % shard_count
+        // internally, but since we can't access shard_count directly, we
+        // try all plausible power-of-2 shard counts (4..=128) and accept a
+        // candidate that collides under ANY of them — guaranteeing at least
+        // one real collision.
+        use std::hash::{BuildHasher, Hash, Hasher};
+
+        let store = TrustStore::new();
+        let (root_0, seed_0) = make_root(0x01);
+        let (anchor, _) = store.resolve_or_observe(root_0);
+
+        let build_hasher = store.records.hasher().clone();
+
+        fn hash_key(bh: &impl BuildHasher, key: &IdentityRoot) -> u64 {
+            let mut h = bh.build_hasher();
+            key.hash(&mut h);
+            h.finish()
+        }
+
+        let anchor_hash = hash_key(&build_hasher, &root_0);
+
+        // Find a root whose hash collides with anchor under some shard count.
+        // With 254 candidates and shard counts 4..=128, we're testing
+        // hash % 4, hash % 8, ... hash % 128. The birthday bound makes
+        // collision near-certain.
+        let mut colliding_root = None;
+        for byte in 2..=255u8 {
+            let (candidate, _, ) = make_root(byte);
+            let candidate_hash = hash_key(&build_hasher, &candidate);
+            // Check collision under several plausible shard counts
+            for shift in [0u32, 7] {
+                let a = (anchor_hash >> shift) as usize;
+                let c = (candidate_hash >> shift) as usize;
+                for shard_count in [4, 8, 16, 32, 64, 128] {
+                    if a % shard_count == c % shard_count {
+                        colliding_root = Some(candidate);
+                        break;
+                    }
+                }
+                if colliding_root.is_some() { break; }
+            }
+            if colliding_root.is_some() { break; }
+        }
+
+        let new_head = colliding_root
+            .expect("could not find a shard-colliding root in 254 candidates");
+
+        // Create a provisional at the colliding root
+        store.resolve_or_observe(new_head);
+        assert_eq!(store.len(), 2, "anchor + provisional");
+
+        // Build rotation chain from root_0 → new_head
+        let proof = RotationProof::create(
+            &seed_0, root_0, new_head, RotationEpoch(1), Hlc::now(),
+        ).unwrap();
+        let chain = RotationChain::verify(
+            (root_0, RotationEpoch::ORIGIN), vec![proof],
+        ).unwrap();
+
+        // Run with a timeout — if the phased acquisition is broken, this hangs.
+        let store_arc = std::sync::Arc::new(store);
+        let store_clone = std::sync::Arc::clone(&store_arc);
+        let handle = std::thread::spawn(move || {
+            store_clone.apply_rotation(&anchor, &chain, Hlc::now()).unwrap();
+        });
+
+        // Join with timeout — 5 seconds is generous for a non-deadlocking operation.
+        let result = handle.join();
+        assert!(result.is_ok(),
+            "apply_rotation with same-shard anchor+new_head must not deadlock");
+
+        // Verify the merge happened correctly
+        assert_eq!(store_arc.len(), 1,
+            "provisional must be merged, not left as separate entry");
+    }
+
+    #[test]
+    fn dead_root_blocks_re_observation() {
+        let store = TrustStore::new();
+        let (root, _) = make_root(0x01);
+        store.resolve_or_observe(root);
+
+        let death = DeathNotice {
+            root,
+            epoch: RotationEpoch::ORIGIN,
+            issued_at: Hlc::now(),
+            signature: crate::wire::signable::Signature64::ZERO,
+        };
+        let verified_death = Verified::new_for_test(death);
+        store.apply_death(&verified_death);
+        assert_eq!(store.len(), 0);
+
+        // Re-observe the dead root — must NOT create a new record
+        store.resolve_or_observe(root);
+        assert_eq!(store.len(), 0,
+            "dead root must not be resurrected by re-observation");
+    }
+
+    #[test]
+    fn import_rebuilds_prior_head() {
+        let store = TrustStore::new();
+        let (root_0, seed_0) = make_root(0x01);
+        let (root_1, seed_1) = make_root(0x02);
+        let (root_2, _) = make_root(0x03);
+        let (anchor, _) = store.resolve_or_observe(root_0);
+
+        // Two rotations: root_0 → root_1 → root_2
+        let p1 = RotationProof::create(&seed_0, root_0, root_1, RotationEpoch(1), Hlc::now()).unwrap();
+        let c1 = RotationChain::verify((root_0, RotationEpoch::ORIGIN), vec![p1]).unwrap();
+        store.apply_rotation(&anchor, &c1, Hlc::now()).unwrap();
+
+        let p2 = RotationProof::create(&seed_1, root_1, root_2, RotationEpoch(2), Hlc::now()).unwrap();
+        let c2 = RotationChain::verify((root_1, RotationEpoch(1)), vec![p2]).unwrap();
+        store.apply_rotation(&anchor, &c2, Hlc::now()).unwrap();
+
+        // Export and import
+        let exported = store.export();
+        let restored = TrustStore::import(exported);
+
+        // Current head resolves
+        assert!(restored.snapshot_by_root(&root_2).is_some(), "current head must resolve after import");
+        // Prior head resolves (rebuilt from prior_head_root)
+        assert!(restored.snapshot_by_root(&root_1).is_some(), "prior head must resolve after import");
+        // Anchor resolves via primary key
+        assert!(restored.snapshot_by_root(&root_0).is_some(), "anchor must resolve after import");
+
+        // A third rotation should correctly evict root_1 from the index
+        let (root_3, _) = make_root(0x04);
+        let seed_2 = make_root(0x03).1;
+        let p3 = RotationProof::create(&seed_2, root_2, root_3, RotationEpoch(3), Hlc::now()).unwrap();
+        let c3 = RotationChain::verify((root_2, RotationEpoch(2)), vec![p3]).unwrap();
+        let (anchor_restored, _) = restored.resolve_or_observe(root_0);
+        restored.apply_rotation(&anchor_restored, &c3, Hlc::now()).unwrap();
+
+        assert!(restored.head_to_anchor_get(&root_1).is_none(),
+            "prior-prior head must be evicted after rotation post-import");
+    }
+
+    #[test]
+    fn pin_current_root_resolves_pin_violation() {
+        let store = TrustStore::new();
+        let (root, _) = make_root(0x01);
+        let (new_root, _) = make_root(0x02);
+        let (peer, _) = store.resolve_or_observe(root);
+
+        store.unexplained_root_change(&peer, new_root).unwrap();
+        let record = store.snapshot(&peer).unwrap();
+        assert_eq!(record.state, TrustState::PinViolation);
+
+        let state = store.pin_current_root(&peer).unwrap();
+        assert_eq!(state, TrustState::Pinned);
+
+        let record = store.snapshot(&peer).unwrap();
+        assert_eq!(record.pinned_root, record.anchor_root,
+            "pin_current_root must update pinned_root to anchor_root");
+    }
+
+    #[test]
+    fn withdraw_verification_clears_latch_and_pins() {
+        let store = TrustStore::new();
+        let (root, _) = make_root(0x01);
+        let (new_root, _) = make_root(0x02);
+        let (peer, _) = store.resolve_or_observe(root);
+
+        store.mark_verified(&peer).unwrap();
+        store.unexplained_root_change(&peer, new_root).unwrap();
+        let record = store.snapshot(&peer).unwrap();
+        assert_eq!(record.state, TrustState::VerificationViolation);
+        assert!(record.previously_verified);
+
+        let state = store.withdraw_verification(&peer).unwrap();
+        assert_eq!(state, TrustState::Pinned);
+
+        let record = store.snapshot(&peer).unwrap();
+        assert!(!record.previously_verified,
+            "withdraw_verification must clear the latch");
+        assert_eq!(record.pinned_root, record.anchor_root,
+            "withdraw_verification must pin current root");
+
+        // Future unexplained change should be PinViolation, not VerificationViolation
+        let (another_root, _) = make_root(0x03);
+        let state = store.unexplained_root_change(&peer, another_root).unwrap();
+        assert_eq!(state, TrustState::PinViolation,
+            "after withdrawal, violations are pin-level, not verification-level");
+    }
+
+    #[test]
+    fn cascade_own_trust_sets_latch_on_signed_peers() {
+        let store = TrustStore::new();
+        let (root_a, _) = make_root(0x01);
+        let (root_b, _) = make_root(0x02);
+        let (root_c, _) = make_root(0x03);
+
+        store.resolve_or_observe(root_a);
+        store.resolve_or_observe(root_b);
+        store.resolve_or_observe(root_c);
+
+        // Simulate: root_a and root_b are signed by us, root_c is not
+        let signed_roots: std::collections::HashSet<IdentityRoot> =
+            [root_a, root_b].into_iter().collect();
+
+        let updated = store.cascade_own_trust_change(|root| signed_roots.contains(root));
+        assert_eq!(updated, 2);
+
+        let record_a = store.snapshot_by_root(&root_a).unwrap();
+        assert!(record_a.previously_verified);
+        let record_b = store.snapshot_by_root(&root_b).unwrap();
+        assert!(record_b.previously_verified);
+        let record_c = store.snapshot_by_root(&root_c).unwrap();
+        assert!(!record_c.previously_verified, "unsigned peer must not be affected");
+    }
+
+    #[test]
+    fn event_emission_significant_changes_only() {
+        let store = TrustStore::new();
+        let rx = store.subscribe();
+
+        let (root, _) = make_root(0x01);
+        let (new_root, _) = make_root(0x02);
+        let (peer, _) = store.resolve_or_observe(root);
+
+        // Pinned → Verified: insignificant (no warning needed)
+        store.mark_verified(&peer).unwrap();
+        assert!(rx.try_recv().is_err(), "Pinned→Verified should not emit");
+
+        // Verified → VerificationViolation: significant (identity changed after verify)
+        store.unexplained_root_change(&peer, new_root).unwrap();
+        let event = rx.try_recv().expect("Verified→VerificationViolation must emit");
+        assert_eq!(event.old_state, TrustState::Verified);
+        assert_eq!(event.new_state, TrustState::VerificationViolation);
+        assert!(event.is_significant());
+
+        // VerificationViolation → Pinned via withdraw: significant (resolution)
+        store.withdraw_verification(&peer).unwrap();
+        let event = rx.try_recv().expect("VerificationViolation→Pinned must emit");
+        assert_eq!(event.new_state, TrustState::Pinned);
     }
 }

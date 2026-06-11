@@ -184,12 +184,11 @@ impl DhSeed {
         Self(bytes)
     }
 
-    /// Raw bytes for the downstream PQXDH/MEK flow which constructs
-    /// `aws_lc_rs::agreement::PrivateKey` from this seed.
-    pub fn as_bytes(&self) -> &[u8; 32] {
-        &self.0
-    }
-
+    /// Crate-internal access to the raw seed bytes.
+    ///
+    /// Used by derivation functions (G2, G5) and the operational DH layer.
+    /// NOT public — downstream code accesses the DH seed exclusively
+    /// through `SelfIdentity::dh_seed()` which delegates here.
     pub(crate) fn expose(&self) -> &[u8; 32] {
         &self.0
     }
@@ -431,7 +430,7 @@ mod tests {
         let o = originate_from_seed(
             OriginSeed::from_vault_bytes(Zeroizing::new(seed))
         ).unwrap();
-        assert_eq!(o.dh_seed.as_bytes(), &expected,
+        assert_eq!(o.dh_seed.expose(), &expected,
             "DH seed must match the live PQXDH convention");
     }
 

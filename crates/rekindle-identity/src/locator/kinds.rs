@@ -57,6 +57,10 @@ impl Substrate {
 pub struct ProfileLocator {
     substrate: Substrate,
     /// Canonical key material (substrate prefix stripped).
+    /// Stored as UTF-8 bytes of the BASE64URL_NOPAD-encoded Veilid key.
+    /// Variable-length: Veilid's `BareOpaqueRecordKey` wraps `bytes::Bytes`
+    /// (not `[u8; 32]`), so `Vec<u8>` is the correct representation.
+    /// Typical size: 43 bytes (32 raw bytes → base64url-nopad).
     canonical: Vec<u8>,
 }
 
@@ -87,6 +91,10 @@ pub struct InboxLocator {
 pub struct GovernanceKey {
     substrate: Substrate,
     /// Canonical key material (substrate prefix stripped).
+    /// Stored as UTF-8 bytes of the BASE64URL_NOPAD-encoded Veilid key.
+    /// Variable-length: Veilid's `BareOpaqueRecordKey` wraps `bytes::Bytes`
+    /// (not `[u8; 32]`), so `Vec<u8>` is the correct representation.
+    /// Typical size: 43 bytes (32 raw bytes → base64url-nopad).
     canonical: Vec<u8>,
 }
 

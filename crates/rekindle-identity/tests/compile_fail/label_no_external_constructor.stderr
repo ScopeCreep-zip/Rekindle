@@ -1,0 +1,21 @@
+error[E0277]: the trait bound `Label: FromStr` is not satisfied
+ --> tests/compile_fail/label_no_external_constructor.rs:6:39
+  |
+6 |     let _label: Label = "origin.seed".parse().unwrap(); // must not compile — no FromStr
+  |                                       ^^^^^ the trait `FromStr` is not implemented for `Label`
+  |
+  = help: the following other types implement trait `FromStr`:
+            ByteString
+            CString
+            IpAddr
+            Ipv4Addr
+            Ipv6Addr
+            NonZero<i128>
+            NonZero<i16>
+            NonZero<i32>
+          and $N others
+note: required by a bound in `core::str::<impl str>::parse`
+ --> $RUST/core/src/str/mod.rs
+  |
+  |     pub fn parse<F: FromStr>(&self) -> Result<F, F::Err> {
+  |                     ^^^^^^^ required by this bound in `core::str::<impl str>::parse`

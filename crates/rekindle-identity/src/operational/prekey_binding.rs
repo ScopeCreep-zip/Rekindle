@@ -125,9 +125,7 @@ impl PrekeyBundleBinding {
     pub fn verify_bundle_hash(&self, bundle_bytes: &[u8]) -> Result<(), IdentityError> {
         let computed = *blake3::hash(bundle_bytes).as_bytes();
         if computed != self.bundle_hash {
-            return Err(IdentityError::Encoding(
-                "prekey bundle hash mismatch — bundle content does not match binding".into()
-            ));
+            return Err(IdentityError::BundleHashMismatch);
         }
         Ok(())
     }

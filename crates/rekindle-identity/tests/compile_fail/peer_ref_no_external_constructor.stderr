@@ -1,0 +1,10 @@
+error[E0624]: associated function `anchor` is private
+ --> tests/compile_fail/peer_ref_no_external_constructor.rs:9:26
+  |
+9 |     let _peer = PeerRef::anchor(root); // must not compile — pub(crate)
+  |                          ^^^^^^ private associated function
+  |
+ ::: src/origin/originate.rs
+  |
+  |     pub(crate) fn anchor(root: IdentityRoot) -> Self {
+  |     ------------------------------------------------ private associated function defined here

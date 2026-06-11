@@ -114,6 +114,24 @@ pub enum IdentityError {
     #[error("terminated identity")]
     Terminated,
 
+    // ── Trust store lookup ─────────────────────────────────────────
+
+    /// A trust store operation referenced a peer that is not in the store.
+    #[error("peer not in trust store")]
+    PeerNotInStore,
+
+    /// A trust store record disappeared between two operations within
+    /// the same lock scope — invariant violation.
+    #[error("trust record disappeared under lock")]
+    RecordDisappeared,
+
+    // ── Prekey binding ───────────────────────────────────────────
+
+    /// A prekey bundle's content hash does not match the binding's
+    /// committed hash — the bundle was modified after signing.
+    #[error("prekey bundle hash mismatch")]
+    BundleHashMismatch,
+
     // ── Wire encoding / decoding ─────────────────────────────────
 
     /// The RID/1 CBOR encoder or decoder encountered a structural error:

@@ -95,13 +95,14 @@ pub fn transition(
         }
 
         // ── VerificationWithdrawn ────────────────────────────
+        // Per matrix-rust-sdk: withdraw_verification() calls pin() first,
+        // then clears the latch. The user is saying "I no longer hold this
+        // peer to the verified standard." Future violations are pin-level.
         (TrustState::VerificationViolation, TrustEvent::VerificationWithdrawn) => {
-            // Drop to Pinned. Latch REMAINS set.
-            (TrustState::Pinned, true) // latch was already true
+            (TrustState::Pinned, false) // latch CLEARED
         }
         (TrustState::Verified, TrustEvent::VerificationWithdrawn) => {
-            // Voluntary unverify. Latch REMAINS set.
-            (TrustState::Pinned, true)
+            (TrustState::Pinned, false) // latch CLEARED
         }
         (state, TrustEvent::VerificationWithdrawn) => {
             (state, previously_verified) // no-op in other states
@@ -179,17 +180,20 @@ mod tests {
     }
 
     #[test]
-    fn withdraw_verification() {
+    fn withdraw_verification_clears_latch() {
+        // Per matrix-rust-sdk: withdraw_verification() clears the latch.
+        // The user is saying "I no longer hold this peer to the verified standard."
+        // Future unexplained changes produce PinViolation, not VerificationViolation.
         let (state, latch) = transition(TrustState::Verified, true, TrustEvent::VerificationWithdrawn);
         assert_eq!(state, TrustState::Pinned);
-        assert!(latch, "latch must survive withdrawal");
+        assert!(!latch, "latch must be cleared on withdrawal");
     }
 
     #[test]
-    fn withdraw_from_violation() {
+    fn withdraw_from_violation_clears_latch() {
         let (state, latch) = transition(TrustState::VerificationViolation, true, TrustEvent::VerificationWithdrawn);
         assert_eq!(state, TrustState::Pinned);
-        assert!(latch, "latch must survive withdrawal from violation");
+        assert!(!latch, "latch must be cleared on withdrawal from violation");
     }
 
     #[test]

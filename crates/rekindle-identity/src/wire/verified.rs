@@ -26,7 +26,7 @@ use crate::origin::originate::IdentityRoot;
 use crate::wire::signable::{Hlc, Signature64};
 
 /// A verified identity wire object. Unconstructible except through
-/// `parse_verified()` or the crate-internal `Verified::new_trusted()`.
+/// `parse_verified()` or the crate-internal `Verified::new_for_test()`.
 ///
 /// Consumers receive `&Verified<T>` or `Verified<T>` — they can read
 /// the inner value but cannot construct one from unverified bytes.
@@ -44,16 +44,19 @@ impl<T> Verified<T> {
         self.0
     }
 
-    /// Crate-internal constructor. Called only after successful
-    /// signature verification + epoch check.
-    ///
-    /// # Safety (logical, not memory)
-    ///
-    /// The caller MUST have verified the object's signature(s) and
-    /// epoch freshness before calling this. Misuse produces a
-    /// `Verified<T>` that lies about verification — the type system
-    /// cannot prevent crate-internal misuse, only cross-crate misuse.
-    pub(crate) fn new_trusted(inner: T) -> Self {
+    /// Production constructor. Called exclusively by the `verify_*`
+    /// functions in this module after cryptographic verification.
+    /// Source-scan test (WS-2.2) pins the call sites to:
+    /// `verify_revocation`, `verify_death`, `verify_rotation_proof`.
+    pub(crate) fn from_verified(inner: T) -> Self {
+        Self(inner)
+    }
+
+    /// Test-only constructor. Allows tests to create `Verified<T>`
+    /// with `Signature64::ZERO` for state-machine testing without
+    /// cryptographic overhead. NOT callable from production code.
+    #[cfg(test)]
+    pub(crate) fn new_for_test(inner: T) -> Self {
         Self(inner)
     }
 }
@@ -178,7 +181,7 @@ pub fn verify_revocation(
         domain: derivation_tags::REVOCATION_SIGN,
     })?;
 
-    Ok(Verified::new_trusted(cert))
+    Ok(Verified::from_verified(cert))
 }
 
 /// Parse and verify a `DeathNotice` from its fields.
@@ -203,7 +206,7 @@ pub fn verify_death(
         domain: derivation_tags::DEATH_SIGN,
     })?;
 
-    Ok(Verified::new_trusted(notice))
+    Ok(Verified::from_verified(notice))
 }
 
 /// Parse and verify a `RotationProof` from its fields.
@@ -211,7 +214,7 @@ pub fn verify_rotation_proof(
     proof: crate::root::rotation::RotationProof,
 ) -> Result<Verified<crate::root::rotation::RotationProof>, IdentityError> {
     proof.verify()?;
-    Ok(Verified::new_trusted(proof))
+    Ok(Verified::from_verified(proof))
 }
 
 #[cfg(test)]
@@ -229,21 +232,21 @@ mod tests {
     #[test]
     fn verified_wraps_and_unwraps() {
         let inner = FakeWireObject { value: 42 };
-        let verified = Verified::new_trusted(inner.clone());
+        let verified = Verified::new_for_test(inner.clone());
         assert_eq!(verified.get().value, 42);
         assert_eq!(verified.into_inner(), inner);
     }
 
     #[test]
     fn verified_clone() {
-        let verified = Verified::new_trusted(FakeWireObject { value: 99 });
+        let verified = Verified::new_for_test(FakeWireObject { value: 99 });
         let cloned = verified.clone();
         assert_eq!(verified, cloned);
     }
 
     #[test]
     fn verified_debug() {
-        let verified = Verified::new_trusted(42u64);
+        let verified = Verified::new_for_test(42u64);
         let dbg = format!("{verified:?}");
         assert!(dbg.contains("Verified"), "Debug output should contain 'Verified': {dbg}");
         assert!(dbg.contains("42"), "Debug output should contain the inner value: {dbg}");
@@ -252,9 +255,9 @@ mod tests {
     #[test]
     fn verified_hash() {
         use std::collections::HashSet;
-        let a = Verified::new_trusted(1u64);
-        let b = Verified::new_trusted(1u64);
-        let c = Verified::new_trusted(2u64);
+        let a = Verified::new_for_test(1u64);
+        let b = Verified::new_for_test(1u64);
+        let c = Verified::new_for_test(2u64);
         let mut set = HashSet::new();
         set.insert(a);
         set.insert(b);

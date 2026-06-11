@@ -40,6 +40,11 @@ arc-swap = "1"
 # Local persistence projections ONLY — never for signable wire forms
 serde = { workspace = true }
 
+# Structured leveled instrumentation — never eprintln on a hot path
+tracing = "0.1"
+
 [dev-dependencies]
 serde_json = { workspace = true }
 proptest = "1"
+trybuild = "1"
+hex = { workspace = true }

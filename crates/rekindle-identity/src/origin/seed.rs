@@ -60,8 +60,22 @@ impl OriginSeed {
     /// Crate-internal access to the raw seed bytes.
     ///
     /// Used by derivation functions (G1, G2, G3) that need the seed
-    /// as IKM. Not public — downstream code never touches the seed.
+    /// as IKM.
     pub(crate) fn expose(&self) -> &[u8; 32] {
+        &self.0
+    }
+
+    /// Export seed bytes for vault storage ONLY.
+    ///
+    /// The returned bytes MUST be written to an encrypted vault
+    /// immediately and the caller MUST NOT retain a copy. This
+    /// method exists because the vault storage layer lives outside
+    /// this crate and needs the raw bytes to persist them.
+    ///
+    /// Do NOT use this for derivation — use `SelfIdentity` methods.
+    /// Do NOT use this for signing — use `SelfIdentity::sign()`.
+    /// Do NOT log, display, or transmit the returned bytes.
+    pub fn vault_bytes(&self) -> &[u8; 32] {
         &self.0
     }
 }

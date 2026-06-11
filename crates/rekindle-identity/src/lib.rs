@@ -36,6 +36,10 @@ pub mod grant;
 pub mod trust;
 pub mod vault_label;
 pub mod registry;
+pub mod peer;
+pub mod self_id;
+pub mod signing;
+pub mod prelude;
 
 // ── Top-level re-exports ────────────────────────────────────────
 
@@ -53,7 +57,7 @@ pub use root::termination::DeathNotice;
 
 // Layer 2 — Operational
 pub use origin::DhSeed;
-pub use operational::{DhKey, dh_public_from_seed, dh_agree};
+pub use operational::{DhKey, dh_public_from_seed, dh_agree, x25519_seed_from};
 pub use operational::{DeviceId, DeviceSigningKey, DeviceRecord};
 pub use operational::PrekeyBundleBinding;
 
@@ -66,7 +70,7 @@ pub use persona::{DisplayName, KindDescriptor};
 
 // Layer 5 — Projection
 pub use projection::{Pseudonym, CommunityPersona, ResolvedPersona, PersonaSecrets, derive_persona};
-pub use projection::LinkageProof;
+pub use projection::{LinkageProof, derive_slot_seed};
 
 // Grant / Delegation
 pub use grant::{Capability, CapabilitySet, CustomCapability};
@@ -77,7 +81,7 @@ pub use grant::{verify_chain, EffectiveAuthority, EdgeEpochOracle, AcceptAllEpoc
 pub use session::{SessionAnchor, session_anchor};
 
 // Trust
-pub use trust::{TrustState, TrustEvent, TrustRecord, TrustStore};
+pub use trust::{TrustState, TrustEvent, TrustRecord, TrustStore, IdentityStatusChange};
 
 // Vault Labels
 pub use vault_label::Label;
@@ -85,5 +89,17 @@ pub use vault_label::Label;
 // Registry
 pub use registry::{ResidentIdentity, ResidentSet, PeerResolver, ResolvedPeer};
 
+// Composites
+pub use peer::{PeerId, CryptoIdentity, NetworkAddr, SocialProfile};
+pub use self_id::{SelfIdentity, SelfVerificationState, OriginationResult};
+
 // Wire
 pub use wire::{Hlc, Signable, Signature64, Verified, VerifyCtx};
+
+// Signing — opaque keypair wrapper + verify functions + constants.
+// Consumers use SigningKeypair methods, never aws-lc-rs types directly.
+pub use signing::{
+    SigningKeypair,
+    verify_ec_prekey, verify_pq_prekey, verify_raw as verify_signature,
+    ALG_X25519, ALG_MLKEM768, DOMAIN_OT, DOMAIN_LR,
+};
