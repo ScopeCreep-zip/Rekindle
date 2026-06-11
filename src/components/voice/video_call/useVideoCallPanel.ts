@@ -303,46 +303,14 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
       const canvas = document.createElement("canvas");
       canvas.width = encoderWidth;
       canvas.height = encoderHeight;
-      const decoder = new VideoDecoder({
-        output: (frame: VideoFrame) => {
-          const target = remotes().find((r) => r.streamId === streamId);
-          if (!target?.ctx) {
-            frame.close();
-            return;
-          }
-          if (DEBUG_VIDEO_LATENCY) {
-            // Pair this output with its decode() call to measure the decoder's
-            // internal latency (decode→paint), isolated from buffer delay.
-            const t0 = target.decodeStamps.shift();
-            if (t0 !== undefined) target.lastDecodeMs = performance.now() - t0;
-          }
-          target.ctx.drawImage(frame, 0, 0, target.canvas.width, target.canvas.height);
-          frame.close();
-        },
-        error: (e: Error) => {
-          // Architecture §10.6 line 4081 — decoder lost track; ask the
-          // sender for a keyframe. Community-only — DM relies on the
-          // sender's regular 2-second keyframe cadence. Also surface
-          // the failure structurally so the WKWebView / WebKitGTK
-          // divergence is observable in backend trace.
-          if (props.mode === "community") {
-            void commands.reportVideoDecoderStatus(
-              props.communityId,
-              sender_,
-              streamId,
-              false,
-              e.message,
-            );
-            requestKeyframeFor(streamId);
-          }
-        },
-      });
       const ctx = canvas.getContext("2d");
       remote = {
         streamId,
         senderPseudonym: sender_,
         codec,
-        decoder,
+        // Placeholder — installDecoder() below replaces it before the
+        // remote is appended; never decoded against.
+        decoder: undefined as unknown as VideoDecoder,
         canvas,
         ctx,
         // Flipped true on a successful decoder.configure(); the playout
@@ -353,39 +321,10 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
         decodeStamps: [],
         lastDecodeMs: 0,
         lastDebugAt: 0,
+        lastDecoderRebuildAt: 0,
+        awaitKeyframe: false,
       };
-      // Phase C — configure straight from the negotiated decoder
-      // constraints. No probe round-trip: the backend has already
-      // negotiated `optimizeForLatency` against every peer's
-      // capability report, so a synchronous configure here either
-      // succeeds (set ready=true) or fails (report + leave ready=false).
-      const created = remote;
-      try {
-        decoder.configure({
-          codec: webCodecsString,
-          optimizeForLatency: decoderOptimizeForLatency,
-        });
-        created.ready = true;
-        if (props.mode === "community") {
-          void commands.reportVideoDecoderStatus(
-            props.communityId,
-            sender_,
-            streamId,
-            true,
-          );
-        }
-      } catch (e) {
-        const errorMessage = e instanceof Error ? e.message : String(e);
-        if (props.mode === "community") {
-          void commands.reportVideoDecoderStatus(
-            props.communityId,
-            sender_,
-            streamId,
-            false,
-            errorMessage,
-          );
-        }
-      }
+      installDecoder(remote, webCodecsString, decoderOptimizeForLatency);
       setRemotes((prev) => [...prev, remote!]);
     }
 
@@ -399,6 +338,104 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
       data,
       receivedAt: performance.now(),
     });
+  }
+
+  /** Create + configure a WebCodecs decoder onto `r`. Called at stream
+   *  creation AND from `recoverDecoder` — a fatal WebCodecs decoder
+   *  error CLOSES the decoder permanently (field: one undecryptable
+   *  frame killed the remote feed for the whole session while 71
+   *  keyframe requests went to a corpse). The error callback therefore
+   *  rebuilds instead of only requesting a keyframe. */
+  function installDecoder(
+    r: RemoteStream,
+    webCodecsString: string,
+    optimizeForLatency: boolean,
+  ): void {
+    const decoder = new VideoDecoder({
+      output: (frame: VideoFrame) => {
+        const target = remotes().find((t) => t.streamId === r.streamId);
+        if (!target?.ctx) {
+          frame.close();
+          return;
+        }
+        if (DEBUG_VIDEO_LATENCY) {
+          // Pair this output with its decode() call to measure the decoder's
+          // internal latency (decode→paint), isolated from buffer delay.
+          const t0 = target.decodeStamps.shift();
+          if (t0 !== undefined) target.lastDecodeMs = performance.now() - t0;
+        }
+        target.ctx.drawImage(frame, 0, 0, target.canvas.width, target.canvas.height);
+        frame.close();
+      },
+      error: (e: Error) => {
+        if (props.mode === "community") {
+          void commands.reportVideoDecoderStatus(
+            props.communityId,
+            r.senderPseudonym,
+            r.streamId,
+            false,
+            e.message,
+          );
+        }
+        recoverDecoder(r.streamId, webCodecsString, optimizeForLatency);
+      },
+    });
+    r.decoder = decoder;
+    try {
+      decoder.configure({
+        codec: webCodecsString,
+        optimizeForLatency,
+      });
+      r.ready = true;
+      if (props.mode === "community") {
+        void commands.reportVideoDecoderStatus(
+          props.communityId,
+          r.senderPseudonym,
+          r.streamId,
+          true,
+        );
+      }
+    } catch (e) {
+      const errorMessage = e instanceof Error ? e.message : String(e);
+      r.ready = false;
+      if (props.mode === "community") {
+        void commands.reportVideoDecoderStatus(
+          props.communityId,
+          r.senderPseudonym,
+          r.streamId,
+          false,
+          errorMessage,
+        );
+      }
+    }
+  }
+
+  /** Rebuild a fatally-errored decoder (closed state is permanent in
+   *  WebCodecs), cooldown-guarded against error-loop thrash. The fresh
+   *  decoder must see a keyframe first — `awaitKeyframe` makes the
+   *  pump skip deltas until one decodes — and the sender is asked for
+   *  one immediately. */
+  const DECODER_REBUILD_COOLDOWN_MS = 3000;
+  function recoverDecoder(
+    streamId: string,
+    webCodecsString: string,
+    optimizeForLatency: boolean,
+  ): void {
+    const r = remotes().find((t) => t.streamId === streamId);
+    if (!r) return;
+    const now = performance.now();
+    if (now - r.lastDecoderRebuildAt < DECODER_REBUILD_COOLDOWN_MS) return;
+    r.lastDecoderRebuildAt = now;
+    r.ready = false;
+    try {
+      r.decoder.close();
+    } catch {
+      // Already closed by the fatal error — expected.
+    }
+    r.decodeStamps.length = 0;
+    r.awaitKeyframe = true;
+    installDecoder(r, webCodecsString, optimizeForLatency);
+    requestKeyframeFor(streamId);
   }
 
   /** Community-only: ask the sender to emit a keyframe so a decoder that lost
@@ -425,6 +462,15 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
       if (!r.ready) continue;
       const { release, requestKeyframe } = r.buffer.popDue(now);
       for (const f of release) {
+        // A rebuilt decoder must see a keyframe before any delta —
+        // feeding it one is itself a fatal error (rebuild loop).
+        if (r.awaitKeyframe) {
+          if (!f.keyframe) {
+            requestKeyframeFor(r.streamId);
+            continue;
+          }
+          r.awaitKeyframe = false;
+        }
         try {
           if (DEBUG_VIDEO_LATENCY) r.decodeStamps.push(performance.now());
           r.decoder.decode(

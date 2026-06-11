@@ -104,6 +104,14 @@ export interface RemoteStream {
   lastDecodeMs: number;
   // Throttles the ~1 Hz diagnostic log (performance.now ms).
   lastDebugAt: number;
+  /** performance.now() of the last decoder rebuild — a fatal WebCodecs
+   *  decoder error closes the decoder permanently; recovery recreates
+   *  it (cooldown-guarded) instead of keyframe-requesting a corpse. */
+  lastDecoderRebuildAt: number;
+  /** True after a rebuild until the first keyframe decodes — feeding a
+   *  fresh decoder a delta is itself a fatal error, so the pump skips
+   *  deltas while this is set. */
+  awaitKeyframe: boolean;
 }
 
 export function decodeBase64ToBytes(b64: string): Uint8Array {
