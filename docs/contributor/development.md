@@ -150,7 +150,7 @@ the bundle. (In dev mode, TCC additionally attributes any grant to the
 terminal/IDE that launched the binary — a second reason dev-mode
 camera prompts behave confusingly.)
 
-### Linux: Plain `pnpm tauri dev` — No Wrapper Needed (Deliberate)
+### Linux: `pnpm dev:linux` — Log Capture Only, No Launch Wrapper (Deliberate)
 
 The macOS wrapper exists ONLY because macOS WebKit's GPU helper grants
 camera by the host app's bundle identity. WebKitGTK has no GPU-helper
@@ -165,6 +165,18 @@ camera capture just works. Do NOT add a Linux launch wrapper:
   the Nix GUI-stack `LD_LIBRARY_PATH` scrub;
 - a wrapper would trade away `tauri dev`'s Rust auto-rebuild for
   nothing.
+
+What Linux DOES get is a log-capture pipe: `pnpm dev:linux`
+(`scripts/linux-dev.sh`) runs plain `pnpm tauri dev` through `tee`, so
+the session's tracing output lands in `target/debug/rekindle-dev.log`
+(truncated each run) as well as the terminal — bare `tauri dev` output
+otherwise exists only in the launching terminal's scrollback, which
+nothing else can read. The script stops a still-running dev instance
+first (the single-instance plugin turns a second launch into a
+focus-the-old no-op) and defaults `RUST_LOG` to the in-binary filter
+plus `rekindle_video=debug,rekindle_voice=debug` — the media-plane
+dropped-frame paths log at debug. Auto-rebuild is untouched: `tauri
+dev` itself runs unwrapped.
 
 ## Build Commands
 

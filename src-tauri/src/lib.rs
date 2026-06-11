@@ -46,12 +46,16 @@ pub fn run() {
     // Suppress Veilid's noisy internal ERROR logs (e.g. "no compatible crypto
     // kinds in route" from stale route imports — our code handles these gracefully).
     // The veilid_api target only emits import/routing errors we already catch.
+    // ANSI color only on a real terminal — fmt() defaults to ANSI even when
+    // piped, which fills the dev-wrapper log files (scripts/linux-dev.sh,
+    // scripts/mac-dev-app.sh) with escape codes.
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
                 tracing_subscriber::EnvFilter::new("info,veilid_api=warn,veilid_core=warn")
             }),
         )
+        .with_ansi(std::io::IsTerminal::is_terminal(&std::io::stdout()))
         .init();
 
     let shared_state: SharedState = Arc::new(AppState::default());
