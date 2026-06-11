@@ -110,7 +110,21 @@ unbundled dev binary has none, so `getUserMedia({video})` rejects with
 is authorized and the per-origin prompt was granted
 (tauri-apps/tauri#11951 — fails in dev, works in the built app).
 
-To test camera on macOS:
+To test camera on macOS, use the dev-bundle wrapper — it runs the SAME
+dev binary `tauri dev` runs (Vite dev server, frontend hot-reload)
+inside a minimal `.app` shell so macOS attributes camera access to a
+bundle:
+
+```bash
+pnpm dev:mac        # scripts/mac-dev-app.sh
+```
+
+Re-run it after Rust changes (frontend changes hot-reload). First
+camera use prompts for **Rekindle Dev** (`com.rekindle.app.dev`) —
+accept it; a previously-declined prompt needs
+`tccutil reset Camera com.rekindle.app.dev`.
+
+The full bundled build also works when you want the production shape:
 
 ```bash
 pnpm tauri build --debug --bundles app
