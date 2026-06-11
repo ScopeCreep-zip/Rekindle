@@ -33,17 +33,26 @@ import {
   wireCodecToWebCodecsString,
 } from "./codec_utils";
 
-/** Resolution/fps steps below the negotiated ceiling. `scale` applies
- *  to both dimensions (pixel rate ≈ scale²), so each step roughly
- *  halves the encoder's work; the deepest steps trade fps too. The
- *  encode canvas and the encoder config always move together. */
-const LADDER: ReadonlyArray<{ scale: number; fpsScale: number }> = [
-  { scale: 1, fpsScale: 1 },
-  { scale: 0.75, fpsScale: 1 },
-  { scale: 0.5, fpsScale: 1 },
-  { scale: 0.5, fpsScale: 0.5 },
-  { scale: 0.35, fpsScale: 0.5 },
-  { scale: 0.25, fpsScale: 0.33 },
+/** Fps/keyframe-cadence steps below the negotiated ceiling. Resolution
+ *  NEVER changes mid-stream: a ladder move that reconfigured the
+ *  encoder to new dimensions broke both receiving platforms' WebCodecs
+ *  decoders on the in-band resolution switch (WebKitGTK stalled with
+ *  no output and no error callback; WKWebView painted a black tile) —
+ *  observed live as "no remote frames here, black tile on the mac"
+ *  while transport, decrypt, and reassembly were all healthy. Fps and
+ *  keyframe cadence are pump-side state: zero encoder reconfigures,
+ *  zero bitstream surprises. Stretching the keyframe interval is what
+ *  makes deep levels fit — at a 100 kbps target the 4 s cadence of
+ *  30-100 KB intras already exceeds the whole budget. Late joiners
+ *  aren't stranded by an 8 s cadence: the keyframe-request path
+ *  (proven live) forces one on demand. */
+const LADDER: ReadonlyArray<{ fpsScale: number; kfIntervalMs: number }> = [
+  { fpsScale: 1, kfIntervalMs: KEYFRAME_INTERVAL_MS },
+  { fpsScale: 0.66, kfIntervalMs: KEYFRAME_INTERVAL_MS },
+  { fpsScale: 0.5, kfIntervalMs: 6000 },
+  { fpsScale: 0.33, kfIntervalMs: 6000 },
+  { fpsScale: 0.25, kfIntervalMs: 8000 },
+  { fpsScale: 0.15, kfIntervalMs: 8000 },
 ];
 
 export type TrackLabel = "camera" | "screen";
@@ -255,7 +264,8 @@ export function createVideoSender(
 
     // Output-measured ladder state (see codec_utils LADDER_* rationale):
     // level indexes LADDER; bytes/windowStart accumulate real encoder
-    // output between evaluations.
+    // output between evaluations. Width/height stay at the negotiated
+    // constraints for the stream's whole life (see LADDER comment).
     let ladderLevel = 0;
     let ladderBytes = 0;
     let ladderWindowStart = performance.now();
@@ -263,15 +273,16 @@ export function createVideoSender(
     const appliedShape = (): { width: number; height: number; fps: number } => {
       const step = LADDER[ladderLevel];
       return {
-        width: Math.max(2, Math.floor((constraints!.maxWidth * step.scale) / 2) * 2),
-        height: Math.max(2, Math.floor((constraints!.maxHeight * step.scale) / 2) * 2),
+        width: constraints!.maxWidth,
+        height: constraints!.maxHeight,
         fps: Math.max(1, Math.round(constraints!.maxFps * step.fpsScale)),
       };
     };
+    const ladderKfIntervalMs = (): number => LADDER[ladderLevel].kfIntervalMs;
 
     const captureCanvas = document.createElement("canvas");
-    captureCanvas.width = appliedShape().width;
-    captureCanvas.height = appliedShape().height;
+    captureCanvas.width = constraints.maxWidth;
+    captureCanvas.height = constraints.maxHeight;
     const captureCtx = captureCanvas.getContext("2d");
     if (!captureCtx) throw new Error("2d context unavailable");
 
@@ -497,7 +508,7 @@ export function createVideoSender(
         }
         try {
           captureCtx.drawImage(captureVideo, 0, 0, captureCanvas.width, captureCanvas.height);
-          const isKeyframe = now - ts.lastKeyframeMs >= KEYFRAME_INTERVAL_MS;
+          const isKeyframe = now - ts.lastKeyframeMs >= ladderKfIntervalMs();
           if (isKeyframe) ts.lastKeyframeMs = now;
           const videoFrame = new VideoFrame(captureCanvas, {
             timestamp: Math.floor(now * 1000),
@@ -544,25 +555,17 @@ export function createVideoSender(
           }
           if (next !== ladderLevel) {
             ladderLevel = next;
+            // Pump-side state only — no encoder.configure (a mid-stream
+            // reconfigure changes nothing the encoder honors here) and
+            // no canvas resize (resolution is fixed for the stream).
             const shape = appliedShape();
-            captureCanvas.width = shape.width;
-            captureCanvas.height = shape.height;
             frameIntervalMs = 1000 / shape.fps;
-            try {
-              encoder.configure(buildEncoderConfig(constraints!, configuredKbps * 1000, shape));
-              ts.lastKeyframeMs = now; // reconfigure already emits a keyframe
-              reportEncoderStatus(
-                currentCodec,
-                true,
-                `ladder ${ladderLevel}: ${shape.width}x${shape.height}@${shape.fps} ` +
-                  `measured=${Math.round(measuredKbps)}kbps target=${configuredKbps}kbps`,
-              );
-            } catch (e) {
-              console.error("ladder reconfigure failed:", e);
-              recreateEncoder("ladder-reconfigure-failed");
-              scheduleNext();
-              return;
-            }
+            reportEncoderStatus(
+              currentCodec,
+              true,
+              `ladder ${ladderLevel}: ${shape.fps}fps kf=${ladderKfIntervalMs()}ms ` +
+                `measured=${Math.round(measuredKbps)}kbps target=${configuredKbps}kbps`,
+            );
           }
         }
       }
