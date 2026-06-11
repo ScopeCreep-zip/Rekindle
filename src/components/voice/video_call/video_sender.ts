@@ -23,10 +23,28 @@ import {
 } from "../../../stores/video.store";
 import {
   KEYFRAME_INTERVAL_MS,
+  KEYFRAME_MIN_INTERVAL_MS,
+  LADDER_OVERSHOOT_RATIO,
+  LADDER_UNDERSHOOT_RATIO,
+  LADDER_UP_STREAK,
+  LADDER_WINDOW_MS,
   bytesToBase64,
   randomStreamIdHex,
   wireCodecToWebCodecsString,
 } from "./codec_utils";
+
+/** Resolution/fps steps below the negotiated ceiling. `scale` applies
+ *  to both dimensions (pixel rate ≈ scale²), so each step roughly
+ *  halves the encoder's work; the deepest steps trade fps too. The
+ *  encode canvas and the encoder config always move together. */
+const LADDER: ReadonlyArray<{ scale: number; fpsScale: number }> = [
+  { scale: 1, fpsScale: 1 },
+  { scale: 0.75, fpsScale: 1 },
+  { scale: 0.5, fpsScale: 1 },
+  { scale: 0.5, fpsScale: 0.5 },
+  { scale: 0.35, fpsScale: 0.5 },
+  { scale: 0.25, fpsScale: 0.33 },
+];
 
 export type TrackLabel = "camera" | "screen";
 
@@ -172,12 +190,13 @@ export function createVideoSender(
   function buildEncoderConfig(
     constraints: SessionVideoConfig["encoder"],
     bitrate: number,
+    shape?: { width: number; height: number; fps: number },
   ): VideoEncoderConfig {
     const base: VideoEncoderConfig = {
       codec: wireCodecToWebCodecsString(constraints.codec),
-      width: constraints.maxWidth,
-      height: constraints.maxHeight,
-      framerate: constraints.maxFps,
+      width: shape?.width ?? constraints.maxWidth,
+      height: shape?.height ?? constraints.maxHeight,
+      framerate: shape?.fps ?? constraints.maxFps,
       bitrate,
       latencyMode: "realtime",
       ...(constraints.codec === "h264" ? { avc: { format: "annexb" as const } } : {}),
@@ -233,9 +252,26 @@ export function createVideoSender(
     // after a codec-changing reconfigure (post-flush) so queued chunks
     // of the old codec keep their truthful tag.
     let currentCodec = constraints.codec;
+
+    // Output-measured ladder state (see codec_utils LADDER_* rationale):
+    // level indexes LADDER; bytes/windowStart accumulate real encoder
+    // output between evaluations.
+    let ladderLevel = 0;
+    let ladderBytes = 0;
+    let ladderWindowStart = performance.now();
+    let ladderUpStreak = 0;
+    const appliedShape = (): { width: number; height: number; fps: number } => {
+      const step = LADDER[ladderLevel];
+      return {
+        width: Math.max(2, Math.floor((constraints!.maxWidth * step.scale) / 2) * 2),
+        height: Math.max(2, Math.floor((constraints!.maxHeight * step.scale) / 2) * 2),
+        fps: Math.max(1, Math.round(constraints!.maxFps * step.fpsScale)),
+      };
+    };
+
     const captureCanvas = document.createElement("canvas");
-    captureCanvas.width = constraints.maxWidth;
-    captureCanvas.height = constraints.maxHeight;
+    captureCanvas.width = appliedShape().width;
+    captureCanvas.height = appliedShape().height;
     const captureCtx = captureCanvas.getContext("2d");
     if (!captureCtx) throw new Error("2d context unavailable");
 
@@ -257,6 +293,7 @@ export function createVideoSender(
       new VideoEncoder({
         output: (chunk: EncodedVideoChunk) => {
           chunksOut += 1;
+          ladderBytes += chunk.byteLength;
           const buf = new Uint8Array(chunk.byteLength);
           chunk.copyTo(buf);
           const payloadB64 = bytesToBase64(buf);
@@ -305,12 +342,16 @@ export function createVideoSender(
       }
       encoder = makeEncoder();
       try {
-        encoder.configure(buildEncoderConfig(constraints, configuredKbps * 1000));
+        encoder.configure(buildEncoderConfig(constraints, configuredKbps * 1000, appliedShape()));
         currentCodec = constraints.codec;
         ts.lastKeyframeMs = 0; // force a keyframe so receivers re-sync
         framesFed = 0;
         chunksOut = 0;
         firstFedAt = 0;
+        // Stale output bytes from the dead encoder must not skew the
+        // next ladder evaluation.
+        ladderBytes = 0;
+        ladderWindowStart = now;
         console.warn(`video encoder recreated (${reason})`);
         reportEncoderStatus(currentCodec, true, `recreated: ${reason}`);
       } catch (e) {
@@ -325,7 +366,7 @@ export function createVideoSender(
     // locally encodable, but WebKit can still reject the full config
     // shape; surface that instead of letting startCamera die opaquely.
     try {
-      encoder.configure(buildEncoderConfig(constraints, configuredKbps * 1000));
+      encoder.configure(buildEncoderConfig(constraints, configuredKbps * 1000, appliedShape()));
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       reportEncoderStatus(constraints.codec, false, `initial configure: ${msg}`);
@@ -334,7 +375,7 @@ export function createVideoSender(
     }
     reportEncoderStatus(currentCodec, true, "configured");
 
-    let frameIntervalMs = 1000 / constraints.maxFps;
+    let frameIntervalMs = 1000 / appliedShape().fps;
     let lastEmittedAt = 0;
     let scheduleHandle: number | null = null;
     let scheduledViaRVFC = false;
@@ -386,12 +427,20 @@ export function createVideoSender(
         reportedUnencodable = null;
         const codecChanged = fresh.codec !== currentCodec;
         constraints = fresh;
-        captureCanvas.width = constraints.maxWidth;
-        captureCanvas.height = constraints.maxHeight;
-        frameIntervalMs = 1000 / constraints.maxFps;
+        // New negotiated ceiling — re-discover the sustainable shape
+        // below it from scratch rather than carry over a ladder level
+        // measured against the old one.
+        ladderLevel = 0;
+        ladderBytes = 0;
+        ladderWindowStart = performance.now();
+        ladderUpStreak = 0;
+        const shape = appliedShape();
+        captureCanvas.width = shape.width;
+        captureCanvas.height = shape.height;
+        frameIntervalMs = 1000 / shape.fps;
         const reconfigure = (): void => {
           try {
-            encoder.configure(buildEncoderConfig(constraints!, configuredKbps * 1000));
+            encoder.configure(buildEncoderConfig(constraints!, configuredKbps * 1000, appliedShape()));
             currentCodec = constraints!.codec;
             ts.lastKeyframeMs = performance.now();
             framesFed = 0;
@@ -430,7 +479,7 @@ export function createVideoSender(
         if (Math.abs(ts.lowestReceiverKbps - configuredKbps) / configuredKbps > 0.15) {
           configuredKbps = ts.lowestReceiverKbps;
           try {
-            encoder.configure(buildEncoderConfig(constraints!, configuredKbps * 1000));
+            encoder.configure(buildEncoderConfig(constraints!, configuredKbps * 1000, appliedShape()));
             ts.lastKeyframeMs = now; // reconfigure already emits a keyframe
           } catch (e) {
             console.error("encoder reconfigure failed:", e);
@@ -461,6 +510,61 @@ export function createVideoSender(
           console.error("encode failed:", e);
         }
         lastEmittedAt = now;
+      }
+      // Output-measured ladder: compare REAL encoder output against the
+      // bitrate target and step resolution/fps until it fits — the
+      // configured bitrate is advisory on WebKitGTK (observed 6×
+      // overshoot starving the pacer into 80%+ frame expiry, which
+      // receivers render as garble). Windows with zero output (encoder
+      // warming/stalled) are skipped: silence is not headroom.
+      if (now - ladderWindowStart >= LADDER_WINDOW_MS) {
+        const measuredKbps = (ladderBytes * 8) / (now - ladderWindowStart);
+        const produced = ladderBytes > 0;
+        ladderBytes = 0;
+        ladderWindowStart = now;
+        if (produced) {
+          let next = ladderLevel;
+          if (
+            measuredKbps > configuredKbps * LADDER_OVERSHOOT_RATIO &&
+            ladderLevel < LADDER.length - 1
+          ) {
+            next = ladderLevel + 1;
+            ladderUpStreak = 0;
+          } else if (
+            measuredKbps < configuredKbps * LADDER_UNDERSHOOT_RATIO &&
+            ladderLevel > 0
+          ) {
+            ladderUpStreak += 1;
+            if (ladderUpStreak >= LADDER_UP_STREAK) {
+              next = ladderLevel - 1;
+              ladderUpStreak = 0;
+            }
+          } else {
+            ladderUpStreak = 0;
+          }
+          if (next !== ladderLevel) {
+            ladderLevel = next;
+            const shape = appliedShape();
+            captureCanvas.width = shape.width;
+            captureCanvas.height = shape.height;
+            frameIntervalMs = 1000 / shape.fps;
+            try {
+              encoder.configure(buildEncoderConfig(constraints!, configuredKbps * 1000, shape));
+              ts.lastKeyframeMs = now; // reconfigure already emits a keyframe
+              reportEncoderStatus(
+                currentCodec,
+                true,
+                `ladder ${ladderLevel}: ${shape.width}x${shape.height}@${shape.fps} ` +
+                  `measured=${Math.round(measuredKbps)}kbps target=${configuredKbps}kbps`,
+              );
+            } catch (e) {
+              console.error("ladder reconfigure failed:", e);
+              recreateEncoder("ladder-reconfigure-failed");
+              scheduleNext();
+              return;
+            }
+          }
+        }
       }
       // First-chunk watchdog: frames going in, nothing coming out.
       if (
@@ -520,15 +624,27 @@ export function createVideoSender(
     ts.streamId = null;
   }
 
+  /** Honor a force only when the last keyframe is older than the
+   *  libwebrtc-style send floor — receivers re-request at 1 Hz until
+   *  resynced, so an unthrottled force would emit a keyframe per
+   *  request and starve the pacer with 30-100 KB intras.
+   *  `lastKeyframeMs = 0` is the "emit on next tick" sentinel. */
+  const forceIfDue = (ts: TrackState): void => {
+    if (ts.lastKeyframeMs !== 0 && performance.now() - ts.lastKeyframeMs < KEYFRAME_MIN_INTERVAL_MS) {
+      return;
+    }
+    ts.lastKeyframeMs = 0;
+  };
+
   function forceKeyframe(streamId: string): void {
     for (const ts of Object.values(tracks)) {
-      if (ts.streamId === streamId) ts.lastKeyframeMs = 0;
+      if (ts.streamId === streamId) forceIfDue(ts);
     }
   }
 
   function forceKeyframeAll(): void {
     for (const ts of Object.values(tracks)) {
-      if (ts.streamId !== null) ts.lastKeyframeMs = 0;
+      if (ts.streamId !== null) forceIfDue(ts);
     }
   }
 

@@ -19,6 +19,31 @@ import type { Codec } from "../../../ipc/commands/types_sync";
 // 15-dropped-deltas keyframe-request escalation.
 export const KEYFRAME_INTERVAL_MS = 4000;
 
+// Keyframe-request (PLI/FIR analog) rate limits, both ends. Sender:
+// ignore requests within 300 ms of the last emitted keyframe —
+// libwebrtc's kMinKeyframeSendIntervalMs (encoder_rtcp_feedback.cc).
+// Receiver: re-request no faster than 1 Hz per stream but PERSIST
+// until a keyframe lands — the request envelope is fire-and-forget
+// over an onion route, so a lost one-shot means a frozen tile.
+export const KEYFRAME_MIN_INTERVAL_MS = 300;
+export const KEYFRAME_REQUEST_MIN_INTERVAL_MS = 1000;
+
+// Output-measured encoder ladder. WebKitGTK's GStreamer-backed
+// VideoEncoder holds its configured CBR only loosely (observed 6×
+// overshoot: ~640 kbps emitted at a 100 kbps target, 34-108 KB
+// keyframes), and WebCodecs exposes no stricter rate-control knob on
+// that engine — so the configured bitrate must never be trusted as
+// achieved. The sender measures actual encoded output per window and
+// steps resolution/fps down until output fits the target. The window
+// exceeds KEYFRAME_INTERVAL_MS so every measurement includes at least
+// one keyframe (a keyframe-free window would read deceptively low).
+export const LADDER_WINDOW_MS = 5000;
+export const LADDER_OVERSHOOT_RATIO = 1.25;
+export const LADDER_UNDERSHOOT_RATIO = 0.6;
+// Consecutive headroom windows required before stepping back up —
+// one quiet-scene window must not bounce the ladder.
+export const LADDER_UP_STREAK = 2;
+
 /** `Codec` wire string → fully-specified WebCodecs codec parameter.
  *  Shared by the encoder (video_sender.ts) and decoder
  *  (useVideoCallPanel.ts) — one map, one edit per new codec. H.264 is

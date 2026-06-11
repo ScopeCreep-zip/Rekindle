@@ -227,6 +227,16 @@ pub fn handle_video_payload<D: VideoDeps>(
             // (which owns the encoder) to mark the next frame as a
             // keyframe. Also reset our local reassembly buffer for
             // the same stream so we don't sit on stale partials.
+            // Info on purpose (sender debounces at 300 ms): pairs with
+            // the requester's "keyframe request → channel peers" line
+            // to make the return path observable end-to-end.
+            tracing::info!(
+                target: "rekindle_video::receive",
+                community_id = %community_id,
+                sender_pseudonym = %sender_pseudonym,
+                stream_id = %hex::encode(stream_id),
+                "keyframe request received"
+            );
             reassembly.reset_stream(community_id, stream_id, sender_pseudonym);
             deps.emit_event(VideoEvent::KeyframeRequest {
                 community_id: community_id.to_string(),

@@ -117,6 +117,16 @@ pub fn send_video_keyframe_request_inner(
     stream_id_hex: &str,
 ) -> Result<(), String> {
     let stream_id = decode_stream_id(stream_id_hex)?;
+    // Info on purpose (≤1 Hz per stream, receiver-side rate limit):
+    // a dead keyframe-request return path is invisible at the sender,
+    // so the REQUESTING side's log must show the egress attempt.
+    tracing::info!(
+        target: "rekindle_video::receive",
+        community_id = %community_id,
+        channel_id = %channel_id,
+        stream_id = %stream_id_hex,
+        "keyframe request → channel peers"
+    );
     let envelope = CommunityEnvelope::Control(ControlPayload::KeyframeRequest {
         channel_id: channel_id.to_string(),
         stream_id,

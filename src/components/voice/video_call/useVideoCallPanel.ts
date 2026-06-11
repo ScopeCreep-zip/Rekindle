@@ -18,6 +18,7 @@ import {
 import {
   ACK_INTERVAL_MS,
   DEBUG_VIDEO_LATENCY,
+  KEYFRAME_REQUEST_MIN_INTERVAL_MS,
   type RemoteStream,
   decodeBase64ToBytes,
   wireCodecToWebCodecsString,
@@ -269,12 +270,11 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
             `dropping delta frames for unknown stream ${streamId.slice(0, 8)} — waiting for keyframe (${dropped} dropped)`,
           );
         }
-        if (dropped === 15 && props.mode === "community") {
-          void commands.sendVideoKeyframeRequest(
-            props.communityId,
-            props.channelId,
-            streamId,
-          );
+        // Every 15th dropped delta, not a one-shot at 15: the request
+        // envelope is fire-and-forget, so a single lost request used to
+        // freeze the tile until the sender's own keyframe cadence.
+        if (dropped % 15 === 0) {
+          requestKeyframeFor(streamId);
         }
         return;
       }
@@ -333,7 +333,7 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
               false,
               e.message,
             );
-            void commands.sendVideoKeyframeRequest(props.communityId, props.channelId, streamId);
+            requestKeyframeFor(streamId);
           }
         },
       });
@@ -402,11 +402,17 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
   }
 
   /** Community-only: ask the sender to emit a keyframe so a decoder that lost
-   *  track (gap / decode error) can re-sync. DM relies on the periodic cadence. */
+   *  track (gap / decode error) can re-sync. DM relies on the periodic cadence.
+   *  Rate-limited per stream (1 Hz) — callers may invoke every pump tick while
+   *  desynced; persistence beats reliability over a fire-and-forget envelope. */
+  const keyframeRequestAt = new Map<string, number>();
   function requestKeyframeFor(streamId: string): void {
-    if (props.mode === "community") {
-      void commands.sendVideoKeyframeRequest(props.communityId, props.channelId, streamId);
-    }
+    if (props.mode !== "community") return;
+    const now = performance.now();
+    const last = keyframeRequestAt.get(streamId) ?? 0;
+    if (now - last < KEYFRAME_REQUEST_MIN_INTERVAL_MS) return;
+    keyframeRequestAt.set(streamId, now);
+    void commands.sendVideoKeyframeRequest(props.communityId, props.channelId, streamId);
   }
 
   /** Drives every remote's playout buffer: release due chunks in order,
