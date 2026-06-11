@@ -150,6 +150,22 @@ the bundle. (In dev mode, TCC additionally attributes any grant to the
 terminal/IDE that launched the binary — a second reason dev-mode
 camera prompts behave confusingly.)
 
+### Linux: Plain `pnpm tauri dev` — No Wrapper Needed (Deliberate)
+
+The macOS wrapper exists ONLY because macOS WebKit's GPU helper grants
+camera by the host app's bundle identity. WebKitGTK has no GPU-helper
+bundle attribution — it opens `/dev/video*` directly, so dev-mode
+camera capture just works. Do NOT add a Linux launch wrapper:
+
+- the launch-environment quirks Linux does have are handled inside the
+  binary (`src-tauri/src/platform.rs::linux_display_setup`, before the
+  builder, identically in dev and prod): Wayland socket discovery,
+  the NVIDIA-gated `WEBKIT_DISABLE_DMABUF_RENDERER` (NVIDIA-only on
+  purpose — unconditional broke pointer input on Mesa/Wayland), and
+  the Nix GUI-stack `LD_LIBRARY_PATH` scrub;
+- a wrapper would trade away `tauri dev`'s Rust auto-rebuild for
+  nothing.
+
 ## Build Commands
 
 ```bash
