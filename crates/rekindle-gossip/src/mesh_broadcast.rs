@@ -196,7 +196,14 @@ async fn send_to_one_peer<D: GossipDeps>(
     data: Vec<u8>,
     msg_id: Option<String>,
 ) {
-    let first = deps.send_app_message(&peer.route_blob, data.clone()).await;
+    let first = if peer.route_blob.is_empty() {
+        // Peer published presence before its route allocation finished
+        // (the registry warns "our_route_blob is None" on that path).
+        // An empty blob can never import — skip straight to re-resolve.
+        Err("empty route blob in peer cache".to_string())
+    } else {
+        deps.send_app_message(&peer.route_blob, data.clone()).await
+    };
 
     if first.is_ok() {
         if let Some(ref mid) = msg_id {

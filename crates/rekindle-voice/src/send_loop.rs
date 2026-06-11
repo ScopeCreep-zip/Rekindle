@@ -12,6 +12,7 @@
 //! The src-tauri facade (lands in 14.i) builds the deps + params and
 //! calls [`run`].
 
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -24,6 +25,10 @@ use crate::codec::OpusCodec;
 use crate::session_deps::{VoiceSessionDeps, VoiceSessionEvent};
 use crate::transport::VoiceTransport;
 use crate::VoiceMode;
+
+/// Consecutive per-peer send failures before the route-heal hook fires
+/// (and the warn re-logs). 50 ≈ one second of speech at 20 ms frames.
+const ROUTE_HEAL_THRESHOLD: u64 = 50;
 
 pub struct VoiceSendParams {
     pub capture_rx: Option<mpsc::Receiver<Vec<f32>>>,
@@ -61,6 +66,10 @@ struct VoiceSendLoop {
     was_speaking: bool,
     packets_sent: u64,
     send_failures: u64,
+    /// Consecutive send failures per peer — drives the route-heal
+    /// escalation (a dead remote route fails every frame; without
+    /// healing it is hammered 50×/s forever).
+    peer_send_failures: HashMap<String, u64>,
     last_quality_report: Instant,
     community_id: Option<String>,
     channel_id: String,
@@ -119,6 +128,7 @@ impl VoiceSendLoop {
             was_speaking: false,
             packets_sent: 0,
             send_failures: 0,
+            peer_send_failures: HashMap::new(),
             last_quality_report: Instant::now(),
             community_id: params.community_id,
             channel_id: params.channel_id,
@@ -242,26 +252,112 @@ impl VoiceSendLoop {
         {
             let transport = self.transport.lock().await;
             if transport.is_connected() {
-                let send_result = match transport.mode() {
-                    VoiceMode::Mesh => transport.send(&encoded).await,
+                let (roster, errors) = match transport.mode() {
+                    VoiceMode::Mesh => {
+                        let roster = transport.peer_keys();
+                        let errors = transport.broadcast(&encoded).await;
+                        (roster, errors)
+                    }
                     VoiceMode::Mcu { ref host_pseudonym } if *host_pseudonym == self.public_key => {
                         // We are the MCU host — MCU loop handles mixing + distribution.
-                        Ok(())
+                        (Vec::new(), Vec::new())
                     }
                     VoiceMode::Mcu { ref host_pseudonym } => {
                         // Non-host: send only to the MCU host.
-                        transport.send_to_peer(host_pseudonym, &encoded).await
+                        let roster = vec![host_pseudonym.clone()];
+                        let errors = match transport.send_to_peer(host_pseudonym, &encoded).await {
+                            Ok(()) => Vec::new(),
+                            Err(e) => vec![(host_pseudonym.clone(), e)],
+                        };
+                        (roster, errors)
                     }
                 };
-                if let Err(e) = send_result {
-                    tracing::warn!(error = %e, "voice send loop: transport send failed");
-                    self.send_failures += 1;
-                }
+                drop(transport);
+                self.note_send_results(&roster, &errors);
                 self.packets_sent += 1;
             }
         }
 
         self.report_quality_if_due();
+    }
+
+    /// Per-peer send accounting: success resets the failure streak; a
+    /// streak hitting multiples of [`ROUTE_HEAL_THRESHOLD`] fires the
+    /// deps route-heal hook (presence re-resolve → roster refresh) and
+    /// the rate-limited warn — NOT one log line per frame per peer.
+    /// The whole-frame `send_failures` counter (quality classification)
+    /// counts a frame failed only when EVERY peer failed, preserving
+    /// the original loss semantics.
+    fn note_send_results(
+        &mut self,
+        roster: &[String],
+        errors: &[(String, crate::error::VoiceError)],
+    ) {
+        if !roster.is_empty() && !errors.is_empty() && errors.len() >= roster.len() {
+            self.send_failures += 1;
+        }
+        let failed: std::collections::HashSet<&str> =
+            errors.iter().map(|(k, _)| k.as_str()).collect();
+        for key in roster {
+            if !failed.contains(key.as_str()) {
+                self.peer_send_failures.remove(key);
+            }
+        }
+        for (key, error) in errors {
+            // "*" is the transport's not-initialized sentinel, not a peer.
+            if key == "*" {
+                tracing::warn!(error = %error, "voice send loop: transport send failed");
+                continue;
+            }
+            let n = self.peer_send_failures.entry(key.clone()).or_insert(0);
+            *n += 1;
+            if *n == 1 || n.is_multiple_of(ROUTE_HEAL_THRESHOLD) {
+                tracing::warn!(
+                    peer = %key,
+                    consecutive_failures = *n,
+                    error = %error,
+                    "voice send failing for peer"
+                );
+            }
+            if n.is_multiple_of(ROUTE_HEAL_THRESHOLD) {
+                self.spawn_route_heal(key.clone());
+            }
+        }
+    }
+
+    /// Crate-side route heal — the voice mirror of gossip's
+    /// `send_to_one_peer` re-resolve. Spawned off the 20 ms hot path:
+    /// resolve the peer's CURRENT route through the deps port, then
+    /// refresh the transport roster entry (refresh-only: a peer who
+    /// left must not be re-added). Community sessions only — DM 1:1
+    /// call routes heal via call signaling.
+    fn spawn_route_heal(&self, peer: String) {
+        let Some(community_id) = self.community_id.clone() else {
+            return;
+        };
+        let deps = Arc::clone(&self.deps);
+        let transport = Arc::clone(&self.transport);
+        let handle = tokio::spawn(async move {
+            let Some(fresh) = deps.resolve_peer_route_from_dht(&community_id, &peer).await else {
+                tracing::warn!(
+                    community = %community_id,
+                    peer = %peer,
+                    "voice route heal: no fresh route in presence registry"
+                );
+                return;
+            };
+            if fresh.is_empty() {
+                return;
+            }
+            let refreshed = transport.lock().await.refresh_peer_route(&peer, &fresh);
+            tracing::info!(
+                community = %community_id,
+                peer = %peer,
+                refreshed,
+                "voice route heal: presence re-resolve applied"
+            );
+        });
+        self.deps.register_background_handle(handle);
     }
 
     fn flip_speaking_off_if_needed(&mut self) {

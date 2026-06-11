@@ -249,6 +249,20 @@ impl VoiceSessionDeps for VoiceAdapter {
         io_helpers::resolve_peer_route_impl(&self.state, peer_pubkey_hex).await
     }
 
+    async fn resolve_peer_route_from_dht(
+        &self,
+        community_id: &str,
+        peer_pseudonym: &str,
+    ) -> Option<Vec<u8>> {
+        crate::services::community::routes::resolve_member_route(
+            &self.state,
+            &self.pool,
+            community_id,
+            peer_pseudonym,
+        )
+        .await
+    }
+
     async fn load_member_names(
         &self,
         community_id: Option<&str>,

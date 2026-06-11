@@ -13,6 +13,8 @@
 
 use std::sync::Arc;
 
+use rekindle_protocol::dht::community::envelope::{CommunityEnvelope, ControlPayload};
+
 use crate::signaling::deps::{CommunityVoiceEvent, VoiceSignalingDeps};
 
 /// Seconds a roster entry is protected from presence-based removal
@@ -182,6 +184,44 @@ pub async fn reconcile_from_presence(
     }
 
     if !plan.add.is_empty() {
+        // Handshake convergence for the lost-gossip path — the repair
+        // mirrors `voice_join_apply` exactly. (1) Directed ack: the
+        // SimpleX-style introduction carries OUR identity + route, so
+        // the repaired peer adds us from the ack alone and their
+        // handshake advances even though our original VoiceJoin never
+        // reached them. (2) Mutual evidence: a fresh presence row
+        // claiming our channel is the durable Path-1 analog of the
+        // mutual VoiceJoin that `voice_join_apply` already counts as
+        // leg 2; count it the same way and complete leg 3. Without
+        // this, two peers who both missed each other's join gossip sit
+        // at `handshake-announced` forever and media-ready never opens.
+        for add in &plan.add {
+            let ack = CommunityEnvelope::Control(ControlPayload::VoiceJoinAck {
+                channel_id: channel_id.clone(),
+                joiner_pseudonym: add.pseudonym_hex.clone(),
+                display_name: deps.my_display_name(),
+                route_blob: deps.our_route_blob(),
+            });
+            deps.send_to_channel(community_id, &channel_id, &ack);
+        }
+        if transport.lock().await.advance_handshake_seen() {
+            let first = &plan.add[0];
+            deps.emit_event(CommunityVoiceEvent::VoiceJoinHandshake {
+                community_id: community_id.to_string(),
+                channel_id: channel_id.clone(),
+                state: "seen".to_string(),
+                peer: Some(first.pseudonym_hex.clone()),
+                display_name: first.display_name.clone(),
+            });
+        }
+        crate::signaling::presence::send_confirmed_if_first(
+            deps.as_ref(),
+            community_id,
+            &channel_id,
+            &transport,
+        )
+        .await;
+
         // Repaired members missed every capabilities advertise we made
         // before they appeared — directed re-advertise (receivers dedup),
         // then re-check the mesh→MCU threshold the gossip join path

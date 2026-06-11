@@ -8,7 +8,6 @@
 use async_trait::async_trait;
 use rekindle_gossip::{GossipDeps, PeerInfo};
 use rekindle_protocol::dht::community::envelope::SignedEnvelope;
-use rekindle_protocol::dht::DHTManager;
 use tauri::Manager as _;
 
 use crate::services::gossip_adapter::GossipAdapter;
@@ -186,57 +185,13 @@ impl GossipDeps for GossipAdapter {
         community_id: &str,
         peer_pseudonym: &str,
     ) -> Option<Vec<u8>> {
-        // Slot location from the discovered-member rows. `subkey_index`
-        // is the RAW SMPL slot — segment records are
-        // `DHTSchema::smpl(0, members)`, so there is NO owner-subkey
-        // offset — and `segment_index` selects the Plate Gate segment
-        // record the slot lives in.
-        let cid = community_id.to_string();
-        let pk = peer_pseudonym.to_string();
-        let (subkey_index, segment_index) = crate::db_helpers::db_call(&self.pool, move |conn| {
-            conn.query_row(
-                "SELECT subkey_index, segment_index FROM community_members \
-                 WHERE community_id = ?1 AND pseudonym_key = ?2",
-                rusqlite::params![cid, pk],
-                |row| Ok((row.get::<_, u32>(0)?, row.get::<_, u32>(1)?)),
-            )
-        })
-        .await
-        .ok()?;
-
-        let registry_key =
-            crate::services::community::segments::segment_descriptors(&self.state, community_id)
-                .into_iter()
-                .find(|d| d.segment_index == segment_index)
-                .map(|d| d.registry_key)?;
-
-        let rc = state_helpers::safe_routing_context(&self.state)?;
-        let mgr = DHTManager::new(rc);
-        let raw = mgr
-            .get_value_fresh(&registry_key, subkey_index)
-            .await
-            .ok()??;
-
-        // Same trust gate as the presence scan (W26 signature + ban +
-        // liveness) plus a pseudonym match — the slot index comes from
-        // local SQLite, and a re-claimed slot must never hand back
-        // another member's route.
-        let banned: std::collections::HashSet<String> =
-            state_helpers::governance_state(&self.state, community_id)
-                .map(|gov| {
-                    gov.bans
-                        .iter()
-                        .map(|pseudo| hex::encode(pseudo.0))
-                        .collect()
-                })
-                .unwrap_or_default();
-        rekindle_presence::route_for_peer(
-            &raw,
+        crate::services::community::routes::resolve_member_route(
+            &self.state,
+            &self.pool,
+            community_id,
             peer_pseudonym,
-            &banned,
-            rekindle_presence::STALE_HEARTBEAT_SECS,
-            rekindle_utils::timestamp_secs(),
         )
+        .await
     }
 
     async fn send_app_message(&self, route_blob: &[u8], data: Vec<u8>) -> Result<(), String> {

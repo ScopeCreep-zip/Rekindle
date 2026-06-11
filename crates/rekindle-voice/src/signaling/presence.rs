@@ -188,7 +188,7 @@ async fn voice_join_apply(
 /// (the transport's state machine gates re-entry) and surface the
 /// "connected" state to the frontend. Receivers force a video keyframe
 /// (RFC 5104 FIR — a new member needs a full intra to start decoding).
-async fn send_confirmed_if_first(
+pub(super) async fn send_confirmed_if_first(
     deps: &dyn VoiceSignalingDeps,
     community_id: &str,
     channel_id: &str,
@@ -283,6 +283,31 @@ pub(super) fn handle_voice_join_confirmed(
 ) {
     if !deps.voice_engine_bound_to(community_id, &channel_id) {
         return;
+    }
+    // A directed confirm reaching us means we are on the sender's
+    // channel roster — leg-2 evidence ("we are seen") on par with an
+    // ack. Load-bearing for the lost-gossip path: when the original
+    // VoiceJoin/Ack exchange died on stale routes and the roster was
+    // repaired from presence, the peer's confirm is the first envelope
+    // proving bidirectional reachability.
+    if let Some(transport) = deps.transport_handle() {
+        let deps_task = Arc::clone(deps);
+        let cid = community_id.to_string();
+        let ch = channel_id.clone();
+        let peer = sender_pseudonym.to_string();
+        let handle = tokio::spawn(async move {
+            if transport.lock().await.advance_handshake_seen() {
+                deps_task.emit_event(CommunityVoiceEvent::VoiceJoinHandshake {
+                    community_id: cid.clone(),
+                    channel_id: ch.clone(),
+                    state: "seen".to_string(),
+                    peer: Some(peer),
+                    display_name: None,
+                });
+            }
+            send_confirmed_if_first(&*deps_task, &cid, &ch, &transport).await;
+        });
+        deps.register_background_handle(handle);
     }
     deps.emit_event(CommunityVoiceEvent::VoicePeerConfirmed {
         community_id: community_id.to_string(),

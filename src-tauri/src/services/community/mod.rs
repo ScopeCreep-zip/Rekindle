@@ -28,6 +28,7 @@ pub mod notifications;
 pub mod presence;
 pub mod receiver_limits;
 pub mod record_inventory;
+pub mod routes;
 pub mod segments;
 pub mod stage;
 pub mod threads;

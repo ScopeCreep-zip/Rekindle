@@ -236,6 +236,22 @@ pub trait VoiceSessionDeps: Send + Sync + 'static {
 
     // --- Background tasks ---
 
+    /// Re-resolve a community member's CURRENT route from the presence
+    /// registry (same contract as `GossipDeps::resolve_peer_route_from_dht`
+    /// — both adapters delegate to the one shared
+    /// `services::community::routes::resolve_member_route`, one trust
+    /// gate). Pure I/O port: the heal ORCHESTRATION (failure threshold,
+    /// refresh application) lives crate-side in the send loop, exactly
+    /// like gossip's `send_to_one_peer` owns its own re-resolve. This
+    /// is distinct from `resolve_peer_route` above, which resolves 1:1
+    /// FRIEND routes from the profile record — community pseudonyms
+    /// publish routes to the community presence registry instead.
+    async fn resolve_peer_route_from_dht(
+        &self,
+        community_id: &str,
+        peer_pseudonym: &str,
+    ) -> Option<Vec<u8>>;
+
     /// Register a spawned background task so it can be aborted on app
     /// shutdown.
     fn register_background_handle(&self, handle: tokio::task::JoinHandle<()>);
