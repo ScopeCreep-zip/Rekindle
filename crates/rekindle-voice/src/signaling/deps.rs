@@ -68,6 +68,21 @@ pub enum CommunityVoiceEvent {
         channel_id: String,
         participants: Vec<VoiceRosterParticipant>,
     },
+    /// The bound transport's roster actually changed (new peer added
+    /// or present peer removed) via SIGNALING — join, join-ack, roster
+    /// receipt, leave, or presence reconcile. Authoritative for
+    /// session membership: media arrival must never gate roster state
+    /// (a VAD-silent peer sends no packets but is fully present).
+    /// `remote_count` is the roster size captured at mutation time so
+    /// consumers don't re-lock the transport.
+    VoiceRosterChanged {
+        community_id: String,
+        channel_id: String,
+        pseudonym_key: String,
+        present: bool,
+        display_name: Option<String>,
+        remote_count: usize,
+    },
     /// Local three-way join handshake progressed (announced → seen →
     /// connected). `peer`/`display_name` identify the member whose
     /// evidence drove the transition (None for the connected leg).

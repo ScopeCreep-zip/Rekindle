@@ -368,6 +368,46 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
                     },
                 );
             }
+            CommunityVoiceEvent::VoiceRosterChanged {
+                community_id,
+                channel_id,
+                pseudonym_key,
+                present,
+                display_name: _,
+                remote_count,
+            } => {
+                // Session membership is SIGNALING-driven (the transport
+                // roster), never media-driven — a VAD-silent peer sends
+                // no packets but is fully present. This feeds both the
+                // video-session caps slot and the media-ready roster
+                // input; the old path hung both off the first received
+                // voice packet, so video egress deadlocked on inbound
+                // audio.
+                let result = if present {
+                    crate::services::community::video_session::on_peer_joined(
+                        &self.state,
+                        &community_id,
+                        &channel_id,
+                        &pseudonym_key,
+                    )
+                } else {
+                    crate::services::community::video_session::on_peer_left(
+                        &self.state,
+                        &community_id,
+                        &channel_id,
+                        &pseudonym_key,
+                    )
+                };
+                if let Err(e) = result {
+                    tracing::warn!(error = %e, present, "video_session roster sync failed");
+                }
+                crate::services::community::media_ready_runtime::update_media_ready(
+                    &self.state,
+                    &community_id,
+                    &channel_id,
+                    |i| i.roster_non_empty = remote_count > 0,
+                );
+            }
             CommunityVoiceEvent::VoiceJoinHandshake {
                 community_id,
                 channel_id,

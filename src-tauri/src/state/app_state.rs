@@ -237,6 +237,10 @@ pub struct AppState {
     /// Channel-media sends that found an empty roster (observability —
     /// frames encoded but with nobody to send to).
     pub channel_send_empty_roster_drops: std::sync::atomic::AtomicU64,
+    /// Single-flight gate for per-(community, peer) DHT route
+    /// re-resolution. Lives on AppState because the gossip adapter is
+    /// rebuilt per send — the coalescing window must span sends.
+    pub gossip_resolve_gate: rekindle_gossip::ResolveGate,
 }
 
 impl Default for AppState {
@@ -333,6 +337,7 @@ impl Default for AppState {
             voice_ingress_drops_total: std::sync::atomic::AtomicU64::new(0),
             video_pre_ready_drops: std::sync::atomic::AtomicU64::new(0),
             channel_send_empty_roster_drops: std::sync::atomic::AtomicU64::new(0),
+            gossip_resolve_gate: rekindle_gossip::ResolveGate::new(),
         }
     }
 }

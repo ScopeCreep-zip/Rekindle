@@ -169,13 +169,14 @@ impl VoiceSessionDeps for VoiceAdapter {
     }
 
     fn emit_voice_event(&self, event: VoiceSessionEvent) {
-        // Phase B — mirror UserJoined / UserLeft into the per-call
-        // video session aggregator so a new peer's cap slot is created
-        // (seeded with the conservative interim default) before their
-        // first `MediaCapabilities` advertisement arrives, and so a
-        // departing peer's stale entry stops gating the negotiated
-        // shape.
-        event_mapping::sync_video_session(&self.state, &event);
+        // Session membership (video-session caps slots + media-ready
+        // roster input) is driven by the SIGNALING roster via
+        // `CommunityVoiceEvent::VoiceRosterChanged` in the signaling
+        // adapter — NOT from these media-driven events. UserJoined
+        // fires only on the first received voice packet and UserLeft
+        // on silence timeout, so gating membership on them deadlocked
+        // video egress behind inbound audio and dropped present-but-
+        // quiet peers. These events remain UI-facing only.
         // Phase 5 — quality + receive-stats merge into ONE UI event
         // (each emission carries both halves from the cache).
         if let Some(merged) = event_mapping::merge_quality_event(&self.state, &event) {

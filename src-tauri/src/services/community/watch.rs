@@ -136,15 +136,28 @@ pub async fn watch_community_records(
     let Some(rc) = state_helpers::safe_routing_context(state) else {
         return Err("not attached".into());
     };
-    let (governance_key, registry_key, channel_keys) = {
+    let (records_open, governance_key, registry_key, channel_keys) = {
         let communities = state.communities.read();
         let community = communities.get(community_id).ok_or("community not found")?;
         (
+            community.open_community_records.records_open,
             community.open_community_records.governance_key.clone(),
             community.open_community_records.registry_key.clone(),
             community.open_community_records.channel_keys.clone(),
         )
     };
+    // Record keys are restored from persistence at resume, but Veilid
+    // requires open_dht_record THIS session before watch_dht_values —
+    // a pre-open watch can only fail with "record not open". Skip it:
+    // `open_one_community_dht_records` always issues the watch after
+    // the session's opens complete, covering this same key list.
+    if !records_open {
+        tracing::debug!(
+            community = %community_id,
+            "watch requested before this session's record opens — post-open watch covers it"
+        );
+        return Ok(());
+    }
 
     if let Some(governance_key) = governance_key {
         watch_record(&rc, state, community_id, "governance", &governance_key).await;

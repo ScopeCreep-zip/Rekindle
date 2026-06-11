@@ -216,16 +216,46 @@ async fn send_to_one_peer<D: GossipDeps>(
 
     deps.record_peer_reliability(&community_id, &peer.pseudonym_key, false);
 
-    tracing::info!(
-        community = %community_id,
-        peer = %peer.pseudonym_key,
-        "route stale, attempting DHT re-resolve",
-    );
+    // Single-flight: one task leads the DHT re-resolution per
+    // (community, peer); concurrent failures (a queued-broadcast drain
+    // fires dozens at once) wait for the leader's write-back and retry
+    // against the refreshed overlay route instead of issuing their own
+    // DHT lookups.
+    let lead = deps
+        .resolve_gate()
+        .try_lead(&community_id, &peer.pseudonym_key);
+    let fresh_blob = if let Some(_lead_guard) = lead {
+        tracing::info!(
+            community = %community_id,
+            peer = %peer.pseudonym_key,
+            "route stale, attempting DHT re-resolve",
+        );
+        let resolved = deps
+            .resolve_peer_route_from_dht(&community_id, &peer.pseudonym_key)
+            .await;
+        if let Some(ref blob) = resolved {
+            let status = deps
+                .online_member_status(&community_id, &peer.pseudonym_key)
+                .unwrap_or_else(|| "online".to_string());
+            deps.update_peer_route(&community_id, &peer.pseudonym_key, &status, blob.clone());
+        }
+        resolved
+        // _lead_guard drops here — waiters proceed against the
+        // overlay route written back above.
+    } else {
+        deps.resolve_gate()
+            .wait(&community_id, &peer.pseudonym_key)
+            .await;
+        // The leader's write-back (if any) is in the overlay now.
+        deps.current_peers(&community_id)
+            .into_iter()
+            .flatten()
+            .find(|p| p.pseudonym_key == peer.pseudonym_key)
+            .map(|p| p.route_blob)
+            .filter(|blob| !blob.is_empty() && *blob != peer.route_blob)
+    };
 
-    let Some(fresh_blob) = deps
-        .resolve_peer_route_from_dht(&community_id, &peer.pseudonym_key)
-        .await
-    else {
+    let Some(fresh_blob) = fresh_blob else {
         tracing::warn!(
             community = %community_id,
             peer = %peer.pseudonym_key,
@@ -240,10 +270,6 @@ async fn send_to_one_peer<D: GossipDeps>(
 
     match deps.send_app_message(&fresh_blob, data).await {
         Ok(()) => {
-            let status = deps
-                .online_member_status(&community_id, &peer.pseudonym_key)
-                .unwrap_or_else(|| "online".to_string());
-            deps.update_peer_route(&community_id, &peer.pseudonym_key, &status, fresh_blob);
             if let Some(ref mid) = msg_id {
                 deps.record_delivery(mid, &community_id, &peer.pseudonym_key, "delivered")
                     .await;
@@ -295,6 +321,7 @@ mod tests {
         state: Mutex<MockState>,
         identity: Option<[u8; 32]>,
         my_pseudonym: String,
+        resolve_gate: crate::resolve_gate::ResolveGate,
     }
 
     impl MockDeps {
@@ -303,6 +330,7 @@ mod tests {
                 state: Mutex::new(MockState::default()),
                 identity: Some([7u8; 32]),
                 my_pseudonym: "me".to_string(),
+                resolve_gate: crate::resolve_gate::ResolveGate::new(),
             }
         }
     }
@@ -363,6 +391,9 @@ mod tests {
         }
         async fn resolve_peer_route_from_dht(&self, _c: &str, peer: &str) -> Option<Vec<u8>> {
             self.state.lock().fresh_routes.get(peer).cloned()
+        }
+        fn resolve_gate(&self) -> &crate::resolve_gate::ResolveGate {
+            &self.resolve_gate
         }
         async fn send_app_message(&self, route_blob: &[u8], data: Vec<u8>) -> Result<(), String> {
             let mut state = self.state.lock();

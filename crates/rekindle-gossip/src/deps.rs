@@ -97,6 +97,12 @@ pub trait GossipDeps: Send + Sync + 'static {
         peer_pseudonym: &str,
     ) -> Option<Vec<u8>>;
 
+    /// Single-flight gate coalescing concurrent `(community, peer)`
+    /// route re-resolutions — one task leads the DHT lookup, the rest
+    /// wait and retry against the written-back route. Implementations
+    /// hold one `ResolveGate` per node for its lifetime.
+    fn resolve_gate(&self) -> &crate::resolve_gate::ResolveGate;
+
     // === Transport (async) ===
     /// Import the remote private route and send the payload via
     /// `app_message`. Returns `Err` if the send fails for any reason

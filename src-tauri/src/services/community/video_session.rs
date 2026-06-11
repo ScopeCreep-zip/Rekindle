@@ -353,19 +353,6 @@ fn set_pending_local_caps(state: &Arc<AppState>, caps: Option<MediaCapabilities>
     }
 }
 
-/// Number of REMOTE peers currently tracked in a slot (excludes
-/// `LOCAL_PEER_KEY`). Feeds the media-ready gate's roster input —
-/// maintained by the same join/leave signals that keep `peer_caps`
-/// current, so the two views can't drift.
-pub fn remote_peer_count(state: &Arc<AppState>, community_id: &str, channel_id: &str) -> usize {
-    let guard = state.video_sessions.inner.read();
-    guard
-        .get(&(community_id.to_string(), channel_id.to_string()))
-        .map_or(0, |s| {
-            s.peer_caps.keys().filter(|k| *k != LOCAL_PEER_KEY).count()
-        })
-}
-
 /// The most recently reported local WebCodecs probe caps, or `None`
 /// if the frontend hasn't reported yet. Also feeds the directed
 /// `MediaCapabilities` advertisements (`voice_adapter::io_helpers`) so

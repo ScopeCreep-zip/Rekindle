@@ -130,10 +130,21 @@ async fn voice_join_apply(
         .stage_channel_info(community_id, channel_id)
         .is_some_and(|s| s.is_stage);
 
-    transport
-        .lock()
-        .await
-        .add_peer(&sender_key, &blob, joiner_name.as_deref());
+    let (newly_added, remote_count) = {
+        let mut t = transport.lock().await;
+        let newly = t.add_peer(&sender_key, &blob, joiner_name.as_deref());
+        (newly, t.peer_count())
+    };
+    if newly_added {
+        deps.emit_event(CommunityVoiceEvent::VoiceRosterChanged {
+            community_id: community_id.to_string(),
+            channel_id: channel_id.to_string(),
+            pseudonym_key: sender_key.clone(),
+            present: true,
+            display_name: joiner_name.clone(),
+            remote_count,
+        });
+    }
 
     // Handshake leg 2 — "seen": directed ack carrying OUR identity +
     // route so the joiner can add us from the ack alone (SimpleX
@@ -253,10 +264,21 @@ pub(super) fn handle_voice_join_ack(
     let acker = sender_pseudonym.to_string();
     let handle = tokio::spawn(async move {
         if !route_blob.is_empty() {
-            transport
-                .lock()
-                .await
-                .add_peer(&acker, &route_blob, display_name.as_deref());
+            let (newly_added, remote_count) = {
+                let mut t = transport.lock().await;
+                let newly = t.add_peer(&acker, &route_blob, display_name.as_deref());
+                (newly, t.peer_count())
+            };
+            if newly_added {
+                deps_task.emit_event(CommunityVoiceEvent::VoiceRosterChanged {
+                    community_id: cid.clone(),
+                    channel_id: channel_id.clone(),
+                    pseudonym_key: acker.clone(),
+                    present: true,
+                    display_name: display_name.clone(),
+                    remote_count,
+                });
+            }
         }
         if transport.lock().await.advance_handshake_seen() {
             deps_task.emit_event(CommunityVoiceEvent::VoiceJoinHandshake {
@@ -501,11 +523,21 @@ async fn voice_leave_apply(
         .stage_channel_info(community_id, channel_id)
         .is_some_and(|s| s.is_stage);
 
-    let (peer_count, current_mode) = {
+    let (removed, peer_count, current_mode) = {
         let mut t = transport.lock().await;
-        t.remove_peer(&sender_key);
-        (t.peer_count(), t.mode().clone())
+        let removed = t.remove_peer(&sender_key);
+        (removed, t.peer_count(), t.mode().clone())
     };
+    if removed {
+        deps.emit_event(CommunityVoiceEvent::VoiceRosterChanged {
+            community_id: community_id.to_string(),
+            channel_id: channel_id.to_string(),
+            pseudonym_key: sender_key.clone(),
+            present: false,
+            display_name: None,
+            remote_count: peer_count,
+        });
+    }
 
     if is_stage {
         reconcile_stage_transport(deps, community_id, channel_id, &transport, &my_pk).await;
@@ -601,17 +633,32 @@ pub(super) fn handle_voice_roster(
     let cid = community_id.to_string();
     let my_pk = deps.my_pseudonym(community_id).unwrap_or_default();
     let handle = tokio::spawn(async move {
-        {
+        let (added, remote_count) = {
             let mut t = transport.lock().await;
+            let mut added: Vec<(String, Option<String>)> = Vec::new();
             for entry in &participants {
-                if !entry.route_blob.is_empty() && entry.pseudonym_key != my_pk {
-                    t.add_peer(
+                if !entry.route_blob.is_empty()
+                    && entry.pseudonym_key != my_pk
+                    && t.add_peer(
                         &entry.pseudonym_key,
                         &entry.route_blob,
                         entry.display_name.as_deref(),
-                    );
+                    )
+                {
+                    added.push((entry.pseudonym_key.clone(), entry.display_name.clone()));
                 }
             }
+            (added, t.peer_count())
+        };
+        for (pseudonym_key, display_name) in added {
+            deps_task.emit_event(CommunityVoiceEvent::VoiceRosterChanged {
+                community_id: cid.clone(),
+                channel_id: channel_id.clone(),
+                pseudonym_key,
+                present: true,
+                display_name,
+                remote_count,
+            });
         }
         // We (the joiner) just learned the channel roster — directed
         // re-advertise so every present member gets our caps. The

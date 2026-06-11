@@ -140,21 +140,24 @@ pub async fn reconcile_from_presence(
         return;
     }
 
-    {
+    let (added, removed, remote_count) = {
         let mut t = transport.lock().await;
+        let mut added: Vec<bool> = Vec::with_capacity(plan.add.len());
         for add in &plan.add {
-            t.add_peer(
+            added.push(t.add_peer(
                 &add.pseudonym_hex,
                 &add.route_blob,
                 add.display_name.as_deref(),
-            );
+            ));
         }
+        let mut removed: Vec<bool> = Vec::with_capacity(plan.remove.len());
         for gone in &plan.remove {
-            t.remove_peer(gone);
+            removed.push(t.remove_peer(gone));
         }
-    }
+        (added, removed, t.peer_count())
+    };
 
-    for add in &plan.add {
+    for (add, newly) in plan.add.iter().zip(&added) {
         tracing::info!(
             community = %community_id,
             channel = %channel_id,
@@ -168,8 +171,18 @@ pub async fn reconcile_from_presence(
             route_blob: add.route_blob.clone(),
             display_name: add.display_name.clone(),
         });
+        if *newly {
+            deps.emit_event(CommunityVoiceEvent::VoiceRosterChanged {
+                community_id: community_id.to_string(),
+                channel_id: channel_id.clone(),
+                pseudonym_key: add.pseudonym_hex.clone(),
+                present: true,
+                display_name: add.display_name.clone(),
+                remote_count,
+            });
+        }
     }
-    for gone in &plan.remove {
+    for (gone, was_present) in plan.remove.iter().zip(&removed) {
         tracing::info!(
             community = %community_id,
             channel = %channel_id,
@@ -181,6 +194,16 @@ pub async fn reconcile_from_presence(
             channel_id: channel_id.clone(),
             pseudonym_key: gone.clone(),
         });
+        if *was_present {
+            deps.emit_event(CommunityVoiceEvent::VoiceRosterChanged {
+                community_id: community_id.to_string(),
+                channel_id: channel_id.clone(),
+                pseudonym_key: gone.clone(),
+                present: false,
+                display_name: None,
+                remote_count,
+            });
+        }
     }
 
     if !plan.add.is_empty() {

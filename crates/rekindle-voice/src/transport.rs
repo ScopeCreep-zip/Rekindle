@@ -295,7 +295,16 @@ impl VoiceTransport {
 
     /// Add a peer to the voice mesh. The route blob is imported lazily
     /// by the [`VoiceFrameSender`] on first send.
-    pub fn add_peer(&mut self, pseudonym_key: &str, route_blob: &[u8], display_name: Option<&str>) {
+    /// Add (or route-upsert) a roster entry. Returns `true` only when
+    /// the peer is NEW to the roster — callers emit the roster-changed
+    /// signaling event on that edge, so repeat VoiceJoin re-announces
+    /// (route refresh) don't re-fire membership downstream.
+    pub fn add_peer(
+        &mut self,
+        pseudonym_key: &str,
+        route_blob: &[u8],
+        display_name: Option<&str>,
+    ) -> bool {
         tracing::info!(
             channel = %self.channel_id,
             peer = %pseudonym_key,
@@ -305,24 +314,22 @@ impl VoiceTransport {
         // fresh join) so the presence-reconcile grace isn't reset by
         // repeat VoiceJoin announces. A name supplied by any handshake
         // leg upgrades a missing one; `None` never erases a known name.
-        match self.peers.get_mut(pseudonym_key) {
-            Some(existing) => {
-                existing.route_blob = route_blob.to_vec();
-                if let Some(name) = display_name {
-                    existing.display_name = Some(name.to_string());
-                }
+        if let Some(existing) = self.peers.get_mut(pseudonym_key) {
+            existing.route_blob = route_blob.to_vec();
+            if let Some(name) = display_name {
+                existing.display_name = Some(name.to_string());
             }
-            None => {
-                self.peers.insert(
-                    pseudonym_key.to_string(),
-                    VoicePeer {
-                        route_blob: route_blob.to_vec(),
-                        added_at: std::time::Instant::now(),
-                        display_name: display_name.map(str::to_string),
-                    },
-                );
-            }
+            return false;
         }
+        self.peers.insert(
+            pseudonym_key.to_string(),
+            VoicePeer {
+                route_blob: route_blob.to_vec(),
+                added_at: std::time::Instant::now(),
+                display_name: display_name.map(str::to_string),
+            },
+        );
+        true
     }
 
     /// Refresh a peer's route blob ONLY if they are already in the
@@ -364,15 +371,19 @@ impl VoiceTransport {
             .collect()
     }
 
-    /// Remove a peer from the voice mesh.
-    pub fn remove_peer(&mut self, pseudonym_key: &str) {
-        if self.peers.remove(pseudonym_key).is_some() {
+    /// Remove a peer from the voice mesh. Returns `true` when the
+    /// peer was actually present — callers emit the roster-changed
+    /// signaling event on that edge.
+    pub fn remove_peer(&mut self, pseudonym_key: &str) -> bool {
+        let removed = self.peers.remove(pseudonym_key).is_some();
+        if removed {
             tracing::info!(
                 channel = %self.channel_id,
                 peer = %pseudonym_key,
                 "removed voice peer"
             );
         }
+        removed
     }
 
     /// Set the voice channel operating mode.
