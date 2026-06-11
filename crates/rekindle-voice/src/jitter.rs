@@ -177,6 +177,7 @@ mod tests {
             sequence: seq,
             timestamp: u64::from(seq) * 20,
             audio_data: vec![0; 160],
+            mek_generation: 0,
             signature: Vec::new(),
         }
     }

@@ -98,10 +98,13 @@ pub enum VideoEvent {
 /// buffer is NOT exposed through the trait — pass it as a parameter
 /// to crate-side fns instead.
 pub trait VideoDeps: Send + Sync + 'static {
-    /// Current per-community MEK (raw 32 bytes + generation) for
-    /// envelope encrypt/decrypt. Returns `None` if no MEK is cached
-    /// (e.g. the user hasn't joined voice/video for this community).
-    fn community_mek_bytes(&self, community_id: &str) -> Option<([u8; 32], u64)>;
+    /// The channel-media MEK (raw 32 bytes + generation) for envelope
+    /// encrypt/decrypt — §10.5 hierarchy: the per-channel MEK when the
+    /// join/leave rotation has distributed one, the community MEK
+    /// otherwise (stage channels never rotate and so resolve to the
+    /// community key). `None` if neither is cached.
+    fn channel_media_mek(&self, community_id: &str, channel_id: &str)
+        -> Option<([u8; 32], u64)>;
 
     /// Derive the Ed25519 SigningKey for the community pseudonym (the
     /// fragment-level signature uses this). Returns `None` if the

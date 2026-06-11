@@ -353,6 +353,11 @@ impl MekDistributeDeps for MekAdapter {
                     (community_id.to_string(), channel_id.to_string()),
                     mek.clone(),
                 );
+                crate::services::community::media_ready_runtime::on_mek_updated(
+                    &self.state,
+                    community_id,
+                    Some(channel_id),
+                );
                 crate::services::community::mek_rotation_support::update_generation_state(
                     &self.state,
                     community_id,
@@ -368,6 +373,7 @@ impl MekDistributeDeps for MekAdapter {
                 crate::services::community::media_ready_runtime::on_mek_updated(
                     &self.state,
                     community_id,
+                    None,
                 );
                 crate::services::community::mek_rotation_support::update_generation_state(
                     &self.state,

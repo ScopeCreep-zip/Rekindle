@@ -148,6 +148,7 @@ impl McuLoop {
                     data: packet.audio_data,
                     timestamp: packet.timestamp,
                     sequence: packet.sequence,
+                    mek_generation: packet.mek_generation,
                 };
                 match sender.codec.decode(&frame) {
                     Ok(decoded) => {

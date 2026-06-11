@@ -25,6 +25,8 @@ export type VoiceEvent =
         quality: string;
         rxOverflowDrops: number;
         rxLateDrops: number;
+        /** Inbound media dropped for MEK reasons (rotation race signal). */
+        rxMekDrops: number;
         ingressDrops: number;
       };
     }

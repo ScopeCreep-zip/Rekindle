@@ -37,3 +37,30 @@ pub fn communities_with_governance_keys(state: &Arc<AppState>) -> Vec<(String, S
         .filter_map(|c| c.governance_key.as_ref().map(|k| (c.id.clone(), k.clone())))
         .collect()
 }
+
+/// The MEK hierarchy for CHANNEL MEDIA (voice frames, video frames):
+/// the per-channel MEK when the §10.5 join/leave rotation has
+/// distributed one, otherwise the community MEK every member holds
+/// from join. This mirrors the text plane's
+/// `channel_or_community_mek_impl` — one key hierarchy for every
+/// channel payload. Stage channels never rotate (§10.7), so they
+/// resolve to the community MEK by construction. Returns
+/// `(key_bytes, generation)`.
+pub fn channel_media_mek(
+    state: &Arc<AppState>,
+    community_id: &str,
+    channel_id: &str,
+) -> Option<([u8; 32], u64)> {
+    let channel = state
+        .channel_mek_cache
+        .lock()
+        .get(&(community_id.to_string(), channel_id.to_string()))
+        .map(|m| (*m.as_bytes(), m.generation()));
+    channel.or_else(|| {
+        state
+            .mek_cache
+            .lock()
+            .get(community_id)
+            .map(|m| (*m.as_bytes(), m.generation()))
+    })
+}

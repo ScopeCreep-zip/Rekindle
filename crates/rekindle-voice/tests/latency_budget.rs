@@ -144,6 +144,7 @@ fn measure_pipeline_compute_p95() -> Duration {
             sequence: seq,
             timestamp: u64::from(seq) * 20,
             audio_data: encoded.data,
+            mek_generation: 0,
             signature: Vec::new(),
         });
     }
@@ -158,6 +159,7 @@ fn measure_pipeline_compute_p95() -> Duration {
             sequence: seq,
             timestamp: u64::from(seq) * 20,
             audio_data: encoded.data,
+            mek_generation: 0,
             signature: Vec::new(),
         });
         seq = seq.wrapping_add(1);
@@ -166,6 +168,7 @@ fn measure_pipeline_compute_p95() -> Duration {
                 data: packet.audio_data,
                 timestamp: packet.timestamp,
                 sequence: packet.sequence,
+                mek_generation: packet.mek_generation,
             };
             let decoded = decoder.decode(&dec_frame).expect("decode");
             let _ = mixer.mix(&[("p0", &decoded.samples)]);

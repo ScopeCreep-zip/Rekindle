@@ -340,7 +340,7 @@ fn emit_frame_ready<D: VideoDeps>(
     frame: &ReassembledFrame,
     now_ms: u32,
 ) {
-    let Some((mek_bytes, mek_gen)) = deps.community_mek_bytes(community_id) else {
+    let Some((mek_bytes, mek_gen)) = deps.channel_media_mek(community_id, channel_id) else {
         tracing::debug!(
             community = %community_id,
             "video frame received but no MEK cached — requesting"

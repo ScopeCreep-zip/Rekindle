@@ -163,7 +163,7 @@ pub(super) fn decrypt_message_body(
                 .ok()
                 .and_then(|bytes| String::from_utf8(bytes).ok())?;
             state.mek_cache.lock().insert(community_id.to_string(), mek);
-            crate::services::community::media_ready_runtime::on_mek_updated(state, community_id);
+            crate::services::community::media_ready_runtime::on_mek_updated(state, community_id, None);
             Some(plaintext)
         })
 }

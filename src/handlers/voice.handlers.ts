@@ -62,6 +62,7 @@ export async function initVoiceEventListener(): Promise<UnlistenFn> {
         setVoiceState("connectionQuality", event.data.quality);
         setVoiceState("rxOverflowDrops", event.data.rxOverflowDrops);
         setVoiceState("rxLateDrops", event.data.rxLateDrops);
+        setVoiceState("rxMekDrops", event.data.rxMekDrops);
         setVoiceState("ingressDrops", event.data.ingressDrops);
         break;
       case "deviceChanged":

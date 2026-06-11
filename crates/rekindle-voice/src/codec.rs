@@ -18,6 +18,11 @@ pub struct EncodedFrame {
     pub data: Vec<u8>,
     pub timestamp: u64,
     pub sequence: u32,
+    /// Generation of the channel-media MEK that encrypted `data`
+    /// (0 = unencrypted / 1:1 call). Stamped by the send loop at
+    /// encrypt time; carried into the wire packet so receivers can
+    /// detect generation mismatch instead of decrypt-failing blind.
+    pub mek_generation: u64,
 }
 
 /// A single decoded audio frame (PCM samples).
@@ -93,6 +98,7 @@ impl OpusCodec {
             data: output,
             timestamp: 0,
             sequence: 0,
+            mek_generation: 0,
         })
     }
 

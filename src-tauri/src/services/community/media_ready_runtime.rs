@@ -59,22 +59,31 @@ pub fn clear_media_ready(state: &Arc<AppState>, community_id: &str, channel_id: 
     }
 }
 
-/// A community MEK landed (any of the rotation/transfer/join paths).
-/// If a voice session is active for that community, flip `mek_present`
-/// on its slot. Called from every MEK insert site — cheap no-op when
-/// the community has no live voice session.
-pub fn on_mek_updated(state: &Arc<AppState>, community_id: &str) {
-    let channel_id = {
+/// A MEK landed (any of the rotation/transfer/join paths).
+/// `channel_id = None` for a community-level key (the base of the
+/// §10.5 channel-media hierarchy — it affects EVERY channel's
+/// resolution), `Some(ch)` for a per-channel key (affects only that
+/// channel). If a voice session is active on an affected channel,
+/// recompute `mek_present` from the resolution. Called from every MEK
+/// insert site — cheap no-op when no live voice session is affected.
+pub fn on_mek_updated(state: &Arc<AppState>, community_id: &str, channel_id: Option<&str>) {
+    let bound_channel = {
         let ve = state.voice_engine.lock();
         ve.as_ref()
             .filter(|h| h.community_id.as_deref() == Some(community_id))
             .map(|h| h.channel_id.clone())
     };
-    if let Some(channel_id) = channel_id {
-        update_media_ready(state, community_id, &channel_id, |i| {
-            i.mek_present = true;
-        });
+    let Some(bound_channel) = bound_channel else {
+        return;
+    };
+    if channel_id.is_some_and(|ch| ch != bound_channel) {
+        return; // a different channel's key — this session unaffected
     }
+    let present =
+        crate::state_helpers::channel_media_mek(state, community_id, &bound_channel).is_some();
+    update_media_ready(state, community_id, &bound_channel, |i| {
+        i.mek_present = present;
+    });
 }
 
 /// The hard egress gate — `Err(reason)` until the session converged.

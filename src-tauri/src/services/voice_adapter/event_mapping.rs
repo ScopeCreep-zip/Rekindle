@@ -21,6 +21,7 @@ pub struct VoiceQualityCache {
     pub quality: String,
     pub rx_overflow_drops: u64,
     pub rx_late_drops: u64,
+    pub rx_mek_drops: u64,
 }
 
 impl Default for VoiceQualityCache {
@@ -29,6 +30,7 @@ impl Default for VoiceQualityCache {
             quality: "good".to_string(),
             rx_overflow_drops: 0,
             rx_late_drops: 0,
+            rx_mek_drops: 0,
         }
     }
 }
@@ -48,9 +50,11 @@ pub(super) fn merge_quality_event(
         E::ReceiveStats {
             rx_overflow_drops,
             rx_late_drops,
+            rx_mek_drops,
         } => {
             cache.rx_overflow_drops = *rx_overflow_drops;
             cache.rx_late_drops = *rx_late_drops;
+            cache.rx_mek_drops = *rx_mek_drops;
         }
         _ => return None,
     }
@@ -58,6 +62,7 @@ pub(super) fn merge_quality_event(
         quality: cache.quality.clone(),
         rx_overflow_drops: cache.rx_overflow_drops,
         rx_late_drops: cache.rx_late_drops,
+        rx_mek_drops: cache.rx_mek_drops,
         ingress_drops: state
             .voice_ingress_drops_total
             .load(std::sync::atomic::Ordering::Relaxed),
@@ -147,6 +152,7 @@ pub(super) fn emit_local_joined_impl(
             quality: "good".to_string(),
             rx_overflow_drops: 0,
             rx_late_drops: 0,
+            rx_mek_drops: 0,
             ingress_drops: 0,
         },
     );

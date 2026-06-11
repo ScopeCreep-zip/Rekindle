@@ -63,7 +63,7 @@ impl MockDeps {
 }
 
 impl VideoDeps for MockDeps {
-    fn community_mek_bytes(&self, _c: &str) -> Option<([u8; 32], u64)> {
+    fn channel_media_mek(&self, _c: &str, _ch: &str) -> Option<([u8; 32], u64)> {
         self.mek.as_ref().map(|m| (*m.as_bytes(), m.generation()))
     }
 

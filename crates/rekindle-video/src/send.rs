@@ -80,11 +80,11 @@ pub fn build_video_frame<D: VideoDeps>(
         return Err(VideoError::InvalidInput("empty encoded payload".into()));
     }
 
-    let (mek_bytes, mek_gen) =
-        deps.community_mek_bytes(community_id)
-            .ok_or_else(|| VideoError::MekUnavailable {
-                community: community_id.to_string(),
-            })?;
+    let (mek_bytes, mek_gen) = deps
+        .channel_media_mek(community_id, channel_id)
+        .ok_or_else(|| VideoError::MekUnavailable {
+            community: community_id.to_string(),
+        })?;
     let mek = rekindle_crypto::group::media_key::MediaEncryptionKey::from_bytes(mek_bytes, mek_gen);
     let ciphertext = mek
         .encrypt(&request.encoded_payload)

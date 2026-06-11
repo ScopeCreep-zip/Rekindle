@@ -50,12 +50,8 @@ impl VideoAdapter {
 }
 
 impl VideoDeps for VideoAdapter {
-    fn community_mek_bytes(&self, community_id: &str) -> Option<([u8; 32], u64)> {
-        self.state
-            .mek_cache
-            .lock()
-            .get(community_id)
-            .map(|m| (*m.as_bytes(), m.generation()))
+    fn channel_media_mek(&self, community_id: &str, channel_id: &str) -> Option<([u8; 32], u64)> {
+        crate::state_helpers::channel_media_mek(&self.state, community_id, channel_id)
     }
 
     fn community_signing_key(&self, community_id: &str) -> Option<SigningKey> {

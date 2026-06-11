@@ -30,7 +30,8 @@ mod routes;
 
 pub use circuit_breaker::{is_circuit_open, reset_circuit_breaker, trip_circuit_breaker};
 pub use communities::{
-    communities_with_governance_keys, push_community_channel, set_community_channels,
+    channel_media_mek, communities_with_governance_keys, push_community_channel,
+    set_community_channels,
 };
 pub use dht_records::{
     collect_and_clear_community_records, store_dht_record, track_open_records, untrack_records,

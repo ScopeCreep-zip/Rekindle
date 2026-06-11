@@ -31,6 +31,10 @@ pub enum VoiceEvent {
         quality: String,
         rx_overflow_drops: u64,
         rx_late_drops: u64,
+        /// Inbound media dropped for MEK reasons (missing key /
+        /// generation mismatch / decrypt failure) — the visible signal
+        /// for a rotation race; never silent.
+        rx_mek_drops: u64,
         ingress_drops: u64,
     },
     #[serde(rename_all = "camelCase")]

@@ -72,9 +72,37 @@ impl VoiceSessionDeps for VoiceAdapter {
         *self.state.voice_packet_rx_staged.lock() = None;
     }
 
-    fn community_voice_mek(&self, community_id: &str) -> Option<[u8; 32]> {
-        let cache = self.state.mek_cache.lock();
-        cache.get(community_id).map(|mek| *mek.as_bytes())
+    fn channel_media_mek(&self, community_id: &str, channel_id: &str) -> Option<([u8; 32], u64)> {
+        crate::state_helpers::channel_media_mek(&self.state, community_id, channel_id)
+    }
+
+    fn request_mek_refresh(&self, community_id: &str, channel_id: &str) {
+        // Same cascade the video receive path fires — the responder
+        // holds the rotation the requester missed. Needed generation =
+        // one past what we currently resolve (0 resolves to needing
+        // generation 1, the first rotation).
+        let current_gen = crate::state_helpers::channel_media_mek(
+            &self.state,
+            community_id,
+            channel_id,
+        )
+        .map_or(0, |(_, generation)| generation);
+        let Some(my_pseudonym) = self
+            .state
+            .communities
+            .read()
+            .get(community_id)
+            .and_then(|c| c.my_pseudonym_key.clone())
+        else {
+            return;
+        };
+        crate::services::community::mek_rotation::spawn_mek_request_with_retry(
+            std::sync::Arc::clone(&self.state),
+            community_id.to_string(),
+            channel_id.to_string(),
+            current_gen + 1,
+            my_pseudonym,
+        );
     }
 
     fn voice_peers(&self, community_id: &str, _channel_id: &str) -> Vec<VoicePeer> {
@@ -301,8 +329,28 @@ impl VoiceSessionDeps for VoiceAdapter {
         if let Some(community_id) = community_id {
             // Seed the media-ready gate BEFORE the config emit below so
             // its `session_config_emitted` hook lands on a slot whose
-            // other inputs already reflect reality.
-            let mek_present = self.state.mek_cache.lock().get(community_id).is_some();
+            // other inputs already reflect reality. MEK presence uses
+            // the §10.5 channel-media resolution (channel key, else
+            // community key — stage channels resolve community by
+            // construction).
+            let mek_present = crate::state_helpers::channel_media_mek(
+                &self.state,
+                community_id,
+                channel_id,
+            )
+            .is_some();
+            if !mek_present {
+                // Deterministic acquisition: fire the RequestMEK
+                // cascade NOW instead of waiting for the first
+                // undecryptable frame (fresh-device / missed-rotation
+                // edge — the join-triggered rotation usually delivers
+                // first and this resolves as a cache hit no-op).
+                rekindle_voice::VoiceSessionDeps::request_mek_refresh(
+                    self,
+                    community_id,
+                    channel_id,
+                );
+            }
             let caps_reported =
                 crate::services::community::video_session::reported_local_caps(&self.state)
                     .is_some();

@@ -109,7 +109,7 @@ pub async fn rotate_mek_local(
         }
     }
     state.mek_cache.lock().insert(community_id.to_string(), mek);
-    crate::services::community::media_ready_runtime::on_mek_updated(state, community_id);
+    crate::services::community::media_ready_runtime::on_mek_updated(state, community_id, None);
 
     if let Some(ref ks) = *keystore.lock() {
         if let Some(mek) = state.mek_cache.lock().get(community_id) {

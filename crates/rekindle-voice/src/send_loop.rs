@@ -232,19 +232,32 @@ impl VoiceSendLoop {
         encoded.timestamp = rekindle_utils::timestamp_ms();
         self.sequence = self.sequence.wrapping_add(1);
 
-        // Encrypt voice frame with community MEK (if in a community channel).
+        // Encrypt with the channel-media MEK (§10.5 hierarchy: channel
+        // MEK when the join/leave rotation distributed one, community
+        // MEK otherwise). The generation rides the wire so receivers
+        // detect rotation races instead of decrypt-failing blind. NO
+        // key → DROP the frame: community voice must never leave this
+        // node in plaintext (the old `if let Some` silently skipped
+        // encryption when the cache was empty).
         if let Some(ref cid) = self.community_id {
-            if let Some(mek_bytes) = self.deps.community_voice_mek(cid) {
-                // MEK generation 0 here — the cache already returns the
-                // current generation's MEK; the receiver's MEK chain
-                // tracks generation independently.
-                let mek = MediaEncryptionKey::from_bytes(mek_bytes, 0);
-                match mek.encrypt(&encoded.data) {
-                    Ok(ciphertext) => encoded.data = ciphertext,
-                    Err(e) => {
-                        tracing::warn!(error = %e, "voice MEK encrypt failed");
-                        return;
-                    }
+            let Some((mek_bytes, generation)) = self.deps.channel_media_mek(cid, &self.channel_id)
+            else {
+                tracing::warn!(
+                    community = %cid,
+                    channel = %self.channel_id,
+                    "no channel-media MEK — voice frame dropped (never sent plaintext)"
+                );
+                return;
+            };
+            let mek = MediaEncryptionKey::from_bytes(mek_bytes, generation);
+            match mek.encrypt(&encoded.data) {
+                Ok(ciphertext) => {
+                    encoded.data = ciphertext;
+                    encoded.mek_generation = generation;
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "voice MEK encrypt failed");
+                    return;
                 }
             }
         }

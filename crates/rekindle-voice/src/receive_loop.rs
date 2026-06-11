@@ -69,6 +69,12 @@ struct VoiceReceiveLoop {
     jitter_buffer_ms: u32,
     packets_received: u64,
     last_quality_check: Instant,
+    /// Packets dropped this stats window for MEK reasons (missing key /
+    /// generation mismatch / decrypt failure).
+    mek_drops: u64,
+    /// Debounce for the RequestMEK cascade — one fire per window even
+    /// when every packet of a 50/s stream is undecryptable.
+    last_mek_request: Option<Instant>,
     community_id: Option<String>,
     channel_id: Option<String>,
     member_names: HashMap<String, String>,
@@ -110,6 +116,8 @@ impl VoiceReceiveLoop {
             jitter_buffer_ms,
             packets_received: 0,
             last_quality_check: Instant::now(),
+            mek_drops: 0,
+            last_mek_request: None,
             community_id: params.community_id,
             channel_id: params.channel_id,
             member_names: params.member_names,
@@ -165,14 +173,32 @@ impl VoiceReceiveLoop {
         // active call entry whose peer_pubkey matches the packet's
         // sender_key. For community voice, use the MEK.
         if let Some(ref cid) = self.community_id {
-            if let Some(mek_bytes) = self.deps.community_voice_mek(cid) {
-                let mek = MediaEncryptionKey::from_bytes(mek_bytes, 0);
-                match mek.decrypt(&packet.audio_data) {
-                    Ok(plaintext) => packet.audio_data = plaintext,
-                    Err(e) => {
-                        tracing::trace!(error = %e, "voice MEK decrypt failed — skipping packet");
-                        return;
-                    }
+            let cid = cid.clone();
+            let channel = self.channel_id.clone().unwrap_or_default();
+            // Channel-media MEK hierarchy (§10.5): channel MEK when the
+            // join/leave rotation distributed one, community MEK
+            // otherwise. NO undecrypted passthrough — a packet we hold
+            // no key for is dropped and the RequestMEK cascade fired.
+            let Some((mek_bytes, our_gen)) = self.deps.channel_media_mek(&cid, &channel) else {
+                self.note_mek_drop(&cid, &channel, "no channel-media MEK cached");
+                return;
+            };
+            if packet.mek_generation != our_gen {
+                tracing::trace!(
+                    packet_gen = packet.mek_generation,
+                    our_gen,
+                    "voice MEK generation mismatch — dropping + requesting"
+                );
+                self.note_mek_drop(&cid, &channel, "MEK generation mismatch");
+                return;
+            }
+            let mek = MediaEncryptionKey::from_bytes(mek_bytes, our_gen);
+            match mek.decrypt(&packet.audio_data) {
+                Ok(plaintext) => packet.audio_data = plaintext,
+                Err(e) => {
+                    tracing::trace!(error = %e, "voice MEK decrypt failed — dropping + requesting");
+                    self.note_mek_drop(&cid, &channel, "MEK decrypt failed");
+                    return;
                 }
             }
         } else {
@@ -289,6 +315,7 @@ impl VoiceReceiveLoop {
                         data: packet.audio_data,
                         timestamp: packet.timestamp,
                         sequence: packet.sequence,
+                        mek_generation: packet.mek_generation,
                     };
                     match participant.codec.decode(&frame) {
                         Ok(decoded) => decoded.samples,
@@ -406,6 +433,23 @@ impl VoiceReceiveLoop {
         }
     }
 
+    /// Count an undecryptable packet and (debounced, 10s) fire the
+    /// RequestMEK cascade. Drops are surfaced in ReceiveStats — a
+    /// security-relevant drop must never be silent.
+    fn note_mek_drop(&mut self, community_id: &str, channel_id: &str, reason: &'static str) {
+        self.mek_drops += 1;
+        self.deps.record_packet_drop();
+        let due = self
+            .last_mek_request
+            .is_none_or(|t| t.elapsed() >= Duration::from_secs(10));
+        if due {
+            tracing::info!(community = %community_id, channel = %channel_id, reason,
+                "requesting channel MEK refresh");
+            self.deps.request_mek_refresh(community_id, channel_id);
+            self.last_mek_request = Some(Instant::now());
+        }
+    }
+
     fn log_quality_if_due(&mut self) {
         if self.last_quality_check.elapsed() < Duration::from_secs(5) {
             return;
@@ -426,9 +470,17 @@ impl VoiceReceiveLoop {
                 "voice receive-side drops in the last 5s"
             );
         }
+        let mek_drops = std::mem::take(&mut self.mek_drops);
+        if mek_drops > 0 {
+            tracing::warn!(
+                rx_mek_drops = mek_drops,
+                "voice packets dropped for MEK reasons in the last 5s"
+            );
+        }
         self.deps.emit_voice_event(VoiceSessionEvent::ReceiveStats {
             rx_overflow_drops: overflow,
             rx_late_drops: late,
+            rx_mek_drops: mek_drops,
         });
         tracing::debug!(
             participants = self.participants.len(),

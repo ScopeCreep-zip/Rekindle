@@ -86,6 +86,12 @@ pub struct VoicePacket {
     /// Opus-encoded audio data (MEK-encrypted ciphertext on the wire
     /// for community channels; plaintext for 1:1 calls).
     pub audio_data: Vec<u8>,
+    /// Generation of the channel-media MEK that encrypted
+    /// `audio_data` (0 for 1:1 calls — no MEK). Receivers holding a
+    /// different generation drop the packet and fire the RequestMEK
+    /// cascade instead of feeding garbage to the decoder.
+    #[serde(default)]
+    pub mek_generation: u64,
     /// 64-byte Ed25519 signature over [`signing_bytes`]. Receivers
     /// reject packets with an empty or invalid signature.
     #[serde(default)]
@@ -98,12 +104,13 @@ impl VoicePacket {
     /// packet (and vice versa).
     pub fn signing_bytes(&self) -> Vec<u8> {
         let mut out = Vec::with_capacity(
-            b"rekindle-voice-packet-v1".len() + self.sender_key.len() + 12 + self.audio_data.len(),
+            b"rekindle-voice-packet-v1".len() + self.sender_key.len() + 20 + self.audio_data.len(),
         );
         out.extend_from_slice(b"rekindle-voice-packet-v1");
         out.extend_from_slice(&self.sender_key);
         out.extend_from_slice(&self.sequence.to_le_bytes());
         out.extend_from_slice(&self.timestamp.to_le_bytes());
+        out.extend_from_slice(&self.mek_generation.to_le_bytes());
         out.extend_from_slice(&self.audio_data);
         out
     }
@@ -564,6 +571,7 @@ impl VoiceTransport {
             sequence: frame.sequence,
             timestamp: frame.timestamp,
             audio_data,
+            mek_generation: frame.mek_generation,
             signature: Vec::new(),
         };
         use ed25519_dalek::Signer;

@@ -20,6 +20,8 @@ export interface VoiceState {
   /** Phase 5 — receive-side jitter drops in the last 5 s window. */
   rxOverflowDrops: number;
   rxLateDrops: number;
+  /** Inbound media dropped for MEK reasons (rotation race signal). */
+  rxMekDrops: number;
   /** Cumulative inbound voice-channel drops since login. */
   ingressDrops: number;
   activeCallType: "dm" | "community" | null;
@@ -56,6 +58,7 @@ const [voiceState, setVoiceState] = createStore<VoiceState>({
   connectionQuality: "good",
   rxOverflowDrops: 0,
   rxLateDrops: 0,
+  rxMekDrops: 0,
   ingressDrops: 0,
   activeCallType: null,
   inputDevice: null,

@@ -149,6 +149,7 @@ fn bench_e2e_loopback(c: &mut Criterion) {
             sequence: seq,
             timestamp: u64::from(seq) * 20,
             audio_data: encoded.data,
+            mek_generation: 0,
             signature: Vec::new(),
         });
     }
@@ -164,6 +165,7 @@ fn bench_e2e_loopback(c: &mut Criterion) {
                     sequence: seq,
                     timestamp: u64::from(seq) * 20,
                     audio_data: encoded.data,
+                    mek_generation: 0,
                     signature: Vec::new(),
                 });
                 seq = seq.wrapping_add(1);
@@ -172,6 +174,7 @@ fn bench_e2e_loopback(c: &mut Criterion) {
                         data: packet.audio_data,
                         timestamp: packet.timestamp,
                         sequence: packet.sequence,
+                        mek_generation: packet.mek_generation,
                     };
                     let decoded = decoder.decode(&dec_frame).expect("decode");
                     let _ = mixer.mix(&[("p0", &decoded.samples)]);
@@ -187,6 +190,7 @@ fn make_packet(seq: u32) -> VoicePacket {
         timestamp: u64::from(seq) * 20,
         // 80 bytes is a typical 32 kbps 20 ms Opus frame size.
         audio_data: vec![0xAB; 80],
+        mek_generation: 0,
         signature: Vec::new(),
     }
 }

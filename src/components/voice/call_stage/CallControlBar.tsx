@@ -39,7 +39,7 @@ const CallControlBar: Component<{
     <div class="call-control-bar">
       <div
         class="call-control-quality"
-        title={`Connection: ${voiceState.connectionQuality} — rx drops 5s: ${voiceState.rxOverflowDrops + voiceState.rxLateDrops}, inbound drops total: ${voiceState.ingressDrops}`}
+        title={`Connection: ${voiceState.connectionQuality} — rx drops 5s: ${voiceState.rxOverflowDrops + voiceState.rxLateDrops}, key drops 5s: ${voiceState.rxMekDrops}, inbound drops total: ${voiceState.ingressDrops}`}
       >
         <span
           class="call-control-quality-dot"

@@ -178,11 +178,14 @@ pub trait VoiceSessionDeps: Send + Sync + 'static {
 
     // --- Community state lookups (for community voice channels) ---
 
-    /// Look up the current MEK for a community's voice (for audio AEAD
-    /// in community voice). The MEK is keyed by community_id only —
-    /// one MEK per community covers all voice channels in it (the
-    /// existing `mek_cache` map shape). `None` if no MEK is cached.
-    fn community_voice_mek(&self, community_id: &str) -> Option<[u8; 32]>;
+    /// The MEK for CHANNEL MEDIA in `(community, channel)` with its
+    /// generation: the per-channel MEK when the §10.5 join/leave
+    /// rotation has distributed one, otherwise the community MEK every
+    /// member holds from join (the same hierarchy the text plane
+    /// uses). Stage channels never rotate (§10.7) and so resolve to
+    /// the community MEK by construction. `None` only when neither
+    /// key is cached (fresh device pre-MEK).
+    fn channel_media_mek(&self, community_id: &str, channel_id: &str) -> Option<([u8; 32], u64)>;
 
     /// Snapshot of peers in a community voice channel (with their
     /// pseudonym, display name, route blob). Used at session start
@@ -193,6 +196,12 @@ pub trait VoiceSessionDeps: Send + Sync + 'static {
     /// designated speakers may transmit). Used by send_loop's stage
     /// gate (§10.7).
     fn channel_is_stage(&self, community_id: &str, channel_id: &str) -> bool;
+
+    /// Fire the RequestMEK cascade for this channel — called when
+    /// inbound media can't be decrypted (no key cached, generation
+    /// mismatch, or AEAD failure after a rotation race). The adapter
+    /// owns retry/cascade policy; the loop debounces calls.
+    fn request_mek_refresh(&self, community_id: &str, channel_id: &str);
 
     /// Returns `true` if `our_pseudonym` is currently a designated
     /// speaker in the stage channel. Used by send_loop's stage gate.
@@ -503,6 +512,11 @@ pub enum VoiceSessionEvent {
     ReceiveStats {
         rx_overflow_drops: u64,
         rx_late_drops: u64,
+        /// Packets dropped because the channel-media MEK was missing,
+        /// a different generation, or failed to decrypt — the visible
+        /// signal for a rotation race (silence is not an option for a
+        /// security-relevant drop).
+        rx_mek_drops: u64,
     },
 }
 
