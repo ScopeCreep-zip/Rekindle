@@ -53,6 +53,24 @@ pub fn negotiate_output_config(
     Ok((def.config(), def.sample_format()))
 }
 
+/// Rank of a sample format the capture/playback builders can actually
+/// open (their `match sample_format` arms): lower is better, `None` is
+/// unopenable. F32 is the pipeline's native format (no conversion),
+/// I16 a lossless-enough integer path, U16 the awkward offset-binary
+/// case. Everything else (U8, I8, F64, …) errors at stream build, so a
+/// rate-perfect range in such a format is worth less than ANY openable
+/// range — devices bridged through pipewire-alsa advertise U8 ranges
+/// first while also offering f32/i16 (the "unsupported sample format:
+/// U8" dead-voice failure).
+fn format_rank(format: cpal::SampleFormat) -> Option<u8> {
+    match format {
+        cpal::SampleFormat::F32 => Some(0),
+        cpal::SampleFormat::I16 => Some(1),
+        cpal::SampleFormat::U16 => Some(2),
+        _ => None,
+    }
+}
+
 fn pick_supported<I>(
     ranges: I,
     want_rate: u32,
@@ -65,21 +83,35 @@ where
     let covers_rate = |r: &cpal::SupportedStreamConfigRange| {
         r.min_sample_rate().0 <= want_rate && r.max_sample_rate().0 >= want_rate
     };
+    // Openable format first, then the existing rate/channel preference
+    // within each tier; `min_by_key` keeps the best-ranked format.
+    let best_openable = |pred: &dyn Fn(&cpal::SupportedStreamConfigRange) -> bool| {
+        ranges
+            .iter()
+            .filter(|r| pred(r))
+            .filter_map(|r| format_rank(r.sample_format()).map(|rank| (rank, r)))
+            .min_by_key(|(rank, _)| *rank)
+            .map(|(_, r)| r)
+    };
 
     // Best: exact channel count with a range covering the wanted rate.
-    if let Some(r) = ranges
-        .iter()
-        .find(|r| r.channels() == want_channels && covers_rate(r))
-    {
+    if let Some(r) = best_openable(&|r| r.channels() == want_channels && covers_rate(r)) {
         return Some((stream_config(want_channels, want_rate), r.sample_format()));
     }
     // Next: any channel count whose range covers the wanted rate — keep
     // the rate (no resample), adapt channels only.
-    if let Some(r) = ranges.iter().find(|r| covers_rate(r)) {
+    if let Some(r) = best_openable(&|r| covers_rate(r)) {
         return Some((stream_config(r.channels(), want_rate), r.sample_format()));
     }
-    // Last resort: first advertised range at its max rate — adapt both
-    // rate and channels.
+    // Next: any openable range at its max rate — adapt both rate and
+    // channels.
+    if let Some(r) = best_openable(&|_| true) {
+        let chosen = (*r).with_max_sample_rate();
+        return Some((chosen.config(), chosen.sample_format()));
+    }
+    // Last resort: first advertised range at its max rate — unopenable
+    // format, but preserves the original diagnostic ("unsupported
+    // sample format: …") over a less precise "no input config".
     ranges.first().map(|r| {
         let chosen = (*r).with_max_sample_rate();
         (chosen.config(), chosen.sample_format())
@@ -171,6 +203,83 @@ pub fn adapt_audio(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn range(
+        channels: u16,
+        min_rate: u32,
+        max_rate: u32,
+        format: cpal::SampleFormat,
+    ) -> cpal::SupportedStreamConfigRange {
+        cpal::SupportedStreamConfigRange::new(
+            channels,
+            cpal::SampleRate(min_rate),
+            cpal::SampleRate(max_rate),
+            cpal::SupportedBufferSize::Unknown,
+            format,
+        )
+    }
+
+    #[test]
+    fn unopenable_format_loses_to_openable_one_at_same_rate() {
+        // The live failure: pipewire-alsa advertises a U8 range first
+        // while also offering f32 — U8 must never win.
+        let ranges = vec![
+            range(1, 8000, 48000, cpal::SampleFormat::U8),
+            range(1, 8000, 48000, cpal::SampleFormat::F32),
+        ];
+        let (config, format) = pick_supported(ranges.into_iter(), 48000, 1).unwrap();
+        assert_eq!(format, cpal::SampleFormat::F32);
+        assert_eq!(config.sample_rate.0, 48000);
+        assert_eq!(config.channels, 1);
+    }
+
+    #[test]
+    fn f32_preferred_over_i16_over_u16() {
+        let ranges = vec![
+            range(1, 8000, 48000, cpal::SampleFormat::U16),
+            range(1, 8000, 48000, cpal::SampleFormat::I16),
+            range(1, 8000, 48000, cpal::SampleFormat::F32),
+        ];
+        let (_, format) = pick_supported(ranges.into_iter(), 48000, 1).unwrap();
+        assert_eq!(format, cpal::SampleFormat::F32);
+    }
+
+    #[test]
+    fn openable_format_beats_exact_channel_match() {
+        // A stereo f32 range must win over a mono U8 range even though
+        // mono matches the wanted channel count — an unopenable format
+        // is useless no matter how well the rate/channels line up.
+        let ranges = vec![
+            range(1, 8000, 48000, cpal::SampleFormat::U8),
+            range(2, 8000, 48000, cpal::SampleFormat::F32),
+        ];
+        let (config, format) = pick_supported(ranges.into_iter(), 48000, 1).unwrap();
+        assert_eq!(format, cpal::SampleFormat::F32);
+        assert_eq!(config.channels, 2);
+        assert_eq!(config.sample_rate.0, 48000);
+    }
+
+    #[test]
+    fn openable_off_rate_range_beats_unopenable_covering_range() {
+        // Only a 44.1 kHz i16 range is openable; the 48 kHz U8 range
+        // covering the wanted rate must not win.
+        let ranges = vec![
+            range(1, 8000, 48000, cpal::SampleFormat::U8),
+            range(2, 44100, 44100, cpal::SampleFormat::I16),
+        ];
+        let (config, format) = pick_supported(ranges.into_iter(), 48000, 1).unwrap();
+        assert_eq!(format, cpal::SampleFormat::I16);
+        assert_eq!(config.sample_rate.0, 44100);
+    }
+
+    #[test]
+    fn all_unopenable_falls_back_to_first_range() {
+        // Nothing openable: keep the old behavior so the stream builder
+        // reports the precise "unsupported sample format" diagnostic.
+        let ranges = vec![range(1, 8000, 48000, cpal::SampleFormat::U8)];
+        let (_, format) = pick_supported(ranges.into_iter(), 48000, 1).unwrap();
+        assert_eq!(format, cpal::SampleFormat::U8);
+    }
 
     #[test]
     fn identity_when_formats_match() {
