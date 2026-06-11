@@ -229,8 +229,10 @@ impl GovernanceRuntimeDeps for GovernanceAdapter {
     }
 
     fn insert_channel_mek(&self, community_id: &str, channel_id: &str, mek: MekSnapshot) {
-        self.state.channel_mek_cache.lock().insert(
-            (community_id.to_string(), channel_id.to_string()),
+        crate::state_helpers::install_channel_mek(
+            &self.state,
+            community_id,
+            channel_id,
             CryptoMek::from_bytes(mek.key_bytes, mek.generation),
         );
         crate::services::community::media_ready_runtime::on_mek_updated(

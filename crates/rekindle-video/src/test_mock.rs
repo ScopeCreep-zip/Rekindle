@@ -67,6 +67,10 @@ impl VideoDeps for MockDeps {
         self.mek.as_ref().map(|m| (*m.as_bytes(), m.generation()))
     }
 
+    fn previous_channel_mek(&self, _c: &str, _ch: &str) -> Option<([u8; 32], u64)> {
+        None
+    }
+
     fn community_signing_key(&self, _c: &str) -> Option<SigningKey> {
         self.signing_key.clone()
     }

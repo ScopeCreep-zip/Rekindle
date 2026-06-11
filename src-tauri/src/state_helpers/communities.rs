@@ -64,3 +64,66 @@ pub fn channel_media_mek(
             .map(|m| (*m.as_bytes(), m.generation()))
     })
 }
+
+/// Retention window for the REPLACED channel key after a rotation —
+/// in-flight media encrypted under the old generation still decrypts
+/// during the transition. Matches Discord DAVE's previous-epoch
+/// ratchet retention ("up to ten seconds") and SFrame RFC 9605's
+/// "old key may be kept for some time ... deleted promptly".
+pub const PREV_MEK_RETENTION: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// The ONLY way a channel MEK enters the live cache. Refuses
+/// downgrades (an older-generation transfer must never replace the
+/// live key — rollback vector) and parks the key it replaces in the
+/// previous-generation slot for [`PREV_MEK_RETENTION`]. Returns
+/// `false` when the install was refused.
+pub fn install_channel_mek(
+    state: &Arc<AppState>,
+    community_id: &str,
+    channel_id: &str,
+    mek: rekindle_crypto::group::media_key::MediaEncryptionKey,
+) -> bool {
+    let key = (community_id.to_string(), channel_id.to_string());
+    let mut cache = state.channel_mek_cache.lock();
+    if let Some(cached) = cache.get(&key) {
+        if cached.generation() > mek.generation() {
+            tracing::debug!(
+                community = %community_id,
+                channel = %channel_id,
+                incoming = mek.generation(),
+                cached = cached.generation(),
+                "channel MEK older than cached — not applied to live cache"
+            );
+            return false;
+        }
+        if cached.generation() < mek.generation() {
+            state
+                .channel_mek_prev
+                .lock()
+                .insert(key.clone(), (cached.clone(), std::time::Instant::now()));
+        }
+    }
+    cache.insert(key, mek);
+    true
+}
+
+/// The replaced channel key, while still inside [`PREV_MEK_RETENTION`]
+/// — receive paths consult this on a generation mismatch so in-flight
+/// old-generation media decrypts instead of freezing every rotation.
+/// Expired entries are pruned on read.
+pub fn previous_channel_mek(
+    state: &Arc<AppState>,
+    community_id: &str,
+    channel_id: &str,
+) -> Option<([u8; 32], u64)> {
+    let key = (community_id.to_string(), channel_id.to_string());
+    let mut prev = state.channel_mek_prev.lock();
+    match prev.get(&key) {
+        Some((_, installed)) if installed.elapsed() > PREV_MEK_RETENTION => {
+            prev.remove(&key);
+            None
+        }
+        Some((mek, _)) => Some((*mek.as_bytes(), mek.generation())),
+        None => None,
+    }
+}

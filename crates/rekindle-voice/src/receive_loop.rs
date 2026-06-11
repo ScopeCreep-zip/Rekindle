@@ -179,7 +179,8 @@ impl VoiceReceiveLoop {
             // join/leave rotation distributed one, community MEK
             // otherwise. NO undecrypted passthrough — a packet we hold
             // no key for is dropped and the RequestMEK cascade fired.
-            let Some((mek_bytes, our_gen)) = self.deps.channel_media_mek(&cid, &channel) else {
+            let Some((mut mek_bytes, mut our_gen)) = self.deps.channel_media_mek(&cid, &channel)
+            else {
                 self.note_mek_drop(
                     &cid,
                     &channel,
@@ -189,12 +190,23 @@ impl VoiceReceiveLoop {
                 return;
             };
             if packet.mek_generation < our_gen {
-                // Sender behind us — no request (an older key can't
-                // help; apply refuses downgrades; the sender converges
-                // via its own receive path). Count the drop only.
-                self.mek_drops += 1;
-                self.deps.record_packet_drop();
-                return;
+                // Rotation retention window: the REPLACED key still
+                // decrypts in-flight old-generation packets (SFrame /
+                // DAVE previous-epoch retention). Past the window:
+                // counted drop, no request (an older key can't help;
+                // apply refuses downgrades; the sender converges via
+                // its own receive path).
+                match self.deps.previous_channel_mek(&cid, &channel) {
+                    Some((prev_bytes, prev_gen)) if prev_gen == packet.mek_generation => {
+                        mek_bytes = prev_bytes;
+                        our_gen = prev_gen;
+                    }
+                    _ => {
+                        self.mek_drops += 1;
+                        self.deps.record_packet_drop();
+                        return;
+                    }
+                }
             }
             if packet.mek_generation > our_gen {
                 tracing::trace!(

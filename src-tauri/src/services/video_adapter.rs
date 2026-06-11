@@ -54,6 +54,14 @@ impl VideoDeps for VideoAdapter {
         crate::state_helpers::channel_media_mek(&self.state, community_id, channel_id)
     }
 
+    fn previous_channel_mek(
+        &self,
+        community_id: &str,
+        channel_id: &str,
+    ) -> Option<([u8; 32], u64)> {
+        crate::state_helpers::previous_channel_mek(&self.state, community_id, channel_id)
+    }
+
     fn community_signing_key(&self, community_id: &str) -> Option<SigningKey> {
         let secret = (*self.state.identity_secret.lock())?;
         Some(rekindle_crypto::group::pseudonym::derive_community_pseudonym(&secret, community_id))

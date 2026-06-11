@@ -118,6 +118,12 @@ pub struct AppState {
     pub mek_cache: Mutex<HashMap<String, MediaEncryptionKey>>,
     /// Per-channel MEK cache: `(community_id, channel_id)` → `MediaEncryptionKey`.
     pub channel_mek_cache: Mutex<HashMap<(String, String), MediaEncryptionKey>>,
+    /// The generation each channel key REPLACED, kept for a short
+    /// retention window so in-flight media encrypted under the old
+    /// key still decrypts during a rotation (SFrame RFC 9605 §key
+    /// rotation; Discord DAVE retains previous-epoch ratchets ~10s).
+    pub channel_mek_prev:
+        Mutex<HashMap<(String, String), (MediaEncryptionKey, std::time::Instant)>>,
     /// Friends whose DHT `watch_dht_values` returned false. The sync
     /// service uses `force_refresh=true` for these friends.
     pub unwatched_friends: RwLock<HashSet<String>>,
@@ -287,6 +293,7 @@ impl Default for AppState {
             background_handles: Mutex::new(Vec::new()),
             mek_cache: Mutex::new(HashMap::new()),
             channel_mek_cache: Mutex::new(HashMap::new()),
+            channel_mek_prev: Mutex::new(HashMap::new()),
             unwatched_friends: RwLock::new(HashSet::new()),
             dispatch_loop_handle: RwLock::new(None),
             route_watchdog_shutdown_tx: RwLock::new(None),

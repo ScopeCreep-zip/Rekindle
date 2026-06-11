@@ -76,6 +76,14 @@ impl VoiceSessionDeps for VoiceAdapter {
         crate::state_helpers::channel_media_mek(&self.state, community_id, channel_id)
     }
 
+    fn previous_channel_mek(
+        &self,
+        community_id: &str,
+        channel_id: &str,
+    ) -> Option<([u8; 32], u64)> {
+        crate::state_helpers::previous_channel_mek(&self.state, community_id, channel_id)
+    }
+
     fn request_mek_refresh(&self, community_id: &str, channel_id: &str, needed_generation: u64) {
         // Exact-generation request from the undecryptable packet's
         // wire field (0 = "send me your current") — never a guess; the

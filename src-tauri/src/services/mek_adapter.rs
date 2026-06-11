@@ -51,10 +51,7 @@ impl ChannelMekCache for AppStateMekCache {
     }
 
     fn insert(&self, community_id: &str, channel_id: &str, mek: MediaEncryptionKey) {
-        self.state
-            .channel_mek_cache
-            .lock()
-            .insert((community_id.to_string(), channel_id.to_string()), mek);
+        state_helpers::install_channel_mek(&self.state, community_id, channel_id, mek);
     }
 
     fn current_generation(&self, community_id: &str, channel_id: &str) -> u64 {
@@ -349,25 +346,13 @@ impl MekDistributeDeps for MekAdapter {
         let generation = mek.generation();
         match channel_id {
             Some(channel_id) if !channel_id.is_empty() => {
-                {
-                    let mut cache = self.state.channel_mek_cache.lock();
-                    let key = (community_id.to_string(), channel_id.to_string());
-                    // Never downgrade: an exact-generation transfer for
-                    // an older key (history catch-up) must not replace
-                    // the live key — that would be a rollback vector.
-                    if cache
-                        .get(&key)
-                        .is_some_and(|cached| cached.generation() > generation)
-                    {
-                        tracing::debug!(
-                            community = %community_id,
-                            channel = %channel_id,
-                            incoming = generation,
-                            "channel MEK transfer older than cached — not applied to live cache"
-                        );
-                        return;
-                    }
-                    cache.insert(key, mek.clone());
+                if !state_helpers::install_channel_mek(
+                    &self.state,
+                    community_id,
+                    channel_id,
+                    mek.clone(),
+                ) {
+                    return;
                 }
                 crate::services::community::media_ready_runtime::on_mek_updated(
                     &self.state,

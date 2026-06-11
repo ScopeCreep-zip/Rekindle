@@ -346,21 +346,31 @@ fn emit_frame_ready<D: VideoDeps>(
     frame: &ReassembledFrame,
     now_ms: u32,
 ) {
-    let resolved = deps.channel_media_mek(community_id, channel_id);
-    // A sender BEHIND our generation gets no request — fetching an
-    // older key can't help (apply refuses downgrades); the sender
-    // converges when its own receive path sees our newer frames.
+    let mut resolved = deps.channel_media_mek(community_id, channel_id);
+    // A sender BEHIND our generation: during the rotation retention
+    // window the REPLACED key still decrypts their in-flight frames
+    // (SFrame RFC 9605 / DAVE previous-epoch retention) — no freeze on
+    // every membership rotation. Past the window, drop without a
+    // request (an older key can't help; apply refuses downgrades; the
+    // sender converges from its own side).
     if let Some((_, our_gen)) = resolved {
         if frame.mek_generation < our_gen {
-            tracing::debug!(
-                target: "rekindle_video::receive",
-                community_id = %community_id,
-                sender_pseudonym = %sender_pseudonym,
-                frame_generation = frame.mek_generation,
-                our_generation = our_gen,
-                "video frame from a sender behind our MEK generation — dropped"
-            );
-            return;
+            match deps.previous_channel_mek(community_id, channel_id) {
+                Some((prev_bytes, prev_gen)) if prev_gen == frame.mek_generation => {
+                    resolved = Some((prev_bytes, prev_gen));
+                }
+                _ => {
+                    tracing::debug!(
+                        target: "rekindle_video::receive",
+                        community_id = %community_id,
+                        sender_pseudonym = %sender_pseudonym,
+                        frame_generation = frame.mek_generation,
+                        our_generation = our_gen,
+                        "video frame from a sender behind our MEK generation — dropped"
+                    );
+                    return;
+                }
+            }
         }
     }
     let mismatch_reason = match resolved {

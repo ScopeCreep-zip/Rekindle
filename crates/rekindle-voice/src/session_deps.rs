@@ -187,6 +187,12 @@ pub trait VoiceSessionDeps: Send + Sync + 'static {
     /// key is cached (fresh device pre-MEK).
     fn channel_media_mek(&self, community_id: &str, channel_id: &str) -> Option<([u8; 32], u64)>;
 
+    /// The key the live channel MEK replaced, while inside the
+    /// rotation retention window (~10s) — lets in-flight old-generation
+    /// voice packets decrypt during a rotation instead of dropping.
+    fn previous_channel_mek(&self, community_id: &str, channel_id: &str)
+        -> Option<([u8; 32], u64)>;
+
     /// Snapshot of peers in a community voice channel (with their
     /// pseudonym, display name, route blob). Used at session start
     /// + on roster updates.

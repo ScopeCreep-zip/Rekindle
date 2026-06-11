@@ -106,6 +106,17 @@ pub trait VideoDeps: Send + Sync + 'static {
     fn channel_media_mek(&self, community_id: &str, channel_id: &str)
         -> Option<([u8; 32], u64)>;
 
+    /// The key the live channel MEK replaced, while inside the
+    /// rotation retention window (~10s — SFrame RFC 9605 / Discord
+    /// DAVE previous-epoch retention). Consulted on a generation
+    /// mismatch so in-flight old-generation frames decrypt instead of
+    /// freezing the tile on every membership rotation.
+    fn previous_channel_mek(
+        &self,
+        community_id: &str,
+        channel_id: &str,
+    ) -> Option<([u8; 32], u64)>;
+
     /// Derive the Ed25519 SigningKey for the community pseudonym (the
     /// fragment-level signature uses this). Returns `None` if the
     /// identity secret isn't unlocked.
