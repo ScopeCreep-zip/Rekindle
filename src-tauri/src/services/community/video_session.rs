@@ -329,6 +329,18 @@ pub fn on_local_caps_reported(
         )?;
         let outcome = recompute_and_decide(&state.video_sessions, community_id, channel_id, false)?;
         apply_outcome(state, community_id, channel_id, outcome);
+        // Media-ready input: a join that raced the probe seeded
+        // `local_caps_reported = false` and NOTHING else ever flipped
+        // it — the gate wedged at `caps-unreported` for the whole
+        // session (field-observed: joining within ~40s of app start).
+        // The probe landing IS the "reported" edge; flip it on every
+        // active session slot.
+        crate::services::community::media_ready_runtime::update_media_ready(
+            state,
+            community_id,
+            channel_id,
+            |i| i.local_caps_reported = true,
+        );
     }
     set_pending_local_caps(state, Some(caps));
     Ok(())
