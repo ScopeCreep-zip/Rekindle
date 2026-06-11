@@ -76,8 +76,12 @@ impl CommunityService {
             }
         }
 
-        // Read registry key from governance spine
+        // Read registry key from governance spine, then open it.
+        // The registry is a separate DHT record from governance — it must
+        // be opened before any read_record call (await_join_approval polls
+        // REGISTRY_MEMBER_INDEX, complete_join reads REGISTRY_MEK_VAULT).
         let registry_key = self.read_registry_key(governance_key, &metadata.name).await?;
+        self.io.open_record(&registry_key, None).await?;
 
         // Derive pseudonym
         let pseudonym_hex = self.io.pseudonym_hex(governance_key)?;
@@ -256,6 +260,13 @@ impl CommunityService {
         submitted: &JoinRequestSubmitted,
         approved: &JoinApproved,
     ) -> Result<JoinCompleted, ChatError> {
+        // Re-open governance and registry records. await_join_approval may
+        // have polled for up to 120s — the routing table can evict records
+        // that haven't been touched. open_record is idempotent (no-op if
+        // already open, re-opens if evicted).
+        self.io.open_record(&submitted.governance_key, None).await?;
+        self.io.open_record(&submitted.registry_key, None).await?;
+
         // Read channel list
         let channels_data = self.io.read_record(
             &submitted.governance_key, MANIFEST_CHANNELS, true,
@@ -280,9 +291,15 @@ impl CommunityService {
         );
         let gov_short = &submitted.governance_key[..12.min(submitted.governance_key.len())];
         self.vault.store_key(
-            &format!("community.slot.{gov_short}.{}", approved.slot_index),
+            &rekindle_storage::keys::labels::slot_seed(gov_short, approved.slot_index),
             &slot_seed,
         )?;
+
+        // Build channel name→UUID resolution map from governance channel list.
+        let mut channel_name_to_id = HashMap::new();
+        for ch in &channels {
+            channel_name_to_id.insert(ch.name.clone(), ch.id.clone());
+        }
 
         // Create per-channel DhtLog records so we can write messages to channels.
         // Each member owns their own DhtLog per channel — no shared write access.
@@ -348,6 +365,7 @@ impl CommunityService {
                 role_ids: Vec::new(),
                 slot_index: approved.slot_index,
                 channel_record_keys,
+                channel_name_to_id,
                 community_mailbox_key: submitted.community_mailbox_key.clone(),
                 join_inbox_key: submitted.join_inbox_key.clone(),
                 is_operator: false,

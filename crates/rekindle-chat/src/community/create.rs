@@ -128,6 +128,23 @@ impl CommunityService {
             Some(&governance_keypair), Confirm::Accepted,
         ).await?;
 
+        // Step 5b: Create operator's per-channel DhtLog for #general and
+        // populate the channel name→UUID resolution map.
+        let mut channel_record_keys = HashMap::new();
+        let mut channel_name_to_id = HashMap::new();
+        channel_name_to_id.insert("general".to_string(), general_id.clone());
+        {
+            let (log_key, log_keypair) = self.io
+                .create_record(RecordSchema::SingleWriter { subkey_count: 1 })
+                .await?;
+            let log_short = &log_key[..12.min(log_key.len())];
+            self.vault.store_key(
+                &rekindle_storage::keys::labels::channel_log_keypair(log_short),
+                &log_keypair,
+            )?;
+            channel_record_keys.insert(general_id.clone(), log_key);
+        }
+
         // Step 6: Generate MEK, ECDH-wrap for creator, write to vault
         let mut mek_key = [0u8; 32];
         aws_lc_rs::rand::SystemRandom::new()
@@ -243,7 +260,8 @@ impl CommunityService {
                 display_name: identity.display_name.clone(),
                 role_ids: Vec::new(),
                 slot_index: 11,
-                channel_record_keys: HashMap::new(),
+                channel_record_keys,
+                channel_name_to_id,
                 community_mailbox_key: community_mailbox_key.clone(),
                 join_inbox_key: join_inbox_key.clone(),
                 is_operator: true,

@@ -62,7 +62,7 @@ pub fn apply(
     let mut ruleset = Ruleset::default()
         .handle_access(AccessFs::from_all(abi))
         .expect("landlock handle_access(fs)")
-        .handle_access(AccessNet::from_all(abi))
+        .handle_access(AccessNet::BindTcp)
         .expect("landlock handle_access(net)")
         .scope(Scope::from_all(abi))
         .expect("landlock scope")
@@ -178,10 +178,10 @@ pub fn apply(
     }
 
     // ── Landlock network rules ──────────────────────────────────────
-    // Landlock NetPort rules are exact-port matches — port=0 is NOT a
-    // wildcard for either BindTcp or ConnectTcp. The kernel looks up rules
-    // by the actual port from the socket address (net.c:187).
-    // Every port the daemon binds or connects to must be listed explicitly.
+    // Only BindTcp is handled — ConnectTcp is unrestricted (P2P peers
+    // use arbitrary ports). Landlock NetPort rules are exact-port
+    // matches (net.c:187). Every port the daemon binds on must be
+    // listed explicitly.
 
     // Parse the port from a Veilid listen_address string (e.g. ":40000",
     // "0.0.0.0:40000"). Returns None if empty or unparseable.
@@ -220,19 +220,15 @@ pub fn apply(
             .unwrap_or_else(|e| panic!("landlock add_rule(BindTcp port={port}) failed: {e}"));
     }
 
-    // ── ConnectTcp: ports the daemon connects to outbound ──────────
-    // Veilid bootstrap peers use 5150 (default), 80, and 443.
-    // The configured TCP port is included for peer-to-peer connections.
-    let mut connect_ports: Vec<u16> = vec![5150, 80, 443];
-    if !connect_ports.contains(&veilid_tcp_port) {
-        connect_ports.push(veilid_tcp_port);
-    }
-
-    for port in &connect_ports {
-        ruleset = ruleset
-            .add_rule(NetPort::new(*port, AccessNet::ConnectTcp))
-            .unwrap_or_else(|e| panic!("landlock add_rule(ConnectTcp port={port}) failed: {e}"));
-    }
+    // ConnectTcp is intentionally excluded from handle_access().
+    // Veilid peers listen on arbitrary ports (5150 default, searches
+    // upward, or user-configured). Landlock NetPort rules are exact-
+    // match — no ranges, no wildcards. Enumerating all valid peer
+    // ports is not feasible for a P2P protocol.
+    //
+    // BindTcp is restricted above. ConnectTcp is not governed by
+    // Landlock. Outbound TCP is constrained by seccomp (connect
+    // syscall allowlisted) and filesystem Landlock (no exfiltration).
 
     let status = ruleset
         .restrict_self()
@@ -434,5 +430,7 @@ fn rekindle_daemon_syscalls() -> Vec<&'static str> {
         "statfs", "fstatfs",
         // Modern kernel APIs (tokio 1.x + Veilid on Linux 5.10+)
         "mlock2", "pkey_mprotect", "close_range", "openat2", "epoll_pwait2",
+        // io_uring (transport-ipc per-connection read/write tasks, Linux 5.19+)
+        "io_uring_setup", "io_uring_enter", "io_uring_register",
     ]
 }

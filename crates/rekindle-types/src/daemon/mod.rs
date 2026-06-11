@@ -41,3 +41,13 @@ pub enum AgentType {
     /// Internal system service (the daemon itself).
     System,
 }
+
+/// Registered agent metadata — name, type, and capabilities.
+///
+/// Application-level identity tracking. Transport-level identity
+/// (Noise IK pubkeys) is managed by transport-ipc.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentRegistration {
+    pub agent_type: AgentType,
+    pub capabilities: Vec<String>,
+}

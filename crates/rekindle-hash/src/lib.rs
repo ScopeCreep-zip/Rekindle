@@ -27,7 +27,7 @@ pub mod single;
 #[allow(unsafe_code)]
 pub mod multi_buffer;
 
-/// Digest algorithm selection — mirrors `rekindle_node::ipc::bulk::verify::DigestAlgorithm`.
+/// Digest algorithm selection for Merkle content hash verification.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum DigestAlgorithm {
     Sha256,

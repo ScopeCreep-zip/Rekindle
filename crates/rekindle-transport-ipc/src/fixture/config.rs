@@ -2,7 +2,8 @@
 
 use std::time::Duration;
 
-use crate::v3::context::SessionConfig;
+use crate::v3::bulk::counters::BulkCounters;
+use crate::v3::context::{ServerConfig, SessionConfig};
 
 /// Timeout for bench operations — generous to survive sustained iteration load.
 pub const BENCH_TIMEOUT: Duration = Duration::from_secs(60);
@@ -56,6 +57,15 @@ impl IpcFixtureConfig {
             warmup_count: 5,
             retention_max_bytes: None,
             retention_max_frames: None,
+        }
+    }
+
+    /// Convert to ServerConfig for IpcServer::bind().
+    pub fn to_server_config(&self) -> ServerConfig {
+        ServerConfig {
+            session: self.to_session_config(),
+            handshake: super::handshake_config(),
+            counters: BulkCounters::new(),
         }
     }
 

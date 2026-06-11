@@ -5,11 +5,11 @@
 //! layer — the CLI may also validate for UX, but the daemon enforces.
 //!
 //! Adapted from `rekindle-cli/src/helpers.rs` validation functions.
-//! The daemon's versions return `IpcResponse::Error` directly so dispatch
+//! The daemon's versions return `DaemonResponse::Error` directly so dispatch
 //! handlers can `?`-propagate validation failures.
 
 
-use crate::ipc::protocol::IpcResponse;
+use rekindle_types::daemon::DaemonResponse;
 
 /// Maximum message body length (channel messages and DMs).
 const MAX_MESSAGE_BODY: usize = 2000;
@@ -26,19 +26,19 @@ const MAX_NAME: usize = 100;
 /// - 1-64 characters after trimming
 /// - No control characters (C0 set)
 /// - Returns the trimmed string on success
-pub fn validate_display_name(name: &str) -> Result<String, IpcResponse> {
+pub fn validate_display_name(name: &str) -> Result<String, DaemonResponse> {
     let trimmed = name.trim();
     if trimmed.is_empty() {
-        return Err(IpcResponse::error(400, "display name cannot be empty"));
+        return Err(DaemonResponse::error(400, "display name cannot be empty"));
     }
     if trimmed.len() > MAX_DISPLAY_NAME {
-        return Err(IpcResponse::error(
+        return Err(DaemonResponse::error(
             400,
             format!("display name too long ({} chars, max {MAX_DISPLAY_NAME})", trimmed.len()),
         ));
     }
     if trimmed.chars().any(char::is_control) {
-        return Err(IpcResponse::error(400, "display name cannot contain control characters"));
+        return Err(DaemonResponse::error(400, "display name cannot contain control characters"));
     }
     Ok(trimmed.to_string())
 }
@@ -48,19 +48,19 @@ pub fn validate_display_name(name: &str) -> Result<String, IpcResponse> {
 /// Rules:
 /// - 1-100 characters after trimming
 /// - No control characters
-pub fn validate_name(name: &str, label: &str) -> Result<String, IpcResponse> {
+pub fn validate_name(name: &str, label: &str) -> Result<String, DaemonResponse> {
     let trimmed = name.trim();
     if trimmed.is_empty() {
-        return Err(IpcResponse::error(400, format!("{label} name cannot be empty")));
+        return Err(DaemonResponse::error(400, format!("{label} name cannot be empty")));
     }
     if trimmed.len() > MAX_NAME {
-        return Err(IpcResponse::error(
+        return Err(DaemonResponse::error(
             400,
             format!("{label} name too long ({} chars, max {MAX_NAME})", trimmed.len()),
         ));
     }
     if trimmed.chars().any(char::is_control) {
-        return Err(IpcResponse::error(
+        return Err(DaemonResponse::error(
             400,
             format!("{label} name cannot contain control characters"),
         ));
@@ -73,12 +73,12 @@ pub fn validate_name(name: &str, label: &str) -> Result<String, IpcResponse> {
 /// Rules:
 /// - 1-2000 characters
 /// - Empty strings rejected
-pub fn validate_message_body(body: &str) -> Result<(), IpcResponse> {
+pub fn validate_message_body(body: &str) -> Result<(), DaemonResponse> {
     if body.is_empty() {
-        return Err(IpcResponse::error(400, "message body cannot be empty"));
+        return Err(DaemonResponse::error(400, "message body cannot be empty"));
     }
     if body.len() > MAX_MESSAGE_BODY {
-        return Err(IpcResponse::error(
+        return Err(DaemonResponse::error(
             400,
             format!("message body too long ({} chars, max {MAX_MESSAGE_BODY})", body.len()),
         ));
@@ -89,10 +89,10 @@ pub fn validate_message_body(body: &str) -> Result<(), IpcResponse> {
 /// Validate a presence status string.
 ///
 /// Must be one of: online, away, busy, invisible.
-pub fn validate_status(status: &str) -> Result<(), IpcResponse> {
+pub fn validate_status(status: &str) -> Result<(), DaemonResponse> {
     match status {
         "online" | "away" | "busy" | "invisible" => Ok(()),
-        other => Err(IpcResponse::error(
+        other => Err(DaemonResponse::error(
             400,
             format!("invalid status '{other}' — expected: online, away, busy, invisible"),
         )),
@@ -111,19 +111,19 @@ pub fn validate_status(status: &str) -> Result<(), IpcResponse> {
 /// Base64url segments contain `[A-Za-z0-9_-]`. Public keys are hex.
 /// Invite codes may use other safe formats. This validation rejects
 /// injection-dangerous characters while accepting all known key formats.
-pub fn validate_key(key: &str, label: &str) -> Result<(), IpcResponse> {
+pub fn validate_key(key: &str, label: &str) -> Result<(), DaemonResponse> {
     if key.is_empty() {
-        return Err(IpcResponse::error(400, format!("{label} cannot be empty")));
+        return Err(DaemonResponse::error(400, format!("{label} cannot be empty")));
     }
     if key.chars().any(char::is_control) {
-        return Err(IpcResponse::error(
+        return Err(DaemonResponse::error(
             400,
             format!("{label} cannot contain control characters"),
         ));
     }
     for ch in key.chars() {
         if !ch.is_ascii_alphanumeric() && !matches!(ch, ':' | '-' | '_' | '+' | '/' | '=' | '.') {
-            return Err(IpcResponse::error(
+            return Err(DaemonResponse::error(
                 400,
                 format!("{label} contains invalid character '{ch}'"),
             ));
@@ -133,11 +133,11 @@ pub fn validate_key(key: &str, label: &str) -> Result<(), IpcResponse> {
 }
 
 /// Validate a channel kind string.
-pub fn validate_channel_kind(kind: &str) -> Result<(), IpcResponse> {
+pub fn validate_channel_kind(kind: &str) -> Result<(), DaemonResponse> {
     match kind {
         "text" | "voice" | "announcement" | "forum" | "stage"
         | "directory" | "media" | "events" => Ok(()),
-        other => Err(IpcResponse::error(
+        other => Err(DaemonResponse::error(
             400,
             format!(
                 "invalid channel kind '{other}' — expected: text, voice, announcement, \

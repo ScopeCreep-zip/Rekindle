@@ -14,7 +14,6 @@ use crate::v3::codec::stream::{ack as ack_codec, fin as fin_codec};
 use crate::v3::context::{OutboundFrame, PendingFinState, PendingFinVerify, SessionContext};
 use crate::v3::io::encode::FrameEncoder;
 use crate::v3::io::lane_channels::BulkFrame;
-use crate::v3::stream::registry::Direction;
 use crate::v3::stream::state::StreamEvent;
 use crate::v3::wire::frame_kind::StreamKind;
 
@@ -39,7 +38,7 @@ pub(super) async fn emit_stream_fin(
     stream_id: u8,
     completed: &PendingFinState,
 ) {
-    let _ = ctx.stream_registry_mut().transition(stream_id, Direction::Outbound, StreamEvent::FinSent);
+    let _ = ctx.transition_outbound_stream(stream_id, StreamEvent::FinSent);
 
     let audit_link = ctx.outbound_chain().current_link();
 
@@ -180,7 +179,7 @@ fn emit_ack(ctx: &mut SessionContext, stream_id: u8, pending: &PendingFinVerify)
     let info = ctx.connection_info().clone();
     ctx.router().on_bulk_complete(&info, stream_id, pending.transfer_id, reassembled_bytes, total_chunks);
     ctx.remove_reassembler(stream_id);
-    let _ = ctx.stream_registry_mut().close(stream_id, Direction::Inbound);
+    let _ = ctx.close_inbound_stream(stream_id);
 }
 
 fn emit_nack(ctx: &mut SessionContext, stream_id: u8, pending: &PendingFinVerify) {
@@ -201,5 +200,5 @@ fn emit_nack_with_detail(ctx: &mut SessionContext, stream_id: u8, pending: &Pend
     let info = ctx.connection_info().clone();
     ctx.router().on_bulk_failed(&info, stream_id, pending.transfer_id, detail);
     ctx.remove_reassembler(stream_id);
-    let _ = ctx.stream_registry_mut().close(stream_id, Direction::Inbound);
+    let _ = ctx.close_inbound_stream(stream_id);
 }

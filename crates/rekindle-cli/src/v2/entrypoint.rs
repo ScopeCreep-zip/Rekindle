@@ -1,8 +1,8 @@
 //! Entrypoint for the `rekindle` CLI binary.
 //!
 //! The CLI is an IPC client to the rekindle-node daemon. Every command
-//! sends an `IpcRequest` over the Noise IK encrypted bus and renders
-//! the `IpcResponse`. The CLI never touches `TransportNode`, `Session`,
+//! sends a `DaemonRequest` via `DaemonClient` and renders the
+//! `DaemonResponse`. The CLI never touches `TransportNode`, `Session`,
 //! or the OS keyring directly.
 //!
 //! Multiple CLI instances, TUI instances, and GUI clients can connect
@@ -16,7 +16,7 @@ use crate::v2::cli::{Cli, Command};
 use crate::v2::error;
 use crate::v2::output::format;
 use crate::v2::output::OutputMode;
-use crate::v2::transport::DaemonClient;
+use crate::v2::prelude::{AgentType, DaemonClient, DaemonRequest};
 
 /// CLI entry point — called from the crate's actual main.rs.
 ///
@@ -173,12 +173,11 @@ async fn cli_run(cli: Cli, mode: OutputMode) -> anyhow::Result<()> {
 /// Continuous status refresh every 2 seconds.
 #[allow(clippy::print_stderr)]
 async fn watch_status_loop(client: &DaemonClient, mode: OutputMode) -> anyhow::Result<()> {
-    use rekindle_node::ipc::protocol::IpcRequest;
     loop {
         if !mode.is_structured() {
             eprint!("\x1b[2J\x1b[H");
         }
-        let value = client.request_ok(IpcRequest::Status).await?;
+        let value = client.request_ok(DaemonRequest::Status).await?;
         let snapshot: rekindle_types::display::StatusSnapshot = serde_json::from_value(value)?;
         crate::v2::commands::network::print_status_compact(&snapshot, mode)?;
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
@@ -200,7 +199,7 @@ async fn dispatch_command(
         Command::Node(cmd) => match cmd {
             crate::v2::cli::NodeCmd::Start { .. } => unreachable!("handled before daemon connect"),
             crate::v2::cli::NodeCmd::Stop => {
-                let value = client.request_ok(rekindle_node::ipc::protocol::IpcRequest::Shutdown).await?;
+                let value = client.request_ok(DaemonRequest::Shutdown).await?;
                 if mode.is_structured() { format::print_structured(&value, mode) }
                 else { format::print_text("Daemon shutdown initiated.") }
             }
@@ -208,8 +207,13 @@ async fn dispatch_command(
                 format::print_text("Restart: use 'rekindle node stop && rekindle node start'")
             }
             crate::v2::cli::NodeCmd::Attach | crate::v2::cli::NodeCmd::Detach => {
-                let value = client.request_ok(rekindle_node::ipc::protocol::IpcRequest::NetworkStatus).await?;
+                let value = client.request_ok(DaemonRequest::NetworkStatus).await?;
                 format::print_structured(&value, mode)
+            }
+            crate::v2::cli::NodeCmd::Lock => {
+                let value = client.request_ok(DaemonRequest::Lock).await?;
+                if mode.is_structured() { format::print_structured(&value, mode) }
+                else { format::print_text("Daemon locked — secrets zeroized.") }
             }
         },
         Command::Network(cmd) => crate::v2::commands::network::dispatch(&cmd, client, mode).await,
@@ -239,6 +243,28 @@ async fn dispatch_command(
         }
         // PatchApply and Search/Grep are handled before daemon connect — never reach here.
         Command::Transfer(cmd) => crate::v2::commands::transfer::dispatch(&cmd, client, mode).await,
+        Command::Agent(cmd) => match cmd {
+            crate::v2::cli::AgentCmd::Register { name, agent_type, capabilities } => {
+                let at = match agent_type.as_str() {
+                    "human" => AgentType::Human,
+                    "ai-llm" | "ai" | "llm" => AgentType::AiLlm,
+                    "bot" => AgentType::Bot,
+                    "filter" => AgentType::Filter,
+                    "analyzer" => AgentType::Analyzer,
+                    "bridge" => AgentType::Bridge,
+                    "system" => AgentType::System,
+                    other => anyhow::bail!("unknown agent type '{other}' — expected: human, ai-llm, bot, filter, analyzer, bridge, system"),
+                };
+                let value = client.request_ok(DaemonRequest::AgentRegister {
+                    name, agent_type: at, capabilities,
+                }).await?;
+                format::print_structured(&value, mode)
+            }
+            crate::v2::cli::AgentCmd::Revoke { name } => {
+                let value = client.request_ok(DaemonRequest::AgentRevoke { name }).await?;
+                format::print_structured(&value, mode)
+            }
+        },
         Command::PatchApply { .. } | Command::Search { .. } | Command::Grep { .. } => {
             unreachable!("handled before daemon connect")
         }

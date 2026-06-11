@@ -16,21 +16,16 @@ use rekindle_storage::unlock::VaultUnlock;
 use rekindle_storage::VaultStore;
 use rekindle_transport::veilid::broadcast::node::TransportNode;
 use rekindle_transport::veilid::VeilidTransport;
+use rekindle_types::daemon::DaemonResponse;
 use rekindle_types::display::{Check, CircuitSummary, StatusSnapshot};
 use rekindle_types::session_types::SessionMeta;
 use rekindle_types::transport::Transport;
 
 use crate::daemon::DaemonState;
-use crate::ipc::protocol::IpcResponse;
 
 use super::DaemonContext;
 
 // ── Transport cleanup guard ────────────────────────────────────────────
-//
-// Ensures the transport node is shut down if unlock fails partway through.
-// If ChatService construction, callback install, or resume fails after the
-// transport has already started, the guard spawns a shutdown task on drop.
-// Disarm after successful storage in DaemonContext.
 
 struct TransportGuard {
     node: Option<Arc<TransportNode>>,
@@ -41,7 +36,6 @@ impl TransportGuard {
         Self { node: Some(node) }
     }
 
-    /// Disarm the guard — transport ownership transferred to DaemonContext.
     fn disarm(&mut self) {
         self.node = None;
     }
@@ -60,32 +54,14 @@ impl Drop for TransportGuard {
 
 // ── Unlock ─────────────────────────────────────────────────────────────
 
-/// Handle Unlock — transition from Locked → Resuming → Operational.
-///
-/// Linear 15-step flow:
-/// 1.  Guard state
-/// 2.  Transition to Resuming
-/// 3.  Derive master key from passphrase (Argon2id ~500ms)
-/// 4.  Open vault (SQLCipher)
-/// 5.  Derive session MAC key
-/// 6.  Load session.json (verify BLAKE3 MAC)
-/// 7.  Load transport config
-/// 8.  Start transport (Veilid attach, wait for network)
-/// 9.  Wrap transport in VeilidTransport (Transport trait impl)
-/// 10. Construct ChatService (loads signing key, sessions, MEKs, friend names)
-/// 11. Install TransportCallback (drains buffered events)
-/// 12. Resume (open DHT records, publish route, set up watches, join meshes)
-/// 13. Wire IPC event delivery
-/// 14. Store state in DaemonContext
-/// 15. Spawn background tasks, transition to Operational
 pub(crate) async fn handle_unlock(
     ctx: &Arc<DaemonContext>,
     state: DaemonState,
     passphrase: &str,
-) -> IpcResponse {
+) -> DaemonResponse {
     // Step 1: Guard
     if !state.can_unlock() {
-        return IpcResponse::error(
+        return DaemonResponse::error(
             409,
             format!("cannot unlock in state '{}' — daemon must be locked", state.as_str()),
         );
@@ -93,36 +69,24 @@ pub(crate) async fn handle_unlock(
 
     // Step 2: Transition
     if !ctx.lifecycle.transition(DaemonState::Resuming) {
-        return IpcResponse::error(409, "state transition to Resuming rejected — concurrent state change");
+        return DaemonResponse::error(409, "state transition to Resuming rejected — concurrent state change");
     }
 
     // Step 3: Derive master key from passphrase
-    //
-    // Fresh node detection: if vault.salt doesn't exist, this is a first-time
-    // setup. Generate a random master key, enroll the passphrase (creates
-    // vault.salt + vault.wrapped), then proceed with the normal unlock flow.
-    // This allows `rekindle init` to call Unlock → IdentityCreate in sequence
-    // without requiring a separate "enroll" IPC command.
     let passphrase_unlock = PassphraseUnlock::new(&ctx.paths.state_dir, passphrase.as_bytes());
-    // A node is "fresh" if vault.db doesn't exist. vault.db is the last artifact
-    // created during a successful first-time unlock (after enrollment + vault create).
-    // Checking vault.salt alone is insufficient: a crashed first enrollment may
-    // leave vault.salt + vault.wrapped without vault.db. Re-enrolling is safe —
-    // enroll() overwrites existing salt/wrapped atomically.
     let is_fresh = !ctx.paths.vault_db.exists();
 
     let master_key = if is_fresh {
-        // First-time enrollment: generate master key, wrap with passphrase
         let mk = match rekindle_storage::unlock::MasterKey::generate() {
             Ok(mk) => mk,
             Err(e) => {
                 ctx.lifecycle.transition(DaemonState::Locked);
-                return IpcResponse::error(500, format!("master key generation failed: {e}"));
+                return DaemonResponse::error(500, format!("master key generation failed: {e}"));
             }
         };
         if let Err(e) = passphrase_unlock.enroll(&mk) {
             ctx.lifecycle.transition(DaemonState::Locked);
-            return IpcResponse::error(500, format!("passphrase enrollment failed: {e}"));
+            return DaemonResponse::error(500, format!("passphrase enrollment failed: {e}"));
         }
         tracing::info!("fresh node — vault credentials enrolled");
         mk
@@ -131,7 +95,7 @@ pub(crate) async fn handle_unlock(
             Ok(mk) => mk,
             Err(e) => {
                 ctx.lifecycle.transition(DaemonState::Locked);
-                return IpcResponse::error_with_remediation(
+                return DaemonResponse::error_with_remediation(
                     401,
                     format!("unlock failed: {e}"),
                     "check passphrase, or if identity was never initialized: rekindle init",
@@ -140,13 +104,13 @@ pub(crate) async fn handle_unlock(
         }
     };
 
-    // Step 4: Open vault (create on fresh node)
+    // Step 4: Open vault
     let vault = if is_fresh {
         match VaultStore::create(&ctx.paths.vault_db, master_key.as_bytes()) {
             Ok(v) => Arc::new(v),
             Err(e) => {
                 ctx.lifecycle.transition(DaemonState::Locked);
-                return IpcResponse::error(500, format!("vault creation failed: {e}"));
+                return DaemonResponse::error(500, format!("vault creation failed: {e}"));
             }
         }
     } else {
@@ -154,7 +118,7 @@ pub(crate) async fn handle_unlock(
             Ok(v) => Arc::new(v),
             Err(e) => {
                 ctx.lifecycle.transition(DaemonState::Locked);
-                return IpcResponse::error_with_remediation(
+                return DaemonResponse::error_with_remediation(
                     500,
                     format!("vault open failed: {e}"),
                     "vault may be corrupt — try: rekindle vault repair",
@@ -163,42 +127,35 @@ pub(crate) async fn handle_unlock(
         }
     };
 
-    // Step 5: Derive session MAC key (for session.json integrity verification)
+    // Step 5: Derive session MAC key
     let session_mac_key = rekindle_storage::session_meta::derive_mac_key(master_key.as_bytes());
 
-    // Step 6: Load session.json (or create default on fresh node)
+    // Step 6: Load session.json
     let session_meta: SessionMeta = if is_fresh {
-        // Fresh node — no session.json yet. Create empty SessionMeta.
-        // IdentityCreate will populate it after unlock completes.
         let meta = SessionMeta::default();
         let json = serde_json::to_vec_pretty(&meta).expect("default SessionMeta serializes");
         if let Err(e) = rekindle_storage::session_meta::save(
             &ctx.paths.session_file, &session_mac_key, &json,
         ) {
-            tracing::warn!(error = %e, "failed to write initial session.json — will retry on flush");
+            tracing::warn!(error = %e, "failed to write initial session.json");
         }
         meta
     } else {
-        match rekindle_storage::session_meta::load(
-            &ctx.paths.session_file,
-            &session_mac_key,
-        ) {
+        match rekindle_storage::session_meta::load(&ctx.paths.session_file, &session_mac_key) {
             Ok(json_bytes) => match serde_json::from_slice(&json_bytes) {
                 Ok(meta) => meta,
                 Err(e) => {
                     ctx.lifecycle.transition(DaemonState::Locked);
-                    return IpcResponse::error_with_remediation(
-                        500,
-                        format!("session.json parse failed: {e}"),
+                    return DaemonResponse::error_with_remediation(
+                        500, format!("session.json parse failed: {e}"),
                         "session file may be corrupt — re-initialize: rekindle init",
                     );
                 }
             },
             Err(e) => {
                 ctx.lifecycle.transition(DaemonState::Locked);
-                return IpcResponse::error_with_remediation(
-                    500,
-                    format!("session.json load failed: {e}"),
+                return DaemonResponse::error_with_remediation(
+                    500, format!("session.json load failed: {e}"),
                     "session file missing or MAC invalid — re-initialize: rekindle init",
                 );
             }
@@ -210,9 +167,8 @@ pub(crate) async fn handle_unlock(
         Ok(c) => c,
         Err(e) => {
             ctx.lifecycle.transition(DaemonState::Locked);
-            return IpcResponse::error_with_remediation(
-                500,
-                format!("transport config failed: {e}"),
+            return DaemonResponse::error_with_remediation(
+                500, format!("transport config failed: {e}"),
                 "check config at ~/.config/rekindle/transport.toml",
             );
         }
@@ -223,102 +179,96 @@ pub(crate) async fn handle_unlock(
         Ok(n) => Arc::new(n),
         Err(e) => {
             ctx.lifecycle.transition(DaemonState::Locked);
-            return IpcResponse::error_with_remediation(
-                500,
-                format!("transport start failed: {e}"),
+            return DaemonResponse::error_with_remediation(
+                500, format!("transport start failed: {e}"),
                 "check network connectivity and Veilid configuration",
             );
         }
     };
 
-    // Arm the transport guard — if anything below fails, transport is shut down.
     let mut guard = TransportGuard::new(Arc::clone(&transport_node));
 
-    // Step 9: Wrap in VeilidTransport (Transport trait impl)
+    // Step 9: Wrap in VeilidTransport
     let veilid_transport = Arc::new(VeilidTransport::new(Arc::clone(&transport_node)));
     let transport: Arc<dyn Transport> = veilid_transport;
     let transport_for_ctx = Arc::clone(&transport);
 
     // Step 10: Construct ChatService
     let chat = match ChatService::new(
-        transport,
-        Arc::clone(&vault),
-        session_meta,
-        ctx.paths.session_file.clone(),
-        session_mac_key,
+        transport, Arc::clone(&vault), session_meta,
+        ctx.paths.session_file.clone(), session_mac_key,
     ) {
         Ok(c) => c,
         Err(e) => {
             ctx.lifecycle.transition(DaemonState::Locked);
-            return IpcResponse::error_with_remediation(
-                500,
-                format!("chat service init failed: {e}"),
+            return DaemonResponse::error_with_remediation(
+                500, format!("chat service init failed: {e}"),
                 "vault contents may be corrupt — check logs for detail",
             );
         }
     };
 
-    // Step 11: Install TransportCallback (drains buffered events)
+    // Step 11: Install TransportCallback + resume
     transport_node.set_callback(chat.callback());
 
-    // Step 12: Resume (open DHT records, publish route, set up watches, join meshes)
-    //
-    // Fresh nodes have no identity, no signing key, no DHT records — resume()
-    // will fail with NotInitialized. This is expected: the node goes to
-    // Operational so `rekindle init` can call IdentityCreate to bootstrap.
-    // Existing nodes that fail resume enter Degraded for auto-recovery.
     if let Err(e) = chat.resume().await {
         if is_fresh {
             tracing::info!("fresh node — skipping resume (no identity yet)");
         } else {
             tracing::warn!(error = %e, "chat resume failed — entering degraded state");
-            // Don't fail completely — the daemon is partially functional.
-            // Transport is running, vault is open, but DHT records may not be open.
             ctx.lifecycle.transition(DaemonState::Degraded);
 
-            // Still store state so Lock/Shutdown can clean up.
             let chat = Arc::new(chat);
             *ctx.chat.write() = Some(Arc::clone(&chat));
             *ctx.transport.write() = Some(Arc::clone(&transport_for_ctx));
             *ctx.vault.write() = Some(Arc::clone(&vault));
             guard.disarm();
 
-            return IpcResponse::ok(&serde_json::json!({
+            return DaemonResponse::ok(&serde_json::json!({
                 "state": "degraded",
                 "warning": format!("resume incomplete: {e} — some features may be unavailable"),
             }));
         }
     }
 
-    // Step 13: Wire IPC event delivery
+    // Step 12: Wire event delivery through SubscriptionRegistry
     let chat = Arc::new(chat);
-    let _ = ctx.event_watch_tx.send(Some(chat.pipeline_sender().clone()));
+    let subs = Arc::clone(&ctx.subscriptions);
+    let journal = Arc::clone(&ctx.event_journal);
+    let pipeline_tx = chat.pipeline_sender().clone();
 
-    // Step 14: Store state in DaemonContext
+    tokio::spawn(async move {
+        let mut rx = pipeline_tx.subscribe();
+        loop {
+            match rx.recv().await {
+                Ok(event) => {
+                    journal.append(event.clone());
+                    subs.fan_out(&event);
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                    tracing::warn!(skipped = n, "event delivery lagging");
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    });
+
+    // Step 13: Store state in DaemonContext
     *ctx.chat.write() = Some(Arc::clone(&chat));
     *ctx.transport.write() = Some(Arc::clone(&transport_for_ctx));
     *ctx.vault.write() = Some(Arc::clone(&vault));
     guard.disarm();
 
-    // Step 15: Spawn background tasks + transition to Operational
+    // Step 14: Spawn background tasks + transition to Operational
     spawn_background_tasks(&chat);
     ctx.lifecycle.transition(DaemonState::Operational);
 
     tracing::info!("daemon unlocked — operational");
-    IpcResponse::ok(&serde_json::json!({ "state": "operational" }))
+    DaemonResponse::ok(&serde_json::json!({ "state": "operational" }))
 }
 
 /// Spawn all periodic background tasks.
-///
-/// Each task clones the Arc<ChatService> and loops until
-/// `chat.is_operational()` returns false (signing key cleared during lock).
-///
-/// All intervals use `MissedTickBehavior::Skip` to prevent thundering herd
-/// after load spikes. If the system is loaded and ticks are missed, they
-/// are simply dropped — running inbox scan 3 times in succession after a
-/// load spike accomplishes the same as running it once (idempotent).
 fn spawn_background_tasks(chat: &Arc<ChatService>) {
-    // Inbox scan (30s) — discovers friend requests and acceptances
     let c = Arc::clone(chat);
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(30));
@@ -330,7 +280,6 @@ fn spawn_background_tasks(chat: &Arc<ChatService>) {
         }
     });
 
-    // Heartbeat (60s) — publish online presence
     let c = Arc::clone(chat);
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(60));
@@ -342,7 +291,6 @@ fn spawn_background_tasks(chat: &Arc<ChatService>) {
         }
     });
 
-    // Typing expiry collection (2s) — emit TypingStopped for expired indicators
     let c = Arc::clone(chat);
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(2));
@@ -354,7 +302,6 @@ fn spawn_background_tasks(chat: &Arc<ChatService>) {
         }
     });
 
-    // Dedup eviction (300s) — clear expired dedup entries
     let c = Arc::clone(chat);
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(300));
@@ -366,7 +313,6 @@ fn spawn_background_tasks(chat: &Arc<ChatService>) {
         }
     });
 
-    // Skipped key sweep (3600s) — delete expired skipped message keys from vault
     let c = Arc::clone(chat);
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(3600));
@@ -378,7 +324,6 @@ fn spawn_background_tasks(chat: &Arc<ChatService>) {
         }
     });
 
-    // Session.json dirty flush (5s) — persist session_meta if modified
     let c = Arc::clone(chat);
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(5));
@@ -393,83 +338,66 @@ fn spawn_background_tasks(chat: &Arc<ChatService>) {
 
 // ── Status ─────────────────────────────────────────────────────────────
 
-/// Status cache TTL. Status data is inherently stale — values change on a
-/// seconds timescale, but consumers tolerate up to 1s staleness. At 1000
-/// agents polling simultaneously, only the first computes the snapshot;
-/// the other 999 get the cached version with zero ChatService lock contention.
 const STATUS_CACHE_TTL: Duration = Duration::from_secs(1);
 
-/// Handle Status — always available, any state.
-///
-/// Uses a TTL cache to prevent lock contention on ChatService internals
-/// when many agents poll status simultaneously.
-pub(crate) fn handle_status(ctx: &Arc<DaemonContext>, state: DaemonState) -> IpcResponse {
-    // Fast path: return cached snapshot if fresh.
+pub(crate) fn handle_status(ctx: &Arc<DaemonContext>, state: DaemonState) -> DaemonResponse {
     {
         let cache = ctx.status_cache.lock();
         if let Some((computed_at, ref snapshot)) = *cache {
             if computed_at.elapsed() < STATUS_CACHE_TTL {
-                return IpcResponse::ok(snapshot);
+                return DaemonResponse::ok(snapshot);
             }
         }
-    } // Mutex released before computing new snapshot.
+    }
 
     let chat = ctx.chat.read().clone();
+    let counters = ctx.transport_counters.snapshot();
 
     let snapshot = StatusSnapshot {
         state: state.as_str().to_string(),
-        has_identity: chat.as_ref().is_some_and(|c| {
-            c.session_identity().is_some()
-        }),
-        identity_public_key: chat.as_ref().and_then(|c| {
-            c.session_identity().map(|id| id.public_key_hex.clone())
-        }),
-        identity_display_name: chat.as_ref().and_then(|c| {
-            c.session_identity().map(|id| id.display_name.clone())
-        }),
-        attachment: chat.as_ref()
-            .map_or("unknown".into(), |c| c.io().transport().attachment_state().to_string()),
+        has_identity: chat.as_ref().is_some_and(|c| c.session_identity().is_some()),
+        identity_public_key: chat.as_ref().and_then(|c| c.session_identity().map(|id| id.public_key_hex.clone())),
+        identity_display_name: chat.as_ref().and_then(|c| c.session_identity().map(|id| id.display_name.clone())),
+        attachment: chat.as_ref().map_or("unknown".into(), |c| c.io().transport().attachment_state().to_string()),
         is_attached: chat.as_ref().is_some_and(|c| c.io().transport().is_attached()),
-        public_internet_ready: false, // available via transport snapshot if needed
-        uptime_secs: chat.as_ref()
-            .map_or(0, |c| c.io().transport().uptime_secs()),
-        peer_count: chat.as_ref()
-            .map_or(0, |c| c.io().transport().peer_count() as usize),  // Transport returns u32, StatusSnapshot needs usize
-        route_allocated: false, // available via transport snapshot if needed
-        route_age_secs: None,
+        public_internet_ready: chat.as_ref().is_some_and(|c| c.io().transport().is_public_internet_ready()),
+        uptime_secs: chat.as_ref().map_or(0, |c| c.io().transport().uptime_secs()),
+        peer_count: chat.as_ref().map_or(0, |c| c.io().transport().peer_count() as usize),
+        route_allocated: chat.as_ref().is_some_and(|c| c.io().transport().route_blob().is_some()),
+        route_age_secs: chat.as_ref().and_then(|c| c.io().transport().route_age_secs()),
         active_watches: chat.as_ref().map_or(0, |c| c.watch_count()),
-        gossip_meshes: 0,
-        gossip_mesh_peers: 0,
+        gossip_meshes: chat.as_ref().map_or(0, |c| c.community_count()),
+        gossip_mesh_peers: chat.as_ref().map_or(0, |c| c.io().transport().gossip_mesh_peer_count()),
         unread_channels: chat.as_ref().map_or(0, |c| c.unread_channels().len()),
         unread_dms: chat.as_ref().map_or(0, |c| c.unread_dms().len()),
         unread_friend_requests: chat.as_ref().map_or(0, |c| c.unread_friend_requests()),
-        dedup_entries: 0,
-        dedup_suppressed: 0,
+        dedup_entries: chat.as_ref().map_or(0, |c| c.dedup_stats().0),
+        dedup_suppressed: chat.as_ref().map_or(0, |c| c.dedup_stats().1),
         poll_loop_active: chat.is_some(),
         renewal_loop_active: chat.is_some(),
         community_count: chat.as_ref().map_or(0, |c| c.community_count()),
         friend_count: chat.as_ref().map_or(0, |c| c.friend_count()),
-        circuit_summary: CircuitSummary {
-            total: 0, healthy: 0, degraded: 0, circuit_open: 0,
+        circuit_summary: {
+            let (total, healthy, degraded, circuit_open) = chat.as_ref()
+                .map_or((0, 0, 0, 0), |c| c.io().transport().circuit_summary());
+            CircuitSummary { total, healthy, degraded, circuit_open }
         },
-        bulk_frames_sent: ctx.bulk_counters.frames_sent.load(std::sync::atomic::Ordering::Relaxed),
-        bulk_frames_received: ctx.bulk_counters.frames_received.load(std::sync::atomic::Ordering::Relaxed),
-        bulk_bytes_sent: ctx.bulk_counters.bytes_sent.load(std::sync::atomic::Ordering::Relaxed),
-        bulk_bytes_received: ctx.bulk_counters.bytes_received.load(std::sync::atomic::Ordering::Relaxed),
+        bulk_frames_sent: counters.frames_sent,
+        bulk_frames_received: counters.frames_received,
+        bulk_bytes_sent: counters.bytes_sent,
+        bulk_bytes_received: counters.bytes_received,
         bulk_transfers_active: ctx.bulk_transfers.lock().active_count(),
         checks: build_checks(ctx, state, chat.as_ref().map(AsRef::as_ref)),
     };
 
-    // Store in cache for subsequent requests within TTL.
     {
         let mut cache = ctx.status_cache.lock();
         *cache = Some((std::time::Instant::now(), snapshot.clone()));
     }
 
-    IpcResponse::ok(&snapshot)
+    DaemonResponse::ok(&snapshot)
 }
 
-/// Build diagnostic checks from ChatService API + daemon state.
 fn build_checks(
     ctx: &Arc<DaemonContext>,
     state: DaemonState,
@@ -477,7 +405,6 @@ fn build_checks(
 ) -> Vec<Check> {
     let mut checks = Vec::new();
 
-    // ── NODE ────────────────────────────────────────────────────────
     checks.push(if state.can_query() {
         Check::pass("node.state", "node", state.as_str())
     } else if state == DaemonState::Locked {
@@ -495,7 +422,6 @@ fn build_checks(
             .with_description("transport starts during unlock")
     });
 
-    // ── TRANSPORT ───────────────────────────────────────────────────
     if let Some(chat) = chat {
         let attached = chat.io().transport().is_attached();
         checks.push(if attached {
@@ -513,37 +439,15 @@ fn build_checks(
                 .with_description("no known peers — node may be isolated")
         });
 
-        let uptime = chat.io().transport().uptime_secs();
-        checks.push(Check::pass("node.uptime", "node", fmt_uptime(uptime)));
-    }
+        checks.push(Check::pass("node.uptime", "node", fmt_uptime(chat.io().transport().uptime_secs())));
 
-    // ── CRYPTO ──────────────────────────────────────────────────────
-    if let Some(chat) = chat {
         checks.push(if chat.io().is_signing_key_loaded() {
             Check::pass("crypto.signing_key", "crypto", "loaded")
         } else {
             Check::warn("crypto.signing_key", "crypto", "not loaded")
                 .with_description("signing key not in memory — daemon is locked")
         });
-    }
 
-    // ── STORAGE ─────────────────────────────────────────────────────
-    checks.push(if ctx.paths.session_file.exists() {
-        Check::pass("storage.session_file", "storage", "exists")
-    } else {
-        Check::warn("storage.session_file", "storage", "missing")
-            .with_description("no session file — identity not initialized")
-    });
-
-    let vault_open = ctx.vault.read().is_some();
-    checks.push(if vault_open {
-        Check::pass("storage.vault", "storage", "open")
-    } else {
-        Check::warn("storage.vault", "storage", "closed")
-    });
-
-    // ── IDENTITY ────────────────────────────────────────────────────
-    if let Some(chat) = chat {
         if let Some(identity) = chat.session_identity() {
             checks.push(Check::pass("identity.initialized", "identity", "yes"));
             let pk = &identity.public_key_hex;
@@ -553,122 +457,36 @@ fn build_checks(
                 pk.clone()
             };
             checks.push(Check::pass("identity.public_key", "identity", pk_short));
-            checks.push(Check::pass(
-                "identity.display_name", "identity", &identity.display_name,
-            ));
+            checks.push(Check::pass("identity.display_name", "identity", &identity.display_name));
         } else {
             checks.push(Check::fail("identity.initialized", "identity", "no")
                 .with_description("run: rekindle init"));
         }
+
+        checks.push(Check::pass("subscriptions.watches", "subscriptions", chat.watch_count().to_string()));
     }
 
-    // ── SUBSCRIPTIONS ───────────────────────────────────────────────
-    if let Some(chat) = chat {
-        checks.push(Check::pass(
-            "subscriptions.watches", "subscriptions",
-            chat.watch_count().to_string(),
-        ));
-    }
+    checks.push(if ctx.paths.session_file.exists() {
+        Check::pass("storage.session_file", "storage", "exists")
+    } else {
+        Check::warn("storage.session_file", "storage", "missing")
+            .with_description("no session file — identity not initialized")
+    });
 
-    // ── CRYPTO CAPABILITIES ────────────────────────────────────────
-    {
-        let caps = &ctx.crypto_caps;
+    checks.push(if ctx.vault.read().is_some() {
+        Check::pass("storage.vault", "storage", "open")
+    } else {
+        Check::warn("storage.vault", "storage", "closed")
+    });
 
-        checks.push(if caps.aes_gcm_seal_gibs >= 3.0 {
-            Check::pass("crypto.aes_gcm_seal", "crypto", format!("{:.2} GiB/s", caps.aes_gcm_seal_gibs))
-        } else {
-            Check::warn("crypto.aes_gcm_seal", "crypto", format!("{:.2} GiB/s", caps.aes_gcm_seal_gibs))
-                .with_description("below 3.0 GiB/s target — check AES-NI support")
-        });
-
-        checks.push(if caps.aes_gcm_open_gibs >= 1.5 {
-            Check::pass("crypto.aes_gcm_open", "crypto", format!("{:.2} GiB/s", caps.aes_gcm_open_gibs))
-        } else {
-            Check::warn("crypto.aes_gcm_open", "crypto", format!("{:.2} GiB/s", caps.aes_gcm_open_gibs))
-                .with_description("below 1.5 GiB/s target — check AES-NI support")
-        });
-
-        if caps.aegis_seal_gibs > 0.0 {
-            checks.push(Check::pass("crypto.aegis_seal", "crypto", format!("{:.2} GiB/s", caps.aegis_seal_gibs)));
-        }
-
-        checks.push(if caps.blake3_gibs >= 3.0 {
-            Check::pass("crypto.blake3", "crypto", format!("{:.2} GiB/s", caps.blake3_gibs))
-        } else {
-            Check::warn("crypto.blake3", "crypto", format!("{:.2} GiB/s", caps.blake3_gibs))
-                .with_description("below 3.0 GiB/s target")
-        });
-
-        checks.push(Check::pass("crypto.sha256_single", "crypto", format!("{:.0} MiB/s", caps.sha256_single_mibs)));
-
-        if caps.sha256_mb_simd_active {
-            checks.push(Check::pass(
-                "crypto.sha256_mb", "crypto",
-                format!("{:.0} MiB/s ({:.1}x SIMD)", caps.sha256_mb_mibs, caps.sha256_mb_speedup),
-            ));
-        } else if caps.sha256_mb_mibs > 0.0 {
-            checks.push(Check::warn(
-                "crypto.sha256_mb", "crypto",
-                format!("{:.0} MiB/s ({:.1}x — no SIMD)", caps.sha256_mb_mibs, caps.sha256_mb_speedup),
-            ).with_description("ISA-L multi-buffer fell back to sequential — BLAKE3 Merkle (default) unaffected"));
-        } else {
-            checks.push(Check::pass("crypto.sha256_mb", "crypto", "disabled (BLAKE3 Merkle active)"));
-        }
-
-        checks.push(Check::pass("crypto.bulk_aead", "crypto", &caps.bulk_aead_algorithm));
-    }
-
-    // ── BULK TRANSPORT ─────────────────────────────────────────────
-    {
-        use std::sync::atomic::Ordering;
-        let frames_sent = ctx.bulk_counters.frames_sent.load(Ordering::Relaxed);
-        let frames_recv = ctx.bulk_counters.frames_received.load(Ordering::Relaxed);
-        let bytes_sent = ctx.bulk_counters.bytes_sent.load(Ordering::Relaxed);
-        let bytes_recv = ctx.bulk_counters.bytes_received.load(Ordering::Relaxed);
-        let active = ctx.bulk_transfers.lock().active_count();
-
-        if frames_sent > 0 || frames_recv > 0 {
-            checks.push(Check::pass(
-                "bulk.frames", "bulk",
-                format!("{frames_sent} sent / {frames_recv} received"),
-            ));
-            checks.push(Check::pass(
-                "bulk.bytes", "bulk",
-                format!("{} sent / {} received", fmt_bytes(bytes_sent), fmt_bytes(bytes_recv)),
-            ));
-        } else {
-            checks.push(Check::pass("bulk.activity", "bulk", "no transfers since startup"));
-        }
-
-        if active > 0 {
-            checks.push(Check::pass("bulk.active", "bulk", format!("{active} in progress")));
-        }
-
-        // Feature flags
-        let mut features = Vec::new();
-        if cfg!(feature = "bulk-epoll") { features.push("epoll"); }
-        if cfg!(feature = "bulk-uring") { features.push("io_uring"); }
-        if cfg!(feature = "bulk-memfd") { features.push("memfd"); }
-        if cfg!(feature = "aegis") { features.push("AEGIS-128L"); }
-        if cfg!(feature = "sha256-mb") { features.push("SHA256-MB"); }
-        checks.push(Check::pass("bulk.features", "bulk", features.join(", ")));
-    }
+    checks.push(Check::pass(
+        "subscriptions.connections", "subscriptions",
+        ctx.subscriptions.connection_count().to_string(),
+    ));
 
     checks
 }
 
-#[allow(clippy::cast_precision_loss)] // display-only formatting, precision loss acceptable
-fn fmt_bytes(b: u64) -> String {
-    if b < 1024 { return format!("{b} B"); }
-    let kb = b as f64 / 1024.0;
-    if kb < 1024.0 { return format!("{kb:.1} KB"); }
-    let mb = kb / 1024.0;
-    if mb < 1024.0 { return format!("{mb:.1} MB"); }
-    let gb = mb / 1024.0;
-    format!("{gb:.2} GB")
-}
-
-/// Format seconds as human-readable uptime.
 fn fmt_uptime(secs: u64) -> String {
     if secs < 60 { return format!("{secs}s"); }
     let mins = secs / 60;
@@ -681,39 +499,23 @@ fn fmt_uptime(secs: u64) -> String {
 
 // ── Lock ────────────────────────────────────────────────────────────────
 
-/// Handle Lock — transition to Locked, zeroize all secrets.
-///
-/// Order: transition Locking → chat.lock() → transport shutdown →
-/// clear references → transition Locked.
-///
-/// chat.lock() cancels watches, clears session cache, clears MEK cache,
-/// clears signing key, flushes dirty session.json. After lock(), the
-/// ChatService is inert — is_operational() returns false, background
-/// tasks exit their loops.
-pub(crate) async fn handle_lock(ctx: &Arc<DaemonContext>, state: DaemonState) -> IpcResponse {
+pub(crate) async fn handle_lock(ctx: &Arc<DaemonContext>, state: DaemonState) -> DaemonResponse {
     if !state.can_write() && state != DaemonState::Degraded && state != DaemonState::Detached {
-        return IpcResponse::error(
-            409,
-            format!("cannot lock in state '{}'", state.as_str()),
-        );
+        return DaemonResponse::error(409, format!("cannot lock in state '{}'", state.as_str()));
     }
 
     ctx.lifecycle.transition(DaemonState::Locking);
 
-    // Lock ChatService (zeroize secrets, cancel watches, flush session.json)
     let chat = ctx.chat.read().clone();
     if let Some(ref chat) = chat {
         chat.lock().await;
     }
 
-    // Shutdown transport
     let transport_node = ctx.transport.read().clone();
     if let Some(ref node) = transport_node {
         node.shutdown().await.ok();
     }
 
-    // Clear references — last Arc holders trigger Drop cleanup.
-    // VaultStore::drop does PRAGMA rekey = '' (best-effort C buffer clear).
     *ctx.chat.write() = None;
     *ctx.transport.write() = None;
     *ctx.vault.write() = None;
@@ -721,23 +523,18 @@ pub(crate) async fn handle_lock(ctx: &Arc<DaemonContext>, state: DaemonState) ->
     ctx.lifecycle.transition(DaemonState::Locked);
     tracing::info!("daemon locked — all secrets zeroized");
 
-    IpcResponse::ok(&serde_json::json!({ "state": "locked" }))
+    DaemonResponse::ok(&serde_json::json!({ "state": "locked" }))
 }
 
 // ── Shutdown ────────────────────────────────────────────────────────────
 
-/// Handle Shutdown — initiate graceful daemon shutdown.
-///
-/// Performs lock first (zeroize secrets, stop transport), then transitions
-/// to ShuttingDown which notifies the main event loop to exit.
-pub(crate) async fn handle_shutdown(ctx: &Arc<DaemonContext>, state: DaemonState) -> IpcResponse {
+pub(crate) async fn handle_shutdown(ctx: &Arc<DaemonContext>, state: DaemonState) -> DaemonResponse {
     if state == DaemonState::ShuttingDown {
-        return IpcResponse::ok(&serde_json::json!({ "state": "already_shutting_down" }));
+        return DaemonResponse::ok(&serde_json::json!({ "state": "already_shutting_down" }));
     }
 
     tracing::info!("shutdown requested via IPC");
 
-    // If operational/degraded/detached, perform lock first.
     if state.can_query() || state == DaemonState::Resuming {
         let chat = ctx.chat.read().clone();
         if let Some(ref chat) = chat {
@@ -752,10 +549,9 @@ pub(crate) async fn handle_shutdown(ctx: &Arc<DaemonContext>, state: DaemonState
         *ctx.vault.write() = None;
     }
 
-    // Transition to ShuttingDown — notifies the main event loop via DaemonLifecycle.
     ctx.lifecycle.transition(DaemonState::ShuttingDown);
 
-    IpcResponse::ok(&serde_json::json!({
+    DaemonResponse::ok(&serde_json::json!({
         "state": "shutting_down",
         "message": "daemon will exit after draining connections",
     }))
@@ -763,26 +559,12 @@ pub(crate) async fn handle_shutdown(ctx: &Arc<DaemonContext>, state: DaemonState
 
 // ── Config loading ──────────────────────────────────────────────────────
 
-/// Load only the ports from config at daemon startup (before unlock).
-///
-/// Used by `run_daemon()` to bind metrics and health endpoints on the
-/// configured ports before the first unlock. Falls back to defaults.
 pub(crate) fn load_early_config(
     paths: &crate::state::StatePaths,
 ) -> rekindle_types::config::TransportConfig {
     load_transport_config(paths).unwrap_or_default()
 }
 
-/// Load transport configuration from all standard config paths.
-///
-/// Reads the same config files the CLI reads, in the same precedence order:
-/// 1. /etc/rekindle/config.toml (system-wide, lowest priority)
-/// 2. ~/.config/rekindle/config.toml (user)
-/// 3. ~/.config/rekindle/transport.toml (daemon-specific override)
-/// 4. REKINDLE_CONFIG env var
-///
-/// The `[network]` section maps directly to TransportConfig fields.
-/// Falls back to defaults if no config files exist.
 fn load_transport_config(
     paths: &crate::state::StatePaths,
 ) -> Result<rekindle_types::config::TransportConfig, String> {
@@ -792,15 +574,9 @@ fn load_transport_config(
         ..Default::default()
     };
 
-    // Layer 1: system-wide config (/etc/rekindle/config.toml)
-    // Uses the CLI config format with [network] section — extract transport fields.
     merge_from_cli_config(&mut config, &std::path::PathBuf::from("/etc/rekindle/config.toml"));
-
-    // Layer 2: user config (~/.config/rekindle/config.toml)
     merge_from_cli_config(&mut config, &paths.config_dir.join("config.toml"));
 
-    // Layer 3: daemon-specific transport override (~/.config/rekindle/transport.toml)
-    // This file uses TransportConfig format directly (no [network] wrapper).
     let transport_file = paths.config_dir.join("transport.toml");
     if transport_file.exists() {
         match std::fs::read_to_string(&transport_file) {
@@ -815,33 +591,18 @@ fn load_transport_config(
         }
     }
 
-    // Layer 4: env var override
     if let Ok(env_path) = std::env::var("REKINDLE_CONFIG") {
         merge_from_cli_config(&mut config, &std::path::PathBuf::from(env_path));
     }
 
-    // Always enforce XDG storage dir — config files cannot override it.
     config.storage_dir = paths.veilid_dir.display().to_string();
-
-    tracing::debug!(
-        allow_insecure_protected_store = config.allow_insecure_protected_store,
-        namespace = %config.namespace,
-        "transport config resolved"
-    );
-
     Ok(config)
 }
 
-/// Extract transport-relevant fields from a CLI-format config file.
-///
-/// The CLI config has `[network]` section with fields that map 1:1 to
-/// TransportConfig. This function reads the file, parses the [network]
-/// section, and merges non-default values into the transport config.
 fn merge_from_cli_config(
     config: &mut rekindle_types::config::TransportConfig,
     path: &std::path::Path,
 ) {
-    /// Minimal CLI config shape — just enough to extract [network].
     #[derive(serde::Deserialize, Default)]
     struct CliConfig {
         #[serde(default)]
@@ -887,6 +648,4 @@ fn merge_from_cli_config(
     if let Some(v) = n.metrics_port { config.metrics_port = v; }
     if let Some(v) = n.health_port { config.health_port = v; }
     if let Some(v) = n.veilid.clone() { config.veilid = v; }
-
-    tracing::debug!(path = %path.display(), "merged config layer");
 }

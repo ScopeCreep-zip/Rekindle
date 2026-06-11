@@ -32,6 +32,7 @@ use crate::v3::context::{OutboundFrame, SessionContext};
 use crate::v3::handlers::channel::pong::{verify_and_apply, PongOutcome};
 use crate::v3::io::control_loop::drain::DrainContext;
 use crate::v3::io::read_task::SessionOutcome;
+use crate::v3::router::ConnectionPhase;
 use crate::v3::wire::frame_kind::ChannelKind;
 
 use super::audit_reorder::AuditReorderBuffer;
@@ -113,6 +114,8 @@ impl HeartbeatState {
         ctx: &mut SessionContext,
         payload: &[u8],
     ) {
+        let was_degraded = ctx.heartbeat_miss_count() > 0;
+
         let outcome = match verify_and_apply(ctx, payload) {
             Ok(o) => o,
             Err(e) => {
@@ -126,6 +129,10 @@ impl HeartbeatState {
                 self.counters.heartbeat_pongs_accepted.fetch_add(1, Ordering::Relaxed);
                 self.awaiting_pong = false;
                 self.pong_sleep.as_mut().reset(far_future());
+
+                if was_degraded {
+                    util::notify_state_change(ctx, ConnectionPhase::Degraded, ConnectionPhase::Established);
+                }
 
                 // RTT computation from the echoed PING timestamp.
                 // Per SCTP §8.3: validate sent_at + hbinterval + rto.
@@ -146,14 +153,12 @@ impl HeartbeatState {
             PongOutcome::AcceptedStale => {
                 tracing::info!("PONG accepted — stale (previous generation), peer alive but slow");
                 self.counters.heartbeat_stale_pongs.fetch_add(1, Ordering::Relaxed);
-                // Peer IS alive — it responded to the previous PING.
-                // Reset awaiting_pong and timer. Miss count already reset
-                // by verify_and_apply. last_ping_nonce stays valid — the
-                // current generation nonce is still outstanding.
-                // Do NOT call record_pong_received — RTT would be invalid
-                // for a stale PONG (inflated by one heartbeat interval).
                 self.awaiting_pong = false;
                 self.pong_sleep.as_mut().reset(far_future());
+
+                if was_degraded {
+                    util::notify_state_change(ctx, ConnectionPhase::Degraded, ConnectionPhase::Established);
+                }
             }
             PongOutcome::Discarded => {
                 self.counters.heartbeat_unsolicited_pongs.fetch_add(1, Ordering::Relaxed);
@@ -174,6 +179,12 @@ impl HeartbeatState {
     /// bulk data to respond to our PING — not that the peer is dead.
     /// In this case, reset the miss count instead of incrementing it.
     pub fn handle_pong_timeout(&mut self, ctx: &mut SessionContext) -> Option<SessionOutcome> {
+        tracing::info!(
+            miss_count = ctx.heartbeat_miss_count(),
+            miss_limit = self.miss_limit,
+            activity_elapsed_ms = self.activity_elapsed_ms(),
+            "handle_pong_timeout: ENTERED",
+        );
         self.counters.heartbeat_pong_timeouts.fetch_add(1, Ordering::Relaxed);
 
         // Activity-based suppression: if we received ANY frame from the
@@ -201,7 +212,12 @@ impl HeartbeatState {
             "pong timeout — no response and no activity within deadline"
         );
 
+        let was_healthy = ctx.heartbeat_miss_count() == 0;
         ctx.increment_heartbeat_miss();
+
+        if was_healthy {
+            util::notify_state_change(ctx, ConnectionPhase::Established, ConnectionPhase::Degraded);
+        }
 
         // Rotate nonce generations in SessionContext.
         // The in-flight PONG gets one more cycle to arrive as "stale but valid".
@@ -231,7 +247,14 @@ impl HeartbeatState {
         drain_ctx: &DrainContext<'_>,
         outbound_reorder: &mut AuditReorderBuffer,
     ) -> Option<SessionOutcome> {
+        tracing::info!(
+            activity_elapsed_ms = self.activity_elapsed_ms(),
+            interval_ms = self.interval.as_millis() as u64,
+            awaiting_pong = self.awaiting_pong,
+            "tick: ENTERED",
+        );
         if self.activity_elapsed() >= self.interval && !self.awaiting_pong {
+            tracing::info!("tick: sending PING");
             let nonce = util::rand_nonce();
             let ping = ping_codec::PingPayload {
                 ping_nonce: nonce,

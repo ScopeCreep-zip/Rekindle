@@ -1,0 +1,45 @@
+[package]
+name = "rekindle-identity"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.87"
+description = "Canonical identity types for the Rekindle platform — cryptographic root, derivation grammar, trust state, delegation, vault labels, fleet-density registry"
+license = "MIT"
+
+[lints]
+workspace = true
+
+[dependencies]
+# Crypto primitives — the ONLY path to Ed25519/X25519/ML-KEM.
+# rekindle-ratchet::crypto::{sign, dh} are the live aws-lc-rs wrappers
+# exercised by the PQXDH flow. This crate MUST NOT construct aws-lc-rs
+# keys through any other path.
+rekindle-ratchet = { path = "../rekindle-ratchet" }
+
+# KDF — all derivations are blake3::derive_key(CONTEXT, IKM)
+blake3 = "1"
+
+# Secret hygiene — OriginSeed, DhSeed, PersonaSecrets
+zeroize = { version = "1", features = ["derive"] }
+
+# CSPRNG for OriginSeed::generate() and DeviceId::generate()
+getrandom = "0.2"
+
+# Error types
+thiserror = { workspace = true }
+
+# Hex encoding for public key display and label construction
+hex = { workspace = true }
+
+# Sharded concurrent maps — TrustStore, ResidentSet, PeerResolver
+dashmap = "6"
+
+# Lock-free hot-swap for LocatorRecord, persona caches
+arc-swap = "1"
+
+# Local persistence projections ONLY — never for signable wire forms
+serde = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+proptest = "1"

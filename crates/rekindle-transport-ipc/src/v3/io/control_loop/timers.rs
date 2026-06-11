@@ -19,7 +19,7 @@ pub(super) fn check_deadlines(ctx: &mut SessionContext) -> Option<SessionOutcome
             return Some(util::terminate(ctx, SessionOutcome::DrainTimeout {
                 local_goodbye_sent: ctx.local_goodbye_sent(),
                 peer_goodbye_received: ctx.peer_final_session_seq().is_some(),
-                active_streams: ctx.stream_registry().active_count(),
+                active_streams: ctx.stream_active_count(),
             }));
         }
     }

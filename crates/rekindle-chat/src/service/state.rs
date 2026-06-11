@@ -79,4 +79,9 @@ impl ChatService {
         self.session_meta.read().friend_display_names.len()
     }
 
+    /// Dedup cache statistics: (entries, suppressed_count).
+    pub fn dedup_stats(&self) -> (usize, u64) {
+        let dedup = self.pipeline.dedup().read();
+        (dedup.len(), dedup.suppressed_count())
+    }
 }

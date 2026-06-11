@@ -32,6 +32,8 @@ members = [
     "crates/rekindle-hash",
     "crates/rekindle-transport-ipc",
     "crates/rekindle-transport-buff",
+    "crates/rekindle-keys",
+    "crates/rekindle-client",
 ]
 
 [workspace.dependencies]

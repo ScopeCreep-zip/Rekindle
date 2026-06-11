@@ -1,11 +1,10 @@
 //! Bulk transfer state tracking for control-plane observability.
 //!
-//! The actual bulk data flows through the lane 0x01–0x02 wire protocol,
-//! not through IpcRequest. These data structures track transfer lifecycle
-//! metadata so that `rekindle transfer status` can report progress.
+//! The actual bulk data flows through transport-ipc's bulk lane protocol.
+//! These data structures track transfer lifecycle metadata so that
+//! `rekindle transfer status` can report progress via `DaemonRequest::BulkTransferStatus`.
 
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::time::Instant;
 
 /// State of a single bulk transfer.
@@ -21,16 +20,9 @@ pub struct TransferState {
     pub status: TransferStatus,
     #[serde(skip)]
     pub started_at: Instant,
-    /// Elapsed seconds since transfer started.
     pub elapsed_secs: f64,
-    /// Connection that started this transfer.
     #[serde(skip)]
     pub conn_id: u64,
-    /// Nonce counter from the connection's BulkSession.
-    #[serde(skip)]
-    pub nonce_counter: Option<Arc<crate::ipc::bulk::nonce::NonceCounter>>,
-    /// Digest algorithm for this transfer.
-    pub digest_algorithm: crate::ipc::bulk::verify::DigestAlgorithm,
 }
 
 /// Transfer lifecycle status.
@@ -44,9 +36,6 @@ pub enum TransferStatus {
 }
 
 /// Registry of active and recent bulk transfers.
-///
-/// Lives on `DaemonContext` behind a `parking_lot::Mutex`.
-/// Low contention: only the dispatch thread writes; status queries read.
 pub struct BulkTransferRegistry {
     transfers: HashMap<String, TransferState>,
     next_stream_id: u8,
@@ -69,8 +58,6 @@ impl BulkTransferRegistry {
         digest: String,
         direction: String,
         conn_id: u64,
-        nonce_counter: Option<Arc<crate::ipc::bulk::nonce::NonceCounter>>,
-        digest_algorithm: crate::ipc::bulk::verify::DigestAlgorithm,
     ) -> u8 {
         self.next_stream_id = self.next_stream_id.wrapping_add(1);
         if self.next_stream_id == 0 {
@@ -91,8 +78,6 @@ impl BulkTransferRegistry {
                 status: TransferStatus::Active,
                 started_at: Instant::now(),
                 conn_id,
-                nonce_counter,
-                digest_algorithm,
                 elapsed_secs: 0.0,
             },
         );

@@ -185,6 +185,22 @@ pub trait Transport: Send + Sync + 'static {
     fn peer_count(&self) -> u32;
     fn attachment_state(&self) -> &str;
     fn uptime_secs(&self) -> u64;
+
+    /// Whether the public internet is reachable via this node.
+    /// Determined by NAT traversal and Veilid's attachment handshake.
+    fn is_public_internet_ready(&self) -> bool { false }
+
+    /// Seconds since the current personal route was allocated.
+    /// Returns `None` if no route is currently allocated.
+    fn route_age_secs(&self) -> Option<u64> { None }
+
+    /// Circuit breaker summary across all known peers.
+    /// Returns (total, healthy, degraded, circuit_open) counts.
+    fn circuit_summary(&self) -> (usize, usize, usize, usize) { (0, 0, 0, 0) }
+
+    /// Number of peers in each gossip mesh. Returns total peer count
+    /// across all meshes. Individual per-mesh counts are transport-internal.
+    fn gossip_mesh_peer_count(&self) -> usize { 0 }
 }
 
 /// Callback trait for inbound events from the transport layer.

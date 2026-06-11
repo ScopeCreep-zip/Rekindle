@@ -151,13 +151,14 @@ impl Transport for VeilidTransport {
                 Ok((key, keypair_bytes))
             }
             RecordSchema::MultiWriter { owner_subkeys, member_subkeys, member_count } => {
-                // Construct SMPL member descriptors with unassigned (default) member IDs.
-                // BareMemberId::default() produces an empty key — Veilid treats this as
-                // an unassigned slot that any writer can claim by opening the record
-                // with their keypair.
+                // Construct SMPL member descriptors with placeholder member IDs.
+                // Each m_key must be exactly MEMBER_ID_LENGTH (32) bytes — Veilid's
+                // schema validation rejects empty keys. A 32-byte zero key acts as
+                // an unassigned placeholder that any writer can claim by opening the
+                // record with their keypair.
                 let members: Vec<veilid_core::DHTSchemaSMPLMember> = (0..member_count)
                     .map(|_| veilid_core::DHTSchemaSMPLMember {
-                        m_key: veilid_core::BareMemberId::default(),
+                        m_key: veilid_core::BareMemberId::new(&[0u8; crate::VEILID_MEMBER_ID_LENGTH]),
                         m_cnt: member_subkeys,
                     })
                     .collect();
@@ -328,5 +329,28 @@ impl Transport for VeilidTransport {
 
     fn uptime_secs(&self) -> u64 {
         self.node.uptime().as_secs()
+    }
+
+    fn is_public_internet_ready(&self) -> bool {
+        self.node.shared().public_internet_ready()
+    }
+
+    fn route_age_secs(&self) -> Option<u64> {
+        let routes = self.node.routes();
+        let guard = routes.read();
+        guard.route_age().map(|d| d.as_secs())
+    }
+
+    fn circuit_summary(&self) -> (usize, usize, usize, usize) {
+        let peers = self.node.peers();
+        let guard = peers.read();
+        let summary = guard.circuit_summary();
+        (summary.total, summary.healthy, summary.degraded, summary.circuit_open)
+    }
+
+    fn gossip_mesh_peer_count(&self) -> usize {
+        let meshes = self.broadcast.meshes();
+        let guard = meshes.read();
+        guard.values().map(|mesh| mesh.peers.len()).sum()
     }
 }

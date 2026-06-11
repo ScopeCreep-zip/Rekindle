@@ -28,7 +28,7 @@ blake3 = "1"
 zeroize = { version = "1", features = ["derive", "alloc"] }
 parking_lot = { workspace = true }
 async-trait = "0.1"
-uuid = { version = "1", features = ["v4"] }
+uuid = { version = "1", features = ["v4", "v7"] }
 cbor4ii = { version = "1.2.2", features = ["serde1", "use_std"] }
 postcard = { version = "1", features = ["use-std"] }
 subtle = "2.6"

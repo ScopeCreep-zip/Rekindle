@@ -1,22 +1,22 @@
 //! Key management commands: MEK list/rotate/request, prekey status/replenish, inspect.
 
-use rekindle_node::ipc::protocol::IpcRequest;
+use crate::v2::prelude::DaemonRequest;
 
 use crate::v2::cli::KeyCmd;
 use crate::v2::helpers;
 use crate::v2::output::format;
 use crate::v2::output::OutputMode;
-use crate::v2::transport::DaemonClient;
+use crate::v2::prelude::DaemonClient;
 
 pub async fn dispatch(cmd: &KeyCmd, client: &DaemonClient, mode: OutputMode) -> anyhow::Result<()> {
     match cmd {
         KeyCmd::Mek(sub) => match sub {
             crate::v2::cli::MekCmd::List { community } => {
-                let value = client.request_ok(IpcRequest::MekList { community: community.clone() }).await?;
+                let value = client.request_ok(DaemonRequest::MekList { community: community.clone() }).await?;
                 format::print_structured(&value, mode)
             }
             crate::v2::cli::MekCmd::Rotate { community, channel } => {
-                let value = client.request_ok(IpcRequest::MekRotate {
+                let value = client.request_ok(DaemonRequest::MekRotate {
                     community: community.clone(),
                     channel: channel.clone(),
                 }).await?;
@@ -25,7 +25,7 @@ pub async fn dispatch(cmd: &KeyCmd, client: &DaemonClient, mode: OutputMode) -> 
                 format::print_structured(&value, mode)
             }
             crate::v2::cli::MekCmd::Request { community, channel } => {
-                let value = client.request_ok(IpcRequest::MekRequest {
+                let value = client.request_ok(DaemonRequest::MekRequest {
                     community: community.clone(),
                     channel: channel.clone(),
                     generation: 0,
@@ -35,7 +35,7 @@ pub async fn dispatch(cmd: &KeyCmd, client: &DaemonClient, mode: OutputMode) -> 
         },
         KeyCmd::Prekeys(sub) => match sub {
             crate::v2::cli::PrekeyCmd::Status => {
-                let value = client.request_ok(IpcRequest::Status).await?;
+                let value = client.request_ok(DaemonRequest::Status).await?;
                 if let Ok(snapshot) = serde_json::from_value::<rekindle_types::display::StatusSnapshot>(value.clone()) {
                     let crypto_checks: Vec<_> = snapshot.checks.into_iter()
                         .filter(|c| c.category == "crypto")
@@ -46,12 +46,12 @@ pub async fn dispatch(cmd: &KeyCmd, client: &DaemonClient, mode: OutputMode) -> 
                 }
             }
             crate::v2::cli::PrekeyCmd::Replenish => {
-                let value = client.request_ok(IpcRequest::PrekeyReplenish).await?;
+                let value = client.request_ok(DaemonRequest::PrekeyReplenish).await?;
                 format::print_structured(&value, mode)
             }
         },
         KeyCmd::Inspect { community } => {
-            let value = client.request_ok(IpcRequest::MekList { community: community.clone() }).await?;
+            let value = client.request_ok(DaemonRequest::MekList { community: community.clone() }).await?;
             format::print_structured(&value, mode)
         }
     }

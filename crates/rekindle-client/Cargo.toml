@@ -1,0 +1,19 @@
+[package]
+name = "rekindle-client"
+version = "0.1.0"
+edition = "2021"
+description = "Typed IPC client for the Rekindle daemon"
+license = "MIT"
+
+[lints]
+workspace = true
+
+[dependencies]
+rekindle-keys = { path = "../rekindle-keys" }
+rekindle-transport-ipc = { path = "../rekindle-transport-ipc" }
+rekindle-types = { path = "../rekindle-types" }
+
+tokio = { workspace = true, features = ["sync", "time"] }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }

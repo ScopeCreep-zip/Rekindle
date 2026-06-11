@@ -13,7 +13,6 @@ use crate::v3::codec::stream::fin as codec;
 use crate::v3::codec::stream::ack as ack_codec;
 use crate::v3::context::{OutboundFrame, OutboundStreamKind, PendingFinVerify, SessionContext};
 use crate::v3::handlers::HandlerError;
-use crate::v3::stream::registry::Direction;
 
 pub fn handle(ctx: &mut SessionContext, header: &StreamHeaderInfo, payload: &[u8]) -> Result<(), HandlerError> {
     let fin = codec::decode(payload).map_err(|e| HandlerError::CodecFailed(format!("{e:?}")))?;
@@ -81,7 +80,7 @@ pub fn handle(ctx: &mut SessionContext, header: &StreamHeaderInfo, payload: &[u8
 
         // Cleanup
         ctx.remove_reassembler(stream_id);
-        let _ = ctx.stream_registry_mut().close(stream_id, Direction::Inbound);
+        let _ = ctx.close_inbound_stream(stream_id);
     } else {
         // Deferred verification — chunks still arriving (bulk/rayon path).
         // Store FIN metadata. The control loop's check_deferred_fin_verify()
@@ -95,9 +94,8 @@ pub fn handle(ctx: &mut SessionContext, header: &StreamHeaderInfo, payload: &[u8
         });
 
         // Transition stream state
-        let _ = ctx.stream_registry_mut().transition(
+        let _ = ctx.transition_inbound_stream(
             stream_id,
-            Direction::Inbound,
             crate::v3::stream::state::StreamEvent::FinSent,
         );
     }

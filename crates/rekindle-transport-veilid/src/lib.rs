@@ -42,6 +42,16 @@ pub mod payload;
 #[cfg(test)]
 mod tests;
 
+// ── Constants ────────────────────────────────────────────────────
+
+/// Veilid SMPL schema member key length in bytes.
+///
+/// Mirrors `veilid_core::storage_manager::MEMBER_ID_LENGTH` which is
+/// `pub(crate)` and cannot be imported. Every `DHTSchemaSMPLMember.m_key`
+/// must be exactly this many bytes — Veilid's schema validation rejects
+/// any other length. If Veilid changes this constant, update here.
+pub const VEILID_MEMBER_ID_LENGTH: usize = 32;
+
 // ── Public API ────────────────────────────────────────────────────
 
 // Transport trait implementation

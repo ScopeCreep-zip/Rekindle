@@ -47,4 +47,6 @@ pub enum SystemCmd {
         #[arg(long)]
         since: u64,
     },
+    /// Hot-reload authorization policy from disk.
+    PolicyReload,
 }

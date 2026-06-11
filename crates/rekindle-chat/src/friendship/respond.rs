@@ -77,8 +77,14 @@ pub async fn respond_to_acceptance(
             )))?;
 
     // ── Load our prekey private material from vault ─────────────────
+    //
+    // request.rs stores per-target: signal.spk.{target_short}, not per-ID.
+    // This allows multiple outstanding friend requests without overwriting
+    // each other's prekey material. The target_short is the first 12 chars
+    // of the peer's public key (which is `peer_pubkey` here).
 
-    let spk_label = rekindle_storage::keys::labels::signed_prekey(init_msg.spk_b_id);
+    let peer_short = &peer_pubkey[..12.min(peer_pubkey.len())];
+    let spk_label = rekindle_storage::keys::labels::target_signed_prekey(peer_short);
     let spk_bytes = vault
         .load_key(&spk_label)?
         .ok_or_else(|| ChatError::Internal(format!(
@@ -86,12 +92,8 @@ pub async fn respond_to_acceptance(
              consumed by a previous handshake or the identity was rotated"
         )))?;
 
-    let opk_bytes = if init_msg.opk_b_id != 0 {
-        let label = rekindle_storage::keys::labels::one_time_prekey(init_msg.opk_b_id);
-        vault.load_key(&label)?
-    } else {
-        None
-    };
+    // OPK is not used in our friend request flow (opk_b_id is always 0).
+    let opk_bytes: Option<Vec<u8>> = None;
 
     // Load our identity X25519 DH seed
     let ik_dh_seed_bytes = vault
@@ -120,8 +122,8 @@ pub async fn respond_to_acceptance(
         }
     });
 
-    // Load PQPK decapsulation key from vault
-    let pqpk_label = rekindle_storage::keys::labels::pq_prekey(init_msg.pqpk_b_id);
+    // Load PQPK decapsulation key from vault (per-target label, same as request.rs)
+    let pqpk_label = rekindle_storage::keys::labels::target_pq_prekey(peer_short);
     let dk_bytes_vec = vault
         .load_key(&pqpk_label)?
         .ok_or_else(|| ChatError::Internal(format!(

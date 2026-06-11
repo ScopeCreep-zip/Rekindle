@@ -12,6 +12,8 @@ use crate::v3::audit::chain::AuditChain;
 use crate::v3::audit::checkpoint::{CheckpointConfig, CheckpointTracker};
 use crate::v3::audit::gap::GapDetector;
 use crate::v3::audit::retention::{RetentionBuffer, RetentionConfig};
+use crate::v3::bulk::counters::BulkCounters;
+use crate::v3::session::handshake::HandshakeConfig;
 
 use crate::v3::crypto::keys::DerivedKeys;
 use crate::v3::dedup::cache::{ReceiverCache, ReceiverCacheConfig, SenderCache, SenderCacheConfig};
@@ -22,8 +24,9 @@ use crate::v3::session::rotation::RotationCoordinator;
 use crate::v3::session::state::SessionState;
 use crate::v3::stream::flow_control::{BackpressureState, CreditTracker};
 use crate::v3::stream::reassembler::Reassembler;
-use crate::v3::stream::registry::StreamRegistry;
+use crate::v3::stream::registry::{Direction, RegistryError, StreamRegistry};
 use crate::v3::stream::resume::{ResumeConfig, ResumeRegistry, ResumeState};
+use crate::v3::stream::state::{StreamEvent, StreamState};
 use crate::v3::wire::capability::CapabilityBits;
 use crate::v3::wire::clearance::Clearance;
 use crate::v3::io::encode::EpochKeys;
@@ -88,6 +91,66 @@ impl OutboundFrame {
             Self::Audit { .. } => Lane::Audit,
             Self::Handoff { .. } => Lane::Handoff,
         }
+    }
+}
+
+// ── ServerConfig ─────────────────────────────────────────────────
+
+/// Server construction config. 3 mandatory positional params on bind()
+/// (path, keypair, router_factory) + 1 ServerConfig for everything
+/// with a sensible default. Adding a field is non-breaking — callers
+/// use struct update: `ServerConfig { counters: mine, ..ServerConfig::new() }`
+pub struct ServerConfig {
+    pub session: SessionConfig,
+    pub handshake: HandshakeConfig,
+    pub counters: Arc<BulkCounters>,
+}
+
+impl ServerConfig {
+    pub fn new() -> Self {
+        Self {
+            session: SessionConfig::default(),
+            handshake: HandshakeConfig::default(),
+            counters: BulkCounters::new(),
+        }
+    }
+
+    pub fn for_test() -> Self {
+        let mut session = SessionConfig::default();
+        session.heartbeat_interval_ms = 1_000;
+        session.heartbeat_miss_limit = 3;
+        session.heartbeat_response_timeout_ms = 500;
+        session.max_connections = Some(16);
+        Self {
+            session,
+            handshake: HandshakeConfig::new(
+                CapabilityBits::MANDATORY_V1 | CapabilityBits::AEAD_AEGIS128L,
+                Clearance::Internal,
+            ),
+            counters: BulkCounters::new(),
+        }
+    }
+
+    pub fn for_bench() -> Self {
+        let mut session = SessionConfig::default();
+        session.heartbeat_interval_ms = 60_000;
+        session.heartbeat_miss_limit = 100;
+        session.heartbeat_response_timeout_ms = 60_000;
+        session.max_connections = Some(65536);
+        Self {
+            session,
+            handshake: HandshakeConfig::new(
+                CapabilityBits::MANDATORY_V1 | CapabilityBits::AEAD_AEGIS128L,
+                Clearance::Internal,
+            ),
+            counters: BulkCounters::new(),
+        }
+    }
+}
+
+impl Default for ServerConfig {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -617,8 +680,51 @@ impl SessionContext {
 
     // ── Stream ────────────────────────────────────────────────────
 
-    pub fn stream_registry(&self) -> &StreamRegistry { &self.stream_registry }
-    pub fn stream_registry_mut(&mut self) -> &mut StreamRegistry { &mut self.stream_registry }
+    // ── Direction-aware stream lifecycle ──────────────────────────
+
+    pub fn open_inbound_stream(&mut self, id: u8) -> Result<(), RegistryError> {
+        self.stream_registry.open(id, Direction::Inbound)
+    }
+
+    pub fn open_outbound_stream(&mut self, id: u8) -> Result<(), RegistryError> {
+        self.stream_registry.open(id, Direction::Outbound)
+    }
+
+    pub fn close_inbound_stream(&mut self, id: u8) -> Result<(), RegistryError> {
+        self.stream_registry.close(id, Direction::Inbound)
+    }
+
+    pub fn close_outbound_stream(&mut self, id: u8) -> Result<(), RegistryError> {
+        self.stream_registry.close(id, Direction::Outbound)
+    }
+
+    pub fn reset_inbound_stream(&mut self, id: u8) -> Result<(), RegistryError> {
+        self.stream_registry.reset(id, Direction::Inbound)
+    }
+
+    pub fn reset_outbound_stream(&mut self, id: u8) -> Result<(), RegistryError> {
+        self.stream_registry.reset(id, Direction::Outbound)
+    }
+
+    pub fn inbound_stream_state(&self, id: u8) -> Option<StreamState> {
+        self.stream_registry.state(id, Direction::Inbound)
+    }
+
+    pub fn outbound_stream_state(&self, id: u8) -> Option<StreamState> {
+        self.stream_registry.state(id, Direction::Outbound)
+    }
+
+    pub fn transition_inbound_stream(&mut self, id: u8, event: StreamEvent) -> Result<(), RegistryError> {
+        self.stream_registry.transition(id, Direction::Inbound, event)
+    }
+
+    pub fn transition_outbound_stream(&mut self, id: u8, event: StreamEvent) -> Result<(), RegistryError> {
+        self.stream_registry.transition(id, Direction::Outbound, event)
+    }
+
+    pub fn stream_active_count(&self) -> usize {
+        self.stream_registry.active_count()
+    }
 
     pub fn create_reassembler(&mut self, stream_id: u8) {
         let window = self.config.reassembler_window;

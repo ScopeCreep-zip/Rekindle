@@ -1,30 +1,30 @@
 //! Friend commands: add, accept, reject, remove, list, requests.
 
-use rekindle_node::ipc::protocol::IpcRequest;
+use crate::v2::prelude::DaemonRequest;
 
 use crate::v2::cli::FriendCmd;
 use crate::v2::helpers;
 use crate::v2::output::{format, table};
 use crate::v2::output::OutputMode;
-use crate::v2::transport::DaemonClient;
+use crate::v2::prelude::DaemonClient;
 
 pub async fn dispatch(cmd: &FriendCmd, client: &DaemonClient, mode: OutputMode) -> anyhow::Result<()> {
     match cmd {
         FriendCmd::Add { target, message } => {
-            let value = client.request_ok(IpcRequest::FriendAdd {
+            let value = client.request_ok(DaemonRequest::FriendAdd {
                 target_profile_key: target.clone(),
                 message: message.clone().unwrap_or_default(),
             }).await?;
             format::print_structured(&value, mode)
         }
         FriendCmd::Accept { request_id } => {
-            let value = client.request_ok(IpcRequest::FriendAccept {
+            let value = client.request_ok(DaemonRequest::FriendAccept {
                 public_key: request_id.clone(),
             }).await?;
             format::print_structured(&value, mode)
         }
         FriendCmd::Reject { request_id } => {
-            let value = client.request_ok(IpcRequest::FriendReject {
+            let value = client.request_ok(DaemonRequest::FriendReject {
                 public_key: request_id.clone(),
             }).await?;
             format::print_structured(&value, mode)
@@ -34,14 +34,14 @@ pub async fn dispatch(cmd: &FriendCmd, client: &DaemonClient, mode: OutputMode) 
                 let confirmed = helpers::confirm(&format!("Remove friend '{}'?", helpers::abbreviate_key(friend)))?;
                 if !confirmed { return format::print_text("Cancelled."); }
             }
-            let value = client.request_ok(IpcRequest::FriendRemove {
+            let value = client.request_ok(DaemonRequest::FriendRemove {
                 public_key: friend.clone(),
             }).await?;
             helpers::audit_log("remove_friend", friend, "ok");
             format::print_structured(&value, mode)
         }
         FriendCmd::List { status, .. } => {
-            let value = client.request_ok(IpcRequest::FriendList).await?;
+            let value = client.request_ok(DaemonRequest::FriendList).await?;
             if mode.is_structured() {
                 return format::print_structured(&value, mode);
             }
@@ -63,7 +63,7 @@ pub async fn dispatch(cmd: &FriendCmd, client: &DaemonClient, mode: OutputMode) 
             table::print_table(&["Name", "Status", "Key", "Route"], &rows, mode)
         }
         FriendCmd::Requests => {
-            let value = client.request_ok(IpcRequest::FriendRequests).await?;
+            let value = client.request_ok(DaemonRequest::FriendRequests).await?;
             format::print_structured(&value, mode)
         }
         FriendCmd::Block { .. } | FriendCmd::Unblock { .. } => {

@@ -18,6 +18,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::v3::bulk::counters;
+use crate::v3::context::ServerConfig;
 use std::time::Duration;
 
 use tokio::net::UnixListener;
@@ -105,9 +106,11 @@ where
         path: &Path,
         keypair: snow::Keypair,
         router_factory: F,
-        config: SessionConfig,
-        handshake_config: HandshakeConfig,
+        server_config: ServerConfig,
     ) -> Result<Self, ServerError> {
+        let config = server_config.session;
+        let handshake_config = server_config.handshake;
+        let counters = server_config.counters;
         if let Some(parent) = path.parent() {
             if !parent.as_os_str().is_empty() {
                 std::fs::create_dir_all(parent).map_err(|e| ServerError::Bind {
@@ -134,8 +137,6 @@ where
         let encrypt_pool = crate::v3::crypto::pool::build_encrypt_pool(
             config.encrypt_workers.unwrap_or(0),
         );
-        let counters = crate::v3::bulk::counters::BulkCounters::new();
-
         // Global buffer pools — shared across ALL connections.
         // Capacity = rayon_workers × 2: enough for full pipeline saturation
         // without over-provisioning. Buffers allocate on demand (no upfront

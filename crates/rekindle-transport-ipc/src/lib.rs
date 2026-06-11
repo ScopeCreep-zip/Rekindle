@@ -8,5 +8,4 @@
 pub mod v3;
 pub mod calibrate;
 
-#[cfg(feature = "bench-harness")]
 pub mod fixture;

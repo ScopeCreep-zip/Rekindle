@@ -29,7 +29,7 @@ run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 
-rk() { local n="$1"; shift; docker exec --user rekindle "rekindle-${n}" rekindle "$@" 2>&1; }
+rk() { local n="$1"; shift; docker exec --user rekindle "rekindle-${n}" rekindle "$@" 2>/dev/null; }
 
 echo "📋 Node Identities"
 echo "==================="
@@ -58,7 +58,7 @@ run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 
-rk() { local n="$1"; shift; docker exec --user rekindle "rekindle-${n}" rekindle "$@" 2>&1; }
+rk() { local n="$1"; shift; docker exec --user rekindle "rekindle-${n}" rekindle "$@" 2>/dev/null; }
 
 echo "🔧 Rekindle Multi-Node Test Setup"
 echo "==================================="
@@ -227,7 +227,7 @@ run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 
-rk() { local n="$1"; shift; docker exec --user rekindle "rekindle-${n}" rekindle "$@" 2>&1; }
+rk() { local n="$1"; shift; docker exec --user rekindle "rekindle-${n}" rekindle "$@" 2>/dev/null; }
 
 echo "💬 Channel Message Test (Multi-Volley)"
 echo "========================================"
@@ -336,7 +336,7 @@ run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 
-rk() { local n="$1"; shift; docker exec --user rekindle "rekindle-${n}" rekindle "$@" 2>&1; }
+rk() { local n="$1"; shift; docker exec --user rekindle "rekindle-${n}" rekindle "$@" 2>/dev/null; }
 
 echo "📨 DM Message Test (Bidirectional Multi-Volley)"
 echo "================================================="

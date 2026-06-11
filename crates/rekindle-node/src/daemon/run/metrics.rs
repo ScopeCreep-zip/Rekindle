@@ -131,11 +131,12 @@ impl DaemonMetrics {
             );
         }
 
-        self.bulk_frames_sent.store(ctx.bulk_counters.frames_sent.load(Ordering::Relaxed), Ordering::Relaxed);
-        self.bulk_frames_received.store(ctx.bulk_counters.frames_received.load(Ordering::Relaxed), Ordering::Relaxed);
-        self.bulk_bytes_sent.store(ctx.bulk_counters.bytes_sent.load(Ordering::Relaxed), Ordering::Relaxed);
-        self.bulk_bytes_received.store(ctx.bulk_counters.bytes_received.load(Ordering::Relaxed), Ordering::Relaxed);
-        self.bulk_transfers_active.store(ctx.bulk_transfers.lock().active_count() as u64, Ordering::Relaxed);
+        let counters = ctx.transport_counters.snapshot();
+        self.bulk_frames_sent.store(counters.frames_sent, Ordering::Relaxed);
+        self.bulk_frames_received.store(counters.frames_received, Ordering::Relaxed);
+        self.bulk_bytes_sent.store(counters.bytes_sent, Ordering::Relaxed);
+        self.bulk_bytes_received.store(counters.bytes_received, Ordering::Relaxed);
+        self.bulk_transfers_active.store(0, Ordering::Relaxed);
     }
 }
 

@@ -1,6 +1,6 @@
 //! One-shot CLI command handlers.
 //!
-//! Each module constructs an `IpcRequest`, sends it via `DaemonClient`,
+//! Each module constructs an `DaemonRequest`, sends it via `DaemonClient`,
 //! deserializes the response, and renders output in the appropriate format.
 //! No business logic — that lives in `rekindle-chat`.
 

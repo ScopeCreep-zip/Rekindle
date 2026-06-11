@@ -42,11 +42,23 @@ impl MessagingService {
             }
         }
 
+        // Resolve channel name → UUID. All downstream lookups use the UUID.
+        let membership = {
+            let meta = self.session_meta.read();
+            meta.communities.get(community).cloned()
+                .ok_or_else(|| ChatError::NotMember { community: community.into() })?
+        };
+        let channel_id = membership.resolve_channel(channel)
+            .map_err(|e| ChatError::ChannelNotFound {
+                community: community.into(),
+                channel: e.to_string(),
+            })?;
+
         let (mek_key, mek_generation) = self.mek_cache
-            .current(community, channel)
+            .current(community, &channel_id)
             .ok_or_else(|| ChatError::MekNotCached {
                 community: community.into(),
-                channel: channel.into(),
+                channel: channel_id.clone(),
             })?;
 
         let encrypted = mek::mek_encrypt(&mek_key, body.as_bytes())?;
@@ -67,16 +79,10 @@ impl MessagingService {
         let entry_bytes = serde_json::to_vec(&entry)
             .map_err(|e| ChatError::Serialization(format!("channel entry: {e}")))?;
 
-        let membership = {
-            let meta = self.session_meta.read();
-            meta.communities.get(community).cloned()
-                .ok_or_else(|| ChatError::NotMember { community: community.into() })?
-        };
-
-        let log_key = membership.channel_record_keys.get(channel)
+        let log_key = membership.channel_record_keys.get(&channel_id)
             .ok_or_else(|| ChatError::ChannelNotFound {
                 community: community.into(),
-                channel: channel.into(),
+                channel: channel_id.clone(),
             })?;
 
         let log_short = &log_key[..12.min(log_key.len())];
@@ -89,14 +95,14 @@ impl MessagingService {
         ).await?;
 
         self.vault.store_channel_message(
-            community, channel, &pseudonym_hex, "", body, timestamp, 0,
+            community, &channel_id, &pseudonym_hex, "", body, timestamp, 0,
             &message_id, mek_generation,
         )?;
 
         // Gossip: notify mesh peers via dedup path
         let content_hash = hex::encode(&blake3::hash(body.as_bytes()).as_bytes()[..16]);
         let notification = GossipPayload::MessageNotification {
-            channel_id: channel.into(),
+            channel_id: channel_id.clone(),
             message_id: message_id.clone(),
             author_pseudonym: pseudonym_hex,
             subkey_index: 0,

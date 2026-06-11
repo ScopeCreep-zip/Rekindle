@@ -27,7 +27,7 @@ use crate::v3::context::{SessionConfig, SessionContext, SessionRole};
 use crate::v3::io::lane_channels::RecvBufPool;
 use crate::v3::io::control_loop;
 use crate::v3::io::lane_channels::{LaneChannels, WireBufPool};
-use crate::v3::router::{ConnectionInfo, FrameRouter};
+use crate::v3::router::{ConnectionInfo, ConnectionPhase, FrameRouter};
 use crate::v3::session::handshake::{
     dialler_handshake, HandshakeConfig, HandshakeError,
 };
@@ -56,6 +56,7 @@ struct ClientRouter {
     inbound_tx: mpsc::Sender<InboundFrame>,
     pending_acks: Arc<Mutex<HashMap<uuid::Uuid, send::AckWaiter>>>,
     pending_bulk: Arc<Mutex<HashMap<u8, send::BulkWaiter>>>,
+    pending_replies: Arc<Mutex<HashMap<uuid::Uuid, ReplySender>>>,
 }
 
 impl FrameRouter for ClientRouter {
@@ -68,6 +69,7 @@ impl FrameRouter for ClientRouter {
             session_id: info.session_id,
             peer_id: info.peer_id,
             message_id: None,
+            correlation_id: None,
             sender_clearance: None,
             subscription_id: None,
             topic_hash: None,
@@ -88,6 +90,7 @@ impl FrameRouter for ClientRouter {
             session_id: info.session_id,
             peer_id: info.peer_id,
             message_id: Some(message_id),
+            correlation_id: None,
             sender_clearance: Some(sender_clearance),
             subscription_id: None,
             topic_hash: None,
@@ -108,6 +111,7 @@ impl FrameRouter for ClientRouter {
             session_id: info.session_id,
             peer_id: info.peer_id,
             message_id: Some(message_id),
+            correlation_id: None,
             sender_clearance: Some(sender_clearance),
             subscription_id: None,
             topic_hash: None,
@@ -128,6 +132,7 @@ impl FrameRouter for ClientRouter {
             session_id: info.session_id,
             peer_id: info.peer_id,
             message_id: None,
+            correlation_id: None,
             sender_clearance: None,
             subscription_id: Some(subscription_id),
             topic_hash: Some(*topic_hash),
@@ -140,6 +145,22 @@ impl FrameRouter for ClientRouter {
     }
 
     fn on_reply(&self, info: &ConnectionInfo, reply_message_id: uuid::Uuid, correlation_id: uuid::Uuid, status_phase: u32, payload: &[u8]) {
+        // request_reply() path: deliver directly to per-request oneshot.
+        // The caller awaits this oneshot — no recv() needed, no frame race.
+        if let Some(reply_tx) = self.pending_replies.lock().remove(&correlation_id) {
+            tracing::trace!(
+                %correlation_id,
+                payload_len = payload.len(),
+                "on_reply: delivering to pending_replies oneshot",
+            );
+            let _ = reply_tx.send(Ok(ReplyPayload {
+                payload: payload.to_vec(),
+                status_phase,
+            }));
+            return;
+        }
+
+        // send_request() + recv() legacy path.
         if let Some(waiter) = self.pending_acks.lock().remove(&correlation_id) {
             let _ = waiter.tx.send(Ok(()));
         }
@@ -151,6 +172,7 @@ impl FrameRouter for ClientRouter {
             session_id: info.session_id,
             peer_id: info.peer_id,
             message_id: Some(reply_message_id),
+            correlation_id: Some(correlation_id),
             sender_clearance: None,
             subscription_id: None,
             topic_hash: None,
@@ -163,6 +185,21 @@ impl FrameRouter for ClientRouter {
     }
 
     fn on_reject(&self, info: &ConnectionInfo, rejected_message_id: uuid::Uuid, reason_code: u32, detail: &str) {
+        // request_reply() path: deliver rejection to per-request oneshot.
+        if let Some(reply_tx) = self.pending_replies.lock().remove(&rejected_message_id) {
+            tracing::debug!(
+                %rejected_message_id, reason_code,
+                "on_reject: delivering to pending_replies oneshot",
+            );
+            let _ = reply_tx.send(Err(RequestReplyError::Rejected {
+                reason_code,
+                detail: detail.to_owned(),
+            }));
+            self.pending_acks.lock().remove(&rejected_message_id);
+            return;
+        }
+
+        // send_request() legacy path.
         if let Some(waiter) = self.pending_acks.lock().remove(&rejected_message_id) {
             let _ = waiter.tx.send(Err(SendError::Rejected {
                 reason_code,
@@ -177,6 +214,7 @@ impl FrameRouter for ClientRouter {
             session_id: info.session_id,
             peer_id: info.peer_id,
             message_id: Some(rejected_message_id),
+            correlation_id: None,
             sender_clearance: None,
             subscription_id: None,
             topic_hash: None,
@@ -236,11 +274,11 @@ impl FrameRouter for ClientRouter {
         }
     }
 
-    fn on_connection_state_change(&self, info: &ConnectionInfo, old_state: &str, new_state: &str) {
+    fn on_connection_state_change(&self, info: &ConnectionInfo, old_phase: ConnectionPhase, new_phase: ConnectionPhase) {
         tracing::info!(
             conn_id = info.conn_id,
             session_id = %info.session_id,
-            old_state, new_state,
+            old_phase = %old_phase, new_phase = %new_phase,
             "client connection state change"
         );
     }
@@ -286,8 +324,9 @@ impl Drop for ClientGuard {
 
 /// The IPC bus client.
 ///
-/// Send via `&self` (concurrent-safe). Recv via `&mut self` (exclusive).
-/// Shutdown is consuming — `shutdown(self)` drops all resources.
+/// Send via `&self` (concurrent-safe). Recv via `&self` (concurrent-safe
+/// via internal Mutex). Shutdown is consuming — `shutdown(self)` drops
+/// all resources.
 ///
 /// No Drop impl on IpcClient itself — ClientGuard handles cancellation.
 /// This enables partial moves in shutdown() so BulkSender's crossbeam
@@ -308,7 +347,7 @@ pub struct IpcClient {
     session_id: uuid::Uuid,
     agreed_clearance: Clearance,
     active_capabilities: CapabilityBits,
-    phase: Arc<Mutex<ConnectionPhase>>,
+    phase: Arc<Mutex<ClientPhase>>,
     /// Some during normal operation. Taken by shutdown() to await task exit.
     control_handle: Option<tokio::task::JoinHandle<()>>,
     /// Guard signals eventfd + cancels token on drop.
@@ -436,15 +475,17 @@ impl IpcClient {
         let (outbound_audit_queue, outbound_audit_wake) = crate::v3::bulk::new_audit_queue(channel_capacity);
         let (inbound_audit_queue, inbound_audit_wake) = crate::v3::bulk::new_audit_queue(channel_capacity);
 
-        let phase = Arc::new(Mutex::new(ConnectionPhase::Ready));
+        let phase = Arc::new(Mutex::new(ClientPhase::Ready));
         let phase_control = Arc::clone(&phase);
         let cancel_token = tokio_util::sync::CancellationToken::new();
         let child_cancel = cancel_token.child_token();
 
         let pending_acks = Arc::new(Mutex::new(HashMap::new()));
         let pending_bulk = Arc::new(Mutex::new(HashMap::new()));
+        let pending_replies = Arc::new(Mutex::new(HashMap::new()));
         let pending_acks_ctrl = Arc::clone(&pending_acks);
         let pending_bulk_ctrl = Arc::clone(&pending_bulk);
+        let pending_replies_ctrl = Arc::clone(&pending_replies);
 
         // BulkSender: dispatches STREAM_PAYLOAD chunks directly to rayon → write task,
         // bypassing the control loop. STREAM_OPEN/FIN go through outbound_tx for lifecycle.
@@ -521,6 +562,7 @@ impl IpcClient {
             bulk_sender,
             pending_acks,
             pending_bulk,
+            pending_replies,
             phase: Arc::clone(&phase),
             agreed_clearance,
             handoff_threshold: config.handoff_threshold_bytes,
@@ -539,6 +581,7 @@ impl IpcClient {
             inbound_tx,
             pending_acks: pending_acks_ctrl,
             pending_bulk: pending_bulk_ctrl,
+            pending_replies: pending_replies_ctrl,
         });
 
         // SessionContext for the client's control loop
@@ -634,7 +677,7 @@ impl IpcClient {
                     result
                 }
             };
-            *phase_control.lock() = ConnectionPhase::Closed;
+            *phase_control.lock() = ClientPhase::Closed;
             tracing::info!(outcome = ?outcome, "client session ended");
         });
 
@@ -660,12 +703,23 @@ impl IpcClient {
     pub fn session_id(&self) -> uuid::Uuid { self.session_id }
     pub fn agreed_clearance(&self) -> Clearance { self.agreed_clearance }
     pub fn active_capabilities(&self) -> CapabilityBits { self.active_capabilities }
-    pub fn phase(&self) -> ConnectionPhase { *self.phase.lock() }
+    pub fn phase(&self) -> ClientPhase { *self.phase.lock() }
 
     // ── Send operations (delegate to SendState, take &self) ──────
 
     pub async fn send_request(&self, payload: &[u8], ack_timeout: Duration) -> Result<SendDelivered, SendError> {
         self.send_state.send_request(payload, ack_timeout).await
+    }
+
+    /// Send a DATAGRAM_REQUEST and await the reply payload directly.
+    ///
+    /// Unlike `send_request()` which only confirms delivery and requires
+    /// a separate `recv()` call, `request_reply()` returns the reply
+    /// payload via a per-request oneshot channel. This bypasses the
+    /// shared `recv()` channel entirely — no races with PUBLISH events,
+    /// no correlation needed, concurrent-safe at 200K agents.
+    pub async fn request_reply(&self, payload: &[u8], timeout: Duration) -> Result<ReplyPayload, RequestReplyError> {
+        self.send_state.request_reply(payload, timeout).await
     }
 
     pub async fn send_notify(&self, payload: &[u8]) -> Result<(), ClientError> {
@@ -688,7 +742,7 @@ impl IpcClient {
         self.send_state.cancel_bulk(stream_id).await;
     }
 
-    // ── Recv operations (delegate to InboundReceiver, take &mut self) ──
+    // ── Recv operations (delegate to InboundReceiver, take &self) ──────
 
     pub async fn recv(&self) -> Option<InboundFrame> {
         self.recv_state.recv().await

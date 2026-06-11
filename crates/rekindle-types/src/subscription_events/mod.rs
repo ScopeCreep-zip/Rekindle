@@ -106,6 +106,16 @@ pub enum EventCategory {
 }
 
 impl SubscriptionEvent {
+    /// Serialize to bytes via postcard.
+    pub fn to_bytes(&self) -> Result<Vec<u8>, postcard::Error> {
+        postcard::to_allocvec(self)
+    }
+
+    /// Deserialize from bytes via postcard.
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, postcard::Error> {
+        postcard::from_bytes(bytes)
+    }
+
     /// The category of this event.
     pub fn category(&self) -> EventCategory {
         match self {
@@ -225,7 +235,7 @@ impl SubscriptionEvent {
 /// Clients register filters to receive only events they care about.
 /// Connections with zero filters receive zero events (fail closed).
 /// Maximum 64 filters per connection to bound memory.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SubscriptionFilter {
     /// Event categories to match. None = all categories.
     pub categories: Option<Vec<EventCategory>>,

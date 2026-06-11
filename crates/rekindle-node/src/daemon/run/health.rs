@@ -6,9 +6,7 @@
 //! 503 if shutting down.
 //!
 //! Diagnostic dump: triggered by SIGUSR1. Writes a full state snapshot to
-//! a timestamped file in the state directory. Contains: daemon state,
-//! peer count, watch count, session count, MEK cache stats, community
-//! list, friend list, uptime, memory usage. No secrets.
+//! a timestamped file in the state directory. No secrets.
 
 use std::sync::Arc;
 
@@ -17,15 +15,6 @@ use crate::daemon::dispatch::DaemonContext;
 use crate::state::StatePaths;
 
 /// Serve health check on `127.0.0.1:port`.
-///
-/// Responds to any TCP connection with a minimal HTTP response:
-/// - 200 "ok" if daemon state is Locked/Operational/Degraded/Detached
-/// - 503 "shutting_down" if daemon state is ShuttingDown/Stopped
-/// - 503 "starting" if daemon state is Starting/Resuming
-///
-/// No request parsing beyond detecting a TCP connection. Load balancers
-/// and container orchestrators (Kubernetes livenessProbe, Docker HEALTHCHECK)
-/// only need a TCP connect or HTTP status code.
 pub async fn serve_health(lifecycle: Arc<DaemonLifecycle>, port: u16) {
     use tokio::io::AsyncWriteExt;
     use tokio::net::TcpListener;
@@ -81,19 +70,6 @@ pub async fn serve_health(lifecycle: Arc<DaemonLifecycle>, port: u16) {
 }
 
 /// Write a diagnostic dump to a timestamped file in the state directory.
-///
-/// Triggered by SIGUSR1. Contains a full non-secret state snapshot:
-/// - Daemon state + uptime
-/// - Transport attachment + peer count
-/// - Watch count + registered watch keys
-/// - Session count
-/// - MEK cache stats (channel count, generation counts — no key material)
-/// - Community list (names, governance keys, our pseudonyms)
-/// - Friend list (display names, peer keys)
-/// - Memory usage (from /proc/self/statm on Linux)
-/// - Event pipeline stats (dedup entries, suppressed count)
-///
-/// No signing keys, no vault contents, no message plaintext, no ratchet state.
 pub async fn write_diagnostic_dump(ctx: &Arc<DaemonContext>, paths: &StatePaths) {
     use std::fmt::Write;
     let mut dump = String::with_capacity(8192);
@@ -133,33 +109,7 @@ pub async fn write_diagnostic_dump(ctx: &Arc<DaemonContext>, paths: &StatePaths)
         let _ = writeln!(dump, "\n--- Chat Service: NOT INITIALIZED (daemon locked) ---");
     }
 
-    // Crypto capabilities (run probe fresh for current numbers)
-    {
-        let caps = crate::ipc::bulk::capability::probe();
-        let _ = writeln!(dump, "\n--- Crypto Capabilities ---");
-        let _ = writeln!(dump, "aes_gcm_seal: {:.2} GiB/s", caps.aes_gcm_seal_gibs);
-        let _ = writeln!(dump, "aes_gcm_open: {:.2} GiB/s", caps.aes_gcm_open_gibs);
-        let _ = writeln!(dump, "aegis_seal: {:.2} GiB/s", caps.aegis_seal_gibs);
-        let _ = writeln!(dump, "sha256_single: {:.0} MiB/s", caps.sha256_single_mibs);
-        let _ = writeln!(dump, "sha256_multi_buffer: {:.0} MiB/s", caps.sha256_mb_mibs);
-        let _ = writeln!(dump, "sha256_mb_speedup: {:.1}x", caps.sha256_mb_speedup);
-        let _ = writeln!(dump, "sha256_mb_simd_active: {}", caps.sha256_mb_simd_active);
-        let _ = writeln!(dump, "blake3: {:.2} GiB/s", caps.blake3_gibs);
-        let _ = writeln!(dump, "bulk_aead_algorithm: {}", caps.bulk_aead_algorithm);
-        let _ = writeln!(dump, "meets_targets: {}", caps.meets_targets());
-    }
-
-    // Compiled feature flags
-    {
-        let _ = writeln!(dump, "\n--- Compiled Features ---");
-        let _ = writeln!(dump, "bulk-epoll: {}", cfg!(feature = "bulk-epoll"));
-        let _ = writeln!(dump, "bulk-uring: {}", cfg!(feature = "bulk-uring"));
-        let _ = writeln!(dump, "bulk-memfd: {}", cfg!(feature = "bulk-memfd"));
-        let _ = writeln!(dump, "aegis: {}", cfg!(feature = "aegis"));
-        let _ = writeln!(dump, "sha256-mb: {}", cfg!(feature = "sha256-mb"));
-    }
-
-    // Sandbox status
+    // Security hardening
     {
         let _ = writeln!(dump, "\n--- Security Hardening ---");
         #[cfg(target_os = "linux")]
@@ -218,70 +168,36 @@ pub async fn write_diagnostic_dump(ctx: &Arc<DaemonContext>, paths: &StatePaths)
         }
     }
 
-    // Encrypt pool topology
+    // Subscriptions
     {
-        let cores = crate::ipc::bulk::encrypt::cached_physical_cores();
-        let workers = cores.len().saturating_sub(2).clamp(1, 4);
-        let _ = writeln!(dump, "\n--- Encrypt Pool ---");
-        let _ = writeln!(dump, "physical_cores_detected: {}", cores.len());
-        let _ = writeln!(dump, "core_ids: {cores:?}");
-        let _ = writeln!(dump, "encrypt_workers: {workers}");
+        let _ = writeln!(dump, "\n--- Subscriptions ---");
+        let _ = writeln!(dump, "active_connections: {}", ctx.subscriptions.connection_count());
     }
 
-    // Buffer pool health
-    if let Some(ss) = ctx.server_state.read().as_ref() {
-        let _ = writeln!(dump, "\n--- Connections ---");
-        let _ = writeln!(dump, "active_connections: {}", ss.connections.len());
-        let _ = writeln!(
-            dump,
-            "registered_agents: {}",
-            ss.name_to_conn.read().len()
-        );
-    }
-
-    // Bulk transport counters
+    // Registered agents
     {
-        use std::sync::atomic::Ordering;
-        let _ = writeln!(dump, "\n--- Bulk Transport ---");
-        let _ = writeln!(
-            dump,
-            "frames_sent: {}",
-            ctx.bulk_counters.frames_sent.load(Ordering::Relaxed)
-        );
-        let _ = writeln!(
-            dump,
-            "frames_received: {}",
-            ctx.bulk_counters.frames_received.load(Ordering::Relaxed)
-        );
-        let _ = writeln!(
-            dump,
-            "bytes_sent: {}",
-            ctx.bulk_counters.bytes_sent.load(Ordering::Relaxed)
-        );
-        let _ = writeln!(
-            dump,
-            "bytes_received: {}",
-            ctx.bulk_counters.bytes_received.load(Ordering::Relaxed)
-        );
+        let agents = ctx.agents.read();
+        let _ = writeln!(dump, "\n--- Registered Agents ---");
+        let _ = writeln!(dump, "agent_count: {}", agents.len());
+        for (name, reg) in agents.iter() {
+            let _ = writeln!(dump, "  {name}: type={:?} capabilities={:?}", reg.agent_type, reg.capabilities);
+        }
     }
 
-    // Active bulk transfers
+    // Transport counters
     {
-        let reg = ctx.bulk_transfers.lock();
-        let active = reg.active_count();
-        let all = reg.list();
-        let _ = writeln!(dump, "active_transfers: {active}");
-        let _ = writeln!(dump, "total_transfers_tracked: {}", all.len());
+        let counters = ctx.transport_counters.snapshot();
+        let _ = writeln!(dump, "\n--- Transport Counters ---");
+        let _ = writeln!(dump, "frames_sent: {}", counters.frames_sent);
+        let _ = writeln!(dump, "frames_received: {}", counters.frames_received);
+        let _ = writeln!(dump, "bytes_sent: {}", counters.bytes_sent);
+        let _ = writeln!(dump, "bytes_received: {}", counters.bytes_received);
     }
 
-    // Noise handshake parameters
+    // Noise protocol
     {
         let _ = writeln!(dump, "\n--- Noise Protocol ---");
-        let _ = writeln!(
-            dump,
-            "params: {}",
-            crate::ipc::noise_keys::NOISE_PARAMS
-        );
+        let _ = writeln!(dump, "params: {}", rekindle_keys::NOISE_PARAMS);
         let _ = writeln!(dump, "resolver: aws-lc (custom CryptoResolver)");
     }
 
@@ -291,7 +207,7 @@ pub async fn write_diagnostic_dump(ctx: &Arc<DaemonContext>, paths: &StatePaths)
         if let Ok(statm) = std::fs::read_to_string("/proc/self/statm") {
             let fields: Vec<&str> = statm.split_whitespace().collect();
             if fields.len() >= 2 {
-                let page_size = 4096u64; // Assume 4K pages
+                let page_size = 4096u64;
                 let virt_pages: u64 = fields[0].parse().unwrap_or(0);
                 let rss_pages: u64 = fields[1].parse().unwrap_or(0);
                 let _ = writeln!(dump, "\n--- Memory ---");
@@ -318,7 +234,6 @@ pub async fn write_diagnostic_dump(ctx: &Arc<DaemonContext>, paths: &StatePaths)
                 error = %e,
                 "diagnostic dump write FAILED"
             );
-            // Fall back to tracing so operators can still see it in logs.
             tracing::error!(dump = %dump, "diagnostic dump (file write failed, dumping to log)");
         }
     }

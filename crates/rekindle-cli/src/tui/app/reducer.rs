@@ -1,6 +1,6 @@
 //! TEA reducer — process_action() maps Actions to state mutations.
 
-use rekindle_node::ipc::protocol::IpcRequest;
+use crate::v2::prelude::{DaemonRequest, ReadContext};
 
 use super::super::action::{Action, SearchMode, ToastLevel};
 use super::super::terminal::Tui;
@@ -130,8 +130,8 @@ impl App {
                     if let Err(e) = client.subscribe_scoped(&gov).await {
                         tracing::warn!(community = %gov, error = %e, "failed to scope subscription");
                     }
-                    if let Err(e) = client.request_ok(IpcRequest::MarkRead {
-                        context: rekindle_node::ipc::protocol::ReadContext::Channel { community: gov, channel: ch },
+                    if let Err(e) = client.request_ok(DaemonRequest::MarkRead {
+                        context: ReadContext::Channel { community: gov, channel: ch },
                     }).await {
                         tracing::debug!(error = %e, "mark-read failed");
                     }
@@ -148,8 +148,8 @@ impl App {
                 let client = std::sync::Arc::clone(&self.client);
                 let pk = peer_key;
                 tokio::spawn(async move {
-                    if let Err(e) = client.request_ok(IpcRequest::MarkRead {
-                        context: rekindle_node::ipc::protocol::ReadContext::Dm { peer: pk },
+                    if let Err(e) = client.request_ok(DaemonRequest::MarkRead {
+                        context: ReadContext::Dm { peer: pk },
                     }).await {
                         tracing::debug!(error = %e, "DM mark-read failed");
                     }

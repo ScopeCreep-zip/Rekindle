@@ -6,6 +6,8 @@
 
 use std::time::Duration;
 
+use tokio::sync::oneshot;
+
 use crate::v3::io::lane_channels::PlaintextBuf;
 use crate::v3::wire::clearance::Clearance;
 use crate::v3::wire::lane::Lane;
@@ -69,6 +71,59 @@ impl std::fmt::Display for SendError {
 
 impl std::error::Error for SendError {}
 
+// ── Request-reply types ─────────────────────────────────────────
+
+/// The decoded reply payload from a `request_reply()` call.
+///
+/// Contains the application-level payload bytes (already decoded from
+/// wire format by the transport) and the transport-level status_phase.
+/// The caller deserializes `payload` with their own codec (e.g., postcard
+/// for `DaemonResponse`).
+#[derive(Debug)]
+pub struct ReplyPayload {
+    /// The application payload from the reply.
+    pub payload: Vec<u8>,
+    /// Transport-level status phase from the reply frame.
+    pub status_phase: u32,
+}
+
+/// Errors from a `request_reply()` operation.
+#[derive(Debug)]
+pub enum RequestReplyError {
+    /// The reply was not received within the timeout.
+    Timeout,
+    /// The connection is not in an active phase.
+    ConnectionNotActive,
+    /// The request was rejected by the peer.
+    Rejected { reason_code: u32, detail: String },
+    /// The reply channel was dropped (connection lost).
+    ChannelClosed,
+    /// The outbound channel failed (control loop dead).
+    WriteFailed(String),
+}
+
+impl std::fmt::Display for RequestReplyError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Timeout => write!(f, "request-reply timeout"),
+            Self::ConnectionNotActive => write!(f, "connection not active"),
+            Self::Rejected { reason_code, detail } =>
+                write!(f, "peer rejected request (code {reason_code}): {detail}"),
+            Self::ChannelClosed => write!(f, "reply channel closed"),
+            Self::WriteFailed(s) => write!(f, "write failed: {s}"),
+        }
+    }
+}
+
+impl std::error::Error for RequestReplyError {}
+
+/// Oneshot sender type for per-request reply delivery.
+///
+/// Used by `ClientRouter::on_reply` and `SendState::request_reply`.
+/// Defined once here to avoid repeating the full generic signature
+/// at every construction and storage site.
+pub type ReplySender = oneshot::Sender<Result<ReplyPayload, RequestReplyError>>;
+
 // ── Bulk transfer types ──────────────────────────────────────────
 
 /// Successful delivery of a bulk data transfer.
@@ -121,6 +176,7 @@ pub struct InboundFrame {
     pub session_id: uuid::Uuid,
     pub peer_id: [u8; 32],
     pub message_id: Option<uuid::Uuid>,
+    pub correlation_id: Option<uuid::Uuid>,
     pub sender_clearance: Option<Clearance>,
     pub subscription_id: Option<uuid::Uuid>,
     pub topic_hash: Option<[u8; 32]>,
@@ -196,7 +252,7 @@ impl std::fmt::Debug for BulkChunk {
 
 /// Connection lifecycle phase.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ConnectionPhase {
+pub enum ClientPhase {
     Ready,
     Active,
     Degraded,
@@ -204,7 +260,7 @@ pub enum ConnectionPhase {
     Closed,
 }
 
-impl ConnectionPhase {
+impl ClientPhase {
     pub fn can_send(self) -> bool {
         matches!(self, Self::Ready | Self::Active | Self::Degraded)
     }

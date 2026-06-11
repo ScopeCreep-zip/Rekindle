@@ -6,7 +6,10 @@ pub mod reducer;
 pub mod render;
 
 use std::sync::Arc;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
 use tokio::sync::mpsc;
+use tokio::time;
 
 use super::action::{Action, ToastLevel};
 use super::components::confirm_dialog::ConfirmDialogState;
@@ -18,7 +21,7 @@ use super::keybinds::KeymapStore;
 use super::navigator::Navigator;
 use super::terminal::Tui;
 use super::theme::ThemeManager;
-use crate::v2::transport::DaemonClient;
+use crate::v2::prelude::{DaemonClient, DaemonRequest};
 
 pub struct App {
     pub(crate) should_quit: bool,
@@ -37,7 +40,7 @@ pub struct App {
     pub(crate) pending_confirm_action: Option<Action>,
     pub(crate) node_was_connected: bool,
     pub(crate) clipboard: Option<arboard::Clipboard>,
-    pub(crate) clipboard_clear_at: Option<std::time::Instant>,
+    pub(crate) clipboard_clear_at: Option<Instant>,
     pub(crate) idle_frames: u32,
     pub(crate) cached_peer_count: usize,
     pub(crate) cached_communities: Vec<CachedCommunity>,
@@ -53,7 +56,10 @@ pub struct App {
     pub(crate) pending_session_restore: Option<(String, Option<String>)>,
     /// Last time fff search was invoked from the quick switcher overlay.
     /// Used for 50ms debounce to prevent input lag on large projects.
-    pub(crate) last_search_query_at: Option<std::time::Instant>,
+    pub(crate) last_search_query_at: Option<Instant>,
+    /// Last event sequence number received from daemon subscription.
+    /// Used for cursor-based replay on reconnect via EventResume.
+    pub(crate) last_event_seq: Option<u64>,
 }
 
 #[derive(Clone)]
@@ -104,6 +110,7 @@ impl App {
             file_content_search: super::components::file_content_search::FileContentSearch::new(),
             pending_session_restore: None,
             last_search_query_at: None,
+            last_event_seq: None,
         }
     }
 
@@ -132,7 +139,7 @@ impl App {
                 // Wait briefly for the initial scan so the first quick switcher
                 // open has file results. Non-blocking: 500ms max, then proceed
                 // with partial results (scan continues in background).
-                let _scan_complete = s.wait_for_scan(std::time::Duration::from_millis(500));
+                let _scan_complete = s.wait_for_scan(Duration::from_millis(500));
                 tracing::info!(root = %project_root, "fff search initialized");
                 self.search = Some(s);
             }
@@ -167,12 +174,21 @@ impl App {
             }
         }
 
-        let mut fallback_interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
-        fallback_interval.tick().await;
+        // Two-tier data refresh:
+        // - status_interval (2s): lightweight Status-only IPC round-trip.
+        //   Keeps the dashboard clock, peer count, route, and attachment
+        //   current. Users expect uptime to tick with seconds.
+        // - full_refresh_interval (30s): all 5 IPC requests (Status,
+        //   Peers, Communities, Identity, Friends). Heavy data that
+        //   changes slowly.
+        let mut status_interval = time::interval(Duration::from_secs(2));
+        status_interval.tick().await;
+        let mut full_refresh_interval = time::interval(Duration::from_secs(30));
+        full_refresh_interval.tick().await;
 
         // Reconnection state: None = connected, Some(instant) = next reconnect attempt time
-        let mut reconnect_at: Option<tokio::time::Instant> = None;
-        let mut reconnect_delay = tokio::time::Duration::from_millis(500);
+        let mut reconnect_at: Option<time::Instant> = None;
+        let mut reconnect_delay = Duration::from_millis(500);
         let mut reconnect_attempt: u32 = 0;
 
         loop {
@@ -204,7 +220,7 @@ impl App {
                         // Daemon connection lost — enter reconnection state
                         event_rx = None;
                         self.node_was_connected = false;
-                        reconnect_at = Some(tokio::time::Instant::now() + reconnect_delay);
+                        reconnect_at = Some(time::Instant::now() + reconnect_delay);
                         reconnect_attempt = 0;
                         self.notifications.push(
                             "Daemon disconnected — reconnecting...".into(),
@@ -224,7 +240,7 @@ impl App {
                 // Reconnection timer — fires only when disconnected
                 () = async {
                     match reconnect_at {
-                        Some(at) => tokio::time::sleep_until(at).await,
+                        Some(at) => time::sleep_until(at).await,
                         None => std::future::pending().await,
                     }
                 } => {
@@ -240,11 +256,21 @@ impl App {
                                 tracing::warn!(error = %e, "reconnect subscribe failed");
                             }
 
+                            // Replay missed events via cursor-based resume
+                            if let Some(seq) = self.last_event_seq {
+                                match new_client.request_ok(DaemonRequest::EventResume {
+                                    last_seen_seq: Some(seq),
+                                }).await {
+                                    Ok(_) => tracing::info!(last_seq = seq, "event resume successful"),
+                                    Err(e) => tracing::warn!(error = %e, last_seq = seq, "event resume failed — full reload"),
+                                }
+                            }
+
                             // Replace client and event channel in-place
                             self.client = Arc::new(new_client);
                             event_rx = new_event_rx;
                             reconnect_at = None;
-                            reconnect_delay = tokio::time::Duration::from_millis(500);
+                            reconnect_delay = Duration::from_millis(500);
                             self.node_was_connected = true;
 
                             self.notifications.push(
@@ -259,14 +285,14 @@ impl App {
                         }
                         Err(e) => {
                             tracing::debug!(attempt = reconnect_attempt, error = %e, "reconnect failed");
-                            reconnect_delay = (reconnect_delay * 2).min(tokio::time::Duration::from_secs(15));
+                            reconnect_delay = (reconnect_delay * 2).min(Duration::from_secs(15));
                             // Add jitter to prevent thundering herd when multiple clients reconnect
-                            let nanos = std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
+                            let nanos = SystemTime::now()
+                                .duration_since(UNIX_EPOCH)
                                 .unwrap_or_default()
                                 .subsec_nanos();
-                            let jitter = tokio::time::Duration::from_millis(u64::from(nanos % 500));
-                            reconnect_at = Some(tokio::time::Instant::now() + reconnect_delay + jitter);
+                            let jitter = Duration::from_millis(u64::from(nanos % 500));
+                            reconnect_at = Some(time::Instant::now() + reconnect_delay + jitter);
 
                             if reconnect_attempt >= 20 {
                                 self.notifications.push(
@@ -279,7 +305,15 @@ impl App {
                     }
                 }
 
-                _ = fallback_interval.tick() => {
+                // Lightweight status heartbeat — keeps the dashboard
+                // clock, peer count, route, and attachment current.
+                _ = status_interval.tick() => {
+                    self.load_status_only();
+                }
+
+                // Full data refresh — communities, friends, identity.
+                // These change slowly; no need to poll every 2 seconds.
+                _ = full_refresh_interval.tick() => {
                     self.load_dashboard_data();
                 }
             }

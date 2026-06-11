@@ -34,7 +34,6 @@ use crate::v3::dispatch::inbound::dispatch_frame;
 use crate::v3::io::encode::FrameEncoder;
 use crate::v3::io::lane_channels::{LaneChannels, PlaintextBuf};
 use crate::v3::session::state::{SessionEvent, SessionState};
-use crate::v3::stream::registry::Direction;
 use crate::v3::wire::constants::{ENVELOPE_LEN, STREAM_HEADER_LEN};
 use crate::v3::wire::frame_class::FrameClass;
 use crate::v3::wire::frame_kind::{AuditKind, ChannelKind, StreamKind};
@@ -647,7 +646,7 @@ async fn handle_bulk_decrypted(
                             total_bytes, total_chunks,
                         );
                         ctx.remove_reassembler(stream_id);
-                        let _ = ctx.stream_registry_mut().close(stream_id, Direction::Inbound);
+                        let _ = ctx.close_inbound_stream(stream_id);
                     } else {
                         // Content hash mismatch on FIN_FOLLOWS — terminate
                         return Some(util::terminate(ctx, SessionOutcome::AeadVerificationFailed {

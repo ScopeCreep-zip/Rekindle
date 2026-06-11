@@ -20,12 +20,9 @@ tui = [
     "dep:arboard",
 ]
 daemon = [
+    "dep:rekindle-node",
     "dep:rekindle-transport",
     "dep:sd-notify",
-    "dep:snow",
-    "dep:rustix",
-    "dep:postcard",
-    "dep:subtle",
 ]
 
 [[bin]]
@@ -64,15 +61,12 @@ parking_lot = { workspace = true }
 git2 = "0.20"
 
 # Workspace crates
-rekindle-node = { path = "../rekindle-node" }
+rekindle-client = { path = "../rekindle-client" }
 rekindle-types = { path = "../rekindle-types" }
 rekindle-utils = { path = "../rekindle-utils" }
 
-# Linux-only: enable io_uring bulk transport and memfd zero-copy.
-# These features require Linux 5.19+ (io_uring) and 3.17+ (memfd).
-# On macOS/Windows, only the portable defaults (epoll, aegis, sha256-mb) compile.
-[target.'cfg(target_os = "linux")'.dependencies]
-rekindle-node = { path = "../rekindle-node", features = ["bulk-uring", "bulk-memfd"] }
+# Serialization (patch operations, config)
+postcard = { version = "1", features = ["use-std"] }
 
 # Project-wide search (fff — Fast File Finder)
 fff-search = { git = "https://github.com/dmtrKovalenko/fff.git", rev = "8cb1f476" }
@@ -88,12 +82,9 @@ futures-util = { version = "0.3", optional = true, default-features = false, fea
 arboard = { version = "3", optional = true, default-features = false, features = ["wayland-data-control"] }
 
 # Daemon (feature-gated — enables `rekindle node start`)
+rekindle-node = { path = "../rekindle-node", optional = true }
 rekindle-transport = { path = "../rekindle-transport", optional = true }
 sd-notify = { version = "0.4", optional = true }
-snow = { git = "https://github.com/mcginty/snow", rev = "295dc7b", optional = true }
-rustix = { version = "1", features = ["process"], optional = true }
-postcard = { version = "1", features = ["use-std"], optional = true }
-subtle = { version = "2", optional = true }
 
 [dev-dependencies]
 insta = "1"

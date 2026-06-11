@@ -454,3 +454,18 @@ impl std::fmt::Debug for DaemonRequest {
         }
     }
 }
+
+impl DaemonRequest {
+    /// Serialize to bytes via postcard.
+    ///
+    /// SSOT for the request wire format. All concrete types — no
+    /// `serde_json::Value`, so postcard works without constraint.
+    pub fn to_bytes(&self) -> Result<Vec<u8>, postcard::Error> {
+        postcard::to_allocvec(self)
+    }
+
+    /// Deserialize from bytes via postcard.
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, postcard::Error> {
+        postcard::from_bytes(bytes)
+    }
+}

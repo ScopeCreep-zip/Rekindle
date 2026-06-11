@@ -5,6 +5,8 @@
 
 use std::time::Duration;
 
+use rekindle_transport_ipc::v3::router::ConnectionPhase;
+
 use super::harness::*;
 
 /// Client sends GOODBYE → server drains → both sides Closed.
@@ -31,9 +33,9 @@ async fn graceful_shutdown() {
     );
     let last = changes.last().unwrap();
     assert!(
-        last.new_state.contains("Closed"),
-        "graceful shutdown must produce Closed state, got old={:?} new={:?}",
-        last.old_state, last.new_state,
+        last.new_phase == ConnectionPhase::Closed,
+        "graceful shutdown must produce Closed phase, got old={:?} new={:?}",
+        last.old_phase, last.new_phase,
     );
 }
 
@@ -58,9 +60,9 @@ async fn connection_lost_on_client_drop() {
     );
     let last = changes.last().unwrap();
     assert!(
-        last.new_state.contains("ConnectionLost") || last.new_state.contains("Closed"),
-        "crash must produce ConnectionLost or Closed, got old={:?} new={:?}",
-        last.old_state, last.new_state,
+        last.new_phase == ConnectionPhase::Dead || last.new_phase == ConnectionPhase::Closed,
+        "crash must produce Dead or Closed, got old={:?} new={:?}",
+        last.old_phase, last.new_phase,
     );
 }
 

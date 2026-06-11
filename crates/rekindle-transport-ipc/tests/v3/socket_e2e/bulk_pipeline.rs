@@ -3,6 +3,8 @@
 
 use std::time::Duration;
 
+use rekindle_transport_ipc::v3::router::ConnectionPhase;
+
 use super::harness::*;
 
 #[tokio::test]
@@ -133,7 +135,7 @@ async fn bulk_content_hash_mismatch_rejects() {
     let failures = f.router.bulk_failures.lock();
     let state_changes = f.router.state_changes.lock();
     let has_rejection = !failures.is_empty() || state_changes.iter().any(|c| {
-        c.new_state.contains("ContentHashMismatch") || c.new_state.contains("ChannelError")
+        c.new_phase == ConnectionPhase::Dead
     });
 
     assert!(

@@ -4,9 +4,6 @@
 //! of a connected server+client pair. Used by both `#[tokio::test]` tests
 //! and criterion benchmarks. No connection setup code exists outside this
 //! module.
-//!
-//! Gated behind `#[cfg(any(test, feature = "bench-harness"))]` so it
-//! never compiles into production builds.
 
 mod config;
 
@@ -19,7 +16,7 @@ use std::time::Duration;
 use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 
-use crate::v3::client::IpcClient;
+use crate::v3::client::{IpcClient, ReplyPayload, RequestReplyError};
 use crate::v3::crypto::noise::generate_keypair;
 use crate::v3::router::{MockRouter, ReplyRouter};
 use crate::v3::server::{ConnectionHandle, IpcServer};
@@ -69,8 +66,9 @@ impl IpcFixture {
         let client_keypair = generate_keypair().expect("client keypair failed");
         let server_pub: [u8; 32] = server_keypair.public.clone().try_into().expect("pubkey 32 bytes");
 
-        let session_config = config.to_session_config();
-        let hs_config = handshake_config();
+        let server_config = config.to_server_config();
+        let session_config = server_config.session.clone();
+        let hs_config = server_config.handshake.clone();
 
         let shared_router = MockRouter::new();
         let shared_router_ref = Arc::clone(&shared_router);
@@ -92,8 +90,7 @@ impl IpcFixture {
                     conn_handle,
                 }
             },
-            session_config.clone(),
-            hs_config.clone(),
+            server_config,
         ).await.expect("server bind failed");
 
         let cancel = server.cancel_token().clone();
@@ -170,8 +167,7 @@ impl IpcFixture {
         keypair: snow::Keypair,
         config: IpcFixtureConfig,
     ) -> BoundServer {
-        let session_config = config.to_session_config();
-        let hs_config = handshake_config();
+        let server_config = config.to_server_config();
 
         let shared_router = MockRouter::new();
         let shared_router_ref = Arc::clone(&shared_router);
@@ -185,8 +181,7 @@ impl IpcFixture {
                     conn_handle,
                 }
             },
-            session_config,
-            hs_config,
+            server_config,
         ).await.expect("server bind failed");
 
         let cancel = server.cancel_token().clone();
@@ -232,10 +227,14 @@ impl IpcFixture {
     pub fn session_id(&self) -> uuid::Uuid { self.client().session_id() }
     pub fn agreed_clearance(&self) -> Clearance { self.client().agreed_clearance() }
     pub fn active_capabilities(&self) -> CapabilityBits { self.client().active_capabilities() }
-    pub fn phase(&self) -> crate::v3::client::ConnectionPhase { self.client().phase() }
+    pub fn phase(&self) -> crate::v3::client::ClientPhase { self.client().phase() }
 
     pub async fn send_request(&self, payload: &[u8], ack_timeout: Duration) -> Result<crate::v3::client::SendDelivered, crate::v3::client::SendError> {
         self.client().send_request(payload, ack_timeout).await
+    }
+
+    pub async fn request_reply(&self, payload: &[u8], timeout: Duration) -> Result<ReplyPayload, RequestReplyError> {
+        self.client().request_reply(payload, timeout).await
     }
 
     pub async fn send_notify(&self, payload: &[u8]) -> Result<(), crate::v3::client::ClientError> {

@@ -2,7 +2,6 @@ use crate::v3::codec::header::StreamHeaderInfo;
 use crate::v3::codec::stream::open as codec;
 use crate::v3::context::SessionContext;
 use crate::v3::handlers::HandlerError;
-use crate::v3::stream::registry::Direction;
 
 pub fn handle(ctx: &mut SessionContext, header: &StreamHeaderInfo, payload: &[u8]) -> Result<(), HandlerError> {
     // No session state check here — dispatch_frame (inbound.rs) is the SSOT
@@ -22,7 +21,7 @@ pub fn handle(ctx: &mut SessionContext, header: &StreamHeaderInfo, payload: &[u8
         role = ?ctx.role(),
         "stream::open handler: opening stream in registry"
     );
-    ctx.stream_registry_mut().open(header.stream_id, Direction::Inbound)
+    ctx.open_inbound_stream(header.stream_id)
         .map_err(|e| {
             tracing::error!(
                 stream_id = header.stream_id,

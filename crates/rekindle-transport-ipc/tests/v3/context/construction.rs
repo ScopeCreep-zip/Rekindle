@@ -85,9 +85,9 @@ fn audit_chains_anchored_to_handshake_hash() {
 }
 
 #[test]
-fn stream_registry_empty_initially() {
+fn no_active_streams_initially() {
     let ctx = build_test_context(test_handshake_result());
-    assert_eq!(ctx.stream_registry().active_count(), 0);
+    assert_eq!(ctx.stream_active_count(), 0);
 }
 
 #[test]

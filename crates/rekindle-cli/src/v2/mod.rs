@@ -1,14 +1,14 @@
 //! Rekindle CLI v2 — complete rewrite against the restructured crate architecture.
 //!
 //! Architecture invariant: this crate is an IPC client ONLY. No business logic,
-//! no crypto, no storage access, no transport calls. It sends `IpcRequest`
-//! variants over the Noise IK encrypted Unix socket and renders responses.
+//! no crypto, no storage access, no transport calls. It calls typed methods on
+//! `DaemonClient` over the Noise IK encrypted Unix socket and renders responses.
 
 pub mod entrypoint;
 pub mod error;
 pub mod helpers;
 pub mod output;
-pub mod transport;
+pub mod prelude;
 pub mod cli;
 pub mod commands;
 pub mod config;

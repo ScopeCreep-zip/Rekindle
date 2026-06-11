@@ -1,13 +1,12 @@
 //! Admin dispatch handlers: Agent*, Policy, Network*.
 //!
-//! Subscribe/Unsubscribe are handled server-side in the IPC bus router
-//! via EventRouter — they never reach daemon dispatch.
+//! Subscribe/Unsubscribe are handled server-side in DaemonRouter
+//! — they never reach daemon dispatch.
 
 use std::sync::Arc;
 use crate::daemon::DaemonState;
-use crate::ipc::protocol::IpcResponse;
-use crate::ipc::message::AgentType;
-use crate::ipc::noise_keys::validate_agent_name;
+use rekindle_types::daemon::{AgentRegistration, AgentType, DaemonResponse};
+use rekindle_keys::validate_agent_name;
 
 use super::{DaemonContext, PolicyConfig, state_error};
 
@@ -16,14 +15,14 @@ use super::{DaemonContext, PolicyConfig, state_error};
 /// Handle NetworkStatus — detailed transport node status.
 ///
 /// Uses Transport trait methods available on `Arc<dyn Transport>`.
-pub(crate) fn handle_network_status(ctx: &Arc<DaemonContext>, state: DaemonState) -> IpcResponse {
+pub(crate) fn handle_network_status(ctx: &Arc<DaemonContext>, state: DaemonState) -> DaemonResponse {
     if !state.can_query() { return state_error(state, "query"); }
     let transport_guard = ctx.transport.read();
     let Some(ref transport) = *transport_guard else {
-        return IpcResponse::error(503, "transport not started");
+        return DaemonResponse::error(503, "transport not started");
     };
 
-    IpcResponse::ok(&serde_json::json!({
+    DaemonResponse::ok(&serde_json::json!({
         "attachment": transport.attachment_state(),
         "is_attached": transport.is_attached(),
         "uptime_secs": transport.uptime_secs(),
@@ -35,14 +34,14 @@ pub(crate) fn handle_network_status(ctx: &Arc<DaemonContext>, state: DaemonState
 ///
 /// Uses Transport trait methods. Detailed peer breakdown is available
 /// via ChatService diagnostics in the status endpoint.
-pub(crate) fn handle_network_peers(ctx: &Arc<DaemonContext>, state: DaemonState) -> IpcResponse {
+pub(crate) fn handle_network_peers(ctx: &Arc<DaemonContext>, state: DaemonState) -> DaemonResponse {
     if !state.can_query() { return state_error(state, "query"); }
     let transport_guard = ctx.transport.read();
     let Some(ref transport) = *transport_guard else {
-        return IpcResponse::error(503, "transport not started");
+        return DaemonResponse::error(503, "transport not started");
     };
 
-    IpcResponse::ok(&serde_json::json!({
+    DaemonResponse::ok(&serde_json::json!({
         "peer_count": transport.peer_count(),
         "is_attached": transport.is_attached(),
         "attachment": transport.attachment_state(),
@@ -51,34 +50,26 @@ pub(crate) fn handle_network_peers(ctx: &Arc<DaemonContext>, state: DaemonState)
 
 // ── Agent Management ────────────────────────────────────────────────────
 
-/// Handle AgentRegister — register a named agent in the ClearanceRegistry.
-///
-/// Validates the agent name (path-traversal safe), then inserts into the
-/// shared registry with the declared capabilities. The agent's Noise IK
-/// static pubkey is used as the registry key — this is extracted from the
-/// connection state by the server layer and will be wired through when
-/// dispatch receives connection context.
-///
-/// For now, we register with a zero pubkey placeholder. The server layer
-/// should call `registry.register()` with the real pubkey after dispatch
-/// returns success.
+/// Handle AgentRegister — register a named agent in the daemon's agent registry.
 pub(crate) fn handle_agent_register(
     ctx: &Arc<DaemonContext>, name: &str, agent_type: AgentType, capabilities: &[String],
-) -> IpcResponse {
+) -> DaemonResponse {
     if let Err(e) = validate_agent_name(name) {
-        return IpcResponse::error(400, format!("invalid agent name: {e}"));
+        return DaemonResponse::error(400, format!("invalid agent name: {e}"));
     }
 
-    // Check if name is already registered
-    let registry = ctx.registry.blocking_read();
-    if registry.find_by_name(name).is_some() {
-        return IpcResponse::error(409, format!("agent '{name}' is already registered"));
+    let mut agents = ctx.agents.write();
+    if agents.contains_key(name) {
+        return DaemonResponse::error(409, format!("agent '{name}' is already registered"));
     }
-    drop(registry);
 
-    // The actual pubkey-keyed registration happens in the server layer
-    // after this response is sent back. We validate and ack here.
-    IpcResponse::ok(&serde_json::json!({
+    agents.insert(name.to_owned(), AgentRegistration {
+        agent_type,
+        capabilities: capabilities.to_vec(),
+    });
+
+    tracing::info!(agent = name, agent_type = ?agent_type, "agent registered");
+    DaemonResponse::ok(&serde_json::json!({
         "registered": true,
         "name": name,
         "agent_type": format!("{agent_type:?}"),
@@ -86,27 +77,22 @@ pub(crate) fn handle_agent_register(
     }))
 }
 
-/// Handle AgentRevoke — remove an agent from the ClearanceRegistry.
-pub(crate) fn handle_agent_revoke(ctx: &Arc<DaemonContext>, name: &str) -> IpcResponse {
+/// Handle AgentRevoke — remove an agent from the daemon's agent registry.
+pub(crate) fn handle_agent_revoke(ctx: &Arc<DaemonContext>, name: &str) -> DaemonResponse {
     if let Err(e) = validate_agent_name(name) {
-        return IpcResponse::error(400, format!("invalid agent name: {e}"));
+        return DaemonResponse::error(400, format!("invalid agent name: {e}"));
     }
 
-    let mut registry = ctx.registry.blocking_write();
-    match registry.revoke_by_name(name) {
-        Some(identity) => {
-            tracing::info!(
-                agent = name,
-                generation = identity.generation,
-                "agent revoked from registry"
-            );
-            IpcResponse::ok(&serde_json::json!({
+    let removed = ctx.agents.write().remove(name);
+    match removed {
+        Some(_) => {
+            tracing::info!(agent = name, "agent revoked");
+            DaemonResponse::ok(&serde_json::json!({
                 "revoked": true,
                 "name": name,
-                "generation": identity.generation,
             }))
         }
-        None => IpcResponse::error(404, format!("agent '{name}' not found in registry")),
+        None => DaemonResponse::error(404, format!("agent '{name}' not found in registry")),
     }
 }
 
@@ -120,7 +106,7 @@ pub(crate) fn handle_agent_revoke(ctx: &Arc<DaemonContext>, name: &str) -> IpcRe
 ///
 /// System policy fields override user policy (admin constraints are
 /// additive and cannot be weakened by user config).
-pub(crate) fn handle_policy_reload(ctx: &Arc<DaemonContext>) -> IpcResponse {
+pub(crate) fn handle_policy_reload(ctx: &Arc<DaemonContext>) -> DaemonResponse {
     let system_path = std::path::Path::new("/etc/rekindle/policy.toml");
     let user_path = ctx.paths.config_dir.join("policy.toml");
 
@@ -134,7 +120,7 @@ pub(crate) fn handle_policy_reload(ctx: &Arc<DaemonContext>) -> IpcResponse {
                 tracing::info!("system policy loaded from {}", system_path.display());
             }
             Err(e) => {
-                return IpcResponse::error(
+                return DaemonResponse::error(
                     500,
                     format!("system policy parse failed ({}): {e}", system_path.display()),
                 );
@@ -150,7 +136,7 @@ pub(crate) fn handle_policy_reload(ctx: &Arc<DaemonContext>) -> IpcResponse {
                 tracing::info!("user policy loaded from {}", user_path.display());
             }
             Err(e) => {
-                return IpcResponse::error(
+                return DaemonResponse::error(
                     500,
                     format!("user policy parse failed ({}): {e}", user_path.display()),
                 );
@@ -160,7 +146,7 @@ pub(crate) fn handle_policy_reload(ctx: &Arc<DaemonContext>) -> IpcResponse {
 
     *ctx.policy.write() = policy.clone();
 
-    IpcResponse::ok(&serde_json::json!({
+    DaemonResponse::ok(&serde_json::json!({
         "reloaded": true,
         "min_hop_count": policy.min_hop_count,
         "require_signature_verification": policy.require_signature_verification,

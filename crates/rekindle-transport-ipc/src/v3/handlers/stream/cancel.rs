@@ -3,8 +3,6 @@ use crate::v3::codec::stream::cancel as codec;
 use crate::v3::codec::stream::cancel_ack as ack_codec;
 use crate::v3::context::{OutboundFrame, OutboundStreamKind, SessionContext};
 use crate::v3::handlers::HandlerError;
-use crate::v3::stream::registry::Direction;
-
 pub fn handle(ctx: &mut SessionContext, header: &StreamHeaderInfo, payload: &[u8]) -> Result<(), HandlerError> {
     let cancel = codec::decode(payload).map_err(|e| HandlerError::CodecFailed(format!("{e:?}")))?;
 
@@ -19,7 +17,7 @@ pub fn handle(ctx: &mut SessionContext, header: &StreamHeaderInfo, payload: &[u8
         .unwrap_or([0u8; 32]);
 
     ctx.remove_reassembler(header.stream_id);
-    let _ = ctx.stream_registry_mut().close(header.stream_id, Direction::Inbound);
+    let _ = ctx.close_inbound_stream(header.stream_id);
 
     if ctx.has_resume() {
         ctx.register_resume_state(

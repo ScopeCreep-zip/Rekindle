@@ -31,7 +31,7 @@ use super::keybinds::KeymapStore;
 use super::navigator::Navigator;
 use super::terminal::Tui;
 use super::theme::ThemeManager;
-use crate::transport::DaemonClient;
+use crate::v2::prelude::DaemonClient;
 
 /// TUI application state and main loop.
 ///

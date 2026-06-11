@@ -24,7 +24,7 @@ fn resume_accepted_reopens_stream() {
     });
     resume::handle(&mut ctx, &header, &payload).unwrap();
 
-    assert_eq!(ctx.stream_registry().active_count(), 1);
+    assert_eq!(ctx.stream_active_count(), 1);
     assert!(ctx.has_reassembler(10));
     assert_no_router_deliveries(&router);
 }

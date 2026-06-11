@@ -5,7 +5,7 @@ use std::path::Path;
 use crate::v2::output::format;
 use crate::v2::output::OutputMode;
 use crate::v2::patch::{apply, generate};
-use crate::v2::transport::DaemonClient;
+use crate::v2::prelude::{DaemonClient, DaemonRequest};
 
 /// `rekindle patch [files...] [--staged] [--message] [--channel-community -C channel] [--dm-peer]`
 pub async fn cmd_patch(
@@ -54,7 +54,7 @@ pub async fn cmd_patch(
         };
 
         if let (Some(community), Some(channel)) = (channel_community, channel_name) {
-            let value = client.request_ok(rekindle_node::ipc::protocol::IpcRequest::ChannelSend {
+            let value = client.request_ok(DaemonRequest::ChannelSend {
                 community: community.to_string(),
                 channel: channel.to_string(),
                 body,
@@ -70,7 +70,7 @@ pub async fn cmd_patch(
                 patch.summary(),
             ))
         } else if let Some(peer) = dm_peer {
-            let value = client.request_ok(rekindle_node::ipc::protocol::IpcRequest::DmSend {
+            let value = client.request_ok(DaemonRequest::DmSend {
                 peer_key: peer.to_string(),
                 body,
             }).await?;

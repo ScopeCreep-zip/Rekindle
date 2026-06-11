@@ -112,15 +112,15 @@ impl FriendshipService {
         // cannot complete the responder side of the handshake.
         let target_short = &target_profile_key[..12.min(target_profile_key.len())];
         self.vault.store_key(
-            &format!("signal.spk.{target_short}"),
+            &labels::target_signed_prekey(target_short),
             spk_seed.as_ref(),
         )?;
         self.vault.store_key(
-            &format!("signal.pqpk.{target_short}"),
+            &labels::target_pq_prekey(target_short),
             pq_material.dk_bytes.as_ref(),
         )?;
         self.vault.store_key(
-            &format!("signal.pqpk-lr.{target_short}"),
+            &labels::target_pq_last_resort(target_short),
             pq_lr_material.dk_bytes.as_ref(),
         )?;
 

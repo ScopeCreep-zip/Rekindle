@@ -22,8 +22,8 @@ echo ""
 
 echo "Building rekindle binary (release)..."
 rm -f target/release/rekindle
-cargo clean -p rekindle-cli -p rekindle-node -p rekindle-transport-veilid -p rekindle-transport -p rekindle-chat -p rekindle-types -p rekindle-storage -p rekindle-ratchet
-cargo build -p rekindle-cli -p rekindle-node -p rekindle-transport-veilid -p rekindle-transport -p rekindle-chat -p rekindle-types -p rekindle-storage -p rekindle-ratchet --release
+cargo clean -p rekindle-cli -p rekindle-node -p rekindle-client -p rekindle-keys -p rekindle-transport-ipc -p rekindle-transport-veilid -p rekindle-transport -p rekindle-chat -p rekindle-types -p rekindle-storage -p rekindle-ratchet
+cargo build -p rekindle-cli --release
 
 # Strip nix store paths from binaries so they run on stock Debian/Ubuntu.
 # Same pattern as open-sesame build:deb (patchelf --set-interpreter + --remove-rpath).

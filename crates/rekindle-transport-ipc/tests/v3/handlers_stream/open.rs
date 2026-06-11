@@ -34,7 +34,7 @@ fn open_creates_reassembler() {
 fn open_registers_stream() {
     let (mut ctx, router) = make_test_context();
     open::handle(&mut ctx, &make_header(7), &make_open_payload(7)).unwrap();
-    assert_eq!(ctx.stream_registry().active_count(), 1);
+    assert_eq!(ctx.stream_active_count(), 1);
     assert_no_router_deliveries(&router);
 }
 

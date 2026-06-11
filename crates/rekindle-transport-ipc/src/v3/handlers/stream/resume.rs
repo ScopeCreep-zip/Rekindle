@@ -3,7 +3,6 @@ use crate::v3::codec::stream::resume as codec;
 use crate::v3::codec::stream::resume_deny as deny_codec;
 use crate::v3::context::{OutboundFrame, OutboundStreamKind, OutboundFailureCode, SessionContext};
 use crate::v3::handlers::HandlerError;
-use crate::v3::stream::registry::Direction;
 use crate::v3::stream::resume::{evaluate_resume_request, ResumeDecision, ResumeDenialReason};
 
 pub fn handle(ctx: &mut SessionContext, header: &StreamHeaderInfo, payload: &[u8]) -> Result<(), HandlerError> {
@@ -18,7 +17,7 @@ pub fn handle(ctx: &mut SessionContext, header: &StreamHeaderInfo, payload: &[u8
 
     match decision {
         ResumeDecision::Accepted { resume_from_chunk } => {
-            ctx.stream_registry_mut().open(header.stream_id, Direction::Inbound)
+            ctx.open_inbound_stream(header.stream_id)
                 .map_err(|_| HandlerError::StreamAlreadyOpen(header.stream_id))?;
             ctx.create_reassembler_from_offset(header.stream_id, resume_from_chunk);
             // Replay early bulk chunks (same race as STREAM_OPEN)

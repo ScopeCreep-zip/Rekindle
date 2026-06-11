@@ -31,7 +31,8 @@ use crate::v3::context::OutboundFrame;
 use crate::v3::wire::clearance::Clearance;
 
 use super::types::{
-    ClientError, SendDelivered, SendError, BulkDelivered, BulkError, ConnectionPhase,
+    ClientError, SendDelivered, SendError, BulkDelivered, BulkError, ClientPhase,
+    ReplyPayload, ReplySender, RequestReplyError,
 };
 
 /// Pending ack waiter — resolved when CHANNEL_ACK or DATAGRAM_REJECT arrives.
@@ -52,7 +53,8 @@ pub(crate) struct SendState {
     pub bulk_sender: BulkSender,
     pub pending_acks: Arc<Mutex<HashMap<uuid::Uuid, AckWaiter>>>,
     pub pending_bulk: Arc<Mutex<HashMap<u8, BulkWaiter>>>,
-    pub phase: Arc<Mutex<ConnectionPhase>>,
+    pub pending_replies: Arc<Mutex<HashMap<uuid::Uuid, ReplySender>>>,
+    pub phase: Arc<Mutex<ClientPhase>>,
     pub agreed_clearance: Clearance,
     /// Payload size threshold for memfd handoff (bytes).
     pub handoff_threshold: u64,
@@ -99,6 +101,75 @@ impl SendState {
             Err(_) => {
                 self.pending_acks.lock().remove(&message_id);
                 Err(SendError::AckTimeout)
+            }
+        }
+    }
+
+    /// Send a DATAGRAM_REQUEST and await the reply payload directly.
+    ///
+    /// Registers a per-request oneshot in `pending_replies`. The
+    /// `ClientRouter::on_reply` callback delivers the payload to this
+    /// oneshot instead of pushing to the shared `inbound_tx` channel.
+    /// Concurrent callers each get their own oneshot — no serialization,
+    /// no `recv()` race.
+    ///
+    /// Returns the application-level reply payload bytes. The caller
+    /// deserializes these with their own codec (e.g., postcard for
+    /// `DaemonResponse`).
+    pub async fn request_reply(
+        &self,
+        payload: &[u8],
+        reply_timeout: Duration,
+    ) -> Result<ReplyPayload, RequestReplyError> {
+        if !self.phase.lock().can_send() {
+            return Err(RequestReplyError::ConnectionNotActive);
+        }
+
+        let message_id = uuid::Uuid::now_v7();
+        tracing::debug!(
+            %message_id,
+            payload_len = payload.len(),
+            timeout_ms = reply_timeout.as_millis() as u64,
+            "request_reply: sending request",
+        );
+
+        let encoded = request_codec::encode(&request_codec::DatagramRequestPayload {
+            message_id,
+            reply_timeout_ms: u32::try_from(reply_timeout.as_millis()).unwrap_or(u32::MAX),
+            sender_clearance: self.agreed_clearance,
+            application_payload: payload.to_vec(),
+            conditions: vec![],
+        });
+
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.pending_replies.lock().insert(message_id, reply_tx);
+
+        if let Err(e) = self.outbound_tx.send(OutboundFrame::Datagram {
+            kind: crate::v3::wire::frame_kind::DatagramKind::Request,
+            payload: encoded,
+        }).await {
+            self.pending_replies.lock().remove(&message_id);
+            tracing::error!(%message_id, error = %e, "request_reply: outbound channel failed");
+            return Err(RequestReplyError::WriteFailed(format!("{e:?}")));
+        }
+
+        match tokio::time::timeout(reply_timeout, reply_rx).await {
+            Ok(Ok(result)) => {
+                tracing::debug!(%message_id, "request_reply: reply received");
+                result
+            }
+            Ok(Err(_)) => {
+                tracing::warn!(%message_id, "request_reply: reply channel closed — connection lost");
+                Err(RequestReplyError::ChannelClosed)
+            }
+            Err(_) => {
+                self.pending_replies.lock().remove(&message_id);
+                tracing::warn!(
+                    %message_id,
+                    timeout_ms = reply_timeout.as_millis() as u64,
+                    "request_reply: timeout — no reply received",
+                );
+                Err(RequestReplyError::Timeout)
             }
         }
     }

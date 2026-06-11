@@ -26,7 +26,7 @@ fn stream_open_beyond_256_rejected() {
         });
         open::handle(&mut ctx, &header, &payload).unwrap();
     }
-    assert_eq!(ctx.stream_registry().active_count(), 256);
+    assert_eq!(ctx.stream_active_count(), 256);
 
     let header = StreamHeaderInfo {
         frame_class: FrameClass::Stream, frame_kind: StreamKind::Open,

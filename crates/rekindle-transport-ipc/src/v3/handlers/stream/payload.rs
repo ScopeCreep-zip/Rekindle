@@ -3,8 +3,6 @@ use crate::v3::codec::stream::ack as ack_codec;
 use crate::v3::context::{OutboundFrame, OutboundStreamKind, SessionContext};
 use crate::v3::handlers::HandlerError;
 use crate::v3::io::lane_channels::PlaintextBuf;
-use crate::v3::stream::registry::Direction;
-
 pub fn handle(ctx: &mut SessionContext, header: &StreamHeaderInfo, payload: &[u8]) -> Result<(), HandlerError> {
     let digest = *blake3::hash(payload).as_bytes();
 
@@ -58,7 +56,7 @@ pub fn handle(ctx: &mut SessionContext, header: &StreamHeaderInfo, payload: &[u8
             );
 
             ctx.remove_reassembler(header.stream_id);
-            let _ = ctx.stream_registry_mut().close(header.stream_id, Direction::Inbound);
+            let _ = ctx.close_inbound_stream(header.stream_id);
         }
     }
 

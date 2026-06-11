@@ -6,6 +6,7 @@ mod stream;
 mod audit;
 mod heartbeat;
 mod lifecycle;
+mod lifecycle_notifications;
 mod adversarial;
 mod bulk_pipeline;
 mod pressure;

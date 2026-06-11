@@ -1,17 +1,17 @@
 //! DM commands: send, inbox, read, watch, typing.
 
-use rekindle_node::ipc::protocol::IpcRequest;
+use crate::v2::prelude::DaemonRequest;
 
 use crate::v2::cli::DmCmd;
 use crate::v2::helpers;
 use crate::v2::output::format;
 use crate::v2::output::OutputMode;
-use crate::v2::transport::DaemonClient;
+use crate::v2::prelude::DaemonClient;
 
 pub async fn dispatch(cmd: &DmCmd, client: &DaemonClient, mode: OutputMode) -> anyhow::Result<()> {
     match cmd {
         DmCmd::Send { friend, message, .. } => {
-            let value = client.request_ok(IpcRequest::DmSend {
+            let value = client.request_ok(DaemonRequest::DmSend {
                 peer_key: friend.clone(),
                 body: message.clone(),
             }).await?;
@@ -19,7 +19,7 @@ pub async fn dispatch(cmd: &DmCmd, client: &DaemonClient, mode: OutputMode) -> a
         }
         DmCmd::Inbox { limit, since, .. } => {
             #[allow(clippy::cast_possible_truncation)]
-            let value = client.request_ok(IpcRequest::DmInbox {
+            let value = client.request_ok(DaemonRequest::DmInbox {
                 limit: *limit as u32,
             }).await?;
             if let Some(ref since_str) = since {
@@ -30,9 +30,9 @@ pub async fn dispatch(cmd: &DmCmd, client: &DaemonClient, mode: OutputMode) -> a
             format::print_structured(&value, mode)
         }
         DmCmd::Read { conversation_id, limit, .. } => {
-            // Uses the new DmThread IpcRequest for efficient single-conversation load
+            // Uses the new DmThread DaemonRequest for efficient single-conversation load
             #[allow(clippy::cast_possible_truncation)]
-            let value = client.request_ok(IpcRequest::DmThread {
+            let value = client.request_ok(DaemonRequest::DmThread {
                 peer_key: conversation_id.clone(),
                 limit: *limit as u32,
             }).await?;
@@ -42,7 +42,7 @@ pub async fn dispatch(cmd: &DmCmd, client: &DaemonClient, mode: OutputMode) -> a
             anyhow::bail!("dm watch: event receiver unavailable — is another streaming command already running?")
         }
         DmCmd::Typing { friend, typing } => {
-            let value = client.request_ok(IpcRequest::DmTyping {
+            let value = client.request_ok(DaemonRequest::DmTyping {
                 peer_key: friend.clone(),
                 typing: *typing,
             }).await?;

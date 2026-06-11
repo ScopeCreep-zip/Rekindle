@@ -1,0 +1,17 @@
+[package]
+name = "rekindle-keys"
+version = "0.1.0"
+edition = "2021"
+description = "Application-level Noise IK keypair lifecycle for the Rekindle platform"
+license = "MIT"
+
+[lints]
+workspace = true
+
+[dependencies]
+snow = { git = "https://github.com/mcginty/snow", rev = "295dc7b" }
+blake3 = "1"
+zeroize = { version = "1", features = ["derive"] }
+rustix = { version = "1", features = ["process"] }
+tokio = { workspace = true, features = ["fs"] }
+tracing = { workspace = true }

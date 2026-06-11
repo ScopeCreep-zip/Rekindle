@@ -1,17 +1,17 @@
 //! Channel commands: list, create, delete, update, send, history, watch, edit, delete, pin, unpin, typing.
 
-use rekindle_node::ipc::protocol::IpcRequest;
+use crate::v2::prelude::DaemonRequest;
 
 use crate::v2::cli::ChannelCmd;
 use crate::v2::helpers;
 use crate::v2::output::{format, table};
 use crate::v2::output::OutputMode;
-use crate::v2::transport::DaemonClient;
+use crate::v2::prelude::DaemonClient;
 
 pub async fn dispatch(cmd: &ChannelCmd, client: &DaemonClient, mode: OutputMode) -> anyhow::Result<()> {
     match cmd {
         ChannelCmd::List { community, .. } => {
-            let value = client.request_ok(IpcRequest::ChannelList { community: community.clone() }).await?;
+            let value = client.request_ok(DaemonRequest::ChannelList { community: community.clone() }).await?;
             if mode.is_structured() {
                 return format::print_structured(&value, mode);
             }
@@ -26,7 +26,7 @@ pub async fn dispatch(cmd: &ChannelCmd, client: &DaemonClient, mode: OutputMode)
         }
         ChannelCmd::Create { community, name, kind, category, topic, slowmode } => {
             let validated_name = helpers::validate_name(name, "Channel")?;
-            let value = client.request_ok(IpcRequest::ChannelCreate {
+            let value = client.request_ok(DaemonRequest::ChannelCreate {
                 community: community.clone(),
                 name: validated_name,
                 kind: kind.clone(),
@@ -42,7 +42,7 @@ pub async fn dispatch(cmd: &ChannelCmd, client: &DaemonClient, mode: OutputMode)
                 if !confirmed { return format::print_text("Cancelled."); }
             }
             let channel_id = helpers::resolve_channel_id(channel);
-            let value = client.request_ok(IpcRequest::ChannelDelete {
+            let value = client.request_ok(DaemonRequest::ChannelDelete {
                 community: community.clone(),
                 channel_id,
             }).await?;
@@ -51,7 +51,7 @@ pub async fn dispatch(cmd: &ChannelCmd, client: &DaemonClient, mode: OutputMode)
         ChannelCmd::Update { community, channel, name, topic, slowmode } => {
             let channel_id = helpers::resolve_channel_id(channel);
             let validated_name = name.as_ref().map(|n| helpers::validate_name(n, "Channel")).transpose()?;
-            let value = client.request_ok(IpcRequest::ChannelUpdate {
+            let value = client.request_ok(DaemonRequest::ChannelUpdate {
                 community: community.clone(),
                 channel_id,
                 name: validated_name,
@@ -62,7 +62,7 @@ pub async fn dispatch(cmd: &ChannelCmd, client: &DaemonClient, mode: OutputMode)
         }
         ChannelCmd::Send { community, channel, message, reply_to } => {
             let reply = reply_to.as_ref().and_then(|s| s.parse::<u64>().ok());
-            let value = client.request_ok(IpcRequest::ChannelSend {
+            let value = client.request_ok(DaemonRequest::ChannelSend {
                 community: community.clone(),
                 channel: channel.clone(),
                 body: message.clone(),
@@ -73,7 +73,7 @@ pub async fn dispatch(cmd: &ChannelCmd, client: &DaemonClient, mode: OutputMode)
         }
         ChannelCmd::History { community, channel, limit, .. } => {
             #[allow(clippy::cast_possible_truncation)]
-            let value = client.request_ok(IpcRequest::ChannelHistory {
+            let value = client.request_ok(DaemonRequest::ChannelHistory {
                 community: community.clone(),
                 channel: channel.clone(),
                 limit: *limit as u32,
@@ -84,7 +84,7 @@ pub async fn dispatch(cmd: &ChannelCmd, client: &DaemonClient, mode: OutputMode)
             anyhow::bail!("channel watch: use the streaming path in main dispatch")
         }
         ChannelCmd::Edit { community, channel, message_id, new_body } => {
-            let value = client.request_ok(IpcRequest::MessageEdit {
+            let value = client.request_ok(DaemonRequest::MessageEdit {
                 community: community.clone(),
                 channel: channel.clone(),
                 message_id: message_id.clone(),
@@ -93,7 +93,7 @@ pub async fn dispatch(cmd: &ChannelCmd, client: &DaemonClient, mode: OutputMode)
             format::print_structured(&value, mode)
         }
         ChannelCmd::MessageDelete { community, channel, message_id } => {
-            let value = client.request_ok(IpcRequest::MessageDelete {
+            let value = client.request_ok(DaemonRequest::MessageDelete {
                 community: community.clone(),
                 channel: channel.clone(),
                 message_id: message_id.clone(),
@@ -101,7 +101,7 @@ pub async fn dispatch(cmd: &ChannelCmd, client: &DaemonClient, mode: OutputMode)
             format::print_structured(&value, mode)
         }
         ChannelCmd::Pin { community, channel, message_id } => {
-            let value = client.request_ok(IpcRequest::PinAdd {
+            let value = client.request_ok(DaemonRequest::PinAdd {
                 community: community.clone(),
                 channel: channel.clone(),
                 message_id: message_id.clone(),
@@ -109,7 +109,7 @@ pub async fn dispatch(cmd: &ChannelCmd, client: &DaemonClient, mode: OutputMode)
             format::print_structured(&value, mode)
         }
         ChannelCmd::Unpin { community, channel, message_id } => {
-            let value = client.request_ok(IpcRequest::PinRemove {
+            let value = client.request_ok(DaemonRequest::PinRemove {
                 community: community.clone(),
                 channel: channel.clone(),
                 message_id: message_id.clone(),
@@ -117,7 +117,7 @@ pub async fn dispatch(cmd: &ChannelCmd, client: &DaemonClient, mode: OutputMode)
             format::print_structured(&value, mode)
         }
         ChannelCmd::Typing { community, channel } => {
-            let value = client.request_ok(IpcRequest::ChannelTyping {
+            let value = client.request_ok(DaemonRequest::ChannelTyping {
                 community: community.clone(),
                 channel: channel.clone(),
             }).await?;

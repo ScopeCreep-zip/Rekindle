@@ -165,28 +165,31 @@ impl CommunityService {
         queue.retain(|p| p.requester_pseudonym_hex != member_pseudonym);
         self.write_moderation_queue(&membership.registry_key, &queue, &keypair).await?;
 
-        // Wrap MEKs for the approved member via ECDH
-        if let Some((mek_bytes, gen)) = self.mek_cache.current(governance_key, "general") {
-            if !pending.x25519_pub_hex.is_empty() {
-                if let Some(recipient_pub) = hex::decode(&pending.x25519_pub_hex)
-                    .ok()
-                    .and_then(|b| <[u8; 32]>::try_from(b.as_slice()).ok())
-                {
-                    let operator_seed = self.io.pseudonym_seed(governance_key)?;
-                    let operator_x25519 = blake3::derive_key("rekindle identity x25519 v1", &operator_seed);
-                    let mek_wire = crate::crypto::mek::mek_to_wire(&mek_bytes, gen);
+        // Wrap MEKs for the approved member via ECDH — iterate all channels
+        if !pending.x25519_pub_hex.is_empty() {
+            if let Some(recipient_pub) = hex::decode(&pending.x25519_pub_hex)
+                .ok()
+                .and_then(|b| <[u8; 32]>::try_from(b.as_slice()).ok())
+            {
+                let channels = self.read_channels(governance_key).await.unwrap_or_default();
+                let operator_seed = self.io.pseudonym_seed(governance_key)?;
+                let operator_x25519 = blake3::derive_key("rekindle identity x25519 v1", &operator_seed);
+                let mut vault = self.read_mek_vault(&membership.registry_key).await?;
 
-                    if let Ok(wrapped) = crate::crypto::mek::wrap_mek(&operator_x25519, &recipient_pub, &mek_wire) {
-                        let mut vault = self.read_mek_vault(&membership.registry_key).await?;
-                        if let Some(entry) = vault.iter_mut().find(|e| e.channel_id == "general") {
-                            entry.copies.push(EncryptedMekCopy {
-                                target_pseudonym: member_pseudonym.to_string(),
-                                encrypted_mek: wrapped,
-                            });
+                for ch in &channels {
+                    if let Some((mek_bytes, gen)) = self.mek_cache.current(governance_key, &ch.id) {
+                        let mek_wire = crate::crypto::mek::mek_to_wire(&mek_bytes, gen);
+                        if let Ok(wrapped) = crate::crypto::mek::wrap_mek(&operator_x25519, &recipient_pub, &mek_wire) {
+                            if let Some(entry) = vault.iter_mut().find(|e| e.channel_id == ch.id) {
+                                entry.copies.push(EncryptedMekCopy {
+                                    target_pseudonym: member_pseudonym.to_string(),
+                                    encrypted_mek: wrapped,
+                                });
+                            }
                         }
-                        self.write_mek_vault(&membership.registry_key, &vault, &keypair).await?;
                     }
                 }
+                self.write_mek_vault(&membership.registry_key, &vault, &keypair).await?;
             }
         }
 
@@ -429,7 +432,8 @@ impl CommunityService {
             &membership.registry_key, REGISTRY_MEMBER_INDEX, &bytes, Some(&keypair), crate::io::Confirm::Accepted,
         ).await?;
 
-        // Wrap MEKs for new members via ECDH
+        // Wrap MEKs for new members via ECDH — iterate all channels
+        let channels = self.read_channels(governance_key).await.unwrap_or_default();
         let operator_seed = self.io.pseudonym_seed(governance_key)?;
         let operator_x25519 = blake3::derive_key("rekindle identity x25519 v1", &operator_seed);
         let mut vault = self.read_mek_vault(&membership.registry_key).await.unwrap_or_default();
@@ -440,14 +444,16 @@ impl CommunityService {
             let Some(recipient_pub) = hex::decode(&req.x25519_pub_hex)
                 .ok()
                 .and_then(|b| <[u8; 32]>::try_from(b.as_slice()).ok()) else { continue };
-            if let Some((mek_bytes, gen)) = self.mek_cache.current(governance_key, "general") {
-                let mek_wire = crate::crypto::mek::mek_to_wire(&mek_bytes, gen);
-                if let Ok(wrapped) = crate::crypto::mek::wrap_mek(&operator_x25519, &recipient_pub, &mek_wire) {
-                    if let Some(entry) = vault.iter_mut().find(|e| e.channel_id == "general") {
-                        entry.copies.push(EncryptedMekCopy {
-                            target_pseudonym: req.requester_pseudonym_hex.clone(),
-                            encrypted_mek: wrapped,
-                        });
+            for ch in &channels {
+                if let Some((mek_bytes, gen)) = self.mek_cache.current(governance_key, &ch.id) {
+                    let mek_wire = crate::crypto::mek::mek_to_wire(&mek_bytes, gen);
+                    if let Ok(wrapped) = crate::crypto::mek::wrap_mek(&operator_x25519, &recipient_pub, &mek_wire) {
+                        if let Some(entry) = vault.iter_mut().find(|e| e.channel_id == ch.id) {
+                            entry.copies.push(EncryptedMekCopy {
+                                target_pseudonym: req.requester_pseudonym_hex.clone(),
+                                encrypted_mek: wrapped,
+                            });
+                        }
                     }
                 }
             }

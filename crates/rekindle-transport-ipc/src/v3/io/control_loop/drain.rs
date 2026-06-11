@@ -19,7 +19,6 @@ use crate::v3::context::{OutboundFrame, SessionContext};
 use crate::v3::io::encode::FrameEncoder;
 use crate::v3::io::lane_channels::LaneChannels;
 use crate::v3::io::read_task::SessionOutcome;
-use crate::v3::stream::registry::Direction;
 use crate::v3::stream::state::StreamEvent;
 use crate::v3::wire::frame_kind::StreamKind;
 
@@ -99,7 +98,7 @@ pub(super) async fn drain_outbound(
         if let OutboundFrame::Data { stream_id, kind, ref mut payload, .. } = &mut outbound {
             match kind {
                 StreamKind::Open => {
-                    if let Err(e) = ctx.stream_registry_mut().open(*stream_id, Direction::Outbound) {
+                    if let Err(e) = ctx.open_outbound_stream(*stream_id) {
                         return Some(util::terminate(ctx, SessionOutcome::ChannelError {
                             code: 0x0005,
                             message: format!("stream_id {} open failed: {e}", stream_id),
@@ -108,17 +107,17 @@ pub(super) async fn drain_outbound(
                     ctx.create_reassembler(*stream_id);
                 }
                 StreamKind::Fin => {
-                    let _ = ctx.stream_registry_mut().transition(*stream_id, Direction::Outbound, StreamEvent::FinSent);
+                    let _ = ctx.transition_outbound_stream(*stream_id, StreamEvent::FinSent);
                     if payload.len() >= 80 {
                         let audit_link = ctx.outbound_chain().current_link();
                         payload[48..80].copy_from_slice(&audit_link);
                     }
                 }
                 StreamKind::Cancel => {
-                    let _ = ctx.stream_registry_mut().transition(*stream_id, Direction::Outbound, StreamEvent::CancelSent);
+                    let _ = ctx.transition_outbound_stream(*stream_id, StreamEvent::CancelSent);
                 }
                 StreamKind::Reset => {
-                    let _ = ctx.stream_registry_mut().transition(*stream_id, Direction::Outbound, StreamEvent::ResetSent);
+                    let _ = ctx.transition_outbound_stream(*stream_id, StreamEvent::ResetSent);
                 }
                 _ => {}
             }

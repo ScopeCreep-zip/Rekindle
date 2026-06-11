@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use rekindle_node::ipc::protocol::IpcRequest;
+use crate::v2::prelude::{DaemonRequest, ReadContext};
 
 use super::super::action::{Action, CommandResult, SearchMode, ToastLevel};
 use super::super::terminal::Tui;
@@ -112,8 +112,8 @@ impl App {
                 let ch = channel.clone();
                 tokio::spawn(async move {
                     let _ = client.subscribe_scoped(&gov).await;
-                    let _ = client.request_ok(IpcRequest::MarkRead {
-                        context: rekindle_node::ipc::protocol::ReadContext::Channel { community: gov, channel: ch },
+                    let _ = client.request_ok(DaemonRequest::MarkRead {
+                        context: ReadContext::Channel { community: gov, channel: ch },
                     }).await;
                 });
             }
@@ -127,8 +127,8 @@ impl App {
                 let client = Arc::clone(&self.client);
                 let pk = peer_key;
                 tokio::spawn(async move {
-                    let _ = client.request_ok(IpcRequest::MarkRead {
-                        context: rekindle_node::ipc::protocol::ReadContext::Dm { peer: pk },
+                    let _ = client.request_ok(DaemonRequest::MarkRead {
+                        context: ReadContext::Dm { peer: pk },
                     }).await;
                 });
             }
@@ -367,7 +367,7 @@ impl App {
                 let community_clone = community.clone();
                 let channel_clone = channel.clone();
                 tokio::spawn(async move {
-                    if let Err(e) = client.request_ok(IpcRequest::MekRequest {
+                    if let Err(e) = client.request_ok(DaemonRequest::MekRequest {
                         community: community_clone,
                         channel: channel_clone,
                         generation: 0,

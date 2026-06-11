@@ -4,9 +4,11 @@
 //! content is delivered through this trait. Implementations MUST be Send + Sync
 //! and non-blocking — a blocking callback starves the connection's read loop.
 
+use std::fmt;
 use std::sync::Arc;
-use crate::v3::wire::clearance::Clearance;
+
 use crate::v3::wire::capability::CapabilityBits;
+use crate::v3::wire::clearance::Clearance;
 
 /// Metadata about the connection that produced a callback.
 /// Passed to every FrameRouter method so the application can make
@@ -18,6 +20,33 @@ pub struct ConnectionInfo {
     pub peer_id: [u8; 32],
     pub clearance: Clearance,
     pub capabilities: CapabilityBits,
+}
+
+/// Application-visible connection lifecycle phase.
+///
+/// The transport fires `on_connection_state_change` with these variants.
+/// The application matches exhaustively — no stringly-typed contracts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ConnectionPhase {
+    Handshaking,
+    Established,
+    Degraded,
+    Draining,
+    Dead,
+    Closed,
+}
+
+impl fmt::Display for ConnectionPhase {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Handshaking => write!(f, "Handshaking"),
+            Self::Established => write!(f, "Established"),
+            Self::Degraded => write!(f, "Degraded"),
+            Self::Draining => write!(f, "Draining"),
+            Self::Dead => write!(f, "Dead"),
+            Self::Closed => write!(f, "Closed"),
+        }
+    }
 }
 
 /// Application-level frame routing. The transport calls these methods
@@ -123,8 +152,8 @@ pub trait FrameRouter: Send + Sync + 'static {
     fn on_connection_state_change(
         &self,
         info: &ConnectionInfo,
-        old_state: &str,
-        new_state: &str,
+        old_phase: ConnectionPhase,
+        new_phase: ConnectionPhase,
     );
 }
 
@@ -206,8 +235,8 @@ pub struct CapturedAck {
 #[derive(Debug, Clone)]
 pub struct CapturedStateChange {
     pub info: ConnectionInfo,
-    pub old_state: String,
-    pub new_state: String,
+    pub old_phase: ConnectionPhase,
+    pub new_phase: ConnectionPhase,
 }
 
 /// Records every delivery for assertion in tests.
@@ -286,9 +315,9 @@ impl FrameRouter for MockRouter {
         });
     }
 
-    fn on_connection_state_change(&self, info: &ConnectionInfo, old_state: &str, new_state: &str) {
+    fn on_connection_state_change(&self, info: &ConnectionInfo, old_phase: ConnectionPhase, new_phase: ConnectionPhase) {
         self.state_changes.lock().push(CapturedStateChange {
-            info: info.clone(), old_state: old_state.to_owned(), new_state: new_state.to_owned(),
+            info: info.clone(), old_phase, new_phase,
         });
     }
 }
@@ -361,7 +390,7 @@ impl FrameRouter for ReplyRouter {
         self.router.on_ack(info, message_ids);
     }
 
-    fn on_connection_state_change(&self, info: &ConnectionInfo, old_state: &str, new_state: &str) {
-        self.router.on_connection_state_change(info, old_state, new_state);
+    fn on_connection_state_change(&self, info: &ConnectionInfo, old_phase: ConnectionPhase, new_phase: ConnectionPhase) {
+        self.router.on_connection_state_change(info, old_phase, new_phase);
     }
 }

@@ -1,25 +1,25 @@
 //! Community commands: create, join, leave, list, info, approve, reject, pending, transfer.
 
-use rekindle_node::ipc::protocol::IpcRequest;
+use crate::v2::prelude::DaemonRequest;
 
 use crate::v2::cli::CommunityCmd;
 use crate::v2::helpers;
 use crate::v2::output::{format, table};
 use crate::v2::output::OutputMode;
-use crate::v2::transport::DaemonClient;
+use crate::v2::prelude::DaemonClient;
 
 pub async fn dispatch(cmd: &CommunityCmd, client: &DaemonClient, mode: OutputMode) -> anyhow::Result<()> {
     match cmd {
         CommunityCmd::Create { name, description, .. } => {
             let validated_name = helpers::validate_name(name, "Community")?;
-            let value = client.request_ok(IpcRequest::CommunityCreate {
+            let value = client.request_ok(DaemonRequest::CommunityCreate {
                 name: validated_name,
                 description: description.clone().unwrap_or_default(),
             }).await?;
             format::print_structured(&value, mode)
         }
         CommunityCmd::Join { invite, .. } => {
-            let value = client.request_ok(IpcRequest::CommunityJoin {
+            let value = client.request_ok(DaemonRequest::CommunityJoin {
                 invite: invite.clone(),
             }).await?;
             format::print_structured(&value, mode)
@@ -29,14 +29,14 @@ pub async fn dispatch(cmd: &CommunityCmd, client: &DaemonClient, mode: OutputMod
                 let confirmed = helpers::confirm(&format!("Leave community '{community}'?"))?;
                 if !confirmed { return format::print_text("Cancelled."); }
             }
-            let value = client.request_ok(IpcRequest::CommunityLeave {
+            let value = client.request_ok(DaemonRequest::CommunityLeave {
                 governance_key: community.clone(),
             }).await?;
             helpers::audit_log("leave_community", community, "ok");
             format::print_structured(&value, mode)
         }
         CommunityCmd::List { .. } => {
-            let value = client.request_ok(IpcRequest::CommunityList).await?;
+            let value = client.request_ok(DaemonRequest::CommunityList).await?;
             if mode.is_structured() {
                 return format::print_structured(&value, mode);
             }
@@ -51,7 +51,7 @@ pub async fn dispatch(cmd: &CommunityCmd, client: &DaemonClient, mode: OutputMod
             table::print_table(&["Name", "Members", "Channels", "Key"], &rows, mode)
         }
         CommunityCmd::Info { community, .. } => {
-            let value = client.request_ok(IpcRequest::CommunityInfo {
+            let value = client.request_ok(DaemonRequest::CommunityInfo {
                 governance_key: community.clone(),
             }).await?;
             if mode.is_structured() {
@@ -71,7 +71,7 @@ pub async fn dispatch(cmd: &CommunityCmd, client: &DaemonClient, mode: OutputMod
             table::print_kv_table(&pairs, mode)
         }
         CommunityCmd::Approve { community, member } => {
-            let value = client.request_ok(IpcRequest::CommunityApprove {
+            let value = client.request_ok(DaemonRequest::CommunityApprove {
                 governance_key: community.clone(),
                 member_pseudonym: member.clone(),
             }).await?;
@@ -81,7 +81,7 @@ pub async fn dispatch(cmd: &CommunityCmd, client: &DaemonClient, mode: OutputMod
             format::print_text(&format!("Approved {}", helpers::abbreviate_key(member)))
         }
         CommunityCmd::Reject { community, member, reason } => {
-            let value = client.request_ok(IpcRequest::CommunityReject {
+            let value = client.request_ok(DaemonRequest::CommunityReject {
                 governance_key: community.clone(),
                 member_pseudonym: member.clone(),
                 reason: reason.clone().unwrap_or_default(),
@@ -92,7 +92,7 @@ pub async fn dispatch(cmd: &CommunityCmd, client: &DaemonClient, mode: OutputMod
             format::print_text(&format!("Rejected {}", helpers::abbreviate_key(member)))
         }
         CommunityCmd::Pending { community } => {
-            let value = client.request_ok(IpcRequest::CommunityPendingMembers {
+            let value = client.request_ok(DaemonRequest::CommunityPendingMembers {
                 governance_key: community.clone(),
             }).await?;
             if mode.is_structured() {
@@ -112,7 +112,7 @@ pub async fn dispatch(cmd: &CommunityCmd, client: &DaemonClient, mode: OutputMod
                 let confirmed = helpers::confirm(&format!("Transfer ownership of '{community}' to {}?", helpers::abbreviate_key(new_owner)))?;
                 if !confirmed { return format::print_text("Cancelled."); }
             }
-            let value = client.request_ok(IpcRequest::CommunityTransferOwnership {
+            let value = client.request_ok(DaemonRequest::CommunityTransferOwnership {
                 governance_key: community.clone(),
                 new_owner_pseudonym: new_owner.clone(),
             }).await?;

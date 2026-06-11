@@ -3,6 +3,7 @@
 //! Every clap derive type lives under `cli/`. Domain-specific subcommand
 //! enums live in submodules. No types are defined inline in this file.
 
+mod agent;
 mod channel;
 mod community;
 mod config;
@@ -13,6 +14,7 @@ mod network;
 mod social;
 mod system;
 
+pub use agent::AgentCmd;
 pub use channel::{ChannelCmd, VoiceCmd};
 pub use community::{CommunityCmd, InviteCmd, ModerateCmd, RoleCmd};
 pub use config::{ConfigCmd, ExportCmd, ImportCmd};
@@ -119,6 +121,9 @@ pub enum Command {
     /// Bulk transfer management (send, receive, status, cancel).
     #[command(subcommand)]
     Transfer(crate::v2::commands::transfer::TransferCmd),
+    /// Agent identity management (register, revoke).
+    #[command(subcommand)]
+    Agent(AgentCmd),
     /// Configuration inspection.
     #[command(subcommand)]
     Config(ConfigCmd),

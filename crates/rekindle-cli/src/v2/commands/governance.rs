@@ -1,17 +1,17 @@
 //! Governance commands: roles, moderation, invites.
 
-use rekindle_node::ipc::protocol::IpcRequest;
+use crate::v2::prelude::DaemonRequest;
 
 use crate::v2::cli::{RoleCmd, ModerateCmd, InviteCmd};
 use crate::v2::helpers;
 use crate::v2::output::format;
 use crate::v2::output::OutputMode;
-use crate::v2::transport::DaemonClient;
+use crate::v2::prelude::DaemonClient;
 
 pub async fn dispatch_role(cmd: &RoleCmd, client: &DaemonClient, mode: OutputMode) -> anyhow::Result<()> {
     match cmd {
         RoleCmd::List { community } => {
-            let value = client.request_ok(IpcRequest::RoleList { community: community.clone() }).await?;
+            let value = client.request_ok(DaemonRequest::RoleList { community: community.clone() }).await?;
             format::print_structured(&value, mode)
         }
         RoleCmd::Create { community, name, permissions, color, position } => {
@@ -19,7 +19,7 @@ pub async fn dispatch_role(cmd: &RoleCmd, client: &DaemonClient, mode: OutputMod
             let col = color.as_deref().map(helpers::parse_color).transpose()?.unwrap_or(0);
             #[allow(clippy::cast_possible_wrap)]
             let pos = position.map_or(0, |p| p as i32);
-            let value = client.request_ok(IpcRequest::RoleCreate {
+            let value = client.request_ok(DaemonRequest::RoleCreate {
                 community: community.clone(),
                 name: name.clone(),
                 permissions: perms,
@@ -32,7 +32,7 @@ pub async fn dispatch_role(cmd: &RoleCmd, client: &DaemonClient, mode: OutputMod
             let rid = helpers::parse_u32(role_id)?;
             let perms = permissions.as_deref().map(helpers::parse_permissions).transpose()?;
             let col = color.as_deref().map(helpers::parse_color).transpose()?;
-            let value = client.request_ok(IpcRequest::RoleUpdate {
+            let value = client.request_ok(DaemonRequest::RoleUpdate {
                 community: community.clone(),
                 role_id: rid,
                 name: name.clone(),
@@ -47,7 +47,7 @@ pub async fn dispatch_role(cmd: &RoleCmd, client: &DaemonClient, mode: OutputMod
                 if !confirmed { return format::print_text("Cancelled."); }
             }
             let rid = helpers::parse_u32(role_id)?;
-            let value = client.request_ok(IpcRequest::RoleDelete {
+            let value = client.request_ok(DaemonRequest::RoleDelete {
                 community: community.clone(),
                 role_id: rid,
             }).await?;
@@ -55,7 +55,7 @@ pub async fn dispatch_role(cmd: &RoleCmd, client: &DaemonClient, mode: OutputMod
         }
         RoleCmd::Assign { community, member, role_id } => {
             let rid = helpers::parse_u32(role_id)?;
-            let value = client.request_ok(IpcRequest::RoleAssign {
+            let value = client.request_ok(DaemonRequest::RoleAssign {
                 community: community.clone(),
                 member_pseudonym: member.clone(),
                 role_id: rid,
@@ -64,7 +64,7 @@ pub async fn dispatch_role(cmd: &RoleCmd, client: &DaemonClient, mode: OutputMod
         }
         RoleCmd::Unassign { community, member, role_id } => {
             let rid = helpers::parse_u32(role_id)?;
-            let value = client.request_ok(IpcRequest::RoleUnassign {
+            let value = client.request_ok(DaemonRequest::RoleUnassign {
                 community: community.clone(),
                 member_pseudonym: member.clone(),
                 role_id: rid,
@@ -77,7 +77,7 @@ pub async fn dispatch_role(cmd: &RoleCmd, client: &DaemonClient, mode: OutputMod
 pub async fn dispatch_moderate(cmd: &ModerateCmd, client: &DaemonClient, mode: OutputMode) -> anyhow::Result<()> {
     match cmd {
         ModerateCmd::Kick { community, member, .. } => {
-            let value = client.request_ok(IpcRequest::Kick {
+            let value = client.request_ok(DaemonRequest::Kick {
                 community: community.clone(),
                 target_pseudonym: member.clone(),
             }).await?;
@@ -85,7 +85,7 @@ pub async fn dispatch_moderate(cmd: &ModerateCmd, client: &DaemonClient, mode: O
             format::print_structured(&value, mode)
         }
         ModerateCmd::Ban { community, member, reason } => {
-            let value = client.request_ok(IpcRequest::Ban {
+            let value = client.request_ok(DaemonRequest::Ban {
                 community: community.clone(),
                 target_pseudonym: member.clone(),
                 reason: reason.clone(),
@@ -94,7 +94,7 @@ pub async fn dispatch_moderate(cmd: &ModerateCmd, client: &DaemonClient, mode: O
             format::print_structured(&value, mode)
         }
         ModerateCmd::Unban { community, member } => {
-            let value = client.request_ok(IpcRequest::Unban {
+            let value = client.request_ok(DaemonRequest::Unban {
                 community: community.clone(),
                 target_pseudonym: member.clone(),
             }).await?;
@@ -103,7 +103,7 @@ pub async fn dispatch_moderate(cmd: &ModerateCmd, client: &DaemonClient, mode: O
         }
         ModerateCmd::Timeout { community, member, duration, reason } => {
             let secs = helpers::parse_duration_secs(duration)?;
-            let value = client.request_ok(IpcRequest::Timeout {
+            let value = client.request_ok(DaemonRequest::Timeout {
                 community: community.clone(),
                 target_pseudonym: member.clone(),
                 duration_seconds: secs,
@@ -113,7 +113,7 @@ pub async fn dispatch_moderate(cmd: &ModerateCmd, client: &DaemonClient, mode: O
             format::print_structured(&value, mode)
         }
         ModerateCmd::Bans { community } => {
-            let value = client.request_ok(IpcRequest::BanList { community: community.clone() }).await?;
+            let value = client.request_ok(DaemonRequest::BanList { community: community.clone() }).await?;
             format::print_structured(&value, mode)
         }
     }
@@ -123,7 +123,7 @@ pub async fn dispatch_invite(cmd: &InviteCmd, client: &DaemonClient, mode: Outpu
     match cmd {
         InviteCmd::Create { community, max_uses, expires } => {
             let exp_secs = expires.as_deref().map(helpers::parse_duration_secs).transpose()?;
-            let value = client.request_ok(IpcRequest::InviteCreate {
+            let value = client.request_ok(DaemonRequest::InviteCreate {
                 community: community.clone(),
                 max_uses: max_uses.unwrap_or(0),
                 expires_seconds: exp_secs,
@@ -131,11 +131,11 @@ pub async fn dispatch_invite(cmd: &InviteCmd, client: &DaemonClient, mode: Outpu
             format::print_structured(&value, mode)
         }
         InviteCmd::List { community } => {
-            let value = client.request_ok(IpcRequest::InviteList { community: community.clone() }).await?;
+            let value = client.request_ok(DaemonRequest::InviteList { community: community.clone() }).await?;
             format::print_structured(&value, mode)
         }
         InviteCmd::Revoke { community, invite_code } => {
-            let value = client.request_ok(IpcRequest::InviteRevoke {
+            let value = client.request_ok(DaemonRequest::InviteRevoke {
                 community: community.clone(),
                 invite_code: invite_code.clone(),
             }).await?;

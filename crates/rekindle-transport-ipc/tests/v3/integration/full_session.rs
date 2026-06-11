@@ -43,7 +43,7 @@ fn full_session_lifecycle_handshake_stream_goodbye() {
         clearance_required: Clearance::Public, conditions: vec![],
     });
     open::handle(&mut ctx, &open_header, &open_payload).unwrap();
-    assert_eq!(ctx.stream_registry().active_count(), 1);
+    assert_eq!(ctx.stream_active_count(), 1);
 
     // Send one chunk
     let payload_header = StreamHeaderInfo {

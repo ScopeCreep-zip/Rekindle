@@ -1,13 +1,13 @@
 //! Bulk transfer commands: send, status, cancel, list.
 //!
 //! These commands interact with the daemon's `BulkTransferRegistry`
-//! via control-plane IpcRequest messages. The actual bulk data flows
+//! via control-plane DaemonRequest messages. The actual bulk data flows
 //! through the lane 0x01–0x02 wire protocol, not through these commands.
 
-use rekindle_node::ipc::protocol::IpcRequest;
+use crate::v2::prelude::DaemonRequest;
 
 use crate::v2::output::{format, OutputMode};
-use crate::v2::transport::DaemonClient;
+use crate::v2::prelude::DaemonClient;
 
 /// Transfer subcommand variants.
 #[derive(Debug, Clone, clap::Subcommand)]
@@ -69,20 +69,20 @@ pub async fn dispatch(
             media_type,
             digest,
             direction,
-        } => IpcRequest::BulkTransferStart {
+        } => DaemonRequest::BulkTransferStart {
             transfer_id: transfer_id.clone(),
             total_size: *total_size,
             media_type: media_type.clone(),
             digest: digest.clone(),
             direction: direction.clone(),
         },
-        TransferCmd::Status { transfer_id } => IpcRequest::BulkTransferStatus {
+        TransferCmd::Status { transfer_id } => DaemonRequest::BulkTransferStatus {
             transfer_id: transfer_id.clone(),
         },
         TransferCmd::Cancel {
             transfer_id,
             reason,
-        } => IpcRequest::BulkTransferCancel {
+        } => DaemonRequest::BulkTransferCancel {
             transfer_id: transfer_id.clone(),
             reason: reason.clone(),
         },
@@ -90,7 +90,7 @@ pub async fn dispatch(
             transfer_id,
             digest,
             bytes_transferred,
-        } => IpcRequest::BulkTransferComplete {
+        } => DaemonRequest::BulkTransferComplete {
             transfer_id: transfer_id.clone(),
             digest: digest.clone(),
             bytes_transferred: *bytes_transferred,

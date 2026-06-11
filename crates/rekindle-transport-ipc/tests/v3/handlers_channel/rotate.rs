@@ -1,17 +1,17 @@
+use rekindle_transport_ipc::v3::codec::channel::rotate as rotate_codec;
 use rekindle_transport_ipc::v3::context::OutboundFrame;
 use rekindle_transport_ipc::v3::dispatch::test_helpers::{make_test_context, assert_no_router_deliveries};
 use rekindle_transport_ipc::v3::handlers::channel::rotate;
-use rekindle_transport_ipc::v3::codec::channel::rotate as rotate_codec;
 use rekindle_transport_ipc::v3::session::state::SessionState;
 use rekindle_transport_ipc::v3::wire::frame_kind::{AuditKind, ChannelKind};
 
 /// handle_init (responder path): receives ROTATE_INIT, produces ROTATE_COMMIT,
-/// installs decoder keys, stores deferred encoder keys, and transitions
+/// queues both decoder and encoder keys via EpochSignal, and transitions
 /// Established → Rotating → Established (via RotateCommitSent).
 ///
 /// The responder completes its rotation handshake in a single handler call.
-/// The session returns to Established immediately — the responder's encoder
-/// stays on epoch=0 until the initiator's first epoch=1 frame arrives.
+/// The session returns to Established immediately — the read task installs
+/// the new keys atomically before reading the next frame.
 #[test]
 fn rotate_init_produces_commit_and_returns_to_established() {
     let (mut responder, router) = make_test_context();
@@ -36,25 +36,22 @@ fn rotate_init_produces_commit_and_returns_to_established() {
         "rotate_init must produce ROTATE_COMMIT"
     );
 
-    // Deferred encoder keys stored — the control loop installs them
-    // when peer_epoch_advanced is detected.
+    // Epoch signal must have a pending install with both decoder and encoder keys.
+    // The read task drains this signal and installs the keys atomically.
+    let epoch_install = responder.epoch_signal().drain();
     assert!(
-        responder.take_deferred_encoder().is_some(),
-        "responder must have deferred encoder keys after handle_init"
+        epoch_install.is_some(),
+        "responder must have queued epoch keys via install_next_epoch_keys after handle_init"
     );
 
     assert_no_router_deliveries(&router);
 }
 
 /// handle_commit (initiator path): receives ROTATE_COMMIT, derives new keys,
-/// installs decoder keys, stores immediate encoder keys, resolves the
+/// queues both decoder and encoder keys via EpochSignal, resolves the
 /// rotation completion oneshot, and produces an audit checkpoint.
-///
-/// The initiator's ctx.keys() is NOT updated — keys go to the encoder/decoder
-/// via EpochSignal. The rotation coordinator (ctx.rotation_mut().current_keys())
-/// holds the new DerivedKeys.
 #[test]
-fn rotate_commit_returns_to_established_with_pending_encoder() {
+fn rotate_commit_returns_to_established_with_epoch_keys() {
     let (mut initiator, router_init) = make_test_context();
 
     let init = initiator.rotation_mut().initiate(30_000, [0xBB; 32]).expect("initiate must succeed");
@@ -73,11 +70,11 @@ fn rotate_commit_returns_to_established_with_pending_encoder() {
 
     assert_eq!(initiator.session_state(), SessionState::Established);
 
-    // Immediate encoder keys stored — the control loop installs them
-    // right after drain_outbound on the same select! iteration.
+    // Epoch signal must have a pending install with both decoder and encoder keys.
+    let epoch_install = initiator.epoch_signal().drain();
     assert!(
-        initiator.take_immediate_encoder().is_some(),
-        "initiator must have immediate encoder keys after handle_commit"
+        epoch_install.is_some(),
+        "initiator must have queued epoch keys via install_next_epoch_keys after handle_commit"
     );
 
     assert_no_router_deliveries(&router_init);

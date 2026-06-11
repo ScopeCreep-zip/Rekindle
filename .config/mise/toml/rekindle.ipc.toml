@@ -44,12 +44,12 @@ echo "✅ lint clean"
 echo ""
 
 echo "── test (excludes pressure) ──"
-cargo test -p rekindle-transport-ipc --features bench-harness --test 'v3_*' -- --skip pressure
+cargo test -p rekindle-transport-ipc -- --skip pressure
 echo "✅ tests pass"
 echo ""
 
 echo "── pressure (isolated, sequential) ──"
-cargo test -p rekindle-transport-ipc --features bench-harness --test v3_socket_e2e pressure -- --test-threads=1
+cargo test -p rekindle-transport-ipc --test v3_socket_e2e pressure -- --test-threads=1
 echo "✅ pressure tests pass"
 echo ""
 
@@ -71,27 +71,27 @@ run = "cargo clippy -p rekindle-transport-ipc -- -D warnings"
 ["ipc:test"]
 description = "All tests excluding pressure (pressure needs isolation)"
 alias = ["it"]
-run = "cargo test -p rekindle-transport-ipc --features bench-harness --test 'v3_*' -- --skip pressure"
+run = "cargo test -p rekindle-transport-ipc -- --skip pressure"
 
 ["ipc:test:e2e"]
 description = "Socket E2E tests only (skips pressure)"
 alias = ["ite"]
-run = "cargo test -p rekindle-transport-ipc --features bench-harness --test v3_socket_e2e -- --skip pressure"
+run = "cargo test -p rekindle-transport-ipc --test v3_socket_e2e -- --skip pressure"
 
 ["ipc:test:pressure"]
 description = "Pressure tests ISOLATED — sequential execution prevents glibc per-thread arena cross-contamination"
 alias = ["itp"]
-run = "cargo test -p rekindle-transport-ipc --features bench-harness --test v3_socket_e2e pressure -- --test-threads=1"
+run = "cargo test -p rekindle-transport-ipc --test v3_socket_e2e pressure -- --test-threads=1"
 
 ["ipc:test:pressure:sustained"]
 description = "Sustained bulk transfer memory leak detection — isolated"
 alias = ["itps"]
-run = "cargo test -p rekindle-transport-ipc --features bench-harness --test v3_socket_e2e pressure::sustained_bulk_no_leak_no_stall -- --test-threads=1 --nocapture"
+run = "cargo test -p rekindle-transport-ipc --test v3_socket_e2e pressure::sustained_bulk_no_leak_no_stall -- --test-threads=1 --nocapture"
 
 ["ipc:test:pressure:backpressure"]
 description = "Backpressure OOM prevention — isolated"
 alias = ["itpb"]
-run = "cargo test -p rekindle-transport-ipc --features bench-harness --test v3_socket_e2e pressure::backpressure_prevents_oom -- --test-threads=1 --nocapture"
+run = "cargo test -p rekindle-transport-ipc --test v3_socket_e2e pressure::backpressure_prevents_oom -- --test-threads=1 --nocapture"
 
 ["ipc:bench"]
 description = "Workload benchmarks only (crypto primitives + socket E2E). Run ipc:baseline first."
@@ -135,12 +135,12 @@ echo "║              Baseline Calibration Complete                   ║"
 echo "╠═══════════════════════════════════════════════════════════════╣"
 echo "║                                                             ║"
 echo "║  Calibration data:                                          ║"
-echo "║    target/calibration_floors.jsonl                                  ║"
+echo "║    target/calibration_floors.jsonl                          ║"
 echo "║                                                             ║"
-echo "║  Criterion floor reports:                                    ║"
-echo "║    target/criterion/report/index.html                        ║"
+echo "║  Criterion floor reports:                                   ║"
+echo "║    target/criterion/report/index.html                       ║"
 echo "║                                                             ║"
-echo "║  Run 'mise run ipc:bench' for workload benchmarks.           ║"
+echo "║  Run 'mise run ipc:bench' for workload benchmarks.          ║"
 echo "║                                                             ║"
 echo "╚═══════════════════════════════════════════════════════════════╝"
 echo ""
@@ -237,7 +237,7 @@ cargo bench -p rekindle-transport-ipc --features bench-harness --bench v3_calibr
 echo ""
 echo "Outputs:"
 for d in target/criterion/{dram_bandwidth,cache_hierarchy,memcpy_floor,allocation_floor,page_fault,blake3_floor}/report; do
-  [ -f "$d/index.html" ] && echo "  file://$PWD/$d/index.html"
+  [ -f "$d/index.html" ] && echo "    file://$PWD/$d/index.html"
 done
 '''
 
@@ -264,17 +264,17 @@ cargo bench -p rekindle-transport-ipc --features bench-harness --bench v3_socket
 ["ipc:test:e2e:concurrent"]
 description = "Concurrent multi-stream saturation — guards audit queue capacity"
 alias = ["itec"]
-run = "cargo test -p rekindle-transport-ipc --features bench-harness --test v3_socket_e2e stream::concurrent_large_streams_saturate_pool -- --nocapture"
+run = "cargo test -p rekindle-transport-ipc --test v3_socket_e2e stream::concurrent_large_streams_saturate_pool -- --nocapture"
 
 ["ipc:test:e2e:rotation"]
 description = "Key rotation E2E — proves post-rotation frames decrypt correctly"
 alias = ["iter"]
-run = "cargo test -p rekindle-transport-ipc --features bench-harness --test v3_socket_e2e rotation -- --nocapture"
+run = "cargo test -p rekindle-transport-ipc --test v3_socket_e2e rotation -- --nocapture"
 
 ["ipc:test:e2e:pubsub"]
 description = "Pub/sub E2E — proves subscribe/publish/unsubscribe lifecycle"
 alias = ["itep"]
-run = "cargo test -p rekindle-transport-ipc --features bench-harness --test v3_socket_e2e pubsub -- --nocapture"
+run = "cargo test -p rekindle-transport-ipc --test v3_socket_e2e pubsub -- --nocapture"
 
 ["ipc:diag"]
 description = "Diagnostic pressure run — verbose output with pool counters and RSS curve"
@@ -287,23 +287,23 @@ echo "rekindle-transport-ipc — Diagnostic Pressure Run"
 echo "=================================================="
 echo "Pool counters, RSS snapshots, and allocation tracking visible."
 echo ""
-RUST_LOG=debug cargo test -p rekindle-transport-ipc --features bench-harness --test v3_socket_e2e pressure -- --test-threads=1 --nocapture 2>&1 | grep -E "(transfer|PIPELINE|wire_pool|RecvBufPool|RSS|growth|DIAG|pool)"
+RUST_LOG=debug cargo test -p rekindle-transport-ipc --test v3_socket_e2e pressure -- --test-threads=1 --nocapture 2>&1 | grep -E "(transfer|PIPELINE|wire_pool|RecvBufPool|RSS|growth|DIAG|pool)"
 '''
 
 ["ipc:diag:pool"]
 description = "Pool integration diagnostics — validates pool cycling under load"
 alias = ["idp"]
-run = "cargo test -p rekindle-transport-ipc --features bench-harness --test v3_socket_e2e pool_integration -- --nocapture"
+run = "cargo test -p rekindle-transport-ipc --test v3_socket_e2e pool_integration -- --nocapture"
 
 ["ipc:diag:heartbeat"]
 description = "Heartbeat under bulk saturation — proves control loop is not starved"
 alias = ["idh"]
-run = "cargo test -p rekindle-transport-ipc --features bench-harness --test v3_socket_e2e heartbeat -- --nocapture"
+run = "cargo test -p rekindle-transport-ipc --test v3_socket_e2e heartbeat -- --nocapture"
 
 ["ipc:diag:audit"]
 description = "Audit chain integrity under load — proves no gaps in hash chain"
 alias = ["ida"]
-run = "cargo test -p rekindle-transport-ipc --features bench-harness --test v3_socket_e2e audit -- --nocapture"
+run = "cargo test -p rekindle-transport-ipc --test v3_socket_e2e audit -- --nocapture"
 
 ["ipc:doc"]
 description = "Build rustdoc"

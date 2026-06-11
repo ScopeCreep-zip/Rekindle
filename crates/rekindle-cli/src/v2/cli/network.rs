@@ -20,6 +20,8 @@ pub enum NodeCmd {
     Attach,
     /// Detach from network (keep node alive).
     Detach,
+    /// Lock the daemon (zeroize secrets, stop transport, keep process running).
+    Lock,
 }
 
 /// Network status and peer management subcommands.

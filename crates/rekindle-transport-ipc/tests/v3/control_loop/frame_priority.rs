@@ -23,12 +23,12 @@ use rekindle_transport_ipc::v3::io::lane_channels::PlaintextBuf;
 fn bulk_chunks_delivered_in_order_despite_arrival_order() {
     let (mut ctx, _router) = make_test_context();
 
-    use rekindle_transport_ipc::v3::handlers::stream::{open, payload};
-    use rekindle_transport_ipc::v3::codec::stream::open as open_codec;
     use rekindle_transport_ipc::v3::codec::header::StreamHeaderInfo;
+    use rekindle_transport_ipc::v3::codec::stream::open as open_codec;
+    use rekindle_transport_ipc::v3::handlers::stream::{open, payload};
+    use rekindle_transport_ipc::v3::wire::clearance::Clearance;
     use rekindle_transport_ipc::v3::wire::frame_class::FrameClass;
     use rekindle_transport_ipc::v3::wire::frame_kind::StreamKind;
-    use rekindle_transport_ipc::v3::wire::clearance::Clearance;
 
     let oh = StreamHeaderInfo {
         frame_class: FrameClass::Stream, frame_kind: StreamKind::Open,
@@ -73,7 +73,7 @@ fn bulk_chunks_delivered_in_order_despite_arrival_order() {
 fn duplicate_chunks_silently_dropped() {
     let (mut ctx, _) = make_test_context();
 
-    ctx.stream_registry_mut().open(5).unwrap();
+    ctx.open_outbound_stream(5).unwrap();
     ctx.create_reassembler(5);
 
     insert_chunk(&mut ctx, 5, 0, &[0xAA; 50]);
@@ -93,8 +93,8 @@ fn duplicate_chunks_silently_dropped() {
 fn multiple_streams_reassemble_independently() {
     let (mut ctx, _) = make_test_context();
 
-    ctx.stream_registry_mut().open(0).unwrap();
-    ctx.stream_registry_mut().open(1).unwrap();
+    ctx.open_outbound_stream(0).unwrap();
+    ctx.open_outbound_stream(1).unwrap();
     ctx.create_reassembler(0);
     ctx.create_reassembler(1);
 
@@ -106,13 +106,14 @@ fn multiple_streams_reassemble_independently() {
     assert_eq!(ctx.reassembler_next_expected(1), 1);
 }
 
-/// Double open on the same stream_id is rejected.
+/// Double inbound open on the same stream_id is rejected.
+/// The receiver must reject a duplicate STREAM_OPEN from the peer.
 #[test]
-fn double_open_rejected() {
+fn double_inbound_open_rejected() {
     let (mut ctx, _) = make_test_context();
-    ctx.stream_registry_mut().open(7).unwrap();
-    let result = ctx.stream_registry_mut().open(7);
-    assert!(result.is_err(), "double open must be rejected");
+    ctx.open_inbound_stream(7).unwrap();
+    let result = ctx.open_inbound_stream(7);
+    assert!(result.is_err(), "double inbound open must be rejected");
 }
 
 /// After close + reassembler removal, reopening the same stream_id
@@ -121,15 +122,15 @@ fn double_open_rejected() {
 fn stream_reuse_after_close_starts_fresh() {
     let (mut ctx, _) = make_test_context();
 
-    ctx.stream_registry_mut().open(4).unwrap();
+    ctx.open_outbound_stream(4).unwrap();
     ctx.create_reassembler(4);
     insert_chunk(&mut ctx, 4, 0, &[0xAA; 32]);
     assert_eq!(ctx.reassembler_next_expected(4), 1);
 
-    let _ = ctx.stream_registry_mut().close(4);
+    let _ = ctx.close_outbound_stream(4);
     ctx.remove_reassembler(4);
 
-    ctx.stream_registry_mut().open(4).unwrap();
+    ctx.open_outbound_stream(4).unwrap();
     ctx.create_reassembler(4);
 
     assert_eq!(ctx.reassembler_next_expected(4), 0,
@@ -153,7 +154,7 @@ fn backpressure_state_tracked() {
 #[test]
 fn merkle_content_hash_matches_sender_computation() {
     let (mut ctx, _) = make_test_context();
-    ctx.stream_registry_mut().open(10).unwrap();
+    ctx.open_outbound_stream(10).unwrap();
     ctx.create_reassembler(10);
 
     let chunks: Vec<Vec<u8>> = vec![
@@ -190,7 +191,7 @@ fn merkle_content_hash_matches_sender_computation() {
 #[test]
 fn merkle_content_hash_fails_on_corruption() {
     let (mut ctx, _) = make_test_context();
-    ctx.stream_registry_mut().open(11).unwrap();
+    ctx.open_outbound_stream(11).unwrap();
     ctx.create_reassembler(11);
 
     let chunks: Vec<Vec<u8>> = vec![vec![0x01; 100], vec![0x02; 100]];

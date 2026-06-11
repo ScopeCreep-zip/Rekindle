@@ -1,15 +1,15 @@
+use rekindle_transport_ipc::v3::codec::header::StreamHeaderInfo;
+use rekindle_transport_ipc::v3::codec::stream::cancel as cancel_codec;
 use rekindle_transport_ipc::v3::context::OutboundFrame;
 use rekindle_transport_ipc::v3::dispatch::test_helpers::{make_test_context, assert_no_router_deliveries};
 use rekindle_transport_ipc::v3::handlers::stream::cancel;
-use rekindle_transport_ipc::v3::codec::stream::cancel as cancel_codec;
-use rekindle_transport_ipc::v3::codec::header::StreamHeaderInfo;
 use rekindle_transport_ipc::v3::wire::frame_class::FrameClass;
 use rekindle_transport_ipc::v3::wire::frame_kind::StreamKind;
 
 #[test]
 fn cancel_produces_cancel_ack() {
     let (mut ctx, router) = make_test_context();
-    ctx.stream_registry_mut().open(5).unwrap();
+    ctx.open_inbound_stream(5).unwrap();
     ctx.create_reassembler(5);
 
     let header = StreamHeaderInfo {
@@ -33,7 +33,7 @@ fn cancel_produces_cancel_ack() {
 fn cancel_registers_in_resume_registry() {
     let (mut ctx, router) = make_test_context();
     let tid = uuid::Uuid::from_u128(7);
-    ctx.stream_registry_mut().open(7).unwrap();
+    ctx.open_inbound_stream(7).unwrap();
     ctx.create_reassembler(7);
 
     let header = StreamHeaderInfo {
@@ -52,7 +52,7 @@ fn cancel_registers_in_resume_registry() {
 #[test]
 fn cancel_clears_reassembler() {
     let (mut ctx, router) = make_test_context();
-    ctx.stream_registry_mut().open(3).unwrap();
+    ctx.open_inbound_stream(3).unwrap();
     ctx.create_reassembler(3);
     assert!(ctx.has_reassembler(3));
 

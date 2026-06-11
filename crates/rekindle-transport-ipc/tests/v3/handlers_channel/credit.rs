@@ -16,7 +16,7 @@ fn lane_scoped_credit_updates_lane_budget() {
 #[test]
 fn stream_scoped_credit_updates_stream_tracker() {
     let (mut ctx, router) = make_test_context();
-    ctx.stream_registry_mut().open(5).unwrap();
+    ctx.open_inbound_stream(5).unwrap();
     ctx.create_reassembler(5);
 
     let payload = credit_codec::encode(&credit_codec::CreditPayload {

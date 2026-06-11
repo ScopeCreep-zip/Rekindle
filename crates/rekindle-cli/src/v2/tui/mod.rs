@@ -22,7 +22,7 @@ pub mod widgets;
 use std::sync::Arc;
 
 use crate::v2::cli::Cli;
-use crate::v2::transport::DaemonClient;
+use crate::v2::prelude::{DaemonClient, DaemonRequest};
 
 /// TUI entry point.
 ///
@@ -56,7 +56,7 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
         let mut last_err = None;
         let mut result = None;
         for attempt in 1..=5u32 {
-            match client.request_ok(rekindle_node::ipc::protocol::IpcRequest::Status).await {
+            match client.request_ok(DaemonRequest::Status).await {
                 Ok(v) => { result = Some(v); break; }
                 Err(e) => {
                     tracing::debug!(attempt, error = %e, "daemon not ready, retrying");
