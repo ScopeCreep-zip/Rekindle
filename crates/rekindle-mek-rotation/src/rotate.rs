@@ -107,12 +107,14 @@ pub async fn rotate_voice_mek_for_membership<D: MekDistributeDeps>(
 ) -> Result<(), MekRotationError> {
     let trigger = pseudonym_from_hex(trigger_pseudonym)
         .ok_or_else(|| MekRotationError::InvalidInput("invalid trigger pseudonym".to_string()))?;
-    let recipients = deps.voice_recipients(
-        community_id,
-        channel_id,
-        trigger_pseudonym,
-        include_trigger_in_recipients,
-    );
+    let recipients = deps
+        .voice_recipients(
+            community_id,
+            channel_id,
+            trigger_pseudonym,
+            include_trigger_in_recipients,
+        )
+        .await;
     let candidate_keys = recipients
         .iter()
         .filter(|r| r.pseudonym_hex != trigger_pseudonym)

@@ -100,8 +100,11 @@ pub trait MekDistributeDeps: Send + Sync {
     ) -> Vec<RotationRecipient>;
 
     /// Voice-channel-scoped recipients — voice MEK rotation only
-    /// targets peers currently in the voice channel transport.
-    fn voice_recipients(
+    /// targets peers currently in the voice channel transport. Async
+    /// because the roster lives behind the transport's async lock and
+    /// rotation always runs on the runtime (a blocking read here
+    /// panics tokio workers).
+    async fn voice_recipients(
         &self,
         community_id: &str,
         channel_id: &str,

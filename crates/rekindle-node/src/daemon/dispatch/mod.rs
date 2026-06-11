@@ -446,8 +446,8 @@ pub async fn dispatch(ctx: &DaemonContext, request: IpcRequest) -> IpcResponse {
             name,
             agent_type,
             capabilities,
-        } => admin::handle_agent_register(ctx, &name, agent_type, &capabilities),
-        IpcRequest::AgentRevoke { name } => admin::handle_agent_revoke(ctx, &name),
+        } => admin::handle_agent_register(ctx, &name, agent_type, &capabilities).await,
+        IpcRequest::AgentRevoke { name } => admin::handle_agent_revoke(ctx, &name).await,
         IpcRequest::PolicyReload => admin::handle_policy_reload(ctx),
     }
 }

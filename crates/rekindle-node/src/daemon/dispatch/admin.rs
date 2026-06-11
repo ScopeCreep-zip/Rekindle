@@ -72,7 +72,7 @@ pub(crate) fn handle_network_peers(ctx: &DaemonContext, state: DaemonState) -> I
 /// For now, we register with a zero pubkey placeholder. The server layer
 /// should call `registry.register()` with the real pubkey after dispatch
 /// returns success.
-pub(crate) fn handle_agent_register(
+pub(crate) async fn handle_agent_register(
     ctx: &DaemonContext,
     name: &str,
     agent_type: AgentType,
@@ -82,8 +82,10 @@ pub(crate) fn handle_agent_register(
         return IpcResponse::error(400, format!("invalid agent name: {e}"));
     }
 
-    // Check if name is already registered
-    let registry = ctx.registry.blocking_read();
+    // Check if name is already registered. Dispatch runs on the
+    // runtime, so the registry lock must be awaited — a blocking read
+    // here panics the tokio worker.
+    let registry = ctx.registry.read().await;
     if registry.find_by_name(name).is_some() {
         return IpcResponse::error(409, format!("agent '{name}' is already registered"));
     }
@@ -100,12 +102,12 @@ pub(crate) fn handle_agent_register(
 }
 
 /// Handle AgentRevoke — remove an agent from the ClearanceRegistry.
-pub(crate) fn handle_agent_revoke(ctx: &DaemonContext, name: &str) -> IpcResponse {
+pub(crate) async fn handle_agent_revoke(ctx: &DaemonContext, name: &str) -> IpcResponse {
     if let Err(e) = validate_agent_name(name) {
         return IpcResponse::error(400, format!("invalid agent name: {e}"));
     }
 
-    let mut registry = ctx.registry.blocking_write();
+    let mut registry = ctx.registry.write().await;
     match registry.revoke_by_name(name) {
         Some(identity) => {
             tracing::info!(

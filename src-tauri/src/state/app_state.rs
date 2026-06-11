@@ -364,47 +364,25 @@ impl AppState {
         }
     }
 
-    /// Snapshot the voice transport's peer keys when the active engine is
-    /// joined to the given community + channel. Returns an empty Vec when
-    /// no engine is active or it is joined to a different channel. Used
-    /// by §10.5 MEK rotation to enumerate recipients of new-generation
-    /// keys.
-    pub fn voice_engine_peer_keys_for_channel(
+    /// Hand out the voice transport `Arc` when the active engine is
+    /// joined to the given community + channel; `None` when no engine
+    /// is active or it's on a different channel. §10.5 MEK rotation
+    /// reads the roster (peer keys + the routes each peer advertised
+    /// in its VoiceJoin) through this — the transport sits behind an
+    /// async lock, so callers `.lock().await` it themselves. The
+    /// parking_lot `voice_engine` guard drops before this returns, so
+    /// no sync guard is ever held across the caller's await.
+    pub fn voice_engine_transport_for_channel(
         &self,
         community_id: &str,
         channel_id: &str,
-    ) -> Vec<String> {
+    ) -> Option<std::sync::Arc<tokio::sync::Mutex<rekindle_voice::transport::VoiceTransport>>>
+    {
         let ve = self.voice_engine.lock();
-        let Some(handle) = ve.as_ref() else {
-            return Vec::new();
-        };
+        let handle = ve.as_ref()?;
         if handle.community_id.as_deref() != Some(community_id) || handle.channel_id != channel_id {
-            return Vec::new();
+            return None;
         }
-        let transport = handle.transport.blocking_lock();
-        transport.peer_keys()
-    }
-
-    /// Snapshot the voice transport's `pseudonym → route_blob` map when
-    /// the active engine is joined to the given community + channel.
-    /// Empty when no engine is active or it's on a different channel.
-    /// §10.5 MEK rotation uses these (the routes each peer advertised in
-    /// its VoiceJoin) as the authoritative recipient routes, so a
-    /// just-joined peer still receives the new-generation key even
-    /// before the gossip presence overlay catches up.
-    pub fn voice_engine_peer_routes_for_channel(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-    ) -> std::collections::HashMap<String, Vec<u8>> {
-        let ve = self.voice_engine.lock();
-        let Some(handle) = ve.as_ref() else {
-            return std::collections::HashMap::new();
-        };
-        if handle.community_id.as_deref() != Some(community_id) || handle.channel_id != channel_id {
-            return std::collections::HashMap::new();
-        }
-        let transport = handle.transport.blocking_lock();
-        transport.peer_entries().into_iter().collect()
+        Some(std::sync::Arc::clone(&handle.transport))
     }
 }

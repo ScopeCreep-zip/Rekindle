@@ -191,7 +191,7 @@ impl MekDistributeDeps for MekAdapter {
             .unwrap_or_default()
     }
 
-    fn voice_recipients(
+    async fn voice_recipients(
         &self,
         community_id: &str,
         channel_id: &str,
@@ -199,16 +199,27 @@ impl MekDistributeDeps for MekAdapter {
         include_trigger_in_recipients: bool,
     ) -> Vec<RotationRecipient> {
         use std::collections::HashSet;
-        // Inlined from src-tauri mek_rotation_support::voice_recipients
-        // (the helper module is `mod` not `pub mod`; sub-step 17.f.2
-        // will delete it). voice rotation only targets peers currently
-        // in the voice channel transport — plus the local member (if
-        // any) since we're rotating for ourselves too.
-        let mut participants = self
-            .state
-            .voice_engine_peer_keys_for_channel(community_id, channel_id)
-            .into_iter()
-            .collect::<HashSet<_>>();
+        // voice rotation only targets peers currently in the voice
+        // channel transport — plus the local member (if any) since
+        // we're rotating for ourselves too. One awaited lock snapshots
+        // keys + routes together; rotation always runs on the runtime,
+        // so a blocking read here would panic the tokio worker (the
+        // exact failure that killed join handling at app_state.rs:384).
+        let (peer_keys, transport_routes): (Vec<String>, std::collections::HashMap<_, _>) =
+            match self
+                .state
+                .voice_engine_transport_for_channel(community_id, channel_id)
+            {
+                Some(transport) => {
+                    let guard = transport.lock().await;
+                    (
+                        guard.peer_keys(),
+                        guard.peer_entries().into_iter().collect(),
+                    )
+                }
+                None => (Vec::new(), std::collections::HashMap::new()),
+            };
+        let mut participants = peer_keys.into_iter().collect::<HashSet<_>>();
         let my_pseudonym_hex = self.my_pseudonym(community_id).map(|p| hex::encode(p.0));
         if let Some(me) = my_pseudonym_hex {
             participants.insert(me);
@@ -221,9 +232,6 @@ impl MekDistributeDeps for MekAdapter {
         // gossip presence overlay, which lags a fresh join — the cause
         // of the MEK being delivered to an empty route so a just-joined
         // peer never decrypts. online_members is the fallback.
-        let transport_routes = self
-            .state
-            .voice_engine_peer_routes_for_channel(community_id, channel_id);
         let communities = self.state.communities.read();
         let Some(community) = communities.get(community_id) else {
             return Vec::new();
