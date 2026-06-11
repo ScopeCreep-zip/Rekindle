@@ -194,6 +194,10 @@ impl GossipDeps for GossipAdapter {
         .await
     }
 
+    fn resolve_gate(&self) -> &rekindle_gossip::ResolveGate {
+        &self.state.gossip_resolve_gate
+    }
+
     async fn send_app_message(&self, route_blob: &[u8], data: Vec<u8>) -> Result<(), String> {
         let rc = state_helpers::safe_routing_context(&self.state)
             .ok_or_else(|| "no routing context".to_string())?;
