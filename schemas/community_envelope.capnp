@@ -558,6 +558,10 @@ struct VideoFragmentPayload @0xea003b000000a000 {
     # this tag. Signature-covered (the codec byte rides the fragment
     # signing bytes).
     codec                @9 :Codec;
+    # Generation of the channel-media MEK that encrypted the frame —
+    # receivers request exactly this generation on decrypt failure
+    # instead of guessing. Signature-covered.
+    mekGeneration        @10 :UInt64;
 }
 
 struct VideoParityFragmentPayload @0xea003c000000a000 {
@@ -575,6 +579,8 @@ struct VideoParityFragmentPayload @0xea003c000000a000 {
     # Codec of the frame this parity covers — mirrors
     # VideoFragmentPayload.codec; signature-covered.
     codec                @10 :Codec;
+    # Mirrors VideoFragmentPayload.mekGeneration; signature-covered.
+    mekGeneration        @11 :UInt64;
 }
 
 struct FrameAckPayload @0xea003d000000a000 {

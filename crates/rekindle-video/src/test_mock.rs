@@ -85,7 +85,7 @@ impl VideoDeps for MockDeps {
         self.active_channel.clone()
     }
 
-    fn request_mek_refresh(&self, community_id: &str, channel_id: &str) {
+    fn request_mek_refresh(&self, community_id: &str, channel_id: &str, _needed_generation: u64) {
         self.calls
             .lock()
             .mek_refresh_requests

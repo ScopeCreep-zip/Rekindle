@@ -78,6 +78,7 @@ pub fn handle_video_payload<D: VideoDeps>(
             keyframe,
             codec,
             timestamp,
+            mek_generation,
             payload,
             signature,
         } => {
@@ -100,6 +101,7 @@ pub fn handle_video_payload<D: VideoDeps>(
                 keyframe,
                 codec,
                 timestamp,
+                mek_generation,
                 payload,
                 signature,
             };
@@ -142,6 +144,7 @@ pub fn handle_video_payload<D: VideoDeps>(
             codec,
             frame_len,
             timestamp,
+            mek_generation,
             payload,
             signature,
         } => {
@@ -165,6 +168,7 @@ pub fn handle_video_payload<D: VideoDeps>(
                 codec,
                 frame_len,
                 timestamp,
+                mek_generation,
                 payload,
                 signature,
             };
@@ -323,14 +327,16 @@ fn fragment_signature_valid(sender_hex: &str, to_sign: &[u8], signature: &[u8]) 
     rekindle_secrets::derive::verify_pseudonym_signature(&pseudonym, to_sign, &sig).is_ok()
 }
 
-/// Decrypt a reassembled frame under the current community MEK and
-/// emit `VideoEvent::FrameReady` with the plaintext payload. The
-/// channel gate in `handle_video_payload` already guarantees the frame
-/// belongs to the channel we're actively in; the MEK check is the
-/// crypto fallback — and a MEK miss/mismatch fires the RequestMEK
-/// cascade (debounced) instead of dropping silently forever: a sender
-/// one generation ahead (voice MEK rotates on every membership change)
-/// would otherwise render as a permanently black tile.
+/// Decrypt a reassembled frame under the channel-media MEK and emit
+/// `VideoEvent::FrameReady` with the plaintext payload. The channel
+/// gate in `handle_video_payload` already guarantees the frame belongs
+/// to the channel we're actively in. Every fragment carries the
+/// generation it was encrypted with, so recovery is CONVERGENT: a
+/// miss, mismatch, or decrypt failure requests EXACTLY the frame's
+/// generation (debounced) — never a guess. The same-generation
+/// decrypt-failure case covers split-brain rotations (both sides
+/// minted the same generation independently): the responder serves
+/// its key for that generation and the requester overwrites.
 fn emit_frame_ready<D: VideoDeps>(
     deps: &D,
     reassembly: &VideoReassemblyState,
@@ -340,16 +346,44 @@ fn emit_frame_ready<D: VideoDeps>(
     frame: &ReassembledFrame,
     now_ms: u32,
 ) {
-    let Some((mek_bytes, mek_gen)) = deps.channel_media_mek(community_id, channel_id) else {
-        tracing::debug!(
-            community = %community_id,
-            "video frame received but no MEK cached — requesting"
+    let resolved = deps.channel_media_mek(community_id, channel_id);
+    // A sender BEHIND our generation gets no request — fetching an
+    // older key can't help (apply refuses downgrades); the sender
+    // converges when its own receive path sees our newer frames.
+    if let Some((_, our_gen)) = resolved {
+        if frame.mek_generation < our_gen {
+            tracing::debug!(
+                target: "rekindle_video::receive",
+                community_id = %community_id,
+                sender_pseudonym = %sender_pseudonym,
+                frame_generation = frame.mek_generation,
+                our_generation = our_gen,
+                "video frame from a sender behind our MEK generation — dropped"
+            );
+            return;
+        }
+    }
+    let mismatch_reason = match resolved {
+        None => Some("no channel-media MEK cached"),
+        Some((_, our_gen)) if our_gen != frame.mek_generation => Some("MEK generation mismatch"),
+        Some(_) => None,
+    };
+    if let Some(reason) = mismatch_reason {
+        tracing::warn!(
+            target: "rekindle_video::receive",
+            community_id = %community_id,
+            sender_pseudonym = %sender_pseudonym,
+            frame_generation = frame.mek_generation,
+            our_generation = resolved.map_or(-1i64, |(_, g)| i64::try_from(g).unwrap_or(i64::MAX)),
+            reason,
+            "video frame undecryptable — requesting the frame's exact MEK generation"
         );
         if reassembly.should_request_mek(community_id, now_ms) {
-            deps.request_mek_refresh(community_id, channel_id);
+            deps.request_mek_refresh(community_id, channel_id, frame.mek_generation);
         }
         return;
-    };
+    }
+    let (mek_bytes, mek_gen) = resolved.expect("checked above");
     let mek = MediaEncryptionKey::from_bytes(mek_bytes, mek_gen);
     let plaintext = match mek.decrypt(&frame.payload) {
         Ok(p) => p,
@@ -361,10 +395,11 @@ fn emit_frame_ready<D: VideoDeps>(
                 sender_pseudonym = %sender_pseudonym,
                 stream_id = %hex::encode(frame.stream_id),
                 frame_seq = frame.frame_seq,
-                "video frame MEK decrypt failed — requesting refresh"
+                frame_generation = frame.mek_generation,
+                "video frame MEK decrypt failed at matching generation (split-brain or tamper) — requesting"
             );
             if reassembly.should_request_mek(community_id, now_ms) {
-                deps.request_mek_refresh(community_id, channel_id);
+                deps.request_mek_refresh(community_id, channel_id, frame.mek_generation);
             }
             return;
         }
@@ -419,6 +454,7 @@ mod tests {
             keyframe: true,
             codec: Codec::Vp9,
             timestamp: 42,
+            mek_generation: 1,
             payload: ciphertext,
             signature: Vec::new(),
         };
@@ -442,6 +478,7 @@ mod tests {
                 keyframe: frag.keyframe,
                 codec: frag.codec,
                 timestamp: frag.timestamp,
+                mek_generation: frag.mek_generation,
                 payload: frag.payload,
                 signature: frag.signature,
             },
@@ -518,6 +555,7 @@ mod tests {
                 keyframe: true,
                 codec: Codec::Vp9,
                 timestamp: 7,
+                mek_generation: 2,
                 payload: newer_mek.encrypt(b"frame").expect("encrypt"),
                 signature: Vec::new(),
             };
@@ -535,6 +573,7 @@ mod tests {
                 keyframe: frag.keyframe,
                 codec: frag.codec,
                 timestamp: frag.timestamp,
+                mek_generation: frag.mek_generation,
                 payload: frag.payload,
                 signature: frag.signature,
             }
@@ -638,6 +677,7 @@ mod tests {
                 keyframe: false,
                 codec: Codec::Vp9,
                 timestamp: 0,
+                mek_generation: 0,
                 payload: vec![0xAB; 64],
                 signature: vec![0u8; 64],
             },

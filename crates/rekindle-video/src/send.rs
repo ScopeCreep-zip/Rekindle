@@ -101,6 +101,7 @@ pub fn build_video_frame<D: VideoDeps>(
         keyframe: request.keyframe,
         codec: request.codec,
         timestamp: request.timestamp,
+        mek_generation: mek_gen,
         signing_key: &signing_key,
     };
 
@@ -175,19 +176,28 @@ struct SendCtx<'a> {
     keyframe: bool,
     codec: Codec,
     timestamp: u32,
+    /// Generation of the channel-media MEK that encrypted the frame —
+    /// rides every fragment so receivers can request the exact key.
+    mek_generation: u64,
     signing_key: &'a SigningKey,
 }
 
 impl SendCtx<'_> {
+    fn frame_shape(&self) -> crate::fragment::FrameShape {
+        crate::fragment::FrameShape {
+            stream_id: self.stream_id,
+            frame_seq: self.frame_seq,
+            keyframe: self.keyframe,
+            codec: self.codec,
+            timestamp: self.timestamp,
+            mek_generation: self.mek_generation,
+        }
+    }
+}
+
+impl SendCtx<'_> {
     fn collect_without_fec(&self, ciphertext: &[u8]) -> Result<Vec<CommunityEnvelope>, VideoError> {
-        let mut fragments = fragment_frame(
-            self.stream_id,
-            self.frame_seq,
-            self.keyframe,
-            self.codec,
-            self.timestamp,
-            ciphertext,
-        )?;
+        let mut fragments = fragment_frame(self.frame_shape(), ciphertext)?;
         let count = u32::try_from(fragments.len()).unwrap_or(u32::MAX);
         for fragment in &mut fragments {
             let to_sign = fragment_signing_bytes(fragment);
@@ -206,6 +216,7 @@ impl SendCtx<'_> {
                     keyframe: fragment.keyframe,
                     codec: fragment.codec,
                     timestamp: fragment.timestamp,
+                    mek_generation: fragment.mek_generation,
                     payload: fragment.payload,
                     signature: fragment.signature,
                 })
@@ -228,15 +239,7 @@ impl SendCtx<'_> {
         ciphertext: &[u8],
         parity_count: u8,
     ) -> Result<Vec<CommunityEnvelope>, VideoError> {
-        let mut fec = fragment_frame_with_fec(
-            self.stream_id,
-            self.frame_seq,
-            self.keyframe,
-            self.codec,
-            self.timestamp,
-            ciphertext,
-            parity_count,
-        )?;
+        let mut fec = fragment_frame_with_fec(self.frame_shape(), ciphertext, parity_count)?;
 
         for fragment in &mut fec.data {
             let to_sign = fragment_signing_bytes(fragment);
@@ -264,6 +267,7 @@ impl SendCtx<'_> {
                 keyframe: fragment.keyframe,
                 codec: fragment.codec,
                 timestamp: fragment.timestamp,
+                mek_generation: fragment.mek_generation,
                 payload: fragment.payload,
                 signature: fragment.signature,
             }));
@@ -289,6 +293,7 @@ impl SendCtx<'_> {
                     codec: fragment.codec,
                     frame_len: fragment.frame_len,
                     timestamp: fragment.timestamp,
+                    mek_generation: fragment.mek_generation,
                     payload: fragment.payload,
                     signature: fragment.signature,
                 },

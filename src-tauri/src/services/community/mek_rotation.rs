@@ -26,20 +26,27 @@ pub fn spawn_mek_request_with_retry(
     tokio::spawn(async move {
         let max_cascades = u32::try_from(rekindle_mek_rotation::MAX_CASCADES).unwrap_or(3);
         const RETRY_DEADLINE_MS: u64 = 5_000;
+        // Snapshot the resolution at spawn so `0` ("send me current")
+        // can detect that ANY new key landed.
+        let initial_gen =
+            crate::state_helpers::channel_media_mek(&state, &community_id, &channel_id)
+                .map(|(_, generation)| generation);
         for cascade_index in 0..max_cascades {
-            // Bail early if the MEK arrived via a concurrent path (parallel
-            // rotation broadcast, an MekTransfer reply that already landed,
-            // a different channel's request that produced the same gen).
-            let cache_hit = state
-                .channel_mek_cache
-                .lock()
-                .get(&(community_id.clone(), channel_id.clone()))
-                .is_some_and(|mek| mek.generation() == needed_generation)
-                || state
-                    .mek_cache
-                    .lock()
-                    .get(&community_id)
-                    .is_some_and(|mek| mek.generation() == needed_generation);
+            // Bail early if a satisfying MEK arrived via a concurrent
+            // path (parallel rotation broadcast, an MekTransfer reply,
+            // a different request that produced the same gen).
+            // Satisfied means: resolution at/after the needed
+            // generation — the responder may serve CURRENT when the
+            // exact historical generation is gone, which still
+            // converges the live stream.
+            let resolved =
+                crate::state_helpers::channel_media_mek(&state, &community_id, &channel_id)
+                    .map(|(_, generation)| generation);
+            let cache_hit = match (needed_generation, resolved) {
+                (0, current) => current != initial_gen && current.is_some(),
+                (needed, Some(current)) => current >= needed,
+                (_, None) => false,
+            };
             if cache_hit {
                 return;
             }

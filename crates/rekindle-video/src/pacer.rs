@@ -276,6 +276,7 @@ mod tests {
             keyframe: false,
             codec: rekindle_types::video::Codec::Vp9,
             timestamp: 0,
+            mek_generation: 0,
             payload: vec![0; payload_len],
             signature: Vec::new(),
         })

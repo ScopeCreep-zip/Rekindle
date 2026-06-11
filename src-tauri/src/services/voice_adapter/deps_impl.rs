@@ -76,17 +76,10 @@ impl VoiceSessionDeps for VoiceAdapter {
         crate::state_helpers::channel_media_mek(&self.state, community_id, channel_id)
     }
 
-    fn request_mek_refresh(&self, community_id: &str, channel_id: &str) {
-        // Same cascade the video receive path fires — the responder
-        // holds the rotation the requester missed. Needed generation =
-        // one past what we currently resolve (0 resolves to needing
-        // generation 1, the first rotation).
-        let current_gen = crate::state_helpers::channel_media_mek(
-            &self.state,
-            community_id,
-            channel_id,
-        )
-        .map_or(0, |(_, generation)| generation);
+    fn request_mek_refresh(&self, community_id: &str, channel_id: &str, needed_generation: u64) {
+        // Exact-generation request from the undecryptable packet's
+        // wire field (0 = "send me your current") — never a guess; the
+        // responder can always satisfy it, so recovery converges.
         let Some(my_pseudonym) = self
             .state
             .communities
@@ -100,7 +93,7 @@ impl VoiceSessionDeps for VoiceAdapter {
             std::sync::Arc::clone(&self.state),
             community_id.to_string(),
             channel_id.to_string(),
-            current_gen + 1,
+            needed_generation,
             my_pseudonym,
         );
     }
@@ -349,6 +342,7 @@ impl VoiceSessionDeps for VoiceAdapter {
                     self,
                     community_id,
                     channel_id,
+                    0, // "send me your current generation"
                 );
             }
             let caps_reported =

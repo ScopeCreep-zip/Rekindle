@@ -180,16 +180,34 @@ impl VoiceReceiveLoop {
             // otherwise. NO undecrypted passthrough — a packet we hold
             // no key for is dropped and the RequestMEK cascade fired.
             let Some((mek_bytes, our_gen)) = self.deps.channel_media_mek(&cid, &channel) else {
-                self.note_mek_drop(&cid, &channel, "no channel-media MEK cached");
+                self.note_mek_drop(
+                    &cid,
+                    &channel,
+                    "no channel-media MEK cached",
+                    packet.mek_generation,
+                );
                 return;
             };
-            if packet.mek_generation != our_gen {
+            if packet.mek_generation < our_gen {
+                // Sender behind us — no request (an older key can't
+                // help; apply refuses downgrades; the sender converges
+                // via its own receive path). Count the drop only.
+                self.mek_drops += 1;
+                self.deps.record_packet_drop();
+                return;
+            }
+            if packet.mek_generation > our_gen {
                 tracing::trace!(
                     packet_gen = packet.mek_generation,
                     our_gen,
-                    "voice MEK generation mismatch — dropping + requesting"
+                    "voice MEK generation mismatch — dropping + requesting exact generation"
                 );
-                self.note_mek_drop(&cid, &channel, "MEK generation mismatch");
+                self.note_mek_drop(
+                    &cid,
+                    &channel,
+                    "MEK generation mismatch",
+                    packet.mek_generation,
+                );
                 return;
             }
             let mek = MediaEncryptionKey::from_bytes(mek_bytes, our_gen);
@@ -197,7 +215,12 @@ impl VoiceReceiveLoop {
                 Ok(plaintext) => packet.audio_data = plaintext,
                 Err(e) => {
                     tracing::trace!(error = %e, "voice MEK decrypt failed — dropping + requesting");
-                    self.note_mek_drop(&cid, &channel, "MEK decrypt failed");
+                    self.note_mek_drop(
+                        &cid,
+                        &channel,
+                        "MEK decrypt failed",
+                        packet.mek_generation,
+                    );
                     return;
                 }
             }
@@ -436,7 +459,13 @@ impl VoiceReceiveLoop {
     /// Count an undecryptable packet and (debounced, 10s) fire the
     /// RequestMEK cascade. Drops are surfaced in ReceiveStats — a
     /// security-relevant drop must never be silent.
-    fn note_mek_drop(&mut self, community_id: &str, channel_id: &str, reason: &'static str) {
+    fn note_mek_drop(
+        &mut self,
+        community_id: &str,
+        channel_id: &str,
+        reason: &'static str,
+        needed_generation: u64,
+    ) {
         self.mek_drops += 1;
         self.deps.record_packet_drop();
         let due = self
@@ -444,8 +473,9 @@ impl VoiceReceiveLoop {
             .is_none_or(|t| t.elapsed() >= Duration::from_secs(10));
         if due {
             tracing::info!(community = %community_id, channel = %channel_id, reason,
-                "requesting channel MEK refresh");
-            self.deps.request_mek_refresh(community_id, channel_id);
+                needed_generation, "requesting channel MEK refresh");
+            self.deps
+                .request_mek_refresh(community_id, channel_id, needed_generation);
             self.last_mek_request = Some(Instant::now());
         }
     }

@@ -349,10 +349,26 @@ impl MekDistributeDeps for MekAdapter {
         let generation = mek.generation();
         match channel_id {
             Some(channel_id) if !channel_id.is_empty() => {
-                self.state.channel_mek_cache.lock().insert(
-                    (community_id.to_string(), channel_id.to_string()),
-                    mek.clone(),
-                );
+                {
+                    let mut cache = self.state.channel_mek_cache.lock();
+                    let key = (community_id.to_string(), channel_id.to_string());
+                    // Never downgrade: an exact-generation transfer for
+                    // an older key (history catch-up) must not replace
+                    // the live key — that would be a rollback vector.
+                    if cache
+                        .get(&key)
+                        .is_some_and(|cached| cached.generation() > generation)
+                    {
+                        tracing::debug!(
+                            community = %community_id,
+                            channel = %channel_id,
+                            incoming = generation,
+                            "channel MEK transfer older than cached — not applied to live cache"
+                        );
+                        return;
+                    }
+                    cache.insert(key, mek.clone());
+                }
                 crate::services::community::media_ready_runtime::on_mek_updated(
                     &self.state,
                     community_id,
@@ -366,10 +382,21 @@ impl MekDistributeDeps for MekAdapter {
                 );
             }
             _ => {
-                self.state
-                    .mek_cache
-                    .lock()
-                    .insert(community_id.to_string(), mek.clone());
+                {
+                    let mut cache = self.state.mek_cache.lock();
+                    if cache
+                        .get(community_id)
+                        .is_some_and(|cached| cached.generation() > generation)
+                    {
+                        tracing::debug!(
+                            community = %community_id,
+                            incoming = generation,
+                            "community MEK transfer older than cached — not applied to live cache"
+                        );
+                        return;
+                    }
+                    cache.insert(community_id.to_string(), mek.clone());
+                }
                 crate::services::community::media_ready_runtime::on_mek_updated(
                     &self.state,
                     community_id,

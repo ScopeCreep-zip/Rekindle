@@ -129,18 +129,36 @@ pub async fn handle_request_mek(
         return Ok(());
     }
 
-    let mek = super::mek_rotation_support::lookup_mek(
-        app_handle,
-        state,
-        community_id,
-        channel_id,
-        needed_generation,
-    )
-    .ok_or_else(|| {
-        format!(
-            "no MEK at generation {needed_generation} for community {community_id} channel {channel_id}"
+    // `needed_generation == 0` is the wire sentinel for "send me your
+    // current generation" (session-join acquisition). Otherwise serve
+    // the EXACT generation (cache or per-generation keystore history);
+    // when the exact one is gone but our current is newer, serve
+    // current — the requester treats >= needed as satisfied, so the
+    // live stream converges instead of the request cascading to
+    // nothing forever.
+    let current = crate::state_helpers::channel_media_mek(state, community_id, channel_id)
+        .map(|(bytes, generation)| {
+            rekindle_crypto::group::media_key::MediaEncryptionKey::from_bytes(bytes, generation)
+        });
+    let mek = if needed_generation == 0 {
+        current.ok_or_else(|| {
+            format!("no current MEK for community {community_id} channel {channel_id}")
+        })?
+    } else {
+        super::mek_rotation_support::lookup_mek(
+            app_handle,
+            state,
+            community_id,
+            channel_id,
+            needed_generation,
         )
-    })?;
+        .or_else(|| current.filter(|mek| mek.generation() > needed_generation))
+        .ok_or_else(|| {
+            format!(
+                "no MEK at generation {needed_generation} (nor newer) for community {community_id} channel {channel_id}"
+            )
+        })?
+    };
 
     let requester_route = adapter
         .as_ref()

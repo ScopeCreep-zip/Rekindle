@@ -197,11 +197,13 @@ pub trait VoiceSessionDeps: Send + Sync + 'static {
     /// gate (§10.7).
     fn channel_is_stage(&self, community_id: &str, channel_id: &str) -> bool;
 
-    /// Fire the RequestMEK cascade for this channel — called when
-    /// inbound media can't be decrypted (no key cached, generation
-    /// mismatch, or AEAD failure after a rotation race). The adapter
-    /// owns retry/cascade policy; the loop debounces calls.
-    fn request_mek_refresh(&self, community_id: &str, channel_id: &str);
+    /// Fire the RequestMEK cascade naming the EXACT generation needed
+    /// (from the undecryptable packet's wire field; `0` = "send me your
+    /// current"). Called when inbound media can't be decrypted (no key
+    /// cached, generation mismatch, or AEAD failure after a rotation
+    /// race). The adapter owns retry/cascade policy; the loop
+    /// debounces calls.
+    fn request_mek_refresh(&self, community_id: &str, channel_id: &str, needed_generation: u64);
 
     /// Returns `true` if `our_pseudonym` is currently a designated
     /// speaker in the stage channel. Used by send_loop's stage gate.

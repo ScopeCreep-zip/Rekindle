@@ -80,15 +80,10 @@ impl VideoDeps for VideoAdapter {
         (handle.community_id.as_deref() == Some(community_id)).then(|| handle.channel_id.clone())
     }
 
-    fn request_mek_refresh(&self, community_id: &str, channel_id: &str) {
-        // Sender is (at least) one generation ahead — the dominant case
-        // is the rotation triggered by OUR OWN join (§10.7) whose
-        // MekTransfer hasn't landed yet. Fire the existing cascade for
-        // current+1; responders hold exactly that generation.
-        let current_gen = self.state.mek_cache.lock().get(community_id).map_or(
-            0,
-            rekindle_crypto::group::media_key::MediaEncryptionKey::generation,
-        );
+    fn request_mek_refresh(&self, community_id: &str, channel_id: &str, needed_generation: u64) {
+        // Exact-generation request from the undecryptable frame's wire
+        // field (0 = "send me your current") — never a guess; the
+        // responder can always satisfy it, so recovery converges.
         let Some(my_pseudonym) = self
             .state
             .communities
@@ -102,7 +97,7 @@ impl VideoDeps for VideoAdapter {
             std::sync::Arc::clone(&self.state),
             community_id.to_string(),
             channel_id.to_string(),
-            current_gen + 1,
+            needed_generation,
             my_pseudonym,
         );
     }

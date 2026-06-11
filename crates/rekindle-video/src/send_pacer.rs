@@ -123,6 +123,7 @@ mod tests {
                     keyframe: true,
                     codec: rekindle_types::video::Codec::Vp9,
                     timestamp: 0,
+                    mek_generation: 0,
                     payload: vec![0; 4_000],
                     signature: Vec::new(),
                 })

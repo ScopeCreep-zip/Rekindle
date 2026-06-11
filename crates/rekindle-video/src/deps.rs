@@ -144,7 +144,11 @@ pub trait VideoDeps: Send + Sync + 'static {
     /// Fire the RequestMEK cascade instead of dropping silently
     /// (silent drop = permanently black tile). Debounced by the
     /// caller; fire-and-forget.
-    fn request_mek_refresh(&self, community_id: &str, channel_id: &str);
+    /// Fire the RequestMEK cascade naming the EXACT generation needed
+    /// (from the undecryptable frame's wire field). `0` = "send me your
+    /// current generation" (used at session join when nothing is
+    /// cached).
+    fn request_mek_refresh(&self, community_id: &str, channel_id: &str, needed_generation: u64);
 
     /// Emit a UI-facing event from a receive-side handler.
     fn emit_event(&self, event: VideoEvent);

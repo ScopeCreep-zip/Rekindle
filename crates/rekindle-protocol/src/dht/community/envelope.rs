@@ -619,6 +619,10 @@ pub enum ControlPayload {
         /// from this tag. Signature-covered.
         codec: Codec,
         timestamp: u32,
+        /// Generation of the channel-media MEK that encrypted the
+        /// frame — receivers request exactly this generation on
+        /// decrypt failure instead of guessing. Signature-covered.
+        mek_generation: u64,
         payload: Vec<u8>,
         signature: Vec<u8>,
     },
@@ -640,6 +644,8 @@ pub enum ControlPayload {
         codec: Codec,
         frame_len: u32,
         timestamp: u32,
+        /// Mirrors `VideoFragment::mek_generation`. Signature-covered.
+        mek_generation: u64,
         payload: Vec<u8>,
         signature: Vec<u8>,
     },
@@ -871,6 +877,7 @@ mod tests {
             keyframe: true,
             codec: Codec::H264,
             timestamp: 1234,
+            mek_generation: 7,
             payload: vec![1, 2, 3],
             signature: vec![9; 64],
         });
@@ -900,6 +907,7 @@ mod tests {
             codec: Codec::Vp8,
             frame_len: 4096,
             timestamp: 5678,
+            mek_generation: 7,
             payload: vec![4, 5, 6],
             signature: vec![7; 64],
         });

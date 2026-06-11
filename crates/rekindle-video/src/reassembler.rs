@@ -39,6 +39,8 @@ pub enum ReassemblerError {
     KeyframeMismatch,
     #[error("codec tag mismatch within the same frame_seq")]
     CodecMismatch,
+    #[error("MEK generation mismatch within the same frame_seq")]
+    MekGenerationMismatch,
     #[error("parity_index {0} >= parity_total {1}")]
     ParityIndexOutOfRange(u8, u8),
     #[error("parity metadata mismatch — frame already has different data_count/parity_total")]
@@ -58,6 +60,10 @@ pub struct ReassembledFrame {
     /// decoder.
     pub codec: Codec,
     pub timestamp: u32,
+    /// Generation of the channel-media MEK that encrypted the frame —
+    /// from the fragments; the decrypt step requests exactly this
+    /// generation on failure.
+    pub mek_generation: u64,
     pub payload: Vec<u8>,
     /// `true` if at least one parity fragment was used to recover a
     /// missing data fragment. Caller may emit a `KeyframeRequest` to
@@ -90,6 +96,9 @@ struct PartialFrame {
     /// truncate post-reconstruction padding. `0` until at least one
     /// parity fragment has arrived (data-only senders never set this).
     frame_len: u32,
+    /// MEK generation from the first fragment (data or parity); a
+    /// mid-frame mismatch drops the frame like a codec mismatch.
+    mek_generation: u64,
 }
 
 impl PartialFrame {
@@ -99,6 +108,7 @@ impl PartialFrame {
         codec: Codec,
         timestamp: u32,
         received_at_ms: u32,
+        mek_generation: u64,
     ) -> Self {
         Self {
             frag_total,
@@ -111,10 +121,17 @@ impl PartialFrame {
             parity_chunks: Vec::new(),
             received_parity_count: 0,
             frame_len: 0,
+            mek_generation,
         }
     }
 
-    fn from_parity(data_count: u8, codec: Codec, timestamp: u32, received_at_ms: u32) -> Self {
+    fn from_parity(
+        data_count: u8,
+        codec: Codec,
+        timestamp: u32,
+        received_at_ms: u32,
+        mek_generation: u64,
+    ) -> Self {
         Self {
             frag_total: data_count,
             codec,
@@ -126,6 +143,7 @@ impl PartialFrame {
             parity_chunks: Vec::new(),
             received_parity_count: 0,
             frame_len: 0,
+            mek_generation,
         }
     }
 }
@@ -183,11 +201,15 @@ impl Reassembler {
                 fragment.codec,
                 fragment.timestamp,
                 now_ms,
+                fragment.mek_generation,
             )
         });
 
         if partial.codec != fragment.codec {
             return Err(ReassemblerError::CodecMismatch);
+        }
+        if partial.mek_generation != fragment.mek_generation {
+            return Err(ReassemblerError::MekGenerationMismatch);
         }
         if partial.frag_total != total {
             return Err(ReassemblerError::FragTotalMismatch {
@@ -252,6 +274,7 @@ impl Reassembler {
                 fragment.codec,
                 fragment.timestamp,
                 now_ms,
+                fragment.mek_generation,
             )
         });
 
@@ -337,6 +360,7 @@ fn try_complete(
             keyframe: partial.keyframe.unwrap_or(false),
             codec: partial.codec,
             timestamp: partial.timestamp,
+            mek_generation: partial.mek_generation,
             payload,
             recovered_via_fec: false,
         };
@@ -389,6 +413,7 @@ fn try_complete(
         keyframe: partial.keyframe.unwrap_or(false),
         codec: partial.codec,
         timestamp: partial.timestamp,
+        mek_generation: partial.mek_generation,
         payload,
         recovered_via_fec: true,
     };
@@ -399,15 +424,30 @@ fn try_complete(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use crate::fragment::FrameShape;
     use crate::fragment::{fragment_frame, fragment_frame_with_fec, FRAGMENT_PAYLOAD_LIMIT};
+
+    fn test_shape(
+        stream_id: [u8; STREAM_ID_LEN],
+        frame_seq: u32,
+        keyframe: bool,
+        codec: Codec,
+        timestamp: u32,
+    ) -> FrameShape {
+        FrameShape {
+            stream_id,
+            frame_seq,
+            keyframe,
+            codec,
+            timestamp,
+            mek_generation: 0,
+        }
+    }
 
     fn fragmented(frame_seq: u32, payload: &[u8], keyframe: bool) -> Vec<VideoFragment> {
         fragment_frame(
-            [7u8; STREAM_ID_LEN],
-            frame_seq,
-            keyframe,
-            Codec::Vp9,
-            0,
+            test_shape([7u8; STREAM_ID_LEN], frame_seq, keyframe, Codec::Vp9, 0),
             payload,
         )
         .unwrap()
@@ -493,7 +533,7 @@ mod tests {
         // Same invariant on the PARITY ingest path.
         let mut r = Reassembler::new();
         let frame = vec![0xEEu8; FRAGMENT_PAYLOAD_LIMIT * 2 + 200];
-        let fec = fragment_frame_with_fec([7u8; STREAM_ID_LEN], 5, true, Codec::Vp9, 0, &frame, 2)
+        let fec = fragment_frame_with_fec(test_shape([7u8; STREAM_ID_LEN], 5, true, Codec::Vp9, 0), &frame, 2)
             .unwrap();
         assert!(r.ingest("alice", fec.data[0].clone(), 0).unwrap().is_none());
         let mut relabeled = fec.parity[0].clone();
@@ -508,7 +548,7 @@ mod tests {
         // data[0], data[2], parity[0]. Reassembler should reconstruct.
         let mut r = Reassembler::new();
         let frame = vec![0xCDu8; FRAGMENT_PAYLOAD_LIMIT * 2 + 200];
-        let fec = fragment_frame_with_fec([5u8; STREAM_ID_LEN], 9, true, Codec::Vp9, 50, &frame, 2)
+        let fec = fragment_frame_with_fec(test_shape([5u8; STREAM_ID_LEN], 9, true, Codec::Vp9, 50), &frame, 2)
             .unwrap();
         assert_eq!(fec.data.len(), 3);
         assert_eq!(fec.parity.len(), 2);
@@ -535,7 +575,7 @@ mod tests {
         let mut r = Reassembler::new();
         let frame = vec![0xEEu8; FRAGMENT_PAYLOAD_LIMIT * 2 + 13];
         let fec =
-            fragment_frame_with_fec([6u8; STREAM_ID_LEN], 11, true, Codec::Vp9, 99, &frame, 1)
+            fragment_frame_with_fec(test_shape([6u8; STREAM_ID_LEN], 11, true, Codec::Vp9, 99), &frame, 1)
                 .unwrap();
         assert_eq!(fec.data.len(), 3);
         assert_eq!(fec.parity.len(), 1);
@@ -565,7 +605,7 @@ mod tests {
         // no-op against an already-removed partial.
         let mut r = Reassembler::new();
         let frame = vec![0xCCu8; FRAGMENT_PAYLOAD_LIMIT * 2 + 33];
-        let fec = fragment_frame_with_fec([8u8; STREAM_ID_LEN], 12, true, Codec::Vp9, 1, &frame, 1)
+        let fec = fragment_frame_with_fec(test_shape([8u8; STREAM_ID_LEN], 12, true, Codec::Vp9, 1), &frame, 1)
             .unwrap();
         assert!(r.ingest("alice", fec.data[0].clone(), 0).unwrap().is_none());
         assert!(r.ingest("alice", fec.data[1].clone(), 0).unwrap().is_none());

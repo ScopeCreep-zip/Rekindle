@@ -50,6 +50,11 @@ pub struct VideoFragment {
     /// to u32 — drift across ~50 days is acceptable for a streaming
     /// protocol where freshness is local-relative).
     pub timestamp: u32,
+    /// Generation of the channel-media MEK that encrypted the frame
+    /// (architecture line 1100: the generation rides the envelope so
+    /// receivers know WHICH key — recovery requests name this exact
+    /// generation instead of guessing). Covered by the signature.
+    pub mek_generation: u64,
     /// MEK-encrypted fragment payload. Per architecture §10.6 line 2057
     /// the MEK encryption happens before fragmentation.
     pub payload: Vec<u8>,
@@ -89,6 +94,9 @@ pub struct VideoParityFragment {
     /// reconstruction.
     pub frame_len: u32,
     pub timestamp: u32,
+    /// Mirrors [`VideoFragment::mek_generation`] — FEC-recovered
+    /// frames need the generation too. Covered by the signature.
+    pub mek_generation: u64,
     /// MEK-encrypted parity bytes — same shard size as the data
     /// fragments' payload (i.e. `ceil(frame_len / data_count)`).
     pub payload: Vec<u8>,
@@ -118,7 +126,7 @@ pub enum FragmentError {
 /// without re-implementing the byte layout.
 pub fn fragment_signing_bytes(fragment: &VideoFragment) -> Vec<u8> {
     let mut buf =
-        Vec::with_capacity(STREAM_ID_LEN + 4 + 1 + 1 + 1 + 1 + 4 + fragment.payload.len());
+        Vec::with_capacity(STREAM_ID_LEN + 4 + 1 + 1 + 1 + 1 + 4 + 8 + fragment.payload.len());
     buf.extend_from_slice(&fragment.stream_id);
     buf.extend_from_slice(&fragment.frame_seq.to_le_bytes());
     buf.push(fragment.frag_index);
@@ -126,6 +134,7 @@ pub fn fragment_signing_bytes(fragment: &VideoFragment) -> Vec<u8> {
     buf.push(u8::from(fragment.keyframe));
     buf.push(fragment.codec.wire_byte());
     buf.extend_from_slice(&fragment.timestamp.to_le_bytes());
+    buf.extend_from_slice(&fragment.mek_generation.to_le_bytes());
     buf.extend_from_slice(&fragment.payload);
     buf
 }
@@ -134,8 +143,9 @@ pub fn fragment_signing_bytes(fragment: &VideoFragment) -> Vec<u8> {
 /// `fragment_signing_bytes` but covers the FEC-specific fields; the
 /// codec byte sits after `data_count`.
 pub fn parity_signing_bytes(fragment: &VideoParityFragment) -> Vec<u8> {
-    let mut buf =
-        Vec::with_capacity(STREAM_ID_LEN + 4 + 1 + 1 + 1 + 1 + 4 + 4 + fragment.payload.len());
+    let mut buf = Vec::with_capacity(
+        STREAM_ID_LEN + 4 + 1 + 1 + 1 + 1 + 4 + 4 + 8 + fragment.payload.len(),
+    );
     buf.extend_from_slice(&fragment.stream_id);
     buf.extend_from_slice(&fragment.frame_seq.to_le_bytes());
     buf.push(fragment.parity_index);
@@ -144,6 +154,7 @@ pub fn parity_signing_bytes(fragment: &VideoParityFragment) -> Vec<u8> {
     buf.push(fragment.codec.wire_byte());
     buf.extend_from_slice(&fragment.frame_len.to_le_bytes());
     buf.extend_from_slice(&fragment.timestamp.to_le_bytes());
+    buf.extend_from_slice(&fragment.mek_generation.to_le_bytes());
     buf.extend_from_slice(&fragment.payload);
     buf
 }
@@ -151,14 +162,31 @@ pub fn parity_signing_bytes(fragment: &VideoParityFragment) -> Vec<u8> {
 /// Split an already-encrypted frame into ≤`FRAGMENT_PAYLOAD_LIMIT`
 /// chunks. Caller signs each fragment afterwards using the sender's
 /// pseudonym key — this module is sign-agnostic.
+/// Per-frame metadata shared by every fragment of one frame —
+/// bundles the builder parameters so the arg lists stay flat.
+#[derive(Debug, Clone, Copy)]
+pub struct FrameShape {
+    pub stream_id: [u8; STREAM_ID_LEN],
+    pub frame_seq: u32,
+    pub keyframe: bool,
+    pub codec: Codec,
+    pub timestamp: u32,
+    /// Generation of the channel-media MEK that encrypted the frame.
+    pub mek_generation: u64,
+}
+
 pub fn fragment_frame(
-    stream_id: [u8; STREAM_ID_LEN],
-    frame_seq: u32,
-    keyframe: bool,
-    codec: Codec,
-    timestamp: u32,
+    shape: FrameShape,
     encrypted_frame: &[u8],
 ) -> Result<Vec<VideoFragment>, FragmentError> {
+    let FrameShape {
+        stream_id,
+        frame_seq,
+        keyframe,
+        codec,
+        timestamp,
+        mek_generation,
+    } = shape;
     if encrypted_frame.is_empty() {
         return Err(FragmentError::EmptyFrame);
     }
@@ -178,6 +206,7 @@ pub fn fragment_frame(
             keyframe,
             codec,
             timestamp,
+            mek_generation,
             payload: chunk.to_vec(),
             signature: Vec::new(),
         });
@@ -203,14 +232,18 @@ pub struct FecFragments {
 /// encoding. The original length travels in each parity fragment's
 /// `frame_len` field for receiver-side truncation.
 pub fn fragment_frame_with_fec(
-    stream_id: [u8; STREAM_ID_LEN],
-    frame_seq: u32,
-    keyframe: bool,
-    codec: Codec,
-    timestamp: u32,
+    shape: FrameShape,
     encrypted_frame: &[u8],
     parity_count: u8,
 ) -> Result<FecFragments, FragmentError> {
+    let FrameShape {
+        stream_id,
+        frame_seq,
+        keyframe,
+        codec,
+        timestamp,
+        mek_generation,
+    } = shape;
     use reed_solomon_erasure::galois_8::ReedSolomon;
 
     if encrypted_frame.is_empty() {
@@ -256,6 +289,7 @@ pub fn fragment_frame_with_fec(
             keyframe,
             codec,
             timestamp,
+            mek_generation,
             payload: shard.clone(),
             signature: Vec::new(),
         });
@@ -271,6 +305,7 @@ pub fn fragment_frame_with_fec(
             codec,
             frame_len,
             timestamp,
+            mek_generation,
             payload: shard.clone(),
             signature: Vec::new(),
         });
@@ -348,16 +383,33 @@ pub fn reconstruct_frame(
 mod tests {
     use super::*;
 
+    fn test_shape(
+        stream_id: [u8; STREAM_ID_LEN],
+        frame_seq: u32,
+        keyframe: bool,
+        codec: Codec,
+        timestamp: u32,
+    ) -> FrameShape {
+        FrameShape {
+            stream_id,
+            frame_seq,
+            keyframe,
+            codec,
+            timestamp,
+            mek_generation: 0,
+        }
+    }
+
     #[test]
     fn empty_frame_rejected() {
-        let err = fragment_frame([0u8; STREAM_ID_LEN], 1, true, Codec::Vp9, 0, &[]).unwrap_err();
+        let err = fragment_frame(test_shape([0u8; STREAM_ID_LEN], 1, true, Codec::Vp9, 0), &[]).unwrap_err();
         assert_eq!(err, FragmentError::EmptyFrame);
     }
 
     #[test]
     fn small_frame_one_fragment() {
         let frame = vec![0xABu8; 1024];
-        let frags = fragment_frame([1u8; STREAM_ID_LEN], 7, true, Codec::Vp9, 100, &frame).unwrap();
+        let frags = fragment_frame(test_shape([1u8; STREAM_ID_LEN], 7, true, Codec::Vp9, 100), &frame).unwrap();
         assert_eq!(frags.len(), 1);
         assert_eq!(frags[0].frame_seq, 7);
         assert!(frags[0].keyframe);
@@ -369,7 +421,7 @@ mod tests {
     fn large_frame_multiple_fragments() {
         let frame = vec![0x55u8; FRAGMENT_PAYLOAD_LIMIT * 3 + 100];
         let frags =
-            fragment_frame([2u8; STREAM_ID_LEN], 12, false, Codec::Vp9, 200, &frame).unwrap();
+            fragment_frame(test_shape([2u8; STREAM_ID_LEN], 12, false, Codec::Vp9, 200), &frame).unwrap();
         assert_eq!(frags.len(), 4);
         assert_eq!(frags[3].frag_index, 3);
         assert_eq!(frags[3].frag_total, 4);
@@ -382,7 +434,7 @@ mod tests {
     fn fec_encode_then_reconstruct_when_no_drops() {
         let frame = vec![0xAAu8; FRAGMENT_PAYLOAD_LIMIT * 3 + 100];
         let frags =
-            fragment_frame_with_fec([9u8; STREAM_ID_LEN], 42, true, Codec::Vp9, 500, &frame, 2)
+            fragment_frame_with_fec(test_shape([9u8; STREAM_ID_LEN], 42, true, Codec::Vp9, 500), &frame, 2)
                 .unwrap();
         assert_eq!(frags.data.len(), 4);
         assert_eq!(frags.parity.len(), 2);
@@ -416,7 +468,7 @@ mod tests {
             .map(|i| u8::try_from(i & 0xff).unwrap())
             .collect();
         let frags =
-            fragment_frame_with_fec([3u8; STREAM_ID_LEN], 7, true, Codec::Vp9, 100, &frame, 2)
+            fragment_frame_with_fec(test_shape([3u8; STREAM_ID_LEN], 7, true, Codec::Vp9, 100), &frame, 2)
                 .unwrap();
 
         // Drop frag_index 1 and 3.
@@ -448,7 +500,7 @@ mod tests {
         // remain — below the 4-shard threshold for reconstruction.
         let frame = vec![0x77u8; FRAGMENT_PAYLOAD_LIMIT * 3 + 50];
         let frags =
-            fragment_frame_with_fec([4u8; STREAM_ID_LEN], 8, true, Codec::Vp9, 200, &frame, 2)
+            fragment_frame_with_fec(test_shape([4u8; STREAM_ID_LEN], 8, true, Codec::Vp9, 200), &frame, 2)
                 .unwrap();
         let received_data: Vec<(u8, Vec<u8>)> = frags
             .data
@@ -479,7 +531,7 @@ mod tests {
     #[test]
     fn fec_zero_parity_rejected() {
         let frame = vec![0u8; 100];
-        let err = fragment_frame_with_fec([0u8; STREAM_ID_LEN], 1, true, Codec::Vp9, 0, &frame, 0)
+        let err = fragment_frame_with_fec(test_shape([0u8; STREAM_ID_LEN], 1, true, Codec::Vp9, 0), &frame, 0)
             .unwrap_err();
         assert_eq!(err, FragmentError::ZeroParity);
     }
@@ -495,6 +547,7 @@ mod tests {
             codec: Codec::H264,
             frame_len: 1234,
             timestamp: 0xCAFE_BABE,
+            mek_generation: 0,
             payload: vec![0x10, 0x20],
             signature: Vec::new(),
         };
@@ -516,15 +569,19 @@ mod tests {
             &bytes[STREAM_ID_LEN + 12..STREAM_ID_LEN + 16],
             &0xCAFE_BABEu32.to_le_bytes()
         );
-        assert_eq!(&bytes[STREAM_ID_LEN + 16..], &[0x10, 0x20]);
+        assert_eq!(
+            &bytes[STREAM_ID_LEN + 16..STREAM_ID_LEN + 24],
+            &0u64.to_le_bytes()
+        );
+        assert_eq!(&bytes[STREAM_ID_LEN + 24..], &[0x10, 0x20]);
     }
 
     #[test]
     fn signing_bytes_match_spec_layout() {
-        // Architecture §10.6 line 2071 extended with the codec tag —
-        // the canonical bytes-to-sign are `(stream_id || frame_seq ||
-        // frag_index || frag_total || keyframe || codec || timestamp ||
-        // payload)`.
+        // Architecture §10.6 line 2071 extended with the codec tag and
+        // the MEK generation — the canonical bytes-to-sign are
+        // `(stream_id || frame_seq || frag_index || frag_total ||
+        // keyframe || codec || timestamp || mek_generation || payload)`.
         let frag = VideoFragment {
             stream_id: [0xABu8; STREAM_ID_LEN],
             frame_seq: 0x1122_3344,
@@ -533,6 +590,7 @@ mod tests {
             keyframe: true,
             codec: Codec::Vp8,
             timestamp: 0xDEAD_BEEF,
+            mek_generation: 0,
             payload: vec![0x01, 0x02, 0x03],
             signature: Vec::new(),
         };
@@ -550,7 +608,11 @@ mod tests {
             &bytes[STREAM_ID_LEN + 8..STREAM_ID_LEN + 12],
             &0xDEAD_BEEFu32.to_le_bytes()
         );
-        assert_eq!(&bytes[STREAM_ID_LEN + 12..], &[0x01, 0x02, 0x03]);
+        assert_eq!(
+            &bytes[STREAM_ID_LEN + 12..STREAM_ID_LEN + 20],
+            &0u64.to_le_bytes()
+        );
+        assert_eq!(&bytes[STREAM_ID_LEN + 20..], &[0x01, 0x02, 0x03]);
     }
 
     #[test]
@@ -566,6 +628,7 @@ mod tests {
             keyframe: true,
             codec: Codec::Vp9,
             timestamp: 0,
+            mek_generation: 0,
             payload: vec![0xFF],
             signature: Vec::new(),
         };
@@ -577,7 +640,7 @@ mod tests {
     #[test]
     fn rejects_frame_exceeding_max_fragments() {
         let frame = vec![0u8; FRAGMENT_PAYLOAD_LIMIT * (MAX_FRAGMENTS_PER_FRAME + 1)];
-        let err = fragment_frame([3u8; STREAM_ID_LEN], 1, true, Codec::Vp9, 0, &frame).unwrap_err();
+        let err = fragment_frame(test_shape([3u8; STREAM_ID_LEN], 1, true, Codec::Vp9, 0), &frame).unwrap_err();
         match err {
             FragmentError::TooManyFragments(n) => {
                 assert!(n > MAX_FRAGMENTS_PER_FRAME);
