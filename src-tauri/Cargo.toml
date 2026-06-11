@@ -105,6 +105,22 @@ qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 chrono-tz = "0.9"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+# Host-app AVCapture authorization (platform.rs) — WKWebView mints its
+# camera/mic sandbox extensions from the HOST app's TCC grant; the app
+# must request it itself (Apple: "Requesting Authorization for Media
+# Capture on macOS"). objc2/block2 are already in the tree via tauri.
+objc2 = "0.6"
+block2 = "0.6"
+objc2-av-foundation = { version = "0.3", default-features = false, features = [
+    "AVCaptureDevice",
+    "AVMediaFormat",
+    # requestAccessForMediaType:completionHandler: is gated behind the
+    # crate's block2 feature (completion handler = ObjC block).
+    "block2",
+    "std",
+] }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["client", "staging"] }

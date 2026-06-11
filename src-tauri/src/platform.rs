@@ -184,8 +184,8 @@ mod tests {
 /// Frames are captured via WebCodecs and shipped over Veilid, so no
 /// WebRTC/gstreamer stack is required — only the capture API.
 ///
-/// No-op on macOS/Windows: those webviews honour getUserMedia natively and
-/// surface the OS permission prompt themselves.
+/// macOS has its own arm below (host-app TCC authorization); Windows'
+/// WebView2 surfaces the capture prompt itself.
 #[cfg(target_os = "linux")]
 pub fn enable_webview_media_capture(window: &tauri::WebviewWindow) {
     use webkit2gtk::glib::prelude::Cast;
@@ -220,6 +220,129 @@ pub fn enable_webview_media_capture(window: &tauri::WebviewWindow) {
     }
 }
 
-/// No-op outside Linux — native webviews handle media permissions themselves.
-#[cfg(not(target_os = "linux"))]
+/// Enable in-webview camera/microphone capture on macOS (WKWebView).
+///
+/// WKWebView mints its camera/mic sandbox extensions from the HOST
+/// app's TCC authorization — when it's missing at capture time, WebKit
+/// logs "Could not create a 'com.apple.webkit.camera' sandbox
+/// extension" and `getUserMedia` yields nothing. Establish the
+/// authorization deterministically up front (Apple: "Requesting
+/// Authorization for Media Capture on macOS") instead of relying on
+/// WebKit's UIProcess to trigger the prompt mid-`getUserMedia`.
+///
+/// Notes:
+/// - `Info.plist` must carry `NSCameraUsageDescription` /
+///   `NSMicrophoneUsageDescription` (it does — tauri-build embeds it
+///   into the dev binary and merges it at bundle time).
+/// - Host TCC authorization is necessary but NOT sufficient: camera
+///   frames are pulled by WebKit's sandboxed GPU helper, which resolves
+///   its capture sandbox extension against the host's BUNDLE identity.
+///   `tauri dev`'s bare binary has none, so even with host TCC
+///   authorized + the per-origin prompt granted, `getUserMedia` rejects
+///   with "No AVVideoCaptureSource device". Video capture on macOS
+///   requires the bundled `.app` (`pnpm tauri build --debug`); confirmed
+///   by tauri-apps/tauri#11951. See `docs/contributor/development.md`.
+/// - In `tauri dev` the TCC grant is additionally attributed to the
+///   RESPONSIBLE PROCESS — the terminal/IDE that launched the binary —
+///   so the prompt names that app, not Rekindle.
+/// - The pre-auth stays: in the bundled app it front-loads the TCC
+///   prompt deterministically and surfaces denial state in the logs.
+/// - The status precheck + `Once` guards keep this idempotent across
+///   every window builder that calls it.
+#[cfg(target_os = "macos")]
+pub fn enable_webview_media_capture(_window: &tauri::WebviewWindow) {
+    use objc2_av_foundation::{AVMediaTypeAudio, AVMediaTypeVideo};
+
+    // SAFETY: extern NSString constant from AVFoundation — valid for
+    // the process lifetime once the framework is loaded (tauri links it
+    // transitively via WebKit/AppKit).
+    let video = unsafe { AVMediaTypeVideo };
+    // SAFETY: same extern-constant contract as `AVMediaTypeVideo` above.
+    let audio = unsafe { AVMediaTypeAudio };
+    request_av_authorization("camera", video);
+    request_av_authorization("microphone", audio);
+}
+
+/// Check-then-request one AVFoundation media authorization, logging the
+/// outcome under `rekindle_video::permissions`. Denied/Restricted warns
+/// once per process (eight windows call this; one actionable line
+/// beats eight copies).
+#[cfg(target_os = "macos")]
+fn request_av_authorization(
+    kind: &'static str,
+    media_type: Option<&'static objc2_av_foundation::AVMediaType>,
+) {
+    use objc2_av_foundation::{AVAuthorizationStatus, AVCaptureDevice};
+
+    static DENIED_WARNED: std::sync::Once = std::sync::Once::new();
+
+    let Some(media_type) = media_type else {
+        tracing::warn!(
+            target: "rekindle_video::permissions",
+            kind,
+            "AVFoundation media-type constant unavailable — capture authorization skipped"
+        );
+        return;
+    };
+    // SAFETY: class method on AVCaptureDevice with a valid media type.
+    let status = unsafe { AVCaptureDevice::authorizationStatusForMediaType(media_type) };
+    match status {
+        AVAuthorizationStatus::Authorized => {
+            tracing::debug!(target: "rekindle_video::permissions", kind, "capture authorized");
+        }
+        AVAuthorizationStatus::NotDetermined => {
+            let handler = block2::RcBlock::new(move |granted: objc2::runtime::Bool| {
+                if granted.as_bool() {
+                    tracing::info!(
+                        target: "rekindle_video::permissions",
+                        kind,
+                        "capture authorization granted"
+                    );
+                } else {
+                    tracing::warn!(
+                        target: "rekindle_video::permissions",
+                        kind,
+                        "capture authorization DENIED by the user — enable it in \
+                         System Settings → Privacy & Security"
+                    );
+                }
+            });
+            // SAFETY: documented AVCaptureDevice request API; the
+            // completion block is retained by AVFoundation until called.
+            unsafe {
+                AVCaptureDevice::requestAccessForMediaType_completionHandler(media_type, &handler);
+            }
+            tracing::info!(
+                target: "rekindle_video::permissions",
+                kind,
+                "capture authorization requested (TCC prompt shown)"
+            );
+        }
+        AVAuthorizationStatus::Denied | AVAuthorizationStatus::Restricted => {
+            DENIED_WARNED.call_once(|| {
+                tracing::warn!(
+                    target: "rekindle_video::permissions",
+                    kind,
+                    ?status,
+                    "capture access denied/restricted — System Settings → Privacy & \
+                     Security → Camera/Microphone. Under `tauri dev` the grant belongs \
+                     to the TERMINAL/IDE that launched the binary (TCC responsible \
+                     process); `tccutil reset Camera` clears a half-granted state."
+                );
+            });
+        }
+        _ => {
+            tracing::warn!(
+                target: "rekindle_video::permissions",
+                kind,
+                ?status,
+                "unknown AVFoundation authorization status"
+            );
+        }
+    }
+}
+
+/// No-op on Windows — WebView2 surfaces the capture permission prompt
+/// itself and TCC-style host authorization doesn't exist there.
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 pub fn enable_webview_media_capture(_window: &tauri::WebviewWindow) {}

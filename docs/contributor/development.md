@@ -100,6 +100,42 @@ pnpm tauri dev
 
 CMake auto-detects the Visual Studio installation and MSVC compiler.
 
+### macOS Camera: Requires the Bundled App (Not `tauri dev`)
+
+**`pnpm tauri dev` cannot capture camera video on macOS.** WebKit pulls
+camera frames in its sandboxed GPU helper process, which resolves its
+capture sandbox extension against the host app's *bundle* identity. An
+unbundled dev binary has none, so `getUserMedia({video})` rejects with
+`NotAllowedError: … No AVVideoCaptureSource device` even when host TCC
+is authorized and the per-origin prompt was granted
+(tauri-apps/tauri#11951 — fails in dev, works in the built app).
+
+To test camera on macOS:
+
+```bash
+pnpm tauri build --debug --bundles app
+open target/debug/bundle/macos/Rekindle.app
+```
+
+- First camera use in the bundle: a TCC prompt naming **Rekindle**
+  (the grant lands on Rekindle's bundle id). Accept it.
+- The bundle carries `src-tauri/Info.plist` (usage strings +
+  `NSCameraUseContinuityCameraDeviceType` for iPhone Continuity
+  Cameras) and `src-tauri/Entitlements.plist` (camera + audio-input),
+  both required.
+- A previously-declined prompt can't be re-shown by the app. Clear it
+  with `tccutil reset Camera <bundle-id>` (id from `tauri.conf.json`
+  → `identifier`), then relaunch.
+- The host app still requests AVCapture authorization up front
+  (`src-tauri/src/platform.rs::enable_webview_media_capture`, macOS
+  arm); the outcome logs under `rekindle_video::permissions`.
+
+Everything else — voice (native cpal capture), messaging, presence —
+works fine under `pnpm tauri dev`; only WebView camera capture needs
+the bundle. (In dev mode, TCC additionally attributes any grant to the
+terminal/IDE that launched the binary — a second reason dev-mode
+camera prompts behave confusingly.)
+
 ## Build Commands
 
 ```bash
