@@ -343,39 +343,55 @@ impl VoiceReceiveLoop {
     fn decode_all_participants(&mut self) -> Vec<(String, Vec<f32>)> {
         let mut streams: Vec<(String, Vec<f32>)> = Vec::new();
 
-        for (key, participant) in &mut self.participants {
-            let decoded = match participant.jitter_buffer.pop() {
-                Some(packet) => {
-                    let frame = EncodedFrame {
-                        data: packet.audio_data,
-                        timestamp: packet.timestamp,
-                        sequence: packet.sequence,
-                        mek_generation: packet.mek_generation,
-                    };
-                    match participant.codec.decode(&frame) {
-                        Ok(decoded) => decoded.samples,
-                        Err(e) => {
-                            tracing::trace!(error = %e, "decode failed — using PLC");
-                            participant
-                                .codec
-                                .decode_plc()
-                                .map_or_else(|_| vec![0.0; self.frame_size], |d| d.samples)
-                        }
+        let frame_size = self.frame_size;
+        let decode_packet =
+            |participant: &mut ParticipantDecoder, packet: VoicePacket| {
+                let frame = EncodedFrame {
+                    data: packet.audio_data,
+                    timestamp: packet.timestamp,
+                    sequence: packet.sequence,
+                    mek_generation: packet.mek_generation,
+                };
+                match participant.codec.decode(&frame) {
+                    Ok(decoded) => decoded.samples,
+                    Err(e) => {
+                        tracing::trace!(error = %e, "decode failed — using PLC");
+                        participant
+                            .codec
+                            .decode_plc()
+                            .map_or_else(|_| vec![0.0; frame_size], |d| d.samples)
                     }
                 }
+            };
+
+        for (key, participant) in &mut self.participants {
+            let decoded = match participant.jitter_buffer.pop() {
+                Some(packet) => decode_packet(participant, packet),
                 None => {
-                    // No packet available — try FEC if next packet exists, else PLC.
                     if participant.last_packet_time.elapsed() < Duration::from_secs(2) {
-                        if let Some(next_data) = participant.jitter_buffer.peek_next_audio_data() {
-                            participant
+                        // Expected packet missing. Once the gap outlives the
+                        // jitter window it is loss, not reordering — jump and
+                        // resume from the oldest buffered packet (a stalled
+                        // position otherwise discards every later GOOD packet
+                        // via the overflow trim). Until then: FEC off the next
+                        // packet when buffered (advancing past the concealed
+                        // position), else PLC.
+                        if let Some(packet) = participant.jitter_buffer.note_miss_and_maybe_jump() {
+                            decode_packet(participant, packet)
+                        } else if let Some(next_data) =
+                            participant.jitter_buffer.peek_next_audio_data()
+                        {
+                            let samples = participant
                                 .codec
                                 .decode_fec(next_data)
-                                .map_or_else(|_| vec![0.0; self.frame_size], |d| d.samples)
+                                .map_or_else(|_| vec![0.0; frame_size], |d| d.samples);
+                            participant.jitter_buffer.advance_after_fec();
+                            samples
                         } else {
                             participant
                                 .codec
                                 .decode_plc()
-                                .map_or_else(|_| vec![0.0; self.frame_size], |d| d.samples)
+                                .map_or_else(|_| vec![0.0; frame_size], |d| d.samples)
                         }
                     } else {
                         continue; // Participant timed out, skip.
