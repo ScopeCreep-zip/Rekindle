@@ -24,15 +24,23 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP_DIR="$ROOT/target/debug/dev-bundle/Rekindle Dev.app"
 VITE_LOG="${TMPDIR:-/tmp}/rekindle-vite-dev.log"
 
+# Probe the dev server the way the webview does: http://localhost:1420
+# through the system resolver. Vite 6 binds the IPv6 loopback
+# ([::1]:1420), so a raw 127.0.0.1 port check reports DOWN while the
+# server is fine.
+vite_up() {
+    curl -s -o /dev/null --max-time 2 "http://localhost:1420/" 2>/dev/null
+}
+
 # 1. Frontend dev server (devUrl http://localhost:1420).
-if ! nc -z 127.0.0.1 1420 2>/dev/null; then
+if ! vite_up; then
     echo "→ starting Vite dev server (log: $VITE_LOG)"
     (cd "$ROOT" && nohup pnpm dev >"$VITE_LOG" 2>&1 &)
     for _ in $(seq 1 120); do
-        nc -z 127.0.0.1 1420 2>/dev/null && break
+        vite_up && break
         sleep 0.5
     done
-    nc -z 127.0.0.1 1420 2>/dev/null || {
+    vite_up || {
         echo "✗ Vite did not come up on :1420 — see $VITE_LOG" >&2
         exit 1
     }
