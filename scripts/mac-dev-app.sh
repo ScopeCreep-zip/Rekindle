@@ -87,7 +87,21 @@ cat > "$APP_DIR/Contents/Info.plist" <<'PLIST'
 PLIST
 
 # 4. Launch through LaunchServices (NOT by exec'ing the binary — the
-#    bundle attribution comes from how it's launched).
-echo "→ launching Rekindle Dev.app"
-open "$APP_DIR"
+#    bundle attribution comes from how it's launched; running the
+#    binary from a terminal would re-attribute TCC to the terminal).
+#    `open --stdout/--stderr` captures the app's tracing output, which
+#    otherwise goes nowhere; we then tail it live. A still-running
+#    instance must exit first or `open` just activates it without the
+#    new redirection.
+APP_LOG="$ROOT/target/debug/dev-bundle/rekindle-dev.log"
+if pgrep -f "dev-bundle/Rekindle Dev.app/Contents/MacOS/rekindle" >/dev/null; then
+    echo "→ stopping the running Rekindle Dev instance"
+    pkill -f "dev-bundle/Rekindle Dev.app/Contents/MacOS/rekindle" || true
+    sleep 1
+fi
+echo "→ launching Rekindle Dev.app (log: $APP_LOG)"
+: > "$APP_LOG"
+open --stdout "$APP_LOG" --stderr "$APP_LOG" "$APP_DIR"
 echo "✓ running — Rust changes need a re-run of this script; frontend hot-reloads"
+echo "── live logs (Ctrl-C stops the tail, NOT the app) ──"
+exec tail -f "$APP_LOG"
