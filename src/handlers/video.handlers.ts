@@ -120,7 +120,21 @@ export async function probeAndReportLocalVideoCapabilities(): Promise<void> {
   // The only fatal shape: no encoder AND no decoder. A decode-only
   // platform still reports (watch-without-send is a supported mode —
   // the backend logs it instead of emitting an incompatibility).
+  // REPORT FIRST even then: an explicit empty-caps report flips the
+  // media-ready gate's `local_caps_reported` input, so the failure is
+  // a visible negotiated state instead of a silent permanent
+  // `caps-unreported` hang (callers swallow this throw with .catch).
   if (encodeCodecs.length === 0 && decodeCodecs.length === 0) {
+    const emptyCaps: MediaCapabilities = {
+      maxPixelCount: 0,
+      maxFps: 0,
+      encodeCodecs: [],
+      decodeCodecs: [],
+      supportsOptimizeForLatency: false,
+      supportedScalabilityModes: ["flat"],
+    };
+    cachedCaps = emptyCaps;
+    await commands.reportLocalVideoCapabilities(emptyCaps);
     throw new Error(
       "WebView has no usable WebCodecs video support — video calls cannot run.",
     );
