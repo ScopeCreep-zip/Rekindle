@@ -70,13 +70,43 @@ pub(crate) async fn handle_community_record_change(
                     community_id: community.id.clone(),
                 });
             }
-            community
+            if let Some(found) = community
                 .channel_log_keys
                 .iter()
                 .find_map(|(channel_id, record_key)| {
                     (record_key == dht_key).then(|| ChangedRecord::Channel {
                         community_id: community.id.clone(),
                         channel_id: channel_id.clone(),
+                    })
+                })
+            {
+                return Some(found);
+            }
+            // Plate Gate (§15.4) — segment-N records route to the same
+            // arms as their segment-0 counterparts: a segment-registry
+            // change is a presence change, a segment-governance change
+            // is a governance change, a channel-segment record change
+            // is channel traffic. These are watched (tracked_watch_keys)
+            // and previously fell through to the friend-presence
+            // handler, which silently ignored them.
+            let gov = community.governance_state.as_ref()?;
+            if gov.segments.iter().any(|s| s.registry_key == dht_key) {
+                return Some(ChangedRecord::Registry {
+                    community_id: community.id.clone(),
+                });
+            }
+            if gov.segments.iter().any(|s| s.governance_key == dht_key) {
+                return Some(ChangedRecord::Governance {
+                    community_id: community.id.clone(),
+                    governance_key: dht_key.to_string(),
+                });
+            }
+            gov.channel_segment_records
+                .iter()
+                .find_map(|((channel_id, _segment), csr)| {
+                    (csr.record_key == dht_key).then(|| ChangedRecord::Channel {
+                        community_id: community.id.clone(),
+                        channel_id: hex::encode(channel_id.0),
                     })
                 })
         })

@@ -29,6 +29,43 @@ pub fn mark_watch_inactive(state: &Arc<AppState>, record_key: &str) {
     }
 }
 
+/// Every community record key the watch tier tracks, labelled for
+/// logging: top-level governance + member registry + channel logs from
+/// `open_community_records`, PLUS Plate Gate segment-N governance /
+/// registry records and channel-segment records from the merged
+/// governance state (§15.4). The presence scan reads segment
+/// registries, so they must be watched like segment 0 — otherwise a
+/// >255-member community's presence updates only surface on the poll
+/// backstop. De-duped (segment lists can overlap the top-level keys).
+fn tracked_watch_keys(community: &crate::state::CommunityState) -> Vec<(&'static str, String)> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out: Vec<(&'static str, String)> = Vec::new();
+    let mut push = |label: &'static str, key: String, seen: &mut std::collections::HashSet<String>| {
+        if !key.is_empty() && seen.insert(key.clone()) {
+            out.push((label, key));
+        }
+    };
+    if let Some(ref gov_key) = community.open_community_records.governance_key {
+        push("governance", gov_key.clone(), &mut seen);
+    }
+    if let Some(ref reg_key) = community.open_community_records.registry_key {
+        push("registry", reg_key.clone(), &mut seen);
+    }
+    for ch_key in &community.open_community_records.channel_keys {
+        push("channel", ch_key.clone(), &mut seen);
+    }
+    if let Some(gov) = community.governance_state.as_ref() {
+        for seg in &gov.segments {
+            push("segment-governance", seg.governance_key.clone(), &mut seen);
+            push("segment-registry", seg.registry_key.clone(), &mut seen);
+        }
+        for csr in gov.channel_segment_records.values() {
+            push("channel-segment", csr.record_key.clone(), &mut seen);
+        }
+    }
+    out
+}
+
 /// W-1 #16 — return the set of tracked community record keys that are
 /// currently NOT in `watched_records`. The inspect loop calls this each
 /// tick and attempts to re-establish those watches; this turns watch
@@ -39,23 +76,11 @@ pub fn unwatched_tracked_records(state: &Arc<AppState>, community_id: &str) -> V
     let Some(community) = communities.get(community_id) else {
         return Vec::new();
     };
-    let mut out = Vec::new();
-    if let Some(ref gov_key) = community.open_community_records.governance_key {
-        if !community.watched_records.contains(gov_key) {
-            out.push(gov_key.clone());
-        }
-    }
-    if let Some(ref reg_key) = community.open_community_records.registry_key {
-        if !community.watched_records.contains(reg_key) {
-            out.push(reg_key.clone());
-        }
-    }
-    for ch_key in &community.open_community_records.channel_keys {
-        if !community.watched_records.contains(ch_key) {
-            out.push(ch_key.clone());
-        }
-    }
-    out
+    tracked_watch_keys(community)
+        .into_iter()
+        .filter(|(_, key)| !community.watched_records.contains(key))
+        .map(|(_, key)| key)
+        .collect()
 }
 
 /// W-1 #16 — re-attempt watches on any tracked record whose previous
@@ -136,14 +161,12 @@ pub async fn watch_community_records(
     let Some(rc) = state_helpers::safe_routing_context(state) else {
         return Err("not attached".into());
     };
-    let (records_open, governance_key, registry_key, channel_keys) = {
+    let (records_open, keys) = {
         let communities = state.communities.read();
         let community = communities.get(community_id).ok_or("community not found")?;
         (
             community.open_community_records.records_open,
-            community.open_community_records.governance_key.clone(),
-            community.open_community_records.registry_key.clone(),
-            community.open_community_records.channel_keys.clone(),
+            tracked_watch_keys(community),
         )
     };
     // Record keys are restored from persistence at resume, but Veilid
@@ -159,14 +182,8 @@ pub async fn watch_community_records(
         return Ok(());
     }
 
-    if let Some(governance_key) = governance_key {
-        watch_record(&rc, state, community_id, "governance", &governance_key).await;
-    }
-    if let Some(registry_key) = registry_key {
-        watch_record(&rc, state, community_id, "registry", &registry_key).await;
-    }
-    for channel_key in &channel_keys {
-        watch_record(&rc, state, community_id, "channel", channel_key).await;
+    for (label, key) in &keys {
+        watch_record(&rc, state, community_id, label, key).await;
     }
     Ok(())
 }
