@@ -173,6 +173,8 @@ export const syncCommands = {
    */
   reportLocalVideoCapabilities: (caps: MediaCapabilities) =>
     invoke<void>("report_local_video_capabilities", { caps }),
+  reportMediaCaptureError: (stage: string, message: string) =>
+    invoke<void>("report_media_capture_error", { stage, message }),
   /**
    * Phase 5 — the DM peer's advertised video decode codecs (wire
    * strings, preference-ordered — from their CallInvite/CallAccept).

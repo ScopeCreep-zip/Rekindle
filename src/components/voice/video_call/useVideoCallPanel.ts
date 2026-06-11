@@ -483,13 +483,9 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
 
   async function startCamera(): Promise<void> {
     setError(null);
-    try {
-      // Plan §Failure 2 — honour the persisted camera selection from
-      // Settings → Video. `exact` surfaces an OverconstrainedError if the
-      // device disappeared so the user sees a clear message.
-      const deviceId = settingsState.selectedVideoDeviceId;
-      const { width, height, frameRate } = captureConstraints();
-      const stream = await navigator.mediaDevices.getUserMedia({
+    const { width, height, frameRate } = captureConstraints();
+    const open = (deviceId: string | undefined) =>
+      navigator.mediaDevices.getUserMedia({
         video: {
           deviceId: deviceId ? { exact: deviceId } : undefined,
           width,
@@ -498,6 +494,27 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
         },
         audio: false,
       });
+    try {
+      // Honour the persisted camera selection from Settings → Video,
+      // but WebKit deviceIds are origin/data-store salted and rotate
+      // across reinstalls — a stale saved id throws
+      // OverconstrainedError forever. Retry once unpinned (default
+      // camera) and tell the user, instead of a permanently dead
+      // camera button (Discord/Meet behaviour for vanished devices).
+      const savedId = settingsState.selectedVideoDeviceId;
+      let stream: MediaStream;
+      try {
+        stream = await open(savedId ?? undefined);
+      } catch (first) {
+        if (!savedId) throw first;
+        const firstMsg = first instanceof Error ? first.message : String(first);
+        void commands.reportMediaCaptureError(
+          "camera-saved-device",
+          `saved camera unavailable (${firstMsg}) — retrying default`,
+        );
+        stream = await open(undefined);
+        setError("Saved camera unavailable — using default camera");
+      }
       cameraStream = stream;
       setCameraCapture(stream);
       if (localCameraVideoRef.value) {
@@ -511,6 +528,7 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(`Camera failed: ${msg}`);
+      void commands.reportMediaCaptureError("camera", msg);
       cameraStream?.getTracks().forEach((t) => t.stop());
       cameraStream = null;
       setCameraCapture(null);
@@ -551,6 +569,7 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(`Screen share failed: ${msg}`);
+      void commands.reportMediaCaptureError("screen", msg);
       screenStream?.getTracks().forEach((t) => t.stop());
       screenStream = null;
       setScreenCapture(null);

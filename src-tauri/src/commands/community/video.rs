@@ -189,6 +189,24 @@ pub async fn report_video_encoder_status(
 /// Phase F — frontend reports the result of its `decoder.configure()`
 /// call. Backend logs structurally so the WKWebView / WebKitGTK divergence
 /// in receiver decode is visible in trace logs without UI screenshots.
+/// Frontend capture failures (getUserMedia / getDisplayMedia) must be
+/// visible in the terminal log — the webview console is invisible in
+/// normal dev runs, and a silent camera failure reads as "the camera
+/// just doesn't open".
+#[tauri::command]
+pub async fn report_media_capture_error(
+    stage: String,
+    message: String,
+) -> Result<(), String> {
+    tracing::warn!(
+        target: "rekindle_video::permissions",
+        stage = %stage,
+        error = %message,
+        "frontend media capture failure"
+    );
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn report_video_decoder_status(
     community_id: String,
