@@ -56,8 +56,22 @@ echo "→ building dev binary"
 #    bundle plist adds the identity macOS needs for TCC + the WebKit
 #    GPU-helper sandbox extension. Keep the usage strings in BOTH in
 #    sync with src-tauri/Info.plist.
+#
+#    TCC pins camera/mic grants to the AD-HOC binary's cdhash — every
+#    Rust rebuild invalidates them SILENTLY (WebKit then sees an empty
+#    device list: getUserMedia fails OverconstrainedError, WebKit bug
+#    177126 shape). Detect a changed binary and reset the grants so
+#    the next capture re-prompts ONCE instead of failing silently.
+#    (A stable codesigning identity would avoid the re-prompt; none is
+#    configured on this machine.)
 echo "→ assembling $APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS"
+if [ -f "$APP_DIR/Contents/MacOS/rekindle" ] && \
+   ! cmp -s "$ROOT/target/debug/rekindle" "$APP_DIR/Contents/MacOS/rekindle"; then
+    echo "→ binary changed — resetting stale TCC camera/mic grants (one new prompt)"
+    tccutil reset Camera com.rekindle.app.dev >/dev/null 2>&1 || true
+    tccutil reset Microphone com.rekindle.app.dev >/dev/null 2>&1 || true
+fi
 cp "$ROOT/target/debug/rekindle" "$APP_DIR/Contents/MacOS/rekindle"
 cat > "$APP_DIR/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
