@@ -23,24 +23,14 @@ pub(super) fn handle_voice_join(
     route_blob: Vec<u8>,
     display_name: Option<String>,
 ) {
-    let stage_info = deps.stage_channel_info(community_id, &channel_id);
-    let is_stage = stage_info.as_ref().is_some_and(|s| s.is_stage);
-
-    // Non-stage channels rotate MEK on membership change (§10.7:
-    // stage channels never rotate — anyone may listen; only speakers
-    // transmit).
-    if !is_stage {
-        let deps_rot = Arc::clone(deps);
-        let cid = community_id.to_string();
-        let ch_id = channel_id.clone();
-        let sender = sender_pseudonym.to_string();
-        let handle = tokio::spawn(async move {
-            deps_rot
-                .rotate_voice_mek_for_membership(cid, ch_id, sender, true)
-                .await;
-        });
-        deps.register_background_handle(handle);
-    }
+    // §10.5 rotation moved into `voice_join_apply`, gated on the
+    // roster ACTUALLY changing: VoiceJoin re-announces (every route
+    // refresh re-broadcasts one) used to fire a rotation per envelope
+    // — generations climbed with zero membership changes and the two
+    // peers' independent rotations collided into same-generation
+    // different-key split-brain (field: gen 10→16 in one session with
+    // one peer). A re-announce is a route upsert, not a membership
+    // change.
 
     // §10.6 channel scoping — only a transport bound to this exact
     // (community, channel) may absorb the joiner. A join announced
@@ -78,7 +68,7 @@ pub(super) fn handle_voice_join(
         let joiner_name = display_name.clone();
         let handle = tokio::spawn(async move {
             voice_join_apply(
-                &*deps_task,
+                &deps_task,
                 &cid,
                 &ch_id,
                 transport,
@@ -114,7 +104,7 @@ struct JoinApply {
 }
 
 async fn voice_join_apply(
-    deps: &dyn VoiceSignalingDeps,
+    deps: &Arc<dyn VoiceSignalingDeps>,
     community_id: &str,
     channel_id: &str,
     transport: Arc<tokio::sync::Mutex<VoiceTransport>>,
@@ -144,6 +134,21 @@ async fn voice_join_apply(
             display_name: joiner_name.clone(),
             remote_count,
         });
+        // §10.5 — rotate ONLY on a genuine membership change (this
+        // peer was not on the roster). Stage channels never rotate
+        // (§10.7: anyone may listen; only speakers transmit).
+        if !is_stage {
+            let deps_rot = Arc::clone(deps);
+            let cid = community_id.to_string();
+            let ch_id = channel_id.to_string();
+            let sender = sender_key.clone();
+            let handle = tokio::spawn(async move {
+                deps_rot
+                    .rotate_voice_mek_for_membership(cid, ch_id, sender, true)
+                    .await;
+            });
+            deps.register_background_handle(handle);
+        }
     }
 
     // Handshake leg 2 — "seen": directed ack carrying OUR identity +
@@ -169,7 +174,7 @@ async fn voice_join_apply(
             peer: Some(sender_key.clone()),
             display_name: joiner_name.clone(),
         });
-        send_confirmed_if_first(deps, community_id, channel_id, &transport).await;
+        send_confirmed_if_first(&**deps, community_id, channel_id, &transport).await;
     }
 
     // §10.6 — the joiner needs our MediaCapabilities and missed any
@@ -179,13 +184,13 @@ async fn voice_join_apply(
     deps.advertise_media_capabilities(community_id, channel_id);
 
     if is_stage {
-        reconcile_stage_transport(deps, community_id, channel_id, &transport, &my_pk).await;
+        reconcile_stage_transport(&**deps, community_id, channel_id, &transport, &my_pk).await;
         return;
     }
 
-    maybe_switch_to_mcu(deps, community_id, channel_id, &transport, &my_pk).await;
+    maybe_switch_to_mcu(&**deps, community_id, channel_id, &transport, &my_pk).await;
 
-    let participants = roster_entries(deps, &my_pk, &transport).await;
+    let participants = roster_entries(&**deps, &my_pk, &transport).await;
     if !participants.is_empty() {
         let envelope = CommunityEnvelope::Control(ControlPayload::VoiceRoster {
             channel_id: channel_id.to_string(),
