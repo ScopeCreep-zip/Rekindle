@@ -133,15 +133,15 @@ pub(super) fn spawn_login_services(
     ));
 
     // Proactive route refresh loop (re-allocates our private route every 120s)
-    let (route_refresh_shutdown_tx, route_refresh_shutdown_rx) = mpsc::channel::<()>(1);
-    let route_refresh_app = app.clone();
-    let route_refresh_state = Arc::clone(state);
-    let route_refresh_handle = tauri::async_runtime::spawn(services::veilid::route_refresh_loop(
-        route_refresh_app,
-        route_refresh_state,
-        route_refresh_shutdown_rx,
+    let (route_watchdog_shutdown_tx, route_watchdog_shutdown_rx) = mpsc::channel::<()>(1);
+    let route_watchdog_app = app.clone();
+    let route_watchdog_state = Arc::clone(state);
+    let route_watchdog_handle = tauri::async_runtime::spawn(services::veilid::route_watchdog_loop(
+        route_watchdog_app,
+        route_watchdog_state,
+        route_watchdog_shutdown_rx,
     ));
-    *state.route_refresh_shutdown_tx.write() = Some(route_refresh_shutdown_tx);
+    *state.route_watchdog_shutdown_tx.write() = Some(route_watchdog_shutdown_tx);
 
     // Idle/auto-away service
     let idle_tx = services::idle_service::start_idle_service(app.clone(), Arc::clone(state));
@@ -161,7 +161,7 @@ pub(super) fn spawn_login_services(
         handles.push(reminder_handle);
         handles.push(sync_handle);
         handles.push(dht_handle);
-        handles.push(route_refresh_handle);
+        handles.push(route_watchdog_handle);
         handles.push(heartbeat_handle);
     }
 }

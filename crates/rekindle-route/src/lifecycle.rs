@@ -1,40 +1,58 @@
-//! Route refresh cadence and dead-route recovery helpers.
+//! Event-driven route lifecycle policy.
+//!
+//! Routes are NOT rotated on a timer: veilid-core manages route health
+//! itself (its private_route_management task tests routes and reports
+//! death via `RouteChange`), and a fixed rotation interval is also a
+//! deterministic-timing fingerprint. A route lives until Veilid names
+//! it dead or attachment is lost; death triggers an immediate heal
+//! (forget → allocate → republish). These constants and the `HealGate`
+//! define that policy identically for every process (Tauri host,
+//! daemon/CLI transport) — backend-owns-policy.
 
 use std::time::{Duration, Instant};
 
-pub const ROUTE_REFRESH_INTERVAL: Duration = Duration::from_secs(120);
+/// Cadence of the attached-but-routeless watchdog — the only timer in
+/// the route lifecycle. It backstops missed heals (allocation failures,
+/// startup races, reattach), never rotates a live route.
+pub const ROUTE_WATCHDOG_INTERVAL: Duration = Duration::from_secs(30);
 
+/// Minimum spacing between dead-route heal attempts. A flapping
+/// network can emit `RouteChange` bursts; within the cooldown the heal
+/// is skipped (state is already forgotten) and the watchdog covers it.
+pub const HEAL_COOLDOWN: Duration = Duration::from_secs(10);
+
+/// Backstop TTL for cached PEER route blobs. Peers no longer rotate on
+/// a timer; their blobs stay valid until dead-remote-route events or
+/// send failures invalidate them. This guards against silently-dead
+/// entries only.
+pub const PEER_ROUTE_CACHE_MAX_AGE: Duration = Duration::from_secs(900);
+
+/// Flap debounce for dead-route heals.
 #[derive(Debug, Clone)]
-pub struct RouteLifecycle {
-    refresh_interval: Duration,
-    last_refresh: Instant,
+pub struct HealGate {
+    last_attempt: Option<Instant>,
+    cooldown: Duration,
 }
 
-impl RouteLifecycle {
-    pub fn new(now: Instant) -> Self {
+impl HealGate {
+    pub fn new(cooldown: Duration) -> Self {
         Self {
-            refresh_interval: ROUTE_REFRESH_INTERVAL,
-            last_refresh: now,
+            last_attempt: None,
+            cooldown,
         }
     }
 
-    pub fn with_interval(now: Instant, refresh_interval: Duration) -> Self {
-        Self {
-            refresh_interval,
-            last_refresh: now,
+    /// Record and admit a heal attempt: `true` when no attempt ran
+    /// within the cooldown (the attempt is recorded), `false` when one
+    /// did (caller skips; the watchdog backstops).
+    pub fn try_begin(&mut self, now: Instant) -> bool {
+        if let Some(last) = self.last_attempt {
+            if now.saturating_duration_since(last) < self.cooldown {
+                return false;
+            }
         }
-    }
-
-    pub fn should_refresh_at(&self, now: Instant) -> bool {
-        now.saturating_duration_since(self.last_refresh) >= self.refresh_interval
-    }
-
-    pub fn mark_refreshed(&mut self, now: Instant) {
-        self.last_refresh = now;
-    }
-
-    pub fn handle_dead_route(&mut self, now: Instant) {
-        self.last_refresh = now.checked_sub(self.refresh_interval).unwrap_or(now);
+        self.last_attempt = Some(now);
+        true
     }
 }
 
@@ -42,21 +60,26 @@ impl RouteLifecycle {
 mod tests {
     use std::time::{Duration, Instant};
 
-    use super::RouteLifecycle;
+    use super::HealGate;
 
     #[test]
-    fn refresh_due_after_interval() {
+    fn heal_gate_blocks_within_cooldown() {
         let start = Instant::now();
-        let lifecycle = RouteLifecycle::with_interval(start, Duration::from_secs(120));
-        assert!(!lifecycle.should_refresh_at(start + Duration::from_secs(119)));
-        assert!(lifecycle.should_refresh_at(start + Duration::from_secs(120)));
+        let mut gate = HealGate::new(Duration::from_secs(10));
+        assert!(gate.try_begin(start), "first attempt always admitted");
+        assert!(
+            !gate.try_begin(start + Duration::from_secs(9)),
+            "within cooldown must be blocked"
+        );
     }
 
     #[test]
-    fn dead_route_forces_immediate_refresh() {
+    fn heal_gate_allows_after_cooldown() {
         let start = Instant::now();
-        let mut lifecycle = RouteLifecycle::with_interval(start, Duration::from_secs(120));
-        lifecycle.handle_dead_route(start + Duration::from_secs(30));
-        assert!(lifecycle.should_refresh_at(start + Duration::from_secs(30)));
+        let mut gate = HealGate::new(Duration::from_secs(10));
+        assert!(gate.try_begin(start));
+        assert!(gate.try_begin(start + Duration::from_secs(10)));
+        // The admitted attempt re-arms the cooldown.
+        assert!(!gate.try_begin(start + Duration::from_secs(19)));
     }
 }

@@ -71,7 +71,7 @@ pub fn cached_route_blob(state: &Arc<AppState>, peer_key: &str) -> Option<Vec<u8
             if let Some(cached) = handle.peer_route_cache.get(peer_key) {
                 if !cached.is_stale_at(
                     Instant::now(),
-                    rekindle_route::lifecycle::ROUTE_REFRESH_INTERVAL,
+                    rekindle_route::lifecycle::PEER_ROUTE_CACHE_MAX_AGE,
                 ) {
                     return Some(cached.route_blob.clone());
                 }

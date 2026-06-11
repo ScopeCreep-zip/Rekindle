@@ -38,6 +38,7 @@ pub(crate) async fn run_dispatch_loop<H: InboundHandler>(
     mut shutdown_rx: mpsc::Receiver<()>,
     api: veilid_core::VeilidAPI,
     shared: Arc<SharedState>,
+    heal_tx: Option<mpsc::Sender<crate::broadcast::node::RouteAuthorityEvent>>,
 ) {
     let mut dedup = DedupCache::new(config.dedup_cache_capacity);
     info!("transport dispatch loop started");
@@ -45,7 +46,7 @@ pub(crate) async fn run_dispatch_loop<H: InboundHandler>(
     loop {
         tokio::select! {
             Some(update) = update_rx.recv() => {
-                dispatch_update(&handler, &config, &mut dedup, &api, &shared, update).await;
+                dispatch_update(&handler, &config, &mut dedup, &api, &shared, heal_tx.as_ref(), update).await;
             }
             _ = shutdown_rx.recv() => {
                 info!("transport dispatch loop shutting down");
@@ -61,6 +62,7 @@ async fn dispatch_update<H: InboundHandler>(
     dedup: &mut DedupCache,
     api: &veilid_core::VeilidAPI,
     shared: &SharedState,
+    heal_tx: Option<&mpsc::Sender<crate::broadcast::node::RouteAuthorityEvent>>,
     update: VeilidUpdate,
 ) {
     match update {
@@ -88,7 +90,7 @@ async fn dispatch_update<H: InboundHandler>(
                 .await;
         }
         VeilidUpdate::RouteChange(change) => {
-            dispatch_route_change(handler, shared, &change).await;
+            dispatch_route_change(handler, shared, heal_tx, &change).await;
         }
         VeilidUpdate::Shutdown => {
             info!("veilid shutdown event received");
@@ -411,9 +413,20 @@ async fn dispatch_value_change<H: InboundHandler>(
 async fn dispatch_route_change<H: InboundHandler>(
     handler: &Arc<H>,
     _shared: &SharedState,
+    heal_tx: Option<&mpsc::Sender<crate::broadcast::node::RouteAuthorityEvent>>,
     change: &veilid_core::VeilidRouteChange,
 ) {
     if !change.dead_routes.is_empty() {
+        // Feed the route authority loop (event-driven heal). try_send:
+        // a full channel means heals are already queued — dropping the
+        // duplicate signal is correct (the loop coalesces bursts).
+        if let Some(tx) = heal_tx {
+            let _ = tx.try_send(
+                crate::broadcast::node::RouteAuthorityEvent::DeadLocalRoutes(
+                    change.dead_routes.clone(),
+                ),
+            );
+        }
         let count = change.dead_routes.len();
         handler
             .on_event(TransportEvent::LocalRoutesDied { count })

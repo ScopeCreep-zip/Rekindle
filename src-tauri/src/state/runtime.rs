@@ -204,6 +204,7 @@ pub struct RoutingManagerHandle {
     pub manager: rekindle_protocol::routing::RoutingManager,
     /// Timestamped peer route blobs for staleness-aware eviction.
     pub peer_route_cache: rekindle_route::cache::RouteCache,
-    /// Shared private-route refresh lifecycle for dead-route recovery and cadence checks.
-    pub route_lifecycle: rekindle_route::lifecycle::RouteLifecycle,
+    /// Flap debounce for dead-route heals (routes are event-driven —
+    /// no rotation cadence to track).
+    pub heal_gate: rekindle_route::lifecycle::HealGate,
 }

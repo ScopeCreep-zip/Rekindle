@@ -196,8 +196,8 @@ fn merge_network(base: &mut super::schema::NetworkConfig, overlay: &super::schem
     if overlay.dht_write_retries != 3 {
         base.dht_write_retries = overlay.dht_write_retries;
     }
-    if overlay.route_refresh_secs != 60 {
-        base.route_refresh_secs = overlay.route_refresh_secs;
+    if overlay.route_watchdog_secs != 30 {
+        base.route_watchdog_secs = overlay.route_watchdog_secs;
     }
     if overlay.route_cache_ttl_secs != 90 {
         base.route_cache_ttl_secs = overlay.route_cache_ttl_secs;

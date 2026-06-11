@@ -60,8 +60,8 @@ fn validate_network(network: &super::schema::NetworkConfig) -> anyhow::Result<()
     if network.circuit_breaker_threshold == 0 {
         anyhow::bail!("network.circuit_breaker_threshold must be > 0");
     }
-    if network.route_refresh_secs == 0 {
-        anyhow::bail!("network.route_refresh_secs must be > 0");
+    if network.route_watchdog_secs == 0 {
+        anyhow::bail!("network.route_watchdog_secs must be > 0");
     }
     if network.route_cache_ttl_secs == 0 {
         anyhow::bail!("network.route_cache_ttl_secs must be > 0");
@@ -296,9 +296,9 @@ mod tests {
     }
 
     #[test]
-    fn zero_route_refresh_rejected() {
+    fn zero_route_watchdog_rejected() {
         let mut cfg = Config::default();
-        cfg.network.route_refresh_secs = 0;
+        cfg.network.route_watchdog_secs = 0;
         assert!(validate(&cfg).is_err());
     }
 

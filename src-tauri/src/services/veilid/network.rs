@@ -250,9 +250,18 @@ pub fn handle_attachment(
             "network reconnected; invalidating watches, rebuilding governance, triggering friend resync"
         );
         invalidate_all_watches(state);
+        let routeless = {
+            let node = state.node.read();
+            node.as_ref().is_some_and(|nh| nh.route_blob.is_none())
+        };
         let state = state.clone();
         let app_handle = app_handle.clone();
         tokio::spawn(async move {
+            // Heal the route FIRST — the governance/presence republish
+            // below and every send path need a live inbound route.
+            if routeless {
+                allocate_fresh_private_route(&app_handle, &state).await;
+            }
             crate::services::governance_adapter::open_community_dht_records(&state).await;
             crate::services::governance_adapter::rebuild_governance_from_dht(&state).await;
             let _ = sync_service::sync_friends_now(&state, &app_handle).await;
@@ -282,21 +291,53 @@ pub async fn handle_route_change(
     };
 
     if our_route_died {
-        {
+        let heal_admitted = {
             let mut rm = state.routing_manager.write();
-            if let Some(ref mut handle) = *rm {
-                handle.manager.forget_private_route();
-                handle.route_lifecycle.handle_dead_route(Instant::now());
+            match *rm {
+                Some(ref mut handle) => {
+                    handle.manager.forget_private_route();
+                    handle.heal_gate.try_begin(Instant::now())
+                }
+                None => false,
             }
+        };
+        // The dead blob must not linger as Some — the routeless
+        // watchdog keys off `route_blob.is_none()`.
+        if let Some(ref mut nh) = *state.node.write() {
+            nh.route_blob = None;
         }
-        allocate_fresh_private_route(app_handle, state).await;
+        let attached = state_helpers::is_attached(state);
+        if attached && heal_admitted {
+            allocate_fresh_private_route(app_handle, state).await;
+        } else {
+            // Detached (reattach hook heals) or within the heal
+            // cooldown during a flap (watchdog backstops within 30s).
+            tracing::debug!(
+                attached,
+                heal_admitted,
+                "dead route heal deferred (flap guard / detached)"
+            );
+        }
     }
 
     if !change.dead_remote_routes.is_empty() {
-        let mut dht_mgr = state.dht_manager.write();
-        if let Some(mgr) = dht_mgr.as_mut() {
-            mgr.manager
-                .invalidate_dead_routes(&change.dead_remote_routes);
+        let affected_pubkeys = {
+            let mut dht_mgr = state.dht_manager.write();
+            dht_mgr.as_mut().map_or_else(Vec::new, |mgr| {
+                mgr.manager
+                    .invalidate_dead_routes(&change.dead_remote_routes)
+            })
+        };
+        // The DHTManager caches aren't the only copy: the live
+        // peer-route cache holds the same blobs and must drop them too,
+        // or sends keep importing a route Veilid just declared dead.
+        if !affected_pubkeys.is_empty() {
+            let mut rm = state.routing_manager.write();
+            if let Some(ref mut handle) = *rm {
+                for pubkey in &affected_pubkeys {
+                    handle.peer_route_cache.remove(pubkey);
+                }
+            }
         }
     }
 }
@@ -323,67 +364,6 @@ async fn new_private_route_with_retry(
     None
 }
 
-pub(crate) async fn reallocate_private_route(app_handle: &AppHandle, state: &Arc<AppState>) {
-    let Some(api) = state_helpers::veilid_api(state) else {
-        return;
-    };
-
-    let Some(new_route) = new_private_route_with_retry(&api, 5).await else {
-        tracing::warn!("route refresh: failed to allocate new route; keeping old");
-        return;
-    };
-
-    {
-        let mut rm = state.routing_manager.write();
-        if let Some(ref mut handle) = *rm {
-            // Grace inside set_allocated_route: the replaced route stays
-            // alive one refresh cycle so in-flight private-routed RPCs
-            // can still compile replies against it.
-            handle
-                .manager
-                .set_allocated_route(new_route.route_id.clone(), new_route.blob.clone());
-            handle.route_lifecycle.mark_refreshed(Instant::now());
-        }
-    }
-    if let Some(ref mut nh) = *state.node.write() {
-        nh.route_blob = Some(new_route.blob.clone());
-    }
-
-    super::emit_network_status(app_handle, state);
-
-    if let Err(e) = message_service::push_profile_update(state, 6, new_route.blob.clone()).await {
-        tracing::warn!(error = %e, "failed to re-publish route blob to DHT");
-    }
-
-    let mailbox_key = {
-        let node = state.node.read();
-        node.as_ref().and_then(|nh| nh.mailbox_dht_key.clone())
-    };
-    if let Some(mailbox_key) = mailbox_key {
-        let rc = {
-            let node = state.node.read();
-            node.as_ref().map(|nh| nh.routing_context.clone())
-        };
-        if let Some(rc) = rc {
-            if let Err(e) = rekindle_protocol::dht::mailbox::update_mailbox_route(
-                &rc,
-                &mailbox_key,
-                &new_route.blob,
-            )
-            .await
-            {
-                tracing::warn!(error = %e, "failed to update mailbox route blob");
-            }
-        }
-    }
-
-    // Peers' voice rosters hold the blob we advertised at VoiceJoin —
-    // re-announce so directed channel sends to us survive the rotation.
-    crate::services::voice_adapter::reannounce_voice_route(state);
-
-    tracing::info!("re-allocated private route (make-before-break, old route held one cycle)");
-}
-
 pub(crate) async fn allocate_fresh_private_route(app_handle: &AppHandle, state: &Arc<AppState>) {
     let Some(api) = state_helpers::veilid_api(state) else {
         return;
@@ -402,7 +382,6 @@ pub(crate) async fn allocate_fresh_private_route(app_handle: &AppHandle, state: 
             handle
                 .manager
                 .set_allocated_route(route_blob.route_id.clone(), route_blob.blob.clone());
-            handle.route_lifecycle.mark_refreshed(Instant::now());
         }
     }
     if let Some(ref mut nh) = *state.node.write() {
@@ -434,6 +413,19 @@ pub(crate) async fn allocate_fresh_private_route(app_handle: &AppHandle, state: 
                 tracing::warn!(error = %e, "failed to update mailbox route blob");
             }
         }
+    }
+
+    // SMPL presence registry rows carry our route blob — targeted
+    // re-write per joined community so gossip peers pick the new blob
+    // up on their next poll/watch (replaces the old refresh-loop's
+    // full rejoin + needs_initial_sync storm).
+    let community_ids: Vec<String> = {
+        let communities = state.communities.read();
+        communities.keys().cloned().collect()
+    };
+    for community_id in &community_ids {
+        crate::services::community::presence::registry::write_our_presence(state, community_id)
+            .await;
     }
 
     // Dead-route recovery is the worst case for voice peers — the blob

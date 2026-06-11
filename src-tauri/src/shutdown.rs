@@ -63,8 +63,8 @@ pub async fn graceful_shutdown(state: &SharedState) {
     }
 
     // Signal route refresh loop shutdown
-    let route_refresh_tx = state.route_refresh_shutdown_tx.write().take();
-    if let Some(tx) = route_refresh_tx {
+    let route_watchdog_tx = state.route_watchdog_shutdown_tx.write().take();
+    if let Some(tx) = route_watchdog_tx {
         let _ = tx.send(()).await;
     }
 

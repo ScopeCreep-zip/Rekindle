@@ -58,9 +58,11 @@ pub async fn initialize_node(
     *state.routing_manager.write() = Some(RoutingManagerHandle {
         manager: routing_manager,
         peer_route_cache: rekindle_route::cache::RouteCache::new(
-            rekindle_route::lifecycle::ROUTE_REFRESH_INTERVAL,
+            rekindle_route::lifecycle::PEER_ROUTE_CACHE_MAX_AGE,
         ),
-        route_lifecycle: rekindle_route::lifecycle::RouteLifecycle::new(std::time::Instant::now()),
+        heal_gate: rekindle_route::lifecycle::HealGate::new(
+            rekindle_route::lifecycle::HEAL_COOLDOWN,
+        ),
     });
 
     // W16.9b — adopt the running VeilidAPI into a TransportNode in

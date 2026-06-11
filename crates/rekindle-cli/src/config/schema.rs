@@ -87,9 +87,10 @@ pub struct NetworkConfig {
     #[serde(default = "default_dht_write_retries")]
     pub dht_write_retries: u32,
 
-    /// Route refresh interval in seconds.
-    #[serde(default = "default_route_refresh_secs")]
-    pub route_refresh_secs: u64,
+    /// Routeless-watchdog cadence in seconds (routes are event-driven;
+    /// this only backstops missed heals — no timer rotation).
+    #[serde(default = "default_route_watchdog_secs", alias = "route_refresh_secs")]
+    pub route_watchdog_secs: u64,
 
     /// Route cache TTL in seconds.
     #[serde(default = "default_route_cache_ttl_secs")]
@@ -126,7 +127,7 @@ impl Default for NetworkConfig {
             safety: SafetyUserConfig::default(),
             rpc_timeout_ms: default_rpc_timeout_ms(),
             dht_write_retries: default_dht_write_retries(),
-            route_refresh_secs: default_route_refresh_secs(),
+            route_watchdog_secs: default_route_watchdog_secs(),
             route_cache_ttl_secs: default_route_cache_ttl_secs(),
             circuit_breaker_threshold: default_circuit_breaker_threshold(),
             circuit_breaker_cooldown_secs: default_circuit_breaker_cooldown_secs(),
@@ -311,8 +312,8 @@ fn default_rpc_timeout_ms() -> u64 {
 fn default_dht_write_retries() -> u32 {
     3
 }
-fn default_route_refresh_secs() -> u64 {
-    60
+fn default_route_watchdog_secs() -> u64 {
+    30
 }
 fn default_route_cache_ttl_secs() -> u64 {
     90

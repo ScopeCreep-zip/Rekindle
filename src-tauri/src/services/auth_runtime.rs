@@ -80,7 +80,7 @@ pub async fn logout_inner(
     shutdown_voice(&state, &VoiceShutdownOpts::FULL).await;
 
     {
-        let tx = state.route_refresh_shutdown_tx.write().take();
+        let tx = state.route_watchdog_shutdown_tx.write().take();
         if let Some(tx) = tx {
             let _ = tx.send(()).await;
         }
@@ -173,7 +173,7 @@ pub async fn delete_identity_inner(
         shutdown_voice(&state, &VoiceShutdownOpts::FULL).await;
 
         {
-            let tx = state.route_refresh_shutdown_tx.write().take();
+            let tx = state.route_watchdog_shutdown_tx.write().take();
             if let Some(tx) = tx {
                 let _ = tx.send(()).await;
             }

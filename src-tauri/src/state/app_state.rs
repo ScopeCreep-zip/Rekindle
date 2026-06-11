@@ -42,9 +42,11 @@ pub struct AppState {
     /// until those services migrate flow-by-flow.
     pub transport: Arc<RwLock<Option<Arc<rekindle_transport::TransportNode>>>>,
     /// W16.9b — transport's `Session` mirroring src-tauri's identity +
-    /// friend-inbox metadata. Populated at login. Shared with the
-    /// transport's route_refresh_loop so community routes refresh
-    /// alongside the personal route. `None` before login.
+    /// friend-inbox metadata. `None` before login. In outbound-only
+    /// adoption the transport spawns no route loop (the HOST owns the
+    /// route lifecycle — `network::handle_route_change` +
+    /// `allocate_fresh_private_route`), so this exists only for
+    /// transport operations that read identity metadata.
     pub transport_session: Arc<parking_lot::RwLock<Option<rekindle_transport::session::Session>>>,
     /// W16.9b — durable retry queue store. Used by `EnvelopeQueue` for
     /// DM body sends + future expect-reply flows. `Some` after app
@@ -122,7 +124,7 @@ pub struct AppState {
     /// `JoinHandle` for the Veilid dispatch loop.
     pub dispatch_loop_handle: RwLock<Option<tokio::task::JoinHandle<()>>>,
     /// Shutdown sender for the route refresh loop.
-    pub route_refresh_shutdown_tx: RwLock<Option<mpsc::Sender<()>>>,
+    pub route_watchdog_shutdown_tx: RwLock<Option<mpsc::Sender<()>>>,
     /// Shutdown sender for the idle/auto-away service.
     pub idle_shutdown_tx: RwLock<Option<mpsc::Sender<()>>>,
     /// Shutdown sender for the presence heartbeat loop.
@@ -287,7 +289,7 @@ impl Default for AppState {
             channel_mek_cache: Mutex::new(HashMap::new()),
             unwatched_friends: RwLock::new(HashSet::new()),
             dispatch_loop_handle: RwLock::new(None),
-            route_refresh_shutdown_tx: RwLock::new(None),
+            route_watchdog_shutdown_tx: RwLock::new(None),
             idle_shutdown_tx: RwLock::new(None),
             heartbeat_shutdown_tx: RwLock::new(None),
             pre_away_status: RwLock::new(None),

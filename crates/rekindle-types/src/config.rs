@@ -38,9 +38,11 @@ pub struct TransportConfig {
     #[serde(default = "default_dht_write_retries")]
     pub dht_write_retries: u32,
 
-    /// Interval in seconds between route refresh cycles.
-    #[serde(default = "default_route_refresh_secs")]
-    pub route_refresh_secs: u64,
+    /// Cadence in seconds of the attached-but-routeless watchdog.
+    /// Routes are event-driven (healed on `RouteChange` death), never
+    /// rotated on a timer — this only backstops missed heals.
+    #[serde(default = "default_route_watchdog_secs", alias = "routeRefreshSecs")]
+    pub route_watchdog_secs: u64,
 
     /// TTL in seconds for cached imported routes before re-import.
     #[serde(default = "default_route_cache_ttl_secs")]
@@ -196,7 +198,7 @@ impl Default for TransportConfig {
             safety: SafetyConfig::default(),
             rpc_timeout_ms: default_rpc_timeout_ms(),
             dht_write_retries: default_dht_write_retries(),
-            route_refresh_secs: default_route_refresh_secs(),
+            route_watchdog_secs: default_route_watchdog_secs(),
             route_cache_ttl_secs: default_route_cache_ttl_secs(),
             circuit_breaker_threshold: default_circuit_breaker_threshold(),
             circuit_breaker_cooldown_secs: default_circuit_breaker_cooldown_secs(),
@@ -216,8 +218,8 @@ fn default_rpc_timeout_ms() -> u64 {
 fn default_dht_write_retries() -> u32 {
     3
 }
-fn default_route_refresh_secs() -> u64 {
-    60
+fn default_route_watchdog_secs() -> u64 {
+    30
 }
 fn default_route_cache_ttl_secs() -> u64 {
     90
@@ -246,6 +248,16 @@ mod tests {
         let parsed: TransportConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.namespace, "rekindle");
         assert_eq!(parsed.rpc_timeout_ms, 8_000);
+        assert_eq!(parsed.route_watchdog_secs, 30);
+    }
+
+    #[test]
+    fn old_route_refresh_key_still_parses() {
+        // Pre-rename configs carry `routeRefreshSecs` (camelCase wire);
+        // the serde alias must map it onto the watchdog cadence.
+        let json = r#"{"storageDir": "/tmp/x", "routeRefreshSecs": 45}"#;
+        let parsed: TransportConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.route_watchdog_secs, 45);
     }
 
     #[test]

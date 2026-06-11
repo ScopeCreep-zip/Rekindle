@@ -41,8 +41,8 @@ pub struct TransportNode {
     /// dispatch loop, transport provides senders/DHT/peer registry only.
     /// `Some` for full adoption with transport-owned dispatch.
     dispatch_handle: Option<tokio::task::JoinHandle<()>>,
-    route_refresh_handle: Option<tokio::task::JoinHandle<()>>,
-    route_refresh_shutdown_tx: Option<mpsc::Sender<()>>,
+    route_authority_handle: Option<tokio::task::JoinHandle<()>>,
+    route_authority_shutdown_tx: Option<mpsc::Sender<()>>,
     route_manager: Arc<parking_lot::RwLock<RouteManager>>,
     peer_registry: Arc<parking_lot::RwLock<PeerRegistry>>,
     shared_state: Arc<SharedState>,
@@ -52,10 +52,10 @@ impl TransportNode {
     /// Start a new transport node, attach to the Veilid network, and begin
     /// dispatching inbound events to `handler`.
     ///
-    /// The `session` Arc is shared with the route refresh loop so community
-    /// routes can be refreshed alongside the personal route. The session
-    /// may be `None` at startup (no identity yet) — it gets populated
-    /// during `IdentityCreate` or session load.
+    /// The `session` Arc is shared with the route authority loop so
+    /// dead community-mailbox routes heal alongside the personal route.
+    /// The session may be `None` at startup (no identity yet) — it gets
+    /// populated during `IdentityCreate` or session load.
     pub async fn start<H: InboundHandler>(
         config: TransportConfig,
         handler: Arc<H>,
@@ -79,8 +79,9 @@ impl TransportNode {
         // tried and reverted — `new_private_route()` round-trip TESTS
         // each allocation, so 3-hop tripled the relays that must all
         // answer (allocations flapped) and put 6 hops under every voice
-        // frame. Reply-path safety for inbound RPCs is handled by the
-        // one-cycle route-release grace instead.
+        // frame. Reply-path safety for inbound RPCs holds because
+        // routes are event-driven now: they stay alive until Veilid
+        // reports them dead, so replies compile against live routes.
 
         let (update_tx, update_rx) = mpsc::channel::<VeilidUpdate>(4096);
         let update_callback: veilid_core::UpdateCallback = Arc::new(move |update| {
@@ -120,11 +121,13 @@ impl TransportNode {
         let shared_state = SharedState::new();
 
         let (shutdown_tx, shutdown_rx) = mpsc::channel(1);
+        let (heal_tx, heal_rx) = mpsc::channel(16);
         let dispatch_handle = {
             let h = Arc::clone(&handler);
             let c = Arc::clone(&config);
             let a = api.clone();
             let ss = Arc::clone(&shared_state);
+            let ht = heal_tx;
             tokio::spawn(dispatch::run_dispatch_loop(
                 h,
                 c,
@@ -132,17 +135,21 @@ impl TransportNode {
                 shutdown_rx,
                 a,
                 ss,
+                Some(ht),
             ))
         };
 
-        let (rr_tx, rr_rx) = mpsc::channel(1);
-        let route_refresh_handle = {
+        let (ra_tx, ra_rx) = mpsc::channel(1);
+        let route_authority_handle = {
             let a = api.clone();
             let rm = Arc::clone(&route_manager);
-            let secs = config.route_refresh_secs;
+            let secs = config.route_watchdog_secs;
             let sess = Arc::clone(&session);
             let cfg = Arc::clone(&config);
-            tokio::spawn(run_route_refresh_loop(a, rm, secs, rr_rx, sess, cfg))
+            let ss = Arc::clone(&shared_state);
+            tokio::spawn(run_route_authority_loop(
+                a, rm, secs, heal_rx, ra_rx, sess, cfg, ss,
+            ))
         };
 
         info!("transport node started");
@@ -152,8 +159,8 @@ impl TransportNode {
             config,
             shutdown_tx,
             dispatch_handle: Some(dispatch_handle),
-            route_refresh_handle: Some(route_refresh_handle),
-            route_refresh_shutdown_tx: Some(rr_tx),
+            route_authority_handle: Some(route_authority_handle),
+            route_authority_shutdown_tx: Some(ra_tx),
             route_manager,
             peer_registry,
             shared_state,
@@ -195,11 +202,13 @@ impl TransportNode {
         let shared_state = SharedState::new();
 
         let (shutdown_tx, shutdown_rx) = mpsc::channel(1);
+        let (heal_tx, heal_rx) = mpsc::channel(16);
         let dispatch_handle = {
             let h = Arc::clone(handler);
             let c = Arc::clone(&config);
             let a = api.clone();
             let ss = Arc::clone(&shared_state);
+            let ht = heal_tx;
             tokio::spawn(dispatch::run_dispatch_loop(
                 h,
                 c,
@@ -207,17 +216,21 @@ impl TransportNode {
                 shutdown_rx,
                 a,
                 ss,
+                Some(ht),
             ))
         };
 
-        let (rr_tx, rr_rx) = mpsc::channel(1);
-        let route_refresh_handle = {
+        let (ra_tx, ra_rx) = mpsc::channel(1);
+        let route_authority_handle = {
             let a = api.clone();
             let rm = Arc::clone(&route_manager);
-            let secs = config.route_refresh_secs;
+            let secs = config.route_watchdog_secs;
             let sess = Arc::clone(session);
             let cfg = Arc::clone(&config);
-            tokio::spawn(run_route_refresh_loop(a, rm, secs, rr_rx, sess, cfg))
+            let ss = Arc::clone(&shared_state);
+            tokio::spawn(run_route_authority_loop(
+                a, rm, secs, heal_rx, ra_rx, sess, cfg, ss,
+            ))
         };
 
         info!("transport node adopted (host owns Veilid lifecycle)");
@@ -227,8 +240,8 @@ impl TransportNode {
             config,
             shutdown_tx,
             dispatch_handle: Some(dispatch_handle),
-            route_refresh_handle: Some(route_refresh_handle),
-            route_refresh_shutdown_tx: Some(rr_tx),
+            route_authority_handle: Some(route_authority_handle),
+            route_authority_shutdown_tx: Some(ra_tx),
             route_manager,
             peer_registry,
             shared_state,
@@ -247,12 +260,12 @@ impl TransportNode {
     /// new send paths route through transport's typed APIs (e.g.
     /// `operations::friend::send_friend_request`, `operations::dm_invite`).
     ///
-    /// The route_refresh_loop is still spawned because outbound sends
-    /// need fresh local routes. Inbound dispatch is the host's job.
-    ///
-    /// Use [`Self::shutdown_borrowed`] to stop the route refresh loop
-    /// when shutting down. The `dispatch_handle` is `None`, so shutdown
-    /// is a noop on that front.
+    /// NO route loop is spawned in this mode: the HOST owns the
+    /// personal route lifecycle (allocation, dead-route healing,
+    /// republish — src-tauri's `handle_route_change` /
+    /// `allocate_fresh_private_route`). The transport's `RouteManager`
+    /// stays empty here; outbound safety routes are allocated
+    /// internally by veilid-core per send.
     pub fn adopt_outbound(
         config: TransportConfig,
         api: VeilidAPI,
@@ -269,18 +282,10 @@ impl TransportNode {
         )));
         let shared_state = SharedState::new();
 
-        // Send-side only — no dispatch loop.
+        // Send-side only — no dispatch loop, no route loop (host owns
+        // both the dispatch and the route lifecycle in this mode).
         let (shutdown_tx, _shutdown_rx) = mpsc::channel(1);
-
-        let (rr_tx, rr_rx) = mpsc::channel(1);
-        let route_refresh_handle = {
-            let a = api.clone();
-            let rm = Arc::clone(&route_manager);
-            let secs = config.route_refresh_secs;
-            let sess = Arc::clone(session);
-            let cfg = Arc::clone(&config);
-            tokio::spawn(run_route_refresh_loop(a, rm, secs, rr_rx, sess, cfg))
-        };
+        let _ = session; // host owns session-derived publishing too
 
         info!("transport node adopted (outbound-only — host owns dispatch + Veilid lifecycle)");
 
@@ -289,8 +294,8 @@ impl TransportNode {
             config,
             shutdown_tx,
             dispatch_handle: None,
-            route_refresh_handle: Some(route_refresh_handle),
-            route_refresh_shutdown_tx: Some(rr_tx),
+            route_authority_handle: None,
+            route_authority_shutdown_tx: None,
             route_manager,
             peer_registry,
             shared_state,
@@ -301,11 +306,11 @@ impl TransportNode {
     /// nodes — the host process owns Veilid lifecycle and will detach
     /// itself).
     pub async fn shutdown_borrowed(mut self) -> Result<()> {
-        info!("transport node (borrowed) shutting down dispatch + route refresh");
-        if let Some(tx) = self.route_refresh_shutdown_tx.take() {
+        info!("transport node (borrowed) shutting down dispatch + route authority");
+        if let Some(tx) = self.route_authority_shutdown_tx.take() {
             let _ = tx.send(()).await;
         }
-        if let Some(h) = self.route_refresh_handle.take() {
+        if let Some(h) = self.route_authority_handle.take() {
             let _ = h.await;
         }
         let _ = self.shutdown_tx.send(()).await;
@@ -314,7 +319,7 @@ impl TransportNode {
                 warn!(error = %e, "dispatch loop join failed");
             }
         }
-        info!("transport node (borrowed) dispatch + route refresh stopped");
+        info!("transport node (borrowed) dispatch + route authority stopped");
         Ok(())
     }
 
@@ -322,10 +327,10 @@ impl TransportNode {
     pub async fn shutdown(mut self) -> Result<()> {
         info!("transport node shutting down");
 
-        if let Some(tx) = self.route_refresh_shutdown_tx.take() {
+        if let Some(tx) = self.route_authority_shutdown_tx.take() {
             let _ = tx.send(()).await;
         }
-        if let Some(h) = self.route_refresh_handle.take() {
+        if let Some(h) = self.route_authority_handle.take() {
             let _ = h.await;
         }
 
@@ -871,135 +876,240 @@ fn veilid_update_label(update: &VeilidUpdate) -> &'static str {
     }
 }
 
-/// Periodically re-allocate routes before they expire.
+/// Event-driven route authority — the ONLY owner of this transport's
+/// personal route and (operator) community mailbox routes.
 ///
-/// Refreshes both the personal private route AND all community routes
-/// for communities where this node is an operator. Community routes
-/// are published to each community's mailbox DHT record so joiners
-/// can reach the owner's daemon.
-async fn run_route_refresh_loop(
+/// Routes are never rotated on a timer: veilid-core tests route health
+/// itself and reports death via `RouteChange`. Death events arrive on
+/// `heal_rx` (fed by the dispatch loop); the heal is forget → allocate
+/// → republish. The watchdog tick only repairs "attached but
+/// routeless" states (failed heals, startup races) and releases routes
+/// for communities we stopped operating. Explicit Veilid release
+/// happens only at shutdown / operator-exit — dead routes are
+/// forgotten, never released (release on a dead route is an
+/// "Invalid argument" API error).
+pub(crate) enum RouteAuthorityEvent {
+    /// Veilid reported these local routes dead (`RouteChange`).
+    DeadLocalRoutes(Vec<veilid_core::RouteId>),
+}
+
+/// Pure classification of a dead-route batch against owned state:
+/// did the personal route die, and which community mailboxes lost
+/// their published route.
+fn classify_dead_routes(
+    dead: &[veilid_core::RouteId],
+    personal: Option<&veilid_core::RouteId>,
+    community_live: &std::collections::HashMap<String, veilid_core::RouteId>,
+) -> (bool, Vec<String>) {
+    let personal_died = personal.is_some_and(|p| dead.contains(p));
+    let mailboxes = community_live
+        .iter()
+        .filter(|(_, id)| dead.contains(id))
+        .map(|(key, _)| key.clone())
+        .collect();
+    (personal_died, mailboxes)
+}
+
+/// Allocate + install + republish the personal route (profile subkey
+/// `PROFILE_SUBKEY_ROUTE_BLOB` + personal mailbox). Publish failures
+/// are logged, not fatal — the blob is installed locally and the
+/// records self-heal on the next publish trigger.
+async fn heal_personal_route(
+    api: &VeilidAPI,
+    route_manager: &Arc<parking_lot::RwLock<RouteManager>>,
+    session: &Arc<parking_lot::RwLock<Option<crate::session::Session>>>,
+    config: &Arc<TransportConfig>,
+) {
+    let rb = match api.new_private_route().await {
+        Ok(rb) => rb,
+        Err(e) => {
+            tracing::warn!(error = %e, "personal route heal: allocation failed — watchdog retries");
+            return;
+        }
+    };
+    route_manager
+        .write()
+        .set_route(rb.route_id, rb.blob.clone());
+    tracing::info!("personal route healed (event-driven)");
+
+    let (profile_key, mailbox_key) = {
+        let guard = session.read();
+        match guard.as_ref() {
+            Some(s) => (
+                s.identity.profile_dht_key.clone(),
+                s.identity.mailbox_dht_key.clone(),
+            ),
+            None => return, // no session yet — resume() publishes on login
+        }
+    };
+    let rc = match build_routing_context(api, &config.safety.dht) {
+        Ok(rc) => rc,
+        Err(e) => {
+            tracing::warn!(error = %e, "personal route heal: no routing context for republish");
+            return;
+        }
+    };
+    if !profile_key.is_empty() {
+        if let Err(e) = super::dht::record::set(
+            &rc,
+            &profile_key,
+            crate::payload::dht_types::PROFILE_SUBKEY_ROUTE_BLOB,
+            rb.blob.clone(),
+            None,
+        )
+        .await
+        {
+            tracing::warn!(error = %e, "personal route heal: profile republish failed");
+        }
+    }
+    if !mailbox_key.is_empty() {
+        let dht = DhtStore::new(rc);
+        if let Err(e) = dht.mailbox().update_route(&mailbox_key, &rb.blob).await {
+            tracing::warn!(error = %e, "personal route heal: mailbox republish failed");
+        }
+    }
+}
+
+/// Allocate + publish one community mailbox route. On publish failure
+/// the unpublished route is released immediately (nothing can
+/// reference it; don't leak an allocation). Returns the new route id
+/// on success for `community_live` bookkeeping.
+async fn heal_community_route(
+    api: &VeilidAPI,
+    config: &Arc<TransportConfig>,
+    mailbox_key: &str,
+) -> Option<veilid_core::RouteId> {
+    let rb = match api.new_private_route().await {
+        Ok(rb) => rb,
+        Err(e) => {
+            tracing::warn!(mailbox = %mailbox_key, error = %e, "community route heal: allocation failed");
+            return None;
+        }
+    };
+    let rc = match build_routing_context(api, &config.safety.dht) {
+        Ok(rc) => rc,
+        Err(e) => {
+            tracing::warn!(error = %e, "community route heal: no routing context");
+            let _ = api.release_private_route(rb.route_id);
+            return None;
+        }
+    };
+    let dht = DhtStore::new(rc);
+    match dht
+        .mailbox()
+        .update_community_route(mailbox_key, &rb.blob)
+        .await
+    {
+        Ok(()) => {
+            tracing::info!(mailbox = %mailbox_key, "community route healed (event-driven)");
+            Some(rb.route_id)
+        }
+        Err(e) => {
+            // Never published — release now so a failing mailbox
+            // doesn't leak an allocation per attempt.
+            if let Err(re) = api.release_private_route(rb.route_id) {
+                tracing::debug!(error = %re, "unpublished community route release failed");
+            }
+            tracing::warn!(mailbox = %mailbox_key, error = %e, "community route publish failed");
+            None
+        }
+    }
+}
+
+async fn run_route_authority_loop(
     api: VeilidAPI,
     route_manager: Arc<parking_lot::RwLock<RouteManager>>,
-    interval_secs: u64,
+    watchdog_secs: u64,
+    mut heal_rx: mpsc::Receiver<RouteAuthorityEvent>,
     mut shutdown_rx: mpsc::Receiver<()>,
     session: Arc<parking_lot::RwLock<Option<crate::session::Session>>>,
     config: Arc<TransportConfig>,
+    shared: Arc<SharedState>,
 ) {
-    let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(interval_secs));
+    let mut interval =
+        tokio::time::interval(tokio::time::Duration::from_secs(watchdog_secs.max(1)));
     interval.tick().await; // skip immediate first tick
 
-    // Routes replaced by the previous tick, held alive one extra cycle.
-    // Veilid compiles the reply to an inbound private-routed RPC against
-    // the route the question arrived on — releasing a route the moment
-    // its replacement lands kills every in-flight reply (and trips
-    // veilid-core 0.5.2's `safety_spec.preferred_route` allocation bail).
-    let mut personal_grace: Option<veilid_core::RouteId> = None;
-    // Community mailbox routes, keyed by mailbox key: the route published
-    // last tick (live) and the one it replaced (retiring — released after
-    // its one-cycle grace). Pre-fix these were never released at all.
+    // Published community mailbox routes (operator only) — needed to
+    // match dead RouteIds back to their mailbox, to avoid re-allocating
+    // per watchdog tick, and to release on operator-exit / shutdown.
     let mut community_live: std::collections::HashMap<String, veilid_core::RouteId> =
         std::collections::HashMap::new();
-    let mut community_retiring: std::collections::HashMap<String, veilid_core::RouteId> =
-        std::collections::HashMap::new();
+    let mut heal_gate =
+        rekindle_route::lifecycle::HealGate::new(rekindle_route::lifecycle::HEAL_COOLDOWN);
 
     loop {
         tokio::select! {
+            Some(event) = heal_rx.recv() => {
+                // Coalesce a burst of RouteChange events into one heal.
+                let RouteAuthorityEvent::DeadLocalRoutes(mut dead) = event;
+                while let Ok(RouteAuthorityEvent::DeadLocalRoutes(more)) = heal_rx.try_recv() {
+                    dead.extend(more);
+                }
+                let (personal_died, dead_mailboxes) = classify_dead_routes(
+                    &dead,
+                    route_manager.read().route_id(),
+                    &community_live,
+                );
+                if personal_died {
+                    route_manager.write().forget_route();
+                }
+                for mailbox in &dead_mailboxes {
+                    community_live.remove(mailbox);
+                }
+                if !personal_died && dead_mailboxes.is_empty() {
+                    continue;
+                }
+                if !shared.is_attached() {
+                    // Detached flap: state is forgotten; reattach +
+                    // watchdog heal once the network is back.
+                    tracing::debug!("dead route(s) while detached — heal deferred to watchdog");
+                    continue;
+                }
+                if !heal_gate.try_begin(std::time::Instant::now()) {
+                    tracing::debug!("dead-route heal within cooldown — watchdog backstops");
+                    continue;
+                }
+                if personal_died {
+                    heal_personal_route(&api, &route_manager, &session, &config).await;
+                }
+                for mailbox in dead_mailboxes {
+                    if let Some(id) = heal_community_route(&api, &config, &mailbox).await {
+                        community_live.insert(mailbox, id);
+                    }
+                }
+            }
             _ = interval.tick() => {
-                // ── Personal route refresh ─────────────────────────────
-                // Release the route replaced last cycle — grace is over.
-                if let Some(expired) = personal_grace.take() {
-                    if let Err(e) = api.release_private_route(expired) {
-                        tracing::debug!(error = %e, "grace-expired route release failed (likely already dead)");
-                    }
+                if !shared.is_attached() {
+                    continue;
                 }
-                // Make-before-break: allocate the replacement BEFORE
-                // touching the current route, then park the replaced
-                // route for one grace cycle.
-                match api.new_private_route().await {
-                    Ok(rb) => {
-                        personal_grace = route_manager.read().route_id().cloned();
-                        route_manager.write().set_route(rb.route_id, rb.blob);
-                        tracing::debug!("personal route refreshed");
-                    }
-                    Err(e) => {
-                        // Keep the current route — a failed refresh must
-                        // not leave the node routeless.
-                        tracing::warn!(error = %e, "personal route refresh failed — keeping current route, retry next tick");
-                    }
+                // Routeless watchdog: heal anything that should exist
+                // but doesn't.
+                if !route_manager.read().has_route() {
+                    heal_personal_route(&api, &route_manager, &session, &config).await;
                 }
-
-                // ── Community route refresh ────────────────────────────
-                // For each community where we're an operator, allocate a
-                // fresh route and publish it to the community mailbox.
-                let operator_communities: Vec<(String, String)> = {
+                let operator_mailboxes: Vec<String> = {
                     let guard = session.read();
                     guard.as_ref().map_or_else(Vec::new, |s| {
                         s.communities.values()
                             .filter(|m| m.is_operator && !m.community_mailbox_key.is_empty())
-                            .map(|m| (m.community_name.clone(), m.community_mailbox_key.clone()))
+                            .map(|m| m.community_mailbox_key.clone())
                             .collect()
                     })
                 };
-
-                if !operator_communities.is_empty() {
-                    let rc = match build_routing_context(&api, &config.safety.dht) {
-                        Ok(rc) => rc,
-                        Err(e) => {
-                            tracing::warn!(error = %e, "cannot build routing context for community route refresh");
-                            continue;
-                        }
-                    };
-                    let dht = DhtStore::new(rc);
-
-                    for (name, mailbox_key) in &operator_communities {
-                        // Route replaced two cycles ago — grace over.
-                        if let Some(expired) = community_retiring.remove(mailbox_key) {
-                            if let Err(e) = api.release_private_route(expired) {
-                                tracing::debug!(community = %name, error = %e, "grace-expired community route release failed");
-                            }
-                        }
-                        match api.new_private_route().await {
-                            Ok(rb) => {
-                                match dht.mailbox().update_community_route(mailbox_key, &rb.blob).await {
-                                    Ok(()) => {
-                                        // The previously published route
-                                        // enters its one-cycle grace.
-                                        if let Some(prev) = community_live.insert(mailbox_key.clone(), rb.route_id) {
-                                            community_retiring.insert(mailbox_key.clone(), prev);
-                                        }
-                                        tracing::debug!(community = %name, "community route refreshed");
-                                    }
-                                    Err(e) => {
-                                        // Never published — nothing can
-                                        // reference it; release now so a
-                                        // failing mailbox doesn't leak an
-                                        // allocation per tick.
-                                        if let Err(re) = api.release_private_route(rb.route_id) {
-                                            tracing::debug!(error = %re, "unpublished community route release failed");
-                                        }
-                                        tracing::warn!(community = %name, error = %e, "community route publish failed");
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                tracing::warn!(community = %name, error = %e, "community route allocation failed");
-                            }
+                for mailbox in &operator_mailboxes {
+                    if !community_live.contains_key(mailbox) {
+                        if let Some(id) = heal_community_route(&api, &config, mailbox).await {
+                            community_live.insert(mailbox.clone(), id);
                         }
                     }
                 }
-
-                // Drop route state for communities we no longer operate.
-                let active_mailboxes: std::collections::HashSet<&String> =
-                    operator_communities.iter().map(|(_, key)| key).collect();
+                // Operator-exit: release routes for mailboxes we no
+                // longer operate (the route is alive — explicit
+                // release is correct when abandoning it).
+                let active: std::collections::HashSet<&String> = operator_mailboxes.iter().collect();
                 community_live.retain(|key, route| {
-                    if active_mailboxes.contains(key) {
-                        return true;
-                    }
-                    let _ = api.release_private_route(route.clone());
-                    false
-                });
-                community_retiring.retain(|key, route| {
-                    if active_mailboxes.contains(key) {
+                    if active.contains(key) {
                         return true;
                     }
                     let _ = api.release_private_route(route.clone());
@@ -1007,9 +1117,55 @@ async fn run_route_refresh_loop(
                 });
             }
             _ = shutdown_rx.recv() => {
-                tracing::info!("route refresh loop shutting down");
+                for (_, route) in community_live.drain() {
+                    let _ = api.release_private_route(route);
+                }
+                tracing::info!("route authority loop shutting down");
                 break;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod route_authority_tests {
+    use super::classify_dead_routes;
+
+    fn route_id(byte: u8) -> veilid_core::RouteId {
+        veilid_core::RouteId::new(
+            veilid_core::CRYPTO_KIND_VLD0,
+            veilid_core::BareRouteId::new(&[byte; 32]),
+        )
+    }
+
+    #[test]
+    fn classify_dead_routes_personal() {
+        let personal = route_id(1);
+        let dead = vec![route_id(1)];
+        let live = std::collections::HashMap::new();
+        let (personal_died, mailboxes) = classify_dead_routes(&dead, Some(&personal), &live);
+        assert!(personal_died);
+        assert!(mailboxes.is_empty());
+    }
+
+    #[test]
+    fn classify_dead_routes_community() {
+        let dead = vec![route_id(2)];
+        let mut live = std::collections::HashMap::new();
+        live.insert("mb1".to_string(), route_id(2));
+        live.insert("mb2".to_string(), route_id(3));
+        let (personal_died, mailboxes) = classify_dead_routes(&dead, None, &live);
+        assert!(!personal_died);
+        assert_eq!(mailboxes, vec!["mb1".to_string()]);
+    }
+
+    #[test]
+    fn classify_dead_routes_none() {
+        let personal = route_id(1);
+        let dead = vec![route_id(9)];
+        let live = std::collections::HashMap::new();
+        let (personal_died, mailboxes) = classify_dead_routes(&dead, Some(&personal), &live);
+        assert!(!personal_died);
+        assert!(mailboxes.is_empty());
     }
 }

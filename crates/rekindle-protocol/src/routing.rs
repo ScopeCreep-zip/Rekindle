@@ -33,14 +33,6 @@ pub struct RoutingManager {
     private_route_id: Option<RouteId>,
     /// Our private route blob (shared with peers for receiving messages).
     pub private_route_blob: Option<Vec<u8>>,
-    /// Route replaced by the most recent refresh, held alive for one
-    /// more refresh cycle. Veilid compiles the reply to an inbound
-    /// private-routed RPC against the route the question arrived on —
-    /// releasing the old route at the instant a new one is installed
-    /// kills the reply path of every in-flight question (and trips
-    /// veilid-core 0.5.2's `safety_spec.preferred_route` allocation
-    /// bail). The replaced route is released on the NEXT install.
-    pending_release: Option<RouteId>,
 }
 
 impl RoutingManager {
@@ -51,32 +43,7 @@ impl RoutingManager {
             safety_mode,
             private_route_id: None,
             private_route_blob: None,
-            pending_release: None,
         }
-    }
-
-    /// Allocate a new private route for receiving messages.
-    ///
-    /// Returns the route blob that should be published to the DHT so peers
-    /// can send us messages.
-    pub async fn allocate_private_route(&mut self) -> Result<Vec<u8>, ProtocolError> {
-        let route_blob = self
-            .api
-            .new_private_route()
-            .await
-            .map_err(|e| ProtocolError::RoutingError(format!("new_private_route: {e}")))?;
-
-        self.release_pending();
-        self.pending_release = self.private_route_id.replace(route_blob.route_id.clone());
-        self.private_route_blob = Some(route_blob.blob.clone());
-
-        tracing::info!(
-            route_id = %route_blob.route_id,
-            blob_len = route_blob.blob.len(),
-            "private route allocated"
-        );
-
-        Ok(route_blob.blob)
     }
 
     /// Release (destroy) the current private route.
@@ -86,7 +53,6 @@ impl RoutingManager {
     /// a no-op — use [`forget_private_route`] instead when the route is known
     /// to be dead.
     pub fn release_private_route(&mut self) -> Result<(), ProtocolError> {
-        self.release_pending();
         if let Some(route_id) = self.private_route_id.take() {
             self.api
                 .release_private_route(route_id)
@@ -95,17 +61,6 @@ impl RoutingManager {
         self.private_route_blob = None;
         tracing::info!("private route released");
         Ok(())
-    }
-
-    /// Release the route held over from the previous refresh, if any.
-    /// Failure is expected when the route already died and Veilid
-    /// cleaned it up — log at debug and move on.
-    fn release_pending(&mut self) {
-        if let Some(expired) = self.pending_release.take() {
-            if let Err(e) = self.api.release_private_route(expired) {
-                tracing::debug!(error = %e, "grace-expired route release failed (likely already dead)");
-            }
-        }
     }
 
     /// Clear the current private route from our state without calling Veilid.
@@ -150,14 +105,11 @@ impl RoutingManager {
     /// of a lock guard (e.g. `parking_lot` across an `.await` boundary) and
     /// then store the result back.
     ///
-    /// Make-before-break with one-cycle grace: the route being replaced
-    /// (if any) is NOT released here — it is parked in `pending_release`
-    /// so in-flight private-routed RPCs that arrived on it can still
-    /// compile their replies, and released on the next install (or on
-    /// full [`release_private_route`] teardown).
+    /// Routes are event-driven (no proactive rotation): install happens
+    /// only at first login or after a dead route was `forget`-cleared, so
+    /// there is never a live route to replace — a plain install.
     pub fn set_allocated_route(&mut self, route_id: RouteId, blob: Vec<u8>) {
-        self.release_pending();
-        self.pending_release = self.private_route_id.replace(route_id);
+        self.private_route_id = Some(route_id);
         self.private_route_blob = Some(blob);
     }
 }

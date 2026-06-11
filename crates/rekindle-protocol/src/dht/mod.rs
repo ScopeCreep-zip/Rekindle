@@ -484,7 +484,15 @@ impl DHTManager {
     /// and any matching entries in the `imported_routes` cache. This ensures
     /// community server routes are also invalidated when Veilid reports them
     /// as dead, not just peer-to-peer routes.
-    pub fn invalidate_dead_routes(&mut self, dead_routes: &[veilid_core::RouteId]) {
+    ///
+    /// Returns the pubkeys whose routes died so the caller can clear
+    /// any OTHER per-peer route caches it holds (the host's live
+    /// `peer_route_cache` keeps its own copy of these blobs).
+    pub fn invalidate_dead_routes(
+        &mut self,
+        dead_routes: &[veilid_core::RouteId],
+    ) -> Vec<String> {
+        let mut affected = Vec::new();
         for route_id in dead_routes {
             // Invalidate peer route cache entry
             if let Some(pubkey) = self.route_id_to_pubkey.remove(route_id) {
@@ -495,6 +503,7 @@ impl DHTManager {
                 if let Some(blob) = self.route_cache.remove(&pubkey) {
                     self.imported_routes.remove(&blob);
                 }
+                affected.push(pubkey);
             }
         }
 
@@ -504,6 +513,7 @@ impl DHTManager {
             dead_routes.iter().collect();
         self.imported_routes
             .retain(|_blob, (route_id, _ts)| !dead_set.contains(route_id));
+        affected
     }
 
     /// Invalidate all cached route state for a peer by their public key.
