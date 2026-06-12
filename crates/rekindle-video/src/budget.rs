@@ -27,6 +27,35 @@ pub const VIDEO_MAX_KBPS: u32 = 1200;
 /// the classic "video must adapt" threshold.
 const LOSS_BACKOFF_Q8: u8 = 13;
 
+/// Static payload-share estimate (Q10) for the 4 KiB-fragment frame
+/// mix (~0.625) — used until the pacer has measured a real window.
+pub const START_PAYLOAD_SHARE_Q10: u32 = 640;
+
+/// Scale receiver-measured PAYLOAD goodput up to the WIRE domain the
+/// AIMD runs in. The receiver can only count reassembled frame bytes;
+/// the sender knows its own measured payload share (data payload ÷
+/// wire bytes incl. parity + per-fragment overhead). Without this
+/// scaling the GCC growth cap compares wire-rate apples to
+/// payload-rate oranges: at share ≈ 0.625 the cap (1.5 × goodput)
+/// lands BELOW the current rate and the policy hard-freezes — the
+/// libwebrtc `WithOverhead` lesson (estimate in wire units, convert
+/// at the encoder boundary).
+#[must_use]
+pub fn wire_feedback_kbps(payload_kbps: u32, share_q10: u32) -> u32 {
+    let s = u64::from(share_q10.clamp(256, 1024));
+    u32::try_from(u64::from(payload_kbps) * 1024 / s).unwrap_or(u32::MAX)
+}
+
+/// The media-rate target to hand the ENCODER for a wire-domain pacer
+/// target: encoder output × (1/share) ≈ wire demand, so the encoder
+/// must aim at `wire × share` or it overproduces into the pacer queue
+/// (delta expiry → phantom loss → death spiral).
+#[must_use]
+pub fn encoder_target_kbps(wire_kbps: u32, share_q10: u32) -> u32 {
+    let s = u64::from(share_q10.clamp(256, 1024));
+    u32::try_from(u64::from(wire_kbps) * s / 1024).unwrap_or(u32::MAX)
+}
+
 /// One AIMD step from receiver feedback:
 /// - loss above ~5 % → multiplicative decrease (×0.85);
 /// - clean window → additive-ish ramp (×1.10), capped at 1.5× the
@@ -109,6 +138,50 @@ mod tests {
         // marked. The cap limits growth only — never forces decay.
         let next = target_from_feedback(800, 1, 0);
         assert_eq!(next, 800, "growth capped, no decay without loss");
+    }
+
+    #[test]
+    fn wire_domain_loop_converges_with_realistic_share() {
+        // The R4 closed loop: encoder targets wire×share, receiver
+        // measures that payload rate, sender scales it back to wire
+        // before the AIMD step. Must reach the ceiling from the start
+        // value on a clean link.
+        let share = START_PAYLOAD_SHARE_Q10;
+        let mut t = VIDEO_START_KBPS;
+        for _ in 0..30 {
+            let payload_goodput = encoder_target_kbps(t, share);
+            let wire_feedback = wire_feedback_kbps(payload_goodput, share);
+            t = target_from_feedback(t, wire_feedback, 0);
+        }
+        assert_eq!(t, VIDEO_MAX_KBPS, "clean wire-domain loop must reach ceiling");
+    }
+
+    #[test]
+    fn payload_domain_feedback_would_freeze_documenting_the_bug() {
+        // Control test for the fix above: feeding PAYLOAD goodput
+        // straight into the wire-domain AIMD freezes the target —
+        // 1.5 × 0.625 < 1.0 lands the cap below prev.
+        let payload_goodput = encoder_target_kbps(350, START_PAYLOAD_SHARE_Q10); // 218
+        assert_eq!(target_from_feedback(350, payload_goodput, 0), 350);
+    }
+
+    #[test]
+    fn unit_conversions_round_trip_and_clamp() {
+        for share in [256u32, 640, 1024] {
+            let wire = 800u32;
+            let media = encoder_target_kbps(wire, share);
+            let back = wire_feedback_kbps(media, share);
+            assert!(
+                back.abs_diff(wire) <= 4,
+                "share {share}: {wire} → {media} → {back} drifted"
+            );
+        }
+        // Out-of-range shares clamp instead of zeroing/exploding.
+        assert_eq!(encoder_target_kbps(1000, 0), encoder_target_kbps(1000, 256));
+        assert_eq!(wire_feedback_kbps(1000, 4096), wire_feedback_kbps(1000, 1024));
+        // The stalled-ack guard survives the wire scaling: ~0 feedback
+        // never decays a clean stream.
+        assert_eq!(target_from_feedback(800, wire_feedback_kbps(1, 640), 0), 800);
     }
 
     #[test]

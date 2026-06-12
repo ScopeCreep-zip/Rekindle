@@ -152,6 +152,7 @@ pub async fn shutdown_voice(state: &AppState, opts: &VoiceShutdownOpts) {
     }
     *state.video_pacer_tx.write() = None;
     *state.video_pacer_rate_tx.write() = None;
+    *state.video_payload_share_rx.write() = None;
     state.video_bitrate_targets.lock().clear();
 
     // Belt-and-suspenders: clear voice channels even if the adapter

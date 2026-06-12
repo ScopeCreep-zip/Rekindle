@@ -45,14 +45,33 @@ pub struct PacedFrame {
     pub enqueued_ms: u64,
 }
 
-/// Media payload size of one fragment envelope — the bucket meters
-/// media bytes; envelope framing overhead is proportional and small.
-fn envelope_media_bytes(envelope: &CommunityEnvelope) -> usize {
+/// Per-fragment wire overhead beyond the media payload: ~250 B of our
+/// own envelope (VideoFragment header + Ed25519 signature + packed
+/// Cap'n Proto framing) plus ~1.1 KiB of first-hop Veilid chrome
+/// (ENV0 header/signature + ~6 onion layers + RoutedOperation). At
+/// the 4 KiB fragment budget this is ~25% of wire bytes — far too big
+/// to ignore; the bucket must meter what the network actually carries
+/// (libwebrtc's pacing `include overhead` model).
+pub const PER_FRAGMENT_OVERHEAD_BYTES: usize = 1_400;
+
+/// Wire cost of one fragment envelope: payload + per-fragment chrome.
+fn envelope_wire_cost(envelope: &CommunityEnvelope) -> usize {
     match envelope {
         CommunityEnvelope::Control(
             ControlPayload::VideoFragment { payload, .. }
             | ControlPayload::VideoParityFragment { payload, .. },
-        ) => payload.len(),
+        ) => payload.len() + PER_FRAGMENT_OVERHEAD_BYTES,
+        _ => 0,
+    }
+}
+
+/// Receiver-countable payload of one envelope: DATA fragments only.
+/// Parity is consumed inside the reassembler and never reaches the
+/// receiver's goodput accounting — it belongs in the wire denominator
+/// of the payload share but not the numerator.
+fn envelope_data_payload_bytes(envelope: &CommunityEnvelope) -> usize {
+    match envelope {
+        CommunityEnvelope::Control(ControlPayload::VideoFragment { payload, .. }) => payload.len(),
         _ => 0,
     }
 }
@@ -63,6 +82,10 @@ pub struct PacerStats {
     pub sent_fragments: u64,
     pub dropped_frames: u64,
     pub expired_frames: u64,
+    /// Keyframes whose wire cost exceeded a full TTL of budget at
+    /// intake — no pacing policy can deliver such a frame without
+    /// starving every delta behind it (the R4 "forbidden band").
+    pub oversized_keyframes: u64,
     pub queue_depth: usize,
     pub rate_kbps: u32,
 }
@@ -87,6 +110,13 @@ pub struct VideoPacer {
     sent_fragments: u64,
     dropped_frames: u64,
     expired_frames: u64,
+    oversized_keyframes: u64,
+    /// Released DATA-fragment payload bytes (the receiver-countable
+    /// share numerator) since startup.
+    released_data_payload_bytes: u64,
+    /// Released wire bytes — payload + overhead, data + parity (the
+    /// share denominator) since startup.
+    released_wire_bytes: u64,
 }
 
 impl VideoPacer {
@@ -102,6 +132,9 @@ impl VideoPacer {
             sent_fragments: 0,
             dropped_frames: 0,
             expired_frames: 0,
+            oversized_keyframes: 0,
+            released_data_payload_bytes: 0,
+            released_wire_bytes: 0,
         }
     }
 
@@ -116,11 +149,14 @@ impl VideoPacer {
     }
 
     /// Bucket capacity (milli-bytes): a quarter-second of budget, but
-    /// always at least one max-size fragment so progress is possible
-    /// at any rate.
+    /// always at least one max-size fragment AT WIRE COST so progress
+    /// is possible at any rate.
     fn bucket_cap(&self) -> u64 {
         let quarter_second = self.millibytes_per_ms() * 250;
-        let one_fragment = (crate::fragment::FRAGMENT_PAYLOAD_LIMIT as u64 + 4096) * 1000;
+        let one_fragment = (crate::fragment::FRAGMENT_PAYLOAD_LIMIT as u64
+            + PER_FRAGMENT_OVERHEAD_BYTES as u64
+            + 4096)
+            * 1000;
         quarter_second.max(one_fragment)
     }
 
@@ -147,6 +183,23 @@ impl VideoPacer {
     /// droppable frame exists (it's the freshest sync point). The
     /// in-flight front frame is never dropped.
     pub fn enqueue(&mut self, frame: PacedFrame, now_ms: u64) -> usize {
+        // R4 intake guard: a keyframe whose wire cost exceeds a full
+        // delta-TTL of budget cannot be delivered without expiring
+        // every delta queued behind it — count it so the driver can
+        // surface the encoder/budget mismatch (the frame still ships;
+        // dropping the only sync point would be worse).
+        if frame.keyframe {
+            let wire: u64 = frame
+                .envelopes
+                .iter()
+                .map(|e| envelope_wire_cost(e) as u64)
+                .sum();
+            // milli-bytes/ms × TTL ms ÷ 1000 = whole bytes over one TTL.
+            let ttl_budget_bytes = self.millibytes_per_ms() * MAX_QUEUE_AGE_MS / 1000;
+            if wire > ttl_budget_bytes {
+                self.oversized_keyframes += 1;
+            }
+        }
         self.expire_stale(now_ms);
         let mut dropped = 0;
         while self.queue.len() >= MAX_QUEUED_FRAMES {
@@ -211,11 +264,14 @@ impl VideoPacer {
                 self.front_cursor = 0;
                 continue;
             };
-            let cost = envelope_media_bytes(envelope) as u64 * 1000;
+            let wire = envelope_wire_cost(envelope);
+            let cost = wire as u64 * 1000;
             if cost > self.bucket_millibytes {
                 break;
             }
             self.bucket_millibytes -= cost;
+            self.released_wire_bytes += wire as u64;
+            self.released_data_payload_bytes += envelope_data_payload_bytes(envelope) as u64;
             let front = self.queue.front().expect("checked above");
             out.push((
                 front.community_id.clone(),
@@ -226,6 +282,22 @@ impl VideoPacer {
             self.sent_fragments += 1;
         }
         out
+    }
+
+    /// Q10 fixed-point payload share of released traffic:
+    /// receiver-countable data payload ÷ wire bytes, clamped to
+    /// [0.25, 1.0]. `None` until at least one full fragment has been
+    /// released. Feeds the wire↔media unit conversions in `budget` —
+    /// the AIMD runs in wire units, the encoder in media units, and
+    /// this measured ratio is the bridge (libwebrtc's
+    /// `WithOverhead` model).
+    #[must_use]
+    pub fn payload_share_q10(&self) -> Option<u32> {
+        if self.released_wire_bytes < (crate::fragment::FRAGMENT_PAYLOAD_LIMIT as u64) {
+            return None;
+        }
+        let q10 = self.released_data_payload_bytes * 1024 / self.released_wire_bytes;
+        Some(u32::try_from(q10.clamp(256, 1024)).expect("clamped to <= 1024"))
     }
 
     /// Milliseconds until the next fragment becomes affordable: 0 when
@@ -240,7 +312,7 @@ impl VideoPacer {
         let Some(envelope) = front.envelopes.get(self.front_cursor) else {
             return 0;
         };
-        let cost = envelope_media_bytes(envelope) as u64 * 1000;
+        let cost = envelope_wire_cost(envelope) as u64 * 1000;
         if cost <= self.bucket_millibytes {
             return 0;
         }
@@ -255,6 +327,7 @@ impl VideoPacer {
             sent_fragments: self.sent_fragments,
             dropped_frames: self.dropped_frames,
             expired_frames: self.expired_frames,
+            oversized_keyframes: self.oversized_keyframes,
             queue_depth: self.queue.len(),
             rate_kbps: self.rate_kbps,
         }
@@ -264,6 +337,7 @@ impl VideoPacer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fragment::FRAGMENT_PAYLOAD_LIMIT;
     use proptest::prelude::*;
 
     fn fragment_envelope(payload_len: usize) -> CommunityEnvelope {
@@ -280,6 +354,41 @@ mod tests {
             payload: vec![0; payload_len],
             signature: Vec::new(),
         })
+    }
+
+    fn parity_envelope(payload_len: usize) -> CommunityEnvelope {
+        CommunityEnvelope::Control(ControlPayload::VideoParityFragment {
+            channel_id: "ch".into(),
+            stream_id: [1; 16],
+            frame_seq: 0,
+            parity_index: 0,
+            parity_total: 1,
+            data_count: 1,
+            codec: rekindle_types::video::Codec::Vp9,
+            frame_len: 0,
+            timestamp: 0,
+            mek_generation: 0,
+            payload: vec![0; payload_len],
+            signature: Vec::new(),
+        })
+    }
+
+    /// Keyframe with `data` data shards + `parity` parity shards, all
+    /// `frag_bytes` — the canonical post-FEC shape.
+    fn fec_keyframe(seq: u32, data: usize, parity: usize, frag_bytes: usize, t: u64) -> PacedFrame {
+        let mut envelopes: Vec<CommunityEnvelope> =
+            (0..data).map(|_| fragment_envelope(frag_bytes)).collect();
+        envelopes.extend((0..parity).map(|_| parity_envelope(frag_bytes)));
+        PacedFrame {
+            community_id: "c".into(),
+            channel_id: "ch".into(),
+            stream_id: [1; 16],
+            frame_seq: seq,
+            keyframe: true,
+            envelopes,
+            bytes: data * frag_bytes,
+            enqueued_ms: t,
+        }
     }
 
     fn frame(seq: u32, keyframe: bool, fragments: usize, frag_bytes: usize, t: u64) -> PacedFrame {
@@ -300,10 +409,11 @@ mod tests {
 
     #[test]
     fn fragments_released_in_order_at_rate() {
-        // 350 kbps = 43_750 B/s. A 3×10 KB frame: initial bucket
-        // (capped) affords some, the rest trickles.
+        // 350 kbps = 43_750 B/s wire. A 3×4 KiB frame (≈16.5 KiB wire):
+        // the initial bucket (≈10.9 KiB) affords the first fragment,
+        // the rest trickles.
         let mut p = VideoPacer::new(350);
-        p.enqueue(frame(1, true, 3, 10_000, 0), 0);
+        p.enqueue(frame(1, true, 3, 4_096, 0), 0);
         let first = p.poll(0);
         assert!(!first.is_empty(), "initial bucket affords ≥1 fragment");
         let mut total = first.len();
@@ -319,7 +429,7 @@ mod tests {
     #[test]
     fn in_flight_frame_always_completes() {
         let mut p = VideoPacer::new(350);
-        p.enqueue(frame(1, false, 4, 10_000, 0), 0);
+        p.enqueue(frame(1, false, 4, 4_096, 0), 0);
         // Start releasing frame 1 (cursor > 0)…
         let released = p.poll(0);
         assert!(!released.is_empty() && released.len() < 4);
@@ -334,7 +444,7 @@ mod tests {
             got += p
                 .poll(t)
                 .iter()
-                .filter(|(_, _, e)| envelope_media_bytes(e) == 10_000)
+                .filter(|(_, _, e)| envelope_data_payload_bytes(e) == 4_096)
                 .count();
             if got == 4 {
                 break;
@@ -346,9 +456,9 @@ mod tests {
     #[test]
     fn expiry_sheds_stale_non_keyframes_only() {
         let mut p = VideoPacer::new(100);
-        p.enqueue(frame(1, true, 1, 10_000, 0), 0);
-        p.enqueue(frame(2, false, 1, 10_000, 0), 0);
-        p.enqueue(frame(3, false, 1, 10_000, 0), 0);
+        p.enqueue(frame(1, true, 1, 4_096, 0), 0);
+        p.enqueue(frame(2, false, 1, 4_096, 0), 0);
+        p.enqueue(frame(3, false, 1, 4_096, 0), 0);
         // Far past MAX_QUEUE_AGE_MS: the deltas expire un-sent; the
         // keyframe is exempt — it SHIPS (late) instead of expiring.
         let released = p.poll(MAX_QUEUE_AGE_MS + 1_000);
@@ -361,6 +471,103 @@ mod tests {
         assert_eq!(released.len(), 1);
     }
 
+    #[test]
+    fn payload_share_none_before_first_release() {
+        let p = VideoPacer::new(350);
+        assert_eq!(p.payload_share_q10(), None);
+    }
+
+    #[test]
+    fn payload_share_tracks_canonical_mix() {
+        // The R4 budget-model mix over one 4 s keyframe interval:
+        // 1 keyframe (6 data + 2 parity à 4,096) + 47 deltas (2,500 B).
+        // payload = 6×4096 + 47×2500 = 142,076
+        // wire    = 8×(4096+1400) + 47×(2500+1400) = 227,268
+        // share   = 142,076 × 1024 / 227,268 = 640.18 → 640
+        let mut p = VideoPacer::new(100_000); // effectively unmetered
+        let mut t = 0u64;
+        p.enqueue(fec_keyframe(0, 6, 2, 4_096, t), t);
+        let _ = p.poll(t);
+        for seq in 1..=47u32 {
+            // Drain as we go — 48 queued frames would trip the
+            // MAX_QUEUED_FRAMES shed and skew the released mix.
+            t += 1;
+            p.enqueue(frame(seq, false, 1, 2_500, t), t);
+            let _ = p.poll(t);
+        }
+        assert_eq!(p.stats().queue_depth, 0, "mix fully drained");
+        assert_eq!(p.stats().dropped_frames, 0, "nothing shed");
+        let share = p.payload_share_q10().expect("released a full window");
+        assert!(
+            (634..=646).contains(&share),
+            "share {share} outside 640±6 — wire/payload accounting drifted"
+        );
+    }
+
+    #[test]
+    fn parity_counts_as_wire_not_payload() {
+        // A lone FEC keyframe: parity inflates the wire denominator
+        // but never the receiver-countable numerator.
+        // share = 24,576 × 1024 / 43,968 = 572.36 → 572
+        let mut p = VideoPacer::new(100_000);
+        p.enqueue(fec_keyframe(0, 6, 2, 4_096, 0), 0);
+        let mut t = 0u64;
+        for _ in 0..50 {
+            t += 50;
+            let _ = p.poll(t);
+            if p.stats().queue_depth == 0 {
+                break;
+            }
+        }
+        assert_eq!(p.payload_share_q10(), Some(572));
+    }
+
+    #[test]
+    fn oversized_keyframe_counted_at_intake() {
+        // 100 kbps → TTL budget = 100×125×500/1000 = 6,250 B; a 2-shard
+        // keyframe costs 2×(4096+1400) = 10,992 B wire → flagged.
+        let mut p = VideoPacer::new(100);
+        p.enqueue(fec_keyframe(0, 2, 0, 4_096, 0), 0);
+        assert_eq!(p.stats().oversized_keyframes, 1);
+        // At 750 kbps (46,875 B TTL budget) the same frame is fine.
+        let mut p = VideoPacer::new(750);
+        p.enqueue(fec_keyframe(0, 2, 0, 4_096, 0), 0);
+        assert_eq!(p.stats().oversized_keyframes, 0);
+    }
+
+    #[test]
+    fn keyframe_burst_starves_deltas_at_low_rate_only() {
+        // The R4 forbidden band: a 24 KiB keyframe ≈ 44 KiB wire takes
+        // ~1 s to drain at 350 kbps — deltas arriving behind it at
+        // 12 fps age past the 500 ms TTL. At 750 kbps the drain fits
+        // inside the TTL and every delta ships.
+        for (rate_kbps, min_expired, max_expired) in [(350u32, 5u64, u64::MAX), (750, 0, 0)] {
+            let mut p = VideoPacer::new(rate_kbps);
+            // Burn most of the initial bucket burst so the keyframe
+            // meets a steady-state bucket, not a full one.
+            p.enqueue(frame(0, false, 1, 4_000, 0), 0);
+            let _ = p.poll(0);
+            let mut t: u64 = 1;
+            p.enqueue(fec_keyframe(1, 6, 2, 4_096, t), t);
+            let mut seq = 2u32;
+            let mut last_arrival = t;
+            while t < 2_500 {
+                let _ = p.poll(t);
+                while last_arrival + 83 <= t {
+                    last_arrival += 83;
+                    p.enqueue(frame(seq, false, 1, 2_500, last_arrival), last_arrival);
+                    seq += 1;
+                }
+                t += 5;
+            }
+            let expired = p.stats().expired_frames;
+            assert!(
+                expired >= min_expired && expired <= max_expired,
+                "rate {rate_kbps}: expired {expired}, wanted [{min_expired}, {max_expired}]"
+            );
+        }
+    }
+
     proptest! {
         /// Sliding-window rate bound: bytes released in any 1s window
         /// never exceed rate × 1.25 (the bucket-cap burst allowance)
@@ -368,7 +575,7 @@ mod tests {
         #[test]
         fn release_rate_bounded(
             rate_kbps in 100u32..1200,
-            frames in proptest::collection::vec((1usize..5, 1_000usize..28_000), 1..20),
+            frames in proptest::collection::vec((1usize..5, 512usize..4_096), 1..20),
         ) {
             let mut p = VideoPacer::new(rate_kbps);
             let mut t: u64 = 0;
@@ -379,8 +586,9 @@ mod tests {
             }
             for _ in 0..2_000 {
                 let released = p.poll(t);
+                // The bound is on WIRE bytes — what the bucket meters.
                 let released_bytes: usize =
-                    released.iter().map(|(_, _, e)| envelope_media_bytes(e)).sum();
+                    released.iter().map(|(_, _, e)| envelope_wire_cost(e)).sum();
                 if released_bytes > 0 {
                     events.push((t, released_bytes));
                 }
@@ -390,13 +598,16 @@ mod tests {
                 t += p.next_poll_in_ms(t).max(1);
             }
             // One window of refill + the initial burst (bucket cap has
-            // a one-fragment floor for low rates) + one fragment slack.
-            // Integer math mirrors the pacer's own milli-byte units.
+            // a one-fragment-wire floor for low rates) + one fragment
+            // of wire slack. Integer math mirrors the pacer's own
+            // milli-byte units.
             let bytes_per_sec = u64::from(rate_kbps) * 125;
+            let one_fragment_wire =
+                (FRAGMENT_PAYLOAD_LIMIT + PER_FRAGMENT_OVERHEAD_BYTES) as u64;
             // div_ceil: the pacer's cap is exact in MILLI-bytes, so a
             // truncating byte division here undercounts by <1 byte.
-            let burst_cap = bytes_per_sec.div_ceil(4).max(32_864);
-            let window_budget = bytes_per_sec + burst_cap + 28_000;
+            let burst_cap = bytes_per_sec.div_ceil(4).max(one_fragment_wire + 4_096);
+            let window_budget = bytes_per_sec + burst_cap + one_fragment_wire;
             for (start, _) in &events {
                 let in_window: usize = events
                     .iter()

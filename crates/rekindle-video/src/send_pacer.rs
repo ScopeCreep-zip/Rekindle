@@ -22,6 +22,7 @@ pub async fn run_video_pacer<D: VideoDeps>(
     deps: Arc<D>,
     mut frame_rx: tokio::sync::mpsc::Receiver<PacedFrame>,
     mut rate_rx: tokio::sync::watch::Receiver<u32>,
+    share_tx: tokio::sync::watch::Sender<u32>,
     mut shutdown_rx: tokio::sync::mpsc::Receiver<()>,
 ) {
     let mut pacer = VideoPacer::new(*rate_rx.borrow());
@@ -76,7 +77,8 @@ pub async fn run_video_pacer<D: VideoDeps>(
         }
 
         let now = rekindle_utils::timestamp_ms();
-        for (community_id, channel_id, envelope) in pacer.poll(now) {
+        let released = pacer.poll(now);
+        for (community_id, channel_id, envelope) in released {
             if let Err(error) = deps.send_to_channel(&community_id, &channel_id, &envelope) {
                 tracing::warn!(
                     target: "rekindle_video::pacer",
@@ -87,6 +89,19 @@ pub async fn run_video_pacer<D: VideoDeps>(
                 );
             }
         }
+        // Publish the measured payload share — the AIMD's wire↔media
+        // unit bridge. `send_if_modified` keeps watch wakeups to real
+        // changes.
+        if let Some(share) = pacer.payload_share_q10() {
+            share_tx.send_if_modified(|current| {
+                if *current == share {
+                    false
+                } else {
+                    *current = share;
+                    true
+                }
+            });
+        }
 
         if now.saturating_sub(last_summary_ms) >= SUMMARY_INTERVAL_MS {
             last_summary_ms = now;
@@ -96,6 +111,8 @@ pub async fn run_video_pacer<D: VideoDeps>(
                 sent_fragments = s.sent_fragments,
                 dropped_frames = s.dropped_frames,
                 expired_frames = s.expired_frames,
+                oversized_keyframes = s.oversized_keyframes,
+                payload_share_q10 = pacer.payload_share_q10().unwrap_or(0),
                 queue_depth = s.queue_depth,
                 rate_kbps = s.rate_kbps,
                 "pacer summary"
@@ -148,12 +165,14 @@ mod tests {
         let deps = Arc::new(MockDeps::new());
         let (frame_tx, frame_rx) = tokio::sync::mpsc::channel(8);
         let (_rate_tx, rate_rx) = tokio::sync::watch::channel(350u32);
+        let (share_tx, share_rx) = tokio::sync::watch::channel(crate::START_PAYLOAD_SHARE_Q10);
         let (shutdown_tx, shutdown_rx) = tokio::sync::mpsc::channel(1);
 
         let task = tokio::spawn(run_video_pacer(
             Arc::clone(&deps),
             frame_rx,
             rate_rx,
+            share_tx,
             shutdown_rx,
         ));
 
@@ -194,6 +213,10 @@ mod tests {
                 "FIFO frame order + fragment order preserved"
             );
         }
+
+        // The measured payload share reached the watch channel:
+        // 4,000 payload / (4,000 + 1,400) wire = 758 in Q10.
+        assert_eq!(*share_rx.borrow(), 758);
 
         shutdown_tx.send(()).await.unwrap();
         task.await.unwrap();

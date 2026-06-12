@@ -233,6 +233,12 @@ impl Reassembler {
         if slot.is_none() {
             *slot = Some(fragment.payload);
             partial.received_data_count = partial.received_data_count.saturating_add(1);
+            // Last-ACTIVITY eviction anchor: a large paced frame's
+            // fragments legitimately span more than the stale horizon
+            // at low rates — anchoring on the FIRST fragment evicted
+            // partials right before their completing shard arrived,
+            // making big keyframes structurally uncompletable.
+            partial.received_at_ms = now_ms;
         }
 
         try_complete(buffer, fragment.frame_seq, fragment.stream_id)
@@ -299,6 +305,8 @@ impl Reassembler {
         if slot.is_none() {
             *slot = Some(fragment.payload);
             partial.received_parity_count = partial.received_parity_count.saturating_add(1);
+            // Same last-activity anchor as the data path.
+            partial.received_at_ms = now_ms;
         }
 
         try_complete(buffer, fragment.frame_seq, fragment.stream_id)
@@ -451,6 +459,52 @@ mod tests {
             payload,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn slow_paced_frame_survives_horizon_while_fragments_trickle() {
+        // Regression (audit D12): a paced multi-fragment frame whose
+        // shards span longer than STALE_FRAME_HORIZON_MS used to be
+        // evicted right before its completing fragment arrived —
+        // first-fragment anchoring. With last-activity anchoring, a
+        // trickle with gaps under the horizon completes.
+        let mut r = Reassembler::new();
+        let payload = vec![0x44u8; FRAGMENT_PAYLOAD_LIMIT * 3 + 10];
+        let frags = fragmented(9, &payload, true);
+        assert_eq!(frags.len(), 4);
+        let mut t = 0u32;
+        for frag in &frags[..3] {
+            assert!(r.ingest("alice", frag.clone(), t).unwrap().is_none());
+            t += STALE_FRAME_HORIZON_MS - 200; // each gap < horizon
+        }
+        // Total elapsed ≈ 2.7× the horizon — far past first-fragment
+        // eviction, still within last-activity.
+        let done = r.ingest("alice", frags[3].clone(), t).unwrap();
+        assert!(done.is_some(), "trickled frame must complete");
+        assert_eq!(done.unwrap().payload, payload);
+    }
+
+    #[test]
+    fn abandoned_frame_still_evicts_after_quiet_horizon() {
+        // The horizon still works when activity STOPS: a partial with
+        // no new fragments for > horizon is evicted on the stream's
+        // next ingest.
+        let mut r = Reassembler::new();
+        let payload = vec![0x55u8; FRAGMENT_PAYLOAD_LIMIT * 2 + 10];
+        let frags = fragmented(11, &payload, false);
+        assert!(r.ingest("alice", frags[0].clone(), 0).unwrap().is_none());
+        // A different frame's fragment arrives long after — sweeping
+        // the abandoned partial.
+        let other = fragmented(12, &vec![0x66u8; 512], false);
+        let _ = r
+            .ingest("alice", other[0].clone(), STALE_FRAME_HORIZON_MS + 500)
+            .unwrap();
+        // Completing the abandoned frame now starts a FRESH partial
+        // (the old one is gone), so it does not complete.
+        let done = r
+            .ingest("alice", frags[1].clone(), STALE_FRAME_HORIZON_MS + 600)
+            .unwrap();
+        assert!(done.is_none(), "abandoned partial was evicted");
     }
 
     #[test]

@@ -18,11 +18,15 @@ use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 
-/// Per-fragment maximum chunk size. Leaves headroom under Veilid's
-/// 32 KB app_message limit for Signal Double Ratchet overhead +
-/// envelope framing. Mirrors the community video budget so the
-/// frontend's keyframe-fragmentation logic stays unchanged.
-pub const FRAGMENT_PAYLOAD_LIMIT: usize = 28 * 1024;
+/// Per-fragment maximum chunk size, sized for loss granularity rather
+/// than the 32 KB `app_message` ceiling: Veilid segments every
+/// envelope on a UDP hop into 1,272-byte fire-and-forget datagrams
+/// with all-or-nothing reassembly, so a 28 KiB fragment rode as ~23
+/// datagrams per hop and one lost datagram killed the whole fragment.
+/// 4 KiB ≈ 4-5 datagrams/hop. Mirrors the community video budget
+/// (rekindle-video `fragment.rs`) so the frontend's fragmentation
+/// logic stays unchanged.
+pub const FRAGMENT_PAYLOAD_LIMIT: usize = 4 * 1024;
 
 /// Reassembly buffers older than this are dropped during the next
 /// `record_fragment` call. 5 s comfortably exceeds a stalled keyframe's
@@ -381,9 +385,11 @@ mod tests {
     }
 
     #[test]
-    fn fragment_payload_limit_is_28_kib() {
+    fn fragment_payload_limit_matches_community_budget() {
         // Sanity check the published constant — frontend keyframe
-        // splitter depends on this value.
-        assert_eq!(FRAGMENT_PAYLOAD_LIMIT, 28 * 1024);
+        // splitter depends on this value, and the DM budget must stay
+        // in lock-step with the community one (rekindle-video
+        // fragment.rs, per-hop datagram rationale).
+        assert_eq!(FRAGMENT_PAYLOAD_LIMIT, 4 * 1024);
     }
 }

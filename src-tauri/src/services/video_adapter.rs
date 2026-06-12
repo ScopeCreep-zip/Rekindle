@@ -213,13 +213,28 @@ impl VideoDeps for VideoAdapter {
 }
 
 impl VideoAdapter {
-    /// One AIMD step from receiver feedback. The policy state and the
-    /// pacer rate advance on EVERY step — a +10% ramp must compound,
-    /// and a watch send is free. Only the frontend
+    /// One AIMD step from receiver feedback, run in WIRE units (R4 —
+    /// the libwebrtc `WithOverhead` model): the receiver can only
+    /// count reassembled payload bytes, so its goodput is scaled up by
+    /// the pacer's measured payload share before the step; the pacer
+    /// watch carries the wire target; the frontend/native encoder gets
+    /// the media-domain conversion (`encoder_target_kbps`). Without
+    /// the scaling, the GCC growth cap compares wire to payload and
+    /// hard-freezes at realistic shares (1.5 × 0.625 < 1.0).
+    ///
+    /// Policy state and pacer rate advance on EVERY step — a +10% ramp
+    /// must compound, and a watch send is free. Only the frontend
     /// `CommunityEvent::VideoBitrateTarget` is gated by the >15%
     /// hysteresis, because the encoder reconfigure it triggers forces
     /// a keyframe.
     fn apply_bitrate_feedback(&self, community_id: &str, channel_id: &str, kbps: u32, loss_q8: u8) {
+        let share_q10 = self
+            .state
+            .video_payload_share_rx
+            .read()
+            .as_ref()
+            .map_or(rekindle_video::START_PAYLOAD_SHARE_Q10, |rx| *rx.borrow());
+        let feedback_wire = rekindle_video::wire_feedback_kbps(kbps, share_q10);
         let key = (community_id.to_string(), channel_id.to_string());
         let (prev, next, last_emitted) = {
             let mut targets = self.state.video_bitrate_targets.lock();
@@ -227,7 +242,7 @@ impl VideoAdapter {
                 rekindle_video::VIDEO_START_KBPS,
                 rekindle_video::VIDEO_START_KBPS,
             ));
-            let next = rekindle_video::target_from_feedback(prev, kbps, loss_q8);
+            let next = rekindle_video::target_from_feedback(prev, feedback_wire, loss_q8);
             targets.insert(key.clone(), (next, emitted));
             (prev, next, emitted)
         };
@@ -245,19 +260,25 @@ impl VideoAdapter {
             .video_bitrate_targets
             .lock()
             .insert(key, (next, next));
+        let encoder_kbps = rekindle_video::encoder_target_kbps(next, share_q10);
         tracing::info!(
             target: "rekindle_video::pacer",
             community_id,
             channel_id,
-            kbps = next,
-            feedback_kbps = kbps,
+            wire_kbps = next,
+            encoder_kbps,
+            share_q10,
+            feedback_payload_kbps = kbps,
             loss_q8,
             "bitrate target updated"
         );
         let event = CommunityEvent::VideoBitrateTarget {
             community_id: community_id.to_string(),
             channel_id: channel_id.to_string(),
-            kbps: next,
+            // Media-domain rate — what the encoder should PRODUCE so
+            // its output fits the wire budget after fragmentation
+            // overhead + parity.
+            kbps: encoder_kbps,
         };
         crate::event_dispatch::emit_live(&self.app_handle, "community-event", &event);
     }

@@ -226,6 +226,10 @@ pub struct AppState {
     /// Rate input of the running pacer (kbps). Driven by the backend
     /// bitrate policy in `video_adapter::emit_event`.
     pub video_pacer_rate_tx: RwLock<Option<tokio::sync::watch::Sender<u32>>>,
+    /// Measured payload share (Q10: data payload ÷ wire bytes) from
+    /// the pacer — the AIMD's wire↔media unit bridge (R4). `None`
+    /// outside a voice session.
+    pub video_payload_share_rx: RwLock<Option<tokio::sync::watch::Receiver<u32>>>,
     /// Shutdown for the pacer task (fired on voice teardown).
     pub video_pacer_shutdown_tx: RwLock<Option<mpsc::Sender<()>>>,
     /// Bitrate-policy state per (community, channel):
@@ -343,6 +347,7 @@ impl Default for AppState {
             ),
             video_pacer_tx: RwLock::new(None),
             video_pacer_rate_tx: RwLock::new(None),
+            video_payload_share_rx: RwLock::new(None),
             video_pacer_shutdown_tx: RwLock::new(None),
             video_bitrate_targets: Mutex::new(HashMap::new()),
             video_pacer_send_drops: std::sync::atomic::AtomicU64::new(0),

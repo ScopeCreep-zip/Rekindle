@@ -404,6 +404,11 @@ pub(super) fn spawn_voice_loops_impl(
                 rekindle_video::pacer::MAX_QUEUED_FRAMES,
             );
             let (rate_tx, rate_rx) = tokio::sync::watch::channel(rekindle_video::VIDEO_START_KBPS);
+            // Wire↔media unit bridge (R4): the pacer measures the real
+            // payload share of released traffic; the AIMD step and the
+            // encoder-target conversion read it from this watch.
+            let (share_tx, share_rx) =
+                tokio::sync::watch::channel(rekindle_video::START_PAYLOAD_SHARE_Q10);
             let (pacer_shutdown_tx, pacer_shutdown_rx) = mpsc::channel::<()>(1);
             let pacer_deps =
                 crate::services::video_adapter::VideoAdapter::new(state.clone(), app.clone());
@@ -411,10 +416,12 @@ pub(super) fn spawn_voice_loops_impl(
                 pacer_deps,
                 frame_rx,
                 rate_rx,
+                share_tx,
                 pacer_shutdown_rx,
             ));
             *state.video_pacer_tx.write() = Some(frame_tx);
             *state.video_pacer_rate_tx.write() = Some(rate_tx);
+            *state.video_payload_share_rx.write() = Some(share_rx);
             *state.video_pacer_shutdown_tx.write() = Some(pacer_shutdown_tx);
         }
     }

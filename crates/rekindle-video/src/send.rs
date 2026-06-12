@@ -26,10 +26,12 @@ use crate::fragment::{
 use crate::pacer::PacedFrame;
 use crate::reassembly_state::VideoReassemblyState;
 
-/// One parity per N data shards for keyframes. With 4× ratio,
-/// dropping up to 25% of fragments is recoverable. Inter-frames get
-/// no parity.
-const KEYFRAME_PARITY_RATIO_DENOM: usize = 4;
+/// One parity per N data shards for any multi-fragment frame. With 4×
+/// ratio, dropping up to 25% of fragments is recoverable. The old
+/// keyframes-only gate predates the 4 KiB fragment budget: a lost
+/// delta fragment now costs a keyframe request (a full intra on the
+/// wire), which is far more expensive than 25% parity on the delta.
+const PARITY_RATIO_DENOM: usize = 4;
 
 /// Per-frame send request. Bundling all the variable-per-frame fields
 /// into a struct keeps the orchestration helpers below a sane argument
@@ -113,7 +115,7 @@ pub fn build_video_frame<D: VideoDeps>(
         emit_initial_topology(deps, community_id, channel_id, request.stream_id)?;
     }
 
-    let parity_count = parity_count_for(request.keyframe, &ciphertext);
+    let parity_count = parity_count_for(&ciphertext);
     let envelopes = if parity_count > 0 {
         ctx.collect_with_fec(&ciphertext, parity_count)?
     } else {
@@ -153,17 +155,14 @@ fn emit_initial_topology<D: VideoDeps>(
 }
 
 #[must_use]
-fn parity_count_for(keyframe: bool, ciphertext: &[u8]) -> u8 {
-    if !keyframe {
-        return 0;
-    }
+fn parity_count_for(ciphertext: &[u8]) -> u8 {
     let data = ciphertext.len().div_ceil(FRAGMENT_PAYLOAD_LIMIT);
     if data < 2 {
         // 1-shard frames don't benefit from parity (parity = duplicate)
         // — and reed-solomon over 1+1 only recovers exact duplicates.
         return 0;
     }
-    u8::try_from(data.div_ceil(KEYFRAME_PARITY_RATIO_DENOM)).unwrap_or(u8::MAX)
+    u8::try_from(data.div_ceil(PARITY_RATIO_DENOM)).unwrap_or(u8::MAX)
 }
 
 /// Bundle of references the FEC and non-FEC collect helpers both
@@ -554,24 +553,34 @@ mod tests {
     }
 
     #[test]
-    fn parity_count_for_inter_frame_is_zero() {
-        let ct = vec![0u8; 10_000];
-        assert_eq!(parity_count_for(false, &ct), 0);
+    fn parity_count_for_multi_shard_inter_frame_is_positive() {
+        // Deltas get parity too now — a lost delta fragment costs a
+        // keyframe request, which is far pricier than 25% parity.
+        let ct = vec![0u8; FRAGMENT_PAYLOAD_LIMIT * 2 + 100];
+        assert!(parity_count_for(&ct) >= 1);
     }
 
     #[test]
-    fn parity_count_for_single_shard_keyframe_is_zero() {
+    fn parity_count_for_single_shard_frame_is_zero() {
         let ct = vec![0u8; 100]; // < FRAGMENT_PAYLOAD_LIMIT
-        assert_eq!(parity_count_for(true, &ct), 0);
+        assert_eq!(parity_count_for(&ct), 0);
     }
 
     #[test]
     fn parity_count_for_multi_shard_keyframe_is_positive() {
         let ct = vec![0u8; FRAGMENT_PAYLOAD_LIMIT * 4 + 100];
-        let p = parity_count_for(true, &ct);
+        let p = parity_count_for(&ct);
         assert!(
             p >= 1,
             "expected at least 1 parity shard for 5-shard keyframe"
         );
+    }
+
+    #[test]
+    fn canonical_keyframe_gets_quarter_parity() {
+        // 24 KiB keyframe at the 4 KiB budget: 6 data shards → 2 parity
+        // (div_ceil(6/4)) — the R4 budget-model mix in the plan.
+        let ct = vec![0u8; 24 * 1024];
+        assert_eq!(parity_count_for(&ct), 2);
     }
 }

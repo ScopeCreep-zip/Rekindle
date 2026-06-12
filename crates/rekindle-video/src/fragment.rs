@@ -1,21 +1,30 @@
 //! Architecture §10.6 video fragmentation. A single encoded video
 //! frame may exceed Veilid's `app_message` 32 KiB cap, so we split it
-//! into ≤28 KiB chunks (the §10.6 budget — 28 KiB leaves room for the
-//! envelope, signature, MEK overhead, and Cap'n Proto framing).
+//! into chunks sized for the transport's REAL per-hop unit (see
+//! [`FRAGMENT_PAYLOAD_LIMIT`]).
 
 use rekindle_types::video::Codec;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-/// Per-fragment payload limit. Spec line 3231 ("Veilid `app_message`
-/// payload limit minus overhead") for files; the same budget applies
-/// to video fragments.
-pub const FRAGMENT_PAYLOAD_LIMIT: usize = 28 * 1024;
+/// Per-fragment payload limit, sized for loss granularity rather than
+/// the 32 KiB `app_message` ceiling. Veilid segments every envelope on
+/// a UDP hop into 1,272-byte fire-and-forget datagrams with
+/// all-or-nothing reassembly and no retransmit
+/// (veilid-tools `assembly_buffer.rs`: `FRAGMENT_LEN = 1280 - 8`), so
+/// a 28 KiB fragment rode as ~23 datagrams PER HOP — at 0.5%/datagram
+/// loss across ~6 onion hops that's ~50% frame delivery, observed live
+/// as undecodable video. True single-datagram fragments are infeasible
+/// (first-hop onion chrome is ~0.9-1.2 KiB + ~250 B of our own
+/// envelope), so 4 KiB is the knee: 4-5 datagrams/hop, and a 24 KiB
+/// keyframe becomes 6 data + 2 parity shards that Reed-Solomon can
+/// actually recover (P≈0.93 where the 28 KiB monolith delivered 0.50).
+pub const FRAGMENT_PAYLOAD_LIMIT: usize = 4 * 1024;
 
-/// Maximum fragments per frame. `frag_total: u8` per the spec's
-/// `VideoFragment` struct caps us at 256 — well above any frame we'd
-/// realistically ship at 480p @ 15 fps.
-pub const MAX_FRAGMENTS_PER_FRAME: usize = 256;
+/// Maximum fragments per frame — `frag_total: u8` caps the WIRE field
+/// at 255. Must never read 256: a frame splitting into exactly 256
+/// chunks passed the bound check but panicked at the `u8` conversion.
+pub const MAX_FRAGMENTS_PER_FRAME: usize = 255;
 
 /// 16-byte stream identifier — derived from `(channel_id || sender_pseudonym)`
 /// so concurrent streams (e.g. two members screen-sharing in the same
@@ -404,6 +413,27 @@ mod tests {
     fn empty_frame_rejected() {
         let err = fragment_frame(test_shape([0u8; STREAM_ID_LEN], 1, true, Codec::Vp9, 0), &[]).unwrap_err();
         assert_eq!(err, FragmentError::EmptyFrame);
+    }
+
+    #[test]
+    fn exactly_max_fragments_succeeds() {
+        // 255 full chunks — the u8 wire ceiling, must round-trip.
+        let frame = vec![0u8; FRAGMENT_PAYLOAD_LIMIT * MAX_FRAGMENTS_PER_FRAME];
+        let frags =
+            fragment_frame(test_shape([2u8; STREAM_ID_LEN], 1, true, Codec::Vp9, 0), &frame)
+                .unwrap();
+        assert_eq!(frags.len(), 255);
+        assert_eq!(frags[254].frag_total, 255);
+    }
+
+    #[test]
+    fn one_over_max_fragments_errors_instead_of_panicking() {
+        // Regression: 256 chunks passed the old `> 256` bound check and
+        // panicked at the u8 conversion.
+        let frame = vec![0u8; FRAGMENT_PAYLOAD_LIMIT * MAX_FRAGMENTS_PER_FRAME + 1];
+        let err = fragment_frame(test_shape([2u8; STREAM_ID_LEN], 1, true, Codec::Vp9, 0), &frame)
+            .unwrap_err();
+        assert_eq!(err, FragmentError::TooManyFragments(256));
     }
 
     #[test]
