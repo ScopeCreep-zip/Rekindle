@@ -76,8 +76,40 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
    *  by community id. Control events still ride `community-event`. */
   let dmFrameChannel: Channel<DmVideoFrameMsg> | null = null;
   let communityFrameChannel: Channel<CommunityVideoFrameMsg> | null = null;
-  /** Single rAF that paces every remote's playout buffer into its decoder. */
-  let playoutRaf: number | null = null;
+  /** Single clock that paces every remote's playout buffer into its
+   *  decoder — and emits the ~1 Hz acks the sender's bitrate policy
+   *  feeds on. rAF when visible; a timer chain when hidden, because
+   *  every platform's webview suspends rAF for hidden/minimized
+   *  windows (Page Visibility semantics) — a frozen pump stalls
+   *  decode AND acks, which the far end can't tell apart from a dead
+   *  route. */
+  let playoutHandle: number | null = null;
+  let playoutVia: "raf" | "timer" = "raf";
+
+  function cancelPlayout(): void {
+    if (playoutHandle === null) return;
+    if (playoutVia === "raf") cancelAnimationFrame(playoutHandle);
+    else clearTimeout(playoutHandle);
+    playoutHandle = null;
+  }
+
+  function schedulePlayout(): void {
+    if (document.hidden) {
+      playoutVia = "timer";
+      playoutHandle = window.setTimeout(playoutPump, 250);
+    } else {
+      playoutVia = "raf";
+      playoutHandle = requestAnimationFrame(playoutPump);
+    }
+  }
+
+  /** Re-arm across the visibility edge — a pending rAF in a newly
+   *  hidden window may never fire, killing the chain before it could
+   *  reschedule onto the timer path. */
+  function onPlayoutVisibilityChange(): void {
+    cancelPlayout();
+    schedulePlayout();
+  }
 
   const localCameraVideoRef: { value: HTMLVideoElement | undefined } = { value: undefined };
   const localScreenVideoRef: { value: HTMLVideoElement | undefined } = { value: undefined };
@@ -114,9 +146,10 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
         console.error("WebCodecs capability probe failed:", e);
       });
     }
-    // One rAF clock paces playout for all remotes. E2E has no decoders/frames,
+    // One clock paces playout for all remotes. E2E has no decoders/frames,
     // so the loop is harmless there (remotes() stays empty).
-    playoutRaf = requestAnimationFrame(playoutPump);
+    schedulePlayout();
+    document.addEventListener("visibilitychange", onPlayoutVisibilityChange);
     if (props.mode === "community") {
       const communityIdLocal = props.communityId;
       unlistenCommunity = subscribeCommunityEvents((event) => {
@@ -207,7 +240,8 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
   onCleanup(() => {
     void stopCamera();
     void stopScreen();
-    if (playoutRaf !== null) cancelAnimationFrame(playoutRaf);
+    document.removeEventListener("visibilitychange", onPlayoutVisibilityChange);
+    cancelPlayout();
     unlistenCommunity?.then((unlisten) => unlisten());
     if (communityFrameChannel && props.mode === "community") {
       void commands.unregisterCommunityVideoChannel(props.communityId);
@@ -511,7 +545,7 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
         );
       }
     }
-    playoutRaf = requestAnimationFrame(playoutPump);
+    schedulePlayout();
   }
 
   /** Capture / display constraints come from the backend-negotiated
@@ -593,6 +627,28 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
         );
         stream = await open(undefined);
         setError("Saved camera unavailable — using default camera");
+      }
+      // Capture hygiene (all platforms): the delivered camera mode can
+      // differ from the constraints above — drivers commonly hand back
+      // the full-native mode (noisy MJPEG, different aspect) and let
+      // the UA scale in software. Nudge the track toward the encode
+      // shape, then LOG what was actually delivered — every mismatch
+      // here turns into encoder entropy the bitrate budget pays for,
+      // and it was invisible until now.
+      const track = stream.getVideoTracks()[0];
+      if (track) {
+        try {
+          await track.applyConstraints({ width, height, frameRate });
+        } catch {
+          // Best-effort: a camera that can't hit the shape still works —
+          // the sender's aspect-correct draw absorbs the difference.
+        }
+        const s = track.getSettings();
+        void commands.reportMediaCaptureError(
+          "camera-settings",
+          `delivered ${s.width}x${s.height}@${s.frameRate ?? "?"}fps ` +
+            `(wanted ${width}x${height}@${frameRate})`,
+        );
       }
       cameraStream = stream;
       setCameraCapture(stream);

@@ -37,22 +37,21 @@ import {
  *  NEVER changes mid-stream: a ladder move that reconfigured the
  *  encoder to new dimensions broke both receiving platforms' WebCodecs
  *  decoders on the in-band resolution switch (WebKitGTK stalled with
- *  no output and no error callback; WKWebView painted a black tile) —
- *  observed live as "no remote frames here, black tile on the mac"
- *  while transport, decrypt, and reassembly were all healthy. Fps and
- *  keyframe cadence are pump-side state: zero encoder reconfigures,
- *  zero bitstream surprises. Stretching the keyframe interval is what
- *  makes deep levels fit — at a 100 kbps target the 4 s cadence of
- *  30-100 KB intras already exceeds the whole budget. Late joiners
- *  aren't stranded by an 8 s cadence: the keyframe-request path
- *  (proven live) forces one on demand. */
+ *  no output and no error callback; WKWebView painted a black tile).
+ *  Fps is floored near 7: under CBR, per-frame bytes = bitrate ÷ fps,
+ *  so cutting fps below that point GROWS each frame instead of
+ *  shedding bytes — the 2 fps depths of the previous ladder produced
+ *  40 KB deltas / 160 KB keyframes (temporal prediction collapses at
+ *  500 ms frame spacing) and froze the far end. Bytes are shed by the
+ *  fps-coupled encoder bitrate (`effectiveBitrate`) following the AIMD
+ *  target down, not by fps alone. Late joiners aren't stranded by the
+ *  6 s cadence: the keyframe-request path (proven live) forces one on
+ *  demand. */
 const LADDER: ReadonlyArray<{ fpsScale: number; kfIntervalMs: number }> = [
   { fpsScale: 1, kfIntervalMs: KEYFRAME_INTERVAL_MS },
-  { fpsScale: 0.66, kfIntervalMs: KEYFRAME_INTERVAL_MS },
+  { fpsScale: 0.8, kfIntervalMs: KEYFRAME_INTERVAL_MS },
+  { fpsScale: 0.66, kfIntervalMs: 6000 },
   { fpsScale: 0.5, kfIntervalMs: 6000 },
-  { fpsScale: 0.33, kfIntervalMs: 6000 },
-  { fpsScale: 0.25, kfIntervalMs: 8000 },
-  { fpsScale: 0.15, kfIntervalMs: 8000 },
 ];
 
 export type TrackLabel = "camera" | "screen";
@@ -280,6 +279,18 @@ export function createVideoSender(
     };
     const ladderKfIntervalMs = (): number => LADDER[ladderLevel].kfIntervalMs;
 
+    /** Encoder bitrate coupled to the EFFECTIVE fps. Under CBR,
+     *  per-frame bytes = bitrate ÷ fps — handing the full AIMD target
+     *  to a low-fps stream concentrates the whole budget into a few
+     *  giant frames (live: 1200 kbps at 2 fps = 75 KB average frames,
+     *  ~190 KB keyframes via libvpx's 250% max-intra, each costing
+     *  seconds of pacer drain — the frozen-tile chain). Scaling by
+     *  fps/5 bounds a keyframe to ~½ s of pacer budget at any level;
+     *  at ≥5 fps the full target applies. Floor keeps the encoder out
+     *  of its degenerate sub-50 kbps range. */
+    const effectiveBitrate = (kbps: number, fps: number): number =>
+      Math.max(50_000, Math.round(kbps * 1000 * Math.min(1, fps / 5)));
+
     const captureCanvas = document.createElement("canvas");
     captureCanvas.width = constraints.maxWidth;
     captureCanvas.height = constraints.maxHeight;
@@ -353,7 +364,7 @@ export function createVideoSender(
       }
       encoder = makeEncoder();
       try {
-        encoder.configure(buildEncoderConfig(constraints, configuredKbps * 1000, appliedShape()));
+        encoder.configure(buildEncoderConfig(constraints, effectiveBitrate(configuredKbps, appliedShape().fps), appliedShape()));
         currentCodec = constraints.codec;
         ts.lastKeyframeMs = 0; // force a keyframe so receivers re-sync
         framesFed = 0;
@@ -377,7 +388,7 @@ export function createVideoSender(
     // locally encodable, but WebKit can still reject the full config
     // shape; surface that instead of letting startCamera die opaquely.
     try {
-      encoder.configure(buildEncoderConfig(constraints, configuredKbps * 1000, appliedShape()));
+      encoder.configure(buildEncoderConfig(constraints, effectiveBitrate(configuredKbps, appliedShape().fps), appliedShape()));
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       reportEncoderStatus(constraints.codec, false, `initial configure: ${msg}`);
@@ -389,22 +400,54 @@ export function createVideoSender(
     let frameIntervalMs = 1000 / appliedShape().fps;
     let lastEmittedAt = 0;
     let scheduleHandle: number | null = null;
-    let scheduledViaRVFC = false;
+    let scheduledVia: "rvfc" | "raf" | "timer" = "raf";
+
+    const cancelScheduled = (): void => {
+      if (scheduleHandle === null) return;
+      const v = captureVideo as VideoWithRVFC;
+      if (scheduledVia === "rvfc" && typeof v.cancelVideoFrameCallback === "function") {
+        v.cancelVideoFrameCallback(scheduleHandle);
+      } else if (scheduledVia === "raf") {
+        cancelAnimationFrame(scheduleHandle);
+      } else {
+        clearTimeout(scheduleHandle);
+      }
+      scheduleHandle = null;
+    };
 
     /** Prefer requestVideoFrameCallback (fires per camera frame, keeps
      *  running while the window is occluded on macOS — rAF doesn't);
-     *  rAF when the engine lacks rVFC (WebKitGTK 2.52). */
+     *  rAF when the engine lacks rVFC (WebKitGTK 2.52). Hidden page:
+     *  timer chain — every platform's webview suspends rAF for hidden
+     *  or minimized windows (Page Visibility semantics), so an
+     *  rAF-scheduled pump freezes and outbound video goes static while
+     *  keyframe requests pile up unanswered. Hidden-page timers are
+     *  clamped (~1 s), but 1 fps with serviced keyframe requests beats
+     *  a frozen tile. */
     const scheduleNext = (): void => {
       if (cancelled || fatal) return;
       const v = captureVideo as VideoWithRVFC;
-      if (typeof v.requestVideoFrameCallback === "function") {
-        scheduledViaRVFC = true;
+      if (document.hidden) {
+        scheduledVia = "timer";
+        scheduleHandle = window.setTimeout(pump, Math.max(frameIntervalMs, 250));
+      } else if (typeof v.requestVideoFrameCallback === "function") {
+        scheduledVia = "rvfc";
         scheduleHandle = v.requestVideoFrameCallback(pump);
       } else {
-        scheduledViaRVFC = false;
+        scheduledVia = "raf";
         scheduleHandle = requestAnimationFrame(pump);
       }
     };
+
+    /** Re-arm across the visibility edge: a pending rAF/rVFC in a
+     *  newly-hidden window may simply never fire — the pump chain dies
+     *  before it can reschedule itself onto the timer path. */
+    const onVisibilityChange = (): void => {
+      if (cancelled || fatal) return;
+      cancelScheduled();
+      scheduleNext();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
 
     const pump = (): void => {
       if (cancelled || fatal) return;
@@ -451,7 +494,7 @@ export function createVideoSender(
         frameIntervalMs = 1000 / shape.fps;
         const reconfigure = (): void => {
           try {
-            encoder.configure(buildEncoderConfig(constraints!, configuredKbps * 1000, appliedShape()));
+            encoder.configure(buildEncoderConfig(constraints!, effectiveBitrate(configuredKbps, appliedShape().fps), appliedShape()));
             currentCodec = constraints!.codec;
             ts.lastKeyframeMs = performance.now();
             framesFed = 0;
@@ -490,7 +533,7 @@ export function createVideoSender(
         if (Math.abs(ts.lowestReceiverKbps - configuredKbps) / configuredKbps > 0.15) {
           configuredKbps = ts.lowestReceiverKbps;
           try {
-            encoder.configure(buildEncoderConfig(constraints!, configuredKbps * 1000, appliedShape()));
+            encoder.configure(buildEncoderConfig(constraints!, effectiveBitrate(configuredKbps, appliedShape().fps), appliedShape()));
             ts.lastKeyframeMs = now; // reconfigure already emits a keyframe
           } catch (e) {
             console.error("encoder reconfigure failed:", e);
@@ -510,8 +553,13 @@ export function createVideoSender(
           captureCtx.drawImage(captureVideo, 0, 0, captureCanvas.width, captureCanvas.height);
           const isKeyframe = now - ts.lastKeyframeMs >= ladderKfIntervalMs();
           if (isKeyframe) ts.lastKeyframeMs = now;
+          // Explicit duration: canvas-sourced frames otherwise carry
+          // WebKitGTK's hardcoded 1-second GstBuffer duration, which
+          // whipsaws libvpx's framerate belief every frame and wrecks
+          // its rate control (one leg of the observed CBR overshoot).
           const videoFrame = new VideoFrame(captureCanvas, {
             timestamp: Math.floor(now * 1000),
+            duration: Math.round(frameIntervalMs * 1000),
           });
           encoder.encode(videoFrame, { keyFrame: isKeyframe });
           videoFrame.close();
@@ -523,11 +571,11 @@ export function createVideoSender(
         lastEmittedAt = now;
       }
       // Output-measured ladder: compare REAL encoder output against the
-      // bitrate target and step resolution/fps until it fits — the
-      // configured bitrate is advisory on WebKitGTK (observed 6×
-      // overshoot starving the pacer into 80%+ frame expiry, which
-      // receivers render as garble). Windows with zero output (encoder
-      // warming/stalled) are skipped: silence is not headroom.
+      // bitrate target and step fps/keyframe-cadence until it fits —
+      // the configured bitrate is loosely honored on WebKitGTK (VP9
+      // rides libvpx GOOD-quality deadline, not realtime). Windows with
+      // zero output (encoder warming/stalled) are skipped: silence is
+      // not headroom.
       if (now - ladderWindowStart >= LADDER_WINDOW_MS) {
         const measuredKbps = (ladderBytes * 8) / (now - ladderWindowStart);
         const produced = ladderBytes > 0;
@@ -555,15 +603,30 @@ export function createVideoSender(
           }
           if (next !== ladderLevel) {
             ladderLevel = next;
-            // Pump-side state only — no encoder.configure (a mid-stream
-            // reconfigure changes nothing the encoder honors here) and
-            // no canvas resize (resolution is fixed for the stream).
+            // Same-dimension reconfigure (the proven-safe class — the
+            // drift path does it): the encoder must hear the TRUTHFUL
+            // framerate and the fps-coupled bitrate, or CBR keeps
+            // splitting the old budget across the new frame count and
+            // each frame balloons (the 2 fps / 75 KB-frame failure).
+            // Resolution never changes here.
             const shape = appliedShape();
             frameIntervalMs = 1000 / shape.fps;
+            try {
+              encoder.configure(
+                buildEncoderConfig(constraints!, effectiveBitrate(configuredKbps, shape.fps), shape),
+              );
+              ts.lastKeyframeMs = now; // reconfigure already emits a keyframe
+            } catch (e) {
+              console.error("ladder reconfigure failed:", e);
+              recreateEncoder("ladder-reconfigure-failed");
+              scheduleNext();
+              return;
+            }
             reportEncoderStatus(
               currentCodec,
               true,
               `ladder ${ladderLevel}: ${shape.fps}fps kf=${ladderKfIntervalMs()}ms ` +
+                `bitrate=${Math.round(effectiveBitrate(configuredKbps, shape.fps) / 1000)}kbps ` +
                 `measured=${Math.round(measuredKbps)}kbps target=${configuredKbps}kbps`,
             );
           }
@@ -602,14 +665,8 @@ export function createVideoSender(
 
     ts.stop = () => {
       cancelled = true;
-      if (scheduleHandle !== null) {
-        const v = captureVideo as VideoWithRVFC;
-        if (scheduledViaRVFC && typeof v.cancelVideoFrameCallback === "function") {
-          v.cancelVideoFrameCallback(scheduleHandle);
-        } else {
-          cancelAnimationFrame(scheduleHandle);
-        }
-      }
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      cancelScheduled();
       try {
         encoder.close();
       } catch (e) {

@@ -198,12 +198,23 @@ pub async fn report_media_capture_error(
     stage: String,
     message: String,
 ) -> Result<(), String> {
-    tracing::warn!(
-        target: "rekindle_video::permissions",
-        stage = %stage,
-        error = %message,
-        "frontend media capture failure"
-    );
+    // `*-settings` stages are diagnostics (e.g. the camera mode the
+    // platform actually delivered vs the requested one), not failures.
+    if stage.ends_with("-settings") {
+        tracing::info!(
+            target: "rekindle_video::permissions",
+            stage = %stage,
+            detail = %message,
+            "frontend media capture report"
+        );
+    } else {
+        tracing::warn!(
+            target: "rekindle_video::permissions",
+            stage = %stage,
+            error = %message,
+            "frontend media capture failure"
+        );
+    }
     Ok(())
 }
 
