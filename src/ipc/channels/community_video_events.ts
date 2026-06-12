@@ -83,6 +83,16 @@ export type CommunityVideoEvent =
       };
     }
   | {
+      // The Linux-native capture session died asynchronously (camera
+      // unplug, pipeline failure) — revert the toggle + surface it.
+      type: "nativeVideoError";
+      data: {
+        communityId: string;
+        channelId: string;
+        message: string;
+      };
+    }
+  | {
       // Phase 3 — the backend negotiator found NO local encode codec
       // every peer can decode. Latched backend-side: fires once per
       // compatible→incompatible transition. `peers` lists the blocking

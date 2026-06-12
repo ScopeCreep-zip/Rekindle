@@ -1,5 +1,6 @@
 import { Component, createSignal, onCleanup, onMount, Show } from "solid-js";
 import QrScanner from "qr-scanner";
+import { commands } from "../../ipc/commands";
 
 interface QrScannerOverlayProps {
   onResult: (decoded: string) => void;
@@ -49,11 +50,24 @@ const QrScannerOverlay: Component<QrScannerOverlayProps> = (props) => {
         preferredCamera: "environment",
       },
     );
-    scanner.start().catch((e: unknown) => {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error("QR scanner start failed:", msg);
-      setError(`Could not access camera: ${msg}`);
-    });
+    // A backend-native camera session owns the device exclusively —
+    // and a busy camera surfaces NO getUserMedia error: the scanner
+    // would sit on silent black, never decoding, with nothing to
+    // diagnose. Pre-empt instead.
+    commands
+      .nativeVideoActive()
+      .catch(() => null)
+      .then((active) => {
+        if (active) {
+          setError("Camera is in use by the current call");
+          return;
+        }
+        scanner?.start().catch((e: unknown) => {
+          const msg = e instanceof Error ? e.message : String(e);
+          console.error("QR scanner start failed:", msg);
+          setError(`Could not access camera: ${msg}`);
+        });
+      });
   });
 
   onCleanup(() => {

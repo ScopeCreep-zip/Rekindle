@@ -55,6 +55,10 @@ export interface CallTile {
   isLocal: boolean;
   /// Screen-share tile — preferred for the spotlight slot.
   isScreen: boolean;
+  /// Self CAMERA surfaces mirror (Discord-style); screens and remote
+  /// tiles never do. Only meaningful for canvas tiles — the <video>
+  /// preview mirrors via its own class.
+  mirror?: boolean;
 }
 
 export function useCallStage() {
@@ -83,13 +87,28 @@ export function useCallStage() {
     if (voiceState.isConnected) {
       const camOn = pipe?.cameraOn() ?? false;
       const scrOn = pipe?.screenOn() ?? false;
+      // Native-capture self view: the camera is backend-owned and the
+      // self stream arrives as a loopback decode — its canvas IS the
+      // self tile (a bindVideo tile would hold a null srcObject and
+      // render permanently black).
+      const selfLoopback = (pipe?.remotes() ?? []).find((r) => r.isLocal);
       if (pipe && camOn) {
-        put(out, "self-camera", {
-          bindVideo: pipe.bindCameraVideo,
-          displayName: `${authState.displayName ?? "You"} (you)`,
-          isLocal: true,
-          isScreen: false,
-        });
+        if (selfLoopback) {
+          put(out, "self-camera", {
+            canvas: selfLoopback.canvas,
+            displayName: `${authState.displayName ?? "You"} (you)`,
+            isLocal: true,
+            isScreen: false,
+            mirror: true,
+          });
+        } else {
+          put(out, "self-camera", {
+            bindVideo: pipe.bindCameraVideo,
+            displayName: `${authState.displayName ?? "You"} (you)`,
+            isLocal: true,
+            isScreen: false,
+          });
+        }
       }
       if (pipe && scrOn) {
         put(out, "self-screen", {
@@ -115,6 +134,9 @@ export function useCallStage() {
     const remotes = pipe?.remotes() ?? [];
     const withVideo = new Set<string>();
     for (const r of remotes) {
+      // The self loopback renders as the self tile above, never as a
+      // remote tile (unmirrored, "Participant"-named, double card).
+      if (r.isLocal) continue;
       const p = voiceState.participants.find((x) => x.publicKey === r.senderPseudonym);
       if (p) withVideo.add(p.publicKey);
       put(out, `remote-${r.streamId}`, {

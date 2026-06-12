@@ -76,6 +76,11 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
    *  by community id. Control events still ride `community-event`. */
   let dmFrameChannel: Channel<DmVideoFrameMsg> | null = null;
   let communityFrameChannel: Channel<CommunityVideoFrameMsg> | null = null;
+  /** Backend-native capture (Linux GStreamer) — capability-detected on
+   *  mount, never OS-sniffed. When a native session runs, its loopback
+   *  stream id marks the self-view stream in ingest. */
+  let nativeCaptureAvailable = false;
+  let nativeStreamId: string | null = null;
   /** Single clock that paces every remote's playout buffer into its
    *  decoder — and emits the ~1 Hz acks the sender's bitrate policy
    *  feeds on. rAF when visible; a timer chain when hidden, because
@@ -145,6 +150,14 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
       probeAndReportLocalVideoCapabilities().catch((e) => {
         console.error("WebCodecs capability probe failed:", e);
       });
+      commands
+        .nativeVideoCaptureAvailable()
+        .then((available) => {
+          nativeCaptureAvailable = available;
+        })
+        .catch(() => {
+          // Probe failure = webview path; same as off-Linux.
+        });
     }
     // One clock paces playout for all remotes. E2E has no decoders/frames,
     // so the loop is harmless there (remotes() stays empty).
@@ -179,15 +192,28 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
           // active local stream so their tiles light up immediately
           // instead of waiting out the keyframe cadence.
           if (event.data.channelId === props.channelId) {
-            sender.forceKeyframeAll();
+            if (nativeStreamId) {
+              void commands.forceNativeKeyframes();
+            } else {
+              sender.forceKeyframeAll();
+            }
           }
         } else if (event.type === "videoBitrateTarget") {
           // Phase 4 — the BACKEND owns the bitrate policy now (AIMD
           // over FrameAck/BandwidthEstimate feedback with the audio
           // reserve subtracted). The encoder just follows the target;
-          // the raw ack events no longer steer it directly.
-          if (event.data.channelId === props.channelId) {
+          // the raw ack events no longer steer it directly. The native
+          // path follows the bitrate watch in the backend already.
+          if (event.data.channelId === props.channelId && !nativeStreamId) {
             sender.setTargetKbps(event.data.kbps);
+          }
+        } else if (event.type === "nativeVideoError") {
+          // The backend camera session died asynchronously (unplug,
+          // pipeline failure) — revert the toggle and surface it.
+          if (event.data.channelId === props.channelId) {
+            nativeStreamId = null;
+            setCameraOn(false);
+            setError(`Camera stopped: ${event.data.message}`);
           }
         }
       });
@@ -341,6 +367,7 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
       remote = {
         streamId,
         senderPseudonym: sender_,
+        isLocal: nativeStreamId !== null && streamId === nativeStreamId,
         codec,
         // Placeholder — installDecoder() below replaces it before the
         // remote is appended; never decoded against.
@@ -360,6 +387,34 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
       };
       installDecoder(remote, webCodecsString, decoderOptimizeForLatency);
       setRemotes((prev) => [...prev, remote!]);
+    }
+
+    // Self-view loopback: frames arrive in order over the ipc::Channel
+    // — there is nothing to reorder or absorb, and the playout buffer
+    // would add ~50 ms of pure self-view lag. Decode immediately
+    // (keeping the fresh-decoder keyframe guard).
+    if (remote.isLocal) {
+      if (!remote.ready) return;
+      if (remote.awaitKeyframe) {
+        if (!keyframe) {
+          requestKeyframeFor(remote.streamId);
+          return;
+        }
+        remote.awaitKeyframe = false;
+      }
+      try {
+        remote.decoder.decode(
+          new EncodedVideoChunk({
+            type: keyframe ? "key" : "delta",
+            timestamp,
+            data,
+          }),
+        );
+      } catch (e) {
+        console.error("self-view decode failed:", e);
+        requestKeyframeFor(remote.streamId);
+      }
+      return;
     }
 
     // Reorder + jitter-absorb instead of decoding on arrival. The playout
@@ -483,6 +538,13 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
     const last = keyframeRequestAt.get(streamId) ?? 0;
     if (now - last < KEYFRAME_REQUEST_MIN_INTERVAL_MS) return;
     keyframeRequestAt.set(streamId, now);
+    // The self-view loopback's sender is OUR native encoder — channel
+    // envelopes would spam peers with requests for a stream they don't
+    // own while the frozen tile never heard them.
+    if (nativeStreamId !== null && streamId === nativeStreamId) {
+      void commands.forceNativeKeyframes();
+      return;
+    }
     void commands.sendVideoKeyframeRequest(props.communityId, props.channelId, streamId);
   }
 
@@ -494,6 +556,11 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
     for (const r of remotes()) {
       // Skip until the async decoder.configure() has landed (see ingest).
       if (!r.ready) continue;
+      // Self-view loopback streams decode at ingest (in-order channel,
+      // nothing to jitter-absorb) and are NEVER acked — a self-ack
+      // would broadcast loopback stats into every peer's channel-keyed
+      // bitrate policy.
+      if (r.isLocal) continue;
       const { release, requestKeyframe } = r.buffer.popDue(now);
       for (const f of release) {
         // A rebuilt decoder must see a keyframe before any delta —
@@ -599,6 +666,27 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
 
   async function startCamera(): Promise<void> {
     setError(null);
+    // Backend-native capture path (capability-detected): no
+    // getUserMedia, no webview encoder — the backend owns the camera
+    // and encode, and the self view arrives via the loopback stream.
+    if (nativeCaptureAvailable && props.mode === "community") {
+      try {
+        const prefs = await commands.getPreferences();
+        nativeStreamId = await commands.startNativeVideo(
+          props.communityId,
+          props.channelId,
+          "camera",
+          prefs.videoDeviceLabel ?? null,
+        );
+        setCameraOn(true);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        nativeStreamId = null;
+        setError(`Camera failed: ${msg}`);
+        void commands.reportMediaCaptureError("camera-native", msg);
+      }
+      return;
+    }
     const { width, height, frameRate } = captureConstraints();
     const open = (deviceId: string | undefined) =>
       navigator.mediaDevices.getUserMedia({
@@ -671,6 +759,31 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
   }
 
   async function stopCamera(): Promise<void> {
+    if (nativeStreamId !== null) {
+      const localId = nativeStreamId;
+      nativeStreamId = null;
+      // Drop the loopback tile + decoder with the session.
+      setRemotes((prev) =>
+        prev.filter((r) => {
+          if (r.streamId === localId) {
+            try {
+              r.decoder.close();
+            } catch (e) {
+              console.error("self-view decoder close failed:", e);
+            }
+            return false;
+          }
+          return true;
+        }),
+      );
+      try {
+        await commands.stopNativeVideo();
+      } catch (e) {
+        console.error("stop_native_video failed:", e);
+      }
+      setCameraOn(false);
+      return;
+    }
     sender.stop("camera");
     cameraStream?.getTracks().forEach((t) => t.stop());
     cameraStream = null;
@@ -854,7 +967,9 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
         await document.exitPictureInPicture();
         return;
       }
-      const remote = remotes()[0];
+      // PiP shows a REMOTE peer — the self-view loopback must not win
+      // the slot just because it registered first.
+      const remote = remotes().find((r) => !r.isLocal);
       if (remote && typeof (remote.canvas as HTMLCanvasElement).captureStream === "function") {
         const stream = (remote.canvas as HTMLCanvasElement).captureStream(30);
         if (!pipBridgeVideo.value) {

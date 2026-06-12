@@ -263,6 +263,36 @@ export const syncCommands = {
       streamIdHex,
     }),
   /**
+   * Capability query for the camera toggle — true only where the
+   * backend's native capture stack (Linux GStreamer vp8enc) passed its
+   * availability probe. Feature detection, never OS sniffing.
+   */
+  nativeVideoCaptureAvailable: () =>
+    invoke<boolean>("native_video_capture_available"),
+  listNativeVideoDevices: () =>
+    invoke<{ displayName: string }[]>("list_native_video_devices"),
+  /**
+   * Active native stream id (hex) when a backend camera session runs.
+   * Webview camera consumers (QR scanner) must check this first: a
+   * busy camera surfaces NO getUserMedia error — the stream resolves
+   * live and silently delivers zero frames.
+   */
+  nativeVideoActive: () => invoke<string | null>("native_video_active"),
+  startNativeVideo: (
+    communityId: string,
+    channelId: string,
+    trackLabel: string,
+    deviceLabel: string | null,
+  ) =>
+    invoke<string>("start_native_video", {
+      communityId,
+      channelId,
+      trackLabel,
+      deviceLabel,
+    }),
+  stopNativeVideo: () => invoke<void>("stop_native_video"),
+  forceNativeKeyframes: () => invoke<void>("force_native_keyframes"),
+  /**
    * Architecture §10.6 line 4082 — out-of-band bandwidth advertisement
    * when network conditions change between frames (Wi-Fi → cellular).
    */

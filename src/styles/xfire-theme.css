@@ -5486,7 +5486,18 @@
   }
 
   .call-stage-tile-video {
-    transform: scaleX(-1); /* mirror own preview, Discord-style */
+    transform: scaleX(-1); /* mirror own CAMERA preview, Discord-style */
+  }
+
+  /* Screen shares must read normally — mirrored text is the wart. */
+  .call-stage-tile-screen .call-stage-tile-video {
+    transform: none;
+  }
+
+  /* The native-capture self view renders into a canvas (loopback
+     decode); mirror it like the camera <video> preview. */
+  .call-stage-tile-mirror .call-stage-tile-canvas canvas {
+    transform: scaleX(-1);
   }
 
   .call-stage-tile-avatar {

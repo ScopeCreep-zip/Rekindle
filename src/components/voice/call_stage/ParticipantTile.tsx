@@ -31,6 +31,10 @@ const ParticipantTile: Component<{
       classList={{
         "call-stage-tile-spotlight": props.spotlighted,
         "call-stage-tile-speaking": isSpeaking(),
+        // Mirror only the SELF CAMERA surface — screens must read
+        // normally (mirrored text), remotes are never mirrored.
+        "call-stage-tile-mirror": props.tile.mirror === true,
+        "call-stage-tile-screen": props.tile.isScreen,
       }}
       onDblClick={() => props.onSpotlight?.()}
     >
