@@ -10,12 +10,6 @@
 //! Pure functions; the adapter (`video_adapter::emit_event`) owns the
 //! per-(community, channel) previous-target state.
 
-/// Absolute audio reserve. Opus at 32 kbps plus envelope/signature
-/// overhead lands ~70-80 kbps on the wire; 64 kbps of *budget headroom*
-/// is reserved out of the video estimate so video can never price
-/// voice out (voice itself is structurally unpaced — see `pacer.rs`).
-pub const VOICE_RESERVE_KBPS: u32 = 64;
-
 /// Starting video target: 480p15 over multi-hop Veilid routes. The
 /// previous 800 kbps default assumed direct-UDP-class throughput and
 /// saturated routes hard enough to drop voice.
@@ -33,23 +27,26 @@ pub const VIDEO_MAX_KBPS: u32 = 1200;
 /// the classic "video must adapt" threshold.
 const LOSS_BACKOFF_Q8: u8 = 13;
 
-/// The video budget for a given downstream estimate: the estimate
-/// minus the voice reserve, clamped to `[MIN, MAX]`. `None` (no
-/// feedback yet) → the conservative start value.
-#[must_use]
-pub fn video_budget_kbps(estimate_kbps: Option<u32>) -> u32 {
-    match estimate_kbps {
-        None => VIDEO_START_KBPS,
-        Some(est) => est
-            .saturating_sub(VOICE_RESERVE_KBPS)
-            .clamp(VIDEO_MIN_KBPS, VIDEO_MAX_KBPS),
-    }
-}
-
 /// One AIMD step from receiver feedback:
 /// - loss above ~5 % → multiplicative decrease (×0.85);
-/// - clean window → additive-ish ramp (×1.10), capped by the budget
-///   derived from the receiver's own kbps estimate.
+/// - clean window → additive-ish ramp (×1.10), capped at 1.5× the
+///   receiver's measured delivered kbps.
+///
+/// The 1.5× cap is GCC's increase rule (`A_hat < 1.5 · R_hat`,
+/// draft-ietf-rmcat-gcc): delivered throughput is bounded by our own
+/// pacer rate, so any cap ≤ 1.0× measured makes recovery impossible —
+/// the rate ratchets down and pins at the floor (observed live: 350 →
+/// 100 kbps in 9 s, pinned for the rest of the session, ladder forced
+/// to 2 fps). Growth must be allowed to EXCEED delivered to discover
+/// headroom; loss is the overshoot signal that brings it back down.
+/// The cap therefore limits growth only — it never forces decay below
+/// the previous target (a stalled ack window measuring ~0 kbps must
+/// not crater a clean stream; decrease is the loss branch's job).
+///
+/// `feedback_kbps` is the receiver's VIDEO-ONLY byte count — no voice
+/// reserve is subtracted here (that would double-count voice, which
+/// rides unpaced beside the video pacer and is protected by the loss
+/// backoff when a route actually saturates).
 ///
 /// Result is always within `[VIDEO_MIN_KBPS, VIDEO_MAX_KBPS]`.
 #[must_use]
@@ -58,9 +55,9 @@ pub fn target_from_feedback(prev_kbps: u32, feedback_kbps: u32, loss_q8: u8) -> 
         // ×0.85 in exact integer math.
         u32::try_from(u64::from(prev_kbps) * 85 / 100).unwrap_or(u32::MAX)
     } else {
-        // ×1.10, capped by the receiver-derived budget.
         let ramped = u32::try_from(u64::from(prev_kbps) * 110 / 100).unwrap_or(u32::MAX);
-        ramped.min(video_budget_kbps(Some(feedback_kbps)))
+        let cap = u32::try_from(u64::from(feedback_kbps) * 3 / 2).unwrap_or(u32::MAX);
+        ramped.min(cap.max(prev_kbps))
     };
     next.clamp(VIDEO_MIN_KBPS, VIDEO_MAX_KBPS)
 }
@@ -70,18 +67,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn budget_clamps_and_defaults() {
-        assert_eq!(video_budget_kbps(None), VIDEO_START_KBPS);
-        // Estimate below the reserve → floor, never zero/underflow.
-        assert_eq!(video_budget_kbps(Some(40)), VIDEO_MIN_KBPS);
-        assert_eq!(video_budget_kbps(Some(0)), VIDEO_MIN_KBPS);
-        // Mid-range: reserve comes off the top.
-        assert_eq!(video_budget_kbps(Some(500)), 500 - VOICE_RESERVE_KBPS);
-        // Huge estimate → ceiling.
-        assert_eq!(video_budget_kbps(Some(100_000)), VIDEO_MAX_KBPS);
-    }
-
-    #[test]
     fn loss_decreases_target() {
         let next = target_from_feedback(400, 1_000, 50);
         assert!(next < 400, "loss must back off: {next}");
@@ -89,18 +74,41 @@ mod tests {
     }
 
     #[test]
-    fn clean_feedback_ramps_toward_budget() {
+    fn clean_feedback_ramps() {
         let next = target_from_feedback(350, 1_000, 0);
         assert!(next > 350, "clean window must ramp: {next}");
-        assert_eq!(next, 385); // 350 × 1.10, budget (936) not binding
+        assert_eq!(next, 385); // 350 × 1.10, cap (1500) not binding
     }
 
     #[test]
-    fn ramp_capped_by_receiver_estimate() {
-        // Receiver only measures 300 kbps downstream — the ramp may
-        // never exceed (300 − reserve).
-        let next = target_from_feedback(350, 300, 0);
-        assert_eq!(next, 300 - VOICE_RESERVE_KBPS);
+    fn ramp_capped_at_gcc_factor_of_delivered() {
+        // Receiver measures 300 kbps delivered — growth may reach but
+        // not exceed 1.5× that (GCC A_hat < 1.5 · R_hat).
+        let next = target_from_feedback(440, 300, 0);
+        assert_eq!(next, 450); // min(484, 1.5 × 300)
+    }
+
+    #[test]
+    fn pinned_floor_recovers_when_clean() {
+        // Regression for the live death spiral: target at the floor,
+        // receiver measuring exactly what the pacer let through. A
+        // 1.0×-delivered cap held this at 100 forever; the GCC cap
+        // lets a clean stream climb back out.
+        let mut t = VIDEO_MIN_KBPS;
+        let mut delivered = VIDEO_MIN_KBPS;
+        for _ in 0..30 {
+            t = target_from_feedback(t, delivered, 0);
+            delivered = t; // pacer follows target; receiver measures it
+        }
+        assert_eq!(t, VIDEO_MAX_KBPS, "clean feedback must escape the floor");
+    }
+
+    #[test]
+    fn stalled_ack_window_does_not_crater_a_clean_stream() {
+        // A transport hiccup yields an ack of ~0 kbps with no loss
+        // marked. The cap limits growth only — never forces decay.
+        let next = target_from_feedback(800, 1, 0);
+        assert_eq!(next, 800, "growth capped, no decay without loss");
     }
 
     #[test]

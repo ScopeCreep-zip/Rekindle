@@ -228,9 +228,15 @@ pub struct AppState {
     pub video_pacer_rate_tx: RwLock<Option<tokio::sync::watch::Sender<u32>>>,
     /// Shutdown for the pacer task (fired on voice teardown).
     pub video_pacer_shutdown_tx: RwLock<Option<mpsc::Sender<()>>>,
-    /// Last emitted bitrate target per (community, channel) — the
-    /// AIMD policy's previous-value state + emit hysteresis anchor.
-    pub video_bitrate_targets: Mutex<HashMap<(String, String), u32>>,
+    /// Bitrate-policy state per (community, channel):
+    /// `(policy_target, last_emitted)`. The policy target advances on
+    /// EVERY feedback step — a +10% AIMD ramp must compound, so it can
+    /// never sit behind the >15% emit hysteresis (that gate once also
+    /// blocked the state write, which froze the target at the floor).
+    /// `last_emitted` anchors the hysteresis for the frontend
+    /// `VideoBitrateTarget` event alone (an encoder reconfigure forces
+    /// a keyframe; the pacer follows every step for free).
+    pub video_bitrate_targets: Mutex<HashMap<(String, String), (u32, u32)>>,
     /// Frames refused because the pacer channel was full/absent.
     pub video_pacer_send_drops: std::sync::atomic::AtomicU64,
     /// Phase 5 — last-known halves of the merged ConnectionQuality

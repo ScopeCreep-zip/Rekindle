@@ -21,10 +21,7 @@ pub mod stream_id;
 #[cfg(test)]
 mod test_mock;
 
-pub use budget::{
-    target_from_feedback, video_budget_kbps, VIDEO_MAX_KBPS, VIDEO_MIN_KBPS, VIDEO_START_KBPS,
-    VOICE_RESERVE_KBPS,
-};
+pub use budget::{target_from_feedback, VIDEO_MAX_KBPS, VIDEO_MIN_KBPS, VIDEO_START_KBPS};
 pub use deps::{VideoDeps, VideoEvent};
 pub use error::VideoError;
 pub use fragment::{

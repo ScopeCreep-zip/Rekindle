@@ -213,34 +213,38 @@ impl VideoDeps for VideoAdapter {
 }
 
 impl VideoAdapter {
-    /// One AIMD step from receiver feedback; on a material (>15%) move
-    /// update the pacer rate and emit `CommunityEvent::VideoBitrateTarget`.
+    /// One AIMD step from receiver feedback. The policy state and the
+    /// pacer rate advance on EVERY step — a +10% ramp must compound,
+    /// and a watch send is free. Only the frontend
+    /// `CommunityEvent::VideoBitrateTarget` is gated by the >15%
+    /// hysteresis, because the encoder reconfigure it triggers forces
+    /// a keyframe.
     fn apply_bitrate_feedback(&self, community_id: &str, channel_id: &str, kbps: u32, loss_q8: u8) {
         let key = (community_id.to_string(), channel_id.to_string());
-        let next = {
-            let targets = self.state.video_bitrate_targets.lock();
-            let prev = targets
-                .get(&key)
-                .copied()
-                .unwrap_or(rekindle_video::VIDEO_START_KBPS);
-            rekindle_video::target_from_feedback(prev, kbps, loss_q8)
+        let (prev, next, last_emitted) = {
+            let mut targets = self.state.video_bitrate_targets.lock();
+            let (prev, emitted) = targets.get(&key).copied().unwrap_or((
+                rekindle_video::VIDEO_START_KBPS,
+                rekindle_video::VIDEO_START_KBPS,
+            ));
+            let next = rekindle_video::target_from_feedback(prev, kbps, loss_q8);
+            targets.insert(key.clone(), (next, emitted));
+            (prev, next, emitted)
         };
-        let prev_emitted = self
-            .state
-            .video_bitrate_targets
-            .lock()
-            .get(&key)
-            .copied()
-            .unwrap_or(rekindle_video::VIDEO_START_KBPS);
+        if next != prev {
+            if let Some(rate_tx) = self.state.video_pacer_rate_tx.read().as_ref() {
+                let _ = rate_tx.send(next);
+            }
+        }
         let drift =
-            (f64::from(next) - f64::from(prev_emitted)).abs() / f64::from(prev_emitted.max(1));
+            (f64::from(next) - f64::from(last_emitted)).abs() / f64::from(last_emitted.max(1));
         if drift <= 0.15 {
             return;
         }
-        self.state.video_bitrate_targets.lock().insert(key, next);
-        if let Some(rate_tx) = self.state.video_pacer_rate_tx.read().as_ref() {
-            let _ = rate_tx.send(next);
-        }
+        self.state
+            .video_bitrate_targets
+            .lock()
+            .insert(key, (next, next));
         tracing::info!(
             target: "rekindle_video::pacer",
             community_id,
