@@ -188,6 +188,10 @@ share, overlay, auto-update.
 - [x] Cross-device sync foundation (architecture §28.4)
 - [x] Video / screen-share fragmentation pipeline
   (`rekindle-video`)
+- [x] Transport-correct 4 KiB video fragments + wire-domain AIMD
+  (§10.6 rationale: Veilid per-hop 1,272 B datagram segmentation)
+- [x] Linux-native camera capture + vp8enc realtime CBR
+  (`rekindle-video-capture`, capability-detected; loopback self view)
 - [x] Full-text search (FTS5 across messages, threads, DMs)
 - [ ] Auto-update via Tauri updater (`check_for_updates` stubbed)
 - [ ] In-game overlay (research / prototype)
