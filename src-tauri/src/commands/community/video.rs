@@ -40,6 +40,65 @@ pub async fn send_video_frame(
     send_video_frame_inner(state.inner(), &community_id, &channel_id, &request)
 }
 
+/// Capability query for the frontend camera toggle — true only when
+/// the Linux-native capture stack passed its full availability probe.
+/// Off-Linux this is always false and the webview path runs.
+#[tauri::command]
+pub async fn native_video_capture_available() -> Result<bool, String> {
+    Ok(crate::services::native_video::capture_available())
+}
+
+#[tauri::command]
+pub async fn list_native_video_devices(
+) -> Result<Vec<crate::services::native_video::NativeVideoDevice>, String> {
+    Ok(crate::services::native_video::list_devices())
+}
+
+/// The active native stream id (hex), when a session runs. Webview
+/// camera consumers (QR scanner, settings) MUST check this before
+/// getUserMedia: a busy camera surfaces NO error there — the stream
+/// resolves live and silently delivers zero frames.
+#[tauri::command]
+pub async fn native_video_active(state: State<'_, SharedState>) -> Result<Option<String>, String> {
+    Ok(crate::services::native_video::active_stream_id(
+        state.inner(),
+    ))
+}
+
+#[tauri::command]
+pub async fn start_native_video(
+    community_id: String,
+    channel_id: String,
+    track_label: String,
+    device_label: Option<String>,
+    state: State<'_, SharedState>,
+    app: tauri::AppHandle,
+) -> Result<String, String> {
+    crate::services::native_video::start(
+        state.inner(),
+        &app,
+        &community_id,
+        &channel_id,
+        &track_label,
+        device_label,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn stop_native_video(state: State<'_, SharedState>) -> Result<(), String> {
+    crate::services::native_video::stop(state.inner());
+    Ok(())
+}
+
+/// FIR semantics for the native path — `voicePeerConfirmed` forces a
+/// keyframe so a joiner's tile lights immediately.
+#[tauri::command]
+pub async fn force_native_keyframes(state: State<'_, SharedState>) -> Result<(), String> {
+    crate::services::native_video::force_keyframes(state.inner());
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn send_video_frame_ack(
     community_id: String,
@@ -147,6 +206,16 @@ pub async fn report_local_video_capabilities(
     state: State<'_, SharedState>,
     caps: rekindle_video::MediaCapabilities,
 ) -> Result<(), String> {
+    // The native Linux encoder's codecs join the webview probe's set
+    // at this IPC seam — negotiation can pick VP8 without the probe
+    // knowing the native pipeline exists, and the session logic stays
+    // deterministic (machine-state-free) for tests.
+    let mut caps = caps;
+    for codec in crate::services::native_video::native_encode_codecs() {
+        if !caps.encode_codecs.contains(&codec) {
+            caps.encode_codecs.push(codec);
+        }
+    }
     crate::services::community::video_session::on_local_caps_reported(state.inner(), caps)
 }
 

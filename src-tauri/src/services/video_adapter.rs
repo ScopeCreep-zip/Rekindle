@@ -205,6 +205,13 @@ impl VideoDeps for VideoAdapter {
             } => {
                 self.apply_bitrate_feedback(community_id, channel_id, *kbps, *loss_q8);
             }
+            // Native-owned streams answer keyframe requests in the
+            // backend (force-key-unit into vp8enc); the event still
+            // flows to the frontend, where forceKeyframe is a no-op
+            // for stream ids the webview sender doesn't own.
+            VideoEvent::KeyframeRequest { stream_id, .. } => {
+                let _ = crate::services::native_video::on_keyframe_request(&self.state, stream_id);
+            }
             _ => {}
         }
         let mapped = map_video_event(event);

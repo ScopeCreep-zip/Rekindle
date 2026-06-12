@@ -38,7 +38,9 @@
   "plugins": {
     "deep-link": {
       "desktop": {
-        "schemes": ["rekindle"]
+        "schemes": [
+          "rekindle"
+        ]
       }
     }
   },
@@ -55,6 +57,22 @@
     "macOS": {
       "minimumSystemVersion": "10.15",
       "entitlements": "./Entitlements.plist"
+    },
+    "linux": {
+      "deb": {
+        "depends": [
+          "libgstreamer1.0-0 (>= 1.20)",
+          "libgstreamer-plugins-base1.0-0 (>= 1.20)",
+          "gstreamer1.0-plugins-base",
+          "gstreamer1.0-plugins-good"
+        ],
+        "recommends": [
+          "gstreamer1.0-pipewire"
+        ]
+      },
+      "appimage": {
+        "bundleMediaFramework": true
+      }
     }
   }
 }

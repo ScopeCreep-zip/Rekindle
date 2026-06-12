@@ -144,6 +144,9 @@ pub async fn shutdown_voice(state: &AppState, opts: &VoiceShutdownOpts) {
             &channel_id,
         );
     }
+    // Native camera session dies with the voice session — its frames
+    // have nowhere to go without the pacer/roster below.
+    crate::services::native_video::stop(state);
     // Phase 4 — stop the video pacer with the session. Dropping the
     // frame sender also ends the task if the shutdown send raced.
     let pacer_shutdown = state.video_pacer_shutdown_tx.write().take();

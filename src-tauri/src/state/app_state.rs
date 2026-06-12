@@ -230,6 +230,8 @@ pub struct AppState {
     /// the pacer — the AIMD's wire↔media unit bridge (R4). `None`
     /// outside a voice session.
     pub video_payload_share_rx: RwLock<Option<tokio::sync::watch::Receiver<u32>>>,
+    /// Linux-native camera session slot (unit type off-Linux).
+    pub native_video: crate::services::native_video::NativeVideoSlot,
     /// Shutdown for the pacer task (fired on voice teardown).
     pub video_pacer_shutdown_tx: RwLock<Option<mpsc::Sender<()>>>,
     /// Bitrate-policy state per (community, channel):
@@ -348,6 +350,7 @@ impl Default for AppState {
             video_pacer_tx: RwLock::new(None),
             video_pacer_rate_tx: RwLock::new(None),
             video_payload_share_rx: RwLock::new(None),
+            native_video: crate::services::native_video::NativeVideoSlot::default(),
             video_pacer_shutdown_tx: RwLock::new(None),
             video_bitrate_targets: Mutex::new(HashMap::new()),
             video_pacer_send_drops: std::sync::atomic::AtomicU64::new(0),

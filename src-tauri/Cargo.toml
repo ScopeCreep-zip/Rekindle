@@ -124,6 +124,10 @@ objc2-av-foundation = { version = "0.3", default-features = false, features = [
 [target.'cfg(target_os = "linux")'.dependencies]
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["client", "staging"] }
+# Native camera capture + vp8enc realtime CBR - replaces the webview
+# encode path on Linux (WebKitGTK's VP9 rides libvpx GOOD-deadline, no
+# true CBR). See services/native_video.rs.
+rekindle-video-capture = { path = "../crates/rekindle-video-capture" }
 # WebKitGTK ships the MediaStream API gated off and denies getUserMedia
 # permission requests by default — the cause of the blank in-app webcam on
 # Linux. We reach the underlying WebView (same version wry/tauri compiles

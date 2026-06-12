@@ -249,6 +249,15 @@ pub enum CommunityEvent {
         channel_id: String,
         kbps: u32,
     },
+    /// The Linux-native capture session died asynchronously (camera
+    /// unplugged, pipeline failure) — the panel reverts the camera
+    /// toggle and surfaces the message.
+    #[serde(rename_all = "camelCase")]
+    NativeVideoError {
+        community_id: String,
+        channel_id: String,
+        message: String,
+    },
     /// Phase F — a gossiped video envelope failed signature or shape
     /// verification at the receive boundary. Surfaced to the UI so the
     /// asymmetric-drop case (one peer rejects, the other doesn't) is

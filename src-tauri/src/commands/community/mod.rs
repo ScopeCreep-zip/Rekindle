@@ -176,17 +176,23 @@ pub use unread::{__cmd__get_unread_counts, __cmd__mark_channel_read};
 pub use unread::{get_unread_counts, mark_channel_read};
 pub use video::{
     __cmd__default_media_capabilities, __cmd__derive_video_stream_id,
+    __cmd__force_native_keyframes, __cmd__list_native_video_devices,
+    __cmd__native_video_active, __cmd__native_video_capture_available,
     __cmd__notify_video_topology_change, __cmd__register_community_video_channel,
     __cmd__report_local_video_capabilities, __cmd__report_video_decoder_status,
     __cmd__report_media_capture_error, __cmd__report_video_encoder_status,
     __cmd__send_video_bandwidth_estimate,
     __cmd__send_video_frame, __cmd__send_video_frame_ack, __cmd__send_video_keyframe_request,
+    __cmd__start_native_video, __cmd__stop_native_video,
     __cmd__unregister_community_video_channel, default_media_capabilities, derive_video_stream_id,
-    notify_video_topology_change, register_community_video_channel,
+    force_native_keyframes, list_native_video_devices, native_video_active,
+    native_video_capture_available, notify_video_topology_change,
+    register_community_video_channel,
     report_local_video_capabilities, report_media_capture_error, report_video_decoder_status,
     report_video_encoder_status,
     send_video_bandwidth_estimate, send_video_frame, send_video_frame_ack,
-    send_video_keyframe_request, unregister_community_video_channel,
+    send_video_keyframe_request, start_native_video, stop_native_video,
+    unregister_community_video_channel,
 };
 
 pub(crate) use helpers::require_permission;

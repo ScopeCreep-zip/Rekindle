@@ -58,6 +58,33 @@ pub fn send_video_frame_inner(
     let payload = base64::engine::general_purpose::STANDARD
         .decode(request.encoded_payload_b64.as_bytes())
         .map_err(|e| format!("invalid base64 payload: {e}"))?;
+    let codec = rekindle_types::video::Codec::from_wire_str(&request.codec)
+        .ok_or_else(|| format!("unknown codec wire string: {}", request.codec))?;
+    send_encoded_video_frame(
+        state,
+        community_id,
+        channel_id,
+        &video::VideoFrameSend {
+            stream_id,
+            frame_seq: request.frame_seq,
+            keyframe: request.keyframe,
+            codec,
+            timestamp: request.timestamp,
+            encoded_payload: payload,
+        },
+    )
+}
+
+/// Source-agnostic frame egress — the convergence point for the
+/// webview path (base64 over IPC, above) and the native Linux capture
+/// pump (raw bytes, `services::native_video`). Media-ready gate, then
+/// `build_video_frame` (MEK encrypt + fragment + sign) into the pacer.
+pub fn send_encoded_video_frame(
+    state: &SharedState,
+    community_id: &str,
+    channel_id: &str,
+    request: &video::VideoFrameSend,
+) -> Result<u32, String> {
     if let Err(reason) = crate::services::community::media_ready_runtime::media_ready_gate(
         state,
         community_id,
@@ -77,17 +104,7 @@ pub fn send_video_frame_inner(
         }
         return Err(format!("media not ready: {reason}"));
     }
-    let codec = rekindle_types::video::Codec::from_wire_str(&request.codec)
-        .ok_or_else(|| format!("unknown codec wire string: {}", request.codec))?;
-    let send_request = video::VideoFrameSend {
-        stream_id,
-        frame_seq: request.frame_seq,
-        keyframe: request.keyframe,
-        codec,
-        timestamp: request.timestamp,
-        encoded_payload: payload,
-    };
-    video::send_video_frame(state, community_id, channel_id, &send_request)
+    video::send_video_frame(state, community_id, channel_id, request)
 }
 
 pub fn send_video_frame_ack_inner(

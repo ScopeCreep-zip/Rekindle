@@ -7387,6 +7387,7 @@ dependencies = [
  "rekindle-utils",
  "rekindle-vault",
  "rekindle-video",
+ "rekindle-video-capture",
  "rekindle-voice",
  "rusqlite",
  "serde",
