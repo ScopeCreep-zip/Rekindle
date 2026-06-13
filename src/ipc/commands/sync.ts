@@ -100,7 +100,7 @@ export const syncCommands = {
   /**
    * Send one encoded frame chunk (from the WebCodecs VideoEncoder
    * output) into the community video stream. The backend MEK-encrypts,
-   * fragments to ≤28 KB, attaches FEC parity for keyframes, signs each
+   * fragments to the 4 KB transport budget, attaches FEC parity for multi-fragment frames, signs each
    * fragment, and broadcasts via gossip. Returns the number of
    * fragments dispatched (data + parity).
    */
@@ -114,7 +114,7 @@ export const syncCommands = {
    * W11.4 (P6.2) — send one encoded video frame to a 1:1 DM peer.
    * Mirrors `sendVideoFrame` shape but routes through the existing
    * Signal-encrypted DM transport instead of community gossip.
-   * Backend chunks ≤28 KB and wraps each chunk in a
+   * Backend chunks to the 4 KB transport budget and wraps each chunk in a
    * `DmVideoFragment` payload. Returns the number of fragments sent.
    */
   sendDmVideoFrame: (

@@ -49,13 +49,13 @@ pub struct CaptureConfig {
     pub keyframe_max_dist: u32,
 }
 
+/// One encoded VP8 chunk. Wire timestamps are stamped by the consumer
+/// (the native pump uses wall-clock ms so the loopback latency probe
+/// measures true encode→paint) — pipeline running time stays internal.
 #[derive(Debug)]
 pub struct EncodedFrame {
     pub payload: Vec<u8>,
     pub keyframe: bool,
-    /// Pipeline running time of the frame, milliseconds (wraps u32 —
-    /// matches the wire `timestamp` field semantics).
-    pub timestamp_ms: u32,
 }
 
 /// A running capture session. Dropping it without `stop()` still tears
@@ -176,10 +176,6 @@ impl NativeCaptureSession {
                         return Ok(gst::FlowSuccess::Ok);
                     };
                     let keyframe = !buffer.flags().contains(gst::BufferFlags::DELTA_UNIT);
-                    let timestamp_ms = buffer
-                        .pts()
-                        .map(gst::ClockTime::mseconds)
-                        .map_or(0, |ms| u32::try_from(ms % u64::from(u32::MAX)).unwrap_or(0));
                     let Ok(map) = buffer.map_readable() else {
                         return Ok(gst::FlowSuccess::Ok);
                     };
@@ -192,7 +188,6 @@ impl NativeCaptureSession {
                     let _ = frame_tx.try_send(EncodedFrame {
                         payload: map.as_slice().to_vec(),
                         keyframe,
-                        timestamp_ms,
                     });
                     Ok(gst::FlowSuccess::Ok)
                 })

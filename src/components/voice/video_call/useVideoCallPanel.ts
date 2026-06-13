@@ -682,6 +682,14 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
     // Backend-native capture path (capability-detected): no
     // getUserMedia, no webview encoder — the backend owns the camera
     // and encode, and the self view arrives via the loopback stream.
+    // Re-query on a cold cache: a click racing the onMount probe must
+    // not fall back to the webview encoder on a native-capable box
+    // (the probe is OnceLock-cached backend-side — this is cheap).
+    if (!nativeCaptureAvailable && props.mode === "community") {
+      nativeCaptureAvailable = await commands
+        .nativeVideoCaptureAvailable()
+        .catch(() => false);
+    }
     if (nativeCaptureAvailable && props.mode === "community") {
       try {
         const prefs = await commands.getPreferences();

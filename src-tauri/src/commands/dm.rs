@@ -93,7 +93,7 @@ pub async fn get_dm_messages(
 /// already covers confidentiality + authenticity).
 ///
 /// The frontend produces VP9 chunks via WebCodecs and base64-encodes
-/// them for IPC; the backend chunks ≤28 KB, wraps each chunk in a
+/// them for IPC; the backend chunks to the 4 KB transport budget, wraps each chunk in a
 /// `DmVideoFragment` payload, and sends through the existing DM
 /// transport. Returns the number of fragments dispatched.
 #[tauri::command]

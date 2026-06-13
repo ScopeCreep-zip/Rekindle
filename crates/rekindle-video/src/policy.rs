@@ -26,11 +26,25 @@ use crate::{
     SessionVideoConfig,
 };
 
-/// Total per-frame byte budget. `FRAGMENT_PAYLOAD_LIMIT (28 KiB) ×
-/// MAX_FRAGMENTS_PER_FRAME (256)` = 7 MiB ceiling, asserted by the
-/// fragmenter. A frame at 3 bytes/pixel (RGB / planar 4:4:4) cannot
-/// exceed this without overrunning the transport.
-const FRAME_BUDGET_BYTES: u64 = 7 * 1024 * 1024;
+/// The fragmenter's hard transport ceiling for ONE encoded frame:
+/// `FRAGMENT_PAYLOAD_LIMIT × MAX_FRAGMENTS_PER_FRAME` (≈ 1 MiB at the
+/// 4 KiB budget). Derived, never a literal — this constant silently
+/// lied once when the fragment budget changed under it.
+const TRANSPORT_FRAME_CEILING_BYTES: u64 =
+    (crate::fragment::FRAGMENT_PAYLOAD_LIMIT * crate::fragment::MAX_FRAGMENTS_PER_FRAME) as u64;
+
+/// Explicit worst-case compression floor for the raw→encoded proxy:
+/// VP8/VP9 intra under our realtime CBR + quantizer caps stays well
+/// above 3:1 versus 3 B/px raw even on noise (pathological observed:
+/// 4.2:1 — a 294 KB keyframe at 854×480). The budget check validates
+/// RAW bytes, so the ceiling is scaled up by this floor.
+const COMPRESSION_FLOOR: u64 = 3;
+
+/// Total per-frame RAW byte budget (≈ 3 MiB): a config passing
+/// `width × height × 3 ≤ ceiling × floor` cannot produce an encoded
+/// frame that overruns the fragmenter. 854×480 and 1280×720 pass;
+/// 1080p+ clamps.
+const FRAME_BUDGET_BYTES: u64 = TRANSPORT_FRAME_CEILING_BYTES * COMPRESSION_FLOOR;
 const BYTES_PER_PIXEL: u64 = 3;
 
 /// Compute the local node's `SessionVideoConfig` against a set of

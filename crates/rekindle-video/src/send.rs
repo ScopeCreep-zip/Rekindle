@@ -1,7 +1,8 @@
 //! Phase 16 — community video send pipeline (build side).
 //!
 //! Architecture §10.6 — MEK-encrypt the encoded payload, fragment to
-//! ≤28 KB, sign each fragment with the community pseudonym Ed25519
+//! the 4 KiB transport budget, sign each fragment with the community
+//! pseudonym Ed25519
 //! key. Phase 4: the signed envelopes are NOT dispatched here — they
 //! are returned as one `PacedFrame` and released through the
 //! audio-first `VideoPacer` (`send_pacer::run_video_pacer`), which
@@ -51,7 +52,8 @@ pub struct VideoFrameSend {
 
 /// Build-side entry point — invoked from the `send_video_frame` Tauri
 /// command after the webview encoder produces a `VideoEncoder.encode()`
-/// chunk. MEK-encrypts the payload, fragments to ≤28 KB, signs each
+/// chunk. MEK-encrypts the payload, fragments to the transport budget
+/// (`FRAGMENT_PAYLOAD_LIMIT`, 4 KiB), signs each
 /// fragment with the sender's pseudonym Ed25519 key, and returns the
 /// envelopes as ONE `PacedFrame` for the pacer to release at the
 /// budgeted rate.
