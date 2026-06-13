@@ -12,6 +12,9 @@ const VideoTab: Component = () => {
   // rotate across reinstalls.
   const [videoDevices, setVideoDevices] = createSignal<MediaDeviceInfo[]>([]);
   const [videoEnumError, setVideoEnumError] = createSignal<string | null>(null);
+  /** Native-backend camera labels absent from the webview list —
+   *  selected by label (no WebKit deviceId exists for them). */
+  const [nativeOnlyLabels, setNativeOnlyLabels] = createSignal<string[]>([]);
 
   // WebView-side enumeration: getUserMedia must succeed once in THIS
   // window before labels populate; request a temporary stream,
@@ -38,6 +41,19 @@ const VideoTab: Component = () => {
       } catch (inner) {
         console.error("Failed to enumerate video devices:", inner);
       }
+    }
+    // Backend-native device list (Linux GStreamer DeviceMonitor):
+    // labels the webview can't see while getUserMedia is blocked or a
+    // native session owns the camera. Same labels getUserMedia would
+    // report — selection persists by label either way.
+    try {
+      const native = await commands.listNativeVideoDevices();
+      const seen = new Set(videoDevices().map((d) => d.label));
+      setNativeOnlyLabels(
+        native.map((d) => d.displayName).filter((l) => l && !seen.has(l)),
+      );
+    } catch {
+      // Off-Linux / probe failed — webview list only.
     }
   }
 
@@ -74,9 +90,24 @@ const VideoTab: Component = () => {
       <FormField label="Camera Device">
         <select
           class="form-select"
-          value={settingsState.selectedVideoDeviceId ?? ""}
+          value={
+            settingsState.selectedVideoDeviceId ??
+            (settingsState.selectedVideoDeviceLabel &&
+            nativeOnlyLabels().includes(settingsState.selectedVideoDeviceLabel)
+              ? `native:${settingsState.selectedVideoDeviceLabel}`
+              : "")
+          }
           onChange={(e) => {
-            const next = e.currentTarget.value || null;
+            const raw = e.currentTarget.value;
+            if (raw.startsWith("native:")) {
+              // Native-backend device — no WebKit deviceId exists; the
+              // label is the persisted key both paths resolve by.
+              setSettingsState("selectedVideoDeviceId", null);
+              setSettingsState("selectedVideoDeviceLabel", raw.slice("native:".length));
+              void persistVideoSelection();
+              return;
+            }
+            const next = raw || null;
             const label = next
               ? (videoDevices().find((d) => d.deviceId === next)?.label ?? null)
               : null;
@@ -92,6 +123,9 @@ const VideoTab: Component = () => {
                 {d.label || `Camera ${d.deviceId.slice(0, 6)}`}
               </option>
             )}
+          </For>
+          <For each={nativeOnlyLabels()}>
+            {(label) => <option value={`native:${label}`}>{label}</option>}
           </For>
         </select>
       </FormField>

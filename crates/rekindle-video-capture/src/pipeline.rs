@@ -81,6 +81,15 @@ impl NativeCaptureSession {
         gst::init().map_err(|e| CaptureError::Unavailable(e.to_string()))?;
 
         let (source, source_desc) = match &config.source_override {
+            // Tests pass element descriptions ("videotestsrc
+            // num-buffers=10") — parse_bin handles properties; a bare
+            // factory name builds directly.
+            Some(desc) if desc.contains(' ') => (
+                gst::parse::bin_from_description(desc, true)
+                    .map_err(|e| CaptureError::Unavailable(format!("{desc}: {e}")))?
+                    .upcast::<gst::Element>(),
+                desc.clone(),
+            ),
             Some(name) => (
                 gst::ElementFactory::make(name)
                     .build()
@@ -201,21 +210,48 @@ impl NativeCaptureSession {
             CaptureError::Pipeline("pipeline has no bus".into())
         })?;
         let deadline = Instant::now() + START_DEADLINE;
+        // Error/Eos can land on the bus BEFORE the post-start watcher
+        // exists (verified: a finite source posts EOS at ~40 ms) — the
+        // start loop must forward what it sees, never pop-and-discard,
+        // or an unplug racing the first sample vanishes.
+        let mut pending_error: Option<String> = None;
         loop {
             if first_sample.load(Ordering::Acquire) {
                 break;
             }
-            if let Some(msg) = bus.timed_pop(Some(gst::ClockTime::from_mseconds(50))) {
-                if let gst::MessageView::Error(err) = msg.view() {
-                    let mapped = map_bus_error(err, &source_desc);
-                    let _ = pipeline.set_state(gst::State::Null);
-                    return Err(mapped);
+            if let Some(msg) = bus.timed_pop_filtered(
+                Some(gst::ClockTime::from_mseconds(50)),
+                &[gst::MessageType::Error, gst::MessageType::Eos],
+            ) {
+                match msg.view() {
+                    gst::MessageView::Error(err) => {
+                        let mapped = map_bus_error(err, &source_desc);
+                        let _ = pipeline.set_state(gst::State::Null);
+                        return Err(mapped);
+                    }
+                    gst::MessageView::Eos(_) => {
+                        if first_sample.load(Ordering::Acquire) {
+                            // Started, then immediately ended — the
+                            // session is valid; the pump learns of the
+                            // end through the error channel.
+                            pending_error = Some("camera stream ended".into());
+                            break;
+                        }
+                        let _ = pipeline.set_state(gst::State::Null);
+                        return Err(CaptureError::Device(format!(
+                            "{source_desc}: stream ended before the first frame"
+                        )));
+                    }
+                    _ => {}
                 }
             }
             if Instant::now() >= deadline {
                 let _ = pipeline.set_state(gst::State::Null);
                 return Err(CaptureError::Timeout(source_desc));
             }
+        }
+        if let Some(message) = pending_error {
+            let _ = error_tx.try_send(message);
         }
         tracing::info!(
             target: "rekindle_video_capture",
@@ -335,6 +371,13 @@ fn configure_encoder(encoder: &gst::Element, config: &CaptureConfig) {
     // speed preset, bounded worst-case quality, short rate-control
     // buffer so CBR is enforced over ~0.5 s not 6 s, error-resilient
     // partitions for lossy transport.
+    //
+    // Keyframe SIZE bounding (plan R4 "investigate in Phase 2"):
+    // GstVPXEnc exposes no libvpx max-intra knob — the verified
+    // 47-property surface (identical 1.20→main) has nothing mapping to
+    // rc_max_intra_bitrate_pct. Intra size is therefore bounded only
+    // indirectly by the short CBR buffer model below; the pacer's
+    // oversized-keyframe intake guard remains the explicit detector.
     encoder.set_property("lag-in-frames", 0i32);
     encoder.set_property("cpu-used", 8i32);
     encoder.set_property("max-quantizer", 56i32);
@@ -529,6 +572,40 @@ mod tests {
         assert!(
             low * 2 < high,
             "120 kbps window ({low} B) should be well under half the 600 kbps window ({high} B)"
+        );
+    }
+
+    #[test]
+    fn post_start_failure_fires_error_channel() {
+        // Plan Phase 2 test (d): the ASYNC error path — a finite
+        // source ends the stream after start succeeded; the bus
+        // watcher must surface it through error_tx (the same path a
+        // camera unplug takes).
+        if !capture_available() {
+            eprintln!("skipping: gstreamer unavailable in this environment");
+            return;
+        }
+        let (frame_tx, mut frame_rx) = tokio::sync::mpsc::channel(256);
+        let (error_tx, mut error_rx) = tokio::sync::mpsc::channel(4);
+        let mut config = test_config(300);
+        config.source_override = Some("videotestsrc num-buffers=10".into());
+        let session = NativeCaptureSession::start(&config, frame_tx, error_tx)
+            .expect("finite videotestsrc starts");
+        let _ = drain_for(&mut frame_rx, Duration::from_millis(300));
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut message = None;
+        while Instant::now() < deadline {
+            if let Ok(m) = error_rx.try_recv() {
+                message = Some(m);
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        session.stop();
+        let message = message.expect("error channel fires after the stream ends");
+        assert!(
+            message.contains("ended"),
+            "EOS surfaces as a stream-ended error: {message}"
         );
     }
 

@@ -335,6 +335,16 @@ mod platform {
                             break;
                         };
                         frame_seq = frame_seq.wrapping_add(1);
+                        // Wire timestamp = unix ms (u32-wrapped, same
+                        // modulus as the receive path's now_ms). Only
+                        // DIFFERENCES matter to receivers' jitter math,
+                        // and a wall-clock base lets the self-view
+                        // loopback report true encode→paint latency
+                        // (R5 verification probe).
+                        let wire_ts = u32::try_from(
+                            rekindle_utils::timestamp_ms() % u64::from(u32::MAX),
+                        )
+                        .unwrap_or(0);
                         // Loopback FIRST (pre-gate): the self tile works
                         // solo and shows exactly what peers will get.
                         pump_state.video_channels.send_community(
@@ -346,7 +356,7 @@ mod platform {
                                 frame_seq,
                                 keyframe: frame.keyframe,
                                 codec: "vp8".into(),
-                                timestamp: frame.timestamp_ms,
+                                timestamp: wire_ts,
                                 payload_b64: base64::engine::general_purpose::STANDARD
                                     .encode(&frame.payload),
                             },
@@ -362,7 +372,7 @@ mod platform {
                                 frame_seq,
                                 keyframe: frame.keyframe,
                                 codec: rekindle_types::video::Codec::Vp8,
-                                timestamp: frame.timestamp_ms,
+                                timestamp: wire_ts,
                                 encoded_payload: frame.payload,
                             },
                         );

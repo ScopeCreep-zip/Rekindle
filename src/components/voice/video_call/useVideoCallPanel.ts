@@ -402,6 +402,19 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
         }
         remote.awaitKeyframe = false;
       }
+      // R5 latency probe: the native pump stamps unix-ms (u32-wrapped)
+      // timestamps, so encode→ingest is directly measurable. ~1 Hz
+      // through the *-settings info lane — the webview console is
+      // invisible in dev logs.
+      const nowMs = performance.now();
+      if (nowMs - remote.lastDebugAt >= 1000) {
+        remote.lastDebugAt = nowMs;
+        const e2e = (Date.now() % 4294967295) - timestamp;
+        void commands.reportMediaCaptureError(
+          "self-view-settings",
+          `loopback encode→ingest ${e2e}ms (decode+paint adds single-digit ms)`,
+        );
+      }
       try {
         remote.decoder.decode(
           new EncodedVideoChunk({

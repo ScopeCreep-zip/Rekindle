@@ -235,46 +235,16 @@ impl VideoAdapter {
     /// hysteresis, because the encoder reconfigure it triggers forces
     /// a keyframe.
     fn apply_bitrate_feedback(&self, community_id: &str, channel_id: &str, kbps: u32, loss_q8: u8) {
-        let share_q10 = self
-            .state
-            .video_payload_share_rx
-            .read()
-            .as_ref()
-            .map_or(rekindle_video::START_PAYLOAD_SHARE_Q10, |rx| *rx.borrow());
-        let feedback_wire = rekindle_video::wire_feedback_kbps(kbps, share_q10);
-        let key = (community_id.to_string(), channel_id.to_string());
-        let (prev, next, last_emitted) = {
-            let mut targets = self.state.video_bitrate_targets.lock();
-            let (prev, emitted) = targets.get(&key).copied().unwrap_or((
-                rekindle_video::VIDEO_START_KBPS,
-                rekindle_video::VIDEO_START_KBPS,
-            ));
-            let next = rekindle_video::target_from_feedback(prev, feedback_wire, loss_q8);
-            targets.insert(key.clone(), (next, emitted));
-            (prev, next, emitted)
-        };
-        if next != prev {
-            if let Some(rate_tx) = self.state.video_pacer_rate_tx.read().as_ref() {
-                let _ = rate_tx.send(next);
-            }
-        }
-        let drift =
-            (f64::from(next) - f64::from(last_emitted)).abs() / f64::from(last_emitted.max(1));
-        if drift <= 0.15 {
+        let Some(encoder_kbps) =
+            bitrate_feedback_step(&self.state, community_id, channel_id, kbps, loss_q8)
+        else {
             return;
-        }
-        self.state
-            .video_bitrate_targets
-            .lock()
-            .insert(key, (next, next));
-        let encoder_kbps = rekindle_video::encoder_target_kbps(next, share_q10);
+        };
         tracing::info!(
             target: "rekindle_video::pacer",
             community_id,
             channel_id,
-            wire_kbps = next,
             encoder_kbps,
-            share_q10,
             feedback_payload_kbps = kbps,
             loss_q8,
             "bitrate target updated"
@@ -289,6 +259,48 @@ impl VideoAdapter {
         };
         crate::event_dispatch::emit_live(&self.app_handle, "community-event", &event);
     }
+}
+
+/// The AIMD step minus the event emission, separated so the wire-domain
+/// behavior is testable without an `AppHandle`: scales receiver payload
+/// goodput to wire units, steps the target, persists policy state,
+/// pushes the pacer watch on change — and returns `Some(media-domain
+/// encoder target)` only when the >15% emit hysteresis fires.
+fn bitrate_feedback_step(
+    state: &Arc<AppState>,
+    community_id: &str,
+    channel_id: &str,
+    kbps: u32,
+    loss_q8: u8,
+) -> Option<u32> {
+    let share_q10 = state
+        .video_payload_share_rx
+        .read()
+        .as_ref()
+        .map_or(rekindle_video::START_PAYLOAD_SHARE_Q10, |rx| *rx.borrow());
+    let feedback_wire = rekindle_video::wire_feedback_kbps(kbps, share_q10);
+    let key = (community_id.to_string(), channel_id.to_string());
+    let (prev, next, last_emitted) = {
+        let mut targets = state.video_bitrate_targets.lock();
+        let (prev, emitted) = targets.get(&key).copied().unwrap_or((
+            rekindle_video::VIDEO_START_KBPS,
+            rekindle_video::VIDEO_START_KBPS,
+        ));
+        let next = rekindle_video::target_from_feedback(prev, feedback_wire, loss_q8);
+        targets.insert(key.clone(), (next, emitted));
+        (prev, next, emitted)
+    };
+    if next != prev {
+        if let Some(rate_tx) = state.video_pacer_rate_tx.read().as_ref() {
+            let _ = rate_tx.send(next);
+        }
+    }
+    let drift = (f64::from(next) - f64::from(last_emitted)).abs() / f64::from(last_emitted.max(1));
+    if drift <= 0.15 {
+        return None;
+    }
+    state.video_bitrate_targets.lock().insert(key, (next, next));
+    Some(rekindle_video::encoder_target_kbps(next, share_q10))
 }
 
 fn map_video_event(event: VideoEvent) -> CommunityEvent {
@@ -467,4 +479,51 @@ pub fn handle_video_payload(
         payload,
         now_ms,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// R4 test #7 (adapter integration): the AIMD step runs in WIRE
+    /// units. A receiver acking exactly the encoder-domain goodput of
+    /// the current target (the death-spiral scenario the payload-unit
+    /// loop froze on) must still ramp; the pacer watch carries the
+    /// WIRE target; the >15% hysteresis gates ONLY the encoder event,
+    /// whose value is the media-domain conversion.
+    #[test]
+    fn bitrate_feedback_runs_in_wire_domain() {
+        let state = Arc::new(crate::state::AppState::default());
+        let (_share_tx, share_rx) =
+            tokio::sync::watch::channel(rekindle_video::START_PAYLOAD_SHARE_Q10);
+        *state.video_payload_share_rx.write() = Some(share_rx);
+        let (rate_tx, rate_rx) = tokio::sync::watch::channel(rekindle_video::VIDEO_START_KBPS);
+        *state.video_pacer_rate_tx.write() = Some(rate_tx);
+
+        // Clean ack at the encoder-domain goodput of the 350 start
+        // target (share 640 → 218 kbps payload).
+        let payload = rekindle_video::encoder_target_kbps(350, 640);
+        let emitted = bitrate_feedback_step(&state, "c", "ch", payload, 0);
+        let key = ("c".to_string(), "ch".to_string());
+        let (next, _) = *state.video_bitrate_targets.lock().get(&key).unwrap();
+        assert_eq!(next, 385, "wire-domain ramp must not freeze: {next}");
+        assert_eq!(*rate_rx.borrow(), 385, "pacer watch carries the WIRE target");
+        assert!(
+            emitted.is_none(),
+            "10% drift is below the 15% emit hysteresis"
+        );
+
+        // Second clean ack compounds past the hysteresis → the event
+        // fires with the MEDIA-domain value.
+        let payload2 = rekindle_video::encoder_target_kbps(385, 640);
+        let emitted2 = bitrate_feedback_step(&state, "c", "ch", payload2, 0);
+        let (next2, anchored) = *state.video_bitrate_targets.lock().get(&key).unwrap();
+        assert_eq!(next2, 423, "ramp compounds across steps");
+        assert_eq!(anchored, 423, "emit re-anchors the hysteresis");
+        assert_eq!(
+            emitted2,
+            Some(rekindle_video::encoder_target_kbps(423, 640)),
+            "event carries the encoder-domain rate"
+        );
+    }
 }
