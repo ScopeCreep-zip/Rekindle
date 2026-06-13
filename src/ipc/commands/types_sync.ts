@@ -340,3 +340,14 @@ export interface CommunityVideoFrameMsg {
   timestamp: number;
   payloadB64: string;
 }
+
+/**
+ * JPEG self-view still from the Linux-native capture pipeline's preview
+ * branch, pushed through the native-preview `Channel`. Mirrors the Rust
+ * `video_channels::NativePreviewFrameMsg`. Codec-stateless — painted to
+ * a canvas via `createImageBitmap`, no WebCodecs decoder.
+ */
+export interface NativePreviewFrameMsg {
+  streamIdHex: string;
+  jpegB64: string;
+}

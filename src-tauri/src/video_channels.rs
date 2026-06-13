@@ -52,6 +52,17 @@ pub struct DmVideoFrameMsg {
     pub encoded_payload_b64: String,
 }
 
+/// One JPEG still from the Linux-native capture pipeline's preview
+/// branch — the LOCAL self-view, pushed to the channel the video panel
+/// registers while a native session runs. Codec-stateless: the webview
+/// paints it straight to a canvas via `createImageBitmap`, no decoder.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativePreviewFrameMsg {
+    pub stream_id_hex: String,
+    pub jpeg_b64: String,
+}
+
 /// One reassembled community video frame pushed to the per-community
 /// channel the community video panel registers. Mirrors the previous
 /// `CommunityEvent::VideoFrame` payload.
@@ -81,6 +92,11 @@ pub struct VideoChannelRegistry {
     /// Frames that arrived before `register_community` — drained into
     /// the channel, in order, the moment it registers (Phase 6).
     pending_community: Mutex<HashMap<String, PendingFrames>>,
+    /// The active native-capture self-view channel. Single slot: only
+    /// one native camera session runs at a time. No pre-registration
+    /// buffer — the panel registers before it starts the native session,
+    /// and a dropped preview still is harmless (the next is a full JPEG).
+    native_preview: Mutex<Option<Channel<NativePreviewFrameMsg>>>,
 }
 
 impl VideoChannelRegistry {
@@ -173,6 +189,25 @@ impl VideoChannelRegistry {
                 }
             }
             entry.frames.push_back(frame);
+        }
+    }
+
+    pub fn register_native_preview(&self, channel: Channel<NativePreviewFrameMsg>) {
+        *self.native_preview.lock() = Some(channel);
+    }
+
+    pub fn unregister_native_preview(&self) {
+        *self.native_preview.lock() = None;
+    }
+
+    /// Push a self-view JPEG to the registered preview channel. No-op
+    /// when none is registered; a dead channel (hard reload) is dropped
+    /// so it can't linger.
+    pub fn send_native_preview(&self, frame: NativePreviewFrameMsg) {
+        let mut slot = self.native_preview.lock();
+        let dead = slot.as_ref().is_some_and(|ch| ch.send(frame).is_err());
+        if dead {
+            *slot = None;
         }
     }
 }
@@ -333,6 +368,30 @@ mod tests {
             log.lock().is_empty(),
             "stale pending frames must not replay"
         );
+    }
+
+    #[test]
+    fn native_preview_routes_then_stops_on_unregister() {
+        let reg = VideoChannelRegistry::new();
+        let (channel, log) = recording_channel::<NativePreviewFrameMsg>();
+        reg.register_native_preview(channel);
+        reg.send_native_preview(NativePreviewFrameMsg {
+            stream_id_hex: "ab12".into(),
+            jpeg_b64: "Zm9v".into(),
+        });
+        {
+            let got = log.lock();
+            assert_eq!(got.len(), 1, "one preview frame forwarded");
+            let v: serde_json::Value = serde_json::from_str(&got[0]).unwrap();
+            assert_eq!(v["streamIdHex"], "ab12");
+            assert_eq!(v["jpegB64"], "Zm9v");
+        }
+        reg.unregister_native_preview();
+        reg.send_native_preview(NativePreviewFrameMsg {
+            stream_id_hex: "ab12".into(),
+            jpeg_b64: "YmFy".into(),
+        });
+        assert_eq!(log.lock().len(), 1, "no delivery after unregister");
     }
 
     #[test]

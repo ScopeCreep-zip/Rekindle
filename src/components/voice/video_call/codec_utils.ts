@@ -81,13 +81,6 @@ export const DEBUG_VIDEO_LATENCY = true;
 export interface RemoteStream {
   streamId: string;
   senderPseudonym: string;
-  /** Our own native-capture loopback (self-view): decoded immediately
-   *  (the in-order ipc::Channel has nothing to jitter-absorb — the
-   *  playout buffer would add ~50 ms of pure self-view lag), never
-   *  acked (self-acks would broadcast loopback stats into every peer's
-   *  bitrate policy), and keyframe recovery goes to the NATIVE encoder
-   *  command, not channel envelopes. */
-  isLocal: boolean;
   /** Codec this stream's decoder is configured for — from the
    *  per-frame tag. A tag change tears the decoder down. */
   codec: Codec;

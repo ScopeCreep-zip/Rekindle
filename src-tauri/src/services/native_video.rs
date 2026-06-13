@@ -5,13 +5,14 @@
 //! branch themselves — the frontend asks `capture_available` instead
 //! of sniffing the OS.
 //!
-//! The pump task owns the GStreamer session and converges on the same
-//! egress as the webview path (`send_encoded_video_frame` → media-
-//! ready gate → MEK encrypt → fragment → pacer). Every encoded frame
-//! is ALSO looped back to the local UI through the per-community
-//! frame channel BEFORE the gate — the self-view tile renders through
-//! the proven remote-decode path, works solo in a channel, and shows
-//! exactly what peers receive (R5).
+//! The pump task owns the GStreamer session. One capture (`v4l2src`),
+//! `tee`-fanned: the ENCODE branch converges on the same egress as the
+//! webview path (`send_encoded_video_frame` → media-ready gate → MEK
+//! encrypt → fragment → pacer); the PREVIEW branch emits small JPEG
+//! stills the pump forwards to the webview's self-view channel (painted
+//! to a canvas via `createImageBitmap`). No second `getUserMedia`
+//! consumer of the camera, no encode→decode loopback for local pixels —
+//! the single-capture + in-process fan-out every native P2P client uses.
 
 use std::sync::Arc;
 
@@ -101,7 +102,6 @@ mod platform {
     use std::sync::Arc;
     use std::time::{Duration, Instant};
 
-    use base64::Engine as _;
     use parking_lot::Mutex;
     use rekindle_video_capture::{CaptureConfig, NativeCaptureSession};
 
@@ -222,15 +222,9 @@ mod platform {
             .as_slice()
             .try_into()
             .map_err(|_| "stream id must be 16 bytes".to_string())?;
-        let my_pseudonym = {
-            let communities = state.communities.read();
-            communities
-                .get(community_id)
-                .and_then(|cs| cs.my_pseudonym_key.clone())
-                .ok_or_else(|| "not a member of this community".to_string())?
-        };
 
         let (frame_tx, mut frame_rx) = tokio::sync::mpsc::channel(64);
+        let (preview_tx, mut preview_rx) = tokio::sync::mpsc::channel(8);
         let (error_tx, mut error_rx) = tokio::sync::mpsc::channel(4);
         let (control_tx, mut control_rx) = tokio::sync::mpsc::channel(8);
 
@@ -246,7 +240,7 @@ mod platform {
         // start() blocks up to its 2 s first-sample deadline.
         let session = tokio::task::spawn_blocking({
             let config = config.clone();
-            move || NativeCaptureSession::start(&config, frame_tx, error_tx)
+            move || NativeCaptureSession::start(&config, frame_tx, preview_tx, error_tx)
         })
         .await
         .map_err(|e| format!("capture start task: {e}"))?
@@ -258,7 +252,8 @@ mod platform {
             control_tx,
         });
 
-        // The pump: frames out, control in, bitrate follow-the-watch.
+        // The pump: frames out, preview out, control in, bitrate
+        // follow-the-watch.
         let pump_state = Arc::clone(state);
         let pump_app = app.clone();
         let pump_community = community_id.to_string();
@@ -266,6 +261,7 @@ mod platform {
         let pump_stream_hex = stream_id_hex.clone();
         tokio::spawn(async move {
             let mut frame_seq: u32 = 0;
+            let mut preview_count: u64 = 0;
             let mut last_forced = Instant::now();
             let mut rate_rx = pump_state
                 .video_pacer_rate_tx
@@ -328,6 +324,36 @@ mod platform {
                         }
                         continue;
                     }
+                    preview = preview_rx.recv() => {
+                        let Some(preview) = preview else {
+                            // Preview branch ended — the encode branch's
+                            // own teardown (frame_rx None / error_rx)
+                            // owns session lifecycle; just stop forwarding.
+                            continue;
+                        };
+                        // Local self-view: JPEG straight to the webview's
+                        // preview channel (canvas paint), never the peer
+                        // egress. Best-effort — a dropped still is fine.
+                        use base64::Engine;
+                        let jpeg_b64 = base64::engine::general_purpose::STANDARD
+                            .encode(&preview.jpeg);
+                        preview_count += 1;
+                        if preview_count == 1 {
+                            tracing::info!(
+                                target: "rekindle_video_capture",
+                                community_id = %pump_community,
+                                jpeg_bytes = preview.jpeg.len(),
+                                "self-view preview branch producing frames"
+                            );
+                        }
+                        pump_state.video_channels.send_native_preview(
+                            crate::video_channels::NativePreviewFrameMsg {
+                                stream_id_hex: pump_stream_hex.clone(),
+                                jpeg_b64,
+                            },
+                        );
+                        continue;
+                    }
                     frame = frame_rx.recv() => {
                         let Some(frame) = frame else {
                             // Pipeline torn down — sender side dropped.
@@ -336,33 +362,17 @@ mod platform {
                         };
                         frame_seq = frame_seq.wrapping_add(1);
                         // Wire timestamp = unix ms (u32-wrapped, same
-                        // modulus as the receive path's now_ms). Only
-                        // DIFFERENCES matter to receivers' jitter math,
-                        // and a wall-clock base lets the self-view
-                        // loopback report true encode→paint latency
-                        // (R5 verification probe).
+                        // modulus as the receive path's now_ms) — only
+                        // DIFFERENCES matter to receivers' jitter math.
                         let wire_ts = u32::try_from(
                             rekindle_utils::timestamp_ms() % u64::from(u32::MAX),
                         )
                         .unwrap_or(0);
-                        // Loopback FIRST (pre-gate): the self tile works
-                        // solo and shows exactly what peers will get.
-                        pump_state.video_channels.send_community(
-                            &pump_community,
-                            crate::video_channels::CommunityVideoFrameMsg {
-                                community_id: pump_community.clone(),
-                                sender_pseudonym: my_pseudonym.clone(),
-                                stream_id: pump_stream_hex.clone(),
-                                frame_seq,
-                                keyframe: frame.keyframe,
-                                codec: "vp9".into(),
-                                timestamp: wire_ts,
-                                payload_b64: base64::engine::general_purpose::STANDARD
-                                    .encode(&frame.payload),
-                            },
-                        );
-                        // Egress — gate + MEK + fragment + pacer. Gate
-                        // drops self-log (rate-limited) inside.
+                        // Egress to PEERS only — gate + MEK + fragment +
+                        // pacer. No loopback: the local self-view is a
+                        // direct getUserMedia preview in the webview
+                        // (PipeWire shares the camera), never a decode
+                        // round-trip.
                         let _ = crate::services::community_video_runtime::send_encoded_video_frame(
                             &pump_state,
                             &pump_community,

@@ -27,4 +27,6 @@ pub use device::{list_devices, VideoDevice};
 #[cfg(target_os = "linux")]
 pub use error::CaptureError;
 #[cfg(target_os = "linux")]
-pub use pipeline::{capture_available, CaptureConfig, EncodedFrame, NativeCaptureSession};
+pub use pipeline::{
+    capture_available, CaptureConfig, EncodedFrame, NativeCaptureSession, PreviewFrame,
+};

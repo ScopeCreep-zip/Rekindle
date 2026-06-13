@@ -251,7 +251,13 @@ pub enum CommunityEvent {
     },
     /// The Linux-native capture session died asynchronously (camera
     /// unplugged, pipeline failure) — the panel reverts the camera
-    /// toggle and surfaces the message.
+    /// toggle and surfaces the message. Linux-only: only the native
+    /// GStreamer pipeline emits this, so the variant is gated to where
+    /// it can be constructed (the webview path on macOS/Windows
+    /// reports capture failures inline via `setError`, never through a
+    /// CommunityEvent). The frontend TS union keeps the variant
+    /// unconditionally — it simply never arrives off-Linux.
+    #[cfg(target_os = "linux")]
     #[serde(rename_all = "camelCase")]
     NativeVideoError {
         community_id: String,

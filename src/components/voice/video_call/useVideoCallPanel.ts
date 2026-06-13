@@ -5,6 +5,7 @@ import type {
   Codec,
   CommunityVideoFrameMsg,
   DmVideoFrameMsg,
+  NativePreviewFrameMsg,
   SessionVideoConfig,
 } from "../../../ipc/commands";
 import { subscribeCommunityEvents } from "../../../ipc/channels";
@@ -77,10 +78,32 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
   let dmFrameChannel: Channel<DmVideoFrameMsg> | null = null;
   let communityFrameChannel: Channel<CommunityVideoFrameMsg> | null = null;
   /** Backend-native capture (Linux GStreamer) — capability-detected on
-   *  mount, never OS-sniffed. When a native session runs, its loopback
-   *  stream id marks the self-view stream in ingest. */
-  let nativeCaptureAvailable = false;
+   *  mount, never OS-sniffed. `nativeStreamId` non-null marks an active
+   *  native session: encode is GStreamer's (VP9 to peers), the self-view
+   *  is a direct getUserMedia preview, and keyframe FIR / bitrate events
+   *  route to the native encoder instead of the webview one. */
+  // Reactive so the call stage can decide the self-tile rendering
+  // (canvas vs <video>) from a STABLE per-session flag — capability is
+  // probed at mount, well before any camera toggle, so the stage never
+  // races a half-built tile.
+  const [nativeCaptureAvailable, setNativeCaptureAvailable] = createSignal(false);
+  /** This session captures natively (Linux GStreamer) — community mode
+   *  only; DM stays on the webview path. Stable for the session. */
+  const nativeCapture = (): boolean =>
+    nativeCaptureAvailable() && props.mode === "community";
   let nativeStreamId: string | null = null;
+  /** Linux-native self-view: the backend capture pipeline tees a JPEG
+   *  preview branch to us (single capture, no 2nd getUserMedia consumer,
+   *  no loopback). Those stills paint to this canvas, which the
+   *  self-camera tile mounts. Null on webview platforms (mac/Windows use
+   *  a direct getUserMedia `<video>` instead). */
+  const [nativeSelfCanvas, setNativeSelfCanvas] = createSignal<HTMLCanvasElement | null>(
+    null,
+  );
+  let nativePreviewChannel: Channel<NativePreviewFrameMsg> | null = null;
+  // Drop a preview still if the previous createImageBitmap is still in
+  // flight — self-view is best-effort, never a backlog.
+  let nativePreviewDecoding = false;
   /** Single clock that paces every remote's playout buffer into its
    *  decoder — and emits the ~1 Hz acks the sender's bitrate policy
    *  feeds on. rAF when visible; a timer chain when hidden, because
@@ -153,7 +176,7 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
       commands
         .nativeVideoCaptureAvailable()
         .then((available) => {
-          nativeCaptureAvailable = available;
+          setNativeCaptureAvailable(available);
         })
         .catch(() => {
           // Probe failure = webview path; same as off-Linux.
@@ -212,6 +235,9 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
           // pipeline failure) — revert the toggle and surface it.
           if (event.data.channelId === props.channelId) {
             nativeStreamId = null;
+            void commands.unregisterNativePreviewChannel();
+            nativePreviewChannel = null;
+            setNativeSelfCanvas(null);
             setCameraOn(false);
             setError(`Camera stopped: ${event.data.message}`);
           }
@@ -367,7 +393,6 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
       remote = {
         streamId,
         senderPseudonym: sender_,
-        isLocal: nativeStreamId !== null && streamId === nativeStreamId,
         codec,
         // Placeholder — installDecoder() below replaces it before the
         // remote is appended; never decoded against.
@@ -387,47 +412,6 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
       };
       installDecoder(remote, webCodecsString, decoderOptimizeForLatency);
       setRemotes((prev) => [...prev, remote!]);
-    }
-
-    // Self-view loopback: frames arrive in order over the ipc::Channel
-    // — there is nothing to reorder or absorb, and the playout buffer
-    // would add ~50 ms of pure self-view lag. Decode immediately
-    // (keeping the fresh-decoder keyframe guard).
-    if (remote.isLocal) {
-      if (!remote.ready) return;
-      if (remote.awaitKeyframe) {
-        if (!keyframe) {
-          requestKeyframeFor(remote.streamId);
-          return;
-        }
-        remote.awaitKeyframe = false;
-      }
-      // R5 latency probe: the native pump stamps unix-ms (u32-wrapped)
-      // timestamps, so encode→ingest is directly measurable. ~1 Hz
-      // through the *-settings info lane — the webview console is
-      // invisible in dev logs.
-      const nowMs = performance.now();
-      if (nowMs - remote.lastDebugAt >= 1000) {
-        remote.lastDebugAt = nowMs;
-        const e2e = (Date.now() % 4294967295) - timestamp;
-        void commands.reportMediaCaptureError(
-          "self-view-settings",
-          `loopback encode→ingest ${e2e}ms (decode+paint adds single-digit ms)`,
-        );
-      }
-      try {
-        remote.decoder.decode(
-          new EncodedVideoChunk({
-            type: keyframe ? "key" : "delta",
-            timestamp,
-            data,
-          }),
-        );
-      } catch (e) {
-        console.error("self-view decode failed:", e);
-        requestKeyframeFor(remote.streamId);
-      }
-      return;
     }
 
     // Reorder + jitter-absorb instead of decoding on arrival. The playout
@@ -476,7 +460,7 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
             r.senderPseudonym,
             r.streamId,
             false,
-            e.message,
+            `${e.message} [codec=${webCodecsString}]`,
           );
         }
         recoverDecoder(r.streamId, webCodecsString, optimizeForLatency);
@@ -484,9 +468,16 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
     });
     r.decoder = decoder;
     try {
+      // optimizeForLatency is deliberately NOT set: WebKitGTK's
+      // WebCodecs low-latency decode path is buggy (Igalia: decoder
+      // not pinned to a single thread) and produces "Decode error" on
+      // otherwise-valid VP8/VP9 frames — the configure succeeds but the
+      // first decode throws, looping the decoder rebuild. Correctness
+      // over the ~1 frame of latency the hint would save. (`optimize
+      // ForLatency` is still threaded through for the error report and
+      // the recover path so the diagnostic stays honest.)
       decoder.configure({
         codec: webCodecsString,
-        optimizeForLatency,
       });
       r.ready = true;
       if (props.mode === "community") {
@@ -551,13 +542,6 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
     const last = keyframeRequestAt.get(streamId) ?? 0;
     if (now - last < KEYFRAME_REQUEST_MIN_INTERVAL_MS) return;
     keyframeRequestAt.set(streamId, now);
-    // The self-view loopback's sender is OUR native encoder — channel
-    // envelopes would spam peers with requests for a stream they don't
-    // own while the frozen tile never heard them.
-    if (nativeStreamId !== null && streamId === nativeStreamId) {
-      void commands.forceNativeKeyframes();
-      return;
-    }
     void commands.sendVideoKeyframeRequest(props.communityId, props.channelId, streamId);
   }
 
@@ -569,11 +553,6 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
     for (const r of remotes()) {
       // Skip until the async decoder.configure() has landed (see ingest).
       if (!r.ready) continue;
-      // Self-view loopback streams decode at ingest (in-order channel,
-      // nothing to jitter-absorb) and are NEVER acked — a self-ack
-      // would broadcast loopback stats into every peer's channel-keyed
-      // bitrate policy.
-      if (r.isLocal) continue;
       const { release, requestKeyframe } = r.buffer.popDue(now);
       for (const f of release) {
         // A rebuilt decoder must see a keyframe before any delta —
@@ -679,18 +658,54 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
 
   async function startCamera(): Promise<void> {
     setError(null);
-    // Backend-native capture path (capability-detected): no
-    // getUserMedia, no webview encoder — the backend owns the camera
-    // and encode, and the self view arrives via the loopback stream.
+    // Backend-native capture path (capability-detected): the backend
+    // owns encode to peers (GStreamer VP9), and the self view is a
+    // direct getUserMedia preview (no webview encoder, no loopback).
     // Re-query on a cold cache: a click racing the onMount probe must
     // not fall back to the webview encoder on a native-capable box
     // (the probe is OnceLock-cached backend-side — this is cheap).
-    if (!nativeCaptureAvailable && props.mode === "community") {
-      nativeCaptureAvailable = await commands
-        .nativeVideoCaptureAvailable()
-        .catch(() => false);
+    if (!nativeCaptureAvailable() && props.mode === "community") {
+      setNativeCaptureAvailable(
+        await commands.nativeVideoCaptureAvailable().catch(() => false),
+      );
     }
-    if (nativeCaptureAvailable && props.mode === "community") {
+    if (nativeCaptureAvailable() && props.mode === "community") {
+      // Self-view canvas + preview channel, registered BEFORE the native
+      // session starts so the first JPEG stills aren't dropped. The
+      // backend captures ONCE (v4l2src) and tees: VP9 to peers + JPEG
+      // stills here. No second getUserMedia consumer, no loopback.
+      const canvas = document.createElement("canvas");
+      canvas.width = 320;
+      canvas.height = 180;
+      const ctx = canvas.getContext("2d");
+      const ch = new Channel<NativePreviewFrameMsg>();
+      ch.onmessage = (msg) => {
+        if (!ctx || nativePreviewDecoding) return;
+        nativePreviewDecoding = true;
+        const bytes = decodeBase64ToBytes(msg.jpegB64);
+        const blob = new Blob([bytes as BlobPart], { type: "image/jpeg" });
+        void createImageBitmap(blob)
+          .then((bmp) => {
+            ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+            bmp.close();
+          })
+          .catch((e: unknown) => {
+            // A corrupt still just doesn't paint; the next is a fresh
+            // full JPEG (intra-only, no reference chain). Surface it so a
+            // persistent decode failure is visible in the terminal log.
+            const m = e instanceof Error ? e.message : String(e);
+            void commands.reportMediaCaptureError(
+              "camera-native-preview",
+              `self-view createImageBitmap failed: ${m}`,
+            );
+          })
+          .finally(() => {
+            nativePreviewDecoding = false;
+          });
+      };
+      nativePreviewChannel = ch;
+      void commands.registerNativePreviewChannel(ch);
+      setNativeSelfCanvas(canvas);
       try {
         const prefs = await commands.getPreferences();
         nativeStreamId = await commands.startNativeVideo(
@@ -703,6 +718,9 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         nativeStreamId = null;
+        void commands.unregisterNativePreviewChannel();
+        nativePreviewChannel = null;
+        setNativeSelfCanvas(null);
         setError(`Camera failed: ${msg}`);
         void commands.reportMediaCaptureError("camera-native", msg);
       }
@@ -781,27 +799,16 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
 
   async function stopCamera(): Promise<void> {
     if (nativeStreamId !== null) {
-      const localId = nativeStreamId;
       nativeStreamId = null;
-      // Drop the loopback tile + decoder with the session.
-      setRemotes((prev) =>
-        prev.filter((r) => {
-          if (r.streamId === localId) {
-            try {
-              r.decoder.close();
-            } catch (e) {
-              console.error("self-view decoder close failed:", e);
-            }
-            return false;
-          }
-          return true;
-        }),
-      );
       try {
         await commands.stopNativeVideo();
       } catch (e) {
         console.error("stop_native_video failed:", e);
       }
+      // Tear down the self-view preview channel + canvas.
+      void commands.unregisterNativePreviewChannel();
+      nativePreviewChannel = null;
+      setNativeSelfCanvas(null);
       setCameraOn(false);
       return;
     }
@@ -988,9 +995,9 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
         await document.exitPictureInPicture();
         return;
       }
-      // PiP shows a REMOTE peer — the self-view loopback must not win
-      // the slot just because it registered first.
-      const remote = remotes().find((r) => !r.isLocal);
+      // PiP shows a remote peer (every entry in remotes() is a peer now
+      // — the self-view is a direct getUserMedia preview, not a stream).
+      const remote = remotes()[0];
       if (remote && typeof (remote.canvas as HTMLCanvasElement).captureStream === "function") {
         const stream = (remote.canvas as HTMLCanvasElement).captureStream(30);
         if (!pipBridgeVideo.value) {
@@ -1029,6 +1036,13 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
     localScreenVideoRef,
     bindCameraVideo,
     bindScreenVideo,
+    /** This session captures natively (Linux): the self-tile is the
+     *  JPEG preview canvas, never a getUserMedia `<video>`. Stable per
+     *  session, so the call stage never races a half-built tile. */
+    nativeCapture,
+    /** Linux-native self-view canvas (JPEG preview branch); null until
+     *  the first preview frame creates it. */
+    nativeSelfCanvas,
     togglePictureInPicture,
   };
 }

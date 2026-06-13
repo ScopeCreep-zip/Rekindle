@@ -1,16 +1,24 @@
-//! GStreamer capture+encode pipeline:
+//! GStreamer capture+encode pipeline with an in-process `tee` fan-out:
 //!
 //! ```text
-//! {camera source} ! decodebin ! videoconvert ! videoscale ! videorate
-//!   ! video/x-raw,format=I420,width=W,height=H,framerate=F/1
-//!   ! queue leaky=downstream max-size-buffers=2
-//!   ! vp9enc deadline=1 end-usage=cbr target-bitrate=B ...
-//!   ! appsink
+//! {camera source} ! decodebin ! videoconvert ! video/x-raw,format=I420 ! tee t.
+//!   t. ! queue leaky=downstream ! videoscale ! videorate
+//!      ! video/x-raw,format=I420,width=W,height=H,framerate=F/1
+//!      ! vp9enc deadline=1 end-usage=cbr target-bitrate=B ... ! appsink   (→ peers)
+//!   t. ! queue leaky=downstream ! videoscale ! videorate
+//!      ! video/x-raw,format=I420,width=320,height=180,framerate=F/1
+//!      ! jpegenc ! appsink                                                 (→ self-view)
 //! ```
 //!
-//! `decodebin` absorbs the MJPEG-vs-raw camera split (PipeWire does
-//! not transparently decode MJPEG — the app owns that); the leaky
-//! queue back-pressures on RAW frames so encoded output is never
+//! ONE camera open (raw `v4l2src`), fanned out the way every native P2P
+//! client does it (Jami's observer set, qTox's `CameraSource` signal,
+//! Linphone's MSFilter `tee`): one branch encodes VP9 for peers, the
+//! other emits small JPEG stills the webview paints to a canvas as the
+//! LOCAL self-view. Never a second `getUserMedia` consumer (Linux V4L2
+//! forbids two openers of one camera; PipeWire multiplexing is fragile)
+//! and never an encode→decode loopback (an anti-pattern used by no real
+//! app). `decodebin` absorbs the MJPEG-vs-raw camera split; the leaky
+//! queues back-pressure on RAW frames so encoded output is never
 //! dropped; `vp9enc deadline=1 end-usage=cbr` is libvpx's true RTC
 //! rate-control path — the entire reason this crate exists.
 
@@ -49,14 +57,27 @@ pub struct CaptureConfig {
     pub keyframe_max_dist: u32,
 }
 
-/// One encoded VP9 chunk. Wire timestamps are stamped by the consumer
-/// (the native pump uses wall-clock ms so the loopback latency probe
-/// measures true encode→paint) — pipeline running time stays internal.
+/// One encoded VP9 chunk for the peer egress branch. Wire timestamps
+/// are stamped by the consumer (the native pump uses wall-clock ms) —
+/// pipeline running time stays internal.
 #[derive(Debug)]
 pub struct EncodedFrame {
     pub payload: Vec<u8>,
     pub keyframe: bool,
 }
+
+/// One JPEG still from the preview branch — the LOCAL self-view. Small
+/// (≈320×180) and codec-stateless, so the webview paints it straight to
+/// a canvas via `createImageBitmap`, with no WebCodecs decoder involved.
+#[derive(Debug)]
+pub struct PreviewFrame {
+    pub jpeg: Vec<u8>,
+}
+
+/// Preview self-view dimensions — a small thumbnail; the heavy lifting
+/// (resolution, bitrate) is the encode branch's job.
+const PREVIEW_WIDTH: i32 = 320;
+const PREVIEW_HEIGHT: i32 = 180;
 
 /// A running capture session. Dropping it without `stop()` still tears
 /// the pipeline down (Drop impl) — `stop()` exists for explicit,
@@ -76,6 +97,7 @@ impl NativeCaptureSession {
     pub fn start(
         config: &CaptureConfig,
         frame_tx: tokio::sync::mpsc::Sender<EncodedFrame>,
+        preview_tx: tokio::sync::mpsc::Sender<PreviewFrame>,
         error_tx: tokio::sync::mpsc::Sender<String>,
     ) -> Result<Self, CaptureError> {
         gst::init().map_err(|e| CaptureError::Unavailable(e.to_string()))?;
@@ -100,46 +122,99 @@ impl NativeCaptureSession {
         };
 
         let pipeline = gst::Pipeline::new();
+        // Shared head: decode (MJPEG-or-raw) → convert → system-memory
+        // I420 → tee. Pinning a plain `video/x-raw` (no `memory:DMABuf`
+        // feature) here forces a system-memory copy the CPU branches can
+        // negotiate, and normalizing to I420 once means both branches
+        // inherit it (vp9enc wants I420; jpegenc accepts it).
         let decode = make(&pipeline, "decodebin")?;
         let convert = make(&pipeline, "videoconvert")?;
-        let scale = make(&pipeline, "videoscale")?;
-        // Cameras (and videotestsrc) run fixed mode sets — videorate
-        // adapts whatever framerate the device delivers to the encode
-        // fps, or the capsfilter would simply refuse to negotiate.
-        let rate = make(&pipeline, "videorate")?;
-        let capsfilter = make(&pipeline, "capsfilter")?;
-        let queue = make(&pipeline, "queue")?;
+        let head_caps = make(&pipeline, "capsfilter")?;
+        let tee = make(&pipeline, "tee")?;
+        // Encode branch (→ peers): scale/rate to the negotiated encode
+        // shape, then vp9enc. Cameras run fixed mode sets — videorate
+        // adapts the delivered framerate to the encode fps.
+        let enc_queue = make(&pipeline, "queue")?;
+        let enc_scale = make(&pipeline, "videoscale")?;
+        let enc_rate = make(&pipeline, "videorate")?;
+        let enc_caps = make(&pipeline, "capsfilter")?;
         let encoder = make(&pipeline, "vp9enc")?;
-        let appsink_el = make(&pipeline, "appsink")?;
+        let enc_appsink_el = make(&pipeline, "appsink")?;
+        // Preview branch (→ local self-view): downscale to a small
+        // thumbnail and JPEG-encode it.
+        let pv_queue = make(&pipeline, "queue")?;
+        let pv_scale = make(&pipeline, "videoscale")?;
+        let pv_rate = make(&pipeline, "videorate")?;
+        let pv_caps = make(&pipeline, "capsfilter")?;
+        let jpegenc = make(&pipeline, "jpegenc")?;
+        let pv_appsink_el = make(&pipeline, "appsink")?;
         pipeline
             .add(&source)
             .map_err(|e| CaptureError::Pipeline(e.to_string()))?;
 
-        let caps = gst::Caps::builder("video/x-raw")
-            .field("format", "I420")
-            .field("width", i32::try_from(config.width).unwrap_or(854))
-            .field("height", i32::try_from(config.height).unwrap_or(480))
-            .field(
-                "framerate",
-                gst::Fraction::new(i32::try_from(config.fps).unwrap_or(15), 1),
-            )
-            .build();
-        capsfilter.set_property("caps", &caps);
+        let fps = i32::try_from(config.fps).unwrap_or(15);
+        head_caps.set_property(
+            "caps",
+            gst::Caps::builder("video/x-raw").field("format", "I420").build(),
+        );
+        enc_caps.set_property(
+            "caps",
+            gst::Caps::builder("video/x-raw")
+                .field("format", "I420")
+                .field("width", i32::try_from(config.width).unwrap_or(854))
+                .field("height", i32::try_from(config.height).unwrap_or(480))
+                .field("framerate", gst::Fraction::new(fps, 1))
+                .build(),
+        );
+        pv_caps.set_property(
+            "caps",
+            gst::Caps::builder("video/x-raw")
+                .field("format", "I420")
+                .field("width", PREVIEW_WIDTH)
+                .field("height", PREVIEW_HEIGHT)
+                .field("framerate", gst::Fraction::new(fps, 1))
+                .build(),
+        );
 
-        // Raw-side backpressure: drop CAPTURED frames under load, never
-        // encoded ones (an encoded drop is a reference-chain break).
-        queue.set_property_from_str("leaky", "downstream");
-        queue.set_property("max-size-buffers", 2u32);
-        queue.set_property("max-size-bytes", 0u32);
-        queue.set_property("max-size-time", 0u64);
+        // Raw-side backpressure on BOTH branches: drop CAPTURED frames
+        // under load, never encoded ones (an encoded drop is a
+        // reference-chain break). The post-tee queue also gives each
+        // branch its own streaming thread so one can't stall the other.
+        for q in [&enc_queue, &pv_queue] {
+            q.set_property_from_str("leaky", "downstream");
+            q.set_property("max-size-buffers", 2u32);
+            q.set_property("max-size-bytes", 0u32);
+            q.set_property("max-size-time", 0u64);
+        }
 
         configure_encoder(&encoder, config);
+        // jpegenc quality 0..100; 50 keeps the self-view thumbnail at a
+        // few KB/frame.
+        jpegenc.set_property("quality", 50i32);
 
         source
             .link(&decode)
             .map_err(|e| CaptureError::Pipeline(format!("source!decodebin: {e}")))?;
-        gst::Element::link_many([&convert, &scale, &rate, &capsfilter, &queue, &encoder, &appsink_el])
-            .map_err(|e| CaptureError::Pipeline(format!("convert..appsink: {e}")))?;
+        gst::Element::link_many([&convert, &head_caps, &tee])
+            .map_err(|e| CaptureError::Pipeline(format!("convert..tee: {e}")))?;
+        gst::Element::link_many([
+            &enc_queue,
+            &enc_scale,
+            &enc_rate,
+            &enc_caps,
+            &encoder,
+            &enc_appsink_el,
+        ])
+        .map_err(|e| CaptureError::Pipeline(format!("encode branch: {e}")))?;
+        gst::Element::link_many([
+            &pv_queue, &pv_scale, &pv_rate, &pv_caps, &jpegenc, &pv_appsink_el,
+        ])
+        .map_err(|e| CaptureError::Pipeline(format!("preview branch: {e}")))?;
+        // Linking from the tee auto-requests a fresh src pad per branch.
+        tee.link(&enc_queue)
+            .map_err(|e| CaptureError::Pipeline(format!("tee!encode: {e}")))?;
+        tee.link(&pv_queue)
+            .map_err(|e| CaptureError::Pipeline(format!("tee!preview: {e}")))?;
 
         // decodebin pads appear per-stream at runtime — link the first
         // video pad to videoconvert.
@@ -159,14 +234,16 @@ impl NativeCaptureSession {
             }
         });
 
+        // Success is judged on the ENCODE branch's first sample — peers
+        // are the priority; the preview branch is best-effort.
         let first_sample = Arc::new(AtomicBool::new(false));
-        let sink = appsink_el
+        let enc_sink = enc_appsink_el
             .clone()
             .dynamic_cast::<gst_app::AppSink>()
-            .map_err(|_| CaptureError::Pipeline("appsink cast".into()))?;
-        sink.set_property("sync", false);
+            .map_err(|_| CaptureError::Pipeline("encode appsink cast".into()))?;
+        enc_sink.set_property("sync", false);
         let first_sample_cb = Arc::clone(&first_sample);
-        sink.set_callbacks(
+        enc_sink.set_callbacks(
             gst_app::AppSinkCallbacks::builder()
                 .new_sample(move |sink| {
                     let Ok(sample) = sink.pull_sample() else {
@@ -188,6 +265,34 @@ impl NativeCaptureSession {
                     let _ = frame_tx.try_send(EncodedFrame {
                         payload: map.as_slice().to_vec(),
                         keyframe,
+                    });
+                    Ok(gst::FlowSuccess::Ok)
+                })
+                .build(),
+        );
+
+        // Preview branch: JPEG stills to the self-view. Pure best-effort
+        // — a full channel (UI behind) just drops the still; the next one
+        // is a fresh full frame (JPEG is intra-only, no reference chain).
+        let pv_sink = pv_appsink_el
+            .clone()
+            .dynamic_cast::<gst_app::AppSink>()
+            .map_err(|_| CaptureError::Pipeline("preview appsink cast".into()))?;
+        pv_sink.set_property("sync", false);
+        pv_sink.set_callbacks(
+            gst_app::AppSinkCallbacks::builder()
+                .new_sample(move |sink| {
+                    let Ok(sample) = sink.pull_sample() else {
+                        return Err(gst::FlowError::Eos);
+                    };
+                    let Some(buffer) = sample.buffer() else {
+                        return Ok(gst::FlowSuccess::Ok);
+                    };
+                    let Ok(map) = buffer.map_readable() else {
+                        return Ok(gst::FlowSuccess::Ok);
+                    };
+                    let _ = preview_tx.try_send(PreviewFrame {
+                        jpeg: map.as_slice().to_vec(),
                     });
                     Ok(gst::FlowSuccess::Ok)
                 })
@@ -424,6 +529,8 @@ fn probe_available() -> Result<(), String> {
     for factory in [
         "vp9enc",
         "jpegdec",
+        "jpegenc",
+        "tee",
         "videoconvert",
         "videoscale",
         "videorate",
@@ -474,6 +581,10 @@ fn probe_available() -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+    // Tests skip themselves with an eprintln! when GStreamer/the camera is
+    // unavailable in the build env (CI without /dev/video*); print-stderr is a
+    // production-code guard, not a test-diagnostic one — keep the skip reason.
+    #![allow(clippy::print_stderr)]
     use super::*;
 
     fn test_config(bitrate_kbps: u32) -> CaptureConfig {
@@ -510,8 +621,9 @@ mod tests {
             return;
         }
         let (frame_tx, mut frame_rx) = tokio::sync::mpsc::channel(256);
+        let (preview_tx, _preview_rx) = tokio::sync::mpsc::channel(64);
         let (error_tx, _error_rx) = tokio::sync::mpsc::channel(4);
-        let session = NativeCaptureSession::start(&test_config(300), frame_tx, error_tx)
+        let session = NativeCaptureSession::start(&test_config(300), frame_tx, preview_tx, error_tx)
             .expect("videotestsrc pipeline starts");
         let frames = drain_for(&mut frame_rx, Duration::from_millis(1_200));
         session.stop();
@@ -526,8 +638,9 @@ mod tests {
             return;
         }
         let (frame_tx, mut frame_rx) = tokio::sync::mpsc::channel(256);
+        let (preview_tx, _preview_rx) = tokio::sync::mpsc::channel(64);
         let (error_tx, _error_rx) = tokio::sync::mpsc::channel(4);
-        let session = NativeCaptureSession::start(&test_config(300), frame_tx, error_tx)
+        let session = NativeCaptureSession::start(&test_config(300), frame_tx, preview_tx, error_tx)
             .expect("videotestsrc pipeline starts");
         // Let the stream settle past its initial keyframe.
         let _ = drain_for(&mut frame_rx, Duration::from_millis(500));
@@ -552,8 +665,9 @@ mod tests {
             return;
         }
         let (frame_tx, mut frame_rx) = tokio::sync::mpsc::channel(1024);
+        let (preview_tx, _preview_rx) = tokio::sync::mpsc::channel(64);
         let (error_tx, _error_rx) = tokio::sync::mpsc::channel(4);
-        let session = NativeCaptureSession::start(&test_config(600), frame_tx, error_tx)
+        let session = NativeCaptureSession::start(&test_config(600), frame_tx, preview_tx, error_tx)
             .expect("videotestsrc pipeline starts");
         let high: usize = drain_for(&mut frame_rx, Duration::from_millis(1_500))
             .iter()
@@ -585,9 +699,10 @@ mod tests {
         }
         let (frame_tx, mut frame_rx) = tokio::sync::mpsc::channel(256);
         let (error_tx, mut error_rx) = tokio::sync::mpsc::channel(4);
+        let (preview_tx, _preview_rx) = tokio::sync::mpsc::channel(64);
         let mut config = test_config(300);
         config.source_override = Some("videotestsrc num-buffers=10".into());
-        let session = NativeCaptureSession::start(&config, frame_tx, error_tx)
+        let session = NativeCaptureSession::start(&config, frame_tx, preview_tx, error_tx)
             .expect("finite videotestsrc starts");
         let _ = drain_for(&mut frame_rx, Duration::from_millis(300));
         let deadline = Instant::now() + Duration::from_secs(5);
@@ -614,9 +729,11 @@ mod tests {
         }
         let (frame_tx, _frame_rx) = tokio::sync::mpsc::channel(4);
         let (error_tx, _error_rx) = tokio::sync::mpsc::channel(4);
+        let (preview_tx, _preview_rx) = tokio::sync::mpsc::channel(64);
         let mut config = test_config(300);
         config.source_override = Some("no-such-element-exists".into());
-        let err = NativeCaptureSession::start(&config, frame_tx, error_tx).unwrap_err();
+        let err =
+            NativeCaptureSession::start(&config, frame_tx, preview_tx, error_tx).unwrap_err();
         assert!(matches!(err, CaptureError::Unavailable(_)), "{err}");
     }
 }

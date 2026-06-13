@@ -168,6 +168,8 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::community::notify_video_topology_change,
         commands::community::register_community_video_channel,
         commands::community::unregister_community_video_channel,
+        commands::community::register_native_preview_channel,
+        commands::community::unregister_native_preview_channel,
         commands::community::report_local_video_capabilities,
         commands::community::report_video_decoder_status,
         commands::community::report_media_capture_error,

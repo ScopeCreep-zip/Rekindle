@@ -87,24 +87,45 @@ export function useCallStage() {
     if (voiceState.isConnected) {
       const camOn = pipe?.cameraOn() ?? false;
       const scrOn = pipe?.screenOn() ?? false;
-      // Native-capture self view: the camera is backend-owned and the
-      // self stream arrives as a loopback decode — its canvas IS the
-      // self tile (a bindVideo tile would hold a null srcObject and
-      // render permanently black).
-      const selfLoopback = (pipe?.remotes() ?? []).find((r) => r.isLocal);
+      // Self view, fed by ONE capture per platform (never a 2nd camera
+      // open, never a loopback):
+      //   - webview (mac/Windows): direct getUserMedia MediaStream bound
+      //     to a <video> via bindCameraVideo.
+      //   - Linux native: the backend tees a JPEG preview branch we paint
+      //     to a canvas (nativeSelfCanvas).
+      // `nativeCapture()` is decided at mount and stable for the session,
+      // so the path never flips mid-session. CRITICAL: the cached tile
+      // objects are plain (mutated via Object.assign) and the keyed <For>
+      // reuses a row by reference — so a tile must NEVER change content
+      // TYPE (canvas↔video) under the same key, or the row never
+      // re-renders (black forever). On native, while the canvas hasn't
+      // been created yet we therefore show the avatar under a DIFFERENT
+      // key ("self-avatar"); the key swap forces a fresh row that mounts
+      // the canvas the moment it exists.
+      const selfName = `${authState.displayName ?? "You"} (you)`;
       if (pipe && camOn) {
-        if (selfLoopback) {
-          put(out, "self-camera", {
-            canvas: selfLoopback.canvas,
-            displayName: `${authState.displayName ?? "You"} (you)`,
-            isLocal: true,
-            isScreen: false,
-            mirror: true,
-          });
+        if (pipe.nativeCapture?.()) {
+          const nativeCanvas = pipe.nativeSelfCanvas?.() ?? null;
+          if (nativeCanvas) {
+            put(out, "self-camera", {
+              canvas: nativeCanvas,
+              displayName: selfName,
+              isLocal: true,
+              isScreen: false,
+              mirror: true,
+            });
+          } else {
+            put(out, "self-avatar", {
+              displayName: selfName,
+              avatarUrl: authState.avatarUrl ?? undefined,
+              isLocal: true,
+              isScreen: false,
+            });
+          }
         } else {
           put(out, "self-camera", {
             bindVideo: pipe.bindCameraVideo,
-            displayName: `${authState.displayName ?? "You"} (you)`,
+            displayName: selfName,
             isLocal: true,
             isScreen: false,
           });
@@ -134,9 +155,6 @@ export function useCallStage() {
     const remotes = pipe?.remotes() ?? [];
     const withVideo = new Set<string>();
     for (const r of remotes) {
-      // The self loopback renders as the self tile above, never as a
-      // remote tile (unmirrored, "Participant"-named, double card).
-      if (r.isLocal) continue;
       const p = voiceState.participants.find((x) => x.publicKey === r.senderPseudonym);
       if (p) withVideo.add(p.publicKey);
       put(out, `remote-${r.streamId}`, {

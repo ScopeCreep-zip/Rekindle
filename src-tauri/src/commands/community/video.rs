@@ -176,6 +176,28 @@ pub async fn unregister_community_video_channel(
     Ok(())
 }
 
+/// Register the self-view channel the Linux-native capture pump pushes
+/// JPEG preview stills to. Single slot — only one native session runs at
+/// a time. The panel registers this before starting the native session.
+#[tauri::command]
+pub async fn register_native_preview_channel(
+    on_frame: tauri::ipc::Channel<crate::video_channels::NativePreviewFrameMsg>,
+    state: State<'_, SharedState>,
+) -> Result<(), String> {
+    state.video_channels.register_native_preview(on_frame);
+    Ok(())
+}
+
+/// Drop the native self-view channel when the camera stops / panel
+/// unmounts so preview stills stop being forwarded.
+#[tauri::command]
+pub async fn unregister_native_preview_channel(
+    state: State<'_, SharedState>,
+) -> Result<(), String> {
+    state.video_channels.unregister_native_preview();
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn notify_video_topology_change(
     community_id: String,

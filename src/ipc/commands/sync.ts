@@ -1,7 +1,7 @@
 import { Channel } from "@tauri-apps/api/core";
 import { invoke } from "../invoke";
 import type {
-  BackgroundSyncReport, Codec, CommunityAnalytics, CommunityVideoFrameMsg, DeviceList, DmConversation, DmMessageRecord, DmVideoFrameMsg, LinkPreview, MediaCapabilities, MessageSearch, PairingAccept, PairingQrPayload, PairingSession, SearchResult, SendVideoFrameRequest, SyncManifest, SyncPreferences, SyncReadState, VideoTopologyReason, VideoTrackLabel,
+  BackgroundSyncReport, Codec, CommunityAnalytics, CommunityVideoFrameMsg, DeviceList, DmConversation, DmMessageRecord, DmVideoFrameMsg, LinkPreview, MediaCapabilities, MessageSearch, NativePreviewFrameMsg, PairingAccept, PairingQrPayload, PairingSession, SearchResult, SendVideoFrameRequest, SyncManifest, SyncPreferences, SyncReadState, VideoTopologyReason, VideoTrackLabel,
 } from "./types_sync";
 
 export const syncCommands = {
@@ -346,6 +346,18 @@ export const syncCommands = {
   /** Phase 11 Tier 1 — drop the per-community video channel on unmount. */
   unregisterCommunityVideoChannel: (communityId: string) =>
     invoke<void>("unregister_community_video_channel", { communityId }),
+
+  /**
+   * Register the self-view channel the Linux-native capture pump pushes
+   * JPEG preview stills to. The panel registers this before starting a
+   * native session; the stills paint to the self-camera canvas. Single
+   * slot — only one native session runs at a time.
+   */
+  registerNativePreviewChannel: (onFrame: Channel<NativePreviewFrameMsg>) =>
+    invoke<void>("register_native_preview_channel", { onFrame }),
+  /** Drop the native self-view channel when the native camera stops. */
+  unregisterNativePreviewChannel: () =>
+    invoke<void>("unregister_native_preview_channel"),
 
   // Phase 10 — replay events newer than `lastCursor` (the last cursor
   // this window persisted to localStorage). The backend re-emits each
