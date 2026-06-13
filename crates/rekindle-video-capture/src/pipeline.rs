@@ -4,14 +4,14 @@
 //! {camera source} ! decodebin ! videoconvert ! videoscale ! videorate
 //!   ! video/x-raw,format=I420,width=W,height=H,framerate=F/1
 //!   ! queue leaky=downstream max-size-buffers=2
-//!   ! vp8enc deadline=1 end-usage=cbr target-bitrate=B ...
+//!   ! vp9enc deadline=1 end-usage=cbr target-bitrate=B ...
 //!   ! appsink
 //! ```
 //!
 //! `decodebin` absorbs the MJPEG-vs-raw camera split (PipeWire does
 //! not transparently decode MJPEG — the app owns that); the leaky
 //! queue back-pressures on RAW frames so encoded output is never
-//! dropped; `vp8enc deadline=1 end-usage=cbr` is libvpx's true RTC
+//! dropped; `vp9enc deadline=1 end-usage=cbr` is libvpx's true RTC
 //! rate-control path — the entire reason this crate exists.
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -49,7 +49,7 @@ pub struct CaptureConfig {
     pub keyframe_max_dist: u32,
 }
 
-/// One encoded VP8 chunk. Wire timestamps are stamped by the consumer
+/// One encoded VP9 chunk. Wire timestamps are stamped by the consumer
 /// (the native pump uses wall-clock ms so the loopback latency probe
 /// measures true encode→paint) — pipeline running time stays internal.
 #[derive(Debug)]
@@ -109,7 +109,7 @@ impl NativeCaptureSession {
         let rate = make(&pipeline, "videorate")?;
         let capsfilter = make(&pipeline, "capsfilter")?;
         let queue = make(&pipeline, "queue")?;
-        let encoder = make(&pipeline, "vp8enc")?;
+        let encoder = make(&pipeline, "vp9enc")?;
         let appsink_el = make(&pipeline, "appsink")?;
         pipeline
             .add(&source)
@@ -299,7 +299,7 @@ impl NativeCaptureSession {
         })
     }
 
-    /// Follow the bitrate policy's encoder-domain target. `vp8enc`
+    /// Follow the bitrate policy's encoder-domain target. `vp9enc`
     /// applies rate-control properties to an initialized encoder live
     /// (`vpx_codec_enc_config_set` — de-facto stable 1.20→main).
     pub fn set_bitrate_kbps(&self, kbps: u32) {
@@ -362,17 +362,18 @@ fn configure_encoder(encoder: &gst::Element, config: &CaptureConfig) {
         "keyframe-max-dist",
         i32::try_from(config.keyframe_max_dist).unwrap_or(128),
     );
-    // Realtime knobs (verified stable 1.20→main): no lookahead, fast
-    // speed preset, bounded worst-case quality, short rate-control
-    // buffer so CBR is enforced over ~0.5 s not 6 s, error-resilient
-    // partitions for lossy transport.
+    // Realtime knobs, shared by vp8enc/vp9enc (both GstVPXEnc): no
+    // lookahead, fast speed preset, bounded worst-case quality, short
+    // rate-control buffer so CBR is enforced over ~0.5 s not 6 s,
+    // error-resilient partitions for lossy transport.
     //
-    // Keyframe SIZE bounding (plan R4 "investigate in Phase 2"):
-    // GstVPXEnc exposes no libvpx max-intra knob — the verified
-    // 47-property surface (identical 1.20→main) has nothing mapping to
-    // rc_max_intra_bitrate_pct. Intra size is therefore bounded only
-    // indirectly by the short CBR buffer model below; the pacer's
-    // oversized-keyframe intake guard remains the explicit detector.
+    // Keyframe SIZE bounding (plan R4): GstVPXEnc exposes no libvpx
+    // max-intra knob — intra size is bounded only indirectly by the
+    // short CBR buffer model below; the pacer's oversized-keyframe
+    // intake guard remains the explicit detector.
+    //
+    // cpu-used range differs (vp8enc 0..16, vp9enc −16..16); 8 is valid
+    // for both — fast realtime on either encoder.
     encoder.set_property("lag-in-frames", 0i32);
     encoder.set_property("cpu-used", 8i32);
     encoder.set_property("max-quantizer", 56i32);
@@ -399,8 +400,8 @@ fn map_bus_error(err: &gst::message::Error, source_desc: &str) -> CaptureError {
 
 /// The R1 four-step availability checklist, cached: (1) gst::init,
 /// (2) every required element factory exists (incl. at least one
-/// camera source), (3) the vp8enc properties we set exist on the
-/// class, (4) a one-shot videotestsrc→vp8enc dry-run reaches PAUSED —
+/// camera source), (3) the vp9enc properties we set exist on the
+/// class, (4) a one-shot videotestsrc→vp9enc dry-run reaches PAUSED —
 /// catching present-but-unloadable plugins. Any failure → false →
 /// the webview path.
 pub fn capture_available() -> bool {
@@ -421,7 +422,7 @@ pub fn capture_available() -> bool {
 fn probe_available() -> Result<(), String> {
     gst::init().map_err(|e| format!("gst init: {e}"))?;
     for factory in [
-        "vp8enc",
+        "vp9enc",
         "jpegdec",
         "videoconvert",
         "videoscale",
@@ -440,9 +441,9 @@ fn probe_available() -> Result<(), String> {
     {
         return Err("no camera source element (pipewiresrc/v4l2src)".into());
     }
-    let encoder = gst::ElementFactory::make("vp8enc")
+    let encoder = gst::ElementFactory::make("vp9enc")
         .build()
-        .map_err(|e| format!("vp8enc instantiate: {e}"))?;
+        .map_err(|e| format!("vp9enc instantiate: {e}"))?;
     for prop in [
         "deadline",
         "end-usage",
@@ -455,13 +456,15 @@ fn probe_available() -> Result<(), String> {
         "error-resilient",
     ] {
         if encoder.find_property(prop).is_none() {
-            return Err(format!("vp8enc missing property: {prop}"));
+            return Err(format!("vp9enc missing property: {prop}"));
         }
     }
     // Dry run: plugin files can exist while their shared-library deps
     // are broken (partial installs) — only a state change proves it.
-    let pipeline = gst::parse::launch("videotestsrc num-buffers=1 ! vp8enc deadline=1 ! fakesink")
-        .map_err(|e| format!("dry-run parse: {e}"))?;
+    let pipeline = gst::parse::launch(
+        "videotestsrc num-buffers=1 ! video/x-raw,format=I420 ! vp9enc deadline=1 ! fakesink",
+    )
+    .map_err(|e| format!("dry-run parse: {e}"))?;
     pipeline
         .set_state(gst::State::Paused)
         .map_err(|e| format!("dry-run pause: {e}"))?;

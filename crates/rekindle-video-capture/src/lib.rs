@@ -1,11 +1,12 @@
-//! Native Linux camera capture + VP8 realtime encode (GStreamer).
+//! Native Linux camera capture + VP9 realtime encode (GStreamer).
 //!
 //! Exists because the webview encode path is structurally broken on
 //! Linux: WebKitGTK maps WebCodecs VP9 `realtime` onto libvpx's
 //! GOOD-quality deadline (no true CBR — observed 4-6× bitrate
 //! overshoot with 100-280 KB frames), and no WebCodecs knob fixes it.
-//! GStreamer's `vp8enc` with `deadline=1 end-usage=cbr` runs libvpx's
-//! real RTC rate-control path; the wire stays VP8, which every
+//! GStreamer's `vp9enc` with `deadline=1 end-usage=cbr` runs libvpx's
+//! real RTC rate-control path; the wire is VP9 — WebKitGTK's WebCodecs
+//! decodes vp09 (it rejects vp8), and every other platform
 //! receiving platform's WebCodecs decoder already handles via the
 //! per-fragment codec tag.
 //!

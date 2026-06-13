@@ -26,7 +26,7 @@ pub struct NativeVideoDevice {
 
 /// Encode shape for the native path — the negotiated §10.6 interim
 /// ceiling. Resolution is fixed for the stream's life (decoders break
-/// on in-band resize); rate adaptation is bitrate-only, which vp8enc
+/// on in-band resize); rate adaptation is bitrate-only, which vp9enc
 /// actually honors.
 #[cfg(target_os = "linux")]
 const NATIVE_WIDTH: u32 = 854;
@@ -86,7 +86,7 @@ pub fn on_keyframe_request(state: &AppState, stream_id: &[u8; 16]) -> bool {
 }
 
 /// Codecs the native path can encode — unioned into the local
-/// `MediaCapabilities` so codec negotiation can pick VP8 without
+/// `MediaCapabilities` so codec negotiation can pick VP9 without
 /// the webview probe knowing about the native encoder.
 pub fn native_encode_codecs() -> Vec<rekindle_types::video::Codec> {
     platform::native_encode_codecs()
@@ -145,7 +145,7 @@ mod platform {
 
     pub fn native_encode_codecs() -> Vec<rekindle_types::video::Codec> {
         if capture_available() {
-            vec![rekindle_types::video::Codec::Vp8]
+            vec![rekindle_types::video::Codec::Vp9]
         } else {
             Vec::new()
         }
@@ -355,7 +355,7 @@ mod platform {
                                 stream_id: pump_stream_hex.clone(),
                                 frame_seq,
                                 keyframe: frame.keyframe,
-                                codec: "vp8".into(),
+                                codec: "vp9".into(),
                                 timestamp: wire_ts,
                                 payload_b64: base64::engine::general_purpose::STANDARD
                                     .encode(&frame.payload),
@@ -371,7 +371,7 @@ mod platform {
                                 stream_id,
                                 frame_seq,
                                 keyframe: frame.keyframe,
-                                codec: rekindle_types::video::Codec::Vp8,
+                                codec: rekindle_types::video::Codec::Vp9,
                                 timestamp: wire_ts,
                                 encoded_payload: frame.payload,
                             },
