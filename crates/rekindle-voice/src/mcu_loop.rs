@@ -122,7 +122,7 @@ impl McuLoop {
                         sender_key.clone(),
                         PerSenderState {
                             codec,
-                            jitter_buffer: JitterBuffer::new(200),
+                            jitter_buffer: JitterBuffer::new(80),
                             last_packet_time: Instant::now(),
                         },
                     );

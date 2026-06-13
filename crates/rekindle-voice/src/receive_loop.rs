@@ -40,6 +40,10 @@ pub struct VoiceReceiveParams {
     /// Populated from SQLite on loop start so we don't need async DB
     /// queries inside the receive path.
     pub member_names: HashMap<String, String>,
+    /// Base jitter target (ms) from `VoiceConfig` — the floor the
+    /// adaptive controller starts at and never shrinks below. Replaces
+    /// the old hardcoded 200 ms.
+    pub jitter_base_ms: u32,
 }
 
 struct ParticipantDecoder {
@@ -66,7 +70,7 @@ struct VoiceReceiveLoop {
     frame_size: usize,
     sample_rate: u32,
     channels: u16,
-    jitter_buffer_ms: u32,
+    jitter_base_ms: u32,
     packets_received: u64,
     last_quality_check: Instant,
     /// Packets dropped this stats window for MEK reasons (missing key /
@@ -98,7 +102,6 @@ impl VoiceReceiveLoop {
         let sample_rate: u32 = 48000;
         let channels: u16 = 1;
         let frame_size: usize = 960;
-        let jitter_buffer_ms: u32 = 200;
 
         Some(Self {
             packet_rx: params.packet_rx,
@@ -113,7 +116,7 @@ impl VoiceReceiveLoop {
             frame_size,
             sample_rate,
             channels,
-            jitter_buffer_ms,
+            jitter_base_ms: params.jitter_base_ms,
             packets_received: 0,
             last_quality_check: Instant::now(),
             mek_drops: 0,
@@ -281,7 +284,7 @@ impl VoiceReceiveLoop {
                         sender_key.clone(),
                         ParticipantDecoder {
                             codec,
-                            jitter_buffer: JitterBuffer::new(self.jitter_buffer_ms),
+                            jitter_buffer: JitterBuffer::new(self.jitter_base_ms),
                             replay_window: VoiceSeqWindow::new(),
                             is_speaking: false,
                             last_packet_time: Instant::now(),
@@ -518,6 +521,11 @@ impl VoiceReceiveLoop {
         let (mut overflow, mut late) = (0u64, 0u64);
         for participant in self.participants.values_mut() {
             let (o, l) = participant.jitter_buffer.take_drops();
+            // Late drops in this window mean the adaptive target was too
+            // low — grow it; a clean window advances toward the shrink
+            // gate. (Per-push EWMA handles fast jitter; this is the
+            // slow safety net + controlled shrink.)
+            participant.jitter_buffer.note_window_health(l);
             overflow += o;
             late += l;
         }

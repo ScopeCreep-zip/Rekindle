@@ -124,15 +124,27 @@ export class VideoPlayoutBuffer {
       if (min === null || min <= this.nextSeq) break;
       const oldest = this.frames.get(min)!;
       if (now - oldest.receivedAt < this.playoutDelayMs) break;
+      // The gap [nextSeq, min) is now declared lost: those sequences never
+      // arrived on the wire. Count every skipped sequence exactly once,
+      // here at declaration, and advance past the hole. (The old code only
+      // counted on a keyframe jump and never in the kf===null stall, so the
+      // sender's AIMD never saw the loss and pinned at the ceiling.)
+      this.lost += min - this.nextSeq;
+      this.nextSeq = min;
       const kf = this.nextKeyframeSeq();
       if (kf === null) {
-        // Only undecodable deltas ahead — wait for a fresh keyframe.
+        // Only undecodable deltas ahead — they reference the now-broken
+        // chain and can never decode. Drop them (delivered-but-undecodable,
+        // already counted as received, NOT wire loss), hold here, and ask
+        // for a fresh keyframe. Clearing the buffer also makes the next
+        // stalled tick a no-op so the gap isn't re-counted.
+        this.frames.clear();
         out.requestKeyframe = true;
         break;
       }
-      // Jump the gap: account the loss, drop the undecodable frames before
-      // the keyframe, resume from it.
-      this.lost += kf - this.nextSeq;
+      // A keyframe is buffered ahead: drop the undecodable deltas before it
+      // ([min, kf) — delivered-but-undecodable, not counted) and resume from
+      // the keyframe.
       for (const k of [...this.frames.keys()]) if (k < kf) this.frames.delete(k);
       this.nextSeq = kf;
       out.requestKeyframe = true;

@@ -26,6 +26,9 @@ struct LoopBundle {
     playback_tx: Option<tokio::sync::mpsc::Sender<Vec<f32>>>,
     noise_suppression: bool,
     echo_cancellation: bool,
+    /// Config-preset jitter base (ms) — the floor the adaptive receive
+    /// buffer starts at (replaces the old hardcoded 200 ms).
+    jitter_base_ms: u32,
 }
 
 /// Body of `VoiceSessionDeps::init_voice_session` — extracted as a
@@ -262,11 +265,13 @@ fn take_channels_and_config(state: &AppState) -> Result<LoopBundle, String> {
     let handle = ve.as_mut().ok_or("no active voice engine")?;
     let ns = handle.engine.config().noise_suppression;
     let ec = handle.engine.config().echo_cancellation;
+    let jitter_base_ms = handle.engine.config().jitter_buffer_ms;
     Ok(LoopBundle {
         capture_rx: handle.engine.take_capture_rx(),
         playback_tx: handle.engine.take_playback_tx(),
         noise_suppression: ns,
         echo_cancellation: ec,
+        jitter_base_ms,
     })
 }
 
@@ -358,6 +363,7 @@ pub(super) fn spawn_voice_loops_impl(
                 Some(voice_channel_id)
             },
             member_names,
+            jitter_base_ms: bundle.jitter_base_ms,
         },
     ));
 

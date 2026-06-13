@@ -20,8 +20,11 @@ pub const VIDEO_START_KBPS: u32 = 350;
 /// the floor is a route problem, not a bitrate problem.
 pub const VIDEO_MIN_KBPS: u32 = 100;
 
-/// Ceiling — even clean feedback never ramps past this on routes.
-pub const VIDEO_MAX_KBPS: u32 = 1200;
+/// Ceiling — even clean feedback never ramps past this on routes. Sized
+/// for sustained 480p15 over a 3-hop Veilid Safe route; the old 1200
+/// assumed direct-UDP throughput and a transient clean ramp saturated
+/// the egress the unpaced voice stream shares, starving audio.
+pub const VIDEO_MAX_KBPS: u32 = 600;
 
 /// Receiver loss above which the AIMD step backs off: 13/256 ≈ 5 %,
 /// the classic "video must adapt" threshold.
@@ -96,6 +99,24 @@ mod tests {
     use super::*;
 
     #[test]
+    fn ceiling_is_route_realistic() {
+        // Guard: the ceiling is sized for a 3-hop Veilid Safe route, not
+        // direct UDP. Raising it re-opens the egress-saturation that
+        // starves the unpaced voice stream — change deliberately.
+        assert_eq!(VIDEO_MAX_KBPS, 600);
+    }
+
+    #[test]
+    fn accurate_loss_backs_off_below_ceiling() {
+        // With Part B feeding a real (non-zero) loss signal, the AIMD
+        // backs off near the ceiling instead of pinning at it: 20/256 ≈
+        // 8 % > the 5 % threshold → ×0.85.
+        let next = target_from_feedback(580, 600, 20);
+        assert!(next < 580, "real loss must back off near the ceiling: {next}");
+        assert_eq!(next, 493); // 580 × 0.85
+    }
+
+    #[test]
     fn loss_decreases_target() {
         let next = target_from_feedback(400, 1_000, 50);
         assert!(next < 400, "loss must back off: {next}");
@@ -136,8 +157,10 @@ mod tests {
     fn stalled_ack_window_does_not_crater_a_clean_stream() {
         // A transport hiccup yields an ack of ~0 kbps with no loss
         // marked. The cap limits growth only — never forces decay.
-        let next = target_from_feedback(800, 1, 0);
-        assert_eq!(next, 800, "growth capped, no decay without loss");
+        // (500 sits below the 600 ceiling so the clamp isn't what holds
+        // it — the no-decay cap is.)
+        let next = target_from_feedback(500, 1, 0);
+        assert_eq!(next, 500, "growth capped, no decay without loss");
     }
 
     #[test]
@@ -180,8 +203,9 @@ mod tests {
         assert_eq!(encoder_target_kbps(1000, 0), encoder_target_kbps(1000, 256));
         assert_eq!(wire_feedback_kbps(1000, 4096), wire_feedback_kbps(1000, 1024));
         // The stalled-ack guard survives the wire scaling: ~0 feedback
-        // never decays a clean stream.
-        assert_eq!(target_from_feedback(800, wire_feedback_kbps(1, 640), 0), 800);
+        // never decays a clean stream. (500 < the 600 ceiling so it's the
+        // no-decay cap holding, not the clamp.)
+        assert_eq!(target_from_feedback(500, wire_feedback_kbps(1, 640), 0), 500);
     }
 
     #[test]
