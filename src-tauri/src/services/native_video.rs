@@ -412,10 +412,14 @@ mod platform {
     use super::NativeVideoDevice;
     use crate::state::AppState;
 
-    /// Unit slot — `AppState` carries it on every platform so state
-    /// construction never platform-branches.
+    /// Empty slot — `AppState` carries it on every platform so state
+    /// construction never platform-branches. Empty-braces (not a unit
+    /// struct) so the shared `NativeVideoSlot::default()` call site in
+    /// `app_state.rs` doesn't trip `default_constructed_unit_structs`
+    /// on this platform, while the Linux build has a real field-bearing
+    /// struct.
     #[derive(Default)]
-    pub struct NativeVideoSlot;
+    pub struct NativeVideoSlot {}
 
     pub fn capture_available() -> bool {
         false
@@ -441,6 +445,10 @@ mod platform {
         false
     }
 
+    #[allow(
+        clippy::unused_async,
+        reason = "platform stub mirrors the Linux async signature; callers await uniformly"
+    )]
     pub async fn start(
         _state: &Arc<AppState>,
         _app: &tauri::AppHandle,

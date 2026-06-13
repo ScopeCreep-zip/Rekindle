@@ -584,7 +584,10 @@ mod tests {
     // Tests skip themselves with an eprintln! when GStreamer/the camera is
     // unavailable in the build env (CI without /dev/video*); print-stderr is a
     // production-code guard, not a test-diagnostic one — keep the skip reason.
-    #![allow(clippy::print_stderr)]
+    #![allow(
+        clippy::print_stderr,
+        reason = "test-skip diagnostics when GStreamer/camera is unavailable in CI"
+    )]
     use super::*;
 
     fn test_config(bitrate_kbps: u32) -> CaptureConfig {
