@@ -289,7 +289,17 @@ pub fn fragment_frame_with_fec(
         .map_err(|e| FragmentError::Fec(format!("rs encode: {e}")))?;
 
     let mut data: Vec<VideoFragment> = Vec::with_capacity(data_count);
-    for (idx, shard) in shards.iter().take(data_count).enumerate() {
+    for idx in 0..data_count {
+        // Systematic-code invariant (RFC 6330 §"need not be included in
+        // the packet", RFC 8627 "source packets transmitted
+        // unmodified"): the DATA fragment carries the REAL object bytes,
+        // never the FEC null-padding. The padded `shards[idx]` is used
+        // only for the Reed-Solomon parity encode above; here we slice
+        // the original `encrypted_frame` so the last shard is short, not
+        // zero-extended. Receivers that get all data concatenate them
+        // into the exact ciphertext with no length metadata needed.
+        let start = idx * shard_size;
+        let end = ((idx + 1) * shard_size).min(encrypted_frame.len());
         data.push(VideoFragment {
             stream_id,
             frame_seq,
@@ -299,7 +309,7 @@ pub fn fragment_frame_with_fec(
             codec,
             timestamp,
             mek_generation,
-            payload: shard.clone(),
+            payload: encrypted_frame[start..end].to_vec(),
             signature: Vec::new(),
         });
     }
@@ -351,11 +361,17 @@ pub fn reconstruct_frame(
         )));
     }
 
-    // Determine shard size from any received payload — they're all equal.
+    // Shard size = the MAX received payload length. Data fragments now
+    // carry real (unpadded) bytes, so the last data shard is SHORT; only
+    // a full shard (any parity, or any non-last data shard) gives the
+    // true RS shard size. Taking `.first()` could pick the short shard
+    // and mis-size every other shard (notably the only-short-data+parity
+    // case). The full shards are the maximum; the short last shard is ≤.
     let shard_size = received_data
-        .first()
+        .iter()
+        .chain(received_parity.iter())
         .map(|(_, p)| p.len())
-        .or_else(|| received_parity.first().map(|(_, p)| p.len()))
+        .max()
         .unwrap_or(0);
     if shard_size == 0 {
         return Err(FragmentError::EmptyFrame);
@@ -364,9 +380,18 @@ pub fn reconstruct_frame(
     let mut shards: Vec<Option<Vec<u8>>> = vec![None; total];
     for (idx, payload) in received_data {
         let i = usize::from(*idx);
-        if i < usize::from(data_count) && payload.len() == shard_size {
-            shards[i] = Some(payload.clone());
+        if i >= usize::from(data_count) || payload.len() > shard_size {
+            // Out-of-range index, or a payload longer than a shard —
+            // corrupt; skip rather than mis-place.
+            continue;
         }
+        // Re-synthesize the FEC zero-padding RS expects: the sender
+        // padded the last data shard before computing parity, then
+        // shipped only the real bytes. Re-pad to shard_size so RS sees
+        // the exact shards it encoded.
+        let mut shard = payload.clone();
+        shard.resize(shard_size, 0);
+        shards[i] = Some(shard);
     }
     for (idx, payload) in received_parity {
         let i = usize::from(data_count) + usize::from(*idx);
@@ -518,6 +543,65 @@ mod tests {
             &received_parity,
             4,
             2,
+            u32::try_from(frame.len()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(recovered, frame);
+    }
+
+    #[test]
+    fn fec_data_fragments_carry_unpadded_bytes() {
+        // Systematic-code invariant (RFC 6330/8627): data fragments
+        // carry only real object bytes, never FEC padding. A frame whose
+        // length is not a multiple of shard_size DOES pad the last shard
+        // for parity computation — but that padding must not ride the
+        // wire. The in-order concat of data payloads is the exact frame.
+        let frame: Vec<u8> = (0..FRAGMENT_PAYLOAD_LIMIT * 2 + 33)
+            .map(|i| u8::try_from(i & 0xff).unwrap())
+            .collect();
+        let frags =
+            fragment_frame_with_fec(test_shape([1u8; STREAM_ID_LEN], 3, true, Codec::Vp9, 7), &frame, 1)
+                .unwrap();
+        let total: usize = frags.data.iter().map(|f| f.payload.len()).sum();
+        assert_eq!(total, frame.len(), "data fragments must carry no padding");
+        let mut concat = Vec::new();
+        for f in &frags.data {
+            concat.extend_from_slice(&f.payload);
+        }
+        assert_eq!(concat, frame);
+    }
+
+    #[test]
+    fn fec_reconstruct_repads_received_short_shard() {
+        // The last data shard is short (real bytes). Receive ALL data
+        // (incl. the short last) + parity, drop one FULL middle data
+        // shard. reconstruct_frame must re-pad the received short shard
+        // to shard_size so RS sees the exact shards the sender encoded.
+        let frame: Vec<u8> = (0..FRAGMENT_PAYLOAD_LIMIT * 2 + 33)
+            .map(|i| u8::try_from(i & 0xff).unwrap())
+            .collect();
+        let frags =
+            fragment_frame_with_fec(test_shape([2u8; STREAM_ID_LEN], 4, true, Codec::Vp9, 9), &frame, 1)
+                .unwrap();
+        assert_eq!(frags.data.len(), 3);
+        // Drop the FULL middle data shard (index 1); keep 0 and the
+        // short last (index 2), plus parity.
+        let received_data: Vec<(u8, Vec<u8>)> = frags
+            .data
+            .iter()
+            .filter(|f| f.frag_index != 1)
+            .map(|f| (f.frag_index, f.payload.clone()))
+            .collect();
+        let received_parity: Vec<(u8, Vec<u8>)> = frags
+            .parity
+            .iter()
+            .map(|f| (f.parity_index, f.payload.clone()))
+            .collect();
+        let recovered = reconstruct_frame(
+            &received_data,
+            &received_parity,
+            3,
+            1,
             u32::try_from(frame.len()).unwrap(),
         )
         .unwrap();

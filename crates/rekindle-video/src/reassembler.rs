@@ -357,11 +357,14 @@ fn try_complete(
                 payload.extend(bytes);
             }
         }
-        // Strip null padding only when we know the original length
-        // (i.e. parity packets arrived alongside).
-        if partial.frame_len > 0 {
-            payload.truncate(partial.frame_len as usize);
-        }
+        // Systematic-code invariant: data fragments carry the REAL
+        // (unpadded) object bytes (see `fragment_frame_with_fec`), so
+        // the in-order concat of all data shards IS the exact ciphertext
+        // — no frame_len truncation needed or wanted. The old
+        // truncate-only-if-frame_len>0 leaked FEC padding into the
+        // ciphertext when data arrived before parity (frame_len==0),
+        // failing AEAD decrypt. Padding survives only inside
+        // `reconstruct_frame`, where RS genuinely needs padded shards.
         let frame = ReassembledFrame {
             stream_id,
             frame_seq,
@@ -654,9 +657,14 @@ mod tests {
 
     #[test]
     fn fec_fast_path_when_all_data_arrives_first() {
-        // All 3 data shards arrive before any parity. Fast-path concat
-        // should complete the frame; the late parity arrival becomes a
-        // no-op against an already-removed partial.
+        // Regression for the live "decrypt failed at matching
+        // generation" bug: all 3 data shards arrive before any parity
+        // (the normal send order), so frame_len is still 0. Under the
+        // systematic-code invariant the fast-path concat must yield the
+        // EXACT original ciphertext — no FEC padding, because data
+        // fragments carry real bytes. Before the fix the last shard was
+        // null-padded on the wire and the concat was 1 byte longer,
+        // corrupting the AEAD ciphertext.
         let mut r = Reassembler::new();
         let frame = vec![0xCCu8; FRAGMENT_PAYLOAD_LIMIT * 2 + 33];
         let fec = fragment_frame_with_fec(test_shape([8u8; STREAM_ID_LEN], 12, true, Codec::Vp9, 1), &frame, 1)
@@ -667,15 +675,6 @@ mod tests {
         assert!(done.is_some());
         let frame_out = done.unwrap();
         assert!(!frame_out.recovered_via_fec);
-        // Without prior parity, frame_len was 0 → no truncation. The
-        // last data shard isn't padded for a non-FEC sender, but a
-        // FEC-using sender pads to `shard_size`. Confirm we get back
-        // the original (which means padding must NOT have been added
-        // since frame_len was 0). The encoder pads to shard_size for
-        // FEC-encoded shards, so without frame_len the concat could
-        // be longer than the original — this asserts the contract.
-        let shard_size = frame.len().div_ceil(3);
-        assert_eq!(frame_out.payload.len(), shard_size * 3);
-        assert_eq!(&frame_out.payload[..frame.len()], &frame[..]);
+        assert_eq!(frame_out.payload, frame);
     }
 }
