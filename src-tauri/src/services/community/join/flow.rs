@@ -483,10 +483,10 @@ async fn decode_invite_context(
         let mek = rekindle_crypto::group::media_key::MediaEncryptionKey::from_wire_bytes(&mek_wire)
             .ok_or("invalid MEK wire bytes")?;
         let generation = mek.generation();
-        state
-            .mek_cache
-            .lock()
-            .insert(governance_key_str.to_string(), mek);
+        // Centralized resolver — the invite-delivered MEK carries provenance
+        // (from_wire_bytes); routing it through the resolver keeps a join that
+        // races a live rotation convergent instead of clobbering.
+        crate::state_helpers::install_community_mek(state, governance_key_str, mek);
         generation
     };
 

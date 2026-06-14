@@ -148,10 +148,10 @@ pub(super) fn decrypt_message_body(
             .decrypt(&message.ciphertext)
             .ok()
             .and_then(|bytes| String::from_utf8(bytes).ok())?;
-        state
-            .channel_mek_cache
-            .lock()
-            .insert((community_id.to_string(), channel_id.to_string()), mek);
+        // Centralized resolver — a lazily-loaded historical channel key must
+        // not downgrade/clobber the live one (it carries provenance from
+        // Stronghold's wire round-trip).
+        crate::state_helpers::install_channel_mek(state, community_id, channel_id, mek);
         return Some(plaintext);
     }
 
@@ -162,8 +162,15 @@ pub(super) fn decrypt_message_body(
                 .decrypt(&message.ciphertext)
                 .ok()
                 .and_then(|bytes| String::from_utf8(bytes).ok())?;
-            state.mek_cache.lock().insert(community_id.to_string(), mek);
-            crate::services::community::media_ready_runtime::on_mek_updated(state, community_id, None);
+            // Centralized resolver: a lazily-loaded persisted key must not
+            // downgrade a newer live key or clobber a canonical same-gen one.
+            if crate::state_helpers::install_community_mek(state, community_id, mek) {
+                crate::services::community::media_ready_runtime::on_mek_updated(
+                    state,
+                    community_id,
+                    None,
+                );
+            }
             Some(plaintext)
         })
 }

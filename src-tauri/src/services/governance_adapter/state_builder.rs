@@ -131,8 +131,11 @@ pub(super) fn insert_community_into_state(state: &Arc<AppState>, community: Comm
         presence_policy: rekindle_types::presence::PresenceSharingPolicy::default(),
     };
 
-    state.mek_cache.lock().insert(
-        id.clone(),
+    // Centralized resolver: a hydrated snapshot must not downgrade a newer
+    // live key or clobber a canonical same-gen key.
+    let _ = crate::state_helpers::install_community_mek(
+        state,
+        &id,
         CryptoMek::from_bytes(mek.key_bytes, mek.generation),
     );
     state.communities.write().insert(id, cs);

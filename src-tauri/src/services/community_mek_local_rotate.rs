@@ -26,7 +26,6 @@ pub async fn rotate_mek_local(
             .map_or(0, |c| c.mek_generation)
     };
     let new_gen = current_gen + 1;
-    let mek = MediaEncryptionKey::generate(new_gen);
 
     let (my_signing_key, my_pseudonym, registry_key, registry_owner_kp) = {
         let communities = state.communities.read();
@@ -48,6 +47,21 @@ pub async fn rotate_mek_local(
             None => return Err("no identity secret".into()),
         };
         (signing_key, my_pseudonym, registry_key, registry_kp)
+    };
+
+    // Stamp the minter's election rank so concurrent admin rotations at the
+    // same generation converge deterministically (lowest rank wins on every
+    // peer). Manual rotation has no departed/trigger member, so use a zero
+    // context — the rank is then a stable per-minter tiebreak.
+    let mek = match hex::decode(&my_pseudonym)
+        .ok()
+        .and_then(|b| <[u8; 32]>::try_from(b).ok())
+    {
+        Some(me) => {
+            let rank = rekindle_secrets::rotator::election_hash(&[0u8; 32], &me);
+            MediaEncryptionKey::generate(new_gen).with_provenance(me, rank)
+        }
+        None => MediaEncryptionKey::generate(new_gen),
     };
 
     let rc = state_helpers::routing_context(state).ok_or("not attached")?;
@@ -108,8 +122,9 @@ pub async fn rotate_mek_local(
             c.mek_generation = new_gen;
         }
     }
-    state.mek_cache.lock().insert(community_id.to_string(), mek);
-    crate::services::community::media_ready_runtime::on_mek_updated(state, community_id, None);
+    if state_helpers::install_community_mek(state, community_id, mek) {
+        crate::services::community::media_ready_runtime::on_mek_updated(state, community_id, None);
+    }
 
     if let Some(ref ks) = *keystore.lock() {
         if let Some(mek) = state.mek_cache.lock().get(community_id) {

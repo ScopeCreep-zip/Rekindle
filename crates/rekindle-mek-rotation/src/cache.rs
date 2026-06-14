@@ -61,9 +61,23 @@ impl ChannelMekCache for InMemoryMekCache {
     }
 
     fn insert(&self, community_id: &str, channel_id: &str, mek: MediaEncryptionKey) {
-        self.inner
-            .lock()
-            .insert((community_id.to_string(), channel_id.to_string()), mek);
+        let mut map = self.inner.lock();
+        let key = (community_id.to_string(), channel_id.to_string());
+        // Mirror the live cache's deterministic same-generation conflict
+        // resolution (see `state_helpers::install_channel_mek`): a same-gen key
+        // is replaced only when the incoming minter has the lower election
+        // rank, so this crate cache converges identically to the AppState one.
+        if let Some(cached) = map.get(&key) {
+            if cached.generation() == mek.generation()
+                && !crate::convergence::incoming_wins_same_generation(
+                    cached.election_rank().as_ref(),
+                    mek.election_rank().as_ref(),
+                )
+            {
+                return;
+            }
+        }
+        map.insert(key, mek);
     }
 
     fn current_generation(&self, community_id: &str, channel_id: &str) -> u64 {
@@ -160,6 +174,26 @@ mod tests {
         assert!(snap
             .iter()
             .any(|(k, g)| k == &("c2".into(), "ch3".into()) && *g == 8));
+    }
+
+    #[test]
+    fn same_generation_converges_on_lowest_election_rank() {
+        // Two rotators minted different keys at the SAME generation. Whichever
+        // order they arrive, the cache must end up holding the lower-rank key.
+        let low =
+            MediaEncryptionKey::from_bytes([1u8; 32], 5).with_provenance([0u8; 32], [0x10; 32]);
+        let high =
+            MediaEncryptionKey::from_bytes([2u8; 32], 5).with_provenance([0u8; 32], [0x20; 32]);
+
+        let cache = InMemoryMekCache::new();
+        cache.insert("c", "ch", high.clone());
+        cache.insert("c", "ch", low.clone());
+        assert_eq!(cache.get("c", "ch", 5).unwrap().as_bytes(), low.as_bytes());
+
+        let cache2 = InMemoryMekCache::new();
+        cache2.insert("c", "ch", low.clone());
+        cache2.insert("c", "ch", high.clone());
+        assert_eq!(cache2.get("c", "ch", 5).unwrap().as_bytes(), low.as_bytes());
     }
 
     #[test]

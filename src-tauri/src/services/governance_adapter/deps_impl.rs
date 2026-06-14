@@ -217,15 +217,22 @@ impl GovernanceRuntimeDeps for GovernanceAdapter {
     }
 
     fn insert_community_mek(&self, community_id: &str, mek: MekSnapshot) {
-        self.state.mek_cache.lock().insert(
-            community_id.to_string(),
-            CryptoMek::from_bytes(mek.key_bytes, mek.generation),
-        );
-        crate::services::community::media_ready_runtime::on_mek_updated(
+        // Route through the centralized resolver so a hydrated snapshot can't
+        // downgrade a newer live key or clobber a canonical same-gen key.
+        // (MekSnapshot carries no provenance → untagged; it loses to any
+        // tagged key and is keep-cached vs another untagged one, which is the
+        // correct behaviour for hydration.)
+        if crate::state_helpers::install_community_mek(
             &self.state,
             community_id,
-            None,
-        );
+            CryptoMek::from_bytes(mek.key_bytes, mek.generation),
+        ) {
+            crate::services::community::media_ready_runtime::on_mek_updated(
+                &self.state,
+                community_id,
+                None,
+            );
+        }
     }
 
     fn insert_channel_mek(&self, community_id: &str, channel_id: &str, mek: MekSnapshot) {

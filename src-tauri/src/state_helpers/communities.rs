@@ -65,6 +65,25 @@ pub fn channel_media_mek(
     })
 }
 
+/// Like [`channel_media_mek`] but returns the FULL cached key (clone),
+/// preserving its provenance (rotator pseudonym + election rank). Use this
+/// when the key will be re-distributed (e.g. answering a `RequestMEK`) so the
+/// recipient learns the canonical rank and converges correctly — reconstructing
+/// via `from_bytes` would strip provenance and could let a requester later flip
+/// to a non-canonical same-generation key.
+pub fn channel_media_mek_full(
+    state: &Arc<AppState>,
+    community_id: &str,
+    channel_id: &str,
+) -> Option<rekindle_crypto::group::media_key::MediaEncryptionKey> {
+    let channel = state
+        .channel_mek_cache
+        .lock()
+        .get(&(community_id.to_string(), channel_id.to_string()))
+        .cloned();
+    channel.or_else(|| state.mek_cache.lock().get(community_id).cloned())
+}
+
 /// Retention window for the REPLACED channel key after a rotation —
 /// in-flight media encrypted under the old generation still decrypts
 /// during the transition. Matches Discord DAVE's previous-epoch
@@ -96,7 +115,27 @@ pub fn install_channel_mek(
             );
             return false;
         }
-        if cached.generation() < mek.generation() {
+        if cached.generation() == mek.generation() {
+            // Same-generation collision (split-brain): two rotators minted
+            // different random keys for this generation. Keep the canonical
+            // one — the key whose minter has the lowest deterministic election
+            // rank (= the rightful primary rotator). Every peer applies this
+            // pure comparison and converges on the identical key, regardless of
+            // which transfer arrived first.
+            if !rekindle_mek_rotation::convergence::incoming_wins_same_generation(
+                cached.election_rank().as_ref(),
+                mek.election_rank().as_ref(),
+            ) {
+                return false;
+            }
+            // Incoming is more canonical — park the superseded same-gen key so
+            // in-flight packets encrypted under it still decrypt during the
+            // brief convergence window (PREV_MEK_RETENTION).
+            state
+                .channel_mek_prev
+                .lock()
+                .insert(key.clone(), (cached.clone(), std::time::Instant::now()));
+        } else if cached.generation() < mek.generation() {
             state
                 .channel_mek_prev
                 .lock()
@@ -104,6 +143,48 @@ pub fn install_channel_mek(
         }
     }
     cache.insert(key, mek);
+    true
+}
+
+/// The ONLY way a community-wide MEK enters the live cache. The
+/// community analogue of [`install_channel_mek`]: refuses downgrades (an
+/// older-generation transfer must never replace the live key — rollback
+/// vector) and resolves same-generation split-brain by keeping the key
+/// whose minter has the lowest deterministic election rank, so every peer
+/// converges on the identical key regardless of arrival order. Returns
+/// `false` when the install was refused.
+///
+/// Every write to `state.mek_cache` MUST go through here (rotation, received
+/// transfer, governance hydration, restore) so no path can re-introduce the
+/// last-write-wins divergence. (The community cache has no previous-key
+/// window like channels do; community-wide MEK rotations are rare and the
+/// 1:1 retention need is covered at the channel layer.)
+pub fn install_community_mek(
+    state: &Arc<AppState>,
+    community_id: &str,
+    mek: rekindle_crypto::group::media_key::MediaEncryptionKey,
+) -> bool {
+    let mut cache = state.mek_cache.lock();
+    if let Some(cached) = cache.get(community_id) {
+        if cached.generation() > mek.generation() {
+            tracing::debug!(
+                community = %community_id,
+                incoming = mek.generation(),
+                cached = cached.generation(),
+                "community MEK older than cached — not applied to live cache"
+            );
+            return false;
+        }
+        if cached.generation() == mek.generation()
+            && !rekindle_mek_rotation::convergence::incoming_wins_same_generation(
+                cached.election_rank().as_ref(),
+                mek.election_rank().as_ref(),
+            )
+        {
+            return false;
+        }
+    }
+    cache.insert(community_id.to_string(), mek);
     true
 }
 

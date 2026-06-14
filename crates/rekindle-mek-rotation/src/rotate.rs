@@ -54,7 +54,18 @@ pub async fn rotate_text_mek_for_departure<D: MekDistributeDeps>(
     };
 
     let new_generation = initial_generation + 1;
-    let mek = MediaEncryptionKey::generate(new_generation);
+    // Stamp the minter's deterministic election rank (blake3(departed||me) —
+    // the same value `cascade_candidates` ranks by) so every peer converges on
+    // the lowest-rank (= rightful primary rotator) key for this generation,
+    // resolving same-generation split-brain. Context = `departed` to match the
+    // election at the top of this fn.
+    let mek = match deps.my_pseudonym(community_id) {
+        Some(me) => {
+            let rank = rekindle_secrets::rotator::election_hash(&departed.0, &me.0);
+            MediaEncryptionKey::generate(new_generation).with_provenance(me.0, rank)
+        }
+        None => MediaEncryptionKey::generate(new_generation),
+    };
     distribute_mek(
         deps,
         community_id,
@@ -137,7 +148,15 @@ pub async fn rotate_voice_mek_for_membership<D: MekDistributeDeps>(
     };
 
     let new_generation = initial_generation + 1;
-    let mek = MediaEncryptionKey::generate(new_generation);
+    // Stamp the minter's election rank (context = `trigger`, matching the
+    // election above) for deterministic same-generation convergence.
+    let mek = match deps.my_pseudonym(community_id) {
+        Some(me) => {
+            let rank = rekindle_secrets::rotator::election_hash(&trigger.0, &me.0);
+            MediaEncryptionKey::generate(new_generation).with_provenance(me.0, rank)
+        }
+        None => MediaEncryptionKey::generate(new_generation),
+    };
     distribute_mek(
         deps,
         community_id,

@@ -139,29 +139,27 @@ pub fn restore_community_pseudonyms_and_meks(
         }
     }
 
-    // Load MEKs into cache
-    {
-        let mut mek_cache = state.mek_cache.lock();
-        for (community_id, mek) in mek_updates {
-            tracing::debug!(
-                community = %community_id,
-                generation = mek.generation(),
-                "restored MEK from Stronghold"
-            );
-            mek_cache.insert(community_id, mek);
-        }
+    // Load MEKs into cache via the centralized resolvers (NOT a raw insert):
+    // restored keys carry provenance (Stronghold round-trips it via
+    // to/from_wire_bytes), so a restore that races a live rotation converges
+    // deterministically instead of clobbering. Call per-item — the helpers
+    // take their own lock, so we must not hold the cache lock here.
+    for (community_id, mek) in mek_updates {
+        tracing::debug!(
+            community = %community_id,
+            generation = mek.generation(),
+            "restored MEK from Stronghold"
+        );
+        crate::state_helpers::install_community_mek(state, &community_id, mek);
     }
 
-    {
-        let mut channel_mek_cache = state.channel_mek_cache.lock();
-        for (community_id, channel_id, mek) in channel_mek_updates {
-            tracing::debug!(
-                community = %community_id,
-                channel = %channel_id,
-                generation = mek.generation(),
-                "restored channel MEK from Stronghold"
-            );
-            channel_mek_cache.insert((community_id, channel_id), mek);
-        }
+    for (community_id, channel_id, mek) in channel_mek_updates {
+        tracing::debug!(
+            community = %community_id,
+            channel = %channel_id,
+            generation = mek.generation(),
+            "restored channel MEK from Stronghold"
+        );
+        crate::state_helpers::install_channel_mek(state, &community_id, &channel_id, mek);
     }
 }

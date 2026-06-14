@@ -367,20 +367,11 @@ impl MekDistributeDeps for MekAdapter {
                 );
             }
             _ => {
-                {
-                    let mut cache = self.state.mek_cache.lock();
-                    if cache
-                        .get(community_id)
-                        .is_some_and(|cached| cached.generation() > generation)
-                    {
-                        tracing::debug!(
-                            community = %community_id,
-                            incoming = generation,
-                            "community MEK transfer older than cached — not applied to live cache"
-                        );
-                        return;
-                    }
-                    cache.insert(community_id.to_string(), mek.clone());
+                // Centralized downgrade-refuse + same-generation split-brain
+                // resolution (lowest election rank wins). Refused → don't touch
+                // generation state / media-ready either.
+                if !state_helpers::install_community_mek(&self.state, community_id, mek.clone()) {
+                    return;
                 }
                 crate::services::community::media_ready_runtime::on_mek_updated(
                     &self.state,

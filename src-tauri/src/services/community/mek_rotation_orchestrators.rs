@@ -136,10 +136,10 @@ pub async fn handle_request_mek(
     // current — the requester treats >= needed as satisfied, so the
     // live stream converges instead of the request cascading to
     // nothing forever.
-    let current = crate::state_helpers::channel_media_mek(state, community_id, channel_id)
-        .map(|(bytes, generation)| {
-            rekindle_crypto::group::media_key::MediaEncryptionKey::from_bytes(bytes, generation)
-        });
+    // Full key (with provenance) — serving a `from_bytes` reconstruction would
+    // strip the minter's election rank, letting the requester later flip to a
+    // non-canonical same-generation key.
+    let current = crate::state_helpers::channel_media_mek_full(state, community_id, channel_id);
     let mek = if needed_generation == 0 {
         current.ok_or_else(|| {
             format!("no current MEK for community {community_id} channel {channel_id}")
