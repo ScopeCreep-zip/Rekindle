@@ -142,16 +142,17 @@ async fn allocate_route_with_retry(
 
 /// Wait for public internet readiness, allocate a private route, then publish
 /// profile and friend list to DHT.
-pub(super) async fn spawn_dht_publish(
-    app_handle: tauri::AppHandle,
-    state: SharedState,
-    pool: DbPool,
-    prekey_bundle_bytes: Option<Vec<u8>>,
-    dht_keys: DhtKeysConfig,
-) {
-    // Wait for public internet ready via watch channel
-    let mut rx = state.network_ready_rx.clone();
-    let ready = tokio::time::timeout(std::time::Duration::from_secs(60), async {
+/// Wait (bounded) for Veilid `public_internet_ready` via the network-ready
+/// watch channel. Returns `true` once ready, `false` on timeout or channel
+/// close. DHT record/route opens issued before readiness are unreliable on a
+/// freshly-attached node (sparse routing table → transient `KeyNotFound`), so
+/// callers gate their startup DHT work on this. (`AppState.network_ready_rx`
+/// is fed by the attachment handler in `services::veilid::network`.)
+pub(super) async fn wait_for_network_ready(
+    mut rx: tokio::sync::watch::Receiver<bool>,
+    timeout_secs: u64,
+) -> bool {
+    tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), async {
         loop {
             if *rx.borrow_and_update() {
                 return true;
@@ -162,7 +163,19 @@ pub(super) async fn spawn_dht_publish(
         }
     })
     .await
-    .unwrap_or(false);
+    .unwrap_or(false)
+}
+
+pub(super) async fn spawn_dht_publish(
+    app_handle: tauri::AppHandle,
+    state: SharedState,
+    pool: DbPool,
+    prekey_bundle_bytes: Option<Vec<u8>>,
+    dht_keys: DhtKeysConfig,
+) {
+    // Wait for public internet ready before publishing (route/record opens are
+    // unreliable on a sparse cold-start routing table).
+    let ready = wait_for_network_ready(state.network_ready_rx.clone(), 60).await;
 
     if !ready {
         tracing::warn!(

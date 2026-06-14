@@ -21,6 +21,77 @@ use veilid_core::{
 use crate::error::ProtocolError;
 
 /// Parse a DHT record key string into a Veilid `RecordKey`.
+/// Default bounded-retry budget for opening an existing DHT record before
+/// concluding it is genuinely gone and recreating it. ≈45 s — long enough for
+/// a freshly-attached node's routing table to mature (the architecture's
+/// cold-start model: §4.8 "opened once on startup"; §2675 recreate is for
+/// genuine >1 h expiry). Mirrors `allocate_route_with_retry`'s 15 attempts.
+pub const DEFAULT_DHT_OPEN_ATTEMPTS: u32 = 15;
+pub const DEFAULT_DHT_OPEN_DELAY: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// Map a veilid DHT-open error to a `ProtocolError`, separating the
+/// TRANSIENT "couldn't reach any node holding this record yet" case from hard
+/// errors. On a freshly-attached node with a sparse routing table the outbound
+/// fanout exhausts and the open returns `KeyNotFound` (or `TryAgain` /
+/// `Timeout` / `NoConnection`) even though the record still exists — see
+/// veilid-core `storage_manager/open_record.rs`. Those are mapped to
+/// `DhtRecordUnreachable` so callers retry instead of recreating; every other
+/// variant (e.g. `Generic` "not writable", `InvalidArgument`) is a hard
+/// `DhtError` where retrying/recreating is pointless or wrong.
+pub(crate) fn classify_dht_open_error(
+    context: &str,
+    e: &veilid_core::VeilidAPIError,
+) -> ProtocolError {
+    use veilid_core::VeilidAPIError as E;
+    match e {
+        E::KeyNotFound { .. } | E::TryAgain { .. } | E::Timeout | E::NoConnection { .. } => {
+            ProtocolError::DhtRecordUnreachable(format!("{context}: {e}"))
+        }
+        _ => ProtocolError::DhtError(format!("{context}: {e}")),
+    }
+}
+
+/// Retry an async DHT-open operation while it fails with the TRANSIENT
+/// [`ProtocolError::DhtRecordUnreachable`] (a sparse routing table on a
+/// freshly-attached node), up to `attempts` times with `delay` between tries.
+/// Success and HARD errors return immediately; after the budget is exhausted
+/// the last unreachable error is returned so the caller can treat the record
+/// as genuinely gone (and recreate). `delay = Duration::ZERO` disables
+/// sleeping (tests). Mirrors `allocate_route_with_retry`.
+pub async fn retry_on_unreachable<T, F, Fut>(
+    attempts: u32,
+    delay: std::time::Duration,
+    mut op: F,
+) -> Result<T, ProtocolError>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<T, ProtocolError>>,
+{
+    let attempts = attempts.max(1);
+    for attempt in 1..=attempts {
+        match op().await {
+            Ok(v) => return Ok(v),
+            Err(e @ ProtocolError::DhtRecordUnreachable(_)) => {
+                if attempt == attempts {
+                    return Err(e);
+                }
+                tracing::debug!(
+                    attempt,
+                    attempts,
+                    error = %e,
+                    "DHT record unreachable — retrying open before giving up"
+                );
+                if !delay.is_zero() {
+                    tokio::time::sleep(delay).await;
+                }
+            }
+            // Hard error (e.g. not-writable / parse) — retrying won't help.
+            Err(e) => return Err(e),
+        }
+    }
+    unreachable!("loop returns on the final attempt")
+}
+
 pub fn parse_record_key(key: &str) -> Result<veilid_core::RecordKey, ProtocolError> {
     key.parse()
         .map_err(|e| ProtocolError::DhtError(format!("invalid record key '{key}': {e}")))
@@ -166,7 +237,7 @@ impl DHTManager {
             .routing_context
             .open_dht_record(record_key, None)
             .await
-            .map_err(|e| ProtocolError::DhtError(format!("open_dht_record: {e}")))?;
+            .map_err(|e| classify_dht_open_error("open_dht_record", &e))?;
 
         tracing::debug!(key, "opened DHT record (read-only)");
         Ok(())
@@ -188,10 +259,40 @@ impl DHTManager {
             .routing_context
             .open_dht_record(record_key, Some(writer))
             .await
-            .map_err(|e| ProtocolError::DhtError(format!("open_dht_record (writable): {e}")))?;
+            .map_err(|e| classify_dht_open_error("open_dht_record (writable)", &e))?;
 
         tracing::debug!(key, "opened DHT record (writable)");
         Ok(())
+    }
+
+    /// [`open_record_writable`] with bounded retry on the TRANSIENT
+    /// `DhtRecordUnreachable` case (veilid `KeyNotFound`/`TryAgain` from a
+    /// sparse routing table on a freshly-attached node). Hard errors return
+    /// immediately. After `attempts` exhaust, the last (still-transient)
+    /// error is returned so the caller can treat the record as genuinely gone
+    /// (and recreate). Mirrors `allocate_route_with_retry` — the default is
+    /// 15 × 3 s ≈ 45 s. Pass `delay = Duration::ZERO` to disable sleeping (tests).
+    pub async fn open_record_writable_with_retry(
+        &self,
+        key: &str,
+        writer: veilid_core::KeyPair,
+        attempts: u32,
+        delay: std::time::Duration,
+    ) -> Result<(), ProtocolError> {
+        retry_on_unreachable(attempts, delay, || {
+            self.open_record_writable(key, writer.clone())
+        })
+        .await
+    }
+
+    /// Read-only sibling of [`open_record_writable_with_retry`].
+    pub async fn open_record_with_retry(
+        &self,
+        key: &str,
+        attempts: u32,
+        delay: std::time::Duration,
+    ) -> Result<(), ProtocolError> {
+        retry_on_unreachable(attempts, delay, || self.open_record(key)).await
     }
 
     /// Close a DHT record.
@@ -349,7 +450,18 @@ impl DHTManager {
         label: &str,
     ) -> Result<OpenOrCreateResult, ProtocolError> {
         if let (Some(key), Some(keypair)) = (existing_key, owner_keypair) {
-            match self.open_record_writable(key, keypair.clone()).await {
+            // Retry the open on TRANSIENT unreachability (sparse routing table
+            // on a fresh node) before giving up — otherwise a momentary
+            // KeyNotFound would orphan the real record and churn its key.
+            match self
+                .open_record_writable_with_retry(
+                    key,
+                    keypair.clone(),
+                    DEFAULT_DHT_OPEN_ATTEMPTS,
+                    DEFAULT_DHT_OPEN_DELAY,
+                )
+                .await
+            {
                 Ok(()) => {
                     tracing::info!(key, label, "reusing existing DHT record");
                     return Ok(OpenOrCreateResult {
@@ -361,7 +473,7 @@ impl DHTManager {
                 Err(e) => {
                     tracing::warn!(
                         key, label, error = %e,
-                        "failed to open existing DHT record — creating new one"
+                        "failed to open existing DHT record after retries — creating new one"
                     );
                 }
             }
@@ -529,5 +641,81 @@ impl DHTManager {
             }
             tracing::debug!(peer = %pubkey_hex, "invalidated cached route for peer after send failure");
         }
+    }
+}
+
+#[cfg(test)]
+mod retry_tests {
+    use super::*;
+    use std::cell::Cell;
+
+    #[test]
+    fn classify_transient_vs_hard() {
+        use veilid_core::VeilidAPIError as E;
+        // Transient (couldn't reach holders yet) → retryable.
+        for transient in [
+            E::timeout(),
+            E::try_again("busy"),
+            E::no_connection("no route"),
+        ] {
+            assert!(
+                matches!(
+                    classify_dht_open_error("ctx", &transient),
+                    ProtocolError::DhtRecordUnreachable(_)
+                ),
+                "{transient} should be transient"
+            );
+        }
+        // Hard error (bad input / not writable) → NOT retryable.
+        assert!(matches!(
+            classify_dht_open_error("ctx", &E::generic("not writable")),
+            ProtocolError::DhtError(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn retry_recovers_after_transient_failures() {
+        let calls = Cell::new(0u32);
+        let res: Result<&str, ProtocolError> =
+            retry_on_unreachable(5, std::time::Duration::ZERO, || {
+                let n = calls.get();
+                calls.set(n + 1);
+                async move {
+                    if n < 2 {
+                        Err(ProtocolError::DhtRecordUnreachable(format!("transient {n}")))
+                    } else {
+                        Ok("opened")
+                    }
+                }
+            })
+            .await;
+        assert_eq!(res.unwrap(), "opened");
+        assert_eq!(calls.get(), 3, "failed twice, succeeded on the third attempt");
+    }
+
+    #[tokio::test]
+    async fn retry_exhausts_then_surfaces_error() {
+        let calls = Cell::new(0u32);
+        let res: Result<(), ProtocolError> =
+            retry_on_unreachable(3, std::time::Duration::ZERO, || {
+                calls.set(calls.get() + 1);
+                async { Err(ProtocolError::DhtRecordUnreachable("still gone".into())) }
+            })
+            .await;
+        assert!(matches!(res, Err(ProtocolError::DhtRecordUnreachable(_))));
+        assert_eq!(calls.get(), 3, "uses the full budget before giving up");
+    }
+
+    #[tokio::test]
+    async fn retry_does_not_retry_hard_errors() {
+        let calls = Cell::new(0u32);
+        let res: Result<(), ProtocolError> =
+            retry_on_unreachable(5, std::time::Duration::ZERO, || {
+                calls.set(calls.get() + 1);
+                async { Err(ProtocolError::DhtError("not writable".into())) }
+            })
+            .await;
+        assert!(matches!(res, Err(ProtocolError::DhtError(_))));
+        assert_eq!(calls.get(), 1, "a hard error must NOT be retried (no key churn delay)");
     }
 }

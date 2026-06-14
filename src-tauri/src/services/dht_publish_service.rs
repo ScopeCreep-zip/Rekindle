@@ -145,10 +145,20 @@ pub async fn publish_mailbox(
     let veilid_keypair = veilid_core::KeyPair::new_from_parts(veilid_pubkey, bare_secret);
 
     let mailbox_key = if let Some(existing_key) = existing_mailbox_key {
-        match rekindle_protocol::dht::mailbox::open_mailbox_writable(
-            &routing_context,
-            existing_key,
-            veilid_keypair.clone(),
+        // Retry transient unreachability (sparse routing on a fresh node)
+        // before recreating — otherwise a momentary KeyNotFound churns the
+        // mailbox key. (Mailbox keys are identity-deterministic so a recreate
+        // is harmless, but the retry avoids a redundant create + DHT write.)
+        match rekindle_protocol::dht::retry_on_unreachable(
+            rekindle_protocol::dht::DEFAULT_DHT_OPEN_ATTEMPTS,
+            rekindle_protocol::dht::DEFAULT_DHT_OPEN_DELAY,
+            || {
+                rekindle_protocol::dht::mailbox::open_mailbox_writable(
+                    &routing_context,
+                    existing_key,
+                    veilid_keypair.clone(),
+                )
+            },
         )
         .await
         {
@@ -157,7 +167,7 @@ pub async fn publish_mailbox(
                 existing_key.clone()
             }
             Err(e) => {
-                tracing::warn!(error = %e, "failed to reopen mailbox — creating new one");
+                tracing::warn!(error = %e, "failed to reopen mailbox after retries — creating new one");
                 rekindle_protocol::dht::mailbox::create_mailbox(&routing_context, veilid_keypair)
                     .await
                     .map_err(|e| format!("create mailbox: {e}"))?
@@ -326,11 +336,25 @@ pub async fn publish_account(
 
     let (account_key, new_keypair) = if let Some(ref existing_key) = existing_account_key {
         if let Some(keypair) = owner_keypair {
-            match rekindle_protocol::dht::account::AccountRecord::open(
-                &routing_context,
-                existing_key,
-                keypair,
-                encryption_key,
+            // Retry transient unreachability before recreating: the account
+            // record's key is random, so a premature recreate on a sparse
+            // cold-start routing table orphans the real record (the entry point
+            // peers resolve). `DhtRecordKey` is ZeroizeOnDrop/non-Clone, so the
+            // closure re-derives a fresh one per attempt (cheap HKDF) from the
+            // already-copied-out `secret_bytes` — no lock is held across awaits.
+            match rekindle_protocol::dht::retry_on_unreachable(
+                rekindle_protocol::dht::DEFAULT_DHT_OPEN_ATTEMPTS,
+                rekindle_protocol::dht::DEFAULT_DHT_OPEN_DELAY,
+                || {
+                    let enc_key =
+                        rekindle_crypto::DhtRecordKey::derive_account_key(&secret_bytes);
+                    rekindle_protocol::dht::account::AccountRecord::open(
+                        &routing_context,
+                        existing_key,
+                        keypair.clone(),
+                        enc_key,
+                    )
+                },
             )
             .await
             {
@@ -347,7 +371,7 @@ pub async fn publish_account(
                 Err(e) => {
                     tracing::warn!(
                         key = %existing_key, error = %e,
-                        "failed to open existing account record — creating new one"
+                        "failed to open existing account record after retries — creating new one"
                     );
                     let enc_key = rekindle_crypto::DhtRecordKey::derive_account_key(&secret_bytes);
                     create_fresh_account_record(

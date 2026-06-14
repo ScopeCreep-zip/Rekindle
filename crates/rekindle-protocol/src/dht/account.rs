@@ -122,7 +122,7 @@ impl AccountRecord {
         let _ = rc
             .open_dht_record(record_key.clone(), Some(owner_keypair.clone()))
             .await
-            .map_err(|e| ProtocolError::DhtError(format!("open account record: {e}")))?;
+            .map_err(|e| super::classify_dht_open_error("open account record", &e))?;
 
         // Read and decrypt header to populate child key pointers and keypairs
         let value = rc

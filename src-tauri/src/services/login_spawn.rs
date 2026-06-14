@@ -61,6 +61,22 @@ pub(super) fn spawn_login_services(
         let bg_app = app.clone();
         let bg_state = Arc::clone(state);
         tokio::spawn(async move {
+            // Wait (bounded) for the routing table to mature before opening the
+            // community DHT records — on a sparse cold-start table the opens hit
+            // transient KeyNotFound and the channel watch fails "record not
+            // open". On timeout, proceed best-effort anyway (the watch-retry +
+            // keepalive recover residuals); don't skip hydration entirely, which
+            // would leave communities unsynced on a slow network.
+            if !super::login_runtime::wait_for_network_ready(
+                bg_state.network_ready_rx.clone(),
+                60,
+            )
+            .await
+            {
+                tracing::warn!(
+                    "public internet not ready within 60s — running community DHT hydration best-effort"
+                );
+            }
             crate::services::governance_adapter::open_community_dht_records(&bg_state).await;
             crate::services::governance_adapter::hydrate_community_state_from_dht(&bg_state).await;
             crate::services::governance_adapter::rebuild_governance_from_dht(&bg_state).await;

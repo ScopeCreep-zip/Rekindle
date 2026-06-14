@@ -14,6 +14,17 @@ pub enum ProtocolError {
     #[error("DHT operation failed: {0}")]
     DhtError(String),
 
+    /// A DHT record open/get could not reach any node holding the record
+    /// (veilid `KeyNotFound`/`TryAgain` — the outbound fanout returned no
+    /// descriptor). On a freshly-attached node with a sparse routing table
+    /// this is TRANSIENT and indistinguishable from "record genuinely
+    /// absent", so callers must RETRY (gated on routing-table readiness)
+    /// before concluding a record is gone and recreating it. Distinct from
+    /// `DhtError` so the open-or-recreate sites don't churn record keys on a
+    /// transient cold-start failure.
+    #[error("DHT record unreachable (retryable): {0}")]
+    DhtRecordUnreachable(String),
+
     #[error("routing error: {0}")]
     RoutingError(String),
 

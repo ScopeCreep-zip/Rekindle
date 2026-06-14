@@ -46,7 +46,7 @@ pub async fn open_mailbox_writable(
     let _ = rc
         .open_dht_record(record_key, Some(identity_keypair))
         .await
-        .map_err(|e| ProtocolError::DhtError(format!("open_mailbox_writable: {e}")))?;
+        .map_err(|e| super::classify_dht_open_error("open_mailbox_writable", &e))?;
 
     tracing::debug!(key, "opened mailbox DHT record (writable)");
     Ok(())

@@ -180,7 +180,16 @@ async fn try_reopen_and_update(
     prekey_bundle: &[u8],
     route_blob: &[u8],
 ) -> Result<(), ProtocolError> {
-    dht.open_record_writable(key, owner_keypair).await?;
+    // Retry transient unreachability before letting the caller recreate — the
+    // profile key is random, so a premature recreate on a sparse cold-start
+    // routing table orphans the real record.
+    dht.open_record_writable_with_retry(
+        key,
+        owner_keypair,
+        super::DEFAULT_DHT_OPEN_ATTEMPTS,
+        super::DEFAULT_DHT_OPEN_DELAY,
+    )
+    .await?;
 
     update_subkey(
         dht,
