@@ -23,7 +23,7 @@ use rekindle_types::id::PseudonymKey;
 pub fn select_rotator(departed: &PseudonymKey, remaining: &[PseudonymKey]) -> Option<PseudonymKey> {
     remaining
         .iter()
-        .min_by_key(|member| candidate_hash(&departed.0, &member.0))
+        .min_by_key(|member| election_hash(&departed.0, &member.0))
         .cloned()
 }
 
@@ -43,7 +43,7 @@ pub fn select_mek_responder(
     members
         .iter()
         .filter(|m| m != &requester)
-        .min_by_key(|member| candidate_hash(&requester.0, &member.0))
+        .min_by_key(|member| election_hash(&requester.0, &member.0))
         .cloned()
 }
 
@@ -59,7 +59,7 @@ pub fn cascade_candidates(
 ) -> Vec<PseudonymKey> {
     let mut scored: Vec<_> = remaining
         .iter()
-        .map(|m| (candidate_hash(&departed.0, &m.0), m.clone()))
+        .map(|m| (election_hash(&departed.0, &m.0), m.clone()))
         .collect();
     scored.sort_by(|a, b| a.0.cmp(&b.0));
     scored
@@ -69,8 +69,15 @@ pub fn cascade_candidates(
         .collect()
 }
 
-/// Compute blake3(context_bytes || candidate_bytes) for deterministic ordering.
-fn candidate_hash(context: &[u8; 32], candidate: &[u8; 32]) -> [u8; 32] {
+/// Compute `blake3(context || candidate)` — the deterministic election rank.
+///
+/// This is the single source of the ordering used by [`select_rotator`],
+/// [`select_mek_responder`], and [`cascade_candidates`]. It is also the rank a
+/// minting rotator stamps onto its MEK (`MediaEncryptionKey::with_provenance`)
+/// so every peer can deterministically converge on the lowest-rank (= rightful
+/// primary) key for a generation, resolving same-generation split-brain.
+#[must_use]
+pub fn election_hash(context: &[u8; 32], candidate: &[u8; 32]) -> [u8; 32] {
     let mut hasher = blake3::Hasher::new();
     hasher.update(context);
     hasher.update(candidate);

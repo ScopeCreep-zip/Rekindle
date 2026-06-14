@@ -24,6 +24,7 @@
 //! supply concrete AppState / DbPool / AppHandle / Veilid wiring.
 
 pub mod cache;
+pub mod convergence;
 pub mod deps;
 pub mod distribute;
 pub mod election;
