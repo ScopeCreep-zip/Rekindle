@@ -66,6 +66,9 @@ struct VoiceSendLoop {
     was_speaking: bool,
     packets_sent: u64,
     send_failures: u64,
+    /// Diagnostic: frames seen by `process_frame`, for periodic capture
+    /// level + VAD logging (the only outbound-voice observability we have).
+    diag_frames: u64,
     /// Consecutive send failures per peer — drives the route-heal
     /// escalation (a dead remote route fails every frame; without
     /// healing it is hammered 50×/s forever).
@@ -128,6 +131,7 @@ impl VoiceSendLoop {
             was_speaking: false,
             packets_sent: 0,
             send_failures: 0,
+            diag_frames: 0,
             peer_send_failures: HashMap::new(),
             last_quality_report: Instant::now(),
             community_id: params.community_id,
@@ -205,6 +209,29 @@ impl VoiceSendLoop {
         let processed = self
             .processor
             .process_capture(&frame_samples, latest_speaker_ref.as_deref());
+
+        // Diagnostic telemetry (~every 2s). Distinguishes the three ways
+        // outbound voice silently dies: a silent/wrong capture device
+        // (raw_peak ~0), AEC/denoise over-suppression (raw_peak healthy but
+        // proc_peak ~0), and VAD gating (both peaks healthy but is_speech
+        // false → nothing clears the gate below). `packets_sent` shows whether
+        // anything is actually leaving the node.
+        self.diag_frames = self.diag_frames.wrapping_add(1);
+        if self.diag_frames.is_multiple_of(100) {
+            let raw_peak = frame_samples.iter().fold(0.0f32, |m, &s| m.max(s.abs()));
+            let proc_peak = processed
+                .samples
+                .iter()
+                .fold(0.0f32, |m, &s| m.max(s.abs()));
+            tracing::debug!(
+                raw_peak,
+                proc_peak,
+                is_speech = processed.is_speech,
+                had_speaker_ref = latest_speaker_ref.is_some(),
+                packets_sent = self.packets_sent,
+                "voice capture diagnostic"
+            );
+        }
 
         // Emit speaking state change to frontend.
         if processed.is_speech != self.was_speaking {
