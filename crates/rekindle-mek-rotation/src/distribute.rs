@@ -46,17 +46,27 @@ pub async fn wait_for_rotation_slot<D: MekDistributeDeps>(
     let me = deps.my_pseudonym(community_id)?;
     let index = candidates.iter().position(|candidate| candidate == &me)?;
 
+    // Cascade levels >0 wait their backoff so the rightful primary mints first.
     if index > 0 {
         tokio::time::sleep(cascade_delay(index)).await;
-        // Community-wide rotation: there's no per-channel generation
-        // counter in the cache (the cache is keyed by (community,
-        // channel)). For the None case we skip the LWW check — the
-        // governance-state MEKGenerationBump entry serializes
-        // community-wide rotations CRDT-style instead.
-        if let Some(channel) = channel_id {
-            if deps.cache().current_generation(community_id, channel) > initial_generation {
-                return None;
-            }
+    }
+
+    // Final guard before claiming the slot — for EVERY index, INCLUDING the
+    // primary (index 0). If another rotator already advanced this channel's
+    // generation while we were electing/waiting, stand down rather than mint a
+    // competing same-generation key. Previously only cascade levels (index > 0)
+    // checked, so two peers that both believed they were the primary (divergent
+    // presence views) would each mint at the same generation. Applying it to
+    // index 0 closes that window.
+    //
+    // Channel-scoped only: the community-wide (None) generation lives in a
+    // separate cache (`state.mek_cache`), not the channel cache this
+    // `current_generation` reads, so checking it here would be a no-op. The
+    // deterministic same-generation rank convergence (the cache-resolution
+    // layer) is the backstop for community-wide rotations.
+    if let Some(channel) = channel_id {
+        if deps.cache().current_generation(community_id, channel) > initial_generation {
+            return None;
         }
     }
 
