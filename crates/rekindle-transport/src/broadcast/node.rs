@@ -72,6 +72,27 @@ impl TransportNode {
         );
         veilid_config.protected_store.allow_insecure_fallback =
             config.allow_insecure_protected_store;
+        // veilid-core 0.5.3's ProtectedStore::init calls keyring-manager
+        // 0.7.1's `new_secure()` (Linux: secret-service's BLOCKING zbus D-Bus
+        // API → `Runtime::block_on`) BEFORE any fallback runs, so under our
+        // Tokio runtime it panics ("runtime within a runtime"). The daemon's
+        // own identity uses the OS keyring directly (the `keyring` crate);
+        // veilid's protected store only holds veilid node/route secrets, which
+        // are fine in `storage_dir`. Always use insecure (file) storage so
+        // `new_secure()` is never reached.
+        veilid_config.protected_store.always_use_insecure_storage = true;
+        // Disable UPnP/IGD port mapping to sidestep a latent veilid-core panic
+        // (0.5.2 + 0.5.3, fixed only on unreleased git main): a failed
+        // `upnp_task` sets `network_needs_restart`, which re-runs
+        // `Network::startup_internal`; that calls
+        // `refresh_network_state().await?.unwrap_or_log()` (native/mod.rs:750),
+        // and `refresh_network_state` returns `Ok(None)` when interfaces are
+        // unchanged (always true for a UPnP-triggered restart) → the unwrap
+        // panics and the node is stranded detached. `upnp = false` means the
+        // task never ticks, so the trigger never fires. UPnP is only an
+        // inbound-reachability optimization; without it a NAT'd node uses
+        // inbound relays via VICE, so connectivity degrades gracefully.
+        veilid_config.network.upnp = false;
         // `network.rpc.default_route_hop_count` stays at the veilid
         // default (1): compiled paths are safety(3)+private(1) = 4 hops,
         // at/above the architecture §8 "Compiled Route = Safety +
@@ -849,8 +870,10 @@ pub fn deserialize_keypair(bytes: &[u8]) -> Result<veilid_core::KeyPair> {
 /// Format: public key bytes (32) + secret key bytes (32) = 64 bytes.
 pub fn serialize_keypair(kp: &veilid_core::KeyPair) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(64);
-    bytes.extend_from_slice(kp.key().value().bytes());
-    bytes.extend_from_slice(kp.secret().value().bytes());
+    // veilid-core 0.5.3: `BareKey::bytes()` returns an owned `bytes::Bytes`
+    // (was `&[u8]` in 0.5.2); `as_ref()` gives the `&[u8]` extend_from_slice wants.
+    bytes.extend_from_slice(kp.key().value().bytes().as_ref());
+    bytes.extend_from_slice(kp.secret().value().bytes().as_ref());
     bytes
 }
 

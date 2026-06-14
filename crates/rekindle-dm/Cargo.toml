@@ -26,8 +26,9 @@ zeroize = { version = "1", features = ["derive"] }
 # Phase 13 additions: async runtime + storage + tracing + trait abstractions.
 async-trait = "0.1"
 tokio = { workspace = true, features = ["sync", "macros", "rt"] }
-tokio-rusqlite = "0.7"
-rusqlite = { version = "0.37", features = ["bundled"] }
+# Vendored tokio-rusqlite 0.7, package-renamed (see crates/rekindle-asql).
+tokio_rusqlite = { package = "rekindle-asql", path = "../rekindle-asql" }
+rusqlite = { version = "0.38", features = ["bundled"] }
 tracing = { workspace = true }
 parking_lot = { workspace = true }
 rand = "0.8" # Phase 13 — slot_seed random bytes for new DM records.

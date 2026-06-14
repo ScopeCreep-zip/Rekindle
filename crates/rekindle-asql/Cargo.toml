@@ -1,0 +1,27 @@
+[package]
+name = "rekindle-asql"
+version = "0.1.0"
+edition = "2021"
+description = "Async handle for rusqlite on a dedicated background thread — vendored from tokio-rusqlite 0.7 (MIT), bumped to rusqlite 0.38 because upstream is unmaintained and hard-pins rusqlite 0.37 (which conflicts with veilid-core 0.5.3's sqlite chain)."
+license = "MIT"
+repository = "https://github.com/programatik29/tokio-rusqlite"
+readme = "README.md"
+keywords = ["async", "rusqlite", "sqlite"]
+categories = ["asynchronous", "database"]
+
+# NOTE: This crate intentionally does NOT inherit `[lints] workspace = true`.
+# It is vendored third-party code carrying its own `#![warn(...)]` lint header
+# (see src/lib.rs); applying our stricter pedantic set would mean editing the
+# verbatim copy, defeating the point of vendoring it unchanged.
+
+[dependencies]
+# Features for rusqlite are supplied by the CONSUMER crates' own direct
+# rusqlite dependency (cargo unifies features across the graph), so this
+# stays featureless — it only needs the `Connection`/`close` API surface.
+rusqlite = "0.38"
+crossbeam-channel = "0.5"
+tokio = { version = "1", features = ["sync"] }
+
+[dev-dependencies]
+rusqlite = { version = "0.38", features = ["bundled"] }
+tokio = { version = "1", features = ["full"] }

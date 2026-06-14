@@ -6,6 +6,7 @@ pub mod dm;
 pub mod event;
 pub mod friends;
 pub mod game;
+pub mod notification;
 pub mod push_relay;
 pub mod relay;
 pub mod search;

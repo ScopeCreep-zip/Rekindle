@@ -8,7 +8,7 @@ description = "Double-encrypted SQLCipher vault for Rekindle (SQLCipher page-lev
 workspace = true
 
 [dependencies]
-rusqlite = { version = "0.37", features = ["bundled-sqlcipher-vendored-openssl"] }
+rusqlite = { version = "0.38", features = ["bundled-sqlcipher-vendored-openssl"] }
 aes-gcm = "0.10"
 blake3 = "1"
 argon2 = "0.5"

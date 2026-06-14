@@ -29,6 +29,11 @@ export const systemCommands = {
     invoke<void>("set_preferences", { prefs }),
   checkForUpdates: () => invoke<boolean>("check_for_updates"),
 
+  // Notifications — backend command instead of the plugin's `sendNotification`,
+  // whose Linux `show` path panics (blocks on zbus inside the async runtime).
+  showOsNotification: (title: string, body: string) =>
+    invoke<void>("show_os_notification", { title, body }),
+
   // Windows
   showBuddyList: () => invoke<void>("show_buddy_list"),
   openChatWindow: (publicKey: string, displayName: string) =>

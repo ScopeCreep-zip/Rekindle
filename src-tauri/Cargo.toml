@@ -59,6 +59,12 @@ futures.workspace = true
 
 tauri = { version = "2", features = ["macos-private-api", "tray-icon", "image-png"] }
 tauri-plugin-notification = "2"
+# Direct dependency so `show_os_notification` (commands/notification.rs) can use
+# notify_rust's async `show_async()` on Linux — the notification plugin's own
+# `show` blocks on zbus inside the async runtime and panics on Linux. The plugin
+# already pulls notify-rust 4.x with default features (`z` = zbus+serde+async),
+# so this unifies to the same build (no extra compile).
+notify-rust = "4"
 # tauri-plugin-window-state removed — causes infinite windowDidMove loop on macOS
 # with prevent_exit(), see tauri#11489
 tauri-plugin-store = "2"
@@ -78,8 +84,11 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 parking_lot = { workspace = true }
-rusqlite = { version = "0.37", features = ["bundled"] }
-tokio-rusqlite = "0.7"
+rusqlite = { version = "0.38", features = ["bundled"] }
+# Vendored tokio-rusqlite 0.7 (upstream hard-pins rusqlite 0.37, which
+# conflicts with veilid-core 0.5.3's sqlite chain). package-renamed so all
+# `tokio_rusqlite::` references compile unchanged.
+tokio_rusqlite = { package = "rekindle-asql", path = "../crates/rekindle-asql" }
 argon2 = "0.5"
 zeroize = "1"
 hex = "0.4"
@@ -90,7 +99,7 @@ base64 = "0.22"
 rand = "0.8"
 regex = "1"
 uuid = { version = "1", features = ["v4"] }
-veilid-core = { version = "0.5.2", default-features = true }
+veilid-core = { version = "0.5.3", default-features = true }
 image = { version = "0.25", default-features = false, features = ["webp", "png", "jpeg", "gif"] }
 # Architecture §28.4 device pairing — QR-code rendering for the
 # pairing flow. SVG output keeps the frontend dep-free (it just

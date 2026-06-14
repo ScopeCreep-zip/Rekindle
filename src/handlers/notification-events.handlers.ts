@@ -2,7 +2,6 @@ import type { UnlistenFn } from "@tauri-apps/api/event";
 import {
   isPermissionGranted,
   requestPermission,
-  sendNotification,
 } from "@tauri-apps/plugin-notification";
 import { subscribeNotificationEvents } from "../ipc/channels";
 import { setNotificationState } from "../stores/notification.store";
@@ -28,7 +27,7 @@ export async function showSystemNotification(title: string, body: string): Promi
       granted = (await requestPermission()) === "granted";
     }
     if (granted) {
-      await sendNotification({ title, body });
+      await commands.showOsNotification(title, body);
     }
   } catch (error) {
     console.warn("Failed to show system notification:", error);

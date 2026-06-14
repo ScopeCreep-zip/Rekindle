@@ -8,6 +8,7 @@
     "dev": "lsof -ti:1420 | xargs kill -9 2>/dev/null; vite",
     "dev:mac": "./scripts/mac-dev-app.sh",
     "dev:linux": "./scripts/linux-dev.sh",
+    "reset:veilid": "./scripts/reset-veilid-storage.sh",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
