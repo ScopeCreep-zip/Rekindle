@@ -159,29 +159,34 @@ impl AudioProcessor {
     fn process_sub_frame(&mut self, input: &[f32], speaker_ref: Option<&[f32]>) -> (Vec<f32>, f32) {
         let sub_frame_size = DenoiseState::FRAME_SIZE;
 
-        // Step 1: Echo cancellation (operates on normalized [-1, 1] floats)
-        let echo_cancelled = if self.echo_cancellation_enabled {
-            if let Some(ref mut aec) = self.echo_canceller {
+        // Step 1: Echo cancellation (operates on normalized [-1, 1] floats).
+        // ONLY run AEC3 when we actually have a non-empty render (speaker)
+        // reference. With no reference, AEC3 has no echo to model and instead
+        // adapts toward suppressing the near-end — crushing the mic to
+        // near-silence (observed live: raw_peak ~0.24 -> proc_peak ~0.0008
+        // when had_speaker_ref=false). Feeding zeros as render is NOT a fix
+        // (it still drives residual-echo suppression); the correct no-render
+        // behaviour is to bypass the canceller for this frame and let the
+        // denoiser/VAD handle the raw input. `feed_speaker_reference` still
+        // primes the render side, so the filter is ready the moment playback
+        // (and thus a real reference) resumes.
+        let echo_cancelled = match (
+            self.echo_cancellation_enabled,
+            self.echo_canceller.as_mut(),
+            speaker_ref,
+        ) {
+            (true, Some(aec), Some(reference)) if !reference.is_empty() => {
                 let mut aec_output = vec![0.0f32; sub_frame_size];
-
-                // Feed render/speaker reference and process capture in one call
-                match aec.0.process(
-                    input,
-                    speaker_ref,
-                    false, // level_change
-                    &mut aec_output,
-                ) {
+                match aec.0.process(input, Some(reference), false, &mut aec_output) {
                     Ok(_metrics) => aec_output,
                     Err(e) => {
                         tracing::trace!(error = ?e, "AEC3 process failed — passing through");
                         input.to_vec()
                     }
                 }
-            } else {
-                input.to_vec()
             }
-        } else {
-            input.to_vec()
+            // No reference (or AEC disabled/unavailable) -> never crush near-end.
+            _ => input.to_vec(),
         };
 
         // Step 2: Scale to 16-bit PCM range for nnnoiseless
@@ -322,5 +327,35 @@ mod tests {
         // Process with speaker reference — should not panic
         let result = proc.process_capture(&silence, Some(&speaker));
         assert_eq!(result.samples.len(), 960);
+    }
+
+    #[test]
+    fn no_speaker_reference_does_not_crush_near_end() {
+        // Regression: AEC3 with NO render reference has no echo to model and
+        // adapts toward suppressing the near-end, crushing the mic toward
+        // silence over a second or so (observed live: raw_peak ~0.24 ->
+        // proc_peak ~0.0008). The guard bypasses AEC when there's no
+        // reference. noise_suppression=false so the output reflects only the
+        // echo-cancellation stage; echo_cancellation=true builds the AEC.
+        let mut proc = AudioProcessor::new(false, true, 0.01, 100, 20);
+        let frame: Vec<f32> = (0i16..960)
+            .map(|i| (f32::from(i) * 440.0 * std::f32::consts::TAU / 48000.0).sin() * 0.5)
+            .collect();
+        let raw_peak = frame.iter().fold(0.0f32, |m, &s| m.max(s.abs()));
+
+        // Run ~1s of frames with NO render reference; the old (unguarded) AEC
+        // path would have adapted to near-silence by the end.
+        let mut last_peak = 0.0f32;
+        for _ in 0..50 {
+            let result = proc.process_capture(&frame, None);
+            last_peak = result
+                .samples
+                .iter()
+                .fold(0.0f32, |m, &s| m.max(s.abs()));
+        }
+        assert!(
+            last_peak > raw_peak * 0.5,
+            "near-end crushed without a render reference: raw_peak={raw_peak}, last_peak={last_peak}"
+        );
     }
 }
