@@ -26,9 +26,17 @@ use crate::session_deps::{VoiceSessionDeps, VoiceSessionEvent};
 use crate::transport::VoiceTransport;
 use crate::VoiceMode;
 
-/// Consecutive per-peer send failures before the route-heal hook fires
-/// (and the warn re-logs). 50 ≈ one second of speech at 20 ms frames.
+/// Steady-state rate-limit for the route-heal hook (and the warn re-log):
+/// after the first heal, re-heal only every this-many consecutive failures.
+/// 50 ≈ one second of speech at 20 ms frames.
 const ROUTE_HEAL_THRESHOLD: u64 = 50;
+
+/// First route-heal fires after this many consecutive per-peer failures —
+/// ~60 ms, not the ~1 s of waiting for the full [`ROUTE_HEAL_THRESHOLD`].
+/// A peer whose Veilid route went stale mid-call gets re-resolved promptly
+/// instead of dropping a second of audio first; > 1 so a single transient
+/// blip doesn't trigger a needless DHT re-resolve.
+const ROUTE_HEAL_FIRST: u64 = 3;
 
 pub struct VoiceSendParams {
     pub capture_rx: Option<mpsc::Receiver<Vec<f32>>>,
@@ -351,7 +359,7 @@ impl VoiceSendLoop {
             }
             let n = self.peer_send_failures.entry(key.clone()).or_insert(0);
             *n += 1;
-            if *n == 1 || n.is_multiple_of(ROUTE_HEAL_THRESHOLD) {
+            if *n == 1 || *n == ROUTE_HEAL_FIRST || n.is_multiple_of(ROUTE_HEAL_THRESHOLD) {
                 tracing::warn!(
                     peer = %key,
                     consecutive_failures = *n,
@@ -359,7 +367,10 @@ impl VoiceSendLoop {
                     "voice send failing for peer"
                 );
             }
-            if n.is_multiple_of(ROUTE_HEAL_THRESHOLD) {
+            // Heal promptly on the first short streak, then rate-limit to
+            // every ROUTE_HEAL_THRESHOLD so a persistently-dead route isn't
+            // re-resolved 50×/s.
+            if *n == ROUTE_HEAL_FIRST || n.is_multiple_of(ROUTE_HEAL_THRESHOLD) {
                 self.spawn_route_heal(key.clone());
             }
         }
